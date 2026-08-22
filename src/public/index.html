@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Training Assistant • Local &amp; Offline</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <span class="brand">Training Assistant</span>
+    <span class="dot">•</span>
+    <span class="tagline">Local &amp; Offline</span>
+  </header>
+
+  <main>
+    <section class="card form-card">
+      <div class="field">
+        <span class="field-label">RPE — esforço percebido (1 a 10)</span>
+        <div class="rpe-row" id="rpeRow"></div>
+      </div>
+
+      <div class="field">
+        <label class="field-label" for="notes">Notas do atleta</label>
+        <textarea id="notes" rows="3" placeholder="Como foi o treino? Sono, clima, dores, sensações…"></textarea>
+      </div>
+
+      <div class="field">
+        <span class="field-label">Arquivo .FIT</span>
+        <section id="dropzone" class="dropzone" role="button" tabindex="0" aria-label="Selecionar arquivo .FIT">
+          <p class="drop-title" id="dropTitle">Arraste seu arquivo <strong>.FIT</strong> aqui</p>
+          <p class="drop-sub" id="dropSub">ou clique para selecionar do computador</p>
+          <input type="file" id="fileInput" accept=".fit" hidden>
+        </section>
+      </div>
+
+      <button id="generateBtn" class="generate-btn" type="button" disabled>Gerar Prompt de Análise</button>
+    </section>
+
+    <p id="status" class="status" role="status"></p>
+
+    <section id="resultsFlow" class="results-flow" aria-live="polite">
+      <div class="meta" id="metaRow"></div>
+
+      <div class="card table-card">
+        <table>
+          <thead><tr id="lapsHead"></tr></thead>
+          <tbody id="lapsBody"></tbody>
+        </table>
+      </div>
+
+      <section class="prompt-block">
+        <h2 class="section-title">Prompt para o AI Coach</h2>
+        <pre id="markdownPreview" class="prompt-pre" tabindex="0"></pre>
+      </section>
+
+      <button id="copyBtn" class="copy-btn" type="button">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
+        <span id="copyLabel">Copy Prompt to AI Coach</span>
+      </button>
+    </section>
+  </main>
+
+  <script src="form-state.js" defer></script>
+  <script src="app.js" defer></script>
+</body>
+</html>
