@@ -29,8 +29,8 @@ function parseRpe(raw) {
   const trimmed = String(raw).trim();
   if (trimmed === '') return { ok: true, value: null };
   const value = Number(trimmed);
-  if (!Number.isInteger(value) || value < 1 || value > 10) {
-    return { ok: false, error: 'rpe must be an integer between 1 and 10.' };
+  if (!Number.isInteger(value) || value < 1 || value > 5) {
+    return { ok: false, error: 'rpe must be an integer between 1 and 5.' };
   }
   return { ok: true, value };
 }

@@ -27,6 +27,7 @@
   const REMEMBERED_FIELDS = ['tenis', 'fonte_fc', 'terreno'];
   const STORAGE_KEY = 'training-assistant:prefs';
   const COPY_RESET_MS = 1600;
+  const RPE_MAX = 5;
 
   let selectedRpe = null;
   let selectedFile = null;
@@ -37,10 +38,10 @@
     lapsHead.appendChild(th);
   });
 
-  for (let value = 1; value <= 10; value += 1) {
+  for (let value = 1; value <= RPE_MAX; value += 1) {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = `rpe-btn tone-${Math.ceil(value / 2)}`;
+    btn.className = `rpe-btn tone-${value}`;
     btn.textContent = String(value);
     btn.setAttribute('aria-pressed', 'false');
     btn.addEventListener('click', () => {
@@ -98,7 +99,7 @@
   }
 
   const refreshSubmitState = () => {
-    generateBtn.disabled = !FormState.isSubmittable({ file: selectedFile });
+    generateBtn.disabled = !FormState.isSubmittable({ rpe: selectedRpe, file: selectedFile });
   };
 
   const attachFile = (file) => {

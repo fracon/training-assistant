@@ -100,12 +100,12 @@ function fullFormFields() {
     { name: 'tipo_treino', value: 'Intervalado' },
     { name: 'treino_planejado', value: '6x1km forte | trote 400m' },
     { name: 'fc_alvo', value: '145–155 bpm' },
-    { name: 'rpe_alvo', value: '7' },
+    { name: 'rpe_alvo', value: '4' },
     { name: 'tenis', value: 'Nimbus 26' },
     { name: 'fonte_fc', value: 'Cinta Peitoral' },
     { name: 'clima', value: '22°C, Nublado' },
     { name: 'terreno', value: 'Asfalto' },
-    { name: 'rpe_percebido', value: '8' },
+    { name: 'rpe_percebido', value: '5' },
     { name: 'respiracao', value: 'Ofegante' },
     { name: 'sensacao_muscular', value: 'Pesada' },
     { name: 'energia_final', value: 'No limite' },
@@ -118,16 +118,16 @@ test('parseRpe accepts blank, integer, and boundary values', () => {
   assert.deepEqual(parseRpe(undefined), { ok: true, value: null });
   assert.deepEqual(parseRpe(''), { ok: true, value: null });
   assert.deepEqual(parseRpe('   '), { ok: true, value: null });
-  assert.deepEqual(parseRpe('7'), { ok: true, value: 7 });
+  assert.deepEqual(parseRpe('3'), { ok: true, value: 3 });
   assert.deepEqual(parseRpe('1'), { ok: true, value: 1 });
-  assert.deepEqual(parseRpe('10'), { ok: true, value: 10 });
+  assert.deepEqual(parseRpe('5'), { ok: true, value: 5 });
 });
 
 test('parseRpe rejects non-integers and out-of-range values', () => {
-  assert.deepEqual(parseRpe('abc'), { ok: false, error: 'rpe must be an integer between 1 and 10.' });
-  assert.equal(parseRpe('7.5').ok, false);
+  assert.deepEqual(parseRpe('abc'), { ok: false, error: 'rpe must be an integer between 1 and 5.' });
+  assert.equal(parseRpe('2.5').ok, false);
   assert.equal(parseRpe('0').ok, false);
-  assert.equal(parseRpe('11').ok, false);
+  assert.equal(parseRpe('6').ok, false);
 });
 
 test('POST /api/fit/parse rejects non-multipart requests', async () => {
@@ -165,7 +165,7 @@ test('POST /api/fit/parse validates the planned rpe field', async () => {
     { name: 'rpe_alvo', value: 'eleven' },
   ]);
   assert.equal(response.statusCode, 400);
-  assert.deepEqual(response.json(), { error: 'rpe must be an integer between 1 and 10.' });
+  assert.deepEqual(response.json(), { error: 'rpe must be an integer between 1 and 5.' });
 });
 
 test('POST /api/fit/parse validates the perceived rpe field', async () => {
@@ -173,10 +173,10 @@ test('POST /api/fit/parse validates the perceived rpe field', async () => {
   const response = await postParts(app, [
     { name: 'file', fileName: 'run.fit', value: 'binary' },
     { name: 'rpe_alvo', value: '' },
-    { name: 'rpe_percebido', value: '11' },
+    { name: 'rpe_percebido', value: '6' },
   ]);
   assert.equal(response.statusCode, 400);
-  assert.deepEqual(response.json(), { error: 'rpe must be an integer between 1 and 10.' });
+  assert.deepEqual(response.json(), { error: 'rpe must be an integer between 1 and 5.' });
 });
 
 test('POST /api/fit/parse reports unreadable files as 422', async () => {
@@ -223,12 +223,12 @@ test('POST /api/fit/parse renders the full coach prompt from the complete payloa
     tipoTreino: 'Intervalado',
     treinoPlanejado: '6x1km forte | trote 400m',
     fcAlvo: '145–155 bpm',
-    rpeAlvo: 7,
+    rpeAlvo: 4,
     tenis: 'Nimbus 26',
     fonteFc: 'Cinta Peitoral',
     clima: '22°C, Nublado',
     terreno: 'Asfalto',
-    rpePercebido: 8,
+    rpePercebido: 5,
     respiracao: 'Ofegante',
     sensacaoMuscular: 'Pesada',
     energiaFinal: 'No limite',
@@ -238,8 +238,8 @@ test('POST /api/fit/parse renders the full coach prompt from the complete payloa
   assert.equal(payload.markdown, expectedMarkdown);
 
   assert.ok(payload.markdown.includes('Tipo de treino: Intervalado'));
-  assert.ok(payload.markdown.includes('RPE alvo: 7/10'));
-  assert.ok(payload.markdown.includes('RPE percebido: 8/10'));
+  assert.ok(payload.markdown.includes('RPE alvo: 4/5'));
+  assert.ok(payload.markdown.includes('RPE percebido: 5/5'));
   assert.ok(payload.markdown.includes('Tênis utilizado: Nimbus 26'));
   assert.ok(payload.markdown.includes('Duração total: 30:00'));
   assert.ok(payload.markdown.includes('Distância total: 5.50 km'));

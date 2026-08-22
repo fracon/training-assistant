@@ -65,7 +65,7 @@ function orNoneReported(value) {
 }
 
 function rpeLabel(value) {
-  return value === null || value === undefined ? UNINFORMED : `${value}/10`;
+  return value === null || value === undefined ? UNINFORMED : `${value}/5`;
 }
 
 function pad2(value) {

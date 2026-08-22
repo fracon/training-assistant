@@ -5,6 +5,10 @@
     root.FormState = factory();
   }
 })(typeof self !== 'undefined' ? self : this, function () {
+  function isValidRpe(value) {
+    return Number.isInteger(value) && value >= 1 && value <= 5;
+  }
+
   function isAttachedFitFile(file) {
     return Boolean(
       file &&
@@ -14,8 +18,8 @@
   }
 
   function isSubmittable(state) {
-    return Boolean(state && isAttachedFitFile(state.file));
+    return Boolean(state && isValidRpe(state.rpe) && isAttachedFitFile(state.file));
   }
 
-  return { isSubmittable, isAttachedFitFile };
+  return { isSubmittable, isAttachedFitFile, isValidRpe };
 });
