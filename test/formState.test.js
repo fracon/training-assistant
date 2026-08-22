@@ -3,17 +3,29 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { isSubmittable } = require('../src/public/form-state.js');
+const { isSubmittable, isAttachedFitFile } = require('../src/public/form-state.js');
 
 const validState = () => ({
-  rpe: 7,
-  notes: 'Dormi bem, pernas leves.',
   file: { name: 'treino.fit' },
 });
 
-test('isSubmittable accepts a complete state at the rpe boundaries', () => {
-  assert.equal(isSubmittable({ ...validState(), rpe: 1 }), true);
-  assert.equal(isSubmittable({ ...validState(), rpe: 10 }), true);
+test('isAttachedFitFile accepts .fit names in any case', () => {
+  assert.equal(isAttachedFitFile({ name: 'treino.FIT' }), true);
+  assert.equal(isAttachedFitFile({ name: 'treino.fit' }), true);
+});
+
+test('isAttachedFitFile rejects non-fit names and malformed files', () => {
+  assert.equal(isAttachedFitFile(null), false);
+  assert.equal(isAttachedFitFile(undefined), false);
+  assert.equal(isAttachedFitFile({}), false);
+  assert.equal(isAttachedFitFile({ name: 'treino.txt' }), false);
+  assert.equal(isAttachedFitFile({ name: '' }), false);
+  assert.equal(isAttachedFitFile({ name: null }), false);
+});
+
+test('isSubmittable accepts a state with an attached fit file', () => {
+  assert.equal(isSubmittable(validState()), true);
+  assert.equal(isSubmittable({ file: { name: 'WORKOUT.FiT' } }), true);
 });
 
 test('isSubmittable rejects missing or malformed state objects', () => {
@@ -22,24 +34,9 @@ test('isSubmittable rejects missing or malformed state objects', () => {
   assert.equal(isSubmittable({}), false);
 });
 
-test('isSubmittable requires an integer rpe between 1 and 10', () => {
-  assert.equal(isSubmittable({ ...validState(), rpe: null }), false);
-  assert.equal(isSubmittable({ ...validState(), rpe: undefined }), false);
-  assert.equal(isSubmittable({ ...validState(), rpe: 0 }), false);
-  assert.equal(isSubmittable({ ...validState(), rpe: 11 }), false);
-  assert.equal(isSubmittable({ ...validState(), rpe: 7.5 }), false);
-  assert.equal(isSubmittable({ ...validState(), rpe: '7' }), false);
-});
-
-test('isSubmittable requires non-empty trimmed notes', () => {
-  assert.equal(isSubmittable({ ...validState(), notes: '' }), false);
-  assert.equal(isSubmittable({ ...validState(), notes: '   \n\t ' }), false);
-  assert.equal(isSubmittable({ ...validState(), notes: null }), false);
-  assert.equal(isSubmittable({ ...validState(), notes: 42 }), false);
-  assert.equal(isSubmittable({ ...validState(), notes: ' ok ' }), true);
-});
-
-test('isSubmittable requires an attached file', () => {
+test('isSubmittable requires a file with a .fit extension', () => {
   assert.equal(isSubmittable({ ...validState(), file: null }), false);
   assert.equal(isSubmittable({ ...validState(), file: undefined }), false);
+  assert.equal(isSubmittable({ ...validState(), file: {} }), false);
+  assert.equal(isSubmittable({ ...validState(), file: { name: 'run.txt' } }), false);
 });

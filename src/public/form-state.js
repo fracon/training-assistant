@@ -5,17 +5,17 @@
     root.FormState = factory();
   }
 })(typeof self !== 'undefined' ? self : this, function () {
-  function isSubmittable(state) {
+  function isAttachedFitFile(file) {
     return Boolean(
-      state &&
-      Number.isInteger(state.rpe) &&
-      state.rpe >= 1 &&
-      state.rpe <= 10 &&
-      typeof state.notes === 'string' &&
-      state.notes.trim().length > 0 &&
-      state.file
+      file &&
+      typeof file.name === 'string' &&
+      /\.fit$/i.test(file.name)
     );
   }
 
-  return { isSubmittable };
+  function isSubmittable(state) {
+    return Boolean(state && isAttachedFitFile(state.file));
+  }
+
+  return { isSubmittable, isAttachedFitFile };
 });

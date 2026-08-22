@@ -47,6 +47,12 @@ main {
   gap: 0.95rem;
 }
 
+#workoutForm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.95rem;
+}
+
 .dropzone {
   min-height: 114px;
   border: 2px dashed var(--line-strong);
@@ -103,6 +109,60 @@ main {
 .field { display: flex; flex-direction: column; gap: 0.45rem; }
 
 .field-label { font-size: 0.82rem; color: var(--muted); font-weight: 600; letter-spacing: 0.02em; }
+
+.group {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 0.85rem 0.95rem 1rem;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  background: rgba(244, 240, 232, 0.5);
+}
+
+.group legend {
+  padding: 0 0.45rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-deep);
+}
+
+.grid { display: grid; gap: 0.7rem; }
+.grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.grid-2x2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+input[type="text"],
+select,
+.prompt-textarea {
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--bg);
+  padding: 0.55rem 0.65rem;
+  font: inherit;
+  font-size: 0.92rem;
+  color: inherit;
+}
+
+select {
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%238b8172' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.6rem center;
+  padding-right: 1.9rem;
+}
+
+input[type="text"]:focus-visible,
+select:focus-visible,
+.prompt-textarea:focus-visible {
+  outline: 2px solid var(--accent-deep);
+  outline-offset: 1px;
+}
+
+textarea { width: 100%; }
 
 .rpe-row {
   display: grid;
@@ -272,18 +332,19 @@ tbody tr:nth-child(even) { background: #faf7f0; }
   margin: 0 0 12px;
 }
 
-.prompt-pre {
+.prompt-textarea {
   display: block;
-  width: 100%;
-  box-sizing: border-box;
+  min-height: 220px;
+  max-height: 480px;
+  overflow-y: auto;
+  resize: vertical;
   margin: 0;
   background: #2e2921;
   color: #efe9db;
-  border-radius: 8px;
+  border-color: #2e2921;
   padding: 16px;
-  overflow: auto;
-  max-height: 340px;
   font-size: 0.78rem;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
   line-height: 1.5;
 }
 
@@ -317,4 +378,6 @@ tbody tr:nth-child(even) { background: #faf7f0; }
   .results-flow { gap: 18px; }
   .rpe-row { grid-template-columns: repeat(5, minmax(0, 1fr)); }
   .topbar .tagline { font-size: 0.8rem; }
+  .grid-3 { grid-template-columns: 1fr; }
+  .grid-2x2 { grid-template-columns: 1fr; }
 }

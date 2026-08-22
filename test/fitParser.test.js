@@ -121,6 +121,18 @@ test('summarize builds cumulative lap views from session data', () => {
   assert.equal(third.lap, 3);
   assert.equal(third.durationLabel, '08:00');
   assert.equal(third.cumulativeLabel, '20:01');
+
+  assert.deepEqual(summary.totals, {
+    durationSeconds: 1200.6,
+    durationLabel: '20:01',
+    distanceKm: 3.6,
+    distanceLabel: '3.60',
+    avgPaceSecondsPerKm: 333.5,
+    avgPaceLabel: '5:34',
+    avgHeartRate: 150,
+    maxHeartRate: 162,
+    ascentMeters: 30,
+  });
 });
 
 test('summarize tolerates missing fields and falls back gracefully', () => {
@@ -129,6 +141,17 @@ test('summarize tolerates missing fields and falls back gracefully', () => {
   assert.equal(emptySummary.activity.startTime, null);
   assert.equal(emptySummary.activity.endTime, null);
   assert.deepEqual(emptySummary.laps, []);
+  assert.deepEqual(emptySummary.totals, {
+    durationSeconds: 0,
+    durationLabel: '00:00',
+    distanceKm: null,
+    distanceLabel: '-',
+    avgPaceSecondsPerKm: null,
+    avgPaceLabel: '--:--',
+    avgHeartRate: null,
+    maxHeartRate: null,
+    ascentMeters: null,
+  });
 
   const noLaps = summarize({ sessions: [{ sport: 'cycling' }] });
   assert.deepEqual(noLaps.laps, []);
@@ -155,6 +178,70 @@ test('summarize tolerates missing fields and falls back gracefully', () => {
   assert.equal(cadenceOnly.avgCadenceSpm, 80);
   assert.equal(cadenceOnly.maxCadenceSpm, 90);
   assert.equal(cadenceOnly.avgHeartRate, null);
+});
+
+test('summarize computes totals across mixed lap quality', () => {
+  const summary = summarize({
+    sessions: [
+      {
+        sport: 'running',
+        start_time: new Date('2026-02-03T07:30:00Z'),
+        laps: [
+          makeLap({ total_elapsed_time: 600, total_distance: 2000 }),
+          makeLap({
+            message_index: 1,
+            intensity: 'rest',
+            total_elapsed_time: 0,
+            total_distance: 0,
+            avg_heart_rate: 140,
+          }),
+          makeLap({
+            message_index: 2,
+            total_elapsed_time: 60,
+            total_distance: 1000,
+            avg_heart_rate: null,
+            max_heart_rate: null,
+            total_ascent: null,
+          }),
+        ],
+      },
+    ],
+  });
+
+  assert.deepEqual(summary.totals, {
+    durationSeconds: 660,
+    durationLabel: '11:00',
+    distanceKm: 3,
+    distanceLabel: '3.00',
+    avgPaceSecondsPerKm: 220,
+    avgPaceLabel: '3:40',
+    avgHeartRate: 150,
+    maxHeartRate: 162,
+    ascentMeters: 20,
+  });
+});
+
+test('summarize reports zero-distance workouts without a pace average', () => {
+  const treadmill = summarize({
+    sessions: [{ laps: [makeLap({ total_distance: 0 })] }],
+  });
+  assert.equal(treadmill.totals.distanceKm, 0);
+  assert.equal(treadmill.totals.distanceLabel, '0.00');
+  assert.equal(treadmill.totals.avgPaceSecondsPerKm, null);
+  assert.equal(treadmill.totals.avgPaceLabel, '--:--');
+  assert.equal(treadmill.totals.durationLabel, '10:00');
+});
+
+test('summarize skips pace when no lap carries a duration', () => {
+  const distanceOnly = summarize({
+    sessions: [
+      { laps: [makeLap({ total_elapsed_time: undefined, total_distance: 1000 })] },
+    ],
+  });
+  assert.equal(distanceOnly.totals.durationSeconds, 0);
+  assert.equal(distanceOnly.totals.durationLabel, '00:00');
+  assert.equal(distanceOnly.totals.distanceKm, 1);
+  assert.equal(distanceOnly.totals.avgPaceLabel, '--:--');
 });
 
 test('summarize falls back to top-level laps in list mode output', () => {
@@ -300,6 +387,18 @@ test('parseFitFile decodes a synthetic binary Garmin-style FIT file', async () =
   assert.equal(restLap.durationLabel, '20:00');
   assert.equal(restLap.cumulativeLabel, '30:00');
   assert.equal(restLap.bestPaceLabel, '3:00');
+
+  assert.deepEqual(summary.totals, {
+    durationSeconds: 1800.4,
+    durationLabel: '30:00',
+    distanceKm: 5,
+    distanceLabel: '5.00',
+    avgPaceSecondsPerKm: 360.1,
+    avgPaceLabel: '6:00',
+    avgHeartRate: 150,
+    maxHeartRate: 162,
+    ascentMeters: 17,
+  });
 });
 
 test('parseFitFile integrates with the real fit-file-parser on garbage input', async () => {

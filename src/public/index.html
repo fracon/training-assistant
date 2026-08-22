@@ -14,28 +14,145 @@
   </header>
 
   <main>
-    <section class="card form-card">
-      <div class="field">
-        <span class="field-label">RPE — esforço percebido (1 a 10)</span>
-        <div class="rpe-row" id="rpeRow"></div>
-      </div>
+    <form id="workoutForm" autocomplete="off">
+      <section class="card form-card">
+        <fieldset class="group">
+        <legend>Treino Planejado</legend>
+        <div class="grid grid-3">
+          <div class="field">
+            <label class="field-label" for="tipo_treino">Tipo de treino</label>
+            <select id="tipo_treino" name="tipo_treino">
+              <option value="">—</option>
+              <option value="Leve">Leve</option>
+              <option value="Longão">Longão</option>
+              <option value="Intervalado">Intervalado</option>
+              <option value="Ritmo">Ritmo</option>
+              <option value="Recuperação">Recuperação</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="field-label" for="fc_alvo">FC alvo</label>
+            <input type="text" id="fc_alvo" name="fc_alvo" placeholder="ex.: 145–155 bpm">
+          </div>
+          <div class="field">
+            <label class="field-label" for="rpe_alvo">RPE alvo</label>
+            <select id="rpe_alvo" name="rpe_alvo">
+              <option value="">—</option>
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+              <option value="6">6</option>
+              <option value="7">7</option>
+              <option value="8">8</option>
+              <option value="9">9</option>
+              <option value="10">10</option>
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <label class="field-label" for="treino_planejado">Treino planejado</label>
+          <textarea id="treino_planejado" name="treino_planejado" rows="2" class="auto-grow"
+            placeholder="ex.: 5 km aquecimento + 6×1 km forte (3:50–4:00) com 400 m de trote"></textarea>
+        </div>
+      </fieldset>
 
-      <div class="field">
-        <label class="field-label" for="notes">Notas do atleta</label>
-        <textarea id="notes" rows="3" placeholder="Como foi o treino? Sono, clima, dores, sensações…"></textarea>
-      </div>
+      <fieldset class="group">
+        <legend>Contexto &amp; Equipamento</legend>
+        <div class="grid grid-2x2">
+          <div class="field">
+            <label class="field-label" for="tenis">Tênis</label>
+            <input type="text" id="tenis" name="tenis" placeholder="ex.: Nimbus 26">
+          </div>
+          <div class="field">
+            <label class="field-label" for="fonte_fc">Fonte da FC</label>
+            <select id="fonte_fc" name="fonte_fc">
+              <option value="">—</option>
+              <option value="Cinta Peitoral">Cinta Peitoral</option>
+              <option value="Sensor Óptico do Relógio">Sensor Óptico do Relógio</option>
+              <option value="Sem FC">Sem FC</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="field-label" for="clima">Temperatura e clima</label>
+            <input type="text" id="clima" name="clima" placeholder="ex.: 22°C, Nublado, vento leve">
+          </div>
+          <div class="field">
+            <label class="field-label" for="terreno">Terreno/percurso</label>
+            <select id="terreno" name="terreno">
+              <option value="">—</option>
+              <option value="Asfalto">Asfalto</option>
+              <option value="Terra/Trilha">Terra/Trilha</option>
+              <option value="Pista">Pista</option>
+              <option value="Esteira">Esteira</option>
+              <option value="Misto">Misto</option>
+            </select>
+          </div>
+        </div>
+      </fieldset>
 
-      <div class="field">
-        <span class="field-label">Arquivo .FIT</span>
-        <section id="dropzone" class="dropzone" role="button" tabindex="0" aria-label="Selecionar arquivo .FIT">
-          <p class="drop-title" id="dropTitle">Arraste seu arquivo <strong>.FIT</strong> aqui</p>
-          <p class="drop-sub" id="dropSub">ou clique para selecionar do computador</p>
-          <input type="file" id="fileInput" accept=".fit" hidden>
-        </section>
-      </div>
+      <fieldset class="group">
+        <legend>Percepção e Esforço</legend>
+        <div class="field">
+          <span class="field-label">RPE percebido — esforço percebido (1 a 10)</span>
+          <div class="rpe-row" id="rpeRow"></div>
+        </div>
+        <div class="grid grid-3">
+          <div class="field">
+            <label class="field-label" for="respiracao">Respiração</label>
+            <select id="respiracao" name="respiracao">
+              <option value="">—</option>
+              <option value="Controlada">Controlada</option>
+              <option value="Ofegante">Ofegante</option>
+              <option value="Muito Ofegante">Muito Ofegante</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="field-label" for="sensacao_muscular">Sensação muscular</label>
+            <select id="sensacao_muscular" name="sensacao_muscular">
+              <option value="">—</option>
+              <option value="Leve">Leve</option>
+              <option value="Normal">Normal</option>
+              <option value="Pesada">Pesada</option>
+              <option value="Fadigada">Fadigada</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="field-label" for="energia_final">Energia ao terminar</label>
+            <select id="energia_final" name="energia_final">
+              <option value="">—</option>
+              <option value="Sobrava energia">Sobrava energia</option>
+              <option value="No limite">No limite</option>
+              <option value="Esgotado">Esgotado</option>
+            </select>
+          </div>
+        </div>
+      </fieldset>
 
-      <button id="generateBtn" class="generate-btn" type="button" disabled>Gerar Prompt de Análise</button>
-    </section>
+      <fieldset class="group">
+        <legend>Feedback</legend>
+        <div class="field">
+          <label class="field-label" for="dor_desconforto">Dor ou desconforto</label>
+          <textarea id="dor_desconforto" name="dor_desconforto" rows="2" class="auto-grow"
+            placeholder="ex.: pontada leve no tendão de Aquiles direito após o km 8…"></textarea>
+        </div>
+        <div class="field">
+          <label class="field-label" for="feedback_livre">Feedback livre</label>
+          <textarea id="feedback_livre" name="feedback_livre" rows="2" class="auto-grow"
+            placeholder="Como foi o treino? Sono, clima, sensações gerais…"></textarea>
+        </div>
+      </fieldset>
+      </section>
+
+      <section id="dropzone" class="dropzone" role="button" tabindex="0" aria-label="Selecionar arquivo .FIT">
+        <p class="drop-title" id="dropTitle">Arraste seu arquivo <strong>.FIT</strong> aqui</p>
+        <p class="drop-sub" id="dropSub">ou clique para selecionar do computador</p>
+        <input type="file" id="fileInput" accept=".fit" hidden>
+      </section>
+
+      <button id="generateBtn" class="generate-btn" type="submit" disabled>Gerar Prompt</button>
+    </form>
 
     <p id="status" class="status" role="status"></p>
 
@@ -50,13 +167,13 @@
       </div>
 
       <section class="prompt-block">
-        <h2 class="section-title">Prompt para o AI Coach</h2>
-        <pre id="markdownPreview" class="prompt-pre" tabindex="0"></pre>
+        <h2 class="section-title">Prompt para o AI Coach — revise antes de copiar</h2>
+        <textarea id="markdownPreview" class="prompt-textarea" readonly spellcheck="false"></textarea>
       </section>
 
       <button id="copyBtn" class="copy-btn" type="button">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
-        <span id="copyLabel">Copy Prompt to AI Coach</span>
+        <span id="copyLabel">Copiar Prompt</span>
       </button>
     </section>
   </main>

@@ -9,6 +9,21 @@ const { generateMarkdown } = require('./markdownGenerator');
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
+const FIELD_MAP = {
+  tipo_treino: 'tipoTreino',
+  treino_planejado: 'treinoPlanejado',
+  fc_alvo: 'fcAlvo',
+  tenis: 'tenis',
+  fonte_fc: 'fonteFc',
+  clima: 'clima',
+  terreno: 'terreno',
+  respiracao: 'respiracao',
+  sensacao_muscular: 'sensacaoMuscular',
+  energia_final: 'energiaFinal',
+  dor_desconforto: 'dorDesconforto',
+  feedback_livre: 'feedbackLivre',
+};
+
 function parseRpe(raw) {
   if (raw === undefined) return { ok: true, value: null };
   const trimmed = String(raw).trim();
@@ -60,20 +75,31 @@ async function buildServer(options = {}) {
       return reply.code(400).send({ error: 'Only .FIT files are supported.' });
     }
 
-    const rpeResult = parseRpe(fields.rpe);
-    if (!rpeResult.ok) {
-      return reply.code(400).send({ error: rpeResult.error });
+    const rpeAlvo = parseRpe(fields.rpe_alvo);
+    if (!rpeAlvo.ok) {
+      return reply.code(400).send({ error: rpeAlvo.error });
+    }
+
+    const rpePercebido = parseRpe(fields.rpe_percebido);
+    if (!rpePercebido.ok) {
+      return reply.code(400).send({ error: rpePercebido.error });
     }
 
     try {
       const summary = await parseFile(fileBuffer);
-      const notes = fields.notes || '';
-      const markdown = generateMarkdown(summary, { rpe: rpeResult.value, notes });
+      const feedback = {};
+      for (const [fieldName, feedbackKey] of Object.entries(FIELD_MAP)) {
+        feedback[feedbackKey] = fields[fieldName];
+      }
+      feedback.rpeAlvo = rpeAlvo.value;
+      feedback.rpePercebido = rpePercebido.value;
+      const markdown = generateMarkdown(summary, feedback);
       return reply.send({
         fileName,
         sizeBytes: fileBuffer.length,
         activity: summary.activity,
         laps: summary.laps,
+        totals: summary.totals,
         markdown,
       });
     } catch (error) {

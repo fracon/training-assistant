@@ -99,6 +99,54 @@ function buildLapView(lap, index, cumulativeBefore) {
   };
 }
 
+function buildTotals(views) {
+  let durationSeconds = 0;
+  let hrWeighted = 0;
+  let hrWeight = 0;
+  const maxHeartRates = [];
+  let distanceKmSum = 0;
+  let hasDistance = false;
+  let ascentSum = 0;
+  let hasAscent = false;
+
+  for (const view of views) {
+    if (view.duration !== null) {
+      durationSeconds += view.duration;
+      if (view.avgHeartRate !== null && view.duration > 0) {
+        hrWeighted += view.avgHeartRate * view.duration;
+        hrWeight += view.duration;
+      }
+    }
+    if (view.maxHeartRate !== null) maxHeartRates.push(view.maxHeartRate);
+    if (view.distanceKm !== null) {
+      hasDistance = true;
+      distanceKmSum += view.distanceKm;
+    }
+    if (view.ascentMeters !== null) {
+      hasAscent = true;
+      ascentSum += view.ascentMeters;
+    }
+  }
+
+  const distanceKm = hasDistance ? round(distanceKmSum, 3) : null;
+  const avgPaceSecondsPerKm =
+    distanceKm !== null && distanceKm > 0 && durationSeconds > 0
+      ? round(durationSeconds / distanceKm, 1)
+      : null;
+
+  return {
+    durationSeconds: round(durationSeconds, 2),
+    durationLabel: formatDuration(durationSeconds),
+    distanceKm,
+    distanceLabel: formatDistance(distanceKm),
+    avgPaceSecondsPerKm,
+    avgPaceLabel: formatPace(avgPaceSecondsPerKm),
+    avgHeartRate: hrWeight > 0 ? Math.round(hrWeighted / hrWeight) : null,
+    maxHeartRate: maxHeartRates.length ? Math.max(...maxHeartRates) : null,
+    ascentMeters: hasAscent ? round(ascentSum, 1) : null,
+  };
+}
+
 function summarize(data) {
   const source = data ?? {};
   const session = source.sessions?.[0] ?? {};
@@ -118,6 +166,7 @@ function summarize(data) {
       endTime: toIso(session.timestamp),
     },
     laps: lapViews,
+    totals: buildTotals(lapViews),
   };
 }
 

@@ -3,13 +3,13 @@
 
   const $ = (id) => document.getElementById(id);
 
+  const form = $('workoutForm');
   const dropzone = $('dropzone');
   const dropTitle = $('dropTitle');
   const dropSub = $('dropSub');
   const fileInput = $('fileInput');
   const statusEl = $('status');
   const rpeRow = $('rpeRow');
-  const notesEl = $('notes');
   const generateBtn = $('generateBtn');
   const metaRow = $('metaRow');
   const lapsHead = $('lapsHead');
@@ -24,9 +24,12 @@
     'Avg HR', 'Max HR', 'Asc (m)', 'Desc (m)', 'Avg Cad', 'Max Cad', 'Stride (m)', 'kcal',
   ];
 
+  const REMEMBERED_FIELDS = ['tenis', 'fonte_fc', 'terreno'];
+  const STORAGE_KEY = 'training-assistant:prefs';
+  const COPY_RESET_MS = 1600;
+
   let selectedRpe = null;
   let selectedFile = null;
-  let markdownText = '';
 
   COLUMNS.forEach((title) => {
     const th = document.createElement('th');
@@ -46,10 +49,17 @@
         other.classList.toggle('selected', other === btn);
         other.setAttribute('aria-pressed', String(other === btn));
       });
-      refreshSubmitState();
     });
     rpeRow.appendChild(btn);
   }
+
+  document.querySelectorAll('textarea.auto-grow').forEach((el) => {
+    const grow = () => {
+      el.style.height = 'auto';
+      el.style.height = `${el.scrollHeight}px`;
+    };
+    el.addEventListener('input', grow);
+  });
 
   const setStatus = (message, tone = '') => {
     statusEl.textContent = message;
@@ -60,21 +70,35 @@
 
   const fmtDate = (iso) => (iso ? new Date(iso).toLocaleString() : '-');
 
-  const autoResize = () => {
-    notesEl.style.height = 'auto';
-    notesEl.style.height = `${notesEl.scrollHeight}px`;
-  };
-  notesEl.addEventListener('input', () => {
-    autoResize();
-    refreshSubmitState();
-  });
+  function loadPrefs() {
+    let prefs = {};
+    try {
+      prefs = JSON.parse(localStorage.getItem(STORAGE_KEY)) ?? {};
+    } catch {
+      prefs = {};
+    }
+    REMEMBERED_FIELDS.forEach((fieldName) => {
+      const saved = prefs[fieldName];
+      if (typeof saved === 'string' && saved !== '') {
+        $(`#${fieldName}`).value = saved;
+      }
+    });
+  }
+
+  function savePrefs() {
+    const prefs = {};
+    REMEMBERED_FIELDS.forEach((fieldName) => {
+      prefs[fieldName] = $(`#${fieldName}`).value;
+    });
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
+    } catch {
+      /* storage unavailable - preferences simply won't persist */
+    }
+  }
 
   const refreshSubmitState = () => {
-    generateBtn.disabled = !FormState.isSubmittable({
-      rpe: selectedRpe,
-      notes: notesEl.value,
-      file: selectedFile,
-    });
+    generateBtn.disabled = !FormState.isSubmittable({ file: selectedFile });
   };
 
   const attachFile = (file) => {
@@ -120,33 +144,6 @@
 
   dropzone.addEventListener('drop', (event) => handleFiles(event.dataTransfer.files));
 
-  async function submitWorkout() {
-    if (generateBtn.disabled || !selectedFile) return;
-    generateBtn.disabled = true;
-    generateBtn.textContent = 'Processando...';
-    resultsFlow.classList.remove('visible');
-    copyBtn.classList.remove('visible');
-    setStatus(`Processando “${selectedFile.name}”…`);
-    const form = new FormData();
-    form.append('file', selectedFile, selectedFile.name);
-    form.append('rpe', String(selectedRpe));
-    form.append('notes', notesEl.value);
-    try {
-      const response = await fetch('/api/fit/parse', { method: 'POST', body: form });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || 'Falha ao processar o arquivo.');
-      render(payload);
-      setStatus(`“${payload.fileName}” processado com sucesso.`, 'ok');
-    } catch (error) {
-      setStatus(error.message, 'error');
-    } finally {
-      generateBtn.textContent = 'Gerar Prompt de Análise';
-      refreshSubmitState();
-    }
-  }
-
-  generateBtn.addEventListener('click', submitWorkout);
-
   function chip(label, value) {
     const span = document.createElement('span');
     span.className = 'chip';
@@ -157,15 +154,19 @@
     return span;
   }
 
-  function render(payload) {
+  function renderMeta(payload) {
     metaRow.innerHTML = '';
     [
       ['Esporte', payload.activity.sport ?? '-'],
       ['Início', fmtDate(payload.activity.startTime)],
       ['Fim', fmtDate(payload.activity.endTime)],
+      ['Duração', payload.totals?.durationLabel ?? '-'],
+      ['Distância', payload.totals?.distanceLabel !== undefined ? payload.totals.distanceLabel : '-'],
       ['Laps', payload.laps.length],
     ].forEach(([label, value]) => metaRow.appendChild(chip(label, value)));
+  }
 
+  function renderLaps(payload) {
     lapsBody.innerHTML = '';
     payload.laps.forEach((lap) => {
       const tr = document.createElement('tr');
@@ -189,20 +190,53 @@
       stepTd.appendChild(badge);
       lapsBody.appendChild(tr);
     });
+  }
 
+  function render(payload) {
+    renderMeta(payload);
+    renderLaps(payload);
     resultsFlow.classList.add('visible');
-
-    markdownText = payload.markdown;
-    previewEl.textContent = markdownText;
+    previewEl.value = payload.markdown;
     copyBtn.classList.add('visible');
   }
 
-  copyBtn.addEventListener('click', async () => {
+  async function submitWorkout(event) {
+    event.preventDefault();
+    if (generateBtn.disabled || !selectedFile) return;
+    generateBtn.disabled = true;
+    generateBtn.textContent = 'Processando...';
+    resultsFlow.classList.remove('visible');
+    copyBtn.classList.remove('visible');
+    setStatus(`Processando “${selectedFile.name}”…`);
+    const formData = new FormData(form);
+    formData.append('file', selectedFile, selectedFile.name);
+    formData.append('rpe_percebido', selectedRpe === null ? '' : String(selectedRpe));
     try {
-      await navigator.clipboard.writeText(markdownText);
+      const response = await fetch('/api/fit/parse', { method: 'POST', body: formData });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Falha ao processar o arquivo.');
+      savePrefs();
+      render(payload);
+      setStatus(`“${payload.fileName}” processado com sucesso.`, 'ok');
+    } catch (error) {
+      setStatus(error.message, 'error');
+    } finally {
+      generateBtn.textContent = 'Gerar Prompt';
+      refreshSubmitState();
+    }
+  }
+
+  form.addEventListener('submit', submitWorkout);
+
+  let copyResetTimer = null;
+
+  copyBtn.addEventListener('click', async () => {
+    const text = previewEl.value;
+    try {
+      await navigator.clipboard.writeText(text);
     } catch {
       const helper = document.createElement('textarea');
-      helper.value = markdownText;
+      helper.value = text;
       helper.setAttribute('readonly', '');
       helper.style.position = 'fixed';
       helper.style.opacity = '0';
@@ -212,10 +246,14 @@
       helper.remove();
     }
     copyBtn.classList.add('copied');
-    copyLabel.textContent = 'Prompt copiado!';
-    setTimeout(() => {
+    copyLabel.textContent = 'Copiado!';
+    clearTimeout(copyResetTimer);
+    copyResetTimer = setTimeout(() => {
       copyBtn.classList.remove('copied');
-      copyLabel.textContent = 'Copy Prompt to AI Coach';
-    }, 1600);
+      copyLabel.textContent = 'Copiar Prompt';
+    }, COPY_RESET_MS);
   });
+
+  loadPrefs();
+  refreshSubmitState();
 })();
