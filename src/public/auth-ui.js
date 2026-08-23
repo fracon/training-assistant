@@ -30,34 +30,46 @@
 
   function validateRegistration(input) {
     const fields = input ?? {};
-    const missing = [
-      ['first_name', 'first name'],
-      ['last_name', 'last name'],
-      ['email', 'email'],
-    ].find(([key]) => !text(fields[key]));
+    const errors = [];
+    const invalid = {};
 
-    if (missing) {
-      return `Please enter your ${missing[1]}.`;
-    }
-
+    const firstName = text(fields.first_name);
+    const lastName = text(fields.last_name);
+    const email = text(fields.email);
     const password = typeof fields.password === 'string' ? fields.password : '';
+    const confirm = typeof fields.confirm === 'string' ? fields.confirm : '';
+
+    if (!firstName) {
+      errors.push('Please enter your first name.');
+      invalid.first_name = true;
+    }
+    if (!lastName) {
+      errors.push('Please enter your last name.');
+      invalid.last_name = true;
+    }
+    if (!email) {
+      errors.push('Please enter your email.');
+      invalid.email = true;
+    } else if (!EMAIL_PATTERN.test(email)) {
+      errors.push('Please enter a valid email address.');
+      invalid.email = true;
+    }
     if (!password) {
-      return 'Please choose a password.';
+      errors.push('Please choose a password.');
+      invalid.password = true;
+    } else if (password.length < MIN_PASSWORD_LENGTH) {
+      errors.push(`Password must be at least ${MIN_PASSWORD_LENGTH} characters long.`);
+      invalid.password = true;
+    }
+    if (!confirm) {
+      errors.push('Please confirm your password.');
+      invalid.confirm = true;
+    } else if (password && confirm !== password) {
+      errors.push('Passwords do not match.');
+      invalid.confirm = true;
     }
 
-    if (!isValidEmail(fields.email)) {
-      return 'Please enter a valid email address.';
-    }
-
-    if (password.length < MIN_PASSWORD_LENGTH) {
-      return `Password must be at least ${MIN_PASSWORD_LENGTH} characters long.`;
-    }
-
-    if (fields.confirm !== password) {
-      return 'Passwords do not match.';
-    }
-
-    return '';
+    return { valid: errors.length === 0, errors, invalid };
   }
 
   return { isValidEmail, validateLogin, validateRegistration, MIN_PASSWORD_LENGTH };

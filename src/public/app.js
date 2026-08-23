@@ -269,6 +269,21 @@
   const registerForm = $('registerForm');
   const authTitle = $('authTitle');
   const authSubtitle = $('authSubtitle');
+  const registerErrorBox = $('registerError');
+  const registerErrorList = $('registerErrorList');
+  const toastEl = $('toast');
+  const toastMessage = $('toastMessage');
+
+  const TOAST_DURATION_MS = 2800;
+  const AUTH_TRANSITION_MS = 180;
+
+  const REGISTER_FIELDS = {
+    first_name: 'registerFirstName',
+    last_name: 'registerLastName',
+    email: 'registerEmail',
+    password: 'registerPassword',
+    confirm: 'registerConfirm',
+  };
 
   const AUTH_COPY = {
     login: {
@@ -300,7 +315,7 @@
   }
 
   function showApp() {
-    authView.classList.add('hidden');
+    hideAuthView();
     appView.classList.remove('hidden');
     userBadge.classList.remove('hidden');
     logoutBtn.classList.remove('hidden');
@@ -310,7 +325,44 @@
     appView.classList.add('hidden');
     userBadge.classList.add('hidden');
     logoutBtn.classList.add('hidden');
+    authView.classList.remove('leaving');
     authView.classList.remove('hidden');
+  }
+
+  function hideAuthView() {
+    authView.classList.add('leaving');
+    setTimeout(() => {
+      authView.classList.add('hidden');
+      authView.classList.remove('leaving');
+    }, AUTH_TRANSITION_MS);
+  }
+
+  let toastTimer = null;
+
+  function showToast(message) {
+    toastMessage.textContent = message;
+    toastEl.classList.add('visible');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.remove('visible'), TOAST_DURATION_MS);
+  }
+
+  function clearRegistrationErrors() {
+    registerErrorBox.classList.add('hidden');
+    registerErrorList.innerHTML = '';
+    Object.values(REGISTER_FIELDS).forEach((id) => $(id).classList.remove('input-error'));
+  }
+
+  function showRegistrationErrors(errors, invalid) {
+    registerErrorList.innerHTML = '';
+    errors.forEach((message) => {
+      const item = document.createElement('li');
+      item.textContent = message;
+      registerErrorList.appendChild(item);
+    });
+    Object.keys(invalid).forEach((field) => {
+      $(REGISTER_FIELDS[field]).classList.add('input-error');
+    });
+    registerErrorBox.classList.remove('hidden');
   }
 
   function showPanel(which) {
@@ -326,7 +378,7 @@
     loginForm.reset();
     registerForm.reset();
     setAuthMessage($('loginError'), '');
-    setAuthMessage($('registerError'), '');
+    clearRegistrationErrors();
   }
 
   async function resolveSession() {
@@ -387,6 +439,7 @@
     busy(submitBtn, true, 'Sign In', 'Signing In…');
     try {
       await signIn(credentials.email.trim(), credentials.password);
+      resetAuthForms();
       await resolveSession();
     } catch (error) {
       setAuthMessage(messageEl, error.message);
@@ -404,27 +457,30 @@
       password: $('registerPassword').value,
       confirm: $('registerConfirm').value,
     };
-    const validationError = AuthUI.validateRegistration(registration);
-    const messageEl = $('registerError');
-    if (validationError) {
-      setAuthMessage(messageEl, validationError);
+    clearRegistrationErrors();
+
+    const validation = AuthUI.validateRegistration(registration);
+    if (!validation.valid) {
+      showRegistrationErrors(validation.errors, validation.invalid);
       return;
     }
-    setAuthMessage(messageEl, '');
+
     const submitBtn = $('registerBtn');
     busy(submitBtn, true, 'Create Account', 'Creating Account…');
     try {
       await requestJson('/api/auth/register', registration);
       try {
         await signIn(registration.email.trim(), registration.password);
+        resetAuthForms();
         await resolveSession();
+        showToast('Account created successfully! Welcome.');
       } catch {
         showPanel('login');
         $('loginEmail').value = registration.email.trim();
         setAuthMessage($('loginError'), 'Account created! Sign in to continue.', 'ok');
       }
     } catch (error) {
-      setAuthMessage(messageEl, error.message);
+      showRegistrationErrors([error.message], {});
     } finally {
       busy(submitBtn, false, 'Create Account', 'Creating Account…');
     }
@@ -432,12 +488,17 @@
 
   $('showRegisterBtn').addEventListener('click', () => {
     setAuthMessage($('loginError'), '');
+    clearRegistrationErrors();
     showPanel('register');
   });
 
   $('showLoginBtn').addEventListener('click', () => {
-    setAuthMessage($('registerError'), '');
+    clearRegistrationErrors();
     showPanel('login');
+  });
+
+  Object.values(REGISTER_FIELDS).forEach((id) => {
+    $(id).addEventListener('input', () => $(id).classList.remove('input-error'));
   });
 
   logoutBtn.addEventListener('click', async () => {

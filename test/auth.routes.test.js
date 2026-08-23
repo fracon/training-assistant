@@ -255,6 +255,8 @@ test('GET / serves the authentication UI alongside the protected app shell', asy
   assert.match(response.body, /Already have an account\? <strong>Sign In<\/strong>/);
   assert.match(response.body, /id="logoutBtn"/);
   assert.match(response.body, /auth-ui\.js/);
+  assert.match(response.body, /id="toast"/);
+  assert.match(response.body, /auth-error-box/);
 
   await app.close();
 });
