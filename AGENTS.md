@@ -50,13 +50,29 @@ Whenever starting the development of a new feature, you MUST follow this strict 
 - **Phase 3: Authentication [⏳ ON-HOLD / NEXT]**
   - Implement a secure authentication system to protect the application from unauthorized access.
 
-- **Phase 4: Dashboard & Calendar (Excel Import) [🚧 PLANNED]**
+- **Phase 4: Internationalization (i18n) [🚧 PLANNED]**
+  - Deliver a seamless cross-device language experience with a highly polished, minimalist UI.
+  - **Languages Supported:** American English (`en-US`) and Brazilian Portuguese (`pt-BR`).
+  - **Default Language:** `en-US` is the default fallback everywhere.
+  - **Storage & Data Structure:** translations live in dedicated JSON files (e.g., `src/public/locales/en.json`, `src/public/locales/pt.json`). Strictly Vanilla JS — no heavy third-party i18n libraries.
+  - **Full Scope Coverage:** both the Frontend UI (`login`, `register`, `training-result`) and the Backend AI Prompt Generator (`src/markdownGenerator.js`) must be translatable.
+  - **Mechanics, Database & State Management:**
+    - Update the SQLite schema: add a `preferred_lang` column to the `users` table.
+    - The Registration UI must include a language selection input to capture this preference upon account creation.
+    - The frontend uses `localStorage` for immediate, synchronous client-side rendering.
+    - Upon successful login (or via the `GET /api/me` route), the frontend reads `preferred_lang` from the database and updates `localStorage` to ensure cross-device consistency.
+    - Toggling the language instantly updates the UI, writes `localStorage`, and fires a background API call syncing the preference back to the user's database record.
+  - **UI Placement & UX:**
+    - A clean, minimalist language switcher (e.g., a simple "EN | PT" text toggle), located in the top-right corner of the screen across all pages.
+    - On public pages (`login.html`, `register.html`) it sits alone in the top-right; on authenticated pages (`training-result.html`) it sits in the topbar directly next to the user badge and Logout button.
+
+- **Phase 5: Dashboard & Calendar (Excel Import) [🚧 PLANNED]**
   - Create new UI screens: Dashboard and Training Calendar.
   - Implement bulk training plan import directly via Excel files.
 
-- **Phase 5: Garmin Automation (WebUSB / File System API) [🚧 PLANNED]**
+- **Phase 6: Garmin Automation (WebUSB / File System API) [🚧 PLANNED]**
   - Eliminate manual `.FIT` file drag-and-drop.
   - Implement direct read access to connected Garmin watch via browser APIs.
 
-- **Phase 6: Advanced LLM Integration [🚧 PLANNED]**
+- **Phase 7: Advanced LLM Integration [🚧 PLANNED]**
   - Potential direct API connection to LLMs for automated response rendering within the UI.
