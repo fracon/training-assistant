@@ -1,0 +1,229 @@
+{
+  "app": {
+    "name": "Training Assistant",
+    "tagline": "Local e Offline"
+  },
+  "shell": {
+    "nav": {
+      "training": "Resultado do Treino",
+      "dashboard": "Dashboard",
+      "calendar": "Calendário"
+    },
+    "soon": "Em breve",
+    "collapse": "Recolher menu",
+    "expand": "Expandir menu",
+    "footer": {
+      "status": "Training Assistant • Local e Offline"
+    }
+  },
+  "login": {
+    "title": "Entrar • Training Assistant",
+    "heading": "Bem-vindo de volta",
+    "subtitle": "Entre para manter seu diário de treinos em dia.",
+    "emailLabel": "E-mail",
+    "emailPlaceholder": "voce@example.com",
+    "passwordLabel": "Senha",
+    "passwordPlaceholder": "••••••••",
+    "submit": "Entrar",
+    "submitting": "Entrando…",
+    "footerHtml": "Não tem uma conta? <strong>Cadastre-se</strong>",
+    "registeredBanner": "Conta criada! Entre para continuar."
+  },
+  "register": {
+    "title": "Criar Conta • Training Assistant",
+    "heading": "Crie sua conta",
+    "subtitle": "Cadastre-se em segundos e mantenha todos os treinos em um só lugar.",
+    "firstNameLabel": "Nome",
+    "firstNamePlaceholder": "Rafael",
+    "lastNameLabel": "Sobrenome",
+    "lastNamePlaceholder": "Vilaça",
+    "emailLabel": "E-mail",
+    "emailPlaceholder": "voce@example.com",
+    "passwordLabel": "Senha",
+    "passwordPlaceholder": "Pelo menos 8 caracteres",
+    "confirmLabel": "Confirmar senha",
+    "confirmPlaceholder": "Repita sua senha",
+    "languageLabel": "Idioma preferido",
+    "langEn": "English (US)",
+    "langPt": "Português (Brasil)",
+    "submit": "Criar Conta",
+    "submitting": "Criando conta…",
+    "footerHtml": "Já tem uma conta? <strong>Entrar</strong>",
+    "toastSuccess": "Conta criada com sucesso! Bem-vindo."
+  },
+  "errors": {
+    "fillBoth": "Preencha seu e-mail e senha.",
+    "invalidEmail": "Informe um endereço de e-mail válido.",
+    "firstNameRequired": "Informe seu nome.",
+    "lastNameRequired": "Informe seu sobrenome.",
+    "emailRequired": "Informe seu e-mail.",
+    "choosePassword": "Escolha uma senha.",
+    "passwordMin": "A senha deve ter pelo menos {min} caracteres.",
+    "confirmRequired": "Confirme sua senha.",
+    "mismatch": "As senhas não coincidem.",
+    "missingBoth": "E-mail e senha são obrigatórios.",
+    "invalidCredentials": "E-mail ou senha inválidos.",
+    "emailTaken": "Este e-mail já está cadastrado.",
+    "network": "Rede indisponível. Tente novamente.",
+    "generic": "Algo deu errado. Tente novamente."
+  },
+  "training": {
+    "title": "Resultado do Treino • Training Assistant",
+    "plannedLegend": "Treino Planejado",
+    "typeLabel": "Tipo de treino",
+    "targetHrLabel": "FC alvo",
+    "targetRpeLabel": "RPE alvo",
+    "plannedLabel": "Treino planejado",
+    "plannedPlaceholder": "ex.: 5 km aquecimento + 6×1 km forte (3:50–4:00) com 400 m de trote",
+    "contextLegend": "Contexto & Equipamento",
+    "shoesLabel": "Tênis",
+    "shoesPlaceholder": "ex.: Nimbus 26",
+    "hrSourceLabel": "Fonte da FC",
+    "weatherLabel": "Temperatura e clima",
+    "weatherPlaceholder": "ex.: 22°C, Nublado, vento leve",
+    "terrainLabel": "Terreno/percurso",
+    "effortLegend": "Percepção e Esforço",
+    "rpePerceivedLabel": "RPE percebido — esforço percebido (1 a 5)",
+    "breathingLabel": "Respiração",
+    "muscleFeelLabel": "Sensação muscular",
+    "endEnergyLabel": "Energia ao terminar",
+    "feedbackLegend": "Feedback",
+    "discomfortLabel": "Dor ou desconforto",
+    "discomfortPlaceholder": "ex.: pontada leve no tendão de Aquiles direito após o km 8…",
+    "freeFeedbackLabel": "Feedback livre",
+    "freeFeedbackPlaceholder": "Como foi o treino? Sono, clima, sensações gerais…",
+    "dropTitleHtml": "Arraste seu arquivo <strong>.FIT</strong> aqui",
+    "dropSub": "ou clique para selecionar do computador",
+    "dropReady": "Pronto: {name}",
+    "dropReplace": "Clique ou arraste outro arquivo para substituir",
+    "ariaDropzone": "Selecionar arquivo .FIT",
+    "generate": "Gerar Prompt",
+    "generating": "Processando...",
+    "statusProcessing": "Processando “{name}”…",
+    "statusSuccess": "“{name}” processado com sucesso.",
+    "statusFailed": "Falha ao processar o arquivo.",
+    "errorNotFit": "Selecione um arquivo .FIT válido.",
+    "promptHeading": "Prompt para o AI Coach — revise antes de copiar",
+    "copyPrompt": "Copiar Prompt",
+    "copied": "Copiado!",
+    "metaSport": "Esporte",
+    "metaStart": "Início",
+    "metaEnd": "Fim",
+    "metaDuration": "Duração",
+    "metaDistance": "Distância",
+    "metaLaps": "Laps"
+  },
+  "prompt": {
+    "intro1": "Analise o treino de corrida abaixo considerando todo o histórico do meu treinamento, minha evolução recente, os treinos anteriores, o planejamento atual e minhas provas-alvo.",
+    "intro2": "Quero que você aja como meu treinador de corrida e mantenha continuidade com o planejamento que já estamos seguindo.",
+    "sectionPlanned": "DADOS DO TREINO PLANEJADO",
+    "fieldDate": "Data",
+    "fieldWeekday": "Dia da semana",
+    "fieldType": "Tipo de treino",
+    "fieldPlanned": "Treino planejado",
+    "fieldTargetHr": "FC alvo",
+    "fieldTargetRpe": "RPE alvo",
+    "fieldShoes": "Tênis",
+    "sectionRealized": "DADOS DO TREINO REALIZADO",
+    "fieldTotalDuration": "Duração total",
+    "fieldTotalDistance": "Distância total",
+    "fieldAvgPace": "Pace médio",
+    "fieldAvgHr": "FC média",
+    "fieldMaxHr": "FC máxima",
+    "fieldElevation": "Desnível positivo",
+    "fieldShoesUsed": "Tênis utilizado",
+    "hrSourceLabel": "Fonte da frequência cardíaca:",
+    "conditionsLabel": "Condições:",
+    "fieldTempWeather": "Temperatura e Clima",
+    "fieldTerrain": "Terreno/percurso",
+    "fieldTimeOfDay": "Horário",
+    "perceptionLabel": "Percepção do treino:",
+    "fieldRpePerceived": "RPE percebido",
+    "fieldBreathing": "Respiração",
+    "fieldMuscleFeel": "Sensação muscular",
+    "fieldEndEnergy": "Energia ao terminar",
+    "discomfortLabel": "Dor ou desconforto:",
+    "freeFeedbackLabel": "Feedback livre:",
+    "sectionDetailed": "DADOS DETALHADOS",
+    "lapsFallback": "_Nenhum dado detalhado de laps disponível._",
+    "instructionsTitle": "INSTRUÇÕES PARA A ANÁLISE",
+    "notInformed": "não informado",
+    "noneReported": "Nenhum relatado",
+    "dayFirst": true,
+    "weekdays": [
+      "domingo",
+      "segunda-feira",
+      "terça-feira",
+      "quarta-feira",
+      "quinta-feira",
+      "sexta-feira",
+      "sábado"
+    ],
+    "instructions": [
+      {
+        "text": "Compare o treino realizado com o treino planejado."
+      },
+      {
+        "text": "Analise pace, FC, percepção de esforço, duração, distância, altimetria, cadência e demais métricas disponíveis."
+      },
+      {
+        "text": "Não interprete pace isoladamente. Considere altimetria, temperatura, vento, terreno e percepção de esforço."
+      },
+      {
+        "text": "Para treinos controlados, intervalados ou progressivos, analise cada bloco separadamente e compare a consistência entre os blocos."
+      },
+      {
+        "text": "Para longos, analise também deriva de FC, evolução do pace, fadiga muscular, energia no final e capacidade aparente de continuar."
+      },
+      {
+        "text": "Dê maior importância à percepção de esforço quando:",
+        "bullets": [
+          "estiver muito quente;",
+          "houver muitas subidas;",
+          "a FC tiver sido medida apenas pelo sensor óptico;",
+          "houver sinais de leitura inconsistente da FC."
+        ]
+      },
+      {
+        "text": "Considere meu histórico recente de dores/desconfortos e observe especialmente qualquer recorrência ou mudança de padrão. Não presuma que um desconforto antigo voltou se eu não relatar sintomas."
+      },
+      {
+        "text": "Diferencie desconforto passageiro, fadiga normal de treinamento e sinais que justifiquem redução/interrupção da carga. Não faça diagnóstico médico a partir dos dados."
+      },
+      {
+        "text": "Compare o treino com sessões semelhantes que já fiz anteriormente quando isso trouxer informação útil sobre minha evolução."
+      },
+      {
+        "text": "Avalie se o treino confirma, melhora ou piora nossa leitura atual do meu condicionamento e da preparação para minhas provas-alvo."
+      },
+      {
+        "text": "Não altere automaticamente os próximos treinos só porque o treino de hoje foi muito bom. A progressão deve continuar conservadora e coerente com a carga acumulada."
+      },
+      {
+        "text": "Se houver motivo para modificar o próximo treino ou o restante da semana, explique exatamente o que mudaria e por quê. Caso contrário, confirme que o planejamento permanece."
+      },
+      {
+        "text": "Quando houver dados suficientes, destaque tendências relevantes de evolução, mas não extrapole pace de intervalos diretamente para pace de prova."
+      },
+      {
+        "text": "Ao final, dê uma conclusão curta classificando o treino, por exemplo:",
+        "bullets": [
+          "abaixo do esperado;",
+          "adequado;",
+          "bom;",
+          "muito bom;",
+          "excelente."
+        ]
+      },
+      {
+        "text": "Termine informando:",
+        "bullets": [
+          "estado de recuperação/carga que o treino sugere;",
+          "se o próximo treino permanece igual ou precisa ser ajustado;",
+          "qualquer ponto específico que devemos observar nas próximas 24–48 horas."
+        ]
+      }
+    ],
+    "outro": "Não preciso que você repita todos os números que enviei. Quero interpretação, comparação com meu histórico e implicações para o planejamento."
+  }
+}

@@ -1,0 +1,9 @@
+@import url('./shared/theme.css');
+
+.auth-card {
+  max-width: 470px;
+}
+
+.auth-panel .grid {
+  margin-bottom: 0.1rem;
+}

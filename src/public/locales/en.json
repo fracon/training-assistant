@@ -1,0 +1,229 @@
+{
+  "app": {
+    "name": "Training Assistant",
+    "tagline": "Local & Offline"
+  },
+  "shell": {
+    "nav": {
+      "training": "Training Result",
+      "dashboard": "Dashboard",
+      "calendar": "Calendar"
+    },
+    "soon": "Soon",
+    "collapse": "Collapse sidebar",
+    "expand": "Expand sidebar",
+    "footer": {
+      "status": "Training Assistant • Local & Offline"
+    }
+  },
+  "login": {
+    "title": "Sign In • Training Assistant",
+    "heading": "Welcome back",
+    "subtitle": "Sign in to keep your training log on track.",
+    "emailLabel": "Email",
+    "emailPlaceholder": "you@example.com",
+    "passwordLabel": "Password",
+    "passwordPlaceholder": "••••••••",
+    "submit": "Sign In",
+    "submitting": "Signing In…",
+    "footerHtml": "Don't have an account? <strong>Register</strong>",
+    "registeredBanner": "Account created! Sign in to continue."
+  },
+  "register": {
+    "title": "Create Account • Training Assistant",
+    "heading": "Create your account",
+    "subtitle": "Join in seconds and keep every workout in one place.",
+    "firstNameLabel": "First Name",
+    "firstNamePlaceholder": "Rafael",
+    "lastNameLabel": "Last Name",
+    "lastNamePlaceholder": "Vilaça",
+    "emailLabel": "Email",
+    "emailPlaceholder": "you@example.com",
+    "passwordLabel": "Password",
+    "passwordPlaceholder": "At least 8 characters",
+    "confirmLabel": "Confirm Password",
+    "confirmPlaceholder": "Repeat your password",
+    "languageLabel": "Preferred language",
+    "langEn": "English (US)",
+    "langPt": "Português (Brasil)",
+    "submit": "Create Account",
+    "submitting": "Creating Account…",
+    "footerHtml": "Already have an account? <strong>Sign In</strong>",
+    "toastSuccess": "Account created successfully! Welcome."
+  },
+  "errors": {
+    "fillBoth": "Please fill in your email and password.",
+    "invalidEmail": "Please enter a valid email address.",
+    "firstNameRequired": "Please enter your first name.",
+    "lastNameRequired": "Please enter your last name.",
+    "emailRequired": "Please enter your email.",
+    "choosePassword": "Please choose a password.",
+    "passwordMin": "Password must be at least {min} characters long.",
+    "confirmRequired": "Please confirm your password.",
+    "mismatch": "Passwords do not match.",
+    "missingBoth": "Email and password are required.",
+    "invalidCredentials": "Invalid email or password.",
+    "emailTaken": "This email is already registered.",
+    "network": "Network unavailable. Please try again.",
+    "generic": "Something went wrong. Please try again."
+  },
+  "training": {
+    "title": "Training Result • Training Assistant",
+    "plannedLegend": "Planned Workout",
+    "typeLabel": "Workout type",
+    "targetHrLabel": "Target HR",
+    "targetRpeLabel": "Target RPE",
+    "plannedLabel": "Planned workout",
+    "plannedPlaceholder": "e.g.: 5 km warm-up + 6×1 km hard (3:50–4:00) with 400 m jog",
+    "contextLegend": "Context & Gear",
+    "shoesLabel": "Shoes",
+    "shoesPlaceholder": "e.g.: Nimbus 26",
+    "hrSourceLabel": "HR source",
+    "weatherLabel": "Temperature & weather",
+    "weatherPlaceholder": "e.g.: 22°C, Cloudy, light wind",
+    "terrainLabel": "Terrain/route",
+    "effortLegend": "Perceived Exertion",
+    "rpePerceivedLabel": "Perceived RPE — effort (1 to 5)",
+    "breathingLabel": "Breathing",
+    "muscleFeelLabel": "Muscle sensation",
+    "endEnergyLabel": "Energy at the end",
+    "feedbackLegend": "Feedback",
+    "discomfortLabel": "Pain or discomfort",
+    "discomfortPlaceholder": "e.g.: mild ache in the right Achilles tendon after km 8…",
+    "freeFeedbackLabel": "Free feedback",
+    "freeFeedbackPlaceholder": "How did it go? Sleep, weather, overall sensations…",
+    "dropTitleHtml": "Drop your <strong>.FIT</strong> file here",
+    "dropSub": "or click to pick one from your computer",
+    "dropReady": "Ready: {name}",
+    "dropReplace": "Click or drop another file to replace it",
+    "ariaDropzone": "Select a .FIT file",
+    "generate": "Generate Prompt",
+    "generating": "Processing...",
+    "statusProcessing": "Processing “{name}”…",
+    "statusSuccess": "“{name}” processed successfully.",
+    "statusFailed": "Failed to process the file.",
+    "errorNotFit": "Please select a valid .FIT file.",
+    "promptHeading": "Prompt for the AI Coach — review before copying",
+    "copyPrompt": "Copy Prompt",
+    "copied": "Copied!",
+    "metaSport": "Sport",
+    "metaStart": "Start",
+    "metaEnd": "End",
+    "metaDuration": "Duration",
+    "metaDistance": "Distance",
+    "metaLaps": "Laps"
+  },
+  "prompt": {
+    "intro1": "Analyze the running workout below considering my full training history, my recent progress, previous workouts, the current plan and my target races.",
+    "intro2": "Act as my running coach and keep continuity with the plan we are already following.",
+    "sectionPlanned": "PLANNED WORKOUT DATA",
+    "fieldDate": "Date",
+    "fieldWeekday": "Day of week",
+    "fieldType": "Workout type",
+    "fieldPlanned": "Planned workout",
+    "fieldTargetHr": "Target HR",
+    "fieldTargetRpe": "Target RPE",
+    "fieldShoes": "Shoes",
+    "sectionRealized": "COMPLETED WORKOUT DATA",
+    "fieldTotalDuration": "Total duration",
+    "fieldTotalDistance": "Total distance",
+    "fieldAvgPace": "Average pace",
+    "fieldAvgHr": "Average HR",
+    "fieldMaxHr": "Max HR",
+    "fieldElevation": "Elevation gain",
+    "fieldShoesUsed": "Shoes used",
+    "hrSourceLabel": "Heart rate source:",
+    "conditionsLabel": "Conditions:",
+    "fieldTempWeather": "Temperature and weather",
+    "fieldTerrain": "Terrain/route",
+    "fieldTimeOfDay": "Time of day",
+    "perceptionLabel": "Workout perception:",
+    "fieldRpePerceived": "Perceived RPE",
+    "fieldBreathing": "Breathing",
+    "fieldMuscleFeel": "Muscle sensation",
+    "fieldEndEnergy": "Energy at the end",
+    "discomfortLabel": "Pain or discomfort:",
+    "freeFeedbackLabel": "Free feedback:",
+    "sectionDetailed": "DETAILED DATA",
+    "lapsFallback": "_No detailed lap data available._",
+    "instructionsTitle": "ANALYSIS INSTRUCTIONS",
+    "notInformed": "not informed",
+    "noneReported": "None reported",
+    "dayFirst": false,
+    "weekdays": [
+      "Sunday",
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday",
+      "Saturday"
+    ],
+    "instructions": [
+      {
+        "text": "Compare the completed workout with the planned workout."
+      },
+      {
+        "text": "Analyze pace, HR, perceived effort, duration, distance, elevation, cadence and the other available metrics."
+      },
+      {
+        "text": "Never interpret pace in isolation. Consider elevation, temperature, wind, terrain and perceived effort."
+      },
+      {
+        "text": "For controlled, interval or progressive workouts, analyze each block separately and compare consistency between blocks."
+      },
+      {
+        "text": "For long runs, also analyze HR drift, pace progression, muscular fatigue, energy at the end and the apparent ability to keep going."
+      },
+      {
+        "text": "Give greater importance to perceived effort when:",
+        "bullets": [
+          "it is very hot;",
+          "there are many climbs;",
+          "HR was measured only by the optical sensor;",
+          "there are signs of inconsistent HR readings."
+        ]
+      },
+      {
+        "text": "Consider my recent history of aches/discomfort and pay special attention to any recurrence or change of pattern. Do not assume an old discomfort has returned if I did not report symptoms."
+      },
+      {
+        "text": "Distinguish passing discomfort, normal training fatigue and signs that justify reducing/stopping the load. Do not make medical diagnoses from the data."
+      },
+      {
+        "text": "Compare this workout with similar sessions I have done before when that brings useful information about my progress."
+      },
+      {
+        "text": "Assess whether the workout confirms, improves or worsens our current reading of my fitness and my preparation for my target races."
+      },
+      {
+        "text": "Do not automatically change upcoming workouts just because today's workout went very well. Progression must remain conservative and consistent with the accumulated load."
+      },
+      {
+        "text": "If there is reason to modify the next workout or the rest of the week, explain exactly what would change and why. Otherwise, confirm that the plan stays as it is."
+      },
+      {
+        "text": "When there is enough data, highlight relevant progress trends, but do not extrapolate interval pace directly to race pace."
+      },
+      {
+        "text": "At the end, give a short conclusion classifying the workout, for example:",
+        "bullets": [
+          "below expectations;",
+          "adequate;",
+          "good;",
+          "very good;",
+          "excellent."
+        ]
+      },
+      {
+        "text": "Finish by reporting:",
+        "bullets": [
+          "the recovery/load state the workout suggests;",
+          "whether the next workout stays the same or needs to be adjusted;",
+          "any specific point we should watch over the next 24–48 hours."
+        ]
+      }
+    ],
+    "outro": "I don't need you to repeat every number I sent. I want interpretation, comparison against my history, and implications for the planning."
+  }
+}

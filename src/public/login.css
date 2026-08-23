@@ -1,0 +1,10 @@
+@import url('./shared/theme.css');
+
+.auth-card {
+  max-width: 384px;
+}
+
+.auth-subtitle {
+  max-width: 36ch;
+  margin-inline: auto;
+}

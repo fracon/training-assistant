@@ -1,3 +1,12 @@
+FROM node:24-alpine AS build
+
+RUN apk add --no-cache python3 make g++
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci --omit=dev && npm cache clean --force
+
 FROM node:24-alpine
 
 ENV NODE_ENV=production
@@ -7,8 +16,7 @@ ENV PORT=3000
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci --omit=dev && npm cache clean --force
-
+COPY --from=build /app/node_modules ./node_modules
 COPY src ./src
 
 USER node

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign In • Training Assistant</title>
+  <link rel="stylesheet" href="login.css">
+</head>
+<body>
+  <header class="topbar">
+    <span class="brand">Training Assistant</span>
+    <span class="dot">•</span>
+    <span class="tagline" data-i18n="app.tagline">Local &amp; Offline</span>
+    <div class="lang-switch">
+      <button type="button" data-lang="en-US" aria-label="English (US)">EN</button>
+      <span class="sep">|</span>
+      <button type="button" data-lang="pt-BR" aria-label="Português (Brasil)">PT</button>
+    </div>
+  </header>
+
+  <section class="auth-view" data-i18n-aria-label="login.heading" aria-label="Sign in">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <span class="auth-eyebrow">Training Assistant</span>
+        <h1 class="auth-title" data-i18n="login.heading">Welcome back</h1>
+        <p class="auth-subtitle" data-i18n="login.subtitle">Sign in to keep your training log on track.</p>
+      </div>
+
+      <form id="loginForm" class="auth-panel" autocomplete="on" novalidate>
+        <div class="field">
+          <label class="field-label" for="email" data-i18n="login.emailLabel">Email</label>
+          <input type="email" id="email" name="email" required autocomplete="email"
+            placeholder="you@example.com" data-i18n-placeholder="login.emailPlaceholder">
+        </div>
+        <div class="field">
+          <label class="field-label" for="password" data-i18n="login.passwordLabel">Password</label>
+          <input type="password" id="password" name="password" required
+            autocomplete="current-password" placeholder="••••••••"
+            data-i18n-placeholder="login.passwordPlaceholder">
+        </div>
+        <p id="formError" class="auth-message" role="alert"></p>
+        <button id="submitBtn" class="btn-primary" type="submit" data-i18n="login.submit">Sign In</button>
+        <a class="auth-alt" href="/register.html"
+          data-i18n-html="login.footerHtml">Don't have an account? <strong>Register</strong></a>
+      </form>
+    </div>
+  </section>
+
+  <script src="login.js" type="module"></script>
+</body>
+</html>

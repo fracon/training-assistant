@@ -1,26 +1,21 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Training Assistant • Local &amp; Offline</title>
-  <link rel="stylesheet" href="styles.css">
+  <title>Training Result • Training Assistant</title>
+  <link rel="stylesheet" href="shared/shell.css">
+  <link rel="stylesheet" href="training-result.css">
 </head>
 <body>
-  <header class="topbar">
-    <span class="brand">Training Assistant</span>
-    <span class="dot">•</span>
-    <span class="tagline">Local &amp; Offline</span>
-  </header>
-
-  <main>
+  <main id="appView">
     <form id="workoutForm" autocomplete="off">
       <section class="card form-card">
         <fieldset class="group">
-        <legend>Treino Planejado</legend>
+        <legend data-i18n="training.plannedLegend">Planned Workout</legend>
         <div class="grid grid-3">
           <div class="field">
-            <label class="field-label" for="tipo_treino">Tipo de treino</label>
+            <label class="field-label" for="tipo_treino" data-i18n="training.typeLabel">Workout type</label>
             <select id="tipo_treino" name="tipo_treino">
               <option value="">—</option>
               <option value="Leve">Leve</option>
@@ -31,11 +26,11 @@
             </select>
           </div>
           <div class="field">
-            <label class="field-label" for="fc_alvo">FC alvo</label>
-            <input type="text" id="fc_alvo" name="fc_alvo" placeholder="ex.: 145–155 bpm">
+            <label class="field-label" for="fc_alvo" data-i18n="training.targetHrLabel">Target HR</label>
+            <input type="text" id="fc_alvo" name="fc_alvo" placeholder="e.g.: 145–155 bpm">
           </div>
           <div class="field">
-            <label class="field-label" for="rpe_alvo">RPE alvo</label>
+            <label class="field-label" for="rpe_alvo" data-i18n="training.targetRpeLabel">Target RPE</label>
             <select id="rpe_alvo" name="rpe_alvo">
               <option value="">—</option>
               <option value="1">1</option>
@@ -47,21 +42,23 @@
           </div>
         </div>
         <div class="field">
-          <label class="field-label" for="treino_planejado">Treino planejado</label>
+          <label class="field-label" for="treino_planejado" data-i18n="training.plannedLabel">Planned workout</label>
           <textarea id="treino_planejado" name="treino_planejado" rows="2" class="auto-grow"
-            placeholder="ex.: 5 km aquecimento + 6×1 km forte (3:50–4:00) com 400 m de trote"></textarea>
+            placeholder="e.g.: 5 km warm-up + 6×1 km hard (3:50–4:00) with 400 m jog"
+            data-i18n-placeholder="training.plannedPlaceholder"></textarea>
         </div>
       </fieldset>
 
       <fieldset class="group">
-        <legend>Contexto &amp; Equipamento</legend>
+        <legend data-i18n="training.contextLegend">Context &amp; Gear</legend>
         <div class="grid grid-2x2">
           <div class="field">
-            <label class="field-label" for="tenis">Tênis</label>
-            <input type="text" id="tenis" name="tenis" placeholder="ex.: Nimbus 26">
+            <label class="field-label" for="tenis" data-i18n="training.shoesLabel">Shoes</label>
+            <input type="text" id="tenis" name="tenis" placeholder="e.g.: Nimbus 26"
+              data-i18n-placeholder="training.shoesPlaceholder">
           </div>
           <div class="field">
-            <label class="field-label" for="fonte_fc">Fonte da FC</label>
+            <label class="field-label" for="fonte_fc" data-i18n="training.hrSourceLabel">HR source</label>
             <select id="fonte_fc" name="fonte_fc">
               <option value="">—</option>
               <option value="Cinta Peitoral">Cinta Peitoral</option>
@@ -70,11 +67,12 @@
             </select>
           </div>
           <div class="field">
-            <label class="field-label" for="clima">Temperatura e clima</label>
-            <input type="text" id="clima" name="clima" placeholder="ex.: 22°C, Nublado, vento leve">
+            <label class="field-label" for="clima" data-i18n="training.weatherLabel">Temperature &amp; weather</label>
+            <input type="text" id="clima" name="clima" placeholder="e.g.: 22°C, Cloudy, light wind"
+              data-i18n-placeholder="training.weatherPlaceholder">
           </div>
           <div class="field">
-            <label class="field-label" for="terreno">Terreno/percurso</label>
+            <label class="field-label" for="terreno" data-i18n="training.terrainLabel">Terrain/route</label>
             <select id="terreno" name="terreno">
               <option value="">—</option>
               <option value="Asfalto">Asfalto</option>
@@ -88,14 +86,14 @@
       </fieldset>
 
       <fieldset class="group">
-        <legend>Percepção e Esforço</legend>
+        <legend data-i18n="training.effortLegend">Perceived Exertion</legend>
         <div class="field">
-          <span class="field-label">RPE percebido — esforço percebido (1 a 5)</span>
+          <span class="field-label" data-i18n="training.rpePerceivedLabel">Perceived RPE — effort (1 to 5)</span>
           <div class="rpe-row" id="rpeRow"></div>
         </div>
         <div class="grid grid-3">
           <div class="field">
-            <label class="field-label" for="respiracao">Respiração</label>
+            <label class="field-label" for="respiracao" data-i18n="training.breathingLabel">Breathing</label>
             <select id="respiracao" name="respiracao">
               <option value="">—</option>
               <option value="Controlada">Controlada</option>
@@ -104,7 +102,7 @@
             </select>
           </div>
           <div class="field">
-            <label class="field-label" for="sensacao_muscular">Sensação muscular</label>
+            <label class="field-label" for="sensacao_muscular" data-i18n="training.muscleFeelLabel">Muscle sensation</label>
             <select id="sensacao_muscular" name="sensacao_muscular">
               <option value="">—</option>
               <option value="Leve">Leve</option>
@@ -114,7 +112,7 @@
             </select>
           </div>
           <div class="field">
-            <label class="field-label" for="energia_final">Energia ao terminar</label>
+            <label class="field-label" for="energia_final" data-i18n="training.endEnergyLabel">Energy at the end</label>
             <select id="energia_final" name="energia_final">
               <option value="">—</option>
               <option value="Sobrava energia">Sobrava energia</option>
@@ -126,27 +124,32 @@
       </fieldset>
 
       <fieldset class="group">
-        <legend>Feedback</legend>
+        <legend data-i18n="training.feedbackLegend">Feedback</legend>
         <div class="field">
-          <label class="field-label" for="dor_desconforto">Dor ou desconforto</label>
+          <label class="field-label" for="dor_desconforto" data-i18n="training.discomfortLabel">Pain or discomfort</label>
           <textarea id="dor_desconforto" name="dor_desconforto" rows="2" class="auto-grow"
-            placeholder="ex.: pontada leve no tendão de Aquiles direito após o km 8…"></textarea>
+            placeholder="e.g.: mild ache in the right Achilles tendon after km 8…"
+            data-i18n-placeholder="training.discomfortPlaceholder"></textarea>
         </div>
         <div class="field">
-          <label class="field-label" for="feedback_livre">Feedback livre</label>
+          <label class="field-label" for="feedback_livre" data-i18n="training.freeFeedbackLabel">Free feedback</label>
           <textarea id="feedback_livre" name="feedback_livre" rows="2" class="auto-grow"
-            placeholder="Como foi o treino? Sono, clima, sensações gerais…"></textarea>
+            placeholder="How did it go? Sleep, weather, overall sensations…"
+            data-i18n-placeholder="training.freeFeedbackPlaceholder"></textarea>
         </div>
       </fieldset>
       </section>
 
-      <section id="dropzone" class="dropzone" role="button" tabindex="0" aria-label="Selecionar arquivo .FIT">
-        <p class="drop-title" id="dropTitle">Arraste seu arquivo <strong>.FIT</strong> aqui</p>
-        <p class="drop-sub" id="dropSub">ou clique para selecionar do computador</p>
+      <section id="dropzone" class="dropzone" role="button" tabindex="0" aria-label="Select a .FIT file"
+        data-i18n-aria-label="training.ariaDropzone">
+        <p class="drop-title" id="dropTitle"
+          data-i18n-html="training.dropTitleHtml">Drop your <strong>.FIT</strong> file here</p>
+        <p class="drop-sub" id="dropSub" data-i18n="training.dropSub">or click to pick one from your computer</p>
         <input type="file" id="fileInput" accept=".fit" hidden>
       </section>
 
-      <button id="generateBtn" class="generate-btn" type="submit" disabled>Gerar Prompt</button>
+      <button id="generateBtn" class="btn-primary" type="submit" disabled
+        data-i18n="training.generate">Generate Prompt</button>
     </form>
 
     <p id="status" class="status" role="status"></p>
@@ -162,18 +165,19 @@
       </div>
 
       <section class="prompt-block">
-        <h2 class="section-title">Prompt para o AI Coach — revise antes de copiar</h2>
+        <h2 class="section-title" data-i18n="training.promptHeading">Prompt for the AI Coach — review before copying</h2>
         <textarea id="markdownPreview" class="prompt-textarea" readonly spellcheck="false"></textarea>
       </section>
 
       <button id="copyBtn" class="copy-btn" type="button">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
-        <span id="copyLabel">Copiar Prompt</span>
+        <span id="copyLabel" data-i18n="training.copyPrompt">Copy Prompt</span>
       </button>
     </section>
   </main>
 
+  <script src="https://unpkg.com/lucide@latest"></script>
   <script src="form-state.js" defer></script>
-  <script src="app.js" defer></script>
+  <script src="training-result.js" type="module"></script>
 </body>
 </html>

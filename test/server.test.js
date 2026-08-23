@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 
 const { buildServer, parseRpe } = require('../src/server');
 const { generateMarkdown } = require('../src/markdownGenerator');
+const { createDatabase } = require('../src/db/database');
 
 function makeLapView(overrides = {}) {
   return {
@@ -219,7 +220,7 @@ test('POST /api/fit/parse renders the full coach prompt from the complete payloa
   assert.deepEqual(payload.totals, GOOD_SUMMARY.totals);
   assert.ok(stubParse.lastBuffer.equals(Buffer.from([0x0c, 0x00])));
 
-  const expectedMarkdown = generateMarkdown(GOOD_SUMMARY, {
+  const expectedFeedback = {
     tipoTreino: 'Intervalado',
     treinoPlanejado: '6x1km forte | trote 400m',
     fcAlvo: '145–155 bpm',
@@ -234,21 +235,21 @@ test('POST /api/fit/parse renders the full coach prompt from the complete payloa
     energiaFinal: 'No limite',
     dorDesconforto: 'Pontada leve no Aquiles direito',
     feedbackLivre: 'Vento contra | hidratei bem',
-  });
-  assert.equal(payload.markdown, expectedMarkdown);
+  };
+  assert.equal(payload.markdown, generateMarkdown(GOOD_SUMMARY, expectedFeedback, 'en-US'));
 
-  assert.ok(payload.markdown.includes('Tipo de treino: Intervalado'));
-  assert.ok(payload.markdown.includes('RPE alvo: 4/5'));
-  assert.ok(payload.markdown.includes('RPE percebido: 5/5'));
-  assert.ok(payload.markdown.includes('Tênis utilizado: Nimbus 26'));
-  assert.ok(payload.markdown.includes('Duração total: 30:00'));
-  assert.ok(payload.markdown.includes('Distância total: 5.50 km'));
-  assert.ok(payload.markdown.includes('Pace médio: 5:27 min/km'));
-  assert.ok(payload.markdown.includes('FC média: 152 bpm'));
-  assert.ok(payload.markdown.includes('FC máxima: 164 bpm'));
-  assert.ok(payload.markdown.includes('Desnível positivo: 45 m'));
-  assert.ok(payload.markdown.includes('Horário: 07:30'));
-  assert.ok(payload.markdown.includes('Dia da semana: terça-feira'));
+  assert.ok(payload.markdown.includes('Workout type: Intervalado'));
+  assert.ok(payload.markdown.includes('Target RPE: 4/5'));
+  assert.ok(payload.markdown.includes('Perceived RPE: 5/5'));
+  assert.ok(payload.markdown.includes('Shoes used: Nimbus 26'));
+  assert.ok(payload.markdown.includes('Total duration: 30:00'));
+  assert.ok(payload.markdown.includes('Total distance: 5.50 km'));
+  assert.ok(payload.markdown.includes('Average pace: 5:27 min/km'));
+  assert.ok(payload.markdown.includes('Average HR: 152 bpm'));
+  assert.ok(payload.markdown.includes('Max HR: 164 bpm'));
+  assert.ok(payload.markdown.includes('Elevation gain: 45 m'));
+  assert.ok(payload.markdown.includes('Time of day: 07:30'));
+  assert.ok(payload.markdown.includes('Day of week: Tuesday'));
   assert.ok(payload.markdown.includes('| Run | 1 | 10:04 |'));
 });
 
@@ -259,18 +260,56 @@ test('POST /api/fit/parse tolerates an empty form payload', async () => {
   ]);
   assert.equal(response.statusCode, 200);
   const payload = response.json();
-  assert.ok(payload.markdown.includes('Tipo de treino: não informado'));
-  assert.ok(payload.markdown.includes('RPE alvo: não informado'));
-  assert.ok(payload.markdown.includes('Dor ou desconforto:\nNenhum relatado'));
+  assert.ok(payload.markdown.includes('Workout type: not informed'));
+  assert.ok(payload.markdown.includes('Target RPE: not informed'));
+  assert.ok(payload.markdown.includes('Pain or discomfort:\nNone reported'));
 });
 
-test('GET / serves the single page frontend', async () => {
+test('authenticated uploads render the prompt in the user preferred language', async () => {
+  const db = createDatabase({ filename: ':memory:' });
+  const app = await buildServer({ db, parseFitFile: stubParse(), sessionCookieSecure: false });
+
+  await app.inject({
+    method: 'POST',
+    url: '/api/auth/register',
+    payload: {
+      email: 'rafael@example.com',
+      password: 'super-secret-1',
+      first_name: 'Rafael',
+      last_name: 'Vilaça',
+      preferred_lang: 'pt-BR',
+    },
+  });
+  const login = await app.inject({
+    method: 'POST',
+    url: '/api/auth/login',
+    payload: { email: 'rafael@example.com', password: 'super-secret-1' },
+  });
+  const cookiePair = [].concat(login.headers['set-cookie'] ?? [])[0].split(';')[0];
+
+  const multipartBody = multipart([
+    { name: 'file', fileName: 'run.fit', value: Buffer.from([0x0c, 0x00]) },
+  ]);
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/fit/parse',
+    headers: { cookie: cookiePair, ...multipartBody.headers },
+    payload: multipartBody.payload,
+  });
+
+  assert.equal(response.statusCode, 200);
+  const payload = response.json();
+  assert.ok(payload.markdown.includes('Tipo de treino: não informado'));
+
+  await app.close();
+  db.close();
+});
+
+test('GET / redirects anonymous visitors to the login page', async () => {
   const app = await buildServer({ parseFitFile: stubParse() });
   const response = await app.inject({ method: 'GET', url: '/' });
-  assert.equal(response.statusCode, 200);
-  assert.match(response.headers['content-type'], /text\/html/);
-  assert.ok(response.body.includes('Training Assistant'));
-  assert.ok(response.body.includes('Treino Planejado'));
+  assert.equal(response.statusCode, 302);
+  assert.equal(response.headers.location, '/login.html');
 });
 
 test('the default parser rejects garbage uploads end-to-end', async () => {
@@ -282,4 +321,110 @@ test('the default parser rejects garbage uploads end-to-end', async () => {
     { name: 'file', fileName: 'garbage.fit', value: emptyFitFile },
   ]);
   assert.equal(response.statusCode, 422);
+});
+
+test('POST /api/auth/register creates a user and never exposes the hash', async () => {
+  const db = await createDatabase({ filename: ':memory:' });
+  const app = await buildServer({ db });
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/auth/register',
+    payload: {
+      email: 'Rafael@Example.com',
+      password: 'super-secret-1',
+      first_name: 'Rafael',
+      last_name: 'Vilaça',
+    },
+  });
+
+  assert.equal(response.statusCode, 201);
+  const payload = response.json();
+  assert.deepEqual(payload, {
+    id: 1,
+    email: 'rafael@example.com',
+    first_name: 'Rafael',
+    last_name: 'Vilaça',
+    preferred_lang: 'en-US',
+  });
+  assert.ok(!response.body.includes('password_hash'));
+
+  const row = db.prepare('SELECT password_hash FROM users WHERE id = 1').get();
+  assert.match(row.password_hash, /^scrypt\$/);
+
+  await app.close();
+  db.close();
+});
+
+test('POST /api/auth/register validates fields and duplicates', async () => {
+  const db = await createDatabase({ filename: ':memory:' });
+  const app = await buildServer({ db });
+
+  const missing = await app.inject({
+    method: 'POST',
+    url: '/api/auth/register',
+    payload: { email: 'rafael@example.com' },
+  });
+  assert.equal(missing.statusCode, 400);
+  assert.deepEqual(missing.json(), {
+    error: 'Missing required fields: password, first_name, last_name.',
+  });
+
+  const valid = await app.inject({
+    method: 'POST',
+    url: '/api/auth/register',
+    payload: {
+      email: 'rafael@example.com',
+      password: 'super-secret-1',
+      first_name: 'Rafael',
+      last_name: 'Vilaça',
+    },
+  });
+  assert.equal(valid.statusCode, 201);
+
+  const duplicate = await app.inject({
+    method: 'POST',
+    url: '/api/auth/register',
+    payload: {
+      email: 'rafael@example.com',
+      password: 'super-secret-1',
+      first_name: 'Rafael',
+      last_name: 'Vilaça',
+    },
+  });
+  assert.equal(duplicate.statusCode, 409);
+  assert.deepEqual(duplicate.json(), { error: 'This email is already registered.' });
+
+  await app.close();
+  db.close();
+});
+
+test('unexpected registration failures surface as HTTP 500', async () => {
+  const db = await createDatabase({ filename: ':memory:' });
+  const app = await buildServer({ db });
+  await db.close();
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/auth/register',
+    payload: {
+      email: 'rafael@example.com',
+      password: 'super-secret-1',
+      first_name: 'Rafael',
+      last_name: 'Vilaça',
+    },
+  });
+  assert.equal(response.statusCode, 500);
+
+  await app.close();
+});
+
+test('auth routes are not registered when no database is provided', async () => {
+  const app = await buildServer({ parseFitFile: stubParse() });
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/auth/register',
+    payload: {},
+  });
+  assert.equal(response.statusCode, 404);
 });
