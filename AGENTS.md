@@ -18,6 +18,15 @@
 4. **Infrastructure Immutability:** Do not alter Docker or GitHub Actions configurations without explicit permission. The current ZimaOS/Cloudflare setup (port 8081) is finalized.
 5. **UI Consistency:** Any new UI elements must match the existing modern, high-density, cozy aesthetic.
 
+## 🎨 Frontend Architecture (Immutable)
+
+These rules codify the Phase 3 refactor and must never be violated by future work:
+
+1. **Multi-Page Principle:** No single-page hacks or overlapping layout states. Every primary screen or user flow (e.g., Login, Register, TrainingResult/Dashboard) **must** reside in its own dedicated, standalone files following the `<page>.html` / `<page>.css` / `<page>.js` convention (`src/public/login.html`, `src/public/register.html`, `src/public/training-result.html`).
+2. **Shared Abstractions & Modularization:** Common styling tokens (earthy color variables, fonts, resets) are centralized in shared assets (e.g., `src/public/shared/theme.css`), imported by every page stylesheet. Reusable logic (validators, API helpers) must be abstracted into ES modules under `src/public/shared/` (e.g., `validators.js`, `api.js`) and imported by the page scripts — never duplicated across pages.
+3. **Server-Side Routing & Gating:** Fastify must strictly handle access control at the server level: unauthenticated requests to root or protected paths redirect to `login.html`; authenticated sessions are served `training-result.html`; authenticated users are redirected away from auth pages back to `/`.
+4. **Testing Mandate:** All new pages and modular components must ship with accompanying tests and keep code coverage strictly at **100%** (`npm run test:coverage`).
+
 ## 💻 Development Workflow
 Whenever starting the development of a new feature, you MUST follow this strict git workflow:
 1. **Branching:** Create and checkout a new branch named `feature/<feature-name>`. Do NOT develop directly on the `main` branch.
