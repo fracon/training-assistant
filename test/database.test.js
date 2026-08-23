@@ -96,18 +96,58 @@ test('migrateDatabase adds preferred_lang to legacy users tables', () => {
   migrateDatabase(db);
 
   const row = db
-    .prepare('SELECT email, preferred_lang FROM users WHERE email = ?')
+    .prepare('SELECT email, preferred_lang, first_day_of_week FROM users WHERE email = ?')
     .get('legacy@example.com');
   assert.equal(row.preferred_lang, 'en-US');
+  assert.equal(row.first_day_of_week, 'Monday');
 
   db.prepare("INSERT INTO users (email, password_hash) VALUES (?, ?)").run(
     'post-migration@example.com',
     'hash'
   );
   const defaulted = db
-    .prepare('SELECT preferred_lang FROM users WHERE email = ?')
+    .prepare('SELECT preferred_lang, first_day_of_week FROM users WHERE email = ?')
     .get('post-migration@example.com');
   assert.equal(defaulted.preferred_lang, 'en-US');
+  assert.equal(defaulted.first_day_of_week, 'Monday');
+
+  db.close();
+});
+
+test('migrateDatabase adds first_day_of_week to partially migrated tables', () => {
+  const db = new Database(':memory:');
+  db.exec(`
+    CREATE TABLE users (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      email         TEXT    NOT NULL UNIQUE,
+      password_hash TEXT    NOT NULL,
+      first_name    TEXT,
+      last_name     TEXT,
+      preferred_lang TEXT   NOT NULL DEFAULT 'en-US',
+      first_day_of_week TEXT NOT NULL DEFAULT 'Monday',
+      created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+  db.prepare(
+    "INSERT INTO users (email, password_hash, preferred_lang, first_day_of_week) VALUES (?, ?, 'pt-BR', 'Sunday')"
+  ).run('partial@example.com', 'hash');
+
+  assert.doesNotThrow(() => migrateDatabase(db));
+  assert.doesNotThrow(() => migrateDatabase(db));
+
+  const columns = db.pragma('table_info(users)').map((column) => column.name);
+  assert.ok(columns.includes('first_day_of_week'));
+
+  const row = db
+    .prepare('SELECT preferred_lang, first_day_of_week FROM users WHERE email = ?')
+    .get('partial@example.com');
+  assert.equal(row.preferred_lang, 'pt-BR');
+  assert.equal(row.first_day_of_week, 'Sunday', 'existing values are preserved');
+
+  const fresh = db
+    .prepare('INSERT INTO users (email, password_hash) VALUES (?, ?) RETURNING first_day_of_week')
+    .get('fresh@example.com', 'hash');
+  assert.equal(fresh.first_day_of_week, 'Monday');
 
   db.close();
 });

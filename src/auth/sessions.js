@@ -28,7 +28,8 @@ function findActiveSession(db, token) {
   const row = db
     .prepare(
       `SELECT s.id AS token, s.user_id, s.expires_at,
-              u.id AS user_id, u.email, u.first_name, u.last_name, u.preferred_lang
+              u.id AS user_id, u.email, u.first_name, u.last_name, u.preferred_lang,
+              u.first_day_of_week
        FROM sessions s
        JOIN users u ON u.id = s.user_id
        WHERE s.id = ?`
@@ -47,6 +48,7 @@ function findActiveSession(db, token) {
       first_name: row.first_name,
       last_name: row.last_name,
       preferred_lang: row.preferred_lang,
+      first_day_of_week: row.first_day_of_week,
     },
   };
 }

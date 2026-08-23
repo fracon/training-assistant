@@ -3,6 +3,26 @@
     "name": "Training Assistant",
     "tagline": "Local e Offline"
   },
+  "calendar": {
+    "title": "Calendário de Treinos",
+    "subtitle": "Seu mês em um olhar",
+    "previousMonth": "Mês anterior",
+    "nextMonth": "Próximo mês",
+    "today": "Hoje",
+    "firstDayLabel": "A semana começa em",
+    "weekStart": {
+      "Monday": "Segunda-feira",
+      "Sunday": "Domingo"
+    },
+    "months": [
+      "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+      "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+    ],
+    "weekdaysShort": ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"],
+    "weekdaysLong": [
+      "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado", "Domingo"
+    ]
+  },
   "shell": {
     "nav": {
       "training": "Resultado do Treino",

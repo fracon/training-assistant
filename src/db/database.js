@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
   first_name     TEXT,
   last_name      TEXT,
   preferred_lang TEXT    NOT NULL DEFAULT 'en-US',
+  first_day_of_week TEXT NOT NULL DEFAULT 'Monday',
   created_at     TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -48,6 +49,11 @@ function migrateDatabase(db) {
   if (!columns.some((column) => column.name === 'preferred_lang')) {
     db.exec(
       "ALTER TABLE users ADD COLUMN preferred_lang TEXT NOT NULL DEFAULT 'en-US'"
+    );
+  }
+  if (!columns.some((column) => column.name === 'first_day_of_week')) {
+    db.exec(
+      "ALTER TABLE users ADD COLUMN first_day_of_week TEXT NOT NULL DEFAULT 'Monday'"
     );
   }
 }

@@ -40,7 +40,7 @@ async function loginUser(db, payload, sessionOptions) {
 
   const row = db
     .prepare(
-      'SELECT id, email, password_hash, first_name, last_name, preferred_lang FROM users WHERE email = ?'
+      'SELECT id, email, password_hash, first_name, last_name, preferred_lang, first_day_of_week FROM users WHERE email = ?'
     )
     .get(email);
 
@@ -62,6 +62,7 @@ async function loginUser(db, payload, sessionOptions) {
       first_name: row.first_name,
       last_name: row.last_name,
       preferred_lang: row.preferred_lang,
+      first_day_of_week: row.first_day_of_week,
     },
     session,
   };

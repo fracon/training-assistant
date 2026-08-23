@@ -1,0 +1,176 @@
+@import url('./shared/theme.css');
+
+.calendar-page {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 1.6rem 1.4rem 2rem;
+}
+
+.calendar-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.3rem;
+}
+
+.calendar-heading h1 {
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+
+.calendar-subtitle {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--muted);
+  margin-top: 0.15rem;
+}
+
+.calendar-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.week-start-switch {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--card);
+}
+
+.week-start-switch button {
+  border: none;
+  background: none;
+  padding: 0.42rem 0.85rem;
+  font-family: inherit;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.week-start-switch button.active {
+  background: rgba(111, 144, 112, 0.18);
+  color: var(--accent-deep);
+}
+
+.month-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.month-nav h2 {
+  min-width: 172px;
+  text-align: center;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.month-nav button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.month-nav button:hover {
+  background: rgba(111, 144, 112, 0.12);
+  color: var(--accent-deep);
+}
+
+.month-nav button svg {
+  width: 17px;
+  height: 17px;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.weekday-head {
+  text-align: center;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding-bottom: 0.25rem;
+}
+
+.day-cell {
+  min-height: 84px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  padding: 0.4rem 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.day-cell.outside {
+  opacity: 0.38;
+  background: transparent;
+  border-style: dashed;
+}
+
+.day-cell.today {
+  border-color: var(--accent-deep);
+  box-shadow: inset 0 0 0 1px var(--accent-deep);
+}
+
+.day-cell .day-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: rgba(111, 144, 112, 0.14);
+  color: var(--accent-deep);
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 640px) {
+  .day-cell {
+    min-height: 56px;
+    padding: 0.25rem;
+  }
+
+  .month-nav h2 {
+    min-width: 132px;
+    font-size: 0.85rem;
+  }
+}

@@ -20,6 +20,10 @@ const {
   isSupportedLanguage,
   normalizeLanguage,
 } = require('./auth/language');
+const {
+  isSupportedWeekStart,
+  normalizeWeekStart,
+} = require('./auth/weekStart');
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
@@ -79,6 +83,13 @@ async function buildServer(options = {}) {
       return reply.redirect('/login.html');
     }
     return reply.sendFile('training-result.html');
+  });
+
+  app.get('/calendar.html', async (request, reply) => {
+    if (!sessionOf(request)) {
+      return reply.redirect('/login.html');
+    }
+    return reply.sendFile('calendar.html');
   });
 
   app.get('/login.html', async (request, reply) => {
@@ -162,6 +173,23 @@ async function buildServer(options = {}) {
       );
       return { preferred_lang: language };
     });
+
+    app.patch(
+      '/api/users/me/calendar-preference',
+      { preHandler: requireAuth },
+      async (request, reply) => {
+        const requested = request.body?.first_day_of_week;
+        if (!isSupportedWeekStart(requested)) {
+          return reply.code(400).send({ error: 'Unsupported week start.' });
+        }
+        const firstDay = normalizeWeekStart(requested);
+        db.prepare('UPDATE users SET first_day_of_week = ? WHERE id = ?').run(
+          firstDay,
+          request.user.id
+        );
+        return { first_day_of_week: firstDay };
+      }
+    );
   }
 
   app.post('/api/fit/parse', async (request, reply) => {

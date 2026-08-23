@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Training Calendar • Training Assistant</title>
+  <link rel="stylesheet" href="shared/shell.css">
+  <link rel="stylesheet" href="calendar.css">
+</head>
+<body>
+  <main id="appView">
+    <section class="calendar-page">
+      <header class="calendar-header">
+        <div class="calendar-heading">
+          <h1 data-i18n="calendar.title">Training Calendar</h1>
+          <p class="calendar-subtitle" data-i18n="calendar.subtitle">Your month at a glance</p>
+        </div>
+
+        <div class="calendar-controls">
+          <div class="week-start-switch" role="group" aria-label="Week starts on">
+            <button type="button" id="mondayBtn" data-week-start="Monday">Mon</button>
+            <button type="button" id="sundayBtn" data-week-start="Sunday">Sun</button>
+          </div>
+
+          <div class="month-nav">
+            <button type="button" id="prevMonthBtn" aria-label="Previous month">
+              <i data-lucide="chevron-left"></i>
+            </button>
+            <h2 id="monthTitle">—</h2>
+            <button type="button" id="nextMonthBtn" aria-label="Next month">
+              <i data-lucide="chevron-right"></i>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <p id="calendarStatus" class="visually-hidden" role="status" aria-live="polite"></p>
+
+      <div id="calendarGrid" class="calendar-grid" aria-label="Monthly calendar"></div>
+    </section>
+  </main>
+
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="shared/shell.js" type="module"></script>
+  <script src="calendar.js" type="module"></script>
+</body>
+</html>

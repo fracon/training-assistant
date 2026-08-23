@@ -3,6 +3,26 @@
     "name": "Training Assistant",
     "tagline": "Local & Offline"
   },
+  "calendar": {
+    "title": "Training Calendar",
+    "subtitle": "Your month at a glance",
+    "previousMonth": "Previous month",
+    "nextMonth": "Next month",
+    "today": "Today",
+    "firstDayLabel": "Week starts on",
+    "weekStart": {
+      "Monday": "Monday",
+      "Sunday": "Sunday"
+    },
+    "months": [
+      "January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December"
+    ],
+    "weekdaysShort": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+    "weekdaysLong": [
+      "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"
+    ]
+  },
   "shell": {
     "nav": {
       "training": "Training Result",

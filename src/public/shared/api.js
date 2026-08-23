@@ -28,6 +28,14 @@ export function updateLanguagePreference(lang) {
   return requestJson('/api/users/me/language', { preferred_lang: lang }, 'PATCH');
 }
 
+export function updateCalendarPreference(firstDay) {
+  return requestJson(
+    '/api/users/me/calendar-preference',
+    { first_day_of_week: firstDay },
+    'PATCH'
+  );
+}
+
 export async function signOut() {
   try {
     await fetch('/api/auth/logout', { method: 'POST' });

@@ -30,8 +30,8 @@ const NAV_ITEMS = [
     id: 'calendar',
     icon: 'calendar-days',
     labelKey: 'shell.nav.calendar',
-    href: null,
-    disabled: true,
+    href: '/calendar.html',
+    disabled: false,
   },
 ];
 
