@@ -66,13 +66,27 @@ Whenever starting the development of a new feature, you MUST follow this strict 
     - A clean, minimalist language switcher (e.g., a simple "EN | PT" text toggle), located in the top-right corner of the screen across all pages.
     - On public pages (`login.html`, `register.html`) it sits alone in the top-right; on authenticated pages (`training-result.html`) it sits in the topbar directly next to the user badge and Logout button.
 
-- **Phase 5: Dashboard & Calendar (Excel Import) [🚧 PLANNED]**
+- **Phase 5: App Shell & Home UI Layout [🚧 PLANNED]**
+  - Elevate the UI to a modern SaaS application standard with a polished master layout.
+  - **Goal:** create a master layout file (`src/public/home.html`) that serves as the main entry point for authenticated users, replacing/absorbing `training-result.html`.
+  - **Layout Structure (Modern SaaS Design):**
+    - **Header/Topbar:** retain the exact header we already built (user badge, i18n language switcher, Logout button).
+    - **Sidebar (Left Menu):**
+      - Implement a vertical navigation menu on the left side.
+      - Menu items must contain both an **Icon** (SVG or minimal icon set) and a **Label** (translatable via our i18n system).
+      - Must be **collapsible/expandable**: when expanded, shows icon + label; when collapsed, the sidebar shrinks laterally, hiding the text and smoothly centering only the icons.
+      - Must use smooth CSS transitions for the collapse/expand animation.
+    - **Main Content Area (Center/Right):** the large remaining portion of the screen where specific feature content (like the FIT file parser today, future calendars, or settings) will be rendered or injected.
+  - **Aesthetic:** strictly adhere to the existing minimalist, earthy theme (DM Sans, sage/cream/charcoal colors). It must look highly polished and premium.
+  - **Technical Constraints:** strictly Vanilla HTML/CSS/JS. No heavy frameworks. Re-use existing shared CSS tokens.
+
+- **Phase 6: Dashboard & Calendar (Excel Import) [🚧 PLANNED]**
   - Create new UI screens: Dashboard and Training Calendar.
   - Implement bulk training plan import directly via Excel files.
 
-- **Phase 6: Garmin Automation (WebUSB / File System API) [🚧 PLANNED]**
+- **Phase 7: Garmin Automation (WebUSB / File System API) [🚧 PLANNED]**
   - Eliminate manual `.FIT` file drag-and-drop.
   - Implement direct read access to connected Garmin watch via browser APIs.
 
-- **Phase 7: Advanced LLM Integration [🚧 PLANNED]**
+- **Phase 8: Advanced LLM Integration [🚧 PLANNED]**
   - Potential direct API connection to LLMs for automated response rendering within the UI.
