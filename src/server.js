@@ -6,6 +6,7 @@ const multipart = require('@fastify/multipart');
 const fastifyStatic = require('@fastify/static');
 const { parseFitFile } = require('./fitParser');
 const { generateMarkdown } = require('./markdownGenerator');
+const { registerUser, RegistrationError } = require('./auth/registration');
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
@@ -43,6 +44,20 @@ async function buildServer(options = {}) {
   await app.register(fastifyStatic, { root: path.join(__dirname, 'public') });
 
   const parseFile = options.parseFitFile || parseFitFile;
+
+  if (options.db) {
+    app.post('/api/auth/register', async (request, reply) => {
+      try {
+        const user = await registerUser(options.db, request.body);
+        return reply.code(201).send(user);
+      } catch (error) {
+        if (error instanceof RegistrationError) {
+          return reply.code(error.status).send({ error: error.message });
+        }
+        throw error;
+      }
+    });
+  }
 
   app.post('/api/fit/parse', async (request, reply) => {
     if (!request.isMultipart()) {

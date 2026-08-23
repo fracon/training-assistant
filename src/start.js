@@ -1,13 +1,20 @@
 'use strict';
 
 const { buildServer } = require('./server');
+const { createDatabase, resolveDatabaseFile } = require('./db/database');
 
 const port = Number(process.env.PORT) || 3000;
+const databaseFile =
+  process.env.DATABASE_FILE || resolveDatabaseFile(process.cwd());
 
-buildServer()
-  .then((app) => app.listen({ port, host: process.env.HOST || '127.0.0.1' }))
-  .then((address) => console.log(`Training Assistant ready at ${address}`))
-  .catch((error) => {
-    console.error(error);
-    process.exit(1);
-  });
+async function main() {
+  const db = createDatabase({ filename: databaseFile });
+  const app = await buildServer({ db });
+  await app.listen({ port, host: process.env.HOST || '127.0.0.1' });
+  console.log(`Training Assistant ready at ${app.server.address().address}:${port}`);
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

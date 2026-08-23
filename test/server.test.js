@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 
 const { buildServer, parseRpe } = require('../src/server');
 const { generateMarkdown } = require('../src/markdownGenerator');
+const { createDatabase } = require('../src/db/database');
 
 function makeLapView(overrides = {}) {
   return {
@@ -282,4 +283,109 @@ test('the default parser rejects garbage uploads end-to-end', async () => {
     { name: 'file', fileName: 'garbage.fit', value: emptyFitFile },
   ]);
   assert.equal(response.statusCode, 422);
+});
+
+test('POST /api/auth/register creates a user and never exposes the hash', async () => {
+  const db = await createDatabase({ filename: ':memory:' });
+  const app = await buildServer({ db });
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/auth/register',
+    payload: {
+      email: 'Rafael@Example.com',
+      password: 'super-secret-1',
+      first_name: 'Rafael',
+      last_name: 'Vilaça',
+    },
+  });
+
+  assert.equal(response.statusCode, 201);
+  const payload = response.json();
+  assert.deepEqual(payload, {
+    id: 1,
+    email: 'rafael@example.com',
+    first_name: 'Rafael',
+    last_name: 'Vilaça',
+  });
+  assert.ok(!response.body.includes('password_hash'));
+
+  const row = db.prepare('SELECT password_hash FROM users WHERE id = 1').get();
+  assert.match(row.password_hash, /^scrypt\$/);
+
+  await app.close();
+  db.close();
+});
+
+test('POST /api/auth/register validates fields and duplicates', async () => {
+  const db = await createDatabase({ filename: ':memory:' });
+  const app = await buildServer({ db });
+
+  const missing = await app.inject({
+    method: 'POST',
+    url: '/api/auth/register',
+    payload: { email: 'rafael@example.com' },
+  });
+  assert.equal(missing.statusCode, 400);
+  assert.deepEqual(missing.json(), {
+    error: 'Missing required fields: password, first_name, last_name.',
+  });
+
+  const valid = await app.inject({
+    method: 'POST',
+    url: '/api/auth/register',
+    payload: {
+      email: 'rafael@example.com',
+      password: 'super-secret-1',
+      first_name: 'Rafael',
+      last_name: 'Vilaça',
+    },
+  });
+  assert.equal(valid.statusCode, 201);
+
+  const duplicate = await app.inject({
+    method: 'POST',
+    url: '/api/auth/register',
+    payload: {
+      email: 'rafael@example.com',
+      password: 'super-secret-1',
+      first_name: 'Rafael',
+      last_name: 'Vilaça',
+    },
+  });
+  assert.equal(duplicate.statusCode, 409);
+  assert.deepEqual(duplicate.json(), { error: 'This email is already registered.' });
+
+  await app.close();
+  db.close();
+});
+
+test('unexpected registration failures surface as HTTP 500', async () => {
+  const db = await createDatabase({ filename: ':memory:' });
+  const app = await buildServer({ db });
+  await db.close();
+
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/auth/register',
+    payload: {
+      email: 'rafael@example.com',
+      password: 'super-secret-1',
+      first_name: 'Rafael',
+      last_name: 'Vilaça',
+    },
+  });
+  assert.equal(response.statusCode, 500);
+
+  await app.close();
+});
+
+test('auth routes are not registered when no database is provided', async () => {
+  const app = await buildServer({ parseFitFile: stubParse() });
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/auth/register',
+    payload: {},
+  });
+  assert.equal(response.statusCode, 404);
 });
