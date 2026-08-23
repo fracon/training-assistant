@@ -7,6 +7,10 @@ import {
 
 const SIDEBAR_STORAGE_KEY = 'training-assistant:sidebar-collapsed';
 
+export const FOOTER_ELEMENT_TAG = 'footer';
+export const FOOTER_CLASS_NAME = 'bottom-bar';
+export const FOOTER_STATUS_KEY = 'shell.footer.status';
+
 const NAV_ITEMS = [
   {
     id: 'training-result',
@@ -175,6 +179,16 @@ function buildTopbar() {
   return header;
 }
 
+function buildBottomBar() {
+  const bar = document.createElement(FOOTER_ELEMENT_TAG);
+  bar.className = FOOTER_CLASS_NAME;
+  const status = el('span', 'bottom-bar-status');
+  status.setAttribute('data-i18n', FOOTER_STATUS_KEY);
+  status.textContent = translate(shellI18n.messages, FOOTER_STATUS_KEY);
+  bar.appendChild(status);
+  return bar;
+}
+
 function buildLayout(activeId) {
   const shellRoot = el('div', 'app-shell');
   shellRoot.appendChild(buildSidebar(activeId));
@@ -183,6 +197,7 @@ function buildLayout(activeId) {
   column.appendChild(buildTopbar());
   const content = el('div', 'main-content');
   column.appendChild(content);
+  column.appendChild(buildBottomBar());
   shellRoot.appendChild(column);
 
   const main = document.querySelector('main');
@@ -263,5 +278,6 @@ export async function initShell({ active } = {}) {
   wireLanguageSwitcher(shellI18n);
 
   document.body.classList.remove('shell-loading');
+  document.body.classList.add('shell-mounted');
   return user;
 }

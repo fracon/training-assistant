@@ -6,6 +6,9 @@ const assert = require('node:assert/strict');
 const {
   readSidebarCollapsed,
   writeSidebarCollapsed,
+  FOOTER_ELEMENT_TAG,
+  FOOTER_CLASS_NAME,
+  FOOTER_STATUS_KEY,
 } = require('../src/public/shared/shell.js');
 const en = require('../src/public/locales/en.json');
 const pt = require('../src/public/locales/pt.json');
@@ -80,9 +83,18 @@ test('every sidebar label key resolves in both locale files', () => {
     'shell.soon',
     'shell.collapse',
     'shell.expand',
+    FOOTER_STATUS_KEY,
   ];
   for (const key of keys) {
     assert.equal(typeof lookup(en, key), 'string', `en.json missing ${key}`);
     assert.equal(typeof lookup(pt, key), 'string', `pt.json missing ${key}`);
   }
+});
+
+test('bottom bar is a footer element carrying the translatable status line', () => {
+  assert.equal(FOOTER_ELEMENT_TAG, 'footer');
+  assert.equal(FOOTER_CLASS_NAME, 'bottom-bar');
+  assert.equal(FOOTER_STATUS_KEY, 'shell.footer.status');
+  assert.equal(en.shell.footer.status, 'Training Assistant • Local & Offline');
+  assert.equal(pt.shell.footer.status, 'Training Assistant • Local e Offline');
 });

@@ -11,7 +11,10 @@
     },
     "soon": "Em breve",
     "collapse": "Recolher menu",
-    "expand": "Expandir menu"
+    "expand": "Expandir menu",
+    "footer": {
+      "status": "Training Assistant • Local e Offline"
+    }
   },
   "login": {
     "title": "Entrar • Training Assistant",

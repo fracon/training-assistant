@@ -390,11 +390,15 @@ test('shared assets and scripts are served publicly across pages', async () => {
   assert.equal(shellModule.statusCode, 200);
   assert.match(shellModule.body, /export async function initShell/);
   assert.match(shellModule.body, /data-lucide/);
+  assert.match(shellModule.body, /FOOTER_ELEMENT_TAG = 'footer'/);
+  assert.match(shellModule.body, /shell\.footer\.status/);
 
   const shellStyles = await app.inject({ method: 'GET', url: '/shared/shell.css' });
   assert.equal(shellStyles.statusCode, 200);
   assert.match(shellStyles.body, /\.sidebar \{/);
   assert.match(shellStyles.body, /width 0\.3s ease/);
+  assert.match(shellStyles.body, /overflow-y: auto/);
+  assert.match(shellStyles.body, /\.bottom-bar \{/);
 
   for (const locale of ['/locales/en.json', '/locales/pt.json']) {
     const response = await app.inject({ method: 'GET', url: locale });
