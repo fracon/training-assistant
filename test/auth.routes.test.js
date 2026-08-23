@@ -402,6 +402,7 @@ test('shared assets and scripts are served publicly across pages', async () => {
   assert.match(shellStyles.body, /overflow-y: auto/);
   assert.match(shellStyles.body, /\.bottom-bar \{/);
   assert.match(shellStyles.body, /\.app-shell\.collapsed \.sidebar-label \{[\s\S]*?display: none;/);
+  assert.match(shellStyles.body, /\.app-shell\.collapsed \.soon-chip \{[\s\S]*?display: none;/);
   assert.match(shellStyles.body, /\.app-shell\.collapsed \.sidebar-footer \{[\s\S]*?justify-content: center;/);
 
   for (const locale of ['/locales/en.json', '/locales/pt.json']) {

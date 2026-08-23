@@ -188,8 +188,7 @@ body.shell-mounted {
 }
 
 .app-shell.collapsed .soon-chip {
-  opacity: 0;
-  pointer-events: none;
+  display: none;
 }
 
 .sidebar-footer { margin-top: auto; }
