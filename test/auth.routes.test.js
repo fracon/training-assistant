@@ -275,7 +275,10 @@ test('GET /training-result.html serves the tool to authenticated users', async (
   assert.equal(response.statusCode, 200);
   assert.match(response.headers['content-type'], /text\/html/);
   assert.match(response.body, /id="workoutForm"/);
-  assert.match(response.body, /class="lang-switch"/);
+  assert.match(response.body, /id="appView"/);
+  assert.doesNotMatch(response.body, /id="logoutBtn"/);
+  assert.match(response.body, /shared\/shell\.css/);
+  assert.match(response.body, /unpkg\.com\/lucide/);
 
   await app.close();
   db.close();
@@ -296,7 +299,6 @@ test('GET / serves the TrainingResult tool to authenticated users', async () => 
   assert.match(response.headers['content-type'], /text\/html/);
   assert.match(response.body, /Training Result/);
   assert.match(response.body, /id="workoutForm"/);
-  assert.match(response.body, /id="logoutBtn"/);
   assert.match(response.body, /training-result\.js/);
 
   await app.close();
@@ -383,6 +385,16 @@ test('shared assets and scripts are served publicly across pages', async () => {
   const i18nModule = await app.inject({ method: 'GET', url: '/shared/i18n.js' });
   assert.equal(i18nModule.statusCode, 200);
   assert.match(i18nModule.body, /export function createI18n/);
+
+  const shellModule = await app.inject({ method: 'GET', url: '/shared/shell.js' });
+  assert.equal(shellModule.statusCode, 200);
+  assert.match(shellModule.body, /export async function initShell/);
+  assert.match(shellModule.body, /data-lucide/);
+
+  const shellStyles = await app.inject({ method: 'GET', url: '/shared/shell.css' });
+  assert.equal(shellStyles.statusCode, 200);
+  assert.match(shellStyles.body, /\.sidebar \{/);
+  assert.match(shellStyles.body, /width 0\.3s ease/);
 
   for (const locale of ['/locales/en.json', '/locales/pt.json']) {
     const response = await app.inject({ method: 'GET', url: locale });

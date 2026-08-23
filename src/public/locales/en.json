@@ -3,6 +3,16 @@
     "name": "Training Assistant",
     "tagline": "Local & Offline"
   },
+  "shell": {
+    "nav": {
+      "training": "Training Result",
+      "dashboard": "Dashboard",
+      "calendar": "Calendar"
+    },
+    "soon": "Soon",
+    "collapse": "Collapse sidebar",
+    "expand": "Expand sidebar"
+  },
   "login": {
     "title": "Sign In • Training Assistant",
     "heading": "Welcome back",

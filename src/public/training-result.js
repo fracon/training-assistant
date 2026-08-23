@@ -1,5 +1,4 @@
-import { currentUser, signOut } from './shared/api.js';
-import { createI18n, wireLanguageSwitcher } from './shared/i18n.js';
+import { initShell, getShellI18n } from './shared/shell.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -18,8 +17,6 @@ const resultsFlow = $('resultsFlow');
 const previewEl = $('markdownPreview');
 const copyBtn = $('copyBtn');
 const copyLabel = $('copyLabel');
-const userBadge = $('userBadge');
-const logoutBtn = $('logoutBtn');
 
 const COLUMNS = [
   'Step', 'Lap', 'Time', 'Cumulative', 'Dist (km)', 'Avg Pace', 'Best Pace',
@@ -35,8 +32,7 @@ let selectedRpe = null;
 let selectedFile = null;
 let lastPayload = null;
 
-const i18n = createI18n({ persistPreference: true, onChange: refreshDynamicTexts });
-wireLanguageSwitcher(i18n);
+const i18n = getShellI18n();
 
 COLUMNS.forEach((title) => {
   const th = document.createElement('th');
@@ -104,38 +100,11 @@ function savePrefs() {
   }
 }
 
-function setUserBadge(user) {
-  userBadge.innerHTML = '';
-  const name = [user.first_name, user.last_name].filter(Boolean).join(' ');
-  const strong = document.createElement('b');
-  strong.textContent = name || user.email;
-  userBadge.appendChild(strong);
-}
-
-logoutBtn.addEventListener('click', async () => {
-  logoutBtn.disabled = true;
-  await signOut();
-  window.location.replace('/login.html');
-});
-
 function refreshDynamicTexts() {
   document.title = i18n.t('training.title');
   if (lastPayload) {
     renderMeta(lastPayload);
   }
-}
-
-async function boot() {
-  const user = await currentUser();
-  if (!user) {
-    window.location.replace('/login.html');
-    return;
-  }
-  await i18n.init(user.preferred_lang);
-  refreshDynamicTexts();
-  setUserBadge(user);
-  userBadge.classList.remove('hidden');
-  logoutBtn.classList.remove('hidden');
 }
 
 const refreshSubmitState = () => {
@@ -301,4 +270,9 @@ copyBtn.addEventListener('click', async () => {
 
 loadPrefs();
 refreshSubmitState();
-boot();
+
+const user = await initShell({ active: 'training-result' });
+if (user) {
+  document.addEventListener('app:languagechange', refreshDynamicTexts);
+  refreshDynamicTexts();
+}

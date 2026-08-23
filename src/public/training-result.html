@@ -4,24 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Training Result • Training Assistant</title>
+  <link rel="stylesheet" href="shared/shell.css">
   <link rel="stylesheet" href="training-result.css">
 </head>
 <body>
-  <header class="topbar">
-    <span class="brand">Training Assistant</span>
-    <span class="dot">•</span>
-    <span class="tagline" data-i18n="app.tagline">Local &amp; Offline</span>
-    <div class="topbar-actions">
-      <div class="lang-switch">
-        <button type="button" data-lang="en-US" aria-label="English (US)">EN</button>
-        <span class="sep">|</span>
-        <button type="button" data-lang="pt-BR" aria-label="Português (Brasil)">PT</button>
-      </div>
-      <span id="userBadge" class="user-badge hidden"></span>
-      <button id="logoutBtn" class="logout-btn hidden" type="button">Logout</button>
-    </div>
-  </header>
-
   <main id="appView">
     <form id="workoutForm" autocomplete="off">
       <section class="card form-card">
@@ -190,6 +176,7 @@
     </section>
   </main>
 
+  <script src="https://unpkg.com/lucide@latest"></script>
   <script src="form-state.js" defer></script>
   <script src="training-result.js" type="module"></script>
 </body>
