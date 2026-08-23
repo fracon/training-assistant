@@ -4,9 +4,16 @@ const path = require('node:path');
 const Fastify = require('fastify');
 const multipart = require('@fastify/multipart');
 const fastifyStatic = require('@fastify/static');
+const fastifyCookie = require('@fastify/cookie');
 const { parseFitFile } = require('./fitParser');
 const { generateMarkdown } = require('./markdownGenerator');
 const { registerUser, RegistrationError } = require('./auth/registration');
+const { loginUser, LoginError } = require('./auth/login');
+const {
+  SESSION_COOKIE_NAME,
+  deleteSession,
+} = require('./auth/sessions');
+const { createRequireAuth } = require('./auth/requireAuth');
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
@@ -42,13 +49,17 @@ async function buildServer(options = {}) {
     limits: { fileSize: options.maxFileSizeBytes ?? MAX_FILE_BYTES },
   });
   await app.register(fastifyStatic, { root: path.join(__dirname, 'public') });
+  await app.register(fastifyCookie);
 
   const parseFile = options.parseFitFile || parseFitFile;
 
   if (options.db) {
+    const db = options.db;
+    const requireAuth = createRequireAuth(db);
+
     app.post('/api/auth/register', async (request, reply) => {
       try {
-        const user = await registerUser(options.db, request.body);
+        const user = await registerUser(db, request.body);
         return reply.code(201).send(user);
       } catch (error) {
         if (error instanceof RegistrationError) {
@@ -56,6 +67,45 @@ async function buildServer(options = {}) {
         }
         throw error;
       }
+    });
+
+    app.post('/api/auth/login', async (request, reply) => {
+      try {
+        const { user, session } = await loginUser(db, request.body, {
+          ttlMs: options.sessionTtlMs,
+        });
+        reply.setCookie(SESSION_COOKIE_NAME, session.token, {
+          path: '/',
+          httpOnly: true,
+          sameSite: 'lax',
+          secure: options.sessionCookieSecure ?? true,
+          expires: new Date(session.expiresAt),
+        });
+        return reply.send({ user });
+      } catch (error) {
+        if (error instanceof LoginError) {
+          return reply.code(error.status).send({ error: error.message });
+        }
+        throw error;
+      }
+    });
+
+    app.post('/api/auth/logout', async (request, reply) => {
+      const token = request.cookies[SESSION_COOKIE_NAME];
+      if (token) {
+        deleteSession(db, token);
+      }
+      reply.clearCookie(SESSION_COOKIE_NAME, {
+        path: '/',
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: options.sessionCookieSecure ?? true,
+      });
+      return { status: 'ok' };
+    });
+
+    app.get('/api/me', { preHandler: requireAuth }, async (request) => {
+      return { user: request.user };
     });
   }
 
