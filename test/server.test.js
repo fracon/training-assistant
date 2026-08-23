@@ -265,13 +265,11 @@ test('POST /api/fit/parse tolerates an empty form payload', async () => {
   assert.ok(payload.markdown.includes('Dor ou desconforto:\nNenhum relatado'));
 });
 
-test('GET / serves the single page frontend', async () => {
+test('GET / redirects anonymous visitors to the login page', async () => {
   const app = await buildServer({ parseFitFile: stubParse() });
   const response = await app.inject({ method: 'GET', url: '/' });
-  assert.equal(response.statusCode, 200);
-  assert.match(response.headers['content-type'], /text\/html/);
-  assert.ok(response.body.includes('Training Assistant'));
-  assert.ok(response.body.includes('Treino Planejado'));
+  assert.equal(response.statusCode, 302);
+  assert.equal(response.headers.location, '/login.html');
 });
 
 test('the default parser rejects garbage uploads end-to-end', async () => {

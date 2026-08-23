@@ -8,7 +8,7 @@ const {
   validateLogin,
   validateRegistration,
   MIN_PASSWORD_LENGTH,
-} = require('../src/public/auth-ui.js');
+} = require('../src/public/shared/validators.js');
 
 const validRegistration = () => ({
   first_name: 'Rafael',

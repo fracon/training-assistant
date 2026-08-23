@@ -12,6 +12,7 @@ const { loginUser, LoginError } = require('./auth/login');
 const {
   SESSION_COOKIE_NAME,
   deleteSession,
+  findActiveSession,
 } = require('./auth/sessions');
 const { createRequireAuth } = require('./auth/requireAuth');
 
@@ -48,10 +49,46 @@ async function buildServer(options = {}) {
   await app.register(multipart, {
     limits: { fileSize: options.maxFileSizeBytes ?? MAX_FILE_BYTES },
   });
-  await app.register(fastifyStatic, { root: path.join(__dirname, 'public') });
+  await app.register(fastifyStatic, {
+    root: path.join(__dirname, 'public'),
+    index: false,
+  });
   await app.register(fastifyCookie);
 
   const parseFile = options.parseFitFile || parseFitFile;
+
+  const sessionOf = (request) => {
+    if (!options.db) return null;
+    return findActiveSession(options.db, request.cookies[SESSION_COOKIE_NAME]);
+  };
+
+  app.get('/', async (request, reply) => {
+    if (!sessionOf(request)) {
+      return reply.redirect('/login.html');
+    }
+    return reply.sendFile('training-result.html');
+  });
+
+  app.get('/training-result.html', async (request, reply) => {
+    if (!sessionOf(request)) {
+      return reply.redirect('/login.html');
+    }
+    return reply.sendFile('training-result.html');
+  });
+
+  app.get('/login.html', async (request, reply) => {
+    if (sessionOf(request)) {
+      return reply.redirect('/');
+    }
+    return reply.sendFile('login.html');
+  });
+
+  app.get('/register.html', async (request, reply) => {
+    if (sessionOf(request)) {
+      return reply.redirect('/');
+    }
+    return reply.sendFile('register.html');
+  });
 
   if (options.db) {
     const db = options.db;

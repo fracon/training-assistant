@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Training Assistant • Local &amp; Offline</title>
-  <link rel="stylesheet" href="styles.css">
+  <title>Training Result • Training Assistant</title>
+  <link rel="stylesheet" href="training-result.css">
 </head>
 <body>
   <header class="topbar">
@@ -17,72 +17,7 @@
     </div>
   </header>
 
-  <section id="authView" class="auth-view hidden" aria-label="Authentication">
-    <div class="auth-card">
-      <div class="auth-brand">
-        <span class="auth-eyebrow">Training Assistant</span>
-        <h1 id="authTitle" class="auth-title">Welcome back</h1>
-        <p id="authSubtitle" class="auth-subtitle">Sign in to keep your training log on track.</p>
-      </div>
-
-      <form id="loginForm" class="auth-panel" autocomplete="on" novalidate>
-        <div class="field">
-          <label class="field-label" for="loginEmail">Email</label>
-          <input type="email" id="loginEmail" name="email" required autocomplete="email"
-            placeholder="you@example.com">
-        </div>
-        <div class="field">
-          <label class="field-label" for="loginPassword">Password</label>
-          <input type="password" id="loginPassword" name="password" required
-            autocomplete="current-password" placeholder="••••••••">
-        </div>
-        <p id="loginError" class="auth-message" role="alert"></p>
-        <button id="loginBtn" class="auth-submit" type="submit">Sign In</button>
-        <button type="button" id="showRegisterBtn" class="auth-alt">
-          Don't have an account? <strong>Register</strong>
-        </button>
-      </form>
-
-      <form id="registerForm" class="auth-panel" autocomplete="on" hidden novalidate>
-        <div class="grid grid-2x2">
-          <div class="field">
-            <label class="field-label" for="registerFirstName">First Name</label>
-            <input type="text" id="registerFirstName" name="first_name" required autocomplete="given-name"
-              placeholder="Rafael">
-          </div>
-          <div class="field">
-            <label class="field-label" for="registerLastName">Last Name</label>
-            <input type="text" id="registerLastName" name="last_name" required autocomplete="family-name"
-              placeholder="Vilaça">
-          </div>
-        </div>
-        <div class="field">
-          <label class="field-label" for="registerEmail">Email</label>
-          <input type="email" id="registerEmail" name="email" required autocomplete="email"
-            placeholder="you@example.com">
-        </div>
-        <div class="field">
-          <label class="field-label" for="registerPassword">Password</label>
-          <input type="password" id="registerPassword" name="password" required minlength="8"
-            autocomplete="new-password" placeholder="At least 8 characters">
-        </div>
-        <div class="field">
-          <label class="field-label" for="registerConfirm">Confirm Password</label>
-          <input type="password" id="registerConfirm" name="confirm" required autocomplete="new-password"
-            placeholder="Repeat your password">
-        </div>
-        <div id="registerError" class="auth-error-box hidden" role="alert">
-          <ul id="registerErrorList"></ul>
-        </div>
-        <button id="registerBtn" class="auth-submit" type="submit">Create Account</button>
-        <button type="button" id="showLoginBtn" class="auth-alt">
-          Already have an account? <strong>Sign In</strong>
-        </button>
-      </form>
-    </div>
-  </section>
-
-  <main id="appView" class="hidden">
+  <main id="appView">
     <form id="workoutForm" autocomplete="off">
       <section class="card form-card">
         <fieldset class="group">
@@ -215,7 +150,7 @@
         <input type="file" id="fileInput" accept=".fit" hidden>
       </section>
 
-      <button id="generateBtn" class="generate-btn" type="submit" disabled>Gerar Prompt</button>
+      <button id="generateBtn" class="btn-primary" type="submit" disabled>Gerar Prompt</button>
     </form>
 
     <p id="status" class="status" role="status"></p>
@@ -242,13 +177,7 @@
     </section>
   </main>
 
-  <div id="toast" class="toast" role="status" aria-live="polite">
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="m8.5 12.2 2.4 2.4 4.8-5"/></svg>
-    <span id="toastMessage"></span>
-  </div>
-
   <script src="form-state.js" defer></script>
-  <script src="auth-ui.js" defer></script>
-  <script src="app.js" defer></script>
+  <script src="training-result.js" type="module"></script>
 </body>
 </html>

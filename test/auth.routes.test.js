@@ -240,23 +240,132 @@ test('logout succeeds even without a session cookie', async () => {
   db.close();
 });
 
-test('GET / serves the authentication UI alongside the protected app shell', async () => {
-  const app = await buildServer({});
-  const response = await app.inject({ method: 'GET', url: '/' });
+test('anonymous visitors hitting protected paths are redirected to the login page', async () => {
+  const db = createDatabase({ filename: ':memory:' });
+  const app = await buildServer({ db });
+
+  for (const url of ['/', '/training-result.html']) {
+    const response = await app.inject({ method: 'GET', url });
+    assert.equal(response.statusCode, 302, url);
+    assert.equal(response.headers.location, '/login.html', url);
+  }
+
+  await app.close();
+  db.close();
+});
+
+test('GET /training-result.html serves the tool to authenticated users', async () => {
+  const db = createDatabase({ filename: ':memory:' });
+  const app = await buildServer({ db });
+  const { cookiePair } = await registerAndLogin(app);
+
+  const response = await app.inject({
+    method: 'GET',
+    url: '/training-result.html',
+    headers: { cookie: cookiePair },
+  });
 
   assert.equal(response.statusCode, 200);
   assert.match(response.headers['content-type'], /text\/html/);
-  assert.match(response.body, /id="authView"/);
-  assert.match(response.body, /id="loginForm"/);
-  assert.match(response.body, /id="registerForm"/);
-  assert.match(response.body, /Sign In/);
-  assert.match(response.body, /Create Account/);
-  assert.match(response.body, /Don't have an account\? <strong>Register<\/strong>/);
-  assert.match(response.body, /Already have an account\? <strong>Sign In<\/strong>/);
+  assert.match(response.body, /id="workoutForm"/);
+
+  await app.close();
+  db.close();
+});
+
+test('GET / serves the TrainingResult tool to authenticated users', async () => {
+  const db = createDatabase({ filename: ':memory:' });
+  const app = await buildServer({ db });
+  const { cookiePair } = await registerAndLogin(app);
+
+  const response = await app.inject({
+    method: 'GET',
+    url: '/',
+    headers: { cookie: cookiePair },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.match(response.headers['content-type'], /text\/html/);
+  assert.match(response.body, /Training Result/);
+  assert.match(response.body, /id="workoutForm"/);
   assert.match(response.body, /id="logoutBtn"/);
-  assert.match(response.body, /auth-ui\.js/);
-  assert.match(response.body, /id="toast"/);
-  assert.match(response.body, /auth-error-box/);
+  assert.match(response.body, /training-result\.js/);
+
+  await app.close();
+  db.close();
+});
+
+test('GET /login.html serves sign-in anonymously and redirects sessions home', async () => {
+  const db = createDatabase({ filename: ':memory:' });
+  const app = await buildServer({ db });
+  const { cookiePair } = await registerAndLogin(app);
+
+  const anonymous = await app.inject({ method: 'GET', url: '/login.html' });
+  assert.equal(anonymous.statusCode, 200);
+  assert.match(anonymous.body, /Sign In/);
+  assert.match(anonymous.body, /id="loginForm"/);
+  assert.match(anonymous.body, /href="\/register\.html"/);
+  assert.match(anonymous.body, /login\.js/);
+  assert.doesNotMatch(anonymous.body, /id="workoutForm"/);
+
+  const authenticated = await app.inject({
+    method: 'GET',
+    url: '/login.html',
+    headers: { cookie: cookiePair },
+  });
+  assert.equal(authenticated.statusCode, 302);
+  assert.equal(authenticated.headers.location, '/');
+
+  await app.close();
+  db.close();
+});
+
+test('GET /register.html serves sign-up anonymously and redirects sessions home', async () => {
+  const db = createDatabase({ filename: ':memory:' });
+  const app = await buildServer({ db });
+  const { cookiePair } = await registerAndLogin(app);
+
+  const anonymous = await app.inject({ method: 'GET', url: '/register.html' });
+  assert.equal(anonymous.statusCode, 200);
+  assert.match(anonymous.body, /Create Account/);
+  assert.match(anonymous.body, /id="registerForm"/);
+  assert.match(anonymous.body, /href="\/login\.html"/);
+  assert.match(anonymous.body, /auth-error-box/);
+  assert.match(anonymous.body, /register\.js/);
+
+  const authenticated = await app.inject({
+    method: 'GET',
+    url: '/register.html',
+    headers: { cookie: cookiePair },
+  });
+  assert.equal(authenticated.statusCode, 302);
+  assert.equal(authenticated.headers.location, '/');
+
+  await app.close();
+  db.close();
+});
+
+test('shared assets and scripts are served publicly across pages', async () => {
+  const app = await buildServer({});
+
+  for (const asset of [
+    '/shared/theme.css',
+    '/login.css',
+    '/register.css',
+    '/training-result.css',
+    '/form-state.js',
+  ]) {
+    const response = await app.inject({ method: 'GET', url: asset });
+    assert.equal(response.statusCode, 200, asset);
+  }
+
+  const validators = await app.inject({ method: 'GET', url: '/shared/validators.js' });
+  assert.equal(validators.statusCode, 200);
+  assert.match(validators.body, /export function validateRegistration/);
+
+  const api = await app.inject({ method: 'GET', url: '/shared/api.js' });
+  assert.equal(api.statusCode, 200);
+  assert.match(api.body, /export function signIn/);
 
   await app.close();
 });
