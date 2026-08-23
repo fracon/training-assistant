@@ -87,7 +87,7 @@ function buildSidebar(activeId) {
 
   const brand = el('div', 'sidebar-brand');
   brand.appendChild(icon('footprints'));
-  const brandName = el('span');
+  const brandName = el('span', 'sidebar-label');
   brandName.textContent = 'Training Assistant';
   brand.appendChild(brandName);
   aside.appendChild(brand);
@@ -104,7 +104,7 @@ function buildSidebar(activeId) {
       if (item.id === activeId) entry.setAttribute('aria-current', 'page');
     }
     entry.appendChild(icon(item.icon));
-    const label = el('span', 'nav-label');
+    const label = el('span', 'nav-label sidebar-label');
     label.setAttribute('data-i18n', item.labelKey);
     entry.appendChild(label);
     if (item.disabled) {
@@ -121,7 +121,7 @@ function buildSidebar(activeId) {
   toggle.type = 'button';
   toggle.id = 'sidebarToggle';
   toggle.appendChild(icon('chevrons-left'));
-  const toggleLabel = el('span', 'toggle-label');
+  const toggleLabel = el('span', 'toggle-label sidebar-label');
   toggleLabel.setAttribute('data-i18n', 'shell.collapse');
   toggle.appendChild(toggleLabel);
   footer.appendChild(toggle);

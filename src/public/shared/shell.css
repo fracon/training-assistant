@@ -85,6 +85,35 @@ body.shell-mounted {
 
 .app-shell.collapsed .sidebar { width: 68px; }
 
+/* All sidebar text carries .sidebar-label so the collapsed state can hide it
+   without clipping ("Tr..." bleed). */
+.sidebar-label {
+  white-space: nowrap;
+  overflow: hidden;
+  opacity: 1;
+  transition: opacity 0.2s ease, max-width 0.3s ease;
+}
+
+.app-shell.collapsed .sidebar-label {
+  display: none;
+}
+
+/* Collapsed mode centers every icon inside the 68px rail: zero out gaps and
+   horizontal padding so leftover spacing cannot push icons off-center. */
+.app-shell.collapsed .sidebar-brand,
+.app-shell.collapsed .nav-item,
+.app-shell.collapsed .sidebar-toggle {
+  justify-content: center;
+  gap: 0;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.app-shell.collapsed .sidebar-footer {
+  display: flex;
+  justify-content: center;
+}
+
 .sidebar-brand {
   display: flex;
   align-items: center;
@@ -142,15 +171,7 @@ body.shell-mounted {
 }
 
 .nav-label {
-  overflow: hidden;
-  max-width: 160px;
-  opacity: 1;
-  transition: opacity 0.2s ease, max-width 0.3s ease;
-}
-
-.app-shell.collapsed .nav-label {
-  max-width: 0;
-  opacity: 0;
+  font-size: inherit;
 }
 
 .soon-chip {
@@ -166,7 +187,10 @@ body.shell-mounted {
   transition: opacity 0.2s ease;
 }
 
-.app-shell.collapsed .soon-chip { opacity: 0; }
+.app-shell.collapsed .soon-chip {
+  opacity: 0;
+  pointer-events: none;
+}
 
 .sidebar-footer { margin-top: auto; }
 
@@ -199,16 +223,6 @@ body.shell-mounted {
 .toggle-label {
   font-size: 0.8rem;
   font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  max-width: 140px;
-  opacity: 1;
-  transition: opacity 0.2s ease, max-width 0.3s ease;
-}
-
-.app-shell.collapsed .toggle-label {
-  max-width: 0;
-  opacity: 0;
 }
 
 @media (max-width: 640px) {

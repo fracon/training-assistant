@@ -392,6 +392,8 @@ test('shared assets and scripts are served publicly across pages', async () => {
   assert.match(shellModule.body, /data-lucide/);
   assert.match(shellModule.body, /FOOTER_ELEMENT_TAG = 'footer'/);
   assert.match(shellModule.body, /shell\.footer\.status/);
+  assert.match(shellModule.body, /'nav-label sidebar-label'/);
+  assert.match(shellModule.body, /'toggle-label sidebar-label'/);
 
   const shellStyles = await app.inject({ method: 'GET', url: '/shared/shell.css' });
   assert.equal(shellStyles.statusCode, 200);
@@ -399,6 +401,8 @@ test('shared assets and scripts are served publicly across pages', async () => {
   assert.match(shellStyles.body, /width 0\.3s ease/);
   assert.match(shellStyles.body, /overflow-y: auto/);
   assert.match(shellStyles.body, /\.bottom-bar \{/);
+  assert.match(shellStyles.body, /\.app-shell\.collapsed \.sidebar-label \{[\s\S]*?display: none;/);
+  assert.match(shellStyles.body, /\.app-shell\.collapsed \.sidebar-footer \{[\s\S]*?justify-content: center;/);
 
   for (const locale of ['/locales/en.json', '/locales/pt.json']) {
     const response = await app.inject({ method: 'GET', url: locale });
