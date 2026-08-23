@@ -100,8 +100,24 @@ test('findActiveSession hydrates the user for valid tokens', () => {
       email: 'valid@example.com',
       first_name: null,
       last_name: null,
+      preferred_lang: 'en-US',
     },
   });
+
+  db.close();
+});
+
+test('findActiveSession exposes the stored preferred language', () => {
+  const db = createDatabase({ filename: ':memory:' });
+  const { lastInsertRowid } = db
+    .prepare(
+      "INSERT INTO users (email, password_hash, preferred_lang) VALUES (?, ?, 'pt-BR')"
+    )
+    .run('pt-runner@example.com', 'scrypt$aa$bb');
+  const session = createSession(db, Number(lastInsertRowid));
+
+  const found = findActiveSession(db, session.token);
+  assert.equal(found.user.preferred_lang, 'pt-BR');
 
   db.close();
 });

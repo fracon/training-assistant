@@ -220,7 +220,7 @@ test('POST /api/fit/parse renders the full coach prompt from the complete payloa
   assert.deepEqual(payload.totals, GOOD_SUMMARY.totals);
   assert.ok(stubParse.lastBuffer.equals(Buffer.from([0x0c, 0x00])));
 
-  const expectedMarkdown = generateMarkdown(GOOD_SUMMARY, {
+  const expectedFeedback = {
     tipoTreino: 'Intervalado',
     treinoPlanejado: '6x1km forte | trote 400m',
     fcAlvo: '145–155 bpm',
@@ -235,21 +235,21 @@ test('POST /api/fit/parse renders the full coach prompt from the complete payloa
     energiaFinal: 'No limite',
     dorDesconforto: 'Pontada leve no Aquiles direito',
     feedbackLivre: 'Vento contra | hidratei bem',
-  });
-  assert.equal(payload.markdown, expectedMarkdown);
+  };
+  assert.equal(payload.markdown, generateMarkdown(GOOD_SUMMARY, expectedFeedback, 'en-US'));
 
-  assert.ok(payload.markdown.includes('Tipo de treino: Intervalado'));
-  assert.ok(payload.markdown.includes('RPE alvo: 4/5'));
-  assert.ok(payload.markdown.includes('RPE percebido: 5/5'));
-  assert.ok(payload.markdown.includes('Tênis utilizado: Nimbus 26'));
-  assert.ok(payload.markdown.includes('Duração total: 30:00'));
-  assert.ok(payload.markdown.includes('Distância total: 5.50 km'));
-  assert.ok(payload.markdown.includes('Pace médio: 5:27 min/km'));
-  assert.ok(payload.markdown.includes('FC média: 152 bpm'));
-  assert.ok(payload.markdown.includes('FC máxima: 164 bpm'));
-  assert.ok(payload.markdown.includes('Desnível positivo: 45 m'));
-  assert.ok(payload.markdown.includes('Horário: 07:30'));
-  assert.ok(payload.markdown.includes('Dia da semana: terça-feira'));
+  assert.ok(payload.markdown.includes('Workout type: Intervalado'));
+  assert.ok(payload.markdown.includes('Target RPE: 4/5'));
+  assert.ok(payload.markdown.includes('Perceived RPE: 5/5'));
+  assert.ok(payload.markdown.includes('Shoes used: Nimbus 26'));
+  assert.ok(payload.markdown.includes('Total duration: 30:00'));
+  assert.ok(payload.markdown.includes('Total distance: 5.50 km'));
+  assert.ok(payload.markdown.includes('Average pace: 5:27 min/km'));
+  assert.ok(payload.markdown.includes('Average HR: 152 bpm'));
+  assert.ok(payload.markdown.includes('Max HR: 164 bpm'));
+  assert.ok(payload.markdown.includes('Elevation gain: 45 m'));
+  assert.ok(payload.markdown.includes('Time of day: 07:30'));
+  assert.ok(payload.markdown.includes('Day of week: Tuesday'));
   assert.ok(payload.markdown.includes('| Run | 1 | 10:04 |'));
 });
 
@@ -260,9 +260,49 @@ test('POST /api/fit/parse tolerates an empty form payload', async () => {
   ]);
   assert.equal(response.statusCode, 200);
   const payload = response.json();
+  assert.ok(payload.markdown.includes('Workout type: not informed'));
+  assert.ok(payload.markdown.includes('Target RPE: not informed'));
+  assert.ok(payload.markdown.includes('Pain or discomfort:\nNone reported'));
+});
+
+test('authenticated uploads render the prompt in the user preferred language', async () => {
+  const db = createDatabase({ filename: ':memory:' });
+  const app = await buildServer({ db, parseFitFile: stubParse(), sessionCookieSecure: false });
+
+  await app.inject({
+    method: 'POST',
+    url: '/api/auth/register',
+    payload: {
+      email: 'rafael@example.com',
+      password: 'super-secret-1',
+      first_name: 'Rafael',
+      last_name: 'Vilaça',
+      preferred_lang: 'pt-BR',
+    },
+  });
+  const login = await app.inject({
+    method: 'POST',
+    url: '/api/auth/login',
+    payload: { email: 'rafael@example.com', password: 'super-secret-1' },
+  });
+  const cookiePair = [].concat(login.headers['set-cookie'] ?? [])[0].split(';')[0];
+
+  const multipartBody = multipart([
+    { name: 'file', fileName: 'run.fit', value: Buffer.from([0x0c, 0x00]) },
+  ]);
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/fit/parse',
+    headers: { cookie: cookiePair, ...multipartBody.headers },
+    payload: multipartBody.payload,
+  });
+
+  assert.equal(response.statusCode, 200);
+  const payload = response.json();
   assert.ok(payload.markdown.includes('Tipo de treino: não informado'));
-  assert.ok(payload.markdown.includes('RPE alvo: não informado'));
-  assert.ok(payload.markdown.includes('Dor ou desconforto:\nNenhum relatado'));
+
+  await app.close();
+  db.close();
 });
 
 test('GET / redirects anonymous visitors to the login page', async () => {
@@ -305,6 +345,7 @@ test('POST /api/auth/register creates a user and never exposes the hash', async 
     email: 'rafael@example.com',
     first_name: 'Rafael',
     last_name: 'Vilaça',
+    preferred_lang: 'en-US',
   });
   assert.ok(!response.body.includes('password_hash'));
 

@@ -1,4 +1,5 @@
 import { currentUser, signOut } from './shared/api.js';
+import { createI18n, wireLanguageSwitcher } from './shared/i18n.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -32,6 +33,10 @@ const RPE_MAX = 5;
 
 let selectedRpe = null;
 let selectedFile = null;
+let lastPayload = null;
+
+const i18n = createI18n({ persistPreference: true, onChange: refreshDynamicTexts });
+wireLanguageSwitcher(i18n);
 
 COLUMNS.forEach((title) => {
   const th = document.createElement('th');
@@ -113,12 +118,21 @@ logoutBtn.addEventListener('click', async () => {
   window.location.replace('/login.html');
 });
 
+function refreshDynamicTexts() {
+  document.title = i18n.t('training.title');
+  if (lastPayload) {
+    renderMeta(lastPayload);
+  }
+}
+
 async function boot() {
   const user = await currentUser();
   if (!user) {
     window.location.replace('/login.html');
     return;
   }
+  await i18n.init(user.preferred_lang);
+  refreshDynamicTexts();
   setUserBadge(user);
   userBadge.classList.remove('hidden');
   logoutBtn.classList.remove('hidden');
@@ -131,13 +145,13 @@ const refreshSubmitState = () => {
 const attachFile = (file) => {
   if (!file) return;
   if (!/\.fit$/i.test(file.name)) {
-    setStatus('Selecione um arquivo .FIT válido.', 'error');
+    setStatus(i18n.t('training.errorNotFit'), 'error');
     return;
   }
   selectedFile = file;
   dropzone.classList.add('attached');
-  dropTitle.textContent = `Pronto: ${file.name}`;
-  dropSub.textContent = 'Clique ou arraste outro arquivo para substituir';
+  dropTitle.textContent = i18n.t('training.dropReady', { name: file.name });
+  dropSub.textContent = i18n.t('training.dropReplace');
   setStatus('');
   refreshSubmitState();
 };
@@ -184,12 +198,15 @@ function chip(label, value) {
 function renderMeta(payload) {
   metaRow.innerHTML = '';
   [
-    ['Esporte', payload.activity.sport ?? '-'],
-    ['Início', fmtDate(payload.activity.startTime)],
-    ['Fim', fmtDate(payload.activity.endTime)],
-    ['Duração', payload.totals?.durationLabel ?? '-'],
-    ['Distância', payload.totals?.distanceLabel !== undefined ? payload.totals.distanceLabel : '-'],
-    ['Laps', payload.laps.length],
+    [i18n.t('training.metaSport'), payload.activity.sport ?? '-'],
+    [i18n.t('training.metaStart'), fmtDate(payload.activity.startTime)],
+    [i18n.t('training.metaEnd'), fmtDate(payload.activity.endTime)],
+    [i18n.t('training.metaDuration'), payload.totals?.durationLabel ?? '-'],
+    [
+      i18n.t('training.metaDistance'),
+      payload.totals?.distanceLabel !== undefined ? payload.totals.distanceLabel : '-',
+    ],
+    [i18n.t('training.metaLaps'), payload.laps.length],
   ].forEach(([label, value]) => metaRow.appendChild(chip(label, value)));
 }
 
@@ -231,24 +248,25 @@ async function submitWorkout(event) {
   event.preventDefault();
   if (generateBtn.disabled || !selectedFile) return;
   generateBtn.disabled = true;
-  generateBtn.textContent = 'Processando...';
+  generateBtn.textContent = i18n.t('training.generating');
   resultsFlow.classList.remove('visible');
   copyBtn.classList.remove('visible');
-  setStatus(`Processando “${selectedFile.name}”…`);
+  setStatus(i18n.t('training.statusProcessing', { name: selectedFile.name }));
   const formData = new FormData(form);
   formData.append('file', selectedFile, selectedFile.name);
   formData.append('rpe_percebido', selectedRpe === null ? '' : String(selectedRpe));
   try {
     const response = await fetch('/api/fit/parse', { method: 'POST', body: formData });
     const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || 'Falha ao processar o arquivo.');
+    if (!response.ok) throw new Error(payload.error || i18n.t('training.statusFailed'));
     savePrefs();
+    lastPayload = payload;
     render(payload);
-    setStatus(`“${payload.fileName}” processado com sucesso.`, 'ok');
+    setStatus(i18n.t('training.statusSuccess', { name: payload.fileName }), 'ok');
   } catch (error) {
     setStatus(error.message, 'error');
   } finally {
-    generateBtn.textContent = 'Gerar Prompt';
+    generateBtn.textContent = i18n.t('training.generate');
     refreshSubmitState();
   }
 }
@@ -273,11 +291,11 @@ copyBtn.addEventListener('click', async () => {
     helper.remove();
   }
   copyBtn.classList.add('copied');
-  copyLabel.textContent = 'Copiado!';
+  copyLabel.textContent = i18n.t('training.copied');
   clearTimeout(copyResetTimer);
   copyResetTimer = setTimeout(() => {
     copyBtn.classList.remove('copied');
-    copyLabel.textContent = 'Copiar Prompt';
+    copyLabel.textContent = i18n.t('training.copyPrompt');
   }, COPY_RESET_MS);
 });
 

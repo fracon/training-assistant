@@ -15,6 +15,11 @@ const {
   findActiveSession,
 } = require('./auth/sessions');
 const { createRequireAuth } = require('./auth/requireAuth');
+const {
+  DEFAULT_LANGUAGE,
+  isSupportedLanguage,
+  normalizeLanguage,
+} = require('./auth/language');
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
@@ -144,6 +149,19 @@ async function buildServer(options = {}) {
     app.get('/api/me', { preHandler: requireAuth }, async (request) => {
       return { user: request.user };
     });
+
+    app.patch('/api/users/me/language', { preHandler: requireAuth }, async (request, reply) => {
+      const requested = request.body?.preferred_lang;
+      if (!isSupportedLanguage(requested)) {
+        return reply.code(400).send({ error: 'Unsupported language.' });
+      }
+      const language = normalizeLanguage(requested);
+      db.prepare('UPDATE users SET preferred_lang = ? WHERE id = ?').run(
+        language,
+        request.user.id
+      );
+      return { preferred_lang: language };
+    });
   }
 
   app.post('/api/fit/parse', async (request, reply) => {
@@ -195,7 +213,8 @@ async function buildServer(options = {}) {
       }
       feedback.rpeAlvo = rpeAlvo.value;
       feedback.rpePercebido = rpePercebido.value;
-      const markdown = generateMarkdown(summary, feedback);
+      const lang = sessionOf(request)?.user.preferred_lang ?? DEFAULT_LANGUAGE;
+      const markdown = generateMarkdown(summary, feedback, lang);
       return reply.send({
         fileName,
         sizeBytes: fileBuffer.length,

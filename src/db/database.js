@@ -6,12 +6,13 @@ const Database = require('better-sqlite3');
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
-  id            INTEGER PRIMARY KEY AUTOINCREMENT,
-  email         TEXT    NOT NULL UNIQUE,
-  password_hash TEXT    NOT NULL,
-  first_name    TEXT,
-  last_name     TEXT,
-  created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  email          TEXT    NOT NULL UNIQUE,
+  password_hash  TEXT    NOT NULL,
+  first_name     TEXT,
+  last_name      TEXT,
+  preferred_lang TEXT    NOT NULL DEFAULT 'en-US',
+  created_at     TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -42,10 +43,20 @@ function resolveDatabaseFile(cwd) {
   return path.join(cwd, 'data', 'database.sqlite');
 }
 
+function migrateDatabase(db) {
+  const columns = db.pragma('table_info(users)');
+  if (!columns.some((column) => column.name === 'preferred_lang')) {
+    db.exec(
+      "ALTER TABLE users ADD COLUMN preferred_lang TEXT NOT NULL DEFAULT 'en-US'"
+    );
+  }
+}
+
 function initializeDatabase(db) {
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   db.exec(SCHEMA);
+  migrateDatabase(db);
   return db;
 }
 
@@ -57,4 +68,10 @@ function createDatabase({ filename } = {}) {
   return initializeDatabase(new Database(filename));
 }
 
-module.exports = { SCHEMA, resolveDatabaseFile, initializeDatabase, createDatabase };
+module.exports = {
+  SCHEMA,
+  resolveDatabaseFile,
+  initializeDatabase,
+  migrateDatabase,
+  createDatabase,
+};

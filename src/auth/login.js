@@ -40,7 +40,7 @@ async function loginUser(db, payload, sessionOptions) {
 
   const row = db
     .prepare(
-      'SELECT id, email, password_hash, first_name, last_name FROM users WHERE email = ?'
+      'SELECT id, email, password_hash, first_name, last_name, preferred_lang FROM users WHERE email = ?'
     )
     .get(email);
 
@@ -61,6 +61,7 @@ async function loginUser(db, payload, sessionOptions) {
       email: row.email,
       first_name: row.first_name,
       last_name: row.last_name,
+      preferred_lang: row.preferred_lang,
     },
     session,
   };

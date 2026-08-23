@@ -13,10 +13,10 @@ export function validateLogin(input) {
   const email = text(input && input.email);
   const password = typeof (input && input.password) === 'string' ? input.password : '';
   if (!email || !password) {
-    return 'Please fill in your email and password.';
+    return 'errors.fillBoth';
   }
   if (!isValidEmail(email)) {
-    return 'Please enter a valid email address.';
+    return 'errors.invalidEmail';
   }
   return '';
 }
@@ -33,32 +33,32 @@ export function validateRegistration(input) {
   const confirm = typeof fields.confirm === 'string' ? fields.confirm : '';
 
   if (!firstName) {
-    errors.push('Please enter your first name.');
+    errors.push('errors.firstNameRequired');
     invalid.first_name = true;
   }
   if (!lastName) {
-    errors.push('Please enter your last name.');
+    errors.push('errors.lastNameRequired');
     invalid.last_name = true;
   }
   if (!email) {
-    errors.push('Please enter your email.');
+    errors.push('errors.emailRequired');
     invalid.email = true;
   } else if (!EMAIL_PATTERN.test(email)) {
-    errors.push('Please enter a valid email address.');
+    errors.push('errors.invalidEmail');
     invalid.email = true;
   }
   if (!password) {
-    errors.push('Please choose a password.');
+    errors.push('errors.choosePassword');
     invalid.password = true;
   } else if (password.length < MIN_PASSWORD_LENGTH) {
-    errors.push(`Password must be at least ${MIN_PASSWORD_LENGTH} characters long.`);
+    errors.push('errors.passwordMin');
     invalid.password = true;
   }
   if (!confirm) {
-    errors.push('Please confirm your password.');
+    errors.push('errors.confirmRequired');
     invalid.confirm = true;
   } else if (password && confirm !== password) {
-    errors.push('Passwords do not match.');
+    errors.push('errors.mismatch');
     invalid.confirm = true;
   }
 

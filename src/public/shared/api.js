@@ -1,8 +1,8 @@
-export async function requestJson(url, body) {
+export async function requestJson(url, body, method = 'POST') {
   let response;
   try {
     response = await fetch(url, {
-      method: 'POST',
+      method,
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
     });
@@ -22,6 +22,10 @@ export function signIn(email, password) {
 
 export function registerAccount(payload) {
   return requestJson('/api/auth/register', payload);
+}
+
+export function updateLanguagePreference(lang) {
+  return requestJson('/api/users/me/language', { preferred_lang: lang }, 'PATCH');
 }
 
 export async function signOut() {

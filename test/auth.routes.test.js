@@ -42,6 +42,7 @@ test('login issues an http-only session cookie backed by a database row', async 
       email: 'rafael@example.com',
       first_name: 'Rafael',
       last_name: 'Vilaça',
+      preferred_lang: 'en-US',
     },
   });
   assert.ok(!login.body.includes('password_hash'));
@@ -149,7 +150,13 @@ test('/api/me serves the authenticated profile from the session cookie', async (
   const me = await app.inject({ method: 'GET', url: '/api/me', headers: { cookie: cookiePair } });
   assert.equal(me.statusCode, 200);
   assert.deepEqual(me.json(), {
-    user: { id: 1, email: 'rafael@example.com', first_name: 'Rafael', last_name: 'Vilaça' },
+    user: {
+      id: 1,
+      email: 'rafael@example.com',
+      first_name: 'Rafael',
+      last_name: 'Vilaça',
+      preferred_lang: 'en-US',
+    },
   });
 
   await app.close();
@@ -268,6 +275,7 @@ test('GET /training-result.html serves the tool to authenticated users', async (
   assert.equal(response.statusCode, 200);
   assert.match(response.headers['content-type'], /text\/html/);
   assert.match(response.body, /id="workoutForm"/);
+  assert.match(response.body, /class="lang-switch"/);
 
   await app.close();
   db.close();
@@ -306,6 +314,8 @@ test('GET /login.html serves sign-in anonymously and redirects sessions home', a
   assert.match(anonymous.body, /id="loginForm"/);
   assert.match(anonymous.body, /href="\/register\.html"/);
   assert.match(anonymous.body, /login\.js/);
+  assert.match(anonymous.body, /class="lang-switch"/);
+  assert.match(anonymous.body, /data-lang="pt-BR"/);
   assert.doesNotMatch(anonymous.body, /id="workoutForm"/);
 
   const authenticated = await app.inject({
@@ -332,6 +342,9 @@ test('GET /register.html serves sign-up anonymously and redirects sessions home'
   assert.match(anonymous.body, /href="\/login\.html"/);
   assert.match(anonymous.body, /auth-error-box/);
   assert.match(anonymous.body, /register\.js/);
+  assert.match(anonymous.body, /class="lang-switch"/);
+  assert.match(anonymous.body, /id="preferredLang"/);
+  assert.match(anonymous.body, /name="preferred_lang"/);
 
   const authenticated = await app.inject({
     method: 'GET',
@@ -367,6 +380,17 @@ test('shared assets and scripts are served publicly across pages', async () => {
   assert.equal(api.statusCode, 200);
   assert.match(api.body, /export function signIn/);
 
+  const i18nModule = await app.inject({ method: 'GET', url: '/shared/i18n.js' });
+  assert.equal(i18nModule.statusCode, 200);
+  assert.match(i18nModule.body, /export function createI18n/);
+
+  for (const locale of ['/locales/en.json', '/locales/pt.json']) {
+    const response = await app.inject({ method: 'GET', url: locale });
+    assert.equal(response.statusCode, 200, locale);
+    assert.match(response.headers['content-type'], /json/);
+    assert.ok(JSON.parse(response.body).app.name);
+  }
+
   await app.close();
 });
 
@@ -374,13 +398,150 @@ test('auth routes are absent when no database is provided', async () => {
   const app = await buildServer({});
 
   for (const [method, url] of [
+    ['POST', '/api/auth/register'],
     ['POST', '/api/auth/login'],
     ['POST', '/api/auth/logout'],
     ['GET', '/api/me'],
+    ['PATCH', '/api/users/me/language'],
   ]) {
     const response = await app.inject({ method, url });
     assert.equal(response.statusCode, 404, `${method} ${url}`);
   }
 
   await app.close();
+});
+
+test('registration captures the preferred language selection', async () => {
+  const db = createDatabase({ filename: ':memory:' });
+  const app = await buildServer({ db });
+
+  const register = await app.inject({
+    method: 'POST',
+    url: '/api/auth/register',
+    payload: { ...REGISTER_PAYLOAD, preferred_lang: 'pt-BR' },
+  });
+  assert.equal(register.statusCode, 201);
+  assert.equal(register.json().preferred_lang, 'pt-BR');
+
+  const me = await registerAndLogin(app).then(({ cookiePair }) =>
+    app.inject({ method: 'GET', url: '/api/me', headers: { cookie: cookiePair } })
+  );
+  assert.equal(me.json().user.preferred_lang, 'pt-BR');
+
+  await app.close();
+  db.close();
+});
+
+test('registration defaults unknown or missing languages to en-US', async () => {
+  const db = createDatabase({ filename: ':memory:' });
+  const app = await buildServer({ db });
+
+  const junk = await app.inject({
+    method: 'POST',
+    url: '/api/auth/register',
+    payload: { ...REGISTER_PAYLOAD, preferred_lang: 'fr-FR' },
+  });
+  assert.equal(junk.statusCode, 201);
+  assert.equal(junk.json().preferred_lang, 'en-US');
+
+  await app.close();
+  db.close();
+});
+
+async function languageScenario() {
+  const db = createDatabase({ filename: ':memory:' });
+  const app = await buildServer({ db, sessionCookieSecure: false });
+  const { cookiePair } = await registerAndLogin(app);
+  return { db, app, cookiePair };
+}
+
+test('authenticated users can update their preferred language', async () => {
+  const { db, app, cookiePair } = await languageScenario();
+
+  const update = await app.inject({
+    method: 'PATCH',
+    url: '/api/users/me/language',
+    headers: { cookie: cookiePair },
+    payload: { preferred_lang: 'pt-BR' },
+  });
+  assert.equal(update.statusCode, 200);
+  assert.deepEqual(update.json(), { preferred_lang: 'pt-BR' });
+
+  const stored = db
+    .prepare('SELECT preferred_lang FROM users WHERE email = ?')
+    .get('rafael@example.com');
+  assert.equal(stored.preferred_lang, 'pt-BR');
+
+  const me = await app.inject({
+    method: 'GET',
+    url: '/api/me',
+    headers: { cookie: cookiePair },
+  });
+  assert.equal(me.json().user.preferred_lang, 'pt-BR');
+
+  await app.close();
+  db.close();
+});
+
+test('language updates canonicalize casing and whitespace', async () => {
+  const { app, cookiePair } = await languageScenario();
+
+  const update = await app.inject({
+    method: 'PATCH',
+    url: '/api/users/me/language',
+    headers: { cookie: cookiePair },
+    payload: { preferred_lang: ' EN-us ' },
+  });
+  assert.equal(update.statusCode, 200);
+  assert.deepEqual(update.json(), { preferred_lang: 'en-US' });
+
+  await app.close();
+});
+
+test('language updates reject unsupported values with 400', async () => {
+  const { db, app, cookiePair } = await languageScenario();
+
+  for (const preferred_lang of ['fr-FR', '', 'pt', null]) {
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/users/me/language',
+      headers: { cookie: cookiePair },
+      payload: { preferred_lang },
+    });
+    assert.equal(response.statusCode, 400, String(preferred_lang));
+    assert.deepEqual(response.json(), { error: 'Unsupported language.' }, String(preferred_lang));
+  }
+
+  const noBody = await app.inject({
+    method: 'PATCH',
+    url: '/api/users/me/language',
+    headers: { cookie: cookiePair },
+  });
+  assert.equal(noBody.statusCode, 400);
+  assert.deepEqual(noBody.json(), { error: 'Unsupported language.' });
+
+  const unchanged = db
+    .prepare('SELECT preferred_lang FROM users WHERE email = ?')
+    .get('rafael@example.com');
+  assert.equal(unchanged.preferred_lang, 'en-US');
+
+  await app.close();
+  db.close();
+});
+
+test('language updates require an authenticated session', async () => {
+  const { db, app } = await languageScenario();
+
+  const anonymous = await app.inject({
+    method: 'PATCH',
+    url: '/api/users/me/language',
+    payload: { preferred_lang: 'pt-BR' },
+  });
+  assert.equal(anonymous.statusCode, 401);
+
+  const sessions = db.prepare('SELECT COUNT(*) AS total FROM sessions').get();
+  assert.equal(sessions.total, 1);
+
+  await app.close();
+  db.close();
 });

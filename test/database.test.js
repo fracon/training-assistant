@@ -11,6 +11,7 @@ const {
   SCHEMA,
   resolveDatabaseFile,
   initializeDatabase,
+  migrateDatabase,
   createDatabase,
 } = require('../src/db/database');
 
@@ -47,6 +48,74 @@ test('SCHEMA is idempotent when executed twice', () => {
   db.exec(SCHEMA);
   assert.doesNotThrow(() => db.exec(SCHEMA));
   db.close();
+});
+
+test('new users default to en-US preferred language', () => {
+  const db = createDatabase({ filename: ':memory:' });
+
+  const { lastInsertRowid: userId } = db
+    .prepare('INSERT INTO users (email, password_hash) VALUES (?, ?)')
+    .run('default-lang@example.com', 'hash');
+  const explicit = db
+    .prepare(
+      "INSERT INTO users (email, password_hash, preferred_lang) VALUES (?, ?, 'pt-BR')"
+    )
+    .run('pt-user@example.com', 'hash');
+
+  const languages = db
+    .prepare('SELECT id, preferred_lang FROM users ORDER BY id')
+    .all();
+  assert.deepEqual(languages, [
+    { id: Number(userId), preferred_lang: 'en-US' },
+    { id: Number(explicit.lastInsertRowid), preferred_lang: 'pt-BR' },
+  ]);
+
+  const columns = db.pragma('table_info(users)').map((column) => column.name);
+  assert.ok(columns.includes('preferred_lang'));
+
+  db.close();
+});
+
+test('migrateDatabase adds preferred_lang to legacy users tables', () => {
+  const db = new Database(':memory:');
+  db.exec(`
+    CREATE TABLE users (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      email         TEXT    NOT NULL UNIQUE,
+      password_hash TEXT    NOT NULL,
+      first_name    TEXT,
+      last_name     TEXT,
+      created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+  db.prepare('INSERT INTO users (email, password_hash) VALUES (?, ?)').run(
+    'legacy@example.com',
+    'hash'
+  );
+
+  migrateDatabase(db);
+
+  const row = db
+    .prepare('SELECT email, preferred_lang FROM users WHERE email = ?')
+    .get('legacy@example.com');
+  assert.equal(row.preferred_lang, 'en-US');
+
+  db.prepare("INSERT INTO users (email, password_hash) VALUES (?, ?)").run(
+    'post-migration@example.com',
+    'hash'
+  );
+  const defaulted = db
+    .prepare('SELECT preferred_lang FROM users WHERE email = ?')
+    .get('post-migration@example.com');
+  assert.equal(defaulted.preferred_lang, 'en-US');
+
+  db.close();
+});
+
+test('initializeDatabase is safe to run on already-migrated databases', () => {
+  const first = createDatabase({ filename: ':memory:' });
+  assert.doesNotThrow(() => initializeDatabase(first));
+  first.close();
 });
 
 test('in-memory database stores users and sessions via prepared statements', () => {

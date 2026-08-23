@@ -10,52 +10,66 @@
   <header class="topbar">
     <span class="brand">Training Assistant</span>
     <span class="dot">•</span>
-    <span class="tagline">Local &amp; Offline</span>
+    <span class="tagline" data-i18n="app.tagline">Local &amp; Offline</span>
+    <div class="lang-switch">
+      <button type="button" data-lang="en-US" aria-label="English (US)">EN</button>
+      <span class="sep">|</span>
+      <button type="button" data-lang="pt-BR" aria-label="Português (Brasil)">PT</button>
+    </div>
   </header>
 
-  <section class="auth-view" aria-label="Create account">
+  <section class="auth-view" data-i18n-aria-label="register.heading" aria-label="Create account">
     <div class="auth-card">
       <div class="auth-brand">
         <span class="auth-eyebrow">Training Assistant</span>
-        <h1 class="auth-title">Create your account</h1>
-        <p class="auth-subtitle">Join in seconds and keep every workout in one place.</p>
+        <h1 class="auth-title" data-i18n="register.heading">Create your account</h1>
+        <p class="auth-subtitle" data-i18n="register.subtitle">Join in seconds and keep every workout in one place.</p>
       </div>
 
       <form id="registerForm" class="auth-panel" autocomplete="on" novalidate>
         <div class="grid grid-2x2">
           <div class="field">
-            <label class="field-label" for="firstName">First Name</label>
+            <label class="field-label" for="firstName" data-i18n="register.firstNameLabel">First Name</label>
             <input type="text" id="firstName" name="first_name" required autocomplete="given-name"
-              placeholder="Rafael">
+              placeholder="Rafael" data-i18n-placeholder="register.firstNamePlaceholder">
           </div>
           <div class="field">
-            <label class="field-label" for="lastName">Last Name</label>
+            <label class="field-label" for="lastName" data-i18n="register.lastNameLabel">Last Name</label>
             <input type="text" id="lastName" name="last_name" required autocomplete="family-name"
-              placeholder="Vilaça">
+              placeholder="Vilaça" data-i18n-placeholder="register.lastNamePlaceholder">
           </div>
         </div>
         <div class="field">
-          <label class="field-label" for="email">Email</label>
+          <label class="field-label" for="email" data-i18n="register.emailLabel">Email</label>
           <input type="email" id="email" name="email" required autocomplete="email"
-            placeholder="you@example.com">
+            placeholder="you@example.com" data-i18n-placeholder="register.emailPlaceholder">
         </div>
         <div class="field">
-          <label class="field-label" for="password">Password</label>
+          <label class="field-label" for="password" data-i18n="register.passwordLabel">Password</label>
           <input type="password" id="password" name="password" required minlength="8"
-            autocomplete="new-password" placeholder="At least 8 characters">
+            autocomplete="new-password" placeholder="At least 8 characters"
+            data-i18n-placeholder="register.passwordPlaceholder">
         </div>
         <div class="field">
-          <label class="field-label" for="confirm">Confirm Password</label>
+          <label class="field-label" for="confirm" data-i18n="register.confirmLabel">Confirm Password</label>
           <input type="password" id="confirm" name="confirm" required autocomplete="new-password"
-            placeholder="Repeat your password">
+            placeholder="Repeat your password" data-i18n-placeholder="register.confirmPlaceholder">
+        </div>
+        <div class="field">
+          <label class="field-label" for="preferredLang" data-i18n="register.languageLabel">Preferred language</label>
+          <select id="preferredLang" name="preferred_lang">
+            <option value="en-US" data-i18n="register.langEn">English (US)</option>
+            <option value="pt-BR" data-i18n="register.langPt">Português (Brasil)</option>
+          </select>
         </div>
 
         <div id="formErrors" class="auth-error-box hidden" role="alert">
           <ul id="errorList"></ul>
         </div>
 
-        <button id="submitBtn" class="btn-primary" type="submit">Create Account</button>
-        <a class="auth-alt" href="/login.html">Already have an account? <strong>Sign In</strong></a>
+        <button id="submitBtn" class="btn-primary" type="submit" data-i18n="register.submit">Create Account</button>
+        <a class="auth-alt" href="/login.html"
+          data-i18n-html="register.footerHtml">Already have an account? <strong>Sign In</strong></a>
       </form>
     </div>
   </section>

@@ -1,5 +1,11 @@
-import { validateRegistration } from './shared/validators.js';
+import { validateRegistration, MIN_PASSWORD_LENGTH } from './shared/validators.js';
 import { currentUser, registerAccount, signIn } from './shared/api.js';
+import {
+  createI18n,
+  wireLanguageSwitcher,
+  translateApiError,
+  syncStoredLanguageFromUser,
+} from './shared/i18n.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -18,6 +24,10 @@ const form = $('registerForm');
 const errorBox = $('formErrors');
 const errorList = $('errorList');
 const submitBtn = $('submitBtn');
+const languageSelect = $('preferredLang');
+
+const i18n = createI18n();
+wireLanguageSwitcher(i18n);
 
 let toastTimer = null;
 
@@ -36,9 +46,12 @@ function clearErrors() {
 
 function showErrors(errors, invalid) {
   errorList.innerHTML = '';
-  errors.forEach((message) => {
+  errors.forEach((key) => {
     const item = document.createElement('li');
-    item.textContent = message;
+    item.textContent =
+      key === 'errors.passwordMin'
+        ? i18n.t(key, { min: MIN_PASSWORD_LENGTH })
+        : i18n.t(key);
     errorList.appendChild(item);
   });
   Object.keys(invalid).forEach((field) => {
@@ -49,7 +62,9 @@ function showErrors(errors, invalid) {
 
 function setBusy(isBusy) {
   submitBtn.disabled = isBusy;
-  submitBtn.textContent = isBusy ? 'Creating Account…' : 'Create Account';
+  submitBtn.textContent = isBusy
+    ? i18n.t('register.submitting')
+    : i18n.t('register.submit');
 }
 
 function collectPayload() {
@@ -59,6 +74,7 @@ function collectPayload() {
     email: $('email').value,
     password: $('password').value,
     confirm: $('confirm').value,
+    preferred_lang: languageSelect.value,
   };
 }
 
@@ -78,14 +94,15 @@ form.addEventListener('submit', async (event) => {
   try {
     await registerAccount(payload);
     try {
-      await signIn(payload.email.trim(), payload.password);
-      showToast('Account created successfully! Welcome.');
+      const session = await signIn(payload.email.trim(), payload.password);
+      syncStoredLanguageFromUser(session?.user);
+      showToast(i18n.t('register.toastSuccess'));
       setTimeout(() => window.location.replace('/'), REDIRECT_DELAY_MS);
     } catch {
       window.location.replace('/login.html?registered=1');
     }
   } catch (error) {
-    showErrors([error.message], {});
+    showErrors([translateApiError(error.message, i18n.t)], {});
     setBusy(false);
   }
 });
@@ -93,6 +110,10 @@ form.addEventListener('submit', async (event) => {
 Object.values(FIELD_IDS).forEach((id) => {
   $(id).addEventListener('input', () => $(id).classList.remove('input-error'));
 });
+
+await i18n.init();
+setBusy(false);
+languageSelect.value = i18n.language;
 
 currentUser().then((user) => {
   if (user) {

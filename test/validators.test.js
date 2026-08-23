@@ -9,6 +9,8 @@ const {
   validateRegistration,
   MIN_PASSWORD_LENGTH,
 } = require('../src/public/shared/validators.js');
+const en = require('../src/public/locales/en.json');
+const pt = require('../src/public/locales/pt.json');
 
 const validRegistration = () => ({
   first_name: 'Rafael',
@@ -33,15 +35,39 @@ test('isValidEmail accepts ordinary addresses and rejects malformed ones', () =>
 
 test('validateLogin requires both credentials', () => {
   assert.equal(validateLogin({ email: 'runner@example.com', password: 'secret123' }), '');
-  assert.match(validateLogin(), /fill in your email and password/);
-  assert.match(validateLogin({}), /fill in your email and password/);
-  assert.match(validateLogin({ email: '', password: '' }), /fill in your email and password/);
-  assert.match(validateLogin({ email: 'runner@example.com' }), /fill in your email and password/);
-  assert.match(validateLogin({ password: 'secret123' }), /fill in your email and password/);
+  assert.equal(validateLogin(), 'errors.fillBoth');
+  assert.equal(validateLogin({}), 'errors.fillBoth');
+  assert.equal(validateLogin({ email: '', password: '' }), 'errors.fillBoth');
+  assert.equal(validateLogin({ email: 'runner@example.com' }), 'errors.fillBoth');
+  assert.equal(validateLogin({ password: 'secret123' }), 'errors.fillBoth');
 });
 
 test('validateLogin rejects malformed emails', () => {
-  assert.match(validateLogin({ email: 'not-an-email', password: 'secret123' }), /valid email/);
+  assert.equal(validateLogin({ email: 'not-an-email', password: 'secret123' }), 'errors.invalidEmail');
+});
+
+test('every validator key resolves in both locale files', () => {
+  const lookup = (messages, path) =>
+    path.split('.').reduce((acc, part) => (acc == null ? acc : acc[part]), messages);
+  const keys = [
+    validateLogin(),
+    validateLogin({ email: 'nope', password: 'secret123' }),
+    ...validateRegistration({}).errors,
+    ...validateRegistration({ ...validRegistration(), email: 'nope@nope' }).errors,
+    ...validateRegistration({ ...validRegistration(), confirm: 'different-1' }).errors,
+    ...validateRegistration({
+      ...validRegistration(),
+      password: 'short7',
+      confirm: 'short7',
+    }).errors,
+  ];
+  for (const key of keys) {
+    assert.match(key, /^errors\./, key);
+    assert.equal(typeof lookup(en, key), 'string', `en.json missing ${key}`);
+    assert.equal(typeof lookup(pt, key), 'string', `pt.json missing ${key}`);
+  }
+  assert.ok(en.errors.passwordMin.includes('{min}'));
+  assert.ok(pt.errors.passwordMin.includes('{min}'));
 });
 
 test('validateRegistration accepts a complete matching payload', () => {
@@ -59,11 +85,11 @@ test('validateRegistration aggregates every problem at once', () => {
   const result = validateRegistration({});
   assert.equal(result.valid, false);
   assert.deepEqual(result.errors, [
-    'Please enter your first name.',
-    'Please enter your last name.',
-    'Please enter your email.',
-    'Please choose a password.',
-    'Please confirm your password.',
+    'errors.firstNameRequired',
+    'errors.lastNameRequired',
+    'errors.emailRequired',
+    'errors.choosePassword',
+    'errors.confirmRequired',
   ]);
   assert.deepEqual(result.invalid, {
     first_name: true,
@@ -76,11 +102,11 @@ test('validateRegistration aggregates every problem at once', () => {
 
 test('validateRegistration flags only the offending fields individually', () => {
   const missingLastName = validateRegistration({ ...validRegistration(), last_name: '' });
-  assert.deepEqual(missingLastName.errors, ['Please enter your last name.']);
+  assert.deepEqual(missingLastName.errors, ['errors.lastNameRequired']);
   assert.deepEqual(missingLastName.invalid, { last_name: true });
 
   const badEmail = validateRegistration({ ...validRegistration(), email: 'nope@nope' });
-  assert.deepEqual(badEmail.errors, ['Please enter a valid email address.']);
+  assert.deepEqual(badEmail.errors, ['errors.invalidEmail']);
   assert.deepEqual(badEmail.invalid, { email: true });
 
   const shortPassword = validateRegistration({
@@ -88,18 +114,16 @@ test('validateRegistration flags only the offending fields individually', () => 
     password: 'short7',
     confirm: 'short7',
   });
-  assert.deepEqual(shortPassword.errors, [
-    `Password must be at least ${MIN_PASSWORD_LENGTH} characters long.`,
-  ]);
+  assert.deepEqual(shortPassword.errors, ['errors.passwordMin']);
   assert.deepEqual(shortPassword.invalid, { password: true });
   assert.equal(MIN_PASSWORD_LENGTH, 8);
 
   const mismatch = validateRegistration({ ...validRegistration(), confirm: 'different-1' });
-  assert.deepEqual(mismatch.errors, ['Passwords do not match.']);
+  assert.deepEqual(mismatch.errors, ['errors.mismatch']);
   assert.deepEqual(mismatch.invalid, { confirm: true });
 
   const missingConfirm = validateRegistration({ ...validRegistration(), confirm: undefined });
-  assert.deepEqual(missingConfirm.errors, ['Please confirm your password.']);
+  assert.deepEqual(missingConfirm.errors, ['errors.confirmRequired']);
   assert.deepEqual(missingConfirm.invalid, { confirm: true });
 });
 
@@ -113,6 +137,6 @@ test('validateRegistration tolerates non-string junk inputs as missing fields', 
   });
   assert.equal(result.valid, false);
   assert.equal(result.errors.length, 5);
-  assert.ok(result.errors[0].includes('first name'));
-  assert.ok(result.errors[2].includes('email'));
+  assert.equal(result.errors[0], 'errors.firstNameRequired');
+  assert.equal(result.errors[2], 'errors.emailRequired');
 });

@@ -47,12 +47,33 @@ test('loginUser authenticates with a case-insensitive email and stores the sessi
     email: 'rafael@example.com',
     first_name: null,
     last_name: null,
+    preferred_lang: 'en-US',
   });
   assert.match(session.token, /^[0-9a-f]{64}$/);
 
   const row = db.prepare('SELECT user_id, expires_at FROM sessions WHERE id = ?').get(session.token);
   assert.equal(row.user_id, userId);
   assert.ok(Date.parse(row.expires_at) > Date.now());
+
+  db.close();
+});
+
+test('loginUser returns the stored preferred language with the profile', async () => {
+  const db = createDatabase({ filename: ':memory:' });
+  const passwordHash = await hashPassword('super-secret-1');
+  const { lastInsertRowid } = db
+    .prepare(
+      "INSERT INTO users (email, password_hash, preferred_lang) VALUES (?, ?, 'pt-BR')"
+    )
+    .run('bilingual@example.com', passwordHash);
+
+  const { user } = await loginUser(db, {
+    email: 'bilingual@example.com',
+    password: 'super-secret-1',
+  });
+
+  assert.equal(user.preferred_lang, 'pt-BR');
+  assert.equal(user.id, Number(lastInsertRowid));
 
   db.close();
 });

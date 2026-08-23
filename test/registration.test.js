@@ -35,6 +35,7 @@ test('normalizeRegistration trims fields, lowercases the email and tolerates a m
       password: '  keep-spaces-out-of-hash-only  ',
       first_name: 'Rafael',
       last_name: 'Vilaça',
+      preferred_lang: 'en-US',
     }
   );
 
@@ -43,6 +44,7 @@ test('normalizeRegistration trims fields, lowercases the email and tolerates a m
     password: '',
     first_name: '',
     last_name: '',
+    preferred_lang: 'en-US',
   });
 
   assert.deepEqual(normalizeRegistration({ email: 42 }), {
@@ -50,7 +52,13 @@ test('normalizeRegistration trims fields, lowercases the email and tolerates a m
     password: '',
     first_name: '',
     last_name: '',
+    preferred_lang: 'en-US',
   });
+});
+
+test('normalizeRegistration canonicalizes the preferred language and defaults junk values', () => {
+  assert.equal(normalizeRegistration({ preferred_lang: ' PT-BR ' }).preferred_lang, 'pt-BR');
+  assert.equal(normalizeRegistration({ preferred_lang: 'fr-FR' }).preferred_lang, 'en-US');
 });
 
 test('validateRegistration reports every missing field at once', () => {
@@ -98,6 +106,7 @@ test('registerUser persists a hashed user and returns data without the hash', as
     email: 'rafael@example.com',
     first_name: 'Rafael',
     last_name: 'Vilaça',
+    preferred_lang: 'en-US',
   });
   assert.equal('password_hash' in user, false);
 
@@ -108,6 +117,23 @@ test('registerUser persists a hashed user and returns data without the hash', as
   assert.match(row.password_hash, /^scrypt\$[0-9a-f]{32}\$[0-9a-f]{128}$/);
   assert.notEqual(row.password_hash, 'super-secret-1');
   assert.equal(await verifyPassword('super-secret-1', row.password_hash), true);
+
+  db.close();
+});
+
+test('registerUser persists the preferred language selection', async () => {
+  const db = createDatabase({ filename: ':memory:' });
+
+  const user = await registerUser(
+    db,
+    buildRegistration({ email: 'runner@Example.com', preferred_lang: 'pt-BR' })
+  );
+
+  assert.equal(user.preferred_lang, 'pt-BR');
+  const row = db
+    .prepare('SELECT preferred_lang FROM users WHERE id = ?')
+    .get(user.id);
+  assert.equal(row.preferred_lang, 'pt-BR');
 
   db.close();
 });

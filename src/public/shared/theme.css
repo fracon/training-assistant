@@ -99,6 +99,53 @@ textarea::placeholder {
   transform: translateY(-1px);
 }
 
+/* ---------- Language switcher ---------- */
+
+.lang-switch {
+  display: flex;
+  align-items: center;
+  font-size: 0.78rem;
+  letter-spacing: 0.05em;
+}
+
+.topbar > .lang-switch {
+  position: absolute;
+  right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.lang-switch .sep {
+  color: var(--muted);
+  opacity: 0.6;
+  margin: 0 0.1rem;
+}
+
+.lang-switch button {
+  border: none;
+  background: none;
+  padding: 0.28rem 0.4rem;
+  color: var(--muted);
+  font-size: inherit;
+  font-weight: 600;
+  letter-spacing: inherit;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.lang-switch button:hover { color: var(--ink); }
+
+.lang-switch button.active {
+  color: var(--accent-deep);
+  background: rgba(111, 144, 112, 0.14);
+}
+
+.lang-switch button:focus-visible {
+  outline: 2px solid var(--accent-deep);
+  outline-offset: 1px;
+}
+
 /* ---------- Fields ---------- */
 
 .field { display: flex; flex-direction: column; gap: 0.45rem; }
@@ -358,6 +405,7 @@ input.input-error:focus-visible {
 @media (max-width: 640px) {
   .topbar { justify-content: flex-start; }
   .topbar-actions { right: 0.6rem; gap: 0.4rem; }
+  .topbar > .lang-switch { right: 0.6rem; }
   .user-badge { display: none; }
   .auth-view { padding: 1.2rem 0.75rem; }
   .auth-card { padding: 1.4rem 1.1rem 1.3rem; }
