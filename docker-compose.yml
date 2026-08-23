@@ -1,6 +1,6 @@
 services:
   training-assistant:
-    image: ghcr.io/YOUR_GITHUB_USER/training-assistant:latest
+    image: ghcr.io/fracon/training-assistant:latest
     container_name: training-assistant
     restart: unless-stopped
     ports:
