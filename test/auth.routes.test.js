@@ -240,6 +240,25 @@ test('logout succeeds even without a session cookie', async () => {
   db.close();
 });
 
+test('GET / serves the authentication UI alongside the protected app shell', async () => {
+  const app = await buildServer({});
+  const response = await app.inject({ method: 'GET', url: '/' });
+
+  assert.equal(response.statusCode, 200);
+  assert.match(response.headers['content-type'], /text\/html/);
+  assert.match(response.body, /id="authView"/);
+  assert.match(response.body, /id="loginForm"/);
+  assert.match(response.body, /id="registerForm"/);
+  assert.match(response.body, /Sign In/);
+  assert.match(response.body, /Create Account/);
+  assert.match(response.body, /Don't have an account\? <strong>Register<\/strong>/);
+  assert.match(response.body, /Already have an account\? <strong>Sign In<\/strong>/);
+  assert.match(response.body, /id="logoutBtn"/);
+  assert.match(response.body, /auth-ui\.js/);
+
+  await app.close();
+});
+
 test('auth routes are absent when no database is provided', async () => {
   const app = await buildServer({});
 

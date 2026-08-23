@@ -257,4 +257,200 @@
 
   loadPrefs();
   refreshSubmitState();
+
+  /* ---------- Authentication flow ---------- */
+
+  const authView = $('authView');
+  const appView = $('appView');
+  const userBadge = $('userBadge');
+  const logoutBtn = $('logoutBtn');
+
+  const loginForm = $('loginForm');
+  const registerForm = $('registerForm');
+  const authTitle = $('authTitle');
+  const authSubtitle = $('authSubtitle');
+
+  const AUTH_COPY = {
+    login: {
+      title: 'Welcome back',
+      subtitle: 'Sign in to keep your training log on track.',
+    },
+    register: {
+      title: 'Create your account',
+      subtitle: 'Join in seconds and keep every workout in one place.',
+    },
+  };
+
+  function setAuthMessage(el, message, tone = '') {
+    el.textContent = message;
+    el.dataset.tone = tone;
+  }
+
+  function busy(button, isBusy, label, busyLabel) {
+    button.disabled = isBusy;
+    button.textContent = isBusy ? busyLabel : label;
+  }
+
+  function setUserBadge(user) {
+    userBadge.innerHTML = '';
+    const name = [user.first_name, user.last_name].filter(Boolean).join(' ');
+    const strong = document.createElement('b');
+    strong.textContent = name || user.email;
+    userBadge.appendChild(strong);
+  }
+
+  function showApp() {
+    authView.classList.add('hidden');
+    appView.classList.remove('hidden');
+    userBadge.classList.remove('hidden');
+    logoutBtn.classList.remove('hidden');
+  }
+
+  function showAuth() {
+    appView.classList.add('hidden');
+    userBadge.classList.add('hidden');
+    logoutBtn.classList.add('hidden');
+    authView.classList.remove('hidden');
+  }
+
+  function showPanel(which) {
+    const showRegister = which === 'register';
+    registerForm.hidden = !showRegister;
+    loginForm.hidden = showRegister;
+    authTitle.textContent = AUTH_COPY[which].title;
+    authSubtitle.textContent = AUTH_COPY[which].subtitle;
+    $(showRegister ? 'registerFirstName' : 'loginEmail').focus();
+  }
+
+  function resetAuthForms() {
+    loginForm.reset();
+    registerForm.reset();
+    setAuthMessage($('loginError'), '');
+    setAuthMessage($('registerError'), '');
+  }
+
+  async function resolveSession() {
+    let user = null;
+    try {
+      const response = await fetch('/api/me', { headers: { accept: 'application/json' } });
+      if (response.ok) {
+        const payload = await response.json();
+        user = payload.user ?? null;
+      }
+    } catch {
+      user = null;
+    }
+    if (user) {
+      setUserBadge(user);
+      showApp();
+    } else {
+      showAuth();
+    }
+  }
+
+  async function requestJson(url, body) {
+    let response;
+    try {
+      response = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    } catch {
+      throw new Error('Network unavailable. Please try again.');
+    }
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.error || 'Something went wrong. Please try again.');
+    }
+    return payload;
+  }
+
+  async function signIn(email, password) {
+    await requestJson('/api/auth/login', { email, password });
+  }
+
+  loginForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const credentials = {
+      email: $('loginEmail').value,
+      password: $('loginPassword').value,
+    };
+    const validationError = AuthUI.validateLogin(credentials);
+    const messageEl = $('loginError');
+    if (validationError) {
+      setAuthMessage(messageEl, validationError);
+      return;
+    }
+    setAuthMessage(messageEl, '');
+    const submitBtn = $('loginBtn');
+    busy(submitBtn, true, 'Sign In', 'Signing In…');
+    try {
+      await signIn(credentials.email.trim(), credentials.password);
+      await resolveSession();
+    } catch (error) {
+      setAuthMessage(messageEl, error.message);
+    } finally {
+      busy(submitBtn, false, 'Sign In', 'Signing In…');
+    }
+  });
+
+  registerForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const registration = {
+      first_name: $('registerFirstName').value,
+      last_name: $('registerLastName').value,
+      email: $('registerEmail').value,
+      password: $('registerPassword').value,
+      confirm: $('registerConfirm').value,
+    };
+    const validationError = AuthUI.validateRegistration(registration);
+    const messageEl = $('registerError');
+    if (validationError) {
+      setAuthMessage(messageEl, validationError);
+      return;
+    }
+    setAuthMessage(messageEl, '');
+    const submitBtn = $('registerBtn');
+    busy(submitBtn, true, 'Create Account', 'Creating Account…');
+    try {
+      await requestJson('/api/auth/register', registration);
+      try {
+        await signIn(registration.email.trim(), registration.password);
+        await resolveSession();
+      } catch {
+        showPanel('login');
+        $('loginEmail').value = registration.email.trim();
+        setAuthMessage($('loginError'), 'Account created! Sign in to continue.', 'ok');
+      }
+    } catch (error) {
+      setAuthMessage(messageEl, error.message);
+    } finally {
+      busy(submitBtn, false, 'Create Account', 'Creating Account…');
+    }
+  });
+
+  $('showRegisterBtn').addEventListener('click', () => {
+    setAuthMessage($('loginError'), '');
+    showPanel('register');
+  });
+
+  $('showLoginBtn').addEventListener('click', () => {
+    setAuthMessage($('registerError'), '');
+    showPanel('login');
+  });
+
+  logoutBtn.addEventListener('click', async () => {
+    logoutBtn.disabled = true;
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch {
+      /* network hiccup - resolveSession below still reflects server truth */
+    }
+    resetAuthForms();
+    await resolveSession();
+    logoutBtn.disabled = false;
+  });
+
+  resolveSession();
 })();
