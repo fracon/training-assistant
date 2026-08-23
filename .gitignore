@@ -24,6 +24,12 @@ temp/
 *.pid
 *.seed
 
+# SQLite database (never commit user data)
+data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
 # OS files
 .DS_Store
 Thumbs.db

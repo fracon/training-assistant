@@ -5,3 +5,5 @@ services:
     restart: unless-stopped
     ports:
       - "8081:3000"
+    volumes:
+      - ./data:/app/data
