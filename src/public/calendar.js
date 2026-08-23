@@ -44,6 +44,12 @@ export function weekdayOrder(firstDay) {
   return [1, 2, 3, 4, 5, 6, 0];
 }
 
+// Locale name arrays are Monday-indexed (index 0 = Monday, 6 = Sunday),
+// while Date.prototype.getDay() is Sunday-indexed (0 = Sunday).
+export function weekdayArrayIndex(jsDay) {
+  return (((jsDay % 7) + 7) % 7 + 6) % 7;
+}
+
 export function buildCalendarCells(year, monthIndex, firstDay, today = new Date()) {
   const order = weekdayOrder(firstDay);
   const firstOfMonth = new Date(year, monthIndex, 1);
@@ -112,10 +118,12 @@ function setupCalendarPage() {
     for (let index = 0; index < 7; index += 1) {
       shortNames.push(t(`calendar.weekdaysShort.${index}`));
     }
-    for (const column of weekdayOrder(state.firstDay)) {
+    const headerLabels = weekdayOrder(state.firstDay).map(
+      (jsDay) => shortNames[weekdayArrayIndex(jsDay)]
+    );
+    for (const label of headerLabels) {
       const head = el('div', 'weekday-head');
-      head.textContent = shortNames[column];
-      head.setAttribute('title', t(`calendar.weekdaysLong.${column}`));
+      head.textContent = label;
       grid.appendChild(head);
     }
 
@@ -134,7 +142,7 @@ function setupCalendarPage() {
       node.appendChild(number);
       node.setAttribute(
         'aria-label',
-        `${longNames[cell.date.getDay()]} ${cell.dayNumber} ${t(`calendar.months.${cell.date.getMonth()}`)} ${cell.date.getFullYear()}`
+        `${longNames[weekdayArrayIndex(cell.date.getDay())]} ${cell.dayNumber} ${t(`calendar.months.${cell.date.getMonth()}`)} ${cell.date.getFullYear()}`
       );
       grid.appendChild(node);
     }

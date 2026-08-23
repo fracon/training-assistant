@@ -12,6 +12,7 @@ const {
   saveStoredWeekStart,
   syncStoredWeekStartFromUser,
   weekdayOrder,
+  weekdayArrayIndex,
   buildCalendarCells,
 } = require('../src/public/calendar.js');
 const en = require('../src/public/locales/en.json');
@@ -71,6 +72,61 @@ test('syncStoredWeekStartFromUser mirrors a valid preference into storage', () =
 test('weekday order honors the Monday default and Sunday option', () => {
   assert.deepEqual(weekdayOrder('Monday'), [1, 2, 3, 4, 5, 6, 0]);
   assert.deepEqual(weekdayOrder('Sunday'), [0, 1, 2, 3, 4, 5, 6]);
+});
+
+test('weekdayArrayIndex converts getDay values to monday-indexed locale arrays', () => {
+  assert.equal(weekdayArrayIndex(0), 6, 'Sunday is the last slot of locale arrays');
+  assert.equal(weekdayArrayIndex(1), 0, 'Monday opens locale arrays');
+  assert.equal(weekdayArrayIndex(2), 1);
+  assert.equal(weekdayArrayIndex(4), 3);
+  assert.equal(weekdayArrayIndex(6), 5);
+});
+
+function headerLabelsFor(firstDay, messages = en) {
+  return weekdayOrder(firstDay).map(
+    (jsDay) => messages.calendar.weekdaysShort[weekdayArrayIndex(jsDay)]
+  );
+}
+
+test('grid headers re-index instantly when the week start toggles', () => {
+  assert.deepEqual(headerLabelsFor('Monday'), ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']);
+  assert.deepEqual(headerLabelsFor('Sunday'), ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']);
+
+  assert.deepEqual(headerLabelsFor('Monday', pt), ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom']);
+  assert.deepEqual(headerLabelsFor('Sunday', pt), ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']);
+});
+
+test('every august 2026 cell sits in the column matching its weekday', () => {
+  for (const firstDay of ['Monday', 'Sunday']) {
+    const cells = buildCalendarCells(2026, 7, firstDay);
+    cells.forEach((cell, position) => {
+      assert.equal(
+        weekdayOrder(firstDay)[position % 7],
+        cell.date.getDay(),
+        `${firstDay} column ${position % 7} vs ${cell.key}`
+      );
+    });
+  }
+});
+
+test('august 23 2026 (a sunday) renders under the Sun header in both modes', () => {
+  assert.equal(new Date(2026, 7, 23).getDay(), 0, 'the reported date is a Sunday');
+
+  for (const firstDay of ['Monday', 'Sunday']) {
+    const cells = buildCalendarCells(2026, 7, firstDay);
+    const position = cells.findIndex((cell) => cell.key === '2026-8-23');
+    const columnIndex = position % 7;
+
+    assert.equal(weekdayOrder(firstDay)[columnIndex], 0);
+    assert.equal(headerLabelsFor(firstDay)[columnIndex], 'Sun');
+    assert.equal(headerLabelsFor(firstDay, pt)[columnIndex], 'Dom');
+    assert.equal(cells[position].inMonth, true);
+  }
+
+  const mondayFirst = buildCalendarCells(2026, 7, 'Monday');
+  assert.equal(mondayFirst.findIndex((cell) => cell.key === '2026-8-23') % 7, 6, 'last column');
+  const sundayFirst = buildCalendarCells(2026, 7, 'Sunday');
+  assert.equal(sundayFirst.findIndex((cell) => cell.key === '2026-8-23') % 7, 0, 'first column');
 });
 
 test('buildCalendarCells renders a Monday-first month grid', () => {
