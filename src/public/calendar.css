@@ -107,6 +107,7 @@
 }
 
 .import-btn {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
@@ -125,6 +126,35 @@
 
 .import-btn:hover {
   background: rgba(111, 144, 112, 0.26);
+}
+
+.import-btn .custom-tooltip {
+  position: absolute;
+  top: 110%;
+  right: 0;
+  z-index: 50;
+  width: max-content;
+  max-width: 280px;
+  text-align: left;
+  white-space: normal;
+  line-height: 1.4;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--card);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  font-size: 0.8rem;
+  font-weight: 500;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-4px);
+  transition: all 0.2s ease;
+}
+
+.import-btn:hover .custom-tooltip,
+.import-btn:focus-visible .custom-tooltip {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .import-btn:disabled {

@@ -277,27 +277,70 @@ test('calendar header stacks title above a full-width actions row without a subt
 test('import button label and hover tooltip are translated with key parity', () => {
   assert.equal(en.calendar.import.button, 'Import trainings');
   assert.equal(pt.calendar.import.button, 'Importar treinos');
-  assert.equal(en.calendar.import.tooltip, 'Imports Excel files (.xlsx, .xls) containing your training schedule.');
-  assert.equal(pt.calendar.import.tooltip, 'Importa arquivos Excel (.xlsx, .xls) contendo a sua planilha de treinos.');
+  assert.equal(
+    en.calendar.import.tooltip,
+    "Imports Excel files (.xlsx, .xls). The spreadsheet must contain the 11 standard columns (Data, Dia, Período, Tipo, etc.), with 'Data' and 'Tipo' being mandatory. Do not include note rows or merged cells."
+  );
+  assert.equal(
+    pt.calendar.import.tooltip,
+    "Importa planilhas Excel (.xlsx, .xls). A planilha deve conter as 11 colunas padrão (Data, Dia, Período, Tipo, etc.), sendo 'Data' e 'Tipo' obrigatórias. Não inclua linhas de anotações ou células mescladas."
+  );
   assert.equal(en.calendar.subtitle, undefined);
   assert.equal(pt.calendar.subtitle, undefined);
 });
 
-test('import tooltip swaps on language change through the shared i18n title handler', () => {
+test('import button renders a DOM tooltip fed by the translation cycle', () => {
   const html = readFileSync(join(publicDir, 'calendar.html'), 'utf8');
   const buttonStart = html.indexOf('<button type="button" id="importBtn"');
   const buttonEnd = html.indexOf('</button>', buttonStart);
   const buttonMarkup = html.slice(buttonStart, buttonEnd);
 
-  assert.ok(buttonMarkup.includes('data-i18n-title="calendar.import.tooltip"'),
-    'the tooltip is bound to the i18n key');
-  assert.ok(buttonMarkup.includes('title="Imports Excel files (.xlsx, .xls) containing your training schedule."'),
-    'an English fallback title is present before hydration');
+  assert.ok(!buttonMarkup.includes('title='), 'the native title attribute is gone');
+  assert.ok(!buttonMarkup.includes('data-i18n-title'), 'no data-i18n-title binding remains');
+  assert.match(
+    buttonMarkup,
+    /<div class="custom-tooltip" data-i18n="calendar\.import\.tooltip"><\/div>/,
+    'the tooltip div is bound to the i18n key inside the button'
+  );
   assert.match(buttonMarkup, /data-i18n="calendar\.import\.button"[^>]*>Import trainings<\/span>/);
 
   const i18nJs = readFileSync(join(publicDir, 'shared', 'i18n.js'), 'utf8');
-  assert.match(i18nJs, /querySelectorAll\('\[data-i18n-title\]'\)/);
-  assert.match(i18nJs, /el\.title = translate\(messages, el\.dataset\.i18nTitle\);/);
+  assert.ok(!i18nJs.includes('data-i18n-title'), 'the unused native-title handler was removed from i18n.js');
+});
+
+test('calendar.css gives the import button a right-anchored chip-style tooltip', () => {
+  const css = readFileSync(join(publicDir, 'calendar.css'), 'utf8');
+
+  const buttonBlock = css.match(/\.import-btn \{[^}]*\}/)?.[0] ?? '';
+  assert.match(buttonBlock, /position:\s*relative/, 'tooltip positioning anchor');
+
+  const tooltipBlock = css.match(/\.import-btn \.custom-tooltip \{[^}]*\}/)?.[0] ?? '';
+  for (const expected of [
+    'position: absolute',
+    'top: 110%',
+    'right: 0',
+    'z-index: 50',
+    'width: max-content',
+    'max-width: 280px',
+    'text-align: left',
+    'white-space: normal',
+    'line-height: 1.4',
+    'background: var(--ink)',
+    'color: var(--card)',
+    'border-radius: 6px',
+    'padding: 8px 12px',
+    'box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15)',
+    'opacity: 0',
+    'pointer-events: none',
+    'transform: translateY(-4px)',
+    'transition: all 0.2s ease',
+  ]) {
+    assert.ok(tooltipBlock.includes(expected), expected);
+  }
+
+  const hoverBlock = css.match(/\.import-btn:hover \.custom-tooltip[^{]*\{[^}]*\}/)?.[0] ?? '';
+  assert.match(hoverBlock, /opacity:\s*1/);
+  assert.match(hoverBlock, /transform:\s*translateY\(0\)/);
 });
 
 test('calendar.css stacks the header vertically and spreads the actions row', () => {

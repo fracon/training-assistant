@@ -39,7 +39,7 @@
     "gridLabel": "Calendário mensal",
     "import": {
       "button": "Importar treinos",
-      "tooltip": "Importa arquivos Excel (.xlsx, .xls) contendo a sua planilha de treinos.",
+      "tooltip": "Importa planilhas Excel (.xlsx, .xls). A planilha deve conter as 11 colunas padrão (Data, Dia, Período, Tipo, etc.), sendo 'Data' e 'Tipo' obrigatórias. Não inclua linhas de anotações ou células mescladas.",
       "title": "Importar treinos",
       "hint": "Escolha uma planilha .xlsx ou .xls com as colunas: Dia, Período, Tipo, Treino, Detalhes, FC alvo, RPE, Tênis, Previsão no horário, Observações.",
       "loading": "Importando…",

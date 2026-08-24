@@ -39,7 +39,7 @@
     "gridLabel": "Monthly calendar",
     "import": {
       "button": "Import trainings",
-      "tooltip": "Imports Excel files (.xlsx, .xls) containing your training schedule.",
+      "tooltip": "Imports Excel files (.xlsx, .xls). The spreadsheet must contain the 11 standard columns (Data, Dia, Período, Tipo, etc.), with 'Data' and 'Tipo' being mandatory. Do not include note rows or merged cells.",
       "title": "Import trainings",
       "hint": "Pick a .xlsx or .xls spreadsheet with columns: Dia, Período, Tipo, Treino, Detalhes, FC alvo, RPE, Tênis, Previsão no horário, Observações.",
       "loading": "Importing…",
