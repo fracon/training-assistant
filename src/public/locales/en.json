@@ -21,7 +21,7 @@
       "sunday": "Sunday"
     },
     "optionalContext": "Optional context",
-    "optionalContextPlaceholder": "e.g., traveling on Tuesday, poor sleep…",
+    "contextPlaceholder": "Examples: travel, schedule changes, poor sleep, fatigue, pain/discomfort, work commitments, inability to run, shoe preference...",
     "generate": "Generate Prompt",
     "resultTitle": "Generated prompt",
     "resultPlaceholder": "Fill in the form and generate your prompt.",

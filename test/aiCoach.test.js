@@ -91,6 +91,12 @@ test('the prompt template keeps the required Portuguese structure', () => {
     /\| Data \| Dia \| Período \| Tipo \| Treino \| Detalhes \| FC alvo \| RPE \| Tênis \| Previsão do tempo \| Observações \|/
   );
   assert.match(PROMPT_TEMPLATE, /15\. O objetivo não é maximizar cada treino individualmente\./);
+  assert.match(
+    PROMPT_TEMPLATE,
+    /CONTEXTO ADICIONAL DESTA SEMANA\n\n\{\{CONTEXTO_OPCIONAL\}\}\n\nINSTRUÇÕES PARA MONTAR A SEMANA/,
+    'context section flows straight into the instructions'
+  );
+  assert.ok(!PROMPT_TEMPLATE.includes('Exemplos:'), 'example list lives in the UI, not the prompt');
 
   const tokens = PROMPT_TEMPLATE.match(/\{\{[A-Z_]+\}\}/g) ?? [];
   assert.equal(tokens.length, 9, 'exactly nine placeholders exist');
@@ -292,6 +298,12 @@ test('both templates carry the identical placeholder contract', () => {
     PROMPT_TEMPLATE_EN,
     /If recent data indicates that the originally expected plan should be altered, prioritize the correct adaptation/
   );
+  assert.match(
+    PROMPT_TEMPLATE_EN,
+    /ADDITIONAL CONTEXT FOR THIS WEEK\n\n\{\{CONTEXTO_OPCIONAL\}\}\n\nINSTRUCTIONS FOR PLANNING THE WEEK/,
+    'context section flows straight into the instructions'
+  );
+  assert.ok(!PROMPT_TEMPLATE_EN.includes('Examples:'), 'example list lives in the UI, not the prompt');
   assert.ok(!PROMPT_TEMPLATE.includes('{{DISPONIBILIDADE}}'));
 });
 
@@ -352,4 +364,59 @@ test('ai-coach.js wires the guarded language-change listener and lang-aware gene
   assert.match(js, /applyRoutineDefault\(currentValues, lastRoutineDefault, nextDefault\)/);
   assert.match(js, /lastRoutineDefault = nextDefault;/);
   assert.match(js, /lang: i18n\.language/);
+});
+
+test('generated prompts no longer embed the context examples', () => {
+  const pt = buildPrompt({ targetDate: new Date(2026, 7, 31), disponibilidade: {}, contexto: '' });
+  const en = buildPrompt({
+    targetDate: new Date(2026, 7, 31),
+    disponibilidade: {},
+    contexto: '',
+    lang: 'en-US',
+  });
+
+  assert.ok(!pt.includes('qualquer outra circunstância relevante'));
+  assert.ok(!pt.includes('compromisso de trabalho;'));
+  assert.ok(!en.includes('any other relevant circumstance'));
+  assert.ok(!en.includes('work commitments;'));
+
+  const custom = buildPrompt({
+    targetDate: new Date(2026, 7, 31),
+    disponibilidade: {},
+    contexto: 'viagem na terça',
+  });
+  assert.ok(custom.includes('\nviagem na terça\n'), 'user context still lands in the prompt');
+});
+
+test('the textarea placeholder is translated and swaps on language change', async () => {
+  const { translate } = require('../src/public/shared/i18n.js');
+
+  const html = readFileSync(join(publicDir, 'ai-coach.html'), 'utf8');
+  assert.match(html, /data-i18n-placeholder="aiCoach\.contextPlaceholder"/);
+  assert.match(html, /<textarea id="optionalContext"/);
+
+  const shellSource = readFileSync(
+    join(publicDir, 'shared', 'i18n.js'),
+    'utf8'
+  );
+  assert.match(
+    shellSource,
+    /\[data-i18n-placeholder\][\s\S]*?\.placeholder = translate/,
+    'shell i18n cycle rewrites only the placeholder attribute'
+  );
+
+  const en = JSON.parse(readFileSync(join(publicDir, 'locales', 'en.json'), 'utf8'));
+  const pt = JSON.parse(readFileSync(join(publicDir, 'locales', 'pt.json'), 'utf8'));
+
+  const expectedEn =
+    'Examples: travel, schedule changes, poor sleep, fatigue, pain/discomfort, work commitments, inability to run, shoe preference...';
+  const expectedPt =
+    'Exemplos: viagem, alteração de horário, pouco sono, fadiga, dor/desconforto, compromisso de trabalho, impossibilidade de correr, preferência de tênis...';
+
+  assert.equal(en.aiCoach.contextPlaceholder, expectedEn);
+  assert.equal(pt.aiCoach.contextPlaceholder, expectedPt);
+  assert.equal(translate(en, 'aiCoach.contextPlaceholder'), expectedEn);
+  assert.equal(translate(pt, 'aiCoach.contextPlaceholder'), expectedPt);
+  assert.equal(typeof en.aiCoach.optionalContextPlaceholder, 'undefined', 'old key removed');
+  assert.equal(typeof pt.aiCoach.optionalContextPlaceholder, 'undefined', 'old key removed');
 });

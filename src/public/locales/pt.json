@@ -21,7 +21,7 @@
       "sunday": "Domingo"
     },
     "optionalContext": "Contexto opcional",
-    "optionalContextPlaceholder": "ex.: viagem na terça, pouco sono…",
+    "contextPlaceholder": "Exemplos: viagem, alteração de horário, pouco sono, fadiga, dor/desconforto, compromisso de trabalho, impossibilidade de correr, preferência de tênis...",
     "generate": "Gerar Prompt",
     "resultTitle": "Prompt gerado",
     "resultPlaceholder": "Preencha o formulário e gere o seu prompt.",

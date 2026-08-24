@@ -42,17 +42,6 @@ CONTEXTO ADICIONAL DESTA SEMANA
 
 {{CONTEXTO_OPCIONAL}}
 
-Exemplos:
-- viagem;
-- alteração de horário;
-- pouco sono;
-- fadiga;
-- dor/desconforto;
-- compromisso de trabalho;
-- impossibilidade de correr determinado dia;
-- preferência de tênis;
-- qualquer outra circunstância relevante.
-
 INSTRUÇÕES PARA MONTAR A SEMANA
 
 1. Planeje SOMENTE os treinos de corrida. Não inclua musculação.
@@ -128,8 +117,6 @@ If I do not provide any special restrictions, assume my normal running routine.
 ADDITIONAL CONTEXT FOR THIS WEEK
 
 {{CONTEXTO_OPCIONAL}}
-
-Examples: travel; schedule changes; poor sleep; fatigue; pain/discomfort; work commitments; inability to run on a specific day; shoe preference; any other relevant circumstance.
 
 INSTRUCTIONS FOR PLANNING THE WEEK
 
