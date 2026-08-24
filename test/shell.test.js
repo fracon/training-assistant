@@ -31,6 +31,7 @@ const NAV_ITEMS = [
   },
   { id: 'dashboard', labelKey: 'shell.nav.dashboard', href: null, disabled: true, icon: 'layout-dashboard' },
   { id: 'calendar', labelKey: 'shell.nav.calendar', href: '/calendar.html', disabled: false, icon: 'calendar-days' },
+  { id: 'ai-coach', labelKey: 'shell.nav.aiCoach', href: '/ai-coach.html', disabled: false, icon: 'bot' },
 ];
 
 test('sidebar starts expanded when no state was ever stored', () => {
@@ -69,10 +70,12 @@ test('shell navigation config matches the phase specification', () => {
       ['training-result', false],
       ['dashboard', true],
       ['calendar', false],
+      ['ai-coach', false],
     ]
   );
   assert.equal(NAV_ITEMS[0].href, '/training-result.html');
   assert.equal(NAV_ITEMS[2].href, '/calendar.html');
+  assert.equal(NAV_ITEMS[3].href, '/ai-coach.html');
   assert.ok(
     NAV_ITEMS.filter((item) => item.disabled).every((item) => item.href === null)
   );

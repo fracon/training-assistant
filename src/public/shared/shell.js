@@ -33,6 +33,13 @@ const NAV_ITEMS = [
     href: '/calendar.html',
     disabled: false,
   },
+  {
+    id: 'ai-coach',
+    icon: 'bot',
+    labelKey: 'shell.nav.aiCoach',
+    href: '/ai-coach.html',
+    disabled: false,
+  },
 ];
 
 export function readSidebarCollapsed(storage = globalThis.localStorage) {

@@ -3,6 +3,30 @@
     "name": "Training Assistant",
     "tagline": "Local e Offline"
   },
+  "aiCoach": {
+    "title": "Prompt do Coach de IA",
+    "subtitle": "Monte um briefing detalhado para o seu coach de IA externo",
+    "targetDate": "Data alvo",
+    "targetDateHint": "Semana a ser planejada. Padrão: próxima segunda-feira.",
+    "availability": "Disponibilidade",
+    "availabilityHint": "Informe ao coach quando você pode correr em cada dia.",
+    "days": {
+      "monday": "Segunda",
+      "tuesday": "Terça",
+      "wednesday": "Quarta",
+      "thursday": "Quinta",
+      "friday": "Sexta",
+      "saturday": "Sábado",
+      "sunday": "Domingo"
+    },
+    "optionalContext": "Contexto opcional",
+    "optionalContextPlaceholder": "ex.: viagem na terça, pouco sono…",
+    "generate": "Gerar Prompt",
+    "resultTitle": "Prompt gerado",
+    "resultPlaceholder": "Preencha o formulário e gere o seu prompt.",
+    "copy": "Copiar para a área de transferência",
+    "copied": "Copiado!"
+  },
   "calendar": {
     "title": "Calendário de Treinos",
     "subtitle": "Seu mês em um olhar",
@@ -37,7 +61,8 @@
     "nav": {
       "training": "Resultado do Treino",
       "dashboard": "Dashboard",
-      "calendar": "Calendário"
+      "calendar": "Calendário",
+      "aiCoach": "Coach de IA"
     },
     "soon": "Em breve",
     "collapse": "Recolher menu",

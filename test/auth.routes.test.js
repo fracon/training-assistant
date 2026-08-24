@@ -733,3 +733,25 @@ test('calendar page is gated and served to authenticated users', async () => {
 
   await app.close();
 });
+
+test('ai coach page is gated and served to authenticated users', async () => {
+  const { app, cookiePair } = await calendarScenario();
+
+  const anonymous = await app.inject({ method: 'GET', url: '/ai-coach.html' });
+  assert.equal(anonymous.statusCode, 302);
+  assert.equal(anonymous.headers.location, '/login.html');
+
+  const authenticated = await app.inject({
+    method: 'GET',
+    url: '/ai-coach.html',
+    headers: { cookie: cookiePair },
+  });
+  assert.equal(authenticated.statusCode, 200);
+  assert.match(authenticated.headers['content-type'], /text\/html/);
+  assert.match(authenticated.body, /id="promptForm"/);
+  assert.match(authenticated.body, /shared\/shell\.css/);
+  assert.match(authenticated.body, /ai-coach\.js/);
+  assert.doesNotMatch(authenticated.body, /id="logoutBtn"/);
+
+  await app.close();
+});

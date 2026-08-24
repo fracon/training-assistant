@@ -3,6 +3,30 @@
     "name": "Training Assistant",
     "tagline": "Local & Offline"
   },
+  "aiCoach": {
+    "title": "AI Coach Prompt",
+    "subtitle": "Build a detailed briefing for your external AI coach",
+    "targetDate": "Target date",
+    "targetDateHint": "Week to plan. Defaults to next Monday.",
+    "availability": "Availability",
+    "availabilityHint": "Tell the coach when you can run each day.",
+    "days": {
+      "monday": "Monday",
+      "tuesday": "Tuesday",
+      "wednesday": "Wednesday",
+      "thursday": "Thursday",
+      "friday": "Friday",
+      "saturday": "Saturday",
+      "sunday": "Sunday"
+    },
+    "optionalContext": "Optional context",
+    "optionalContextPlaceholder": "e.g., traveling on Tuesday, poor sleep…",
+    "generate": "Generate Prompt",
+    "resultTitle": "Generated prompt",
+    "resultPlaceholder": "Fill in the form and generate your prompt.",
+    "copy": "Copy to Clipboard",
+    "copied": "Copied!"
+  },
   "calendar": {
     "title": "Training Calendar",
     "subtitle": "Your month at a glance",
@@ -37,7 +61,8 @@
     "nav": {
       "training": "Training Result",
       "dashboard": "Dashboard",
-      "calendar": "Calendar"
+      "calendar": "Calendar",
+      "aiCoach": "AI Coach"
     },
     "soon": "Soon",
     "collapse": "Collapse sidebar",

@@ -94,6 +94,13 @@ async function buildServer(options = {}) {
     return reply.sendFile('calendar.html');
   });
 
+  app.get('/ai-coach.html', async (request, reply) => {
+    if (!sessionOf(request)) {
+      return reply.redirect('/login.html');
+    }
+    return reply.sendFile('ai-coach.html');
+  });
+
   app.get('/login.html', async (request, reply) => {
     if (sessionOf(request)) {
       return reply.redirect('/');
