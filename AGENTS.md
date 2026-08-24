@@ -95,9 +95,27 @@ Whenever starting the development of a new feature, you MUST follow this strict 
     - Expose a protected update endpoint (mirroring `PATCH /api/users/me/language`) and place the Mon/Sun toggle in the Topbar or within the Calendar view header.
   - **i18n Coverage:** month names and days of the week must be fully translatable using the existing `src/public/locales/en.json` / `pt.json`; the locale key-parity test must keep both files in sync.
 
-- **Phase 7: Garmin Automation (WebUSB / File System API) [🚧 PLANNED]**
+- **Phase 7: AI Coach Prompt Generator [🚧 PLANNED]**
+  - **Feature Scope:** a dedicated tool page that builds a highly detailed, pre-formatted prompt for an external AI Coach (ChatGPT/Claude) to plan the next training week. The user copies the generated text and pastes it into their LLM of choice — nothing is ever sent anywhere by this app (local-first rule).
+  - **Architecture & Multi-Page Adherence:**
+    - Standalone page following the strict convention: `src/public/ai-coach.html` / `ai-coach.css` / `ai-coach.js`.
+    - MUST import `shared/shell.js` so the Topbar and Sidebar are automatically injected; mark "AI Coach" as the active nav item.
+    - Add a new Sidebar navigation item (e.g., **"AI Coach"**) with a Lucide icon (`bot` or `sparkles`), label translatable via i18n locales.
+    - Strictly Vanilla JS — no external libraries. Re-use existing shared CSS tokens and the earthy aesthetic.
+  - **Form Variables:**
+    - `Target Date`: defaults to the date of the *next* Monday (auto-computed on load, still editable).
+    - `Availability`: 7 input fields, Monday through Sunday, each defaulting to a standard routine text.
+    - `Optional Context`: a `<textarea>` for free-form notes (e.g., "traveling on Tuesday").
+    - A **"Generate Prompt"** button that replaces the placeholders in the template and renders the final text in a copyable block with a **"Copy to Clipboard"** action (with success feedback).
+  - **The Prompt Template Requirement (CRITICAL):**
+    - The exact Portuguese prompt template provided by the user MUST be strictly used verbatim — no rewriting, translation, or "improvements" to its wording.
+    - The template contains specific personal rules: Fânzeres weather context, RPE progression rules, shoe rotation, and a strict Excel-style output format for the weekly plan.
+    - Only three placeholders are replaced at generation time: `{{DATA_DA_SEGUNDA}}` (Target Date), `{{DISPONIBILIDADE}}` (the 7-day availability lines), and `{{CONTEXTO_OPCIONAL}}` (optional notes).
+  - **i18n Coverage:** all UI chrome (labels, buttons, hints) must be translatable via `src/public/locales/en.json` / `pt.json`; the embedded Portuguese prompt template itself stays in Portuguese regardless of UI language.
+
+- **Phase 8: Garmin Automation (WebUSB / File System API) [🚧 PLANNED]**
   - Eliminate manual `.FIT` file drag-and-drop.
   - Implement direct read access to connected Garmin watch via browser APIs.
 
-- **Phase 8: Advanced LLM Integration [🚧 PLANNED]**
+- **Phase 9: Advanced LLM Integration [🚧 PLANNED]**
   - Potential direct API connection to LLMs for automated response rendering within the UI.
