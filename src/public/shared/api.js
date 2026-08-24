@@ -28,6 +28,47 @@ export function updateLanguagePreference(lang) {
   return requestJson('/api/users/me/language', { preferred_lang: lang }, 'PATCH');
 }
 
+export function updateCalendarPreference(firstDay) {
+  return requestJson(
+    '/api/users/me/calendar-preference',
+    { first_day_of_week: firstDay },
+    'PATCH'
+  );
+}
+
+export async function fetchCalendarTrainings() {
+  try {
+    const response = await fetch('/api/calendar/trainings', {
+      headers: { accept: 'application/json' },
+    });
+    if (!response.ok) return [];
+    const payload = await response.json();
+    return Array.isArray(payload.trainings) ? payload.trainings : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function importTrainingsFile(file) {
+  const form = new FormData();
+  form.append('file', file);
+  let response;
+  try {
+    response = await fetch('/api/calendar/import', { method: 'POST', body: form });
+  } catch {
+    throw Object.assign(new Error('Network unavailable. Please try again.'), {
+      rowErrors: null,
+    });
+  }
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw Object.assign(new Error(payload.error || 'Import failed.'), {
+      rowErrors: Array.isArray(payload.errors) ? payload.errors : null,
+    });
+  }
+  return payload;
+}
+
 export async function signOut() {
   try {
     await fetch('/api/auth/logout', { method: 'POST' });

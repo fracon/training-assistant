@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Coach Prompt • Training Assistant</title>
+  <link rel="stylesheet" href="shared/shell.css">
+  <link rel="stylesheet" href="ai-coach.css">
+</head>
+<body>
+  <main id="appView">
+    <section class="ai-coach-page">
+      <header class="ai-coach-header">
+        <h1 data-i18n="aiCoach.title">AI Coach Prompt</h1>
+        <p class="ai-coach-subtitle" data-i18n="aiCoach.subtitle">Build a detailed briefing for your external AI coach</p>
+      </header>
+
+      <form id="promptForm" class="prompt-form" novalidate>
+        <div class="field">
+          <label for="targetDate" data-i18n="aiCoach.targetDate">Target date</label>
+          <input type="date" id="targetDate" required>
+          <p class="field-hint" data-i18n="aiCoach.targetDateHint">Week to plan. Defaults to next Monday.</p>
+        </div>
+
+        <fieldset class="availability-fieldset">
+          <legend data-i18n="aiCoach.availability">Availability</legend>
+          <p class="field-hint" data-i18n="aiCoach.availabilityHint">Tell the coach when you can run each day.</p>
+          <div class="availability-grid">
+            <div class="day-row">
+              <label for="dispSeg" data-i18n="aiCoach.days.monday">Monday</label>
+              <input type="text" id="dispSeg" value="Rotina normal">
+            </div>
+            <div class="day-row">
+              <label for="dispTer" data-i18n="aiCoach.days.tuesday">Tuesday</label>
+              <input type="text" id="dispTer" value="Rotina normal">
+            </div>
+            <div class="day-row">
+              <label for="dispQua" data-i18n="aiCoach.days.wednesday">Wednesday</label>
+              <input type="text" id="dispQua" value="Rotina normal">
+            </div>
+            <div class="day-row">
+              <label for="dispQui" data-i18n="aiCoach.days.thursday">Thursday</label>
+              <input type="text" id="dispQui" value="Rotina normal">
+            </div>
+            <div class="day-row">
+              <label for="dispSex" data-i18n="aiCoach.days.friday">Friday</label>
+              <input type="text" id="dispSex" value="Rotina normal">
+            </div>
+            <div class="day-row">
+              <label for="dispSab" data-i18n="aiCoach.days.saturday">Saturday</label>
+              <input type="text" id="dispSab" value="Rotina normal">
+            </div>
+            <div class="day-row">
+              <label for="dispDom" data-i18n="aiCoach.days.sunday">Sunday</label>
+              <input type="text" id="dispDom" value="Rotina normal">
+            </div>
+          </div>
+        </fieldset>
+
+        <div class="field">
+          <label for="optionalContext" data-i18n="aiCoach.optionalContext">Optional context</label>
+          <textarea id="optionalContext" rows="3" data-i18n-placeholder="aiCoach.contextPlaceholder"
+            placeholder="Examples: travel, schedule changes, poor sleep, fatigue, pain/discomfort, work commitments, inability to run, shoe preference..."></textarea>
+        </div>
+
+        <button type="submit" id="generateBtn" class="generate-btn">
+          <i data-lucide="sparkles"></i>
+          <span data-i18n="aiCoach.generate">Generate Prompt</span>
+        </button>
+      </form>
+
+      <section id="resultSection" class="result-section hidden" aria-live="polite">
+        <div class="result-header">
+          <h2 data-i18n="aiCoach.resultTitle">Generated prompt</h2>
+          <button type="button" id="copyBtn" class="copy-btn">
+            <span class="copy-icon"><i data-lucide="copy"></i></span>
+            <span id="copyLabel" data-i18n="aiCoach.copy">Copy to Clipboard</span>
+          </button>
+        </div>
+        <pre id="promptOutput" class="prompt-output" tabindex="0"></pre>
+      </section>
+
+      <p id="resultPlaceholder" class="result-placeholder" data-i18n="aiCoach.resultPlaceholder">
+        Fill in the form and generate your prompt.
+      </p>
+    </section>
+  </main>
+
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="shared/shell.js" type="module"></script>
+  <script src="ai-coach.js" type="module"></script>
+</body>
+</html>

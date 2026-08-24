@@ -36,6 +36,7 @@ test('normalizeRegistration trims fields, lowercases the email and tolerates a m
       first_name: 'Rafael',
       last_name: 'Vilaça',
       preferred_lang: 'en-US',
+      first_day_of_week: 'Monday',
     }
   );
 
@@ -45,6 +46,7 @@ test('normalizeRegistration trims fields, lowercases the email and tolerates a m
     first_name: '',
     last_name: '',
     preferred_lang: 'en-US',
+    first_day_of_week: 'Monday',
   });
 
   assert.deepEqual(normalizeRegistration({ email: 42 }), {
@@ -53,12 +55,18 @@ test('normalizeRegistration trims fields, lowercases the email and tolerates a m
     first_name: '',
     last_name: '',
     preferred_lang: 'en-US',
+    first_day_of_week: 'Monday',
   });
 });
 
 test('normalizeRegistration canonicalizes the preferred language and defaults junk values', () => {
   assert.equal(normalizeRegistration({ preferred_lang: ' PT-BR ' }).preferred_lang, 'pt-BR');
   assert.equal(normalizeRegistration({ preferred_lang: 'fr-FR' }).preferred_lang, 'en-US');
+});
+
+test('normalizeRegistration canonicalizes the first day of week', () => {
+  assert.equal(normalizeRegistration({ first_day_of_week: ' sunday ' }).first_day_of_week, 'Sunday');
+  assert.equal(normalizeRegistration({ first_day_of_week: 'Funday' }).first_day_of_week, 'Monday');
 });
 
 test('validateRegistration reports every missing field at once', () => {
@@ -107,6 +115,7 @@ test('registerUser persists a hashed user and returns data without the hash', as
     first_name: 'Rafael',
     last_name: 'Vilaça',
     preferred_lang: 'en-US',
+    first_day_of_week: 'Monday',
   });
   assert.equal('password_hash' in user, false);
 

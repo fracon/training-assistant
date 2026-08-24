@@ -2,6 +2,7 @@
 
 const { hashPassword } = require('./passwords');
 const { normalizeLanguage } = require('./language');
+const { normalizeWeekStart } = require('./weekStart');
 
 const MIN_PASSWORD_LENGTH = 8;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -25,6 +26,7 @@ function normalizeRegistration(payload) {
     first_name: field(body.first_name),
     last_name: field(body.last_name),
     preferred_lang: normalizeLanguage(body.preferred_lang),
+    first_day_of_week: normalizeWeekStart(body.first_day_of_week),
   };
 }
 
@@ -58,15 +60,16 @@ async function registerUser(db, payload) {
   const passwordHash = await hashPassword(registration.password);
   const result = db
     .prepare(
-      `INSERT INTO users (email, password_hash, first_name, last_name, preferred_lang)
-       VALUES (?, ?, ?, ?, ?)`
+      `INSERT INTO users (email, password_hash, first_name, last_name, preferred_lang, first_day_of_week)
+       VALUES (?, ?, ?, ?, ?, ?)`
     )
     .run(
       registration.email,
       passwordHash,
       registration.first_name,
       registration.last_name,
-      registration.preferred_lang
+      registration.preferred_lang,
+      registration.first_day_of_week
     );
 
   return {
@@ -75,6 +78,7 @@ async function registerUser(db, payload) {
     first_name: registration.first_name,
     last_name: registration.last_name,
     preferred_lang: registration.preferred_lang,
+    first_day_of_week: registration.first_day_of_week,
   };
 }
 

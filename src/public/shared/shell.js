@@ -30,8 +30,15 @@ const NAV_ITEMS = [
     id: 'calendar',
     icon: 'calendar-days',
     labelKey: 'shell.nav.calendar',
-    href: null,
-    disabled: true,
+    href: '/calendar.html',
+    disabled: false,
+  },
+  {
+    id: 'ai-coach',
+    icon: 'bot',
+    labelKey: 'shell.nav.aiCoach',
+    href: '/ai-coach.html',
+    disabled: false,
   },
 ];
 
@@ -63,7 +70,7 @@ function icon(name) {
   return holder;
 }
 
-function refreshIcons() {
+export function refreshIcons() {
   try {
     if (globalThis.lucide && typeof globalThis.lucide.createIcons === 'function') {
       globalThis.lucide.createIcons();

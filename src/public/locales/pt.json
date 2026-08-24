@@ -3,11 +3,67 @@
     "name": "Training Assistant",
     "tagline": "Local e Offline"
   },
+  "aiCoach": {
+    "title": "Prompt do Coach de IA",
+    "subtitle": "Monte um briefing detalhado para o seu coach de IA externo",
+    "targetDate": "Data alvo",
+    "targetDateHint": "Semana a ser planejada. Padrão: próxima segunda-feira.",
+    "availability": "Disponibilidade",
+    "availabilityHint": "Informe ao coach quando você pode correr em cada dia.",
+    "defaultRoutine": "Rotina normal",
+    "days": {
+      "monday": "Segunda",
+      "tuesday": "Terça",
+      "wednesday": "Quarta",
+      "thursday": "Quinta",
+      "friday": "Sexta",
+      "saturday": "Sábado",
+      "sunday": "Domingo"
+    },
+    "optionalContext": "Contexto opcional",
+    "contextPlaceholder": "Exemplos: viagem, alteração de horário, pouco sono, fadiga, dor/desconforto, compromisso de trabalho, impossibilidade de correr, preferência de tênis...",
+    "generate": "Gerar Prompt",
+    "resultTitle": "Prompt gerado",
+    "resultPlaceholder": "Preencha o formulário e gere o seu prompt.",
+    "copy": "Copiar para a área de transferência",
+    "copied": "Copiado!"
+  },
+  "calendar": {
+    "title": "Calendário de Treinos",
+    "subtitle": "Seu mês em um olhar",
+    "previousMonth": "Mês anterior",
+    "nextMonth": "Próximo mês",
+    "today": "Hoje",
+    "import": {
+      "button": "Importar",
+      "title": "Importar treinos",
+      "hint": "Escolha uma planilha .xlsx ou .xls com as colunas: Dia, Período, Tipo, Treino, Detalhes, FC alvo, RPE, Tênis, Previsão no horário, Observações.",
+      "loading": "Importando…",
+      "success": "{count} treino(s) importados para o seu calendário.",
+      "failedTitle": "Encontramos problemas na sua planilha",
+      "rowError": "Linha {row} • {col}: {error}",
+      "close": "Fechar"
+    },
+    "firstDayLabel": "A semana começa em",
+    "weekStart": {
+      "Monday": "Segunda-feira",
+      "Sunday": "Domingo"
+    },
+    "months": [
+      "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+      "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+    ],
+    "weekdaysShort": ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"],
+    "weekdaysLong": [
+      "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado", "Domingo"
+    ]
+  },
   "shell": {
     "nav": {
       "training": "Resultado do Treino",
       "dashboard": "Dashboard",
-      "calendar": "Calendário"
+      "calendar": "Calendário",
+      "aiCoach": "Coach de IA"
     },
     "soon": "Em breve",
     "collapse": "Recolher menu",

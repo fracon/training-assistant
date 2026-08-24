@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
   first_name     TEXT,
   last_name      TEXT,
   preferred_lang TEXT    NOT NULL DEFAULT 'en-US',
+  first_day_of_week TEXT NOT NULL DEFAULT 'Monday',
   created_at     TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -37,6 +38,22 @@ CREATE TABLE IF NOT EXISTS workouts (
   observations TEXT,
   created_at   DATETIME NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS trainings (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  dia         TEXT NOT NULL,
+  periodo     TEXT,
+  tipo        TEXT NOT NULL,
+  treino      TEXT,
+  detalhes    TEXT,
+  fc_alvo     TEXT,
+  rpe         TEXT,
+  tenis       TEXT,
+  previsao    TEXT,
+  observacoes TEXT,
+  created_at  DATETIME NOT NULL DEFAULT (datetime('now'))
+);
 `;
 
 function resolveDatabaseFile(cwd) {
@@ -48,6 +65,11 @@ function migrateDatabase(db) {
   if (!columns.some((column) => column.name === 'preferred_lang')) {
     db.exec(
       "ALTER TABLE users ADD COLUMN preferred_lang TEXT NOT NULL DEFAULT 'en-US'"
+    );
+  }
+  if (!columns.some((column) => column.name === 'first_day_of_week')) {
+    db.exec(
+      "ALTER TABLE users ADD COLUMN first_day_of_week TEXT NOT NULL DEFAULT 'Monday'"
     );
   }
 }

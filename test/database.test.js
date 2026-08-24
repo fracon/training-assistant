@@ -38,7 +38,7 @@ test('initializeDatabase applies pragmas and creates the schema', () => {
     )
     .all()
     .map((row) => row.name);
-  assert.deepEqual(objects, ['sessions', 'users', 'workouts']);
+  assert.deepEqual(objects, ['sessions', 'trainings', 'users', 'workouts']);
 
   db.close();
 });
@@ -96,18 +96,58 @@ test('migrateDatabase adds preferred_lang to legacy users tables', () => {
   migrateDatabase(db);
 
   const row = db
-    .prepare('SELECT email, preferred_lang FROM users WHERE email = ?')
+    .prepare('SELECT email, preferred_lang, first_day_of_week FROM users WHERE email = ?')
     .get('legacy@example.com');
   assert.equal(row.preferred_lang, 'en-US');
+  assert.equal(row.first_day_of_week, 'Monday');
 
   db.prepare("INSERT INTO users (email, password_hash) VALUES (?, ?)").run(
     'post-migration@example.com',
     'hash'
   );
   const defaulted = db
-    .prepare('SELECT preferred_lang FROM users WHERE email = ?')
+    .prepare('SELECT preferred_lang, first_day_of_week FROM users WHERE email = ?')
     .get('post-migration@example.com');
   assert.equal(defaulted.preferred_lang, 'en-US');
+  assert.equal(defaulted.first_day_of_week, 'Monday');
+
+  db.close();
+});
+
+test('migrateDatabase adds first_day_of_week to partially migrated tables', () => {
+  const db = new Database(':memory:');
+  db.exec(`
+    CREATE TABLE users (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      email         TEXT    NOT NULL UNIQUE,
+      password_hash TEXT    NOT NULL,
+      first_name    TEXT,
+      last_name     TEXT,
+      preferred_lang TEXT   NOT NULL DEFAULT 'en-US',
+      first_day_of_week TEXT NOT NULL DEFAULT 'Monday',
+      created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+  db.prepare(
+    "INSERT INTO users (email, password_hash, preferred_lang, first_day_of_week) VALUES (?, ?, 'pt-BR', 'Sunday')"
+  ).run('partial@example.com', 'hash');
+
+  assert.doesNotThrow(() => migrateDatabase(db));
+  assert.doesNotThrow(() => migrateDatabase(db));
+
+  const columns = db.pragma('table_info(users)').map((column) => column.name);
+  assert.ok(columns.includes('first_day_of_week'));
+
+  const row = db
+    .prepare('SELECT preferred_lang, first_day_of_week FROM users WHERE email = ?')
+    .get('partial@example.com');
+  assert.equal(row.preferred_lang, 'pt-BR');
+  assert.equal(row.first_day_of_week, 'Sunday', 'existing values are preserved');
+
+  const fresh = db
+    .prepare('INSERT INTO users (email, password_hash) VALUES (?, ?) RETURNING first_day_of_week')
+    .get('fresh@example.com', 'hash');
+  assert.equal(fresh.first_day_of_week, 'Monday');
 
   db.close();
 });
@@ -268,6 +308,56 @@ test('workouts enforce foreign keys and cascade on user delete', () => {
   db.prepare('DELETE FROM users WHERE id = ?').run(userId);
 
   const remaining = db.prepare('SELECT COUNT(*) AS total FROM workouts').get();
+  assert.equal(remaining.total, 0);
+
+  db.close();
+});
+
+test('trainings enforce foreign keys, require dia/tipo and cascade on user delete', () => {
+  const db = createDatabase({ filename: ':memory:' });
+
+  assert.throws(
+    () =>
+      db
+        .prepare('INSERT INTO trainings (user_id, dia, tipo) VALUES (?, ?, ?)')
+        .run(99999, '2026-08-23', 'Corrida'),
+    /FOREIGN KEY constraint failed/
+  );
+  assert.throws(
+    () =>
+      db
+        .prepare('INSERT INTO trainings (user_id, dia, tipo) VALUES (?, ?, ?)')
+        .run(null, '2026-08-23', 'Corrida'),
+    /NOT NULL constraint failed/
+  );
+
+  const { lastInsertRowid: userId } = db
+    .prepare('INSERT INTO users (email, password_hash) VALUES (?, ?)')
+    .run('cascade-trainings@example.com', 'hash');
+  db.prepare(
+    "INSERT INTO trainings (user_id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes) VALUES (?, ?, 'Manhã', 'Corrida', 'Longão', 'Zona 2', '150', '3', 'Adizero', '90 min', 'Leve')"
+  ).run(userId, '2026-08-23');
+
+  const stored = db
+    .prepare(
+      'SELECT dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes FROM trainings WHERE user_id = ?'
+    )
+    .get(userId);
+  assert.deepEqual(stored, {
+    dia: '2026-08-23',
+    periodo: 'Manhã',
+    tipo: 'Corrida',
+    treino: 'Longão',
+    detalhes: 'Zona 2',
+    fc_alvo: '150',
+    rpe: '3',
+    tenis: 'Adizero',
+    previsao: '90 min',
+    observacoes: 'Leve',
+  });
+
+  db.prepare('DELETE FROM users WHERE id = ?').run(userId);
+  const remaining = db.prepare('SELECT COUNT(*) AS total FROM trainings').get();
   assert.equal(remaining.total, 0);
 
   db.close();

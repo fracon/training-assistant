@@ -43,6 +43,7 @@ test('login issues an http-only session cookie backed by a database row', async 
       first_name: 'Rafael',
       last_name: 'Vilaça',
       preferred_lang: 'en-US',
+      first_day_of_week: 'Monday',
     },
   });
   assert.ok(!login.body.includes('password_hash'));
@@ -156,6 +157,7 @@ test('/api/me serves the authenticated profile from the session cookie', async (
       first_name: 'Rafael',
       last_name: 'Vilaça',
       preferred_lang: 'en-US',
+      first_day_of_week: 'Monday',
     },
   });
 
@@ -565,4 +567,191 @@ test('language updates require an authenticated session', async () => {
 
   await app.close();
   db.close();
+});
+
+async function calendarScenario() {
+  const db = createDatabase({ filename: ':memory:' });
+  const app = await buildServer({ db, sessionCookieSecure: false });
+  const { cookiePair } = await registerAndLogin(app);
+  return { db, app, cookiePair };
+}
+
+test('registration captures the first day of week preference', async () => {
+  const db = createDatabase({ filename: ':memory:' });
+  const app = await buildServer({ db });
+
+  const register = await app.inject({
+    method: 'POST',
+    url: '/api/auth/register',
+    payload: { ...REGISTER_PAYLOAD, first_day_of_week: 'Sunday' },
+  });
+  assert.equal(register.statusCode, 201);
+  assert.equal(register.json().first_day_of_week, 'Sunday');
+
+  const { login, cookiePair } = await registerAndLogin(app, {
+    ...REGISTER_PAYLOAD,
+    email: 'sunday-runner@example.com',
+    first_day_of_week: 'Sunday',
+  });
+  assert.equal(login.json().user.first_day_of_week, 'Sunday');
+
+  const me = await app.inject({
+    method: 'GET',
+    url: '/api/me',
+    headers: { cookie: cookiePair },
+  });
+  assert.equal(me.json().user.first_day_of_week, 'Sunday');
+
+  await app.close();
+  db.close();
+});
+
+test('registration defaults unknown or missing week starts to Monday', async () => {
+  for (const first_day_of_week of [undefined, 'Funday', '']) {
+    const db = createDatabase({ filename: ':memory:' });
+    const app = await buildServer({ db });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/auth/register',
+      payload: {
+        ...REGISTER_PAYLOAD,
+        email: `mon-${String(first_day_of_week)}@example.com`,
+        first_day_of_week,
+      },
+    });
+    assert.equal(response.statusCode, 201);
+    assert.equal(response.json().first_day_of_week, 'Monday');
+
+    await app.close();
+    db.close();
+  }
+});
+
+test('authenticated users can update their week start preference', async () => {
+  const { db, app, cookiePair } = await calendarScenario();
+
+  const update = await app.inject({
+    method: 'PATCH',
+    url: '/api/users/me/calendar-preference',
+    headers: { cookie: cookiePair },
+    payload: { first_day_of_week: 'Sunday' },
+  });
+  assert.equal(update.statusCode, 200);
+  assert.deepEqual(update.json(), { first_day_of_week: 'Sunday' });
+
+  const stored = db
+    .prepare('SELECT first_day_of_week FROM users WHERE email = ?')
+    .get('rafael@example.com');
+  assert.equal(stored.first_day_of_week, 'Sunday');
+
+  const backToMonday = await app.inject({
+    method: 'PATCH',
+    url: '/api/users/me/calendar-preference',
+    headers: { cookie: cookiePair },
+    payload: { first_day_of_week: ' monday ' },
+  });
+  assert.deepEqual(backToMonday.json(), { first_day_of_week: 'Monday' });
+
+  const me = await app.inject({
+    method: 'GET',
+    url: '/api/me',
+    headers: { cookie: cookiePair },
+  });
+  assert.equal(me.json().user.first_day_of_week, 'Monday');
+
+  await app.close();
+  db.close();
+});
+
+test('week start updates reject unsupported values with 400', async () => {
+  const { db, app, cookiePair } = await calendarScenario();
+
+  for (const first_day_of_week of ['Funday', '', 'Mon', null]) {
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/users/me/calendar-preference',
+      headers: { cookie: cookiePair },
+      payload: { first_day_of_week },
+    });
+    assert.equal(response.statusCode, 400, String(first_day_of_week));
+    assert.deepEqual(
+      response.json(),
+      { error: 'Unsupported week start.' },
+      String(first_day_of_week)
+    );
+  }
+
+  const noBody = await app.inject({
+    method: 'PATCH',
+    url: '/api/users/me/calendar-preference',
+    headers: { cookie: cookiePair },
+  });
+  assert.equal(noBody.statusCode, 400);
+  assert.deepEqual(noBody.json(), { error: 'Unsupported week start.' });
+
+  const unchanged = db
+    .prepare('SELECT first_day_of_week FROM users WHERE email = ?')
+    .get('rafael@example.com');
+  assert.equal(unchanged.first_day_of_week, 'Monday');
+
+  await app.close();
+  db.close();
+});
+
+test('week start updates require an authenticated session', async () => {
+  const { app } = await calendarScenario();
+
+  const anonymous = await app.inject({
+    method: 'PATCH',
+    url: '/api/users/me/calendar-preference',
+    payload: { first_day_of_week: 'Sunday' },
+  });
+  assert.equal(anonymous.statusCode, 401);
+
+  await app.close();
+});
+
+test('calendar page is gated and served to authenticated users', async () => {
+  const { app, cookiePair } = await calendarScenario();
+
+  const anonymous = await app.inject({ method: 'GET', url: '/calendar.html' });
+  assert.equal(anonymous.statusCode, 302);
+  assert.equal(anonymous.headers.location, '/login.html');
+
+  const authenticated = await app.inject({
+    method: 'GET',
+    url: '/calendar.html',
+    headers: { cookie: cookiePair },
+  });
+  assert.equal(authenticated.statusCode, 200);
+  assert.match(authenticated.headers['content-type'], /text\/html/);
+  assert.match(authenticated.body, /id="calendarGrid"/);
+  assert.match(authenticated.body, /shared\/shell\.css/);
+  assert.match(authenticated.body, /calendar\.js/);
+  assert.doesNotMatch(authenticated.body, /id="logoutBtn"/);
+
+  await app.close();
+});
+
+test('ai coach page is gated and served to authenticated users', async () => {
+  const { app, cookiePair } = await calendarScenario();
+
+  const anonymous = await app.inject({ method: 'GET', url: '/ai-coach.html' });
+  assert.equal(anonymous.statusCode, 302);
+  assert.equal(anonymous.headers.location, '/login.html');
+
+  const authenticated = await app.inject({
+    method: 'GET',
+    url: '/ai-coach.html',
+    headers: { cookie: cookiePair },
+  });
+  assert.equal(authenticated.statusCode, 200);
+  assert.match(authenticated.headers['content-type'], /text\/html/);
+  assert.match(authenticated.body, /id="promptForm"/);
+  assert.match(authenticated.body, /shared\/shell\.css/);
+  assert.match(authenticated.body, /ai-coach\.js/);
+  assert.doesNotMatch(authenticated.body, /id="logoutBtn"/);
+
+  await app.close();
 });

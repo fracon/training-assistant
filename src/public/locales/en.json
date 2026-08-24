@@ -3,11 +3,67 @@
     "name": "Training Assistant",
     "tagline": "Local & Offline"
   },
+  "aiCoach": {
+    "title": "AI Coach Prompt",
+    "subtitle": "Build a detailed briefing for your external AI coach",
+    "targetDate": "Target date",
+    "targetDateHint": "Week to plan. Defaults to next Monday.",
+    "availability": "Availability",
+    "availabilityHint": "Tell the coach when you can run each day.",
+    "defaultRoutine": "Normal routine",
+    "days": {
+      "monday": "Monday",
+      "tuesday": "Tuesday",
+      "wednesday": "Wednesday",
+      "thursday": "Thursday",
+      "friday": "Friday",
+      "saturday": "Saturday",
+      "sunday": "Sunday"
+    },
+    "optionalContext": "Optional context",
+    "contextPlaceholder": "Examples: travel, schedule changes, poor sleep, fatigue, pain/discomfort, work commitments, inability to run, shoe preference...",
+    "generate": "Generate Prompt",
+    "resultTitle": "Generated prompt",
+    "resultPlaceholder": "Fill in the form and generate your prompt.",
+    "copy": "Copy to Clipboard",
+    "copied": "Copied!"
+  },
+  "calendar": {
+    "title": "Training Calendar",
+    "subtitle": "Your month at a glance",
+    "previousMonth": "Previous month",
+    "nextMonth": "Next month",
+    "today": "Today",
+    "import": {
+      "button": "Import",
+      "title": "Import trainings",
+      "hint": "Pick a .xlsx or .xls spreadsheet with columns: Dia, Período, Tipo, Treino, Detalhes, FC alvo, RPE, Tênis, Previsão no horário, Observações.",
+      "loading": "Importing…",
+      "success": "{count} training(s) imported to your calendar.",
+      "failedTitle": "We found issues in your spreadsheet",
+      "rowError": "Row {row} • {col}: {error}",
+      "close": "Close"
+    },
+    "firstDayLabel": "Week starts on",
+    "weekStart": {
+      "Monday": "Monday",
+      "Sunday": "Sunday"
+    },
+    "months": [
+      "January", "February", "March", "April", "May", "June",
+      "July", "August", "September", "October", "November", "December"
+    ],
+    "weekdaysShort": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+    "weekdaysLong": [
+      "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"
+    ]
+  },
   "shell": {
     "nav": {
       "training": "Training Result",
       "dashboard": "Dashboard",
-      "calendar": "Calendar"
+      "calendar": "Calendar",
+      "aiCoach": "AI Coach"
     },
     "soon": "Soon",
     "collapse": "Collapse sidebar",

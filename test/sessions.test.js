@@ -101,6 +101,7 @@ test('findActiveSession hydrates the user for valid tokens', () => {
       first_name: null,
       last_name: null,
       preferred_lang: 'en-US',
+      first_day_of_week: 'Monday',
     },
   });
 

@@ -48,6 +48,7 @@ test('loginUser authenticates with a case-insensitive email and stores the sessi
     first_name: null,
     last_name: null,
     preferred_lang: 'en-US',
+    first_day_of_week: 'Monday',
   });
   assert.match(session.token, /^[0-9a-f]{64}$/);
 

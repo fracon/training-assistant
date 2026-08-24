@@ -20,6 +20,12 @@ const {
   isSupportedLanguage,
   normalizeLanguage,
 } = require('./auth/language');
+const {
+  isSupportedWeekStart,
+  normalizeWeekStart,
+} = require('./auth/weekStart');
+const ExcelJS = require('exceljs');
+const { parseSheet } = require('./trainingImport');
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
@@ -79,6 +85,20 @@ async function buildServer(options = {}) {
       return reply.redirect('/login.html');
     }
     return reply.sendFile('training-result.html');
+  });
+
+  app.get('/calendar.html', async (request, reply) => {
+    if (!sessionOf(request)) {
+      return reply.redirect('/login.html');
+    }
+    return reply.sendFile('calendar.html');
+  });
+
+  app.get('/ai-coach.html', async (request, reply) => {
+    if (!sessionOf(request)) {
+      return reply.redirect('/login.html');
+    }
+    return reply.sendFile('ai-coach.html');
   });
 
   app.get('/login.html', async (request, reply) => {
@@ -161,6 +181,105 @@ async function buildServer(options = {}) {
         request.user.id
       );
       return { preferred_lang: language };
+    });
+
+    app.patch(
+      '/api/users/me/calendar-preference',
+      { preHandler: requireAuth },
+      async (request, reply) => {
+        const requested = request.body?.first_day_of_week;
+        if (!isSupportedWeekStart(requested)) {
+          return reply.code(400).send({ error: 'Unsupported week start.' });
+        }
+        const firstDay = normalizeWeekStart(requested);
+        db.prepare('UPDATE users SET first_day_of_week = ? WHERE id = ?').run(
+          firstDay,
+          request.user.id
+        );
+        return { first_day_of_week: firstDay };
+      }
+    );
+
+    app.get('/api/calendar/trainings', { preHandler: requireAuth }, async (request) => {
+      const trainings = db
+        .prepare(
+          `SELECT id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes
+           FROM trainings WHERE user_id = ? ORDER BY dia, id`
+        )
+        .all(request.user.id);
+      return { trainings };
+    });
+
+    app.post('/api/calendar/import', { preHandler: requireAuth }, async (request, reply) => {
+      if (!request.isMultipart()) {
+        return reply.code(400).send({ error: 'Expected multipart/form-data upload.' });
+      }
+
+      let fileBuffer = null;
+      try {
+        for await (const part of request.parts()) {
+          if (part.type === 'file' && part.fieldname === 'file') {
+            fileBuffer = await part.toBuffer();
+          }
+        }
+      } catch (error) {
+        request.log.warn(error);
+        return reply.code(413).send({ error: 'File exceeds the size limit.' });
+      }
+
+      if (!fileBuffer) {
+        return reply.code(400).send({ error: 'Missing spreadsheet file.' });
+      }
+
+      let workbook;
+      try {
+        workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.load(fileBuffer);
+      } catch (error) {
+        request.log.warn(error);
+        return reply.code(400).send({
+          error: 'Unsupported spreadsheet file. Please upload a valid .xlsx or .xls workbook.',
+        });
+      }
+
+      const worksheet = workbook.worksheets[0];
+      if (!worksheet) {
+        return reply.code(400).send({ error: 'The spreadsheet has no sheets.' });
+      }
+
+      const { records, errors } = parseSheet(worksheet);
+      if (errors.length > 0) {
+        return reply.code(400).send({ errors });
+      }
+      if (records.length === 0) {
+        return reply.code(400).send({ errors: [{ row: 1, col: 'Dia', error: 'No training rows found.' }] });
+      }
+
+      const insert = db.prepare(
+        `INSERT INTO trainings
+           (user_id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      );
+      const insertMany = db.transaction((rows) => {
+        for (const record of rows) {
+          insert.run(
+            request.user.id,
+            record.dia,
+            record.periodo,
+            record.tipo,
+            record.treino,
+            record.detalhes,
+            record.fc_alvo,
+            record.rpe,
+            record.tenis,
+            record.previsao,
+            record.observacoes
+          );
+        }
+      });
+      insertMany(records);
+
+      return { imported: records.length };
     });
   }
 
