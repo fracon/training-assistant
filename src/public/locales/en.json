@@ -34,6 +34,9 @@
     "previousMonth": "Previous month",
     "nextMonth": "Next month",
     "today": "Today",
+    "weekStartLabel": "Start of week:",
+    "mon": "Mon",
+    "sun": "Sun",
     "import": {
       "button": "Import",
       "title": "Import trainings",

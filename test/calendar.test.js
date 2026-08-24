@@ -206,6 +206,46 @@ test('calendar locale data is complete and parity-safe', () => {
   assert.equal(pt.calendar.weekdaysShort[0], 'Seg');
 });
 
+test('week-start label and toggle texts are translated with strict key parity', () => {
+  for (const messages of [en, pt]) {
+    assert.equal(typeof messages.calendar.weekStartLabel, 'string');
+    assert.equal(typeof messages.calendar.mon, 'string');
+    assert.equal(typeof messages.calendar.sun, 'string');
+  }
+  assert.equal(en.calendar.weekStartLabel, 'Start of week:');
+  assert.equal(pt.calendar.weekStartLabel, 'Início da semana:');
+  assert.equal(en.calendar.mon, 'Mon');
+  assert.equal(en.calendar.sun, 'Sun');
+  assert.equal(pt.calendar.mon, 'Seg');
+  assert.equal(pt.calendar.sun, 'Dom');
+});
+
+test('calendar.html ships the week-start label adjacent to the toggle group', () => {
+  const html = readFileSync(join(publicDir, 'calendar.html'), 'utf8');
+
+  const labelIndex = html.indexOf('<span class="week-start-label" data-i18n="calendar.weekStartLabel">');
+  assert.ok(labelIndex !== -1, 'label element carries the i18n attribute');
+
+  const switchIndex = html.indexOf('class="week-start-switch"');
+  assert.ok(switchIndex !== -1 && switchIndex > labelIndex, 'label sits right before the toggle group');
+  assert.ok(html.includes('>Mon</button>'), 'Mon stays as the static English fallback');
+  assert.ok(html.includes('>Sun</button>'), 'Sun stays as the static English fallback');
+});
+
+test('calendar.js renders localized toggle texts and refreshes on language change', () => {
+  const js = readFileSync(join(publicDir, 'calendar.js'), 'utf8');
+
+  assert.match(js, /mondayBtn\.textContent = t\('calendar\.mon'\);/);
+  assert.match(js, /sundayBtn\.textContent = t\('calendar\.sun'\);/);
+
+  const handlerStart = js.indexOf("addEventListener('app:languagechange'");
+  assert.ok(handlerStart !== -1, 'the page listens to app:languagechange');
+  const handlerEnd = js.indexOf('});', handlerStart);
+  const handlerBody = js.slice(handlerStart, handlerEnd);
+  assert.ok(handlerBody.includes('syncToggleButtons()'), 'toggle labels re-render instantly');
+  assert.ok(handlerBody.includes('render()'), 'month title and grid headers re-render instantly');
+});
+
 test('chipLines splits trainings into a secondary type line and a full title line', () => {
   assert.deepEqual(
     chipLines({ tipo: 'Corrida', treino: 'Recuperação / Base muito leve' }),

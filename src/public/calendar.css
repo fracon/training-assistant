@@ -36,6 +36,12 @@
   gap: 0.8rem;
 }
 
+.week-start-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
 .week-start-switch {
   display: inline-flex;
   border: 1px solid var(--line);

@@ -34,6 +34,9 @@
     "previousMonth": "Mês anterior",
     "nextMonth": "Próximo mês",
     "today": "Hoje",
+    "weekStartLabel": "Início da semana:",
+    "mon": "Seg",
+    "sun": "Dom",
     "import": {
       "button": "Importar",
       "title": "Importar treinos",

@@ -171,6 +171,8 @@ function setupCalendarPage() {
   }
 
   function syncToggleButtons() {
+    mondayBtn.textContent = t('calendar.mon');
+    sundayBtn.textContent = t('calendar.sun');
     mondayBtn.classList.toggle('active', state.firstDay === 'Monday');
     sundayBtn.classList.toggle('active', state.firstDay === 'Sunday');
   }
@@ -235,6 +237,11 @@ function setupCalendarPage() {
 
   mondayBtn.addEventListener('click', () => applyWeekStart('Monday'));
   sundayBtn.addEventListener('click', () => applyWeekStart('Sunday'));
+
+  document.addEventListener('app:languagechange', () => {
+    syncToggleButtons();
+    render();
+  });
 
   prevBtn.addEventListener('click', () => {
     state.monthIndex -= 1;
