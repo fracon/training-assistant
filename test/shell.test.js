@@ -2,6 +2,8 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { readFileSync } = require('node:fs');
+const { join } = require('node:path');
 
 const {
   readSidebarCollapsed,
@@ -89,6 +91,8 @@ test('every sidebar label key resolves in both locale files', () => {
     'shell.soon',
     'shell.collapse',
     'shell.expand',
+    'shell.navLabel',
+    'shell.logout',
     FOOTER_STATUS_KEY,
   ];
   for (const key of keys) {
@@ -103,4 +107,15 @@ test('bottom bar is a footer element carrying the translatable status line', () 
   assert.equal(FOOTER_STATUS_KEY, 'shell.footer.status');
   assert.equal(en.shell.footer.status, 'Training Assistant • Local & Offline');
   assert.equal(pt.shell.footer.status, 'Training Assistant • Local e Offline');
+});
+
+test('shell chrome strings are translated and wired through i18n attributes', () => {
+  assert.equal(en.shell.navLabel, 'Main navigation');
+  assert.equal(pt.shell.navLabel, 'Navegação principal');
+  assert.equal(en.shell.logout, 'Logout');
+  assert.equal(pt.shell.logout, 'Sair');
+
+  const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
+  assert.match(js, /setAttribute\('data-i18n-aria-label', 'shell\.navLabel'\);/);
+  assert.match(js, /setAttribute\('data-i18n', 'shell\.logout'\);/);
 });

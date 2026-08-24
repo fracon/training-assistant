@@ -101,6 +101,7 @@ function buildSidebar(activeId) {
 
   const nav = el('nav', 'sidebar-nav');
   nav.setAttribute('aria-label', 'Main navigation');
+  nav.setAttribute('data-i18n-aria-label', 'shell.navLabel');
   for (const item of NAV_ITEMS) {
     const entry = el('a', `nav-item${item.disabled ? ' disabled' : ''}${item.id === activeId ? ' active' : ''}`);
     entry.dataset.navId = item.id;
@@ -179,6 +180,7 @@ function buildTopbar() {
   const logout = el('button', 'logout-btn hidden');
   logout.type = 'button';
   logout.id = 'logoutBtn';
+  logout.setAttribute('data-i18n', 'shell.logout');
   logout.textContent = 'Logout';
   actions.appendChild(logout);
 

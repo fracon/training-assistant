@@ -232,6 +232,27 @@ test('calendar.html ships the week-start label adjacent to the toggle group', ()
   assert.ok(html.includes('>Sun</button>'), 'Sun stays as the static English fallback');
 });
 
+test('calendar grid aria-label is translated with strict key parity', () => {
+  assert.equal(en.calendar.gridLabel, 'Monthly calendar');
+  assert.equal(pt.calendar.gridLabel, 'Calendário mensal');
+});
+
+test('calendar.html binds every static aria-label to a locale key', () => {
+  const html = readFileSync(join(publicDir, 'calendar.html'), 'utf8');
+
+  for (const key of [
+    'calendar.firstDayLabel',
+    'calendar.previousMonth',
+    'calendar.nextMonth',
+    'calendar.gridLabel',
+  ]) {
+    assert.ok(
+      html.includes(`data-i18n-aria-label="${key}"`),
+      `${key} must be bound through data-i18n-aria-label`
+    );
+  }
+});
+
 test('calendar.js renders localized toggle texts and refreshes on language change', () => {
   const js = readFileSync(join(publicDir, 'calendar.js'), 'utf8');
 

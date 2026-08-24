@@ -37,6 +37,7 @@
     "weekStartLabel": "Start of week:",
     "mon": "Mon",
     "sun": "Sun",
+    "gridLabel": "Monthly calendar",
     "import": {
       "button": "Import",
       "title": "Import trainings",
@@ -71,6 +72,8 @@
     "soon": "Soon",
     "collapse": "Collapse sidebar",
     "expand": "Expand sidebar",
+    "navLabel": "Main navigation",
+    "logout": "Logout",
     "footer": {
       "status": "Training Assistant • Local & Offline"
     }

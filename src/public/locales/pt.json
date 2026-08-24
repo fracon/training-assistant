@@ -37,6 +37,7 @@
     "weekStartLabel": "Início da semana:",
     "mon": "Seg",
     "sun": "Dom",
+    "gridLabel": "Calendário mensal",
     "import": {
       "button": "Importar",
       "title": "Importar treinos",
@@ -71,6 +72,8 @@
     "soon": "Em breve",
     "collapse": "Recolher menu",
     "expand": "Expandir menu",
+    "navLabel": "Navegação principal",
+    "logout": "Sair",
     "footer": {
       "status": "Training Assistant • Local e Offline"
     }

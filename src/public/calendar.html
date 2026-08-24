@@ -18,17 +18,20 @@
 
         <div class="calendar-controls">
           <span class="week-start-label" data-i18n="calendar.weekStartLabel">Start of week:</span>
-          <div class="week-start-switch" role="group" aria-label="Week starts on">
+          <div class="week-start-switch" role="group" aria-label="Week starts on"
+            data-i18n-aria-label="calendar.firstDayLabel">
             <button type="button" id="mondayBtn" data-week-start="Monday">Mon</button>
             <button type="button" id="sundayBtn" data-week-start="Sunday">Sun</button>
           </div>
 
           <div class="month-nav">
-            <button type="button" id="prevMonthBtn" aria-label="Previous month">
+            <button type="button" id="prevMonthBtn" aria-label="Previous month"
+              data-i18n-aria-label="calendar.previousMonth">
               <i data-lucide="chevron-left"></i>
             </button>
             <h2 id="monthTitle">—</h2>
-            <button type="button" id="nextMonthBtn" aria-label="Next month">
+            <button type="button" id="nextMonthBtn" aria-label="Next month"
+              data-i18n-aria-label="calendar.nextMonth">
               <i data-lucide="chevron-right"></i>
             </button>
           </div>
@@ -45,7 +48,8 @@
 
       <div id="importBanner" class="import-banner hidden"></div>
 
-      <div id="calendarGrid" class="calendar-grid" aria-label="Monthly calendar"></div>
+      <div id="calendarGrid" class="calendar-grid" aria-label="Monthly calendar"
+        data-i18n-aria-label="calendar.gridLabel"></div>
     </section>
 
     <div id="importModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="importModalTitle">
