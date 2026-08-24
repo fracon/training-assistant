@@ -212,12 +212,31 @@ test('ai-coach.html wires the shell, lucide and the full form', () => {
     assert.match(html, new RegExp(`id="${id}" value="Rotina normal"`));
   }
   assert.match(html, /<textarea id="optionalContext"/);
-  assert.match(html, /type="submit" id="generateBtn"/);
+  assert.match(html, /type="submit" id="generateBtn" class="btn-primary"/);
+  assert.ok(!html.includes('generate-btn'), 'the scoped generate-btn class is retired');
   assert.match(html, /data-lucide="sparkles"/);
   assert.match(html, /id="copyBtn"/);
   assert.match(html, /data-lucide="copy"/);
   assert.match(html, /<pre id="promptOutput"/);
   assert.match(html, /data-i18n="aiCoach\.title"/);
+});
+
+test('the generate button matches the shared primary hover contract', () => {
+  const css = readFileSync(join(publicDir, 'ai-coach.css'), 'utf8');
+
+  assert.ok(!css.includes('.generate-btn'), 'no scoped generate-btn rules remain');
+  assert.match(
+    css,
+    /\.btn-primary \{[^}]*transition:\s*all 0\.2s ease/,
+    'one smooth animation curve for the primary action'
+  );
+  assert.match(
+    css,
+    /\.btn-primary:hover:not\(:disabled\) \{[^}]*transform:\s*translateY\(-2px\)/,
+    'the button lifts exactly like the training-result primary'
+  );
+  assert.match(css, /\.btn-primary:hover:not\(:disabled\) \{[^}]*background:\s*#405c46/);
+  assert.ok(!css.includes('translateY(-1px)'), 'the old subtle lift is gone');
 });
 
 test('locale files expose every ai-coach string in both languages', async () => {

@@ -108,30 +108,21 @@
   font-weight: 500;
 }
 
-.generate-btn {
+/* Mirrors the training-result primary treatment exactly: solid sage pill,
+   one smooth animation curve, and the same translateY lift on hover.
+   align-self preserves the original compact left-aligned placement. */
+.btn-primary {
   align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.65rem 1.2rem;
-  border: none;
   border-radius: 999px;
-  background: var(--accent-deep);
-  color: #fff;
-  font-size: 0.95rem;
+  font: inherit;
   font-weight: 600;
-  cursor: pointer;
-  transition: background 0.15s ease, transform 0.15s ease;
+  padding: 11px 22px;
+  transition: all 0.2s ease;
 }
 
-.generate-btn:hover {
-  background: var(--accent);
-  transform: translateY(-1px);
-}
-
-.generate-btn svg {
-  width: 18px;
-  height: 18px;
+.btn-primary:hover:not(:disabled) {
+  background: #405c46;
+  transform: translateY(-2px);
 }
 
 .result-section {
