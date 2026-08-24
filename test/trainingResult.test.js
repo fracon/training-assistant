@@ -544,7 +544,7 @@ test('training-result.html ships the expanded feedback grid and generator button
 
   assert.match(html, /<div class="form-actions">/);
   assert.match(html, /<button id="generateBtn" class="btn-secondary" type="button">/);
-  assert.match(html, /<i data-lucide="bot" aria-hidden="true"><\/i>/);
+  assert.match(html, /<i data-lucide="sparkles" aria-hidden="true"><\/i>/);
   assert.match(html, /data-i18n="session\.generatePrompt"/);
   assert.match(html, /<button id="saveBtn" class="btn-primary" type="button"/);
 
