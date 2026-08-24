@@ -110,21 +110,34 @@
           <div class="field">
             <label class="field-label" for="feedbackBreathing"
               data-i18n="session.fieldBreathing">Breathing</label>
-            <input type="text" id="feedbackBreathing" class="input-control"
-              autocomplete="off" data-i18n-placeholder="session.breathingPlaceholder">
+            <select id="feedbackBreathing" class="input-control">
+              <option value="">–</option>
+              <option value="controlled" data-i18n="breathing.controlled">Controlled</option>
+              <option value="panting" data-i18n="breathing.panting">Panting</option>
+              <option value="heavy" data-i18n="breathing.heavy">Very out of breath</option>
+            </select>
           </div>
           <div class="field">
             <label class="field-label" for="feedbackMuscle"
               data-i18n="session.fieldMuscle">Muscle sensation</label>
-            <input type="text" id="feedbackMuscle" class="input-control"
-              autocomplete="off" data-i18n-placeholder="session.musclePlaceholder">
+            <select id="feedbackMuscle" class="input-control">
+              <option value="">–</option>
+              <option value="light" data-i18n="muscle.light">Light</option>
+              <option value="normal" data-i18n="muscle.normal">Normal</option>
+              <option value="heavy" data-i18n="muscle.heavy">Heavy</option>
+              <option value="fatigued" data-i18n="muscle.fatigued">Fatigued</option>
+            </select>
           </div>
 
           <div class="field">
             <label class="field-label" for="feedbackEnergy"
               data-i18n="session.fieldEnergy">Energy at finish</label>
-            <input type="text" id="feedbackEnergy" class="input-control"
-              autocomplete="off" data-i18n-placeholder="session.energyPlaceholder">
+            <select id="feedbackEnergy" class="input-control">
+              <option value="">–</option>
+              <option value="surplus" data-i18n="energy.surplus">Energy left</option>
+              <option value="limit" data-i18n="energy.limit">On the limit</option>
+              <option value="exhausted" data-i18n="energy.exhausted">Exhausted</option>
+            </select>
           </div>
           <div class="field">
             <label class="field-label" for="feedbackPain"

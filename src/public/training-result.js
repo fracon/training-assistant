@@ -216,9 +216,9 @@ export function collectPromptValues({ training, form }) {
     TEMPERATURA_CLIMA: form.feedback_weather,
     TERRENO: form.terrain_label,
     RPE_PERCEBIDO: form.feedback_rpe,
-    RESPIRACAO: form.feedback_breathing,
-    SENSACAO_MUSCULAR: form.feedback_muscle,
-    ENERGIA_FINAL: form.feedback_energy,
+    RESPIRACAO: form.breathing_label,
+    SENSACAO_MUSCULAR: form.muscle_label,
+    ENERGIA_FINAL: form.energy_label,
     DOR_DESCONFORTO: form.feedback_pain,
     FEEDBACK: form.feedback_notas,
     ANEXAR_SCREENSHOT_GARMIN_OU_INSERIR_DADOS_DE_LAPS_AQUI: form.fitAttached
@@ -262,6 +262,25 @@ const TERRAIN_LABEL_KEYS = {
   track: 'terrain.track',
   treadmill: 'terrain.treadmill',
   mixed: 'terrain.mixed',
+};
+
+const BREATHING_LABEL_KEYS = {
+  controlled: 'breathing.controlled',
+  panting: 'breathing.panting',
+  heavy: 'breathing.heavy',
+};
+
+const MUSCLE_LABEL_KEYS = {
+  light: 'muscle.light',
+  normal: 'muscle.normal',
+  heavy: 'muscle.heavy',
+  fatigued: 'muscle.fatigued',
+};
+
+const ENERGY_LABEL_KEYS = {
+  surplus: 'energy.surplus',
+  limit: 'energy.limit',
+  exhausted: 'energy.exhausted',
 };
 
 async function initTrainingResult() {
@@ -349,6 +368,9 @@ async function initTrainingResult() {
     const hrValue = hrSourceSelect.value;
     const hrKey = HR_SOURCE_LABEL_KEYS[hrValue];
     const terrainKey = TERRAIN_LABEL_KEYS[terrainInput.value];
+    const breathingKey = BREATHING_LABEL_KEYS[breathingInput.value];
+    const muscleKey = MUSCLE_LABEL_KEYS[muscleInput.value];
+    const energyKey = ENERGY_LABEL_KEYS[energyInput.value];
     return {
       feedback_rpe: normalizeFeedbackRpe(rpeInput.value),
       feedback_notas: notesInput.value,
@@ -357,12 +379,16 @@ async function initTrainingResult() {
       feedback_hr_source: hrValue === '' ? null : hrValue,
       feedback_weather: weatherInput.value,
       feedback_terrain: terrainInput.value === '' ? null : terrainInput.value,
-      feedback_breathing: breathingInput.value,
-      feedback_muscle: muscleInput.value,
-      feedback_energy: energyInput.value,
+      feedback_breathing:
+        breathingInput.value === '' ? null : breathingInput.value,
+      feedback_muscle: muscleInput.value === '' ? null : muscleInput.value,
+      feedback_energy: energyInput.value === '' ? null : energyInput.value,
       feedback_pain: painInput.value,
       hr_source_label: hrKey ? t(hrKey) : '',
       terrain_label: terrainKey ? t(terrainKey) : '',
+      breathing_label: breathingKey ? t(breathingKey) : '',
+      muscle_label: muscleKey ? t(muscleKey) : '',
+      energy_label: energyKey ? t(energyKey) : '',
       language: i18n.language,
       fitAttached: Boolean(fitFileInput.files && fitFileInput.files.length > 0),
     };
@@ -377,7 +403,16 @@ async function initTrainingResult() {
     saveBtn.disabled = true;
     saveBtn.textContent = t('session.saving');
     try {
-      const { hr_source_label, terrain_label, language, fitAttached, ...payload } = state;
+      const {
+        hr_source_label,
+        terrain_label,
+        breathing_label,
+        muscle_label,
+        energy_label,
+        language,
+        fitAttached,
+        ...payload
+      } = state;
       await saveTrainingFeedback(id, payload);
       window.location.href = '/calendar.html';
     } catch {

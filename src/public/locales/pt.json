@@ -159,11 +159,8 @@
     "weatherPlaceholder": "ex.: 22°C, nublado, vento leve",
     "fieldTerrain": "Terreno/percurso",
     "fieldBreathing": "Respiração",
-    "breathingPlaceholder": "ex.: leve, controlada",
     "fieldMuscle": "Sensação muscular",
-    "musclePlaceholder": "ex.: pernas frescas",
     "fieldEnergy": "Energia ao terminar",
-    "energyPlaceholder": "ex.: daria para continuar",
     "fieldPain": "Dor ou desconforto",
     "painPlaceholder": "ex.: pontada leve no tendão de Aquiles direito…",
     "generatePrompt": "Gerar Prompt de Análise",
@@ -183,6 +180,22 @@
     "track": "Pista",
     "treadmill": "Esteira",
     "mixed": "Misto"
+  },
+  "breathing": {
+    "controlled": "Controlada",
+    "panting": "Ofegante",
+    "heavy": "Muito Ofegante"
+  },
+  "muscle": {
+    "light": "Leve",
+    "normal": "Normal",
+    "heavy": "Pesada",
+    "fatigued": "Fadigada"
+  },
+  "energy": {
+    "surplus": "Sobrava energia",
+    "limit": "No limite",
+    "exhausted": "Esgotado"
   },
   "prompt": {
     "intro1": "Analise o treino de corrida abaixo considerando todo o histórico do meu treinamento, minha evolução recente, os treinos anteriores, o planejamento atual e minhas provas-alvo.",

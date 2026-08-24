@@ -287,9 +287,9 @@ test('PATCH /api/trainings/:id saves trimmed notes and persists every field', as
       feedback_hr_source: 'chest_strap',
       feedback_weather: '22°C nublado',
       feedback_terrain: '  trail  ',
-      feedback_breathing: 'leve, controlada',
-      feedback_muscle: 'pernas frescas',
-      feedback_energy: 'daria para continuar',
+      feedback_breathing: '  controlled  ',
+      feedback_muscle: 'light',
+      feedback_energy: 'surplus',
       feedback_pain: 'pontada leve no Aquiles direito',
     },
   });
@@ -312,9 +312,9 @@ test('PATCH /api/trainings/:id saves trimmed notes and persists every field', as
   assert.equal(row.feedback_hr_source, 'chest_strap');
   assert.equal(row.feedback_weather, '22°C nublado');
   assert.equal(row.feedback_terrain, 'trail');
-  assert.equal(row.feedback_breathing, 'leve, controlada');
-  assert.equal(row.feedback_muscle, 'pernas frescas');
-  assert.equal(row.feedback_energy, 'daria para continuar');
+  assert.equal(row.feedback_breathing, 'controlled', 'dropdown tokens are trimmed');
+  assert.equal(row.feedback_muscle, 'light');
+  assert.equal(row.feedback_energy, 'surplus');
   assert.equal(row.feedback_pain, 'pontada leve no Aquiles direito');
 
   const fetched = await app.inject({

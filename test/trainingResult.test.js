@@ -201,9 +201,12 @@ function baseForm(overrides = {}) {
     hr_source_label: 'Cinta peitoral',
     terrain_label: 'Asfalto',
     feedback_weather: '22°C nublado',
-    feedback_breathing: 'controlada',
-    feedback_muscle: 'pernas frescas',
-    feedback_energy: 'daria para continuar',
+    feedback_breathing: 'controlled',
+    breathing_label: 'Controlada',
+    feedback_muscle: 'light',
+    muscle_label: 'Leve',
+    feedback_energy: 'surplus',
+    energy_label: 'Sobrava energia',
     feedback_pain: '',
     language: 'pt-BR',
     fitAttached: false,
@@ -242,9 +245,13 @@ test('collectPromptValues maps planned data, form state and FIT placeholders', (
   assert.equal(values.TEMPERATURA_CLIMA, '22°C nublado');
   assert.equal(values.TERRENO, 'Asfalto');
   assert.equal(values.RPE_PERCEBIDO, 3);
-  assert.equal(values.RESPIRACAO, 'controlada');
-  assert.equal(values.SENSACAO_MUSCULAR, 'pernas frescas');
-  assert.equal(values.ENERGIA_FINAL, 'daria para continuar');
+  assert.equal(
+    values.RESPIRACAO,
+    'Controlada',
+    'the prompt shows the localized breathing label, not the stored token'
+  );
+  assert.equal(values.SENSACAO_MUSCULAR, 'Leve');
+  assert.equal(values.ENERGIA_FINAL, 'Sobrava energia');
   assert.equal(values.FEEDBACK, 'Boa sensação');
   assert.equal(values.ANEXAR_SCREENSHOT_GARMIN_OU_INSERIR_DADOS_DE_LAPS_AQUI, '-');
 });
@@ -345,6 +352,60 @@ test('training-result.html ships the expanded feedback grid and generator button
   }
   assert.ok(!html.includes('session.terrainPlaceholder'), 'dead placeholder binding removed');
 
+  const CLOSED_FEEDBACK_SELECTS = [
+    [
+      'feedbackBreathing',
+      [
+        ['controlled', 'breathing.controlled'],
+        ['panting', 'breathing.panting'],
+        ['heavy', 'breathing.heavy'],
+      ],
+    ],
+    [
+      'feedbackMuscle',
+      [
+        ['light', 'muscle.light'],
+        ['normal', 'muscle.normal'],
+        ['heavy', 'muscle.heavy'],
+        ['fatigued', 'muscle.fatigued'],
+      ],
+    ],
+    [
+      'feedbackEnergy',
+      [
+        ['surplus', 'energy.surplus'],
+        ['limit', 'energy.limit'],
+        ['exhausted', 'energy.exhausted'],
+      ],
+    ],
+  ];
+  for (const [id, options] of CLOSED_FEEDBACK_SELECTS) {
+    assert.match(
+      html,
+      new RegExp(`<select id="${id}" class="input-control">`),
+      `${id} is a closed dropdown, not a free text input`
+    );
+    assert.ok(
+      !html.includes(`id="${id}" type="text"`) && !new RegExp(`<input[^>]*id="${id}"`).test(html),
+      `no free-text ${id} input remains`
+    );
+    assert.match(
+      html,
+      new RegExp(`<select id="${id}" class="input-control">\\s*\\n\\s*<option value="">–</option>`),
+      `${id} starts with an empty default option`
+    );
+    for (const [value, key] of options) {
+      assert.match(html, new RegExp(`<option value="${value}" data-i18n="${key}">`));
+    }
+  }
+  for (const deadKey of [
+    'session.breathingPlaceholder',
+    'session.musclePlaceholder',
+    'session.energyPlaceholder',
+  ]) {
+    assert.ok(!html.includes(deadKey), `${deadKey} binding removed`);
+  }
+
   for (const optionKey of ['session.hrSourceStrap', 'session.hrSourceOptical', 'session.hrSourceNone']) {
     assert.match(html, new RegExp(`data-i18n="${optionKey}"`), `${optionKey} translated`);
   }
@@ -383,8 +444,29 @@ test('training-result.js wires toggling, saving, generation and i18n refreshes',
   assert.match(js, /has_smartwatch: isFitFieldVisible\(smartwatchSelect\.value\),/);
   assert.match(js, /feedback_hr_source: hrValue === '' \? null : hrValue,/);
   assert.match(js, /feedback_terrain: terrainInput\.value === '' \? null : terrainInput\.value,/);
+  assert.match(js, /feedback_breathing:\s*\n\s*breathingInput\.value === '' \? null : breathingInput\.value,/);
+  assert.match(js, /feedback_muscle: muscleInput\.value === '' \? null : muscleInput\.value,/);
+  assert.match(js, /feedback_energy: energyInput\.value === '' \? null : energyInput\.value,/);
   assert.match(js, /const terrainKey = TERRAIN_LABEL_KEYS\[terrainInput\.value\];/);
+  assert.match(
+    js,
+    /const breathingKey = BREATHING_LABEL_KEYS\[breathingInput\.value\];/,
+    'breathing tokens resolve through the closed option map'
+  );
+  assert.match(
+    js,
+    /const muscleKey = MUSCLE_LABEL_KEYS\[muscleInput\.value\];/,
+    'muscle tokens resolve through the closed option map'
+  );
+  assert.match(
+    js,
+    /const energyKey = ENERGY_LABEL_KEYS\[energyInput\.value\];/,
+    'energy tokens resolve through the closed option map'
+  );
   assert.match(js, /terrain_label: terrainKey \? t\(terrainKey\) : '',/);
+  assert.match(js, /breathing_label: breathingKey \? t\(breathingKey\) : '',/);
+  assert.match(js, /muscle_label: muscleKey \? t\(muscleKey\) : '',/);
+  assert.match(js, /energy_label: energyKey \? t\(energyKey\) : '',/);
   assert.match(
     js,
     /TERRENO: form\.terrain_label,/,
@@ -392,7 +474,35 @@ test('training-result.js wires toggling, saving, generation and i18n refreshes',
   );
   assert.match(
     js,
-    /const \{ hr_source_label, terrain_label, language, fitAttached, \.\.\.payload \} = state;/,
+    /RESPIRACAO: form\.breathing_label,/,
+    'the prompt shows the localized breathing label, not the stored token'
+  );
+  assert.match(
+    js,
+    /SENSACAO_MUSCULAR: form\.muscle_label,/,
+    'the prompt shows the localized muscle label, not the stored token'
+  );
+  assert.match(
+    js,
+    /ENERGIA_FINAL: form\.energy_label,/,
+    'the prompt shows the localized energy label, not the stored token'
+  );
+  assert.match(
+    js,
+    new RegExp(
+      [
+        'const \\{',
+        '\\s*hr_source_label,',
+        '\\s*terrain_label,',
+        '\\s*breathing_label,',
+        '\\s*muscle_label,',
+        '\\s*energy_label,',
+        '\\s*language,',
+        '\\s*fitAttached,',
+        '\\s*\\.\\.\\.payload',
+        '\\s*\\} = state;',
+      ].join('')
+    ),
     'only persistable feedback columns reach the PATCH endpoint'
   );
 
@@ -452,11 +562,8 @@ test('session locale namespace stays in parity across en-US and pt-BR', () => {
     'weatherPlaceholder',
     'fieldTerrain',
     'fieldBreathing',
-    'breathingPlaceholder',
     'fieldMuscle',
-    'musclePlaceholder',
     'fieldEnergy',
-    'energyPlaceholder',
     'fieldPain',
     'painPlaceholder',
     'generatePrompt',
@@ -501,6 +608,41 @@ test('session locale namespace stays in parity across en-US and pt-BR', () => {
 
   assert.equal(en.session.terrainPlaceholder, undefined);
   assert.equal(pt.session.terrainPlaceholder, undefined);
+
+  for (const deadKey of ['breathingPlaceholder', 'musclePlaceholder', 'energyPlaceholder']) {
+    assert.equal(en.session[deadKey], undefined, `en.session.${deadKey} removed`);
+    assert.equal(pt.session[deadKey], undefined, `pt.session.${deadKey} removed`);
+  }
+
+  const CLOSED_OPTION_NAMESPACES = [
+    [
+      'breathing',
+      { controlled: ['Controlled', 'Controlada'], panting: ['Panting', 'Ofegante'], heavy: ['Very out of breath', 'Muito Ofegante'] },
+    ],
+    [
+      'muscle',
+      {
+        light: ['Light', 'Leve'],
+        normal: ['Normal', 'Normal'],
+        heavy: ['Heavy', 'Pesada'],
+        fatigued: ['Fatigued', 'Fadigada'],
+      },
+    ],
+    [
+      'energy',
+      {
+        surplus: ['Energy left', 'Sobrava energia'],
+        limit: ['On the limit', 'No limite'],
+        exhausted: ['Exhausted', 'Esgotado'],
+      },
+    ],
+  ];
+  for (const [namespace, options] of CLOSED_OPTION_NAMESPACES) {
+    for (const [key, [english, portuguese]] of Object.entries(options)) {
+      assert.equal(en[namespace][key], english, `en.${namespace}.${key}`);
+      assert.equal(pt[namespace][key], portuguese, `pt.${namespace}.${key}`);
+    }
+  }
 
   assert.equal(typeof en.training.title, 'string');
   assert.equal(typeof pt.training.title, 'string');

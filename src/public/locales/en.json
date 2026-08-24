@@ -159,11 +159,8 @@
     "weatherPlaceholder": "e.g.: 22°C, cloudy, light wind",
     "fieldTerrain": "Terrain/route",
     "fieldBreathing": "Breathing",
-    "breathingPlaceholder": "e.g.: easy, controlled",
     "fieldMuscle": "Muscle sensation",
-    "musclePlaceholder": "e.g.: legs feeling fresh",
     "fieldEnergy": "Energy at finish",
-    "energyPlaceholder": "e.g.: could have kept going",
     "fieldPain": "Pain or discomfort",
     "painPlaceholder": "e.g.: mild twinge in the right Achilles tendon…",
     "generatePrompt": "Generate analysis prompt",
@@ -183,6 +180,22 @@
     "track": "Track",
     "treadmill": "Treadmill",
     "mixed": "Mixed"
+  },
+  "breathing": {
+    "controlled": "Controlled",
+    "panting": "Panting",
+    "heavy": "Very out of breath"
+  },
+  "muscle": {
+    "light": "Light",
+    "normal": "Normal",
+    "heavy": "Heavy",
+    "fatigued": "Fatigued"
+  },
+  "energy": {
+    "surplus": "Energy left",
+    "limit": "On the limit",
+    "exhausted": "Exhausted"
   },
   "prompt": {
     "intro1": "Analyze the running workout below considering my full training history, my recent progress, previous workouts, the current plan and my target races.",
