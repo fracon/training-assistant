@@ -52,6 +52,9 @@ CREATE TABLE IF NOT EXISTS trainings (
   tenis       TEXT,
   previsao    TEXT,
   observacoes TEXT,
+  feedback_rpe   INTEGER,
+  feedback_notas TEXT,
+  completed       INTEGER NOT NULL DEFAULT 0,
   created_at  DATETIME NOT NULL DEFAULT (datetime('now'))
 );
 `;
@@ -70,6 +73,19 @@ function migrateDatabase(db) {
   if (!columns.some((column) => column.name === 'first_day_of_week')) {
     db.exec(
       "ALTER TABLE users ADD COLUMN first_day_of_week TEXT NOT NULL DEFAULT 'Monday'"
+    );
+  }
+
+  const trainingColumns = db.pragma('table_info(trainings)');
+  if (!trainingColumns.some((column) => column.name === 'feedback_rpe')) {
+    db.exec('ALTER TABLE trainings ADD COLUMN feedback_rpe INTEGER');
+  }
+  if (!trainingColumns.some((column) => column.name === 'feedback_notas')) {
+    db.exec('ALTER TABLE trainings ADD COLUMN feedback_notas TEXT');
+  }
+  if (!trainingColumns.some((column) => column.name === 'completed')) {
+    db.exec(
+      'ALTER TABLE trainings ADD COLUMN completed INTEGER NOT NULL DEFAULT 0'
     );
   }
 }

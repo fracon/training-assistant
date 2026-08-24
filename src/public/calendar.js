@@ -119,6 +119,11 @@ export function chipLines(training) {
   };
 }
 
+// Sessions are contextual: clicking a chip deep-links into the result page.
+export function trainingResultUrl(id) {
+  return `/training-result.html?id=${id}`;
+}
+
 function setupCalendarPage() {
   const grid = document.getElementById('calendarGrid');
   const monthTitle = document.getElementById('monthTitle');
@@ -160,6 +165,10 @@ function setupCalendarPage() {
         tooltip.textContent = training.detalhes;
         chip.appendChild(tooltip);
       }
+      chip.dataset.trainingId = String(training.id);
+      chip.addEventListener('click', () => {
+        window.location.href = trainingResultUrl(training.id);
+      });
       cellNode.appendChild(chip);
     }
     if (dayTrainings.length > visible.length) {

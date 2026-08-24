@@ -200,6 +200,14 @@
   color: var(--accent-deep);
 }
 
+.day-cell .training-chip[data-training-id] {
+  cursor: pointer;
+}
+
+.day-cell .training-chip[data-training-id]:active {
+  transform: scale(0.98);
+}
+
 .day-cell .chip-type {
   font-size: 0.7rem;
   font-weight: 600;

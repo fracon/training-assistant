@@ -13,13 +13,6 @@ export const FOOTER_STATUS_KEY = 'shell.footer.status';
 
 const NAV_ITEMS = [
   {
-    id: 'training-result',
-    icon: 'activity',
-    labelKey: 'shell.nav.training',
-    href: '/training-result.html',
-    disabled: false,
-  },
-  {
     id: 'dashboard',
     icon: 'layout-dashboard',
     labelKey: 'shell.nav.dashboard',
@@ -267,7 +260,7 @@ export async function initShell({ active } = {}) {
     return null;
   }
 
-  const shellRoot = buildLayout(active ?? 'training-result');
+  const shellRoot = buildLayout(active ?? null);
   syncToggleState(shellRoot, readSidebarCollapsed());
 
   await shellI18n.init(user.preferred_lang);

@@ -24,13 +24,6 @@ function stubStorage(initial = {}) {
 }
 
 const NAV_ITEMS = [
-  {
-    id: 'training-result',
-    labelKey: 'shell.nav.training',
-    href: '/training-result.html',
-    disabled: false,
-    icon: 'activity',
-  },
   { id: 'dashboard', labelKey: 'shell.nav.dashboard', href: null, disabled: true, icon: 'layout-dashboard' },
   { id: 'calendar', labelKey: 'shell.nav.calendar', href: '/calendar.html', disabled: false, icon: 'calendar-days' },
   { id: 'ai-coach', labelKey: 'shell.nav.aiCoach', href: '/ai-coach.html', disabled: false, icon: 'bot' },
@@ -69,18 +62,23 @@ test('shell navigation config matches the phase specification', () => {
   assert.deepEqual(
     NAV_ITEMS.map((item) => [item.id, item.disabled]),
     [
-      ['training-result', false],
       ['dashboard', true],
       ['calendar', false],
       ['ai-coach', false],
     ]
   );
-  assert.equal(NAV_ITEMS[0].href, '/training-result.html');
-  assert.equal(NAV_ITEMS[2].href, '/calendar.html');
-  assert.equal(NAV_ITEMS[3].href, '/ai-coach.html');
+  assert.equal(NAV_ITEMS[1].href, '/calendar.html');
+  assert.equal(NAV_ITEMS[2].href, '/ai-coach.html');
   assert.ok(
     NAV_ITEMS.filter((item) => item.disabled).every((item) => item.href === null)
   );
+});
+
+test('training-result is contextual only and absent from the sidebar', () => {
+  const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
+  assert.ok(!js.includes("'training-result'"), 'no training-result nav entry remains');
+  assert.ok(!js.includes('/training-result.html'), 'the shell never links the session page');
+  assert.ok(js.includes("buildLayout(active ?? null)"), 'unknown active ids simply highlight nothing');
 });
 
 test('every sidebar label key resolves in both locale files', () => {

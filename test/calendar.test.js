@@ -19,6 +19,7 @@ const {
   weekdayArrayIndex,
   buildCalendarCells,
   chipLines,
+  trainingResultUrl,
 } = require('../src/public/calendar.js');
 const en = require('../src/public/locales/en.json');
 const pt = require('../src/public/locales/pt.json');
@@ -455,4 +456,36 @@ test('calendar.css styles chips as flex columns with an elegant custom hover too
   assert.ok(hoverBlock, 'hover state rule exists');
   assert.match(hoverBlock, /opacity:\s*1/);
   assert.match(hoverBlock, /transform: translateX\(-50%\) translateY\(-8px\)/, 'tooltip floats up');
+});
+
+test('trainingResultUrl deep-links into the contextual session page', () => {
+  assert.equal(trainingResultUrl(7), '/training-result.html?id=7');
+  assert.equal(trainingResultUrl('42'), '/training-result.html?id=42');
+});
+
+test('training chips are wired as clickable links into the session page', () => {
+  const js = readFileSync(join(publicDir, 'calendar.js'), 'utf8');
+  const chipBody = js.slice(
+    js.indexOf("el('span', 'training-chip'"),
+    js.indexOf('cellNode.appendChild(chip)')
+  );
+  assert.match(chipBody, /chip\.dataset\.trainingId = String\(training\.id\);/);
+  assert.match(chipBody, /trainingResultUrl\(training\.id\)/);
+  assert.ok(js.includes("window.location.href = trainingResultUrl(training.id)"));
+});
+
+test('calendar.css signals chip clickability without styling the overflow chip', () => {
+  const css = readFileSync(join(publicDir, 'calendar.css'), 'utf8');
+
+  const cursorBlock = css.match(
+    /\.day-cell \.training-chip\[data-training-id\] \{[^}]*\}/
+  )?.[0];
+  assert.ok(cursorBlock, '[data-training-id] cursor rule exists');
+  assert.match(cursorBlock, /cursor:\s*pointer/);
+
+  const activeBlock = css.match(
+    /\.day-cell \.training-chip\[data-training-id\]:active \{[^}]*\}/
+  )?.[0];
+  assert.ok(activeBlock, ':active press feedback exists');
+  assert.match(activeBlock, /transform: scale\(0\.98\)/);
 });

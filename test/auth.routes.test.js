@@ -276,7 +276,7 @@ test('GET /training-result.html serves the tool to authenticated users', async (
 
   assert.equal(response.statusCode, 200);
   assert.match(response.headers['content-type'], /text\/html/);
-  assert.match(response.body, /id="workoutForm"/);
+  assert.match(response.body, /id="feedbackRpe"/);
   assert.match(response.body, /id="appView"/);
   assert.doesNotMatch(response.body, /id="logoutBtn"/);
   assert.match(response.body, /shared\/shell\.css/);
@@ -299,8 +299,8 @@ test('GET / serves the TrainingResult tool to authenticated users', async () => 
 
   assert.equal(response.statusCode, 200);
   assert.match(response.headers['content-type'], /text\/html/);
-  assert.match(response.body, /Training Result/);
-  assert.match(response.body, /id="workoutForm"/);
+  assert.match(response.body, /Training Session/);
+  assert.match(response.body, /id="feedbackNotas"/);
   assert.match(response.body, /training-result\.js/);
 
   await app.close();

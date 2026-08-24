@@ -281,6 +281,72 @@ async function buildServer(options = {}) {
 
       return { imported: records.length };
     });
+
+    const TRAINING_COLUMNS =
+      'id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes, feedback_rpe, feedback_notas, completed';
+
+    const findTraining = db.prepare(
+      `SELECT ${TRAINING_COLUMNS} FROM trainings WHERE id = ? AND user_id = ?`
+    );
+
+    app.get('/api/trainings/:id', { preHandler: requireAuth }, async (request, reply) => {
+      const id = Number(request.params.id);
+      if (!Number.isInteger(id) || id <= 0) {
+        return reply.code(400).send({ error: 'Invalid training id.' });
+      }
+      const training = findTraining.get(id, request.user.id);
+      if (!training) {
+        return reply.code(404).send({ error: 'Training not found.' });
+      }
+      return { training };
+    });
+
+    app.patch('/api/trainings/:id', { preHandler: requireAuth }, async (request, reply) => {
+      const id = Number(request.params.id);
+      if (!Number.isInteger(id) || id <= 0) {
+        return reply.code(400).send({ error: 'Invalid training id.' });
+      }
+
+      const body = request.body ?? {};
+      const updates = {};
+
+      if (body.feedback_rpe !== undefined) {
+        const parsed = parseRpe(body.feedback_rpe);
+        if (!parsed.ok) {
+          return reply.code(400).send({ error: parsed.error });
+        }
+        updates.feedback_rpe = parsed.value;
+      }
+      if (body.feedback_notas !== undefined) {
+        if (body.feedback_notas !== null && typeof body.feedback_notas !== 'string') {
+          return reply.code(400).send({ error: 'feedback_notas must be a string.' });
+        }
+        updates.feedback_notas =
+          typeof body.feedback_notas === 'string' ? body.feedback_notas.trim() : null;
+      }
+      if (body.completed !== undefined) {
+        if (typeof body.completed !== 'boolean') {
+          return reply.code(400).send({ error: 'completed must be a boolean.' });
+        }
+        updates.completed = body.completed ? 1 : 0;
+      }
+
+      const fields = Object.keys(updates);
+      if (fields.length === 0) {
+        return reply.code(400).send({ error: 'No feedback fields provided.' });
+      }
+
+      if (!findTraining.get(id, request.user.id)) {
+        return reply.code(404).send({ error: 'Training not found.' });
+      }
+
+      const assignments = fields.map((field) => `${field} = ?`).join(', ');
+      db.prepare(
+        `UPDATE trainings SET ${assignments} WHERE id = ? AND user_id = ?`
+      ).run(...fields.map((field) => updates[field]), id, request.user.id);
+
+      return { training: findTraining.get(id, request.user.id) };
+    });
   }
 
   app.post('/api/fit/parse', async (request, reply) => {

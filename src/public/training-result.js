@@ -1,278 +1,115 @@
 import { initShell, getShellI18n } from './shared/shell.js';
+import { translate } from './shared/i18n.js';
+import { fetchTraining, saveTrainingFeedback } from './shared/api.js';
 
-const $ = (id) => document.getElementById(id);
+// Sessions open contextually via /training-result.html?id=<id>; without an
+// id there is nothing to show, so the page bounces back to the calendar.
+export function resolveSessionId(search) {
+  const raw = new URLSearchParams(search).get('id');
+  const id = raw === null ? '' : raw.trim();
+  return id === '' ? null : id;
+}
 
-const form = $('workoutForm');
-const dropzone = $('dropzone');
-const dropTitle = $('dropTitle');
-const dropSub = $('dropSub');
-const fileInput = $('fileInput');
-const statusEl = $('status');
-const rpeRow = $('rpeRow');
-const generateBtn = $('generateBtn');
-const metaRow = $('metaRow');
-const lapsHead = $('lapsHead');
-const lapsBody = $('lapsBody');
-const resultsFlow = $('resultsFlow');
-const previewEl = $('markdownPreview');
-const copyBtn = $('copyBtn');
-const copyLabel = $('copyLabel');
+export function formatDateLabel(iso) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso ?? ''));
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : '';
+}
 
-const COLUMNS = [
-  'Step', 'Lap', 'Time', 'Cumulative', 'Dist (km)', 'Avg Pace', 'Best Pace',
-  'Avg HR', 'Max HR', 'Asc (m)', 'Desc (m)', 'Avg Cad', 'Max Cad', 'Stride (m)', 'kcal',
+export function plannedValue(training, field) {
+  const value = training?.[field];
+  return value === null || value === undefined || value === '' ? '-' : String(value);
+}
+
+// '' / blank -> null (unanswered), integer 1..5 kept, anything else -> NaN.
+export function normalizeFeedbackRpe(raw) {
+  const trimmed = String(raw ?? '').trim();
+  if (trimmed === '') return null;
+  const value = Number(trimmed);
+  return Number.isInteger(value) && value >= 1 && value <= 5 ? value : NaN;
+}
+
+const PLANNED_FIELDS = [
+  ['tipo', 'plannedTipo'],
+  ['treino', 'plannedTreino'],
+  ['detalhes', 'plannedDetalhes'],
+  ['fc_alvo', 'plannedFcAlvo'],
+  ['rpe', 'plannedRpe'],
+  ['tenis', 'plannedTenis'],
 ];
 
-const REMEMBERED_FIELDS = ['tenis', 'fonte_fc', 'terreno'];
-const STORAGE_KEY = 'training-assistant:prefs';
-const COPY_RESET_MS = 1600;
-const RPE_MAX = 5;
+async function initTrainingResult() {
+  const statusEl = document.getElementById('status');
+  const dateEl = document.getElementById('sessionDate');
+  const saveBtn = document.getElementById('saveBtn');
+  const rpeInput = document.getElementById('feedbackRpe');
+  const notesInput = document.getElementById('feedbackNotas');
 
-let selectedRpe = null;
-let selectedFile = null;
-let lastPayload = null;
+  let i18n = null;
+  const t = (key) => translate(i18n ? i18n.messages : {}, key);
 
-const i18n = getShellI18n();
-
-COLUMNS.forEach((title) => {
-  const th = document.createElement('th');
-  th.textContent = title;
-  lapsHead.appendChild(th);
-});
-
-for (let value = 1; value <= RPE_MAX; value += 1) {
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.className = `rpe-btn tone-${value}`;
-  btn.textContent = String(value);
-  btn.setAttribute('aria-pressed', 'false');
-  btn.addEventListener('click', () => {
-    selectedRpe = value;
-    rpeRow.querySelectorAll('.rpe-btn').forEach((other) => {
-      other.classList.toggle('selected', other === btn);
-      other.setAttribute('aria-pressed', String(other === btn));
-    });
-  });
-  rpeRow.appendChild(btn);
-}
-
-document.querySelectorAll('textarea.auto-grow').forEach((el) => {
-  const grow = () => {
-    el.style.height = 'auto';
-    el.style.height = `${el.scrollHeight}px`;
+  const setStatus = (message, tone = '') => {
+    statusEl.textContent = message;
+    statusEl.dataset.tone = tone;
   };
-  el.addEventListener('input', grow);
-});
 
-const setStatus = (message, tone = '') => {
-  statusEl.textContent = message;
-  statusEl.dataset.tone = tone;
-};
-
-const fmt = (value) => (value === null || value === undefined ? '-' : value);
-
-const fmtDate = (iso) => (iso ? new Date(iso).toLocaleString() : '-');
-
-function loadPrefs() {
-  let prefs = {};
-  try {
-    prefs = JSON.parse(localStorage.getItem(STORAGE_KEY)) ?? {};
-  } catch {
-    prefs = {};
-  }
-  REMEMBERED_FIELDS.forEach((fieldName) => {
-    const saved = prefs[fieldName];
-    if (typeof saved === 'string' && saved !== '') {
-      $(`#${fieldName}`).value = saved;
-    }
-  });
-}
-
-function savePrefs() {
-  const prefs = {};
-  REMEMBERED_FIELDS.forEach((fieldName) => {
-    prefs[fieldName] = $(`#${fieldName}`).value;
-  });
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
-  } catch {
-    /* storage unavailable - preferences simply won't persist */
-  }
-}
-
-function refreshDynamicTexts() {
-  document.title = i18n.t('training.title');
-  if (lastPayload) {
-    renderMeta(lastPayload);
-  }
-}
-
-const refreshSubmitState = () => {
-  generateBtn.disabled = !FormState.isSubmittable({ rpe: selectedRpe, file: selectedFile });
-};
-
-const attachFile = (file) => {
-  if (!file) return;
-  if (!/\.fit$/i.test(file.name)) {
-    setStatus(i18n.t('training.errorNotFit'), 'error');
+  const id = resolveSessionId(window.location.search);
+  if (!id) {
+    window.location.href = '/calendar.html';
     return;
   }
-  selectedFile = file;
-  dropzone.classList.add('attached');
-  dropTitle.textContent = i18n.t('training.dropReady', { name: file.name });
-  dropSub.textContent = i18n.t('training.dropReplace');
-  setStatus('');
-  refreshSubmitState();
-};
 
-const handleFiles = (list) => {
-  attachFile(list && list[0]);
-};
+  await initShell();
+  i18n = getShellI18n();
+  document.title = t('training.title');
 
-dropzone.addEventListener('click', () => fileInput.click());
-dropzone.addEventListener('keydown', (event) => {
-  if (event.key === 'Enter' || event.key === ' ') {
-    event.preventDefault();
-    fileInput.click();
-  }
-});
-fileInput.addEventListener('change', () => handleFiles(fileInput.files));
-
-['dragenter', 'dragover'].forEach((type) => {
-  dropzone.addEventListener(type, (event) => {
-    event.preventDefault();
-    dropzone.classList.add('dragging');
-  });
-});
-
-['dragleave', 'drop'].forEach((type) => {
-  dropzone.addEventListener(type, (event) => {
-    event.preventDefault();
-    dropzone.classList.remove('dragging');
-  });
-});
-
-dropzone.addEventListener('drop', (event) => handleFiles(event.dataTransfer.files));
-
-function chip(label, value) {
-  const span = document.createElement('span');
-  span.className = 'chip';
-  const strong = document.createElement('b');
-  strong.textContent = `${label}:`;
-  span.appendChild(strong);
-  span.appendChild(document.createTextNode(String(value)));
-  return span;
-}
-
-function renderMeta(payload) {
-  metaRow.innerHTML = '';
-  [
-    [i18n.t('training.metaSport'), payload.activity.sport ?? '-'],
-    [i18n.t('training.metaStart'), fmtDate(payload.activity.startTime)],
-    [i18n.t('training.metaEnd'), fmtDate(payload.activity.endTime)],
-    [i18n.t('training.metaDuration'), payload.totals?.durationLabel ?? '-'],
-    [
-      i18n.t('training.metaDistance'),
-      payload.totals?.distanceLabel !== undefined ? payload.totals.distanceLabel : '-',
-    ],
-    [i18n.t('training.metaLaps'), payload.laps.length],
-  ].forEach(([label, value]) => metaRow.appendChild(chip(label, value)));
-}
-
-function renderLaps(payload) {
-  lapsBody.innerHTML = '';
-  payload.laps.forEach((lap) => {
-    const tr = document.createElement('tr');
-    [
-      lap.stepType, lap.lap, lap.durationLabel, lap.cumulativeLabel,
-      lap.distanceLabel, lap.avgPaceLabel, lap.bestPaceLabel,
-      fmt(lap.avgHeartRate), fmt(lap.maxHeartRate),
-      fmt(lap.ascentMeters), fmt(lap.descentMeters),
-      fmt(lap.avgCadenceSpm), fmt(lap.maxCadenceSpm),
-      fmt(lap.strideMeters), fmt(lap.calories),
-    ].forEach((cell) => {
-      const td = document.createElement('td');
-      td.textContent = String(cell);
-      tr.appendChild(td);
-    });
-    const stepTd = tr.firstChild;
-    stepTd.innerHTML = '';
-    const badge = document.createElement('span');
-    badge.className = `badge-${lap.stepType.toLowerCase()}`;
-    badge.textContent = lap.stepType;
-    stepTd.appendChild(badge);
-    lapsBody.appendChild(tr);
-  });
-}
-
-function render(payload) {
-  renderMeta(payload);
-  renderLaps(payload);
-  resultsFlow.classList.add('visible');
-  previewEl.value = payload.markdown;
-  copyBtn.classList.add('visible');
-}
-
-async function submitWorkout(event) {
-  event.preventDefault();
-  if (generateBtn.disabled || !selectedFile) return;
-  generateBtn.disabled = true;
-  generateBtn.textContent = i18n.t('training.generating');
-  resultsFlow.classList.remove('visible');
-  copyBtn.classList.remove('visible');
-  setStatus(i18n.t('training.statusProcessing', { name: selectedFile.name }));
-  const formData = new FormData(form);
-  formData.append('file', selectedFile, selectedFile.name);
-  formData.append('rpe_percebido', selectedRpe === null ? '' : String(selectedRpe));
+  setStatus(t('session.loading'));
+  let training;
   try {
-    const response = await fetch('/api/fit/parse', { method: 'POST', body: formData });
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || i18n.t('training.statusFailed'));
-    savePrefs();
-    lastPayload = payload;
-    render(payload);
-    setStatus(i18n.t('training.statusSuccess', { name: payload.fileName }), 'ok');
-  } catch (error) {
-    setStatus(error.message, 'error');
-  } finally {
-    generateBtn.textContent = i18n.t('training.generate');
-    refreshSubmitState();
-  }
-}
-
-form.addEventListener('submit', submitWorkout);
-
-let copyResetTimer = null;
-
-copyBtn.addEventListener('click', async () => {
-  const text = previewEl.value;
-  try {
-    await navigator.clipboard.writeText(text);
+    training = await fetchTraining(id);
   } catch {
-    const helper = document.createElement('textarea');
-    helper.value = text;
-    helper.setAttribute('readonly', '');
-    helper.style.position = 'fixed';
-    helper.style.opacity = '0';
-    document.body.appendChild(helper);
-    helper.select();
-    document.execCommand('copy');
-    helper.remove();
+    setStatus(t('session.errors.load'), 'error');
+    return;
   }
-  copyBtn.classList.add('copied');
-  copyLabel.textContent = i18n.t('training.copied');
-  clearTimeout(copyResetTimer);
-  copyResetTimer = setTimeout(() => {
-    copyBtn.classList.remove('copied');
-    copyLabel.textContent = i18n.t('training.copyPrompt');
-  }, COPY_RESET_MS);
-});
+  if (!training) {
+    setStatus(t('session.errors.notFound'), 'error');
+    return;
+  }
 
-loadPrefs();
-refreshSubmitState();
+  dateEl.textContent = formatDateLabel(training.dia);
+  for (const [field, elementId] of PLANNED_FIELDS) {
+    document.getElementById(elementId).textContent = plannedValue(training, field);
+  }
+  rpeInput.value = training.feedback_rpe ?? '';
+  notesInput.value = training.feedback_notas ?? '';
+  setStatus('');
 
-const user = await initShell({ active: 'training-result' });
-if (user) {
-  document.addEventListener('app:languagechange', refreshDynamicTexts);
-  refreshDynamicTexts();
+  saveBtn.addEventListener('click', async () => {
+    const feedbackRpe = normalizeFeedbackRpe(rpeInput.value);
+    if (Number.isNaN(feedbackRpe)) {
+      setStatus(t('session.errors.rpe'), 'error');
+      return;
+    }
+    saveBtn.disabled = true;
+    saveBtn.textContent = t('session.saving');
+    try {
+      await saveTrainingFeedback(id, {
+        feedbackRpe,
+        feedbackNotes: notesInput.value,
+      });
+      window.location.href = '/calendar.html';
+    } catch {
+      saveBtn.disabled = false;
+      saveBtn.textContent = t('session.save');
+      setStatus(t('session.errors.save'), 'error');
+    }
+  });
+
+  document.addEventListener('app:languagechange', () => {
+    document.title = t('training.title');
+    if (!saveBtn.disabled) saveBtn.textContent = t('session.save');
+  });
+}
+
+if (typeof document !== 'undefined' && document.getElementById('appView')) {
+  initTrainingResult();
 }
