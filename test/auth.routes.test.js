@@ -2,7 +2,10 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { readFileSync } = require('node:fs');
+const { join } = require('node:path');
 
+const publicDir = join(__dirname, '..', 'src', 'public');
 const { buildServer } = require('../src/server');
 const { createDatabase } = require('../src/db/database');
 
@@ -754,4 +757,30 @@ test('ai coach page is gated and served to authenticated users', async () => {
   assert.doesNotMatch(authenticated.body, /id="logoutBtn"/);
 
   await app.close();
+});
+
+test('auth pages ride the unified primary button design', () => {
+  for (const page of ['login.html', 'register.html']) {
+    const html = readFileSync(join(publicDir, page), 'utf8');
+    assert.match(
+      html,
+      /id="submitBtn" class="btn-primary" type="submit"/,
+      `${page} submit button uses the global primary class`
+    );
+  }
+
+  for (const sheet of ['login.css', 'register.css']) {
+    const css = readFileSync(join(publicDir, sheet), 'utf8');
+    assert.ok(!css.includes('btn'), `${sheet} adds no local button overrides`);
+  }
+
+  const theme = readFileSync(join(publicDir, 'shared', 'theme.css'), 'utf8');
+  assert.match(theme, /\.btn-primary \{[^}]*border-radius:\s*999px/, 'the pill shape matches every screen');
+  assert.match(theme, /\.btn-primary \{[^}]*transition:\s*all 0\.2s ease/, 'one smooth animation curve');
+  assert.match(
+    theme,
+    /\.btn-primary:hover:not\(:disabled\) \{[^}]*transform:\s*translateY\(-2px\)/,
+    'auth buttons lift exactly like the app screens'
+  );
+  assert.match(theme, /\.btn-primary:hover:not\(:disabled\) \{[^}]*background:\s*#405c46/);
 });
