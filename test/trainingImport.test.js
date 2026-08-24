@@ -186,6 +186,16 @@ test('header aliases cover the Phase 7 eleven-column AI layout', () => {
     'previsao no horario': 'previsao',
     'previsao do tempo': 'previsao',
     observacoes: 'observacoes',
+    date: 'dia',
+    day: 'dia_semana',
+    period: 'periodo',
+    type: 'tipo',
+    workout: 'treino',
+    details: 'detalhes',
+    'target hr': 'fc_alvo',
+    shoe: 'tenis',
+    'weather forecast': 'previsao',
+    notes: 'observacoes',
   };
   assert.deepEqual(FIELD_BY_HEADER, expected);
   assert.deepEqual(REQUIRED_FIELDS, ['dia', 'tipo']);
@@ -247,6 +257,30 @@ test('parseSheet accepts the Phase 7 layout: Data date plus Dia weekday string',
     { row: 1, col: 'Data', error: 'Missing required column.' },
   ], 'legacy Phase 6 sheets without a Data column are rejected up front');
   assert.equal(legacy.records.length, 0);
+});
+
+test('parseSheet accepts English AI headers and mirrors the Portuguese structure', () => {
+  const values = ['23/08/2026', 'Domingo', 'Morning', 'Corrida', 'Long Run', 'Zona 2', '150', '3', 'Adizero', '90 min', 'Sentir leve'];
+  const english = parseSheet(fakeWorksheet([
+    fakeRow(1, ['Date', 'Day', 'Period', 'Type', 'Workout', 'Details', 'Target HR', 'RPE', 'Shoe', 'Weather Forecast', 'Notes']),
+    fakeRow(2, values),
+  ]));
+  const portuguese = parseSheet(fakeWorksheet([
+    fakeRow(1, ['Data', 'Dia', 'Período', 'Tipo', 'Treino', 'Detalhes', 'FC alvo', 'RPE', 'Tênis', 'Previsão do tempo', 'Observações']),
+    fakeRow(2, values),
+  ]));
+
+  assert.deepEqual(english.errors, [], 'English Date/Type satisfy the mandatory columns');
+  assert.deepEqual(portuguese.errors, []);
+  assert.equal(english.records.length, 1);
+  assert.deepEqual(
+    Object.keys(english.records[0]).sort(),
+    Object.keys(portuguese.records[0]).sort(),
+    'both languages resolve to the identical internal field set'
+  );
+  assert.deepEqual(english.records, portuguese.records, 'identical cell values produce byte-equal records');
+  assert.equal(english.records[0].dia, '2026-08-23');
+  assert.equal(english.records[0].dia_semana, 'Domingo');
 });
 
 test('parseSheet reports missing required columns on the header row', () => {

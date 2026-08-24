@@ -279,7 +279,7 @@ test('import button label and hover tooltip are translated with key parity', () 
   assert.equal(pt.calendar.import.button, 'Importar treinos');
   assert.equal(
     en.calendar.import.tooltip,
-    'Imports Excel files (.xlsx, .xls).\n\nExpected format (11 columns):\n• Data (mandatory, DD/MM/YYYY)\n• Dia\n• Período\n• Tipo (mandatory)\n• Treino\n• Detalhes\n• FC alvo\n• RPE\n• Tênis\n• Previsão do tempo\n• Observações\n\n* Do not include note rows or merged cells.'
+    'Imports Excel files (.xlsx, .xls).\n\nExpected format (11 columns):\n• Date (mandatory, DD/MM/YYYY)\n• Day\n• Period\n• Type (mandatory)\n• Workout\n• Details\n• Target HR\n• RPE\n• Shoe\n• Weather Forecast\n• Notes\n\n* Do not include note rows or merged cells.'
   );
   assert.equal(
     pt.calendar.import.tooltip,

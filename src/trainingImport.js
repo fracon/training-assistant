@@ -19,6 +19,16 @@ const FIELD_BY_HEADER = {
   'previsao no horario': 'previsao',
   'previsao do tempo': 'previsao',
   observacoes: 'observacoes',
+  date: 'dia',
+  day: 'dia_semana',
+  period: 'periodo',
+  type: 'tipo',
+  workout: 'treino',
+  details: 'detalhes',
+  'target hr': 'fc_alvo',
+  shoe: 'tenis',
+  'weather forecast': 'previsao',
+  notes: 'observacoes',
 };
 
 const REQUIRED_FIELDS = ['dia', 'tipo'];
