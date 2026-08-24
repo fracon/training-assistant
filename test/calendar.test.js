@@ -279,12 +279,14 @@ test('import button label and hover tooltip are translated with key parity', () 
   assert.equal(pt.calendar.import.button, 'Importar treinos');
   assert.equal(
     en.calendar.import.tooltip,
-    "Imports Excel files (.xlsx, .xls). The spreadsheet must contain the 11 standard columns (Data, Dia, Período, Tipo, etc.), with 'Data' and 'Tipo' being mandatory. Do not include note rows or merged cells."
+    'Imports Excel files (.xlsx, .xls).\n\nExpected format (11 columns):\n• Data (mandatory, DD/MM/YYYY)\n• Dia\n• Período\n• Tipo (mandatory)\n• Treino\n• Detalhes\n• FC alvo\n• RPE\n• Tênis\n• Previsão do tempo\n• Observações\n\n* Do not include note rows or merged cells.'
   );
   assert.equal(
     pt.calendar.import.tooltip,
-    "Importa planilhas Excel (.xlsx, .xls). A planilha deve conter as 11 colunas padrão (Data, Dia, Período, Tipo, etc.), sendo 'Data' e 'Tipo' obrigatórias. Não inclua linhas de anotações ou células mescladas."
+    'Importa planilhas Excel (.xlsx, .xls).\n\nFormato esperado (11 colunas):\n• Data (obrigatório, DD/MM/YYYY)\n• Dia\n• Período\n• Tipo (obrigatório)\n• Treino\n• Detalhes\n• FC alvo\n• RPE\n• Tênis\n• Previsão do tempo\n• Observações\n\n* Não inclua linhas de notas ou células mescladas.'
   );
+  assert.ok(en.calendar.import.tooltip.split('\n').length > 10, 'the EN tooltip renders as a structured list');
+  assert.ok(pt.calendar.import.tooltip.split('\n').length > 10, 'the PT tooltip renders as a structured list');
   assert.equal(en.calendar.subtitle, undefined);
   assert.equal(pt.calendar.subtitle, undefined);
 });
@@ -321,9 +323,9 @@ test('calendar.css gives the import button a right-anchored chip-style tooltip',
     'right: 0',
     'z-index: 50',
     'width: max-content',
-    'max-width: 280px',
+    'max-width: 300px',
     'text-align: left',
-    'white-space: normal',
+    'white-space: pre-line',
     'line-height: 1.4',
     'background: var(--ink)',
     'color: var(--card)',
