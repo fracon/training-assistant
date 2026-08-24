@@ -205,31 +205,30 @@ select.input-control {
   margin-top: 20px;
 }
 
-.btn-primary {
-  border: none;
-  border-radius: 999px;
-  background: var(--accent-deep);
-  color: #ffffff;
-  font: inherit;
-  font-weight: 600;
-  padding: 11px 22px;
-  cursor: pointer;
-  transition: background 160ms ease, transform 120ms ease;
-}
-
+.btn-primary,
 .btn-secondary {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
-  border: 1px solid var(--accent-deep);
   border-radius: 999px;
-  background: transparent;
-  color: var(--accent-deep);
   font: inherit;
   font-weight: 600;
   padding: 11px 22px;
   cursor: pointer;
-  transition: background 160ms ease, transform 120ms ease;
+  transition: all 0.2s ease;
+}
+
+.btn-primary {
+  border: none;
+  background: var(--accent-deep);
+  color: #ffffff;
+}
+
+.btn-secondary {
+  border: 1px solid var(--accent-deep);
+  background: transparent;
+  color: var(--accent-deep);
 }
 
 .btn-secondary svg {
@@ -237,10 +236,21 @@ select.input-control {
   height: 16px;
 }
 
+/* One shared physical motion for every button; only the surface treatment
+   differs. The outline button keeps its transparent/surface look on hover -
+   never a solid fill or white text. */
 .btn-primary:hover:not(:disabled),
 .btn-secondary:hover:not(:disabled) {
-  background: #3d5a43;
-  color: #ffffff;
+  transform: translateY(-2px);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #405c46;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background-color: rgba(111, 144, 112, 0.08);
+  box-shadow: 0 6px 14px rgba(60, 53, 42, 0.12);
 }
 
 .btn-primary:active:not(:disabled),

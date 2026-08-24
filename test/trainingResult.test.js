@@ -543,10 +543,10 @@ test('training-result.html ships the expanded feedback grid and generator button
   }
 
   assert.match(html, /<div class="form-actions">/);
-  assert.match(html, /<button id="generateBtn" class="btn-secondary" type="button">/);
+  assert.match(html, /<button id="generateBtn" class="btn-primary" type="button">/);
   assert.match(html, /<i data-lucide="sparkles" aria-hidden="true"><\/i>/);
   assert.match(html, /data-i18n="session\.generatePrompt"/);
-  assert.match(html, /<button id="saveBtn" class="btn-primary" type="button"/);
+  assert.match(html, /<button id="saveBtn" class="btn-secondary" type="button"/);
 
   for (const legacy of ['id="dropzone"', 'id="fileInput"', 'markdownPreview', 'copyBtn', 'form-state.js']) {
     assert.ok(!html.includes(legacy), `${legacy} is gone from the refactored page`);
@@ -948,6 +948,23 @@ test('training-result.css keeps the earthy premium aesthetic for the session vie
   assert.match(css, /\.form-actions \{[^}]*display:\s*flex/);
   assert.match(css, /\.btn-secondary \{[^}]*border:\s*1px solid var\(--accent-deep\)/);
   assert.match(css, /\.btn-secondary svg \{[^}]*width:\s*16px/);
+  assert.match(
+    css,
+    /\.btn-primary,\s*\n\s*\.btn-secondary \{[^}]*transition:\s*all 0\.2s ease/,
+    'both buttons share one smooth animation curve'
+  );
+  assert.match(
+    css,
+    /\.btn-primary:hover:not\(:disabled\),\s*\n\s*\.btn-secondary:hover:not\(:disabled\) \{[^}]*transform:\s*translateY\(-2px\)/,
+    'the hover motion is identical for both styles'
+  );
+  assert.match(
+    css,
+    /\.btn-secondary:hover:not\(:disabled\) \{[^}]*background-color:\s*rgba\(111,\s*144,\s*112,\s*0\.08\)/,
+    'the outline button dims subtly instead of filling solid'
+  );
+  assert.ok(!css.includes('#3d5a43'), 'the old solid-fill outline hover is gone');
+  assert.match(css, /\.btn-secondary \{[^}]*background:\s*transparent/, 'the outline stays surface-colored');
   assert.match(css, /\.input-control:focus \{[^}]*border-color:\s*var\(--accent\)/);
   assert.match(
     css,
