@@ -214,6 +214,11 @@ test('ai-coach.html wires the shell, lucide and the full form', () => {
   assert.match(html, /<textarea id="optionalContext"/);
   assert.match(html, /type="submit" id="generateBtn" class="btn-primary"/);
   assert.ok(!html.includes('generate-btn'), 'the scoped generate-btn class is retired');
+  assert.match(
+    html,
+    /<i data-lucide="sparkles"[^>]*><\/i>\s*<span data-i18n=/,
+    'the icon renders directly before the label span'
+  );
   assert.match(html, /data-lucide="sparkles"/);
   assert.match(html, /id="copyBtn"/);
   assert.match(html, /data-lucide="copy"/);
@@ -223,8 +228,19 @@ test('ai-coach.html wires the shell, lucide and the full form', () => {
 
 test('the generate button matches the shared primary hover contract', () => {
   const css = readFileSync(join(publicDir, 'ai-coach.css'), 'utf8');
+  const theme = readFileSync(join(publicDir, 'shared', 'theme.css'), 'utf8');
 
   assert.ok(!css.includes('.generate-btn'), 'no scoped generate-btn rules remain');
+  assert.match(
+    theme,
+    /\.btn-primary \{[^}]*display:\s*inline-flex;\s*\n\s*align-items:\s*center;\s*\n\s*justify-content:\s*center;\s*\n\s*gap:\s*0\.5rem/,
+    'the icon and the label share one strict flex centering rule'
+  );
+  assert.match(
+    theme,
+    /\.btn-primary > svg \{[^}]*flex-shrink:\s*0/,
+    'the sparkles icon cannot drift or squish inside the button'
+  );
   assert.match(
     css,
     /\.btn-primary \{[^}]*transition:\s*all 0\.2s ease/,

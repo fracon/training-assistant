@@ -544,6 +544,11 @@ test('training-result.html ships the expanded feedback grid and generator button
 
   assert.match(html, /<div class="form-actions">/);
   assert.match(html, /<button id="generateBtn" class="btn-primary" type="button">/);
+  assert.match(
+    html,
+    /<i data-lucide="sparkles"[^>]*><\/i>\s*<span data-i18n=/,
+    'the icon renders directly before the label span'
+  );
   assert.match(html, /<i data-lucide="sparkles" aria-hidden="true"><\/i>/);
   assert.match(html, /data-i18n="session\.generatePrompt"/);
   assert.match(html, /<button id="saveBtn" class="btn-secondary" type="button"/);
@@ -952,6 +957,11 @@ test('training-result.css keeps the earthy premium aesthetic for the session vie
     css,
     /\.btn-primary,\s*\n\s*\.btn-secondary \{[^}]*transition:\s*all 0\.2s ease/,
     'both buttons share one smooth animation curve'
+  );
+  assert.match(
+    css,
+    /\.btn-primary,\s*\n\s*\.btn-secondary \{[^}]*display:\s*inline-flex;\s*\n\s*align-items:\s*center;\s*\n\s*justify-content:\s*center/,
+    'both buttons center their icon and label with strict flex'
   );
   assert.match(
     css,

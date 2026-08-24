@@ -775,6 +775,12 @@ test('auth pages ride the unified primary button design', () => {
   }
 
   const theme = readFileSync(join(publicDir, 'shared', 'theme.css'), 'utf8');
+  assert.match(
+    theme,
+    /\.btn-primary \{[^}]*display:\s*inline-flex;\s*\n\s*align-items:\s*center;\s*\n\s*justify-content:\s*center;\s*\n\s*gap:\s*0\.5rem/,
+    'the global primary centers icon and label with a strict flex rule'
+  );
+  assert.match(theme, /\.btn-primary > svg \{[^}]*flex-shrink:\s*0/, 'lucide icons never squish or drift off-center');
   assert.match(theme, /\.btn-primary \{[^}]*border-radius:\s*999px/, 'the pill shape matches every screen');
   assert.match(theme, /\.btn-primary \{[^}]*transition:\s*all 0\.2s ease/, 'one smooth animation curve');
   assert.match(
