@@ -58,35 +58,52 @@ function isValidIso(year, month, day) {
   );
 }
 
-// Accepts JS Dates from real date cells, raw Excel serials and strings in
-// DD/MM/YYYY (the spec format) or YYYY-MM-DD. Always yields YYYY-MM-DD.
+// exceljs materializes serial dates around UTC midnight while locally built
+// Dates sit on local midnight; reading with the wrong getters shifts the
+// calendar day by one near timezone boundaries. Whichever side reports
+// midnight wins, so the wall-calendar day is always preserved.
+function isoFromCellDate(date) {
+  const utcMidnight =
+    date.getUTCHours() === 0 &&
+    date.getUTCMinutes() === 0 &&
+    date.getUTCSeconds() === 0 &&
+    date.getUTCMilliseconds() === 0;
+  const localMidnight =
+    date.getHours() === 0 &&
+    date.getMinutes() === 0 &&
+    date.getSeconds() === 0 &&
+    date.getMilliseconds() === 0;
+  if (localMidnight && !utcMidnight) {
+    return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+  }
+  return `${date.getUTCFullYear()}-${pad2(date.getUTCMonth() + 1)}-${pad2(date.getUTCDate())}`;
+}
+
+// Accepts JS Dates from real date cells (timezone-shift-proof), raw Excel
+// serials and strings in DD/MM/YYYY or DD-MM-YYYY (single digits allowed,
+// surrounding whitespace ignored) or YYYY-MM-DD. Returns the YYYY-MM-DD
+// string, or null when the value is not a trustworthy calendar date.
 function normalizeDia(value) {
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return {
-      ok: true,
-      iso: `${value.getFullYear()}-${pad2(value.getMonth() + 1)}-${pad2(value.getDate())}`,
-    };
+    return isoFromCellDate(value);
   }
   if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
-    return { ok: true, iso: isoFromSerial(value) };
+    return isoFromSerial(value);
   }
-  const text = cellToText(value);
-  const slash = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (slash) {
-    const [, day, month, year] = slash;
-    if (isValidIso(Number(year), Number(month), Number(day))) {
-      return { ok: true, iso: `${year}-${pad2(month)}-${pad2(day)}` };
-    }
-    return { ok: false };
+  const text = String(cellToText(value)).trim();
+  const dmy = text.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (dmy) {
+    const [, day, month, year] = dmy;
+    return isValidIso(Number(year), Number(month), Number(day))
+      ? `${year}-${pad2(month)}-${pad2(day)}`
+      : null;
   }
   const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (iso) {
     const [, year, month, day] = iso;
-    if (isValidIso(Number(year), Number(month), Number(day))) {
-      return { ok: true, iso: text };
-    }
+    return isValidIso(Number(year), Number(month), Number(day)) ? text : null;
   }
-  return { ok: false };
+  return null;
 }
 
 // exceljs cells can be primitives, Date objects, formula results
@@ -95,7 +112,8 @@ function cellToText(value) {
   if (value === null || value === undefined) return '';
   if (value instanceof Date) {
     if (Number.isNaN(value.getTime())) return '';
-    return `${value.getDate()}/${value.getMonth() + 1}/${value.getFullYear()}`;
+    const [year, month, day] = isoFromCellDate(value).split('-');
+    return `${Number(day)}/${Number(month)}/${year}`;
   }
   if (typeof value === 'object') {
     if (Array.isArray(value.richText)) {
@@ -159,15 +177,30 @@ function parseSheet(worksheet) {
     const values = {};
     for (const field of FIELD_ORDER) values[field] = '';
     let hasContent = false;
+    let filledCells = 0;
+    let soleText = '';
     for (const [column, field] of Object.entries(fieldsByColumn)) {
       const text = cellToText(cellValue(Number(column)));
       values[field] = text;
-      if (text !== '') hasContent = true;
+      if (text !== '') {
+        hasContent = true;
+        filledCells += 1;
+        soleText = text;
+      }
     }
     if (!hasContent) return;
 
+    // AI coaches append "Nota:"/"Note:"/"Observação:" footers under the
+    // table; a lone cell carrying one is metadata, never a training attempt.
+    if (
+      filledCells === 1 &&
+      /^(nota|note|observacao)/.test(accentless(soleText))
+    ) {
+      return;
+    }
+
     const dia = normalizeDia(values.dia);
-    if (!dia.ok) {
+    if (dia === null) {
       errors.push({
         row: rowNumber,
         col: 'Dia',
@@ -188,7 +221,7 @@ function parseSheet(worksheet) {
 
     const record = {};
     for (const field of FIELD_ORDER) record[field] = values[field];
-    record.dia = dia.iso;
+    record.dia = dia;
     records.push(record);
   });
 
@@ -206,6 +239,7 @@ module.exports = {
   accentless,
   pad2,
   isoFromSerial,
+  isoFromCellDate,
   isValidIso,
   normalizeDia,
   cellToText,

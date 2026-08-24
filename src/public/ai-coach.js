@@ -74,6 +74,8 @@ ARQUIVO EXCEL
 
 Depois de definir o planejamento, gere um arquivo Excel (.xlsx) para download mantendo o estilo visual (cabeçalho destacado, texto legível, largura adequada, quebra automática). Antes de gerar o Excel, faça uma breve análise interna da carga recente e determine se a semana representa manutenção, progressão ou recuperação.
 
+REGRA ESTRITA: NUNCA adicione linhas de notas, observações, rodapés ou células mescladas na planilha. A planilha deve conter EXCLUSIVAMENTE a linha de cabeçalho e as linhas de treino. Qualquer explicação extra deve ir apenas no texto da sua resposta, nunca no arquivo.
+
 Na resposta, apresente:
 1. uma explicação curta sobre o objetivo da semana e o que mudou em relação à anterior;
 2. a tabela completa;
@@ -149,6 +151,8 @@ Use dates in DD/MM/YYYY format. In "Period", use the actual expected time/period
 EXCEL FILE
 
 After defining the plan, generate an Excel (.xlsx) file for download maintaining the visual style (highlighted header, readable text, adequate column width, text wrapping). Before generating the Excel, briefly analyze the recent load internally and determine whether the week represents maintenance, progression, or recovery.
+
+STRICT RULE: NEVER add note rows, observations, footers, or merged cells inside the spreadsheet. The spreadsheet must EXCLUSIVELY contain the header row and the training rows. Any extra explanations must go only in the text of your response, never in the file.
 
 In your response, provide:
 1. a short explanation of the week's goal and what changed compared to the previous one;

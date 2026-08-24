@@ -9,6 +9,7 @@ const {
   accentless,
   pad2,
   isoFromSerial,
+  isoFromCellDate,
   isValidIso,
   normalizeDia,
   cellToText,
@@ -55,6 +56,51 @@ test('isoFromSerial converts Excel serial dates to ISO strings', () => {
   assert.equal(isoFromSerial(serial), '2026-08-23');
 });
 
+test('isoFromCellDate never lets timezones move the calendar day', () => {
+  // exceljs-style date: built on UTC midnight; local getters would lag a day
+  // behind UTC in western timezones (the E2E bug).
+  assert.equal(isoFromCellDate(new Date(Date.UTC(2026, 7, 23))), '2026-08-23');
+  assert.equal(isoFromCellDate(new Date(Date.UTC(2026, 7, 24))), '2026-08-24');
+  // Locally-built midnight dates must keep their local wall-calendar day.
+  assert.equal(isoFromCellDate(new Date(2026, 7, 23)), '2026-08-23');
+  // Real datetimes (neither side midnight) follow the serial's UTC day.
+  assert.equal(isoFromCellDate(new Date(Date.UTC(2026, 7, 25, 12, 30))), '2026-08-25');
+
+  // Deterministic branch coverage for every midnight combination, immune to
+  // the machine's timezone: local-midnight-only wins with local getters.
+  const fakeParts = ({ h = 0, utcH = 0 } = {}) => ({
+    getHours: () => h,
+    getMinutes: () => 0,
+    getSeconds: () => 0,
+    getMilliseconds: () => 0,
+    getUTCHours: () => utcH,
+    getUTCMinutes: () => 0,
+    getUTCSeconds: () => 0,
+    getUTCMilliseconds: () => 0,
+    getFullYear: () => 2026,
+    getMonth: () => 7,
+    getDate: () => 22,
+    getUTCFullYear: () => 2026,
+    getUTCMonth: () => 7,
+    getUTCDate: () => 23,
+  });
+  assert.equal(
+    isoFromCellDate(fakeParts({ utcH: 3 })),
+    '2026-08-22',
+    'local midnight beats shifted UTC'
+  );
+  assert.equal(
+    isoFromCellDate(fakeParts({ h: 21 })),
+    '2026-08-23',
+    'non-local-midnight reads the UTC day'
+  );
+  assert.equal(
+    isoFromCellDate(fakeParts({})),
+    '2026-08-23',
+    'both midnights agree on the UTC day'
+  );
+});
+
 test('isValidIso rejects impossible calendar dates', () => {
   assert.equal(isValidIso(2026, 2, 29), false);
   assert.equal(isValidIso(2024, 2, 29), true);
@@ -63,21 +109,45 @@ test('isValidIso rejects impossible calendar dates', () => {
   assert.equal(isValidIso(2026, 0, 10), false);
 });
 
-test('normalizeDia handles Date objects, serials and DD/MM/YYYY strings', () => {
-  assert.deepEqual(normalizeDia(new Date(2026, 7, 23)), { ok: true, iso: '2026-08-23' });
-  assert.deepEqual(normalizeDia(new Date(2026, 0, 5)), { ok: true, iso: '2026-01-05' });
+test('normalizeDia handles Date objects, serials and tolerant strings', () => {
+  assert.equal(normalizeDia(new Date(2026, 7, 23)), '2026-08-23');
+  assert.equal(normalizeDia(new Date(2026, 0, 5)), '2026-01-05');
+  assert.equal(
+    normalizeDia(new Date(Date.UTC(2026, 7, 24))),
+    '2026-08-24',
+    'exceljs UTC-midnight dates must not shift backwards a day'
+  );
 
   const serial = (Date.UTC(2026, 7, 23) - Date.UTC(1899, 11, 30)) / 86400000;
-  assert.deepEqual(normalizeDia(serial), { ok: true, iso: '2026-08-23' });
+  assert.equal(normalizeDia(serial), '2026-08-23');
 
-  assert.deepEqual(normalizeDia('23/08/2026'), { ok: true, iso: '2026-08-23' });
-  assert.deepEqual(normalizeDia(' 1/3/2026 '), { ok: true, iso: '2026-03-01' });
-  assert.deepEqual(normalizeDia('2026-08-23'), { ok: true, iso: '2026-08-23' });
+  assert.equal(normalizeDia('23/08/2026'), '2026-08-23');
+  assert.equal(normalizeDia(' 24/08/2026 '), '2026-08-24', 'padded string');
+  assert.equal(normalizeDia('\t25/08/2026\n'), '2026-08-25', 'hidden whitespace');
+  assert.equal(normalizeDia('26/8/2026'), '2026-08-26', 'single-digit day/month');
+  assert.equal(normalizeDia('9/8/2026'), '2026-08-09', 'single-digit day/month');
+  assert.equal(normalizeDia('27-08-2026'), '2026-08-27', 'dash separator');
+  assert.equal(normalizeDia('28-8-2026'), '2026-08-28', 'dash + single digits');
+  assert.equal(normalizeDia('2026-08-23'), '2026-08-23');
 });
 
 test('normalizeDia rejects junk and impossible dates', () => {
-  for (const junk of ['', '   ', '31/02/2026', '32/01/2026', '00/00/0000', '2026-13-01', 'Aug 23', '08/2026', null, undefined, {}, true]) {
-    assert.equal(normalizeDia(junk).ok, false, String(junk));
+  for (const junk of [
+    '',
+    '   ',
+    '31/02/2026',
+    '32/01/2026',
+    '32-01-2026',
+    '00/00/0000',
+    '2026-13-01',
+    'Aug 23',
+    '08/2026',
+    null,
+    undefined,
+    {},
+    true,
+  ]) {
+    assert.equal(normalizeDia(junk), null, String(junk));
   }
 });
 
@@ -87,6 +157,11 @@ test('cellToText flattens every exceljs cell shape', () => {
   assert.equal(cellToText(null), '');
   assert.equal(cellToText(undefined), '');
   assert.equal(cellToText(new Date(2026, 7, 23)), '23/8/2026');
+  assert.equal(
+    cellToText(new Date(Date.UTC(2026, 7, 25))),
+    '25/8/2026',
+    'UTC-midnight date cells keep their day in any timezone'
+  );
   assert.equal(cellToText(new Date('not a date')), '');
   assert.equal(cellToText({ result: ' Intervalado ' }), 'Intervalado');
   assert.equal(cellToText({ richText: [{ text: 'Long ' }, { text: 'Run' }] }), 'Long Run');
@@ -113,11 +188,12 @@ test('parseSheet maps valid rows and normalizes Dia to ISO', () => {
     fakeRow(1, ['Dia', 'Período', 'Tipo', 'Treino', 'Detalhes', 'FC alvo', 'RPE', 'Tênis', 'Previsão no horário', 'Observações']),
     fakeRow(2, ['23/08/2026', 'Morning', 'Corrida', 'Long Run', 'Zona 2', '150', '3', 'Adizero', '90 min', 'Sentir leve']),
     fakeRow(3, [new Date(2026, 7, 25), '', 'Intervalado', '', '', '', '', '', '', '']),
+    fakeRow(4, [' 26/8/2026 ', '', 'Rodagem', '', '', '', '', '', '', '']),
   ]);
 
   const { records, errors } = parseSheet(worksheet);
   assert.deepEqual(errors, []);
-  assert.equal(records.length, 2);
+  assert.equal(records.length, 3);
 
   assert.deepEqual(records[0], {
     dia: '2026-08-23',
@@ -134,6 +210,7 @@ test('parseSheet maps valid rows and normalizes Dia to ISO', () => {
   assert.equal(records[1].dia, '2026-08-25');
   assert.equal(records[1].tipo, 'Intervalado');
   assert.equal(records[1].periodo, '');
+  assert.equal(records[2].dia, '2026-08-26', 'padded single-digit date parses');
 });
 
 test('parseSheet reports missing required columns on the header row', () => {
@@ -180,6 +257,40 @@ test('parseSheet skips fully empty data rows silently', () => {
   assert.deepEqual(errors, []);
   assert.equal(records.length, 1);
   assert.equal(records[0].dia, '2026-08-26');
+});
+
+test('parseSheet silently skips rogue AI footnote rows', () => {
+  const worksheet = fakeWorksheet([
+    fakeRow(1, ['Dia', 'Tipo']),
+    fakeRow(2, ['27/08/2026', 'Corrida']),
+    fakeRow(3, ['Nota: esta semana inicia o bloco de transição.']),
+    fakeRow(4, ['Note: recovery week ahead']),
+    fakeRow(5, ['OBSERVAÇÃO: aquecer 15 minutos antes de cada sessão']),
+    fakeRow(6, ['Observaçao: sem acento padrao']),
+    fakeRow(7, ['nota minúscula com espaço antes']),
+    fakeRow(8, ['28/08/2026', 'Ciclismo']),
+  ]);
+  const { records, errors } = parseSheet(worksheet);
+  assert.deepEqual(errors, []);
+  assert.equal(records.length, 2);
+  assert.deepEqual(
+    records.map((record) => record.dia),
+    ['2026-08-27', '2026-08-28']
+  );
+});
+
+test('parseSheet still validates rows where a note prefix shares cells with data', () => {
+  const worksheet = fakeWorksheet([
+    fakeRow(1, ['Dia', 'Tipo']),
+    fakeRow(2, ['Nota: ver previsão', 'Corrida']),
+    fakeRow(3, ['29/08/2026', 'Corrida', 'Nota extra no fim']),
+  ]);
+  const { records, errors } = parseSheet(worksheet);
+  assert.deepEqual(errors, [
+    { row: 2, col: 'Dia', error: 'Invalid date format. Use DD/MM/YYYY.' },
+  ]);
+  assert.equal(records.length, 1);
+  assert.equal(records[0].dia, '2026-08-29');
 });
 
 test('parseSheet flags a workbook with no usable rows at all', () => {

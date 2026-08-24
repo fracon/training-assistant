@@ -96,6 +96,14 @@ test('the prompt template keeps the required Portuguese structure', () => {
     /CONTEXTO ADICIONAL DESTA SEMANA\n\n\{\{CONTEXTO_OPCIONAL\}\}\n\nINSTRUÇÕES PARA MONTAR A SEMANA/,
     'context section flows straight into the instructions'
   );
+  const ptRule =
+    'REGRA ESTRITA: NUNCA adicione linhas de notas, observações, rodapés ou células mescladas na planilha. A planilha deve conter EXCLUSIVAMENTE a linha de cabeçalho e as linhas de treino. Qualquer explicação extra deve ir apenas no texto da sua resposta, nunca no arquivo.';
+  assert.ok(PROMPT_TEMPLATE.includes(ptRule), 'strict no-notes Excel rule present');
+  assert.ok(
+    PROMPT_TEMPLATE.indexOf('ARQUIVO EXCEL') !== -1 &&
+      PROMPT_TEMPLATE.indexOf(ptRule) > PROMPT_TEMPLATE.indexOf('ARQUIVO EXCEL'),
+    'strict rule lives inside the ARQUIVO EXCEL section'
+  );
   assert.ok(!PROMPT_TEMPLATE.includes('Exemplos:'), 'example list lives in the UI, not the prompt');
 
   const tokens = PROMPT_TEMPLATE.match(/\{\{[A-Z_]+\}\}/g) ?? [];
@@ -302,6 +310,14 @@ test('both templates carry the identical placeholder contract', () => {
     PROMPT_TEMPLATE_EN,
     /ADDITIONAL CONTEXT FOR THIS WEEK\n\n\{\{CONTEXTO_OPCIONAL\}\}\n\nINSTRUCTIONS FOR PLANNING THE WEEK/,
     'context section flows straight into the instructions'
+  );
+  const enRule =
+    'STRICT RULE: NEVER add note rows, observations, footers, or merged cells inside the spreadsheet. The spreadsheet must EXCLUSIVELY contain the header row and the training rows. Any extra explanations must go only in the text of your response, never in the file.';
+  assert.ok(PROMPT_TEMPLATE_EN.includes(enRule), 'strict no-notes Excel rule present');
+  assert.ok(
+    PROMPT_TEMPLATE_EN.indexOf('EXCEL FILE') !== -1 &&
+      PROMPT_TEMPLATE_EN.indexOf(enRule) > PROMPT_TEMPLATE_EN.indexOf('EXCEL FILE'),
+    'strict rule lives inside the EXCEL FILE section'
   );
   assert.ok(!PROMPT_TEMPLATE_EN.includes('Examples:'), 'example list lives in the UI, not the prompt');
   assert.ok(!PROMPT_TEMPLATE.includes('{{DISPONIBILIDADE}}'));
