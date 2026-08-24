@@ -26,6 +26,15 @@ body.shell-mounted {
   flex-shrink: 0;
 }
 
+/* The topbar is brand-free: only actions remain, so they hug the right
+   edge instead of floating at the inherited centered position. The
+   min-height keeps the bar tall now that no text defines its flow height. */
+.topbar {
+  justify-content: flex-end;
+  align-items: center;
+  min-height: 2.75rem;
+}
+
 .main-content {
   flex: 1;
   min-width: 0;

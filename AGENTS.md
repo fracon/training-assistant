@@ -1,7 +1,7 @@
-# 🧠 AI Agent Context & Guidelines: Training Assistant
+# 🧠 AI Agent Context & Guidelines: Kinesis
 
 ## 🎯 Project Overview
-"Training Assistant" is a local-first, privacy-focused Node.js web application designed for runners. It parses Garmin `.FIT` files locally and combines them with user-inputted context (RPE, weather, gear, planned workout) to generate a highly structured, copy-pasteable prompt. This prompt is then fed by the user into an LLM (like ChatGPT or Claude) to act as a personalized running coach.
+"Kinesis" (formerly "Training Assistant") is a local-first, privacy-focused Node.js web application designed for runners. It parses Garmin `.FIT` files locally and combines them with user-inputted context (RPE, weather, gear, planned workout) to generate a highly structured, copy-pasteable prompt. This prompt is then fed by the user into an LLM (like ChatGPT or Claude) to act as a personalized running coach.
 
 ## 🛠️ Tech Stack & Infrastructure
 - **Backend:** Node.js (v24), Fastify, vanilla JavaScript.

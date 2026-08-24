@@ -88,7 +88,8 @@ function buildSidebar(activeId) {
   const brand = el('div', 'sidebar-brand');
   brand.appendChild(icon('footprints'));
   const brandName = el('span', 'sidebar-label');
-  brandName.textContent = 'Training Assistant';
+  brandName.setAttribute('data-i18n', 'app.name');
+  brandName.textContent = 'Kinesis';
   brand.appendChild(brandName);
   aside.appendChild(brand);
 
@@ -133,19 +134,6 @@ function buildSidebar(activeId) {
 
 function buildTopbar() {
   const header = el('header', 'topbar');
-
-  const brand = el('span', 'brand');
-  brand.textContent = 'Training Assistant';
-  header.appendChild(brand);
-
-  const dot = el('span', 'dot');
-  dot.textContent = '•';
-  header.appendChild(dot);
-
-  const tagline = el('span', 'tagline');
-  tagline.setAttribute('data-i18n', 'app.tagline');
-  tagline.textContent = 'Local & Offline';
-  header.appendChild(tagline);
 
   const actions = el('div', 'topbar-actions');
 

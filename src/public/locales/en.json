@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "Training Assistant",
+    "name": "Kinesis",
     "tagline": "Local & Offline"
   },
   "aiCoach": {
@@ -74,11 +74,11 @@
     "navLabel": "Main navigation",
     "logout": "Logout",
     "footer": {
-      "status": "Training Assistant • Local & Offline"
+      "status": "Local & Offline"
     }
   },
   "login": {
-    "title": "Sign In • Training Assistant",
+    "title": "Sign In • Kinesis",
     "heading": "Welcome back",
     "subtitle": "Sign in to keep your training log on track.",
     "emailLabel": "Email",
@@ -91,7 +91,7 @@
     "registeredBanner": "Account created! Sign in to continue."
   },
   "register": {
-    "title": "Create Account • Training Assistant",
+    "title": "Create Account • Kinesis",
     "heading": "Create your account",
     "subtitle": "Join in seconds and keep every workout in one place.",
     "firstNameLabel": "First Name",
@@ -129,7 +129,7 @@
     "generic": "Something went wrong. Please try again."
   },
   "training": {
-    "title": "Training Session • Training Assistant"
+    "title": "Training Session • Kinesis"
   },
   "session": {
     "title": "Training Session",

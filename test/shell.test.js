@@ -103,8 +103,34 @@ test('bottom bar is a footer element carrying the translatable status line', () 
   assert.equal(FOOTER_ELEMENT_TAG, 'footer');
   assert.equal(FOOTER_CLASS_NAME, 'bottom-bar');
   assert.equal(FOOTER_STATUS_KEY, 'shell.footer.status');
-  assert.equal(en.shell.footer.status, 'Training Assistant • Local & Offline');
-  assert.equal(pt.shell.footer.status, 'Training Assistant • Local e Offline');
+  assert.equal(en.shell.footer.status, 'Local & Offline');
+  assert.equal(pt.shell.footer.status, 'Local e Offline');
+});
+
+test('the brand lives only in the sidebar as Kinesis', () => {
+  const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
+
+  assert.ok(!js.includes('Training Assistant'), 'the old name is gone from the shell');
+  assert.match(
+    js,
+    /brandName\.setAttribute\('data-i18n', 'app\.name'\);/,
+    'the sidebar brand resolves through translations'
+  );
+  assert.match(js, /brandName\.textContent = 'Kinesis';/, 'Kinesis is the pre-translation fallback');
+  assert.ok(!js.includes("el('span', 'brand')"), 'no topbar brand span is built anymore');
+  assert.ok(!js.includes("el('span', 'dot')"), 'the brand dot separator is gone');
+  assert.ok(!js.includes("el('span', 'tagline')"), 'the topbar tagline is gone');
+
+  const css = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.css'), 'utf8');
+  assert.match(
+    css,
+    /\.topbar \{[^}]*justify-content:\s*flex-end/,
+    'action-only topbar hugs the right edge'
+  );
+  assert.match(css, /\.topbar \{[^}]*min-height:\s*2\.75rem/, 'the bar keeps its height without text flow');
+
+  assert.equal(en.app.name, 'Kinesis');
+  assert.equal(pt.app.name, 'Kinesis');
 });
 
 test('shell chrome strings are translated and wired through i18n attributes', () => {

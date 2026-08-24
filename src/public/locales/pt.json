@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "Training Assistant",
+    "name": "Kinesis",
     "tagline": "Local e Offline"
   },
   "aiCoach": {
@@ -74,11 +74,11 @@
     "navLabel": "Navegação principal",
     "logout": "Sair",
     "footer": {
-      "status": "Training Assistant • Local e Offline"
+      "status": "Local e Offline"
     }
   },
   "login": {
-    "title": "Entrar • Training Assistant",
+    "title": "Entrar • Kinesis",
     "heading": "Bem-vindo de volta",
     "subtitle": "Entre para manter seu diário de treinos em dia.",
     "emailLabel": "E-mail",
@@ -91,7 +91,7 @@
     "registeredBanner": "Conta criada! Entre para continuar."
   },
   "register": {
-    "title": "Criar Conta • Training Assistant",
+    "title": "Criar Conta • Kinesis",
     "heading": "Crie sua conta",
     "subtitle": "Cadastre-se em segundos e mantenha todos os treinos em um só lugar.",
     "firstNameLabel": "Nome",
@@ -129,7 +129,7 @@
     "generic": "Algo deu errado. Tente novamente."
   },
   "training": {
-    "title": "Sessão de Treino • Training Assistant"
+    "title": "Sessão de Treino • Kinesis"
   },
   "session": {
     "title": "Sessão de Treino",
