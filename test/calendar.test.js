@@ -2,6 +2,10 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { readFileSync } = require('node:fs');
+const { join } = require('node:path');
+
+const publicDir = join(__dirname, '..', 'src', 'public');
 
 const {
   WEEK_START_STORAGE_KEY,
@@ -14,6 +18,7 @@ const {
   weekdayOrder,
   weekdayArrayIndex,
   buildCalendarCells,
+  chipLines,
 } = require('../src/public/calendar.js');
 const en = require('../src/public/locales/en.json');
 const pt = require('../src/public/locales/pt.json');
@@ -199,4 +204,80 @@ test('calendar locale data is complete and parity-safe', () => {
   assert.equal(pt.calendar.months[0], 'Janeiro');
   assert.equal(en.calendar.weekdaysShort[0], 'Mon');
   assert.equal(pt.calendar.weekdaysShort[0], 'Seg');
+});
+
+test('chipLines splits trainings into a secondary type line and a full title line', () => {
+  assert.deepEqual(
+    chipLines({ tipo: 'Corrida', treino: 'Recuperação / Base muito leve' }),
+    { type: 'Corrida', title: 'Recuperação / Base muito leve' },
+    'the full Treino value is never truncated'
+  );
+  assert.deepEqual(chipLines({ tipo: 'Corrida', treino: '' }), { type: 'Corrida', title: '' });
+  assert.deepEqual(chipLines({ tipo: 'Ciclismo' }), { type: 'Ciclismo', title: '' });
+});
+
+test('training chips render multi-line content and inject Detalhes into the tooltip div', () => {
+  const js = readFileSync(join(publicDir, 'calendar.js'), 'utf8');
+
+  assert.ok(js.includes("el('span', 'chip-type')"), 'Tipo renders in .chip-type');
+  assert.ok(js.includes("el('span', 'chip-title')"), 'full Treino renders in .chip-title');
+
+  const tooltipStart = js.indexOf("el('div', 'chip-tooltip')");
+  assert.ok(tooltipStart !== -1, 'a custom .chip-tooltip element is created');
+  const chipEnd = js.indexOf('cellNode.appendChild(chip)');
+  assert.ok(chipEnd > tooltipStart);
+  const chipBody = js.slice(js.indexOf("el('span', 'training-chip'"), chipEnd);
+  assert.ok(chipBody.includes('training.detalhes'), 'Detalhes is injected inside the tooltip');
+  assert.match(
+    chipBody,
+    /tooltip\.textContent = training\.detalhes;/,
+    'Detalhes text goes into the tooltip node'
+  );
+
+  assert.ok(!/\bchip\.title\s*=/.test(js), 'native title attribute removed from training chips');
+  assert.ok(!js.includes('trainingLabel'), 'old single-line label helper is gone');
+});
+
+test('calendar.css styles chips as flex columns with an elegant custom hover tooltip', () => {
+  const css = readFileSync(join(publicDir, 'calendar.css'), 'utf8');
+
+  const chipBlock = css.match(/\.day-cell \.training-chip \{[^}]*\}/)?.[0] ?? '';
+  assert.match(chipBlock, /position:\s*relative/, 'tooltip positioning anchor');
+  assert.match(chipBlock, /display:\s*flex/);
+  assert.match(chipBlock, /flex-direction:\s*column/);
+  assert.doesNotMatch(chipBlock, /ellipsis|nowrap/, 'text wraps naturally, no truncation');
+
+  assert.match(css, /\.day-cell \.chip-type \{[^}]*font-size:\s*0\.75rem/);
+  assert.match(css, /\.day-cell \.chip-type \{[^}]*text-transform:\s*uppercase/);
+  assert.match(css, /\.day-cell \.chip-title \{[^}]*font-size:\s*0\.85rem/);
+  assert.match(css, /\.day-cell \.chip-title \{[^}]*word-wrap:\s*break-word/);
+
+  const tooltipBlock = css.match(/\.day-cell \.chip-tooltip \{[^}]*\}/)?.[0] ?? '';
+  for (const expected of [
+    'position: absolute',
+    'bottom: 100%',
+    'left: 50%',
+    'transform: translateX(-50%) translateY(-4px)',
+    'background: var(--ink)',
+    'color: var(--card)',
+    'box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15)',
+    'z-index: 50',
+    'width: max-content',
+    'max-width: 250px',
+    'white-space: normal',
+    'border-radius: 6px',
+    'padding: 8px 12px',
+    'opacity: 0',
+    'pointer-events: none',
+    'transition: opacity 0.2s ease, transform 0.2s ease',
+  ]) {
+    assert.ok(tooltipBlock.includes(expected), expected);
+  }
+
+  const hoverBlock = css.match(
+    /\.day-cell \.training-chip:hover \.chip-tooltip \{[^}]*\}/
+  )?.[0];
+  assert.ok(hoverBlock, 'hover state rule exists');
+  assert.match(hoverBlock, /opacity:\s*1/);
+  assert.match(hoverBlock, /transform: translateX\(-50%\) translateY\(-8px\)/, 'tooltip floats up');
 });

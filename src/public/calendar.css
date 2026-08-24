@@ -152,19 +152,56 @@
 }
 
 .day-cell .training-chip {
-  display: block;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   margin-top: 0.3rem;
-  padding: 0.12rem 0.4rem;
+  padding: 0.28rem 0.45rem;
   border-radius: 7px;
   background: rgba(111, 144, 112, 0.18);
   color: var(--accent-deep);
-  font-size: 0.62rem;
-  font-weight: 700;
-  letter-spacing: 0.01em;
+}
+
+.day-cell .chip-type {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+
+.day-cell .chip-title {
+  font-size: 0.85rem;
+  line-height: 1.2;
+  word-wrap: break-word;
+}
+
+.day-cell .chip-tooltip {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%) translateY(-4px);
+  z-index: 50;
+  width: max-content;
+  max-width: 250px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--card);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  font-size: 0.8rem;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: normal;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.day-cell .training-chip:hover .chip-tooltip {
+  opacity: 1;
+  transform: translateX(-50%) translateY(-8px);
 }
 
 .day-cell .chip-more {

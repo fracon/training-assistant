@@ -110,6 +110,15 @@ function el(tag, className) {
   return node;
 }
 
+// Pure view-model for a calendar training chip: the Tipo renders as the
+// small secondary line, the full untruncated Treino as the main line.
+export function chipLines(training) {
+  return {
+    type: training.tipo,
+    title: training.treino && training.treino !== '' ? training.treino : '',
+  };
+}
+
 function setupCalendarPage() {
   const grid = document.getElementById('calendarGrid');
   const monthTitle = document.getElementById('monthTitle');
@@ -133,20 +142,24 @@ function setupCalendarPage() {
     return translate(i18n ? i18n.messages : {}, key, params);
   }
 
-  function trainingLabel(training) {
-    return training.treino && training.treino !== ''
-      ? `${training.tipo} • ${training.treino}`
-      : training.tipo;
-  }
-
   function appendTrainingChips(cellNode, dayTrainings) {
     const visible = dayTrainings.slice(0, 3);
     for (const training of visible) {
+      const lines = chipLines(training);
       const chip = el('span', 'training-chip');
-      chip.textContent = trainingLabel(training);
-      chip.title = [training.periodo, training.detalhes, training.observacoes]
-        .filter((part) => part)
-        .join(' — ');
+      const type = el('span', 'chip-type');
+      type.textContent = lines.type;
+      chip.appendChild(type);
+      if (lines.title) {
+        const title = el('span', 'chip-title');
+        title.textContent = lines.title;
+        chip.appendChild(title);
+      }
+      if (training.detalhes) {
+        const tooltip = el('div', 'chip-tooltip');
+        tooltip.textContent = training.detalhes;
+        chip.appendChild(tooltip);
+      }
       cellNode.appendChild(chip);
     }
     if (dayTrainings.length > visible.length) {
