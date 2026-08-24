@@ -111,7 +111,7 @@ Whenever starting the development of a new feature, you MUST follow this strict 
     - The exact Portuguese prompt template provided by the user MUST be strictly used verbatim — no rewriting, translation, or "improvements" to its wording.
     - The template contains specific personal rules: Fânzeres weather context, RPE progression rules, shoe rotation, and a strict Excel-style output format for the weekly plan.
     - Only three placeholders are replaced at generation time: `{{DATA_DA_SEGUNDA}}` (Target Date), `{{DISPONIBILIDADE}}` (the 7-day availability lines), and `{{CONTEXTO_OPCIONAL}}` (optional notes).
-  - **i18n Coverage:** all UI chrome (labels, buttons, hints) must be translatable via `src/public/locales/en.json` / `pt.json`; the embedded Portuguese prompt template itself stays in Portuguese regardless of UI language.
+  - **i18n Coverage:** all UI chrome (labels, buttons, hints) must be translatable via `src/public/locales/en.json` / `pt.json`. Both prompt templates are embedded verbatim: Portuguese (`pt-BR`, default fallback) and English (`en-US`); the active UI language selects which one is generated. Placeholder names (`{{DATA_DA_SEGUNDA}}`, per-day `{{DISP_…}}`, `{{CONTEXTO_OPCIONAL}}`) stay identical in both templates.
 
 - **Phase 8: Garmin Automation (WebUSB / File System API) [🚧 PLANNED]**
   - Eliminate manual `.FIT` file drag-and-drop.

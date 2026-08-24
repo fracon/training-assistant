@@ -10,6 +10,7 @@
     "targetDateHint": "Semana a ser planejada. Padrão: próxima segunda-feira.",
     "availability": "Disponibilidade",
     "availabilityHint": "Informe ao coach quando você pode correr em cada dia.",
+    "defaultRoutine": "Rotina normal",
     "days": {
       "monday": "Segunda",
       "tuesday": "Terça",

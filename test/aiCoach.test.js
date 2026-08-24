@@ -9,13 +9,18 @@ const publicDir = join(__dirname, '..', 'src', 'public');
 
 const {
   PROMPT_TEMPLATE,
+  PROMPT_TEMPLATE_EN,
   PLACEHOLDERS,
+  DEFAULT_ROUTINE_BY_LANG,
   pad2,
   nextMonday,
   formatDiaSlashes,
   dateInputValue,
   parseInputDate,
   availabilityDefaults,
+  applyRoutineDefault,
+  resolveTemplateLang,
+  defaultRoutineFor,
   buildPrompt,
   copyPromptText,
 } = require('../src/public/ai-coach.js');
@@ -216,4 +221,135 @@ test('locale files expose every ai-coach string in both languages', async () => 
   }
 
   assert.notEqual(en.aiCoach.title, pt.aiCoach.title);
+});
+
+test('the default routine string is language-aware', () => {
+  assert.deepEqual(DEFAULT_ROUTINE_BY_LANG, {
+    'en-US': 'Normal routine',
+    'pt-BR': 'Rotina normal',
+  });
+  assert.equal(defaultRoutineFor('en-US'), 'Normal routine');
+  assert.equal(defaultRoutineFor('pt-BR'), 'Rotina normal');
+  assert.equal(defaultRoutineFor('junk'), 'Normal routine', 'app-wide en-US fallback');
+
+  assert.deepEqual(availabilityDefaults('pt-BR'), availabilityDefaults());
+  for (const value of Object.values(availabilityDefaults('en-US'))) {
+    assert.equal(value, 'Normal routine');
+  }
+});
+
+test('applyRoutineDefault rewrites only untouched day values', () => {
+  const values = {
+    segunda: 'Rotina normal',
+    terca: 'Só depois das 19h',
+    quarta: 'Rotina normal',
+    quinta: '',
+    sexta: 'Rotina normal',
+    sabado: 'Livre',
+    domingo: 'Rotina normal',
+  };
+  assert.deepEqual(
+    applyRoutineDefault(values, 'Rotina normal', 'Normal routine'),
+    {
+      segunda: 'Normal routine',
+      terca: 'Só depois das 19h',
+      quarta: 'Normal routine',
+      quinta: '',
+      sexta: 'Normal routine',
+      sabado: 'Livre',
+      domingo: 'Normal routine',
+    }
+  );
+  assert.deepEqual(
+    applyRoutineDefault({ segunda: 'Custom' }, 'Rotina normal', 'Rotina normal'),
+    { segunda: 'Custom' },
+    'identical defaults leave everything untouched'
+  );
+});
+
+test('resolveTemplateLang keeps Portuguese as the template fallback', () => {
+  assert.equal(resolveTemplateLang('pt-BR'), 'pt-BR');
+  assert.equal(resolveTemplateLang('en-US'), 'en-US');
+  assert.equal(resolveTemplateLang('fr-FR'), 'pt-BR');
+  assert.equal(resolveTemplateLang(undefined), 'pt-BR');
+});
+
+test('both templates carry the identical placeholder contract', () => {
+  const tokensOf = (template) => template.match(/\{\{[A-Z_]+\}\}/g) ?? [];
+  assert.deepEqual(tokensOf(PROMPT_TEMPLATE_EN), tokensOf(PROMPT_TEMPLATE));
+  assert.match(PROMPT_TEMPLATE_EN, /WEEK DATE/);
+  assert.match(PROMPT_TEMPLATE_EN, /AVAILABILITY/);
+  assert.match(PROMPT_TEMPLATE_EN, /ADDITIONAL CONTEXT FOR THIS WEEK/);
+  assert.match(PROMPT_TEMPLATE_EN, /INSTRUCTIONS FOR PLANNING THE WEEK/);
+  assert.match(PROMPT_TEMPLATE_EN, /SPREADSHEET FORMAT/);
+  assert.match(PROMPT_TEMPLATE_EN, /EXCEL FILE/);
+  assert.match(PROMPT_TEMPLATE_EN, /Fânzeres, Gondomar, Portugal/);
+  assert.match(
+    PROMPT_TEMPLATE_EN,
+    /\| Date \| Day \| Period \| Type \| Workout \| Details \| Target HR \| RPE \| Shoe \| Weather Forecast \| Notes \|/
+  );
+  assert.match(
+    PROMPT_TEMPLATE_EN,
+    /If recent data indicates that the originally expected plan should be altered, prioritize the correct adaptation/
+  );
+  assert.ok(!PROMPT_TEMPLATE.includes('{{DISPONIBILIDADE}}'));
+});
+
+test('buildPrompt generates the English template in English mode', () => {
+  const prompt = buildPrompt({
+    targetDate: new Date(2026, 7, 31),
+    disponibilidade: {},
+    contexto: 'traveling on Tuesday',
+    lang: 'en-US',
+  });
+
+  assert.ok(prompt.startsWith('I want you to generate my running training schedule'));
+  assert.ok(prompt.includes('The week to be planned starts on:\n31/08/2026'));
+  assert.ok(prompt.includes('Monday: Normal routine'));
+  assert.ok(prompt.includes('Sunday: Normal routine'));
+  assert.ok(!prompt.includes('Rotina normal'), 'no Portuguese leftovers in EN output');
+  assert.ok(!prompt.includes('{{'));
+  assert.ok(prompt.includes('traveling on Tuesday'));
+});
+
+test('buildPrompt keeps the Portuguese template by default and for unknown languages', () => {
+  for (const lang of [undefined, 'pt-BR', 'fr-FR']) {
+    const prompt = buildPrompt({
+      targetDate: new Date(2026, 7, 31),
+      disponibilidade: {},
+      contexto: '',
+      lang,
+    });
+    assert.ok(prompt.startsWith('Quero que você gere minha planilha de treinos'));
+    assert.ok(prompt.includes('Segunda: Rotina normal'));
+    assert.ok(!prompt.includes('{{'));
+  }
+});
+
+test('buildPrompt merges user values over language-aware defaults', () => {
+  const prompt = buildPrompt({
+    targetDate: new Date(2026, 7, 31),
+    disponibilidade: { segunda: 'Evening only' },
+    contexto: '',
+    lang: 'en-US',
+  });
+  assert.ok(prompt.includes('Monday: Evening only'));
+  assert.ok(prompt.includes('Tuesday: Normal routine'));
+});
+
+test('locale files expose the translated default routine', async () => {
+  const en = JSON.parse(readFileSync(join(publicDir, 'locales', 'en.json'), 'utf8'));
+  const pt = JSON.parse(readFileSync(join(publicDir, 'locales', 'pt.json'), 'utf8'));
+
+  assert.equal(en.aiCoach.defaultRoutine, 'Normal routine');
+  assert.equal(pt.aiCoach.defaultRoutine, 'Rotina normal');
+});
+
+test('ai-coach.js wires the guarded language-change listener and lang-aware generation', () => {
+  const js = readFileSync(join(publicDir, 'ai-coach.js'), 'utf8');
+
+  assert.match(js, /addEventListener\('app:languagechange'/);
+  assert.match(js, /applyRoutineDefault\(currentValues, lastRoutineDefault, nextDefault\)/);
+  assert.match(js, /lastRoutineDefault = nextDefault;/);
+  assert.match(js, /lang: i18n\.language/);
 });

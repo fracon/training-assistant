@@ -1,5 +1,5 @@
 import { initShell, getShellI18n, refreshIcons } from './shared/shell.js';
-import { translate } from './shared/i18n.js';
+import { translate, normalizeClientLanguage } from './shared/i18n.js';
 
 // Verbatim Portuguese briefing for the external AI Coach.
 // The wording below is a hard requirement — do not translate, rewrite
@@ -90,8 +90,108 @@ Na resposta, apresente:
 2. a tabela completa;
 3. o link para download do arquivo Excel.`;
 
+// Verbatim English briefing, selected when the active UI language is
+// English. Placeholder names stay identical to the Portuguese template so
+// the replacement logic never changes.
+export const PROMPT_TEMPLATE_EN = `I want you to generate my running training schedule for next week, continuing the plan we are currently following.
+
+Use ALL available context from my training, especially:
+- the workouts completed in recent weeks;
+- my subjective feedback after each session;
+- progression of volume, intensity, and duration of long runs;
+- response to quality workouts;
+- fatigue and recovery;
+- recent history of aches or discomforts;
+- adaptation to different shoes;
+- weather conditions;
+- my goal races and current preparation stage.
+
+Do not create an isolated or generic week. The week must be a coherent progression of the current cycle.
+
+WEEK DATE
+
+The week to be planned starts on:
+{{DATA_DA_SEGUNDA}}
+
+AVAILABILITY
+
+Monday: {{DISP_SEG}}
+Tuesday: {{DISP_TER}}
+Wednesday: {{DISP_QUA}}
+Thursday: {{DISP_QUI}}
+Friday: {{DISP_SEX}}
+Saturday: {{DISP_SAB}}
+Sunday: {{DISP_DOM}}
+
+If I do not provide any special restrictions, assume my normal running routine.
+
+ADDITIONAL CONTEXT FOR THIS WEEK
+
+{{CONTEXTO_OPCIONAL}}
+
+Examples: travel; schedule changes; poor sleep; fatigue; pain/discomfort; work commitments; inability to run on a specific day; shoe preference; any other relevant circumstance.
+
+INSTRUCTIONS FOR PLANNING THE WEEK
+
+1. Plan ONLY running workouts. Do not include strength training.
+2. Keep the general structure we've been using when it still makes sense, but don't be strictly bound by it. Adjust days, intensity, volume, or recovery based on recent history.
+3. Consider the accumulated load. Do not simultaneously increase multiple important load dimensions unnecessarily (like duration, intensity, and long run volume).
+4. Use the actual results of recent workouts to decide progression. An exceptionally good workout should not automatically trigger an aggressive jump in load.
+5. On easy runs, prioritize effort and HR over pace.
+6. For quality workouts, clearly specify: warm-up; number and duration of blocks; recovery; intensity/HR/RPE; cool-down.
+7. For long runs, clearly specify each part of the workout. If there is a controlled/progressive block, make it explicit that it should be done by effort and indicate the expected RPE.
+8. Consider that my usual route has plenty of hills. Do not dictate that I chase pace on uphills. HR may rise significantly in these sections; consider effort and breathing primarily.
+9. Consider temperature and weather conditions. Check the forecast for Fânzeres, Gondomar, Portugal, specifically around the workout time: weekday runs: approximately 12 PM; Sunday long run: between 8 AM and 9 AM.
+10. The forecast must match the workout time, not just the daily min/max.
+11. If strong heat is forecasted, adapt the workout when necessary and make this explicit in the notes. Do not prescribe inappropriate intensity just to maintain the original plan.
+12. Choose the most appropriate shoe for each session considering the shoes I have available, the type of workout, and our recent history with each.
+13. Consider any recent pain or discomfort, but do not continue treating an old injury as active if subsequent workouts demonstrate full recovery.
+14. If there is any recent sign that warrants caution, make the necessary adaptation and explain it in the notes.
+15. The goal is not to maximize each individual workout. The goal is to build consistency and arrive at goal races in the best possible condition.
+
+SPREADSHEET FORMAT
+
+Keep EXACTLY the table format we already use, adding only "Data" (Date) as the FIRST column.
+The columns must be, in this order: Date, Day, Period, Type, Workout, Details, Target HR, RPE, Shoe, Weather Forecast, Notes.
+
+Structural example:
+| Date | Day | Period | Type | Workout | Details | Target HR | RPE | Shoe | Weather Forecast | Notes |
+
+Use dates in DD/MM/YYYY format. In "Period", use the actual expected time/period (e.g., ~12h or 8-9h). In "Weather Forecast", report compactly (e.g., 23-24 °C, partly cloudy (~12h)). Do not include rows for strength training.
+
+EXCEL FILE
+
+After defining the plan, generate an Excel (.xlsx) file for download maintaining the visual style (highlighted header, readable text, adequate column width, text wrapping). Before generating the Excel, briefly analyze the recent load internally and determine whether the week represents maintenance, progression, or recovery.
+
+In your response, provide:
+1. a short explanation of the week's goal and what changed compared to the previous one;
+2. the complete table;
+3. the link to download the Excel file.
+If recent data indicates that the originally expected plan should be altered, prioritize the correct adaptation rather than simply repeating the previous week's structure.`;
+
 const DAY_KEYS = ['segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado', 'domingo'];
-const DEFAULT_AVAILABILITY = 'Rotina normal';
+
+export const DEFAULT_ROUTINE_BY_LANG = {
+  'en-US': 'Normal routine',
+  'pt-BR': 'Rotina normal',
+};
+
+// The prompt template keeps its historical Portuguese fallback for unknown
+// languages; availability defaults follow the app-wide en-US fallback.
+export const TEMPLATE_BY_LANG = {
+  'pt-BR': PROMPT_TEMPLATE,
+  'en-US': PROMPT_TEMPLATE_EN,
+};
+
+export function resolveTemplateLang(lang) {
+  return Object.prototype.hasOwnProperty.call(TEMPLATE_BY_LANG, lang)
+    ? lang
+    : 'pt-BR';
+}
+
+export function defaultRoutineFor(lang) {
+  return DEFAULT_ROUTINE_BY_LANG[normalizeClientLanguage(lang)];
+}
 
 export const PLACEHOLDERS = {
   segunda: '{{DISP_SEG}}',
@@ -126,29 +226,42 @@ export function dateInputValue(date) {
   return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
 }
 
-export function availabilityDefaults() {
+export function availabilityDefaults(lang = 'pt-BR') {
+  const routine = defaultRoutineFor(lang);
   return {
-    segunda: DEFAULT_AVAILABILITY,
-    terca: DEFAULT_AVAILABILITY,
-    quarta: DEFAULT_AVAILABILITY,
-    quinta: DEFAULT_AVAILABILITY,
-    sexta: DEFAULT_AVAILABILITY,
-    sabado: DEFAULT_AVAILABILITY,
-    domingo: DEFAULT_AVAILABILITY,
+    segunda: routine,
+    terca: routine,
+    quarta: routine,
+    quinta: routine,
+    sexta: routine,
+    sabado: routine,
+    domingo: routine,
   };
+}
+
+// Swaps only the values still holding the previous language's default
+// routine, so anything the user typed stays untouched.
+export function applyRoutineDefault(values, previousDefault, nextDefault) {
+  const updated = {};
+  for (const [day, value] of Object.entries(values)) {
+    updated[day] = value === previousDefault ? nextDefault : value;
+  }
+  return updated;
 }
 
 function replaceAll(text, token, value) {
   return text.split(token).join(value);
 }
 
-export function buildPrompt({ targetDate, disponibilidade = {}, contexto = '' }) {
+export function buildPrompt({ targetDate, disponibilidade = {}, contexto = '', lang = 'pt-BR' }) {
+  const templateLang = resolveTemplateLang(lang);
+  const template = TEMPLATE_BY_LANG[templateLang];
   let prompt = replaceAll(
-    PROMPT_TEMPLATE,
+    template,
     '{{DATA_DA_SEGUNDA}}',
     formatDiaSlashes(targetDate)
   );
-  const availability = { ...availabilityDefaults(), ...disponibilidade };
+  const availability = { ...availabilityDefaults(templateLang), ...disponibilidade };
   for (const day of DAY_KEYS) {
     prompt = replaceAll(prompt, PLACEHOLDERS[day], String(availability[day] ?? '').trim());
   }
@@ -191,10 +304,10 @@ const DAY_INPUT_IDS = {
 const COPY_FEEDBACK_MS = 2000;
 
 function setupAiCoachPage() {
-  let i18n = null;
+  const i18n = getShellI18n();
 
   function t(key) {
-    return translate(i18n ? i18n.messages : {}, key);
+    return translate(i18n.messages, key);
   }
 
   const form = document.getElementById('promptForm');
@@ -208,6 +321,30 @@ function setupAiCoachPage() {
   const copyLabel = document.getElementById('copyLabel');
 
   targetDateInput.value = dateInputValue(nextMonday());
+
+  // Fresh form: stamp the current language's default routine on all seven
+  // day inputs and remember it so later language switches only rewrite
+  // values the user has not customized yet.
+  let lastRoutineDefault = t('aiCoach.defaultRoutine') || defaultRoutineFor(i18n.language);
+  for (const inputId of Object.values(DAY_INPUT_IDS)) {
+    const input = document.getElementById(inputId);
+    if (input) input.value = lastRoutineDefault;
+  }
+
+  document.addEventListener('app:languagechange', () => {
+    const nextDefault = t('aiCoach.defaultRoutine') || defaultRoutineFor(i18n.language);
+    const currentValues = {};
+    for (const [day, inputId] of Object.entries(DAY_INPUT_IDS)) {
+      const input = document.getElementById(inputId);
+      if (input) currentValues[day] = input.value;
+    }
+    const updated = applyRoutineDefault(currentValues, lastRoutineDefault, nextDefault);
+    for (const [day, value] of Object.entries(updated)) {
+      const input = document.getElementById(DAY_INPUT_IDS[day]);
+      if (input) input.value = value;
+    }
+    lastRoutineDefault = nextDefault;
+  });
 
   let copiedTimer = null;
 
@@ -239,6 +376,7 @@ function setupAiCoachPage() {
       targetDate,
       disponibilidade,
       contexto: optionalContextInput.value,
+      lang: i18n.language,
     });
     resultSection.classList.remove('hidden');
     resultPlaceholder.classList.add('hidden');

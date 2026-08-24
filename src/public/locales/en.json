@@ -10,6 +10,7 @@
     "targetDateHint": "Week to plan. Defaults to next Monday.",
     "availability": "Availability",
     "availabilityHint": "Tell the coach when you can run each day.",
+    "defaultRoutine": "Normal routine",
     "days": {
       "monday": "Monday",
       "tuesday": "Tuesday",
