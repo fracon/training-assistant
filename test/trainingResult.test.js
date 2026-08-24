@@ -477,6 +477,19 @@ test('training-result.html ships the expanded feedback grid and generator button
     /<textarea id="feedbackPain" rows="3" class="input-control"[\s\S]*?data-i18n-placeholder="feedback\.painPlaceholder"><\/textarea>/
   );
 
+  assert.match(
+    html,
+    /data-i18n="session\.freeFeedbackLabel">Free feedback<\/label>/,
+    'the free feedback label uses its dedicated translation key'
+  );
+  assert.match(
+    html,
+    /placeholder="How was the workout\? Sleep, weather, general sensations\.\.\."\s*\n\s*data-i18n-placeholder="session\.freeFeedbackPlaceholder"/,
+    'the free feedback textarea ships the restored placeholder'
+  );
+  assert.ok(!html.includes('session.notesLabel'), 'dead notes label binding removed');
+  assert.ok(!html.includes('session.notesPlaceholder'), 'dead notes placeholder binding removed');
+
   for (const optionKey of ['session.hrSourceStrap', 'session.hrSourceOptical', 'session.hrSourceNone']) {
     assert.match(html, new RegExp(`data-i18n="${optionKey}"`), `${optionKey} translated`);
   }
@@ -658,8 +671,8 @@ test('session locale namespace stays in parity across en-US and pt-BR', () => {
     'fieldTenis',
     'feedbackHeading',
     'realizedRpeLabel',
-    'notesLabel',
-    'notesPlaceholder',
+    'freeFeedbackLabel',
+    'freeFeedbackPlaceholder',
     'fieldSmartwatch',
     'smartwatchYes',
     'smartwatchNo',
@@ -725,10 +738,23 @@ test('session locale namespace stays in parity across en-US and pt-BR', () => {
     'energyPlaceholder',
     'fieldPain',
     'painPlaceholder',
+    'notesLabel',
+    'notesPlaceholder',
   ]) {
     assert.equal(en.session[deadKey], undefined, `en.session.${deadKey} removed`);
     assert.equal(pt.session[deadKey], undefined, `pt.session.${deadKey} removed`);
   }
+
+  assert.equal(en.session.freeFeedbackLabel, 'Free feedback');
+  assert.equal(pt.session.freeFeedbackLabel, 'Feedback livre');
+  assert.equal(
+    en.session.freeFeedbackPlaceholder,
+    'How was the workout? Sleep, weather, general sensations...'
+  );
+  assert.equal(
+    pt.session.freeFeedbackPlaceholder,
+    'Como foi o treino? Sono, clima, sensações gerais...'
+  );
 
   const PAIN_I18N = {
     common: {
