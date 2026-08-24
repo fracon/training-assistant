@@ -199,8 +199,8 @@ function baseForm(overrides = {}) {
     feedback_notas: 'Boa sensação',
     feedback_shoe: 'Nimbus 26',
     hr_source_label: 'Cinta peitoral',
+    terrain_label: 'Asfalto',
     feedback_weather: '22°C nublado',
-    feedback_terrain: 'loop plano',
     feedback_breathing: 'controlada',
     feedback_muscle: 'pernas frescas',
     feedback_energy: 'daria para continuar',
@@ -240,7 +240,7 @@ test('collectPromptValues maps planned data, form state and FIT placeholders', (
   assert.equal(values.TENIS_UTILIZADO, 'Nimbus 26');
   assert.equal(values.FONTE_FC, 'Cinta peitoral');
   assert.equal(values.TEMPERATURA_CLIMA, '22°C nublado');
-  assert.equal(values.TERRENO, 'loop plano');
+  assert.equal(values.TERRENO, 'Asfalto');
   assert.equal(values.RPE_PERCEBIDO, 3);
   assert.equal(values.RESPIRACAO, 'controlada');
   assert.equal(values.SENSACAO_MUSCULAR, 'pernas frescas');
@@ -320,6 +320,31 @@ test('training-result.html ships the expanded feedback grid and generator button
     assert.match(html, new RegExp(`id="${id}"`), `#${id} exists`);
   }
 
+  assert.match(
+    html,
+    /<select id="feedbackTerrain" class="input-control">/,
+    'terrain is a closed dropdown, not a free text input'
+  );
+  assert.ok(
+    !html.includes('id="feedbackTerrain" type="text"') &&
+      !/<input[^>]*id="feedbackTerrain"/.test(html),
+    'no free-text terrain input remains'
+  );
+  assert.match(
+    html,
+    /<select id="feedbackTerrain" class="input-control">\s*\n\s*<option value="">–<\/option>/
+  );
+  for (const [value, key] of [
+    ['asphalt', 'terrain.asphalt'],
+    ['trail', 'terrain.trail'],
+    ['track', 'terrain.track'],
+    ['treadmill', 'terrain.treadmill'],
+    ['mixed', 'terrain.mixed'],
+  ]) {
+    assert.match(html, new RegExp(`<option value="${value}" data-i18n="${key}">`));
+  }
+  assert.ok(!html.includes('session.terrainPlaceholder'), 'dead placeholder binding removed');
+
   for (const optionKey of ['session.hrSourceStrap', 'session.hrSourceOptical', 'session.hrSourceNone']) {
     assert.match(html, new RegExp(`data-i18n="${optionKey}"`), `${optionKey} translated`);
   }
@@ -357,9 +382,17 @@ test('training-result.js wires toggling, saving, generation and i18n refreshes',
 
   assert.match(js, /has_smartwatch: isFitFieldVisible\(smartwatchSelect\.value\),/);
   assert.match(js, /feedback_hr_source: hrValue === '' \? null : hrValue,/);
+  assert.match(js, /feedback_terrain: terrainInput\.value === '' \? null : terrainInput\.value,/);
+  assert.match(js, /const terrainKey = TERRAIN_LABEL_KEYS\[terrainInput\.value\];/);
+  assert.match(js, /terrain_label: terrainKey \? t\(terrainKey\) : '',/);
   assert.match(
     js,
-    /const \{ hr_source_label, language, fitAttached, \.\.\.payload \} = state;/,
+    /TERRENO: form\.terrain_label,/,
+    'the prompt shows the localized terrain label, not the stored token'
+  );
+  assert.match(
+    js,
+    /const \{ hr_source_label, terrain_label, language, fitAttached, \.\.\.payload \} = state;/,
     'only persistable feedback columns reach the PATCH endpoint'
   );
 
@@ -418,7 +451,6 @@ test('session locale namespace stays in parity across en-US and pt-BR', () => {
     'fieldWeather',
     'weatherPlaceholder',
     'fieldTerrain',
-    'terrainPlaceholder',
     'fieldBreathing',
     'breathingPlaceholder',
     'fieldMuscle',
@@ -450,6 +482,26 @@ test('session locale namespace stays in parity across en-US and pt-BR', () => {
   assert.notEqual(en.session.save, pt.session.save);
   assert.notEqual(en.session.smartwatchYes, pt.session.smartwatchYes);
   assert.notEqual(en.session.hrSourceStrap, pt.session.hrSourceStrap);
+
+  const TERRAIN_KEYS = ['asphalt', 'trail', 'track', 'treadmill', 'mixed'];
+  for (const key of TERRAIN_KEYS) {
+    assert.equal(typeof en.terrain[key], 'string', `en.terrain.${key}`);
+    assert.equal(typeof pt.terrain[key], 'string', `pt.terrain.${key}`);
+  }
+  assert.equal(en.terrain.asphalt, 'Asphalt');
+  assert.equal(pt.terrain.asphalt, 'Asfalto');
+  assert.equal(en.terrain.trail, 'Trail / Dirt');
+  assert.equal(pt.terrain.trail, 'Terra/Trilha');
+  assert.equal(en.terrain.track, 'Track');
+  assert.equal(pt.terrain.track, 'Pista');
+  assert.equal(en.terrain.treadmill, 'Treadmill');
+  assert.equal(pt.terrain.treadmill, 'Esteira');
+  assert.equal(en.terrain.mixed, 'Mixed');
+  assert.equal(pt.terrain.mixed, 'Misto');
+
+  assert.equal(en.session.terrainPlaceholder, undefined);
+  assert.equal(pt.session.terrainPlaceholder, undefined);
+
   assert.equal(typeof en.training.title, 'string');
   assert.equal(typeof pt.training.title, 'string');
 

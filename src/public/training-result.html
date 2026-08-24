@@ -97,8 +97,14 @@
           <div class="field">
             <label class="field-label" for="feedbackTerrain"
               data-i18n="session.fieldTerrain">Terrain/route</label>
-            <input type="text" id="feedbackTerrain" class="input-control"
-              autocomplete="off" data-i18n-placeholder="session.terrainPlaceholder">
+            <select id="feedbackTerrain" class="input-control">
+              <option value="">–</option>
+              <option value="asphalt" data-i18n="terrain.asphalt">Asphalt</option>
+              <option value="trail" data-i18n="terrain.trail">Trail / Dirt</option>
+              <option value="track" data-i18n="terrain.track">Track</option>
+              <option value="treadmill" data-i18n="terrain.treadmill">Treadmill</option>
+              <option value="mixed" data-i18n="terrain.mixed">Mixed</option>
+            </select>
           </div>
 
           <div class="field">

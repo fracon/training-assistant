@@ -158,7 +158,6 @@
     "fieldWeather": "Temperature & weather",
     "weatherPlaceholder": "e.g.: 22°C, cloudy, light wind",
     "fieldTerrain": "Terrain/route",
-    "terrainPlaceholder": "e.g.: flat asphalt loop",
     "fieldBreathing": "Breathing",
     "breathingPlaceholder": "e.g.: easy, controlled",
     "fieldMuscle": "Muscle sensation",
@@ -177,6 +176,13 @@
       "rpe": "Realized RPE must be an integer between 1 and 5.",
       "save": "We could not save your feedback. Please try again."
     }
+  },
+  "terrain": {
+    "asphalt": "Asphalt",
+    "trail": "Trail / Dirt",
+    "track": "Track",
+    "treadmill": "Treadmill",
+    "mixed": "Mixed"
   },
   "prompt": {
     "intro1": "Analyze the running workout below considering my full training history, my recent progress, previous workouts, the current plan and my target races.",

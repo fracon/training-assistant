@@ -214,7 +214,7 @@ export function collectPromptValues({ training, form }) {
     TENIS_UTILIZADO: form.feedback_shoe,
     FONTE_FC: form.hr_source_label,
     TEMPERATURA_CLIMA: form.feedback_weather,
-    TERRENO: form.feedback_terrain,
+    TERRENO: form.terrain_label,
     RPE_PERCEBIDO: form.feedback_rpe,
     RESPIRACAO: form.feedback_breathing,
     SENSACAO_MUSCULAR: form.feedback_muscle,
@@ -254,6 +254,14 @@ const HR_SOURCE_LABEL_KEYS = {
   chest_strap: 'session.hrSourceStrap',
   optical_watch: 'session.hrSourceOptical',
   none: 'session.hrSourceNone',
+};
+
+const TERRAIN_LABEL_KEYS = {
+  asphalt: 'terrain.asphalt',
+  trail: 'terrain.trail',
+  track: 'terrain.track',
+  treadmill: 'terrain.treadmill',
+  mixed: 'terrain.mixed',
 };
 
 async function initTrainingResult() {
@@ -340,6 +348,7 @@ async function initTrainingResult() {
   const collectFormState = () => {
     const hrValue = hrSourceSelect.value;
     const hrKey = HR_SOURCE_LABEL_KEYS[hrValue];
+    const terrainKey = TERRAIN_LABEL_KEYS[terrainInput.value];
     return {
       feedback_rpe: normalizeFeedbackRpe(rpeInput.value),
       feedback_notas: notesInput.value,
@@ -347,12 +356,13 @@ async function initTrainingResult() {
       feedback_shoe: shoeInput.value,
       feedback_hr_source: hrValue === '' ? null : hrValue,
       feedback_weather: weatherInput.value,
-      feedback_terrain: terrainInput.value,
+      feedback_terrain: terrainInput.value === '' ? null : terrainInput.value,
       feedback_breathing: breathingInput.value,
       feedback_muscle: muscleInput.value,
       feedback_energy: energyInput.value,
       feedback_pain: painInput.value,
       hr_source_label: hrKey ? t(hrKey) : '',
+      terrain_label: terrainKey ? t(terrainKey) : '',
       language: i18n.language,
       fitAttached: Boolean(fitFileInput.files && fitFileInput.files.length > 0),
     };
@@ -367,7 +377,7 @@ async function initTrainingResult() {
     saveBtn.disabled = true;
     saveBtn.textContent = t('session.saving');
     try {
-      const { hr_source_label, language, fitAttached, ...payload } = state;
+      const { hr_source_label, terrain_label, language, fitAttached, ...payload } = state;
       await saveTrainingFeedback(id, payload);
       window.location.href = '/calendar.html';
     } catch {

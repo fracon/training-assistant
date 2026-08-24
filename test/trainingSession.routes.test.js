@@ -286,7 +286,7 @@ test('PATCH /api/trainings/:id saves trimmed notes and persists every field', as
       feedback_shoe: '  Nimbus 26  ',
       feedback_hr_source: 'chest_strap',
       feedback_weather: '22°C nublado',
-      feedback_terrain: 'loop plano no asfalto',
+      feedback_terrain: '  trail  ',
       feedback_breathing: 'leve, controlada',
       feedback_muscle: 'pernas frescas',
       feedback_energy: 'daria para continuar',
@@ -311,7 +311,7 @@ test('PATCH /api/trainings/:id saves trimmed notes and persists every field', as
   assert.equal(row.feedback_shoe, 'Nimbus 26');
   assert.equal(row.feedback_hr_source, 'chest_strap');
   assert.equal(row.feedback_weather, '22°C nublado');
-  assert.equal(row.feedback_terrain, 'loop plano no asfalto');
+  assert.equal(row.feedback_terrain, 'trail');
   assert.equal(row.feedback_breathing, 'leve, controlada');
   assert.equal(row.feedback_muscle, 'pernas frescas');
   assert.equal(row.feedback_energy, 'daria para continuar');

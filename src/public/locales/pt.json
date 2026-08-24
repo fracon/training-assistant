@@ -158,7 +158,6 @@
     "fieldWeather": "Temperatura e clima",
     "weatherPlaceholder": "ex.: 22°C, nublado, vento leve",
     "fieldTerrain": "Terreno/percurso",
-    "terrainPlaceholder": "ex.: loop plano no asfalto",
     "fieldBreathing": "Respiração",
     "breathingPlaceholder": "ex.: leve, controlada",
     "fieldMuscle": "Sensação muscular",
@@ -177,6 +176,13 @@
       "rpe": "O RPE realizado deve ser um número inteiro entre 1 e 5.",
       "save": "Não conseguimos salvar seu feedback. Tente novamente."
     }
+  },
+  "terrain": {
+    "asphalt": "Asfalto",
+    "trail": "Terra/Trilha",
+    "track": "Pista",
+    "treadmill": "Esteira",
+    "mixed": "Misto"
   },
   "prompt": {
     "intro1": "Analise o treino de corrida abaixo considerando todo o histórico do meu treinamento, minha evolução recente, os treinos anteriores, o planejamento atual e minhas provas-alvo.",
