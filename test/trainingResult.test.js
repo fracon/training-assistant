@@ -20,6 +20,8 @@ const {
   collectPromptValues,
   painPromptText,
   copyAnalysisPrompt,
+  escapeHtmlText,
+  fitDropzonePrimaryHtml,
   PROMPT_TEMPLATE_PT,
   PROMPT_TEMPLATE_EN,
 } = require('../src/public/training-result.js');
@@ -331,6 +333,32 @@ test('copyAnalysisPrompt tolerates rejections and missing clipboards', async () 
   assert.equal(await copyAnalysisPrompt('x', {}), false);
 });
 
+test('escapeHtmlText neutralizes HTML-significant characters', () => {
+  assert.equal(escapeHtmlText('nimbus.fit'), 'nimbus.fit');
+  assert.equal(escapeHtmlText('a<b>&"\'c'), 'a&lt;b&gt;&amp;&quot;&#39;c');
+  assert.equal(escapeHtmlText(null), '');
+  assert.equal(escapeHtmlText(undefined), '');
+  assert.equal(escapeHtmlText(42), '42');
+});
+
+test('fitDropzonePrimaryHtml renders the drag invitation while empty', () => {
+  const translate = (key) => (key === 'session.fitDragText' ? 'Drag your <strong>.FIT</strong> file here' : key);
+  assert.equal(
+    fitDropzonePrimaryHtml({ files: [], translate }),
+    'Drag your <strong>.FIT</strong> file here'
+  );
+  assert.equal(fitDropzonePrimaryHtml({ files: null, translate }), translate('session.fitDragText'));
+});
+
+test('fitDropzonePrimaryHtml announces the chosen file with an escaped name', () => {
+  const translate = (key) => (key === 'session.fitSelected' ? 'File selected: ' : key);
+  const files = [{ name: '<img src=x onerror=alert(1)>.fit' }];
+  assert.equal(
+    fitDropzonePrimaryHtml({ files, translate }),
+    'File selected: <strong>&lt;img src=x onerror=alert(1)&gt;.fit</strong>'
+  );
+});
+
 test('training-result.html ships the expanded feedback grid and generator button', () => {
   const html = readFileSync(join(publicDir, 'training-result.html'), 'utf8');
 
@@ -345,7 +373,22 @@ test('training-result.html ships the expanded feedback grid and generator button
   assert.match(html, /<div class="field fit-field" id="fitField">/);
   assert.match(
     html,
-    /<input type="file" id="fitFileInput" accept="\.fit" class="input-control input-file">/
+    /<label for="fitFile" class="file-dropzone" id="fitDropzone">/,
+    'the FIT input is wrapped in a styled drag-and-drop dropzone'
+  );
+  assert.match(
+    html,
+    /<input type="file" id="fitFile" accept="\.fit" style="display: none;">/,
+    'the native input stays in the DOM but is visually hidden'
+  );
+  assert.match(
+    html,
+    /<span data-i18n-html="session\.fitDragText">Drag your <strong>\.FIT<\/strong> file here<\/span>/,
+    'the primary dropzone line ships translated markup'
+  );
+  assert.match(
+    html,
+    /<div class="dropzone-text-secondary" data-i18n="session\.fitClickText">or click to select from your computer<\/div>/
   );
 
   for (const id of [
@@ -500,7 +543,7 @@ test('training-result.html ships the expanded feedback grid and generator button
   assert.match(html, /data-i18n="session\.generatePrompt"/);
   assert.match(html, /<button id="saveBtn" class="btn-primary" type="button"/);
 
-  for (const legacy of ['dropzone', 'fileInput', 'markdownPreview', 'copyBtn', 'form-state.js']) {
+  for (const legacy of ['id="dropzone"', 'id="fileInput"', 'markdownPreview', 'copyBtn', 'form-state.js']) {
     assert.ok(!html.includes(legacy), `${legacy} is gone from the refactored page`);
   }
 });
@@ -513,6 +556,34 @@ test('training-result.js wires toggling, saving, generation and i18n refreshes',
 
   assert.match(js, /smartwatchSelect\.addEventListener\('change', syncFitFieldVisibility\)/);
   assert.match(js, /fitField\.hidden = !isFitFieldVisible\(smartwatchSelect\.value\);/);
+
+  assert.match(
+    js,
+    /const fitFileInput = document\.getElementById\('fitFile'\);/,
+    'the dropzone wraps the visually hidden native input'
+  );
+  assert.match(js, /const fitDropzone = document\.getElementById\('fitDropzone'\);/);
+  assert.match(js, /fitDropzone\.querySelector\('\.dropzone-text-primary'\)/);
+  assert.match(
+    js,
+    /fitDropzonePrimaryHtml\(\{\s*\n\s*files: fitFileInput\.files,\s*\n\s*translate: t,\s*\n\s*\}\)/,
+    'the primary line renders from the shared helper with live translations'
+  );
+  assert.match(js, /fitDropzonePrimary\.innerHTML = /);
+  assert.match(js, /fitFileInput\.addEventListener\('change', renderFitDropzoneState\)/);
+  assert.match(
+    js,
+    /fitDropzone\.addEventListener\('dragover', \(\) => fitDropzone\.classList\.add\('drag-active'\)\)/
+  );
+  assert.match(
+    js,
+    /fitDropzone\.addEventListener\('dragleave', \(\) =>\s*\n\s*fitDropzone\.classList\.remove\('drag-active'\)\s*\n\s*\)/
+  );
+  assert.match(
+    js,
+    /fitDropzone\.addEventListener\('drop', \(\) => fitDropzone\.classList\.remove\('drag-active'\)\)/,
+    'drag highlight clears whether the drop is accepted or not'
+  );
 
   assert.match(
     js,
@@ -638,6 +709,11 @@ test('training-result.js wires toggling, saving, generation and i18n refreshes',
   assert.match(js, /setTimeout\(/, 'Copied! feedback restores itself after a moment');
 
   assert.match(js, /addEventListener\('app:languagechange'/);
+  assert.match(
+    js,
+    /if \(!generateBtn\.disabled\) generateLabel\.textContent = t\('session\.generatePrompt'\);\s*\n\s*renderFitDropzoneState\(\);/,
+    'language switches re-render the dropzone with the new locale'
+  );
 });
 
 test('shared api client exposes the session endpoints', () => {
@@ -676,7 +752,9 @@ test('session locale namespace stays in parity across en-US and pt-BR', () => {
     'fieldSmartwatch',
     'smartwatchYes',
     'smartwatchNo',
-    'fieldFitFile',
+    'fitDragText',
+    'fitClickText',
+    'fitSelected',
     'fieldShoeUsed',
     'shoeUsedPlaceholder',
     'fieldHrSource',
@@ -740,6 +818,7 @@ test('session locale namespace stays in parity across en-US and pt-BR', () => {
     'painPlaceholder',
     'notesLabel',
     'notesPlaceholder',
+    'fieldFitFile',
   ]) {
     assert.equal(en.session[deadKey], undefined, `en.session.${deadKey} removed`);
     assert.equal(pt.session[deadKey], undefined, `pt.session.${deadKey} removed`);
@@ -755,6 +834,13 @@ test('session locale namespace stays in parity across en-US and pt-BR', () => {
     pt.session.freeFeedbackPlaceholder,
     'Como foi o treino? Sono, clima, sensações gerais...'
   );
+
+  assert.equal(en.session.fitDragText, 'Drag your <strong>.FIT</strong> file here');
+  assert.equal(pt.session.fitDragText, 'Arraste seu arquivo <strong>.FIT</strong> aqui');
+  assert.equal(en.session.fitClickText, 'or click to select from your computer');
+  assert.equal(pt.session.fitClickText, 'ou clique para selecionar do computador');
+  assert.equal(en.session.fitSelected, 'File selected: ');
+  assert.equal(pt.session.fitSelected, 'Arquivo selecionado: ');
 
   const PAIN_I18N = {
     common: {
@@ -828,6 +914,14 @@ test('training-result.css keeps the earthy premium aesthetic for the session vie
   assert.match(css, /\.feedback-grid \{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/);
   assert.match(css, /\.field-wide \{[^}]*grid-column:\s*1 \/ -1/);
   assert.match(css, /\.fit-field\[hidden\] \{[^}]*display:\s*none/, 'conditional FIT field hides cleanly');
+  assert.match(css, /\.file-dropzone \{[^}]*border:\s*2px dashed var\(--line-strong\)/, 'the dropzone invites files with a dashed border');
+  assert.match(css, /\.file-dropzone \{[^}]*cursor:\s*pointer/);
+  assert.match(css, /\.file-dropzone \{[^}]*display:\s*flex/);
+  assert.match(css, /\.file-dropzone \{[^}]*flex-direction:\s*column/);
+  assert.match(css, /\.file-dropzone:hover \{[^}]*border-color:\s*var\(--accent\)/, 'hovering highlights the zone with the sage accent');
+  assert.match(css, /\.file-dropzone\.drag-active \{[^}]*border-color:\s*var\(--accent-deep\)/, 'dragging over deepens the accent');
+  assert.match(css, /\.dropzone-text-primary \{[^}]*font-weight:\s*600/);
+  assert.match(css, /\.dropzone-text-secondary \{[^}]*color:\s*var\(--muted\)/);
   assert.match(css, /\.pain-field\[hidden\] \{[^}]*display:\s*none/, 'the pain description hides until pain is reported');
   assert.match(css, /\.form-actions \{[^}]*display:\s*flex/);
   assert.match(css, /\.btn-secondary \{[^}]*border:\s*1px solid var\(--accent-deep\)/);

@@ -238,6 +238,29 @@ export function collectPromptValues({ training, form }) {
   };
 }
 
+// Neutralizes HTML-significant characters so file names coming from the
+// operating system can never inject markup into the dropzone.
+export function escapeHtmlText(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+// Renders the dropzone primary line: the translated drag invitation while no
+// file is picked, or "File selected: <name>" once one is chosen. The name is
+// always escaped because it is injected as markup.
+export function fitDropzonePrimaryHtml({ files, translate }) {
+  const file = files && files.length > 0 ? files[0] : null;
+  if (!file) {
+    return translate('session.fitDragText');
+  }
+  const prefix = escapeHtmlText(translate('session.fitSelected'));
+  return `${prefix}<strong>${escapeHtmlText(file.name)}</strong>`;
+}
+
 // Copies through the async Clipboard API. Returns true on success so the UI
 // can flip to its "Copied!" feedback state.
 export async function copyAnalysisPrompt(text, clipboard = globalThis.navigator?.clipboard) {
@@ -302,7 +325,9 @@ async function initTrainingResult() {
   const notesInput = document.getElementById('feedbackNotas');
   const smartwatchSelect = document.getElementById('smartwatchSelect');
   const fitField = document.getElementById('fitField');
-  const fitFileInput = document.getElementById('fitFileInput');
+  const fitFileInput = document.getElementById('fitFile');
+  const fitDropzone = document.getElementById('fitDropzone');
+  const fitDropzonePrimary = fitDropzone.querySelector('.dropzone-text-primary');
   const shoeInput = document.getElementById('feedbackShoe');
   const hrSourceSelect = document.getElementById('hrSourceSelect');
   const weatherInput = document.getElementById('feedbackWeather');
@@ -329,6 +354,21 @@ async function initTrainingResult() {
     fitField.hidden = !isFitFieldVisible(smartwatchSelect.value);
   };
   smartwatchSelect.addEventListener('change', syncFitFieldVisibility);
+
+  // The dropzone mirrors the hidden input's state: the drag invitation while
+  // empty, the chosen file name once one is picked.
+  const renderFitDropzoneState = () => {
+    fitDropzonePrimary.innerHTML = fitDropzonePrimaryHtml({
+      files: fitFileInput.files,
+      translate: t,
+    });
+  };
+  fitFileInput.addEventListener('change', renderFitDropzoneState);
+  fitDropzone.addEventListener('dragover', () => fitDropzone.classList.add('drag-active'));
+  fitDropzone.addEventListener('dragleave', () =>
+    fitDropzone.classList.remove('drag-active')
+  );
+  fitDropzone.addEventListener('drop', () => fitDropzone.classList.remove('drag-active'));
 
   // The pain description only exists when pain was reported; hiding it also
   // discards any typed text so stale descriptions never reach the payload.
@@ -475,6 +515,7 @@ async function initTrainingResult() {
     document.title = t('training.title');
     if (!saveBtn.disabled) saveBtn.textContent = t('session.save');
     if (!generateBtn.disabled) generateLabel.textContent = t('session.generatePrompt');
+    renderFitDropzoneState();
   });
 }
 

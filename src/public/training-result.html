@@ -66,9 +66,13 @@
             </select>
           </div>
           <div class="field fit-field" id="fitField">
-            <label class="field-label" for="fitFileInput"
-              data-i18n="session.fieldFitFile">.FIT file</label>
-            <input type="file" id="fitFileInput" accept=".fit" class="input-control input-file">
+            <label for="fitFile" class="file-dropzone" id="fitDropzone">
+              <input type="file" id="fitFile" accept=".fit" style="display: none;">
+              <div class="dropzone-text-primary">
+                <span data-i18n-html="session.fitDragText">Drag your <strong>.FIT</strong> file here</span>
+              </div>
+              <div class="dropzone-text-secondary" data-i18n="session.fitClickText">or click to select from your computer</div>
+            </label>
           </div>
 
           <div class="field">
