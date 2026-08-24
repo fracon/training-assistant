@@ -55,6 +55,15 @@ CREATE TABLE IF NOT EXISTS trainings (
   feedback_rpe   INTEGER,
   feedback_notas TEXT,
   completed       INTEGER NOT NULL DEFAULT 0,
+  has_smartwatch     INTEGER NOT NULL DEFAULT 1,
+  feedback_shoe      TEXT,
+  feedback_hr_source TEXT,
+  feedback_weather   TEXT,
+  feedback_terrain   TEXT,
+  feedback_breathing TEXT,
+  feedback_muscle    TEXT,
+  feedback_energy    TEXT,
+  feedback_pain      TEXT,
   created_at  DATETIME NOT NULL DEFAULT (datetime('now'))
 );
 `;
@@ -87,6 +96,25 @@ function migrateDatabase(db) {
     db.exec(
       'ALTER TABLE trainings ADD COLUMN completed INTEGER NOT NULL DEFAULT 0'
     );
+  }
+  if (!trainingColumns.some((column) => column.name === 'has_smartwatch')) {
+    db.exec(
+      'ALTER TABLE trainings ADD COLUMN has_smartwatch INTEGER NOT NULL DEFAULT 1'
+    );
+  }
+  for (const [name, type] of [
+    ['feedback_shoe', 'TEXT'],
+    ['feedback_hr_source', 'TEXT'],
+    ['feedback_weather', 'TEXT'],
+    ['feedback_terrain', 'TEXT'],
+    ['feedback_breathing', 'TEXT'],
+    ['feedback_muscle', 'TEXT'],
+    ['feedback_energy', 'TEXT'],
+    ['feedback_pain', 'TEXT'],
+  ]) {
+    if (!trainingColumns.some((column) => column.name === name)) {
+      db.exec(`ALTER TABLE trainings ADD COLUMN ${name} ${type}`);
+    }
   }
 }
 

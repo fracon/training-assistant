@@ -95,8 +95,21 @@ body {
   color: var(--ink);
 }
 
-#feedbackRpe,
-#feedbackNotas {
+.feedback-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 18px;
+}
+
+.field-wide {
+  grid-column: 1 / -1;
+}
+
+.fit-field[hidden] {
+  display: none;
+}
+
+.input-control {
   border: 1px solid var(--line-strong);
   border-radius: 10px;
   background: #ffffff;
@@ -104,25 +117,43 @@ body {
   font: inherit;
   padding: 10px 12px;
   outline: none;
+  width: 100%;
+  box-sizing: border-box;
 }
 
-#feedbackRpe {
+.input-rpe {
   width: 90px;
 }
 
-#feedbackNotas {
+textarea.input-control {
   resize: vertical;
   min-height: 84px;
 }
 
-#feedbackRpe:focus,
-#feedbackNotas:focus {
+select.input-control {
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%),
+    linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+  background-position: calc(100% - 18px) 50%, calc(100% - 13px) 50%;
+  background-size: 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 32px;
+}
+
+.input-control:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(111, 144, 112, 0.18);
 }
 
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 20px;
+}
+
 .btn-primary {
-  align-self: flex-start;
   border: none;
   border-radius: 999px;
   background: var(--accent-deep);
@@ -134,15 +165,39 @@ body {
   transition: background 160ms ease, transform 120ms ease;
 }
 
-.btn-primary:hover:not(:disabled) {
-  background: #3d5a43;
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--accent-deep);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--accent-deep);
+  font: inherit;
+  font-weight: 600;
+  padding: 11px 22px;
+  cursor: pointer;
+  transition: background 160ms ease, transform 120ms ease;
 }
 
-.btn-primary:active:not(:disabled) {
+.btn-secondary svg {
+  width: 16px;
+  height: 16px;
+}
+
+.btn-primary:hover:not(:disabled),
+.btn-secondary:hover:not(:disabled) {
+  background: #3d5a43;
+  color: #ffffff;
+}
+
+.btn-primary:active:not(:disabled),
+.btn-secondary:active:not(:disabled) {
   transform: scale(0.98);
 }
 
-.btn-primary:disabled {
+.btn-primary:disabled,
+.btn-secondary:disabled {
   opacity: 0.65;
   cursor: not-allowed;
 }
@@ -150,5 +205,9 @@ body {
 @media (max-width: 560px) {
   .planned-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .feedback-grid {
+    grid-template-columns: 1fr;
   }
 }

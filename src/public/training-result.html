@@ -49,20 +49,101 @@
 
       <section class="card feedback-card" aria-labelledby="feedbackTitle">
         <h2 id="feedbackTitle" data-i18n="session.feedbackHeading">Your feedback</h2>
-        <div class="field">
-          <label class="field-label" for="feedbackRpe"
-            data-i18n="session.realizedRpeLabel">Realized RPE (1 to 5)</label>
-          <input type="number" id="feedbackRpe" min="1" max="5" step="1" inputmode="numeric">
+        <div class="feedback-grid">
+          <div class="field field-wide">
+            <label class="field-label" for="feedbackRpe"
+              data-i18n="session.realizedRpeLabel">Realized RPE (1 to 5)</label>
+            <input type="number" id="feedbackRpe" class="input-control input-rpe"
+              min="1" max="5" step="1" inputmode="numeric">
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="smartwatchSelect"
+              data-i18n="session.fieldSmartwatch">Smartwatch used?</label>
+            <select id="smartwatchSelect" class="input-control">
+              <option value="sim" selected data-i18n="session.smartwatchYes">Yes</option>
+              <option value="nao" data-i18n="session.smartwatchNo">No</option>
+            </select>
+          </div>
+          <div class="field fit-field" id="fitField">
+            <label class="field-label" for="fitFileInput"
+              data-i18n="session.fieldFitFile">.FIT file</label>
+            <input type="file" id="fitFileInput" accept=".fit" class="input-control input-file">
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="feedbackShoe"
+              data-i18n="session.fieldShoeUsed">Shoe used</label>
+            <input type="text" id="feedbackShoe" class="input-control"
+              autocomplete="off" data-i18n-placeholder="session.shoeUsedPlaceholder">
+          </div>
+          <div class="field">
+            <label class="field-label" for="hrSourceSelect"
+              data-i18n="session.fieldHrSource">HR source</label>
+            <select id="hrSourceSelect" class="input-control">
+              <option value="">–</option>
+              <option value="chest_strap" data-i18n="session.hrSourceStrap">Chest strap</option>
+              <option value="optical_watch" data-i18n="session.hrSourceOptical">Watch optical sensor</option>
+              <option value="none" data-i18n="session.hrSourceNone">No HR</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="feedbackWeather"
+              data-i18n="session.fieldWeather">Temperature &amp; weather</label>
+            <input type="text" id="feedbackWeather" class="input-control"
+              autocomplete="off" data-i18n-placeholder="session.weatherPlaceholder">
+          </div>
+          <div class="field">
+            <label class="field-label" for="feedbackTerrain"
+              data-i18n="session.fieldTerrain">Terrain/route</label>
+            <input type="text" id="feedbackTerrain" class="input-control"
+              autocomplete="off" data-i18n-placeholder="session.terrainPlaceholder">
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="feedbackBreathing"
+              data-i18n="session.fieldBreathing">Breathing</label>
+            <input type="text" id="feedbackBreathing" class="input-control"
+              autocomplete="off" data-i18n-placeholder="session.breathingPlaceholder">
+          </div>
+          <div class="field">
+            <label class="field-label" for="feedbackMuscle"
+              data-i18n="session.fieldMuscle">Muscle sensation</label>
+            <input type="text" id="feedbackMuscle" class="input-control"
+              autocomplete="off" data-i18n-placeholder="session.musclePlaceholder">
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="feedbackEnergy"
+              data-i18n="session.fieldEnergy">Energy at finish</label>
+            <input type="text" id="feedbackEnergy" class="input-control"
+              autocomplete="off" data-i18n-placeholder="session.energyPlaceholder">
+          </div>
+          <div class="field">
+            <label class="field-label" for="feedbackPain"
+              data-i18n="session.fieldPain">Pain or discomfort</label>
+            <input type="text" id="feedbackPain" class="input-control"
+              autocomplete="off" data-i18n-placeholder="session.painPlaceholder">
+          </div>
+
+          <div class="field field-wide">
+            <label class="field-label" for="feedbackNotas"
+              data-i18n="session.notesLabel">Subjective notes</label>
+            <textarea id="feedbackNotas" rows="4" class="input-control"
+              placeholder="How did it feel? Pain, energy, weather…"
+              data-i18n-placeholder="session.notesPlaceholder"></textarea>
+          </div>
         </div>
-        <div class="field">
-          <label class="field-label" for="feedbackNotas"
-            data-i18n="session.notesLabel">Subjective notes</label>
-          <textarea id="feedbackNotas" rows="4"
-            placeholder="How did it feel? Pain, energy, weather…"
-            data-i18n-placeholder="session.notesPlaceholder"></textarea>
+
+        <div class="form-actions">
+          <button id="saveBtn" class="btn-primary" type="button"
+            data-i18n="session.save">Save and back to calendar</button>
+          <button id="generateBtn" class="btn-secondary" type="button">
+            <i data-lucide="bot" aria-hidden="true"></i>
+            <span data-i18n="session.generatePrompt">Generate analysis prompt</span>
+          </button>
         </div>
-        <button id="saveBtn" class="btn-primary" type="button"
-          data-i18n="session.save">Save and back to calendar</button>
       </section>
     </section>
   </main>

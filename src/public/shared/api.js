@@ -67,10 +67,10 @@ export async function fetchTraining(id) {
   return payload.training ?? null;
 }
 
-export function saveTrainingFeedback(id, { feedbackRpe, feedbackNotes }) {
+export function saveTrainingFeedback(id, fields = {}) {
   return requestJson(
     `/api/trainings/${id}`,
-    { feedback_rpe: feedbackRpe, feedback_notas: feedbackNotes },
+    fields,
     'PATCH'
   );
 }

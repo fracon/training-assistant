@@ -138,6 +138,15 @@ test('GET /api/trainings/:id returns the planned session with its feedback state
   assert.equal(training.feedback_rpe, null);
   assert.equal(training.feedback_notas, null);
   assert.equal(training.completed, 0);
+  assert.equal(training.has_smartwatch, 1, 'smartwatch defaults to yes');
+  assert.equal(training.feedback_shoe, null);
+  assert.equal(training.feedback_hr_source, null);
+  assert.equal(training.feedback_weather, null);
+  assert.equal(training.feedback_terrain, null);
+  assert.equal(training.feedback_breathing, null);
+  assert.equal(training.feedback_muscle, null);
+  assert.equal(training.feedback_energy, null);
+  assert.equal(training.feedback_pain, null);
 });
 
 test('PATCH /api/trainings/:id requires authentication', async () => {
@@ -237,6 +246,30 @@ test('PATCH /api/trainings/:id answers 404 when the session does not exist', asy
   assert.deepEqual(response.json(), { error: 'Training not found.' });
 });
 
+test('PATCH /api/trainings/:id rejects non-string feedback text fields', async () => {
+  const { app, cookie } = await setup();
+  const response = await app.inject({
+    method: 'PATCH',
+    url: '/api/trainings/1',
+    headers: { cookie },
+    payload: { feedback_shoe: 5 },
+  });
+  assert.equal(response.statusCode, 400);
+  assert.deepEqual(response.json(), { error: 'feedback_shoe must be a string.' });
+});
+
+test('PATCH /api/trainings/:id rejects non-boolean smartwatch flags', async () => {
+  const { app, cookie } = await setup();
+  const response = await app.inject({
+    method: 'PATCH',
+    url: '/api/trainings/1',
+    headers: { cookie },
+    payload: { has_smartwatch: 'yes' },
+  });
+  assert.equal(response.statusCode, 400);
+  assert.deepEqual(response.json(), { error: 'has_smartwatch must be a boolean.' });
+});
+
 test('PATCH /api/trainings/:id saves trimmed notes and persists every field', async () => {
   const { db, app, cookie, userId } = await setup();
   const id = seedTraining(db, { user_id: userId });
@@ -249,24 +282,50 @@ test('PATCH /api/trainings/:id saves trimmed notes and persists every field', as
       feedback_rpe: 3,
       feedback_notas: '  Boa sensação, pernas leves  ',
       completed: true,
+      has_smartwatch: true,
+      feedback_shoe: '  Nimbus 26  ',
+      feedback_hr_source: 'chest_strap',
+      feedback_weather: '22°C nublado',
+      feedback_terrain: 'loop plano no asfalto',
+      feedback_breathing: 'leve, controlada',
+      feedback_muscle: 'pernas frescas',
+      feedback_energy: 'daria para continuar',
+      feedback_pain: 'pontada leve no Aquiles direito',
     },
   });
   assert.equal(response.statusCode, 200);
   assert.equal(response.json().training.completed, 1);
 
   const row = db
-    .prepare('SELECT feedback_rpe, feedback_notas, completed FROM trainings WHERE id = ?')
+    .prepare(
+      `SELECT feedback_rpe, feedback_notas, completed, has_smartwatch,
+        feedback_shoe, feedback_hr_source, feedback_weather, feedback_terrain,
+        feedback_breathing, feedback_muscle, feedback_energy, feedback_pain
+      FROM trainings WHERE id = ?`
+    )
     .get(id);
   assert.equal(row.feedback_rpe, 3);
   assert.equal(row.feedback_notas, 'Boa sensação, pernas leves');
   assert.equal(row.completed, 1);
+  assert.equal(row.has_smartwatch, 1);
+  assert.equal(row.feedback_shoe, 'Nimbus 26');
+  assert.equal(row.feedback_hr_source, 'chest_strap');
+  assert.equal(row.feedback_weather, '22°C nublado');
+  assert.equal(row.feedback_terrain, 'loop plano no asfalto');
+  assert.equal(row.feedback_breathing, 'leve, controlada');
+  assert.equal(row.feedback_muscle, 'pernas frescas');
+  assert.equal(row.feedback_energy, 'daria para continuar');
+  assert.equal(row.feedback_pain, 'pontada leve no Aquiles direito');
 
   const fetched = await app.inject({
     method: 'GET',
     url: `/api/trainings/${id}`,
     headers: { cookie },
   });
-  assert.equal(fetched.json().training.feedback_notas, 'Boa sensação, pernas leves');
+  const training = fetched.json().training;
+  assert.equal(training.feedback_notas, 'Boa sensação, pernas leves');
+  assert.equal(training.has_smartwatch, 1);
+  assert.equal(training.feedback_pain, 'pontada leve no Aquiles direito');
 });
 
 test('PATCH /api/trainings/:id performs partial updates without touching other columns', async () => {
@@ -295,6 +354,8 @@ test('PATCH /api/trainings/:id accepts explicit clears of the feedback fields', 
     user_id: userId,
     feedback_rpe: 5,
     feedback_notas: 'Muito forte',
+    feedback_hr_source: 'optical_watch',
+    feedback_pain: 'Panturrilha direita',
     completed: 1,
   });
 
@@ -302,14 +363,49 @@ test('PATCH /api/trainings/:id accepts explicit clears of the feedback fields', 
     method: 'PATCH',
     url: `/api/trainings/${id}`,
     headers: { cookie },
-    payload: { feedback_rpe: '', feedback_notas: null, completed: false },
+    payload: {
+      feedback_rpe: '',
+      feedback_notas: null,
+      feedback_hr_source: null,
+      feedback_pain: null,
+      completed: false,
+    },
   });
   assert.equal(response.statusCode, 200);
 
   const row = db
-    .prepare('SELECT feedback_rpe, feedback_notas, completed FROM trainings WHERE id = ?')
+    .prepare(
+      'SELECT feedback_rpe, feedback_notas, feedback_hr_source, feedback_pain, completed FROM trainings WHERE id = ?'
+    )
     .get(id);
   assert.equal(row.feedback_rpe, null);
   assert.equal(row.feedback_notas, null);
+  assert.equal(row.feedback_hr_source, null);
+  assert.equal(row.feedback_pain, null);
   assert.equal(row.completed, 0);
+});
+
+test('PATCH /api/trainings/:id toggles the smartwatch flag without touching other columns', async () => {
+  const { db, app, cookie, userId } = await setup();
+  const id = seedTraining(db, {
+    user_id: userId,
+    has_smartwatch: 1,
+    feedback_rpe: 2,
+    feedback_notas: 'Pesado',
+  });
+
+  const response = await app.inject({
+    method: 'PATCH',
+    url: `/api/trainings/${id}`,
+    headers: { cookie },
+    payload: { has_smartwatch: false },
+  });
+  assert.equal(response.statusCode, 200);
+
+  const row = db
+    .prepare('SELECT has_smartwatch, feedback_rpe, feedback_notas FROM trainings WHERE id = ?')
+    .get(id);
+  assert.equal(row.has_smartwatch, 0, 'smartwatch flag flipped to no');
+  assert.equal(row.feedback_rpe, 2, 'previous RPE untouched');
+  assert.equal(row.feedback_notas, 'Pesado', 'previous notes untouched');
 });

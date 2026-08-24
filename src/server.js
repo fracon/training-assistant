@@ -283,7 +283,7 @@ async function buildServer(options = {}) {
     });
 
     const TRAINING_COLUMNS =
-      'id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes, feedback_rpe, feedback_notas, completed';
+      'id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes, feedback_rpe, feedback_notas, completed, has_smartwatch, feedback_shoe, feedback_hr_source, feedback_weather, feedback_terrain, feedback_breathing, feedback_muscle, feedback_energy, feedback_pain';
 
     const findTraining = db.prepare(
       `SELECT ${TRAINING_COLUMNS} FROM trainings WHERE id = ? AND user_id = ?`
@@ -329,6 +329,32 @@ async function buildServer(options = {}) {
           return reply.code(400).send({ error: 'completed must be a boolean.' });
         }
         updates.completed = body.completed ? 1 : 0;
+      }
+      if (body.has_smartwatch !== undefined) {
+        if (typeof body.has_smartwatch !== 'boolean') {
+          return reply.code(400).send({ error: 'has_smartwatch must be a boolean.' });
+        }
+        updates.has_smartwatch = body.has_smartwatch ? 1 : 0;
+      }
+
+      const FEEDBACK_TEXT_FIELDS = [
+        'feedback_shoe',
+        'feedback_hr_source',
+        'feedback_weather',
+        'feedback_terrain',
+        'feedback_breathing',
+        'feedback_muscle',
+        'feedback_energy',
+        'feedback_pain',
+      ];
+      for (const field of FEEDBACK_TEXT_FIELDS) {
+        if (body[field] !== undefined) {
+          if (body[field] !== null && typeof body[field] !== 'string') {
+            return reply.code(400).send({ error: `${field} must be a string.` });
+          }
+          updates[field] =
+            typeof body[field] === 'string' ? body[field].trim() : null;
+        }
       }
 
       const fields = Object.keys(updates);
