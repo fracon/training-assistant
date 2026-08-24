@@ -17,6 +17,7 @@ const REGISTER_PAYLOAD = {
 };
 
 const HEADERS = [
+  'Data',
   'Dia',
   'Período',
   'Tipo',
@@ -25,7 +26,7 @@ const HEADERS = [
   'FC alvo',
   'RPE',
   'Tênis',
-  'Previsão no horário',
+  'Previsão do tempo',
   'Observações',
 ];
 
@@ -169,9 +170,9 @@ test('import parses rows, normalizes Dia and persists trainings', async () => {
   const { db, app, upload, getTrainings } = await setup();
 
   const buffer = await spreadsheetBuffer(HEADERS, [
-    ['23/08/2026', 'Manhã', 'Corrida', 'Longão', 'Zona 2', '150', '3', 'Adizero', '90 min', 'Leve'],
-    [new Date(2026, 7, 25), 'Tarde', 'Intervalado', '', '', '', '', '', '', ''],
-    ['', ''],
+    ['23/08/2026', 'Domingo', 'Manhã', 'Corrida', 'Longão', 'Zona 2', '150', '3', 'Adizero', '90 min', 'Leve'],
+    [new Date(2026, 7, 25), 'Terça', 'Tarde', 'Intervalado', '', '', '', '', '', '', ''],
+    ['', '', ''],
   ]);
   const response = await upload(buffer);
 
@@ -227,11 +228,11 @@ test('import aborts entirely and reports every offending row', async () => {
   const { db, app, upload } = await setup();
 
   const buffer = await spreadsheetBuffer(HEADERS, [
-    ['23/08/2026', 'Manhã', 'Corrida'],
-    ['', 'Tarde', 'Ciclismo'],
-    ['31/02/2026', 'Noite', 'Natação'],
-    ['26/08/2026', ''],
-    ['27/08/2026', 'Manhã', 'Musculação'],
+    ['23/08/2026', 'Domingo', 'Manhã', 'Corrida'],
+    ['', 'Segunda', 'Tarde', 'Ciclismo'],
+    ['31/02/2026', 'Quarta', 'Noite', 'Natação'],
+    ['26/08/2026', 'Quinta'],
+    ['27/08/2026', 'Sexta', 'Manhã', 'Musculação'],
   ]);
   const response = await upload(buffer);
 
@@ -239,10 +240,10 @@ test('import aborts entirely and reports every offending row', async () => {
   const payload = await response.json();
   assert.equal(Array.isArray(payload.errors), true);
   // Row numbers reference the spreadsheet itself, header included (row 1).
-  assert.deepEqual(payload.errors[0], { row: 3, col: 'Dia', error: 'Required value is empty.' });
+  assert.deepEqual(payload.errors[0], { row: 3, col: 'Data', error: 'Required value is empty.' });
   assert.deepEqual(payload.errors[1], {
     row: 4,
-    col: 'Dia',
+    col: 'Data',
     error: 'Invalid date format. Use DD/MM/YYYY.',
   });
   assert.deepEqual(payload.errors[2], { row: 5, col: 'Tipo', error: 'Required value is empty.' });
@@ -257,18 +258,29 @@ test('import rejects sheets whose required columns are missing', async () => {
   const { app, upload } = await setup();
 
   const withoutTipo = await upload(
-    await spreadsheetBuffer(['Dia', 'Período'], [['23/08/2026', 'Manhã']])
+    await spreadsheetBuffer(['Data', 'Período'], [['23/08/2026', 'Manhã']])
   );
   assert.equal(withoutTipo.status, 400);
   assert.deepEqual(await withoutTipo.json(), {
     errors: [{ row: 1, col: 'Tipo', error: 'Missing required column.' }],
   });
 
+  const legacyDiaOnly = await upload(
+    await spreadsheetBuffer(['Dia', 'Período'], [['Segunda', 'Manhã']])
+  );
+  assert.equal(legacyDiaOnly.status, 400);
+  assert.deepEqual(await legacyDiaOnly.json(), {
+    errors: [
+      { row: 1, col: 'Data', error: 'Missing required column.' },
+      { row: 1, col: 'Tipo', error: 'Missing required column.' },
+    ],
+  });
+
   const withoutBoth = await upload(await spreadsheetBuffer(['Treino', 'RPE'], [['Fácil', '2']]));
   assert.equal(withoutBoth.status, 400);
   const payload = await withoutBoth.json();
   assert.deepEqual(payload.errors, [
-    { row: 1, col: 'Dia', error: 'Missing required column.' },
+    { row: 1, col: 'Data', error: 'Missing required column.' },
     { row: 1, col: 'Tipo', error: 'Missing required column.' },
   ]);
 
@@ -331,7 +343,7 @@ test('import rejects header-only sheets that contain no training rows', async ()
   const response = await upload(await spreadsheetBuffer(HEADERS, []));
   assert.equal(response.status, 400);
   assert.deepEqual(await response.json(), {
-    errors: [{ row: 1, col: 'Dia', error: 'No training rows found.' }],
+    errors: [{ row: 1, col: 'Data', error: 'No training rows found.' }],
   });
 
   await app.close();

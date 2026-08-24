@@ -252,7 +252,7 @@ async function buildServer(options = {}) {
         return reply.code(400).send({ errors });
       }
       if (records.length === 0) {
-        return reply.code(400).send({ errors: [{ row: 1, col: 'Dia', error: 'No training rows found.' }] });
+        return reply.code(400).send({ errors: [{ row: 1, col: 'Data', error: 'No training rows found.' }] });
       }
 
       const insert = db.prepare(

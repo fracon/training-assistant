@@ -2,8 +2,13 @@
 
 // Header aliases are accent-less, lowercase keys so "Período", "PERIODO" and
 // "periodo" all resolve to the same field.
+// Phase 7 AI sheets carry 11 columns: "Data" holds the real date (mapped to
+// the internal dia), while "Dia" holds a weekday string like "Segunda"
+// (captured as dia_semana and never date-validated). The DB keeps using
+// `dia` for the ISO date, so no migration is needed.
 const FIELD_BY_HEADER = {
-  dia: 'dia',
+  data: 'dia',
+  dia: 'dia_semana',
   periodo: 'periodo',
   tipo: 'tipo',
   treino: 'treino',
@@ -12,12 +17,14 @@ const FIELD_BY_HEADER = {
   rpe: 'rpe',
   tenis: 'tenis',
   'previsao no horario': 'previsao',
+  'previsao do tempo': 'previsao',
   observacoes: 'observacoes',
 };
 
 const REQUIRED_FIELDS = ['dia', 'tipo'];
 const FIELD_ORDER = [
   'dia',
+  'dia_semana',
   'periodo',
   'tipo',
   'treino',
@@ -165,7 +172,7 @@ function parseSheet(worksheet) {
         if (!Object.values(fieldsByColumn).includes(required)) {
           errors.push({
             row: 1,
-            col: required === 'dia' ? 'Dia' : 'Tipo',
+            col: required === 'dia' ? 'Data' : 'Tipo',
             error: 'Missing required column.',
           });
         }
@@ -203,7 +210,7 @@ function parseSheet(worksheet) {
     if (dia === null) {
       errors.push({
         row: rowNumber,
-        col: 'Dia',
+        col: 'Data',
         error:
           values.dia === ''
             ? 'Required value is empty.'
@@ -226,7 +233,7 @@ function parseSheet(worksheet) {
   });
 
   if (!sawHeader) {
-    errors.push({ row: 1, col: 'Dia', error: 'Missing header row.' });
+    errors.push({ row: 1, col: 'Data', error: 'Missing header row.' });
   }
 
   return { records, errors };

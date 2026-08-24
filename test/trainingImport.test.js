@@ -172,23 +172,31 @@ test('cellToText flattens every exceljs cell shape', () => {
   assert.equal(cellToText({ toString: () => 'Custom' }), 'Custom');
 });
 
-test('header aliases cover the ten spec columns', () => {
-  const expected = [
-    'dia', 'periodo', 'tipo', 'treino', 'detalhes',
-    'fc alvo', 'rpe', 'tenis', 'previsao no horario', 'observacoes',
-  ];
-  for (const header of expected) {
-    assert.ok(FIELD_BY_HEADER[header], header);
-  }
+test('header aliases cover the Phase 7 eleven-column AI layout', () => {
+  const expected = {
+    data: 'dia',
+    dia: 'dia_semana',
+    periodo: 'periodo',
+    tipo: 'tipo',
+    treino: 'treino',
+    detalhes: 'detalhes',
+    'fc alvo': 'fc_alvo',
+    rpe: 'rpe',
+    tenis: 'tenis',
+    'previsao no horario': 'previsao',
+    'previsao do tempo': 'previsao',
+    observacoes: 'observacoes',
+  };
+  assert.deepEqual(FIELD_BY_HEADER, expected);
   assert.deepEqual(REQUIRED_FIELDS, ['dia', 'tipo']);
 });
 
 test('parseSheet maps valid rows and normalizes Dia to ISO', () => {
   const worksheet = fakeWorksheet([
-    fakeRow(1, ['Dia', 'Período', 'Tipo', 'Treino', 'Detalhes', 'FC alvo', 'RPE', 'Tênis', 'Previsão no horário', 'Observações']),
-    fakeRow(2, ['23/08/2026', 'Morning', 'Corrida', 'Long Run', 'Zona 2', '150', '3', 'Adizero', '90 min', 'Sentir leve']),
-    fakeRow(3, [new Date(2026, 7, 25), '', 'Intervalado', '', '', '', '', '', '', '']),
-    fakeRow(4, [' 26/8/2026 ', '', 'Rodagem', '', '', '', '', '', '', '']),
+    fakeRow(1, ['Data', 'Dia', 'Período', 'Tipo', 'Treino', 'Detalhes', 'FC alvo', 'RPE', 'Tênis', 'Previsão do tempo', 'Observações']),
+    fakeRow(2, ['23/08/2026', 'Domingo', 'Morning', 'Corrida', 'Long Run', 'Zona 2', '150', '3', 'Adizero', '90 min', 'Sentir leve']),
+    fakeRow(3, [new Date(2026, 7, 25), 'Terça', '', 'Intervalado', '', '', '', '', '', '', '']),
+    fakeRow(4, [' 26/8/2026 ', 'Quarta', '', 'Rodagem', '', '', '', '', '', '', '']),
   ]);
 
   const { records, errors } = parseSheet(worksheet);
@@ -197,6 +205,7 @@ test('parseSheet maps valid rows and normalizes Dia to ISO', () => {
 
   assert.deepEqual(records[0], {
     dia: '2026-08-23',
+    dia_semana: 'Domingo',
     periodo: 'Morning',
     tipo: 'Corrida',
     treino: 'Long Run',
@@ -208,50 +217,78 @@ test('parseSheet maps valid rows and normalizes Dia to ISO', () => {
     observacoes: 'Sentir leve',
   });
   assert.equal(records[1].dia, '2026-08-25');
+  assert.equal(records[1].dia_semana, 'Terça');
   assert.equal(records[1].tipo, 'Intervalado');
   assert.equal(records[1].periodo, '');
   assert.equal(records[2].dia, '2026-08-26', 'padded single-digit date parses');
 });
 
+test('parseSheet accepts the Phase 7 layout: Data date plus Dia weekday string', () => {
+  const worksheet = fakeWorksheet([
+    fakeRow(1, ['Data', 'Dia', 'Tipo']),
+    fakeRow(2, [new Date(Date.UTC(2026, 7, 24)), 'Segunda', 'Corrida']),
+    fakeRow(3, [new Date(2026, 7, 25), 'Terça', 'Ciclismo']),
+    fakeRow(4, ['26/08/2026', 'Quarta', 'Rodagem']),
+  ]);
+
+  const { records, errors } = parseSheet(worksheet);
+  assert.deepEqual(errors, [], 'weekday strings never trigger date validation');
+  assert.equal(records.length, 3);
+  assert.equal(records[0].dia, '2026-08-24', 'UTC-midnight Data cell keeps its day');
+  assert.equal(records[0].dia_semana, 'Segunda');
+  assert.equal(records[1].dia, '2026-08-25');
+  assert.equal(records[2].dia, '2026-08-26');
+
+  const legacy = parseSheet(fakeWorksheet([
+    fakeRow(1, ['Dia', 'Período', 'Tipo']),
+    fakeRow(2, ['23/08/2026', 'Morning', 'Corrida']),
+  ]));
+  assert.deepEqual(legacy.errors, [
+    { row: 1, col: 'Data', error: 'Missing required column.' },
+  ], 'legacy Phase 6 sheets without a Data column are rejected up front');
+  assert.equal(legacy.records.length, 0);
+});
+
 test('parseSheet reports missing required columns on the header row', () => {
   const withoutTipo = parseSheet(fakeWorksheet([
-    fakeRow(1, ['Dia', 'Período', 'Treino']),
-    fakeRow(2, ['23/08/2026', 'Morning', 'Corrida']),
+    fakeRow(1, ['Data', 'Dia', 'Treino']),
+    fakeRow(2, ['23/08/2026', 'Segunda', 'Corrida']),
   ]));
   assert.deepEqual(withoutTipo.errors, [{ row: 1, col: 'Tipo', error: 'Missing required column.' }]);
   assert.equal(withoutTipo.records.length, 0);
 
   const withoutBoth = parseSheet(fakeWorksheet([fakeRow(1, ['Treino', 'RPE'])]));
   assert.deepEqual(withoutBoth.errors, [
-    { row: 1, col: 'Dia', error: 'Missing required column.' },
+    { row: 1, col: 'Data', error: 'Missing required column.' },
     { row: 1, col: 'Tipo', error: 'Missing required column.' },
   ]);
 });
 
 test('parseSheet aborts rows with blank or invalid required cells', () => {
   const worksheet = fakeWorksheet([
-    fakeRow(1, ['Dia', 'Tipo']),
-    fakeRow(2, ['', 'Corrida']),
-    fakeRow(3, ['31/02/2026', 'Corrida']),
-    fakeRow(4, ['24/08/2026', '']),
-    fakeRow(5, ['25/08/2026', 'Ciclismo']),
+    fakeRow(1, ['Data', 'Dia', 'Tipo']),
+    fakeRow(2, ['', '', 'Corrida']),
+    fakeRow(3, ['31/02/2026', 'Quinta', 'Corrida']),
+    fakeRow(4, ['24/08/2026', 'Sexta', '']),
+    fakeRow(5, ['25/08/2026', 'Sábado', 'Ciclismo']),
   ]);
 
   const { records, errors } = parseSheet(worksheet);
   assert.deepEqual(errors, [
-    { row: 2, col: 'Dia', error: 'Required value is empty.' },
-    { row: 3, col: 'Dia', error: 'Invalid date format. Use DD/MM/YYYY.' },
+    { row: 2, col: 'Data', error: 'Required value is empty.' },
+    { row: 3, col: 'Data', error: 'Invalid date format. Use DD/MM/YYYY.' },
     { row: 4, col: 'Tipo', error: 'Required value is empty.' },
   ]);
   assert.equal(records.length, 1);
   assert.equal(records[0].dia, '2026-08-25');
+  assert.equal(records[0].dia_semana, 'Sábado');
 });
 
 test('parseSheet skips fully empty data rows silently', () => {
   const worksheet = fakeWorksheet([
-    fakeRow(1, ['Dia', 'Tipo']),
+    fakeRow(1, ['Data', 'Dia', 'Tipo']),
     fakeRow(2, [null, undefined]),
-    fakeRow(3, ['26/08/2026', 'Corrida']),
+    fakeRow(3, ['26/08/2026', 'Domingo', 'Corrida']),
   ]);
   const { records, errors } = parseSheet(worksheet);
   assert.deepEqual(errors, []);
@@ -261,14 +298,14 @@ test('parseSheet skips fully empty data rows silently', () => {
 
 test('parseSheet silently skips rogue AI footnote rows', () => {
   const worksheet = fakeWorksheet([
-    fakeRow(1, ['Dia', 'Tipo']),
-    fakeRow(2, ['27/08/2026', 'Corrida']),
+    fakeRow(1, ['Data', 'Dia', 'Tipo']),
+    fakeRow(2, ['27/08/2026', 'Segunda', 'Corrida']),
     fakeRow(3, ['Nota: esta semana inicia o bloco de transição.']),
     fakeRow(4, ['Note: recovery week ahead']),
     fakeRow(5, ['OBSERVAÇÃO: aquecer 15 minutos antes de cada sessão']),
     fakeRow(6, ['Observaçao: sem acento padrao']),
     fakeRow(7, ['nota minúscula com espaço antes']),
-    fakeRow(8, ['28/08/2026', 'Ciclismo']),
+    fakeRow(8, ['28/08/2026', 'Terça', 'Ciclismo']),
   ]);
   const { records, errors } = parseSheet(worksheet);
   assert.deepEqual(errors, []);
@@ -281,13 +318,13 @@ test('parseSheet silently skips rogue AI footnote rows', () => {
 
 test('parseSheet still validates rows where a note prefix shares cells with data', () => {
   const worksheet = fakeWorksheet([
-    fakeRow(1, ['Dia', 'Tipo']),
-    fakeRow(2, ['Nota: ver previsão', 'Corrida']),
-    fakeRow(3, ['29/08/2026', 'Corrida', 'Nota extra no fim']),
+    fakeRow(1, ['Data', 'Dia', 'Tipo']),
+    fakeRow(2, ['Nota: ver previsão', 'Quarta', 'Corrida']),
+    fakeRow(3, ['29/08/2026', 'Quinta', 'Corrida', 'Nota extra no fim']),
   ]);
   const { records, errors } = parseSheet(worksheet);
   assert.deepEqual(errors, [
-    { row: 2, col: 'Dia', error: 'Invalid date format. Use DD/MM/YYYY.' },
+    { row: 2, col: 'Data', error: 'Invalid date format. Use DD/MM/YYYY.' },
   ]);
   assert.equal(records.length, 1);
   assert.equal(records[0].dia, '2026-08-29');
@@ -295,7 +332,7 @@ test('parseSheet still validates rows where a note prefix shares cells with data
 
 test('parseSheet flags a workbook with no usable rows at all', () => {
   const empty = parseSheet(fakeWorksheet([]));
-  assert.deepEqual(empty.errors, [{ row: 1, col: 'Dia', error: 'Missing header row.' }]);
+  assert.deepEqual(empty.errors, [{ row: 1, col: 'Data', error: 'Missing header row.' }]);
   assert.equal(empty.records.length, 0);
 });
 
@@ -312,14 +349,14 @@ test('parseSheet tolerates header rows without a cellCount property', () => {
   const { records, errors } = parseSheet(worksheet);
   assert.equal(records.length, 0);
   assert.deepEqual(errors, [
-    { row: 1, col: 'Dia', error: 'Missing required column.' },
+    { row: 1, col: 'Data', error: 'Missing required column.' },
     { row: 1, col: 'Tipo', error: 'Missing required column.' },
-  ]);
+  ], 'a lone legacy Dia header no longer satisfies the date column');
 });
 
 test('parseSheet treats cells beyond a short row as empty', () => {
   const worksheet = fakeWorksheet([
-    fakeRow(1, ['Dia', 'Tipo', 'Período', 'RPE']),
+    fakeRow(1, ['Data', 'Tipo', 'Período', 'RPE']),
     fakeRow(2, ['23/08/2026', 'Corrida']),
   ]);
   const { records, errors } = parseSheet(worksheet);
