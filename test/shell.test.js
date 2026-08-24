@@ -179,3 +179,55 @@ test('shell chrome strings are translated and wired through i18n attributes', ()
   assert.match(js, /setAttribute\('data-i18n-aria-label', 'shell\.navLabel'\);/);
   assert.match(js, /setAttribute\('data-i18n', 'shell\.logout'\);/);
 });
+
+test('the topbar restores a working logout action once authenticated', () => {
+  const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
+
+  assert.match(
+    js,
+    /const logout = el\('button', 'logout-btn hidden'\);/,
+    'the button starts hidden so anonymous visitors never see it'
+  );
+  assert.match(
+    js,
+    /logout\.id = 'logoutBtn';[\s\S]*?logout\.appendChild\(icon\('log-out'\)\);[\s\S]*?label\.setAttribute\('data-i18n', 'shell\.logout'\);/,
+    'the log-out icon renders directly before the translated label'
+  );
+  assert.match(
+    js,
+    /logout\.setAttribute\('data-i18n-aria-label', 'shell\.logout'\);/,
+    'the action stays accessible through translations'
+  );
+  assert.match(
+    js,
+    /badge\.classList\.remove\('hidden'\);\s*\n\s*\/\/ A confirmed session means the sign-out action is safe to show\.\s*\n\s*document\.getElementById\('logoutBtn'\)\.classList\.remove\('hidden'\);/,
+    'a confirmed session reveals the previously invisible button'
+  );
+  assert.match(
+    js,
+    /wireLogout\(\);/,
+    'the click wiring runs on every mount'
+  );
+  assert.match(
+    js,
+    /await signOut\(\);\s*\n\s*window\.location\.replace\('\/login\.html'\);/,
+    'clicking clears the session and returns to the login screen'
+  );
+
+  assert.match(
+    js,
+    /actions\.appendChild\(badge\);[\s\S]*?actions\.appendChild\(logout\);\s*\n\s*header\.appendChild\(actions\);/,
+    'the logout pill is the last action, hugging the far right of the header'
+  );
+
+  const shellCss = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.css'), 'utf8');
+  assert.match(shellCss, /\.topbar \{[^}]*justify-content:\s*flex-end/, 'the action cluster hugs the right edge');
+
+  const theme = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'theme.css'), 'utf8');
+  assert.match(
+    theme,
+    /\.logout-btn \{[^}]*display:\s*inline-flex;\s*\n\s*align-items:\s*center;\s*\n\s*gap:\s*0\.4rem/,
+    'icon and label stay perfectly centered'
+  );
+  assert.match(theme, /\.logout-btn svg \{[^}]*width:\s*14px/, 'the icon is sized to the compact pill');
+});

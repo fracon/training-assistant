@@ -159,11 +159,17 @@ function buildTopbar() {
   badge.id = 'userBadge';
   actions.appendChild(badge);
 
+  // Built hidden: it only becomes visible once setUserBadge confirms a
+  // session, so anonymous visitors never see a dead sign-out control.
   const logout = el('button', 'logout-btn hidden');
   logout.type = 'button';
   logout.id = 'logoutBtn';
-  logout.setAttribute('data-i18n', 'shell.logout');
-  logout.textContent = 'Logout';
+  logout.setAttribute('data-i18n-aria-label', 'shell.logout');
+  logout.appendChild(icon('log-out'));
+  const label = el('span');
+  label.setAttribute('data-i18n', 'shell.logout');
+  label.textContent = 'Logout';
+  logout.appendChild(label);
   actions.appendChild(logout);
 
   header.appendChild(actions);
@@ -225,6 +231,8 @@ function setUserBadge(user) {
   strong.textContent = name || user.email;
   badge.appendChild(strong);
   badge.classList.remove('hidden');
+  // A confirmed session means the sign-out action is safe to show.
+  document.getElementById('logoutBtn').classList.remove('hidden');
 }
 
 function wireLogout() {
