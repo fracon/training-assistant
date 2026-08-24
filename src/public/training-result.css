@@ -109,6 +109,10 @@ body {
   display: none;
 }
 
+.pain-field[hidden] {
+  display: none;
+}
+
 .input-control {
   border: 1px solid var(--line-strong);
   border-radius: 10px;

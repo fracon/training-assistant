@@ -437,6 +437,7 @@ test('migrateDatabase adds feedback columns to legacy trainings tables', () => {
     'feedback_breathing',
     'feedback_muscle',
     'feedback_energy',
+    'feedback_has_pain',
     'feedback_pain',
   ]) {
     assert.ok(columns.includes(name), `${name} column added`);
@@ -445,7 +446,7 @@ test('migrateDatabase adds feedback columns to legacy trainings tables', () => {
   const row = db
     .prepare(
       `SELECT feedback_rpe, feedback_notas, completed, has_smartwatch,
-        feedback_shoe, feedback_pain FROM trainings`
+        feedback_shoe, feedback_has_pain, feedback_pain FROM trainings`
     )
     .get();
   assert.equal(row.feedback_rpe, null);
@@ -453,6 +454,7 @@ test('migrateDatabase adds feedback columns to legacy trainings tables', () => {
   assert.equal(row.completed, 0);
   assert.equal(row.has_smartwatch, 1, 'smartwatch defaults to yes');
   assert.equal(row.feedback_shoe, null);
+  assert.equal(row.feedback_has_pain, null);
   assert.equal(row.feedback_pain, null);
 
   assert.doesNotThrow(() => migrateDatabase(db), 'migration is idempotent');

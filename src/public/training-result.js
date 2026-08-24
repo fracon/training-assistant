@@ -193,6 +193,17 @@ export function buildAnalysisPrompt(template, values) {
   return output;
 }
 
+// Renders {{DOR_DESCONFORTO}} for the briefing: a "no" answer (or an
+// unanswered select) reports no pain; a "yes" answer shows the description,
+// or an explicit note when none was typed.
+export function painPromptText(hasPainValue, description, translate) {
+  if (hasPainValue !== 'yes') {
+    return translate('feedback.noPainReported');
+  }
+  const trimmed = String(description ?? '').trim();
+  return trimmed !== '' ? trimmed : translate('feedback.yesWithoutDescription');
+}
+
 // Maps the loaded session row plus the current form state onto the shared
 // placeholder contract. Garmin metrics are not parsed on this screen yet, so
 // they stay as dashes and detailed data points to an attachment.
@@ -219,7 +230,7 @@ export function collectPromptValues({ training, form }) {
     RESPIRACAO: form.breathing_label,
     SENSACAO_MUSCULAR: form.muscle_label,
     ENERGIA_FINAL: form.energy_label,
-    DOR_DESCONFORTO: form.feedback_pain,
+    DOR_DESCONFORTO: form.pain_description,
     FEEDBACK: form.feedback_notas,
     ANEXAR_SCREENSHOT_GARMIN_OU_INSERIR_DADOS_DE_LAPS_AQUI: form.fitAttached
       ? 'Ver anexo'
@@ -299,6 +310,8 @@ async function initTrainingResult() {
   const breathingInput = document.getElementById('feedbackBreathing');
   const muscleInput = document.getElementById('feedbackMuscle');
   const energyInput = document.getElementById('feedbackEnergy');
+  const hasPainSelect = document.getElementById('feedbackHasPain');
+  const painDescriptionField = document.getElementById('painDescriptionContainer');
   const painInput = document.getElementById('feedbackPain');
   const generateBtn = document.getElementById('generateBtn');
   const generateLabel = generateBtn.querySelector('span');
@@ -316,6 +329,17 @@ async function initTrainingResult() {
     fitField.hidden = !isFitFieldVisible(smartwatchSelect.value);
   };
   smartwatchSelect.addEventListener('change', syncFitFieldVisibility);
+
+  // The pain description only exists when pain was reported; hiding it also
+  // discards any typed text so stale descriptions never reach the payload.
+  const syncPainVisibility = () => {
+    const showDescription = hasPainSelect.value === 'yes';
+    painDescriptionField.hidden = !showDescription;
+    if (!showDescription) {
+      painInput.value = '';
+    }
+  };
+  hasPainSelect.addEventListener('change', syncPainVisibility);
 
   const id = resolveSessionId(window.location.search);
   if (!id) {
@@ -353,6 +377,11 @@ async function initTrainingResult() {
   breathingInput.value = training.feedback_breathing ?? '';
   muscleInput.value = training.feedback_muscle ?? '';
   energyInput.value = training.feedback_energy ?? '';
+  // Legacy rows only carry a description: any saved text implies "yes".
+  const savedHasPain =
+    training.feedback_has_pain === 'yes' ||
+    (training.feedback_has_pain === null && Boolean(training.feedback_pain));
+  hasPainSelect.value = savedHasPain ? 'yes' : 'no';
   painInput.value = training.feedback_pain ?? '';
   smartwatchSelect.value =
     training.has_smartwatch === null || training.has_smartwatch === undefined
@@ -362,6 +391,7 @@ async function initTrainingResult() {
         : 'nao';
   hrSourceSelect.value = training.feedback_hr_source ?? '';
   syncFitFieldVisibility();
+  syncPainVisibility();
   setStatus('');
 
   const collectFormState = () => {
@@ -371,6 +401,7 @@ async function initTrainingResult() {
     const breathingKey = BREATHING_LABEL_KEYS[breathingInput.value];
     const muscleKey = MUSCLE_LABEL_KEYS[muscleInput.value];
     const energyKey = ENERGY_LABEL_KEYS[energyInput.value];
+    const hasPainValue = hasPainSelect.value;
     return {
       feedback_rpe: normalizeFeedbackRpe(rpeInput.value),
       feedback_notas: notesInput.value,
@@ -383,12 +414,14 @@ async function initTrainingResult() {
         breathingInput.value === '' ? null : breathingInput.value,
       feedback_muscle: muscleInput.value === '' ? null : muscleInput.value,
       feedback_energy: energyInput.value === '' ? null : energyInput.value,
-      feedback_pain: painInput.value,
+      feedback_has_pain: hasPainValue === 'yes' ? 'yes' : 'no',
+      feedback_pain: hasPainValue === 'yes' ? painInput.value : '',
       hr_source_label: hrKey ? t(hrKey) : '',
       terrain_label: terrainKey ? t(terrainKey) : '',
       breathing_label: breathingKey ? t(breathingKey) : '',
       muscle_label: muscleKey ? t(muscleKey) : '',
       energy_label: energyKey ? t(energyKey) : '',
+      pain_description: painPromptText(hasPainValue, painInput.value, t),
       language: i18n.language,
       fitAttached: Boolean(fitFileInput.files && fitFileInput.files.length > 0),
     };
@@ -409,6 +442,7 @@ async function initTrainingResult() {
         breathing_label,
         muscle_label,
         energy_label,
+        pain_description,
         language,
         fitAttached,
         ...payload

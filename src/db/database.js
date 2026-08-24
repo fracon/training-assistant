@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS trainings (
   feedback_breathing TEXT,
   feedback_muscle    TEXT,
   feedback_energy    TEXT,
+  feedback_has_pain  TEXT,
   feedback_pain      TEXT,
   created_at  DATETIME NOT NULL DEFAULT (datetime('now'))
 );
@@ -110,6 +111,7 @@ function migrateDatabase(db) {
     ['feedback_breathing', 'TEXT'],
     ['feedback_muscle', 'TEXT'],
     ['feedback_energy', 'TEXT'],
+    ['feedback_has_pain', 'TEXT'],
     ['feedback_pain', 'TEXT'],
   ]) {
     if (!trainingColumns.some((column) => column.name === name)) {

@@ -146,6 +146,7 @@ test('GET /api/trainings/:id returns the planned session with its feedback state
   assert.equal(training.feedback_breathing, null);
   assert.equal(training.feedback_muscle, null);
   assert.equal(training.feedback_energy, null);
+  assert.equal(training.feedback_has_pain, null);
   assert.equal(training.feedback_pain, null);
 });
 
@@ -270,6 +271,22 @@ test('PATCH /api/trainings/:id rejects non-boolean smartwatch flags', async () =
   assert.deepEqual(response.json(), { error: 'has_smartwatch must be a boolean.' });
 });
 
+test('PATCH /api/trainings/:id rejects unsupported pain answers', async () => {
+  const { app, cookie } = await setup();
+  for (const feedback_has_pain of ['maybe', true, 1]) {
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/trainings/1',
+      headers: { cookie },
+      payload: { feedback_has_pain },
+    });
+    assert.equal(response.statusCode, 400, `feedback_has_pain=${String(feedback_has_pain)}`);
+    assert.deepEqual(response.json(), {
+      error: 'feedback_has_pain must be "yes", "no", or null.',
+    });
+  }
+});
+
 test('PATCH /api/trainings/:id saves trimmed notes and persists every field', async () => {
   const { db, app, cookie, userId } = await setup();
   const id = seedTraining(db, { user_id: userId });
@@ -290,6 +307,7 @@ test('PATCH /api/trainings/:id saves trimmed notes and persists every field', as
       feedback_breathing: '  controlled  ',
       feedback_muscle: 'light',
       feedback_energy: 'surplus',
+      feedback_has_pain: 'yes',
       feedback_pain: 'pontada leve no Aquiles direito',
     },
   });
@@ -300,7 +318,8 @@ test('PATCH /api/trainings/:id saves trimmed notes and persists every field', as
     .prepare(
       `SELECT feedback_rpe, feedback_notas, completed, has_smartwatch,
         feedback_shoe, feedback_hr_source, feedback_weather, feedback_terrain,
-        feedback_breathing, feedback_muscle, feedback_energy, feedback_pain
+        feedback_breathing, feedback_muscle, feedback_energy,
+        feedback_has_pain, feedback_pain
       FROM trainings WHERE id = ?`
     )
     .get(id);
@@ -315,6 +334,7 @@ test('PATCH /api/trainings/:id saves trimmed notes and persists every field', as
   assert.equal(row.feedback_breathing, 'controlled', 'dropdown tokens are trimmed');
   assert.equal(row.feedback_muscle, 'light');
   assert.equal(row.feedback_energy, 'surplus');
+  assert.equal(row.feedback_has_pain, 'yes');
   assert.equal(row.feedback_pain, 'pontada leve no Aquiles direito');
 
   const fetched = await app.inject({
@@ -355,6 +375,7 @@ test('PATCH /api/trainings/:id accepts explicit clears of the feedback fields', 
     feedback_rpe: 5,
     feedback_notas: 'Muito forte',
     feedback_hr_source: 'optical_watch',
+    feedback_has_pain: 'yes',
     feedback_pain: 'Panturrilha direita',
     completed: 1,
   });
@@ -367,6 +388,7 @@ test('PATCH /api/trainings/:id accepts explicit clears of the feedback fields', 
       feedback_rpe: '',
       feedback_notas: null,
       feedback_hr_source: null,
+      feedback_has_pain: null,
       feedback_pain: null,
       completed: false,
     },
@@ -375,12 +397,14 @@ test('PATCH /api/trainings/:id accepts explicit clears of the feedback fields', 
 
   const row = db
     .prepare(
-      'SELECT feedback_rpe, feedback_notas, feedback_hr_source, feedback_pain, completed FROM trainings WHERE id = ?'
+      `SELECT feedback_rpe, feedback_notas, feedback_hr_source,
+        feedback_has_pain, feedback_pain, completed FROM trainings WHERE id = ?`
     )
     .get(id);
   assert.equal(row.feedback_rpe, null);
   assert.equal(row.feedback_notas, null);
   assert.equal(row.feedback_hr_source, null);
+  assert.equal(row.feedback_has_pain, null, 'the pain answer clears back to unanswered');
   assert.equal(row.feedback_pain, null);
   assert.equal(row.completed, 0);
 });

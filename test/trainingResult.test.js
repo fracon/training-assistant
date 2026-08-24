@@ -18,6 +18,7 @@ const {
   templateFor,
   buildAnalysisPrompt,
   collectPromptValues,
+  painPromptText,
   copyAnalysisPrompt,
   PROMPT_TEMPLATE_PT,
   PROMPT_TEMPLATE_EN,
@@ -207,7 +208,9 @@ function baseForm(overrides = {}) {
     muscle_label: 'Leve',
     feedback_energy: 'surplus',
     energy_label: 'Sobrava energia',
-    feedback_pain: '',
+    feedback_has_pain: 'yes',
+    feedback_pain: 'Pontada leve no Aquiles direito',
+    pain_description: 'Pontada leve no Aquiles direito',
     language: 'pt-BR',
     fitAttached: false,
     ...overrides,
@@ -252,8 +255,41 @@ test('collectPromptValues maps planned data, form state and FIT placeholders', (
   );
   assert.equal(values.SENSACAO_MUSCULAR, 'Leve');
   assert.equal(values.ENERGIA_FINAL, 'Sobrava energia');
+  assert.equal(
+    values.DOR_DESCONFORTO,
+    'Pontada leve no Aquiles direito',
+    'a reported pain flows straight into the briefing'
+  );
   assert.equal(values.FEEDBACK, 'Boa sensação');
   assert.equal(values.ANEXAR_SCREENSHOT_GARMIN_OU_INSERIR_DADOS_DE_LAPS_AQUI, '-');
+});
+
+test('painPromptText reports no pain unless the user answered yes', () => {
+  const t = (key) => `t:${key}`;
+
+  for (const answer of ['no', '', null, undefined, 'junk']) {
+    assert.equal(
+      painPromptText(answer, 'ignored description', t),
+      't:feedback.noPainReported',
+      `answer=${String(answer)} renders the no-pain marker`
+    );
+  }
+});
+
+test('painPromptText shows the description for a yes answer', () => {
+  const t = (key) => `t:${key}`;
+
+  assert.equal(painPromptText('yes', 'Pontada no Aquiles', t), 'Pontada no Aquiles');
+  assert.equal(painPromptText('yes', '  Pontada no Aquiles  ', t), 'Pontada no Aquiles', 'descriptions are trimmed');
+});
+
+test('painPromptText marks a bare yes without any typed description', () => {
+  const t = (key) => `t:${key}`;
+
+  assert.equal(painPromptText('yes', '', t), 't:feedback.yesWithoutDescription');
+  assert.equal(painPromptText('yes', '   ', t), 't:feedback.yesWithoutDescription', 'whitespace-only descriptions count as blank');
+  assert.equal(painPromptText('yes', null, t), 't:feedback.yesWithoutDescription');
+  assert.equal(painPromptText('yes', undefined, t), 't:feedback.yesWithoutDescription');
 });
 
 test('collectPromptValues points detailed data at the attachment only with a FIT file', () => {
@@ -402,9 +438,44 @@ test('training-result.html ships the expanded feedback grid and generator button
     'session.breathingPlaceholder',
     'session.musclePlaceholder',
     'session.energyPlaceholder',
+    'session.fieldPain',
+    'session.painPlaceholder',
   ]) {
     assert.ok(!html.includes(deadKey), `${deadKey} binding removed`);
   }
+  assert.ok(
+    !/<input[^>]*id="feedbackPain"/.test(html),
+    'the free-text pain input became a textarea inside the conditional block'
+  );
+
+  assert.match(
+    html,
+    /<select id="feedbackHasPain" class="input-control">/,
+    'pain starts as a yes/no question, not an open text field'
+  );
+  assert.match(
+    html,
+    /<option value="no" data-i18n="common\.no">No<\/option>\s*\n\s*<option value="yes" data-i18n="common\.yes">Yes<\/option>/
+  );
+  assert.match(
+    html,
+    /<div class="field field-wide pain-field" id="painDescriptionContainer" hidden>/,
+    'the pain description ships hidden until pain is reported'
+  );
+  assert.match(
+    html,
+    /data-i18n="feedback\.hasPainLabel"/,
+    'the yes/no question label is translated'
+  );
+  assert.match(
+    html,
+    /data-i18n="feedback\.painDescriptionLabel"/,
+    'the description label is translated'
+  );
+  assert.match(
+    html,
+    /<textarea id="feedbackPain" rows="3" class="input-control"[\s\S]*?data-i18n-placeholder="feedback\.painPlaceholder"><\/textarea>/
+  );
 
   for (const optionKey of ['session.hrSourceStrap', 'session.hrSourceOptical', 'session.hrSourceNone']) {
     assert.match(html, new RegExp(`data-i18n="${optionKey}"`), `${optionKey} translated`);
@@ -430,6 +501,19 @@ test('training-result.js wires toggling, saving, generation and i18n refreshes',
   assert.match(js, /smartwatchSelect\.addEventListener\('change', syncFitFieldVisibility\)/);
   assert.match(js, /fitField\.hidden = !isFitFieldVisible\(smartwatchSelect\.value\);/);
 
+  assert.match(
+    js,
+    /hasPainSelect\.addEventListener\('change', syncPainVisibility\)/,
+    'the pain answer drives the description visibility'
+  );
+  assert.match(js, /const showDescription = hasPainSelect\.value === 'yes';/);
+  assert.match(js, /painDescriptionField\.hidden = !showDescription;/);
+  assert.match(
+    js,
+    /if \(!showDescription\) \{\s*\n\s*painInput\.value = '';\s*\n\s*\}/,
+    'answering no discards any typed description'
+  );
+
   assert.match(js, /rpeInput\.value = training\.feedback_rpe \?\? '';/);
   assert.match(js, /shoeInput\.value = training\.feedback_shoe \?\? '';/);
   assert.match(js, /weatherInput\.value = training\.feedback_weather \?\? '';/);
@@ -437,9 +521,15 @@ test('training-result.js wires toggling, saving, generation and i18n refreshes',
   assert.match(js, /breathingInput\.value = training\.feedback_breathing \?\? '';/);
   assert.match(js, /muscleInput\.value = training\.feedback_muscle \?\? '';/);
   assert.match(js, /energyInput\.value = training\.feedback_energy \?\? '';/);
+  assert.match(
+    js,
+    /training\.feedback_has_pain === 'yes' \|\|\s*\n\s*\(training\.feedback_has_pain === null && Boolean\(training\.feedback_pain\)\)/,
+    'saved answers reopen the description; legacy descriptions imply yes'
+  );
+  assert.match(js, /hasPainSelect\.value = savedHasPain \? 'yes' : 'no';/);
   assert.match(js, /painInput\.value = training\.feedback_pain \?\? '';/);
   assert.match(js, /hrSourceSelect\.value = training\.feedback_hr_source \?\? '';/);
-  assert.match(js, /syncFitFieldVisibility\(\);\s*\n\s*setStatus\(''\);/);
+  assert.match(js, /syncFitFieldVisibility\(\);\s*\n\s*syncPainVisibility\(\);\s*\n\s*setStatus\(''\);/);
 
   assert.match(js, /has_smartwatch: isFitFieldVisible\(smartwatchSelect\.value\),/);
   assert.match(js, /feedback_hr_source: hrValue === '' \? null : hrValue,/);
@@ -447,6 +537,22 @@ test('training-result.js wires toggling, saving, generation and i18n refreshes',
   assert.match(js, /feedback_breathing:\s*\n\s*breathingInput\.value === '' \? null : breathingInput\.value,/);
   assert.match(js, /feedback_muscle: muscleInput\.value === '' \? null : muscleInput\.value,/);
   assert.match(js, /feedback_energy: energyInput\.value === '' \? null : energyInput\.value,/);
+  assert.match(js, /const hasPainValue = hasPainSelect\.value;/);
+  assert.match(
+    js,
+    /feedback_has_pain: hasPainValue === 'yes' \? 'yes' : 'no',/,
+    'the pain answer persists as a yes/no token'
+  );
+  assert.match(
+    js,
+    /feedback_pain: hasPainValue === 'yes' \? painInput\.value : '',/,
+    'descriptions are ignored unless pain was reported'
+  );
+  assert.match(
+    js,
+    /pain_description: painPromptText\(hasPainValue, painInput\.value, t\),/,
+    'the briefing text is derived from the shared pain helper'
+  );
   assert.match(js, /const terrainKey = TERRAIN_LABEL_KEYS\[terrainInput\.value\];/);
   assert.match(
     js,
@@ -489,6 +595,11 @@ test('training-result.js wires toggling, saving, generation and i18n refreshes',
   );
   assert.match(
     js,
+    /DOR_DESCONFORTO: form\.pain_description,/,
+    'the prompt renders the pain answer through its dedicated formatter'
+  );
+  assert.match(
+    js,
     new RegExp(
       [
         'const \\{',
@@ -497,6 +608,7 @@ test('training-result.js wires toggling, saving, generation and i18n refreshes',
         '\\s*breathing_label,',
         '\\s*muscle_label,',
         '\\s*energy_label,',
+        '\\s*pain_description,',
         '\\s*language,',
         '\\s*fitAttached,',
         '\\s*\\.\\.\\.payload',
@@ -564,8 +676,6 @@ test('session locale namespace stays in parity across en-US and pt-BR', () => {
     'fieldBreathing',
     'fieldMuscle',
     'fieldEnergy',
-    'fieldPain',
-    'painPlaceholder',
     'generatePrompt',
     'copied',
     'save',
@@ -609,9 +719,38 @@ test('session locale namespace stays in parity across en-US and pt-BR', () => {
   assert.equal(en.session.terrainPlaceholder, undefined);
   assert.equal(pt.session.terrainPlaceholder, undefined);
 
-  for (const deadKey of ['breathingPlaceholder', 'musclePlaceholder', 'energyPlaceholder']) {
+  for (const deadKey of [
+    'breathingPlaceholder',
+    'musclePlaceholder',
+    'energyPlaceholder',
+    'fieldPain',
+    'painPlaceholder',
+  ]) {
     assert.equal(en.session[deadKey], undefined, `en.session.${deadKey} removed`);
     assert.equal(pt.session[deadKey], undefined, `pt.session.${deadKey} removed`);
+  }
+
+  const PAIN_I18N = {
+    common: {
+      yes: ['Yes', 'Sim'],
+      no: ['No', 'Não'],
+    },
+    feedback: {
+      hasPainLabel: ['Any pain or discomfort?', 'Houve dor ou desconforto?'],
+      painDescriptionLabel: ['Pain description', 'Descrição da dor'],
+      painPlaceholder: [
+        'e.g.: mild twinge in the right Achilles tendon after km 8...',
+        'ex.: pontada leve no tendão de Aquiles direito após o km 8...',
+      ],
+      noPainReported: ['None / No pain reported', 'Nenhuma / Sem dor relatada'],
+      yesWithoutDescription: ['Yes (no additional description)', 'Sim (sem descrição adicional)'],
+    },
+  };
+  for (const [namespace, keys] of Object.entries(PAIN_I18N)) {
+    for (const [key, [english, portuguese]] of Object.entries(keys)) {
+      assert.equal(en[namespace][key], english, `en.${namespace}.${key}`);
+      assert.equal(pt[namespace][key], portuguese, `pt.${namespace}.${key}`);
+    }
   }
 
   const CLOSED_OPTION_NAMESPACES = [
@@ -663,6 +802,7 @@ test('training-result.css keeps the earthy premium aesthetic for the session vie
   assert.match(css, /\.feedback-grid \{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/);
   assert.match(css, /\.field-wide \{[^}]*grid-column:\s*1 \/ -1/);
   assert.match(css, /\.fit-field\[hidden\] \{[^}]*display:\s*none/, 'conditional FIT field hides cleanly');
+  assert.match(css, /\.pain-field\[hidden\] \{[^}]*display:\s*none/, 'the pain description hides until pain is reported');
   assert.match(css, /\.form-actions \{[^}]*display:\s*flex/);
   assert.match(css, /\.btn-secondary \{[^}]*border:\s*1px solid var\(--accent-deep\)/);
   assert.match(css, /\.btn-secondary svg \{[^}]*width:\s*16px/);

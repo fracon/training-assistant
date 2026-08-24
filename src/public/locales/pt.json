@@ -161,8 +161,6 @@
     "fieldBreathing": "Respiração",
     "fieldMuscle": "Sensação muscular",
     "fieldEnergy": "Energia ao terminar",
-    "fieldPain": "Dor ou desconforto",
-    "painPlaceholder": "ex.: pontada leve no tendão de Aquiles direito…",
     "generatePrompt": "Gerar Prompt de Análise",
     "copied": "Copiado!",
     "save": "Salvar e voltar ao calendário",
@@ -196,6 +194,17 @@
     "surplus": "Sobrava energia",
     "limit": "No limite",
     "exhausted": "Esgotado"
+  },
+  "common": {
+    "yes": "Sim",
+    "no": "Não"
+  },
+  "feedback": {
+    "hasPainLabel": "Houve dor ou desconforto?",
+    "painDescriptionLabel": "Descrição da dor",
+    "painPlaceholder": "ex.: pontada leve no tendão de Aquiles direito após o km 8...",
+    "noPainReported": "Nenhuma / Sem dor relatada",
+    "yesWithoutDescription": "Sim (sem descrição adicional)"
   },
   "prompt": {
     "intro1": "Analise o treino de corrida abaixo considerando todo o histórico do meu treinamento, minha evolução recente, os treinos anteriores, o planejamento atual e minhas provas-alvo.",

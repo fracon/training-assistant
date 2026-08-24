@@ -140,10 +140,19 @@
             </select>
           </div>
           <div class="field">
+            <label class="field-label" for="feedbackHasPain"
+              data-i18n="feedback.hasPainLabel">Any pain or discomfort?</label>
+            <select id="feedbackHasPain" class="input-control">
+              <option value="no" data-i18n="common.no">No</option>
+              <option value="yes" data-i18n="common.yes">Yes</option>
+            </select>
+          </div>
+          <div class="field field-wide pain-field" id="painDescriptionContainer" hidden>
             <label class="field-label" for="feedbackPain"
-              data-i18n="session.fieldPain">Pain or discomfort</label>
-            <input type="text" id="feedbackPain" class="input-control"
-              autocomplete="off" data-i18n-placeholder="session.painPlaceholder">
+              data-i18n="feedback.painDescriptionLabel">Pain description</label>
+            <textarea id="feedbackPain" rows="3" class="input-control"
+              placeholder="e.g.: mild twinge in the right Achilles tendon after km 8..."
+              data-i18n-placeholder="feedback.painPlaceholder"></textarea>
           </div>
 
           <div class="field field-wide">

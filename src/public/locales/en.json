@@ -161,8 +161,6 @@
     "fieldBreathing": "Breathing",
     "fieldMuscle": "Muscle sensation",
     "fieldEnergy": "Energy at finish",
-    "fieldPain": "Pain or discomfort",
-    "painPlaceholder": "e.g.: mild twinge in the right Achilles tendon…",
     "generatePrompt": "Generate analysis prompt",
     "copied": "Copied!",
     "save": "Save and back to calendar",
@@ -196,6 +194,17 @@
     "surplus": "Energy left",
     "limit": "On the limit",
     "exhausted": "Exhausted"
+  },
+  "common": {
+    "yes": "Yes",
+    "no": "No"
+  },
+  "feedback": {
+    "hasPainLabel": "Any pain or discomfort?",
+    "painDescriptionLabel": "Pain description",
+    "painPlaceholder": "e.g.: mild twinge in the right Achilles tendon after km 8...",
+    "noPainReported": "None / No pain reported",
+    "yesWithoutDescription": "Yes (no additional description)"
   },
   "prompt": {
     "intro1": "Analyze the running workout below considering my full training history, my recent progress, previous workouts, the current plan and my target races.",

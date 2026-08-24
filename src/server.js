@@ -283,7 +283,7 @@ async function buildServer(options = {}) {
     });
 
     const TRAINING_COLUMNS =
-      'id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes, feedback_rpe, feedback_notas, completed, has_smartwatch, feedback_shoe, feedback_hr_source, feedback_weather, feedback_terrain, feedback_breathing, feedback_muscle, feedback_energy, feedback_pain';
+      'id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes, feedback_rpe, feedback_notas, completed, has_smartwatch, feedback_shoe, feedback_hr_source, feedback_weather, feedback_terrain, feedback_breathing, feedback_muscle, feedback_energy, feedback_has_pain, feedback_pain';
 
     const findTraining = db.prepare(
       `SELECT ${TRAINING_COLUMNS} FROM trainings WHERE id = ? AND user_id = ?`
@@ -335,6 +335,15 @@ async function buildServer(options = {}) {
           return reply.code(400).send({ error: 'has_smartwatch must be a boolean.' });
         }
         updates.has_smartwatch = body.has_smartwatch ? 1 : 0;
+      }
+      if (body.feedback_has_pain !== undefined) {
+        const value = body.feedback_has_pain;
+        if (value !== null && value !== 'yes' && value !== 'no') {
+          return reply.code(400).send({
+            error: 'feedback_has_pain must be "yes", "no", or null.',
+          });
+        }
+        updates.feedback_has_pain = value;
       }
 
       const FEEDBACK_TEXT_FIELDS = [
