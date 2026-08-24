@@ -1,5 +1,5 @@
-import { updateCalendarPreference } from './shared/api.js';
-import { initShell, getShellI18n } from './shared/shell.js';
+import { updateCalendarPreference, fetchCalendarTrainings, importTrainingsFile } from './shared/api.js';
+import { initShell, getShellI18n, refreshIcons } from './shared/shell.js';
 import { translate } from './shared/i18n.js';
 
 export const WEEK_START_STORAGE_KEY = 'training-assistant:first-day-of-week';
@@ -50,6 +50,22 @@ export function weekdayArrayIndex(jsDay) {
   return (((jsDay % 7) + 7) % 7 + 6) % 7;
 }
 
+// DB dates are zero-padded ISO strings; grid cell keys use bare numbers.
+export function keyFromIso(iso) {
+  const [year, month, day] = iso.split('-').map(Number);
+  return `${year}-${month}-${day}`;
+}
+
+export function trainingsByDay(trainings) {
+  const byDay = new Map();
+  for (const training of trainings) {
+    const key = keyFromIso(training.dia);
+    if (!byDay.has(key)) byDay.set(key, []);
+    byDay.get(key).push(training);
+  }
+  return byDay;
+}
+
 export function buildCalendarCells(year, monthIndex, firstDay, today = new Date()) {
   const order = weekdayOrder(firstDay);
   const firstOfMonth = new Date(year, monthIndex, 1);
@@ -94,12 +110,37 @@ function setupCalendarPage() {
     year: now.getFullYear(),
     monthIndex: now.getMonth(),
     firstDay: DEFAULT_WEEK_START,
+    trainings: [],
   };
 
   let i18n = null;
 
   function t(key, params) {
     return translate(i18n ? i18n.messages : {}, key, params);
+  }
+
+  function trainingLabel(training) {
+    return training.treino && training.treino !== ''
+      ? `${training.tipo} • ${training.treino}`
+      : training.tipo;
+  }
+
+  function appendTrainingChips(cellNode, dayTrainings) {
+    const visible = dayTrainings.slice(0, 3);
+    for (const training of visible) {
+      const chip = el('span', 'training-chip');
+      chip.textContent = trainingLabel(training);
+      chip.title = [training.periodo, training.detalhes, training.observacoes]
+        .filter((part) => part)
+        .join(' — ');
+      cellNode.appendChild(chip);
+    }
+    if (dayTrainings.length > visible.length) {
+      const more = el('span', 'training-chip chip-more');
+      more.textContent = `+${dayTrainings.length - visible.length}`;
+      more.title = t('calendar.import.title');
+      cellNode.appendChild(more);
+    }
   }
 
   function syncToggleButtons() {
@@ -131,6 +172,7 @@ function setupCalendarPage() {
     for (let index = 0; index < 7; index += 1) {
       longNames.push(t(`calendar.weekdaysLong.${index}`));
     }
+    const byDay = trainingsByDay(state.trainings);
     for (const cell of buildCalendarCells(state.year, state.monthIndex, state.firstDay)) {
       const node = el(
         'div',
@@ -140,6 +182,9 @@ function setupCalendarPage() {
       const number = el('span', 'day-number');
       number.textContent = String(cell.dayNumber);
       node.appendChild(number);
+      if (byDay.has(cell.key)) {
+        appendTrainingChips(node, byDay.get(cell.key));
+      }
       node.setAttribute(
         'aria-label',
         `${longNames[weekdayArrayIndex(cell.date.getDay())]} ${cell.dayNumber} ${t(`calendar.months.${cell.date.getMonth()}`)} ${cell.date.getFullYear()}`
@@ -184,6 +229,71 @@ function setupCalendarPage() {
 
   document.addEventListener('app:languagechange', render);
 
+  const importBtn = document.getElementById('importBtn');
+  const importInput = document.getElementById('importInput');
+  const importBanner = document.getElementById('importBanner');
+  const importModal = document.getElementById('importModal');
+  const importErrorList = document.getElementById('importErrorList');
+  const importModalClose = document.getElementById('importModalClose');
+
+  function showBanner(text) {
+    importBanner.textContent = text;
+    importBanner.classList.remove('hidden');
+  }
+
+  function openRowErrorModal(rowErrors) {
+    importErrorList.innerHTML = '';
+    for (const issue of rowErrors) {
+      const item = document.createElement('li');
+      item.textContent = t('calendar.import.rowError', {
+        row: issue.row,
+        col: issue.col,
+        error: issue.error,
+      });
+      importErrorList.appendChild(item);
+    }
+    importModal.classList.remove('hidden');
+    refreshIcons();
+  }
+
+  async function reloadTrainings() {
+    state.trainings = await fetchCalendarTrainings();
+    render();
+  }
+
+  async function handleImportSelection() {
+    const file = importInput.files && importInput.files[0];
+    importInput.value = '';
+    if (!file) return;
+
+    importBtn.disabled = true;
+    importBtn.classList.add('loading');
+    showBanner(t('calendar.import.loading'));
+    try {
+      const result = await importTrainingsFile(file);
+      await reloadTrainings();
+      showBanner(t('calendar.import.success', { count: result.imported }));
+    } catch (error) {
+      if (error.rowErrors) {
+        openRowErrorModal(error.rowErrors);
+      } else {
+        openRowErrorModal([{ row: '—', col: '—', error: error.message }]);
+      }
+      showBanner('');
+      importBanner.classList.add('hidden');
+    } finally {
+      importBtn.disabled = false;
+      importBtn.classList.remove('loading');
+    }
+  }
+
+  importBtn.addEventListener('click', () => importInput.click());
+  importInput.addEventListener('change', handleImportSelection);
+  importModalClose.addEventListener('click', () => importModal.classList.add('hidden'));
+  importModal.addEventListener('click', (event) => {
+    if (event.target === importModal) importModal.classList.add('hidden');
+  });
+
   return {
     getState: () => ({ ...state }),
     start(user) {
@@ -196,6 +306,7 @@ function setupCalendarPage() {
       i18n = getShellI18n();
       syncToggleButtons();
       render();
+      reloadTrainings();
       return user;
     },
   };

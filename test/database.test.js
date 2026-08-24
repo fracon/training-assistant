@@ -38,7 +38,7 @@ test('initializeDatabase applies pragmas and creates the schema', () => {
     )
     .all()
     .map((row) => row.name);
-  assert.deepEqual(objects, ['sessions', 'users', 'workouts']);
+  assert.deepEqual(objects, ['sessions', 'trainings', 'users', 'workouts']);
 
   db.close();
 });
@@ -308,6 +308,56 @@ test('workouts enforce foreign keys and cascade on user delete', () => {
   db.prepare('DELETE FROM users WHERE id = ?').run(userId);
 
   const remaining = db.prepare('SELECT COUNT(*) AS total FROM workouts').get();
+  assert.equal(remaining.total, 0);
+
+  db.close();
+});
+
+test('trainings enforce foreign keys, require dia/tipo and cascade on user delete', () => {
+  const db = createDatabase({ filename: ':memory:' });
+
+  assert.throws(
+    () =>
+      db
+        .prepare('INSERT INTO trainings (user_id, dia, tipo) VALUES (?, ?, ?)')
+        .run(99999, '2026-08-23', 'Corrida'),
+    /FOREIGN KEY constraint failed/
+  );
+  assert.throws(
+    () =>
+      db
+        .prepare('INSERT INTO trainings (user_id, dia, tipo) VALUES (?, ?, ?)')
+        .run(null, '2026-08-23', 'Corrida'),
+    /NOT NULL constraint failed/
+  );
+
+  const { lastInsertRowid: userId } = db
+    .prepare('INSERT INTO users (email, password_hash) VALUES (?, ?)')
+    .run('cascade-trainings@example.com', 'hash');
+  db.prepare(
+    "INSERT INTO trainings (user_id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes) VALUES (?, ?, 'Manhã', 'Corrida', 'Longão', 'Zona 2', '150', '3', 'Adizero', '90 min', 'Leve')"
+  ).run(userId, '2026-08-23');
+
+  const stored = db
+    .prepare(
+      'SELECT dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes FROM trainings WHERE user_id = ?'
+    )
+    .get(userId);
+  assert.deepEqual(stored, {
+    dia: '2026-08-23',
+    periodo: 'Manhã',
+    tipo: 'Corrida',
+    treino: 'Longão',
+    detalhes: 'Zona 2',
+    fc_alvo: '150',
+    rpe: '3',
+    tenis: 'Adizero',
+    previsao: '90 min',
+    observacoes: 'Leve',
+  });
+
+  db.prepare('DELETE FROM users WHERE id = ?').run(userId);
+  const remaining = db.prepare('SELECT COUNT(*) AS total FROM trainings').get();
   assert.equal(remaining.total, 0);
 
   db.close();

@@ -31,13 +31,29 @@
               <i data-lucide="chevron-right"></i>
             </button>
           </div>
+
+          <button type="button" id="importBtn" class="import-btn">
+            <span class="import-icon"><i data-lucide="file-spreadsheet"></i></span>
+            <span data-i18n="calendar.import.button">Import</span>
+          </button>
+          <input type="file" id="importInput" accept=".xlsx,.xls" hidden>
         </div>
       </header>
 
       <p id="calendarStatus" class="visually-hidden" role="status" aria-live="polite"></p>
 
+      <div id="importBanner" class="import-banner hidden"></div>
+
       <div id="calendarGrid" class="calendar-grid" aria-label="Monthly calendar"></div>
     </section>
+
+    <div id="importModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="importModalTitle">
+      <div class="modal-card">
+        <h3 id="importModalTitle" data-i18n="calendar.import.failedTitle">We found issues in your spreadsheet</h3>
+        <ul id="importErrorList" class="import-error-list"></ul>
+        <button type="button" id="importModalClose" class="modal-close" data-i18n="calendar.import.close">Close</button>
+      </div>
+    </div>
   </main>
 
   <script src="https://unpkg.com/lucide@latest"></script>

@@ -63,7 +63,7 @@ function icon(name) {
   return holder;
 }
 
-function refreshIcons() {
+export function refreshIcons() {
   try {
     if (globalThis.lucide && typeof globalThis.lucide.createIcons === 'function') {
       globalThis.lucide.createIcons();

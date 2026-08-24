@@ -38,6 +38,22 @@ CREATE TABLE IF NOT EXISTS workouts (
   observations TEXT,
   created_at   DATETIME NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS trainings (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  dia         TEXT NOT NULL,
+  periodo     TEXT,
+  tipo        TEXT NOT NULL,
+  treino      TEXT,
+  detalhes    TEXT,
+  fc_alvo     TEXT,
+  rpe         TEXT,
+  tenis       TEXT,
+  previsao    TEXT,
+  observacoes TEXT,
+  created_at  DATETIME NOT NULL DEFAULT (datetime('now'))
+);
 `;
 
 function resolveDatabaseFile(cwd) {
