@@ -26,6 +26,7 @@ const {
 } = require('./auth/weekStart');
 const ExcelJS = require('exceljs');
 const { parseSheet } = require('./trainingImport');
+const { version: APP_VERSION } = require('../package.json');
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
@@ -114,6 +115,8 @@ async function buildServer(options = {}) {
     }
     return reply.sendFile('register.html');
   });
+
+  app.get('/api/version', async () => ({ version: APP_VERSION }));
 
   if (options.db) {
     const db = options.db;

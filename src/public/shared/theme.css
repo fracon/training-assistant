@@ -56,8 +56,6 @@ textarea::placeholder {
 }
 
 .topbar .brand { font-weight: 700; letter-spacing: 0.02em; }
-.topbar .dot { color: var(--accent); font-weight: 700; }
-.topbar .tagline { color: var(--muted); font-size: 0.9rem; }
 
 .topbar-actions {
   position: absolute;

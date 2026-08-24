@@ -9,7 +9,8 @@ const SIDEBAR_STORAGE_KEY = 'training-assistant:sidebar-collapsed';
 
 export const FOOTER_ELEMENT_TAG = 'footer';
 export const FOOTER_CLASS_NAME = 'bottom-bar';
-export const FOOTER_STATUS_KEY = 'shell.footer.status';
+export const VERSION_ENDPOINT = '/api/version';
+export const VERSION_FALLBACK_LABEL = 'v-.-.-';
 
 const NAV_ITEMS = [
   {
@@ -169,13 +170,30 @@ function buildTopbar() {
   return header;
 }
 
+// Resolves the running app version from the backend. Any failure (offline,
+// non-200, malformed payload) degrades to null so the footer can fall back.
+export async function loadAppVersion(fetchImpl = globalThis.fetch) {
+  try {
+    const response = await fetchImpl(VERSION_ENDPOINT);
+    if (!response.ok) return null;
+    const data = await response.json();
+    if (typeof data?.version !== 'string' || data.version === '') return null;
+    return data.version;
+  } catch {
+    return null;
+  }
+}
+
+export function formatAppVersion(version) {
+  return version ? `v${version}` : VERSION_FALLBACK_LABEL;
+}
+
 function buildBottomBar() {
   const bar = document.createElement(FOOTER_ELEMENT_TAG);
   bar.className = FOOTER_CLASS_NAME;
-  const status = el('span', 'bottom-bar-status');
-  status.setAttribute('data-i18n', FOOTER_STATUS_KEY);
-  status.textContent = translate(shellI18n.messages, FOOTER_STATUS_KEY);
-  bar.appendChild(status);
+  const versionLabel = el('span', 'footer-version');
+  versionLabel.id = 'appVersion';
+  bar.appendChild(versionLabel);
   return bar;
 }
 
@@ -257,6 +275,13 @@ export async function initShell({ active } = {}) {
 
   setUserBadge(user);
   wireLogout();
+
+  // The footer only carries the app version; resolve it without blocking
+  // the shell mount and degrade gracefully when unreachable.
+  const versionLabel = shellRoot.querySelector('#appVersion');
+  loadAppVersion().then((version) => {
+    versionLabel.textContent = formatAppVersion(version);
+  });
 
   shellRoot.querySelector('#sidebarToggle').addEventListener('click', () => {
     const collapsed = !shellRoot.classList.contains('collapsed');

@@ -1,7 +1,6 @@
 {
   "app": {
-    "name": "Kinesis",
-    "tagline": "Local e Offline"
+    "name": "Kinesis"
   },
   "aiCoach": {
     "title": "Prompt do Coach de IA",
@@ -72,10 +71,7 @@
     "collapse": "Recolher menu",
     "expand": "Expandir menu",
     "navLabel": "Navegação principal",
-    "logout": "Sair",
-    "footer": {
-      "status": "Local e Offline"
-    }
+    "logout": "Sair"
   },
   "login": {
     "title": "Entrar • Kinesis",

@@ -77,6 +77,11 @@ body.shell-mounted {
   color: var(--muted);
 }
 
+.footer-version {
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
 /* ---------- Sidebar ---------- */
 
 .sidebar {

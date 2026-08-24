@@ -393,7 +393,7 @@ test('shared assets and scripts are served publicly across pages', async () => {
   assert.match(shellModule.body, /export async function initShell/);
   assert.match(shellModule.body, /data-lucide/);
   assert.match(shellModule.body, /FOOTER_ELEMENT_TAG = 'footer'/);
-  assert.match(shellModule.body, /shell\.footer\.status/);
+  assert.match(shellModule.body, /VERSION_ENDPOINT = '\/api\/version'/);
   assert.match(shellModule.body, /'nav-label sidebar-label'/);
   assert.match(shellModule.body, /'toggle-label sidebar-label'/);
 

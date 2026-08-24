@@ -10,7 +10,9 @@ const {
   writeSidebarCollapsed,
   FOOTER_ELEMENT_TAG,
   FOOTER_CLASS_NAME,
-  FOOTER_STATUS_KEY,
+  VERSION_FALLBACK_LABEL,
+  loadAppVersion,
+  formatAppVersion,
 } = require('../src/public/shared/shell.js');
 const en = require('../src/public/locales/en.json');
 const pt = require('../src/public/locales/pt.json');
@@ -91,7 +93,6 @@ test('every sidebar label key resolves in both locale files', () => {
     'shell.expand',
     'shell.navLabel',
     'shell.logout',
-    FOOTER_STATUS_KEY,
   ];
   for (const key of keys) {
     assert.equal(typeof lookup(en, key), 'string', `en.json missing ${key}`);
@@ -99,12 +100,47 @@ test('every sidebar label key resolves in both locale files', () => {
   }
 });
 
-test('bottom bar is a footer element carrying the translatable status line', () => {
+test('the footer carries only the app version, fetched from the backend', async () => {
   assert.equal(FOOTER_ELEMENT_TAG, 'footer');
   assert.equal(FOOTER_CLASS_NAME, 'bottom-bar');
-  assert.equal(FOOTER_STATUS_KEY, 'shell.footer.status');
-  assert.equal(en.shell.footer.status, 'Local & Offline');
-  assert.equal(pt.shell.footer.status, 'Local e Offline');
+
+  const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
+  assert.ok(!js.includes('shell.footer.status'), 'the old status key is gone from the shell');
+  assert.ok(!js.includes("addEventListener('online'"), 'no network status listeners remain');
+  assert.ok(!js.includes("addEventListener('offline'"), 'no network status listeners remain');
+  assert.match(
+    js,
+    /const versionLabel = shellRoot\.querySelector\('#appVersion'\);/,
+    'the footer renders a dedicated version span'
+  );
+  assert.match(
+    js,
+    /loadAppVersion\(\)\.then\(\(version\) => \{\s*\n\s*versionLabel\.textContent = formatAppVersion\(version\);\s*\n\s*\}\);/,
+    'the fetched version lands in the footer without blocking the mount'
+  );
+
+  assert.equal(en.shell.footer, undefined);
+  assert.equal(pt.shell.footer, undefined);
+
+  const css = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.css'), 'utf8');
+  assert.match(css, /\.footer-version \{[^}]*font-weight:\s*600/, 'the version label stays subtle');
+});
+
+test('loadAppVersion resolves the packaged version and degrades to null on any failure', async () => {
+  const ok = (body) => async () => ({ ok: true, json: async () => body });
+  assert.equal(await loadAppVersion(ok({ version: '1.0.0' })), '1.0.0');
+  assert.equal(await loadAppVersion(async () => ({ ok: false, json: async () => ({ version: '1.0.0' }) })), null);
+  assert.equal(await loadAppVersion(ok({})), null, 'a malformed payload is treated as missing');
+  assert.equal(await loadAppVersion(ok({ version: '' })), null);
+  assert.equal(await loadAppVersion(ok({ version: 42 })), null);
+  assert.equal(await loadAppVersion(undefined), null, 'an unreachable backend falls back gracefully');
+});
+
+test('formatAppVersion prefixes the fetched version and falls back to v-.-.-', () => {
+  assert.equal(formatAppVersion('2.3.1'), 'v2.3.1');
+  assert.equal(formatAppVersion(null), VERSION_FALLBACK_LABEL);
+  assert.equal(formatAppVersion(''), VERSION_FALLBACK_LABEL);
+  assert.equal(VERSION_FALLBACK_LABEL, 'v-.-.-');
 });
 
 test('the brand lives only in the sidebar as Kinesis', () => {
