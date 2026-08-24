@@ -949,6 +949,24 @@ test('training-result.css keeps the earthy premium aesthetic for the session vie
   assert.match(css, /\.btn-secondary \{[^}]*border:\s*1px solid var\(--accent-deep\)/);
   assert.match(css, /\.btn-secondary svg \{[^}]*width:\s*16px/);
   assert.match(css, /\.input-control:focus \{[^}]*border-color:\s*var\(--accent\)/);
+  assert.match(
+    css,
+    /\.input-control \{[^}]*background:\s*var\(--bg\)/,
+    'form controls sit on the earthy surface instead of browser white'
+  );
+  assert.match(
+    css,
+    /select\.input-control \{[^}]*-webkit-appearance:\s*none;\s*\n\s*appearance:\s*none/,
+    'native select chrome is stripped'
+  );
+  assert.match(
+    css,
+    /select\.input-control \{[^}]*background-image:\s*url\("data:image\/svg\+xml[^}]*stroke='%238b8172'/,
+    'the dropdown chevron is the shared earthy SVG'
+  );
+  assert.match(css, /select\.input-control \{[^}]*background-repeat:\s*no-repeat/);
+  assert.match(css, /select\.input-control \{[^}]*background-position:\s*right 0\.6rem center/);
+  assert.match(css, /select\.input-control \{[^}]*padding-right:\s*1\.9rem/, 'text clears the chevron');
 
   const responsive = css.slice(css.indexOf('@media (max-width: 560px)'));
   assert.match(responsive, /\.feedback-grid \{\s*grid-template-columns: 1fr;/);

@@ -17,6 +17,7 @@
 3. **No Bloatware:** Stick to Vanilla JS and pure CSS. Do not introduce heavy frontend frameworks (React/Vue/Tailwind) unless explicitly requested and justified.
 4. **Infrastructure Immutability:** Do not alter Docker or GitHub Actions configurations without explicit permission. The current ZimaOS/Cloudflare setup (port 8081) is finalized.
 5. **UI Consistency:** Any new UI elements must match the existing modern, high-density, cozy aesthetic.
+6. **Form Element Consistency:** All form inputs (`input`, `textarea`, `select`) must share a unified design system. They must use the standard earthy surface background, consistent rounded borders, identical padding, and native styling must be overridden (`appearance: none` for selects with custom SVG chevrons). Never use default browser white backgrounds for form controls.
 
 ## 🎨 Frontend Architecture (Immutable)
 
