@@ -390,6 +390,11 @@ test('training-result.html ships the expanded feedback grid and generator button
     html,
     /<div class="dropzone-text-secondary" data-i18n="session\.fitClickText">or click to select from your computer<\/div>/
   );
+  assert.match(
+    html,
+    /id="smartwatchSelect"[\s\S]*?class="field fit-field" id="fitField"/,
+    'the dropzone is laid out after the smartwatch answer'
+  );
 
   for (const id of [
     'feedbackShoe',
@@ -914,14 +919,31 @@ test('training-result.css keeps the earthy premium aesthetic for the session vie
   assert.match(css, /\.feedback-grid \{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/);
   assert.match(css, /\.field-wide \{[^}]*grid-column:\s*1 \/ -1/);
   assert.match(css, /\.fit-field\[hidden\] \{[^}]*display:\s*none/, 'conditional FIT field hides cleanly');
+  assert.match(
+    css,
+    /\.fit-field \{[^}]*grid-column:\s*1 \/ -1/,
+    'the FIT dropzone owns a dedicated full-width row below the smartwatch field'
+  );
+  assert.match(css, /\.fit-field \{[^}]*width:\s*100%/);
   assert.match(css, /\.file-dropzone \{[^}]*border:\s*2px dashed var\(--line-strong\)/, 'the dropzone invites files with a dashed border');
+  assert.match(css, /\.file-dropzone \{[^}]*border-radius:\s*16px/, 'the dropzone uses the rounded reference design');
+  assert.match(css, /\.file-dropzone \{[^}]*padding:\s*2\.5rem 1\.5rem/, 'generous vertical breathing room');
+  assert.match(css, /\.file-dropzone \{[^}]*text-align:\s*center/);
+  assert.match(css, /\.file-dropzone \{[^}]*background-color:\s*var\(--card\)/, 'subtle card surface behind the invitation');
   assert.match(css, /\.file-dropzone \{[^}]*cursor:\s*pointer/);
   assert.match(css, /\.file-dropzone \{[^}]*display:\s*flex/);
   assert.match(css, /\.file-dropzone \{[^}]*flex-direction:\s*column/);
-  assert.match(css, /\.file-dropzone:hover \{[^}]*border-color:\s*var\(--accent\)/, 'hovering highlights the zone with the sage accent');
-  assert.match(css, /\.file-dropzone\.drag-active \{[^}]*border-color:\s*var\(--accent-deep\)/, 'dragging over deepens the accent');
+  assert.match(css, /\.file-dropzone:hover \{[^}]*border-color:\s*var\(--accent-deep\)/, 'hovering highlights the zone with the deep sage accent');
+  assert.match(css, /\.file-dropzone\.drag-active \{[^}]*border-color:\s*var\(--accent-deep\)/, 'dragging over keeps the primary border highlight');
   assert.match(css, /\.dropzone-text-primary \{[^}]*font-weight:\s*600/);
+  assert.match(
+    css,
+    /\.dropzone-text-primary strong \{[^}]*color:\s*var\(--accent-deep\)[^}]*font-weight:\s*700/,
+    '.FIT stands out bold in the primary green'
+  );
   assert.match(css, /\.dropzone-text-secondary \{[^}]*color:\s*var\(--muted\)/);
+  assert.match(css, /\.dropzone-text-secondary \{[^}]*opacity:\s*0\.7/, 'the subtitle stays muted');
+  assert.match(css, /\.dropzone-text-secondary \{[^}]*margin-top:\s*0\.25rem/);
   assert.match(css, /\.pain-field\[hidden\] \{[^}]*display:\s*none/, 'the pain description hides until pain is reported');
   assert.match(css, /\.form-actions \{[^}]*display:\s*flex/);
   assert.match(css, /\.btn-secondary \{[^}]*border:\s*1px solid var\(--accent-deep\)/);
