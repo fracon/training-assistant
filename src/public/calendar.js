@@ -66,6 +66,20 @@ export function trainingsByDay(trainings) {
   return byDay;
 }
 
+// Resolves the list of row issues worth showing in the import modal.
+// Returns null whenever there is nothing meaningful to display so the
+// modal can never open empty (e.g. network blips on initial load).
+export function importErrorEntries(error) {
+  if (!error) return null;
+  if (Array.isArray(error.rowErrors) && error.rowErrors.length > 0) {
+    return error.rowErrors;
+  }
+  if (error.message) {
+    return [{ row: '—', col: '—', error: error.message }];
+  }
+  return null;
+}
+
 export function buildCalendarCells(year, monthIndex, firstDay, today = new Date()) {
   const order = weekdayOrder(firstDay);
   const firstOfMonth = new Date(year, monthIndex, 1);
@@ -241,9 +255,14 @@ function setupCalendarPage() {
     importBanner.classList.remove('hidden');
   }
 
-  function openRowErrorModal(rowErrors) {
+  function showImportErrors(error) {
+    const entries = importErrorEntries(error);
+    if (!entries) {
+      console.warn('calendar: ignoring import failure without error details.');
+      return;
+    }
     importErrorList.innerHTML = '';
-    for (const issue of rowErrors) {
+    for (const issue of entries) {
       const item = document.createElement('li');
       item.textContent = t('calendar.import.rowError', {
         row: issue.row,
@@ -274,11 +293,7 @@ function setupCalendarPage() {
       await reloadTrainings();
       showBanner(t('calendar.import.success', { count: result.imported }));
     } catch (error) {
-      if (error.rowErrors) {
-        openRowErrorModal(error.rowErrors);
-      } else {
-        openRowErrorModal([{ row: '—', col: '—', error: error.message }]);
-      }
+      showImportErrors(error);
       showBanner('');
       importBanner.classList.add('hidden');
     } finally {
