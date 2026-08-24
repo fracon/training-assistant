@@ -253,6 +253,75 @@ test('calendar.html binds every static aria-label to a locale key', () => {
   }
 });
 
+test('calendar header stacks title above a full-width actions row without a subtitle', () => {
+  const html = readFileSync(join(publicDir, 'calendar.html'), 'utf8');
+
+  assert.ok(!html.includes('calendar-subtitle'), 'the subtitle element is removed');
+  assert.ok(!html.includes('calendar-heading'), 'the heading wrapper collapses into the header');
+
+  const h1Index = html.indexOf('<h1 data-i18n="calendar.title">');
+  const actionsIndex = html.indexOf('<div class="calendar-actions">');
+  assert.ok(h1Index !== -1 && actionsIndex !== -1 && h1Index < actionsIndex,
+    'the title sits on its own row above the action controls');
+  assert.ok(html.indexOf('</header>') > actionsIndex);
+
+  const pickerIndex = html.indexOf('<div class="week-start-picker">');
+  const navIndex = html.indexOf('<div class="month-nav">');
+  const importIndex = html.indexOf('<button type="button" id="importBtn"');
+  for (const [name, index] of [['week-start-picker', pickerIndex], ['month-nav', navIndex], ['importBtn', importIndex]]) {
+    assert.ok(index !== -1 && index > actionsIndex, `${name} lives inside .calendar-actions`);
+    assert.ok(index < html.indexOf('</header>'), `${name} stays inside the header`);
+  }
+});
+
+test('import button label and hover tooltip are translated with key parity', () => {
+  assert.equal(en.calendar.import.button, 'Import trainings');
+  assert.equal(pt.calendar.import.button, 'Importar treinos');
+  assert.equal(en.calendar.import.tooltip, 'Imports Excel files (.xlsx, .xls) containing your training schedule.');
+  assert.equal(pt.calendar.import.tooltip, 'Importa arquivos Excel (.xlsx, .xls) contendo a sua planilha de treinos.');
+  assert.equal(en.calendar.subtitle, undefined);
+  assert.equal(pt.calendar.subtitle, undefined);
+});
+
+test('import tooltip swaps on language change through the shared i18n title handler', () => {
+  const html = readFileSync(join(publicDir, 'calendar.html'), 'utf8');
+  const buttonStart = html.indexOf('<button type="button" id="importBtn"');
+  const buttonEnd = html.indexOf('</button>', buttonStart);
+  const buttonMarkup = html.slice(buttonStart, buttonEnd);
+
+  assert.ok(buttonMarkup.includes('data-i18n-title="calendar.import.tooltip"'),
+    'the tooltip is bound to the i18n key');
+  assert.ok(buttonMarkup.includes('title="Imports Excel files (.xlsx, .xls) containing your training schedule."'),
+    'an English fallback title is present before hydration');
+  assert.match(buttonMarkup, /data-i18n="calendar\.import\.button"[^>]*>Import trainings<\/span>/);
+
+  const i18nJs = readFileSync(join(publicDir, 'shared', 'i18n.js'), 'utf8');
+  assert.match(i18nJs, /querySelectorAll\('\[data-i18n-title\]'\)/);
+  assert.match(i18nJs, /el\.title = translate\(messages, el\.dataset\.i18nTitle\);/);
+});
+
+test('calendar.css stacks the header vertically and spreads the actions row', () => {
+  const css = readFileSync(join(publicDir, 'calendar.css'), 'utf8');
+
+  const headerBlock = css.match(/\.calendar-header \{[^}]*\}/)?.[0] ?? '';
+  assert.match(headerBlock, /display:\s*flex/);
+  assert.match(headerBlock, /flex-direction:\s*column/);
+  assert.match(headerBlock, /align-items:\s*flex-start/);
+
+  const actionsBlock = css.match(/\.calendar-actions \{[^}]*\}/)?.[0] ?? '';
+  assert.match(actionsBlock, /display:\s*flex/);
+  assert.match(actionsBlock, /align-items:\s*center/);
+  assert.match(actionsBlock, /justify-content:\s*space-between/);
+  assert.match(actionsBlock, /width:\s*100%/);
+
+  const pickerBlock = css.match(/\.week-start-picker \{[^}]*\}/)?.[0] ?? '';
+  assert.match(pickerBlock, /display:\s*inline-flex/);
+
+  assert.ok(!css.includes('.calendar-subtitle'), 'subtitle rule is gone');
+  assert.ok(!css.includes('.calendar-heading'), 'heading wrapper rule is gone');
+  assert.ok(!css.includes('.calendar-controls'), 'old controls rule is gone');
+});
+
 test('calendar.js renders localized toggle texts and refreshes on language change', () => {
   const js = readFileSync(join(publicDir, 'calendar.js'), 'utf8');
 
@@ -308,9 +377,9 @@ test('calendar.css styles chips as flex columns with an elegant custom hover too
   assert.match(chipBlock, /flex-direction:\s*column/);
   assert.doesNotMatch(chipBlock, /ellipsis|nowrap/, 'text wraps naturally, no truncation');
 
-  assert.match(css, /\.day-cell \.chip-type \{[^}]*font-size:\s*0\.75rem/);
+  assert.match(css, /\.day-cell \.chip-type \{[^}]*font-size:\s*0\.7rem/);
   assert.match(css, /\.day-cell \.chip-type \{[^}]*text-transform:\s*uppercase/);
-  assert.match(css, /\.day-cell \.chip-title \{[^}]*font-size:\s*0\.85rem/);
+  assert.match(css, /\.day-cell \.chip-title \{[^}]*font-size:\s*0\.75rem/);
   assert.match(css, /\.day-cell \.chip-title \{[^}]*word-wrap:\s*break-word/);
 
   const tooltipBlock = css.match(/\.day-cell \.chip-tooltip \{[^}]*\}/)?.[0] ?? '';

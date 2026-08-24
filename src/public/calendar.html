@@ -11,17 +11,16 @@
   <main id="appView">
     <section class="calendar-page">
       <header class="calendar-header">
-        <div class="calendar-heading">
-          <h1 data-i18n="calendar.title">Training Calendar</h1>
-          <p class="calendar-subtitle" data-i18n="calendar.subtitle">Your month at a glance</p>
-        </div>
+        <h1 data-i18n="calendar.title">Training Calendar</h1>
 
-        <div class="calendar-controls">
-          <span class="week-start-label" data-i18n="calendar.weekStartLabel">Start of week:</span>
-          <div class="week-start-switch" role="group" aria-label="Week starts on"
-            data-i18n-aria-label="calendar.firstDayLabel">
-            <button type="button" id="mondayBtn" data-week-start="Monday">Mon</button>
-            <button type="button" id="sundayBtn" data-week-start="Sunday">Sun</button>
+        <div class="calendar-actions">
+          <div class="week-start-picker">
+            <span class="week-start-label" data-i18n="calendar.weekStartLabel">Start of week:</span>
+            <div class="week-start-switch" role="group" aria-label="Week starts on"
+              data-i18n-aria-label="calendar.firstDayLabel">
+              <button type="button" id="mondayBtn" data-week-start="Monday">Mon</button>
+              <button type="button" id="sundayBtn" data-week-start="Sunday">Sun</button>
+            </div>
           </div>
 
           <div class="month-nav">
@@ -36,9 +35,11 @@
             </button>
           </div>
 
-          <button type="button" id="importBtn" class="import-btn">
+          <button type="button" id="importBtn" class="import-btn"
+            title="Imports Excel files (.xlsx, .xls) containing your training schedule."
+            data-i18n-title="calendar.import.tooltip">
             <span class="import-icon"><i data-lucide="file-spreadsheet"></i></span>
-            <span data-i18n="calendar.import.button">Import</span>
+            <span data-i18n="calendar.import.button">Import trainings</span>
           </button>
           <input type="file" id="importInput" accept=".xlsx,.xls" hidden>
         </div>

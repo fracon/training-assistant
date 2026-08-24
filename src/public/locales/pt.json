@@ -30,7 +30,6 @@
   },
   "calendar": {
     "title": "Calendário de Treinos",
-    "subtitle": "Seu mês em um olhar",
     "previousMonth": "Mês anterior",
     "nextMonth": "Próximo mês",
     "today": "Hoje",
@@ -39,7 +38,8 @@
     "sun": "Dom",
     "gridLabel": "Calendário mensal",
     "import": {
-      "button": "Importar",
+      "button": "Importar treinos",
+      "tooltip": "Importa arquivos Excel (.xlsx, .xls) contendo a sua planilha de treinos.",
       "title": "Importar treinos",
       "hint": "Escolha uma planilha .xlsx ou .xls com as colunas: Dia, Período, Tipo, Treino, Detalhes, FC alvo, RPE, Tênis, Previsão no horário, Observações.",
       "loading": "Importando…",
