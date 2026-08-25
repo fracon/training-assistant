@@ -12,9 +12,16 @@ export const FOOTER_CLASS_NAME = 'bottom-bar';
 export const VERSION_ENDPOINT = '/api/version';
 export const VERSION_FALLBACK_LABEL = 'v-.-.-';
 
-// Sidebar order follows the athlete lifecycle: request workouts first,
-// then review/log them. Ids and hrefs stay stable for route matching.
+// Sidebar order: Home (coming soon) first, then request workouts, then
+// review/log workouts. Ids and hrefs stay stable for route matching.
 const NAV_ITEMS = [
+  {
+    id: 'dashboard',
+    icon: 'layout-dashboard',
+    labelKey: 'shell.nav.home',
+    href: null,
+    disabled: true,
+  },
   {
     id: 'ai-coach',
     icon: 'bot',
@@ -28,13 +35,6 @@ const NAV_ITEMS = [
     labelKey: 'shell.nav.workouts',
     href: '/calendar.html',
     disabled: false,
-  },
-  {
-    id: 'dashboard',
-    icon: 'layout-dashboard',
-    labelKey: 'shell.nav.dashboard',
-    href: null,
-    disabled: true,
   },
 ];
 

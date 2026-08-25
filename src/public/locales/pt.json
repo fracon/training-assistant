@@ -63,9 +63,9 @@
   },
   "shell": {
     "nav": {
+      "home": "Início",
       "requestWorkouts": "Solicitar Treinos",
-      "workouts": "Treinos",
-      "dashboard": "Dashboard"
+      "workouts": "Treinos"
     },
     "soon": "Em breve",
     "collapse": "Recolher menu",

@@ -63,9 +63,9 @@
   },
   "shell": {
     "nav": {
+      "home": "Home",
       "requestWorkouts": "Request Workouts",
-      "workouts": "Workouts",
-      "dashboard": "Dashboard"
+      "workouts": "Workouts"
     },
     "soon": "Soon",
     "collapse": "Collapse sidebar",
