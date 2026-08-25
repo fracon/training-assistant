@@ -256,6 +256,13 @@ input.input-error:focus-visible {
 
 /* ---------- Auth card & panels ---------- */
 
+.auth-header {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  z-index: 10;
+}
+
 .auth-view {
   min-height: 100vh;
   display: grid;
@@ -423,6 +430,7 @@ input.input-error:focus-visible {
   .topbar-actions { right: 0.6rem; gap: 0.4rem; }
   .topbar > .lang-switch { right: 0.6rem; }
   .user-badge { display: none; }
+  .auth-header { right: 0.75rem; top: 0.75rem; }
   .auth-view { padding: 1.2rem 0.75rem; }
   .auth-card { padding: 1.4rem 1.1rem 1.3rem; }
   .grid-2x2 { grid-template-columns: 1fr; }

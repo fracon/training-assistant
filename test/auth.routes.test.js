@@ -322,6 +322,9 @@ test('GET /login.html serves sign-in anonymously and redirects sessions home', a
   assert.match(anonymous.body, /href="\/register\.html"/);
   assert.match(anonymous.body, /login\.js/);
   assert.match(anonymous.body, /auth-eyebrow.*Kinesis/s, 'login card shows the KINESIS eyebrow');
+  assert.match(anonymous.body, /class="auth-header"/, 'login has a minimal auth header');
+  assert.match(anonymous.body, /data-lang="en-US"/, 'login header contains EN switcher');
+  assert.match(anonymous.body, /data-lang="pt-BR"/, 'login header contains PT switcher');
   assert.doesNotMatch(anonymous.body, /id="workoutForm"/);
 
   const authenticated = await app.inject({
@@ -349,6 +352,9 @@ test('GET /register.html serves sign-up anonymously and redirects sessions home'
   assert.match(anonymous.body, /auth-error-box/);
   assert.match(anonymous.body, /register\.js/);
   assert.match(anonymous.body, /auth-eyebrow.*Kinesis/s, 'register card shows the KINESIS eyebrow');
+  assert.match(anonymous.body, /class="auth-header"/, 'register has a minimal auth header');
+  assert.match(anonymous.body, /data-lang="en-US"/, 'register header contains EN switcher');
+  assert.match(anonymous.body, /data-lang="pt-BR"/, 'register header contains PT switcher');
   assert.match(anonymous.body, /id="preferredLang"/);
   assert.match(anonymous.body, /name="preferred_lang"/);
 
@@ -797,4 +803,11 @@ test('auth card eyebrow uses uppercase accent styling via theme.css', () => {
   assert.match(theme, /\.auth-eyebrow \{[^}]*font-size:\s*0\.72rem/, 'eyebrow has a small font size');
   assert.match(theme, /\.auth-eyebrow \{[^}]*letter-spacing:\s*0\.12em/, 'eyebrow has generous letter-spacing');
   assert.match(theme, /\.auth-eyebrow \{[^}]*font-weight:\s*700/, 'eyebrow is bold');
+});
+
+test('auth header positions the language switcher in the top-right corner', () => {
+  const theme = readFileSync(join(publicDir, 'shared', 'theme.css'), 'utf8');
+  assert.match(theme, /\.auth-header \{[^}]*position:\s*absolute/, 'auth header is absolutely positioned');
+  assert.match(theme, /\.auth-header \{[^}]*top:\s*1rem/, 'auth header sits near the top');
+  assert.match(theme, /\.auth-header \{[^}]*right:\s*1rem/, 'auth header sits near the right edge');
 });
