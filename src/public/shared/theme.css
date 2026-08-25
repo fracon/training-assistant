@@ -257,7 +257,7 @@ input.input-error:focus-visible {
 /* ---------- Auth card & panels ---------- */
 
 .auth-view {
-  min-height: calc(100vh - 3.4rem);
+  min-height: 100vh;
   display: grid;
   place-items: center;
   padding: 2rem 1rem;
@@ -282,7 +282,7 @@ input.input-error:focus-visible {
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--accent-deep);
+  color: var(--accent);
   margin-bottom: 0.45rem;
 }
 

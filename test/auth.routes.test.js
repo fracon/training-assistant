@@ -321,8 +321,7 @@ test('GET /login.html serves sign-in anonymously and redirects sessions home', a
   assert.match(anonymous.body, /id="loginForm"/);
   assert.match(anonymous.body, /href="\/register\.html"/);
   assert.match(anonymous.body, /login\.js/);
-  assert.match(anonymous.body, /class="lang-switch"/);
-  assert.match(anonymous.body, /data-lang="pt-BR"/);
+  assert.match(anonymous.body, /auth-eyebrow.*Kinesis/s, 'login card shows the KINESIS eyebrow');
   assert.doesNotMatch(anonymous.body, /id="workoutForm"/);
 
   const authenticated = await app.inject({
@@ -349,7 +348,7 @@ test('GET /register.html serves sign-up anonymously and redirects sessions home'
   assert.match(anonymous.body, /href="\/login\.html"/);
   assert.match(anonymous.body, /auth-error-box/);
   assert.match(anonymous.body, /register\.js/);
-  assert.match(anonymous.body, /class="lang-switch"/);
+  assert.match(anonymous.body, /auth-eyebrow.*Kinesis/s, 'register card shows the KINESIS eyebrow');
   assert.match(anonymous.body, /id="preferredLang"/);
   assert.match(anonymous.body, /name="preferred_lang"/);
 
@@ -789,4 +788,13 @@ test('auth pages ride the unified primary button design', () => {
     'auth buttons lift exactly like the app screens'
   );
   assert.match(theme, /\.btn-primary:hover:not\(:disabled\) \{[^}]*background:\s*#405c46/);
+});
+
+test('auth card eyebrow uses uppercase accent styling via theme.css', () => {
+  const theme = readFileSync(join(publicDir, 'shared', 'theme.css'), 'utf8');
+  assert.match(theme, /\.auth-eyebrow \{[^}]*text-transform:\s*uppercase/, 'eyebrow text is uppercased');
+  assert.match(theme, /\.auth-eyebrow \{[^}]*color:\s*var\(--accent\)/, 'eyebrow uses the primary accent color');
+  assert.match(theme, /\.auth-eyebrow \{[^}]*font-size:\s*0\.72rem/, 'eyebrow has a small font size');
+  assert.match(theme, /\.auth-eyebrow \{[^}]*letter-spacing:\s*0\.12em/, 'eyebrow has generous letter-spacing');
+  assert.match(theme, /\.auth-eyebrow \{[^}]*font-weight:\s*700/, 'eyebrow is bold');
 });
