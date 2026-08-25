@@ -67,6 +67,18 @@ CREATE TABLE IF NOT EXISTS trainings (
   feedback_pain      TEXT,
   created_at  DATETIME NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS shoes (
+  id             TEXT    PRIMARY KEY,
+  user_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  brand          TEXT    NOT NULL,
+  model          TEXT    NOT NULL,
+  mileage        REAL    NOT NULL DEFAULT 0.0,
+  target_mileage REAL,
+  status         TEXT    NOT NULL DEFAULT 'active',
+  created_at     TEXT    NOT NULL DEFAULT (datetime('now')),
+  updated_at     TEXT    NOT NULL DEFAULT (datetime('now'))
+);
 `;
 
 function resolveDatabaseFile(cwd) {

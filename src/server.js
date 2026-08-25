@@ -26,6 +26,14 @@ const {
 } = require('./auth/weekStart');
 const ExcelJS = require('exceljs');
 const { parseSheet } = require('./trainingImport');
+const {
+  ShoeError,
+  createShoe,
+  getShoesByUserId,
+  getShoeById,
+  updateShoe,
+  deleteShoe,
+} = require('./shoes');
 const { version: APP_VERSION } = require('../package.json');
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
@@ -384,6 +392,46 @@ async function buildServer(options = {}) {
       ).run(...fields.map((field) => updates[field]), id, request.user.id);
 
       return { training: findTraining.get(id, request.user.id) };
+    });
+
+    app.get('/api/shoes', { preHandler: requireAuth }, async (request) => {
+      const shoes = getShoesByUserId(db, request.user.id);
+      return { shoes };
+    });
+
+    app.post('/api/shoes', { preHandler: requireAuth }, async (request, reply) => {
+      try {
+        const shoe = createShoe(db, request.user.id, request.body);
+        return reply.code(201).send({ shoe });
+      } catch (error) {
+        if (error instanceof ShoeError) {
+          return reply.code(error.status).send({ error: error.message });
+        }
+        throw error;
+      }
+    });
+
+    app.put('/api/shoes/:id', { preHandler: requireAuth }, async (request, reply) => {
+      try {
+        const shoe = updateShoe(db, request.params.id, request.user.id, request.body);
+        if (!shoe) {
+          return reply.code(404).send({ error: 'Shoe not found.' });
+        }
+        return { shoe };
+      } catch (error) {
+        if (error instanceof ShoeError) {
+          return reply.code(error.status).send({ error: error.message });
+        }
+        throw error;
+      }
+    });
+
+    app.delete('/api/shoes/:id', { preHandler: requireAuth }, async (request, reply) => {
+      const deleted = deleteShoe(db, request.params.id, request.user.id);
+      if (!deleted) {
+        return reply.code(404).send({ error: 'Shoe not found.' });
+      }
+      return { status: 'ok' };
     });
   }
 
