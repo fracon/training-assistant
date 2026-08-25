@@ -1,4 +1,4 @@
-import { initShell, getShellI18n, refreshIcons } from './shared/shell.js';
+import { initShell, getShellI18n, refreshIcons, showConfirm } from './shared/shell.js';
 import { translate } from './shared/i18n.js';
 import { fetchShoes, createShoe, updateShoe, deleteShoe } from './shared/api.js';
 
@@ -244,7 +244,11 @@ async function handleAction(action, id, shoes, messages) {
   }
 
   if (action === 'delete') {
-    if (!window.confirm(t(messages, 'shoes.deleteConfirm'))) return;
+    if (!(await showConfirm(
+      t(messages, 'shoes.deleteConfirm'),
+      t(messages, 'shell.confirm.yes'),
+      t(messages, 'shell.confirm.no'),
+    ))) return;
     try {
       await deleteShoe(id);
       const updated = await fetchShoes();

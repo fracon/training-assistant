@@ -74,7 +74,11 @@
     "collapse": "Recolher menu",
     "expand": "Expandir menu",
     "navLabel": "Navegação principal",
-    "logout": "Sair"
+    "logout": "Sair",
+    "confirm": {
+      "yes": "Excluir",
+      "no": "Cancelar"
+    }
   },
   "login": {
     "title": "Entrar • Kinesis",

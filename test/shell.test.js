@@ -91,6 +91,10 @@ test('sidebar navigation follows Home, Request Workouts, Workouts, Shoes', () =>
   assert.equal(pt.shell.nav.workouts, 'Treinos');
   assert.equal(en.shell.nav.shoes, 'Shoes');
   assert.equal(pt.shell.nav.shoes, 'Tênis');
+  assert.equal(en.shell.confirm.yes, 'Delete');
+  assert.equal(pt.shell.confirm.yes, 'Excluir');
+  assert.equal(en.shell.confirm.no, 'Cancel');
+  assert.equal(pt.shell.confirm.no, 'Cancelar');
   assert.equal(en.shell.nav.dashboard, undefined);
 });
 
@@ -111,6 +115,8 @@ test('every sidebar label key resolves in both locale files', () => {
     'shell.expand',
     'shell.navLabel',
     'shell.logout',
+    'shell.confirm.yes',
+    'shell.confirm.no',
   ];
   for (const key of keys) {
     assert.equal(typeof lookup(en, key), 'string', `en.json missing ${key}`);
@@ -248,4 +254,28 @@ test('the topbar restores a working logout action once authenticated', () => {
     'icon and label stay perfectly centered'
   );
   assert.match(theme, /\.logout-btn svg \{[^}]*width:\s*14px/, 'the icon is sized to the compact pill');
+});
+
+test('showConfirm is exported and builds a Promise-based confirmation dialog', () => {
+  const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
+  assert.match(js, /export function showConfirm\(/);
+  assert.match(js, /return new Promise/);
+  assert.match(js, /confirm-backdrop/);
+  assert.match(js, /confirm-card/);
+  assert.match(js, /confirm-message/);
+  assert.match(js, /confirmOkBtn/);
+  assert.match(js, /confirmCancelBtn/);
+  assert.match(js, /setAttribute\('role', 'alertdialog'\)/);
+  assert.match(js, /cleanup\(true\)/);
+  assert.match(js, /cleanup\(false\)/);
+});
+
+test('confirm modal CSS matches the Kinesis design system', () => {
+  const theme = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'theme.css'), 'utf8');
+  assert.match(theme, /\.confirm-backdrop \{[^}]*position:\s*fixed/);
+  assert.match(theme, /\.confirm-backdrop \{[^}]*z-index:\s*9998/);
+  assert.match(theme, /\.confirm-card \{[^}]*border-radius:\s*16px/);
+  assert.match(theme, /\.confirm-card \{[^}]*background:\s*var\(--card\)/);
+  assert.match(theme, /\.btn-danger \{[^}]*background:\s*var\(--danger\)/);
+  assert.match(theme, /\.btn-danger \{[^}]*transition:\s*all 0\.2s ease/);
 });

@@ -289,6 +289,7 @@ test('shoes.js wires the shell, language change listener, and i18n attributes', 
   const js = readFileSync(join(publicDir, 'shoes.js'), 'utf8');
 
   assert.match(js, /import.*initShell.*from.*shared\/shell\.js/);
+  assert.match(js, /import.*showConfirm.*from.*shared\/shell\.js/);
   assert.match(js, /import.*getShellI18n/);
   assert.match(js, /import.*fetchShoes.*from.*shared\/api\.js/);
   assert.match(js, /import.*createShoe/);
@@ -350,10 +351,13 @@ test('shoes.js translates status badges via dynamic i18n key', () => {
   assert.match(js, /`shoes\.status\.\$\{shoe\.status\}`/);
 });
 
-test('shoes.js uses confirm dialog for delete action', () => {
+test('shoes.js uses showConfirm for delete action instead of native confirm', () => {
   const js = readFileSync(join(publicDir, 'shoes.js'), 'utf8');
-  assert.match(js, /window\.confirm/);
+  assert.doesNotMatch(js, /window\.confirm/);
+  assert.match(js, /await showConfirm/);
   assert.match(js, /shoes\.deleteConfirm/);
+  assert.match(js, /shell\.confirm\.yes/);
+  assert.match(js, /shell\.confirm\.no/);
 });
 
 test('shoes.js validates the form with validateShoeForm before submit', () => {

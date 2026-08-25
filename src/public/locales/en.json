@@ -74,7 +74,11 @@
     "collapse": "Collapse sidebar",
     "expand": "Expand sidebar",
     "navLabel": "Main navigation",
-    "logout": "Logout"
+    "logout": "Logout",
+    "confirm": {
+      "yes": "Delete",
+      "no": "Cancel"
+    }
   },
   "login": {
     "title": "Sign In • Kinesis",
