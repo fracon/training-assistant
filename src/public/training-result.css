@@ -193,6 +193,7 @@ body {
 }
 
 .rpe-emoji {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -203,24 +204,61 @@ body {
   border: 2px solid transparent;
   border-radius: 50%;
   cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.rpe-emoji .emoji-icon {
   filter: grayscale(100%);
   opacity: 0.5;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .rpe-emoji:hover {
-  opacity: 0.8;
   background-color: var(--card);
   transform: translateY(-2px);
 }
 
+.rpe-emoji:hover .emoji-icon {
+  opacity: 0.8;
+}
+
 input[type="radio"]:checked + .rpe-emoji {
-  filter: grayscale(0%);
-  opacity: 1;
   border-color: var(--accent);
   background-color: var(--card);
   transform: scale(1.1);
   box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+}
+
+input[type="radio"]:checked + .rpe-emoji .emoji-icon {
+  filter: grayscale(0%);
+  opacity: 1;
+}
+
+.rpe-emoji .custom-tooltip {
+  position: absolute;
+  bottom: 110%;
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  z-index: 50;
+  width: max-content;
+  max-width: 200px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--card);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.rpe-emoji:hover .custom-tooltip {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
 }
 
 textarea.input-control {

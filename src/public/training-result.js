@@ -345,9 +345,9 @@ async function initTrainingResult() {
   let copiedTimer = null;
   const t = (key) => translate(i18n ? i18n.messages : {}, key);
 
-  const applyI18nTitles = () => {
-    rpeSelector.querySelectorAll('[data-i18n-title]').forEach((el) => {
-      el.title = t(el.dataset.i18nTitle);
+  const applyTooltips = () => {
+    rpeSelector.querySelectorAll('[data-i18n]').forEach((el) => {
+      el.textContent = t(el.dataset.i18n);
     });
   };
 
@@ -396,7 +396,7 @@ async function initTrainingResult() {
   await initShell();
   i18n = getShellI18n();
   document.title = t('training.title');
-  applyI18nTitles();
+  applyTooltips();
 
   setStatus(t('session.loading'));
   let training;
@@ -527,7 +527,7 @@ async function initTrainingResult() {
     if (!saveBtn.disabled) saveBtn.textContent = t('session.save');
     if (!generateBtn.disabled) generateLabel.textContent = t('session.generatePrompt');
     renderFitDropzoneState();
-    applyI18nTitles();
+    applyTooltips();
   });
 }
 

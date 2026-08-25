@@ -18,6 +18,7 @@
 4. **Infrastructure Immutability:** Do not alter Docker or GitHub Actions configurations without explicit permission. The current ZimaOS/Cloudflare setup (port 8081) is finalized.
 5. **UI Consistency:** Any new UI elements must match the existing modern, high-density, cozy aesthetic.
 6. **Form Element Consistency:** All form inputs (`input`, `textarea`, `select`) must share a unified design system. They must use the standard earthy surface background, consistent rounded borders, identical padding, and native styling must be overridden (`appearance: none` for selects with custom SVG chevrons). Never use default browser white backgrounds for form controls.
+7. **Tooltips:** NEVER use the native HTML `title` attribute. Always use the custom Kinesis tooltip component — a child `<div class="custom-tooltip">` inside the trigger element, styled via CSS (dark `var(--ink)` background, `0.15s` opacity transition, `z-index: 50`). This ensures visual consistency and eliminates native rendering delays.
 
 ## 🎨 Frontend Architecture (Immutable)
 
