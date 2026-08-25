@@ -3,7 +3,8 @@
     "name": "Kinesis"
   },
   "aiCoach": {
-    "title": "AI Coach Prompt",
+    "title": "Request Workouts",
+    "pageTitle": "Request Workouts • Kinesis",
     "subtitle": "Build a detailed briefing for your external AI coach",
     "targetDate": "Target date",
     "targetDateHint": "Week to plan. Defaults to next Monday.",
@@ -28,7 +29,8 @@
     "copied": "Copied!"
   },
   "calendar": {
-    "title": "Training Calendar",
+    "title": "Workouts",
+    "pageTitle": "Workouts • Kinesis",
     "previousMonth": "Previous month",
     "nextMonth": "Next month",
     "today": "Today",

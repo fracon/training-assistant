@@ -3,7 +3,8 @@
     "name": "Kinesis"
   },
   "aiCoach": {
-    "title": "Prompt do Coach de IA",
+    "title": "Solicitar Treinos",
+    "pageTitle": "Solicitar Treinos • Kinesis",
     "subtitle": "Monte um briefing detalhado para o seu coach de IA externo",
     "targetDate": "Data alvo",
     "targetDateHint": "Semana a ser planejada. Padrão: próxima segunda-feira.",
@@ -28,7 +29,8 @@
     "copied": "Copiado!"
   },
   "calendar": {
-    "title": "Calendário de Treinos",
+    "title": "Treinos",
+    "pageTitle": "Treinos • Kinesis",
     "previousMonth": "Mês anterior",
     "nextMonth": "Próximo mês",
     "today": "Hoje",

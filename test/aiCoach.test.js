@@ -207,6 +207,13 @@ test('ai-coach.html wires the shell, lucide and the full form', () => {
   assert.match(html, /ai-coach\.js" type="module"/);
   assert.match(html, /id="appView"/);
 
+  assert.match(
+    html,
+    /<title data-i18n="aiCoach\.pageTitle">Request Workouts • Kinesis<\/title>/,
+    'the browser tab title is i18n-bound with the Kinesis suffix'
+  );
+  assert.match(html, /<h1 data-i18n="aiCoach\.title">Request Workouts<\/h1>/);
+
   assert.match(html, /type="date" id="targetDate"/);
   for (const id of ['dispSeg', 'dispTer', 'dispQua', 'dispQui', 'dispSex', 'dispSab', 'dispDom']) {
     assert.match(html, new RegExp(`id="${id}" value="Rotina normal"`));
@@ -261,6 +268,7 @@ test('locale files expose every ai-coach string in both languages', async () => 
 
   for (const messages of [en, pt]) {
     assert.equal(typeof messages.aiCoach.title, 'string');
+    assert.equal(typeof messages.aiCoach.pageTitle, 'string');
     assert.equal(typeof messages.aiCoach.targetDate, 'string');
     assert.equal(Object.keys(messages.aiCoach.days).length, 7);
     assert.equal(typeof messages.aiCoach.generate, 'string');
@@ -270,6 +278,10 @@ test('locale files expose every ai-coach string in both languages', async () => 
   }
 
   assert.notEqual(en.aiCoach.title, pt.aiCoach.title);
+  assert.match(en.aiCoach.pageTitle, /• Kinesis$/);
+  assert.match(pt.aiCoach.pageTitle, /• Kinesis$/);
+  assert.equal(en.aiCoach.pageTitle, 'Request Workouts • Kinesis');
+  assert.equal(pt.aiCoach.pageTitle, 'Solicitar Treinos • Kinesis');
 });
 
 test('the default routine string is language-aware', () => {

@@ -196,6 +196,7 @@ test('calendar locale data is complete and parity-safe', () => {
     assert.equal(messages.calendar.weekStart.Monday.length > 0, true);
     assert.equal(messages.calendar.weekStart.Sunday.length > 0, true);
     assert.ok(messages.calendar.title);
+    assert.equal(typeof messages.calendar.pageTitle, 'string');
     assert.ok(messages.calendar.previousMonth);
     assert.ok(messages.calendar.nextMonth);
     assert.ok(messages.calendar.today);
@@ -205,6 +206,11 @@ test('calendar locale data is complete and parity-safe', () => {
   assert.equal(pt.calendar.months[0], 'Janeiro');
   assert.equal(en.calendar.weekdaysShort[0], 'Mon');
   assert.equal(pt.calendar.weekdaysShort[0], 'Seg');
+
+  assert.match(en.calendar.pageTitle, /• Kinesis$/);
+  assert.match(pt.calendar.pageTitle, /• Kinesis$/);
+  assert.equal(en.calendar.pageTitle, 'Workouts • Kinesis');
+  assert.equal(pt.calendar.pageTitle, 'Treinos • Kinesis');
 });
 
 test('week-start label and toggle texts are translated with strict key parity', () => {
@@ -259,6 +265,12 @@ test('calendar header stacks title above a full-width actions row without a subt
 
   assert.ok(!html.includes('calendar-subtitle'), 'the subtitle element is removed');
   assert.ok(!html.includes('calendar-heading'), 'the heading wrapper collapses into the header');
+
+  assert.match(
+    html,
+    /<title data-i18n="calendar\.pageTitle">Workouts • Kinesis<\/title>/,
+    'the browser tab title is i18n-bound with the Kinesis suffix'
+  );
 
   const h1Index = html.indexOf('<h1 data-i18n="calendar.title">');
   const actionsIndex = html.indexOf('<div class="calendar-actions">');
