@@ -266,7 +266,7 @@ test('locale files expose every ai-coach string in both languages', async () => 
     assert.equal(typeof messages.aiCoach.generate, 'string');
     assert.equal(typeof messages.aiCoach.copy, 'string');
     assert.equal(typeof messages.aiCoach.copied, 'string');
-    assert.equal(typeof messages.shell.nav.aiCoach, 'string');
+    assert.equal(typeof messages.shell.nav.requestWorkouts, 'string');
   }
 
   assert.notEqual(en.aiCoach.title, pt.aiCoach.title);

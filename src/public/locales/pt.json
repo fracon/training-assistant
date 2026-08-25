@@ -63,9 +63,9 @@
   },
   "shell": {
     "nav": {
-      "dashboard": "Dashboard",
-      "calendar": "Calendário",
-      "aiCoach": "Coach de IA"
+      "requestWorkouts": "Solicitar Treinos",
+      "workouts": "Treinos",
+      "dashboard": "Dashboard"
     },
     "soon": "Em breve",
     "collapse": "Recolher menu",

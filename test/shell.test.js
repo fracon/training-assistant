@@ -26,9 +26,9 @@ function stubStorage(initial = {}) {
 }
 
 const NAV_ITEMS = [
+  { id: 'ai-coach', labelKey: 'shell.nav.requestWorkouts', href: '/ai-coach.html', disabled: false, icon: 'bot' },
+  { id: 'calendar', labelKey: 'shell.nav.workouts', href: '/calendar.html', disabled: false, icon: 'calendar-days' },
   { id: 'dashboard', labelKey: 'shell.nav.dashboard', href: null, disabled: true, icon: 'layout-dashboard' },
-  { id: 'calendar', labelKey: 'shell.nav.calendar', href: '/calendar.html', disabled: false, icon: 'calendar-days' },
-  { id: 'ai-coach', labelKey: 'shell.nav.aiCoach', href: '/ai-coach.html', disabled: false, icon: 'bot' },
 ];
 
 test('sidebar starts expanded when no state was ever stored', () => {
@@ -60,20 +60,31 @@ test('sidebar state treats anything but "1" as expanded', () => {
   assert.equal(readSidebarCollapsed(stubStorage({ 'training-assistant:sidebar-collapsed': 'junk' })), false);
 });
 
-test('shell navigation config matches the phase specification', () => {
+test('sidebar navigation follows the athlete lifecycle order', () => {
+  assert.deepEqual(
+    NAV_ITEMS.map((item) => item.id),
+    ['ai-coach', 'calendar', 'dashboard'],
+    'request workouts first, then workouts, then the placeholder'
+  );
   assert.deepEqual(
     NAV_ITEMS.map((item) => [item.id, item.disabled]),
     [
-      ['dashboard', true],
-      ['calendar', false],
       ['ai-coach', false],
+      ['calendar', false],
+      ['dashboard', true],
     ]
   );
+  assert.equal(NAV_ITEMS[0].href, '/ai-coach.html');
   assert.equal(NAV_ITEMS[1].href, '/calendar.html');
-  assert.equal(NAV_ITEMS[2].href, '/ai-coach.html');
   assert.ok(
     NAV_ITEMS.filter((item) => item.disabled).every((item) => item.href === null)
   );
+  assert.equal(en.shell.nav.requestWorkouts, 'Request Workouts');
+  assert.equal(pt.shell.nav.requestWorkouts, 'Solicitar Treinos');
+  assert.equal(en.shell.nav.workouts, 'Workouts');
+  assert.equal(pt.shell.nav.workouts, 'Treinos');
+  assert.equal(en.shell.nav.aiCoach, undefined);
+  assert.equal(en.shell.nav.calendar, undefined);
 });
 
 test('training-result is contextual only and absent from the sidebar', () => {
