@@ -608,7 +608,13 @@ test('training-result.js wires toggling, saving, generation and i18n refreshes',
     'answering no discards any typed description'
   );
 
-  assert.match(js, /rpeInput\.value = training\.feedback_rpe \?\? '';/);
+  assert.match(js, /const rpeSelector = document\.getElementById\('feedbackRpe'\);/);
+  assert.match(
+    js,
+    /const savedRpe = training\.feedback_rpe;\s*\n\s*if \(savedRpe != null\) \{\s*\n\s*const savedRadio = rpeSelector\.querySelector\(/,
+    'saved RPE restores the matching radio button'
+  );
+  assert.match(js, /feedback_rpe: normalizeFeedbackRpe\(rpeSelector\.querySelector\('input\[type="radio"\]:checked'\)/);
   assert.match(js, /shoeInput\.value = training\.feedback_shoe \?\? '';/);
   assert.match(js, /weatherInput\.value = training\.feedback_weather \?\? '';/);
   assert.match(js, /terrainInput\.value = training\.feedback_terrain \?\? '';/);
@@ -757,6 +763,11 @@ test('session locale namespace stays in parity across en-US and pt-BR', () => {
     'fieldTenis',
     'feedbackHeading',
     'realizedRpeLabel',
+    'rpeLabel1',
+    'rpeLabel2',
+    'rpeLabel3',
+    'rpeLabel4',
+    'rpeLabel5',
     'freeFeedbackLabel',
     'freeFeedbackPlaceholder',
     'fieldSmartwatch',
@@ -800,6 +811,11 @@ test('session locale namespace stays in parity across en-US and pt-BR', () => {
   assert.notEqual(en.session.save, pt.session.save);
   assert.notEqual(en.session.smartwatchYes, pt.session.smartwatchYes);
   assert.notEqual(en.session.hrSourceStrap, pt.session.hrSourceStrap);
+
+  assert.equal(en.session.rpeLabel1, '1 - Very Easy');
+  assert.equal(pt.session.rpeLabel1, '1 - Muito Fácil');
+  assert.equal(en.session.rpeLabel5, '5 - Max');
+  assert.equal(pt.session.rpeLabel5, '5 - Máximo');
 
   const TERRAIN_KEYS = ['asphalt', 'trail', 'track', 'treadmill', 'mixed'];
   for (const key of TERRAIN_KEYS) {
