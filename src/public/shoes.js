@@ -133,6 +133,7 @@ function openModal(mode, shoe, messages) {
   const titleEl = document.getElementById('modalTitle');
   const form = document.getElementById('shoeForm');
   const saveLabel = document.getElementById('formSaveLabel');
+  const cancelBtn = document.getElementById('formCancelBtn');
   const errorEl = document.getElementById('formError');
 
   errorEl.classList.add('hidden');
@@ -143,8 +144,6 @@ function openModal(mode, shoe, messages) {
   if (mode === 'edit') {
     titleEl.setAttribute('data-i18n', 'shoes.formTitleEdit');
     titleEl.textContent = t(messages, 'shoes.formTitleEdit');
-    saveLabel.setAttribute('data-i18n', 'shoes.save');
-    saveLabel.textContent = t(messages, 'shoes.save');
     document.getElementById('shoeBrand').value = shoe.brand ?? '';
     document.getElementById('shoeModel').value = shoe.model ?? '';
     document.getElementById('shoeMileage').value = shoe.mileage ?? 0;
@@ -152,11 +151,14 @@ function openModal(mode, shoe, messages) {
   } else {
     titleEl.setAttribute('data-i18n', 'shoes.formTitleAdd');
     titleEl.textContent = t(messages, 'shoes.formTitleAdd');
-    saveLabel.setAttribute('data-i18n', 'shoes.save');
-    saveLabel.textContent = t(messages, 'shoes.save');
     form.reset();
     document.getElementById('shoeMileage').value = '0';
   }
+
+  saveLabel.setAttribute('data-i18n', 'shoes.save');
+  saveLabel.textContent = t(messages, 'shoes.save');
+  cancelBtn.setAttribute('data-i18n', 'shoes.cancel');
+  cancelBtn.textContent = t(messages, 'shoes.cancel');
 
   modal.classList.remove('hidden');
   document.getElementById('shoeBrand').focus();
@@ -291,6 +293,17 @@ export async function initShoesPage() {
     const updated = i18n.messages;
     document.title = translate(updated, 'shoes.pageTitle');
     renderList(shoes, updated);
+
+    const modal = document.getElementById('shoeModal');
+    if (!modal.classList.contains('hidden')) {
+      const titleEl = document.getElementById('modalTitle');
+      const saveLabel = document.getElementById('formSaveLabel');
+      const cancelBtn = document.getElementById('formCancelBtn');
+      const i18nKey = titleEl.getAttribute('data-i18n');
+      titleEl.textContent = translate(updated, i18nKey);
+      saveLabel.textContent = translate(updated, 'shoes.save');
+      cancelBtn.textContent = translate(updated, 'shoes.cancel');
+    }
   });
 
   try {
