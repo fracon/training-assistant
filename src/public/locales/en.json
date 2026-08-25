@@ -216,9 +216,10 @@
     "targetMileage": "Target mileage (km)",
     "targetMileagePlaceholder": "Optional",
     "targetMileageHint": "When set, shows a progress bar toward the shoe's expected lifespan.",
-    "status": "Status",
-    "active": "Active",
-    "retired": "Retired",
+    "status": {
+      "active": "Active",
+      "retired": "Retired"
+    },
     "progress": "{current} / {target} km",
     "edit": "Edit",
     "retire": "Retire",

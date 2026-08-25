@@ -232,9 +232,8 @@ test('locale files expose every shoes string in both languages', () => {
     assert.equal(typeof messages.shoes.mileage, 'string');
     assert.equal(typeof messages.shoes.targetMileage, 'string');
     assert.equal(typeof messages.shoes.targetMileageHint, 'string');
-    assert.equal(typeof messages.shoes.status, 'string');
-    assert.equal(typeof messages.shoes.active, 'string');
-    assert.equal(typeof messages.shoes.retired, 'string');
+    assert.equal(typeof messages.shoes.status.active, 'string');
+    assert.equal(typeof messages.shoes.status.retired, 'string');
     assert.equal(typeof messages.shoes.progress, 'string');
     assert.equal(typeof messages.shoes.edit, 'string');
     assert.equal(typeof messages.shoes.retire, 'string');
@@ -278,7 +277,7 @@ test('shoes.js wires the shell, language change listener, and i18n attributes', 
   assert.match(js, /import.*deleteShoe/);
   assert.match(js, /initShell\(\{\s*active:\s*'shoes'\s*\}\)/);
   assert.match(js, /addEventListener\('app:languagechange'/);
-  assert.match(js, /renderList\(shoes, updated\)/);
+  assert.match(js, /renderList\(shoes,\s*msgs\)/);
 });
 
 test('shoes.js exports the expected pure functions', () => {
@@ -311,6 +310,27 @@ test('shoes.js handles retire, reactivate, and delete actions', () => {
   assert.match(js, /STATUS_RETIRED = 'retired'/);
 });
 
+test('shoes.js action handlers use i18n.messages not a stale closure', () => {
+  const js = readFileSync(join(publicDir, 'shoes.js'), 'utf8');
+
+  // initShoesPage must not capture a stale messages snapshot
+  assert.doesNotMatch(js, /const messages = i18n\.messages/);
+
+  // Event handlers must read i18n.messages at call time
+  assert.match(js, /openModal\('add',\s*null,\s*i18n\.messages\)/);
+  assert.match(js, /handleSubmit\(shoes,\s*i18n\.messages\)/);
+  assert.match(js, /handleAction\(btn\.dataset\.action,\s*btn\.dataset\.id,\s*shoes,\s*i18n\.messages\)/);
+  assert.match(js, /renderList\(shoes,\s*i18n\.messages\)/);
+
+  // Language change handler must use a local msgs variable from i18n.messages
+  assert.match(js, /const msgs = i18n\.messages/);
+});
+
+test('shoes.js translates status badges via dynamic i18n key', () => {
+  const js = readFileSync(join(publicDir, 'shoes.js'), 'utf8');
+  assert.match(js, /`shoes\.status\.\$\{shoe\.status\}`/);
+});
+
 test('shoes.js uses confirm dialog for delete action', () => {
   const js = readFileSync(join(publicDir, 'shoes.js'), 'utf8');
   assert.match(js, /window\.confirm/);
@@ -327,7 +347,7 @@ test('shoes.js shows form errors using dynamic shoes.errors.* keys', () => {
   assert.match(js, /showFormError\(`shoes\.errors\.\$\{errors\[0\]\}`, messages\)/);
   assert.match(js, /showFormError\('shoes\.errors\.save', messages\)/);
   assert.match(js, /showToast\(messages, 'shoes\.errors\.delete'\)/);
-  assert.match(js, /showToast\(messages, 'shoes\.errors\.load'\)/);
+  assert.match(js, /showToast\(i18n\.messages, 'shoes\.errors\.load'\)/);
 });
 
 test('shoes.js self-invokes initShoesPage when appView exists', () => {

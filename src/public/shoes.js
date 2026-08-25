@@ -59,7 +59,7 @@ function renderShoeCard(shoe, messages) {
   card.dataset.shoeId = shoe.id;
 
   const statusClass = shoe.status === STATUS_ACTIVE ? 'status-active' : 'status-retired';
-  const statusLabel = shoe.status === STATUS_ACTIVE ? t(messages, 'shoes.active') : t(messages, 'shoes.retired');
+  const statusLabel = t(messages, `shoes.status.${shoe.status}`);
 
   let progressHtml = '';
   const pct = buildProgressPercent(shoe);
@@ -133,6 +133,7 @@ function openModal(mode, shoe, messages) {
   const titleEl = document.getElementById('modalTitle');
   const form = document.getElementById('shoeForm');
   const saveLabel = document.getElementById('formSaveLabel');
+  const cancelBtn = document.getElementById('formCancelBtn');
   const errorEl = document.getElementById('formError');
 
   errorEl.classList.add('hidden');
@@ -143,8 +144,6 @@ function openModal(mode, shoe, messages) {
   if (mode === 'edit') {
     titleEl.setAttribute('data-i18n', 'shoes.formTitleEdit');
     titleEl.textContent = t(messages, 'shoes.formTitleEdit');
-    saveLabel.setAttribute('data-i18n', 'shoes.save');
-    saveLabel.textContent = t(messages, 'shoes.save');
     document.getElementById('shoeBrand').value = shoe.brand ?? '';
     document.getElementById('shoeModel').value = shoe.model ?? '';
     document.getElementById('shoeMileage').value = shoe.mileage ?? 0;
@@ -152,11 +151,14 @@ function openModal(mode, shoe, messages) {
   } else {
     titleEl.setAttribute('data-i18n', 'shoes.formTitleAdd');
     titleEl.textContent = t(messages, 'shoes.formTitleAdd');
-    saveLabel.setAttribute('data-i18n', 'shoes.save');
-    saveLabel.textContent = t(messages, 'shoes.save');
     form.reset();
     document.getElementById('shoeMileage').value = '0';
   }
+
+  saveLabel.setAttribute('data-i18n', 'shoes.save');
+  saveLabel.textContent = t(messages, 'shoes.save');
+  cancelBtn.setAttribute('data-i18n', 'shoes.cancel');
+  cancelBtn.textContent = t(messages, 'shoes.cancel');
 
   modal.classList.remove('hidden');
   document.getElementById('shoeBrand').focus();
@@ -259,7 +261,6 @@ export async function initShoesPage() {
   if (!user) return null;
 
   const i18n = getShellI18n();
-  const messages = i18n.messages;
   const shoes = [];
 
   const addBtn = document.getElementById('addShoeBtn');
@@ -268,7 +269,7 @@ export async function initShoesPage() {
   const form = document.getElementById('shoeForm');
   const shoeListEl = document.getElementById('shoeList');
 
-  addBtn.addEventListener('click', () => openModal('add', null, messages));
+  addBtn.addEventListener('click', () => openModal('add', null, i18n.messages));
   modalCloseBtn.addEventListener('click', closeModal);
   formCancelBtn.addEventListener('click', closeModal);
 
@@ -278,27 +279,38 @@ export async function initShoesPage() {
 
   form.addEventListener('submit', (e) => {
     e.preventDefault();
-    handleSubmit(shoes, messages);
+    handleSubmit(shoes, i18n.messages);
   });
 
   shoeListEl.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
-    handleAction(btn.dataset.action, btn.dataset.id, shoes, messages);
+    handleAction(btn.dataset.action, btn.dataset.id, shoes, i18n.messages);
   });
 
   document.addEventListener('app:languagechange', () => {
-    const updated = i18n.messages;
-    document.title = translate(updated, 'shoes.pageTitle');
-    renderList(shoes, updated);
+    const msgs = i18n.messages;
+    document.title = translate(msgs, 'shoes.pageTitle');
+    renderList(shoes, msgs);
+
+    const modal = document.getElementById('shoeModal');
+    if (!modal.classList.contains('hidden')) {
+      const titleEl = document.getElementById('modalTitle');
+      const saveLabel = document.getElementById('formSaveLabel');
+      const cancelBtn = document.getElementById('formCancelBtn');
+      const i18nKey = titleEl.getAttribute('data-i18n');
+      titleEl.textContent = translate(msgs, i18nKey);
+      saveLabel.textContent = translate(msgs, 'shoes.save');
+      cancelBtn.textContent = translate(msgs, 'shoes.cancel');
+    }
   });
 
   try {
     const fetched = await fetchShoes();
     shoes.push(...fetched);
-    renderList(shoes, messages);
+    renderList(shoes, i18n.messages);
   } catch {
-    showToast(messages, 'shoes.errors.load');
+    showToast(i18n.messages, 'shoes.errors.load');
   }
 
   return user;

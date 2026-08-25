@@ -216,9 +216,10 @@
     "targetMileage": "Vida útil / Alvo (km)",
     "targetMileagePlaceholder": "Opcional",
     "targetMileageHint": "Se informado, exibe uma barra de progresso até a vida útil estimada.",
-    "status": "Status",
-    "active": "Ativo",
-    "retired": "Aposentado",
+    "status": {
+      "active": "Ativo",
+      "retired": "Aposentado"
+    },
     "progress": "{current} / {target} km",
     "edit": "Editar",
     "retire": "Aposentar",

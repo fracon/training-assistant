@@ -221,11 +221,13 @@
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 50;
+  width: 100vw;
+  height: 100vh;
+  z-index: 9999;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(60, 53, 42, 0.3);
+  background: rgba(60, 53, 42, 0.45);
   backdrop-filter: blur(4px);
   padding: 1rem;
 }
@@ -235,8 +237,11 @@
 }
 
 .modal-card {
+  position: relative;
   width: 100%;
   max-width: 440px;
+  max-height: 90vh;
+  overflow-y: auto;
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 20px;
