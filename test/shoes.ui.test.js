@@ -130,6 +130,8 @@ test('shoes.css overrides .btn-danger pill styles for the delete icon button', (
   assert.match(css, /\.btn-icon\.btn-danger \{[^}]*padding:\s*0/);
   assert.match(css, /\.btn-icon\.btn-danger \{[^}]*border-radius:\s*8px/);
   assert.match(css, /\.btn-icon\.btn-danger \{[^}]*background:\s*transparent/);
+  assert.match(css, /\.btn-icon\.btn-danger:hover \{[^}]*transform:\s*none/);
+  assert.match(css, /\.btn-icon\.btn-danger:hover \{[^}]*box-shadow:\s*none/);
 });
 
 /* ── validateShoeForm ── */
