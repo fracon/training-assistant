@@ -74,7 +74,11 @@
     "collapse": "Collapse sidebar",
     "expand": "Expand sidebar",
     "navLabel": "Main navigation",
-    "logout": "Logout"
+    "logout": "Logout",
+    "confirm": {
+      "yes": "Delete",
+      "no": "Cancel"
+    }
   },
   "login": {
     "title": "Sign In • Kinesis",
@@ -231,6 +235,11 @@
     "save": "Save",
     "saving": "Saving…",
     "cancel": "Cancel",
+    "success": {
+      "add": "Shoe registered successfully!",
+      "edit": "Shoe updated successfully!",
+      "delete": "Shoe deleted successfully!"
+    },
     "errors": {
       "brandRequired": "Brand is required.",
       "modelRequired": "Model is required.",

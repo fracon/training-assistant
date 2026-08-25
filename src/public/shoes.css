@@ -211,9 +211,22 @@
   color: var(--ok);
 }
 
+.btn-icon.btn-danger {
+  padding: 0;
+  background: transparent;
+  color: var(--muted);
+  border-radius: 8px;
+  font: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  gap: 0;
+}
+
 .btn-icon.btn-danger:hover {
   background: rgba(165, 73, 47, 0.12);
   color: var(--danger);
+  transform: none;
+  box-shadow: none;
 }
 
 /* ── Modal ── */

@@ -1,4 +1,4 @@
-import { initShell, getShellI18n, refreshIcons } from './shared/shell.js';
+import { initShell, getShellI18n, refreshIcons, showConfirm } from './shared/shell.js';
 import { translate } from './shared/i18n.js';
 import { fetchShoes, createShoe, updateShoe, deleteShoe } from './shared/api.js';
 
@@ -11,8 +11,10 @@ function t(messages, key) {
 
 function showToast(messages, messageKey, duration = 2500) {
   const toast = document.getElementById('toast');
-  toast.textContent = t(messages, messageKey);
+  const textEl = toast.querySelector('.toast-text');
+  textEl.textContent = t(messages, messageKey);
   toast.classList.add('visible');
+  if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [toast] });
   setTimeout(() => toast.classList.remove('visible'), duration);
 }
 
@@ -211,7 +213,7 @@ async function handleSubmit(shoes, messages) {
     shoes.length = 0;
     shoes.push(...updated);
     renderList(shoes, messages);
-    showToast(messages, mode === 'add' ? 'shoes.addNew' : 'shoes.edit');
+    showToast(messages, mode === 'add' ? 'shoes.success.add' : 'shoes.success.edit');
   } catch {
     showFormError('shoes.errors.save', messages);
   } finally {
@@ -242,14 +244,18 @@ async function handleAction(action, id, shoes, messages) {
   }
 
   if (action === 'delete') {
-    if (!window.confirm(t(messages, 'shoes.deleteConfirm'))) return;
+    if (!(await showConfirm(
+      t(messages, 'shoes.deleteConfirm'),
+      t(messages, 'shell.confirm.yes'),
+      t(messages, 'shell.confirm.no'),
+    ))) return;
     try {
       await deleteShoe(id);
       const updated = await fetchShoes();
       shoes.length = 0;
       shoes.push(...updated);
       renderList(shoes, messages);
-      showToast(messages, 'shoes.delete');
+      showToast(messages, 'shoes.success.delete');
     } catch {
       showToast(messages, 'shoes.errors.delete');
     }

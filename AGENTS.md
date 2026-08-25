@@ -51,6 +51,12 @@ Whenever starting the development of a new feature, you MUST follow this strict 
 - **Phase 3: Authentication [⏳ ON-HOLD / NEXT]**
   - Implement a secure authentication system to protect the application from unauthorized access.
 
+- **Phase 3.5: Shoe Rotation Feature [✅ FINISHED]**
+  - Backend CRUD: `shoes` table, `src/shoes.js`, inline routes in `server.js`, 100% test coverage.
+  - Frontend UI: `shoes.html`/`shoes.js`/`shoes.css`, sidebar nav item, i18n, modal CRUD.
+  - UI/UX fixes: stale i18n closure fix, status badge i18n, toast redesign (top-right, Lucide icon).
+  - Shared abstractions: `showConfirm()` in `shell.js` (Promise-based confirm modal), `.btn-danger`/`.confirm-backdrop`/`.confirm-card` in `theme.css`, `shell.confirm.{yes,no}` i18n keys.
+
 - **Phase 4: Internationalization (i18n) [🚧 PLANNED]**
   - Deliver a seamless cross-device language experience with a highly polished, minimalist UI.
   - **Languages Supported:** American English (`en-US`) and Brazilian Portuguese (`pt-BR`).

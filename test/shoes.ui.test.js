@@ -51,6 +51,22 @@ test('shoes.html wires the shell, lucide and the full page', () => {
   assert.match(html, /id="toast"/);
 });
 
+test('shoes.html toast element supports icon and text structure', () => {
+  const html = readFileSync(join(publicDir, 'shoes.html'), 'utf8');
+  assert.match(html, /id="toast" class="toast" role="status" aria-live="polite"/);
+  assert.match(html, /class="toast-icon"/);
+  assert.match(html, /data-lucide="check-circle"/);
+  assert.match(html, /class="toast-text"/);
+});
+
+test('shoes.css toast slides in from the right at the top', () => {
+  const theme = readFileSync(join(publicDir, 'shared', 'theme.css'), 'utf8');
+  assert.match(theme, /\.toast \{[^}]*top:\s*5rem/);
+  assert.match(theme, /\.toast \{[^}]*right:\s*1\.5rem/);
+  assert.match(theme, /\.toast \{[^}]*z-index:\s*10000/);
+  assert.match(theme, /\.toast\.visible \{[^}]*transform:\s*translateX\(0\)/);
+  assert.match(theme, /\.toast-icon svg \{[^}]*width:\s*18px/);
+});
 test('shoes.html form fields use earthy surface styling from theme.css', () => {
   const theme = readFileSync(join(publicDir, 'shared', 'theme.css'), 'utf8');
   const shoesCss = readFileSync(join(publicDir, 'shoes.css'), 'utf8');
@@ -107,6 +123,15 @@ test('shoes.css uses smooth hover animation on primary buttons via theme.css', (
     /\.btn-primary \{[^}]*transition:\s*all 0\.2s ease/,
     'the shared primary button contract includes one smooth animation curve'
   );
+});
+
+test('shoes.css overrides .btn-danger pill styles for the delete icon button', () => {
+  const css = readFileSync(join(publicDir, 'shoes.css'), 'utf8');
+  assert.match(css, /\.btn-icon\.btn-danger \{[^}]*padding:\s*0/);
+  assert.match(css, /\.btn-icon\.btn-danger \{[^}]*border-radius:\s*8px/);
+  assert.match(css, /\.btn-icon\.btn-danger \{[^}]*background:\s*transparent/);
+  assert.match(css, /\.btn-icon\.btn-danger:hover \{[^}]*transform:\s*none/);
+  assert.match(css, /\.btn-icon\.btn-danger:hover \{[^}]*box-shadow:\s*none/);
 });
 
 /* ── validateShoeForm ── */
@@ -245,6 +270,9 @@ test('locale files expose every shoes string in both languages', () => {
     assert.equal(typeof messages.shoes.save, 'string');
     assert.equal(typeof messages.shoes.saving, 'string');
     assert.equal(typeof messages.shoes.cancel, 'string');
+    assert.equal(typeof messages.shoes.success.add, 'string');
+    assert.equal(typeof messages.shoes.success.edit, 'string');
+    assert.equal(typeof messages.shoes.success.delete, 'string');
     assert.equal(typeof messages.shoes.errors.brandRequired, 'string');
     assert.equal(typeof messages.shoes.errors.modelRequired, 'string');
     assert.equal(typeof messages.shoes.errors.mileageInvalid, 'string');
@@ -270,6 +298,7 @@ test('shoes.js wires the shell, language change listener, and i18n attributes', 
   const js = readFileSync(join(publicDir, 'shoes.js'), 'utf8');
 
   assert.match(js, /import.*initShell.*from.*shared\/shell\.js/);
+  assert.match(js, /import.*showConfirm.*from.*shared\/shell\.js/);
   assert.match(js, /import.*getShellI18n/);
   assert.match(js, /import.*fetchShoes.*from.*shared\/api\.js/);
   assert.match(js, /import.*createShoe/);
@@ -308,6 +337,7 @@ test('shoes.js handles retire, reactivate, and delete actions', () => {
   assert.match(js, /data-action="edit"/);
   assert.match(js, /STATUS_ACTIVE = 'active'/);
   assert.match(js, /STATUS_RETIRED = 'retired'/);
+  assert.match(js, /data-lucide="trash-2"/);
 });
 
 test('shoes.js action handlers use i18n.messages not a stale closure', () => {
@@ -331,10 +361,13 @@ test('shoes.js translates status badges via dynamic i18n key', () => {
   assert.match(js, /`shoes\.status\.\$\{shoe\.status\}`/);
 });
 
-test('shoes.js uses confirm dialog for delete action', () => {
+test('shoes.js uses showConfirm for delete action instead of native confirm', () => {
   const js = readFileSync(join(publicDir, 'shoes.js'), 'utf8');
-  assert.match(js, /window\.confirm/);
+  assert.doesNotMatch(js, /window\.confirm/);
+  assert.match(js, /await showConfirm/);
   assert.match(js, /shoes\.deleteConfirm/);
+  assert.match(js, /shell\.confirm\.yes/);
+  assert.match(js, /shell\.confirm\.no/);
 });
 
 test('shoes.js validates the form with validateShoeForm before submit', () => {
@@ -348,6 +381,17 @@ test('shoes.js shows form errors using dynamic shoes.errors.* keys', () => {
   assert.match(js, /showFormError\('shoes\.errors\.save', messages\)/);
   assert.match(js, /showToast\(messages, 'shoes\.errors\.delete'\)/);
   assert.match(js, /showToast\(i18n\.messages, 'shoes\.errors\.load'\)/);
+});
+
+test('shoes.js uses shoes.success.* keys for success toasts', () => {
+  const js = readFileSync(join(publicDir, 'shoes.js'), 'utf8');
+  assert.match(js, /showToast\(messages, mode === 'add' \? 'shoes\.success\.add' : 'shoes\.success\.edit'\)/);
+  assert.match(js, /showToast\(messages, 'shoes\.success\.delete'\)/);
+});
+
+test('shoes.js renders toast icon via lucide.createIcons', () => {
+  const js = readFileSync(join(publicDir, 'shoes.js'), 'utf8');
+  assert.match(js, /lucide\.createIcons\(\{ nodes: \[toast\] \}\)/);
 });
 
 test('shoes.js self-invokes initShoesPage when appView exists', () => {
