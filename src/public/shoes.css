@@ -392,6 +392,15 @@
   border-radius: 10px;
 }
 
+.form-error ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.form-error li {
+  line-height: 1.45;
+}
+
 .form-error.hidden {
   display: none;
 }

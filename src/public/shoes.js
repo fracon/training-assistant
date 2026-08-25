@@ -170,9 +170,16 @@ function closeModal() {
   document.getElementById('shoeModal').classList.add('hidden');
 }
 
-function showFormError(messageKey, messages) {
+function showFormError(messageKeys, messages) {
   const errorEl = document.getElementById('formError');
-  errorEl.textContent = t(messages, messageKey);
+  if (Array.isArray(messageKeys)) {
+    errorEl.innerHTML =
+      '<ul>' +
+      messageKeys.map((key) => '<li>' + t(messages, key) + '</li>').join('') +
+      '</ul>';
+  } else {
+    errorEl.textContent = t(messages, messageKeys);
+  }
   errorEl.classList.remove('hidden');
 }
 
@@ -186,7 +193,7 @@ async function handleSubmit(shoes, messages) {
 
   const errors = validateShoeForm(brand, model, mileage, targetMileage);
   if (errors.length > 0) {
-    showFormError(`shoes.errors.${errors[0]}`, messages);
+    showFormError(errors.map((e) => `shoes.errors.${e}`), messages);
     return;
   }
 
