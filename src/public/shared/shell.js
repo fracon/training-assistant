@@ -36,6 +36,13 @@ const NAV_ITEMS = [
     href: '/calendar.html',
     disabled: false,
   },
+  {
+    id: 'shoes',
+    icon: 'footprints',
+    labelKey: 'shell.nav.shoes',
+    href: '/shoes.html',
+    disabled: false,
+  },
 ];
 
 export function readSidebarCollapsed(storage = globalThis.localStorage) {

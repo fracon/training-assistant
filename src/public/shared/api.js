@@ -115,3 +115,26 @@ export async function currentUser() {
     return null;
   }
 }
+
+export async function fetchShoes() {
+  try {
+    const response = await fetch('/api/shoes', { headers: { accept: 'application/json' } });
+    if (!response.ok) return [];
+    const payload = await response.json();
+    return Array.isArray(payload.shoes) ? payload.shoes : [];
+  } catch {
+    return [];
+  }
+}
+
+export function createShoe(body) {
+  return requestJson('/api/shoes', body);
+}
+
+export function updateShoe(id, body) {
+  return requestJson(`/api/shoes/${id}`, body, 'PUT');
+}
+
+export function deleteShoe(id) {
+  return requestJson(`/api/shoes/${id}`, null, 'DELETE');
+}

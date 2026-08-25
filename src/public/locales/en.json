@@ -67,7 +67,8 @@
     "nav": {
       "home": "Home",
       "requestWorkouts": "Request Workouts",
-      "workouts": "Workouts"
+      "workouts": "Workouts",
+      "shoes": "Shoes"
     },
     "soon": "Soon",
     "collapse": "Collapse sidebar",
@@ -198,6 +199,46 @@
   "common": {
     "yes": "Yes",
     "no": "No"
+  },
+  "shoes": {
+    "title": "Shoes",
+    "pageTitle": "Shoes • Kinesis",
+    "subtitle": "Manage your running shoe rotation",
+    "addNew": "Add Shoe",
+    "empty": "No shoes registered yet.",
+    "emptyHint": "Add your first shoe to start tracking mileage.",
+    "brand": "Brand",
+    "brandPlaceholder": "e.g.: Nike, Asics, New Balance",
+    "model": "Model",
+    "modelPlaceholder": "e.g.: Pegasus 41, Nimbus 27",
+    "mileage": "Current mileage (km)",
+    "mileagePlaceholder": "0",
+    "targetMileage": "Target mileage (km)",
+    "targetMileagePlaceholder": "Optional",
+    "targetMileageHint": "When set, shows a progress bar toward the shoe's expected lifespan.",
+    "status": "Status",
+    "active": "Active",
+    "retired": "Retired",
+    "progress": "{current} / {target} km",
+    "edit": "Edit",
+    "retire": "Retire",
+    "reactivate": "Reactivate",
+    "delete": "Delete",
+    "deleteConfirm": "Are you sure you want to delete this shoe?",
+    "formTitleAdd": "Add New Shoe",
+    "formTitleEdit": "Edit Shoe",
+    "save": "Save",
+    "saving": "Saving…",
+    "cancel": "Cancel",
+    "errors": {
+      "brandRequired": "Brand is required.",
+      "modelRequired": "Model is required.",
+      "mileageInvalid": "Mileage must be a non-negative number.",
+      "targetMileageInvalid": "Target mileage must be a positive number.",
+      "load": "Could not load shoes.",
+      "save": "Could not save shoe. Please try again.",
+      "delete": "Could not delete shoe. Please try again."
+    }
   },
   "feedback": {
     "hasPainLabel": "Any pain or discomfort?",

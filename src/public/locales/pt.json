@@ -67,7 +67,8 @@
     "nav": {
       "home": "Início",
       "requestWorkouts": "Solicitar Treinos",
-      "workouts": "Treinos"
+      "workouts": "Treinos",
+      "shoes": "Tênis"
     },
     "soon": "Em breve",
     "collapse": "Recolher menu",
@@ -198,6 +199,46 @@
   "common": {
     "yes": "Sim",
     "no": "Não"
+  },
+  "shoes": {
+    "title": "Tênis",
+    "pageTitle": "Tênis • Kinesis",
+    "subtitle": "Gerencie a rotação dos seus tênis de corrida",
+    "addNew": "Cadastrar Tênis",
+    "empty": "Nenhum tênis cadastrado ainda.",
+    "emptyHint": "Cadastre seu primeiro tênis para começar a acompanhar a rodagem.",
+    "brand": "Marca",
+    "brandPlaceholder": "ex.: Nike, Asics, New Balance",
+    "model": "Modelo",
+    "modelPlaceholder": "ex.: Pegasus 41, Nimbus 27",
+    "mileage": "Rodagem atual (km)",
+    "mileagePlaceholder": "0",
+    "targetMileage": "Vida útil / Alvo (km)",
+    "targetMileagePlaceholder": "Opcional",
+    "targetMileageHint": "Se informado, exibe uma barra de progresso até a vida útil estimada.",
+    "status": "Status",
+    "active": "Ativo",
+    "retired": "Aposentado",
+    "progress": "{current} / {target} km",
+    "edit": "Editar",
+    "retire": "Aposentar",
+    "reactivate": "Reativar",
+    "delete": "Excluir",
+    "deleteConfirm": "Tem certeza que deseja excluir este tênis?",
+    "formTitleAdd": "Cadastrar Novo Tênis",
+    "formTitleEdit": "Editar Tênis",
+    "save": "Salvar",
+    "saving": "Salvando…",
+    "cancel": "Cancelar",
+    "errors": {
+      "brandRequired": "Marca é obrigatória.",
+      "modelRequired": "Modelo é obrigatório.",
+      "mileageInvalid": "Rodagem deve ser um número não negativo.",
+      "targetMileageInvalid": "Vida útil deve ser um número positivo.",
+      "load": "Não foi possível carregar os tênis.",
+      "save": "Não foi possível salvar o tênis. Tente novamente.",
+      "delete": "Não foi possível excluir o tênis. Tente novamente."
+    }
   },
   "feedback": {
     "hasPainLabel": "Houve dor ou desconforto?",

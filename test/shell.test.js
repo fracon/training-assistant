@@ -29,6 +29,7 @@ const NAV_ITEMS = [
   { id: 'dashboard', labelKey: 'shell.nav.home', href: null, disabled: true, icon: 'layout-dashboard' },
   { id: 'ai-coach', labelKey: 'shell.nav.requestWorkouts', href: '/ai-coach.html', disabled: false, icon: 'bot' },
   { id: 'calendar', labelKey: 'shell.nav.workouts', href: '/calendar.html', disabled: false, icon: 'calendar-days' },
+  { id: 'shoes', labelKey: 'shell.nav.shoes', href: '/shoes.html', disabled: false, icon: 'footprints' },
 ];
 
 test('sidebar starts expanded when no state was ever stored', () => {
@@ -60,11 +61,11 @@ test('sidebar state treats anything but "1" as expanded', () => {
   assert.equal(readSidebarCollapsed(stubStorage({ 'training-assistant:sidebar-collapsed': 'junk' })), false);
 });
 
-test('sidebar navigation follows Home, Request Workouts, Workouts', () => {
+test('sidebar navigation follows Home, Request Workouts, Workouts, Shoes', () => {
   assert.deepEqual(
     NAV_ITEMS.map((item) => item.id),
-    ['dashboard', 'ai-coach', 'calendar'],
-    'Home placeholder first, then request workouts, then workouts'
+    ['dashboard', 'ai-coach', 'calendar', 'shoes'],
+    'Home placeholder first, then request workouts, then workouts, then shoes'
   );
   assert.deepEqual(
     NAV_ITEMS.map((item) => [item.id, item.disabled]),
@@ -72,11 +73,13 @@ test('sidebar navigation follows Home, Request Workouts, Workouts', () => {
       ['dashboard', true],
       ['ai-coach', false],
       ['calendar', false],
+      ['shoes', false],
     ]
   );
   assert.equal(NAV_ITEMS[0].href, null, 'the Home badge item stays a coming-soon placeholder');
   assert.equal(NAV_ITEMS[1].href, '/ai-coach.html');
   assert.equal(NAV_ITEMS[2].href, '/calendar.html');
+  assert.equal(NAV_ITEMS[3].href, '/shoes.html');
   assert.ok(
     NAV_ITEMS.filter((item) => item.disabled).every((item) => item.href === null)
   );
@@ -86,6 +89,8 @@ test('sidebar navigation follows Home, Request Workouts, Workouts', () => {
   assert.equal(pt.shell.nav.requestWorkouts, 'Solicitar Treinos');
   assert.equal(en.shell.nav.workouts, 'Workouts');
   assert.equal(pt.shell.nav.workouts, 'Treinos');
+  assert.equal(en.shell.nav.shoes, 'Shoes');
+  assert.equal(pt.shell.nav.shoes, 'Tênis');
   assert.equal(en.shell.nav.dashboard, undefined);
 });
 

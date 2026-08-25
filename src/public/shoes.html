@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title data-i18n="shoes.pageTitle">Shoes • Kinesis</title>
+  <link rel="stylesheet" href="shared/shell.css">
+  <link rel="stylesheet" href="shoes.css">
+</head>
+<body>
+  <main id="appView">
+    <section class="shoes-page">
+      <header class="shoes-header">
+        <div class="shoes-header-text">
+          <h1 data-i18n="shoes.title">Shoes</h1>
+          <p class="shoes-subtitle" data-i18n="shoes.subtitle">Manage your running shoe rotation</p>
+        </div>
+        <button type="button" id="addShoeBtn" class="btn-primary">
+          <i data-lucide="plus"></i>
+          <span data-i18n="shoes.addNew">Add Shoe</span>
+        </button>
+      </header>
+
+      <div id="shoeEmpty" class="shoes-empty hidden">
+        <i data-lucide="footprints"></i>
+        <p data-i18n="shoes.empty">No shoes registered yet.</p>
+        <p class="shoes-empty-hint" data-i18n="shoes.emptyHint">Add your first shoe to start tracking mileage.</p>
+      </div>
+
+      <div id="shoeList" class="shoe-list"></div>
+    </section>
+
+    <div id="shoeModal" class="modal-backdrop hidden">
+      <div class="modal-card" role="dialog" aria-modal="true">
+        <header class="modal-header">
+          <h2 id="modalTitle" data-i18n="shoes.formTitleAdd">Add New Shoe</h2>
+          <button type="button" id="modalCloseBtn" class="modal-close" aria-label="Close">
+            <i data-lucide="x"></i>
+          </button>
+        </header>
+        <form id="shoeForm" novalidate>
+          <div class="field">
+            <label for="shoeBrand" data-i18n="shoes.brand">Brand</label>
+            <input type="text" id="shoeBrand" data-i18n-placeholder="shoes.brandPlaceholder" placeholder="e.g.: Nike, Asics, New Balance" required>
+          </div>
+          <div class="field">
+            <label for="shoeModel" data-i18n="shoes.model">Model</label>
+            <input type="text" id="shoeModel" data-i18n-placeholder="shoes.modelPlaceholder" placeholder="e.g.: Pegasus 41, Nimbus 27" required>
+          </div>
+          <div class="field">
+            <label for="shoeMileage" data-i18n="shoes.mileage">Current mileage (km)</label>
+            <input type="number" id="shoeMileage" min="0" step="0.1" data-i18n-placeholder="shoes.mileagePlaceholder" placeholder="0">
+          </div>
+          <div class="field">
+            <label for="shoeTargetMileage" data-i18n="shoes.targetMileage">Target mileage (km)</label>
+            <input type="number" id="shoeTargetMileage" min="0" step="0.1" data-i18n-placeholder="shoes.targetMileagePlaceholder" placeholder="Optional">
+            <p class="field-hint" data-i18n="shoes.targetMileageHint">When set, shows a progress bar toward the shoe's expected lifespan.</p>
+          </div>
+          <div id="formError" class="form-error hidden"></div>
+          <div class="form-actions">
+            <button type="button" id="formCancelBtn" class="btn-secondary" data-i18n="shoes.cancel">Cancel</button>
+            <button type="submit" id="formSaveBtn" class="btn-primary">
+              <span id="formSaveLabel" data-i18n="shoes.save">Save</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  </main>
+
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="shared/shell.js" type="module"></script>
+  <script src="shoes.js" type="module"></script>
+</body>
+</html>
