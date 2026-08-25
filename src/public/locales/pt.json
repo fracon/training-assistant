@@ -26,7 +26,10 @@
     "resultTitle": "Prompt gerado",
     "resultPlaceholder": "Preencha o formulário e gere o seu prompt.",
     "copy": "Copiar para a área de transferência",
-    "copied": "Copiado!"
+    "copied": "Copiado!",
+    "shoesSectionTitle": "TÊNIS DISPONÍVEIS PARA ROTAÇÃO",
+    "shoesFallback": "Nenhum tênis específico cadastrado; use a rotação padrão.",
+    "shoesTarget": "Alvo: {target} km"
   },
   "calendar": {
     "title": "Treinos",
@@ -146,6 +149,11 @@
     "fieldTenis": "Tênis",
     "feedbackHeading": "Seu feedback",
     "realizedRpeLabel": "RPE realizado (1 a 5)",
+    "rpeLabel1": "1 - Muito Fácil",
+    "rpeLabel2": "2 - Fácil",
+    "rpeLabel3": "3 - Moderado",
+    "rpeLabel4": "4 - Difícil",
+    "rpeLabel5": "5 - Máximo",
     "freeFeedbackLabel": "Feedback livre",
     "freeFeedbackPlaceholder": "Como foi o treino? Sono, clima, sensações gerais...",
     "fieldSmartwatch": "Smartwatch utilizado?",

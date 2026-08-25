@@ -23,6 +23,7 @@ const {
   defaultRoutineFor,
   buildPrompt,
   copyPromptText,
+  formatShoesBlock,
 } = require('../src/public/ai-coach.js');
 
 test('pad2 zero-pads single digits only', () => {
@@ -93,6 +94,11 @@ test('the prompt template keeps the required Portuguese structure', () => {
   assert.match(PROMPT_TEMPLATE, /15\. O objetivo não é maximizar cada treino individualmente\./);
   assert.match(
     PROMPT_TEMPLATE,
+    /DATA DA SEMANA\n\nA semana a ser planejada começa em:\n\{\{DATA_DA_SEGUNDA\}\}\n\n\{\{SHOES_BLOCK\}\}\n\nDISPONIBILIDADE/,
+    'shoes block sits between the date and availability sections'
+  );
+  assert.match(
+    PROMPT_TEMPLATE,
     /CONTEXTO ADICIONAL DESTA SEMANA\n\n\{\{CONTEXTO_OPCIONAL\}\}\n\nINSTRUÇÕES PARA MONTAR A SEMANA/,
     'context section flows straight into the instructions'
   );
@@ -107,9 +113,10 @@ test('the prompt template keeps the required Portuguese structure', () => {
   assert.ok(!PROMPT_TEMPLATE.includes('Exemplos:'), 'example list lives in the UI, not the prompt');
 
   const tokens = PROMPT_TEMPLATE.match(/\{\{[A-Z_]+\}\}/g) ?? [];
-  assert.equal(tokens.length, 9, 'exactly nine placeholders exist');
+  assert.equal(tokens.length, 10, 'exactly ten placeholders exist');
   assert.deepEqual(tokens, [
     '{{DATA_DA_SEGUNDA}}',
+    '{{SHOES_BLOCK}}',
     '{{DISP_SEG}}',
     '{{DISP_TER}}',
     '{{DISP_QUA}}',
@@ -274,6 +281,9 @@ test('locale files expose every ai-coach string in both languages', async () => 
     assert.equal(typeof messages.aiCoach.generate, 'string');
     assert.equal(typeof messages.aiCoach.copy, 'string');
     assert.equal(typeof messages.aiCoach.copied, 'string');
+    assert.equal(typeof messages.aiCoach.shoesSectionTitle, 'string');
+    assert.equal(typeof messages.aiCoach.shoesFallback, 'string');
+    assert.equal(typeof messages.aiCoach.shoesTarget, 'string');
     assert.equal(typeof messages.shell.nav.requestWorkouts, 'string');
   }
 
@@ -282,6 +292,8 @@ test('locale files expose every ai-coach string in both languages', async () => 
   assert.match(pt.aiCoach.pageTitle, /• Kinesis$/);
   assert.equal(en.aiCoach.pageTitle, 'Request Workouts • Kinesis');
   assert.equal(pt.aiCoach.pageTitle, 'Solicitar Treinos • Kinesis');
+  assert.equal(en.aiCoach.shoesSectionTitle, 'SHOES AVAILABLE FOR ROTATION');
+  assert.equal(pt.aiCoach.shoesSectionTitle, 'TÊNIS DISPONÍVEIS PARA ROTAÇÃO');
 });
 
 test('the default routine string is language-aware', () => {
@@ -355,6 +367,11 @@ test('both templates carry the identical placeholder contract', () => {
   );
   assert.match(
     PROMPT_TEMPLATE_EN,
+    /WEEK DATE\n\nThe week to be planned starts on:\n\{\{DATA_DA_SEGUNDA\}\}\n\n\{\{SHOES_BLOCK\}\}\n\nAVAILABILITY/,
+    'shoes block sits between the date and availability sections'
+  );
+  assert.match(
+    PROMPT_TEMPLATE_EN,
     /ADDITIONAL CONTEXT FOR THIS WEEK\n\n\{\{CONTEXTO_OPCIONAL\}\}\n\nINSTRUCTIONS FOR PLANNING THE WEEK/,
     'context section flows straight into the instructions'
   );
@@ -412,6 +429,122 @@ test('buildPrompt merges user values over language-aware defaults', () => {
   assert.ok(prompt.includes('Tuesday: Normal routine'));
 });
 
+test('formatShoesBlock renders active shoes with mileage and target', () => {
+  const en = JSON.parse(readFileSync(join(publicDir, 'locales', 'en.json'), 'utf8'));
+  const shoes = [
+    { brand: 'Nike', model: 'Pegasus 41', mileage: 320, target_mileage: 800, status: 'active' },
+    { brand: 'Asics', model: 'Nimbus 26', mileage: 150, target_mileage: null, status: 'active' },
+  ];
+  const block = formatShoesBlock(shoes, en);
+  assert.ok(block.includes('SHOES AVAILABLE FOR ROTATION'));
+  assert.ok(block.includes('- Nike Pegasus 41 (Current mileage: 320 km, Target: 800 km)'));
+  assert.ok(block.includes('- Asics Nimbus 26 (Current mileage: 150 km)'));
+  assert.ok(!block.includes('Nimbus 26 (Current mileage: 150 km, Target:'));
+});
+
+test('formatShoesBlock shows fallback when no active shoes exist', () => {
+  const en = JSON.parse(readFileSync(join(publicDir, 'locales', 'en.json'), 'utf8'));
+  const shoes = [
+    { brand: 'Nike', model: 'Vaporfly', mileage: 500, status: 'retired' },
+  ];
+  const block = formatShoesBlock(shoes, en);
+  assert.ok(block.includes('SHOES AVAILABLE FOR ROTATION'));
+  assert.ok(block.includes('No specific shoes registered; use standard rotation.'));
+  assert.ok(!block.includes('Vaporfly'));
+});
+
+test('formatShoesBlock shows fallback for empty array', () => {
+  const block = formatShoesBlock([], {});
+  assert.ok(block.includes('SHOES AVAILABLE FOR ROTATION'));
+  assert.ok(block.includes('No specific shoes registered; use standard rotation.'));
+});
+
+test('formatShoesBlock uses Portuguese locale keys', () => {
+  const pt = JSON.parse(readFileSync(join(publicDir, 'locales', 'pt.json'), 'utf8'));
+  const shoes = [
+    { brand: 'Nike', model: 'Pegasus 41', mileage: 320, target_mileage: 800, status: 'active' },
+  ];
+  const block = formatShoesBlock(shoes, pt);
+  assert.ok(block.includes('TÊNIS DISPONÍVEIS PARA ROTAÇÃO'));
+  assert.ok(block.includes('Alvo: 800 km'));
+});
+
+test('formatShoesBlock defaults mileage to zero when missing', () => {
+  const block = formatShoesBlock([{ brand: 'NB', model: 'SC Elite', mileage: undefined, status: 'active' }], {});
+  assert.ok(block.includes('Current mileage: 0 km'));
+});
+
+test('buildPrompt injects active shoes block before availability in Portuguese', () => {
+  const pt = JSON.parse(readFileSync(join(publicDir, 'locales', 'pt.json'), 'utf8'));
+  const shoes = [
+    { brand: 'Nike', model: 'Pegasus 41', mileage: 320, target_mileage: 800, status: 'active' },
+  ];
+  const prompt = buildPrompt({
+    targetDate: new Date(2026, 7, 31),
+    disponibilidade: {},
+    contexto: '',
+    shoes,
+    messages: pt,
+  });
+  assert.ok(!prompt.includes('{{SHOES_BLOCK}}'), 'placeholder is replaced');
+  assert.ok(prompt.includes('TÊNIS DISPONÍVEIS PARA ROTAÇÃO'));
+  assert.ok(prompt.includes('- Nike Pegasus 41'));
+  const shoesIdx = prompt.indexOf('TÊNIS DISPONÍVEIS PARA ROTAÇÃO');
+  const dispIdx = prompt.indexOf('DISPONIBILIDADE');
+  assert.ok(shoesIdx < dispIdx, 'shoes section appears before availability');
+});
+
+test('buildPrompt injects shoes block before availability in English', () => {
+  const en = JSON.parse(readFileSync(join(publicDir, 'locales', 'en.json'), 'utf8'));
+  const shoes = [
+    { brand: 'Asics', model: 'Nimbus 26', mileage: 150, target_mileage: null, status: 'active' },
+  ];
+  const prompt = buildPrompt({
+    targetDate: new Date(2026, 7, 31),
+    disponibilidade: {},
+    contexto: '',
+    lang: 'en-US',
+    shoes,
+    messages: en,
+  });
+  assert.ok(!prompt.includes('{{SHOES_BLOCK}}'));
+  assert.ok(prompt.includes('SHOES AVAILABLE FOR ROTATION'));
+  assert.ok(prompt.includes('- Asics Nimbus 26 (Current mileage: 150 km)'));
+  const shoesIdx = prompt.indexOf('SHOES AVAILABLE FOR ROTATION');
+  const availIdx = prompt.indexOf('AVAILABILITY');
+  assert.ok(shoesIdx < availIdx, 'shoes section appears before availability');
+});
+
+test('buildPrompt shows fallback when shoes array is empty', () => {
+  const pt = JSON.parse(readFileSync(join(publicDir, 'locales', 'pt.json'), 'utf8'));
+  const prompt = buildPrompt({
+    targetDate: new Date(2026, 7, 31),
+    disponibilidade: {},
+    contexto: '',
+    shoes: [],
+    messages: pt,
+  });
+  assert.ok(prompt.includes('Nenhum tênis específico cadastrado; use a rotação padrão.'));
+});
+
+test('buildPrompt filters out retired shoes from the block', () => {
+  const en = JSON.parse(readFileSync(join(publicDir, 'locales', 'en.json'), 'utf8'));
+  const shoes = [
+    { brand: 'Nike', model: 'Vaporfly', mileage: 500, status: 'retired' },
+    { brand: 'Asics', model: 'Nimbus 26', mileage: 150, status: 'active' },
+  ];
+  const prompt = buildPrompt({
+    targetDate: new Date(2026, 7, 31),
+    disponibilidade: {},
+    contexto: '',
+    lang: 'en-US',
+    shoes,
+    messages: en,
+  });
+  assert.ok(!prompt.includes('Vaporfly'), 'retired shoe is excluded');
+  assert.ok(prompt.includes('Nimbus 26'), 'active shoe is included');
+});
+
 test('locale files expose the translated default routine', async () => {
   const en = JSON.parse(readFileSync(join(publicDir, 'locales', 'en.json'), 'utf8'));
   const pt = JSON.parse(readFileSync(join(publicDir, 'locales', 'pt.json'), 'utf8'));
@@ -427,6 +560,13 @@ test('ai-coach.js wires the guarded language-change listener and lang-aware gene
   assert.match(js, /applyRoutineDefault\(currentValues, lastRoutineDefault, nextDefault\)/);
   assert.match(js, /lastRoutineDefault = nextDefault;/);
   assert.match(js, /lang: i18n\.language/);
+  assert.match(js, /import { fetchShoes } from '\.\/shared\/api\.js'/);
+  assert.match(js, /async function handleGenerate/);
+  assert.match(js, /await fetchShoes\(\)/);
+  assert.match(js, /generateBtn\.disabled = true/);
+  assert.match(js, /generateBtn\.disabled = false/);
+  assert.match(js, /shoes,/);
+  assert.match(js, /messages: i18n\.messages/);
 });
 
 test('generated prompts no longer embed the context examples', () => {

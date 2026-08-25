@@ -51,10 +51,19 @@
         <h2 id="feedbackTitle" data-i18n="session.feedbackHeading">Your feedback</h2>
         <div class="feedback-grid">
           <div class="field field-wide">
-            <label class="field-label" for="feedbackRpe"
-              data-i18n="session.realizedRpeLabel">Realized RPE (1 to 5)</label>
-            <input type="number" id="feedbackRpe" class="input-control input-rpe"
-              min="1" max="5" step="1" inputmode="numeric">
+            <span class="field-label" data-i18n="session.realizedRpeLabel">Realized RPE (1 to 5)</span>
+            <div class="rpe-selector" id="feedbackRpe">
+              <input type="radio" name="rpe" id="rpe-1" value="1" class="sr-only">
+              <label for="rpe-1" class="rpe-emoji"><span class="emoji-icon">🥱</span><div class="custom-tooltip" data-i18n="session.rpeLabel1"></div></label>
+              <input type="radio" name="rpe" id="rpe-2" value="2" class="sr-only">
+              <label for="rpe-2" class="rpe-emoji"><span class="emoji-icon">🙂</span><div class="custom-tooltip" data-i18n="session.rpeLabel2"></div></label>
+              <input type="radio" name="rpe" id="rpe-3" value="3" class="sr-only">
+              <label for="rpe-3" class="rpe-emoji"><span class="emoji-icon">😅</span><div class="custom-tooltip" data-i18n="session.rpeLabel3"></div></label>
+              <input type="radio" name="rpe" id="rpe-4" value="4" class="sr-only">
+              <label for="rpe-4" class="rpe-emoji"><span class="emoji-icon">🥵</span><div class="custom-tooltip" data-i18n="session.rpeLabel4"></div></label>
+              <input type="radio" name="rpe" id="rpe-5" value="5" class="sr-only">
+              <label for="rpe-5" class="rpe-emoji"><span class="emoji-icon">💀</span><div class="custom-tooltip" data-i18n="session.rpeLabel5"></div></label>
+            </div>
           </div>
 
           <div class="field">

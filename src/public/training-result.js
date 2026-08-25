@@ -321,7 +321,7 @@ async function initTrainingResult() {
   const statusEl = document.getElementById('status');
   const dateEl = document.getElementById('sessionDate');
   const saveBtn = document.getElementById('saveBtn');
-  const rpeInput = document.getElementById('feedbackRpe');
+  const rpeSelector = document.getElementById('feedbackRpe');
   const notesInput = document.getElementById('feedbackNotas');
   const smartwatchSelect = document.getElementById('smartwatchSelect');
   const fitField = document.getElementById('fitField');
@@ -344,6 +344,12 @@ async function initTrainingResult() {
   let i18n = null;
   let copiedTimer = null;
   const t = (key) => translate(i18n ? i18n.messages : {}, key);
+
+  const applyTooltips = () => {
+    rpeSelector.querySelectorAll('[data-i18n]').forEach((el) => {
+      el.textContent = t(el.dataset.i18n);
+    });
+  };
 
   const setStatus = (message, tone = '') => {
     statusEl.textContent = message;
@@ -390,6 +396,7 @@ async function initTrainingResult() {
   await initShell();
   i18n = getShellI18n();
   document.title = t('training.title');
+  applyTooltips();
 
   setStatus(t('session.loading'));
   let training;
@@ -409,7 +416,11 @@ async function initTrainingResult() {
     document.getElementById(elementId).textContent = plannedValue(training, field);
   }
 
-  rpeInput.value = training.feedback_rpe ?? '';
+  const savedRpe = training.feedback_rpe;
+  if (savedRpe != null) {
+    const savedRadio = rpeSelector.querySelector(`input[type="radio"][value="${savedRpe}"]`);
+    if (savedRadio) savedRadio.checked = true;
+  }
   notesInput.value = training.feedback_notas ?? '';
   shoeInput.value = training.feedback_shoe ?? '';
   weatherInput.value = training.feedback_weather ?? '';
@@ -443,7 +454,7 @@ async function initTrainingResult() {
     const energyKey = ENERGY_LABEL_KEYS[energyInput.value];
     const hasPainValue = hasPainSelect.value;
     return {
-      feedback_rpe: normalizeFeedbackRpe(rpeInput.value),
+      feedback_rpe: normalizeFeedbackRpe(rpeSelector.querySelector('input[type="radio"]:checked')?.value ?? ''),
       feedback_notas: notesInput.value,
       has_smartwatch: isFitFieldVisible(smartwatchSelect.value),
       feedback_shoe: shoeInput.value,
@@ -516,6 +527,7 @@ async function initTrainingResult() {
     if (!saveBtn.disabled) saveBtn.textContent = t('session.save');
     if (!generateBtn.disabled) generateLabel.textContent = t('session.generatePrompt');
     renderFitDropzoneState();
+    applyTooltips();
   });
 }
 

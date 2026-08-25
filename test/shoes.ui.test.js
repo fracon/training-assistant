@@ -134,6 +134,13 @@ test('shoes.css overrides .btn-danger pill styles for the delete icon button', (
   assert.match(css, /\.btn-icon\.btn-danger:hover \{[^}]*box-shadow:\s*none/);
 });
 
+test('shoes.css styles form-error list items with proper spacing', () => {
+  const css = readFileSync(join(publicDir, 'shoes.css'), 'utf8');
+  assert.match(css, /\.form-error ul \{[^}]*margin:\s*0/);
+  assert.match(css, /\.form-error ul \{[^}]*padding-left:\s*1\.1rem/);
+  assert.match(css, /\.form-error li \{[^}]*line-height:\s*1\.45/);
+});
+
 /* ── validateShoeForm ── */
 
 test('validateShoeForm accepts valid input', () => {
@@ -377,10 +384,24 @@ test('shoes.js validates the form with validateShoeForm before submit', () => {
 
 test('shoes.js shows form errors using dynamic shoes.errors.* keys', () => {
   const js = readFileSync(join(publicDir, 'shoes.js'), 'utf8');
-  assert.match(js, /showFormError\(`shoes\.errors\.\$\{errors\[0\]\}`, messages\)/);
+  assert.match(js, /showFormError\(errors\.map\(\(e\) => `shoes\.errors\.\$\{e\}`\), messages\)/);
   assert.match(js, /showFormError\('shoes\.errors\.save', messages\)/);
   assert.match(js, /showToast\(messages, 'shoes\.errors\.delete'\)/);
   assert.match(js, /showToast\(i18n\.messages, 'shoes\.errors\.load'\)/);
+});
+
+test('showFormError renders array errors as <ul><li> list items', () => {
+  const js = readFileSync(join(publicDir, 'shoes.js'), 'utf8');
+  assert.match(js, /errorEl\.innerHTML/);
+  assert.match(js, /<ul>/);
+  assert.match(js, /<li>/);
+  assert.match(js, /<\/li>/);
+  assert.match(js, /<\/ul>/);
+});
+
+test('showFormError uses textContent for single-string errors', () => {
+  const js = readFileSync(join(publicDir, 'shoes.js'), 'utf8');
+  assert.match(js, /errorEl\.textContent = t\(messages, messageKeys\)/);
 });
 
 test('shoes.js uses shoes.success.* keys for success toasts', () => {
