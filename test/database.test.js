@@ -38,7 +38,7 @@ test('initializeDatabase applies pragmas and creates the schema', () => {
     )
     .all()
     .map((row) => row.name);
-  assert.deepEqual(objects, ['sessions', 'trainings', 'users', 'workouts']);
+  assert.deepEqual(objects, ['sessions', 'shoes', 'trainings', 'users', 'workouts']);
 
   db.close();
 });
