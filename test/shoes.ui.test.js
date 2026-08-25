@@ -61,7 +61,7 @@ test('shoes.html toast element supports icon and text structure', () => {
 
 test('shoes.css toast slides in from the right at the top', () => {
   const theme = readFileSync(join(publicDir, 'shared', 'theme.css'), 'utf8');
-  assert.match(theme, /\.toast \{[^}]*top:\s*1\.5rem/);
+  assert.match(theme, /\.toast \{[^}]*top:\s*5rem/);
   assert.match(theme, /\.toast \{[^}]*right:\s*1\.5rem/);
   assert.match(theme, /\.toast \{[^}]*z-index:\s*10000/);
   assert.match(theme, /\.toast\.visible \{[^}]*transform:\s*translateX\(0\)/);

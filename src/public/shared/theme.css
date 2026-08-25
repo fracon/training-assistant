@@ -366,7 +366,7 @@ input.input-error:focus-visible {
 
 .toast {
   position: fixed;
-  top: 1.5rem;
+  top: 5rem;
   right: 1.5rem;
   z-index: 10000;
   display: flex;
