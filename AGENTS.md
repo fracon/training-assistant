@@ -1,7 +1,7 @@
-# 🧠 AI Agent Context & Guidelines: Training Assistant
+# 🧠 AI Agent Context & Guidelines: Kinesis
 
 ## 🎯 Project Overview
-"Training Assistant" is a local-first, privacy-focused Node.js web application designed for runners. It parses Garmin `.FIT` files locally and combines them with user-inputted context (RPE, weather, gear, planned workout) to generate a highly structured, copy-pasteable prompt. This prompt is then fed by the user into an LLM (like ChatGPT or Claude) to act as a personalized running coach.
+"Kinesis" (formerly "Training Assistant") is a local-first, privacy-focused Node.js web application designed for runners. It parses Garmin `.FIT` files locally and combines them with user-inputted context (RPE, weather, gear, planned workout) to generate a highly structured, copy-pasteable prompt. This prompt is then fed by the user into an LLM (like ChatGPT or Claude) to act as a personalized running coach.
 
 ## 🛠️ Tech Stack & Infrastructure
 - **Backend:** Node.js (v24), Fastify, vanilla JavaScript.
@@ -17,6 +17,7 @@
 3. **No Bloatware:** Stick to Vanilla JS and pure CSS. Do not introduce heavy frontend frameworks (React/Vue/Tailwind) unless explicitly requested and justified.
 4. **Infrastructure Immutability:** Do not alter Docker or GitHub Actions configurations without explicit permission. The current ZimaOS/Cloudflare setup (port 8081) is finalized.
 5. **UI Consistency:** Any new UI elements must match the existing modern, high-density, cozy aesthetic.
+6. **Form Element Consistency:** All form inputs (`input`, `textarea`, `select`) must share a unified design system. They must use the standard earthy surface background, consistent rounded borders, identical padding, and native styling must be overridden (`appearance: none` for selects with custom SVG chevrons). Never use default browser white backgrounds for form controls.
 
 ## 🎨 Frontend Architecture (Immutable)
 

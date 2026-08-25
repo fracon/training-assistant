@@ -2,8 +2,13 @@
 
 // Header aliases are accent-less, lowercase keys so "Período", "PERIODO" and
 // "periodo" all resolve to the same field.
+// Phase 7 AI sheets carry 11 columns: "Data" holds the real date (mapped to
+// the internal dia), while "Dia" holds a weekday string like "Segunda"
+// (captured as dia_semana and never date-validated). The DB keeps using
+// `dia` for the ISO date, so no migration is needed.
 const FIELD_BY_HEADER = {
-  dia: 'dia',
+  data: 'dia',
+  dia: 'dia_semana',
   periodo: 'periodo',
   tipo: 'tipo',
   treino: 'treino',
@@ -12,12 +17,24 @@ const FIELD_BY_HEADER = {
   rpe: 'rpe',
   tenis: 'tenis',
   'previsao no horario': 'previsao',
+  'previsao do tempo': 'previsao',
   observacoes: 'observacoes',
+  date: 'dia',
+  day: 'dia_semana',
+  period: 'periodo',
+  type: 'tipo',
+  workout: 'treino',
+  details: 'detalhes',
+  'target hr': 'fc_alvo',
+  shoe: 'tenis',
+  'weather forecast': 'previsao',
+  notes: 'observacoes',
 };
 
 const REQUIRED_FIELDS = ['dia', 'tipo'];
 const FIELD_ORDER = [
   'dia',
+  'dia_semana',
   'periodo',
   'tipo',
   'treino',
@@ -58,35 +75,52 @@ function isValidIso(year, month, day) {
   );
 }
 
-// Accepts JS Dates from real date cells, raw Excel serials and strings in
-// DD/MM/YYYY (the spec format) or YYYY-MM-DD. Always yields YYYY-MM-DD.
+// exceljs materializes serial dates around UTC midnight while locally built
+// Dates sit on local midnight; reading with the wrong getters shifts the
+// calendar day by one near timezone boundaries. Whichever side reports
+// midnight wins, so the wall-calendar day is always preserved.
+function isoFromCellDate(date) {
+  const utcMidnight =
+    date.getUTCHours() === 0 &&
+    date.getUTCMinutes() === 0 &&
+    date.getUTCSeconds() === 0 &&
+    date.getUTCMilliseconds() === 0;
+  const localMidnight =
+    date.getHours() === 0 &&
+    date.getMinutes() === 0 &&
+    date.getSeconds() === 0 &&
+    date.getMilliseconds() === 0;
+  if (localMidnight && !utcMidnight) {
+    return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+  }
+  return `${date.getUTCFullYear()}-${pad2(date.getUTCMonth() + 1)}-${pad2(date.getUTCDate())}`;
+}
+
+// Accepts JS Dates from real date cells (timezone-shift-proof), raw Excel
+// serials and strings in DD/MM/YYYY or DD-MM-YYYY (single digits allowed,
+// surrounding whitespace ignored) or YYYY-MM-DD. Returns the YYYY-MM-DD
+// string, or null when the value is not a trustworthy calendar date.
 function normalizeDia(value) {
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return {
-      ok: true,
-      iso: `${value.getFullYear()}-${pad2(value.getMonth() + 1)}-${pad2(value.getDate())}`,
-    };
+    return isoFromCellDate(value);
   }
   if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
-    return { ok: true, iso: isoFromSerial(value) };
+    return isoFromSerial(value);
   }
-  const text = cellToText(value);
-  const slash = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (slash) {
-    const [, day, month, year] = slash;
-    if (isValidIso(Number(year), Number(month), Number(day))) {
-      return { ok: true, iso: `${year}-${pad2(month)}-${pad2(day)}` };
-    }
-    return { ok: false };
+  const text = String(cellToText(value)).trim();
+  const dmy = text.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (dmy) {
+    const [, day, month, year] = dmy;
+    return isValidIso(Number(year), Number(month), Number(day))
+      ? `${year}-${pad2(month)}-${pad2(day)}`
+      : null;
   }
   const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (iso) {
     const [, year, month, day] = iso;
-    if (isValidIso(Number(year), Number(month), Number(day))) {
-      return { ok: true, iso: text };
-    }
+    return isValidIso(Number(year), Number(month), Number(day)) ? text : null;
   }
-  return { ok: false };
+  return null;
 }
 
 // exceljs cells can be primitives, Date objects, formula results
@@ -95,7 +129,8 @@ function cellToText(value) {
   if (value === null || value === undefined) return '';
   if (value instanceof Date) {
     if (Number.isNaN(value.getTime())) return '';
-    return `${value.getDate()}/${value.getMonth() + 1}/${value.getFullYear()}`;
+    const [year, month, day] = isoFromCellDate(value).split('-');
+    return `${Number(day)}/${Number(month)}/${year}`;
   }
   if (typeof value === 'object') {
     if (Array.isArray(value.richText)) {
@@ -147,7 +182,7 @@ function parseSheet(worksheet) {
         if (!Object.values(fieldsByColumn).includes(required)) {
           errors.push({
             row: 1,
-            col: required === 'dia' ? 'Dia' : 'Tipo',
+            col: required === 'dia' ? 'Data' : 'Tipo',
             error: 'Missing required column.',
           });
         }
@@ -159,18 +194,33 @@ function parseSheet(worksheet) {
     const values = {};
     for (const field of FIELD_ORDER) values[field] = '';
     let hasContent = false;
+    let filledCells = 0;
+    let soleText = '';
     for (const [column, field] of Object.entries(fieldsByColumn)) {
       const text = cellToText(cellValue(Number(column)));
       values[field] = text;
-      if (text !== '') hasContent = true;
+      if (text !== '') {
+        hasContent = true;
+        filledCells += 1;
+        soleText = text;
+      }
     }
     if (!hasContent) return;
 
+    // AI coaches append "Nota:"/"Note:"/"Observação:" footers under the
+    // table; a lone cell carrying one is metadata, never a training attempt.
+    if (
+      filledCells === 1 &&
+      /^(nota|note|observacao)/.test(accentless(soleText))
+    ) {
+      return;
+    }
+
     const dia = normalizeDia(values.dia);
-    if (!dia.ok) {
+    if (dia === null) {
       errors.push({
         row: rowNumber,
-        col: 'Dia',
+        col: 'Data',
         error:
           values.dia === ''
             ? 'Required value is empty.'
@@ -188,12 +238,12 @@ function parseSheet(worksheet) {
 
     const record = {};
     for (const field of FIELD_ORDER) record[field] = values[field];
-    record.dia = dia.iso;
+    record.dia = dia;
     records.push(record);
   });
 
   if (!sawHeader) {
-    errors.push({ row: 1, col: 'Dia', error: 'Missing header row.' });
+    errors.push({ row: 1, col: 'Data', error: 'Missing header row.' });
   }
 
   return { records, errors };
@@ -206,6 +256,7 @@ module.exports = {
   accentless,
   pad2,
   isoFromSerial,
+  isoFromCellDate,
   isValidIso,
   normalizeDia,
   cellToText,

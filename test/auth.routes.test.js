@@ -2,7 +2,10 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { readFileSync } = require('node:fs');
+const { join } = require('node:path');
 
+const publicDir = join(__dirname, '..', 'src', 'public');
 const { buildServer } = require('../src/server');
 const { createDatabase } = require('../src/db/database');
 
@@ -276,7 +279,7 @@ test('GET /training-result.html serves the tool to authenticated users', async (
 
   assert.equal(response.statusCode, 200);
   assert.match(response.headers['content-type'], /text\/html/);
-  assert.match(response.body, /id="workoutForm"/);
+  assert.match(response.body, /id="feedbackRpe"/);
   assert.match(response.body, /id="appView"/);
   assert.doesNotMatch(response.body, /id="logoutBtn"/);
   assert.match(response.body, /shared\/shell\.css/);
@@ -299,8 +302,8 @@ test('GET / serves the TrainingResult tool to authenticated users', async () => 
 
   assert.equal(response.statusCode, 200);
   assert.match(response.headers['content-type'], /text\/html/);
-  assert.match(response.body, /Training Result/);
-  assert.match(response.body, /id="workoutForm"/);
+  assert.match(response.body, /Training Session/);
+  assert.match(response.body, /id="feedbackNotas"/);
   assert.match(response.body, /training-result\.js/);
 
   await app.close();
@@ -318,8 +321,10 @@ test('GET /login.html serves sign-in anonymously and redirects sessions home', a
   assert.match(anonymous.body, /id="loginForm"/);
   assert.match(anonymous.body, /href="\/register\.html"/);
   assert.match(anonymous.body, /login\.js/);
-  assert.match(anonymous.body, /class="lang-switch"/);
-  assert.match(anonymous.body, /data-lang="pt-BR"/);
+  assert.match(anonymous.body, /auth-eyebrow.*Kinesis/s, 'login card shows the KINESIS eyebrow');
+  assert.match(anonymous.body, /class="auth-header"/, 'login has a minimal auth header');
+  assert.match(anonymous.body, /data-lang="en-US"/, 'login header contains EN switcher');
+  assert.match(anonymous.body, /data-lang="pt-BR"/, 'login header contains PT switcher');
   assert.doesNotMatch(anonymous.body, /id="workoutForm"/);
 
   const authenticated = await app.inject({
@@ -346,7 +351,10 @@ test('GET /register.html serves sign-up anonymously and redirects sessions home'
   assert.match(anonymous.body, /href="\/login\.html"/);
   assert.match(anonymous.body, /auth-error-box/);
   assert.match(anonymous.body, /register\.js/);
-  assert.match(anonymous.body, /class="lang-switch"/);
+  assert.match(anonymous.body, /auth-eyebrow.*Kinesis/s, 'register card shows the KINESIS eyebrow');
+  assert.match(anonymous.body, /class="auth-header"/, 'register has a minimal auth header');
+  assert.match(anonymous.body, /data-lang="en-US"/, 'register header contains EN switcher');
+  assert.match(anonymous.body, /data-lang="pt-BR"/, 'register header contains PT switcher');
   assert.match(anonymous.body, /id="preferredLang"/);
   assert.match(anonymous.body, /name="preferred_lang"/);
 
@@ -393,7 +401,7 @@ test('shared assets and scripts are served publicly across pages', async () => {
   assert.match(shellModule.body, /export async function initShell/);
   assert.match(shellModule.body, /data-lucide/);
   assert.match(shellModule.body, /FOOTER_ELEMENT_TAG = 'footer'/);
-  assert.match(shellModule.body, /shell\.footer\.status/);
+  assert.match(shellModule.body, /VERSION_ENDPOINT = '\/api\/version'/);
   assert.match(shellModule.body, /'nav-label sidebar-label'/);
   assert.match(shellModule.body, /'toggle-label sidebar-label'/);
 
@@ -754,4 +762,52 @@ test('ai coach page is gated and served to authenticated users', async () => {
   assert.doesNotMatch(authenticated.body, /id="logoutBtn"/);
 
   await app.close();
+});
+
+test('auth pages ride the unified primary button design', () => {
+  for (const page of ['login.html', 'register.html']) {
+    const html = readFileSync(join(publicDir, page), 'utf8');
+    assert.match(
+      html,
+      /id="submitBtn" class="btn-primary" type="submit"/,
+      `${page} submit button uses the global primary class`
+    );
+  }
+
+  for (const sheet of ['login.css', 'register.css']) {
+    const css = readFileSync(join(publicDir, sheet), 'utf8');
+    assert.ok(!css.includes('btn'), `${sheet} adds no local button overrides`);
+  }
+
+  const theme = readFileSync(join(publicDir, 'shared', 'theme.css'), 'utf8');
+  assert.match(
+    theme,
+    /\.btn-primary \{[^}]*display:\s*inline-flex;\s*\n\s*align-items:\s*center;\s*\n\s*justify-content:\s*center;\s*\n\s*gap:\s*0\.5rem/,
+    'the global primary centers icon and label with a strict flex rule'
+  );
+  assert.match(theme, /\.btn-primary > svg \{[^}]*flex-shrink:\s*0/, 'lucide icons never squish or drift off-center');
+  assert.match(theme, /\.btn-primary \{[^}]*border-radius:\s*999px/, 'the pill shape matches every screen');
+  assert.match(theme, /\.btn-primary \{[^}]*transition:\s*all 0\.2s ease/, 'one smooth animation curve');
+  assert.match(
+    theme,
+    /\.btn-primary:hover:not\(:disabled\) \{[^}]*transform:\s*translateY\(-2px\)/,
+    'auth buttons lift exactly like the app screens'
+  );
+  assert.match(theme, /\.btn-primary:hover:not\(:disabled\) \{[^}]*background:\s*#405c46/);
+});
+
+test('auth card eyebrow uses uppercase accent styling via theme.css', () => {
+  const theme = readFileSync(join(publicDir, 'shared', 'theme.css'), 'utf8');
+  assert.match(theme, /\.auth-eyebrow \{[^}]*text-transform:\s*uppercase/, 'eyebrow text is uppercased');
+  assert.match(theme, /\.auth-eyebrow \{[^}]*color:\s*var\(--accent\)/, 'eyebrow uses the primary accent color');
+  assert.match(theme, /\.auth-eyebrow \{[^}]*font-size:\s*0\.72rem/, 'eyebrow has a small font size');
+  assert.match(theme, /\.auth-eyebrow \{[^}]*letter-spacing:\s*0\.12em/, 'eyebrow has generous letter-spacing');
+  assert.match(theme, /\.auth-eyebrow \{[^}]*font-weight:\s*700/, 'eyebrow is bold');
+});
+
+test('auth header positions the language switcher in the top-right corner', () => {
+  const theme = readFileSync(join(publicDir, 'shared', 'theme.css'), 'utf8');
+  assert.match(theme, /\.auth-header \{[^}]*position:\s*absolute/, 'auth header is absolutely positioned');
+  assert.match(theme, /\.auth-header \{[^}]*top:\s*1rem/, 'auth header sits near the top');
+  assert.match(theme, /\.auth-header \{[^}]*right:\s*1rem/, 'auth header sits near the right edge');
 });

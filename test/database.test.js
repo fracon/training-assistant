@@ -87,6 +87,12 @@ test('migrateDatabase adds preferred_lang to legacy users tables', () => {
       last_name     TEXT,
       created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
     );
+    CREATE TABLE trainings (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id     INTEGER NOT NULL,
+      dia         TEXT NOT NULL,
+      tipo        TEXT NOT NULL
+    );
   `);
   db.prepare('INSERT INTO users (email, password_hash) VALUES (?, ?)').run(
     'legacy@example.com',
@@ -126,6 +132,12 @@ test('migrateDatabase adds first_day_of_week to partially migrated tables', () =
       preferred_lang TEXT   NOT NULL DEFAULT 'en-US',
       first_day_of_week TEXT NOT NULL DEFAULT 'Monday',
       created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE trainings (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id     INTEGER NOT NULL,
+      dia         TEXT NOT NULL,
+      tipo        TEXT NOT NULL
     );
   `);
   db.prepare(
@@ -388,4 +400,99 @@ test('file-backed database is created in a nested directory with WAL mode and pe
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
+});
+
+test('migrateDatabase adds feedback columns to legacy trainings tables', () => {
+  const db = new Database(':memory:');
+  db.exec(`
+    CREATE TABLE users (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      email         TEXT    NOT NULL UNIQUE,
+      password_hash TEXT    NOT NULL
+    );
+    CREATE TABLE trainings (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id     INTEGER NOT NULL,
+      dia         TEXT NOT NULL,
+      tipo        TEXT NOT NULL,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+  db.prepare(
+    "INSERT INTO trainings (user_id, dia, tipo) VALUES (1, '2026-08-20', 'Corrida')"
+  ).run();
+
+  migrateDatabase(db);
+
+  const columns = db.pragma('table_info(trainings)').map((column) => column.name);
+  for (const name of [
+    'feedback_rpe',
+    'feedback_notas',
+    'completed',
+    'has_smartwatch',
+    'feedback_shoe',
+    'feedback_hr_source',
+    'feedback_weather',
+    'feedback_terrain',
+    'feedback_breathing',
+    'feedback_muscle',
+    'feedback_energy',
+    'feedback_has_pain',
+    'feedback_pain',
+  ]) {
+    assert.ok(columns.includes(name), `${name} column added`);
+  }
+
+  const row = db
+    .prepare(
+      `SELECT feedback_rpe, feedback_notas, completed, has_smartwatch,
+        feedback_shoe, feedback_has_pain, feedback_pain FROM trainings`
+    )
+    .get();
+  assert.equal(row.feedback_rpe, null);
+  assert.equal(row.feedback_notas, null);
+  assert.equal(row.completed, 0);
+  assert.equal(row.has_smartwatch, 1, 'smartwatch defaults to yes');
+  assert.equal(row.feedback_shoe, null);
+  assert.equal(row.feedback_has_pain, null);
+  assert.equal(row.feedback_pain, null);
+
+  assert.doesNotThrow(() => migrateDatabase(db), 'migration is idempotent');
+
+  db.close();
+});
+
+test('migrateDatabase tops up partially migrated trainings tables', () => {
+  const db = new Database(':memory:');
+  db.exec(`
+    CREATE TABLE users (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      email         TEXT    NOT NULL UNIQUE,
+      password_hash TEXT    NOT NULL,
+      preferred_lang TEXT   NOT NULL DEFAULT 'en-US',
+      first_day_of_week TEXT NOT NULL DEFAULT 'Monday'
+    );
+    CREATE TABLE trainings (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id     INTEGER NOT NULL,
+      dia         TEXT NOT NULL,
+      tipo        TEXT NOT NULL,
+      completed   INTEGER NOT NULL DEFAULT 1,
+      created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+  db.prepare(
+    "INSERT INTO trainings (user_id, dia, tipo) VALUES (1, '2026-08-21', 'Bike')"
+  ).run();
+
+  assert.doesNotThrow(() => migrateDatabase(db));
+
+  const row = db
+    .prepare('SELECT feedback_rpe, feedback_notas, completed FROM trainings')
+    .get();
+  assert.equal(row.completed, 1, 'existing values are preserved');
+  assert.equal(row.feedback_rpe, null);
+  assert.equal(row.feedback_notas, null);
+
+  db.close();
 });

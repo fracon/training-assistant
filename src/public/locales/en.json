@@ -1,10 +1,10 @@
 {
   "app": {
-    "name": "Training Assistant",
-    "tagline": "Local & Offline"
+    "name": "Kinesis"
   },
   "aiCoach": {
-    "title": "AI Coach Prompt",
+    "title": "Request Workouts",
+    "pageTitle": "Request Workouts • Kinesis",
     "subtitle": "Build a detailed briefing for your external AI coach",
     "targetDate": "Target date",
     "targetDateHint": "Week to plan. Defaults to next Monday.",
@@ -29,13 +29,18 @@
     "copied": "Copied!"
   },
   "calendar": {
-    "title": "Training Calendar",
-    "subtitle": "Your month at a glance",
+    "title": "Workouts",
+    "pageTitle": "Workouts • Kinesis",
     "previousMonth": "Previous month",
     "nextMonth": "Next month",
     "today": "Today",
+    "weekStartLabel": "Start of week:",
+    "mon": "Mon",
+    "sun": "Sun",
+    "gridLabel": "Monthly calendar",
     "import": {
-      "button": "Import",
+      "button": "Import trainings",
+      "tooltip": "Imports Excel files (.xlsx, .xls).\n\nExpected format (11 columns):\n• Date (mandatory, DD/MM/YYYY)\n• Day\n• Period\n• Type (mandatory)\n• Workout\n• Details\n• Target HR\n• RPE\n• Shoe\n• Weather Forecast\n• Notes\n\n* Do not include note rows or merged cells.",
       "title": "Import trainings",
       "hint": "Pick a .xlsx or .xls spreadsheet with columns: Dia, Período, Tipo, Treino, Detalhes, FC alvo, RPE, Tênis, Previsão no horário, Observações.",
       "loading": "Importing…",
@@ -60,20 +65,18 @@
   },
   "shell": {
     "nav": {
-      "training": "Training Result",
-      "dashboard": "Dashboard",
-      "calendar": "Calendar",
-      "aiCoach": "AI Coach"
+      "home": "Home",
+      "requestWorkouts": "Request Workouts",
+      "workouts": "Workouts"
     },
     "soon": "Soon",
     "collapse": "Collapse sidebar",
     "expand": "Expand sidebar",
-    "footer": {
-      "status": "Training Assistant • Local & Offline"
-    }
+    "navLabel": "Main navigation",
+    "logout": "Logout"
   },
   "login": {
-    "title": "Sign In • Training Assistant",
+    "title": "Sign In • Kinesis",
     "heading": "Welcome back",
     "subtitle": "Sign in to keep your training log on track.",
     "emailLabel": "Email",
@@ -86,7 +89,7 @@
     "registeredBanner": "Account created! Sign in to continue."
   },
   "register": {
-    "title": "Create Account • Training Assistant",
+    "title": "Create Account • Kinesis",
     "heading": "Create your account",
     "subtitle": "Join in seconds and keep every workout in one place.",
     "firstNameLabel": "First Name",
@@ -124,50 +127,84 @@
     "generic": "Something went wrong. Please try again."
   },
   "training": {
-    "title": "Training Result • Training Assistant",
-    "plannedLegend": "Planned Workout",
-    "typeLabel": "Workout type",
-    "targetHrLabel": "Target HR",
-    "targetRpeLabel": "Target RPE",
-    "plannedLabel": "Planned workout",
-    "plannedPlaceholder": "e.g.: 5 km warm-up + 6×1 km hard (3:50–4:00) with 400 m jog",
-    "contextLegend": "Context & Gear",
-    "shoesLabel": "Shoes",
-    "shoesPlaceholder": "e.g.: Nimbus 26",
-    "hrSourceLabel": "HR source",
-    "weatherLabel": "Temperature & weather",
-    "weatherPlaceholder": "e.g.: 22°C, Cloudy, light wind",
-    "terrainLabel": "Terrain/route",
-    "effortLegend": "Perceived Exertion",
-    "rpePerceivedLabel": "Perceived RPE — effort (1 to 5)",
-    "breathingLabel": "Breathing",
-    "muscleFeelLabel": "Muscle sensation",
-    "endEnergyLabel": "Energy at the end",
-    "feedbackLegend": "Feedback",
-    "discomfortLabel": "Pain or discomfort",
-    "discomfortPlaceholder": "e.g.: mild ache in the right Achilles tendon after km 8…",
+    "title": "Training Session • Kinesis"
+  },
+  "session": {
+    "title": "Training Session",
+    "loading": "Loading training…",
+    "plannedHeading": "Planned workout",
+    "fieldTipo": "Type",
+    "fieldTreino": "Workout",
+    "fieldDetalhes": "Details",
+    "fieldFcAlvo": "Target HR",
+    "fieldRpe": "Target RPE",
+    "fieldTenis": "Shoes",
+    "feedbackHeading": "Your feedback",
+    "realizedRpeLabel": "Realized RPE (1 to 5)",
     "freeFeedbackLabel": "Free feedback",
-    "freeFeedbackPlaceholder": "How did it go? Sleep, weather, overall sensations…",
-    "dropTitleHtml": "Drop your <strong>.FIT</strong> file here",
-    "dropSub": "or click to pick one from your computer",
-    "dropReady": "Ready: {name}",
-    "dropReplace": "Click or drop another file to replace it",
-    "ariaDropzone": "Select a .FIT file",
-    "generate": "Generate Prompt",
-    "generating": "Processing...",
-    "statusProcessing": "Processing “{name}”…",
-    "statusSuccess": "“{name}” processed successfully.",
-    "statusFailed": "Failed to process the file.",
-    "errorNotFit": "Please select a valid .FIT file.",
-    "promptHeading": "Prompt for the AI Coach — review before copying",
-    "copyPrompt": "Copy Prompt",
+    "freeFeedbackPlaceholder": "How was the workout? Sleep, weather, general sensations...",
+    "fieldSmartwatch": "Smartwatch used?",
+    "smartwatchYes": "Yes",
+    "smartwatchNo": "No",
+    "fieldShoeUsed": "Shoe used",
+    "shoeUsedPlaceholder": "e.g.: Nimbus 26",
+    "fieldHrSource": "HR source",
+    "hrSourceStrap": "Chest strap",
+    "hrSourceOptical": "Watch optical sensor",
+    "hrSourceNone": "No HR",
+    "fitDragText": "Drag your <strong>.FIT</strong> file here",
+    "fitClickText": "or click to select from your computer",
+    "fitSelected": "File selected: ",
+    "fieldWeather": "Temperature & weather",
+    "weatherPlaceholder": "e.g.: 22°C, cloudy, light wind",
+    "fieldTerrain": "Terrain/route",
+    "fieldBreathing": "Breathing",
+    "fieldMuscle": "Muscle sensation",
+    "fieldEnergy": "Energy at finish",
+    "generatePrompt": "Generate analysis prompt",
     "copied": "Copied!",
-    "metaSport": "Sport",
-    "metaStart": "Start",
-    "metaEnd": "End",
-    "metaDuration": "Duration",
-    "metaDistance": "Distance",
-    "metaLaps": "Laps"
+    "save": "Save and back to calendar",
+    "saving": "Saving…",
+    "errors": {
+      "load": "We could not load this training.",
+      "notFound": "Training not found.",
+      "rpe": "Realized RPE must be an integer between 1 and 5.",
+      "save": "We could not save your feedback. Please try again."
+    }
+  },
+  "terrain": {
+    "asphalt": "Asphalt",
+    "trail": "Trail / Dirt",
+    "track": "Track",
+    "treadmill": "Treadmill",
+    "mixed": "Mixed"
+  },
+  "breathing": {
+    "controlled": "Controlled",
+    "panting": "Panting",
+    "heavy": "Very out of breath"
+  },
+  "muscle": {
+    "light": "Light",
+    "normal": "Normal",
+    "heavy": "Heavy",
+    "fatigued": "Fatigued"
+  },
+  "energy": {
+    "surplus": "Energy left",
+    "limit": "On the limit",
+    "exhausted": "Exhausted"
+  },
+  "common": {
+    "yes": "Yes",
+    "no": "No"
+  },
+  "feedback": {
+    "hasPainLabel": "Any pain or discomfort?",
+    "painDescriptionLabel": "Pain description",
+    "painPlaceholder": "e.g.: mild twinge in the right Achilles tendon after km 8...",
+    "noPainReported": "None / No pain reported",
+    "yesWithoutDescription": "Yes (no additional description)"
   },
   "prompt": {
     "intro1": "Analyze the running workout below considering my full training history, my recent progress, previous workouts, the current plan and my target races.",

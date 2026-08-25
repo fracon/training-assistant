@@ -312,6 +312,13 @@ test('GET / redirects anonymous visitors to the login page', async () => {
   assert.equal(response.headers.location, '/login.html');
 });
 
+test('GET /api/version exposes the packaged app version', async () => {
+  const app = await buildServer({ parseFitFile: stubParse() });
+  const response = await app.inject({ method: 'GET', url: '/api/version' });
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.json(), { version: require('../package.json').version });
+});
+
 test('the default parser rejects garbage uploads end-to-end', async () => {
   const app = await buildServer();
   const emptyFitFile = Buffer.from([

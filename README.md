@@ -1,4 +1,4 @@
-# Training Assistant
+# Kinesis
 
 A **secure, self-hosted, multi-user web application** for managing training logs — drop a Garmin `.FIT` file into the browser, add how the workout felt, and get back a ready-to-paste markdown prompt for your AI coach.
 
@@ -6,7 +6,7 @@ Every account is protected with server-side sessions, every `.FIT` file is parse
 
 ## Why
 
-AI coaches are only as good as the data you give them. Exporting workouts by hand means losing detail. Training Assistant turns the raw `.FIT` file your watch already recorded into a structured, metric-rich review request in seconds — so every recommendation from your AI coach is grounded in real numbers.
+AI coaches are only as good as the data you give them. Exporting workouts by hand means losing detail. Kinesis turns the raw `.FIT` file your watch already recorded into a structured, metric-rich review request in seconds — so every recommendation from your AI coach is grounded in real numbers.
 
 ## Features
 
@@ -226,7 +226,7 @@ Shared code lives in `src/public/shared/`: `theme.css` (earthy color tokens, DM 
 
 ## Deployment & Infrastructure
 
-Training Assistant runs in production on a self-hosted **ZimaOS** server, built and shipped automatically through GitHub Actions and exposed to the internet securely through Cloudflare.
+Kinesis runs in production on a self-hosted **ZimaOS** server, built and shipped automatically through GitHub Actions and exposed to the internet securely through Cloudflare.
 
 ### Architecture Overview
 
@@ -237,7 +237,7 @@ GitHub main ──push──▶ Self-Hosted Runner (Docker on ZimaOS)
                  ghcr.io/fracon/training-assistant:latest
                           │  docker compose pull
                           ▼
-              Training Assistant (Fastify, Docker on ZimaOS :8081)
+              Kinesis (Fastify, Docker on ZimaOS :8081)
                           │  HTTP
                           ▼
                  Cloudflare Tunnel (Zero Trust)

@@ -11,7 +11,7 @@ async function main() {
   const db = createDatabase({ filename: databaseFile });
   const app = await buildServer({ db });
   await app.listen({ port, host: process.env.HOST || '127.0.0.1' });
-  console.log(`Training Assistant ready at ${app.server.address().address}:${port}`);
+  console.log(`Kinesis ready at ${app.server.address().address}:${port}`);
 }
 
 main().catch((error) => {

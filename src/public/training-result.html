@@ -3,181 +3,185 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Training Result • Training Assistant</title>
+  <title>Training Session • Kinesis</title>
   <link rel="stylesheet" href="shared/shell.css">
   <link rel="stylesheet" href="training-result.css">
 </head>
 <body>
   <main id="appView">
-    <form id="workoutForm" autocomplete="off">
-      <section class="card form-card">
-        <fieldset class="group">
-        <legend data-i18n="training.plannedLegend">Planned Workout</legend>
-        <div class="grid grid-3">
-          <div class="field">
-            <label class="field-label" for="tipo_treino" data-i18n="training.typeLabel">Workout type</label>
-            <select id="tipo_treino" name="tipo_treino">
-              <option value="">—</option>
-              <option value="Leve">Leve</option>
-              <option value="Longão">Longão</option>
-              <option value="Intervalado">Intervalado</option>
-              <option value="Ritmo">Ritmo</option>
-              <option value="Recuperação">Recuperação</option>
-            </select>
-          </div>
-          <div class="field">
-            <label class="field-label" for="fc_alvo" data-i18n="training.targetHrLabel">Target HR</label>
-            <input type="text" id="fc_alvo" name="fc_alvo" placeholder="e.g.: 145–155 bpm">
-          </div>
-          <div class="field">
-            <label class="field-label" for="rpe_alvo" data-i18n="training.targetRpeLabel">Target RPE</label>
-            <select id="rpe_alvo" name="rpe_alvo">
-              <option value="">—</option>
-              <option value="1">1</option>
-              <option value="2">2</option>
-              <option value="3">3</option>
-              <option value="4">4</option>
-              <option value="5">5</option>
-            </select>
-          </div>
-        </div>
-        <div class="field">
-          <label class="field-label" for="treino_planejado" data-i18n="training.plannedLabel">Planned workout</label>
-          <textarea id="treino_planejado" name="treino_planejado" rows="2" class="auto-grow"
-            placeholder="e.g.: 5 km warm-up + 6×1 km hard (3:50–4:00) with 400 m jog"
-            data-i18n-placeholder="training.plannedPlaceholder"></textarea>
-        </div>
-      </fieldset>
+    <section class="session-page">
+      <header class="session-header">
+        <h1 data-i18n="session.title">Training Session</h1>
+        <p id="sessionDate" class="session-date"></p>
+      </header>
 
-      <fieldset class="group">
-        <legend data-i18n="training.contextLegend">Context &amp; Gear</legend>
-        <div class="grid grid-2x2">
-          <div class="field">
-            <label class="field-label" for="tenis" data-i18n="training.shoesLabel">Shoes</label>
-            <input type="text" id="tenis" name="tenis" placeholder="e.g.: Nimbus 26"
-              data-i18n-placeholder="training.shoesPlaceholder">
-          </div>
-          <div class="field">
-            <label class="field-label" for="fonte_fc" data-i18n="training.hrSourceLabel">HR source</label>
-            <select id="fonte_fc" name="fonte_fc">
-              <option value="">—</option>
-              <option value="Cinta Peitoral">Cinta Peitoral</option>
-              <option value="Sensor Óptico do Relógio">Sensor Óptico do Relógio</option>
-              <option value="Sem FC">Sem FC</option>
-            </select>
-          </div>
-          <div class="field">
-            <label class="field-label" for="clima" data-i18n="training.weatherLabel">Temperature &amp; weather</label>
-            <input type="text" id="clima" name="clima" placeholder="e.g.: 22°C, Cloudy, light wind"
-              data-i18n-placeholder="training.weatherPlaceholder">
-          </div>
-          <div class="field">
-            <label class="field-label" for="terreno" data-i18n="training.terrainLabel">Terrain/route</label>
-            <select id="terreno" name="terreno">
-              <option value="">—</option>
-              <option value="Asfalto">Asfalto</option>
-              <option value="Terra/Trilha">Terra/Trilha</option>
-              <option value="Pista">Pista</option>
-              <option value="Esteira">Esteira</option>
-              <option value="Misto">Misto</option>
-            </select>
-          </div>
-        </div>
-      </fieldset>
+      <p id="status" class="status" role="status"></p>
 
-      <fieldset class="group">
-        <legend data-i18n="training.effortLegend">Perceived Exertion</legend>
-        <div class="field">
-          <span class="field-label" data-i18n="training.rpePerceivedLabel">Perceived RPE — effort (1 to 5)</span>
-          <div class="rpe-row" id="rpeRow"></div>
-        </div>
-        <div class="grid grid-3">
-          <div class="field">
-            <label class="field-label" for="respiracao" data-i18n="training.breathingLabel">Breathing</label>
-            <select id="respiracao" name="respiracao">
-              <option value="">—</option>
-              <option value="Controlada">Controlada</option>
-              <option value="Ofegante">Ofegante</option>
-              <option value="Muito Ofegante">Muito Ofegante</option>
-            </select>
+      <section class="card planned-card" aria-labelledby="plannedTitle">
+        <h2 id="plannedTitle" data-i18n="session.plannedHeading">Planned workout</h2>
+        <dl class="planned-grid">
+          <div class="planned-item">
+            <dt data-i18n="session.fieldTipo">Type</dt>
+            <dd id="plannedTipo">-</dd>
           </div>
-          <div class="field">
-            <label class="field-label" for="sensacao_muscular" data-i18n="training.muscleFeelLabel">Muscle sensation</label>
-            <select id="sensacao_muscular" name="sensacao_muscular">
-              <option value="">—</option>
-              <option value="Leve">Leve</option>
-              <option value="Normal">Normal</option>
-              <option value="Pesada">Pesada</option>
-              <option value="Fadigada">Fadigada</option>
-            </select>
+          <div class="planned-item">
+            <dt data-i18n="session.fieldTreino">Workout</dt>
+            <dd id="plannedTreino">-</dd>
           </div>
-          <div class="field">
-            <label class="field-label" for="energia_final" data-i18n="training.endEnergyLabel">Energy at the end</label>
-            <select id="energia_final" name="energia_final">
-              <option value="">—</option>
-              <option value="Sobrava energia">Sobrava energia</option>
-              <option value="No limite">No limite</option>
-              <option value="Esgotado">Esgotado</option>
-            </select>
+          <div class="planned-item planned-item-wide">
+            <dt data-i18n="session.fieldDetalhes">Details</dt>
+            <dd id="plannedDetalhes">-</dd>
           </div>
-        </div>
-      </fieldset>
-
-      <fieldset class="group">
-        <legend data-i18n="training.feedbackLegend">Feedback</legend>
-        <div class="field">
-          <label class="field-label" for="dor_desconforto" data-i18n="training.discomfortLabel">Pain or discomfort</label>
-          <textarea id="dor_desconforto" name="dor_desconforto" rows="2" class="auto-grow"
-            placeholder="e.g.: mild ache in the right Achilles tendon after km 8…"
-            data-i18n-placeholder="training.discomfortPlaceholder"></textarea>
-        </div>
-        <div class="field">
-          <label class="field-label" for="feedback_livre" data-i18n="training.freeFeedbackLabel">Free feedback</label>
-          <textarea id="feedback_livre" name="feedback_livre" rows="2" class="auto-grow"
-            placeholder="How did it go? Sleep, weather, overall sensations…"
-            data-i18n-placeholder="training.freeFeedbackPlaceholder"></textarea>
-        </div>
-      </fieldset>
+          <div class="planned-item">
+            <dt data-i18n="session.fieldFcAlvo">Target HR</dt>
+            <dd id="plannedFcAlvo">-</dd>
+          </div>
+          <div class="planned-item">
+            <dt data-i18n="session.fieldRpe">Target RPE</dt>
+            <dd id="plannedRpe">-</dd>
+          </div>
+          <div class="planned-item">
+            <dt data-i18n="session.fieldTenis">Shoes</dt>
+            <dd id="plannedTenis">-</dd>
+          </div>
+        </dl>
       </section>
 
-      <section id="dropzone" class="dropzone" role="button" tabindex="0" aria-label="Select a .FIT file"
-        data-i18n-aria-label="training.ariaDropzone">
-        <p class="drop-title" id="dropTitle"
-          data-i18n-html="training.dropTitleHtml">Drop your <strong>.FIT</strong> file here</p>
-        <p class="drop-sub" id="dropSub" data-i18n="training.dropSub">or click to pick one from your computer</p>
-        <input type="file" id="fileInput" accept=".fit" hidden>
+      <section class="card feedback-card" aria-labelledby="feedbackTitle">
+        <h2 id="feedbackTitle" data-i18n="session.feedbackHeading">Your feedback</h2>
+        <div class="feedback-grid">
+          <div class="field field-wide">
+            <label class="field-label" for="feedbackRpe"
+              data-i18n="session.realizedRpeLabel">Realized RPE (1 to 5)</label>
+            <input type="number" id="feedbackRpe" class="input-control input-rpe"
+              min="1" max="5" step="1" inputmode="numeric">
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="smartwatchSelect"
+              data-i18n="session.fieldSmartwatch">Smartwatch used?</label>
+            <select id="smartwatchSelect" class="input-control">
+              <option value="sim" selected data-i18n="session.smartwatchYes">Yes</option>
+              <option value="nao" data-i18n="session.smartwatchNo">No</option>
+            </select>
+          </div>
+          <div class="field fit-field" id="fitField">
+            <label for="fitFile" class="file-dropzone" id="fitDropzone">
+              <input type="file" id="fitFile" accept=".fit" style="display: none;">
+              <div class="dropzone-text-primary">
+                <span data-i18n-html="session.fitDragText">Drag your <strong>.FIT</strong> file here</span>
+              </div>
+              <div class="dropzone-text-secondary" data-i18n="session.fitClickText">or click to select from your computer</div>
+            </label>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="feedbackShoe"
+              data-i18n="session.fieldShoeUsed">Shoe used</label>
+            <input type="text" id="feedbackShoe" class="input-control"
+              autocomplete="off" data-i18n-placeholder="session.shoeUsedPlaceholder">
+          </div>
+          <div class="field">
+            <label class="field-label" for="hrSourceSelect"
+              data-i18n="session.fieldHrSource">HR source</label>
+            <select id="hrSourceSelect" class="input-control">
+              <option value="">–</option>
+              <option value="chest_strap" data-i18n="session.hrSourceStrap">Chest strap</option>
+              <option value="optical_watch" data-i18n="session.hrSourceOptical">Watch optical sensor</option>
+              <option value="none" data-i18n="session.hrSourceNone">No HR</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="feedbackWeather"
+              data-i18n="session.fieldWeather">Temperature &amp; weather</label>
+            <input type="text" id="feedbackWeather" class="input-control"
+              autocomplete="off" data-i18n-placeholder="session.weatherPlaceholder">
+          </div>
+          <div class="field">
+            <label class="field-label" for="feedbackTerrain"
+              data-i18n="session.fieldTerrain">Terrain/route</label>
+            <select id="feedbackTerrain" class="input-control">
+              <option value="">–</option>
+              <option value="asphalt" data-i18n="terrain.asphalt">Asphalt</option>
+              <option value="trail" data-i18n="terrain.trail">Trail / Dirt</option>
+              <option value="track" data-i18n="terrain.track">Track</option>
+              <option value="treadmill" data-i18n="terrain.treadmill">Treadmill</option>
+              <option value="mixed" data-i18n="terrain.mixed">Mixed</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="feedbackBreathing"
+              data-i18n="session.fieldBreathing">Breathing</label>
+            <select id="feedbackBreathing" class="input-control">
+              <option value="">–</option>
+              <option value="controlled" data-i18n="breathing.controlled">Controlled</option>
+              <option value="panting" data-i18n="breathing.panting">Panting</option>
+              <option value="heavy" data-i18n="breathing.heavy">Very out of breath</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="field-label" for="feedbackMuscle"
+              data-i18n="session.fieldMuscle">Muscle sensation</label>
+            <select id="feedbackMuscle" class="input-control">
+              <option value="">–</option>
+              <option value="light" data-i18n="muscle.light">Light</option>
+              <option value="normal" data-i18n="muscle.normal">Normal</option>
+              <option value="heavy" data-i18n="muscle.heavy">Heavy</option>
+              <option value="fatigued" data-i18n="muscle.fatigued">Fatigued</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="feedbackEnergy"
+              data-i18n="session.fieldEnergy">Energy at finish</label>
+            <select id="feedbackEnergy" class="input-control">
+              <option value="">–</option>
+              <option value="surplus" data-i18n="energy.surplus">Energy left</option>
+              <option value="limit" data-i18n="energy.limit">On the limit</option>
+              <option value="exhausted" data-i18n="energy.exhausted">Exhausted</option>
+            </select>
+          </div>
+          <div class="field">
+            <label class="field-label" for="feedbackHasPain"
+              data-i18n="feedback.hasPainLabel">Any pain or discomfort?</label>
+            <select id="feedbackHasPain" class="input-control">
+              <option value="no" data-i18n="common.no">No</option>
+              <option value="yes" data-i18n="common.yes">Yes</option>
+            </select>
+          </div>
+          <div class="field field-wide pain-field" id="painDescriptionContainer" hidden>
+            <label class="field-label" for="feedbackPain"
+              data-i18n="feedback.painDescriptionLabel">Pain description</label>
+            <textarea id="feedbackPain" rows="3" class="input-control"
+              placeholder="e.g.: mild twinge in the right Achilles tendon after km 8..."
+              data-i18n-placeholder="feedback.painPlaceholder"></textarea>
+          </div>
+
+          <div class="field field-wide">
+            <label class="field-label" for="feedbackNotas"
+              data-i18n="session.freeFeedbackLabel">Free feedback</label>
+            <textarea id="feedbackNotas" rows="4" class="input-control"
+              placeholder="How was the workout? Sleep, weather, general sensations..."
+              data-i18n-placeholder="session.freeFeedbackPlaceholder"></textarea>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button id="saveBtn" class="btn-secondary" type="button"
+            data-i18n="session.save">Save and back to calendar</button>
+          <button id="generateBtn" class="btn-primary" type="button">
+            <i data-lucide="sparkles" aria-hidden="true"></i>
+            <span data-i18n="session.generatePrompt">Generate analysis prompt</span>
+          </button>
+        </div>
       </section>
-
-      <button id="generateBtn" class="btn-primary" type="submit" disabled
-        data-i18n="training.generate">Generate Prompt</button>
-    </form>
-
-    <p id="status" class="status" role="status"></p>
-
-    <section id="resultsFlow" class="results-flow" aria-live="polite">
-      <div class="meta" id="metaRow"></div>
-
-      <div class="card table-card">
-        <table>
-          <thead><tr id="lapsHead"></tr></thead>
-          <tbody id="lapsBody"></tbody>
-        </table>
-      </div>
-
-      <section class="prompt-block">
-        <h2 class="section-title" data-i18n="training.promptHeading">Prompt for the AI Coach — review before copying</h2>
-        <textarea id="markdownPreview" class="prompt-textarea" readonly spellcheck="false"></textarea>
-      </section>
-
-      <button id="copyBtn" class="copy-btn" type="button">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>
-        <span id="copyLabel" data-i18n="training.copyPrompt">Copy Prompt</span>
-      </button>
     </section>
   </main>
 
   <script src="https://unpkg.com/lucide@latest"></script>
-  <script src="form-state.js" defer></script>
+  <script src="shared/shell.js" type="module"></script>
   <script src="training-result.js" type="module"></script>
 </body>
 </html>

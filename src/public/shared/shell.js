@@ -9,35 +9,31 @@ const SIDEBAR_STORAGE_KEY = 'training-assistant:sidebar-collapsed';
 
 export const FOOTER_ELEMENT_TAG = 'footer';
 export const FOOTER_CLASS_NAME = 'bottom-bar';
-export const FOOTER_STATUS_KEY = 'shell.footer.status';
+export const VERSION_ENDPOINT = '/api/version';
+export const VERSION_FALLBACK_LABEL = 'v-.-.-';
 
+// Sidebar order: Home (coming soon) first, then request workouts, then
+// review/log workouts. Ids and hrefs stay stable for route matching.
 const NAV_ITEMS = [
-  {
-    id: 'training-result',
-    icon: 'activity',
-    labelKey: 'shell.nav.training',
-    href: '/training-result.html',
-    disabled: false,
-  },
   {
     id: 'dashboard',
     icon: 'layout-dashboard',
-    labelKey: 'shell.nav.dashboard',
+    labelKey: 'shell.nav.home',
     href: null,
     disabled: true,
   },
   {
-    id: 'calendar',
-    icon: 'calendar-days',
-    labelKey: 'shell.nav.calendar',
-    href: '/calendar.html',
+    id: 'ai-coach',
+    icon: 'bot',
+    labelKey: 'shell.nav.requestWorkouts',
+    href: '/ai-coach.html',
     disabled: false,
   },
   {
-    id: 'ai-coach',
-    icon: 'bot',
-    labelKey: 'shell.nav.aiCoach',
-    href: '/ai-coach.html',
+    id: 'calendar',
+    icon: 'calendar-days',
+    labelKey: 'shell.nav.workouts',
+    href: '/calendar.html',
     disabled: false,
   },
 ];
@@ -95,12 +91,14 @@ function buildSidebar(activeId) {
   const brand = el('div', 'sidebar-brand');
   brand.appendChild(icon('footprints'));
   const brandName = el('span', 'sidebar-label');
-  brandName.textContent = 'Training Assistant';
+  brandName.setAttribute('data-i18n', 'app.name');
+  brandName.textContent = 'Kinesis';
   brand.appendChild(brandName);
   aside.appendChild(brand);
 
   const nav = el('nav', 'sidebar-nav');
   nav.setAttribute('aria-label', 'Main navigation');
+  nav.setAttribute('data-i18n-aria-label', 'shell.navLabel');
   for (const item of NAV_ITEMS) {
     const entry = el('a', `nav-item${item.disabled ? ' disabled' : ''}${item.id === activeId ? ' active' : ''}`);
     entry.dataset.navId = item.id;
@@ -140,19 +138,6 @@ function buildSidebar(activeId) {
 function buildTopbar() {
   const header = el('header', 'topbar');
 
-  const brand = el('span', 'brand');
-  brand.textContent = 'Training Assistant';
-  header.appendChild(brand);
-
-  const dot = el('span', 'dot');
-  dot.textContent = '•';
-  header.appendChild(dot);
-
-  const tagline = el('span', 'tagline');
-  tagline.setAttribute('data-i18n', 'app.tagline');
-  tagline.textContent = 'Local & Offline';
-  header.appendChild(tagline);
-
   const actions = el('div', 'topbar-actions');
 
   const langSwitch = el('div', 'lang-switch');
@@ -176,23 +161,47 @@ function buildTopbar() {
   badge.id = 'userBadge';
   actions.appendChild(badge);
 
+  // Built hidden: it only becomes visible once setUserBadge confirms a
+  // session, so anonymous visitors never see a dead sign-out control.
   const logout = el('button', 'logout-btn hidden');
   logout.type = 'button';
   logout.id = 'logoutBtn';
-  logout.textContent = 'Logout';
+  logout.setAttribute('data-i18n-aria-label', 'shell.logout');
+  logout.appendChild(icon('log-out'));
+  const label = el('span');
+  label.setAttribute('data-i18n', 'shell.logout');
+  label.textContent = 'Logout';
+  logout.appendChild(label);
   actions.appendChild(logout);
 
   header.appendChild(actions);
   return header;
 }
 
+// Resolves the running app version from the backend. Any failure (offline,
+// non-200, malformed payload) degrades to null so the footer can fall back.
+export async function loadAppVersion(fetchImpl = globalThis.fetch) {
+  try {
+    const response = await fetchImpl(VERSION_ENDPOINT);
+    if (!response.ok) return null;
+    const data = await response.json();
+    if (typeof data?.version !== 'string' || data.version === '') return null;
+    return data.version;
+  } catch {
+    return null;
+  }
+}
+
+export function formatAppVersion(version) {
+  return version ? `v${version}` : VERSION_FALLBACK_LABEL;
+}
+
 function buildBottomBar() {
   const bar = document.createElement(FOOTER_ELEMENT_TAG);
   bar.className = FOOTER_CLASS_NAME;
-  const status = el('span', 'bottom-bar-status');
-  status.setAttribute('data-i18n', FOOTER_STATUS_KEY);
-  status.textContent = translate(shellI18n.messages, FOOTER_STATUS_KEY);
-  bar.appendChild(status);
+  const versionLabel = el('span', 'footer-version');
+  versionLabel.id = 'appVersion';
+  bar.appendChild(versionLabel);
   return bar;
 }
 
@@ -224,6 +233,8 @@ function setUserBadge(user) {
   strong.textContent = name || user.email;
   badge.appendChild(strong);
   badge.classList.remove('hidden');
+  // A confirmed session means the sign-out action is safe to show.
+  document.getElementById('logoutBtn').classList.remove('hidden');
 }
 
 function wireLogout() {
@@ -265,7 +276,7 @@ export async function initShell({ active } = {}) {
     return null;
   }
 
-  const shellRoot = buildLayout(active ?? 'training-result');
+  const shellRoot = buildLayout(active ?? null);
   syncToggleState(shellRoot, readSidebarCollapsed());
 
   await shellI18n.init(user.preferred_lang);
@@ -274,6 +285,13 @@ export async function initShell({ active } = {}) {
 
   setUserBadge(user);
   wireLogout();
+
+  // The footer only carries the app version; resolve it without blocking
+  // the shell mount and degrade gracefully when unreachable.
+  const versionLabel = shellRoot.querySelector('#appVersion');
+  loadAppVersion().then((version) => {
+    versionLabel.textContent = formatAppVersion(version);
+  });
 
   shellRoot.querySelector('#sidebarToggle').addEventListener('click', () => {
     const collapsed = !shellRoot.classList.contains('collapsed');

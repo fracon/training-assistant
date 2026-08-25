@@ -49,6 +49,32 @@ export async function fetchCalendarTrainings() {
   }
 }
 
+// Returns the training row, or null when the server answers 404.
+export async function fetchTraining(id) {
+  let response;
+  try {
+    response = await fetch(`/api/trainings/${id}`, {
+      headers: { accept: 'application/json' },
+    });
+  } catch {
+    throw new Error('Network unavailable. Please try again.');
+  }
+  const payload = await response.json().catch(() => ({}));
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    throw new Error(payload.error || 'Something went wrong. Please try again.');
+  }
+  return payload.training ?? null;
+}
+
+export function saveTrainingFeedback(id, fields = {}) {
+  return requestJson(
+    `/api/trainings/${id}`,
+    fields,
+    'PATCH'
+  );
+}
+
 export async function importTrainingsFile(file) {
   const form = new FormData();
   form.append('file', file);

@@ -96,6 +96,14 @@ test('the prompt template keeps the required Portuguese structure', () => {
     /CONTEXTO ADICIONAL DESTA SEMANA\n\n\{\{CONTEXTO_OPCIONAL\}\}\n\nINSTRUÇÕES PARA MONTAR A SEMANA/,
     'context section flows straight into the instructions'
   );
+  const ptRule =
+    'REGRA ESTRITA: NUNCA adicione linhas de notas, observações, rodapés ou células mescladas na planilha. A planilha deve conter EXCLUSIVAMENTE a linha de cabeçalho e as linhas de treino. Qualquer explicação extra deve ir apenas no texto da sua resposta, nunca no arquivo.';
+  assert.ok(PROMPT_TEMPLATE.includes(ptRule), 'strict no-notes Excel rule present');
+  assert.ok(
+    PROMPT_TEMPLATE.indexOf('ARQUIVO EXCEL') !== -1 &&
+      PROMPT_TEMPLATE.indexOf(ptRule) > PROMPT_TEMPLATE.indexOf('ARQUIVO EXCEL'),
+    'strict rule lives inside the ARQUIVO EXCEL section'
+  );
   assert.ok(!PROMPT_TEMPLATE.includes('Exemplos:'), 'example list lives in the UI, not the prompt');
 
   const tokens = PROMPT_TEMPLATE.match(/\{\{[A-Z_]+\}\}/g) ?? [];
@@ -199,17 +207,59 @@ test('ai-coach.html wires the shell, lucide and the full form', () => {
   assert.match(html, /ai-coach\.js" type="module"/);
   assert.match(html, /id="appView"/);
 
+  assert.match(
+    html,
+    /<title data-i18n="aiCoach\.pageTitle">Request Workouts • Kinesis<\/title>/,
+    'the browser tab title is i18n-bound with the Kinesis suffix'
+  );
+  assert.match(html, /<h1 data-i18n="aiCoach\.title">Request Workouts<\/h1>/);
+
   assert.match(html, /type="date" id="targetDate"/);
   for (const id of ['dispSeg', 'dispTer', 'dispQua', 'dispQui', 'dispSex', 'dispSab', 'dispDom']) {
     assert.match(html, new RegExp(`id="${id}" value="Rotina normal"`));
   }
   assert.match(html, /<textarea id="optionalContext"/);
-  assert.match(html, /type="submit" id="generateBtn"/);
+  assert.match(html, /type="submit" id="generateBtn" class="btn-primary"/);
+  assert.ok(!html.includes('generate-btn'), 'the scoped generate-btn class is retired');
+  assert.match(
+    html,
+    /<i data-lucide="sparkles"[^>]*><\/i>\s*<span data-i18n=/,
+    'the icon renders directly before the label span'
+  );
   assert.match(html, /data-lucide="sparkles"/);
   assert.match(html, /id="copyBtn"/);
   assert.match(html, /data-lucide="copy"/);
   assert.match(html, /<pre id="promptOutput"/);
   assert.match(html, /data-i18n="aiCoach\.title"/);
+});
+
+test('the generate button matches the shared primary hover contract', () => {
+  const css = readFileSync(join(publicDir, 'ai-coach.css'), 'utf8');
+  const theme = readFileSync(join(publicDir, 'shared', 'theme.css'), 'utf8');
+
+  assert.ok(!css.includes('.generate-btn'), 'no scoped generate-btn rules remain');
+  assert.match(
+    theme,
+    /\.btn-primary \{[^}]*display:\s*inline-flex;\s*\n\s*align-items:\s*center;\s*\n\s*justify-content:\s*center;\s*\n\s*gap:\s*0\.5rem/,
+    'the icon and the label share one strict flex centering rule'
+  );
+  assert.match(
+    theme,
+    /\.btn-primary > svg \{[^}]*flex-shrink:\s*0/,
+    'the sparkles icon cannot drift or squish inside the button'
+  );
+  assert.match(
+    css,
+    /\.btn-primary \{[^}]*transition:\s*all 0\.2s ease/,
+    'one smooth animation curve for the primary action'
+  );
+  assert.match(
+    css,
+    /\.btn-primary:hover:not\(:disabled\) \{[^}]*transform:\s*translateY\(-2px\)/,
+    'the button lifts exactly like the training-result primary'
+  );
+  assert.match(css, /\.btn-primary:hover:not\(:disabled\) \{[^}]*background:\s*#405c46/);
+  assert.ok(!css.includes('translateY(-1px)'), 'the old subtle lift is gone');
 });
 
 test('locale files expose every ai-coach string in both languages', async () => {
@@ -218,15 +268,20 @@ test('locale files expose every ai-coach string in both languages', async () => 
 
   for (const messages of [en, pt]) {
     assert.equal(typeof messages.aiCoach.title, 'string');
+    assert.equal(typeof messages.aiCoach.pageTitle, 'string');
     assert.equal(typeof messages.aiCoach.targetDate, 'string');
     assert.equal(Object.keys(messages.aiCoach.days).length, 7);
     assert.equal(typeof messages.aiCoach.generate, 'string');
     assert.equal(typeof messages.aiCoach.copy, 'string');
     assert.equal(typeof messages.aiCoach.copied, 'string');
-    assert.equal(typeof messages.shell.nav.aiCoach, 'string');
+    assert.equal(typeof messages.shell.nav.requestWorkouts, 'string');
   }
 
   assert.notEqual(en.aiCoach.title, pt.aiCoach.title);
+  assert.match(en.aiCoach.pageTitle, /• Kinesis$/);
+  assert.match(pt.aiCoach.pageTitle, /• Kinesis$/);
+  assert.equal(en.aiCoach.pageTitle, 'Request Workouts • Kinesis');
+  assert.equal(pt.aiCoach.pageTitle, 'Solicitar Treinos • Kinesis');
 });
 
 test('the default routine string is language-aware', () => {
@@ -302,6 +357,14 @@ test('both templates carry the identical placeholder contract', () => {
     PROMPT_TEMPLATE_EN,
     /ADDITIONAL CONTEXT FOR THIS WEEK\n\n\{\{CONTEXTO_OPCIONAL\}\}\n\nINSTRUCTIONS FOR PLANNING THE WEEK/,
     'context section flows straight into the instructions'
+  );
+  const enRule =
+    'STRICT RULE: NEVER add note rows, observations, footers, or merged cells inside the spreadsheet. The spreadsheet must EXCLUSIVELY contain the header row and the training rows. Any extra explanations must go only in the text of your response, never in the file.';
+  assert.ok(PROMPT_TEMPLATE_EN.includes(enRule), 'strict no-notes Excel rule present');
+  assert.ok(
+    PROMPT_TEMPLATE_EN.indexOf('EXCEL FILE') !== -1 &&
+      PROMPT_TEMPLATE_EN.indexOf(enRule) > PROMPT_TEMPLATE_EN.indexOf('EXCEL FILE'),
+    'strict rule lives inside the EXCEL FILE section'
   );
   assert.ok(!PROMPT_TEMPLATE_EN.includes('Examples:'), 'example list lives in the UI, not the prompt');
   assert.ok(!PROMPT_TEMPLATE.includes('{{DISPONIBILIDADE}}'));

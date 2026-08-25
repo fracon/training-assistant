@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Training Calendar • Training Assistant</title>
+  <title data-i18n="calendar.pageTitle">Workouts • Kinesis</title>
   <link rel="stylesheet" href="shared/shell.css">
   <link rel="stylesheet" href="calendar.css">
 </head>
@@ -11,30 +11,34 @@
   <main id="appView">
     <section class="calendar-page">
       <header class="calendar-header">
-        <div class="calendar-heading">
-          <h1 data-i18n="calendar.title">Training Calendar</h1>
-          <p class="calendar-subtitle" data-i18n="calendar.subtitle">Your month at a glance</p>
-        </div>
+        <h1 data-i18n="calendar.title">Workouts</h1>
 
-        <div class="calendar-controls">
-          <div class="week-start-switch" role="group" aria-label="Week starts on">
-            <button type="button" id="mondayBtn" data-week-start="Monday">Mon</button>
-            <button type="button" id="sundayBtn" data-week-start="Sunday">Sun</button>
+        <div class="calendar-actions">
+          <div class="week-start-picker">
+            <span class="week-start-label" data-i18n="calendar.weekStartLabel">Start of week:</span>
+            <div class="week-start-switch" role="group" aria-label="Week starts on"
+              data-i18n-aria-label="calendar.firstDayLabel">
+              <button type="button" id="mondayBtn" data-week-start="Monday">Mon</button>
+              <button type="button" id="sundayBtn" data-week-start="Sunday">Sun</button>
+            </div>
           </div>
 
           <div class="month-nav">
-            <button type="button" id="prevMonthBtn" aria-label="Previous month">
+            <button type="button" id="prevMonthBtn" aria-label="Previous month"
+              data-i18n-aria-label="calendar.previousMonth">
               <i data-lucide="chevron-left"></i>
             </button>
             <h2 id="monthTitle">—</h2>
-            <button type="button" id="nextMonthBtn" aria-label="Next month">
+            <button type="button" id="nextMonthBtn" aria-label="Next month"
+              data-i18n-aria-label="calendar.nextMonth">
               <i data-lucide="chevron-right"></i>
             </button>
           </div>
 
           <button type="button" id="importBtn" class="import-btn">
             <span class="import-icon"><i data-lucide="file-spreadsheet"></i></span>
-            <span data-i18n="calendar.import.button">Import</span>
+            <span data-i18n="calendar.import.button">Import trainings</span>
+            <div class="custom-tooltip" data-i18n="calendar.import.tooltip"></div>
           </button>
           <input type="file" id="importInput" accept=".xlsx,.xls" hidden>
         </div>
@@ -44,7 +48,8 @@
 
       <div id="importBanner" class="import-banner hidden"></div>
 
-      <div id="calendarGrid" class="calendar-grid" aria-label="Monthly calendar"></div>
+      <div id="calendarGrid" class="calendar-grid" aria-label="Monthly calendar"
+        data-i18n-aria-label="calendar.gridLabel"></div>
     </section>
 
     <div id="importModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="importModalTitle">

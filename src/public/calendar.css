@@ -8,32 +8,38 @@
 
 .calendar-header {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 1rem;
   margin-bottom: 1.3rem;
 }
 
-.calendar-heading h1 {
+.calendar-header h1 {
   font-size: 1.35rem;
   font-weight: 700;
   color: var(--ink);
   letter-spacing: -0.01em;
 }
 
-.calendar-subtitle {
-  font-size: 0.85rem;
-  font-weight: 500;
-  color: var(--muted);
-  margin-top: 0.15rem;
-}
-
-.calendar-controls {
+.calendar-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: space-between;
+  width: 100%;
   gap: 0.8rem;
+}
+
+.week-start-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.week-start-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
 }
 
 .week-start-switch {
@@ -101,6 +107,7 @@
 }
 
 .import-btn {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
@@ -119,6 +126,35 @@
 
 .import-btn:hover {
   background: rgba(111, 144, 112, 0.26);
+}
+
+.import-btn .custom-tooltip {
+  position: absolute;
+  top: 110%;
+  right: 0;
+  z-index: 50;
+  width: max-content;
+  max-width: 300px;
+  text-align: left;
+  white-space: pre-line;
+  line-height: 1.4;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--card);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  font-size: 0.8rem;
+  font-weight: 500;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-4px);
+  transition: all 0.2s ease;
+}
+
+.import-btn:hover .custom-tooltip,
+.import-btn:focus-visible .custom-tooltip {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .import-btn:disabled {
@@ -152,19 +188,64 @@
 }
 
 .day-cell .training-chip {
-  display: block;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   margin-top: 0.3rem;
-  padding: 0.12rem 0.4rem;
+  padding: 0.28rem 0.45rem;
   border-radius: 7px;
   background: rgba(111, 144, 112, 0.18);
   color: var(--accent-deep);
-  font-size: 0.62rem;
-  font-weight: 700;
-  letter-spacing: 0.01em;
+}
+
+.day-cell .training-chip[data-training-id] {
+  cursor: pointer;
+}
+
+.day-cell .training-chip[data-training-id]:active {
+  transform: scale(0.98);
+}
+
+.day-cell .chip-type {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+
+.day-cell .chip-title {
+  font-size: 0.75rem;
+  line-height: 1.2;
+  word-wrap: break-word;
+}
+
+.day-cell .chip-tooltip {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%) translateY(-4px);
+  z-index: 50;
+  width: max-content;
+  max-width: 250px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--card);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  font-size: 0.8rem;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: normal;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.day-cell .training-chip:hover .chip-tooltip {
+  opacity: 1;
+  transform: translateX(-50%) translateY(-8px);
 }
 
 .day-cell .chip-more {

@@ -26,6 +26,7 @@ const {
 } = require('./auth/weekStart');
 const ExcelJS = require('exceljs');
 const { parseSheet } = require('./trainingImport');
+const { version: APP_VERSION } = require('../package.json');
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
@@ -114,6 +115,8 @@ async function buildServer(options = {}) {
     }
     return reply.sendFile('register.html');
   });
+
+  app.get('/api/version', async () => ({ version: APP_VERSION }));
 
   if (options.db) {
     const db = options.db;
@@ -252,7 +255,7 @@ async function buildServer(options = {}) {
         return reply.code(400).send({ errors });
       }
       if (records.length === 0) {
-        return reply.code(400).send({ errors: [{ row: 1, col: 'Dia', error: 'No training rows found.' }] });
+        return reply.code(400).send({ errors: [{ row: 1, col: 'Data', error: 'No training rows found.' }] });
       }
 
       const insert = db.prepare(
@@ -280,6 +283,107 @@ async function buildServer(options = {}) {
       insertMany(records);
 
       return { imported: records.length };
+    });
+
+    const TRAINING_COLUMNS =
+      'id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes, feedback_rpe, feedback_notas, completed, has_smartwatch, feedback_shoe, feedback_hr_source, feedback_weather, feedback_terrain, feedback_breathing, feedback_muscle, feedback_energy, feedback_has_pain, feedback_pain';
+
+    const findTraining = db.prepare(
+      `SELECT ${TRAINING_COLUMNS} FROM trainings WHERE id = ? AND user_id = ?`
+    );
+
+    app.get('/api/trainings/:id', { preHandler: requireAuth }, async (request, reply) => {
+      const id = Number(request.params.id);
+      if (!Number.isInteger(id) || id <= 0) {
+        return reply.code(400).send({ error: 'Invalid training id.' });
+      }
+      const training = findTraining.get(id, request.user.id);
+      if (!training) {
+        return reply.code(404).send({ error: 'Training not found.' });
+      }
+      return { training };
+    });
+
+    app.patch('/api/trainings/:id', { preHandler: requireAuth }, async (request, reply) => {
+      const id = Number(request.params.id);
+      if (!Number.isInteger(id) || id <= 0) {
+        return reply.code(400).send({ error: 'Invalid training id.' });
+      }
+
+      const body = request.body ?? {};
+      const updates = {};
+
+      if (body.feedback_rpe !== undefined) {
+        const parsed = parseRpe(body.feedback_rpe);
+        if (!parsed.ok) {
+          return reply.code(400).send({ error: parsed.error });
+        }
+        updates.feedback_rpe = parsed.value;
+      }
+      if (body.feedback_notas !== undefined) {
+        if (body.feedback_notas !== null && typeof body.feedback_notas !== 'string') {
+          return reply.code(400).send({ error: 'feedback_notas must be a string.' });
+        }
+        updates.feedback_notas =
+          typeof body.feedback_notas === 'string' ? body.feedback_notas.trim() : null;
+      }
+      if (body.completed !== undefined) {
+        if (typeof body.completed !== 'boolean') {
+          return reply.code(400).send({ error: 'completed must be a boolean.' });
+        }
+        updates.completed = body.completed ? 1 : 0;
+      }
+      if (body.has_smartwatch !== undefined) {
+        if (typeof body.has_smartwatch !== 'boolean') {
+          return reply.code(400).send({ error: 'has_smartwatch must be a boolean.' });
+        }
+        updates.has_smartwatch = body.has_smartwatch ? 1 : 0;
+      }
+      if (body.feedback_has_pain !== undefined) {
+        const value = body.feedback_has_pain;
+        if (value !== null && value !== 'yes' && value !== 'no') {
+          return reply.code(400).send({
+            error: 'feedback_has_pain must be "yes", "no", or null.',
+          });
+        }
+        updates.feedback_has_pain = value;
+      }
+
+      const FEEDBACK_TEXT_FIELDS = [
+        'feedback_shoe',
+        'feedback_hr_source',
+        'feedback_weather',
+        'feedback_terrain',
+        'feedback_breathing',
+        'feedback_muscle',
+        'feedback_energy',
+        'feedback_pain',
+      ];
+      for (const field of FEEDBACK_TEXT_FIELDS) {
+        if (body[field] !== undefined) {
+          if (body[field] !== null && typeof body[field] !== 'string') {
+            return reply.code(400).send({ error: `${field} must be a string.` });
+          }
+          updates[field] =
+            typeof body[field] === 'string' ? body[field].trim() : null;
+        }
+      }
+
+      const fields = Object.keys(updates);
+      if (fields.length === 0) {
+        return reply.code(400).send({ error: 'No feedback fields provided.' });
+      }
+
+      if (!findTraining.get(id, request.user.id)) {
+        return reply.code(404).send({ error: 'Training not found.' });
+      }
+
+      const assignments = fields.map((field) => `${field} = ?`).join(', ');
+      db.prepare(
+        `UPDATE trainings SET ${assignments} WHERE id = ? AND user_id = ?`
+      ).run(...fields.map((field) => updates[field]), id, request.user.id);
+
+      return { training: findTraining.get(id, request.user.id) };
     });
   }
 

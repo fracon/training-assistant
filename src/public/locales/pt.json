@@ -1,10 +1,10 @@
 {
   "app": {
-    "name": "Training Assistant",
-    "tagline": "Local e Offline"
+    "name": "Kinesis"
   },
   "aiCoach": {
-    "title": "Prompt do Coach de IA",
+    "title": "Solicitar Treinos",
+    "pageTitle": "Solicitar Treinos • Kinesis",
     "subtitle": "Monte um briefing detalhado para o seu coach de IA externo",
     "targetDate": "Data alvo",
     "targetDateHint": "Semana a ser planejada. Padrão: próxima segunda-feira.",
@@ -29,13 +29,18 @@
     "copied": "Copiado!"
   },
   "calendar": {
-    "title": "Calendário de Treinos",
-    "subtitle": "Seu mês em um olhar",
+    "title": "Treinos",
+    "pageTitle": "Treinos • Kinesis",
     "previousMonth": "Mês anterior",
     "nextMonth": "Próximo mês",
     "today": "Hoje",
+    "weekStartLabel": "Início da semana:",
+    "mon": "Seg",
+    "sun": "Dom",
+    "gridLabel": "Calendário mensal",
     "import": {
-      "button": "Importar",
+      "button": "Importar treinos",
+      "tooltip": "Importa planilhas Excel (.xlsx, .xls).\n\nFormato esperado (11 colunas):\n• Data (obrigatório, DD/MM/YYYY)\n• Dia\n• Período\n• Tipo (obrigatório)\n• Treino\n• Detalhes\n• FC alvo\n• RPE\n• Tênis\n• Previsão do tempo\n• Observações\n\n* Não inclua linhas de notas ou células mescladas.",
       "title": "Importar treinos",
       "hint": "Escolha uma planilha .xlsx ou .xls com as colunas: Dia, Período, Tipo, Treino, Detalhes, FC alvo, RPE, Tênis, Previsão no horário, Observações.",
       "loading": "Importando…",
@@ -60,20 +65,18 @@
   },
   "shell": {
     "nav": {
-      "training": "Resultado do Treino",
-      "dashboard": "Dashboard",
-      "calendar": "Calendário",
-      "aiCoach": "Coach de IA"
+      "home": "Início",
+      "requestWorkouts": "Solicitar Treinos",
+      "workouts": "Treinos"
     },
     "soon": "Em breve",
     "collapse": "Recolher menu",
     "expand": "Expandir menu",
-    "footer": {
-      "status": "Training Assistant • Local e Offline"
-    }
+    "navLabel": "Navegação principal",
+    "logout": "Sair"
   },
   "login": {
-    "title": "Entrar • Training Assistant",
+    "title": "Entrar • Kinesis",
     "heading": "Bem-vindo de volta",
     "subtitle": "Entre para manter seu diário de treinos em dia.",
     "emailLabel": "E-mail",
@@ -86,7 +89,7 @@
     "registeredBanner": "Conta criada! Entre para continuar."
   },
   "register": {
-    "title": "Criar Conta • Training Assistant",
+    "title": "Criar Conta • Kinesis",
     "heading": "Crie sua conta",
     "subtitle": "Cadastre-se em segundos e mantenha todos os treinos em um só lugar.",
     "firstNameLabel": "Nome",
@@ -124,50 +127,84 @@
     "generic": "Algo deu errado. Tente novamente."
   },
   "training": {
-    "title": "Resultado do Treino • Training Assistant",
-    "plannedLegend": "Treino Planejado",
-    "typeLabel": "Tipo de treino",
-    "targetHrLabel": "FC alvo",
-    "targetRpeLabel": "RPE alvo",
-    "plannedLabel": "Treino planejado",
-    "plannedPlaceholder": "ex.: 5 km aquecimento + 6×1 km forte (3:50–4:00) com 400 m de trote",
-    "contextLegend": "Contexto & Equipamento",
-    "shoesLabel": "Tênis",
-    "shoesPlaceholder": "ex.: Nimbus 26",
-    "hrSourceLabel": "Fonte da FC",
-    "weatherLabel": "Temperatura e clima",
-    "weatherPlaceholder": "ex.: 22°C, Nublado, vento leve",
-    "terrainLabel": "Terreno/percurso",
-    "effortLegend": "Percepção e Esforço",
-    "rpePerceivedLabel": "RPE percebido — esforço percebido (1 a 5)",
-    "breathingLabel": "Respiração",
-    "muscleFeelLabel": "Sensação muscular",
-    "endEnergyLabel": "Energia ao terminar",
-    "feedbackLegend": "Feedback",
-    "discomfortLabel": "Dor ou desconforto",
-    "discomfortPlaceholder": "ex.: pontada leve no tendão de Aquiles direito após o km 8…",
+    "title": "Sessão de Treino • Kinesis"
+  },
+  "session": {
+    "title": "Sessão de Treino",
+    "loading": "Carregando treino…",
+    "plannedHeading": "Treino planejado",
+    "fieldTipo": "Tipo",
+    "fieldTreino": "Treino",
+    "fieldDetalhes": "Detalhes",
+    "fieldFcAlvo": "FC alvo",
+    "fieldRpe": "RPE alvo",
+    "fieldTenis": "Tênis",
+    "feedbackHeading": "Seu feedback",
+    "realizedRpeLabel": "RPE realizado (1 a 5)",
     "freeFeedbackLabel": "Feedback livre",
-    "freeFeedbackPlaceholder": "Como foi o treino? Sono, clima, sensações gerais…",
-    "dropTitleHtml": "Arraste seu arquivo <strong>.FIT</strong> aqui",
-    "dropSub": "ou clique para selecionar do computador",
-    "dropReady": "Pronto: {name}",
-    "dropReplace": "Clique ou arraste outro arquivo para substituir",
-    "ariaDropzone": "Selecionar arquivo .FIT",
-    "generate": "Gerar Prompt",
-    "generating": "Processando...",
-    "statusProcessing": "Processando “{name}”…",
-    "statusSuccess": "“{name}” processado com sucesso.",
-    "statusFailed": "Falha ao processar o arquivo.",
-    "errorNotFit": "Selecione um arquivo .FIT válido.",
-    "promptHeading": "Prompt para o AI Coach — revise antes de copiar",
-    "copyPrompt": "Copiar Prompt",
+    "freeFeedbackPlaceholder": "Como foi o treino? Sono, clima, sensações gerais...",
+    "fieldSmartwatch": "Smartwatch utilizado?",
+    "smartwatchYes": "Sim",
+    "smartwatchNo": "Não",
+    "fieldShoeUsed": "Tênis utilizado",
+    "shoeUsedPlaceholder": "ex.: Nimbus 26",
+    "fieldHrSource": "Fonte da FC",
+    "hrSourceStrap": "Cinta peitoral",
+    "hrSourceOptical": "Sensor óptico do relógio",
+    "hrSourceNone": "Sem FC",
+    "fitDragText": "Arraste seu arquivo <strong>.FIT</strong> aqui",
+    "fitClickText": "ou clique para selecionar do computador",
+    "fitSelected": "Arquivo selecionado: ",
+    "fieldWeather": "Temperatura e clima",
+    "weatherPlaceholder": "ex.: 22°C, nublado, vento leve",
+    "fieldTerrain": "Terreno/percurso",
+    "fieldBreathing": "Respiração",
+    "fieldMuscle": "Sensação muscular",
+    "fieldEnergy": "Energia ao terminar",
+    "generatePrompt": "Gerar Prompt de Análise",
     "copied": "Copiado!",
-    "metaSport": "Esporte",
-    "metaStart": "Início",
-    "metaEnd": "Fim",
-    "metaDuration": "Duração",
-    "metaDistance": "Distância",
-    "metaLaps": "Laps"
+    "save": "Salvar e voltar ao calendário",
+    "saving": "Salvando…",
+    "errors": {
+      "load": "Não conseguimos carregar este treino.",
+      "notFound": "Treino não encontrado.",
+      "rpe": "O RPE realizado deve ser um número inteiro entre 1 e 5.",
+      "save": "Não conseguimos salvar seu feedback. Tente novamente."
+    }
+  },
+  "terrain": {
+    "asphalt": "Asfalto",
+    "trail": "Terra/Trilha",
+    "track": "Pista",
+    "treadmill": "Esteira",
+    "mixed": "Misto"
+  },
+  "breathing": {
+    "controlled": "Controlada",
+    "panting": "Ofegante",
+    "heavy": "Muito Ofegante"
+  },
+  "muscle": {
+    "light": "Leve",
+    "normal": "Normal",
+    "heavy": "Pesada",
+    "fatigued": "Fadigada"
+  },
+  "energy": {
+    "surplus": "Sobrava energia",
+    "limit": "No limite",
+    "exhausted": "Esgotado"
+  },
+  "common": {
+    "yes": "Sim",
+    "no": "Não"
+  },
+  "feedback": {
+    "hasPainLabel": "Houve dor ou desconforto?",
+    "painDescriptionLabel": "Descrição da dor",
+    "painPlaceholder": "ex.: pontada leve no tendão de Aquiles direito após o km 8...",
+    "noPainReported": "Nenhuma / Sem dor relatada",
+    "yesWithoutDescription": "Sim (sem descrição adicional)"
   },
   "prompt": {
     "intro1": "Analise o treino de corrida abaixo considerando todo o histórico do meu treinamento, minha evolução recente, os treinos anteriores, o planejamento atual e minhas provas-alvo.",
