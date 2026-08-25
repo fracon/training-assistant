@@ -26,7 +26,10 @@
     "resultTitle": "Generated prompt",
     "resultPlaceholder": "Fill in the form and generate your prompt.",
     "copy": "Copy to Clipboard",
-    "copied": "Copied!"
+    "copied": "Copied!",
+    "shoesSectionTitle": "SHOES AVAILABLE FOR ROTATION",
+    "shoesFallback": "No specific shoes registered; use standard rotation.",
+    "shoesTarget": "Target: {target} km"
   },
   "calendar": {
     "title": "Workouts",

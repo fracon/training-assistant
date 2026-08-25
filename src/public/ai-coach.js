@@ -1,5 +1,6 @@
 import { initShell, getShellI18n, refreshIcons } from './shared/shell.js';
 import { translate, normalizeClientLanguage } from './shared/i18n.js';
+import { fetchShoes } from './shared/api.js';
 
 // Verbatim Portuguese briefing for the external AI Coach.
 // The wording below is a hard requirement — do not translate, rewrite
@@ -25,6 +26,8 @@ DATA DA SEMANA
 
 A semana a ser planejada começa em:
 {{DATA_DA_SEGUNDA}}
+
+{{SHOES_BLOCK}}
 
 DISPONIBILIDADE
 
@@ -103,6 +106,8 @@ WEEK DATE
 
 The week to be planned starts on:
 {{DATA_DA_SEGUNDA}}
+
+{{SHOES_BLOCK}}
 
 AVAILABILITY
 
@@ -244,7 +249,34 @@ function replaceAll(text, token, value) {
   return text.split(token).join(value);
 }
 
-export function buildPrompt({ targetDate, disponibilidade = {}, contexto = '', lang = 'pt-BR' }) {
+// Formats a shoe list block for the AI prompt. Each active shoe gets a
+// bullet line; when no active shoes exist a single fallback line is
+// returned instead. The block always includes the section title from the
+// locale messages.
+export function formatShoesBlock(shoes = [], messages = {}) {
+  const title = messages.aiCoach?.shoesSectionTitle || 'SHOES AVAILABLE FOR ROTATION';
+  const fallback =
+    messages.aiCoach?.shoesFallback || 'No specific shoes registered; use standard rotation.';
+  const targetLabel = messages.aiCoach?.shoesTarget || 'Target: {target} km';
+
+  const activeShoes = shoes.filter((s) => s.status === 'active');
+  let lines;
+  if (activeShoes.length === 0) {
+    lines = [`- ${fallback}`];
+  } else {
+    lines = activeShoes.map((s) => {
+      let line = `- ${s.brand} ${s.model} (Current mileage: ${Number(s.mileage ?? 0)} km`;
+      if (s.target_mileage) {
+        line += `, ${targetLabel.replace('{target}', Number(s.target_mileage))}`;
+      }
+      line += ')';
+      return line;
+    });
+  }
+  return `${title}\n\n${lines.join('\n')}`;
+}
+
+export function buildPrompt({ targetDate, disponibilidade = {}, contexto = '', lang = 'pt-BR', shoes = [], messages = {} }) {
   const templateLang = resolveTemplateLang(lang);
   const template = TEMPLATE_BY_LANG[templateLang];
   let prompt = replaceAll(
@@ -257,7 +289,9 @@ export function buildPrompt({ targetDate, disponibilidade = {}, contexto = '', l
     prompt = replaceAll(prompt, PLACEHOLDERS[day], String(availability[day] ?? '').trim());
   }
   const notes = String(contexto).trim();
-  return replaceAll(prompt, '{{CONTEXTO_OPCIONAL}}', notes === '' ? '-' : notes);
+  prompt = replaceAll(prompt, '{{CONTEXTO_OPCIONAL}}', notes === '' ? '-' : notes);
+  prompt = replaceAll(prompt, '{{SHOES_BLOCK}}', formatShoesBlock(shoes, messages));
+  return prompt;
 }
 
 // Copies through the async Clipboard API. Returns true on success so the
@@ -354,8 +388,9 @@ function setupAiCoachPage() {
     copiedTimer = setTimeout(() => setCopyFeedback(false), COPY_FEEDBACK_MS);
   }
 
-  function handleGenerate(event) {
+  async function handleGenerate(event) {
     event.preventDefault();
+    const generateBtn = document.getElementById('generateBtn');
     const disponibilidade = {};
     for (const [day, inputId] of Object.entries(DAY_INPUT_IDS)) {
       const input = document.getElementById(inputId);
@@ -363,11 +398,23 @@ function setupAiCoachPage() {
     }
     const targetDate =
       parseInputDate(targetDateInput.value) ?? nextMonday();
+
+    generateBtn.disabled = true;
+    let shoes = [];
+    try {
+      shoes = await fetchShoes();
+    } catch {
+      // proceed without shoes — the block will show the fallback text
+    }
+    generateBtn.disabled = false;
+
     promptOutput.textContent = buildPrompt({
       targetDate,
       disponibilidade,
       contexto: optionalContextInput.value,
       lang: i18n.language,
+      shoes,
+      messages: i18n.messages,
     });
     resultSection.classList.remove('hidden');
     resultPlaceholder.classList.add('hidden');

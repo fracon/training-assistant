@@ -26,7 +26,10 @@
     "resultTitle": "Prompt gerado",
     "resultPlaceholder": "Preencha o formulário e gere o seu prompt.",
     "copy": "Copiar para a área de transferência",
-    "copied": "Copiado!"
+    "copied": "Copiado!",
+    "shoesSectionTitle": "TÊNIS DISPONÍVEIS PARA ROTAÇÃO",
+    "shoesFallback": "Nenhum tênis específico cadastrado; use a rotação padrão.",
+    "shoesTarget": "Alvo: {target} km"
   },
   "calendar": {
     "title": "Treinos",
