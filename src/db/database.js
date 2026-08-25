@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS workouts (
 CREATE TABLE IF NOT EXISTS trainings (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  training_cycle_id TEXT REFERENCES training_cycles(id) ON DELETE SET NULL,
   dia         TEXT NOT NULL,
   periodo     TEXT,
   tipo        TEXT NOT NULL,
@@ -75,6 +76,23 @@ CREATE TABLE IF NOT EXISTS shoes (
   model          TEXT    NOT NULL,
   mileage        REAL    NOT NULL DEFAULT 0.0,
   target_mileage REAL,
+  status         TEXT    NOT NULL DEFAULT 'active',
+  created_at     TEXT    NOT NULL DEFAULT (datetime('now')),
+  updated_at     TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS training_cycles (
+  id             TEXT    PRIMARY KEY,
+  user_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  objective      TEXT,
+  target_date    TEXT,
+  distance       TEXT,
+  run_before     TEXT,
+  run_count      INTEGER,
+  primary_goal   TEXT,
+  secondary_goal TEXT,
+  start_date     TEXT,
+  other_events   TEXT,
   status         TEXT    NOT NULL DEFAULT 'active',
   created_at     TEXT    NOT NULL DEFAULT (datetime('now')),
   updated_at     TEXT    NOT NULL DEFAULT (datetime('now'))
@@ -129,6 +147,23 @@ function migrateDatabase(db) {
     if (!trainingColumns.some((column) => column.name === name)) {
       db.exec(`ALTER TABLE trainings ADD COLUMN ${name} ${type}`);
     }
+  }
+
+  // Migration: wipe legacy workouts and add training_cycle_id FK.
+  const workoutColumns = db.pragma('table_info(workouts)');
+  if (workoutColumns.length > 0 && !workoutColumns.some((column) => column.name === 'training_cycle_id')) {
+    db.exec('DELETE FROM workouts');
+    db.exec(
+      "ALTER TABLE workouts ADD COLUMN training_cycle_id TEXT REFERENCES training_cycles(id) ON DELETE SET NULL"
+    );
+  }
+
+  const trainingsColumns = db.pragma('table_info(trainings)');
+  if (trainingsColumns.length > 0 && !trainingsColumns.some((column) => column.name === 'training_cycle_id')) {
+    db.exec('DELETE FROM trainings');
+    db.exec(
+      "ALTER TABLE trainings ADD COLUMN training_cycle_id TEXT REFERENCES training_cycles(id) ON DELETE SET NULL"
+    );
   }
 }
 

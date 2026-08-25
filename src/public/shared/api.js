@@ -138,3 +138,37 @@ export function updateShoe(id, body) {
 export function deleteShoe(id) {
   return requestJson(`/api/shoes/${id}`, null, 'DELETE');
 }
+
+export async function fetchCycles() {
+  try {
+    const response = await fetch('/api/cycles', { headers: { accept: 'application/json' } });
+    if (!response.ok) return [];
+    const payload = await response.json();
+    return Array.isArray(payload.cycles) ? payload.cycles : [];
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchActiveCycle() {
+  try {
+    const response = await fetch('/api/cycles/active', { headers: { accept: 'application/json' } });
+    if (!response.ok) return null;
+    const payload = await response.json();
+    return payload.cycle ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function createCycle(body) {
+  return requestJson('/api/cycles', body);
+}
+
+export function updateCycle(id, body) {
+  return requestJson(`/api/cycles/${id}`, body, 'PUT');
+}
+
+export function deleteCycle(id) {
+  return requestJson(`/api/cycles/${id}`, null, 'DELETE');
+}

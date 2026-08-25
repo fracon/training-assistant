@@ -69,11 +69,13 @@
   "shell": {
     "nav": {
       "home": "Início",
+      "cycles": "Ciclos de Treino",
       "requestWorkouts": "Solicitar Treinos",
       "workouts": "Treinos",
       "shoes": "Tênis"
     },
     "soon": "Em breve",
+    "noCycle": "Nenhum ciclo ativo",
     "collapse": "Recolher menu",
     "expand": "Expandir menu",
     "navLabel": "Navegação principal",
@@ -256,6 +258,37 @@
       "load": "Não foi possível carregar os tênis.",
       "save": "Não foi possível salvar o tênis. Tente novamente.",
       "delete": "Não foi possível excluir o tênis. Tente novamente."
+    }
+  },
+  "cycles": {
+    "title": "Ciclos de Treino",
+    "pageTitle": "Ciclos de Treino • Kinesis",
+    "addCycle": "Novo Ciclo",
+    "empty": "Nenhum ciclo de treino ainda.",
+    "cardTitle": "{objective}",
+    "objective": "Objetivo",
+    "objectivePlaceholder": "ex.: Maratona, Meia Maratona",
+    "targetDate": "Data alvo",
+    "distance": "Distância",
+    "runBefore": "Já correu essa distância?",
+    "runCount": "Quantas vezes",
+    "startDate": "Data de início",
+    "primaryGoal": "Meta principal",
+    "secondaryGoal": "Meta secundária",
+    "otherEvents": "Outros eventos durante o ciclo",
+    "disabledTooltip": "Finalize ou cancele seu ciclo ativo primeiro.",
+    "edit": "Editar",
+    "complete": "Concluir",
+    "cancel": "Cancelar",
+    "generatePrompt": "Gerar prompt",
+    "cancelForm": "Cancelar",
+    "saveCycle": "Salvar Ciclo",
+    "promptTitle": "Prompt Macrocycle – Coach IA",
+    "copyPrompt": "Copiar para a área de transferência",
+    "status": {
+      "active": "Ativo",
+      "completed": "Concluído",
+      "cancelled": "Cancelado"
     }
   },
   "feedback": {

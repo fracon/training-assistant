@@ -69,11 +69,13 @@
   "shell": {
     "nav": {
       "home": "Home",
+      "cycles": "Training Cycles",
       "requestWorkouts": "Request Workouts",
       "workouts": "Workouts",
       "shoes": "Shoes"
     },
     "soon": "Soon",
+    "noCycle": "No active cycle",
     "collapse": "Collapse sidebar",
     "expand": "Expand sidebar",
     "navLabel": "Main navigation",
@@ -256,6 +258,37 @@
       "load": "Could not load shoes.",
       "save": "Could not save shoe. Please try again.",
       "delete": "Could not delete shoe. Please try again."
+    }
+  },
+  "cycles": {
+    "title": "Training Cycles",
+    "pageTitle": "Training Cycles • Kinesis",
+    "addCycle": "Add Cycle",
+    "empty": "No training cycles yet.",
+    "cardTitle": "{objective}",
+    "objective": "Objective",
+    "objectivePlaceholder": "e.g.: Marathon, Half Marathon",
+    "targetDate": "Target date",
+    "distance": "Distance",
+    "runBefore": "Run this distance before?",
+    "runCount": "How many times",
+    "startDate": "Start date",
+    "primaryGoal": "Primary goal",
+    "secondaryGoal": "Secondary goal",
+    "otherEvents": "Other events during cycle",
+    "disabledTooltip": "Complete or cancel your active cycle first.",
+    "edit": "Edit",
+    "complete": "Complete",
+    "cancel": "Cancel",
+    "generatePrompt": "Generate prompt",
+    "cancelForm": "Cancel",
+    "saveCycle": "Save Cycle",
+    "promptTitle": "AI Coach Macrocycle Prompt",
+    "copyPrompt": "Copy to Clipboard",
+    "status": {
+      "active": "Active",
+      "completed": "Completed",
+      "cancelled": "Cancelled"
     }
   },
   "feedback": {

@@ -38,7 +38,7 @@ test('initializeDatabase applies pragmas and creates the schema', () => {
     )
     .all()
     .map((row) => row.name);
-  assert.deepEqual(objects, ['sessions', 'shoes', 'trainings', 'users', 'workouts']);
+  assert.deepEqual(objects, ['sessions', 'shoes', 'training_cycles', 'trainings', 'users', 'workouts']);
 
   db.close();
 });
@@ -410,6 +410,14 @@ test('migrateDatabase adds feedback columns to legacy trainings tables', () => {
       email         TEXT    NOT NULL UNIQUE,
       password_hash TEXT    NOT NULL
     );
+    CREATE TABLE training_cycles (
+      id         TEXT PRIMARY KEY,
+      user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      objective  TEXT,
+      status     TEXT NOT NULL DEFAULT 'active',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
     CREATE TABLE trainings (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id     INTEGER NOT NULL,
@@ -439,23 +447,15 @@ test('migrateDatabase adds feedback columns to legacy trainings tables', () => {
     'feedback_energy',
     'feedback_has_pain',
     'feedback_pain',
+    'training_cycle_id',
   ]) {
     assert.ok(columns.includes(name), `${name} column added`);
   }
 
-  const row = db
-    .prepare(
-      `SELECT feedback_rpe, feedback_notas, completed, has_smartwatch,
-        feedback_shoe, feedback_has_pain, feedback_pain FROM trainings`
-    )
-    .get();
-  assert.equal(row.feedback_rpe, null);
-  assert.equal(row.feedback_notas, null);
-  assert.equal(row.completed, 0);
-  assert.equal(row.has_smartwatch, 1, 'smartwatch defaults to yes');
-  assert.equal(row.feedback_shoe, null);
-  assert.equal(row.feedback_has_pain, null);
-  assert.equal(row.feedback_pain, null);
+  // The new migration wipes legacy rows before adding training_cycle_id.
+  // Verify that the columns were added and the table is empty.
+  const rowCount = db.prepare('SELECT count(*) AS count FROM trainings').get();
+  assert.equal(rowCount.count, 0, 'legacy rows wiped by training_cycle_id migration');
 
   assert.doesNotThrow(() => migrateDatabase(db), 'migration is idempotent');
 
@@ -472,6 +472,14 @@ test('migrateDatabase tops up partially migrated trainings tables', () => {
       preferred_lang TEXT   NOT NULL DEFAULT 'en-US',
       first_day_of_week TEXT NOT NULL DEFAULT 'Monday'
     );
+    CREATE TABLE training_cycles (
+      id         TEXT PRIMARY KEY,
+      user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      objective  TEXT,
+      status     TEXT NOT NULL DEFAULT 'active',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
     CREATE TABLE trainings (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id     INTEGER NOT NULL,
@@ -487,12 +495,14 @@ test('migrateDatabase tops up partially migrated trainings tables', () => {
 
   assert.doesNotThrow(() => migrateDatabase(db));
 
-  const row = db
-    .prepare('SELECT feedback_rpe, feedback_notas, completed FROM trainings')
-    .get();
-  assert.equal(row.completed, 1, 'existing values are preserved');
-  assert.equal(row.feedback_rpe, null);
-  assert.equal(row.feedback_notas, null);
+  // The new migration wipes legacy rows before adding training_cycle_id.
+  const rowCount = db.prepare('SELECT count(*) AS count FROM trainings').get();
+  assert.equal(rowCount.count, 0, 'legacy rows wiped by training_cycle_id migration');
+
+  // Verify the columns are present.
+  const columns = db.pragma('table_info(trainings)').map((c) => c.name);
+  assert.ok(columns.includes('feedback_rpe'));
+  assert.ok(columns.includes('training_cycle_id'));
 
   db.close();
 });

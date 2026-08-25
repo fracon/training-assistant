@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title data-i18n="cycles.pageTitle">Training Cycles • Kinesis</title>
+  <link rel="stylesheet" href="shared/shell.css">
+  <link rel="stylesheet" href="cycles.css">
+</head>
+<body>
+  <main id="appView">
+    <section class="cycles-page">
+      <header class="cycles-header">
+        <h1 data-i18n="cycles.title">Training Cycles</h1>
+        <button id="addCycleBtn" class="btn-primary" type="button">
+          <i data-lucide="plus"></i>
+          <span data-i18n="cycles.addCycle">Add Cycle</span>
+        </button>
+      </header>
+
+      <div id="cycleList" class="cycle-list"></div>
+
+      <div id="promptModal" class="prompt-modal hidden">
+        <div class="prompt-modal-backdrop"></div>
+        <div class="prompt-modal-card">
+          <div class="prompt-modal-header">
+            <h2 data-i18n="cycles.promptTitle">AI Coach Macrocycle Prompt</h2>
+            <button id="promptCloseBtn" class="icon-btn" type="button" aria-label="Close">
+              <i data-lucide="x"></i>
+            </button>
+          </div>
+          <pre id="promptOutput" class="prompt-output"></pre>
+          <div class="prompt-modal-actions">
+            <button id="promptCopyBtn" class="btn-secondary" type="button">
+              <i data-lucide="copy"></i>
+              <span data-i18n="cycles.copyPrompt">Copy to Clipboard</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="shared/shell.js" type="module"></script>
+  <script src="cycles.js" type="module"></script>
+</body>
+</html>

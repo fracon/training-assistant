@@ -97,6 +97,8 @@ async function setup({ maxFileSizeBytes } = {}) {
   await app.listen({ port: 0, host: '127.0.0.1' });
   const base = `http://127.0.0.1:${app.server.address().port}`;
 
+  await createActiveCycle(app, cookiePair);
+
   const upload = async (buffer, filename = 'planilha.xlsx', cookies = cookiePair) => {
     const boundary = `----trainingassistant${Date.now()}${Math.random().toString(16).slice(2)}`;
     const body = multipartBody(boundary, filename, buffer ?? null);
@@ -134,6 +136,15 @@ async function setup({ maxFileSizeBytes } = {}) {
   return { db, app, cookiePair, upload, getTrainings };
 }
 
+async function createActiveCycle(app, cookiePair) {
+  await app.inject({
+    method: 'POST',
+    url: '/api/cycles',
+    headers: { cookie: cookiePair },
+    payload: { objective: 'Test Marathon', status: 'active' },
+  });
+}
+
 test('spreadsheet import requires an authenticated session', async () => {
   const { app, upload } = await setup();
 
@@ -142,6 +153,41 @@ test('spreadsheet import requires an authenticated session', async () => {
   assert.equal(anonymous.status, 401);
 
   await app.close();
+});
+
+test('import rejects requests without an active training cycle', async () => {
+  const db = createDatabase({ filename: ':memory:' });
+  const app = await buildServer({ db, sessionCookieSecure: false });
+
+  await app.inject({ method: 'POST', url: '/api/auth/register', payload: REGISTER_PAYLOAD });
+  const login = await app.inject({
+    method: 'POST',
+    url: '/api/auth/login',
+    payload: { email: REGISTER_PAYLOAD.email, password: REGISTER_PAYLOAD.password },
+  });
+  const cookie = [].concat(login.headers['set-cookie'] ?? [])[0].split(';')[0];
+
+  await app.listen({ port: 0, host: '127.0.0.1' });
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+
+  const buffer = await spreadsheetBuffer(HEADERS, [['23/08/2026', '', 'Corrida']]);
+  const boundary = `----ta${Date.now()}`;
+  const body = multipartBody(boundary, 'planilha.xlsx', buffer);
+  const response = await httpRequest(base, '/api/calendar/import', {
+    method: 'POST',
+    headers: {
+      cookie,
+      connection: 'close',
+      'content-type': `multipart/form-data; boundary=${boundary}`,
+      'content-length': String(body.length),
+    },
+    body,
+  });
+  assert.equal(response.status, 400);
+  assert.deepEqual(JSON.parse(response.text), { error: 'No active training cycle. Create one first.' });
+
+  await app.close();
+  db.close();
 });
 
 test('import rejects requests without a file part', async () => {
@@ -298,6 +344,8 @@ test('import expects multipart requests', async () => {
     payload: { email: REGISTER_PAYLOAD.email, password: REGISTER_PAYLOAD.password },
   });
   const cookiePair = [].concat(login.headers['set-cookie'] ?? [])[0].split(';')[0];
+
+  await createActiveCycle(app, cookiePair);
 
   const response = await app.inject({
     method: 'POST',

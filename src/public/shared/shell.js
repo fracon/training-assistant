@@ -6,14 +6,18 @@ import {
 } from './i18n.js';
 
 const SIDEBAR_STORAGE_KEY = 'training-assistant:sidebar-collapsed';
+const CYCLE_DEPENDENT_ITEMS = ['ai-coach', 'calendar'];
+const CYCLE_REDIRECT_TO = '/cycles.html';
 
 export const FOOTER_ELEMENT_TAG = 'footer';
 export const FOOTER_CLASS_NAME = 'bottom-bar';
 export const VERSION_ENDPOINT = '/api/version';
 export const VERSION_FALLBACK_LABEL = 'v-.-.-';
 
-// Sidebar order: Home (coming soon) first, then request workouts, then
-// review/log workouts. Ids and hrefs stay stable for route matching.
+// Sidebar order: Home (coming soon) first, then cycles, then request
+// workouts, then review/log workouts. Ids and hrefs stay stable for route
+// matching. Items in CYCLE_DEPENDENT_ITEMS are dynamically disabled when
+// no active training cycle exists.
 const NAV_ITEMS = [
   {
     id: 'dashboard',
@@ -21,6 +25,13 @@ const NAV_ITEMS = [
     labelKey: 'shell.nav.home',
     href: null,
     disabled: true,
+  },
+  {
+    id: 'cycles',
+    icon: 'repeat',
+    labelKey: 'shell.nav.cycles',
+    href: '/cycles.html',
+    disabled: false,
   },
   {
     id: 'ai-coach',
@@ -344,6 +355,22 @@ export async function initShell({ active } = {}) {
   setUserBadge(user);
   wireLogout();
 
+  // Check for an active training cycle and disable dependent items.
+  let hasActiveCycle = false;
+  try {
+    const resp = await fetch('/api/cycles/active', { headers: { accept: 'application/json' } });
+    if (resp.ok) {
+      const data = await resp.json();
+      hasActiveCycle = !!data.cycle;
+    }
+  } catch {
+    /* offline or unauthenticated — treat as no cycle */
+  }
+
+  if (!hasActiveCycle) {
+    applyCycleGuard(shellRoot);
+  }
+
   // The footer only carries the app version; resolve it without blocking
   // the shell mount and degrade gracefully when unreachable.
   const versionLabel = shellRoot.querySelector('#appVersion');
@@ -363,4 +390,22 @@ export async function initShell({ active } = {}) {
   document.body.classList.remove('shell-loading');
   document.body.classList.add('shell-mounted');
   return user;
+}
+
+export function applyCycleGuard(shellRoot) {
+  for (const navEntry of shellRoot.querySelectorAll('.nav-item')) {
+    if (CYCLE_DEPENDENT_ITEMS.includes(navEntry.dataset.navId)) {
+      navEntry.classList.add('disabled');
+      navEntry.setAttribute('aria-disabled', 'true');
+      navEntry.removeAttribute('href');
+      const chip = el('span', 'soon-chip');
+      chip.setAttribute('data-i18n', 'shell.noCycle');
+      navEntry.appendChild(chip);
+      navEntry.addEventListener('click', (e) => {
+        e.preventDefault();
+        window.location.href = CYCLE_REDIRECT_TO;
+      });
+    }
+  }
+  refreshIcons();
 }

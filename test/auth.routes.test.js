@@ -256,7 +256,7 @@ test('anonymous visitors hitting protected paths are redirected to the login pag
   const db = createDatabase({ filename: ':memory:' });
   const app = await buildServer({ db });
 
-  for (const url of ['/', '/training-result.html']) {
+  for (const url of ['/', '/training-result.html', '/cycles.html']) {
     const response = await app.inject({ method: 'GET', url });
     assert.equal(response.statusCode, 302, url);
     assert.equal(response.headers.location, '/login.html', url);
@@ -284,6 +284,26 @@ test('GET /training-result.html serves the tool to authenticated users', async (
   assert.doesNotMatch(response.body, /id="logoutBtn"/);
   assert.match(response.body, /shared\/shell\.css/);
   assert.match(response.body, /unpkg\.com\/lucide/);
+
+  await app.close();
+  db.close();
+});
+
+test('GET /cycles.html serves the cycles page to authenticated users', async () => {
+  const db = createDatabase({ filename: ':memory:' });
+  const app = await buildServer({ db });
+  const { cookiePair } = await registerAndLogin(app);
+
+  const response = await app.inject({
+    method: 'GET',
+    url: '/cycles.html',
+    headers: { cookie: cookiePair },
+  });
+
+  assert.equal(response.statusCode, 200);
+  assert.match(response.headers['content-type'], /text\/html/);
+  assert.match(response.body, /id="cycleList"/);
+  assert.match(response.body, /shared\/shell\.css/);
 
   await app.close();
   db.close();
