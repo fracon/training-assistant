@@ -125,6 +125,13 @@ test('shoes.css uses smooth hover animation on primary buttons via theme.css', (
   );
 });
 
+test('shoes.css overrides .btn-danger pill styles for the delete icon button', () => {
+  const css = readFileSync(join(publicDir, 'shoes.css'), 'utf8');
+  assert.match(css, /\.btn-icon\.btn-danger \{[^}]*padding:\s*0/);
+  assert.match(css, /\.btn-icon\.btn-danger \{[^}]*border-radius:\s*8px/);
+  assert.match(css, /\.btn-icon\.btn-danger \{[^}]*background:\s*transparent/);
+});
+
 /* ── validateShoeForm ── */
 
 test('validateShoeForm accepts valid input', () => {
@@ -328,6 +335,7 @@ test('shoes.js handles retire, reactivate, and delete actions', () => {
   assert.match(js, /data-action="edit"/);
   assert.match(js, /STATUS_ACTIVE = 'active'/);
   assert.match(js, /STATUS_RETIRED = 'retired'/);
+  assert.match(js, /data-lucide="trash-2"/);
 });
 
 test('shoes.js action handlers use i18n.messages not a stale closure', () => {
