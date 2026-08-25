@@ -11,8 +11,10 @@ function t(messages, key) {
 
 function showToast(messages, messageKey, duration = 2500) {
   const toast = document.getElementById('toast');
-  toast.textContent = t(messages, messageKey);
+  const textEl = toast.querySelector('.toast-text');
+  textEl.textContent = t(messages, messageKey);
   toast.classList.add('visible');
+  if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [toast] });
   setTimeout(() => toast.classList.remove('visible'), duration);
 }
 
@@ -211,7 +213,7 @@ async function handleSubmit(shoes, messages) {
     shoes.length = 0;
     shoes.push(...updated);
     renderList(shoes, messages);
-    showToast(messages, mode === 'add' ? 'shoes.addNew' : 'shoes.edit');
+    showToast(messages, mode === 'add' ? 'shoes.success.add' : 'shoes.success.edit');
   } catch {
     showFormError('shoes.errors.save', messages);
   } finally {
@@ -249,7 +251,7 @@ async function handleAction(action, id, shoes, messages) {
       shoes.length = 0;
       shoes.push(...updated);
       renderList(shoes, messages);
-      showToast(messages, 'shoes.delete');
+      showToast(messages, 'shoes.success.delete');
     } catch {
       showToast(messages, 'shoes.errors.delete');
     }

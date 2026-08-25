@@ -51,6 +51,22 @@ test('shoes.html wires the shell, lucide and the full page', () => {
   assert.match(html, /id="toast"/);
 });
 
+test('shoes.html toast element supports icon and text structure', () => {
+  const html = readFileSync(join(publicDir, 'shoes.html'), 'utf8');
+  assert.match(html, /id="toast" class="toast" role="status" aria-live="polite"/);
+  assert.match(html, /class="toast-icon"/);
+  assert.match(html, /data-lucide="check-circle"/);
+  assert.match(html, /class="toast-text"/);
+});
+
+test('shoes.css toast slides in from the right at the top', () => {
+  const theme = readFileSync(join(publicDir, 'shared', 'theme.css'), 'utf8');
+  assert.match(theme, /\.toast \{[^}]*top:\s*1\.5rem/);
+  assert.match(theme, /\.toast \{[^}]*right:\s*1\.5rem/);
+  assert.match(theme, /\.toast \{[^}]*z-index:\s*10000/);
+  assert.match(theme, /\.toast\.visible \{[^}]*transform:\s*translateX\(0\)/);
+  assert.match(theme, /\.toast-icon svg \{[^}]*width:\s*18px/);
+});
 test('shoes.html form fields use earthy surface styling from theme.css', () => {
   const theme = readFileSync(join(publicDir, 'shared', 'theme.css'), 'utf8');
   const shoesCss = readFileSync(join(publicDir, 'shoes.css'), 'utf8');
@@ -245,6 +261,9 @@ test('locale files expose every shoes string in both languages', () => {
     assert.equal(typeof messages.shoes.save, 'string');
     assert.equal(typeof messages.shoes.saving, 'string');
     assert.equal(typeof messages.shoes.cancel, 'string');
+    assert.equal(typeof messages.shoes.success.add, 'string');
+    assert.equal(typeof messages.shoes.success.edit, 'string');
+    assert.equal(typeof messages.shoes.success.delete, 'string');
     assert.equal(typeof messages.shoes.errors.brandRequired, 'string');
     assert.equal(typeof messages.shoes.errors.modelRequired, 'string');
     assert.equal(typeof messages.shoes.errors.mileageInvalid, 'string');
@@ -348,6 +367,17 @@ test('shoes.js shows form errors using dynamic shoes.errors.* keys', () => {
   assert.match(js, /showFormError\('shoes\.errors\.save', messages\)/);
   assert.match(js, /showToast\(messages, 'shoes\.errors\.delete'\)/);
   assert.match(js, /showToast\(i18n\.messages, 'shoes\.errors\.load'\)/);
+});
+
+test('shoes.js uses shoes.success.* keys for success toasts', () => {
+  const js = readFileSync(join(publicDir, 'shoes.js'), 'utf8');
+  assert.match(js, /showToast\(messages, mode === 'add' \? 'shoes\.success\.add' : 'shoes\.success\.edit'\)/);
+  assert.match(js, /showToast\(messages, 'shoes\.success\.delete'\)/);
+});
+
+test('shoes.js renders toast icon via lucide.createIcons', () => {
+  const js = readFileSync(join(publicDir, 'shoes.js'), 'utf8');
+  assert.match(js, /lucide\.createIcons\(\{ nodes: \[toast\] \}\)/);
 });
 
 test('shoes.js self-invokes initShoesPage when appView exists', () => {

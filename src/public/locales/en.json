@@ -231,6 +231,11 @@
     "save": "Save",
     "saving": "Saving…",
     "cancel": "Cancel",
+    "success": {
+      "add": "Shoe registered successfully!",
+      "edit": "Shoe updated successfully!",
+      "delete": "Shoe deleted successfully!"
+    },
     "errors": {
       "brandRequired": "Brand is required.",
       "modelRequired": "Model is required.",

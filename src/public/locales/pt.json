@@ -231,6 +231,11 @@
     "save": "Salvar",
     "saving": "Salvando…",
     "cancel": "Cancelar",
+    "success": {
+      "add": "Tênis cadastrado com sucesso!",
+      "edit": "Tênis atualizado com sucesso!",
+      "delete": "Tênis excluído com sucesso!"
+    },
     "errors": {
       "brandRequired": "Marca é obrigatória.",
       "modelRequired": "Modelo é obrigatório.",
