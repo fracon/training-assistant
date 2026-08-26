@@ -160,6 +160,12 @@ test('cycles.css card action buttons match shoes btn-icon pattern', () => {
   assert.match(css, /\.btn-icon\.btn-ok:hover \{[^}]*color:\s*var\(--ok\)/);
 });
 
+test('theme.css toast-error variant uses danger color', () => {
+  const theme = readFileSync(join(publicDir, 'shared', 'theme.css'), 'utf8');
+  assert.match(theme, /\.toast\.toast-error \{[^}]*border-left-color:\s*var\(--danger\)/);
+  assert.match(theme, /\.toast\.toast-error \.toast-icon \{[^}]*color:\s*var\(--danger\)/);
+});
+
 test('cycles.css prompt modal uses shared modal-backdrop pattern', () => {
   const css = readFileSync(join(publicDir, 'cycles.css'), 'utf8');
   assert.match(css, /\.prompt-modal-card \{/);
@@ -290,7 +296,7 @@ test('cycles.js validates objective before submit', () => {
 test('cycles.js shows form errors using cycles.errors.* keys', () => {
   const js = readFileSync(join(publicDir, 'cycles.js'), 'utf8');
   assert.match(js, /showFormError\('cycles\.errors\.save',\s*messages\)/);
-  assert.match(js, /showToast\(messages,\s*'cycles\.errors\.prompt'\)/);
+  assert.match(js, /showToast\(messages,\s*'cycles\.errors\.prompt',\s*\d+,\s*'error'\)/);
 });
 
 test('cycles.js uses cycles.success.* keys for success toasts', () => {
@@ -319,6 +325,8 @@ test('cycles.js handles prompt modal open and copy actions', () => {
   assert.match(js, /promptCloseBtn/);
   assert.match(js, /promptCopyBtn/);
   assert.match(js, /navigator\.clipboard\.writeText/);
+  assert.match(js, /cycles\.errors\.clipboard/);
+  assert.match(js, /selectNodeContents/);
 });
 
 test('cycles.js checks active cycle and disables add button when active exists', () => {
@@ -374,6 +382,7 @@ test('locale files expose every cycles string in both languages', () => {
     assert.equal(typeof messages.cycles.errors.objectiveRequired, 'string');
     assert.equal(typeof messages.cycles.errors.save, 'string');
     assert.equal(typeof messages.cycles.errors.prompt, 'string');
+    assert.equal(typeof messages.cycles.errors.clipboard, 'string');
     assert.equal(typeof messages.cycles.distances['1km'], 'string');
     assert.equal(typeof messages.cycles.distances['3km'], 'string');
     assert.equal(typeof messages.cycles.distances['5km'], 'string');

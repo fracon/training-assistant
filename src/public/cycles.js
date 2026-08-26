@@ -136,9 +136,13 @@ function hidePromptModal() {
   document.getElementById('promptModal').classList.add('hidden');
 }
 
-function showToast(messages, messageKey, duration = 2500) {
+function showToast(messages, messageKey, duration = 2500, type = 'success') {
   const toast = document.getElementById('toast');
+  const iconEl = toast.querySelector('.toast-icon');
   const textEl = toast.querySelector('.toast-text');
+  const iconName = type === 'error' ? 'x-circle' : 'check-circle';
+  iconEl.innerHTML = `<i data-lucide="${iconName}"></i>`;
+  toast.classList.toggle('toast-error', type === 'error');
   textEl.textContent = t(messages, messageKey);
   toast.classList.add('visible');
   if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [toast] });
@@ -240,7 +244,7 @@ async function handleAction(action, id, cycles, messages) {
       const result = await requestJson(`/api/cycles/${id}/prompt`, null, 'GET');
       if (result.prompt) showPromptModal(result.prompt, messages);
     } catch {
-      showToast(messages, 'cycles.errors.prompt');
+      showToast(messages, 'cycles.errors.prompt', 2500, 'error');
     }
   }
 }
@@ -253,7 +257,14 @@ async function handleCopyPrompt(messages) {
     const span = btn.querySelector('span');
     span.textContent = t(messages, 'aiCoach.copied');
     setTimeout(() => { span.textContent = t(messages, 'cycles.copyPrompt'); }, 2000);
-  } catch { /* clipboard unavailable */ }
+  } catch {
+    const range = document.createRange();
+    range.selectNodeContents(output);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    showToast(messages, 'cycles.errors.clipboard', 2500, 'error');
+  }
 }
 
 async function checkActiveCycle(addBtn, messages) {

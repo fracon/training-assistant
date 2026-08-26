@@ -463,6 +463,9 @@ input.input-error:focus-visible {
 
 .toast-icon svg { display: block; width: 18px; height: 18px; }
 
+.toast.toast-error { border-left-color: var(--danger); }
+.toast.toast-error .toast-icon { color: var(--danger); }
+
 /* ---------- Motion ---------- */
 
 #appView { animation: app-rise 0.28s ease both; }

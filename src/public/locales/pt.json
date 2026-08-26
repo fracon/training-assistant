@@ -314,7 +314,8 @@
     "errors": {
       "objectiveRequired": "Objetivo é obrigatório.",
       "save": "Não foi possível salvar o ciclo. Tente novamente.",
-      "prompt": "Não foi possível gerar o prompt. Tente novamente."
+      "prompt": "Não foi possível gerar o prompt. Tente novamente.",
+      "clipboard": "Área de transferência indisponível. Selecione o texto e pressione Ctrl+C."
     }
   },
   "feedback": {
