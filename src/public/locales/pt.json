@@ -301,6 +301,10 @@
     "promptTitle": "Prompt Macrocycle – Coach IA",
     "copyPrompt": "Copiar para a área de transferência",
     "deleteConfirm": "Tem certeza que deseja cancelar este ciclo?",
+    "confirm": {
+      "yes": "Sim, cancelar o ciclo",
+      "no": "Não, manter o ciclo"
+    },
     "status": {
       "active": "Ativo",
       "completed": "Concluído",

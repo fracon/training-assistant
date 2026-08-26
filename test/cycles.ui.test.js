@@ -283,8 +283,8 @@ test('cycles.js uses showConfirm for cancel action instead of native confirm', (
   assert.doesNotMatch(js, /window\.confirm/);
   assert.match(js, /await showConfirm/);
   assert.match(js, /cycles\.deleteConfirm/);
-  assert.match(js, /shell\.confirm\.yes/);
-  assert.match(js, /shell\.confirm\.no/);
+  assert.match(js, /cycles\.confirm\.yes/);
+  assert.match(js, /cycles\.confirm\.no/);
 });
 
 test('cycles.js validates objective before submit', () => {
@@ -417,6 +417,8 @@ test('locale files expose every cycles string in both languages', () => {
     assert.equal(typeof messages.cycles.promptTitle, 'string');
     assert.equal(typeof messages.cycles.copyPrompt, 'string');
     assert.equal(typeof messages.cycles.deleteConfirm, 'string');
+    assert.equal(typeof messages.cycles.confirm.yes, 'string');
+    assert.equal(typeof messages.cycles.confirm.no, 'string');
     assert.equal(typeof messages.cycles.status.active, 'string');
     assert.equal(typeof messages.cycles.status.completed, 'string');
     assert.equal(typeof messages.cycles.status.cancelled, 'string');

@@ -237,8 +237,8 @@ async function handleAction(action, id, cycles, messages) {
   if (action === 'cancel') {
     if (!(await showConfirm(
       t(messages, 'cycles.deleteConfirm'),
-      t(messages, 'shell.confirm.yes'),
-      t(messages, 'shell.confirm.no'),
+      t(messages, 'cycles.confirm.yes'),
+      t(messages, 'cycles.confirm.no'),
     ))) return;
     await updateCycle(id, { status: 'cancelled' });
     const updated = await fetchCycles();

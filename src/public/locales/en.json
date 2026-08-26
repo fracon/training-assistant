@@ -301,6 +301,10 @@
     "promptTitle": "AI Coach Macrocycle Prompt",
     "copyPrompt": "Copy to Clipboard",
     "deleteConfirm": "Are you sure you want to cancel this cycle?",
+    "confirm": {
+      "yes": "Yes, cancel cycle",
+      "no": "No, keep cycle"
+    },
     "status": {
       "active": "Active",
       "completed": "Completed",
