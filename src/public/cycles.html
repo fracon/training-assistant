@@ -11,35 +11,109 @@
   <main id="appView">
     <section class="cycles-page">
       <header class="cycles-header">
-        <h1 data-i18n="cycles.title">Training Cycles</h1>
-        <button id="addCycleBtn" class="btn-primary" type="button">
+        <div class="cycles-header-text">
+          <h1 data-i18n="cycles.title">Training Cycles</h1>
+          <p class="cycles-subtitle" data-i18n="cycles.subtitle">Manage your macrocycle and training blocks</p>
+        </div>
+        <button type="button" id="addCycleBtn" class="btn-primary">
           <i data-lucide="plus"></i>
           <span data-i18n="cycles.addCycle">Add Cycle</span>
         </button>
       </header>
 
-      <div id="cycleList" class="cycle-list"></div>
-
-      <div id="promptModal" class="prompt-modal hidden">
-        <div class="prompt-modal-backdrop"></div>
-        <div class="prompt-modal-card">
-          <div class="prompt-modal-header">
-            <h2 data-i18n="cycles.promptTitle">AI Coach Macrocycle Prompt</h2>
-            <button id="promptCloseBtn" class="icon-btn" type="button" aria-label="Close">
-              <i data-lucide="x"></i>
-            </button>
-          </div>
-          <pre id="promptOutput" class="prompt-output"></pre>
-          <div class="prompt-modal-actions">
-            <button id="promptCopyBtn" class="btn-secondary" type="button">
-              <i data-lucide="copy"></i>
-              <span data-i18n="cycles.copyPrompt">Copy to Clipboard</span>
-            </button>
-          </div>
-        </div>
+      <div id="cycleEmpty" class="cycles-empty hidden">
+        <i data-lucide="repeat"></i>
+        <p data-i18n="cycles.empty">No training cycles yet.</p>
+        <p class="cycles-empty-hint" data-i18n="cycles.emptyHint">Create your first training cycle to organize your macrocycle.</p>
       </div>
+
+      <div id="cycleList" class="cycle-list"></div>
     </section>
   </main>
+
+  <div id="cycleModal" class="modal-backdrop hidden">
+    <div class="modal-card" role="dialog" aria-modal="true">
+      <header class="modal-header">
+        <h2 id="cycleModalTitle" data-i18n="cycles.formTitleAdd">Add New Cycle</h2>
+        <button type="button" id="cycleModalCloseBtn" class="modal-close" aria-label="Close">
+          <i data-lucide="x"></i>
+        </button>
+      </header>
+      <form id="cycleForm" novalidate>
+        <div class="field">
+          <label for="cycleObjective" data-i18n="cycles.objective">Objective</label>
+          <input type="text" id="cycleObjective" data-i18n-placeholder="cycles.objectivePlaceholder" placeholder="e.g.: Marathon, Half Marathon" required>
+        </div>
+        <div class="field">
+          <label for="cycleTargetDate" data-i18n="cycles.targetDate">Target date</label>
+          <input type="date" id="cycleTargetDate">
+        </div>
+        <div class="field">
+          <label for="cycleDistance" data-i18n="cycles.distance">Distance</label>
+          <input type="text" id="cycleDistance" data-i18n-placeholder="cycles.distancePlaceholder" placeholder="e.g. Marathon, 10K">
+        </div>
+        <div class="field">
+          <label for="cycleRunBefore" data-i18n="cycles.runBefore">Run this distance before?</label>
+          <select id="cycleRunBefore">
+            <option value="">–</option>
+            <option value="Sim" data-i18n="common.yes">Yes</option>
+            <option value="Não" data-i18n="common.no">No</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="cycleRunCount" data-i18n="cycles.runCount">How many times</label>
+          <input type="number" id="cycleRunCount" min="0">
+        </div>
+        <div class="field">
+          <label for="cycleStartDate" data-i18n="cycles.startDate">Start date</label>
+          <input type="date" id="cycleStartDate">
+        </div>
+        <div class="field">
+          <label for="cyclePrimaryGoal" data-i18n="cycles.primaryGoal">Primary goal</label>
+          <input type="text" id="cyclePrimaryGoal">
+        </div>
+        <div class="field">
+          <label for="cycleSecondaryGoal" data-i18n="cycles.secondaryGoal">Secondary goal</label>
+          <input type="text" id="cycleSecondaryGoal">
+        </div>
+        <div class="field field-wide">
+          <label for="cycleOtherEvents" data-i18n="cycles.otherEvents">Other events during cycle</label>
+          <textarea id="cycleOtherEvents" rows="2" class="prompt-textarea"></textarea>
+        </div>
+        <div id="cycleFormError" class="form-error hidden"></div>
+        <div class="form-actions">
+          <button type="button" id="cycleCancelBtn" class="btn-secondary" data-i18n="cycles.cancelForm">Cancel</button>
+          <button type="submit" id="cycleSaveBtn" class="btn-primary">
+            <span id="cycleSaveLabel" data-i18n="cycles.saveCycle">Save Cycle</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="promptModal" class="modal-backdrop hidden">
+    <div class="modal-card prompt-modal-card" role="dialog" aria-modal="true">
+      <header class="modal-header">
+        <h2 data-i18n="cycles.promptTitle">AI Coach Macrocycle Prompt</h2>
+        <button type="button" id="promptCloseBtn" class="modal-close" aria-label="Close">
+          <i data-lucide="x"></i>
+        </button>
+      </header>
+      <pre id="promptOutput" class="prompt-output"></pre>
+      <div class="prompt-modal-actions">
+        <button id="promptCopyBtn" class="btn-secondary" type="button">
+          <i data-lucide="copy"></i>
+          <span data-i18n="cycles.copyPrompt">Copy to Clipboard</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite">
+    <span class="toast-icon"><i data-lucide="check-circle"></i></span>
+    <span class="toast-text"></span>
+  </div>
+
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="shared/shell.js" type="module"></script>
   <script src="cycles.js" type="module"></script>

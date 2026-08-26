@@ -263,13 +263,16 @@
   "cycles": {
     "title": "Training Cycles",
     "pageTitle": "Training Cycles • Kinesis",
+    "subtitle": "Manage your macrocycle and training blocks",
     "addCycle": "Add Cycle",
     "empty": "No training cycles yet.",
+    "emptyHint": "Create your first training cycle to organize your macrocycle.",
     "cardTitle": "{objective}",
     "objective": "Objective",
     "objectivePlaceholder": "e.g.: Marathon, Half Marathon",
     "targetDate": "Target date",
     "distance": "Distance",
+    "distancePlaceholder": "e.g. Marathon, 10K",
     "runBefore": "Run this distance before?",
     "runCount": "How many times",
     "startDate": "Start date",
@@ -283,12 +286,26 @@
     "generatePrompt": "Generate prompt",
     "cancelForm": "Cancel",
     "saveCycle": "Save Cycle",
+    "formTitleAdd": "Add New Cycle",
+    "formTitleEdit": "Edit Cycle",
+    "saving": "Saving…",
     "promptTitle": "AI Coach Macrocycle Prompt",
     "copyPrompt": "Copy to Clipboard",
+    "deleteConfirm": "Are you sure you want to cancel this cycle?",
     "status": {
       "active": "Active",
       "completed": "Completed",
       "cancelled": "Cancelled"
+    },
+    "success": {
+      "add": "Cycle created successfully!",
+      "edit": "Cycle updated successfully!",
+      "delete": "Cycle cancelled successfully!"
+    },
+    "errors": {
+      "objectiveRequired": "Objective is required.",
+      "save": "Could not save cycle. Please try again.",
+      "prompt": "Could not generate prompt. Please try again."
     }
   },
   "feedback": {
