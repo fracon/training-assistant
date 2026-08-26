@@ -33,6 +33,11 @@
 
 .add-cycle-wrapper {
   position: relative;
+  display: inline-flex;
+}
+
+.add-cycle-wrapper button:disabled {
+  cursor: not-allowed !important;
 }
 
 .add-cycle-wrapper .custom-tooltip {
@@ -57,7 +62,7 @@
   transition: opacity 0.15s ease, transform 0.15s ease;
 }
 
-.add-cycle-wrapper button:disabled + .custom-tooltip {
+.add-cycle-wrapper:hover button:disabled + .custom-tooltip {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
 }

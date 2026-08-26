@@ -169,14 +169,17 @@ test('cycles.css prompt modal uses shared modal-backdrop pattern', () => {
   assert.match(css, /\.prompt-modal-actions \{/);
 });
 
-test('cycles.css add-cycle-wrapper tooltip shows only when button is disabled', () => {
+test('cycles.css add-cycle-wrapper tooltip shows only when button is disabled AND hovered', () => {
   const css = readFileSync(join(publicDir, 'cycles.css'), 'utf8');
   assert.match(css, /\.add-cycle-wrapper \{/);
   assert.match(css, /\.add-cycle-wrapper \{[^}]*position:\s*relative/);
+  assert.match(css, /\.add-cycle-wrapper \{[^}]*display:\s*inline-flex/);
   assert.match(css, /\.add-cycle-wrapper \.custom-tooltip \{/);
   assert.match(css, /\.add-cycle-wrapper \.custom-tooltip \{[^}]*background:\s*var\(--ink\)/, 'tooltip uses dark ink background');
-  assert.match(css, /\.add-cycle-wrapper button:disabled \+ \.custom-tooltip \{/);
+  assert.match(css, /\.add-cycle-wrapper:hover button:disabled \+ \.custom-tooltip \{/);
   assert.match(css, /button:disabled \+ \.custom-tooltip \{[^}]*opacity:\s*1/);
+  assert.match(css, /\.add-cycle-wrapper button:disabled \{/);
+  assert.match(css, /button:disabled \{[^}]*cursor:\s*not-allowed/, 'disabled button uses not-allowed cursor');
 });
 
 test('cycles.css form modal matches shoes.css modal-backdrop structure', () => {
