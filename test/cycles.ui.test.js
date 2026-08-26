@@ -80,8 +80,11 @@ test('cycles.html form fields use data-i18n attributes for labels and placeholde
   assert.match(html, /data-i18n="cycles\.runCount"/);
   assert.match(html, /data-i18n="cycles\.startDate"/);
   assert.match(html, /data-i18n="cycles\.primaryGoal"/);
+  assert.match(html, /data-i18n-placeholder="cycles\.primaryGoalPlaceholder"/);
   assert.match(html, /data-i18n="cycles\.secondaryGoal"/);
+  assert.match(html, /data-i18n-placeholder="cycles\.secondaryGoalPlaceholder"/);
   assert.match(html, /data-i18n="cycles\.otherEvents"/);
+  assert.match(html, /data-i18n-placeholder="cycles\.otherEventsPlaceholder"/);
   assert.match(html, /data-i18n="cycles\.cancelForm"/);
   assert.match(html, /data-i18n="cycles\.saveCycle"/);
 });
@@ -410,6 +413,9 @@ test('locale files expose every cycles string in both languages', () => {
     assert.equal(typeof messages.cycles.primaryGoal, 'string');
     assert.equal(typeof messages.cycles.secondaryGoal, 'string');
     assert.equal(typeof messages.cycles.otherEvents, 'string');
+    assert.equal(typeof messages.cycles.primaryGoalPlaceholder, 'string');
+    assert.equal(typeof messages.cycles.secondaryGoalPlaceholder, 'string');
+    assert.equal(typeof messages.cycles.otherEventsPlaceholder, 'string');
     assert.equal(typeof messages.cycles.disabledTooltip, 'string');
     assert.equal(typeof messages.cycles.edit, 'string');
     assert.equal(typeof messages.cycles.complete, 'string');
