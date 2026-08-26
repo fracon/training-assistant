@@ -29,6 +29,44 @@
   font-size: 0.86rem;
 }
 
+/* ── Add cycle button tooltip ── */
+
+.add-cycle-wrapper {
+  position: relative;
+  display: inline-flex;
+}
+
+.add-cycle-wrapper button:disabled {
+  cursor: not-allowed !important;
+}
+
+.add-cycle-wrapper .custom-tooltip {
+  position: absolute;
+  top: 110%;
+  left: 50%;
+  transform: translateX(-50%) translateY(-4px);
+  z-index: 50;
+  width: max-content;
+  max-width: 300px;
+  text-align: center;
+  white-space: nowrap;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--card);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  font-size: 0.8rem;
+  font-weight: 500;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.add-cycle-wrapper:hover button:disabled + .custom-tooltip {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
 /* ── Empty state ── */
 
 .cycles-empty {

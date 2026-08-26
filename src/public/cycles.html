@@ -15,10 +15,13 @@
           <h1 data-i18n="cycles.title">Training Cycles</h1>
           <p class="cycles-subtitle" data-i18n="cycles.subtitle">Manage your macrocycle and training blocks</p>
         </div>
-        <button type="button" id="addCycleBtn" class="btn-primary">
-          <i data-lucide="plus"></i>
-          <span data-i18n="cycles.addCycle">Add Cycle</span>
-        </button>
+        <span class="add-cycle-wrapper">
+          <button type="button" id="addCycleBtn" class="btn-primary">
+            <i data-lucide="plus"></i>
+            <span data-i18n="cycles.addCycle">Add Cycle</span>
+          </button>
+          <div class="custom-tooltip"></div>
+        </span>
       </header>
 
       <div id="cycleEmpty" class="cycles-empty hidden">
@@ -50,7 +53,16 @@
         </div>
         <div class="field">
           <label for="cycleDistance" data-i18n="cycles.distance">Distance</label>
-          <input type="text" id="cycleDistance" data-i18n-placeholder="cycles.distancePlaceholder" placeholder="e.g. Marathon, 10K">
+          <select id="cycleDistance">
+            <option value="">–</option>
+            <option value="1km" data-i18n="cycles.distances.1km">1 km</option>
+            <option value="3km" data-i18n="cycles.distances.3km">3 km</option>
+            <option value="5km" data-i18n="cycles.distances.5km">5 km</option>
+            <option value="10km" data-i18n="cycles.distances.10km">10 km</option>
+            <option value="15km" data-i18n="cycles.distances.15km">15 km</option>
+            <option value="half_marathon" data-i18n="cycles.distances.half_marathon">Half Marathon</option>
+            <option value="marathon" data-i18n="cycles.distances.marathon">Marathon</option>
+          </select>
         </div>
         <div class="field">
           <label for="cycleRunBefore" data-i18n="cycles.runBefore">Run this distance before?</label>
