@@ -468,8 +468,8 @@ async function buildServer(options = {}) {
       if (!cycle) {
         return reply.code(404).send({ error: 'Cycle not found.' });
       }
-      const lang = request.user.preferred_lang;
-      const prompt = buildMacrocyclePrompt(cycle, lang);
+      const lng = request.query.lng === 'pt' ? 'pt-BR' : (request.query.lng === 'en' ? 'en-US' : request.user.preferred_lang);
+      const prompt = buildMacrocyclePrompt(cycle, lng);
       return { prompt };
     });
 

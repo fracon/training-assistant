@@ -340,6 +340,25 @@ test('cycles.js prompt catch logs the error before showing toast', () => {
   assert.match(js, /console\.error\('Prompt generation failed:',\s*error\)/);
 });
 
+test('cycles.js prompt request passes lng query parameter from i18n.language', () => {
+  const js = readFileSync(join(publicDir, 'cycles.js'), 'utf8');
+  assert.match(js, /i18n\.language === 'pt-BR'\) \? 'pt' : 'en'/);
+  assert.match(js, /\/api\/cycles\/\$\{id\}\/prompt\?lng=\$\{lng\}/);
+});
+
+test('prompts.js exports DISTANCE_TRANSLATIONS and translateDistance', () => {
+  const js = readFileSync(join(__dirname, '..', 'src', 'prompts.js'), 'utf8');
+  assert.match(js, /const DISTANCE_TRANSLATIONS/);
+  assert.match(js, /function translateDistance\(lang,\s*distance\)/);
+  assert.match(js, /module\.exports.*DISTANCE_TRANSLATIONS/);
+  assert.match(js, /module\.exports.*translateDistance/);
+});
+
+test('prompts.js buildMacrocyclePrompt uses translateDistance for distance', () => {
+  const js = readFileSync(join(__dirname, '..', 'src', 'prompts.js'), 'utf8');
+  assert.match(js, /translateDistance\(lang,\s*cycle\.distance\)/);
+});
+
 test('cycles.js translates distance keys via translateDistance helper', () => {
   const js = readFileSync(join(publicDir, 'cycles.js'), 'utf8');
   assert.match(js, /function translateDistance\(messages,\s*distance\)/);

@@ -295,12 +295,24 @@ Each new week, reassess the athlete that exists at that moment, not the athlete 
 
 const TEMPLATES = { pt: PT_TEMPLATE, en: EN_TEMPLATE };
 
+const DISTANCE_TRANSLATIONS = {
+  pt: { 'half_marathon': 'Meia Maratona', 'marathon': 'Maratona', '1km': '1 km', '3km': '3 km', '5km': '5 km', '10km': '10 km', '15km': '15 km' },
+  en: { 'half_marathon': 'Half Marathon', 'marathon': 'Marathon', '1km': '1 km', '3km': '3 km', '5km': '5 km', '10km': '10 km', '15km': '15 km' },
+};
+
+function translateDistance(lang, distance) {
+  if (!distance) return '-';
+  const short = lang === 'pt-BR' || lang === 'pt' ? 'pt' : 'en';
+  const map = DISTANCE_TRANSLATIONS[short] || DISTANCE_TRANSLATIONS.en;
+  return map[distance] || distance;
+}
+
 function buildMacrocyclePrompt(cycle, lang) {
   const template = lang === 'pt-BR' ? TEMPLATES.pt : TEMPLATES.en;
   return template
     .replace('{objective}', cycle.objective || '-')
     .replace('{target_date}', cycle.target_date || '-')
-    .replace('{distance}', cycle.distance || '-')
+    .replace('{distance}', translateDistance(lang, cycle.distance))
     .replace('{run_before}', cycle.run_before || '-')
     .replace('{run_count}', cycle.run_count != null ? String(cycle.run_count) : '-')
     .replace('{primary_goal}', cycle.primary_goal || '-')
@@ -309,4 +321,4 @@ function buildMacrocyclePrompt(cycle, lang) {
     .replace('{other_events}', cycle.other_events || '-');
 }
 
-module.exports = { TEMPLATES, buildMacrocyclePrompt };
+module.exports = { TEMPLATES, DISTANCE_TRANSLATIONS, translateDistance, buildMacrocyclePrompt };
