@@ -290,7 +290,7 @@ test('cycles.js validates objective before submit', () => {
 test('cycles.js shows form errors using cycles.errors.* keys', () => {
   const js = readFileSync(join(publicDir, 'cycles.js'), 'utf8');
   assert.match(js, /showFormError\('cycles\.errors\.save',\s*messages\)/);
-  assert.match(js, /showToast\(messages,\s*'cycles\.errors\.prompt'\)/);
+  assert.match(js, /showToast\(messages,\s*'cycles\.errors\.prompt',\s*2500,\s*'error'\)/);
 });
 
 test('cycles.js uses cycles.success.* keys for success toasts', () => {
@@ -303,6 +303,20 @@ test('cycles.js uses cycles.success.* keys for success toasts', () => {
 test('cycles.js renders toast icon via lucide.createIcons', () => {
   const js = readFileSync(join(publicDir, 'cycles.js'), 'utf8');
   assert.match(js, /lucide\.createIcons\(\{ nodes: \[toast\] \}\)/);
+});
+
+test('cycles.js showToast accepts a type parameter and toggles toast-error class', () => {
+  const js = readFileSync(join(publicDir, 'cycles.js'), 'utf8');
+  assert.match(js, /function showToast\(messages,\s*messageKey,\s*duration = 2500,\s*type = 'success'\)/);
+  assert.match(js, /toast\.classList\.toggle\('toast-error',\s*type === 'error'\)/);
+  assert.match(js, /type === 'error' \? 'x-circle' : 'check-circle'/);
+});
+
+test('theme.css defines toast-error variant with danger border and icon color', () => {
+  const theme = readFileSync(join(publicDir, 'shared', 'theme.css'), 'utf8');
+  assert.match(theme, /\.toast\.toast-error \{/);
+  assert.match(theme, /\.toast\.toast-error \{[^}]*border-left-color:\s*var\(--danger\)/);
+  assert.match(theme, /\.toast\.toast-error \.toast-icon \{[^}]*color:\s*var\(--danger\)/);
 });
 
 test('cycles.js self-invokes initCyclesPage when appView exists', () => {
@@ -432,4 +446,10 @@ test('api.js createCycle and updateCycle use requestJson', () => {
   assert.match(js, /export function createCycle\(body\)[\s\S]*?return requestJson\('\/api\/cycles',\s*body\)/);
   assert.match(js, /export function updateCycle\(id,\s*body\)[\s\S]*?return requestJson\(`\/api\/cycles\/\$\{id\}`,\s*body,\s*'PUT'\)/);
   assert.match(js, /export function deleteCycle\(id\)[\s\S]*?return requestJson\(`\/api\/cycles\/\$\{id\}`,\s*null,\s*'DELETE'\)/);
+});
+
+test('api.js requestJson omits body for GET requests', () => {
+  const js = readFileSync(join(publicDir, 'shared', 'api.js'), 'utf8');
+  assert.match(js, /if\s*\(method !== 'GET'\)/);
+  assert.match(js, /options\.body = JSON\.stringify\(body\)/);
 });

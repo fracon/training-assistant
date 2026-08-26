@@ -1,11 +1,14 @@
 export async function requestJson(url, body, method = 'POST') {
   let response;
   try {
-    response = await fetch(url, {
+    const options = {
       method,
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    });
+    };
+    if (method !== 'GET') {
+      options.body = JSON.stringify(body);
+    }
+    response = await fetch(url, options);
   } catch {
     throw new Error('Network unavailable. Please try again.');
   }
