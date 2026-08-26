@@ -100,6 +100,14 @@ test('cycles.html distance select has predefined options with i18n keys', () => 
   assert.match(distanceBlock, /<option value="">–<\/option>/, 'empty default option exists');
 });
 
+test('cycles.html addCycleBtn is wrapped with a custom tooltip', () => {
+  const html = readFileSync(join(publicDir, 'cycles.html'), 'utf8');
+  assert.match(html, /class="add-cycle-wrapper"/, 'addCycleBtn has a tooltip wrapper');
+  assert.match(html, /<span class="add-cycle-wrapper">\s*<button[^>]*id="addCycleBtn"/, 'wrapper encloses the add button');
+  assert.match(html, /<div class="custom-tooltip"><\/div>\s*<\/span>/, 'custom-tooltip div is a sibling inside the wrapper');
+  assert.doesNotMatch(html, /id="addCycleBtn"[^>]*title=/, 'addCycleBtn must not have a native title attribute');
+});
+
 test('cycles.html modal is at body root level outside main', () => {
   const html = readFileSync(join(publicDir, 'cycles.html'), 'utf8');
   const mainClose = html.indexOf('</main>');
@@ -159,6 +167,16 @@ test('cycles.css prompt modal uses shared modal-backdrop pattern', () => {
   assert.match(css, /\.prompt-output \{[^}]*white-space:\s*pre-wrap/);
   assert.match(css, /\.prompt-output \{[^}]*background:\s*var\(--bg\)/);
   assert.match(css, /\.prompt-modal-actions \{/);
+});
+
+test('cycles.css add-cycle-wrapper tooltip shows only when button is disabled', () => {
+  const css = readFileSync(join(publicDir, 'cycles.css'), 'utf8');
+  assert.match(css, /\.add-cycle-wrapper \{/);
+  assert.match(css, /\.add-cycle-wrapper \{[^}]*position:\s*relative/);
+  assert.match(css, /\.add-cycle-wrapper \.custom-tooltip \{/);
+  assert.match(css, /\.add-cycle-wrapper \.custom-tooltip \{[^}]*background:\s*var\(--ink\)/, 'tooltip uses dark ink background');
+  assert.match(css, /\.add-cycle-wrapper button:disabled \+ \.custom-tooltip \{/);
+  assert.match(css, /button:disabled \+ \.custom-tooltip \{[^}]*opacity:\s*1/);
 });
 
 test('cycles.css form modal matches shoes.css modal-backdrop structure', () => {
@@ -306,6 +324,8 @@ test('cycles.js checks active cycle and disables add button when active exists',
   assert.match(js, /fetchActiveCycle/);
   assert.match(js, /addBtn\.disabled = true/);
   assert.match(js, /cycles\.disabledTooltip/);
+  assert.doesNotMatch(js, /addBtn\.title/, 'must not use native title attribute');
+  assert.match(js, /\.custom-tooltip/, 'writes tooltip text via custom-tooltip class');
 });
 
 /* ── Locale parity ── */

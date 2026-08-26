@@ -258,12 +258,13 @@ async function handleCopyPrompt(messages) {
 
 async function checkActiveCycle(addBtn, messages) {
   const activeCycle = await fetchActiveCycle();
+  const tooltip = addBtn.closest('.add-cycle-wrapper').querySelector('.custom-tooltip');
   if (activeCycle) {
     addBtn.disabled = true;
-    addBtn.title = t(messages, 'cycles.disabledTooltip');
+    tooltip.textContent = t(messages, 'cycles.disabledTooltip');
   } else {
     addBtn.disabled = false;
-    addBtn.title = '';
+    tooltip.textContent = '';
   }
 }
 
