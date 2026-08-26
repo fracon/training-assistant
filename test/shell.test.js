@@ -89,8 +89,8 @@ test('sidebar navigation follows Home, Request Workouts, Workouts, Shoes', () =>
   assert.equal(pt.shell.nav.requestWorkouts, 'Solicitar Treinos');
   assert.equal(en.shell.nav.workouts, 'Workouts');
   assert.equal(pt.shell.nav.workouts, 'Treinos');
-  assert.equal(en.shell.nav.shoes, 'Shoes');
-  assert.equal(pt.shell.nav.shoes, 'Tênis');
+  assert.equal(en.shell.nav.shoes, 'Shoe Rotation');
+  assert.equal(pt.shell.nav.shoes, 'Rotação de Tênis');
   assert.equal(en.shell.confirm.yes, 'Delete');
   assert.equal(pt.shell.confirm.yes, 'Excluir');
   assert.equal(en.shell.confirm.no, 'Cancel');
