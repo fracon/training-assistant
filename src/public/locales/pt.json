@@ -72,7 +72,7 @@
       "cycles": "Ciclos de Treino",
       "requestWorkouts": "Solicitar Treinos",
       "workouts": "Treinos",
-      "shoes": "Tênis"
+      "shoes": "Rotação de Tênis"
     },
     "soon": "Em breve",
     "noCycle": "Nenhum ciclo ativo",
@@ -288,6 +288,9 @@
     "primaryGoal": "Meta principal",
     "secondaryGoal": "Meta secundária",
     "otherEvents": "Outros eventos durante o ciclo",
+    "primaryGoalPlaceholder": "Ex: Correr a Meia Maratona abaixo de 2h",
+    "secondaryGoalPlaceholder": "Ex: Manter volume semanal consistente acima de 40km",
+    "otherEventsPlaceholder": "Ex: Prova de 10km em outubro como teste de ritmo\n- Férias de 1 semana em setembro",
     "disabledTooltip": "Finalize ou cancele seu ciclo ativo primeiro.",
     "edit": "Editar",
     "complete": "Concluir",
@@ -301,6 +304,10 @@
     "promptTitle": "Prompt Macrocycle – Coach IA",
     "copyPrompt": "Copiar para a área de transferência",
     "deleteConfirm": "Tem certeza que deseja cancelar este ciclo?",
+    "confirm": {
+      "yes": "Sim, cancelar o ciclo",
+      "no": "Não, manter o ciclo"
+    },
     "status": {
       "active": "Ativo",
       "completed": "Concluído",

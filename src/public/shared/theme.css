@@ -461,6 +461,9 @@ input.input-error:focus-visible {
 
 .toast-icon { color: var(--ok); flex-shrink: 0; }
 
+.toast.toast-error { border-left-color: var(--danger); }
+.toast.toast-error .toast-icon { color: var(--danger); }
+
 .toast-icon svg { display: block; width: 18px; height: 18px; }
 
 .toast.toast-error { border-left-color: var(--danger); }
