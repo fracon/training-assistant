@@ -507,6 +507,10 @@ input.input-error:focus-visible {
   background-color: var(--muted);
 }
 
+::-webkit-scrollbar-button {
+  display: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .auth-card,
   .auth-panel,
