@@ -355,6 +355,8 @@ export async function initCyclesPage() {
 
   await checkActiveCycle(addBtn, i18n.messages);
 
+  window.addEventListener('kinesis:cycle-changed', () => checkActiveCycle(addBtn, i18n.messages));
+
   return user;
 }
 

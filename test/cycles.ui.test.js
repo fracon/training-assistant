@@ -265,6 +265,12 @@ test('cycles.js dispatches kinesis:cycle-changed after create, complete, and can
   assert.ok(matches && matches.length >= 3, 'must dispatch the event in create, complete, and cancel handlers');
 });
 
+test('cycles.js listens for kinesis:cycle-changed to re-enable the add button', () => {
+  const js = readFileSync(join(publicDir, 'cycles.js'), 'utf8');
+  assert.match(js, /addEventListener\('kinesis:cycle-changed'/);
+  assert.match(js, /checkActiveCycle\(addBtn/);
+});
+
 test('cycles.js action handlers use i18n.messages not a stale closure', () => {
   const js = readFileSync(join(publicDir, 'cycles.js'), 'utf8');
 
