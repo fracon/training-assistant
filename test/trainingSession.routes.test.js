@@ -13,9 +13,73 @@ const REGISTER_PAYLOAD = {
   last_name: 'Sion',
 };
 
-async function setup() {
+function makeFitSummary(overrides = {}) {
+  return {
+    totals: {
+      durationSeconds: 3600,
+      distanceKm: 10,
+      avgPaceSecondsPerKm: 360,
+      avgHeartRate: 155,
+      maxHeartRate: 175,
+      ascentMeters: 120,
+    },
+    activity: {
+      sport: 'running',
+      startTime: '2026-08-24T07:00:00Z',
+      endTime: '2026-08-24T08:00:00Z',
+    },
+    laps: [{ lap: 1, duration: 3600, stepType: 'Run', durationLabel: '1:00:00', cumulativeSeconds: 3600, cumulativeLabel: '1:00:00', distanceKm: 10, distanceLabel: '10.00', avgPaceSecondsPerKm: 360, avgPaceLabel: '6:00', bestPaceSecondsPerKm: null, bestPaceLabel: '--:--', avgHeartRate: 155, maxHeartRate: 175, ascentMeters: 120, descentMeters: null, avgCadenceSpm: null, maxCadenceSpm: null, strideMeters: null, calories: null }],
+    ...overrides,
+  };
+}
+
+function stubParse(summary = makeFitSummary()) {
+  return async (buffer) => {
+    stubParse.lastBuffer = buffer;
+    return summary;
+  };
+}
+
+function failingParse() {
+  return async () => {
+    throw new Error('unreadable fit');
+  };
+}
+
+function multipart(parts) {
+  const boundary = '----fitupload';
+  const chunks = [];
+  for (const part of parts) {
+    const filename = part.fileName ? `; filename="${part.fileName}"` : '';
+    chunks.push(
+      Buffer.from(
+        `--${boundary}\r\nContent-Disposition: form-data; name="${part.name}"${filename}\r\nContent-Type: ${part.contentType || 'text/plain'}\r\n\r\n`,
+      ),
+    );
+    chunks.push(Buffer.isBuffer(part.value) ? part.value : Buffer.from(part.value));
+    chunks.push(Buffer.from('\r\n'));
+  }
+  chunks.push(Buffer.from(`--${boundary}--\r\n`));
+  return {
+    payload: Buffer.concat(chunks),
+    headers: { 'content-type': `multipart/form-data; boundary=${boundary}` },
+  };
+}
+
+async function postFitParts(app, cookie, parts) {
+  const body = multipart(parts);
+  return app.inject({
+    method: 'POST',
+    url: '/api/trainings/1/fit',
+    headers: { cookie, ...body.headers },
+    payload: body.payload,
+  });
+}
+
+async function setup(overrides = {}) {
   const db = createDatabase({ filename: ':memory:' });
-  const app = await buildServer({ db, sessionCookieSecure: false });
+  const serverOpts = { db, sessionCookieSecure: false, ...overrides };
+  const app = await buildServer(serverOpts);
 
   await app.inject({
     method: 'POST',
@@ -432,4 +496,236 @@ test('PATCH /api/trainings/:id toggles the smartwatch flag without touching othe
   assert.equal(row.has_smartwatch, 0, 'smartwatch flag flipped to no');
   assert.equal(row.feedback_rpe, 2, 'previous RPE untouched');
   assert.equal(row.feedback_notas, 'Pesado', 'previous notes untouched');
+});
+
+// ── POST /api/trainings/:id/fit ─────────────────────────────────
+
+test('POST /api/trainings/:id/fit requires authentication', async () => {
+  const { app } = await setup();
+  const body = multipart([{ name: 'file', fileName: 'run.fit', value: 'data' }]);
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/trainings/1/fit',
+    headers: body.headers,
+    payload: body.payload,
+  });
+  assert.equal(response.statusCode, 401);
+});
+
+test('POST /api/trainings/:id/fit rejects malformed ids', async () => {
+  const { app, cookie } = await setup({ parseFitFile: stubParse() });
+  for (const id of ['abc', '0', '-3']) {
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/trainings/${id}/fit`,
+      headers: { cookie },
+      payload: {},
+    });
+    assert.equal(response.statusCode, 400, `id=${id}`);
+    assert.deepEqual(response.json(), { error: 'Invalid training id.' });
+  }
+});
+
+test('POST /api/trainings/:id/fit returns 404 when training not found', async () => {
+  const { app, cookie } = await setup({ parseFitFile: stubParse() });
+  const response = await postFitParts(app, cookie, [
+    { name: 'file', fileName: 'run.fit', value: 'data' },
+  ]);
+  assert.equal(response.statusCode, 404);
+  assert.deepEqual(response.json(), { error: 'Training not found.' });
+});
+
+test('POST /api/trainings/:id/fit rejects non-multipart requests', async () => {
+  const { db, app, cookie, userId } = await setup({ parseFitFile: stubParse() });
+  seedTraining(db, { user_id: userId });
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/trainings/1/fit',
+    headers: { cookie, 'content-type': 'application/json' },
+    payload: {},
+  });
+  assert.equal(response.statusCode, 400);
+  assert.deepEqual(response.json(), { error: 'Expected multipart/form-data upload.' });
+});
+
+test('POST /api/trainings/:id/fit requires a file field', async () => {
+  const { db, app, cookie, userId } = await setup({ parseFitFile: stubParse() });
+  seedTraining(db, { user_id: userId });
+  const response = await postFitParts(app, cookie, [
+    { name: 'other', value: 'no file here' },
+  ]);
+  assert.equal(response.statusCode, 400);
+  assert.deepEqual(response.json(), { error: 'Missing .FIT file field.' });
+});
+
+test('POST /api/trainings/:id/fit reports parse errors as 422', async () => {
+  const { db, app, cookie, userId } = await setup({ parseFitFile: failingParse() });
+  const id = seedTraining(db, { user_id: userId });
+  const body = multipart([{ name: 'file', fileName: 'run.fit', value: 'data' }]);
+  const response = await app.inject({
+    method: 'POST',
+    url: `/api/trainings/${id}/fit`,
+    headers: { cookie, ...body.headers },
+    payload: body.payload,
+  });
+  assert.equal(response.statusCode, 422);
+  assert.deepEqual(response.json(), {
+    error: 'Could not parse the .FIT file.',
+    detail: 'unreadable fit',
+  });
+});
+
+test('POST /api/trainings/:id/fit persists FIT metrics and returns them', async () => {
+  const summary = makeFitSummary({
+    totals: { durationSeconds: 5400, distanceKm: 12.5, avgPaceSecondsPerKm: 432, avgHeartRate: 160, maxHeartRate: 182, ascentMeters: 200 },
+    activity: { sport: 'running', startTime: '2026-08-24T07:00:00Z', endTime: '2026-08-24T08:30:00Z' },
+    laps: [{ lap: 1, duration: 5400, stepType: 'Run', durationLabel: '1:30:00', cumulativeSeconds: 5400, cumulativeLabel: '1:30:00', distanceKm: 12.5, distanceLabel: '12.50', avgPaceSecondsPerKm: 432, avgPaceLabel: '7:12', bestPaceSecondsPerKm: null, bestPaceLabel: '--:--', avgHeartRate: 160, maxHeartRate: 182, ascentMeters: 200, descentMeters: null, avgCadenceSpm: null, maxCadenceSpm: null, strideMeters: null, calories: null }],
+  });
+  const { db, app, cookie, userId } = await setup({ parseFitFile: stubParse(summary) });
+  const id = seedTraining(db, { user_id: userId });
+
+  const body = multipart([{ name: 'file', fileName: 'morning_run.fit', value: 'binary-data' }]);
+  const response = await app.inject({
+    method: 'POST',
+    url: `/api/trainings/${id}/fit`,
+    headers: { cookie, ...body.headers },
+    payload: body.payload,
+  });
+  assert.equal(response.statusCode, 200);
+
+  const payload = response.json();
+  assert.equal(payload.fit_duration, '1:30:00');
+  assert.equal(payload.fit_distance, 12.5);
+  assert.equal(payload.fit_avg_pace, '7.20');
+  assert.equal(payload.fit_avg_hr, 160);
+  assert.equal(payload.fit_max_hr, 182);
+  assert.equal(payload.fit_elevation_gain, 200);
+  assert.ok(Array.isArray(payload.laps));
+
+  const row = db
+    .prepare('SELECT fit_duration, fit_distance, fit_avg_pace, fit_avg_hr, fit_max_hr, fit_elevation_gain, fit_summary_json FROM trainings WHERE id = ?')
+    .get(id);
+  assert.equal(row.fit_duration, '1:30:00');
+  assert.equal(row.fit_distance, 12.5);
+  assert.equal(row.fit_avg_pace, '7.20');
+  assert.equal(row.fit_avg_hr, 160);
+  assert.equal(row.fit_max_hr, 182);
+  assert.equal(row.fit_elevation_gain, 200);
+  const parsed = JSON.parse(row.fit_summary_json);
+  assert.ok(parsed.activity);
+  assert.ok(parsed.totals);
+  assert.ok(parsed.laps);
+});
+
+test('POST /api/trainings/:id/fit formats minutes-only duration when under one hour', async () => {
+  const summary = makeFitSummary({
+    totals: { durationSeconds: 1800, distanceKm: 5, avgPaceSecondsPerKm: 360, avgHeartRate: 150, maxHeartRate: 168, ascentMeters: 60 },
+    activity: { sport: 'running', startTime: '2026-08-24T07:00:00Z', endTime: '2026-08-24T07:30:00Z' },
+    laps: [],
+  });
+  const { db, app, cookie, userId } = await setup({ parseFitFile: stubParse(summary) });
+  const id = seedTraining(db, { user_id: userId });
+
+  const body = multipart([{ name: 'file', fileName: 'run.fit', value: 'x' }]);
+  const response = await app.inject({
+    method: 'POST',
+    url: `/api/trainings/${id}/fit`,
+    headers: { cookie, ...body.headers },
+    payload: body.payload,
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.json().fit_duration, '30:00');
+});
+
+test('POST /api/trainings/:id/fit extracts metrics from totals produced by summarize()', async () => {
+  const summary = {
+    totals: {
+      durationSeconds: 2400,
+      distanceKm: 7,
+      avgPaceSecondsPerKm: 342.9,
+      avgHeartRate: 145,
+      maxHeartRate: 170,
+      ascentMeters: 80,
+    },
+    activity: { sport: 'running', startTime: null, endTime: null },
+    laps: [],
+  };
+  const { db, app, cookie, userId } = await setup({ parseFitFile: stubParse(summary) });
+  const id = seedTraining(db, { user_id: userId });
+
+  const body = multipart([{ name: 'file', fileName: 'run.fit', value: 'x' }]);
+  const response = await app.inject({
+    method: 'POST',
+    url: `/api/trainings/${id}/fit`,
+    headers: { cookie, ...body.headers },
+    payload: body.payload,
+  });
+  assert.equal(response.statusCode, 200);
+  const payload = response.json();
+  assert.equal(payload.fit_duration, '40:00');
+  assert.equal(payload.fit_distance, 7);
+  assert.equal(payload.fit_avg_hr, 145);
+  assert.equal(payload.fit_max_hr, 170);
+  assert.equal(payload.fit_elevation_gain, 80);
+});
+
+test('POST /api/trainings/:id/fit returns nulls when optional totals fields are absent', async () => {
+  const summary = {
+    totals: { durationSeconds: 600, distanceKm: 2 },
+    activity: {},
+    laps: [],
+  };
+  const { db, app, cookie, userId } = await setup({ parseFitFile: stubParse(summary) });
+  const id = seedTraining(db, { user_id: userId });
+
+  const body = multipart([{ name: 'file', fileName: 'run.fit', value: 'x' }]);
+  const response = await app.inject({
+    method: 'POST',
+    url: `/api/trainings/${id}/fit`,
+    headers: { cookie, ...body.headers },
+    payload: body.payload,
+  });
+  assert.equal(response.statusCode, 200);
+  const payload = response.json();
+  assert.equal(payload.fit_duration, '10:00');
+  assert.equal(payload.fit_distance, 2);
+  assert.equal(payload.fit_avg_pace, null);
+  assert.equal(payload.fit_avg_hr, null);
+  assert.equal(payload.fit_max_hr, null);
+  assert.equal(payload.fit_elevation_gain, null);
+});
+
+test('POST /api/trainings/:id/fit enforces the configured size limit with 413', async () => {
+  const { db, app, cookie, userId } = await setup({
+    parseFitFile: stubParse(),
+    maxFileSizeBytes: 8,
+  });
+  const id = seedTraining(db, { user_id: userId });
+  const body = multipart([{ name: 'file', fileName: 'run.fit', value: Buffer.alloc(64, 1) }]);
+  const response = await app.inject({
+    method: 'POST',
+    url: `/api/trainings/${id}/fit`,
+    headers: { cookie, ...body.headers },
+    payload: body.payload,
+  });
+  assert.equal(response.statusCode, 413);
+  assert.deepEqual(response.json(), { error: 'File exceeds the size limit.' });
+});
+
+test('POST /api/trainings/:id/fit defaults duration and distance to zero when all sources are absent', async () => {
+  const summary = { totals: {}, activity: {}, laps: [] };
+  const { db, app, cookie, userId } = await setup({ parseFitFile: stubParse(summary) });
+  const id = seedTraining(db, { user_id: userId });
+
+  const body = multipart([{ name: 'file', fileName: 'run.fit', value: 'x' }]);
+  const response = await app.inject({
+    method: 'POST',
+    url: `/api/trainings/${id}/fit`,
+    headers: { cookie, ...body.headers },
+    payload: body.payload,
+  });
+  assert.equal(response.statusCode, 200);
+  const payload = response.json();
+  assert.equal(payload.fit_duration, '0:00');
+  assert.equal(payload.fit_distance, 0);
 });

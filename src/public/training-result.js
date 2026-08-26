@@ -1,6 +1,6 @@
 import { initShell, getShellI18n } from './shared/shell.js';
 import { translate } from './shared/i18n.js';
-import { fetchTraining, saveTrainingFeedback } from './shared/api.js';
+import { fetchTraining, saveTrainingFeedback, fetchShoes } from './shared/api.js';
 
 // Sessions open contextually via /training-result.html?id=<id>; without an
 // id there is nothing to show, so the page bounces back to the calendar.
@@ -205,9 +205,9 @@ export function painPromptText(hasPainValue, description, translate) {
 }
 
 // Maps the loaded session row plus the current form state onto the shared
-// placeholder contract. Garmin metrics are not parsed on this screen yet, so
-// they stay as dashes and detailed data points to an attachment.
-export function collectPromptValues({ training, form }) {
+// placeholder contract. FIT metrics come from persisted data when available,
+// falling back to dashes.
+export function collectPromptValues({ training, form, fitData }) {
   return {
     DATA: formatDateLabel(training.dia),
     DIA_SEMANA: weekdayLabel(training.dia, form.language),
@@ -216,12 +216,12 @@ export function collectPromptValues({ training, form }) {
     FC_ALVO: training.fc_alvo,
     RPE_ALVO: training.rpe,
     TENIS: training.tenis,
-    DURACAO: '-',
-    DISTANCIA: '-',
-    PACE_MEDIO: '-',
-    FC_MEDIA: '-',
-    FC_MAXIMA: '-',
-    DESNIVEL_POSITIVO: '-',
+    DURACAO: fitData?.fit_duration || '-',
+    DISTANCIA: fitData?.fit_distance != null ? `${fitData.fit_distance.toFixed(2)} km` : '-',
+    PACE_MEDIO: fitData?.fit_avg_pace ? `${fitData.fit_avg_pace} min/km` : '-',
+    FC_MEDIA: fitData?.fit_avg_hr || '-',
+    FC_MAXIMA: fitData?.fit_max_hr || '-',
+    DESNIVEL_POSITIVO: fitData?.fit_elevation_gain != null ? `${fitData.fit_elevation_gain} m` : '-',
     TENIS_UTILIZADO: form.feedback_shoe,
     FONTE_FC: form.hr_source_label,
     TEMPERATURA_CLIMA: form.feedback_weather,
@@ -232,9 +232,11 @@ export function collectPromptValues({ training, form }) {
     ENERGIA_FINAL: form.energy_label,
     DOR_DESCONFORTO: form.pain_description,
     FEEDBACK: form.feedback_notas,
-    ANEXAR_SCREENSHOT_GARMIN_OU_INSERIR_DADOS_DE_LAPS_AQUI: form.fitAttached
-      ? 'Ver anexo'
-      : '-',
+    ANEXAR_SCREENSHOT_GARMIN_OU_INSERIR_DADOS_DE_LAPS_AQUI: fitData?.laps?.length
+      ? buildLapsMarkdown(fitData.laps)
+      : form.fitAttached
+        ? 'Ver anexo'
+        : '-',
   };
 }
 
@@ -259,6 +261,24 @@ export function fitDropzonePrimaryHtml({ files, translate }) {
   }
   const prefix = escapeHtmlText(translate('session.fitSelected'));
   return `${prefix}<strong>${escapeHtmlText(file.name)}</strong>`;
+}
+
+// Builds a Markdown table from parsed FIT lap data so it can be injected
+// directly into the AI coach prompt. Returns an empty string when there are
+// no laps to display.
+export function buildLapsMarkdown(laps) {
+  if (!Array.isArray(laps) || laps.length === 0) return '';
+  const header = '| # | Type | Distance | Duration | Pace | HR avg. | Ascent |';
+  const separator = '|---|------|----------|----------|------|---------|--------|';
+  const rows = laps.map((lap) => {
+    const distance = lap.distanceLabel ?? '-';
+    const duration = lap.durationLabel ?? '-';
+    const pace = lap.avgPaceLabel ?? '-';
+    const hr = lap.avgHeartRate ?? '-';
+    const ascent = lap.ascentMeters != null ? `${lap.ascentMeters} m` : '-';
+    return `| ${lap.lap} | ${lap.stepType} | ${distance} km | ${duration} | ${pace} min/km | ${hr} | ${ascent} |`;
+  });
+  return [header, separator, ...rows].join('\n');
 }
 
 // Copies through the async Clipboard API. Returns true on success so the UI
@@ -328,7 +348,7 @@ async function initTrainingResult() {
   const fitFileInput = document.getElementById('fitFile');
   const fitDropzone = document.getElementById('fitDropzone');
   const fitDropzonePrimary = fitDropzone.querySelector('.dropzone-text-primary');
-  const shoeInput = document.getElementById('feedbackShoe');
+  const shoeSelect = document.getElementById('feedbackShoe');
   const hrSourceSelect = document.getElementById('hrSourceSelect');
   const weatherInput = document.getElementById('feedbackWeather');
   const terrainInput = document.getElementById('feedbackTerrain');
@@ -340,9 +360,19 @@ async function initTrainingResult() {
   const painInput = document.getElementById('feedbackPain');
   const generateBtn = document.getElementById('generateBtn');
   const generateLabel = generateBtn.querySelector('span');
+  const promptSection = document.getElementById('promptSection');
+  const promptOutput = document.getElementById('promptOutput');
+  const copyPromptBtn = document.getElementById('copyPromptBtn');
+  const copyLabel = copyPromptBtn.querySelector('span');
+  const fitDataSection = document.getElementById('fitDataSection');
+  const fitLapsSection = document.getElementById('fitLapsSection');
+  const fitLapsBody = document.getElementById('fitLapsBody');
 
   let i18n = null;
   let copiedTimer = null;
+  let fitData = null;
+  let currentTrainingId = null;
+  let promptText = '';
   const t = (key) => translate(i18n ? i18n.messages : {}, key);
 
   const applyTooltips = () => {
@@ -375,6 +405,67 @@ async function initTrainingResult() {
     fitDropzone.classList.remove('drag-active')
   );
   fitDropzone.addEventListener('drop', () => fitDropzone.classList.remove('drag-active'));
+
+  const renderLapsTable = () => {
+    const laps = fitData?.laps;
+    if (!Array.isArray(laps) || laps.length === 0) {
+      fitLapsSection.hidden = true;
+      fitLapsBody.innerHTML = '';
+      return;
+    }
+    fitLapsSection.hidden = false;
+    const fragment = document.createDocumentFragment();
+    for (const lap of laps) {
+      const tr = document.createElement('tr');
+      const distance = lap.distanceLabel ?? '-';
+      const duration = lap.durationLabel ?? '-';
+      const pace = lap.avgPaceLabel ?? '-';
+      const hr = lap.avgHeartRate ?? '-';
+      const ascent = lap.ascentMeters != null ? `${lap.ascentMeters} m` : '-';
+      tr.innerHTML = [
+        `<td>${escapeHtmlText(String(lap.lap))}</td>`,
+        `<td>${escapeHtmlText(lap.stepType)}</td>`,
+        `<td>${escapeHtmlText(distance)} km</td>`,
+        `<td>${escapeHtmlText(duration)}</td>`,
+        `<td>${escapeHtmlText(pace)} min/km</td>`,
+        `<td>${escapeHtmlText(String(hr))}</td>`,
+        `<td>${escapeHtmlText(ascent)}</td>`,
+      ].join('');
+      fragment.appendChild(tr);
+    }
+    fitLapsBody.innerHTML = '';
+    fitLapsBody.appendChild(fragment);
+  };
+
+  const renderFitData = () => {
+    if (!fitData) {
+      fitDataSection.hidden = true;
+      return;
+    }
+    fitDataSection.hidden = false;
+    document.getElementById('fitDuration').textContent = fitData.fit_duration || '-';
+    document.getElementById('fitDistance').textContent =
+      fitData.fit_distance != null ? `${fitData.fit_distance.toFixed(2)} km` : '-';
+    document.getElementById('fitAvgPace').textContent =
+      fitData.fit_avg_pace ? `${fitData.fit_avg_pace} min/km` : '-';
+    document.getElementById('fitAvgHr').textContent = fitData.fit_avg_hr ?? '-';
+    document.getElementById('fitMaxHr').textContent = fitData.fit_max_hr ?? '-';
+    document.getElementById('fitElevation').textContent =
+      fitData.fit_elevation_gain != null ? `${fitData.fit_elevation_gain} m` : '-';
+    renderLapsTable();
+  };
+
+  const loadShoes = async () => {
+    const shoes = await fetchShoes();
+    shoeSelect.innerHTML = '<option value="">–</option>';
+    for (const shoe of shoes) {
+      const option = document.createElement('option');
+      const label = shoe.brand && shoe.model ? `${shoe.brand} ${shoe.model}` : shoe.model || shoe.brand || shoe.id;
+      option.value = label;
+      option.textContent = label;
+      shoeSelect.appendChild(option);
+    }
+  };
 
   // The pain description only exists when pain was reported; hiding it also
   // discards any typed text so stale descriptions never reach the payload.
@@ -411,6 +502,10 @@ async function initTrainingResult() {
     return;
   }
 
+  currentTrainingId = id;
+
+  await loadShoes();
+
   dateEl.textContent = formatDateLabel(training.dia);
   for (const [field, elementId] of PLANNED_FIELDS) {
     document.getElementById(elementId).textContent = plannedValue(training, field);
@@ -422,7 +517,7 @@ async function initTrainingResult() {
     if (savedRadio) savedRadio.checked = true;
   }
   notesInput.value = training.feedback_notas ?? '';
-  shoeInput.value = training.feedback_shoe ?? '';
+  shoeSelect.value = training.feedback_shoe ?? '';
   weatherInput.value = training.feedback_weather ?? '';
   terrainInput.value = training.feedback_terrain ?? '';
   breathingInput.value = training.feedback_breathing ?? '';
@@ -441,6 +536,27 @@ async function initTrainingResult() {
         ? 'sim'
         : 'nao';
   hrSourceSelect.value = training.feedback_hr_source ?? '';
+
+  if (training.fit_duration) {
+    let laps = [];
+    if (training.fit_summary_json) {
+      try {
+        const parsed = JSON.parse(training.fit_summary_json);
+        laps = Array.isArray(parsed.laps) ? parsed.laps : [];
+      } catch { /* ignore malformed JSON */ }
+    }
+    fitData = {
+      fit_duration: training.fit_duration,
+      fit_distance: training.fit_distance,
+      fit_avg_pace: training.fit_avg_pace,
+      fit_avg_hr: training.fit_avg_hr,
+      fit_max_hr: training.fit_max_hr,
+      fit_elevation_gain: training.fit_elevation_gain,
+      laps,
+    };
+    renderFitData();
+  }
+
   syncFitFieldVisibility();
   syncPainVisibility();
   setStatus('');
@@ -457,7 +573,7 @@ async function initTrainingResult() {
       feedback_rpe: normalizeFeedbackRpe(rpeSelector.querySelector('input[type="radio"]:checked')?.value ?? ''),
       feedback_notas: notesInput.value,
       has_smartwatch: isFitFieldVisible(smartwatchSelect.value),
-      feedback_shoe: shoeInput.value,
+      feedback_shoe: shoeSelect.value,
       feedback_hr_source: hrValue === '' ? null : hrValue,
       feedback_weather: weatherInput.value,
       feedback_terrain: terrainInput.value === '' ? null : terrainInput.value,
@@ -508,24 +624,58 @@ async function initTrainingResult() {
   });
 
   generateBtn.addEventListener('click', async () => {
-    const promptText = buildAnalysisPrompt(
+    promptText = buildAnalysisPrompt(
       templateFor(i18n.language),
-      collectPromptValues({ training, form: collectFormState() })
+      collectPromptValues({ training, form: collectFormState(), fitData })
     );
-    generateBtn.disabled = true;
+    promptOutput.value = promptText;
+    promptSection.hidden = false;
+  });
+
+  copyPromptBtn.addEventListener('click', async () => {
     const copied = await copyAnalysisPrompt(promptText);
-    generateBtn.disabled = false;
-    generateLabel.textContent = copied ? t('session.copied') : t('session.generatePrompt');
+    copyLabel.textContent = copied ? t('session.copied') : t('session.copyPrompt');
     clearTimeout(copiedTimer);
     copiedTimer = setTimeout(() => {
-      generateLabel.textContent = t('session.generatePrompt');
+      copyLabel.textContent = t('session.copyPrompt');
     }, 2000);
+  });
+
+  fitFileInput.addEventListener('change', async () => {
+    if (!fitFileInput.files || fitFileInput.files.length === 0 || !currentTrainingId) return;
+    const file = fitFileInput.files[0];
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const response = await fetch(`/api/trainings/${currentTrainingId}/fit`, {
+        method: 'POST',
+        body: formData,
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.error || 'Upload failed');
+      }
+      const result = await response.json();
+      fitData = {
+        fit_duration: result.fit_duration,
+        fit_distance: result.fit_distance,
+        fit_avg_pace: result.fit_avg_pace,
+        fit_avg_hr: result.fit_avg_hr,
+        fit_max_hr: result.fit_max_hr,
+        fit_elevation_gain: result.fit_elevation_gain,
+        laps: result.laps || [],
+      };
+      renderFitData();
+    } catch (error) {
+      setStatus(error.message || t('session.errors.fitUpload'), 'error');
+    }
   });
 
   document.addEventListener('app:languagechange', () => {
     document.title = t('training.title');
     if (!saveBtn.disabled) saveBtn.textContent = t('session.save');
     if (!generateBtn.disabled) generateLabel.textContent = t('session.generatePrompt');
+    if (!copyPromptBtn.disabled) copyLabel.textContent = t('session.copyPrompt');
     renderFitDropzoneState();
     applyTooltips();
   });

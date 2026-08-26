@@ -66,6 +66,13 @@ CREATE TABLE IF NOT EXISTS trainings (
   feedback_energy    TEXT,
   feedback_has_pain  TEXT,
   feedback_pain      TEXT,
+  fit_duration       TEXT,
+  fit_distance       REAL,
+  fit_avg_pace       TEXT,
+  fit_avg_hr         INTEGER,
+  fit_max_hr         INTEGER,
+  fit_elevation_gain REAL,
+  fit_summary_json   TEXT,
   created_at  DATETIME NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -143,6 +150,13 @@ function migrateDatabase(db) {
     ['feedback_energy', 'TEXT'],
     ['feedback_has_pain', 'TEXT'],
     ['feedback_pain', 'TEXT'],
+    ['fit_duration', 'TEXT'],
+    ['fit_distance', 'REAL'],
+    ['fit_avg_pace', 'TEXT'],
+    ['fit_avg_hr', 'INTEGER'],
+    ['fit_max_hr', 'INTEGER'],
+    ['fit_elevation_gain', 'REAL'],
+    ['fit_summary_json', 'TEXT'],
   ]) {
     if (!trainingColumns.some((column) => column.name === name)) {
       db.exec(`ALTER TABLE trainings ADD COLUMN ${name} ${type}`);

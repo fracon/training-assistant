@@ -317,7 +317,7 @@ async function buildServer(options = {}) {
     });
 
     const TRAINING_COLUMNS =
-      'id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes, feedback_rpe, feedback_notas, completed, has_smartwatch, feedback_shoe, feedback_hr_source, feedback_weather, feedback_terrain, feedback_breathing, feedback_muscle, feedback_energy, feedback_has_pain, feedback_pain';
+      'id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes, feedback_rpe, feedback_notas, completed, has_smartwatch, feedback_shoe, feedback_hr_source, feedback_weather, feedback_terrain, feedback_breathing, feedback_muscle, feedback_energy, feedback_has_pain, feedback_pain, fit_duration, fit_distance, fit_avg_pace, fit_avg_hr, fit_max_hr, fit_elevation_gain, fit_summary_json';
 
     const findTraining = db.prepare(
       `SELECT ${TRAINING_COLUMNS} FROM trainings WHERE id = ? AND user_id = ?`
@@ -415,6 +415,99 @@ async function buildServer(options = {}) {
       ).run(...fields.map((field) => updates[field]), id, request.user.id);
 
       return { training: findTraining.get(id, request.user.id) };
+    });
+
+    app.post('/api/trainings/:id/fit', { preHandler: requireAuth }, async (request, reply) => {
+      const id = Number(request.params.id);
+      if (!Number.isInteger(id) || id <= 0) {
+        return reply.code(400).send({ error: 'Invalid training id.' });
+      }
+
+      if (!findTraining.get(id, request.user.id)) {
+        return reply.code(404).send({ error: 'Training not found.' });
+      }
+
+      if (!request.isMultipart()) {
+        return reply.code(400).send({ error: 'Expected multipart/form-data upload.' });
+      }
+
+      let fileBuffer = null;
+      try {
+        for await (const part of request.parts()) {
+          if (part.type === 'file' && part.fieldname === 'file') {
+            fileBuffer = await part.toBuffer();
+          }
+        }
+      } catch (error) {
+        request.log.warn(error);
+        return reply.code(413).send({ error: 'File exceeds the size limit.' });
+      }
+
+      if (!fileBuffer) {
+        return reply.code(400).send({ error: 'Missing .FIT file field.' });
+      }
+
+      try {
+        const result = await parseFile(fileBuffer);
+        const durationSec = result.totals?.durationSeconds || 0;
+        const hours = Math.floor(durationSec / 3600);
+        const minutes = Math.floor((durationSec % 3600) / 60);
+        const seconds = Math.floor(durationSec % 60);
+        const fitDuration = hours > 0
+          ? `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+          : `${minutes}:${String(seconds).padStart(2, '0')}`;
+
+        const fitDistance = result.totals?.distanceKm ?? 0;
+        const fitAvgPace = result.totals?.avgPaceSecondsPerKm != null
+          ? (result.totals.avgPaceSecondsPerKm / 60).toFixed(2)
+          : null;
+        const fitAvgHr = result.totals?.avgHeartRate ?? null;
+        const fitMaxHr = result.totals?.maxHeartRate ?? null;
+        const fitElevation = result.totals?.ascentMeters ?? null;
+        const fitSummaryJson = JSON.stringify({
+          activity: result.activity,
+          totals: result.totals,
+          laps: result.laps,
+        });
+
+        db.prepare(
+          `UPDATE trainings SET
+            fit_duration = ?,
+            fit_distance = ?,
+            fit_avg_pace = ?,
+            fit_avg_hr = ?,
+            fit_max_hr = ?,
+            fit_elevation_gain = ?,
+            fit_summary_json = ?
+          WHERE id = ? AND user_id = ?`
+        ).run(
+          fitDuration,
+          fitDistance,
+          fitAvgPace,
+          fitAvgHr,
+          fitMaxHr,
+          fitElevation,
+          fitSummaryJson,
+          id,
+          request.user.id
+        );
+
+        return {
+          fit_duration: fitDuration,
+          fit_distance: fitDistance,
+          fit_avg_pace: fitAvgPace,
+          fit_avg_hr: fitAvgHr,
+          fit_max_hr: fitMaxHr,
+          fit_elevation_gain: fitElevation,
+          laps: result.laps,
+        };
+      } catch (error) {
+        request.log.error(error);
+        return reply.code(422).send({
+          error: 'Could not parse the .FIT file.',
+          detail: error.message,
+        });
+      }
     });
 
     // ── Training Cycles CRUD ────────────────────────────────────
