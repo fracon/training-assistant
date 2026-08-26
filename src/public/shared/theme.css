@@ -484,9 +484,12 @@ input.input-error:focus-visible {
 
 /* ---------- Custom scrollbars ---------- */
 
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--line-strong) transparent;
+/* Firefox-only scrollbar fallback */
+@supports (-moz-appearance: none) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-strong) transparent;
+  }
 }
 
 ::-webkit-scrollbar {
