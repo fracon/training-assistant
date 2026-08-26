@@ -321,6 +321,19 @@ test('cycles.js handles prompt modal open and copy actions', () => {
   assert.match(js, /navigator\.clipboard\.writeText/);
 });
 
+test('cycles.js prompt catch logs the error before showing toast', () => {
+  const js = readFileSync(join(publicDir, 'cycles.js'), 'utf8');
+  assert.match(js, /console\.error\('Prompt generation failed:',\s*error\)/);
+});
+
+test('cycles.js translates distance keys via translateDistance helper', () => {
+  const js = readFileSync(join(publicDir, 'cycles.js'), 'utf8');
+  assert.match(js, /function translateDistance\(messages,\s*distance\)/);
+  assert.match(js, /cycles\.distances\.\$\{distance\}/);
+  assert.match(js, /translated !== key/);
+  assert.match(js, /displayDistance/);
+});
+
 test('cycles.js checks active cycle and disables add button when active exists', () => {
   const js = readFileSync(join(publicDir, 'cycles.js'), 'utf8');
   assert.match(js, /checkActiveCycle/);

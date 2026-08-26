@@ -19,6 +19,13 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+function translateDistance(messages, distance) {
+  if (!distance) return '';
+  const key = `cycles.distances.${distance}`;
+  const translated = t(messages, key);
+  return (translated !== key && translated) ? translated : distance;
+}
+
 function renderCycleCard(cycle, messages) {
   const card = document.createElement('div');
   card.className = 'cycle-card';
@@ -27,6 +34,7 @@ function renderCycleCard(cycle, messages) {
   const title = t(messages, 'cycles.cardTitle').replace('{objective}', cycle.objective || '');
   const statusClass = `status-${cycle.status}`;
   const statusLabel = t(messages, `cycles.status.${cycle.status}`);
+  const displayDistance = translateDistance(messages, cycle.distance);
 
   card.innerHTML = `
     <div class="cycle-card-header">
@@ -35,7 +43,7 @@ function renderCycleCard(cycle, messages) {
     </div>
     <div class="cycle-card-meta">
       ${cycle.target_date ? `<span><strong>${t(messages, 'cycles.targetDate')}:</strong> ${escapeHtml(cycle.target_date)}</span>` : ''}
-      ${cycle.distance ? `<span><strong>${t(messages, 'cycles.distance')}:</strong> ${escapeHtml(cycle.distance)}</span>` : ''}
+      ${displayDistance ? `<span><strong>${t(messages, 'cycles.distance')}:</strong> ${escapeHtml(displayDistance)}</span>` : ''}
       ${cycle.start_date ? `<span><strong>${t(messages, 'cycles.startDate')}:</strong> ${escapeHtml(cycle.start_date)}</span>` : ''}
       ${cycle.primary_goal ? `<span><strong>${t(messages, 'cycles.primaryGoal')}:</strong> ${escapeHtml(cycle.primary_goal)}</span>` : ''}
     </div>
@@ -239,7 +247,8 @@ async function handleAction(action, id, cycles, messages) {
     try {
       const result = await requestJson(`/api/cycles/${id}/prompt`, null, 'GET');
       if (result.prompt) showPromptModal(result.prompt, messages);
-    } catch {
+    } catch (error) {
+      console.error('Prompt generation failed:', error);
       showToast(messages, 'cycles.errors.prompt');
     }
   }
