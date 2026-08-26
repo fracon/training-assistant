@@ -369,19 +369,19 @@ test('buildLapsMarkdown returns empty string for missing or empty laps', () => {
 
 test('buildLapsMarkdown renders a Markdown table from parsed lap views', () => {
   const laps = [
-    { lap: 1, stepType: 'Warmup', distanceLabel: '1.00', durationLabel: '6:30', avgPaceLabel: '6:30', avgHeartRate: 130 },
-    { lap: 2, stepType: 'Run', distanceLabel: '5.00', durationLabel: '25:00', avgPaceLabel: '5:00', avgHeartRate: 162 },
+    { lap: 1, stepType: 'Warmup', distanceLabel: '1.00', durationLabel: '6:30', avgPaceLabel: '6:30', avgHeartRate: 130, ascentMeters: 12 },
+    { lap: 2, stepType: 'Run', distanceLabel: '5.00', durationLabel: '25:00', avgPaceLabel: '5:00', avgHeartRate: 162, ascentMeters: 85 },
   ];
   const md = buildLapsMarkdown(laps);
-  assert.ok(md.includes('| # | Type | Distance | Duration | Pace | HR |'));
-  assert.ok(md.includes('| 1 | Warmup | 1.00 km | 6:30 | 6:30 min/km | 130 |'));
-  assert.ok(md.includes('| 2 | Run | 5.00 km | 25:00 | 5:00 min/km | 162 |'));
+  assert.ok(md.includes('| # | Type | Distance | Duration | Pace | HR avg. | Ascent |'));
+  assert.ok(md.includes('| 1 | Warmup | 1.00 km | 6:30 | 6:30 min/km | 130 | 12 m |'));
+  assert.ok(md.includes('| 2 | Run | 5.00 km | 25:00 | 5:00 min/km | 162 | 85 m |'));
 });
 
 test('buildLapsMarkdown uses dashes for null fields', () => {
-  const laps = [{ lap: 1, stepType: 'Run', distanceLabel: null, durationLabel: null, avgPaceLabel: null, avgHeartRate: null }];
+  const laps = [{ lap: 1, stepType: 'Run', distanceLabel: null, durationLabel: null, avgPaceLabel: null, avgHeartRate: null, ascentMeters: null }];
   const md = buildLapsMarkdown(laps);
-  assert.ok(md.includes('| 1 | Run | - km | - | - min/km | - |'));
+  assert.ok(md.includes('| 1 | Run | - km | - | - min/km | - | - |'));
 });
 
 test('collectPromptValues injects Markdown lap table when fitData has laps', () => {
@@ -393,13 +393,13 @@ test('collectPromptValues injects Markdown lap table when fitData has laps', () 
     fit_max_hr: 175,
     fit_elevation_gain: 120,
     laps: [
-      { lap: 1, stepType: 'Run', distanceLabel: '10.00', durationLabel: '1:00:00', avgPaceLabel: '6:00', avgHeartRate: 155 },
+      { lap: 1, stepType: 'Run', distanceLabel: '10.00', durationLabel: '1:00:00', avgPaceLabel: '6:00', avgHeartRate: 155, ascentMeters: 120 },
     ],
   };
   const values = collectPromptValues({ training: baseTraining, form: baseForm(), fitData });
   const md = values.ANEXAR_SCREENSHOT_GARMIN_OU_INSERIR_DADOS_DE_LAPS_AQUI;
-  assert.ok(md.includes('| # | Type | Distance | Duration | Pace | HR |'));
-  assert.ok(md.includes('| 1 | Run | 10.00 km | 1:00:00 | 6:00 min/km | 155 |'));
+  assert.ok(md.includes('| # | Type | Distance | Duration | Pace | HR avg. | Ascent |'));
+  assert.ok(md.includes('| 1 | Run | 10.00 km | 1:00:00 | 6:00 min/km | 155 | 120 m |'));
 });
 
 test('collectPromptValues falls back to Ver anexo when FIT attached but no laps', () => {
@@ -473,6 +473,8 @@ test('training-result.html ships the expanded feedback grid and generator button
   assert.match(html, /id="fitAvgHr"/);
   assert.match(html, /id="fitMaxHr"/);
   assert.match(html, /id="fitElevation"/);
+  assert.match(html, /<th data-i18n="session\.fitLapHr">HR avg\.<\/th>/);
+  assert.match(html, /<th data-i18n="session\.fitLapAscent">Ascent<\/th>/);
 
   for (const id of [
     'feedbackShoe',
@@ -878,6 +880,7 @@ test('session locale namespace stays in parity across en-US and pt-BR', () => {
     'fitLapDuration',
     'fitLapPace',
     'fitLapHr',
+    'fitLapAscent',
     'fieldShoeUsed',
     'shoeUsedPlaceholder',
     'fieldHrSource',

@@ -268,14 +268,15 @@ export function fitDropzonePrimaryHtml({ files, translate }) {
 // no laps to display.
 export function buildLapsMarkdown(laps) {
   if (!Array.isArray(laps) || laps.length === 0) return '';
-  const header = '| # | Type | Distance | Duration | Pace | HR |';
-  const separator = '|---|------|----------|----------|------|-----|';
+  const header = '| # | Type | Distance | Duration | Pace | HR avg. | Ascent |';
+  const separator = '|---|------|----------|----------|------|---------|--------|';
   const rows = laps.map((lap) => {
     const distance = lap.distanceLabel ?? '-';
     const duration = lap.durationLabel ?? '-';
     const pace = lap.avgPaceLabel ?? '-';
     const hr = lap.avgHeartRate ?? '-';
-    return `| ${lap.lap} | ${lap.stepType} | ${distance} km | ${duration} | ${pace} min/km | ${hr} |`;
+    const ascent = lap.ascentMeters != null ? `${lap.ascentMeters} m` : '-';
+    return `| ${lap.lap} | ${lap.stepType} | ${distance} km | ${duration} | ${pace} min/km | ${hr} | ${ascent} |`;
   });
   return [header, separator, ...rows].join('\n');
 }
@@ -420,6 +421,7 @@ async function initTrainingResult() {
       const duration = lap.durationLabel ?? '-';
       const pace = lap.avgPaceLabel ?? '-';
       const hr = lap.avgHeartRate ?? '-';
+      const ascent = lap.ascentMeters != null ? `${lap.ascentMeters} m` : '-';
       tr.innerHTML = [
         `<td>${escapeHtmlText(String(lap.lap))}</td>`,
         `<td>${escapeHtmlText(lap.stepType)}</td>`,
@@ -427,6 +429,7 @@ async function initTrainingResult() {
         `<td>${escapeHtmlText(duration)}</td>`,
         `<td>${escapeHtmlText(pace)} min/km</td>`,
         `<td>${escapeHtmlText(String(hr))}</td>`,
+        `<td>${escapeHtmlText(ascent)}</td>`,
       ].join('');
       fragment.appendChild(tr);
     }
