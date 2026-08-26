@@ -249,7 +249,7 @@ async function handleAction(action, id, cycles, messages) {
 
   if (action === 'prompt') {
     try {
-      const lng = (i18n.language === 'pt-BR') ? 'pt' : 'en';
+      const lng = (getShellI18n().language === 'pt-BR') ? 'pt' : 'en';
       const result = await requestJson(`/api/cycles/${id}/prompt?lng=${lng}`, null, 'GET');
       if (result.prompt) showPromptModal(result.prompt, messages);
     } catch (error) {

@@ -340,9 +340,9 @@ test('cycles.js prompt catch logs the error before showing toast', () => {
   assert.match(js, /console\.error\('Prompt generation failed:',\s*error\)/);
 });
 
-test('cycles.js prompt request passes lng query parameter from i18n.language', () => {
+test('cycles.js prompt request passes lng query parameter from getShellI18n().language', () => {
   const js = readFileSync(join(publicDir, 'cycles.js'), 'utf8');
-  assert.match(js, /i18n\.language === 'pt-BR'\) \? 'pt' : 'en'/);
+  assert.match(js, /getShellI18n\(\)\.language === 'pt-BR'\) \? 'pt' : 'en'/);
   assert.match(js, /\/api\/cycles\/\$\{id\}\/prompt\?lng=\$\{lng\}/);
 });
 
