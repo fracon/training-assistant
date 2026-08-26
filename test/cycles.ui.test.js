@@ -259,6 +259,13 @@ test('cycles.js handles complete, cancel, and prompt actions', () => {
   assert.match(js, /status:\s*'cancelled'/);
 });
 
+test('cycles.js dispatches kinesis:cycle-changed after complete and cancel', () => {
+  const js = readFileSync(join(publicDir, 'cycles.js'), 'utf8');
+  assert.match(js, /window\.dispatchEvent\(new CustomEvent\('kinesis:cycle-changed'\)\)/g);
+  const matches = js.match(/window\.dispatchEvent\(new CustomEvent\('kinesis:cycle-changed'\)\)/g);
+  assert.ok(matches && matches.length >= 2, 'must dispatch the event in both complete and cancel handlers');
+});
+
 test('cycles.js action handlers use i18n.messages not a stale closure', () => {
   const js = readFileSync(join(publicDir, 'cycles.js'), 'utf8');
 

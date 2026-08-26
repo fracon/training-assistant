@@ -303,8 +303,7 @@ const DISTANCE_TRANSLATIONS = {
 function translateDistance(lang, distance) {
   if (!distance) return '-';
   const short = lang === 'pt-BR' || lang === 'pt' ? 'pt' : 'en';
-  const map = DISTANCE_TRANSLATIONS[short] || DISTANCE_TRANSLATIONS.en;
-  return map[distance] || distance;
+  return DISTANCE_TRANSLATIONS[short][distance] || distance;
 }
 
 function buildMacrocyclePrompt(cycle, lang) {

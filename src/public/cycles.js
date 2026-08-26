@@ -229,6 +229,7 @@ async function handleAction(action, id, cycles, messages) {
     cycles.length = 0;
     cycles.push(...updated);
     renderList(cycles, messages);
+    window.dispatchEvent(new CustomEvent('kinesis:cycle-changed'));
     return;
   }
 
@@ -244,6 +245,7 @@ async function handleAction(action, id, cycles, messages) {
     cycles.push(...updated);
     renderList(cycles, messages);
     showToast(messages, 'cycles.success.delete');
+    window.dispatchEvent(new CustomEvent('kinesis:cycle-changed'));
     return;
   }
 
