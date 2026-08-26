@@ -181,6 +181,11 @@ function buildSidebar(activeId) {
     const label = el('span', 'nav-label sidebar-label');
     label.setAttribute('data-i18n', item.labelKey);
     entry.appendChild(label);
+    if (CYCLE_DEPENDENT_ITEMS.includes(item.id)) {
+      const chip = el('span', 'soon-chip cycle-guard-badge hidden');
+      chip.setAttribute('data-i18n', 'shell.noCycle');
+      entry.appendChild(chip);
+    }
     if (item.disabled) {
       const chip = el('span', 'soon-chip');
       chip.setAttribute('data-i18n', 'shell.soon');
@@ -393,19 +398,20 @@ export async function initShell({ active } = {}) {
 }
 
 export function applyCycleGuard(shellRoot) {
+  const badges = shellRoot.querySelectorAll('.cycle-guard-badge');
   for (const navEntry of shellRoot.querySelectorAll('.nav-item')) {
     if (CYCLE_DEPENDENT_ITEMS.includes(navEntry.dataset.navId)) {
       navEntry.classList.add('disabled');
       navEntry.setAttribute('aria-disabled', 'true');
       navEntry.removeAttribute('href');
-      const chip = el('span', 'soon-chip');
-      chip.setAttribute('data-i18n', 'shell.noCycle');
-      navEntry.appendChild(chip);
       navEntry.addEventListener('click', (e) => {
         e.preventDefault();
         window.location.href = CYCLE_REDIRECT_TO;
       });
     }
+  }
+  for (const badge of badges) {
+    badge.classList.remove('hidden');
   }
   refreshIcons();
 }

@@ -313,14 +313,15 @@ test('applyCycleGuard is exported from shell.js', () => {
   assert.match(js, /export function applyCycleGuard/);
 });
 
-test('applyCycleGuard disables items in CYCLE_DEPENDENT_ITEMS and adds noCycle chip', () => {
+test('applyCycleGuard disables items in CYCLE_DEPENDENT_ITEMS and reveals pre-built badges', () => {
   const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
   assert.match(js, /CYCLE_DEPENDENT_ITEMS\.includes\(navEntry\.dataset\.navId\)/);
   assert.match(js, /navEntry\.classList\.add\('disabled'\)/);
   assert.match(js, /navEntry\.setAttribute\('aria-disabled',\s*'true'\)/);
   assert.match(js, /navEntry\.removeAttribute\('href'\)/);
-  assert.match(js, /data-i18n',\s*'shell\.noCycle'/);
   assert.match(js, /window\.location\.href\s*=\s*CYCLE_REDIRECT_TO/);
+  assert.match(js, /const badges = shellRoot\.querySelectorAll\('\.cycle-guard-badge'\)/);
+  assert.match(js, /badge\.classList\.remove\('hidden'\)/);
 });
 
 test('initShell fetches active cycle and calls applyCycleGuard when none exists', () => {
@@ -342,4 +343,42 @@ test('shell.nav.cycles i18n key exists in both locale files', () => {
   assert.equal(typeof pt.shell.nav.cycles, 'string');
   assert.equal(en.shell.nav.cycles, 'Training Cycles');
   assert.equal(pt.shell.nav.cycles, 'Ciclos de Treino');
+});
+
+test('buildSidebar embeds hidden cycle-guard-badge spans for CYCLE_DEPENDENT_ITEMS', () => {
+  const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
+  assert.match(
+    js,
+    /if \(CYCLE_DEPENDENT_ITEMS\.includes\(item\.id\)\)/,
+    'the guard badge is conditionally injected per nav item'
+  );
+  assert.match(
+    js,
+    /el\('span',\s*'soon-chip cycle-guard-badge hidden'\)/,
+    'the badge ships hidden by default so i18n can translate it before the guard runs'
+  );
+  assert.match(
+    js,
+    /chip\.setAttribute\('data-i18n',\s*'shell\.noCycle'\)/,
+    'the badge carries the noCycle i18n key for automatic translation'
+  );
+});
+
+test('shell.css gives nav-item flex layout so the soon-chip does not overlap the label', () => {
+  const css = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.css'), 'utf8');
+  assert.match(
+    css,
+    /\.nav-item \.nav-label \{[^}]*flex:\s*1/,
+    'the label fills available space'
+  );
+  assert.match(
+    css,
+    /\.nav-item \.nav-label \{[^}]*min-width:\s*0/,
+    'the label can shrink below its content size'
+  );
+  assert.match(
+    css,
+    /\.soon-chip \{[^}]*flex-shrink:\s*0/,
+    'the chip never collapses'
+  );
 });
