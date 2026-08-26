@@ -147,6 +147,38 @@ test('cycles.css prompt modal uses shared modal-backdrop pattern', () => {
   assert.match(css, /\.prompt-modal-actions \{/);
 });
 
+test('cycles.css form modal matches shoes.css modal-backdrop structure', () => {
+  const css = readFileSync(join(publicDir, 'cycles.css'), 'utf8');
+  assert.match(css, /\.modal-backdrop \{/);
+  assert.match(css, /\.modal-backdrop \{[^}]*position:\s*fixed/);
+  assert.match(css, /\.modal-backdrop \{[^}]*z-index:\s*9999/);
+  assert.match(css, /\.modal-backdrop\.hidden \{/);
+  assert.match(css, /\.modal-card \{/);
+  assert.match(css, /\.modal-card \{[^}]*max-width:\s*440px/);
+  assert.match(css, /\.modal-card \{[^}]*border-radius:\s*20px/);
+  assert.match(css, /@keyframes modal-rise/);
+  assert.match(css, /\.modal-header \{/);
+  assert.match(css, /\.modal-header h2 \{/);
+  assert.match(css, /\.modal-close \{/);
+  assert.match(css, /\.modal-close:hover \{/);
+  assert.match(css, /\.modal-card \.field \{/);
+  assert.match(css, /\.form-actions \{/);
+  assert.match(css, /\.btn-secondary \{/);
+  assert.match(css, /\.form-error \{/);
+  assert.match(css, /\.form-error\.hidden \{/);
+});
+
+test('cycles.html modal structure mirrors shoes.html', () => {
+  const html = readFileSync(join(publicDir, 'cycles.html'), 'utf8');
+  assert.match(html, /id="cycleModal" class="modal-backdrop hidden"/);
+  assert.match(html, /class="modal-card" role="dialog" aria-modal="true"/);
+  assert.match(html, /class="modal-header"/);
+  assert.match(html, /class="modal-close"/);
+  assert.match(html, /class="form-actions"/);
+  assert.match(html, /class="btn-secondary"/);
+  assert.match(html, /class="form-error hidden"/);
+});
+
 /* ── cycles.js wiring ── */
 
 test('cycles.js wires the shell, language change listener, and i18n attributes', () => {
