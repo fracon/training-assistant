@@ -319,7 +319,7 @@ test('applyCycleGuard disables items in CYCLE_DEPENDENT_ITEMS and adds noCycle c
   assert.match(js, /navEntry\.classList\.add\('disabled'\)/);
   assert.match(js, /navEntry\.setAttribute\('aria-disabled',\s*'true'\)/);
   assert.match(js, /navEntry\.removeAttribute\('href'\)/);
-  assert.match(js, /data-i18n',\s*'shell\.noCycle'/);
+  assert.match(js, /data-i18n',\s*i18nKey/);
   assert.match(js, /window\.location\.href\s*=\s*CYCLE_REDIRECT_TO/);
 });
 
@@ -342,4 +342,52 @@ test('shell.nav.cycles i18n key exists in both locale files', () => {
   assert.equal(typeof pt.shell.nav.cycles, 'string');
   assert.equal(en.shell.nav.cycles, 'Training Cycles');
   assert.equal(pt.shell.nav.cycles, 'Ciclos de Treino');
+});
+
+test('applyCycleGuard explicitly translates the noCycle chip text on creation', () => {
+  const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
+  assert.match(
+    js,
+    /const currentI18n = getShellI18n\(\)/,
+    'the guard fetches the live i18n instance'
+  );
+  assert.match(
+    js,
+    /if \(currentI18n && currentI18n\.messages\)/,
+    'it guards against a missing dictionary'
+  );
+  assert.match(
+    js,
+    /chip\.textContent = translate\(currentI18n\.messages, i18nKey\) \|\| fallback/,
+    'the chip gets its translated text with a hardcoded fallback'
+  );
+  assert.match(
+    js,
+    /chip\.textContent = fallback/,
+    'the fallback string is used when the i18n instance is unavailable'
+  );
+  assert.match(
+    js,
+    /const fallback = 'NO ACTIVE CYCLE'/,
+    'the fallback is the exact English string'
+  );
+});
+
+test('shell.css gives nav-item flex layout so the soon-chip does not overlap the label', () => {
+  const css = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.css'), 'utf8');
+  assert.match(
+    css,
+    /\.nav-item \.nav-label \{[^}]*flex:\s*1/,
+    'the label fills available space'
+  );
+  assert.match(
+    css,
+    /\.nav-item \.nav-label \{[^}]*min-width:\s*0/,
+    'the label can shrink below its content size'
+  );
+  assert.match(
+    css,
+    /\.soon-chip \{[^}]*flex-shrink:\s*0/,
+    'the chip never collapses'
+  );
 });
