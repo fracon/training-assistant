@@ -69,11 +69,13 @@
   "shell": {
     "nav": {
       "home": "Início",
+      "cycles": "Ciclos de Treino",
       "requestWorkouts": "Solicitar Treinos",
       "workouts": "Treinos",
       "shoes": "Tênis"
     },
     "soon": "Em breve",
+    "noCycle": "Nenhum ciclo ativo",
     "collapse": "Recolher menu",
     "expand": "Expandir menu",
     "navLabel": "Navegação principal",
@@ -256,6 +258,54 @@
       "load": "Não foi possível carregar os tênis.",
       "save": "Não foi possível salvar o tênis. Tente novamente.",
       "delete": "Não foi possível excluir o tênis. Tente novamente."
+    }
+  },
+  "cycles": {
+    "title": "Ciclos de Treino",
+    "pageTitle": "Ciclos de Treino • Kinesis",
+    "subtitle": "Gerencie seu macrociclo e blocos de treino",
+    "addCycle": "Novo Ciclo",
+    "empty": "Nenhum ciclo de treino ainda.",
+    "emptyHint": "Crie seu primeiro ciclo de treino para organizar seu macrociclo.",
+    "cardTitle": "{objective}",
+    "objective": "Objetivo",
+    "objectivePlaceholder": "ex.: Maratona, Meia Maratona",
+    "targetDate": "Data alvo",
+    "distance": "Distância",
+    "distancePlaceholder": "ex.: Maratona, 10K",
+    "runBefore": "Já correu essa distância?",
+    "runCount": "Quantas vezes",
+    "startDate": "Data de início",
+    "primaryGoal": "Meta principal",
+    "secondaryGoal": "Meta secundária",
+    "otherEvents": "Outros eventos durante o ciclo",
+    "disabledTooltip": "Finalize ou cancele seu ciclo ativo primeiro.",
+    "edit": "Editar",
+    "complete": "Concluir",
+    "cancel": "Cancelar",
+    "generatePrompt": "Gerar prompt",
+    "cancelForm": "Cancelar",
+    "saveCycle": "Salvar Ciclo",
+    "formTitleAdd": "Cadastrar Novo Ciclo",
+    "formTitleEdit": "Editar Ciclo",
+    "saving": "Salvando…",
+    "promptTitle": "Prompt Macrocycle – Coach IA",
+    "copyPrompt": "Copiar para a área de transferência",
+    "deleteConfirm": "Tem certeza que deseja cancelar este ciclo?",
+    "status": {
+      "active": "Ativo",
+      "completed": "Concluído",
+      "cancelled": "Cancelado"
+    },
+    "success": {
+      "add": "Ciclo criado com sucesso!",
+      "edit": "Ciclo atualizado com sucesso!",
+      "delete": "Ciclo cancelado com sucesso!"
+    },
+    "errors": {
+      "objectiveRequired": "Objetivo é obrigatório.",
+      "save": "Não foi possível salvar o ciclo. Tente novamente.",
+      "prompt": "Não foi possível gerar o prompt. Tente novamente."
     }
   },
   "feedback": {

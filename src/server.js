@@ -26,6 +26,7 @@ const {
 } = require('./auth/weekStart');
 const ExcelJS = require('exceljs');
 const { parseSheet } = require('./trainingImport');
+const { buildMacrocyclePrompt } = require('./prompts');
 const {
   ShoeError,
   createShoe,
@@ -34,6 +35,15 @@ const {
   updateShoe,
   deleteShoe,
 } = require('./shoes');
+const {
+  CycleError,
+  getActiveCycle,
+  createCycle,
+  getCyclesByUserId,
+  getCycleById,
+  updateCycle,
+  deleteCycle,
+} = require('./cycles');
 const { version: APP_VERSION } = require('../package.json');
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
@@ -108,6 +118,13 @@ async function buildServer(options = {}) {
       return reply.redirect('/login.html');
     }
     return reply.sendFile('ai-coach.html');
+  });
+
+  app.get('/cycles.html', async (request, reply) => {
+    if (!sessionOf(request)) {
+      return reply.redirect('/login.html');
+    }
+    return reply.sendFile('cycles.html');
   });
 
   app.get('/login.html', async (request, reply) => {
@@ -222,6 +239,11 @@ async function buildServer(options = {}) {
     });
 
     app.post('/api/calendar/import', { preHandler: requireAuth }, async (request, reply) => {
+      const activeCycle = getActiveCycle(db, request.user.id);
+      if (!activeCycle) {
+        return reply.code(400).send({ error: 'No active training cycle. Create one first.' });
+      }
+
       if (!request.isMultipart()) {
         return reply.code(400).send({ error: 'Expected multipart/form-data upload.' });
       }
@@ -268,13 +290,14 @@ async function buildServer(options = {}) {
 
       const insert = db.prepare(
         `INSERT INTO trainings
-           (user_id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+           (user_id, training_cycle_id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       );
       const insertMany = db.transaction((rows) => {
         for (const record of rows) {
           insert.run(
             request.user.id,
+            activeCycle.id,
             record.dia,
             record.periodo,
             record.tipo,
@@ -394,7 +417,64 @@ async function buildServer(options = {}) {
       return { training: findTraining.get(id, request.user.id) };
     });
 
-    app.get('/api/shoes', { preHandler: requireAuth }, async (request) => {
+    // ── Training Cycles CRUD ────────────────────────────────────
+    app.get('/api/cycles', { preHandler: requireAuth }, async (request) => {
+      const cycles = getCyclesByUserId(db, request.user.id);
+      return { cycles };
+    });
+
+    app.get('/api/cycles/active', { preHandler: requireAuth }, async (request) => {
+      const cycle = getActiveCycle(db, request.user.id);
+      return { cycle: cycle || null };
+    });
+
+    app.post('/api/cycles', { preHandler: requireAuth }, async (request, reply) => {
+      try {
+        const cycle = createCycle(db, request.user.id, request.body);
+        return reply.code(201).send({ cycle });
+      } catch (error) {
+        if (error instanceof CycleError) {
+          return reply.code(error.status).send({ error: error.message });
+        }
+        throw error;
+      }
+    });
+
+    app.put('/api/cycles/:id', { preHandler: requireAuth }, async (request, reply) => {
+      try {
+        const cycle = updateCycle(db, request.params.id, request.user.id, request.body);
+        if (!cycle) {
+          return reply.code(404).send({ error: 'Cycle not found.' });
+        }
+        return { cycle };
+      } catch (error) {
+        if (error instanceof CycleError) {
+          return reply.code(error.status).send({ error: error.message });
+        }
+        throw error;
+      }
+    });
+
+    app.delete('/api/cycles/:id', { preHandler: requireAuth }, async (request, reply) => {
+      const deleted = deleteCycle(db, request.params.id, request.user.id);
+      if (!deleted) {
+        return reply.code(404).send({ error: 'Cycle not found.' });
+      }
+      return { status: 'ok' };
+    });
+
+    app.get('/api/cycles/:id/prompt', { preHandler: requireAuth }, async (request, reply) => {
+      const cycle = getCycleById(db, request.params.id, request.user.id);
+      if (!cycle) {
+        return reply.code(404).send({ error: 'Cycle not found.' });
+      }
+      const lang = request.user.preferred_lang;
+      const prompt = buildMacrocyclePrompt(cycle, lang);
+      return { prompt };
+    });
+
+    // ── Shoes CRUD ──────────────────────────────────────────────
+    app.get('/api/shoes', { preHandler: requireAuth }, async (request, reply) => {
       const shoes = getShoesByUserId(db, request.user.id);
       return { shoes };
     });

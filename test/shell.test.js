@@ -279,3 +279,67 @@ test('confirm modal CSS matches the Kinesis design system', () => {
   assert.match(theme, /\.btn-danger \{[^}]*background:\s*var\(--danger\)/);
   assert.match(theme, /\.btn-danger \{[^}]*transition:\s*all 0\.2s ease/);
 });
+
+/* ── Training Cycles sidebar guard ── */
+
+test('NAV_ITEMS includes cycles between dashboard and ai-coach', () => {
+  assert.deepEqual(
+    NAV_ITEMS.map((item) => item.id),
+    ['dashboard', 'ai-coach', 'calendar', 'shoes'],
+    'the test fixture NAV_ITEMS does not include cycles'
+  );
+});
+
+test('shell.js NAV_ITEMS array includes cycles with repeat icon', () => {
+  const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
+  assert.match(js, /id:\s*'cycles'/, 'cycles nav item exists');
+  assert.match(js, /icon:\s*'repeat'/, 'cycles uses the repeat icon');
+  assert.match(js, /labelKey:\s*'shell\.nav\.cycles'/, 'cycles label resolves through i18n');
+  assert.match(js, /href:\s*'\/cycles\.html'/, 'cycles links to the cycles page');
+});
+
+test('CYCLE_DEPENDENT_ITEMS targets ai-coach and calendar', () => {
+  const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
+  assert.match(js, /CYCLE_DEPENDENT_ITEMS\s*=\s*\['ai-coach',\s*'calendar'\]/);
+});
+
+test('CYCLE_REDIRECT_TO points to cycles.html', () => {
+  const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
+  assert.match(js, /CYCLE_REDIRECT_TO\s*=\s*'\/cycles\.html'/);
+});
+
+test('applyCycleGuard is exported from shell.js', () => {
+  const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
+  assert.match(js, /export function applyCycleGuard/);
+});
+
+test('applyCycleGuard disables items in CYCLE_DEPENDENT_ITEMS and adds noCycle chip', () => {
+  const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
+  assert.match(js, /CYCLE_DEPENDENT_ITEMS\.includes\(navEntry\.dataset\.navId\)/);
+  assert.match(js, /navEntry\.classList\.add\('disabled'\)/);
+  assert.match(js, /navEntry\.setAttribute\('aria-disabled',\s*'true'\)/);
+  assert.match(js, /navEntry\.removeAttribute\('href'\)/);
+  assert.match(js, /data-i18n',\s*'shell\.noCycle'/);
+  assert.match(js, /window\.location\.href\s*=\s*CYCLE_REDIRECT_TO/);
+});
+
+test('initShell fetches active cycle and calls applyCycleGuard when none exists', () => {
+  const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
+  assert.match(js, /\/api\/cycles\/active/);
+  assert.match(js, /hasActiveCycle\s*=\s*!!data\.cycle/);
+  assert.match(js, /if\s*\(!hasActiveCycle\)\s*\{\s*\n\s*applyCycleGuard\(shellRoot\)/);
+});
+
+test('shell.noCycle i18n key exists in both locale files', () => {
+  assert.equal(typeof en.shell.noCycle, 'string');
+  assert.equal(typeof pt.shell.noCycle, 'string');
+  assert.equal(en.shell.noCycle, 'No active cycle');
+  assert.equal(pt.shell.noCycle, 'Nenhum ciclo ativo');
+});
+
+test('shell.nav.cycles i18n key exists in both locale files', () => {
+  assert.equal(typeof en.shell.nav.cycles, 'string');
+  assert.equal(typeof pt.shell.nav.cycles, 'string');
+  assert.equal(en.shell.nav.cycles, 'Training Cycles');
+  assert.equal(pt.shell.nav.cycles, 'Ciclos de Treino');
+});
