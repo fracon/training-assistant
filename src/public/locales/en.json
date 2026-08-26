@@ -321,7 +321,8 @@
     "errors": {
       "objectiveRequired": "Objective is required.",
       "save": "Could not save cycle. Please try again.",
-      "prompt": "Could not generate prompt. Please try again."
+      "prompt": "Could not generate prompt. Please try again.",
+      "clipboard": "Clipboard unavailable. Select the text and press Ctrl+C."
     }
   },
   "feedback": {

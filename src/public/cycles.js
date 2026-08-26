@@ -270,7 +270,14 @@ async function handleCopyPrompt(messages) {
     const span = btn.querySelector('span');
     span.textContent = t(messages, 'aiCoach.copied');
     setTimeout(() => { span.textContent = t(messages, 'cycles.copyPrompt'); }, 2000);
-  } catch { /* clipboard unavailable */ }
+  } catch {
+    const range = document.createRange();
+    range.selectNodeContents(output);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    showToast(messages, 'cycles.errors.clipboard', 2500, 'error');
+  }
 }
 
 async function checkActiveCycle(addBtn, messages) {
