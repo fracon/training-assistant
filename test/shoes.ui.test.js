@@ -295,8 +295,8 @@ test('locale files expose every shoes string in both languages', () => {
   assert.match(pt.shoes.pageTitle, /• Kinesis$/);
   assert.equal(en.shoes.pageTitle, 'Shoes • Kinesis');
   assert.equal(pt.shoes.pageTitle, 'Tênis • Kinesis');
-  assert.equal(en.shell.nav.shoes, 'Shoes');
-  assert.equal(pt.shell.nav.shoes, 'Tênis');
+  assert.equal(en.shell.nav.shoes, 'Shoe Rotation');
+  assert.equal(pt.shell.nav.shoes, 'Rotação de Tênis');
 });
 
 /* ── shoes.js wiring ── */

@@ -89,8 +89,8 @@ test('sidebar navigation follows Home, Request Workouts, Workouts, Shoes', () =>
   assert.equal(pt.shell.nav.requestWorkouts, 'Solicitar Treinos');
   assert.equal(en.shell.nav.workouts, 'Workouts');
   assert.equal(pt.shell.nav.workouts, 'Treinos');
-  assert.equal(en.shell.nav.shoes, 'Shoes');
-  assert.equal(pt.shell.nav.shoes, 'Tênis');
+  assert.equal(en.shell.nav.shoes, 'Shoe Rotation');
+  assert.equal(pt.shell.nav.shoes, 'Rotação de Tênis');
   assert.equal(en.shell.confirm.yes, 'Delete');
   assert.equal(pt.shell.confirm.yes, 'Excluir');
   assert.equal(en.shell.confirm.no, 'Cancel');
@@ -329,6 +329,27 @@ test('initShell fetches active cycle and calls applyCycleGuard when none exists'
   assert.match(js, /\/api\/cycles\/active/);
   assert.match(js, /hasActiveCycle\s*=\s*!!data\.cycle/);
   assert.match(js, /if\s*\(!hasActiveCycle\)\s*\{\s*\n\s*applyCycleGuard\(shellRoot\)/);
+});
+
+test('initShell listens for kinesis:cycle-changed to refresh the sidebar guard', () => {
+  const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
+  assert.match(js, /window\.addEventListener\('kinesis:cycle-changed'/);
+  assert.match(js, /refreshCycleGuard\(shellRoot\)/);
+});
+
+test('refreshCycleGuard re-fetches active cycle and toggles guard accordingly', () => {
+  const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
+  assert.match(js, /async function refreshCycleGuard\(shellRoot\)/);
+  assert.match(js, /removeCycleGuard\(shellRoot\)/);
+  assert.match(js, /data\.cycle\)\s*\{[^}]*removeCycleGuard/);
+});
+
+test('removeCycleGuard re-enables nav items and hides badges', () => {
+  const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
+  assert.match(js, /function removeCycleGuard\(shellRoot\)/);
+  assert.match(js, /navEntry\.classList\.remove\('disabled'\)/);
+  assert.match(js, /navEntry\.removeAttribute\('aria-disabled'\)/);
+  assert.match(js, /badge\.classList\.add\('hidden'\)/);
 });
 
 test('shell.noCycle i18n key exists in both locale files', () => {

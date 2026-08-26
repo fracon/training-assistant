@@ -72,7 +72,7 @@
       "cycles": "Training Cycles",
       "requestWorkouts": "Request Workouts",
       "workouts": "Workouts",
-      "shoes": "Shoes"
+      "shoes": "Shoe Rotation"
     },
     "soon": "Soon",
     "noCycle": "No active cycle",
@@ -288,6 +288,9 @@
     "primaryGoal": "Primary goal",
     "secondaryGoal": "Secondary goal",
     "otherEvents": "Other events during cycle",
+    "primaryGoalPlaceholder": "e.g. Run a sub-2h half marathon",
+    "secondaryGoalPlaceholder": "e.g. Maintain a consistent weekly volume over 40km",
+    "otherEventsPlaceholder": "e.g. 10k race in October as pace test\n- 1-week vacation in September",
     "disabledTooltip": "Complete or cancel your active cycle first.",
     "edit": "Edit",
     "complete": "Complete",
@@ -301,6 +304,10 @@
     "promptTitle": "AI Coach Macrocycle Prompt",
     "copyPrompt": "Copy to Clipboard",
     "deleteConfirm": "Are you sure you want to cancel this cycle?",
+    "confirm": {
+      "yes": "Yes, cancel cycle",
+      "no": "No, keep cycle"
+    },
     "status": {
       "active": "Active",
       "completed": "Completed",
@@ -314,7 +321,8 @@
     "errors": {
       "objectiveRequired": "Objective is required.",
       "save": "Could not save cycle. Please try again.",
-      "prompt": "Could not generate prompt. Please try again."
+      "prompt": "Could not generate prompt. Please try again.",
+      "clipboard": "Clipboard unavailable. Select the text and press Ctrl+C."
     }
   },
   "feedback": {

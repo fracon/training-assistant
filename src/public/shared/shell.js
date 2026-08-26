@@ -376,6 +376,8 @@ export async function initShell({ active } = {}) {
     applyCycleGuard(shellRoot);
   }
 
+  window.addEventListener('kinesis:cycle-changed', () => refreshCycleGuard(shellRoot));
+
   // The footer only carries the app version; resolve it without blocking
   // the shell mount and degrade gracefully when unreachable.
   const versionLabel = shellRoot.querySelector('#appVersion');
@@ -414,4 +416,35 @@ export function applyCycleGuard(shellRoot) {
     badge.classList.remove('hidden');
   }
   refreshIcons();
+}
+
+function removeCycleGuard(shellRoot) {
+  for (const navEntry of shellRoot.querySelectorAll('.nav-item')) {
+    if (CYCLE_DEPENDENT_ITEMS.includes(navEntry.dataset.navId)) {
+      const item = NAV_ITEMS.find((n) => n.id === navEntry.dataset.navId);
+      navEntry.classList.remove('disabled');
+      navEntry.removeAttribute('aria-disabled');
+      if (item) navEntry.href = item.href;
+    }
+  }
+  for (const badge of shellRoot.querySelectorAll('.cycle-guard-badge')) {
+    badge.classList.add('hidden');
+  }
+  refreshIcons();
+}
+
+async function refreshCycleGuard(shellRoot) {
+  try {
+    const resp = await fetch('/api/cycles/active', { headers: { accept: 'application/json' } });
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data.cycle) {
+        removeCycleGuard(shellRoot);
+      } else {
+        applyCycleGuard(shellRoot);
+      }
+    }
+  } catch {
+    /* network hiccup — keep current sidebar state */
+  }
 }

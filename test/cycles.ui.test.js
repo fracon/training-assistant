@@ -80,8 +80,11 @@ test('cycles.html form fields use data-i18n attributes for labels and placeholde
   assert.match(html, /data-i18n="cycles\.runCount"/);
   assert.match(html, /data-i18n="cycles\.startDate"/);
   assert.match(html, /data-i18n="cycles\.primaryGoal"/);
+  assert.match(html, /data-i18n-placeholder="cycles\.primaryGoalPlaceholder"/);
   assert.match(html, /data-i18n="cycles\.secondaryGoal"/);
+  assert.match(html, /data-i18n-placeholder="cycles\.secondaryGoalPlaceholder"/);
   assert.match(html, /data-i18n="cycles\.otherEvents"/);
+  assert.match(html, /data-i18n-placeholder="cycles\.otherEventsPlaceholder"/);
   assert.match(html, /data-i18n="cycles\.cancelForm"/);
   assert.match(html, /data-i18n="cycles\.saveCycle"/);
 });
@@ -158,6 +161,12 @@ test('cycles.css card action buttons match shoes btn-icon pattern', () => {
   assert.match(css, /\.btn-icon \{[^}]*border-radius:\s*8px/);
   assert.match(css, /\.btn-icon\.btn-warn:hover \{[^}]*color:\s*var\(--danger\)/);
   assert.match(css, /\.btn-icon\.btn-ok:hover \{[^}]*color:\s*var\(--ok\)/);
+});
+
+test('theme.css toast-error variant uses danger color', () => {
+  const theme = readFileSync(join(publicDir, 'shared', 'theme.css'), 'utf8');
+  assert.match(theme, /\.toast\.toast-error \{[^}]*border-left-color:\s*var\(--danger\)/);
+  assert.match(theme, /\.toast\.toast-error \.toast-icon \{[^}]*color:\s*var\(--danger\)/);
 });
 
 test('cycles.css prompt modal uses shared modal-backdrop pattern', () => {
@@ -259,6 +268,18 @@ test('cycles.js handles complete, cancel, and prompt actions', () => {
   assert.match(js, /status:\s*'cancelled'/);
 });
 
+test('cycles.js dispatches kinesis:cycle-changed after create, complete, and cancel', () => {
+  const js = readFileSync(join(publicDir, 'cycles.js'), 'utf8');
+  const matches = js.match(/window\.dispatchEvent\(new CustomEvent\('kinesis:cycle-changed'\)\)/g);
+  assert.ok(matches && matches.length >= 3, 'must dispatch the event in create, complete, and cancel handlers');
+});
+
+test('cycles.js listens for kinesis:cycle-changed to re-enable the add button', () => {
+  const js = readFileSync(join(publicDir, 'cycles.js'), 'utf8');
+  assert.match(js, /addEventListener\('kinesis:cycle-changed'/);
+  assert.match(js, /checkActiveCycle\(addBtn/);
+});
+
 test('cycles.js action handlers use i18n.messages not a stale closure', () => {
   const js = readFileSync(join(publicDir, 'cycles.js'), 'utf8');
 
@@ -277,8 +298,8 @@ test('cycles.js uses showConfirm for cancel action instead of native confirm', (
   assert.doesNotMatch(js, /window\.confirm/);
   assert.match(js, /await showConfirm/);
   assert.match(js, /cycles\.deleteConfirm/);
-  assert.match(js, /shell\.confirm\.yes/);
-  assert.match(js, /shell\.confirm\.no/);
+  assert.match(js, /cycles\.confirm\.yes/);
+  assert.match(js, /cycles\.confirm\.no/);
 });
 
 test('cycles.js validates objective before submit', () => {
@@ -290,7 +311,7 @@ test('cycles.js validates objective before submit', () => {
 test('cycles.js shows form errors using cycles.errors.* keys', () => {
   const js = readFileSync(join(publicDir, 'cycles.js'), 'utf8');
   assert.match(js, /showFormError\('cycles\.errors\.save',\s*messages\)/);
-  assert.match(js, /showToast\(messages,\s*'cycles\.errors\.prompt'\)/);
+  assert.match(js, /showToast\(messages,\s*'cycles\.errors\.prompt',\s*2500,\s*'error'\)/);
 });
 
 test('cycles.js uses cycles.success.* keys for success toasts', () => {
@@ -303,6 +324,20 @@ test('cycles.js uses cycles.success.* keys for success toasts', () => {
 test('cycles.js renders toast icon via lucide.createIcons', () => {
   const js = readFileSync(join(publicDir, 'cycles.js'), 'utf8');
   assert.match(js, /lucide\.createIcons\(\{ nodes: \[toast\] \}\)/);
+});
+
+test('cycles.js showToast accepts a type parameter and toggles toast-error class', () => {
+  const js = readFileSync(join(publicDir, 'cycles.js'), 'utf8');
+  assert.match(js, /function showToast\(messages,\s*messageKey,\s*duration = 2500,\s*type = 'success'\)/);
+  assert.match(js, /toast\.classList\.toggle\('toast-error',\s*type === 'error'\)/);
+  assert.match(js, /type === 'error' \? 'x-circle' : 'check-circle'/);
+});
+
+test('theme.css defines toast-error variant with danger border and icon color', () => {
+  const theme = readFileSync(join(publicDir, 'shared', 'theme.css'), 'utf8');
+  assert.match(theme, /\.toast\.toast-error \{/);
+  assert.match(theme, /\.toast\.toast-error \{[^}]*border-left-color:\s*var\(--danger\)/);
+  assert.match(theme, /\.toast\.toast-error \.toast-icon \{[^}]*color:\s*var\(--danger\)/);
 });
 
 test('cycles.js self-invokes initCyclesPage when appView exists', () => {
@@ -319,6 +354,40 @@ test('cycles.js handles prompt modal open and copy actions', () => {
   assert.match(js, /promptCloseBtn/);
   assert.match(js, /promptCopyBtn/);
   assert.match(js, /navigator\.clipboard\.writeText/);
+  assert.match(js, /cycles\.errors\.clipboard/);
+  assert.match(js, /selectNodeContents/);
+});
+
+test('cycles.js prompt catch logs the error before showing toast', () => {
+  const js = readFileSync(join(publicDir, 'cycles.js'), 'utf8');
+  assert.match(js, /console\.error\('Prompt generation failed:',\s*error\)/);
+});
+
+test('cycles.js prompt request passes lng query parameter from getShellI18n().language', () => {
+  const js = readFileSync(join(publicDir, 'cycles.js'), 'utf8');
+  assert.match(js, /getShellI18n\(\)\.language === 'pt-BR'\) \? 'pt' : 'en'/);
+  assert.match(js, /\/api\/cycles\/\$\{id\}\/prompt\?lng=\$\{lng\}/);
+});
+
+test('prompts.js exports DISTANCE_TRANSLATIONS and translateDistance', () => {
+  const js = readFileSync(join(__dirname, '..', 'src', 'prompts.js'), 'utf8');
+  assert.match(js, /const DISTANCE_TRANSLATIONS/);
+  assert.match(js, /function translateDistance\(lang,\s*distance\)/);
+  assert.match(js, /module\.exports.*DISTANCE_TRANSLATIONS/);
+  assert.match(js, /module\.exports.*translateDistance/);
+});
+
+test('prompts.js buildMacrocyclePrompt uses translateDistance for distance', () => {
+  const js = readFileSync(join(__dirname, '..', 'src', 'prompts.js'), 'utf8');
+  assert.match(js, /translateDistance\(lang,\s*cycle\.distance\)/);
+});
+
+test('cycles.js translates distance keys via translateDistance helper', () => {
+  const js = readFileSync(join(publicDir, 'cycles.js'), 'utf8');
+  assert.match(js, /function translateDistance\(messages,\s*distance\)/);
+  assert.match(js, /cycles\.distances\.\$\{distance\}/);
+  assert.match(js, /translated !== key/);
+  assert.match(js, /displayDistance/);
 });
 
 test('cycles.js checks active cycle and disables add button when active exists', () => {
@@ -352,6 +421,9 @@ test('locale files expose every cycles string in both languages', () => {
     assert.equal(typeof messages.cycles.primaryGoal, 'string');
     assert.equal(typeof messages.cycles.secondaryGoal, 'string');
     assert.equal(typeof messages.cycles.otherEvents, 'string');
+    assert.equal(typeof messages.cycles.primaryGoalPlaceholder, 'string');
+    assert.equal(typeof messages.cycles.secondaryGoalPlaceholder, 'string');
+    assert.equal(typeof messages.cycles.otherEventsPlaceholder, 'string');
     assert.equal(typeof messages.cycles.disabledTooltip, 'string');
     assert.equal(typeof messages.cycles.edit, 'string');
     assert.equal(typeof messages.cycles.complete, 'string');
@@ -365,6 +437,8 @@ test('locale files expose every cycles string in both languages', () => {
     assert.equal(typeof messages.cycles.promptTitle, 'string');
     assert.equal(typeof messages.cycles.copyPrompt, 'string');
     assert.equal(typeof messages.cycles.deleteConfirm, 'string');
+    assert.equal(typeof messages.cycles.confirm.yes, 'string');
+    assert.equal(typeof messages.cycles.confirm.no, 'string');
     assert.equal(typeof messages.cycles.status.active, 'string');
     assert.equal(typeof messages.cycles.status.completed, 'string');
     assert.equal(typeof messages.cycles.status.cancelled, 'string');
@@ -374,6 +448,7 @@ test('locale files expose every cycles string in both languages', () => {
     assert.equal(typeof messages.cycles.errors.objectiveRequired, 'string');
     assert.equal(typeof messages.cycles.errors.save, 'string');
     assert.equal(typeof messages.cycles.errors.prompt, 'string');
+    assert.equal(typeof messages.cycles.errors.clipboard, 'string');
     assert.equal(typeof messages.cycles.distances['1km'], 'string');
     assert.equal(typeof messages.cycles.distances['3km'], 'string');
     assert.equal(typeof messages.cycles.distances['5km'], 'string');
@@ -419,4 +494,10 @@ test('api.js createCycle and updateCycle use requestJson', () => {
   assert.match(js, /export function createCycle\(body\)[\s\S]*?return requestJson\('\/api\/cycles',\s*body\)/);
   assert.match(js, /export function updateCycle\(id,\s*body\)[\s\S]*?return requestJson\(`\/api\/cycles\/\$\{id\}`,\s*body,\s*'PUT'\)/);
   assert.match(js, /export function deleteCycle\(id\)[\s\S]*?return requestJson\(`\/api\/cycles\/\$\{id\}`,\s*null,\s*'DELETE'\)/);
+});
+
+test('api.js requestJson omits body for GET requests', () => {
+  const js = readFileSync(join(publicDir, 'shared', 'api.js'), 'utf8');
+  assert.match(js, /if\s*\(method !== 'GET'\)/);
+  assert.match(js, /options\.body = JSON\.stringify\(body\)/);
 });

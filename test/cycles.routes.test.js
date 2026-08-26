@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 
 const { buildServer } = require('../src/server');
 const { createDatabase } = require('../src/db/database');
+const { DISTANCE_TRANSLATIONS, translateDistance } = require('../src/prompts');
 
 const REGISTER_PAYLOAD = {
   email: 'CycleRunner@Example.com',
@@ -485,7 +486,7 @@ test('GET /api/cycles/:id/prompt returns prompt text for an existing cycle', asy
   const id = seedCycle(db, userId, {
     objective: 'Marathon',
     target_date: '2026-12-01',
-    distance: '42km',
+    distance: 'marathon',
     run_before: '5k',
     run_count: 3,
     primary_goal: 'Finish',
@@ -504,7 +505,6 @@ test('GET /api/cycles/:id/prompt returns prompt text for an existing cycle', asy
   assert.equal(typeof prompt, 'string');
   assert.ok(prompt.length > 0);
   assert.ok(prompt.includes('Marathon'));
-  assert.ok(prompt.includes('42km'));
 });
 
 test('GET /api/cycles/:id/prompt returns 404 for non-existent cycle', async () => {
@@ -567,6 +567,48 @@ test('GET /api/cycles/:id/prompt uses fallback dashes when cycle fields are empt
   const { prompt } = res.json();
   assert.ok(typeof prompt === 'string');
   assert.ok(prompt.length > 0);
+});
+
+test('GET /api/cycles/:id/prompt?lng=pt translates distance to Portuguese', async () => {
+  const { db, app, cookie, userId } = await setup();
+  const id = seedCycle(db, userId, { distance: 'half_marathon' });
+
+  const res = await app.inject({
+    method: 'GET',
+    url: `/api/cycles/${id}/prompt?lng=pt`,
+    headers: { cookie },
+  });
+  assert.equal(res.statusCode, 200);
+  assert.ok(res.json().prompt.includes('Meia Maratona'));
+  assert.ok(!res.json().prompt.includes('half_marathon'));
+});
+
+test('GET /api/cycles/:id/prompt?lng=en translates distance to English', async () => {
+  const { db, app, cookie, userId } = await setup();
+  const id = seedCycle(db, userId, { distance: 'half_marathon' });
+
+  const res = await app.inject({
+    method: 'GET',
+    url: `/api/cycles/${id}/prompt?lng=en`,
+    headers: { cookie },
+  });
+  assert.equal(res.statusCode, 200);
+  assert.ok(res.json().prompt.includes('Half Marathon'));
+  assert.ok(!res.json().prompt.includes('half_marathon'));
+});
+
+test('GET /api/cycles/:id/prompt?lng=pt translates marathon to Maratona', async () => {
+  const { db, app, cookie, userId } = await setup();
+  const id = seedCycle(db, userId, { distance: 'marathon' });
+
+  const res = await app.inject({
+    method: 'GET',
+    url: `/api/cycles/${id}/prompt?lng=pt`,
+    headers: { cookie },
+  });
+  assert.equal(res.statusCode, 200);
+  assert.ok(res.json().prompt.includes('Maratona'));
+  assert.ok(!res.json().prompt.includes('marathon'));
 });
 
 /* ── Error propagation ── */
@@ -646,4 +688,42 @@ test('full CRUD lifecycle: create, list, get active, update, prompt, delete', as
 
   const finalList = await app.inject({ method: 'GET', url: '/api/cycles', headers: { cookie } });
   assert.equal(finalList.json().cycles.length, 0);
+});
+
+/* ── translateDistance unit tests ── */
+
+test('translateDistance returns Portuguese label for half_marathon', () => {
+  assert.equal(translateDistance('pt-BR', 'half_marathon'), 'Meia Maratona');
+});
+
+test('translateDistance returns English label for half_marathon', () => {
+  assert.equal(translateDistance('en-US', 'half_marathon'), 'Half Marathon');
+});
+
+test('translateDistance returns Portuguese label for marathon', () => {
+  assert.equal(translateDistance('pt-BR', 'marathon'), 'Maratona');
+});
+
+test('translateDistance returns English label for marathon', () => {
+  assert.equal(translateDistance('en-US', 'marathon'), 'Marathon');
+});
+
+test('translateDistance falls back to raw value for unknown keys', () => {
+  assert.equal(translateDistance('pt-BR', '42km'), '42km');
+});
+
+test('translateDistance returns dash for null distance', () => {
+  assert.equal(translateDistance('pt-BR', null), '-');
+});
+
+test('translateDistance returns dash for undefined distance', () => {
+  assert.equal(translateDistance('en-US', undefined), '-');
+});
+
+test('DISTANCE_TRANSLATIONS covers all distance keys for both locales', () => {
+  const keys = ['1km', '3km', '5km', '10km', '15km', 'half_marathon', 'marathon'];
+  for (const key of keys) {
+    assert.ok(DISTANCE_TRANSLATIONS.pt[key], `pt missing: ${key}`);
+    assert.ok(DISTANCE_TRANSLATIONS.en[key], `en missing: ${key}`);
+  }
 });

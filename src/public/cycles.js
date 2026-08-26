@@ -19,6 +19,13 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+function translateDistance(messages, distance) {
+  if (!distance) return '';
+  const key = `cycles.distances.${distance}`;
+  const translated = t(messages, key);
+  return (translated !== key && translated) ? translated : distance;
+}
+
 function renderCycleCard(cycle, messages) {
   const card = document.createElement('div');
   card.className = 'cycle-card';
@@ -27,6 +34,7 @@ function renderCycleCard(cycle, messages) {
   const title = t(messages, 'cycles.cardTitle').replace('{objective}', cycle.objective || '');
   const statusClass = `status-${cycle.status}`;
   const statusLabel = t(messages, `cycles.status.${cycle.status}`);
+  const displayDistance = translateDistance(messages, cycle.distance);
 
   card.innerHTML = `
     <div class="cycle-card-header">
@@ -35,7 +43,7 @@ function renderCycleCard(cycle, messages) {
     </div>
     <div class="cycle-card-meta">
       ${cycle.target_date ? `<span><strong>${t(messages, 'cycles.targetDate')}:</strong> ${escapeHtml(cycle.target_date)}</span>` : ''}
-      ${cycle.distance ? `<span><strong>${t(messages, 'cycles.distance')}:</strong> ${escapeHtml(cycle.distance)}</span>` : ''}
+      ${displayDistance ? `<span><strong>${t(messages, 'cycles.distance')}:</strong> ${escapeHtml(displayDistance)}</span>` : ''}
       ${cycle.start_date ? `<span><strong>${t(messages, 'cycles.startDate')}:</strong> ${escapeHtml(cycle.start_date)}</span>` : ''}
       ${cycle.primary_goal ? `<span><strong>${t(messages, 'cycles.primaryGoal')}:</strong> ${escapeHtml(cycle.primary_goal)}</span>` : ''}
     </div>
@@ -136,9 +144,13 @@ function hidePromptModal() {
   document.getElementById('promptModal').classList.add('hidden');
 }
 
-function showToast(messages, messageKey, duration = 2500) {
+function showToast(messages, messageKey, duration = 2500, type = 'success') {
   const toast = document.getElementById('toast');
+  const iconEl = toast.querySelector('.toast-icon');
   const textEl = toast.querySelector('.toast-text');
+  const iconName = type === 'error' ? 'x-circle' : 'check-circle';
+  iconEl.innerHTML = `<i data-lucide="${iconName}"></i>`;
+  toast.classList.toggle('toast-error', type === 'error');
   textEl.textContent = t(messages, messageKey);
   toast.classList.add('visible');
   if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [toast] });
@@ -181,6 +193,7 @@ async function handleSubmit(cycles, messages) {
       cycles.push(...updated);
       renderList(cycles, messages);
       showToast(messages, 'cycles.success.add');
+      window.dispatchEvent(new CustomEvent('kinesis:cycle-changed'));
       if (result.cycle) {
         try {
           const promptResult = await requestJson(`/api/cycles/${result.cycle.id}/prompt`, null, 'GET');
@@ -217,14 +230,15 @@ async function handleAction(action, id, cycles, messages) {
     cycles.length = 0;
     cycles.push(...updated);
     renderList(cycles, messages);
+    window.dispatchEvent(new CustomEvent('kinesis:cycle-changed'));
     return;
   }
 
   if (action === 'cancel') {
     if (!(await showConfirm(
       t(messages, 'cycles.deleteConfirm'),
-      t(messages, 'shell.confirm.yes'),
-      t(messages, 'shell.confirm.no'),
+      t(messages, 'cycles.confirm.yes'),
+      t(messages, 'cycles.confirm.no'),
     ))) return;
     await updateCycle(id, { status: 'cancelled' });
     const updated = await fetchCycles();
@@ -232,15 +246,18 @@ async function handleAction(action, id, cycles, messages) {
     cycles.push(...updated);
     renderList(cycles, messages);
     showToast(messages, 'cycles.success.delete');
+    window.dispatchEvent(new CustomEvent('kinesis:cycle-changed'));
     return;
   }
 
   if (action === 'prompt') {
     try {
-      const result = await requestJson(`/api/cycles/${id}/prompt`, null, 'GET');
+      const lng = (getShellI18n().language === 'pt-BR') ? 'pt' : 'en';
+      const result = await requestJson(`/api/cycles/${id}/prompt?lng=${lng}`, null, 'GET');
       if (result.prompt) showPromptModal(result.prompt, messages);
-    } catch {
-      showToast(messages, 'cycles.errors.prompt');
+    } catch (error) {
+      console.error('Prompt generation failed:', error);
+      showToast(messages, 'cycles.errors.prompt', 2500, 'error');
     }
   }
 }
@@ -253,7 +270,14 @@ async function handleCopyPrompt(messages) {
     const span = btn.querySelector('span');
     span.textContent = t(messages, 'aiCoach.copied');
     setTimeout(() => { span.textContent = t(messages, 'cycles.copyPrompt'); }, 2000);
-  } catch { /* clipboard unavailable */ }
+  } catch {
+    const range = document.createRange();
+    range.selectNodeContents(output);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    showToast(messages, 'cycles.errors.clipboard', 2500, 'error');
+  }
 }
 
 async function checkActiveCycle(addBtn, messages) {
@@ -337,6 +361,8 @@ export async function initCyclesPage() {
   } catch { /* load failed — non-critical */ }
 
   await checkActiveCycle(addBtn, i18n.messages);
+
+  window.addEventListener('kinesis:cycle-changed', () => checkActiveCycle(addBtn, i18n.messages));
 
   return user;
 }
