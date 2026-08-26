@@ -16,17 +16,19 @@ const REGISTER_PAYLOAD = {
 function makeFitSummary(overrides = {}) {
   return {
     totals: {
-      moving_duration: 3600,
-      total_distance: 10000,
-      total_ascent: 120,
+      durationSeconds: 3600,
+      distanceKm: 10,
+      avgPaceSecondsPerKm: 360,
+      avgHeartRate: 155,
+      maxHeartRate: 175,
+      ascentMeters: 120,
     },
     activity: {
-      enhanced_avg_speed: 2.78,
-      avg_heart_rate: 155,
-      max_heart_rate: 175,
-      total_ascent: 120,
+      sport: 'running',
+      startTime: '2026-08-24T07:00:00Z',
+      endTime: '2026-08-24T08:00:00Z',
     },
-    laps: [{ lap: 1, duration: 3600 }],
+    laps: [{ lap: 1, duration: 3600, stepType: 'Run', durationLabel: '1:00:00', cumulativeSeconds: 3600, cumulativeLabel: '1:00:00', distanceKm: 10, distanceLabel: '10.00', avgPaceSecondsPerKm: 360, avgPaceLabel: '6:00', bestPaceSecondsPerKm: null, bestPaceLabel: '--:--', avgHeartRate: 155, maxHeartRate: 175, ascentMeters: 120, descentMeters: null, avgCadenceSpm: null, maxCadenceSpm: null, strideMeters: null, calories: null }],
     ...overrides,
   };
 }
@@ -575,9 +577,9 @@ test('POST /api/trainings/:id/fit reports parse errors as 422', async () => {
 
 test('POST /api/trainings/:id/fit persists FIT metrics and returns them', async () => {
   const summary = makeFitSummary({
-    totals: { moving_duration: 5400, total_distance: 12500, total_ascent: 200 },
-    activity: { enhanced_avg_speed: 2.31, avg_heart_rate: 160, max_heart_rate: 182, total_ascent: 200 },
-    laps: [{ lap: 1, duration: 5400 }],
+    totals: { durationSeconds: 5400, distanceKm: 12.5, avgPaceSecondsPerKm: 432, avgHeartRate: 160, maxHeartRate: 182, ascentMeters: 200 },
+    activity: { sport: 'running', startTime: '2026-08-24T07:00:00Z', endTime: '2026-08-24T08:30:00Z' },
+    laps: [{ lap: 1, duration: 5400, stepType: 'Run', durationLabel: '1:30:00', cumulativeSeconds: 5400, cumulativeLabel: '1:30:00', distanceKm: 12.5, distanceLabel: '12.50', avgPaceSecondsPerKm: 432, avgPaceLabel: '7:12', bestPaceSecondsPerKm: null, bestPaceLabel: '--:--', avgHeartRate: 160, maxHeartRate: 182, ascentMeters: 200, descentMeters: null, avgCadenceSpm: null, maxCadenceSpm: null, strideMeters: null, calories: null }],
   });
   const { db, app, cookie, userId } = await setup({ parseFitFile: stubParse(summary) });
   const id = seedTraining(db, { user_id: userId });
@@ -594,7 +596,7 @@ test('POST /api/trainings/:id/fit persists FIT metrics and returns them', async 
   const payload = response.json();
   assert.equal(payload.fit_duration, '1:30:00');
   assert.equal(payload.fit_distance, 12.5);
-  assert.equal(payload.fit_avg_pace, '25.97');
+  assert.equal(payload.fit_avg_pace, '7.20');
   assert.equal(payload.fit_avg_hr, 160);
   assert.equal(payload.fit_max_hr, 182);
   assert.equal(payload.fit_elevation_gain, 200);
@@ -605,7 +607,7 @@ test('POST /api/trainings/:id/fit persists FIT metrics and returns them', async 
     .get(id);
   assert.equal(row.fit_duration, '1:30:00');
   assert.equal(row.fit_distance, 12.5);
-  assert.equal(row.fit_avg_pace, '25.97');
+  assert.equal(row.fit_avg_pace, '7.20');
   assert.equal(row.fit_avg_hr, 160);
   assert.equal(row.fit_max_hr, 182);
   assert.equal(row.fit_elevation_gain, 200);
@@ -617,8 +619,8 @@ test('POST /api/trainings/:id/fit persists FIT metrics and returns them', async 
 
 test('POST /api/trainings/:id/fit formats minutes-only duration when under one hour', async () => {
   const summary = makeFitSummary({
-    totals: { moving_duration: 1800, total_distance: 5000, total_ascent: 60 },
-    activity: { enhanced_avg_speed: 2.78, avg_heart_rate: 150, max_heart_rate: 168, total_ascent: 60 },
+    totals: { durationSeconds: 1800, distanceKm: 5, avgPaceSecondsPerKm: 360, avgHeartRate: 150, maxHeartRate: 168, ascentMeters: 60 },
+    activity: { sport: 'running', startTime: '2026-08-24T07:00:00Z', endTime: '2026-08-24T07:30:00Z' },
     laps: [],
   });
   const { db, app, cookie, userId } = await setup({ parseFitFile: stubParse(summary) });
@@ -635,17 +637,17 @@ test('POST /api/trainings/:id/fit formats minutes-only duration when under one h
   assert.equal(response.json().fit_duration, '30:00');
 });
 
-test('POST /api/trainings/:id/fit falls back to activity totals when totals are missing', async () => {
+test('POST /api/trainings/:id/fit extracts metrics from totals produced by summarize()', async () => {
   const summary = {
-    totals: {},
-    activity: {
-      total_timer_time: 2400,
-      total_distance: 7000,
-      enhanced_avg_speed: 2.92,
-      avg_heart_rate: 145,
-      max_heart_rate: 170,
-      total_ascent: 80,
+    totals: {
+      durationSeconds: 2400,
+      distanceKm: 7,
+      avgPaceSecondsPerKm: 342.9,
+      avgHeartRate: 145,
+      maxHeartRate: 170,
+      ascentMeters: 80,
     },
+    activity: { sport: 'running', startTime: null, endTime: null },
     laps: [],
   };
   const { db, app, cookie, userId } = await setup({ parseFitFile: stubParse(summary) });
@@ -667,9 +669,9 @@ test('POST /api/trainings/:id/fit falls back to activity totals when totals are 
   assert.equal(payload.fit_elevation_gain, 80);
 });
 
-test('POST /api/trainings/:id/fit returns nulls when activity fields are absent', async () => {
+test('POST /api/trainings/:id/fit returns nulls when optional totals fields are absent', async () => {
   const summary = {
-    totals: { moving_duration: 600, total_distance: 2000 },
+    totals: { durationSeconds: 600, distanceKm: 2 },
     activity: {},
     laps: [],
   };

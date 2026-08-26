@@ -22,6 +22,7 @@ const {
   copyAnalysisPrompt,
   escapeHtmlText,
   fitDropzonePrimaryHtml,
+  buildLapsMarkdown,
   PROMPT_TEMPLATE_PT,
   PROMPT_TEMPLATE_EN,
 } = require('../src/public/training-result.js');
@@ -358,6 +359,56 @@ test('escapeHtmlText neutralizes HTML-significant characters', () => {
   assert.equal(escapeHtmlText(null), '');
   assert.equal(escapeHtmlText(undefined), '');
   assert.equal(escapeHtmlText(42), '42');
+});
+
+test('buildLapsMarkdown returns empty string for missing or empty laps', () => {
+  assert.equal(buildLapsMarkdown(null), '');
+  assert.equal(buildLapsMarkdown(undefined), '');
+  assert.equal(buildLapsMarkdown([]), '');
+});
+
+test('buildLapsMarkdown renders a Markdown table from parsed lap views', () => {
+  const laps = [
+    { lap: 1, stepType: 'Warmup', distanceLabel: '1.00', durationLabel: '6:30', avgPaceLabel: '6:30', avgHeartRate: 130 },
+    { lap: 2, stepType: 'Run', distanceLabel: '5.00', durationLabel: '25:00', avgPaceLabel: '5:00', avgHeartRate: 162 },
+  ];
+  const md = buildLapsMarkdown(laps);
+  assert.ok(md.includes('| # | Type | Distance | Duration | Pace | HR |'));
+  assert.ok(md.includes('| 1 | Warmup | 1.00 km | 6:30 | 6:30 min/km | 130 |'));
+  assert.ok(md.includes('| 2 | Run | 5.00 km | 25:00 | 5:00 min/km | 162 |'));
+});
+
+test('buildLapsMarkdown uses dashes for null fields', () => {
+  const laps = [{ lap: 1, stepType: 'Run', distanceLabel: null, durationLabel: null, avgPaceLabel: null, avgHeartRate: null }];
+  const md = buildLapsMarkdown(laps);
+  assert.ok(md.includes('| 1 | Run | - km | - | - min/km | - |'));
+});
+
+test('collectPromptValues injects Markdown lap table when fitData has laps', () => {
+  const fitData = {
+    fit_duration: '1:00:00',
+    fit_distance: 10,
+    fit_avg_pace: '6:00',
+    fit_avg_hr: 155,
+    fit_max_hr: 175,
+    fit_elevation_gain: 120,
+    laps: [
+      { lap: 1, stepType: 'Run', distanceLabel: '10.00', durationLabel: '1:00:00', avgPaceLabel: '6:00', avgHeartRate: 155 },
+    ],
+  };
+  const values = collectPromptValues({ training: baseTraining, form: baseForm(), fitData });
+  const md = values.ANEXAR_SCREENSHOT_GARMIN_OU_INSERIR_DADOS_DE_LAPS_AQUI;
+  assert.ok(md.includes('| # | Type | Distance | Duration | Pace | HR |'));
+  assert.ok(md.includes('| 1 | Run | 10.00 km | 1:00:00 | 6:00 min/km | 155 |'));
+});
+
+test('collectPromptValues falls back to Ver anexo when FIT attached but no laps', () => {
+  const values = collectPromptValues({
+    training: baseTraining,
+    form: baseForm({ fitAttached: true }),
+    fitData: { fit_duration: '1:00:00', laps: [] },
+  });
+  assert.equal(values.ANEXAR_SCREENSHOT_GARMIN_OU_INSERIR_DADOS_DE_LAPS_AQUI, 'Ver anexo');
 });
 
 test('fitDropzonePrimaryHtml renders the drag invitation while empty', () => {
@@ -820,6 +871,13 @@ test('session locale namespace stays in parity across en-US and pt-BR', () => {
     'fitAvgHr',
     'fitMaxHr',
     'fitElevation',
+    'fitLapsHeading',
+    'fitLap',
+    'fitLapType',
+    'fitLapDistance',
+    'fitLapDuration',
+    'fitLapPace',
+    'fitLapHr',
     'fieldShoeUsed',
     'shoeUsedPlaceholder',
     'fieldHrSource',

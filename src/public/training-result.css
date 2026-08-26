@@ -387,6 +387,54 @@ select.input-control {
   color: var(--ink);
 }
 
+.fit-laps-section {
+  margin-top: 14px;
+}
+
+.fit-laps-section[hidden] {
+  display: none;
+}
+
+.fit-laps-wrapper {
+  overflow-x: auto;
+}
+
+.fit-laps-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.fit-laps-table th {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  padding: 6px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.fit-laps-table td {
+  padding: 7px 10px;
+  color: var(--ink);
+  border-bottom: 1px solid var(--line);
+}
+
+.fit-laps-table tr:last-child td {
+  border-bottom: none;
+}
+
+.fit-laps-table td:nth-child(n+3) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.fit-laps-table th:nth-child(n+3) {
+  text-align: right;
+}
+
 .prompt-section {
   margin-top: 20px;
 }

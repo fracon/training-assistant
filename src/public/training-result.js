@@ -232,9 +232,11 @@ export function collectPromptValues({ training, form, fitData }) {
     ENERGIA_FINAL: form.energy_label,
     DOR_DESCONFORTO: form.pain_description,
     FEEDBACK: form.feedback_notas,
-    ANEXAR_SCREENSHOT_GARMIN_OU_INSERIR_DADOS_DE_LAPS_AQUI: form.fitAttached
-      ? 'Ver anexo'
-      : '-',
+    ANEXAR_SCREENSHOT_GARMIN_OU_INSERIR_DADOS_DE_LAPS_AQUI: fitData?.laps?.length
+      ? buildLapsMarkdown(fitData.laps)
+      : form.fitAttached
+        ? 'Ver anexo'
+        : '-',
   };
 }
 
@@ -259,6 +261,23 @@ export function fitDropzonePrimaryHtml({ files, translate }) {
   }
   const prefix = escapeHtmlText(translate('session.fitSelected'));
   return `${prefix}<strong>${escapeHtmlText(file.name)}</strong>`;
+}
+
+// Builds a Markdown table from parsed FIT lap data so it can be injected
+// directly into the AI coach prompt. Returns an empty string when there are
+// no laps to display.
+export function buildLapsMarkdown(laps) {
+  if (!Array.isArray(laps) || laps.length === 0) return '';
+  const header = '| # | Type | Distance | Duration | Pace | HR |';
+  const separator = '|---|------|----------|----------|------|-----|';
+  const rows = laps.map((lap) => {
+    const distance = lap.distanceLabel ?? '-';
+    const duration = lap.durationLabel ?? '-';
+    const pace = lap.avgPaceLabel ?? '-';
+    const hr = lap.avgHeartRate ?? '-';
+    return `| ${lap.lap} | ${lap.stepType} | ${distance} km | ${duration} | ${pace} min/km | ${hr} |`;
+  });
+  return [header, separator, ...rows].join('\n');
 }
 
 // Copies through the async Clipboard API. Returns true on success so the UI
@@ -345,6 +364,8 @@ async function initTrainingResult() {
   const copyPromptBtn = document.getElementById('copyPromptBtn');
   const copyLabel = copyPromptBtn.querySelector('span');
   const fitDataSection = document.getElementById('fitDataSection');
+  const fitLapsSection = document.getElementById('fitLapsSection');
+  const fitLapsBody = document.getElementById('fitLapsBody');
 
   let i18n = null;
   let copiedTimer = null;
@@ -384,6 +405,35 @@ async function initTrainingResult() {
   );
   fitDropzone.addEventListener('drop', () => fitDropzone.classList.remove('drag-active'));
 
+  const renderLapsTable = () => {
+    const laps = fitData?.laps;
+    if (!Array.isArray(laps) || laps.length === 0) {
+      fitLapsSection.hidden = true;
+      fitLapsBody.innerHTML = '';
+      return;
+    }
+    fitLapsSection.hidden = false;
+    const fragment = document.createDocumentFragment();
+    for (const lap of laps) {
+      const tr = document.createElement('tr');
+      const distance = lap.distanceLabel ?? '-';
+      const duration = lap.durationLabel ?? '-';
+      const pace = lap.avgPaceLabel ?? '-';
+      const hr = lap.avgHeartRate ?? '-';
+      tr.innerHTML = [
+        `<td>${escapeHtmlText(String(lap.lap))}</td>`,
+        `<td>${escapeHtmlText(lap.stepType)}</td>`,
+        `<td>${escapeHtmlText(distance)} km</td>`,
+        `<td>${escapeHtmlText(duration)}</td>`,
+        `<td>${escapeHtmlText(pace)} min/km</td>`,
+        `<td>${escapeHtmlText(String(hr))}</td>`,
+      ].join('');
+      fragment.appendChild(tr);
+    }
+    fitLapsBody.innerHTML = '';
+    fitLapsBody.appendChild(fragment);
+  };
+
   const renderFitData = () => {
     if (!fitData) {
       fitDataSection.hidden = true;
@@ -399,6 +449,7 @@ async function initTrainingResult() {
     document.getElementById('fitMaxHr').textContent = fitData.fit_max_hr ?? '-';
     document.getElementById('fitElevation').textContent =
       fitData.fit_elevation_gain != null ? `${fitData.fit_elevation_gain} m` : '-';
+    renderLapsTable();
   };
 
   const loadShoes = async () => {
@@ -484,6 +535,13 @@ async function initTrainingResult() {
   hrSourceSelect.value = training.feedback_hr_source ?? '';
 
   if (training.fit_duration) {
+    let laps = [];
+    if (training.fit_summary_json) {
+      try {
+        const parsed = JSON.parse(training.fit_summary_json);
+        laps = Array.isArray(parsed.laps) ? parsed.laps : [];
+      } catch { /* ignore malformed JSON */ }
+    }
     fitData = {
       fit_duration: training.fit_duration,
       fit_distance: training.fit_distance,
@@ -491,6 +549,7 @@ async function initTrainingResult() {
       fit_avg_hr: training.fit_avg_hr,
       fit_max_hr: training.fit_max_hr,
       fit_elevation_gain: training.fit_elevation_gain,
+      laps,
     };
     renderFitData();
   }
@@ -601,6 +660,7 @@ async function initTrainingResult() {
         fit_avg_hr: result.fit_avg_hr,
         fit_max_hr: result.fit_max_hr,
         fit_elevation_gain: result.fit_elevation_gain,
+        laps: result.laps || [],
       };
       renderFitData();
     } catch (error) {

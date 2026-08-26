@@ -449,7 +449,7 @@ async function buildServer(options = {}) {
 
       try {
         const result = await parseFile(fileBuffer);
-        const durationSec = result.totals?.moving_duration || result.activity?.total_timer_time || 0;
+        const durationSec = result.totals?.durationSeconds || 0;
         const hours = Math.floor(durationSec / 3600);
         const minutes = Math.floor((durationSec % 3600) / 60);
         const seconds = Math.floor(durationSec % 60);
@@ -457,14 +457,13 @@ async function buildServer(options = {}) {
           ? `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
           : `${minutes}:${String(seconds).padStart(2, '0')}`;
 
-        const totalMeters = result.totals?.total_distance || result.activity?.total_distance || 0;
-        const fitDistance = totalMeters / 1000;
-        const fitAvgPace = result.activity?.enhanced_avg_speed
-          ? (60 / result.activity.enhanced_avg_speed).toFixed(2)
+        const fitDistance = result.totals?.distanceKm ?? 0;
+        const fitAvgPace = result.totals?.avgPaceSecondsPerKm != null
+          ? (result.totals.avgPaceSecondsPerKm / 60).toFixed(2)
           : null;
-        const fitAvgHr = result.activity?.avg_heart_rate || null;
-        const fitMaxHr = result.activity?.max_heart_rate || null;
-        const fitElevation = result.totals?.total_ascent || result.activity?.total_ascent || null;
+        const fitAvgHr = result.totals?.avgHeartRate ?? null;
+        const fitMaxHr = result.totals?.maxHeartRate ?? null;
+        const fitElevation = result.totals?.ascentMeters ?? null;
         const fitSummaryJson = JSON.stringify({
           activity: result.activity,
           totals: result.totals,
