@@ -170,6 +170,13 @@
     "fitDragText": "Arraste seu arquivo <strong>.FIT</strong> aqui",
     "fitClickText": "ou clique para selecionar do computador",
     "fitSelected": "Arquivo selecionado: ",
+    "fitDataHeading": "Dados FIT Processados",
+    "fitDuration": "Duração",
+    "fitDistance": "Distância",
+    "fitAvgPace": "Pace Médio",
+    "fitAvgHr": "FC Média",
+    "fitMaxHr": "FC Máxima",
+    "fitElevation": "Ganho de Altitude",
     "fieldWeather": "Temperatura e clima",
     "weatherPlaceholder": "ex.: 22°C, nublado, vento leve",
     "fieldTerrain": "Terreno/percurso",
@@ -177,6 +184,8 @@
     "fieldMuscle": "Sensação muscular",
     "fieldEnergy": "Energia ao terminar",
     "generatePrompt": "Gerar Prompt de Análise",
+    "promptHeading": "Prompt Gerado",
+    "copyPrompt": "Copiar para a área de transferência",
     "copied": "Copiado!",
     "save": "Salvar e voltar ao calendário",
     "saving": "Salvando…",
@@ -184,7 +193,8 @@
       "load": "Não conseguimos carregar este treino.",
       "notFound": "Treino não encontrado.",
       "rpe": "O RPE realizado deve ser um número inteiro entre 1 e 5.",
-      "save": "Não conseguimos salvar seu feedback. Tente novamente."
+      "save": "Não conseguimos salvar seu feedback. Tente novamente.",
+      "fitUpload": "Não foi possível enviar o arquivo FIT. Tente novamente."
     }
   },
   "terrain": {

@@ -242,7 +242,7 @@ test('collectPromptValues maps planned data, form state and FIT placeholders', (
   assert.equal(values.TENIS, 'Nimbus 26');
 
   for (const metric of ['DURACAO', 'DISTANCIA', 'PACE_MEDIO', 'FC_MEDIA', 'FC_MAXIMA', 'DESNIVEL_POSITIVO']) {
-    assert.equal(values[metric], '-', `${metric} stays dashed until FIT parsing lands`);
+    assert.equal(values[metric], '-', `${metric} stays dashed when no FIT data is present`);
   }
 
   assert.equal(values.TENIS_UTILIZADO, 'Nimbus 26');
@@ -264,6 +264,25 @@ test('collectPromptValues maps planned data, form state and FIT placeholders', (
   );
   assert.equal(values.FEEDBACK, 'Boa sensação');
   assert.equal(values.ANEXAR_SCREENSHOT_GARMIN_OU_INSERIR_DADOS_DE_LAPS_AQUI, '-');
+});
+
+test('collectPromptValues uses persisted FIT data when available', () => {
+  const fitData = {
+    fit_duration: '1:23:45',
+    fit_distance: 15.03,
+    fit_avg_pace: '5:34',
+    fit_avg_hr: 152,
+    fit_max_hr: 171,
+    fit_elevation_gain: 320,
+  };
+  const values = collectPromptValues({ training: baseTraining, form: baseForm(), fitData });
+
+  assert.equal(values.DURACAO, '1:23:45');
+  assert.equal(values.DISTANCIA, '15.03 km');
+  assert.equal(values.PACE_MEDIO, '5:34 min/km');
+  assert.equal(values.FC_MEDIA, 152);
+  assert.equal(values.FC_MAXIMA, 171);
+  assert.equal(values.DESNIVEL_POSITIVO, '320 m');
 });
 
 test('painPromptText reports no pain unless the user answered yes', () => {
@@ -395,6 +414,14 @@ test('training-result.html ships the expanded feedback grid and generator button
     /id="smartwatchSelect"[\s\S]*?class="field fit-field" id="fitField"/,
     'the dropzone is laid out after the smartwatch answer'
   );
+
+  assert.match(html, /id="fitDataSection"[^>]*hidden/, 'FIT data section starts hidden');
+  assert.match(html, /id="fitDuration"/);
+  assert.match(html, /id="fitDistance"/);
+  assert.match(html, /id="fitAvgPace"/);
+  assert.match(html, /id="fitAvgHr"/);
+  assert.match(html, /id="fitMaxHr"/);
+  assert.match(html, /id="fitElevation"/);
 
   for (const id of [
     'feedbackShoe',
@@ -553,7 +580,16 @@ test('training-result.html ships the expanded feedback grid and generator button
   assert.match(html, /data-i18n="session\.generatePrompt"/);
   assert.match(html, /<button id="saveBtn" class="btn-secondary" type="button"/);
 
-  for (const legacy of ['id="dropzone"', 'id="fileInput"', 'markdownPreview', 'copyBtn', 'form-state.js']) {
+  assert.match(html, /<select id="feedbackShoe" class="input-control">/, 'shoe is a select dropdown, not free text');
+  assert.ok(
+    !html.includes('id="feedbackShoe" type="text"') && !/<input[^>]*id="feedbackShoe"/.test(html),
+    'no free-text shoe input remains'
+  );
+  assert.match(html, /id="promptSection"[^>]*hidden/, 'prompt section starts hidden');
+  assert.match(html, /id="promptOutput"/);
+  assert.match(html, /id="copyPromptBtn"/);
+
+  for (const legacy of ['id="dropzone"', 'id="fileInput"', 'markdownPreview', 'copyBtn', 'form-state.js', 'shoeUsedPlaceholder']) {
     assert.ok(!html.includes(legacy), `${legacy} is gone from the refactored page`);
   }
 });
@@ -562,7 +598,7 @@ test('training-result.js wires toggling, saving, generation and i18n refreshes',
   const js = readFileSync(join(publicDir, 'training-result.js'), 'utf8');
 
   assert.match(js, /import \{ initShell, getShellI18n \} from '\.\/shared\/shell\.js';/);
-  assert.match(js, /import \{ fetchTraining, saveTrainingFeedback \} from '\.\/shared\/api\.js';/);
+  assert.match(js, /import \{ fetchTraining, saveTrainingFeedback, fetchShoes \} from '\.\/shared\/api\.js';/);
 
   assert.match(js, /smartwatchSelect\.addEventListener\('change', syncFitFieldVisibility\)/);
   assert.match(js, /fitField\.hidden = !isFitFieldVisible\(smartwatchSelect\.value\);/);
@@ -615,7 +651,8 @@ test('training-result.js wires toggling, saving, generation and i18n refreshes',
     'saved RPE restores the matching radio button'
   );
   assert.match(js, /feedback_rpe: normalizeFeedbackRpe\(rpeSelector\.querySelector\('input\[type="radio"\]:checked'\)/);
-  assert.match(js, /shoeInput\.value = training\.feedback_shoe \?\? '';/);
+  assert.match(js, /const shoeSelect = document\.getElementById\('feedbackShoe'\);/);
+  assert.match(js, /shoeSelect\.value = training\.feedback_shoe \?\? '';/);
   assert.match(js, /weatherInput\.value = training\.feedback_weather \?\? '';/);
   assert.match(js, /terrainInput\.value = training\.feedback_terrain \?\? '';/);
   assert.match(js, /breathingInput\.value = training\.feedback_breathing \?\? '';/);
@@ -719,16 +756,16 @@ test('training-result.js wires toggling, saving, generation and i18n refreshes',
   );
 
   assert.match(js, /templateFor\(i18n\.language\)/);
-  assert.match(js, /collectPromptValues\(\{ training, form: collectFormState\(\) \}\)/);
-  assert.match(js, /await copyAnalysisPrompt\(promptText\)/);
-  assert.match(js, /t\('session\.copied'\)/);
+  assert.match(js, /collectPromptValues\(\{ training, form: collectFormState\(\), fitData \}\)/);
+  assert.match(js, /promptOutput\.value = promptText;/);
+  assert.match(js, /promptSection\.hidden = false;/);
   assert.match(js, /setTimeout\(/, 'Copied! feedback restores itself after a moment');
 
   assert.match(js, /addEventListener\('app:languagechange'/);
   assert.match(
     js,
-    /if \(!generateBtn\.disabled\) generateLabel\.textContent = t\('session\.generatePrompt'\);\s*\n\s*renderFitDropzoneState\(\);/,
-    'language switches re-render the dropzone with the new locale'
+    /if \(!generateBtn\.disabled\) generateLabel\.textContent = t\('session\.generatePrompt'\);\s*\n\s*if \(!copyPromptBtn\.disabled\) copyLabel\.textContent = t\('session\.copyPrompt'\);\s*\n\s*renderFitDropzoneState\(\);/,
+    'language switches re-render the dropzone and copy label with the new locale'
   );
 });
 
@@ -776,6 +813,13 @@ test('session locale namespace stays in parity across en-US and pt-BR', () => {
     'fitDragText',
     'fitClickText',
     'fitSelected',
+    'fitDataHeading',
+    'fitDuration',
+    'fitDistance',
+    'fitAvgPace',
+    'fitAvgHr',
+    'fitMaxHr',
+    'fitElevation',
     'fieldShoeUsed',
     'shoeUsedPlaceholder',
     'fieldHrSource',
@@ -789,6 +833,8 @@ test('session locale namespace stays in parity across en-US and pt-BR', () => {
     'fieldMuscle',
     'fieldEnergy',
     'generatePrompt',
+    'promptHeading',
+    'copyPrompt',
     'copied',
     'save',
     'saving',
@@ -796,6 +842,7 @@ test('session locale namespace stays in parity across en-US and pt-BR', () => {
     'errors.notFound',
     'errors.rpe',
     'errors.save',
+    'errors.fitUpload',
   ];
 
   const lookup = (source, key) =>

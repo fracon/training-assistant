@@ -84,11 +84,42 @@
             </label>
           </div>
 
+          <div class="field field-wide fit-data-section" id="fitDataSection" hidden>
+            <h3 class="fit-data-title" data-i18n="session.fitDataHeading">Parsed FIT Data</h3>
+            <dl class="fit-data-grid">
+              <div class="fit-data-item">
+                <dt data-i18n="session.fitDuration">Duration</dt>
+                <dd id="fitDuration">-</dd>
+              </div>
+              <div class="fit-data-item">
+                <dt data-i18n="session.fitDistance">Distance</dt>
+                <dd id="fitDistance">-</dd>
+              </div>
+              <div class="fit-data-item">
+                <dt data-i18n="session.fitAvgPace">Avg Pace</dt>
+                <dd id="fitAvgPace">-</dd>
+              </div>
+              <div class="fit-data-item">
+                <dt data-i18n="session.fitAvgHr">Avg HR</dt>
+                <dd id="fitAvgHr">-</dd>
+              </div>
+              <div class="fit-data-item">
+                <dt data-i18n="session.fitMaxHr">Max HR</dt>
+                <dd id="fitMaxHr">-</dd>
+              </div>
+              <div class="fit-data-item">
+                <dt data-i18n="session.fitElevation">Elevation Gain</dt>
+                <dd id="fitElevation">-</dd>
+              </div>
+            </dl>
+          </div>
+
           <div class="field">
             <label class="field-label" for="feedbackShoe"
               data-i18n="session.fieldShoeUsed">Shoe used</label>
-            <input type="text" id="feedbackShoe" class="input-control"
-              autocomplete="off" data-i18n-placeholder="session.shoeUsedPlaceholder">
+            <select id="feedbackShoe" class="input-control">
+              <option value="">–</option>
+            </select>
           </div>
           <div class="field">
             <label class="field-label" for="hrSourceSelect"
@@ -184,6 +215,17 @@
             <i data-lucide="sparkles" aria-hidden="true"></i>
             <span data-i18n="session.generatePrompt">Generate analysis prompt</span>
           </button>
+        </div>
+
+        <div class="prompt-section" id="promptSection" hidden>
+          <div class="prompt-header">
+            <h3 data-i18n="session.promptHeading">Generated Prompt</h3>
+            <button id="copyPromptBtn" class="btn-secondary btn-small" type="button">
+              <i data-lucide="copy" aria-hidden="true"></i>
+              <span data-i18n="session.copyPrompt">Copy to clipboard</span>
+            </button>
+          </div>
+          <textarea id="promptOutput" class="input-control prompt-output" rows="16" readonly></textarea>
         </div>
       </section>
     </section>

@@ -348,6 +348,90 @@ select.input-control {
   cursor: not-allowed;
 }
 
+.fit-data-section[hidden] {
+  display: none;
+}
+
+.fit-data-title {
+  margin: 0 0 10px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent-deep);
+}
+
+.fit-data-grid {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px 14px;
+  background: var(--bg);
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.fit-data-item dt {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.fit-data-item dd {
+  margin: 2px 0 0;
+  font-size: 0.95rem;
+  line-height: 1.4;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.prompt-section {
+  margin-top: 20px;
+}
+
+.prompt-section[hidden] {
+  display: none;
+}
+
+.prompt-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.prompt-header h3 {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.btn-small {
+  padding: 7px 14px;
+  font-size: 0.8rem;
+  border-radius: 8px;
+}
+
+.btn-small svg {
+  width: 14px;
+  height: 14px;
+}
+
+.prompt-output {
+  width: 100%;
+  min-height: 240px;
+  resize: vertical;
+  font-family: 'DM Mono', 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.82rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  background: var(--bg);
+}
+
 @media (max-width: 560px) {
   .planned-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -170,6 +170,13 @@
     "fitDragText": "Drag your <strong>.FIT</strong> file here",
     "fitClickText": "or click to select from your computer",
     "fitSelected": "File selected: ",
+    "fitDataHeading": "Parsed FIT Data",
+    "fitDuration": "Duration",
+    "fitDistance": "Distance",
+    "fitAvgPace": "Avg Pace",
+    "fitAvgHr": "Avg HR",
+    "fitMaxHr": "Max HR",
+    "fitElevation": "Elevation Gain",
     "fieldWeather": "Temperature & weather",
     "weatherPlaceholder": "e.g.: 22°C, cloudy, light wind",
     "fieldTerrain": "Terrain/route",
@@ -177,6 +184,8 @@
     "fieldMuscle": "Muscle sensation",
     "fieldEnergy": "Energy at finish",
     "generatePrompt": "Generate analysis prompt",
+    "promptHeading": "Generated Prompt",
+    "copyPrompt": "Copy to clipboard",
     "copied": "Copied!",
     "save": "Save and back to calendar",
     "saving": "Saving…",
@@ -184,7 +193,8 @@
       "load": "We could not load this training.",
       "notFound": "Training not found.",
       "rpe": "Realized RPE must be an integer between 1 and 5.",
-      "save": "We could not save your feedback. Please try again."
+      "save": "We could not save your feedback. Please try again.",
+      "fitUpload": "Could not upload the FIT file. Please try again."
     }
   },
   "terrain": {
