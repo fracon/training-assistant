@@ -508,7 +508,13 @@ input.input-error:focus-visible {
 }
 
 ::-webkit-scrollbar-button {
-  display: none;
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 @media (prefers-reduced-motion: reduce) {
