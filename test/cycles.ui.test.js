@@ -75,7 +75,7 @@ test('cycles.html form fields use data-i18n attributes for labels and placeholde
   assert.match(html, /data-i18n-placeholder="cycles\.objectivePlaceholder"/);
   assert.match(html, /data-i18n="cycles\.targetDate"/);
   assert.match(html, /data-i18n="cycles\.distance"/);
-  assert.match(html, /data-i18n-placeholder="cycles\.distancePlaceholder"/);
+  assert.match(html, /<select id="cycleDistance">/, 'distance field is a select dropdown');
   assert.match(html, /data-i18n="cycles\.runBefore"/);
   assert.match(html, /data-i18n="cycles\.runCount"/);
   assert.match(html, /data-i18n="cycles\.startDate"/);
@@ -84,6 +84,20 @@ test('cycles.html form fields use data-i18n attributes for labels and placeholde
   assert.match(html, /data-i18n="cycles\.otherEvents"/);
   assert.match(html, /data-i18n="cycles\.cancelForm"/);
   assert.match(html, /data-i18n="cycles\.saveCycle"/);
+});
+
+test('cycles.html distance select has predefined options with i18n keys', () => {
+  const html = readFileSync(join(publicDir, 'cycles.html'), 'utf8');
+  const distanceBlock = html.slice(
+    html.indexOf('id="cycleDistance"'),
+    html.indexOf('</select>', html.indexOf('id="cycleDistance"')) + '</select>'.length
+  );
+  const options = ['1km', '3km', '5km', '10km', '15km', 'half_marathon', 'marathon'];
+  for (const value of options) {
+    assert.match(distanceBlock, new RegExp(`value="${value}"`), `has option value="${value}"`);
+    assert.match(distanceBlock, new RegExp(`data-i18n="cycles\\.distances\\.${value}"`), `option ${value} has i18n key`);
+  }
+  assert.match(distanceBlock, /<option value="">–<\/option>/, 'empty default option exists');
 });
 
 test('cycles.html modal is at body root level outside main', () => {
@@ -337,6 +351,13 @@ test('locale files expose every cycles string in both languages', () => {
     assert.equal(typeof messages.cycles.errors.objectiveRequired, 'string');
     assert.equal(typeof messages.cycles.errors.save, 'string');
     assert.equal(typeof messages.cycles.errors.prompt, 'string');
+    assert.equal(typeof messages.cycles.distances['1km'], 'string');
+    assert.equal(typeof messages.cycles.distances['3km'], 'string');
+    assert.equal(typeof messages.cycles.distances['5km'], 'string');
+    assert.equal(typeof messages.cycles.distances['10km'], 'string');
+    assert.equal(typeof messages.cycles.distances['15km'], 'string');
+    assert.equal(typeof messages.cycles.distances.half_marathon, 'string');
+    assert.equal(typeof messages.cycles.distances.marathon, 'string');
     assert.equal(typeof messages.shell.nav.cycles, 'string');
     assert.equal(typeof messages.shell.noCycle, 'string');
   }

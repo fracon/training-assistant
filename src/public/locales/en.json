@@ -273,6 +273,15 @@
     "targetDate": "Target date",
     "distance": "Distance",
     "distancePlaceholder": "e.g. Marathon, 10K",
+    "distances": {
+      "1km": "1 km",
+      "3km": "3 km",
+      "5km": "5 km",
+      "10km": "10 km",
+      "15km": "15 km",
+      "half_marathon": "Half Marathon",
+      "marathon": "Marathon"
+    },
     "runBefore": "Run this distance before?",
     "runCount": "How many times",
     "startDate": "Start date",
