@@ -237,14 +237,14 @@
         </div>
 
         <div class="prompt-section" id="promptSection" hidden>
-          <div class="prompt-header">
-            <h3 data-i18n="session.promptHeading">Generated Prompt</h3>
+          <h3 data-i18n="session.promptHeading">Generated Prompt</h3>
+          <textarea id="promptOutput" class="input-control prompt-output" rows="16" readonly></textarea>
+          <div class="prompt-actions">
             <button id="copyPromptBtn" class="btn-secondary btn-small" type="button">
               <i data-lucide="copy" aria-hidden="true"></i>
               <span data-i18n="session.copyPrompt">Copy to clipboard</span>
             </button>
           </div>
-          <textarea id="promptOutput" class="input-control prompt-output" rows="16" readonly></textarea>
         </div>
       </section>
     </section>

@@ -443,14 +443,13 @@ select.input-control {
   display: none;
 }
 
-.prompt-header {
+.prompt-actions {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
+  justify-content: flex-end;
+  margin-top: 10px;
 }
 
-.prompt-header h3 {
+.prompt-section h3 {
   margin: 0;
   font-size: 0.85rem;
   font-weight: 600;
