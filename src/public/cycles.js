@@ -193,6 +193,7 @@ async function handleSubmit(cycles, messages) {
       cycles.push(...updated);
       renderList(cycles, messages);
       showToast(messages, 'cycles.success.add');
+      window.dispatchEvent(new CustomEvent('kinesis:cycle-changed'));
       if (result.cycle) {
         try {
           const promptResult = await requestJson(`/api/cycles/${result.cycle.id}/prompt`, null, 'GET');
