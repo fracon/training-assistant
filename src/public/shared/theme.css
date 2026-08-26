@@ -493,17 +493,20 @@ input.input-error:focus-visible {
 }
 
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
   background: transparent;
+  margin-block: 8px;
 }
 
 ::-webkit-scrollbar-thumb {
   background-color: var(--line-strong);
   border-radius: 10px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
