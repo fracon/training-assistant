@@ -313,14 +313,15 @@ test('applyCycleGuard is exported from shell.js', () => {
   assert.match(js, /export function applyCycleGuard/);
 });
 
-test('applyCycleGuard disables items in CYCLE_DEPENDENT_ITEMS and adds noCycle chip', () => {
+test('applyCycleGuard disables items in CYCLE_DEPENDENT_ITEMS and reveals pre-built badges', () => {
   const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
   assert.match(js, /CYCLE_DEPENDENT_ITEMS\.includes\(navEntry\.dataset\.navId\)/);
   assert.match(js, /navEntry\.classList\.add\('disabled'\)/);
   assert.match(js, /navEntry\.setAttribute\('aria-disabled',\s*'true'\)/);
   assert.match(js, /navEntry\.removeAttribute\('href'\)/);
-  assert.match(js, /data-i18n',\s*i18nKey/);
   assert.match(js, /window\.location\.href\s*=\s*CYCLE_REDIRECT_TO/);
+  assert.match(js, /const badges = shellRoot\.querySelectorAll\('\.cycle-guard-badge'\)/);
+  assert.match(js, /badge\.classList\.remove\('hidden'\)/);
 });
 
 test('initShell fetches active cycle and calls applyCycleGuard when none exists', () => {
@@ -344,32 +345,22 @@ test('shell.nav.cycles i18n key exists in both locale files', () => {
   assert.equal(pt.shell.nav.cycles, 'Ciclos de Treino');
 });
 
-test('applyCycleGuard explicitly translates the noCycle chip text on creation', () => {
+test('buildSidebar embeds hidden cycle-guard-badge spans for CYCLE_DEPENDENT_ITEMS', () => {
   const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
   assert.match(
     js,
-    /const currentI18n = getShellI18n\(\)/,
-    'the guard fetches the live i18n instance'
+    /if \(CYCLE_DEPENDENT_ITEMS\.includes\(item\.id\)\)/,
+    'the guard badge is conditionally injected per nav item'
   );
   assert.match(
     js,
-    /if \(currentI18n && currentI18n\.messages\)/,
-    'it guards against a missing dictionary'
+    /el\('span',\s*'soon-chip cycle-guard-badge hidden'\)/,
+    'the badge ships hidden by default so i18n can translate it before the guard runs'
   );
   assert.match(
     js,
-    /chip\.textContent = translate\(currentI18n\.messages, i18nKey\) \|\| fallback/,
-    'the chip gets its translated text with a hardcoded fallback'
-  );
-  assert.match(
-    js,
-    /chip\.textContent = fallback/,
-    'the fallback string is used when the i18n instance is unavailable'
-  );
-  assert.match(
-    js,
-    /const fallback = 'NO ACTIVE CYCLE'/,
-    'the fallback is the exact English string'
+    /chip\.setAttribute\('data-i18n',\s*'shell\.noCycle'\)/,
+    'the badge carries the noCycle i18n key for automatic translation'
   );
 });
 
