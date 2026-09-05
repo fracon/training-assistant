@@ -151,7 +151,7 @@
 }
 
 .cycle-card .cycle-objective {
-  margin: 0 0 0.55rem;
+  margin: 0 0 0.25rem;
   font-size: 0.85rem;
   font-weight: 500;
   line-height: 1.45;
@@ -160,7 +160,7 @@
 }
 
 .cycle-card .cycle-target {
-  margin: 0 0 0.3rem;
+  margin: 0 0 0.25rem;
   font-size: 0.85rem;
   color: var(--muted);
 }

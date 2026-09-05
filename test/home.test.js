@@ -872,6 +872,16 @@ test('home.css lays out the cycle header, objective subtitle and compact progres
     /\.cycle-card \.cycle-objective \{[^}]*color:\s*var\(--muted\);/,
     'the objective renders as a muted subtitle beneath the name'
   );
+  assert.match(
+    css,
+    /\.cycle-card \.cycle-objective \{[^}]*margin:\s*0 0 0\.25rem;/,
+    'the objective keeps a compact gap before the target metadata'
+  );
+  assert.match(
+    css,
+    /\.cycle-card \.cycle-target \{[^}]*margin:\s*0 0 0\.25rem;/,
+    'the target metadata keeps compact spacing before progress details'
+  );
   assert.match(css, /\.cycle-card \.days-left \{[^}]*white-space:\s*nowrap/);
 });
 
