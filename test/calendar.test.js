@@ -394,6 +394,18 @@ test('calendar.js renders localized toggle texts and refreshes on language chang
   assert.ok(handlerBody.includes('render()'), 'month title and grid headers re-render instantly');
 });
 
+test('calendar imports use the shell snackbar with imported and skipped counts', () => {
+  const js = readFileSync(join(publicDir, 'calendar.js'), 'utf8');
+  const html = readFileSync(join(publicDir, 'calendar.html'), 'utf8');
+
+  assert.match(js, /showShellToast\(\s*i18n\.messages,\s*'calendar\.import\.success'/);
+  assert.match(js, /imported: result\.imported \?\? 0/);
+  assert.match(js, /skipped: result\.skipped \?\? 0/);
+  assert.equal(html.includes('id="importBanner"'), false, 'the permanent import banner is removed');
+  assert.equal(en.calendar.import.success, '{imported} trainings successfully imported. {skipped} duplicates skipped.');
+  assert.equal(pt.calendar.import.success, '{imported} treinos importados com sucesso. {skipped} duplicados ignorados.');
+});
+
 test('chipLines splits trainings into a secondary type line and a full title line', () => {
   assert.deepEqual(
     chipLines({ tipo: 'Corrida', treino: 'Recuperação / Base muito leve' }),

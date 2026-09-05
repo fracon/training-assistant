@@ -223,7 +223,7 @@ test('import parses rows, normalizes Dia and persists trainings', async () => {
   const response = await upload(buffer);
 
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { imported: 2 });
+  assert.deepEqual(await response.json(), { imported: 2, skipped: 0 });
 
   const stored = db
     .prepare('SELECT dia, periodo, tipo, treino FROM trainings ORDER BY dia')
@@ -261,7 +261,7 @@ test('import skips exact date/name/description duplicates while keeping distinct
   const response = await upload(buffer);
 
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { imported: 3 });
+  assert.deepEqual(await response.json(), { imported: 3, skipped: 2 });
 
   const listed = await getTrainings();
   const trainings = (await listed.json()).trainings;

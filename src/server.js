@@ -374,7 +374,10 @@ async function buildServer(options = {}) {
       });
       insertMany(newRecords);
 
-      return { imported: newRecords.length };
+      return {
+        imported: newRecords.length,
+        skipped: records.length - newRecords.length,
+      };
     });
 
     const TRAINING_COLUMNS =

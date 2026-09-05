@@ -811,6 +811,7 @@ test('the shell owns a dedicated toast so password feedback renders on every pag
   const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
 
   assert.match(js, /export function showShellToast\(/, 'the toast helper is exported');
+  assert.match(js, /translate\(messages, key, params\)/, 'toast messages support localized count parameters');
   assert.match(js, /toast\.id = 'shellToast'/, 'the shell toast has a stable id');
   assert.match(js, /toast\.classList\.toggle\('toast-error', type === 'error'\)/, 'errors switch the toast tone');
   assert.match(js, /setTimeout\(\(\) => toast\.classList\.remove\('visible'\), duration\)/, 'the toast auto-hides');

@@ -370,13 +370,13 @@ function ensureShellToast() {
   return toast;
 }
 
-export function showShellToast(messages, key, type = 'success', duration = 2500) {
+export function showShellToast(messages, key, type = 'success', duration = 2500, params) {
   const toast = ensureShellToast();
   const iconName = type === 'error' ? 'x-circle' : 'check-circle';
   const iconEl = toast.querySelector('.toast-icon');
   if (iconEl) iconEl.innerHTML = `<i data-lucide="${iconName}"></i>`;
   const textEl = toast.querySelector('.toast-text');
-  if (textEl) textEl.textContent = translate(messages, key);
+  if (textEl) textEl.textContent = translate(messages, key, params);
   toast.classList.toggle('toast-error', type === 'error');
   toast.classList.add('visible');
   refreshIcons();
