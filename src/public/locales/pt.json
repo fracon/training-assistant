@@ -513,7 +513,13 @@
       "weekOnly": "Semana {current}",
       "targetLabel": "Data alvo",
       "percentLabel": "{percent}%",
-      "progressAria": "Progresso do ciclo de treino"
+      "progressAria": "Progresso do ciclo de treino",
+      "daysRemaining": {
+        "one": "1 dia restante",
+        "many": "{count} dias restantes",
+        "today": "Hoje",
+        "over": "Encerrado"
+      }
     },
     "metrics": {
       "title": "Esta Semana",

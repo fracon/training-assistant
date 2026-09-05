@@ -513,7 +513,13 @@
       "weekOnly": "Week {current}",
       "targetLabel": "Target date",
       "percentLabel": "{percent}%",
-      "progressAria": "Training cycle progress"
+      "progressAria": "Training cycle progress",
+      "daysRemaining": {
+        "one": "1 day remaining",
+        "many": "{count} days remaining",
+        "today": "Today",
+        "over": "Ended"
+      }
     },
     "metrics": {
       "title": "This Week",

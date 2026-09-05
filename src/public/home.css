@@ -120,12 +120,43 @@
   text-decoration: none;
 }
 
+.cycle-card .cycle-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.9rem;
+  margin-bottom: 0.2rem;
+}
+
 .cycle-card h3.cycle-name {
-  margin: 0 0 0.3rem;
+  margin: 0;
   font-size: 1.2rem;
   font-weight: 700;
   color: var(--ink);
   letter-spacing: -0.01em;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.cycle-card .days-left {
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--accent-deep);
+}
+
+.cycle-card .cycle-objective {
+  margin: 0 0 0.55rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  line-height: 1.45;
+  color: var(--muted);
+  overflow-wrap: anywhere;
 }
 
 .cycle-card .cycle-target {
@@ -135,7 +166,7 @@
 }
 
 .cycle-card .cycle-week {
-  margin: 0 0 0.9rem;
+  margin: 0 0 0.3rem;
   font-size: 0.95rem;
   font-weight: 600;
   color: var(--accent-deep);

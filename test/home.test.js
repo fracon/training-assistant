@@ -42,6 +42,10 @@ const {
   buildWeekDayMarkup,
   renderWeekDays,
   applyCycleVisibility,
+  DEFAULT_DISPLAY_LANGUAGE,
+  formatTargetDate,
+  daysRemainingUntil,
+  daysRemainingText,
 } = require(join(publicDir, 'home.js'));
 
 function readHomeHtml() {
@@ -83,6 +87,8 @@ test('home.html ships the hero, cycle, and metrics dashboard skeleton', () => {
   assert.match(html, /id="cycleEmpty"/);
   assert.match(html, /id="cycleActive"/);
   assert.match(html, /id="cycleName"/);
+  assert.match(html, /id="cycleObjective"/);
+  assert.match(html, /id="cycleDaysLeft"/);
   assert.match(html, /id="cycleTarget"/);
   assert.match(html, /id="cycleWeek"/);
   assert.match(html, /id="cycleProgressRow"/);
@@ -117,6 +123,38 @@ test('home.html starts with the empty cycle state visible and the active card hi
     'the empty state is NOT hidden by default'
   );
   assert.match(html, /<div id="cycleActive" class="cycle-card hidden">/, 'the active card ships hidden until a cycle loads');
+});
+
+test('home.html structures the active card: header with countdown, objective beneath the name', () => {
+  const html = readHomeHtml();
+  const card = html.match(/<div id="cycleActive" class="cycle-card hidden">[\s\S]*?<\/div>\s*<\/div>/);
+  assert.ok(card, 'the active cycle card block exists');
+  assert.match(
+    card[0],
+    /<div class="cycle-header">[\s\S]*?<h3 id="cycleName"[\s\S]*?<span id="cycleDaysLeft"/,
+    'the countdown chip sits on the right side of the card header row'
+  );
+  assert.match(
+    card[0],
+    /<h3 id="cycleName"[^>]*>[\s\S]*?<p id="cycleObjective" class="cycle-objective">/,
+    'the objective subtitle renders directly beneath the cycle name'
+  );
+  assert.match(card[0], /id="cycleDaysLeft" class="days-left" aria-live="polite"/);
+});
+
+test('home.cycle.daysRemaining keys pluralize in both locales', () => {
+  for (const messages of [en, pt]) {
+    assert.equal(typeof messages.home.cycle.daysRemaining.one, 'string');
+    assert.equal(typeof messages.home.cycle.daysRemaining.many, 'string');
+    assert.equal(typeof messages.home.cycle.daysRemaining.today, 'string');
+    assert.equal(typeof messages.home.cycle.daysRemaining.over, 'string');
+  }
+  assert.equal(en.home.cycle.daysRemaining.one, '1 day remaining');
+  assert.equal(en.home.cycle.daysRemaining.many, '{count} days remaining');
+  assert.equal(pt.home.cycle.daysRemaining.one, '1 dia restante');
+  assert.equal(pt.home.cycle.daysRemaining.many, '{count} dias restantes');
+  assert.equal(pt.home.cycle.daysRemaining.today, 'Hoje');
+  assert.equal(pt.home.cycle.daysRemaining.over, 'Encerrado');
 });
 
 test('home.html wires every dashboard label to i18n keys shared by both locales', () => {
@@ -356,11 +394,60 @@ test('cycleCardContent maps a cycle into dashboard card data in the active langu
     new Date(2026, 7, 24)
   );
   assert.equal(content.name, 'Base phase · 60km');
+  assert.equal(content.objective, 'Base phase · 60km');
   assert.equal(content.targetDate, '2026-09-06');
+  assert.equal(content.targetDisplay, '2026-09-06', 'English keeps the ISO sortable date');
+  assert.equal(content.daysRemaining, 13, 'the countdown bridges the current date to the target');
+  assert.equal(content.daysRemainingText, '13 days remaining');
   assert.equal(content.weekText, 'Week 2 of 3');
   assert.equal(content.percent, 67);
   assert.equal(content.hasProgress, true);
   assert.equal(cycleCardContent(null, en, new Date(2026, 7, 24)), null);
+});
+
+test('cycleCardContent formats the target date as dd/mm/yyyy for Portuguese', () => {
+  const ptContent = cycleCardContent(
+    { start_date: '2026-08-17', target_date: '2026-09-13', objective: 'Base' },
+    pt,
+    new Date(2026, 8, 9),
+    'pt-BR'
+  );
+  assert.equal(ptContent.targetDisplay, '13/09/2026');
+  assert.equal(ptContent.targetDate, '2026-09-13');
+  assert.equal(ptContent.daysRemaining, 4);
+  assert.equal(ptContent.daysRemainingText, '4 dias restantes', 'the countdown pluralizes in pt');
+});
+
+test('formatTargetDate keeps ISO for English and day-first for every Portuguese variant', () => {
+  assert.equal(formatTargetDate('2026-09-13', 'en-US'), '2026-09-13');
+  assert.equal(formatTargetDate('2026-09-13', DEFAULT_DISPLAY_LANGUAGE), '2026-09-13');
+  assert.equal(formatTargetDate('2026-09-13', 'pt-BR'), '13/09/2026');
+  assert.equal(formatTargetDate('2026-09-13', 'pt'), '13/09/2026');
+  assert.equal(formatTargetDate('2026-01-02', 'pt-BR'), '02/01/2026', 'month and day are zero-padded');
+  assert.equal(formatTargetDate('junk', 'pt-BR'), '');
+  assert.equal(formatTargetDate(null, 'pt-BR'), '');
+});
+
+test('daysRemainingUntil counts whole days between today and the target', () => {
+  assert.equal(daysRemainingUntil('2026-09-13', new Date(2026, 8, 9)), 4);
+  assert.equal(daysRemainingUntil('2026-09-13', new Date(2026, 8, 10)), 3);
+  assert.equal(daysRemainingUntil('2026-09-13', new Date(2026, 8, 13)), 0, 'target day counts as today');
+  assert.equal(daysRemainingUntil('2026-09-13', new Date(2026, 8, 14)), -1, 'past targets stay negative for the "ended" label');
+  assert.equal(daysRemainingUntil(null), null);
+  assert.equal(daysRemainingUntil('junk'), null);
+});
+
+test('daysRemainingText pluralizes and handles today and ended states', () => {
+  assert.equal(daysRemainingText(pt, 9), '9 dias restantes');
+  assert.equal(daysRemainingText(en, 9), '9 days remaining');
+  assert.equal(daysRemainingText(pt, 1), '1 dia restante');
+  assert.equal(daysRemainingText(en, 1), '1 day remaining');
+  assert.equal(daysRemainingText(pt, 0), 'Hoje');
+  assert.equal(daysRemainingText(en, 0), 'Today');
+  assert.equal(daysRemainingText(pt, -3), 'Encerrado');
+  assert.equal(daysRemainingText(en, -3), 'Ended');
+  assert.equal(daysRemainingText(en, null), '');
+  assert.equal(daysRemainingText(en, undefined), '');
 });
 
 test('metricsCardContent formats the dashboard totals', () => {
@@ -706,6 +793,39 @@ test('home.js keeps the dashboard wiring declarative and reactive', () => {
     /applyCycleVisibility\(\{ emptyContainer: cycleEmpty, activeContainer: cycleActive \}, hasCycle\)/,
     'the cycle renderer funnels both sibling states through the exclusive visibility helper'
   );
+  assert.match(
+    js,
+    /const language = i18n \? i18n\.language : DEFAULT_DISPLAY_LANGUAGE;/,
+    'the active language drives the target-date formatting and countdown'
+  );
+  assert.match(js, /if \(cycleObjective\) \{\s*\n\s*if \(content\.objective/);
+  assert.match(js, /if \(cycleDaysLeft\) cycleDaysLeft\.textContent = content\.daysRemainingText;/);
+  assert.match(js, /if \(cycleTarget\) cycleTarget\.textContent = content\.targetDisplay;/);
+  assert.match(
+    js,
+    /export function daysRemainingText\(messages, days\)/,
+    'the countdown label helper stays exported for unit testing'
+  );
+});
+
+test('home.css lays out the cycle header, objective subtitle and compact progress spacing', () => {
+  const css = readHomeCss();
+  assert.match(
+    css,
+    /\.cycle-card \.cycle-header \{[^}]*display:\s*flex;\s*\n\s*align-items:\s*center;\s*\n\s*justify-content:\s*space-between/,
+    'the header row pinches the countdown chip to the right side'
+  );
+  assert.match(
+    css,
+    /\.cycle-card \.cycle-week \{[^}]*margin:\s*0 0 0\.3rem;/,
+    'the week progress text hugs the progress bar below it'
+  );
+  assert.match(
+    css,
+    /\.cycle-card \.cycle-objective \{[^}]*color:\s*var\(--muted\);/,
+    'the objective renders as a muted subtitle beneath the name'
+  );
+  assert.match(css, /\.cycle-card \.days-left \{[^}]*white-space:\s*nowrap/);
 });
 
 test('home.css stacks the dashboard widgets full-width and styles the week tracker', () => {

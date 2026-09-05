@@ -34,7 +34,11 @@
           </div>
 
           <div id="cycleActive" class="cycle-card hidden">
-            <h3 id="cycleName" class="cycle-name"></h3>
+            <div class="cycle-header">
+              <h3 id="cycleName" class="cycle-name"></h3>
+              <span id="cycleDaysLeft" class="days-left" aria-live="polite"></span>
+            </div>
+            <p id="cycleObjective" class="cycle-objective"></p>
             <p class="cycle-target">
               <span data-i18n="home.cycle.targetLabel">Target date</span>:
               <span id="cycleTarget"></span>

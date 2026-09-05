@@ -5,6 +5,7 @@ import { translate } from './shared/i18n.js';
 export const ZENQUOTES_URL = 'https://zenquotes.io/api/today';
 export const QUOTE_TIMEOUT_MS = 3000;
 export const DAY_MS = 86400000;
+export const DEFAULT_DISPLAY_LANGUAGE = 'en-US';
 
 // Deterministic hero rotation: collisions on day-of-week remain harmless
 // because the rotation is stable across the whole day, never per page load.
@@ -196,6 +197,24 @@ export function cycleProgress(cycle, today = new Date()) {
   return { current: clamped, total, percent: Math.round((clamped / total) * 100) };
 }
 
+export function daysRemainingUntil(targetIso, today = new Date()) {
+  const target = parseIsoDate(targetIso);
+  if (!target) return null;
+  return Math.round((target - startOfDay(today)) / DAY_MS);
+}
+
+// pt-BR renders dd/mm/yyyy; other locales keep the ISO sortable key so the
+// value survives string comparisons and spreadsheet exports unchanged.
+export function formatTargetDate(iso, language) {
+  const date = parseIsoDate(iso);
+  if (!date) return '';
+  const isPortuguese = typeof language === 'string' && language.toLowerCase().startsWith('pt');
+  if (!isPortuguese) return iso;
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  return `${day}/${month}/${date.getFullYear()}`;
+}
+
 export function cycleWeekText(messages, progress) {
   if (!progress || progress.current == null) return '';
   if (progress.total == null) {
@@ -207,13 +226,25 @@ export function cycleWeekText(messages, progress) {
   });
 }
 
-export function cycleCardContent(cycle, messages, today = new Date()) {
+export function daysRemainingText(messages, days) {
+  if (typeof days !== 'number') return '';
+  if (days < 0) return translate(messages, 'home.cycle.daysRemaining.over');
+  if (days === 0) return translate(messages, 'home.cycle.daysRemaining.today');
+  if (days === 1) return translate(messages, 'home.cycle.daysRemaining.one');
+  return translate(messages, 'home.cycle.daysRemaining.many', { count: days });
+}
+
+export function cycleCardContent(cycle, messages, today = new Date(), language = DEFAULT_DISPLAY_LANGUAGE) {
   if (!cycle) return null;
   const progress = cycleProgress(cycle, today);
+  const daysRemaining = daysRemainingUntil(cycle.target_date, today);
   return {
     name: cycle.objective || cycle.distance || '',
     objective: cycle.objective || '',
     targetDate: cycle.target_date || '',
+    targetDisplay: formatTargetDate(cycle.target_date, language),
+    daysRemaining,
+    daysRemainingText: daysRemaining == null ? '' : daysRemainingText(messages, daysRemaining),
     weekText: cycleWeekText(messages, progress),
     percent: progress ? progress.percent : null,
     hasProgress: Boolean(progress && progress.total != null),
@@ -297,6 +328,8 @@ function setupHomePage() {
   const cycleEmpty = document.getElementById('cycleEmpty');
   const cycleActive = document.getElementById('cycleActive');
   const cycleName = document.getElementById('cycleName');
+  const cycleObjective = document.getElementById('cycleObjective');
+  const cycleDaysLeft = document.getElementById('cycleDaysLeft');
   const cycleTarget = document.getElementById('cycleTarget');
   const cycleWeek = document.getElementById('cycleWeek');
   const cycleProgressRow = document.getElementById('cycleProgressRow');
@@ -334,9 +367,21 @@ function setupHomePage() {
     const hasCycle = Boolean(state.cycle);
     applyCycleVisibility({ emptyContainer: cycleEmpty, activeContainer: cycleActive }, hasCycle);
     if (!hasCycle) return;
-    const content = cycleCardContent(state.cycle, i18n ? i18n.messages : {});
+    const messages = i18n ? i18n.messages : {};
+    const language = i18n ? i18n.language : DEFAULT_DISPLAY_LANGUAGE;
+    const content = cycleCardContent(state.cycle, messages, new Date(), language);
     if (cycleName) cycleName.textContent = content.name;
-    if (cycleTarget) cycleTarget.textContent = content.targetDate;
+    if (cycleObjective) {
+      if (content.objective && content.objective !== content.name) {
+        cycleObjective.textContent = content.objective;
+        cycleObjective.classList.remove('hidden');
+      } else {
+        cycleObjective.textContent = '';
+        cycleObjective.classList.add('hidden');
+      }
+    }
+    if (cycleDaysLeft) cycleDaysLeft.textContent = content.daysRemainingText;
+    if (cycleTarget) cycleTarget.textContent = content.targetDisplay;
     if (cycleWeek) cycleWeek.textContent = content.weekText;
     if (cycleProgressRow) cycleProgressRow.classList.toggle('hidden', !content.hasProgress);
     if (cycleProgressBar && content.percent != null) cycleProgressBar.value = content.percent;
