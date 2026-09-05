@@ -72,14 +72,21 @@ export function parseDurationToSeconds(raw) {
   return total;
 }
 
+function parseTrainingDuration(raw) {
+  if (typeof raw === 'number') {
+    return Number.isFinite(raw) && raw > 0 ? raw : 0;
+  }
+  return parseDurationToSeconds(raw);
+}
+
 export function accumulateWeeklyMetrics(trainings) {
   const list = Array.isArray(trainings) ? trainings : [];
   let distanceKm = 0;
   let durationSeconds = 0;
   for (const entry of list) {
-    const distance = Number(entry?.fit_distance);
+    const distance = Number(entry?.fit_distance ?? entry?.distance);
     if (Number.isFinite(distance) && distance > 0) distanceKm += distance;
-    durationSeconds += parseDurationToSeconds(entry?.fit_duration);
+    durationSeconds += parseTrainingDuration(entry?.fit_duration ?? entry?.duration);
   }
   return { distanceKm, durationSeconds };
 }

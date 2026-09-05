@@ -328,6 +328,18 @@ test('accumulateWeeklyMetrics sums distance and duration across the window (with
   assert.deepEqual(accumulateWeeklyMetrics([]), { distanceKm: 0, durationSeconds: 0 });
 });
 
+test('accumulateWeeklyMetrics maps API FIT fields into visible weekly totals', () => {
+  const totals = accumulateWeeklyMetrics([
+    { dia: '2026-08-23', fit_distance: '10', fit_duration: 3720 },
+  ]);
+
+  assert.deepEqual(totals, { distanceKm: 10, durationSeconds: 3720 });
+  assert.deepEqual(metricsCardContent(totals), {
+    distance: '10.00 km',
+    time: '1h 02m',
+  });
+});
+
 test('formatters render distances and durations in the agreed dashboard units', () => {
   assert.equal(formatDistanceKm(0), '0.00 km');
   assert.equal(formatDistanceKm(15.034), '15.03 km');
