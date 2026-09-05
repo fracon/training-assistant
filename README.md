@@ -36,6 +36,20 @@ AI coaches are only as good as the data you give them. Exporting workouts by han
 - **Smart form memory** — repetitive fields (shoes, HR source, terrain) are saved in `localStorage` and pre-filled next time.
 - **Strict input handling** — `.FIT` files only, 10 MB size limit, 10 s parse timeout, clear error messages for unreadable files.
 
+### Home Dashboard
+
+- **Current cycle overview** — cycle title, primary goal, target date, progress, and localized metadata render independently.
+- **Weekly tracker first** — the “This Week” card places the Monday–Sunday tracker above accumulated distance/time tiles. Active days use compact minimalist pills with a Lucide `sport-shoe` icon; empty days remain muted and borderless.
+- **Card navigation** — subtle Lucide `external-link` actions link the cycle card to `/cycles.html` and the weekly card to `/calendar.html`.
+- **Responsive weekly metrics** — completed workout distance and duration are read from the calendar API (`fit_distance`/`fit_duration`), normalized, summed, and formatted in dashboard units.
+- **Accessible quote hero** — a random running-focused Unsplash image is selected at initialization. Loading text, quote text, and author each have dark semitransparent contrast backdrops for legibility over bright photos.
+
+### Excel Training Import
+
+The Calendar page imports `.xlsx`/`.xls` plans and validates every row before persistence. Duplicate prevention uses the exact composite signature **Date (`dia`) + Training Name (`treino`) + Description (`detalhes`)**. Rows matching a stored training or repeated within the same workbook are skipped; workouts on the same date with a different name or description remain valid and are imported.
+
+Import completion uses the shared Snackbar rather than a permanent inline banner. It renders two localized lines: successfully imported trainings and duplicate rows skipped, with singular/plural English and Brazilian Portuguese translations.
+
 ## Quick Start (local development)
 
 Requirements: **Node.js ≥ 24**
@@ -193,13 +207,16 @@ curl -b jar.txt -F "file=@workout.fit" -F "tipo_treino=Longão" -F "rpe_percebid
 
 ## Frontend Architecture
 
-Three standalone pages (no single-page hacks, no overlapping layout states):
+Every primary flow is a standalone page (no single-page hacks, no overlapping layout states):
 
 | Page | Files | Purpose |
 |---|---|---|
 | Login | `src/public/login.html/.css/.js` | Sign-in form only |
 | Register | `src/public/register.html/.css/.js` | Sign-up form with aggregated validation errors and success toast |
 | TrainingResult | `src/public/training-result.html/.css/.js` | The FIT parser tool, gated behind a session |
+| Home | `src/public/home.html/.css/.js` | Authenticated dashboard with cycle, weekly metrics, tracker, and quote hero |
+| Calendar | `src/public/calendar.html/.css/.js` | Monthly training calendar and deduplicating Excel import |
+| AI Coach | `src/public/ai-coach.html/.css/.js` | Local prompt builder for weekly coaching plans |
 
 Shared code lives in `src/public/shared/`: `theme.css` (earthy color tokens, DM Sans, resets), `validators.js` and `api.js` ES modules imported by the page scripts.
 
@@ -216,8 +233,8 @@ Shared code lives in `src/public/shared/`: `theme.css` (earthy color tokens, DM 
 │   ├── markdownGenerator.js    # Summary + form payload → PT-BR AI coach prompt
 │   ├── auth/                   # passwords (scrypt), registration, login, sessions, requireAuth
 │   ├── db/                     # SQLite setup (better-sqlite3, WAL, FKs, schema)
-│   └── public/                 # Multi-page frontend (login / register / training-result)
-│       └── shared/             # theme.css + ES modules (validators, api helpers)
+│   └── public/                 # Multi-page frontend (auth, home, calendar, AI Coach, FIT session)
+│       └── shared/             # theme.css + ES modules (shell, i18n, validators, API helpers)
 ├── scripts/
 │   ├── tryRealFit.js           # CLI sanity check: parse a real file or generate a synthetic .FIT
 │   └── deploy-zimaos.sh        # Server-side helper: docker compose pull && up -d

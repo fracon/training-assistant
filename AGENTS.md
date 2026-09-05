@@ -11,6 +11,30 @@
 - **CI/CD:** Automated via Self-Hosted GitHub Runner pushing to GitHub Container Registry (GHCR).
 - **Networking:** Exposed securely via Cloudflare Zero Trust Tunnels (HTTP on port 8081).
 
+## ✅ Current Implementation Status — `feature/home-dashboard`
+
+The Home Dashboard and its supporting Calendar import flow are implemented and
+polished on the active feature branch. Keep these decisions intact when making
+follow-up changes:
+
+- The dashboard renders the cycle title/goal independently, places the weekly
+  tracker before the metric tiles, and uses minimalist active-day pills with
+  the exact Lucide `sport-shoe` icon plus card-level `external-link` actions.
+- Weekly distance and duration accumulate from `fit_distance` and
+  `fit_duration` values returned by the calendar API, with safe numeric/string
+  parsing and localized display formatting.
+- Excel imports deduplicate by the exact composite signature
+  **Date (`dia`) + Training Name (`treino`) + Description (`detalhes`)**.
+  Existing rows and repeats within one workbook are skipped, while distinct
+  workouts on the same date are retained.
+- Import feedback uses the shared shell Snackbar with two localized lines for
+  imported and skipped counts; do not reintroduce a permanent inline banner.
+- The hero selects a random running-only Unsplash image on initialization.
+  Loading text, quote text, and author all use dark contrast backdrops, and the
+  loader must remain hidden once a quote is rendered (`.hero-loading.hidden`).
+- The branch has been validated repeatedly with `npm run test:coverage`; the
+  required Statements, Branches, Functions, and Lines thresholds remain 100%.
+
 ## 🏆 Golden Rules
 1. **Local-First & Privacy:** Never send `.FIT` data or user inputs to external cloud APIs for processing. All data parsing happens on the local server/browser.
 2. **Test Coverage (The 100% Rule):** Test coverage must strictly remain at 100%. Never introduce new logic without accompanying tests (`npm run test:coverage`).
@@ -82,7 +106,7 @@ Whenever starting the development of a new feature, you MUST follow this strict 
     - A clean, minimalist language switcher (e.g., a simple "EN | PT" text toggle), located in the top-right corner of the screen across all pages.
     - On public pages (`login.html`, `register.html`) it sits alone in the top-right; on authenticated pages (`training-result.html`) it sits in the topbar directly next to the user badge and Logout button.
 
-- **Phase 5: App Shell & Home UI Layout [🚧 PLANNED]**
+- **Phase 5: App Shell & Home UI Layout [✅ FINISHED]**
   - Elevate the UI to a modern SaaS application standard with a polished master layout.
   - **Goal:** create a master layout file (`src/public/home.html`) that serves as the main entry point for authenticated users, replacing/absorbing `training-result.html`.
   - **Layout Structure (Modern SaaS Design):**
@@ -96,7 +120,7 @@ Whenever starting the development of a new feature, you MUST follow this strict 
   - **Aesthetic:** strictly adhere to the existing minimalist, earthy theme (DM Sans, sage/cream/charcoal colors). It must look highly polished and premium.
   - **Technical Constraints:** strictly Vanilla HTML/CSS/JS. No heavy frameworks. Re-use existing shared CSS tokens.
 
-- **Phase 6: Calendar View [🚧 PLANNED]**
+- **Phase 6: Calendar View [✅ FINISHED]**
   - **Feature Scope:**
     - **Monthly View Only (Initially):** a classic monthly grid layout (weeks as rows, days as cells). No week/agenda views in this phase.
     - **First Day of the Week Toggle:** users must be able to choose whether the calendar week starts on Monday or Sunday.
@@ -111,7 +135,7 @@ Whenever starting the development of a new feature, you MUST follow this strict 
     - Expose a protected update endpoint (mirroring `PATCH /api/users/me/language`) and place the Mon/Sun toggle in the Topbar or within the Calendar view header.
   - **i18n Coverage:** month names and days of the week must be fully translatable using the existing `src/public/locales/en.json` / `pt.json`; the locale key-parity test must keep both files in sync.
 
-- **Phase 7: AI Coach Prompt Generator [🚧 PLANNED]**
+- **Phase 7: AI Coach Prompt Generator [✅ FINISHED]**
   - **Feature Scope:** a dedicated tool page that builds a highly detailed, pre-formatted prompt for an external AI Coach (ChatGPT/Claude) to plan the next training week. The user copies the generated text and pastes it into their LLM of choice — nothing is ever sent anywhere by this app (local-first rule).
   - **Architecture & Multi-Page Adherence:**
     - Standalone page following the strict convention: `src/public/ai-coach.html` / `ai-coach.css` / `ai-coach.js`.
