@@ -101,6 +101,7 @@ test('home.html ships the hero, cycle, and metrics dashboard skeleton', () => {
   assert.match(html, /class="dashboard-grid vertical"/);
   assert.match(html, /class="week-tracker"/);
   assert.match(html, /class="week-tracker-days"/);
+  assert.doesNotMatch(html, /weeklyTrackerTitle|class="tracker-title"|data-i18n="home\.metrics\.tracker"/);
   assert.ok(
     html.indexOf('<div class="week-tracker"') < html.indexOf('<div class="metrics-grid">'),
     'the weekly tracker appears before the summary metrics'
@@ -185,7 +186,6 @@ test('home.html wires every dashboard label to i18n keys shared by both locales'
     'home.metrics.title',
     'home.metrics.distance',
     'home.metrics.time',
-    'home.metrics.tracker',
   ];
   for (const key of expectedKeys) {
     assert.ok(html.includes(key), `home.html must reference ${key}`);
@@ -919,6 +919,11 @@ test('home.css stacks the dashboard widgets full-width and styles the week track
   );
   assert.match(css, /\.week-tracker \{[^}]*border-bottom:\s*1px solid var\(--line\)/);
   assert.match(css, /\.week-tracker \{[^}]*margin:\s*0 0 1rem/);
+  assert.match(
+    css,
+    /\.card-section\[aria-labelledby="weeklyMetricsTitle"\] \.section-header \{[^}]*margin-bottom:\s*0\.65rem/,
+    'the tracker sits close beneath the This Week heading'
+  );
   assert.match(css, /\.week-tracker-days \{[^}]*display:\s*flex/);
   assert.match(css, /\.week-tracker-days \{[^}]*align-items:\s*center/);
   assert.match(css, /\.week-day \{[^}]*border:\s*0;[^}]*border-radius:\s*999px/);
