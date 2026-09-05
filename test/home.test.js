@@ -41,6 +41,7 @@ const {
   weekDayState,
   buildWeekDayMarkup,
   renderWeekDays,
+  applyCycleVisibility,
 } = require(join(publicDir, 'home.js'));
 
 function readHomeHtml() {
@@ -97,6 +98,25 @@ test('home.html ships the hero, cycle, and metrics dashboard skeleton', () => {
   assert.match(html, /shared\/shell\.js/);
   assert.match(html, /shared\/shell\.css/);
   assert.match(html, /home\.css/);
+});
+
+test('home.html starts with the empty cycle state visible and the active card hidden', () => {
+  const html = readHomeHtml();
+  const emptyBlock = html.match(
+    /<div id="cycleEmpty" class="empty-state">[\s\S]*?<\/div>\s*<div id="cycleActive"/
+  );
+  assert.ok(emptyBlock, 'the empty-state block precedes the active card');
+  assert.ok(
+    emptyBlock[0].includes('No active training cycle'),
+    'the "No active cycle" text and CTA live inside the empty-state container'
+  );
+  assert.ok(emptyBlock[0].includes('href="/cycles.html"'));
+  assert.equal(
+    /<div id="cycleEmpty" class="empty-state">[\s\S]*?class="hidden">/.test(emptyBlock[0]),
+    false,
+    'the empty state is NOT hidden by default'
+  );
+  assert.match(html, /<div id="cycleActive" class="cycle-card hidden">/, 'the active card ships hidden until a cycle loads');
 });
 
 test('home.html wires every dashboard label to i18n keys shared by both locales', () => {
@@ -589,6 +609,73 @@ test('applyHeroImage sets the CSS var used by the dark overlay hero', () => {
   assert.equal(banner.style.values['--hero-image'], 'url("https://example.com/stage.jpg")');
 });
 
+function fakeCycleEl() {
+  const classes = new Set();
+  return {
+    attrs: {},
+    style: {},
+    classList: {
+      has: (name) => classes.has(name),
+      toggle(name, force) {
+        if (force) classes.add(name);
+        else classes.delete(name);
+        return classes.has(name);
+      },
+    },
+    setAttribute(name, value) {
+      this.attrs[name] = String(value);
+    },
+  };
+}
+
+test('applyCycleVisibility hides the empty state when an active cycle exists', () => {
+  const emptyContainer = fakeCycleEl();
+  const activeContainer = fakeCycleEl();
+
+  applyCycleVisibility({ emptyContainer, activeContainer }, true);
+
+  assert.equal(emptyContainer.classList.has('hidden'), true, 'the empty card gains the hidden class');
+  assert.equal(emptyContainer.style.display, 'none', 'the empty card is display:none');
+  assert.equal(emptyContainer.attrs['aria-hidden'], 'true');
+  assert.equal(activeContainer.classList.has('hidden'), false, 'the active card is revealed');
+  assert.equal(activeContainer.style.display, '', 'the active card returns to its natural display');
+  assert.equal(activeContainer.attrs['aria-hidden'], 'false');
+});
+
+test('applyCycleVisibility hides the active card and reveals the empty state without a cycle', () => {
+  const emptyContainer = fakeCycleEl();
+  const activeContainer = fakeCycleEl();
+
+  applyCycleVisibility({ emptyContainer, activeContainer }, false);
+
+  assert.equal(activeContainer.classList.has('hidden'), true);
+  assert.equal(activeContainer.style.display, 'none');
+  assert.equal(activeContainer.attrs['aria-hidden'], 'true');
+  assert.equal(emptyContainer.classList.has('hidden'), false);
+  assert.equal(emptyContainer.style.display, '');
+  assert.equal(emptyContainer.attrs['aria-hidden'], 'false');
+});
+
+test('applyCycleVisibility flips cleanly between states without leaving stale visibility', () => {
+  const emptyContainer = fakeCycleEl();
+  const activeContainer = fakeCycleEl();
+
+  applyCycleVisibility({ emptyContainer, activeContainer }, true);
+  applyCycleVisibility({ emptyContainer, activeContainer }, false);
+  applyCycleVisibility({ emptyContainer, activeContainer }, true);
+
+  assert.equal(emptyContainer.classList.has('hidden'), true, 'empty is hidden on the final active render');
+  assert.equal(emptyContainer.style.display, 'none');
+  assert.equal(activeContainer.classList.has('hidden'), false, 'active is the only visible state');
+  assert.equal(activeContainer.style.display, '');
+});
+
+test('applyCycleVisibility tolerates missing containers without throwing', () => {
+  assert.doesNotThrow(() => applyCycleVisibility({ emptyContainer: null, activeContainer: null }, true));
+  assert.doesNotThrow(() => applyCycleVisibility({}, false));
+  assert.doesNotThrow(() => applyCycleVisibility(null, true));
+});
+
 // ── JS source invariants ───────────────────────────────────────
 
 test('home.js keeps the dashboard wiring declarative and reactive', () => {
@@ -613,6 +700,12 @@ test('home.js keeps the dashboard wiring declarative and reactive', () => {
   );
   assert.match(js, /renderWeekTracker\(\);/);
   assert.match(js, /state\.trainingDates = trainingDaySet\(weekTrainings\)/);
+  assert.match(js, /export function applyCycleVisibility/);
+  assert.match(
+    js,
+    /applyCycleVisibility\(\{ emptyContainer: cycleEmpty, activeContainer: cycleActive \}, hasCycle\)/,
+    'the cycle renderer funnels both sibling states through the exclusive visibility helper'
+  );
 });
 
 test('home.css stacks the dashboard widgets full-width and styles the week tracker', () => {

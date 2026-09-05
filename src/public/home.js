@@ -225,6 +225,22 @@ export function metricsCardContent(metrics) {
   return { distance: formatDistanceKm(distanceKm), time: formatDuration(durationSeconds) };
 }
 
+// Renders one and only one cycle state. Every switch touches BOTH sibling
+// containers, backed by the .hidden class, an aria-hidden mirror, and an
+// inline display fallback so a stylesheet regression can never make the
+// empty state and the active card render together.
+export function applyCycleVisibility(containers, hasCycle) {
+  const emptyContainer = containers?.emptyContainer;
+  const activeContainer = containers?.activeContainer;
+  if (!emptyContainer || !activeContainer) return;
+  emptyContainer.classList.toggle('hidden', hasCycle);
+  activeContainer.classList.toggle('hidden', !hasCycle);
+  emptyContainer.setAttribute('aria-hidden', String(hasCycle));
+  activeContainer.setAttribute('aria-hidden', String(!hasCycle));
+  emptyContainer.style.display = hasCycle ? 'none' : '';
+  activeContainer.style.display = hasCycle ? '' : 'none';
+}
+
 export function randomFallbackQuote(messages, random = Math.random) {
   const quotes = messages?.home?.hero?.fallbackQuotes;
   if (!Array.isArray(quotes) || quotes.length === 0) return null;
@@ -316,8 +332,7 @@ function setupHomePage() {
   function renderCycle() {
     if (!cycleEmpty || !cycleActive) return;
     const hasCycle = Boolean(state.cycle);
-    cycleEmpty.classList.toggle('hidden', hasCycle);
-    cycleActive.classList.toggle('hidden', !hasCycle);
+    applyCycleVisibility({ emptyContainer: cycleEmpty, activeContainer: cycleActive }, hasCycle);
     if (!hasCycle) return;
     const content = cycleCardContent(state.cycle, i18n ? i18n.messages : {});
     if (cycleName) cycleName.textContent = content.name;
