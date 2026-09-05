@@ -463,11 +463,6 @@ export function openChangePasswordModal(messages = shellI18n.messages) {
     buildPasswordField('confirmNewPassword', 'password.confirmLabel', 'password.confirmPlaceholder', 'check')
   );
 
-  const hint = el('p', 'field-hint password-min-hint');
-  hint.setAttribute('data-i18n', 'errors.passwordMin');
-  hint.setAttribute('data-i18n-params', MIN_PASSWORD_LENGTH);
-  form.appendChild(hint);
-
   const formError = el('div', 'form-error password-error-summary hidden');
   formError.id = 'changePasswordFormError';
   formError.setAttribute('role', 'alert');
@@ -528,17 +523,47 @@ function clearPasswordFormError(formError) {
   formError.classList.add('hidden');
 }
 
+// Renders the grouped error list using a specific messages dictionary. The
+// translation lookups happen strictly here, at render time, so the strings
+// always reflect the dictionary passed in (never a stale module-scope copy).
 function renderPasswordFormErrors(formError, messages, errorCodes, params) {
   const list = formError.querySelector('ul');
   if (list) {
     list.textContent = '';
     for (const code of errorCodes) {
       const item = document.createElement('li');
+      item.dataset.code = code;
       item.textContent = translate(messages, `auth.errors.${code}`, params);
       list.appendChild(item);
     }
   }
   formError.classList.remove('hidden');
+}
+
+// Re-renders any visible change-password errors in the currently active
+// language. Invoked on language switch so the grouped alert box (the only
+// place errors are shown) updates in sync with the rest of the UI.
+export function reapplyPasswordErrors(messages = shellI18n.messages) {
+  const formError = document.getElementById('changePasswordFormError');
+  if (!formError || formError.classList.contains('hidden')) return;
+  const list = formError.querySelector('ul');
+  if (!list) return;
+  const current = list.textContent;
+  const codes = [];
+  for (const item of list.querySelectorAll('li')) {
+    codes.push(item.dataset.code);
+  }
+  if (codes.length === 0) return;
+  list.textContent = '';
+  for (const code of codes) {
+    const item = document.createElement('li');
+    item.dataset.code = code;
+    item.textContent = translate(messages, `auth.errors.${code}`, { min: MIN_PASSWORD_LENGTH });
+    list.appendChild(item);
+  }
+  if (list.textContent !== current) {
+    formError.classList.remove('hidden');
+  }
 }
 
 export function wireChangePasswordForm(form, messages = shellI18n.messages) {
@@ -549,6 +574,10 @@ export function wireChangePasswordForm(form, messages = shellI18n.messages) {
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     clearPasswordFormError(formError);
+
+    // Resolve the dictionary at submit time so the strings always reflect
+    // the currently active language, never a stale module-scope snapshot.
+    const activeMessages = shellI18n.messages;
 
     const values = {
       currentPassword: form.elements.currentPassword.value,
@@ -570,22 +599,26 @@ export function wireChangePasswordForm(form, messages = shellI18n.messages) {
       if (validation.invalid.confirm) {
         form.elements.confirmNewPassword.classList.add('input-error');
       }
-      renderPasswordFormErrors(formError, messages, validation.errors, { min: MIN_PASSWORD_LENGTH });
+      renderPasswordFormErrors(formError, activeMessages, validation.errors, {
+        min: MIN_PASSWORD_LENGTH,
+      });
       return;
     }
 
     submit.disabled = true;
-    submitLabel.textContent = translate(messages, 'password.submitting');
+    submitLabel.textContent = translate(activeMessages, 'password.submitting');
     refreshIcons();
     try {
       await changePassword(values);
-      showShellToast(messages, 'password.toastSuccess');
+      showShellToast(activeMessages, 'password.toastSuccess');
       closeChangePasswordModal();
     } catch (error) {
       const codes = error.codes && error.codes.length > 0 ? error.codes : ['save'];
-      renderPasswordFormErrors(formError, messages, codes, { min: MIN_PASSWORD_LENGTH });
+      renderPasswordFormErrors(formError, activeMessages, codes, {
+        min: MIN_PASSWORD_LENGTH,
+      });
       submit.disabled = false;
-      submitLabel.textContent = translate(messages, 'password.submit');
+      submitLabel.textContent = translate(activeMessages, 'password.submit');
     }
   });
 }
@@ -732,6 +765,17 @@ export async function initShell({ active } = {}) {
   });
 
   wireLanguageSwitcher(shellI18n);
+
+  // The Change Password modal is shell-owned, so its live validation errors
+  // (the grouped alert box) must follow the language switch in real time.
+  window.addEventListener('app:languagechange', () => {
+    reapplyPasswordErrors();
+    const submit = document.getElementById('changePasswordSubmit');
+    if (submit && !submit.disabled) {
+      const label = submit.querySelector('span');
+      if (label) label.textContent = translate(shellI18n.messages, 'password.submit');
+    }
+  });
 
   document.body.classList.remove('shell-loading');
   document.body.classList.add('shell-mounted');

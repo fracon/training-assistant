@@ -15,6 +15,7 @@ const {
   formatAppVersion,
   buildUserMenu,
   wireUserMenu,
+  reapplyPasswordErrors,
 } = require('../src/public/shared/shell.js');
 const en = require('../src/public/locales/en.json');
 const pt = require('../src/public/locales/pt.json');
@@ -767,7 +768,19 @@ test('the change-password modal ships three translated password fields', () => {
   assert.match(js, /buildPasswordField\('newPassword', 'password\.newLabel', 'password\.newPlaceholder', 'key-round'\)/);
   assert.match(js, /buildPasswordField\('confirmNewPassword', 'password\.confirmLabel', 'password\.confirmPlaceholder', 'check'\)/);
   assert.match(js, /input\.autocomplete = name === 'currentPassword' \? 'current-password' : 'new-password'/, 'autofill hints are correct');
-  assert.match(js, /hint\.setAttribute\('data-i18n', 'errors\.passwordMin'\)/, 'the min-length hint is localized');
+});
+
+test('the modal has no lingering inline password-hint text above the error box', () => {
+  const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
+  assert.ok(
+    !js.includes('password-min-hint'),
+    'the static min-length hint element has been removed from the modal'
+  );
+  const css = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.css'), 'utf8');
+  assert.ok(
+    !css.includes('password-min-hint'),
+    'the ghost hint styling has been removed from the stylesheet'
+  );
 });
 
 test('submission runs client-side validation then calls the API and closes the modal', () => {
@@ -775,11 +788,23 @@ test('submission runs client-side validation then calls the API and closes the m
 
   assert.match(js, /validatePasswordChange\(values\)/, 'client validation runs first');
   assert.match(js, /await changePassword\(values\);/, 'the API receives the validated payload');
-  assert.match(js, /showShellToast\(messages, 'password\.toastSuccess'\)/, 'success is announced in a toast');
+  assert.match(js, /showShellToast\(activeMessages, 'password\.toastSuccess'\)/, 'success is announced in a toast');
   assert.match(js, /const codes = error\.codes && error\.codes\.length > 0 \? error\.codes : \['save'\]/, 'server codes fall back to the generic save error');
-  assert.match(js, /renderPasswordFormErrors\(formError, messages, validation\.errors, \{ min: MIN_PASSWORD_LENGTH \}\)/, 'client errors render together');
+  assert.match(js, /renderPasswordFormErrors\(formError, activeMessages, validation\.errors/, 'client errors render together');
+  assert.match(js, /const activeMessages = shellI18n\.messages;/, 'the dictionary is resolved at submit time');
+  assert.match(js, /item\.dataset\.code = code;/, 'each error is tagged with its code for re-rendering');
   assert.match(js, /item\.textContent = translate\(messages, `auth\.errors\.\$\{code\}`,\s*params\)/, 'each code maps through auth.errors');
   assert.match(js, /submit\.disabled = true;/, 'the button disables while submitting');
+});
+
+test('visible password errors re-render in the new language on switch', () => {
+  const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
+
+  assert.match(js, /export function reapplyPasswordErrors\(/, 'the reactive re-render helper is exported');
+  assert.match(js, /window\.addEventListener\('app:languagechange', \(\) => \{\s*\n\s*reapplyPasswordErrors\(\);/, 'the shell hooks the language-change event');
+  assert.match(js, /if \(!formError \|\| formError\.classList\.contains\('hidden'\)\) return;/, 'only a visible error box reacts');
+  assert.match(js, /item\.dataset\.code = code;[\s\S]*?item\.textContent = translate\(messages, `auth\.errors\.\$\{code\}`/, 'errors are rebuilt from their stored codes');
+  assert.match(js, /event\.key === 'Escape'/, 'escape behavior remains wired');
 });
 
 test('the shell owns a dedicated toast so password feedback renders on every page', () => {
@@ -827,4 +852,85 @@ test('the change-password menu item links to the modal label through the shell n
   assert.equal(pt.shell.changePassword, 'Alterar Senha');
   assert.equal(en.password.menuLabel, en.shell.changePassword);
   assert.equal(pt.password.menuLabel, pt.shell.changePassword);
+});
+
+test('reapplyPasswordErrors re-renders visible errors in the new language', () => {
+  const originalDocument = globalThis.document;
+
+  const items = [
+    { dataset: { code: 'currentRequired' }, textContent: en.auth.errors.currentRequired },
+    { dataset: { code: 'passwordMinLength' }, textContent: 'New password must be at least 8 characters long.' },
+  ];
+  const list = {
+    textContent: items.map((i) => i.textContent).join(''),
+    children: items,
+    querySelectorAll: (sel) => (sel === 'li' ? items : []),
+    appendChild(child) {
+      this.children.push(child);
+    },
+  };
+  const formError = {
+    classList: {
+      contains: () => false,
+      remove: () => {},
+    },
+    querySelector: (sel) => (sel === 'ul' ? list : null),
+  };
+
+  let created = [];
+  globalThis.document = {
+    createElement: (tag) => {
+      const node = { tag, dataset: {}, textContent: '', appendChild() {} };
+      created.push(node);
+      return node;
+    },
+    getElementById: (id) => (id === 'changePasswordFormError' ? formError : null),
+    querySelectorAll: () => [],
+    querySelector: () => null,
+  };
+
+  try {
+    reapplyPasswordErrors(en);
+    assert.equal(created[0].dataset.code, 'currentRequired');
+    assert.equal(created[0].textContent, en.auth.errors.currentRequired);
+    assert.equal(created[1].dataset.code, 'passwordMinLength');
+    assert.equal(
+      created[1].textContent,
+      'New password must be at least 8 characters long.',
+      'the {min} param renders from the active dictionary'
+    );
+
+    created = [];
+    reapplyPasswordErrors(pt);
+    assert.equal(created[0].textContent, pt.auth.errors.currentRequired);
+    assert.equal(created[1].textContent, 'A nova senha deve ter pelo menos 8 caracteres.');
+  } finally {
+    globalThis.document = originalDocument;
+  }
+});
+
+test('reapplyPasswordErrors is a no-op while the error box stays hidden', () => {
+  const originalDocument = globalThis.document;
+  const body = { appendChild() {} };
+  const hidden = {
+    className: 'form-error password-error-summary hidden',
+    classList: {
+      contains: () => true,
+    },
+    children: [],
+    querySelector: () => null,
+  };
+
+  globalThis.document = {
+    createElement: () => ({ children: [], dataset: {}, classList: { add() {}, remove() {} }, appendChild() {} }),
+    body,
+    getElementById: (id) => (id === 'changePasswordFormError' ? hidden : null),
+    querySelectorAll: () => [],
+  };
+
+  try {
+    assert.doesNotThrow(() => reapplyPasswordErrors(en), 'hidden errors do not re-render');
+  } finally {
+    globalThis.document = originalDocument;
+  }
 });

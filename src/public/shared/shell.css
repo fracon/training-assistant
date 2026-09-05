@@ -470,13 +470,6 @@ body.shell-mounted {
   background: #fbf1ec;
 }
 
-.password-min-hint {
-  margin: 0;
-  font-size: 0.78rem;
-  color: var(--muted);
-  opacity: 0.8;
-}
-
 .password-form .form-actions {
   display: flex;
   align-items: center;
