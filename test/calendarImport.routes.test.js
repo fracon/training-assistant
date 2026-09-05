@@ -244,6 +244,41 @@ test('import parses rows, normalizes Dia and persists trainings', async () => {
   await app.close();
 });
 
+test('import skips exact date/name/description duplicates while keeping distinct same-day workouts', async () => {
+  const { db, app, upload, getTrainings } = await setup();
+
+  db.prepare(
+    'INSERT INTO trainings (user_id, dia, tipo, treino, detalhes) VALUES (?, ?, ?, ?, ?)'
+  ).run(1, '2026-08-23', 'Corrida', 'Longão', 'Zona 2');
+
+  const buffer = await spreadsheetBuffer(HEADERS, [
+    ['23/08/2026', 'Domingo', 'Manhã', 'Corrida', 'Longão', 'Zona 2'],
+    ['23/08/2026', 'Domingo', 'Tarde', 'Tempo', 'Tempo run', 'Zona 2'],
+    ['23/08/2026', 'Domingo', 'Noite', 'Corrida', 'Tempo run', 'Zona 3'],
+    ['24/08/2026', 'Segunda', 'Manhã', 'Intervalado', 'Pista', '8x400m'],
+    ['24/08/2026', 'Segunda', 'Tarde', 'Intervalado', 'Pista', '8x400m'],
+  ]);
+  const response = await upload(buffer);
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { imported: 3 });
+
+  const listed = await getTrainings();
+  const trainings = (await listed.json()).trainings;
+  assert.equal(trainings.length, 4);
+  assert.deepEqual(
+    trainings.map(({ dia, treino, detalhes }) => [dia, treino, detalhes]),
+    [
+      ['2026-08-23', 'Longão', 'Zona 2'],
+      ['2026-08-23', 'Tempo run', 'Zona 2'],
+      ['2026-08-23', 'Tempo run', 'Zona 3'],
+      ['2026-08-24', 'Pista', '8x400m'],
+    ]
+  );
+
+  await app.close();
+});
+
 test('listing trainings returns only the owner rows ordered by date', async () => {
   const { db, app, getTrainings } = await setup();
 

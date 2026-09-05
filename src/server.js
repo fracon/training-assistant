@@ -334,6 +334,21 @@ async function buildServer(options = {}) {
         return reply.code(400).send({ errors: [{ row: 1, col: 'Data', error: 'No training rows found.' }] });
       }
 
+      const trainingSignature = (record) =>
+        JSON.stringify([record.dia, record.treino, record.detalhes]);
+      const existingSignatures = new Set(
+        db
+          .prepare('SELECT dia, treino, detalhes FROM trainings WHERE user_id = ?')
+          .all(request.user.id)
+          .map(trainingSignature)
+      );
+      const newRecords = records.filter((record) => {
+        const signature = trainingSignature(record);
+        if (existingSignatures.has(signature)) return false;
+        existingSignatures.add(signature);
+        return true;
+      });
+
       const insert = db.prepare(
         `INSERT INTO trainings
            (user_id, training_cycle_id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes)
@@ -357,9 +372,9 @@ async function buildServer(options = {}) {
           );
         }
       });
-      insertMany(records);
+      insertMany(newRecords);
 
-      return { imported: records.length };
+      return { imported: newRecords.length };
     });
 
     const TRAINING_COLUMNS =
