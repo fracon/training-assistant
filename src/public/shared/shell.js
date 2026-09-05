@@ -376,7 +376,18 @@ export function showShellToast(messages, key, type = 'success', duration = 2500,
   const iconEl = toast.querySelector('.toast-icon');
   if (iconEl) iconEl.innerHTML = `<i data-lucide="${iconName}"></i>`;
   const textEl = toast.querySelector('.toast-text');
-  if (textEl) textEl.textContent = translate(messages, key, params);
+  if (textEl) {
+    textEl.textContent = '';
+    if (Array.isArray(params?.lines)) {
+      for (const line of params.lines) {
+        const lineEl = el('span', 'toast-line');
+        lineEl.textContent = translate(messages, line.key, line.params);
+        textEl.appendChild(lineEl);
+      }
+    } else {
+      textEl.textContent = translate(messages, key, params);
+    }
+  }
   toast.classList.toggle('toast-error', type === 'error');
   toast.classList.add('visible');
   refreshIcons();

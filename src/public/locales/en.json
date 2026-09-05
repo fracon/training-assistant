@@ -47,7 +47,12 @@
       "title": "Import trainings",
       "hint": "Pick a .xlsx or .xls spreadsheet with columns: Dia, Período, Tipo, Treino, Detalhes, FC alvo, RPE, Tênis, Previsão no horário, Observações.",
       "loading": "Importing…",
-      "success": "{imported} trainings successfully imported. {skipped} duplicates skipped.",
+      "success": {
+        "importedOne": "1 training successfully imported.",
+        "importedMany": "{count} trainings successfully imported.",
+        "skippedOne": "1 duplicate skipped.",
+        "skippedMany": "{count} duplicates skipped."
+      },
       "failedTitle": "We found issues in your spreadsheet",
       "rowError": "Row {row} • {col}: {error}",
       "close": "Close"

@@ -315,10 +315,25 @@ function setupCalendarPage() {
       await reloadTrainings();
       showShellToast(
         i18n.messages,
-        'calendar.import.success',
+        'calendar.import.success.importedMany',
         'success',
         3500,
-        { imported: result.imported ?? 0, skipped: result.skipped ?? 0 }
+        {
+          lines: [
+            {
+              key: result.imported === 1
+                ? 'calendar.import.success.importedOne'
+                : 'calendar.import.success.importedMany',
+              params: { count: result.imported ?? 0 },
+            },
+            {
+              key: result.skipped === 1
+                ? 'calendar.import.success.skippedOne'
+                : 'calendar.import.success.skippedMany',
+              params: { count: result.skipped ?? 0 },
+            },
+          ],
+        }
       );
     } catch (error) {
       showImportErrors(error);

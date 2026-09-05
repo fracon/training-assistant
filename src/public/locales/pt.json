@@ -47,7 +47,12 @@
       "title": "Importar treinos",
       "hint": "Escolha uma planilha .xlsx ou .xls com as colunas: Dia, Período, Tipo, Treino, Detalhes, FC alvo, RPE, Tênis, Previsão no horário, Observações.",
       "loading": "Importando…",
-      "success": "{imported} treinos importados com sucesso. {skipped} duplicados ignorados.",
+      "success": {
+        "importedOne": "1 treino importado com sucesso.",
+        "importedMany": "{count} treinos importados com sucesso.",
+        "skippedOne": "1 duplicado ignorado.",
+        "skippedMany": "{count} duplicados ignorados."
+      },
       "failedTitle": "Encontramos problemas na sua planilha",
       "rowError": "Linha {row} • {col}: {error}",
       "close": "Fechar"
