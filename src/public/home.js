@@ -16,8 +16,12 @@ export const HERO_IMAGES = [
   'https://images.unsplash.com/photo-1486218119243-13883505764c?auto=format&fit=crop&w=1600&q=80',
   'https://images.unsplash.com/photo-1552674605-db6ffd4facb5?auto=format&fit=crop&w=1600&q=80',
   'https://images.unsplash.com/photo-1551632811-561732d1e306?auto=format&fit=crop&w=1600&q=80',
-  'https://images.unsplash.com/photo-1571008887538-b36bb32fefb8?auto=format&fit=crop&w=1600&q=80',
 ];
+
+// A bundled, network-independent SVG keeps the hero legible when an Unsplash
+// asset is unavailable, removed, or blocked by the user's network.
+export const HERO_FALLBACK_IMAGE =
+  'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%221600%22 height=%22700%22 viewBox=%220 0 1600 700%22%3E%3Cdefs%3E%3ClinearGradient id=%22g%22 x1=%220%22 x2=%221%22 y1=%220%22 y2=%221%22%3E%3Cstop stop-color=%22%233b5143%22/%3E%3Cstop offset=%221%22 stop-color=%22%231d2922%22/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width=%221600%22 height=%22700%22 fill=%22url(%23g)%22/%3E%3C/svg%3E';
 
 export function startOfDay(date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -342,6 +346,30 @@ export function applyHeroImage(banner, imageUrl) {
   banner.style.setProperty('--hero-image', `url("${imageUrl}")`);
 }
 
+export function loadImage(url, ImageConstructor = globalThis.Image) {
+  return new Promise((resolve, reject) => {
+    if (typeof ImageConstructor !== 'function') {
+      reject(new Error('Image preloading is unavailable.'));
+      return;
+    }
+    const image = new ImageConstructor();
+    image.onload = () => resolve(url);
+    image.onerror = () => reject(new Error(`Unable to load hero image: ${url}`));
+    image.src = url;
+  });
+}
+
+export async function preloadHeroImage(banner, imageUrl, ImageConstructor = globalThis.Image) {
+  try {
+    await loadImage(imageUrl, ImageConstructor);
+    applyHeroImage(banner, imageUrl);
+    return imageUrl;
+  } catch {
+    applyHeroImage(banner, HERO_FALLBACK_IMAGE);
+    return HERO_FALLBACK_IMAGE;
+  }
+}
+
 function setupHomePage() {
   const heroBanner = document.getElementById('heroBanner');
   const quoteLoading = document.getElementById('heroQuoteLoading');
@@ -475,7 +503,7 @@ function setupHomePage() {
     start(user) {
       if (!user) return null;
       i18n = getShellI18n();
-      applyHeroImage(heroBanner, heroImageFor());
+      preloadHeroImage(heroBanner, heroImageFor());
       loadHeroQuote();
       loadCycle();
       loadMetrics();
