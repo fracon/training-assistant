@@ -914,6 +914,7 @@ test('home.css lays out the cycle header, objective subtitle and compact progres
 
 test('home.css stacks the dashboard widgets full-width and styles the week tracker', () => {
   const css = readHomeCss();
+  assert.match(css, /\.hero-loading \{[^}]*display:\s*table[^}]*padding:\s*0\.45rem 0\.7rem[^}]*background-color:\s*rgba\(0, 0, 0, 0\.6\)/);
   assert.match(css, /\.hero-quote p \{[^}]*display:\s*table[^}]*padding:\s*0\.45rem 0\.7rem[^}]*background-color:\s*rgba\(0, 0, 0, 0\.6\)/);
   assert.match(css, /\.hero-quote-author \{[^}]*display:\s*table[^}]*background-color:\s*rgba\(0, 0, 0, 0\.6\)/);
   assert.match(css, /@import url\('\.\/shared\/theme\.css'\)/);
