@@ -113,8 +113,16 @@ test('the prompt template keeps the required Portuguese structure', () => {
   assert.ok(!PROMPT_TEMPLATE.includes('Exemplos:'), 'example list lives in the UI, not the prompt');
 
   const tokens = PROMPT_TEMPLATE.match(/\{\{[A-Z_]+\}\}/g) ?? [];
-  assert.equal(tokens.length, 10, 'exactly ten placeholders exist');
+  assert.equal(tokens.length, 18, 'the template carries all schedule and cycle-context placeholders');
   assert.deepEqual(tokens, [
+    '{{CYCLE_NAME}}',
+    '{{CYCLE_GOAL}}',
+    '{{TARGET_RACE_DATE}}',
+    '{{CURRENT_WEEK}}',
+    '{{DAYS_REMAINING}}',
+    '{{PREV_WEEK_TRAININGS}}',
+    '{{PREV_WEEK_DISTANCE_KM}}',
+    '{{PREV_WEEK_TIME_MINUTES}}',
     '{{DATA_DA_SEGUNDA}}',
     '{{SHOES_BLOCK}}',
     '{{DISP_SEG}}',
@@ -148,6 +156,38 @@ test('buildPrompt replaces every placeholder with user values', () => {
   assert.ok(prompt.includes('Segunda: Manhã, antes das 8h'));
   assert.ok(prompt.includes('Domingo: Manhã, entre 8h e 9h'));
   assert.ok(prompt.includes('viagem na terça; pouco sono na quinta.'));
+});
+
+test('buildPrompt injects current cycle and previous-week context in Portuguese', () => {
+  const prompt = buildPrompt({
+    targetDate: new Date(2026, 7, 31),
+    cycle: {
+      name: 'Base Lisboa',
+      goal: 'Correr abaixo de 2h',
+      target_date: '2026-10-18',
+      currentWeek: 4,
+      totalWeeks: 12,
+      daysRemaining: 38,
+    },
+    previousWeek: {
+      completedTrainingsCount: 4,
+      totalDistanceKm: 42.5,
+      totalTimeMinutes: 238,
+    },
+  });
+
+  const intro = prompt.indexOf('Quero que você gere minha planilha');
+  const cycle = prompt.indexOf('CONTEXTO DO CICLO ATUAL');
+  const checklist = prompt.indexOf('Use TODO o contexto disponível');
+  assert.ok(intro < cycle && cycle < checklist, 'cycle context follows the introduction before the checklist');
+  assert.match(prompt, /Nome do ciclo: Base Lisboa/);
+  assert.match(prompt, /Meta do ciclo: Correr abaixo de 2h/);
+  assert.match(prompt, /Data da prova-alvo: 2026-10-18/);
+  assert.match(prompt, /Semana atual: Semana 4 de 12/);
+  assert.match(prompt, /Dias restantes: 38/);
+  assert.match(prompt, /Treinos concluídos na semana anterior: 4/);
+  assert.match(prompt, /Distância total da semana anterior \(km\): 42\.5/);
+  assert.match(prompt, /Tempo total da semana anterior \(minutos\): 238/);
 });
 
 test('buildPrompt falls back to defaults for untouched days and context', () => {
@@ -402,6 +442,39 @@ test('buildPrompt generates the English template in English mode', () => {
   assert.ok(!prompt.includes('Rotina normal'), 'no Portuguese leftovers in EN output');
   assert.ok(!prompt.includes('{{'));
   assert.ok(prompt.includes('traveling on Tuesday'));
+});
+
+test('buildPrompt injects localized cycle and previous-week context in English', () => {
+  const prompt = buildPrompt({
+    targetDate: new Date(2026, 7, 31),
+    lang: 'en-US',
+    cycle: {
+      name: 'Lisbon Base',
+      primary_goal: 'Run under 2 hours',
+      target_date: '2026-10-18',
+      current_week: 4,
+      total_weeks: 12,
+      days_remaining: 38,
+    },
+    previousWeek: {
+      completed_trainings_count: 4,
+      total_distance_km: 42.5,
+      total_time_minutes: 238,
+    },
+  });
+
+  const intro = prompt.indexOf('I want you to generate my running training schedule');
+  const cycle = prompt.indexOf('CURRENT CYCLE CONTEXT');
+  const checklist = prompt.indexOf('Use ALL available context');
+  assert.ok(intro < cycle && cycle < checklist);
+  assert.match(prompt, /Cycle name: Lisbon Base/);
+  assert.match(prompt, /Cycle goal: Run under 2 hours/);
+  assert.match(prompt, /Target race date: 2026-10-18/);
+  assert.match(prompt, /Current week: Week 4 of 12/);
+  assert.match(prompt, /Days remaining: 38/);
+  assert.match(prompt, /Completed trainings in the previous week: 4/);
+  assert.match(prompt, /Previous week total distance \(km\): 42\.5/);
+  assert.match(prompt, /Previous week total time \(minutes\): 238/);
 });
 
 test('buildPrompt keeps the Portuguese template by default and for unknown languages', () => {
