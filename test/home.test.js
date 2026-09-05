@@ -571,9 +571,11 @@ test('buildWeekDayMarkup maps training state to the visual and i18n classes', ()
   assert.equal(active.cls, 'week-day has-training');
   assert.equal(active.label, 'Qua');
   assert.equal(active.dataI18n, 'home.days.wed');
+  assert.equal(active.icon, 'footprints');
   const idle = buildWeekDayMarkup({ date: '2026-08-17', key: 'home.days.mon', hasTraining: false }, en);
   assert.equal(idle.cls, 'week-day empty');
   assert.equal(idle.label, 'Mon');
+  assert.equal(idle.icon, null);
 });
 
 // ── DOM side-effects (hand-rolled runtime) ─────────────────────
@@ -590,6 +592,7 @@ function fakeDocument() {
     },
     appendChild(child) {
       this.children.push(child);
+      this.textContent += child.textContent;
       return child;
     },
   });
@@ -612,7 +615,8 @@ test('renderWeekDays renders an all-empty Monday-to-Sunday week when no training
     assert.equal(dom.container.children.length, 7);
     for (const cell of dom.container.children) {
       assert.equal(cell.className, 'week-day empty');
-      assert.equal(cell.attrs['data-i18n'].startsWith('home.days.'), true);
+      assert.equal(cell.children.some((child) => child.attrs['data-lucide'] === 'footprints'), false);
+      assert.equal(cell.children[0].attrs['data-i18n'].startsWith('home.days.'), true);
     }
     assert.deepEqual(
       dom.container.children.map((cell) => cell.textContent),
@@ -640,6 +644,9 @@ test('renderWeekDays flags exactly Wednesday and Friday as having trainings', ()
     ]);
     assert.equal(dom.container.children[2].textContent, 'Qua', 'Wednesday maps to its PT label');
     assert.equal(dom.container.children[4].textContent, 'Sex', 'Friday maps to its PT label');
+    assert.equal(dom.container.children[2].children[0].attrs['data-lucide'], 'footprints');
+    assert.equal(dom.container.children[4].children[0].attrs['data-lucide'], 'footprints');
+    assert.equal(dom.container.children[2].children[0].attrs['aria-hidden'], 'true');
     assert.equal(dom.container.children[2].attrs['aria-label'], '2026-08-19', 'cells carry their ISO date');
   } finally {
     dom.destroy();

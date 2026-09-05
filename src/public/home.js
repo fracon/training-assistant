@@ -155,6 +155,7 @@ export function buildWeekDayMarkup(state, messages) {
     cls: state.hasTraining ? 'week-day has-training' : 'week-day empty',
     label: translate(messages, state.key),
     dataI18n: state.key,
+    icon: state.hasTraining ? 'footprints' : null,
     ariaLabel: state.date,
   };
 }
@@ -165,14 +166,27 @@ export function buildWeekDayMarkup(state, messages) {
 export function renderWeekDays(container, states, messages) {
   if (!container || !Array.isArray(states)) return;
   container.textContent = '';
+  const renderedCells = [];
   for (const state of states) {
     const markup = buildWeekDayMarkup(state, messages);
     const cell = document.createElement('div');
     cell.className = markup.cls;
-    cell.setAttribute('data-i18n', markup.dataI18n);
     cell.setAttribute('aria-label', markup.ariaLabel);
-    cell.textContent = markup.label;
+    if (markup.icon) {
+      const icon = document.createElement('i');
+      icon.setAttribute('data-lucide', markup.icon);
+      icon.setAttribute('aria-hidden', 'true');
+      cell.appendChild(icon);
+    }
+    const label = document.createElement('span');
+    label.setAttribute('data-i18n', markup.dataI18n);
+    label.textContent = markup.label;
+    cell.appendChild(label);
     container.appendChild(cell);
+    renderedCells.push(cell);
+  }
+  if (globalThis.lucide && typeof globalThis.lucide.createIcons === 'function') {
+    globalThis.lucide.createIcons({ nodes: renderedCells });
   }
 }
 

@@ -319,6 +319,14 @@
 .week-day.has-training {
   background: var(--accent-deep);
   color: #fff;
+  gap: 0.25rem;
+}
+
+.week-day svg {
+  width: 0.9rem;
+  height: 0.9rem;
+  flex-shrink: 0;
+  stroke-width: 2.2;
 }
 
 @media (max-width: 760px) {
