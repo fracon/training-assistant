@@ -426,7 +426,7 @@ test('cycleCardContent maps a cycle into dashboard card data in the active langu
   assert.equal(content.name, 'Base phase · 60km');
   assert.equal(content.objective, 'Maintain consistent weekly volume');
   assert.equal(content.targetDate, '2026-09-06');
-  assert.equal(content.targetDisplay, '2026-09-06', 'English keeps the ISO sortable date');
+  assert.equal(content.targetDisplay, '09/06/2026', 'English uses the localized US date format');
   assert.equal(content.daysRemaining, 13, 'the countdown bridges the current date to the target');
   assert.equal(content.daysRemainingText, '13 days remaining');
   assert.equal(content.weekText, 'Week 2 of 3');
@@ -477,9 +477,9 @@ test('cycleCardContent formats the target date as dd/mm/yyyy for Portuguese', ()
   assert.equal(ptContent.daysRemainingText, '4 dias restantes', 'the countdown pluralizes in pt');
 });
 
-test('formatTargetDate keeps ISO for English and day-first for every Portuguese variant', () => {
-  assert.equal(formatTargetDate('2026-09-13', 'en-US'), '2026-09-13');
-  assert.equal(formatTargetDate('2026-09-13', DEFAULT_DISPLAY_LANGUAGE), '2026-09-13');
+test('formatTargetDate uses localized month/day or day/month ordering', () => {
+  assert.equal(formatTargetDate('2026-09-13', 'en-US'), '09/13/2026');
+  assert.equal(formatTargetDate('2026-09-13', DEFAULT_DISPLAY_LANGUAGE), '09/13/2026');
   assert.equal(formatTargetDate('2026-09-13', 'pt-BR'), '13/09/2026');
   assert.equal(formatTargetDate('2026-09-13', 'pt'), '13/09/2026');
   assert.equal(formatTargetDate('2026-01-02', 'pt-BR'), '02/01/2026', 'month and day are zero-padded');

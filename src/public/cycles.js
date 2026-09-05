@@ -1,5 +1,6 @@
 import { initShell, getShellI18n, refreshIcons, showConfirm } from './shared/shell.js';
 import { translate } from './shared/i18n.js';
+import { formatDate as formatLocalizedDate } from './shared/date.js';
 import {
   fetchCycles,
   fetchActiveCycle,
@@ -26,7 +27,7 @@ function translateDistance(messages, distance) {
   return (translated !== key && translated) ? translated : distance;
 }
 
-function renderCycleCard(cycle, messages) {
+function renderCycleCard(cycle, messages, language = 'en-US') {
   const card = document.createElement('div');
   card.className = 'cycle-card';
   card.dataset.cycleId = cycle.id;
@@ -42,9 +43,9 @@ function renderCycleCard(cycle, messages) {
       <span class="cycle-status ${statusClass}">${escapeHtml(statusLabel)}</span>
     </div>
     <div class="cycle-card-meta">
-      ${cycle.target_date ? `<span><strong>${t(messages, 'cycles.targetDate')}:</strong> ${escapeHtml(cycle.target_date)}</span>` : ''}
+      ${cycle.target_date ? `<span><strong>${t(messages, 'cycles.targetDate')}:</strong> ${escapeHtml(formatLocalizedDate(cycle.target_date, language))}</span>` : ''}
       ${displayDistance ? `<span><strong>${t(messages, 'cycles.distance')}:</strong> ${escapeHtml(displayDistance)}</span>` : ''}
-      ${cycle.start_date ? `<span><strong>${t(messages, 'cycles.startDate')}:</strong> ${escapeHtml(cycle.start_date)}</span>` : ''}
+      ${cycle.start_date ? `<span><strong>${t(messages, 'cycles.startDate')}:</strong> ${escapeHtml(formatLocalizedDate(cycle.start_date, language))}</span>` : ''}
       ${cycle.primary_goal ? `<span><strong>${t(messages, 'cycles.primaryGoal')}:</strong> ${escapeHtml(cycle.primary_goal)}</span>` : ''}
     </div>
     <div class="cycle-card-actions">
@@ -66,7 +67,7 @@ function renderCycleCard(cycle, messages) {
   return card;
 }
 
-function renderList(cycles, messages) {
+function renderList(cycles, messages, language = 'en-US') {
   const listEl = document.getElementById('cycleList');
   const emptyEl = document.getElementById('cycleEmpty');
   listEl.innerHTML = '';
@@ -77,7 +78,7 @@ function renderList(cycles, messages) {
   }
   emptyEl.classList.add('hidden');
   for (const cycle of cycles) {
-    listEl.appendChild(renderCycleCard(cycle, messages));
+    listEl.appendChild(renderCycleCard(cycle, messages, language));
   }
   refreshIcons();
 }
@@ -157,7 +158,7 @@ function showToast(messages, messageKey, duration = 2500, type = 'success') {
   setTimeout(() => toast.classList.remove('visible'), duration);
 }
 
-async function handleSubmit(cycles, messages) {
+async function handleSubmit(cycles, messages, language = 'en-US') {
   const form = document.getElementById('cycleForm');
   const mode = form.dataset.mode;
   const objective = document.getElementById('cycleObjective').value.trim();
@@ -191,7 +192,7 @@ async function handleSubmit(cycles, messages) {
       const updated = await fetchCycles();
       cycles.length = 0;
       cycles.push(...updated);
-      renderList(cycles, messages);
+      renderList(cycles, messages, language);
       showToast(messages, 'cycles.success.add');
       window.dispatchEvent(new CustomEvent('kinesis:cycle-changed'));
       if (result.cycle) {
@@ -206,7 +207,7 @@ async function handleSubmit(cycles, messages) {
       const updated = await fetchCycles();
       cycles.length = 0;
       cycles.push(...updated);
-      renderList(cycles, messages);
+      renderList(cycles, messages, language);
       showToast(messages, 'cycles.success.edit');
     }
   } catch {
@@ -217,7 +218,7 @@ async function handleSubmit(cycles, messages) {
   }
 }
 
-async function handleAction(action, id, cycles, messages) {
+async function handleAction(action, id, cycles, messages, language = 'en-US') {
   if (action === 'edit') {
     const cycle = cycles.find((c) => String(c.id) === String(id));
     if (cycle) openModal('edit', cycle, messages);
@@ -229,7 +230,7 @@ async function handleAction(action, id, cycles, messages) {
     const updated = await fetchCycles();
     cycles.length = 0;
     cycles.push(...updated);
-    renderList(cycles, messages);
+    renderList(cycles, messages, language);
     window.dispatchEvent(new CustomEvent('kinesis:cycle-changed'));
     return;
   }
@@ -244,7 +245,7 @@ async function handleAction(action, id, cycles, messages) {
     const updated = await fetchCycles();
     cycles.length = 0;
     cycles.push(...updated);
-    renderList(cycles, messages);
+    renderList(cycles, messages, language);
     showToast(messages, 'cycles.success.delete');
     window.dispatchEvent(new CustomEvent('kinesis:cycle-changed'));
     return;
@@ -315,13 +316,13 @@ export async function initCyclesPage() {
 
   form.addEventListener('submit', (e) => {
     e.preventDefault();
-    handleSubmit(cycles, i18n.messages);
+    handleSubmit(cycles, i18n.messages, i18n.language);
   });
 
   cycleListEl.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
-    handleAction(btn.dataset.action, btn.dataset.id, cycles, i18n.messages);
+    handleAction(btn.dataset.action, btn.dataset.id, cycles, i18n.messages, i18n.language);
   });
 
   document.getElementById('promptCloseBtn').addEventListener('click', hidePromptModal);
@@ -333,7 +334,7 @@ export async function initCyclesPage() {
   document.addEventListener('app:languagechange', () => {
     const msgs = i18n.messages;
     document.title = translate(msgs, 'cycles.pageTitle');
-    renderList(cycles, msgs);
+      renderList(cycles, msgs, i18n.language);
     checkActiveCycle(addBtn, msgs);
 
     const modal = document.getElementById('cycleModal');
@@ -357,7 +358,7 @@ export async function initCyclesPage() {
   try {
     const fetched = await fetchCycles();
     cycles.push(...fetched);
-    renderList(cycles, i18n.messages);
+      renderList(cycles, i18n.messages, i18n.language);
   } catch { /* load failed — non-critical */ }
 
   await checkActiveCycle(addBtn, i18n.messages);

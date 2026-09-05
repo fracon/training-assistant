@@ -1,5 +1,6 @@
 import { initShell, getShellI18n } from './shared/shell.js';
 import { translate } from './shared/i18n.js';
+import { formatDate as formatLocalizedDate, formatWeekday } from './shared/date.js';
 import { fetchTraining, saveTrainingFeedback, fetchShoes } from './shared/api.js';
 
 // Sessions open contextually via /training-result.html?id=<id>; without an
@@ -10,9 +11,8 @@ export function resolveSessionId(search) {
   return id === '' ? null : id;
 }
 
-export function formatDateLabel(iso) {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso ?? ''));
-  return match ? `${match[3]}/${match[2]}/${match[1]}` : '';
+export function formatDateLabel(iso, language = 'pt-BR') {
+  return formatLocalizedDate(iso, language);
 }
 
 export function plannedValue(training, field) {
@@ -35,11 +35,7 @@ export function isFitFieldVisible(smartwatchValue) {
 
 // Local weekday name ('YYYY-MM-DD' parsed as a local date, never UTC).
 export function weekdayLabel(iso, language) {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso ?? ''));
-  if (!match) return '';
-  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
-  const localeTag = resolveTemplateLang(language);
-  return new Intl.DateTimeFormat(localeTag, { weekday: 'long' }).format(date);
+  return formatWeekday(iso, language);
 }
 
 // Verbatim Portuguese post-workout briefing. Placeholder names are shared
@@ -209,7 +205,7 @@ export function painPromptText(hasPainValue, description, translate) {
 // falling back to dashes.
 export function collectPromptValues({ training, form, fitData }) {
   return {
-    DATA: formatDateLabel(training.dia),
+    DATA: formatDateLabel(training.dia, form.language),
     DIA_SEMANA: weekdayLabel(training.dia, form.language),
     TIPO_TREINO: training.tipo,
     TREINO_PLANEJADO: training.treino,
@@ -506,7 +502,7 @@ async function initTrainingResult() {
 
   await loadShoes();
 
-  dateEl.textContent = formatDateLabel(training.dia);
+  dateEl.textContent = formatDateLabel(training.dia, i18n.language);
   for (const [field, elementId] of PLANNED_FIELDS) {
     document.getElementById(elementId).textContent = plannedValue(training, field);
   }
@@ -673,6 +669,7 @@ async function initTrainingResult() {
 
   document.addEventListener('app:languagechange', () => {
     document.title = t('training.title');
+    if (training) dateEl.textContent = formatDateLabel(training.dia, i18n.language);
     if (!saveBtn.disabled) saveBtn.textContent = t('session.save');
     if (!generateBtn.disabled) generateLabel.textContent = t('session.generatePrompt');
     if (!copyPromptBtn.disabled) copyLabel.textContent = t('session.copyPrompt');

@@ -240,7 +240,7 @@ test('cycles.js wires the shell, language change listener, and i18n attributes',
   assert.match(js, /\brequestJson\b/);
   assert.match(js, /initShell\(\{\s*active:\s*'cycles'\s*\}\)/);
   assert.match(js, /addEventListener\('app:languagechange'/);
-  assert.match(js, /renderList\(cycles,\s*msgs\)/);
+  assert.match(js, /renderList\(cycles,\s*msgs,\s*i18n\.language\)/);
 });
 
 test('cycles.js exports the expected pure functions', () => {
@@ -286,9 +286,9 @@ test('cycles.js action handlers use i18n.messages not a stale closure', () => {
   assert.doesNotMatch(js, /const messages = i18n\.messages/);
 
   assert.match(js, /openModal\('add',\s*null,\s*i18n\.messages\)/);
-  assert.match(js, /handleSubmit\(cycles,\s*i18n\.messages\)/);
-  assert.match(js, /handleAction\(btn\.dataset\.action,\s*btn\.dataset\.id,\s*cycles,\s*i18n\.messages\)/);
-  assert.match(js, /renderList\(cycles,\s*i18n\.messages\)/);
+  assert.match(js, /handleSubmit\(cycles,\s*i18n\.messages,\s*i18n\.language\)/);
+  assert.match(js, /handleAction\(btn\.dataset\.action,\s*btn\.dataset\.id,\s*cycles,\s*i18n\.messages,\s*i18n\.language\)/);
+  assert.match(js, /renderList\(cycles,\s*i18n\.messages,\s*i18n\.language\)/);
 
   assert.match(js, /const msgs = i18n\.messages/);
 });

@@ -185,7 +185,7 @@ test('buildPrompt injects current cycle and previous-week context in Portuguese'
   assert.ok(intro < cycle && cycle < checklist, 'cycle context follows the introduction before the checklist');
   assert.match(prompt, /Nome do ciclo: Base Lisboa/);
   assert.match(prompt, /Meta do ciclo: Correr abaixo de 2h/);
-  assert.match(prompt, /Data da prova-alvo: 2026-10-18/);
+  assert.match(prompt, /Data da prova-alvo: 18\/10\/2026/);
   assert.match(prompt, /Semana atual: Semana 4 de 12/);
   assert.match(prompt, /Dias restantes: 38/);
   assert.match(prompt, /Treinos concluídos na semana anterior: 4/);
@@ -439,7 +439,7 @@ test('buildPrompt generates the English template in English mode', () => {
   });
 
   assert.ok(prompt.startsWith('I want you to generate my running training schedule'));
-  assert.ok(prompt.includes('The week to be planned starts on:\n31/08/2026'));
+  assert.ok(prompt.includes('The week to be planned starts on:\n08/31/2026'));
   assert.ok(prompt.includes('Monday: Normal routine'));
   assert.ok(prompt.includes('Sunday: Normal routine'));
   assert.ok(!prompt.includes('Rotina normal'), 'no Portuguese leftovers in EN output');
@@ -472,7 +472,7 @@ test('buildPrompt injects localized cycle and previous-week context in English',
   assert.ok(intro < cycle && cycle < checklist);
   assert.match(prompt, /Cycle name: Lisbon Base/);
   assert.match(prompt, /Cycle goal: Run under 2 hours/);
-  assert.match(prompt, /Target race date: 2026-10-18/);
+  assert.match(prompt, /Target race date: 10\/18\/2026/);
   assert.match(prompt, /Current week: Week 4 of 12/);
   assert.match(prompt, /Days remaining: 38/);
   assert.match(prompt, /Completed trainings in the previous week: 4/);

@@ -1,6 +1,7 @@
 import { fetchActiveCycle, fetchCalendarTrainings } from './shared/api.js';
 import { initShell, getShellI18n } from './shared/shell.js';
 import { translate } from './shared/i18n.js';
+import { formatDate as formatLocalizedDate } from './shared/date.js';
 
 export const ZENQUOTES_URL = 'https://zenquotes.io/api/today';
 export const QUOTE_TIMEOUT_MS = 3000;
@@ -229,13 +230,7 @@ export function daysRemainingUntil(targetIso, today = new Date()) {
 // pt-BR renders dd/mm/yyyy; other locales keep the ISO sortable key so the
 // value survives string comparisons and spreadsheet exports unchanged.
 export function formatTargetDate(iso, language) {
-  const date = parseIsoDate(iso);
-  if (!date) return '';
-  const isPortuguese = typeof language === 'string' && language.toLowerCase().startsWith('pt');
-  if (!isPortuguese) return iso;
-  const day = String(date.getDate()).padStart(2, '0');
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  return `${day}/${month}/${date.getFullYear()}`;
+  return formatLocalizedDate(iso, language);
 }
 
 export function cycleWeekText(messages, progress) {
