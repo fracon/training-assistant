@@ -492,6 +492,10 @@
     "outro": "I don't need you to repeat every number I sent. I want interpretation, comparison against my history, and implications for the planning."
   },
   "home": {
+    "actions": {
+      "goToCycles": "Go to cycles →",
+      "goToTrainings": "Go to workouts →"
+    },
     "pageTitle": "Dashboard • Kinesis",
     "hero": {
       "loading": "Finding today's inspiration…",

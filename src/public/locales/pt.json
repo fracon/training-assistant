@@ -492,6 +492,10 @@
     "outro": "Não preciso que você repita todos os números que enviei. Quero interpretação, comparação com meu histórico e implicações para o planejamento."
   },
   "home": {
+    "actions": {
+      "goToCycles": "Ir para ciclos →",
+      "goToTrainings": "Ir para treinos →"
+    },
     "pageTitle": "Painel • Kinesis",
     "hero": {
       "loading": "Buscando a inspiração de hoje…",

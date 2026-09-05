@@ -98,6 +98,8 @@ test('home.html ships the hero, cycle, and metrics dashboard skeleton', () => {
   assert.match(html, /id="weeklyDistanceValue"/);
   assert.match(html, /id="weeklyTimeValue"/);
   assert.match(html, /id="weekTrackerDays"/);
+  assert.match(html, /class="card-action" href="\/cycles\.html" data-i18n="home\.actions\.goToCycles"/);
+  assert.match(html, /class="card-action" href="\/calendar\.html" data-i18n="home\.actions\.goToTrainings"/);
   assert.match(html, /class="dashboard-grid vertical"/);
   assert.match(html, /class="week-tracker"/);
   assert.match(html, /class="week-tracker-days"/);
@@ -175,6 +177,8 @@ test('home.html wires every dashboard label to i18n keys shared by both locales'
   const html = readHomeHtml();
   const expectedKeys = [
     'home.pageTitle',
+    'home.actions.goToCycles',
+    'home.actions.goToTrainings',
     'home.hero.loading',
     'home.hero.ariaLabel',
     'home.cycle.title',
@@ -918,6 +922,8 @@ test('home.css stacks the dashboard widgets full-width and styles the week track
     'the distance/time tiles keep their two-up layout inside the full-width card'
   );
   assert.match(css, /\.week-tracker \{[^}]*border-bottom:\s*1px solid var\(--line\)/);
+  assert.match(css, /\.section-header \{[^}]*display:\s*flex/);
+  assert.match(css, /\.card-action \{[^}]*color:\s*var\(--accent-deep\)/);
   assert.match(css, /\.week-tracker \{[^}]*margin:\s*0 0 1rem/);
   assert.match(
     css,
