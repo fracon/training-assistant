@@ -44,6 +44,10 @@
   opacity: 0.85;
 }
 
+.hero-loading.hidden {
+  display: none;
+}
+
 .hero-quote {
   margin: 0;
   padding: 0;

@@ -842,6 +842,8 @@ test('home.js keeps the dashboard wiring declarative and reactive', () => {
   assert.match(js, /'app:languagechange'/);
   assert.match(js, /setProperty\('--hero-image'/);
   assert.match(js, /fetchCalendarTrainings\(range\.start, range\.end\)/);
+  assert.match(js, /quoteLoading\) quoteLoading\.classList\.add\('hidden'\)/);
+  assert.match(js, /quoteBlock\) quoteBlock\.classList\.remove\('hidden'\)/);
   assert.match(
     js,
     /loadQuote\(\{ messages: i18n \? i18n\.messages : \{\} \}\)/,
@@ -915,6 +917,7 @@ test('home.css lays out the cycle header, objective subtitle and compact progres
 test('home.css stacks the dashboard widgets full-width and styles the week tracker', () => {
   const css = readHomeCss();
   assert.match(css, /\.hero-loading \{[^}]*display:\s*table[^}]*padding:\s*0\.45rem 0\.7rem[^}]*background-color:\s*rgba\(0, 0, 0, 0\.6\)/);
+  assert.match(css, /\.hero-loading\.hidden \{[^}]*display:\s*none/);
   assert.match(css, /\.hero-quote p \{[^}]*display:\s*table[^}]*padding:\s*0\.45rem 0\.7rem[^}]*background-color:\s*rgba\(0, 0, 0, 0\.6\)/);
   assert.match(css, /\.hero-quote-author \{[^}]*display:\s*table[^}]*background-color:\s*rgba\(0, 0, 0, 0\.6\)/);
   assert.match(css, /@import url\('\.\/shared\/theme\.css'\)/);
