@@ -22,6 +22,9 @@ const {
   resolveTemplateLang,
   defaultRoutineFor,
   buildPrompt,
+  buildPromptContext,
+  previousWeekSummary,
+  cycleContext,
   copyPromptText,
   formatShoesBlock,
 } = require('../src/public/ai-coach.js');
@@ -113,8 +116,16 @@ test('the prompt template keeps the required Portuguese structure', () => {
   assert.ok(!PROMPT_TEMPLATE.includes('Exemplos:'), 'example list lives in the UI, not the prompt');
 
   const tokens = PROMPT_TEMPLATE.match(/\{\{[A-Z_]+\}\}/g) ?? [];
-  assert.equal(tokens.length, 10, 'exactly ten placeholders exist');
+  assert.equal(tokens.length, 18, 'the template carries all schedule and cycle-context placeholders');
   assert.deepEqual(tokens, [
+    '{{CYCLE_NAME}}',
+    '{{CYCLE_GOAL}}',
+    '{{TARGET_RACE_DATE}}',
+    '{{CURRENT_WEEK}}',
+    '{{DAYS_REMAINING}}',
+    '{{PREV_WEEK_TRAININGS}}',
+    '{{PREV_WEEK_DISTANCE_KM}}',
+    '{{PREV_WEEK_TIME_MINUTES}}',
     '{{DATA_DA_SEGUNDA}}',
     '{{SHOES_BLOCK}}',
     '{{DISP_SEG}}',
@@ -148,6 +159,38 @@ test('buildPrompt replaces every placeholder with user values', () => {
   assert.ok(prompt.includes('Segunda: Manhã, antes das 8h'));
   assert.ok(prompt.includes('Domingo: Manhã, entre 8h e 9h'));
   assert.ok(prompt.includes('viagem na terça; pouco sono na quinta.'));
+});
+
+test('buildPrompt injects current cycle and previous-week context in Portuguese', () => {
+  const prompt = buildPrompt({
+    targetDate: new Date(2026, 7, 31),
+    cycle: {
+      name: 'Base Lisboa',
+      goal: 'Correr abaixo de 2h',
+      target_date: '2026-10-18',
+      currentWeek: 4,
+      totalWeeks: 12,
+      daysRemaining: 38,
+    },
+    previousWeek: {
+      completedTrainingsCount: 4,
+      totalDistanceKm: 42.5,
+      totalTimeMinutes: 238,
+    },
+  });
+
+  const intro = prompt.indexOf('Quero que você gere minha planilha');
+  const cycle = prompt.indexOf('CONTEXTO DO CICLO ATUAL');
+  const checklist = prompt.indexOf('Use TODO o contexto disponível');
+  assert.ok(intro < cycle && cycle < checklist, 'cycle context follows the introduction before the checklist');
+  assert.match(prompt, /Nome do ciclo: Base Lisboa/);
+  assert.match(prompt, /Meta do ciclo: Correr abaixo de 2h/);
+  assert.match(prompt, /Data da prova-alvo: 2026-10-18/);
+  assert.match(prompt, /Semana atual: Semana 4 de 12/);
+  assert.match(prompt, /Dias restantes: 38/);
+  assert.match(prompt, /Treinos concluídos na semana anterior: 4/);
+  assert.match(prompt, /Distância total da semana anterior \(km\): 42\.5/);
+  assert.match(prompt, /Tempo total da semana anterior \(minutos\): 238/);
 });
 
 test('buildPrompt falls back to defaults for untouched days and context', () => {
@@ -402,6 +445,95 @@ test('buildPrompt generates the English template in English mode', () => {
   assert.ok(!prompt.includes('Rotina normal'), 'no Portuguese leftovers in EN output');
   assert.ok(!prompt.includes('{{'));
   assert.ok(prompt.includes('traveling on Tuesday'));
+});
+
+test('buildPrompt injects localized cycle and previous-week context in English', () => {
+  const prompt = buildPrompt({
+    targetDate: new Date(2026, 7, 31),
+    lang: 'en-US',
+    cycle: {
+      name: 'Lisbon Base',
+      primary_goal: 'Run under 2 hours',
+      target_date: '2026-10-18',
+      current_week: 4,
+      total_weeks: 12,
+      days_remaining: 38,
+    },
+    previousWeek: {
+      completed_trainings_count: 4,
+      total_distance_km: 42.5,
+      total_time_minutes: 238,
+    },
+  });
+
+  const intro = prompt.indexOf('I want you to generate my running training schedule');
+  const cycle = prompt.indexOf('CURRENT CYCLE CONTEXT');
+  const checklist = prompt.indexOf('Use ALL available context');
+  assert.ok(intro < cycle && cycle < checklist);
+  assert.match(prompt, /Cycle name: Lisbon Base/);
+  assert.match(prompt, /Cycle goal: Run under 2 hours/);
+  assert.match(prompt, /Target race date: 2026-10-18/);
+  assert.match(prompt, /Current week: Week 4 of 12/);
+  assert.match(prompt, /Days remaining: 38/);
+  assert.match(prompt, /Completed trainings in the previous week: 4/);
+  assert.match(prompt, /Previous week total distance \(km\): 42\.5/);
+  assert.match(prompt, /Previous week total time \(minutes\): 238/);
+});
+
+test('buildPromptContext binds the active cycle and completed previous-week metrics', () => {
+  const targetDate = new Date(2026, 7, 31);
+  const context = buildPromptContext({
+    targetDate,
+    today: new Date(2026, 7, 24),
+    cycle: {
+      objective: 'Base Lisboa',
+      primary_goal: 'Correr abaixo de 2h',
+      start_date: '2026-08-03',
+      target_date: '2026-10-18',
+    },
+    trainings: [
+      { dia: '2026-08-24', fit_distance: '10', fit_duration: '1:00:00' },
+      { dia: '2026-08-30', fit_distance: 5.5, fit_duration: '00:32:00' },
+      { dia: '2026-08-31', fit_distance: 99, fit_duration: '9:00:00' },
+    ],
+  });
+
+  assert.equal(context.cycle.name, 'Base Lisboa', 'cycle objective maps to the prompt name');
+  assert.equal(context.cycle.goal, 'Correr abaixo de 2h', 'goal maps from the primary_goal alias');
+  assert.equal(context.cycle.primary_goal, 'Correr abaixo de 2h');
+  assert.equal(context.cycle.currentWeek, 4);
+  assert.equal(context.cycle.totalWeeks, 11);
+  assert.equal(context.cycle.daysRemaining, 55);
+  assert.deepEqual(context.previousWeek, {
+    completedTrainingsCount: 2,
+    totalDistanceKm: 15.5,
+    totalTimeMinutes: 92,
+  });
+
+  const prompt = buildPrompt({ targetDate, ...context });
+  assert.match(prompt, /Nome do ciclo: Base Lisboa/);
+  assert.match(prompt, /Meta do ciclo: Correr abaixo de 2h/);
+  assert.match(prompt, /Treinos concluídos na semana anterior: 2/);
+  assert.match(prompt, /Distância total da semana anterior \(km\): 15\.5/);
+  assert.match(prompt, /Tempo total da semana anterior \(minutos\): 92/);
+  assert.ok(!prompt.includes('Nome do ciclo: -'));
+});
+
+test('previousWeekSummary handles empty or malformed training data safely', () => {
+  const targetDate = new Date(2026, 7, 31);
+  assert.deepEqual(previousWeekSummary(null, targetDate), {
+    completedTrainingsCount: 0,
+    totalDistanceKm: 0,
+    totalTimeMinutes: 0,
+  });
+  assert.deepEqual(previousWeekSummary([
+    { dia: '2026-08-24', fit_distance: 'bad', fit_duration: 'bad' },
+    { dia: '2026-08-25', completed: true },
+  ], targetDate), {
+    completedTrainingsCount: 1,
+    totalDistanceKm: 0,
+    totalTimeMinutes: 0,
+  });
 });
 
 test('buildPrompt keeps the Portuguese template by default and for unknown languages', () => {

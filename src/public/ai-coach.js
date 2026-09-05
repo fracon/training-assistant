@@ -1,6 +1,7 @@
 import { initShell, getShellI18n, refreshIcons } from './shared/shell.js';
 import { translate, normalizeClientLanguage } from './shared/i18n.js';
 import { fetchShoes } from './shared/api.js';
+import { fetchActiveCycle, fetchCalendarTrainings } from './shared/api.js';
 
 // Verbatim Portuguese briefing for the external AI Coach.
 // The wording below is a hard requirement — do not translate, rewrite
@@ -8,6 +9,17 @@ import { fetchShoes } from './shared/api.js';
 // generation time; the template itself stays Portuguese regardless of
 // the UI language.
 export const PROMPT_TEMPLATE = `Quero que você gere minha planilha de treinos de corrida para a próxima semana, dando continuidade ao planejamento que já estamos seguindo.
+
+CONTEXTO DO CICLO ATUAL
+
+Nome do ciclo: {{CYCLE_NAME}}
+Meta do ciclo: {{CYCLE_GOAL}}
+Data da prova-alvo: {{TARGET_RACE_DATE}}
+Semana atual: {{CURRENT_WEEK}}
+Dias restantes: {{DAYS_REMAINING}}
+Treinos concluídos na semana anterior: {{PREV_WEEK_TRAININGS}}
+Distância total da semana anterior (km): {{PREV_WEEK_DISTANCE_KM}}
+Tempo total da semana anterior (minutos): {{PREV_WEEK_TIME_MINUTES}}
 
 Use TODO o contexto disponível do meu treinamento, especialmente:
 - os treinos realizados nas últimas semanas;
@@ -88,6 +100,17 @@ Na resposta, apresente:
 // English. Placeholder names stay identical to the Portuguese template so
 // the replacement logic never changes.
 export const PROMPT_TEMPLATE_EN = `I want you to generate my running training schedule for next week, continuing the plan we are currently following.
+
+CURRENT CYCLE CONTEXT
+
+Cycle name: {{CYCLE_NAME}}
+Cycle goal: {{CYCLE_GOAL}}
+Target race date: {{TARGET_RACE_DATE}}
+Current week: {{CURRENT_WEEK}}
+Days remaining: {{DAYS_REMAINING}}
+Completed trainings in the previous week: {{PREV_WEEK_TRAININGS}}
+Previous week total distance (km): {{PREV_WEEK_DISTANCE_KM}}
+Previous week total time (minutes): {{PREV_WEEK_TIME_MINUTES}}
 
 Use ALL available context from my training, especially:
 - the workouts completed in recent weeks;
@@ -217,6 +240,106 @@ export function formatDiaSlashes(date) {
   return `${pad2(date.getDate())}/${pad2(date.getMonth() + 1)}/${date.getFullYear()}`;
 }
 
+function contextValue(value) {
+  return value === null || value === undefined || String(value).trim() === '' ? '-' : String(value).trim();
+}
+
+function formatContextDate(value, lang) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return lang === 'pt-BR' ? formatDiaSlashes(value) : dateInputValue(value);
+  }
+  return contextValue(value);
+}
+
+function formatCycleContext(cycle = {}, previousWeek = {}, lang = 'pt-BR') {
+  const currentWeek = cycle.currentWeek ?? cycle.current_week;
+  const totalWeeks = cycle.totalWeeks ?? cycle.total_weeks;
+  const weekText = currentWeek != null && totalWeeks != null
+    ? (lang === 'pt-BR' ? `Semana ${currentWeek} de ${totalWeeks}` : `Week ${currentWeek} of ${totalWeeks}`)
+    : contextValue(currentWeek);
+  return {
+    '{{CYCLE_NAME}}': contextValue(cycle.name ?? cycle.objective),
+    '{{CYCLE_GOAL}}': contextValue(cycle.goal ?? cycle.primary_goal),
+    '{{TARGET_RACE_DATE}}': formatContextDate(cycle.targetRaceDate ?? cycle.target_date, lang),
+    '{{CURRENT_WEEK}}': weekText,
+    '{{DAYS_REMAINING}}': contextValue(cycle.daysRemaining ?? cycle.days_remaining),
+    '{{PREV_WEEK_TRAININGS}}': contextValue(previousWeek.completedTrainingsCount ?? previousWeek.completed_trainings_count),
+    '{{PREV_WEEK_DISTANCE_KM}}': contextValue(previousWeek.totalDistanceKm ?? previousWeek.total_distance_km),
+    '{{PREV_WEEK_TIME_MINUTES}}': contextValue(previousWeek.totalTimeMinutes ?? previousWeek.total_time_minutes),
+  };
+}
+
+const DAY_MS = 86400000;
+
+function isoDateValue(date) {
+  return dateInputValue(date);
+}
+
+function addDays(date, days) {
+  const result = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  result.setDate(result.getDate() + days);
+  return result;
+}
+
+function metricDurationSeconds(value) {
+  if (typeof value === 'number') return Number.isFinite(value) && value > 0 ? value : 0;
+  if (typeof value !== 'string' || value.trim() === '') return 0;
+  const parts = value.split(':').map(Number);
+  if (parts.length === 0 || parts.some((part) => !Number.isFinite(part))) return 0;
+  return parts.reduce((total, part) => total * 60 + part, 0);
+}
+
+export function previousWeekSummary(trainings = [], targetDate) {
+  const weekEnd = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate() - 1);
+  const weekStart = addDays(weekEnd, -6);
+  const rows = Array.isArray(trainings)
+    ? trainings.filter((training) => training && typeof training.dia === 'string' &&
+      training.dia >= isoDateValue(weekStart) && training.dia <= isoDateValue(weekEnd))
+    : [];
+  let totalDistanceKm = 0;
+  let totalTimeMinutes = 0;
+  let completedTrainingsCount = 0;
+  for (const training of rows) {
+    const distance = Number(training.fit_distance ?? training.distance);
+    const durationSeconds = metricDurationSeconds(training.fit_duration ?? training.duration);
+    const completed = training.completed === true || training.completed === 1 ||
+      (Number.isFinite(distance) && distance > 0) || durationSeconds > 0;
+    if (!completed) continue;
+    completedTrainingsCount += 1;
+    if (Number.isFinite(distance) && distance > 0) totalDistanceKm += distance;
+    totalTimeMinutes += durationSeconds / 60;
+  }
+  return { completedTrainingsCount, totalDistanceKm, totalTimeMinutes };
+}
+
+export function cycleContext(cycle = {}, today = new Date()) {
+  const start = parseInputDate(cycle.start_date ?? cycle.startDate);
+  const target = parseInputDate(cycle.target_date ?? cycle.targetRaceDate);
+  const currentDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const currentWeek = cycle.currentWeek ?? cycle.current_week ??
+    (start ? Math.max(1, Math.floor((currentDay - start) / (7 * DAY_MS)) + 1) : undefined);
+  const totalWeeks = cycle.totalWeeks ?? cycle.total_weeks ??
+    (start && target ? Math.max(1, Math.ceil((target - start) / (7 * DAY_MS))) : undefined);
+  const daysRemaining = cycle.daysRemaining ?? cycle.days_remaining ??
+    (target ? Math.max(0, Math.ceil((target - currentDay) / DAY_MS)) : undefined);
+  return {
+    ...cycle,
+    name: cycle.name ?? cycle.objective,
+    goal: cycle.goal ?? cycle.primary_goal,
+    targetRaceDate: cycle.targetRaceDate ?? cycle.target_date,
+    currentWeek,
+    totalWeeks,
+    daysRemaining,
+  };
+}
+
+export function buildPromptContext({ cycle = {}, trainings = [], targetDate, today = new Date() }) {
+  return {
+    cycle: cycleContext(cycle, today),
+    previousWeek: previousWeekSummary(trainings, targetDate),
+  };
+}
+
 // yyyy-mm-dd — the value format accepted by <input type="date">.
 export function dateInputValue(date) {
   return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
@@ -276,7 +399,7 @@ export function formatShoesBlock(shoes = [], messages = {}) {
   return `${title}\n\n${lines.join('\n')}`;
 }
 
-export function buildPrompt({ targetDate, disponibilidade = {}, contexto = '', lang = 'pt-BR', shoes = [], messages = {} }) {
+export function buildPrompt({ targetDate, disponibilidade = {}, contexto = '', lang = 'pt-BR', shoes = [], messages = {}, cycle = {}, previousWeek = {} }) {
   const templateLang = resolveTemplateLang(lang);
   const template = TEMPLATE_BY_LANG[templateLang];
   let prompt = replaceAll(
@@ -284,6 +407,9 @@ export function buildPrompt({ targetDate, disponibilidade = {}, contexto = '', l
     '{{DATA_DA_SEGUNDA}}',
     formatDiaSlashes(targetDate)
   );
+  for (const [token, value] of Object.entries(formatCycleContext(cycle, previousWeek, templateLang))) {
+    prompt = replaceAll(prompt, token, value);
+  }
   const availability = { ...availabilityDefaults(templateLang), ...disponibilidade };
   for (const day of DAY_KEYS) {
     prompt = replaceAll(prompt, PLACEHOLDERS[day], String(availability[day] ?? '').trim());
@@ -401,12 +527,21 @@ function setupAiCoachPage() {
 
     generateBtn.disabled = true;
     let shoes = [];
+    let cycle = {};
+    let trainings = [];
     try {
       shoes = await fetchShoes();
+      cycle = await fetchActiveCycle();
+      trainings = await fetchCalendarTrainings(
+        isoDateValue(addDays(targetDate, -7)),
+        isoDateValue(addDays(targetDate, -1))
+      );
     } catch {
-      // proceed without shoes — the block will show the fallback text
+      // Any unavailable context keeps prompt generation usable with dashes.
     }
     generateBtn.disabled = false;
+
+    const promptContext = buildPromptContext({ cycle: cycle || {}, trainings, targetDate });
 
     promptOutput.textContent = buildPrompt({
       targetDate,
@@ -415,6 +550,7 @@ function setupAiCoachPage() {
       lang: i18n.language,
       shoes,
       messages: i18n.messages,
+      ...promptContext,
     });
     resultSection.classList.remove('hidden');
     resultPlaceholder.classList.add('hidden');

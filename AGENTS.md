@@ -150,8 +150,9 @@ Whenever starting the development of a new feature, you MUST follow this strict 
   - **The Prompt Template Requirement (CRITICAL):**
     - The exact Portuguese prompt template provided by the user MUST be strictly used verbatim — no rewriting, translation, or "improvements" to its wording.
     - The template contains specific personal rules: Fânzeres weather context, RPE progression rules, shoe rotation, and a strict Excel-style output format for the weekly plan.
-    - Only three placeholders are replaced at generation time: `{{DATA_DA_SEGUNDA}}` (Target Date), `{{DISPONIBILIDADE}}` (the 7-day availability lines), and `{{CONTEXTO_OPCIONAL}}` (optional notes).
+    - Schedule placeholders are replaced at generation time: `{{DATA_DA_SEGUNDA}}` (Target Date), the seven `{{DISP_…}}` availability fields, and `{{CONTEXTO_OPCIONAL}}` (optional notes). The cycle context and shoe block use the same localized replacement pass.
   - **i18n Coverage:** all UI chrome (labels, buttons, hints) must be translatable via `src/public/locales/en.json` / `pt.json`. Both prompt templates are embedded verbatim: Portuguese (`pt-BR`, default fallback) and English (`en-US`); the active UI language selects which one is generated. Placeholder names (`{{DATA_DA_SEGUNDA}}`, per-day `{{DISP_…}}`, `{{CONTEXTO_OPCIONAL}}`) stay identical in both templates.
+  - **Dynamic cycle context binding [✅ IMPLEMENTED, commit `445e542`]:** on generation, `ai-coach.js` fetches the active cycle and the preceding week's calendar entries through the shared API module. It normalizes cycle aliases (`objective`/`primary_goal`), derives week progress and days remaining when needed, and injects completed-workout count, distance (km), and time (minutes) into the selected Portuguese or English prompt. This late-bound fetch keeps the prompt synchronized with application state and respects the i18n lifecycle rules.
 
 - **Phase 8: Garmin Automation (WebUSB / File System API) [🚧 PLANNED]**
   - Eliminate manual `.FIT` file drag-and-drop.
