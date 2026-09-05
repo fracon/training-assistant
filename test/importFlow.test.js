@@ -6,6 +6,7 @@ const assert = require('node:assert/strict');
 const {
   fetchCalendarTrainings,
   importTrainingsFile,
+  changePassword,
 } = require('../src/public/shared/api.js');
 const { keyFromIso, trainingsByDay } = require('../src/public/calendar.js');
 
@@ -126,4 +127,49 @@ test('trainingsByDay groups rows by their grid cell key in order', () => {
     'Ciclismo',
   ]);
   assert.deepEqual(grouped.get('2026-9-1').map((training) => training.tipo), ['Natação']);
+});
+
+test('changePassword PUTs the payload and attaches server error codes', async () => {
+  const calls = stubFetchOnce(async () => ({
+    ok: true,
+    json: async () => ({ status: 'ok' }),
+  }));
+
+  const payload = {
+    currentPassword: 'old-pass-1',
+    newPassword: 'brand-new-1',
+    confirmNewPassword: 'brand-new-1',
+  };
+  assert.deepEqual(await changePassword(payload), { status: 'ok' });
+  assert.equal(calls[0].url, '/api/auth/password');
+  assert.deepEqual(calls[0].options, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  globalThis.fetch = originalFetch;
+  stubFetchOnce(async () => ({
+    ok: false,
+    json: async () => ({ error: 'Invalid password change request.', errors: ['passwordsMismatch'] }),
+  }));
+
+  await assert.rejects(changePassword(payload), (error) => {
+    assert.equal(error.message, 'Invalid password change request.');
+    assert.deepEqual(error.codes, ['passwordsMismatch']);
+    return true;
+  });
+});
+
+test('requestJson leaves no codes when the server reports none', async () => {
+  stubFetchOnce(async () => ({
+    ok: false,
+    json: async () => ({ error: 'Generic failure.' }),
+  }));
+
+  await assert.rejects(changePassword({}), (error) => {
+    assert.equal(error.message, 'Generic failure.');
+    assert.equal(error.codes, undefined);
+    return true;
+  });
 });

@@ -122,6 +122,32 @@
     "footerHtml": "Already have an account? <strong>Sign In</strong>",
     "toastSuccess": "Account created successfully! Welcome."
   },
+  "password": {
+    "menuLabel": "Change Password",
+    "title": "Change Password",
+    "currentLabel": "Current Password",
+    "newLabel": "New Password",
+    "confirmLabel": "Confirm New Password",
+    "currentPlaceholder": "Your current password",
+    "newPlaceholder": "At least 8 characters",
+    "confirmPlaceholder": "Repeat your new password",
+    "submit": "Update Password",
+    "submitting": "Updating…",
+    "toastSuccess": "Password updated successfully!"
+  },
+  "auth": {
+    "errors": {
+      "currentRequired": "Please enter your current password.",
+      "newRequired": "Please choose a new password.",
+      "confirmRequired": "Please confirm your new password.",
+      "passwordMinLength": "New password must be at least {min} characters long.",
+      "passwordsMismatch": "New passwords do not match.",
+      "sameAsCurrent": "New password must be different from your current password.",
+      "incorrectCurrentPassword": "Incorrect current password.",
+      "userNotFound": "User not found.",
+      "save": "Could not update your password. Please try again."
+    }
+  },
   "errors": {
     "fillBoth": "Please fill in your email and password.",
     "invalidEmail": "Please enter a valid email address.",

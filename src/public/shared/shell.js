@@ -1,9 +1,10 @@
-import { currentUser, signOut } from './api.js';
+import { currentUser, signOut, changePassword } from './api.js';
 import {
   createI18n,
   wireLanguageSwitcher,
   translate,
 } from './i18n.js';
+import { validatePasswordChange, MIN_PASSWORD_LENGTH } from './validators.js';
 
 const SIDEBAR_STORAGE_KEY = 'training-assistant:sidebar-collapsed';
 const CYCLE_DEPENDENT_ITEMS = ['ai-coach', 'calendar'];
@@ -350,28 +351,304 @@ function wireLogout() {
   });
 }
 
+let passwordToastTimer = null;
+
+// The shell owns a dedicated toast so password feedback renders on every
+// page, regardless of whether the page ships its own #toast element.
+function ensureShellToast() {
+  let toast = document.getElementById('shellToast');
+  if (toast) return toast;
+  toast = el('div', 'toast');
+  toast.id = 'shellToast';
+  toast.setAttribute('role', 'status');
+  toast.setAttribute('aria-live', 'polite');
+  const iconWrap = el('span', 'toast-icon');
+  iconWrap.innerHTML = '<i data-lucide="check-circle"></i>';
+  toast.appendChild(iconWrap);
+  toast.appendChild(el('span', 'toast-text'));
+  document.body.appendChild(toast);
+  return toast;
+}
+
+export function showShellToast(messages, key, type = 'success', duration = 2500) {
+  const toast = ensureShellToast();
+  const iconName = type === 'error' ? 'x-circle' : 'check-circle';
+  const iconEl = toast.querySelector('.toast-icon');
+  if (iconEl) iconEl.innerHTML = `<i data-lucide="${iconName}"></i>`;
+  const textEl = toast.querySelector('.toast-text');
+  if (textEl) textEl.textContent = translate(messages, key);
+  toast.classList.toggle('toast-error', type === 'error');
+  toast.classList.add('visible');
+  refreshIcons();
+  clearTimeout(passwordToastTimer);
+  passwordToastTimer = setTimeout(() => toast.classList.remove('visible'), duration);
+}
+
+function buildPasswordField(name, labelKey, placeholderKey, lucideName) {
+  const field = el('div', 'field');
+  const label = el('label', 'field-label');
+  label.htmlFor = `changePassword${name[0].toUpperCase()}${name.slice(1)}`;
+  label.setAttribute('data-i18n', labelKey);
+  field.appendChild(label);
+  const wrap = el('div', 'password-input-wrap');
+  wrap.appendChild(icon(lucideName));
+  const input = document.createElement('input');
+  input.type = 'password';
+  input.id = `changePassword${name[0].toUpperCase()}${name.slice(1)}`;
+  input.name = name;
+  input.autocomplete = name === 'currentPassword' ? 'current-password' : 'new-password';
+  input.setAttribute('data-i18n-placeholder', placeholderKey);
+  input.required = true;
+  wrap.appendChild(input);
+  field.appendChild(wrap);
+  return field;
+}
+
+function translateAll(root, messages) {
+  root.querySelectorAll('[data-i18n]').forEach((node) => {
+    const paramsRaw = node.dataset.i18nParams;
+    const params = paramsRaw === undefined ? undefined : { min: Number(paramsRaw) };
+    node.textContent = translate(messages, node.dataset.i18n, params);
+  });
+  root.querySelectorAll('[data-i18n-placeholder]').forEach((node) => {
+    node.placeholder = translate(messages, node.dataset.i18nPlaceholder);
+  });
+  root.querySelectorAll('[data-i18n-aria-label]').forEach((node) => {
+    node.setAttribute('aria-label', translate(messages, node.dataset.i18nAriaLabel));
+  });
+}
+
+export function openChangePasswordModal(messages = shellI18n.messages) {
+  closeUserMenu();
+  const existing = document.getElementById('changePasswordModal');
+  if (existing) {
+    existing.classList.remove('hidden');
+    translateAll(existing, messages);
+    refreshIcons();
+    return;
+  }
+
+  const backdrop = el('div', 'modal-backdrop password-modal-backdrop');
+  backdrop.id = 'changePasswordModal';
+  backdrop.setAttribute('role', 'dialog');
+  backdrop.setAttribute('aria-modal', 'true');
+
+  const card = el('div', 'modal-card password-modal-card');
+  card.setAttribute('role', 'document');
+
+  const header = el('div', 'modal-header');
+  const title = el('h2');
+  title.setAttribute('data-i18n', 'password.title');
+  title.textContent = translate(messages, 'password.title');
+  const close = el('button', 'modal-close');
+  close.type = 'button';
+  close.id = 'closeChangePasswordBtn';
+  close.setAttribute('data-i18n-aria-label', 'password.title');
+  close.setAttribute('aria-label', translate(messages, 'password.title'));
+  close.appendChild(icon('x'));
+  header.appendChild(title);
+  header.appendChild(close);
+  card.appendChild(header);
+
+  const form = el('form', 'password-form');
+  form.id = 'changePasswordForm';
+  form.noValidate = true;
+  form.appendChild(
+    buildPasswordField('currentPassword', 'password.currentLabel', 'password.currentPlaceholder', 'lock')
+  );
+  form.appendChild(
+    buildPasswordField('newPassword', 'password.newLabel', 'password.newPlaceholder', 'key-round')
+  );
+  form.appendChild(
+    buildPasswordField('confirmNewPassword', 'password.confirmLabel', 'password.confirmPlaceholder', 'check')
+  );
+
+  const hint = el('p', 'field-hint password-min-hint');
+  hint.setAttribute('data-i18n', 'errors.passwordMin');
+  hint.setAttribute('data-i18n-params', MIN_PASSWORD_LENGTH);
+  form.appendChild(hint);
+
+  const formError = el('div', 'form-error password-error-summary hidden');
+  formError.id = 'changePasswordFormError';
+  formError.setAttribute('role', 'alert');
+  const errorList = el('ul');
+  errorList.id = 'changePasswordErrorList';
+  formError.appendChild(errorList);
+  form.appendChild(formError);
+
+  const actions = el('div', 'form-actions');
+  const submit = el('button', 'btn-primary');
+  submit.type = 'submit';
+  submit.id = 'changePasswordSubmit';
+  submit.appendChild(icon('key-round'));
+  const submitLabel = el('span');
+  submitLabel.setAttribute('data-i18n', 'password.submit');
+  submitLabel.textContent = translate(messages, 'password.submit');
+  submit.appendChild(submitLabel);
+  actions.appendChild(submit);
+  form.appendChild(actions);
+
+  card.appendChild(form);
+  backdrop.appendChild(card);
+  document.body.appendChild(backdrop);
+
+  translateAll(backdrop, messages);
+  wireChangePasswordForm(form, messages);
+  backdrop.addEventListener('click', (e) => {
+    if (e.target === backdrop) closeChangePasswordModal();
+  });
+  close.addEventListener('click', () => closeChangePasswordModal());
+  refreshIcons();
+}
+
+export function closeChangePasswordModal() {
+  const modal = document.getElementById('changePasswordModal');
+  if (!modal) return;
+  const form = document.getElementById('changePasswordForm');
+  if (form) form.reset();
+  const formError = document.getElementById('changePasswordFormError');
+  if (formError) {
+    clearPasswordFormError(formError);
+  }
+  document.querySelectorAll('.password-form .input-error').forEach((node) => {
+    node.classList.remove('input-error');
+  });
+  const submit = document.getElementById('changePasswordSubmit');
+  if (submit) {
+    submit.disabled = false;
+    const label = submit.querySelector('span');
+    if (label) label.textContent = translate(shellI18n.messages, 'password.submit');
+  }
+  modal.classList.add('hidden');
+}
+
+function clearPasswordFormError(formError) {
+  const list = formError.querySelector('ul');
+  if (list) list.textContent = '';
+  formError.classList.add('hidden');
+}
+
+function renderPasswordFormErrors(formError, messages, errorCodes, params) {
+  const list = formError.querySelector('ul');
+  if (list) {
+    list.textContent = '';
+    for (const code of errorCodes) {
+      const item = document.createElement('li');
+      item.textContent = translate(messages, `auth.errors.${code}`, params);
+      list.appendChild(item);
+    }
+  }
+  formError.classList.remove('hidden');
+}
+
+export function wireChangePasswordForm(form, messages = shellI18n.messages) {
+  const submit = form.querySelector('#changePasswordSubmit');
+  const submitLabel = submit.querySelector('span');
+  const formError = form.querySelector('#changePasswordFormError');
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    clearPasswordFormError(formError);
+
+    const values = {
+      currentPassword: form.elements.currentPassword.value,
+      newPassword: form.elements.newPassword.value,
+      confirmNewPassword: form.elements.confirmNewPassword.value,
+    };
+
+    const validation = validatePasswordChange(values);
+    document.querySelectorAll('.password-form .input-error').forEach((node) => {
+      node.classList.remove('input-error');
+    });
+    if (!validation.valid) {
+      if (validation.invalid.current) {
+        form.elements.currentPassword.classList.add('input-error');
+      }
+      if (validation.invalid.next) {
+        form.elements.newPassword.classList.add('input-error');
+      }
+      if (validation.invalid.confirm) {
+        form.elements.confirmNewPassword.classList.add('input-error');
+      }
+      renderPasswordFormErrors(formError, messages, validation.errors, { min: MIN_PASSWORD_LENGTH });
+      return;
+    }
+
+    submit.disabled = true;
+    submitLabel.textContent = translate(messages, 'password.submitting');
+    refreshIcons();
+    try {
+      await changePassword(values);
+      showShellToast(messages, 'password.toastSuccess');
+      closeChangePasswordModal();
+    } catch (error) {
+      const codes = error.codes && error.codes.length > 0 ? error.codes : ['save'];
+      renderPasswordFormErrors(formError, messages, codes, { min: MIN_PASSWORD_LENGTH });
+      submit.disabled = false;
+      submitLabel.textContent = translate(messages, 'password.submit');
+    }
+  });
+}
+
+export function toggleUserMenu() {
+  const dropdown = document.getElementById('userDropdown');
+  const trigger = document.getElementById('userBadge');
+  const isOpen = dropdown && !dropdown.classList.contains('hidden');
+  const expand = !isOpen;
+  if (dropdown) dropdown.classList.toggle('hidden', !expand);
+  if (trigger) {
+    trigger.classList.toggle('open', expand);
+    trigger.setAttribute('aria-expanded', String(expand));
+  }
+  refreshIcons();
+}
+
+function openUserMenu() {
+  const dropdown = document.getElementById('userDropdown');
+  const trigger = document.getElementById('userBadge');
+  if (dropdown) dropdown.classList.remove('hidden');
+  if (trigger) {
+    trigger.classList.add('open');
+    trigger.setAttribute('aria-expanded', 'true');
+  }
+  refreshIcons();
+}
+
+export function closeUserMenu() {
+  const dropdown = document.getElementById('userDropdown');
+  const trigger = document.getElementById('userBadge');
+  if (dropdown) dropdown.classList.add('hidden');
+  if (trigger) {
+    trigger.classList.remove('open');
+    trigger.setAttribute('aria-expanded', 'false');
+  }
+}
+
 export function wireUserMenu() {
-  const badge = document.getElementById('userBadge');
+  const trigger = document.getElementById('userBadge');
   const dropdown = document.getElementById('userDropdown');
 
-  const close = () => dropdown.classList.add('hidden');
+  trigger.addEventListener('click', (event) => {
+    event.stopPropagation();
+    toggleUserMenu();
+  });
 
-  const toggle = () => {
-    const nowHidden = dropdown.classList.toggle('hidden');
-    badge.classList.toggle('open', !nowHidden);
-    badge.setAttribute('aria-expanded', String(!nowHidden));
-    refreshIcons();
-  };
-
-  badge.addEventListener('click', toggle);
   document.addEventListener('click', (event) => {
-    if (!event.target.closest('.user-menu')) close();
+    if (event.target.closest('.user-menu')) return;
+    closeUserMenu();
   });
+
   document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') close();
+    if (event.key === 'Escape') {
+      closeUserMenu();
+      closeChangePasswordModal();
+    }
   });
-  dropdown.addEventListener('click', (event) => {
-    if (event.target.closest('.user-menu-item')) close();
+
+  // The menu item is a real feature trigger: it opens the Change Password
+  // modal instead of merely collapsing the dropdown.
+  document.getElementById('userChangePassword').addEventListener('click', () => {
+    openChangePasswordModal();
   });
 }
 

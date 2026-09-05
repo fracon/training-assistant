@@ -122,6 +122,32 @@
     "footerHtml": "Já tem uma conta? <strong>Entrar</strong>",
     "toastSuccess": "Conta criada com sucesso! Bem-vindo."
   },
+  "password": {
+    "menuLabel": "Alterar Senha",
+    "title": "Alterar Senha",
+    "currentLabel": "Senha Atual",
+    "newLabel": "Nova Senha",
+    "confirmLabel": "Confirmar Nova Senha",
+    "currentPlaceholder": "Sua senha atual",
+    "newPlaceholder": "Pelo menos 8 caracteres",
+    "confirmPlaceholder": "Repita sua nova senha",
+    "submit": "Atualizar Senha",
+    "submitting": "Atualizando…",
+    "toastSuccess": "Senha atualizada com sucesso!"
+  },
+  "auth": {
+    "errors": {
+      "currentRequired": "Informe sua senha atual.",
+      "newRequired": "Escolha uma nova senha.",
+      "confirmRequired": "Confirme sua nova senha.",
+      "passwordMinLength": "A nova senha deve ter pelo menos {min} caracteres.",
+      "passwordsMismatch": "As novas senhas não coincidem.",
+      "sameAsCurrent": "A nova senha deve ser diferente da senha atual.",
+      "incorrectCurrentPassword": "Senha atual incorreta.",
+      "userNotFound": "Usuário não encontrado.",
+      "save": "Não foi possível atualizar sua senha. Tente novamente."
+    }
+  },
   "errors": {
     "fillBoth": "Preencha seu e-mail e senha.",
     "invalidEmail": "Informe um endereço de e-mail válido.",

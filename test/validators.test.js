@@ -7,6 +7,7 @@ const {
   isValidEmail,
   validateLogin,
   validateRegistration,
+  validatePasswordChange,
   MIN_PASSWORD_LENGTH,
 } = require('../src/public/shared/validators.js');
 const en = require('../src/public/locales/en.json');
@@ -139,4 +140,78 @@ test('validateRegistration tolerates non-string junk inputs as missing fields', 
   assert.equal(result.errors.length, 5);
   assert.equal(result.errors[0], 'errors.firstNameRequired');
   assert.equal(result.errors[2], 'errors.emailRequired');
+});
+
+test('validatePasswordChange accepts a complete matching payload', () => {
+  assert.deepEqual(
+    validatePasswordChange({
+      currentPassword: 'old-pass-1',
+      newPassword: 'brand-new-1',
+      confirmNewPassword: 'brand-new-1',
+    }),
+    { valid: true, errors: [], invalid: {} }
+  );
+});
+
+test('validatePasswordChange coerces and reports each problem at once', () => {
+  const result = validatePasswordChange({});
+  assert.equal(result.valid, false);
+  assert.deepEqual(result.errors, ['currentRequired', 'newRequired', 'confirmRequired']);
+  assert.deepEqual(result.invalid, { current: true, next: true, confirm: true });
+});
+
+test('validatePasswordChange flags the offending field individually', () => {
+  const missingCurrent = validatePasswordChange({
+    newPassword: 'brand-new-1',
+    confirmNewPassword: 'brand-new-1',
+  });
+  assert.deepEqual(missingCurrent.errors, ['currentRequired']);
+  assert.deepEqual(missingCurrent.invalid, { current: true });
+
+  const short = validatePasswordChange({
+    currentPassword: 'old-pass-1',
+    newPassword: 'short7',
+    confirmNewPassword: 'short7',
+  });
+  assert.deepEqual(short.errors, ['passwordMinLength']);
+  assert.deepEqual(short.invalid, { next: true });
+
+  const mismatch = validatePasswordChange({
+    currentPassword: 'old-pass-1',
+    newPassword: 'brand-new-1',
+    confirmNewPassword: 'different-2',
+  });
+  assert.deepEqual(mismatch.errors, ['passwordsMismatch']);
+  assert.deepEqual(mismatch.invalid, { confirm: true });
+
+  const same = validatePasswordChange({
+    currentPassword: 'same-pass-1',
+    newPassword: 'same-pass-1',
+    confirmNewPassword: 'same-pass-1',
+  });
+  assert.deepEqual(same.errors, ['sameAsCurrent']);
+  assert.deepEqual(same.invalid, { next: true });
+});
+
+test('validatePasswordChange tolerates non-string junk inputs as missing fields', () => {
+  const result = validatePasswordChange({
+    currentPassword: 42,
+    newPassword: null,
+    confirmNewPassword: [],
+  });
+  assert.equal(result.valid, false);
+  assert.deepEqual(result.errors, ['currentRequired', 'newRequired', 'confirmRequired']);
+});
+
+test('every change-password auth error key resolves in both locale files', () => {
+  const lookup = (messages, path) =>
+    path.split('.').reduce((acc, part) => (acc == null ? acc : acc[part]), messages);
+  const codes = [...validatePasswordChange({}).errors, 'passwordsMismatch', 'sameAsCurrent', 'incorrectCurrentPassword', 'userNotFound', 'save'];
+  for (const code of codes) {
+    const key = `auth.errors.${code}`;
+    assert.equal(typeof lookup(en, key), 'string', `en.json missing ${key}`);
+    assert.equal(typeof lookup(pt, key), 'string', `pt.json missing ${key}`);
+  }
+  assert.ok(en.auth.errors.passwordMinLength.includes('{min}'));
+  assert.ok(pt.auth.errors.passwordMinLength.includes('{min}'));
 });

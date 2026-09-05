@@ -462,32 +462,71 @@ test('buildUserMenu nests the chevron in the badge and ships the change-password
     /\.user-menu-item \{[^}]*display:\s*flex;\s*\n\s*align-items:\s*center;\s*\n\s*justify-content:\s*flex-start;\s*\n\s*gap:\s*10px;\s*\n\s*padding:\s*10px 14px;\s*\n\s*white-space:\s*nowrap;/,
     'the menu item mirrors the exact finalized layout rules'
   );
+  assert.match(
+    css,
+    /\.user-badge svg \{[^}]*transition:\s*transform 0\.2s ease;/,
+    'the chevron animates with a smooth rotation transition'
+  );
+  assert.match(
+    css,
+    /#userBadge\.open svg,\s*\n\.user-menu\.open #userBadge svg \{\s*\n\s*transform:\s*rotate\(180deg\);\s*\n\s*\}/,
+    'the foolproof rotation selector flips the chevron inside the badge'
+  );
+  assert.match(css, /\.user-menu-item \{[^}]*cursor:\s*pointer;/, 'the item presents as clickable');
+  assert.match(
+    css,
+    /\.user-menu-item \{[^}]*color:\s*var\(--ink\);/,
+    'the item uses the primary ink color, never a faded grey'
+  );
+  assert.match(
+    css,
+    /\.user-menu-item:hover \{[^}]*background:\s*rgba\(111, 144, 112, 0\.12\);/,
+    'the hover state is clearly visible against the dropdown'
+  );
 });
 
-test('wireUserMenu binds the badge click plus outside, escape and item close handlers', () => {
+test('wireUserMenu binds the badge click to toggle helpers and the item to the modal', () => {
   const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
 
   assert.match(js, /export function wireUserMenu\(\)/, 'the click wiring is exported');
+  assert.match(js, /export function toggleUserMenu\(\)/, 'the toggle helper is reusable');
+  assert.match(js, /export function closeUserMenu\(\)/, 'closing is reusable and exported');
   assert.match(js, /document\.getElementById\('userBadge'\)/, 'it grabs the badge as the trigger');
   assert.match(js, /document\.getElementById\('userDropdown'\)/, 'it grabs the dropdown');
-  assert.match(js, /badge\.addEventListener\('click', toggle\);/, 'clicking the badge toggles');
-  assert.match(js, /dropdown\.classList\.toggle\('hidden'\)/, 'the toggle flips the hidden flag');
-  assert.match(js, /badge\.classList\.toggle\('open', !nowHidden\);/, 'the badge open state follows');
-  assert.match(js, /badge\.setAttribute\('aria-expanded', String\(!nowHidden\)\);/, 'the aria state follows');
   assert.match(
     js,
-    /document\.addEventListener\('click', \(event\) => \{\s*\n\s*if \(!event\.target\.closest\('\.user-menu'\)\) close\(\);\s*\n\s*\}\);/,
-    'a click outside the menu closes it'
+    /trigger\.addEventListener\('click', \(event\) => \{\s*\n\s*event\.stopPropagation\(\);\s*\n\s*toggleUserMenu\(\);\s*\n\s*\}\);/,
+    'clicking the badge toggles the menu'
   );
   assert.match(
     js,
-    /document\.addEventListener\('keydown', \(event\) => \{\s*\n\s*if \(event\.key === 'Escape'\) close\(\);\s*\n\s*\}\);/,
-    'escape closes the menu'
+    /dropdown\.classList\.toggle\('hidden', !expand\)/,
+    'the toggle flips the hidden flag'
   );
   assert.match(
     js,
-    /dropdown\.addEventListener\('click', \(event\) => \{\s*\n\s*if \(event\.target\.closest\('\.user-menu-item'\)\) close\(\);\s*\n\s*\}\);/,
-    'clicking any menu item closes the dropdown'
+    /trigger\.classList\.toggle\('open', expand\);/,
+    'the badge open state follows the toggle'
+  );
+  assert.match(
+    js,
+    /trigger\.setAttribute\('aria-expanded', String\(expand\)\);/,
+    'the aria state follows the toggle'
+  );
+  assert.match(
+    js,
+    /document\.addEventListener\('click', \(event\) => \{\s*\n\s*if \(event\.target\.closest\('\.user-menu'\)\) return;\s*\n\s*closeUserMenu\(\);\s*\n\s*\}\);/,
+    'a click outside the menu closes it and resets the trigger state'
+  );
+  assert.match(
+    js,
+    /document\.addEventListener\('keydown', \(event\) => \{\s*\n\s*if \(event\.key === 'Escape'\) \{\s*\n\s*closeUserMenu\(\);\s*\n\s*closeChangePasswordModal\(\);\s*\n\s*\}\s*\n\s*\}\);/,
+    'escape closes the dropdown and any open modal'
+  );
+  assert.match(
+    js,
+    /document\.getElementById\('userChangePassword'\)\.addEventListener\('click', \(\) => \{\s*\n\s*openChangePasswordModal\(\);\s*\n\s*\}\);/,
+    'the change-password item opens the modal instead of just collapsing the menu'
   );
 });
 
@@ -511,9 +550,13 @@ test('the user menu is decoupled from the cycle guard and mounts before it', () 
   );
 });
 
-test('the user menu injects a clickable dropdown through the real shell functions', () => {
+test('the user menu injects a clickable dropdown and the change-password item opens the modal', () => {
   const registry = new Map();
   const docListeners = { click: [], keydown: [] };
+
+  function classesOf(node) {
+    return node.className.split(' ').filter(Boolean);
+  }
 
   function fakeEl(tag, cls) {
     const classes = new Set((cls ?? '').split(' ').filter(Boolean));
@@ -524,7 +567,9 @@ test('the user menu injects a clickable dropdown through the real shell function
       type: '',
       textContent: '',
       attrs: {},
+      dataset: {},
       children: [],
+      parent: null,
       get className() {
         return [...classes].join(' ');
       },
@@ -535,14 +580,26 @@ test('the user menu injects a clickable dropdown through the real shell function
         }
       },
       appendChild(child) {
+        child.parent = this;
         this.children.push(child);
         return child;
       },
       setAttribute(key, value) {
         this.attrs[key] = value;
+        if (key.startsWith('data-')) {
+          const prop = key.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+          this.dataset[prop] = value;
+        }
       },
+      reset() {},
       addEventListener(type, fn) {
         (listeners[type] ??= []).push(fn);
+      },
+      querySelector(selector) {
+        return descendants(this).find((c) => matchesSelector(c, selector)) ?? null;
+      },
+      querySelectorAll(selector) {
+        return descendants(this).filter((c) => matchesSelector(c, selector));
       },
       classList: {
         add(...names) {
@@ -567,10 +624,48 @@ test('the user menu injects a clickable dropdown through the real shell function
     return node;
   }
 
+  function matchesPart(node, part) {
+    if (part.startsWith('#')) return node.id === part.slice(1);
+    if (part.startsWith('.')) return classesOf(node).includes(part.slice(1));
+    if (part.startsWith('[')) {
+      const attr = part.slice(1, -1);
+      return Object.prototype.hasOwnProperty.call(node.attrs, attr);
+    }
+    return node.tag === part;
+  }
+
+  function matchesSelector(node, selector) {
+    const parts = selector.trim().split(/\s+/);
+    if (!matchesPart(node, parts[parts.length - 1])) return false;
+    let current = node.parent;
+    for (let i = parts.length - 2; i >= 0; i--) {
+      while (current && !matchesPart(current, parts[i])) current = current.parent;
+      if (!current) return false;
+    }
+    return true;
+  }
+
+  function descendants(node, out = []) {
+    for (const child of node.children) {
+      out.push(child);
+      descendants(child, out);
+    }
+    return out;
+  }
+
+  function findById(node, id) {
+    for (const child of descendants(node)) {
+      if (child.id === id) return child;
+    }
+    return null;
+  }
+
   const originalDocument = globalThis.document;
+  const body = fakeEl('body');
   globalThis.document = {
     createElement: fakeEl,
-    getElementById: (id) => registry.get(id) ?? null,
+    body,
+    getElementById: (id) => registry.get(id) ?? findById(body, id),
     addEventListener: (type, fn) => {
       (docListeners[type] ??= []).push(fn);
     },
@@ -615,31 +710,121 @@ test('the user menu injects a clickable dropdown through the real shell function
 
     wireUserMenu();
 
-    badge.listeners['click'][0]();
+    badge.listeners['click'][0]({ stopPropagation() {} });
     assert.ok(!dropdown.classList.contains('hidden'), 'clicking the badge opens the menu');
     assert.ok(badge.classList.contains('open'), 'the badge flips to open');
     assert.equal(badge.attrs['aria-expanded'], 'true', 'aria-expanded tracks the open state');
 
-    dropdown.listeners['click'][0]({
-      target: { closest: (sel) => (sel === '.user-menu-item' ? changePassword : null) },
-    });
-    assert.ok(dropdown.classList.contains('hidden'), 'clicking a menu item closes the menu');
-
-    badge.listeners['click'][0]();
-    assert.ok(!dropdown.classList.contains('hidden'), 'clicking the badge reopens the menu');
-    assert.equal(badge.attrs['aria-expanded'], 'true', 'aria-expanded follows the reopened state');
-
-    badge.listeners['click'][0]();
+    badge.listeners['click'][0]({ stopPropagation() {} });
     assert.ok(dropdown.classList.contains('hidden'), 'clicking the badge again closes the menu');
     assert.ok(!badge.classList.contains('open'), 'the badge returns to closed');
 
-    docListeners.click[0]({ target: { closest: () => null } });
-    assert.ok(dropdown.classList.contains('hidden'), 'an outside click closes the menu');
+    changePassword.listeners['click'][0]();
+    assert.ok(dropdown.classList.contains('hidden'), 'the modal replaces the dropdown');
 
-    badge.listeners['click'][0]();
+    const modal = document.getElementById('changePasswordModal');
+    assert.ok(modal, 'clicking the item builds the change-password modal');
+    assert.ok(!modal.classList.contains('hidden'), 'the modal element is visibly open');
+
+    const closeBtn = document.getElementById('closeChangePasswordBtn');
+    assert.ok(closeBtn, 'the modal ships a dedicated close button');
+    closeBtn.listeners['click'][0]();
+    assert.ok(modal.classList.contains('hidden'), 'the close button hides the modal');
+
+    changePassword.listeners['click'][0]();
+    modal.listeners['click'][0]({ target: modal });
+    assert.ok(modal.classList.contains('hidden'), 'clicking the backdrop closes the modal');
+
+    changePassword.listeners['click'][0]();
     docListeners.keydown[0]({ key: 'Escape' });
-    assert.ok(dropdown.classList.contains('hidden'), 'escape closes the menu');
+    assert.ok(dropdown.classList.contains('hidden'), 'escape keeps the dropdown closed');
+    assert.ok(modal.classList.contains('hidden'), 'escape closes the modal');
+
+    docListeners.click[0]({ target: { closest: () => null } });
+    assert.ok(badge.classList.contains('open') === false, 'an outside click resets the chevron state');
+
+    badge.listeners['click'][0]({ stopPropagation() {} });
+    docListeners.click[0]({ target: { closest: () => null } });
+    assert.ok(dropdown.classList.contains('hidden'), 'an outside click closes an open menu');
+    assert.ok(!badge.classList.contains('open'), 'outside click resets the rotate state');
+    assert.equal(badge.attrs['aria-expanded'], 'false', 'outside click resets the aria state');
   } finally {
     globalThis.document = originalDocument;
   }
+});
+
+/* ── Change Password modal wiring ── */
+
+test('the change-password modal ships three translated password fields', () => {
+  const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
+
+  assert.match(js, /export function openChangePasswordModal\(/, 'the modal opener is exported');
+  assert.match(js, /export function closeChangePasswordModal\(/, 'the modal closer is exported');
+  assert.match(js, /export function wireChangePasswordForm\(/, 'the form wiring is exported');
+  assert.match(js, /backdrop\.id = 'changePasswordModal'/, 'the modal has a stable id');
+  assert.match(js, /form\.id = 'changePasswordForm'/, 'the form has a stable id');
+  assert.match(js, /buildPasswordField\('currentPassword', 'password\.currentLabel', 'password\.currentPlaceholder', 'lock'\)/);
+  assert.match(js, /buildPasswordField\('newPassword', 'password\.newLabel', 'password\.newPlaceholder', 'key-round'\)/);
+  assert.match(js, /buildPasswordField\('confirmNewPassword', 'password\.confirmLabel', 'password\.confirmPlaceholder', 'check'\)/);
+  assert.match(js, /input\.autocomplete = name === 'currentPassword' \? 'current-password' : 'new-password'/, 'autofill hints are correct');
+  assert.match(js, /hint\.setAttribute\('data-i18n', 'errors\.passwordMin'\)/, 'the min-length hint is localized');
+});
+
+test('submission runs client-side validation then calls the API and closes the modal', () => {
+  const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
+
+  assert.match(js, /validatePasswordChange\(values\)/, 'client validation runs first');
+  assert.match(js, /await changePassword\(values\);/, 'the API receives the validated payload');
+  assert.match(js, /showShellToast\(messages, 'password\.toastSuccess'\)/, 'success is announced in a toast');
+  assert.match(js, /const codes = error\.codes && error\.codes\.length > 0 \? error\.codes : \['save'\]/, 'server codes fall back to the generic save error');
+  assert.match(js, /renderPasswordFormErrors\(formError, messages, validation\.errors, \{ min: MIN_PASSWORD_LENGTH \}\)/, 'client errors render together');
+  assert.match(js, /item\.textContent = translate\(messages, `auth\.errors\.\$\{code\}`,\s*params\)/, 'each code maps through auth.errors');
+  assert.match(js, /submit\.disabled = true;/, 'the button disables while submitting');
+});
+
+test('the shell owns a dedicated toast so password feedback renders on every page', () => {
+  const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
+
+  assert.match(js, /export function showShellToast\(/, 'the toast helper is exported');
+  assert.match(js, /toast\.id = 'shellToast'/, 'the shell toast has a stable id');
+  assert.match(js, /toast\.classList\.toggle\('toast-error', type === 'error'\)/, 'errors switch the toast tone');
+  assert.match(js, /setTimeout\(\(\) => toast\.classList\.remove\('visible'\), duration\)/, 'the toast auto-hides');
+});
+
+test('the password modal is styled to the Kinesis earthy system', () => {
+  const css = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.css'), 'utf8');
+
+  assert.match(css, /\.password-modal-backdrop \{[^}]*position:\s*fixed/, 'the backdrop covers the viewport');
+  assert.match(css, /\.password-modal-backdrop \{[^}]*backdrop-filter:\s*blur\(4px\)/, 'the backdrop softens the page');
+  assert.match(css, /\.password-modal-card \{[^}]*background:\s*var\(--card\)/, 'the card uses the earthy surface');
+  assert.match(css, /\.password-input-wrap input\[type='password'\] \{[^}]*background:\s*var\(--bg\)/, 'inputs never use default white backgrounds');
+  assert.match(css, /\.password-input-wrap input\[type='password'\] \{[^}]*appearance:\s*none/, 'native input chrome is removed');
+});
+
+test('the password i18n keys stay in parity across locale files', () => {
+  assert.equal(en.password.menuLabel, 'Change Password');
+  assert.equal(pt.password.menuLabel, 'Alterar Senha');
+  assert.equal(en.password.title, 'Change Password');
+  assert.equal(pt.password.title, 'Alterar Senha');
+  assert.equal(en.password.currentLabel, 'Current Password');
+  assert.equal(pt.password.currentLabel, 'Senha Atual');
+  assert.equal(en.password.newLabel, 'New Password');
+  assert.equal(pt.password.newLabel, 'Nova Senha');
+  assert.equal(en.password.confirmLabel, 'Confirm New Password');
+  assert.equal(pt.password.confirmLabel, 'Confirmar Nova Senha');
+  assert.equal(en.password.toastSuccess, 'Password updated successfully!');
+  assert.equal(pt.password.toastSuccess, 'Senha atualizada com sucesso!');
+  assert.equal(en.auth.errors.incorrectCurrentPassword, 'Incorrect current password.');
+  assert.equal(pt.auth.errors.incorrectCurrentPassword, 'Senha atual incorreta.');
+  assert.equal(en.auth.errors.passwordsMismatch, 'New passwords do not match.');
+  assert.equal(pt.auth.errors.passwordsMismatch, 'As novas senhas não coincidem.');
+  assert.equal(en.auth.errors.passwordMinLength, 'New password must be at least {min} characters long.');
+  assert.equal(pt.auth.errors.passwordMinLength, 'A nova senha deve ter pelo menos {min} caracteres.');
+});
+
+test('the change-password menu item links to the modal label through the shell namespace', () => {
+  assert.equal(en.shell.changePassword, 'Change Password');
+  assert.equal(pt.shell.changePassword, 'Alterar Senha');
+  assert.equal(en.password.menuLabel, en.shell.changePassword);
+  assert.equal(pt.password.menuLabel, pt.shell.changePassword);
 });

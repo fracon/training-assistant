@@ -333,6 +333,12 @@ test('non-calendar pages ship the user menu bundle, immune to the cycle guard', 
   assert.match(shell.body, /export function wireUserMenu/, 'the click wiring ships globally');
   assert.match(
     shell.body,
+    /getElementById\('userChangePassword'\)\.addEventListener\('click', \(\) => \{\s*\n\s*openChangePasswordModal\(\);\s*\n\s*\}\);/,
+    'the change-password item opens the modal from the served bundle'
+  );
+  assert.match(shell.body, /export function openChangePasswordModal\(/, 'the modal builder ships globally');
+  assert.match(
+    shell.body,
     /the cycle guard must never halt the shell mount/,
     'a guard failure cannot block the bundle from mounting the user menu'
   );

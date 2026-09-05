@@ -63,7 +63,9 @@ export function translate(messages, key, params) {
 
 export function applyTranslations(root, messages) {
   root.querySelectorAll('[data-i18n]').forEach((el) => {
-    el.textContent = translate(messages, el.dataset.i18n);
+    const paramsRaw = el.dataset.i18nParams;
+    const params = paramsRaw === undefined ? undefined : { min: Number(paramsRaw) };
+    el.textContent = translate(messages, el.dataset.i18n, params);
   });
   root.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
     el.placeholder = translate(messages, el.dataset.i18nPlaceholder);
