@@ -571,7 +571,7 @@ test('buildWeekDayMarkup maps training state to the visual and i18n classes', ()
   assert.equal(active.cls, 'week-day has-training');
   assert.equal(active.label, 'Qua');
   assert.equal(active.dataI18n, 'home.days.wed');
-  assert.equal(active.icon, 'footprints');
+  assert.equal(active.icon, 'sport-shoe');
   const idle = buildWeekDayMarkup({ date: '2026-08-17', key: 'home.days.mon', hasTraining: false }, en);
   assert.equal(idle.cls, 'week-day empty');
   assert.equal(idle.label, 'Mon');
@@ -615,7 +615,7 @@ test('renderWeekDays renders an all-empty Monday-to-Sunday week when no training
     assert.equal(dom.container.children.length, 7);
     for (const cell of dom.container.children) {
       assert.equal(cell.className, 'week-day empty');
-      assert.equal(cell.children.some((child) => child.attrs['data-lucide'] === 'footprints'), false);
+      assert.equal(cell.children.some((child) => child.attrs['data-lucide'] === 'sport-shoe'), false);
       assert.equal(cell.children[0].attrs['data-i18n'].startsWith('home.days.'), true);
     }
     assert.deepEqual(
@@ -644,8 +644,8 @@ test('renderWeekDays flags exactly Wednesday and Friday as having trainings', ()
     ]);
     assert.equal(dom.container.children[2].textContent, 'Qua', 'Wednesday maps to its PT label');
     assert.equal(dom.container.children[4].textContent, 'Sex', 'Friday maps to its PT label');
-    assert.equal(dom.container.children[2].children[0].attrs['data-lucide'], 'footprints');
-    assert.equal(dom.container.children[4].children[0].attrs['data-lucide'], 'footprints');
+    assert.equal(dom.container.children[2].children[0].attrs['data-lucide'], 'sport-shoe');
+    assert.equal(dom.container.children[4].children[0].attrs['data-lucide'], 'sport-shoe');
     assert.equal(dom.container.children[2].children[0].attrs['aria-hidden'], 'true');
     assert.equal(dom.container.children[2].attrs['aria-label'], '2026-08-19', 'cells carry their ISO date');
   } finally {
@@ -954,6 +954,7 @@ test('home.css stacks the dashboard widgets full-width and styles the week track
   assert.match(css, /\.week-day \{[^}]*border:\s*0;[^}]*border-radius:\s*999px/);
   assert.match(css, /\.week-day\.has-training \{[^}]*background:\s*var\(--accent-deep\)/);
   assert.match(css, /\.week-day\.has-training \{[^}]*gap:\s*0\.5rem/);
-  assert.match(css, /\.week-day svg \{[^}]*display:\s*inline-block[^}]*transform:\s*rotate\(180deg\)/);
+  assert.match(css, /\.week-day svg \{[^}]*display:\s*inline-block/);
+  assert.doesNotMatch(css, /\.week-day svg \{[^}]*transform:\s*rotate\(180deg\)/);
   assert.match(css, /\.week-day\.empty \{[^}]*background:\s*transparent;[^}]*color:\s*var\(--muted\)/);
 });

@@ -155,7 +155,7 @@ export function buildWeekDayMarkup(state, messages) {
     cls: state.hasTraining ? 'week-day has-training' : 'week-day empty',
     label: translate(messages, state.key),
     dataI18n: state.key,
-    icon: state.hasTraining ? 'footprints' : null,
+    icon: state.hasTraining ? 'sport-shoe' : null,
     ariaLabel: state.date,
   };
 }
