@@ -475,6 +475,27 @@ test('trainingResultUrl deep-links into the contextual session page', () => {
   assert.equal(trainingResultUrl('42'), '/training-result.html?id=42');
 });
 
+test('calendar init redirects to the cycles page when no active cycle exists', () => {
+  const js = readFileSync(join(publicDir, 'calendar.js'), 'utf8');
+
+  assert.match(
+    js,
+    /import \{ [^}]*fetchActiveCycle[^}]*\} from '\.\/shared\/api\.js';/,
+    'the cycle status is fetched from the shared API'
+  );
+  assert.match(js, /const activeCycle = await fetchActiveCycle\(\);/);
+  assert.match(
+    js,
+    /if \(!activeCycle\) \{\s*\n\s*window\.location\.href = '\/cycles\.html';\s*\n\s*return null;/,
+    'cycle-less visitors are bounced to the cycles page before rendering'
+  );
+  const initBody = js.slice(js.indexOf('export async function initCalendar'));
+  assert.ok(
+    initBody.indexOf('if (!activeCycle)') < initBody.indexOf('setupCalendarPage()'),
+    'the calendar only mounts after the cycle guard passes'
+  );
+});
+
 test('training chips are wired as clickable links into the session page', () => {
   const js = readFileSync(join(publicDir, 'calendar.js'), 'utf8');
   const chipBody = js.slice(

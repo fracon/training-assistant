@@ -9,6 +9,7 @@ const { parseFitFile } = require('./fitParser');
 const { generateMarkdown } = require('./markdownGenerator');
 const { registerUser, RegistrationError } = require('./auth/registration');
 const { loginUser, LoginError } = require('./auth/login');
+const { changePassword, ChangePasswordError } = require('./auth/changePassword');
 const {
   SESSION_COOKIE_NAME,
   deleteSession,
@@ -63,6 +64,10 @@ const FIELD_MAP = {
   feedback_livre: 'feedbackLivre',
 };
 
+function homeDestination(db, userId) {
+  return getActiveCycle(db, userId) ? '/calendar.html' : '/cycles.html';
+}
+
 function parseRpe(raw) {
   if (raw === undefined) return { ok: true, value: null };
   const trimmed = String(raw).trim();
@@ -86,6 +91,7 @@ async function buildServer(options = {}) {
   await app.register(fastifyCookie);
 
   const parseFile = options.parseFitFile || parseFitFile;
+  const changeUserPassword = options.changeUserPassword || changePassword;
 
   const sessionOf = (request) => {
     if (!options.db) return null;
@@ -93,10 +99,11 @@ async function buildServer(options = {}) {
   };
 
   app.get('/', async (request, reply) => {
-    if (!sessionOf(request)) {
+    const session = sessionOf(request);
+    if (!session) {
       return reply.redirect('/login.html');
     }
-    return reply.sendFile('training-result.html');
+    return reply.redirect(homeDestination(options.db, session.user.id));
   });
 
   app.get('/training-result.html', async (request, reply) => {
@@ -107,8 +114,12 @@ async function buildServer(options = {}) {
   });
 
   app.get('/calendar.html', async (request, reply) => {
-    if (!sessionOf(request)) {
+    const session = sessionOf(request);
+    if (!session) {
       return reply.redirect('/login.html');
+    }
+    if (!getActiveCycle(options.db, session.user.id)) {
+      return reply.redirect('/cycles.html');
     }
     return reply.sendFile('calendar.html');
   });
@@ -196,6 +207,22 @@ async function buildServer(options = {}) {
 
     app.get('/api/me', { preHandler: requireAuth }, async (request) => {
       return { user: request.user };
+    });
+
+    app.put('/api/auth/password', { preHandler: requireAuth }, async (request, reply) => {
+      try {
+        const result = await changeUserPassword(db, request.user.id, request.body);
+        return reply.send(result);
+      } catch (error) {
+        if (error instanceof ChangePasswordError) {
+          const payload = { error: error.message };
+          if (Array.isArray(error.errors) && error.errors.length > 0) {
+            payload.errors = error.errors;
+          }
+          return reply.code(error.status).send(payload);
+        }
+        throw error;
+      }
     });
 
     app.patch('/api/users/me/language', { preHandler: requireAuth }, async (request, reply) => {

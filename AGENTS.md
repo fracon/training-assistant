@@ -20,6 +20,14 @@
 6. **Form Element Consistency:** All form inputs (`input`, `textarea`, `select`) must share a unified design system. They must use the standard earthy surface background, consistent rounded borders, identical padding, and native styling must be overridden (`appearance: none` for selects with custom SVG chevrons). Never use default browser white backgrounds for form controls.
 7. **Tooltips:** NEVER use the native HTML `title` attribute. Always use the custom Kinesis tooltip component — a child `<div class="custom-tooltip">` inside the trigger element, styled via CSS (dark `var(--ink)` background, `0.15s` opacity transition, `z-index: 50`). This ensures visual consistency and eliminates native rendering delays.
 
+## 🌐 i18n Lifecycle and Dynamic DOM Reactivity
+
+These rules are immutable and derive from real production bugs where dynamically injected UI failed to update on language switch and ghost elements lingered in the DOM. They must never be violated by future work:
+
+1. **LATE EVALUATION:** Never evaluate or cache i18n strings at the top level of a module or upon component initialization if the strings are used in user-triggered events. Always resolve `i18n.messages` INSIDE the event handler (e.g., form submit) to ensure the currently active language dictionary is used.
+2. **DYNAMIC REACTIVITY:** Any dynamically generated text (e.g., JS-injected validation errors, toasts, modals) MUST either use `data-i18n` attributes so the global scanner (`applyTranslations`) can translate them, OR explicitly listen to the global language switch event (`app:languagechange`) to trigger a re-render of the text in the active dictionary.
+3. **DOM CLEANUP:** When refactoring UI patterns (e.g., moving from inline errors to grouped alert boxes), strictly verify and remove all legacy HTML/JS/CSS references to avoid "ghost" elements — no orphaned hint text, dead selectors, or stale keys in the DOM.
+
 ## 🎨 Frontend Architecture (Immutable)
 
 These rules codify the Phase 3 refactor and must never be violated by future work:

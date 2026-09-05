@@ -13,6 +13,9 @@ const {
   VERSION_FALLBACK_LABEL,
   loadAppVersion,
   formatAppVersion,
+  buildUserMenu,
+  wireUserMenu,
+  reapplyPasswordErrors,
 } = require('../src/public/shared/shell.js');
 const en = require('../src/public/locales/en.json');
 const pt = require('../src/public/locales/pt.json');
@@ -115,6 +118,8 @@ test('every sidebar label key resolves in both locale files', () => {
     'shell.expand',
     'shell.navLabel',
     'shell.logout',
+    'shell.userMenu',
+    'shell.changePassword',
     'shell.confirm.yes',
     'shell.confirm.no',
   ];
@@ -225,12 +230,17 @@ test('the topbar restores a working logout action once authenticated', () => {
   assert.match(
     js,
     /badge\.classList\.remove\('hidden'\);\s*\n\s*\/\/ A confirmed session means the sign-out action is safe to show\.\s*\n\s*document\.getElementById\('logoutBtn'\)\.classList\.remove\('hidden'\);/,
-    'a confirmed session reveals the previously invisible button'
+    'a confirmed session reveals the previously invisible badge and button'
   );
   assert.match(
     js,
-    /wireLogout\(\);/,
-    'the click wiring runs on every mount'
+    /document\.getElementById\('userBadgeName'\)\.textContent = name;/,
+    'the badge name element absorbs the signed-in identity'
+  );
+  assert.match(
+    js,
+    /wireLogout\(\);\s*\n\s*\/\/ The user menu wires up before any page-specific guard runs, so a guard\s*\n\s*\/\/ failure can never leave the account trigger unbound\.\s*\n\s*wireUserMenu\(\);/,
+    'the dropdown click wiring runs on every mount before any page guard'
   );
   assert.match(
     js,
@@ -240,7 +250,7 @@ test('the topbar restores a working logout action once authenticated', () => {
 
   assert.match(
     js,
-    /actions\.appendChild\(badge\);[\s\S]*?actions\.appendChild\(logout\);\s*\n\s*header\.appendChild\(actions\);/,
+    /actions\.appendChild\(userMenu\);[\s\S]*?actions\.appendChild\(logout\);\s*\n\s*header\.appendChild\(actions\);/,
     'the logout pill is the last action, hugging the far right of the header'
   );
 
@@ -402,4 +412,525 @@ test('shell.css gives nav-item flex layout so the soon-chip does not overlap the
     /\.soon-chip \{[^}]*flex-shrink:\s*0/,
     'the chip never collapses'
   );
+});
+
+/* ── Global user menu (dropdown + chevron) ── */
+
+test('buildUserMenu nests the chevron in the badge and ships the change-password item', () => {
+  const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
+
+  assert.match(js, /export function buildUserMenu\(\)/, 'the user menu factory is exported');
+  assert.match(js, /const menu = el\('div', 'user-menu'\)/, 'the wrapper uses the .user-menu class');
+  assert.match(js, /const badge = el\('button', 'user-badge hidden'\);/, 'the badge is a clickable button');
+  assert.match(js, /badge\.id = 'userBadge';/, 'the badge is unique by id');
+  assert.match(
+    js,
+    /badge\.appendChild\(icon\('chevron-down'\)\);[\s\S]*?menu\.appendChild\(badge\);/,
+    'the chevron is appended inside the badge pill, not beside it'
+  );
+  assert.match(
+    js,
+    /badge\.setAttribute\('data-i18n-aria-label', 'shell\.userMenu'\);/,
+    'the badge carries the translated aria-label'
+  );
+  assert.match(js, /dropdown\.id = 'userDropdown';/, 'the absolute container is unique by id');
+  assert.match(js, /el\('div', 'user-dropdown hidden'\)/, 'the dropdown ships hidden by default');
+  assert.match(js, /const changePassword = el\('button', 'user-menu-item'\);/, 'the change-password row is a menu item');
+  assert.match(js, /changePassword\.id = 'userChangePassword';/, 'the item is unique by id');
+  assert.match(js, /changePassword\.appendChild\(icon\('key'\)\);/, 'the item renders the key icon');
+  assert.match(
+    js,
+    /changePasswordLabel\.setAttribute\('data-i18n', 'shell\.changePassword'\);/,
+    'the item uses the localized label'
+  );
+  assert.match(
+    js,
+    /changePasswordLabel\.textContent = 'Change Password';/,
+    'the item has a visible fallback string'
+  );
+
+  const css = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.css'), 'utf8');
+  assert.match(css, /\.user-menu \{[^}]*position:\s*relative/, 'the menu anchors the dropdown');
+  assert.match(css, /\.user-menu \{[^}]*display:\s*inline-flex/, 'the wrapper is an inline-flex cluster');
+  assert.match(css, /\.user-menu \{[^}]*align-items:\s*center/, 'the wrapper centers its children');
+  assert.match(
+    css,
+    /\.user-dropdown \{[^}]*position:\s*absolute;\s*\n\s*right:\s*0;\s*\n\s*top:\s*100%;\s*\n\s*width:\s*max-content;\s*\n\s*margin-top:\s*8px;/,
+    'the dropdown pins under the pill and sizes to content'
+  );
+  assert.match(
+    css,
+    /\.user-menu-item \{[^}]*display:\s*flex;\s*\n\s*align-items:\s*center;\s*\n\s*justify-content:\s*flex-start;\s*\n\s*gap:\s*10px;\s*\n\s*padding:\s*10px 14px;\s*\n\s*white-space:\s*nowrap;/,
+    'the menu item mirrors the exact finalized layout rules'
+  );
+  assert.match(
+    css,
+    /\.user-badge svg \{[^}]*transition:\s*transform 0\.2s ease;/,
+    'the chevron animates with a smooth rotation transition'
+  );
+  assert.match(
+    css,
+    /#userBadge\.open svg,\s*\n\.user-menu\.open #userBadge svg \{\s*\n\s*transform:\s*rotate\(180deg\);\s*\n\s*\}/,
+    'the foolproof rotation selector flips the chevron inside the badge'
+  );
+  assert.match(css, /\.user-menu-item \{[^}]*cursor:\s*pointer;/, 'the item presents as clickable');
+  assert.match(
+    css,
+    /\.user-menu-item \{[^}]*color:\s*var\(--ink\);/,
+    'the item uses the primary ink color, never a faded grey'
+  );
+  assert.match(
+    css,
+    /\.user-menu-item:hover \{[^}]*background:\s*rgba\(111, 144, 112, 0\.12\);/,
+    'the hover state is clearly visible against the dropdown'
+  );
+});
+
+test('wireUserMenu binds the badge click to toggle helpers and the item to the modal', () => {
+  const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
+
+  assert.match(js, /export function wireUserMenu\(\)/, 'the click wiring is exported');
+  assert.match(js, /export function toggleUserMenu\(\)/, 'the toggle helper is reusable');
+  assert.match(js, /export function closeUserMenu\(\)/, 'closing is reusable and exported');
+  assert.match(js, /document\.getElementById\('userBadge'\)/, 'it grabs the badge as the trigger');
+  assert.match(js, /document\.getElementById\('userDropdown'\)/, 'it grabs the dropdown');
+  assert.match(
+    js,
+    /trigger\.addEventListener\('click', \(event\) => \{\s*\n\s*event\.stopPropagation\(\);\s*\n\s*toggleUserMenu\(\);\s*\n\s*\}\);/,
+    'clicking the badge toggles the menu'
+  );
+  assert.match(
+    js,
+    /dropdown\.classList\.toggle\('hidden', !expand\)/,
+    'the toggle flips the hidden flag'
+  );
+  assert.match(
+    js,
+    /trigger\.classList\.toggle\('open', expand\);/,
+    'the badge open state follows the toggle'
+  );
+  assert.match(
+    js,
+    /trigger\.setAttribute\('aria-expanded', String\(expand\)\);/,
+    'the aria state follows the toggle'
+  );
+  assert.match(
+    js,
+    /document\.addEventListener\('click', \(event\) => \{\s*\n\s*if \(event\.target\.closest\('\.user-menu'\)\) return;\s*\n\s*closeUserMenu\(\);\s*\n\s*\}\);/,
+    'a click outside the menu closes it and resets the trigger state'
+  );
+  assert.match(
+    js,
+    /document\.addEventListener\('keydown', \(event\) => \{\s*\n\s*if \(event\.key === 'Escape'\) \{\s*\n\s*closeUserMenu\(\);\s*\n\s*closeChangePasswordModal\(\);\s*\n\s*\}\s*\n\s*\}\);/,
+    'escape closes the dropdown and any open modal'
+  );
+  assert.match(
+    js,
+    /document\.getElementById\('userChangePassword'\)\.addEventListener\('click', \(\) => \{\s*\n\s*openChangePasswordModal\(\);\s*\n\s*\}\);/,
+    'the change-password item opens the modal instead of just collapsing the menu'
+  );
+});
+
+test('the user menu is decoupled from the cycle guard and mounts before it', () => {
+  const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
+  const initBody = js.slice(js.indexOf('export async function initShell'));
+
+  assert.ok(
+    initBody.indexOf('wireUserMenu();') < initBody.indexOf('applyCycleGuard(shellRoot)'),
+    'the account trigger wires up before the guard can run'
+  );
+  assert.match(
+    js,
+    /try \{\s*\n\s*if \(!hasActiveCycle\) \{\s*\n\s*applyCycleGuard\(shellRoot\);\s*\n\s*\}\s*\n\s*\} catch \{\s*\n\s*\/\* the cycle guard must never halt the shell mount \*\/\s*\n\s*\}/,
+    'a guard failure is contained and can never halt the shell mount'
+  );
+  assert.match(
+    initBody,
+    /wireUserMenu\(\);[\s\S]*?\/\/ Check for an active training cycle/,
+    'the dropdown init sits before the guard block in the pipeline'
+  );
+});
+
+test('the user menu injects a clickable dropdown and the change-password item opens the modal', () => {
+  const registry = new Map();
+  const docListeners = { click: [], keydown: [] };
+
+  function classesOf(node) {
+    return node.className.split(' ').filter(Boolean);
+  }
+
+  function fakeEl(tag, cls) {
+    const classes = new Set((cls ?? '').split(' ').filter(Boolean));
+    const listeners = {};
+    const node = {
+      tag,
+      id: null,
+      type: '',
+      textContent: '',
+      attrs: {},
+      dataset: {},
+      children: [],
+      parent: null,
+      get className() {
+        return [...classes].join(' ');
+      },
+      set className(value) {
+        classes.clear();
+        for (const name of String(value ?? '').split(' ').filter(Boolean)) {
+          classes.add(name);
+        }
+      },
+      appendChild(child) {
+        child.parent = this;
+        this.children.push(child);
+        return child;
+      },
+      setAttribute(key, value) {
+        this.attrs[key] = value;
+        if (key.startsWith('data-')) {
+          const prop = key.slice(5).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+          this.dataset[prop] = value;
+        }
+      },
+      reset() {},
+      addEventListener(type, fn) {
+        (listeners[type] ??= []).push(fn);
+      },
+      querySelector(selector) {
+        return descendants(this).find((c) => matchesSelector(c, selector)) ?? null;
+      },
+      querySelectorAll(selector) {
+        return descendants(this).filter((c) => matchesSelector(c, selector));
+      },
+      classList: {
+        add(...names) {
+          for (const name of names) classes.add(name);
+        },
+        remove(...names) {
+          for (const name of names) classes.delete(name);
+        },
+        contains(name) {
+          return classes.has(name);
+        },
+        toggle(name, force) {
+          const target = force === undefined ? !classes.has(name) : Boolean(force);
+          if (target) classes.add(name);
+          else classes.delete(name);
+          return classes.has(name);
+        },
+      },
+      listeners,
+    };
+    if (cls) node.className = cls;
+    return node;
+  }
+
+  function matchesPart(node, part) {
+    if (part.startsWith('#')) return node.id === part.slice(1);
+    if (part.startsWith('.')) return classesOf(node).includes(part.slice(1));
+    if (part.startsWith('[')) {
+      const attr = part.slice(1, -1);
+      return Object.prototype.hasOwnProperty.call(node.attrs, attr);
+    }
+    return node.tag === part;
+  }
+
+  function matchesSelector(node, selector) {
+    const parts = selector.trim().split(/\s+/);
+    if (!matchesPart(node, parts[parts.length - 1])) return false;
+    let current = node.parent;
+    for (let i = parts.length - 2; i >= 0; i--) {
+      while (current && !matchesPart(current, parts[i])) current = current.parent;
+      if (!current) return false;
+    }
+    return true;
+  }
+
+  function descendants(node, out = []) {
+    for (const child of node.children) {
+      out.push(child);
+      descendants(child, out);
+    }
+    return out;
+  }
+
+  function findById(node, id) {
+    for (const child of descendants(node)) {
+      if (child.id === id) return child;
+    }
+    return null;
+  }
+
+  const originalDocument = globalThis.document;
+  const body = fakeEl('body');
+  globalThis.document = {
+    createElement: fakeEl,
+    body,
+    getElementById: (id) => registry.get(id) ?? findById(body, id),
+    addEventListener: (type, fn) => {
+      (docListeners[type] ??= []).push(fn);
+    },
+    querySelectorAll: () => [],
+  };
+
+  try {
+    const menu = buildUserMenu();
+    const walk = (node) => {
+      for (const child of node.children) {
+        if (child.id) registry.set(child.id, child);
+        walk(child);
+      }
+    };
+    walk(menu);
+    const badge = registry.get('userBadge');
+    const dropdown = registry.get('userDropdown');
+    const changePassword = registry.get('userChangePassword');
+
+    assert.ok(menu.className === 'user-menu', 'the wrapper renders as .user-menu');
+    assert.equal(badge.tag, 'button', 'the badge renders as a button');
+    assert.equal(badge.attrs['aria-expanded'], 'false', 'the badge discloses the closed state');
+    assert.equal(badge.attrs['data-i18n-aria-label'], 'shell.userMenu');
+    assert.equal(
+      badge.children[badge.children.length - 1].attrs['data-lucide'],
+      'chevron-down',
+      'the chevron is the last child inside the badge pill'
+    );
+    assert.ok(dropdown.className.split(' ').includes('user-dropdown'), 'the container renders');
+    assert.ok(dropdown.classList.contains('hidden'), 'the dropdown starts closed');
+    assert.equal(changePassword.className, 'user-menu-item', 'the change-password row is a menu item');
+    assert.equal(
+      changePassword.children[0].attrs['data-lucide'],
+      'key',
+      'the change-password item renders the key icon'
+    );
+    assert.equal(
+      changePassword.children[1].textContent,
+      'Change Password',
+      'the change-password item keeps its label'
+    );
+
+    wireUserMenu();
+
+    badge.listeners['click'][0]({ stopPropagation() {} });
+    assert.ok(!dropdown.classList.contains('hidden'), 'clicking the badge opens the menu');
+    assert.ok(badge.classList.contains('open'), 'the badge flips to open');
+    assert.equal(badge.attrs['aria-expanded'], 'true', 'aria-expanded tracks the open state');
+
+    badge.listeners['click'][0]({ stopPropagation() {} });
+    assert.ok(dropdown.classList.contains('hidden'), 'clicking the badge again closes the menu');
+    assert.ok(!badge.classList.contains('open'), 'the badge returns to closed');
+
+    changePassword.listeners['click'][0]();
+    assert.ok(dropdown.classList.contains('hidden'), 'the modal replaces the dropdown');
+
+    const modal = document.getElementById('changePasswordModal');
+    assert.ok(modal, 'clicking the item builds the change-password modal');
+    assert.ok(!modal.classList.contains('hidden'), 'the modal element is visibly open');
+
+    const closeBtn = document.getElementById('closeChangePasswordBtn');
+    assert.ok(closeBtn, 'the modal ships a dedicated close button');
+    closeBtn.listeners['click'][0]();
+    assert.ok(modal.classList.contains('hidden'), 'the close button hides the modal');
+
+    changePassword.listeners['click'][0]();
+    modal.listeners['click'][0]({ target: modal });
+    assert.ok(modal.classList.contains('hidden'), 'clicking the backdrop closes the modal');
+
+    changePassword.listeners['click'][0]();
+    docListeners.keydown[0]({ key: 'Escape' });
+    assert.ok(dropdown.classList.contains('hidden'), 'escape keeps the dropdown closed');
+    assert.ok(modal.classList.contains('hidden'), 'escape closes the modal');
+
+    docListeners.click[0]({ target: { closest: () => null } });
+    assert.ok(badge.classList.contains('open') === false, 'an outside click resets the chevron state');
+
+    badge.listeners['click'][0]({ stopPropagation() {} });
+    docListeners.click[0]({ target: { closest: () => null } });
+    assert.ok(dropdown.classList.contains('hidden'), 'an outside click closes an open menu');
+    assert.ok(!badge.classList.contains('open'), 'outside click resets the rotate state');
+    assert.equal(badge.attrs['aria-expanded'], 'false', 'outside click resets the aria state');
+  } finally {
+    globalThis.document = originalDocument;
+  }
+});
+
+/* ── Change Password modal wiring ── */
+
+test('the change-password modal ships three translated password fields', () => {
+  const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
+
+  assert.match(js, /export function openChangePasswordModal\(/, 'the modal opener is exported');
+  assert.match(js, /export function closeChangePasswordModal\(/, 'the modal closer is exported');
+  assert.match(js, /export function wireChangePasswordForm\(/, 'the form wiring is exported');
+  assert.match(js, /backdrop\.id = 'changePasswordModal'/, 'the modal has a stable id');
+  assert.match(js, /form\.id = 'changePasswordForm'/, 'the form has a stable id');
+  assert.match(js, /buildPasswordField\('currentPassword', 'password\.currentLabel', 'password\.currentPlaceholder', 'lock'\)/);
+  assert.match(js, /buildPasswordField\('newPassword', 'password\.newLabel', 'password\.newPlaceholder', 'key-round'\)/);
+  assert.match(js, /buildPasswordField\('confirmNewPassword', 'password\.confirmLabel', 'password\.confirmPlaceholder', 'check'\)/);
+  assert.match(js, /input\.autocomplete = name === 'currentPassword' \? 'current-password' : 'new-password'/, 'autofill hints are correct');
+});
+
+test('the modal has no lingering inline password-hint text above the error box', () => {
+  const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
+  assert.ok(
+    !js.includes('password-min-hint'),
+    'the static min-length hint element has been removed from the modal'
+  );
+  const css = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.css'), 'utf8');
+  assert.ok(
+    !css.includes('password-min-hint'),
+    'the ghost hint styling has been removed from the stylesheet'
+  );
+});
+
+test('submission runs client-side validation then calls the API and closes the modal', () => {
+  const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
+
+  assert.match(js, /validatePasswordChange\(values\)/, 'client validation runs first');
+  assert.match(js, /await changePassword\(values\);/, 'the API receives the validated payload');
+  assert.match(js, /showShellToast\(activeMessages, 'password\.toastSuccess'\)/, 'success is announced in a toast');
+  assert.match(js, /const codes = error\.codes && error\.codes\.length > 0 \? error\.codes : \['save'\]/, 'server codes fall back to the generic save error');
+  assert.match(js, /renderPasswordFormErrors\(formError, activeMessages, validation\.errors/, 'client errors render together');
+  assert.match(js, /const activeMessages = shellI18n\.messages;/, 'the dictionary is resolved at submit time');
+  assert.match(js, /item\.dataset\.code = code;/, 'each error is tagged with its code for re-rendering');
+  assert.match(js, /item\.textContent = translate\(messages, `auth\.errors\.\$\{code\}`,\s*params\)/, 'each code maps through auth.errors');
+  assert.match(js, /submit\.disabled = true;/, 'the button disables while submitting');
+});
+
+test('visible password errors re-render in the new language on switch', () => {
+  const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
+
+  assert.match(js, /export function reapplyPasswordErrors\(/, 'the reactive re-render helper is exported');
+  assert.match(js, /window\.addEventListener\('app:languagechange', \(\) => \{\s*\n\s*reapplyPasswordErrors\(\);/, 'the shell hooks the language-change event');
+  assert.match(js, /if \(!formError \|\| formError\.classList\.contains\('hidden'\)\) return;/, 'only a visible error box reacts');
+  assert.match(js, /item\.dataset\.code = code;[\s\S]*?item\.textContent = translate\(messages, `auth\.errors\.\$\{code\}`/, 'errors are rebuilt from their stored codes');
+  assert.match(js, /event\.key === 'Escape'/, 'escape behavior remains wired');
+});
+
+test('the shell owns a dedicated toast so password feedback renders on every page', () => {
+  const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
+
+  assert.match(js, /export function showShellToast\(/, 'the toast helper is exported');
+  assert.match(js, /toast\.id = 'shellToast'/, 'the shell toast has a stable id');
+  assert.match(js, /toast\.classList\.toggle\('toast-error', type === 'error'\)/, 'errors switch the toast tone');
+  assert.match(js, /setTimeout\(\(\) => toast\.classList\.remove\('visible'\), duration\)/, 'the toast auto-hides');
+});
+
+test('the password modal is styled to the Kinesis earthy system', () => {
+  const css = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.css'), 'utf8');
+
+  assert.match(css, /\.password-modal-backdrop \{[^}]*position:\s*fixed/, 'the backdrop covers the viewport');
+  assert.match(css, /\.password-modal-backdrop \{[^}]*backdrop-filter:\s*blur\(4px\)/, 'the backdrop softens the page');
+  assert.match(css, /\.password-modal-card \{[^}]*background:\s*var\(--card\)/, 'the card uses the earthy surface');
+  assert.match(css, /\.password-input-wrap input\[type='password'\] \{[^}]*background:\s*var\(--bg\)/, 'inputs never use default white backgrounds');
+  assert.match(css, /\.password-input-wrap input\[type='password'\] \{[^}]*appearance:\s*none/, 'native input chrome is removed');
+});
+
+test('the password i18n keys stay in parity across locale files', () => {
+  assert.equal(en.password.menuLabel, 'Change Password');
+  assert.equal(pt.password.menuLabel, 'Alterar Senha');
+  assert.equal(en.password.title, 'Change Password');
+  assert.equal(pt.password.title, 'Alterar Senha');
+  assert.equal(en.password.currentLabel, 'Current Password');
+  assert.equal(pt.password.currentLabel, 'Senha Atual');
+  assert.equal(en.password.newLabel, 'New Password');
+  assert.equal(pt.password.newLabel, 'Nova Senha');
+  assert.equal(en.password.confirmLabel, 'Confirm New Password');
+  assert.equal(pt.password.confirmLabel, 'Confirmar Nova Senha');
+  assert.equal(en.password.toastSuccess, 'Password updated successfully!');
+  assert.equal(pt.password.toastSuccess, 'Senha atualizada com sucesso!');
+  assert.equal(en.auth.errors.incorrectCurrentPassword, 'Incorrect current password.');
+  assert.equal(pt.auth.errors.incorrectCurrentPassword, 'Senha atual incorreta.');
+  assert.equal(en.auth.errors.passwordsMismatch, 'New passwords do not match.');
+  assert.equal(pt.auth.errors.passwordsMismatch, 'As novas senhas não coincidem.');
+  assert.equal(en.auth.errors.passwordMinLength, 'New password must be at least {min} characters long.');
+  assert.equal(pt.auth.errors.passwordMinLength, 'A nova senha deve ter pelo menos {min} caracteres.');
+});
+
+test('the change-password menu item links to the modal label through the shell namespace', () => {
+  assert.equal(en.shell.changePassword, 'Change Password');
+  assert.equal(pt.shell.changePassword, 'Alterar Senha');
+  assert.equal(en.password.menuLabel, en.shell.changePassword);
+  assert.equal(pt.password.menuLabel, pt.shell.changePassword);
+});
+
+test('reapplyPasswordErrors re-renders visible errors in the new language', () => {
+  const originalDocument = globalThis.document;
+
+  const items = [
+    { dataset: { code: 'currentRequired' }, textContent: en.auth.errors.currentRequired },
+    { dataset: { code: 'passwordMinLength' }, textContent: 'New password must be at least 8 characters long.' },
+  ];
+  const list = {
+    textContent: items.map((i) => i.textContent).join(''),
+    children: items,
+    querySelectorAll: (sel) => (sel === 'li' ? items : []),
+    appendChild(child) {
+      this.children.push(child);
+    },
+  };
+  const formError = {
+    classList: {
+      contains: () => false,
+      remove: () => {},
+    },
+    querySelector: (sel) => (sel === 'ul' ? list : null),
+  };
+
+  let created = [];
+  globalThis.document = {
+    createElement: (tag) => {
+      const node = { tag, dataset: {}, textContent: '', appendChild() {} };
+      created.push(node);
+      return node;
+    },
+    getElementById: (id) => (id === 'changePasswordFormError' ? formError : null),
+    querySelectorAll: () => [],
+    querySelector: () => null,
+  };
+
+  try {
+    reapplyPasswordErrors(en);
+    assert.equal(created[0].dataset.code, 'currentRequired');
+    assert.equal(created[0].textContent, en.auth.errors.currentRequired);
+    assert.equal(created[1].dataset.code, 'passwordMinLength');
+    assert.equal(
+      created[1].textContent,
+      'New password must be at least 8 characters long.',
+      'the {min} param renders from the active dictionary'
+    );
+
+    created = [];
+    reapplyPasswordErrors(pt);
+    assert.equal(created[0].textContent, pt.auth.errors.currentRequired);
+    assert.equal(created[1].textContent, 'A nova senha deve ter pelo menos 8 caracteres.');
+  } finally {
+    globalThis.document = originalDocument;
+  }
+});
+
+test('reapplyPasswordErrors is a no-op while the error box stays hidden', () => {
+  const originalDocument = globalThis.document;
+  const body = { appendChild() {} };
+  const hidden = {
+    className: 'form-error password-error-summary hidden',
+    classList: {
+      contains: () => true,
+    },
+    children: [],
+    querySelector: () => null,
+  };
+
+  globalThis.document = {
+    createElement: () => ({ children: [], dataset: {}, classList: { add() {}, remove() {} }, appendChild() {} }),
+    body,
+    getElementById: (id) => (id === 'changePasswordFormError' ? hidden : null),
+    querySelectorAll: () => [],
+  };
+
+  try {
+    assert.doesNotThrow(() => reapplyPasswordErrors(en), 'hidden errors do not re-render');
+  } finally {
+    globalThis.document = originalDocument;
+  }
 });

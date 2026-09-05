@@ -14,6 +14,9 @@ AI coaches are only as good as the data you give them. Exporting workouts by han
 - **User accounts & security** — email/password registration and sign-in backed by Node's native `crypto` (`scrypt`) password hashing.
 - **Secure sessions** — 256-bit random session tokens stored in SQLite, delivered as `HttpOnly` / `Secure` / `SameSite=Lax` cookies with server-side expiry.
 - **Server-side route gating** — unauthenticated visitors are redirected to the login page by Fastify itself; the training tool is never rendered without a valid session.
+- **User dropdown menu** — the user badge in the topbar opens a dropdown with account actions, including **Change Password**.
+- **Secure change password flow** — a dedicated modal with client-side validation that accumulates every problem into a robust grouped error box (the only error surface — no stray inline hints), backed by hardened `scrypt` verification of the current password before re-hashing and storing the new one.
+- **Global route guards** — the Training Calendar is strictly gated: users without an active Training Cycle are redirected to the Cycles page by the server, and cycle-dependent navigation is disabled in the shell as a second line of defense.
 - **One-click logout** — invalidates the session on the server and clears the cookie.
 
 ### Training Log & AI Prompts
@@ -50,6 +53,8 @@ Then open <http://127.0.0.1:3000> — you'll land on the login page. Create an a
 | `npm run dev` | Start with auto-reload on file changes |
 | `npm test` | Run the test suite |
 | `npm run test:coverage` | Run tests with c8 — enforces **100%** statements, branches, functions, lines |
+
+> **The 100% Rule:** every new feature, page, or shared module must ship with tests that keep **coverage strictly at 100%** across all four metrics (Statements, Branches, Functions, Lines). `npm run test:coverage` is the gate — if it drops below 100%, the missing tests must be written before any commit.
 
 Configuration via environment variables:
 

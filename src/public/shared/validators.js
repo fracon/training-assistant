@@ -9,6 +9,41 @@ export function isValidEmail(value) {
   return EMAIL_PATTERN.test(text(value));
 }
 
+export function validatePasswordChange(input) {
+  const fields = input ?? {};
+  const errors = [];
+  const invalid = {};
+
+  const current = typeof fields.currentPassword === 'string' ? fields.currentPassword : '';
+  const next = typeof fields.newPassword === 'string' ? fields.newPassword : '';
+  const confirm = typeof fields.confirmNewPassword === 'string' ? fields.confirmNewPassword : '';
+
+  if (!current) {
+    errors.push('currentRequired');
+    invalid.current = true;
+  }
+  if (!next) {
+    errors.push('newRequired');
+    invalid.next = true;
+  } else if (next.length < MIN_PASSWORD_LENGTH) {
+    errors.push('passwordMinLength');
+    invalid.next = true;
+  }
+  if (!confirm) {
+    errors.push('confirmRequired');
+    invalid.confirm = true;
+  } else if (next && confirm !== next) {
+    errors.push('passwordsMismatch');
+    invalid.confirm = true;
+  }
+  if (next && next === current) {
+    errors.push('sameAsCurrent');
+    invalid.next = true;
+  }
+
+  return { valid: errors.length === 0, errors, invalid };
+}
+
 export function validateLogin(input) {
   const email = text(input && input.email);
   const password = typeof (input && input.password) === 'string' ? input.password : '';

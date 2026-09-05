@@ -14,7 +14,11 @@ export async function requestJson(url, body, method = 'POST') {
   }
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(payload.error || 'Something went wrong. Please try again.');
+    const error = new Error(payload.error || 'Something went wrong. Please try again.');
+    if (Array.isArray(payload.errors) && payload.errors.length > 0) {
+      error.codes = payload.errors;
+    }
+    throw error;
   }
   return payload;
 }
@@ -37,6 +41,10 @@ export function updateCalendarPreference(firstDay) {
     { first_day_of_week: firstDay },
     'PATCH'
   );
+}
+
+export function changePassword(payload) {
+  return requestJson('/api/auth/password', payload, 'PUT');
 }
 
 export async function fetchCalendarTrainings() {
