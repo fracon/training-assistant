@@ -159,10 +159,10 @@ test('home.cycle.daysRemaining keys pluralize in both locales', () => {
 });
 
 test('cycle objective rendering includes the localized label and value', () => {
-  assert.equal(en.home.cycle.objectiveLabel, 'Objective:');
-  assert.equal(pt.home.cycle.objectiveLabel, 'Objetivo:');
-  assert.equal(cycleObjectiveText(en, 'Run under 2h'), 'Objective: Run under 2h');
-  assert.equal(cycleObjectiveText(pt, 'Correr abaixo de 2h'), 'Objetivo: Correr abaixo de 2h');
+  assert.equal(en.home.cycle.targetLabel, 'Target: ');
+  assert.equal(pt.home.cycle.targetLabel, 'Alvo: ');
+  assert.equal(cycleObjectiveText(en, 'Run under 2h'), 'Target: Run under 2h');
+  assert.equal(cycleObjectiveText(pt, 'Correr abaixo de 2h'), 'Alvo: Correr abaixo de 2h');
   assert.equal(cycleObjectiveText(en, ''), '');
 });
 
@@ -176,7 +176,7 @@ test('home.html wires every dashboard label to i18n keys shared by both locales'
     'home.cycle.emptyTitle',
     'home.cycle.emptyText',
     'home.cycle.startButton',
-    'home.cycle.targetLabel',
+    'home.cycle.dateLabel',
     'home.cycle.progressAria',
     'home.metrics.title',
     'home.metrics.distance',

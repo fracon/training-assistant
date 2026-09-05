@@ -236,7 +236,7 @@ export function daysRemainingText(messages, days) {
 
 export function cycleObjectiveText(messages, objective) {
   if (!objective) return '';
-  return `${translate(messages, 'home.cycle.objectiveLabel')} ${objective}`;
+  return `${translate(messages, 'home.cycle.targetLabel')}${objective}`;
 }
 
 export function cycleCardContent(cycle, messages, today = new Date(), language = DEFAULT_DISPLAY_LANGUAGE) {
