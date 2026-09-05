@@ -209,6 +209,31 @@ function buildSidebar(activeId) {
   return aside;
 }
 
+// The user menu is a self-contained shell component: the chevron trigger
+// and its absolute dropdown are built here, completely decoupled from
+// page-specific concerns like the training-cycle guard. It therefore
+// initializes on every route regardless of guard outcomes.
+export function buildUserMenu() {
+  const menu = el('div', 'user-menu');
+  const badge = el('span', 'user-badge hidden');
+  badge.id = 'userBadge';
+  menu.appendChild(badge);
+  const chevron = el('button', 'user-chevron hidden');
+  chevron.type = 'button';
+  chevron.id = 'userChevron';
+  chevron.setAttribute('aria-label', 'Account menu');
+  chevron.setAttribute('data-i18n-aria-label', 'shell.userMenu');
+  chevron.appendChild(icon('chevron-down'));
+  menu.appendChild(chevron);
+  const dropdown = el('div', 'user-dropdown hidden');
+  dropdown.id = 'userDropdown';
+  const identity = el('span', 'user-dropdown-identity');
+  identity.id = 'userDropdownIdentity';
+  dropdown.appendChild(identity);
+  menu.appendChild(dropdown);
+  return menu;
+}
+
 function buildTopbar() {
   const header = el('header', 'topbar');
 
@@ -231,9 +256,8 @@ function buildTopbar() {
   langSwitch.appendChild(separator);
   actions.appendChild(langSwitch);
 
-  const badge = el('span', 'user-badge hidden');
-  badge.id = 'userBadge';
-  actions.appendChild(badge);
+  const userMenu = buildUserMenu();
+  actions.appendChild(userMenu);
 
   // Built hidden: it only becomes visible once setUserBadge confirms a
   // session, so anonymous visitors never see a dead sign-out control.
@@ -307,6 +331,10 @@ function setUserBadge(user) {
   strong.textContent = name || user.email;
   badge.appendChild(strong);
   badge.classList.remove('hidden');
+  // A confirmed session also reveals the account trigger and its menu.
+  document.getElementById('userChevron').classList.remove('hidden');
+  const identity = document.getElementById('userDropdownIdentity');
+  if (identity) identity.textContent = name || user.email;
   // A confirmed session means the sign-out action is safe to show.
   document.getElementById('logoutBtn').classList.remove('hidden');
 }
@@ -317,6 +345,27 @@ function wireLogout() {
     button.disabled = true;
     await signOut();
     window.location.replace('/login.html');
+  });
+}
+
+export function wireUserMenu() {
+  const chevron = document.getElementById('userChevron');
+  const dropdown = document.getElementById('userDropdown');
+
+  const close = () => dropdown.classList.add('hidden');
+
+  const toggle = () => {
+    const nowHidden = dropdown.classList.toggle('hidden');
+    chevron.classList.toggle('open', !nowHidden);
+    refreshIcons();
+  };
+
+  chevron.addEventListener('click', toggle);
+  document.addEventListener('click', (event) => {
+    if (!event.target.closest('.user-menu')) close();
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') close();
   });
 }
 
@@ -359,6 +408,9 @@ export async function initShell({ active } = {}) {
 
   setUserBadge(user);
   wireLogout();
+  // The user menu wires up before any page-specific guard runs, so a guard
+  // failure can never leave the account trigger unbound.
+  wireUserMenu();
 
   // Check for an active training cycle and disable dependent items.
   let hasActiveCycle = false;
@@ -372,8 +424,12 @@ export async function initShell({ active } = {}) {
     /* offline or unauthenticated — treat as no cycle */
   }
 
-  if (!hasActiveCycle) {
-    applyCycleGuard(shellRoot);
+  try {
+    if (!hasActiveCycle) {
+      applyCycleGuard(shellRoot);
+    }
+  } catch {
+    /* the cycle guard must never halt the shell mount */
   }
 
   window.addEventListener('kinesis:cycle-changed', () => refreshCycleGuard(shellRoot));

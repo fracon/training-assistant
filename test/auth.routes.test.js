@@ -309,6 +309,36 @@ test('GET /cycles.html serves the cycles page to authenticated users', async () 
   db.close();
 });
 
+test('non-calendar pages ship the user menu bundle, immune to the cycle guard', async () => {
+  const db = createDatabase({ filename: ':memory:' });
+  const app = await buildServer({ db });
+  const { cookiePair } = await registerAndLogin(app);
+
+  const cycles = await app.inject({
+    method: 'GET',
+    url: '/cycles.html',
+    headers: { cookie: cookiePair },
+  });
+  assert.equal(cycles.statusCode, 200);
+  assert.match(cycles.body, /shared\/shell\.js/, 'the cycles page loads the shell bundle');
+  assert.match(cycles.body, /shared\/shell\.css/);
+
+  const shell = await app.inject({ method: 'GET', url: '/shared/shell.js' });
+  assert.equal(shell.statusCode, 200);
+  assert.match(shell.body, /export function buildUserMenu/, 'the menu factory ships in the bundle');
+  assert.match(shell.body, /user-dropdown hidden/, 'the dropdown container ships hidden');
+  assert.match(shell.body, /icon\('chevron-down'\)/, 'the chevron trigger ships globally');
+  assert.match(shell.body, /export function wireUserMenu/, 'the click wiring ships globally');
+  assert.match(
+    shell.body,
+    /the cycle guard must never halt the shell mount/,
+    'a guard failure cannot block the bundle from mounting the user menu'
+  );
+
+  await app.close();
+  db.close();
+});
+
 test('GET / routes authenticated users without an active cycle to the cycles page', async () => {
   const db = createDatabase({ filename: ':memory:' });
   const app = await buildServer({ db });

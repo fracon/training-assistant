@@ -80,6 +80,7 @@
     "expand": "Expand sidebar",
     "navLabel": "Main navigation",
     "logout": "Logout",
+    "userMenu": "Account menu",
     "confirm": {
       "yes": "Delete",
       "no": "Cancel"

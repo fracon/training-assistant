@@ -80,6 +80,7 @@
     "expand": "Expandir menu",
     "navLabel": "Navegação principal",
     "logout": "Sair",
+    "userMenu": "Menu da conta",
     "confirm": {
       "yes": "Excluir",
       "no": "Cancelar"

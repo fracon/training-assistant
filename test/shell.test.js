@@ -13,6 +13,8 @@ const {
   VERSION_FALLBACK_LABEL,
   loadAppVersion,
   formatAppVersion,
+  buildUserMenu,
+  wireUserMenu,
 } = require('../src/public/shared/shell.js');
 const en = require('../src/public/locales/en.json');
 const pt = require('../src/public/locales/pt.json');
@@ -115,6 +117,7 @@ test('every sidebar label key resolves in both locale files', () => {
     'shell.expand',
     'shell.navLabel',
     'shell.logout',
+    'shell.userMenu',
     'shell.confirm.yes',
     'shell.confirm.no',
   ];
@@ -224,13 +227,13 @@ test('the topbar restores a working logout action once authenticated', () => {
   );
   assert.match(
     js,
-    /badge\.classList\.remove\('hidden'\);\s*\n\s*\/\/ A confirmed session means the sign-out action is safe to show\.\s*\n\s*document\.getElementById\('logoutBtn'\)\.classList\.remove\('hidden'\);/,
-    'a confirmed session reveals the previously invisible button'
+    /badge\.classList\.remove\('hidden'\);\s*\n\s*\/\/ A confirmed session also reveals the account trigger and its menu\.\s*\n\s*document\.getElementById\('userChevron'\)\.classList\.remove\('hidden'\);[\s\S]*?\/\/ A confirmed session means the sign-out action is safe to show\.\s*\n\s*document\.getElementById\('logoutBtn'\)\.classList\.remove\('hidden'\);/,
+    'a confirmed session reveals the previously invisible trigger, menu and button'
   );
   assert.match(
     js,
-    /wireLogout\(\);/,
-    'the click wiring runs on every mount'
+    /wireLogout\(\);\s*\n\s*\/\/ The user menu wires up before any page-specific guard runs, so a guard\s*\n\s*\/\/ failure can never leave the account trigger unbound\.\s*\n\s*wireUserMenu\(\);/,
+    'the dropdown click wiring runs on every mount before any page guard'
   );
   assert.match(
     js,
@@ -240,7 +243,7 @@ test('the topbar restores a working logout action once authenticated', () => {
 
   assert.match(
     js,
-    /actions\.appendChild\(badge\);[\s\S]*?actions\.appendChild\(logout\);\s*\n\s*header\.appendChild\(actions\);/,
+    /actions\.appendChild\(userMenu\);[\s\S]*?actions\.appendChild\(logout\);\s*\n\s*header\.appendChild\(actions\);/,
     'the logout pill is the last action, hugging the far right of the header'
   );
 
@@ -402,4 +405,176 @@ test('shell.css gives nav-item flex layout so the soon-chip does not overlap the
     /\.soon-chip \{[^}]*flex-shrink:\s*0/,
     'the chip never collapses'
   );
+});
+
+/* ── Global user menu (dropdown + chevron) ── */
+
+test('buildUserMenu renders the chevron, dropdown container and identity line', () => {
+  const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
+
+  assert.match(js, /export function buildUserMenu\(\)/, 'the user menu factory is exported');
+  assert.match(js, /const menu = el\('div', 'user-menu'\)/, 'the wrapper uses the .user-menu class');
+  assert.match(js, /badge\.id = 'userBadge';/, 'the name badge lives inside the menu');
+  assert.match(js, /chevron\.id = 'userChevron';/, 'the chevron trigger is unique by id');
+  assert.match(js, /chevron\.appendChild\(icon\('chevron-down'\)\);/, 'the chevron uses a lucide icon');
+  assert.match(
+    js,
+    /chevron\.setAttribute\('data-i18n-aria-label', 'shell\.userMenu'\);/,
+    'the chevron carries the translated aria-label'
+  );
+  assert.match(js, /dropdown\.id = 'userDropdown';/, 'the absolute container is unique by id');
+  assert.match(js, /el\('div', 'user-dropdown hidden'\)/, 'the dropdown ships hidden by default');
+  assert.match(js, /identity\.id = 'userDropdownIdentity';/, 'the identity line is present');
+
+  const css = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.css'), 'utf8');
+  assert.match(css, /\.user-menu \{[^}]*position:\s*relative/, 'the menu anchors the dropdown');
+  assert.match(
+    css,
+    /\.user-dropdown \{[^}]*position:\s*absolute/,
+    'the dropdown floats as an absolute container'
+  );
+  assert.match(css, /\.user-chevron \{[^}]*margin-left:\s*0\.1rem/, 'the chevron hugs the badge');
+  assert.match(css, /\.user-chevron\.open \{[^}]*transform:\s*rotate\(180deg\)/, 'the chevron flips when open');
+});
+
+test('wireUserMenu binds the trigger click plus outside and escape close handlers', () => {
+  const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
+
+  assert.match(js, /export function wireUserMenu\(\)/, 'the click wiring is exported');
+  assert.match(js, /document\.getElementById\('userChevron'\)/, 'it grabs the trigger');
+  assert.match(js, /document\.getElementById\('userDropdown'\)/, 'it grabs the dropdown');
+  assert.match(js, /chevron\.addEventListener\('click', toggle\);/, 'clicking the chevron toggles');
+  assert.match(js, /dropdown\.classList\.toggle\('hidden'\)/, 'the toggle flips the hidden flag');
+  assert.match(js, /chevron\.classList\.toggle\('open', !nowHidden\);/, 'the icon state follows');
+  assert.match(
+    js,
+    /document\.addEventListener\('click', \(event\) => \{\s*\n\s*if \(!event\.target\.closest\('\.user-menu'\)\) close\(\);\s*\n\s*\}\);/,
+    'a click outside the menu closes it'
+  );
+  assert.match(
+    js,
+    /document\.addEventListener\('keydown', \(event\) => \{\s*\n\s*if \(event\.key === 'Escape'\) close\(\);\s*\n\s*\}\);/,
+    'escape closes the menu'
+  );
+});
+
+test('the user menu is decoupled from the cycle guard and mounts before it', () => {
+  const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
+  const initBody = js.slice(js.indexOf('export async function initShell'));
+
+  assert.ok(
+    initBody.indexOf('wireUserMenu();') < initBody.indexOf('applyCycleGuard(shellRoot)'),
+    'the account trigger wires up before the guard can run'
+  );
+  assert.match(
+    js,
+    /try \{\s*\n\s*if \(!hasActiveCycle\) \{\s*\n\s*applyCycleGuard\(shellRoot\);\s*\n\s*\}\s*\n\s*\} catch \{\s*\n\s*\/\* the cycle guard must never halt the shell mount \*\/\s*\n\s*\}/,
+    'a guard failure is contained and can never halt the shell mount'
+  );
+  assert.match(
+    initBody,
+    /wireUserMenu\(\);[\s\S]*?\/\/ Check for an active training cycle/,
+    'the dropdown init sits before the guard block in the pipeline'
+  );
+});
+
+test('the user menu injects a clickable dropdown through the real shell functions', () => {
+  const registry = new Map();
+  const docListeners = { click: [], keydown: [] };
+
+  function fakeEl(tag, cls) {
+    const classes = new Set((cls ?? '').split(' ').filter(Boolean));
+    const listeners = {};
+    const node = {
+      tag,
+      id: null,
+      type: '',
+      textContent: '',
+      attrs: {},
+      children: [],
+      get className() {
+        return [...classes].join(' ');
+      },
+      set className(value) {
+        classes.clear();
+        for (const name of String(value ?? '').split(' ').filter(Boolean)) {
+          classes.add(name);
+        }
+      },
+      appendChild(child) {
+        this.children.push(child);
+        return child;
+      },
+      setAttribute(key, value) {
+        this.attrs[key] = value;
+      },
+      addEventListener(type, fn) {
+        (listeners[type] ??= []).push(fn);
+      },
+      classList: {
+        add(...names) {
+          for (const name of names) classes.add(name);
+        },
+        remove(...names) {
+          for (const name of names) classes.delete(name);
+        },
+        contains(name) {
+          return classes.has(name);
+        },
+        toggle(name, force) {
+          const target = force === undefined ? !classes.has(name) : Boolean(force);
+          if (target) classes.add(name);
+          else classes.delete(name);
+          return classes.has(name);
+        },
+      },
+      listeners,
+    };
+    if (cls) node.className = cls;
+    return node;
+  }
+
+  const originalDocument = globalThis.document;
+  globalThis.document = {
+    createElement: fakeEl,
+    getElementById: (id) => registry.get(id) ?? null,
+    addEventListener: (type, fn) => {
+      (docListeners[type] ??= []).push(fn);
+    },
+    querySelectorAll: () => [],
+  };
+
+  try {
+    const menu = buildUserMenu();
+    for (const child of menu.children) {
+      if (child.id) registry.set(child.id, child);
+    }
+    const chevron = registry.get('userChevron');
+    const dropdown = registry.get('userDropdown');
+
+    assert.ok(menu.className === 'user-menu', 'the wrapper renders as .user-menu');
+    assert.equal(chevron.children[0].attrs['data-lucide'], 'chevron-down', 'the chevron icon is present');
+    assert.equal(chevron.attrs['data-i18n-aria-label'], 'shell.userMenu');
+    assert.ok(dropdown.className.split(' ').includes('user-dropdown'), 'the container renders');
+    assert.ok(dropdown.classList.contains('hidden'), 'the dropdown starts closed');
+
+    wireUserMenu();
+
+    chevron.listeners['click'][0]();
+    assert.ok(!dropdown.classList.contains('hidden'), 'clicking the chevron opens the menu');
+    assert.ok(chevron.classList.contains('open'), 'the chevron flips to open');
+
+    chevron.listeners['click'][0]();
+    assert.ok(dropdown.classList.contains('hidden'), 'clicking again closes the menu');
+    assert.ok(!chevron.classList.contains('open'), 'the chevron returns to closed');
+
+    docListeners.click[0]({ target: { closest: () => null } });
+    assert.ok(dropdown.classList.contains('hidden'), 'an outside click closes the menu');
+
+    chevron.listeners['click'][0]();
+    docListeners.keydown[0]({ key: 'Escape' });
+    assert.ok(dropdown.classList.contains('hidden'), 'escape closes the menu');
+  } finally {
+    globalThis.document = originalDocument;
+  }
 });
