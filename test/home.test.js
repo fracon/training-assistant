@@ -953,5 +953,7 @@ test('home.css stacks the dashboard widgets full-width and styles the week track
   assert.match(css, /\.week-tracker-days \{[^}]*align-items:\s*center/);
   assert.match(css, /\.week-day \{[^}]*border:\s*0;[^}]*border-radius:\s*999px/);
   assert.match(css, /\.week-day\.has-training \{[^}]*background:\s*var\(--accent-deep\)/);
+  assert.match(css, /\.week-day\.has-training \{[^}]*gap:\s*0\.5rem/);
+  assert.match(css, /\.week-day svg \{[^}]*display:\s*inline-block[^}]*transform:\s*rotate\(180deg\)/);
   assert.match(css, /\.week-day\.empty \{[^}]*background:\s*transparent;[^}]*color:\s*var\(--muted\)/);
 });

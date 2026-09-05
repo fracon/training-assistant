@@ -319,14 +319,16 @@
 .week-day.has-training {
   background: var(--accent-deep);
   color: #fff;
-  gap: 0.25rem;
+  gap: 0.5rem;
 }
 
 .week-day svg {
   width: 0.9rem;
   height: 0.9rem;
+  display: inline-block;
   flex-shrink: 0;
   stroke-width: 2.2;
+  transform: rotate(180deg);
 }
 
 @media (max-width: 760px) {
