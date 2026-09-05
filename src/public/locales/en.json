@@ -81,6 +81,7 @@
     "navLabel": "Main navigation",
     "logout": "Logout",
     "userMenu": "Account menu",
+    "changePassword": "Change Password",
     "confirm": {
       "yes": "Delete",
       "no": "Cancel"

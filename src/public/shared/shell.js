@@ -215,21 +215,30 @@ function buildSidebar(activeId) {
 // initializes on every route regardless of guard outcomes.
 export function buildUserMenu() {
   const menu = el('div', 'user-menu');
-  const badge = el('span', 'user-badge hidden');
+  const badge = el('button', 'user-badge hidden');
   badge.id = 'userBadge';
+  badge.type = 'button';
+  badge.setAttribute('aria-label', 'Account menu');
+  badge.setAttribute('data-i18n-aria-label', 'shell.userMenu');
+  badge.setAttribute('aria-expanded', 'false');
+  const name = el('b');
+  name.id = 'userBadgeName';
+  badge.appendChild(name);
+  // The chevron lives inside the badge pill so the indicator and the name
+  // form a single cohesive clickable unit.
+  badge.appendChild(icon('chevron-down'));
   menu.appendChild(badge);
-  const chevron = el('button', 'user-chevron hidden');
-  chevron.type = 'button';
-  chevron.id = 'userChevron';
-  chevron.setAttribute('aria-label', 'Account menu');
-  chevron.setAttribute('data-i18n-aria-label', 'shell.userMenu');
-  chevron.appendChild(icon('chevron-down'));
-  menu.appendChild(chevron);
   const dropdown = el('div', 'user-dropdown hidden');
   dropdown.id = 'userDropdown';
-  const identity = el('span', 'user-dropdown-identity');
-  identity.id = 'userDropdownIdentity';
-  dropdown.appendChild(identity);
+  const changePassword = el('button', 'user-menu-item');
+  changePassword.type = 'button';
+  changePassword.id = 'userChangePassword';
+  changePassword.appendChild(icon('key'));
+  const changePasswordLabel = el('span');
+  changePasswordLabel.setAttribute('data-i18n', 'shell.changePassword');
+  changePasswordLabel.textContent = 'Change Password';
+  changePassword.appendChild(changePasswordLabel);
+  dropdown.appendChild(changePassword);
   menu.appendChild(dropdown);
   return menu;
 }
@@ -325,16 +334,9 @@ function buildLayout(activeId) {
 
 function setUserBadge(user) {
   const badge = document.getElementById('userBadge');
-  badge.innerHTML = '';
-  const name = [user.first_name, user.last_name].filter(Boolean).join(' ');
-  const strong = document.createElement('b');
-  strong.textContent = name || user.email;
-  badge.appendChild(strong);
+  const name = [user.first_name, user.last_name].filter(Boolean).join(' ') || user.email;
+  document.getElementById('userBadgeName').textContent = name;
   badge.classList.remove('hidden');
-  // A confirmed session also reveals the account trigger and its menu.
-  document.getElementById('userChevron').classList.remove('hidden');
-  const identity = document.getElementById('userDropdownIdentity');
-  if (identity) identity.textContent = name || user.email;
   // A confirmed session means the sign-out action is safe to show.
   document.getElementById('logoutBtn').classList.remove('hidden');
 }
@@ -349,23 +351,27 @@ function wireLogout() {
 }
 
 export function wireUserMenu() {
-  const chevron = document.getElementById('userChevron');
+  const badge = document.getElementById('userBadge');
   const dropdown = document.getElementById('userDropdown');
 
   const close = () => dropdown.classList.add('hidden');
 
   const toggle = () => {
     const nowHidden = dropdown.classList.toggle('hidden');
-    chevron.classList.toggle('open', !nowHidden);
+    badge.classList.toggle('open', !nowHidden);
+    badge.setAttribute('aria-expanded', String(!nowHidden));
     refreshIcons();
   };
 
-  chevron.addEventListener('click', toggle);
+  badge.addEventListener('click', toggle);
   document.addEventListener('click', (event) => {
     if (!event.target.closest('.user-menu')) close();
   });
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') close();
+  });
+  dropdown.addEventListener('click', (event) => {
+    if (event.target.closest('.user-menu-item')) close();
   });
 }
 

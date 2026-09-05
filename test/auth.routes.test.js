@@ -327,7 +327,9 @@ test('non-calendar pages ship the user menu bundle, immune to the cycle guard', 
   assert.equal(shell.statusCode, 200);
   assert.match(shell.body, /export function buildUserMenu/, 'the menu factory ships in the bundle');
   assert.match(shell.body, /user-dropdown hidden/, 'the dropdown container ships hidden');
-  assert.match(shell.body, /icon\('chevron-down'\)/, 'the chevron trigger ships globally');
+  assert.match(shell.body, /badge\.appendChild\(icon\('chevron-down'\)\)/, 'the chevron ships inside the badge pill');
+  assert.match(shell.body, /user-menu-item/, 'the change-password item ships in the dropdown');
+  assert.match(shell.body, /shell\.changePassword/, 'the item is localized through the i18n key');
   assert.match(shell.body, /export function wireUserMenu/, 'the click wiring ships globally');
   assert.match(
     shell.body,

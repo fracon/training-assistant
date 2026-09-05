@@ -81,6 +81,7 @@
     "navLabel": "Navegação principal",
     "logout": "Sair",
     "userMenu": "Menu da conta",
+    "changePassword": "Alterar Senha",
     "confirm": {
       "yes": "Excluir",
       "no": "Cancelar"

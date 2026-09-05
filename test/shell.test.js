@@ -118,6 +118,7 @@ test('every sidebar label key resolves in both locale files', () => {
     'shell.navLabel',
     'shell.logout',
     'shell.userMenu',
+    'shell.changePassword',
     'shell.confirm.yes',
     'shell.confirm.no',
   ];
@@ -227,8 +228,13 @@ test('the topbar restores a working logout action once authenticated', () => {
   );
   assert.match(
     js,
-    /badge\.classList\.remove\('hidden'\);\s*\n\s*\/\/ A confirmed session also reveals the account trigger and its menu\.\s*\n\s*document\.getElementById\('userChevron'\)\.classList\.remove\('hidden'\);[\s\S]*?\/\/ A confirmed session means the sign-out action is safe to show\.\s*\n\s*document\.getElementById\('logoutBtn'\)\.classList\.remove\('hidden'\);/,
-    'a confirmed session reveals the previously invisible trigger, menu and button'
+    /badge\.classList\.remove\('hidden'\);\s*\n\s*\/\/ A confirmed session means the sign-out action is safe to show\.\s*\n\s*document\.getElementById\('logoutBtn'\)\.classList\.remove\('hidden'\);/,
+    'a confirmed session reveals the previously invisible badge and button'
+  );
+  assert.match(
+    js,
+    /document\.getElementById\('userBadgeName'\)\.textContent = name;/,
+    'the badge name element absorbs the signed-in identity'
   );
   assert.match(
     js,
@@ -409,43 +415,65 @@ test('shell.css gives nav-item flex layout so the soon-chip does not overlap the
 
 /* ── Global user menu (dropdown + chevron) ── */
 
-test('buildUserMenu renders the chevron, dropdown container and identity line', () => {
+test('buildUserMenu nests the chevron in the badge and ships the change-password item', () => {
   const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
 
   assert.match(js, /export function buildUserMenu\(\)/, 'the user menu factory is exported');
   assert.match(js, /const menu = el\('div', 'user-menu'\)/, 'the wrapper uses the .user-menu class');
-  assert.match(js, /badge\.id = 'userBadge';/, 'the name badge lives inside the menu');
-  assert.match(js, /chevron\.id = 'userChevron';/, 'the chevron trigger is unique by id');
-  assert.match(js, /chevron\.appendChild\(icon\('chevron-down'\)\);/, 'the chevron uses a lucide icon');
+  assert.match(js, /const badge = el\('button', 'user-badge hidden'\);/, 'the badge is a clickable button');
+  assert.match(js, /badge\.id = 'userBadge';/, 'the badge is unique by id');
   assert.match(
     js,
-    /chevron\.setAttribute\('data-i18n-aria-label', 'shell\.userMenu'\);/,
-    'the chevron carries the translated aria-label'
+    /badge\.appendChild\(icon\('chevron-down'\)\);[\s\S]*?menu\.appendChild\(badge\);/,
+    'the chevron is appended inside the badge pill, not beside it'
+  );
+  assert.match(
+    js,
+    /badge\.setAttribute\('data-i18n-aria-label', 'shell\.userMenu'\);/,
+    'the badge carries the translated aria-label'
   );
   assert.match(js, /dropdown\.id = 'userDropdown';/, 'the absolute container is unique by id');
   assert.match(js, /el\('div', 'user-dropdown hidden'\)/, 'the dropdown ships hidden by default');
-  assert.match(js, /identity\.id = 'userDropdownIdentity';/, 'the identity line is present');
+  assert.match(js, /const changePassword = el\('button', 'user-menu-item'\);/, 'the change-password row is a menu item');
+  assert.match(js, /changePassword\.id = 'userChangePassword';/, 'the item is unique by id');
+  assert.match(js, /changePassword\.appendChild\(icon\('key'\)\);/, 'the item renders the key icon');
+  assert.match(
+    js,
+    /changePasswordLabel\.setAttribute\('data-i18n', 'shell\.changePassword'\);/,
+    'the item uses the localized label'
+  );
+  assert.match(
+    js,
+    /changePasswordLabel\.textContent = 'Change Password';/,
+    'the item has a visible fallback string'
+  );
 
   const css = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.css'), 'utf8');
   assert.match(css, /\.user-menu \{[^}]*position:\s*relative/, 'the menu anchors the dropdown');
+  assert.match(css, /\.user-menu \{[^}]*display:\s*inline-flex/, 'the wrapper is an inline-flex cluster');
+  assert.match(css, /\.user-menu \{[^}]*align-items:\s*center/, 'the wrapper centers its children');
   assert.match(
     css,
-    /\.user-dropdown \{[^}]*position:\s*absolute/,
-    'the dropdown floats as an absolute container'
+    /\.user-dropdown \{[^}]*position:\s*absolute;\s*\n\s*right:\s*0;\s*\n\s*top:\s*100%;\s*\n\s*width:\s*max-content;\s*\n\s*margin-top:\s*8px;/,
+    'the dropdown pins under the pill and sizes to content'
   );
-  assert.match(css, /\.user-chevron \{[^}]*margin-left:\s*0\.1rem/, 'the chevron hugs the badge');
-  assert.match(css, /\.user-chevron\.open \{[^}]*transform:\s*rotate\(180deg\)/, 'the chevron flips when open');
+  assert.match(
+    css,
+    /\.user-menu-item \{[^}]*display:\s*flex;\s*\n\s*align-items:\s*center;\s*\n\s*justify-content:\s*flex-start;\s*\n\s*gap:\s*10px;\s*\n\s*padding:\s*10px 14px;\s*\n\s*white-space:\s*nowrap;/,
+    'the menu item mirrors the exact finalized layout rules'
+  );
 });
 
-test('wireUserMenu binds the trigger click plus outside and escape close handlers', () => {
+test('wireUserMenu binds the badge click plus outside, escape and item close handlers', () => {
   const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
 
   assert.match(js, /export function wireUserMenu\(\)/, 'the click wiring is exported');
-  assert.match(js, /document\.getElementById\('userChevron'\)/, 'it grabs the trigger');
+  assert.match(js, /document\.getElementById\('userBadge'\)/, 'it grabs the badge as the trigger');
   assert.match(js, /document\.getElementById\('userDropdown'\)/, 'it grabs the dropdown');
-  assert.match(js, /chevron\.addEventListener\('click', toggle\);/, 'clicking the chevron toggles');
+  assert.match(js, /badge\.addEventListener\('click', toggle\);/, 'clicking the badge toggles');
   assert.match(js, /dropdown\.classList\.toggle\('hidden'\)/, 'the toggle flips the hidden flag');
-  assert.match(js, /chevron\.classList\.toggle\('open', !nowHidden\);/, 'the icon state follows');
+  assert.match(js, /badge\.classList\.toggle\('open', !nowHidden\);/, 'the badge open state follows');
+  assert.match(js, /badge\.setAttribute\('aria-expanded', String\(!nowHidden\)\);/, 'the aria state follows');
   assert.match(
     js,
     /document\.addEventListener\('click', \(event\) => \{\s*\n\s*if \(!event\.target\.closest\('\.user-menu'\)\) close\(\);\s*\n\s*\}\);/,
@@ -455,6 +483,11 @@ test('wireUserMenu binds the trigger click plus outside and escape close handler
     js,
     /document\.addEventListener\('keydown', \(event\) => \{\s*\n\s*if \(event\.key === 'Escape'\) close\(\);\s*\n\s*\}\);/,
     'escape closes the menu'
+  );
+  assert.match(
+    js,
+    /dropdown\.addEventListener\('click', \(event\) => \{\s*\n\s*if \(event\.target\.closest\('\.user-menu-item'\)\) close\(\);\s*\n\s*\}\);/,
+    'clicking any menu item closes the dropdown'
   );
 });
 
@@ -546,32 +579,64 @@ test('the user menu injects a clickable dropdown through the real shell function
 
   try {
     const menu = buildUserMenu();
-    for (const child of menu.children) {
-      if (child.id) registry.set(child.id, child);
-    }
-    const chevron = registry.get('userChevron');
+    const walk = (node) => {
+      for (const child of node.children) {
+        if (child.id) registry.set(child.id, child);
+        walk(child);
+      }
+    };
+    walk(menu);
+    const badge = registry.get('userBadge');
     const dropdown = registry.get('userDropdown');
+    const changePassword = registry.get('userChangePassword');
 
     assert.ok(menu.className === 'user-menu', 'the wrapper renders as .user-menu');
-    assert.equal(chevron.children[0].attrs['data-lucide'], 'chevron-down', 'the chevron icon is present');
-    assert.equal(chevron.attrs['data-i18n-aria-label'], 'shell.userMenu');
+    assert.equal(badge.tag, 'button', 'the badge renders as a button');
+    assert.equal(badge.attrs['aria-expanded'], 'false', 'the badge discloses the closed state');
+    assert.equal(badge.attrs['data-i18n-aria-label'], 'shell.userMenu');
+    assert.equal(
+      badge.children[badge.children.length - 1].attrs['data-lucide'],
+      'chevron-down',
+      'the chevron is the last child inside the badge pill'
+    );
     assert.ok(dropdown.className.split(' ').includes('user-dropdown'), 'the container renders');
     assert.ok(dropdown.classList.contains('hidden'), 'the dropdown starts closed');
+    assert.equal(changePassword.className, 'user-menu-item', 'the change-password row is a menu item');
+    assert.equal(
+      changePassword.children[0].attrs['data-lucide'],
+      'key',
+      'the change-password item renders the key icon'
+    );
+    assert.equal(
+      changePassword.children[1].textContent,
+      'Change Password',
+      'the change-password item keeps its label'
+    );
 
     wireUserMenu();
 
-    chevron.listeners['click'][0]();
-    assert.ok(!dropdown.classList.contains('hidden'), 'clicking the chevron opens the menu');
-    assert.ok(chevron.classList.contains('open'), 'the chevron flips to open');
+    badge.listeners['click'][0]();
+    assert.ok(!dropdown.classList.contains('hidden'), 'clicking the badge opens the menu');
+    assert.ok(badge.classList.contains('open'), 'the badge flips to open');
+    assert.equal(badge.attrs['aria-expanded'], 'true', 'aria-expanded tracks the open state');
 
-    chevron.listeners['click'][0]();
-    assert.ok(dropdown.classList.contains('hidden'), 'clicking again closes the menu');
-    assert.ok(!chevron.classList.contains('open'), 'the chevron returns to closed');
+    dropdown.listeners['click'][0]({
+      target: { closest: (sel) => (sel === '.user-menu-item' ? changePassword : null) },
+    });
+    assert.ok(dropdown.classList.contains('hidden'), 'clicking a menu item closes the menu');
+
+    badge.listeners['click'][0]();
+    assert.ok(!dropdown.classList.contains('hidden'), 'clicking the badge reopens the menu');
+    assert.equal(badge.attrs['aria-expanded'], 'true', 'aria-expanded follows the reopened state');
+
+    badge.listeners['click'][0]();
+    assert.ok(dropdown.classList.contains('hidden'), 'clicking the badge again closes the menu');
+    assert.ok(!badge.classList.contains('open'), 'the badge returns to closed');
 
     docListeners.click[0]({ target: { closest: () => null } });
     assert.ok(dropdown.classList.contains('hidden'), 'an outside click closes the menu');
 
-    chevron.listeners['click'][0]();
+    badge.listeners['click'][0]();
     docListeners.keydown[0]({ key: 'Escape' });
     assert.ok(dropdown.classList.contains('hidden'), 'escape closes the menu');
   } finally {
