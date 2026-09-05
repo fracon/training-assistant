@@ -234,6 +234,11 @@ export function daysRemainingText(messages, days) {
   return translate(messages, 'home.cycle.daysRemaining.many', { count: days });
 }
 
+export function cycleObjectiveText(messages, objective) {
+  if (!objective) return '';
+  return `${translate(messages, 'home.cycle.objectiveLabel')} ${objective}`;
+}
+
 export function cycleCardContent(cycle, messages, today = new Date(), language = DEFAULT_DISPLAY_LANGUAGE) {
   if (!cycle) return null;
   const progress = cycleProgress(cycle, today);
@@ -373,7 +378,7 @@ function setupHomePage() {
     if (cycleName) cycleName.textContent = content.name;
     if (cycleObjective) {
       if (content.objective) {
-        cycleObjective.textContent = content.objective;
+        cycleObjective.textContent = cycleObjectiveText(messages, content.objective);
         cycleObjective.classList.remove('hidden');
       } else {
         cycleObjective.textContent = '';

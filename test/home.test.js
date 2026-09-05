@@ -29,6 +29,7 @@ const {
   currentWeekNumber,
   cycleProgress,
   cycleWeekText,
+  cycleObjectiveText,
   cycleCardContent,
   metricsCardContent,
   randomFallbackQuote,
@@ -155,6 +156,14 @@ test('home.cycle.daysRemaining keys pluralize in both locales', () => {
   assert.equal(pt.home.cycle.daysRemaining.many, '{count} dias restantes');
   assert.equal(pt.home.cycle.daysRemaining.today, 'Hoje');
   assert.equal(pt.home.cycle.daysRemaining.over, 'Encerrado');
+});
+
+test('cycle objective rendering includes the localized label and value', () => {
+  assert.equal(en.home.cycle.objectiveLabel, 'Objective:');
+  assert.equal(pt.home.cycle.objectiveLabel, 'Objetivo:');
+  assert.equal(cycleObjectiveText(en, 'Run under 2h'), 'Objective: Run under 2h');
+  assert.equal(cycleObjectiveText(pt, 'Correr abaixo de 2h'), 'Objetivo: Correr abaixo de 2h');
+  assert.equal(cycleObjectiveText(en, ''), '');
 });
 
 test('home.html wires every dashboard label to i18n keys shared by both locales', () => {
@@ -830,7 +839,7 @@ test('home.js keeps the dashboard wiring declarative and reactive', () => {
     'the active language drives the target-date formatting and countdown'
   );
   assert.match(js, /if \(cycleName\) cycleName\.textContent = content\.name;/);
-  assert.match(js, /if \(cycleObjective\) \{\s*\n\s*if \(content\.objective/);
+  assert.match(js, /cycleObjective\.textContent = cycleObjectiveText\(messages, content\.objective\);/);
   assert.match(js, /cycleObjective\.classList\.add\('hidden'\);/);
   assert.equal(
     /content\.objective !== content\.name/.test(js),

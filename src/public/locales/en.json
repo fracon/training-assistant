@@ -511,6 +511,7 @@
       "startButton": "Plan next cycle",
       "weekLabel": "Week {current} of {total}",
       "weekOnly": "Week {current}",
+      "objectiveLabel": "Objective:",
       "targetLabel": "Target date",
       "percentLabel": "{percent}%",
       "progressAria": "Training cycle progress",
