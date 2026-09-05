@@ -249,13 +249,13 @@
 /* ── Weekly 7-day tracker (Monday → Sunday) ──────────────────── */
 
 .week-tracker {
-  margin-top: 1.15rem;
-  padding-top: 1.05rem;
+  margin-top: 0.9rem;
+  padding-top: 0.85rem;
   border-top: 1px solid var(--line);
 }
 
 .tracker-title {
-  margin: 0 0 0.7rem;
+  margin: 0 0 0.55rem;
   font-size: 0.78rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -265,17 +265,20 @@
 
 .week-tracker-days {
   display: flex;
-  gap: 0.5rem;
+  align-items: center;
+  gap: 0.35rem;
 }
 
 .week-day {
   flex: 1;
   min-width: 0;
-  height: 44px;
+  height: 2rem;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 12px;
+  padding: 0 0.35rem;
+  border: 0;
+  border-radius: 999px;
   font-size: 0.8rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -283,8 +286,7 @@
 }
 
 .week-day.empty {
-  background: var(--bg);
-  border: 1px dashed var(--line);
+  background: transparent;
   color: var(--muted);
 }
 
