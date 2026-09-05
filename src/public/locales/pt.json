@@ -518,7 +518,18 @@
     "metrics": {
       "title": "Esta Semana",
       "distance": "Distância Total",
-      "time": "Tempo Total"
+      "time": "Tempo Total",
+      "tracker": "Treinos da Semana",
+      "trackerAria": "Treinos por dia, de segunda a domingo"
+    },
+    "days": {
+      "mon": "Seg",
+      "tue": "Ter",
+      "wed": "Qua",
+      "thu": "Qui",
+      "fri": "Sex",
+      "sat": "Sáb",
+      "sun": "Dom"
     }
   }
 }

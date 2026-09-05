@@ -103,6 +103,71 @@ export function parseIsoDate(iso) {
   return new Date(year, month - 1, day);
 }
 
+// Monday → Sunday labels resolve through the locale dictionaries and stay
+// index-stable so the tracker can map each ISO day to its abbreviation.
+export const WEEKDAY_KEYS = [
+  'home.days.mon',
+  'home.days.tue',
+  'home.days.wed',
+  'home.days.thu',
+  'home.days.fri',
+  'home.days.sat',
+  'home.days.sun',
+];
+
+export function weekDays(range) {
+  const start = parseIsoDate(range?.start);
+  if (!start) return [];
+  const days = [];
+  for (let i = 0; i < WEEKDAY_KEYS.length; i += 1) {
+    const date = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
+    days.push({ date: isoDate(date), key: WEEKDAY_KEYS[i] });
+  }
+  return days;
+}
+
+export function trainingDaySet(trainings) {
+  const set = new Set();
+  const list = Array.isArray(trainings) ? trainings : [];
+  for (const entry of list) {
+    if (entry && typeof entry.dia === 'string' && entry.dia.trim() !== '') {
+      set.add(entry.dia);
+    }
+  }
+  return set;
+}
+
+export function weekDayState(days, trainingSet) {
+  const pool = trainingSet instanceof Set ? trainingSet : new Set();
+  return days.map((day) => ({ ...day, hasTraining: pool.has(day.date) }));
+}
+
+export function buildWeekDayMarkup(state, messages) {
+  return {
+    cls: state.hasTraining ? 'week-day has-training' : 'week-day empty',
+    label: translate(messages, state.key),
+    dataI18n: state.key,
+    ariaLabel: state.date,
+  };
+}
+
+// Renders the 7 shimmer cells. Each cell carries its i18n key so the global
+// scanner re-translates it on language switch; the caller also re-renders
+// explicitly via the app:languagechange handler.
+export function renderWeekDays(container, states, messages) {
+  if (!container || !Array.isArray(states)) return;
+  container.textContent = '';
+  for (const state of states) {
+    const markup = buildWeekDayMarkup(state, messages);
+    const cell = document.createElement('div');
+    cell.className = markup.cls;
+    cell.setAttribute('data-i18n', markup.dataI18n);
+    cell.setAttribute('aria-label', markup.ariaLabel);
+    cell.textContent = markup.label;
+    container.appendChild(cell);
+  }
+}
+
 export function weeksBetween(startIso, endIso) {
   const start = parseIsoDate(startIso);
   const end = parseIsoDate(endIso);
@@ -223,12 +288,15 @@ function setupHomePage() {
   const cyclePercent = document.getElementById('cyclePercent');
   const weeklyDistance = document.getElementById('weeklyDistanceValue');
   const weeklyTime = document.getElementById('weeklyTimeValue');
+  const weekTrackerDays = document.getElementById('weekTrackerDays');
 
   const state = {
     cycle: null,
     distanceKm: 0,
     durationSeconds: 0,
     quoteSource: 'api',
+    range: null,
+    trainingDates: new Set(),
   };
 
   let i18n = null;
@@ -272,9 +340,16 @@ function setupHomePage() {
     if (weeklyTime) weeklyTime.textContent = content.time;
   }
 
+  function renderWeekTracker() {
+    if (!weekTrackerDays || !state.range) return;
+    const states = weekDayState(weekDays(state.range), state.trainingDates);
+    renderWeekDays(weekTrackerDays, states, i18n ? i18n.messages : {});
+  }
+
   function render() {
     renderCycle();
     renderMetrics();
+    renderWeekTracker();
   }
 
   async function loadCycle() {
@@ -285,10 +360,14 @@ function setupHomePage() {
   async function loadMetrics() {
     const range = weekRange();
     const trainings = await fetchCalendarTrainings(range.start, range.end);
-    const metrics = accumulateWeeklyMetrics(trainingsInRange(trainings, range.start, range.end));
+    const weekTrainings = trainingsInRange(trainings, range.start, range.end);
+    const metrics = accumulateWeeklyMetrics(weekTrainings);
     state.distanceKm = metrics.distanceKm;
     state.durationSeconds = metrics.durationSeconds;
+    state.range = range;
+    state.trainingDates = trainingDaySet(weekTrainings);
     renderMetrics();
+    renderWeekTracker();
   }
 
   async function loadHeroQuote() {
@@ -297,9 +376,10 @@ function setupHomePage() {
     renderQuote(quote);
   }
 
-  // Dynamic content (fallback quotes, cycle card, metric values) re-renders
-  // in the active dictionary. A live ZenQuotes quote is left untouched so a
-  // language toggle never flashes a replacement over the API text.
+  // Dynamic content (fallback quotes, cycle card, metric values, day labels)
+  // re-renders in the active dictionary. A live ZenQuotes quote is left
+  // untouched so a language toggle never flashes a replacement over the API
+  // text.
   document.addEventListener('app:languagechange', () => {
     render();
     if (state.quoteSource === 'fallback' && i18n) {

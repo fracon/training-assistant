@@ -35,6 +35,12 @@ const {
   normalizeZenQuote,
   loadQuote,
   applyHeroImage,
+  WEEKDAY_KEYS,
+  weekDays,
+  trainingDaySet,
+  weekDayState,
+  buildWeekDayMarkup,
+  renderWeekDays,
 } = require(join(publicDir, 'home.js'));
 
 function readHomeHtml() {
@@ -83,6 +89,10 @@ test('home.html ships the hero, cycle, and metrics dashboard skeleton', () => {
   assert.match(html, /id="cyclePercent"/);
   assert.match(html, /id="weeklyDistanceValue"/);
   assert.match(html, /id="weeklyTimeValue"/);
+  assert.match(html, /id="weekTrackerDays"/);
+  assert.match(html, /class="dashboard-grid vertical"/);
+  assert.match(html, /class="week-tracker"/);
+  assert.match(html, /class="week-tracker-days"/);
   assert.match(html, /home\.js/);
   assert.match(html, /shared\/shell\.js/);
   assert.match(html, /shared\/shell\.css/);
@@ -104,6 +114,7 @@ test('home.html wires every dashboard label to i18n keys shared by both locales'
     'home.metrics.title',
     'home.metrics.distance',
     'home.metrics.time',
+    'home.metrics.tracker',
   ];
   for (const key of expectedKeys) {
     assert.ok(html.includes(key), `home.html must reference ${key}`);
@@ -114,7 +125,22 @@ test('home.html wires every dashboard label to i18n keys shared by both locales'
   }
   assert.match(html, /data-i18n-aria-label="home\.hero\.ariaLabel"/);
   assert.match(html, /data-i18n-aria-label="home\.cycle\.progressAria"/);
+  assert.match(html, /data-i18n-aria-label="home\.metrics\.trackerAria"/);
   assert.match(html, /class="btn-primary"\s+href="\/cycles\.html"/);
+});
+
+test('home.days abbreviations exist in both locales and match the weekday keys', () => {
+  for (const messages of [en, pt]) {
+    for (const key of WEEKDAY_KEYS) {
+      assert.equal(typeof messages.home.days[key.split('.')[2]], 'string', `${key} missing value`);
+    }
+  }
+  assert.equal(en.home.days.mon, 'Mon');
+  assert.equal(pt.home.days.mon, 'Seg');
+  assert.equal(pt.home.days.sat, 'Sáb');
+  assert.equal(pt.home.days.sun, 'Dom');
+  assert.equal(en.home.metrics.trackerAria, 'Workouts by day, Monday to Sunday');
+  assert.equal(pt.home.metrics.trackerAria, 'Treinos por dia, de segunda a domingo');
 });
 
 test('home.html fallback quotes stay plural and authored in both locales', () => {
@@ -326,6 +352,144 @@ test('metricsCardContent formats the dashboard totals', () => {
   assert.deepEqual(metricsCardContent(null), { distance: '0.00 km', time: '0h 00m' });
 });
 
+// ── Weekly 7-day tracker ───────────────────────────────────────
+
+const WEEK = { start: '2026-08-17', end: '2026-08-23' };
+
+test('weekDays expands a Monday-to-Sunday window into seven dated cells', () => {
+  const days = weekDays(WEEK);
+  assert.equal(days.length, 7);
+  assert.deepEqual(
+    days.map((day) => day.date),
+    ['2026-08-17', '2026-08-18', '2026-08-19', '2026-08-20', '2026-08-21', '2026-08-22', '2026-08-23']
+  );
+  assert.deepEqual(days.map((day) => day.key), WEEKDAY_KEYS);
+  assert.equal(days[0].date, '2026-08-17');
+  assert.equal(days[6].date, '2026-08-23');
+  assert.deepEqual(weekDays(null), []);
+  assert.deepEqual(weekDays({}), []);
+  assert.deepEqual(weekDays({ start: 'nope' }), []);
+});
+
+test('trainingDaySet collects only well-formed workout dates', () => {
+  const set = trainingDaySet([
+    { dia: '2026-08-19' },
+    { dia: '2026-08-21' },
+    { dia: '2026-08-19' },
+    { dia: '' },
+    { dia: null },
+    null,
+    'junk',
+  ]);
+  assert.ok(set.has('2026-08-19'));
+  assert.ok(set.has('2026-08-21'));
+  assert.equal(set.size, 2, 'duplicates collapse into a single set entry');
+  assert.equal(trainingDaySet(null).size, 0);
+});
+
+test('weekDayState marks exactly the days whose ISO date has a training', () => {
+  const states = weekDayState(weekDays(WEEK), new Set(['2026-08-19', '2026-08-21']));
+  assert.deepEqual(
+    states.map((day) => day.hasTraining),
+    [false, false, true, false, true, false, false]
+  );
+  const none = weekDayState(weekDays(WEEK), trainingDaySet([]));
+  assert.equal(none.every((day) => day.hasTraining === false), true);
+  const allEmptySet = weekDayState(weekDays(WEEK), new Set());
+  assert.equal(allEmptySet.some((day) => day.hasTraining), false);
+});
+
+test('buildWeekDayMarkup maps training state to the visual and i18n classes', () => {
+  const active = buildWeekDayMarkup({ date: '2026-08-19', key: 'home.days.wed', hasTraining: true }, pt);
+  assert.equal(active.cls, 'week-day has-training');
+  assert.equal(active.label, 'Qua');
+  assert.equal(active.dataI18n, 'home.days.wed');
+  const idle = buildWeekDayMarkup({ date: '2026-08-17', key: 'home.days.mon', hasTraining: false }, en);
+  assert.equal(idle.cls, 'week-day empty');
+  assert.equal(idle.label, 'Mon');
+});
+
+// ── DOM side-effects (hand-rolled runtime) ─────────────────────
+
+function fakeDocument() {
+  const realDocument = globalThis.document;
+  const makeEl = () => ({
+    className: '',
+    textContent: '',
+    attrs: {},
+    children: [],
+    setAttribute(name, value) {
+      this.attrs[name] = value;
+    },
+    appendChild(child) {
+      this.children.push(child);
+      return child;
+    },
+  });
+  const container = makeEl();
+  globalThis.document = { createElement: () => makeEl() };
+  return {
+    container,
+    makeEl,
+    destroy: () => {
+      globalThis.document = realDocument;
+    },
+  };
+}
+
+test('renderWeekDays renders an all-empty Monday-to-Sunday week when no training exists', () => {
+  const dom = fakeDocument();
+  try {
+    const states = weekDayState(weekDays(WEEK), new Set());
+    renderWeekDays(dom.container, states, en);
+    assert.equal(dom.container.children.length, 7);
+    for (const cell of dom.container.children) {
+      assert.equal(cell.className, 'week-day empty');
+      assert.equal(cell.attrs['data-i18n'].startsWith('home.days.'), true);
+    }
+    assert.deepEqual(
+      dom.container.children.map((cell) => cell.textContent),
+      ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+    );
+  } finally {
+    dom.destroy();
+  }
+});
+
+test('renderWeekDays flags exactly Wednesday and Friday as having trainings', () => {
+  const dom = fakeDocument();
+  try {
+    const states = weekDayState(weekDays(WEEK), new Set(['2026-08-19', '2026-08-21']));
+    renderWeekDays(dom.container, states, pt);
+    const classes = dom.container.children.map((cell) => cell.className);
+    assert.deepEqual(classes, [
+      'week-day empty',
+      'week-day empty',
+      'week-day has-training',
+      'week-day empty',
+      'week-day has-training',
+      'week-day empty',
+      'week-day empty',
+    ]);
+    assert.equal(dom.container.children[2].textContent, 'Qua', 'Wednesday maps to its PT label');
+    assert.equal(dom.container.children[4].textContent, 'Sex', 'Friday maps to its PT label');
+    assert.equal(dom.container.children[2].attrs['aria-label'], '2026-08-19', 'cells carry their ISO date');
+  } finally {
+    dom.destroy();
+  }
+});
+
+test('renderWeekDays guards against missing containers and non-array states', () => {
+  const dom = fakeDocument();
+  try {
+    renderWeekDays(null, weekDayState(weekDays(WEEK), new Set()), en);
+    renderWeekDays(dom.container, 'not-an-array', en);
+    assert.equal(dom.container.children.length, 0, 'no cells render on invalid input');
+  } finally {
+    dom.destroy();
+  }
+});
+
 // ── Quote loading (fetch + timeout + fallback) ─────────────────
 
 test('randomFallbackQuote picks a deterministic quote from the active dictionary', () => {
@@ -442,13 +606,45 @@ test('home.js keeps the dashboard wiring declarative and reactive', () => {
     /loadQuote\(\{ messages: i18n \? i18n\.messages : \{\} \}\)/,
     'the quote lookup resolves messages inside the call, never at module scope'
   );
+  assert.match(
+    js,
+    /document\.addEventListener\('app:languagechange',\s*\(\) => \{\s*\n\s*render\(\);/,
+    'the language switch re-renders the cycle, metrics and week labels'
+  );
+  assert.match(js, /renderWeekTracker\(\);/);
+  assert.match(js, /state\.trainingDates = trainingDaySet\(weekTrainings\)/);
 });
 
-test('home.css presents the hero and cards inside the earthy shared tokens', () => {
+test('home.css stacks the dashboard widgets full-width and styles the week tracker', () => {
   const css = readHomeCss();
   assert.match(css, /@import url\('\.\/shared\/theme\.css'\)/);
   assert.match(css, /linear-gradient\(rgba\(0, 0, 0, 0\.5\), rgba\(0, 0, 0, 0\.5\)\)/);
   assert.match(css, /var\(--hero-image/);
   assert.match(css, /var\(--accent-deep\)/);
   assert.match(css, /var\(--bg\)/);
+  assert.match(
+    css,
+    /\.dashboard-grid \{[^}]*display:\s*flex;\s*\n\s*flex-direction:\s*column/,
+    'the widget container stacks vertically'
+  );
+  assert.match(
+    css,
+    /\.dashboard-grid \.card-section \{[^}]*width:\s*100%/,
+    'each widget card stretches to the full container width'
+  );
+  const dashboardBlock = css.match(/\.dashboard-grid \{([^}]*)\}/);
+  assert.ok(dashboardBlock, 'the dashboard-grid rule exists');
+  assert.ok(
+    !dashboardBlock[1].includes('grid-template-columns'),
+    'the widget container no longer uses a grid column layout'
+  );
+  assert.match(
+    css,
+    /\.metrics-grid \{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/,
+    'the distance/time tiles keep their two-up layout inside the full-width card'
+  );
+  assert.match(css, /\.week-tracker \{[^}]*border-top:\s*1px solid var\(--line\)/);
+  assert.match(css, /\.week-tracker-days \{[^}]*display:\s*flex/);
+  assert.match(css, /\.week-day\.has-training \{[^}]*background:\s*var\(--accent-deep\)/);
+  assert.match(css, /\.week-day\.empty \{[^}]*border:\s*1px dashed var\(--line\)/);
 });
