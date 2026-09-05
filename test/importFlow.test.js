@@ -49,6 +49,24 @@ test('fetchCalendarTrainings degrades to an empty list on failures', async () =>
   assert.deepEqual(await fetchCalendarTrainings(), []);
 });
 
+test('fetchCalendarTrainings sends the dashboard week window as from/to query params', async () => {
+  const calls = stubFetchOnce(async () => ({
+    ok: true,
+    json: async () => ({ trainings: [] }),
+  }));
+
+  await fetchCalendarTrainings('2026-08-17', '2026-08-23');
+  assert.equal(calls[0].url, '/api/calendar/trainings?from=2026-08-17&to=2026-08-23');
+
+  calls.length = 0;
+  await fetchCalendarTrainings('2026-08-17');
+  assert.equal(calls[0].url, '/api/calendar/trainings?from=2026-08-17');
+
+  calls.length = 0;
+  await fetchCalendarTrainings(undefined, '2026-08-23');
+  assert.equal(calls[0].url, '/api/calendar/trainings?to=2026-08-23');
+});
+
 test('importTrainingsFile uploads FormData to the import endpoint', async () => {
   const calls = stubFetchOnce(async () => ({
     ok: true,

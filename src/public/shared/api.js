@@ -47,9 +47,13 @@ export function changePassword(payload) {
   return requestJson('/api/auth/password', payload, 'PUT');
 }
 
-export async function fetchCalendarTrainings() {
+export async function fetchCalendarTrainings(from, to) {
   try {
-    const response = await fetch('/api/calendar/trainings', {
+    const params = new URLSearchParams();
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+    const query = params.toString();
+    const response = await fetch(`/api/calendar/trainings${query ? `?${query}` : ''}`, {
       headers: { accept: 'application/json' },
     });
     if (!response.ok) return [];

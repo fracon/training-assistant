@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title data-i18n="home.pageTitle">Dashboard • Kinesis</title>
+  <link rel="stylesheet" href="shared/shell.css">
+  <link rel="stylesheet" href="home.css">
+</head>
+<body>
+  <main id="appView">
+    <div class="home-page">
+      <section id="heroBanner" class="hero" aria-label="Daily inspiration"
+        data-i18n-aria-label="home.hero.ariaLabel">
+        <div class="hero-content">
+          <p id="heroQuoteLoading" class="hero-loading" data-i18n="home.hero.loading">Finding today's inspiration…</p>
+          <blockquote id="heroQuote" class="hero-quote hidden">
+            <p id="heroQuoteText"></p>
+            <footer id="heroQuoteAuthor" class="hero-quote-author"></footer>
+          </blockquote>
+        </div>
+      </section>
+
+      <div class="dashboard-grid vertical">
+        <section class="card-section" aria-labelledby="cycleOverviewTitle">
+          <header class="section-header">
+            <h2 id="cycleOverviewTitle" data-i18n="home.cycle.title">Current Training Cycle</h2>
+            <a class="card-action" href="/cycles.html" data-i18n-aria-label="home.actions.goToCycles">
+              <i data-lucide="external-link" aria-hidden="true"></i>
+            </a>
+          </header>
+
+          <div id="cycleEmpty" class="empty-state">
+            <h3 data-i18n="home.cycle.emptyTitle">No active training cycle</h3>
+            <p data-i18n="home.cycle.emptyText">Start planning your next goal.</p>
+            <a class="btn-primary" href="/cycles.html" data-i18n="home.cycle.startButton">Plan next cycle</a>
+          </div>
+
+          <div id="cycleActive" class="cycle-card hidden">
+            <div class="cycle-header">
+              <h3 id="cycleName" class="cycle-name"></h3>
+              <span id="cycleDaysLeft" class="days-left" aria-live="polite"></span>
+            </div>
+            <p id="cycleObjective" class="cycle-objective"></p>
+            <p class="cycle-target">
+              <span data-i18n="home.cycle.dateLabel">Target date</span>:
+              <span id="cycleTarget"></span>
+            </p>
+            <p id="cycleWeek" class="cycle-week"></p>
+            <div id="cycleProgressRow" class="cycle-progress hidden">
+              <progress id="cycleProgressBar" class="cycle-progress-bar" max="100" value="0"
+                aria-label="Training cycle progress" data-i18n-aria-label="home.cycle.progressAria"></progress>
+              <span id="cyclePercent" class="cycle-percent"></span>
+            </div>
+          </div>
+        </section>
+
+        <section class="card-section" aria-labelledby="weeklyMetricsTitle">
+          <header class="section-header">
+            <h2 id="weeklyMetricsTitle" data-i18n="home.metrics.title">This Week</h2>
+            <a class="card-action" href="/calendar.html" data-i18n-aria-label="home.actions.goToTrainings">
+              <i data-lucide="external-link" aria-hidden="true"></i>
+            </a>
+          </header>
+
+          <div class="week-tracker">
+            <div id="weekTrackerDays" class="week-tracker-days" role="list"
+              data-i18n-aria-label="home.metrics.trackerAria"></div>
+          </div>
+
+          <div class="metrics-grid">
+            <div class="metric-tile">
+              <span class="metric-label" data-i18n="home.metrics.distance">Total Distance</span>
+              <span id="weeklyDistanceValue" class="metric-value">0.00 km</span>
+            </div>
+            <div class="metric-tile">
+              <span class="metric-label" data-i18n="home.metrics.time">Total Time</span>
+              <span id="weeklyTimeValue" class="metric-value">0h 00m</span>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="shared/shell.js" type="module"></script>
+  <script src="home.js" type="module"></script>
+</body>
+</html>

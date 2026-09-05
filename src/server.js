@@ -64,10 +64,6 @@ const FIELD_MAP = {
   feedback_livre: 'feedbackLivre',
 };
 
-function homeDestination(db, userId) {
-  return getActiveCycle(db, userId) ? '/calendar.html' : '/cycles.html';
-}
-
 function parseRpe(raw) {
   if (raw === undefined) return { ok: true, value: null };
   const trimmed = String(raw).trim();
@@ -103,7 +99,14 @@ async function buildServer(options = {}) {
     if (!session) {
       return reply.redirect('/login.html');
     }
-    return reply.redirect(homeDestination(options.db, session.user.id));
+    return reply.redirect('/home.html');
+  });
+
+  app.get('/home.html', async (request, reply) => {
+    if (!sessionOf(request)) {
+      return reply.redirect('/login.html');
+    }
+    return reply.sendFile('home.html');
   });
 
   app.get('/training-result.html', async (request, reply) => {
@@ -256,12 +259,28 @@ async function buildServer(options = {}) {
     );
 
     app.get('/api/calendar/trainings', { preHandler: requireAuth }, async (request) => {
+      const rawFrom = request.query?.from;
+      const rawTo = request.query?.to;
+      const from =
+        typeof rawFrom === 'string' && rawFrom.trim() !== '' ? rawFrom.trim() : null;
+      const to = typeof rawTo === 'string' && rawTo.trim() !== '' ? rawTo.trim() : null;
+      const conditions = ['user_id = ?'];
+      const params = [request.user.id];
+      if (from) {
+        conditions.push('dia >= ?');
+        params.push(from);
+      }
+      if (to) {
+        conditions.push('dia <= ?');
+        params.push(to);
+      }
       const trainings = db
         .prepare(
-          `SELECT id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes
-           FROM trainings WHERE user_id = ? ORDER BY dia, id`
+          `SELECT id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes,
+                  fit_distance, fit_duration
+           FROM trainings WHERE ${conditions.join(' AND ')} ORDER BY dia, id`
         )
-        .all(request.user.id);
+        .all(...params);
       return { trainings };
     });
 
@@ -315,6 +334,21 @@ async function buildServer(options = {}) {
         return reply.code(400).send({ errors: [{ row: 1, col: 'Data', error: 'No training rows found.' }] });
       }
 
+      const trainingSignature = (record) =>
+        JSON.stringify([record.dia, record.treino, record.detalhes]);
+      const existingSignatures = new Set(
+        db
+          .prepare('SELECT dia, treino, detalhes FROM trainings WHERE user_id = ?')
+          .all(request.user.id)
+          .map(trainingSignature)
+      );
+      const newRecords = records.filter((record) => {
+        const signature = trainingSignature(record);
+        if (existingSignatures.has(signature)) return false;
+        existingSignatures.add(signature);
+        return true;
+      });
+
       const insert = db.prepare(
         `INSERT INTO trainings
            (user_id, training_cycle_id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes)
@@ -338,9 +372,12 @@ async function buildServer(options = {}) {
           );
         }
       });
-      insertMany(records);
+      insertMany(newRecords);
 
-      return { imported: records.length };
+      return {
+        imported: newRecords.length,
+        skipped: records.length - newRecords.length,
+      };
     });
 
     const TRAINING_COLUMNS =

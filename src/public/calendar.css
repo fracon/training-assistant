@@ -176,17 +176,6 @@
   to { transform: rotate(360deg); }
 }
 
-.import-banner {
-  margin-bottom: 0.9rem;
-  padding: 0.55rem 0.9rem;
-  border-radius: 10px;
-  border: 1px solid rgba(111, 144, 112, 0.35);
-  background: rgba(111, 144, 112, 0.12);
-  color: var(--accent-deep);
-  font-size: 0.82rem;
-  font-weight: 600;
-}
-
 .day-cell .training-chip {
   position: relative;
   display: flex;

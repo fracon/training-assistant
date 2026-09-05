@@ -47,7 +47,12 @@
       "title": "Import trainings",
       "hint": "Pick a .xlsx or .xls spreadsheet with columns: Dia, Período, Tipo, Treino, Detalhes, FC alvo, RPE, Tênis, Previsão no horário, Observações.",
       "loading": "Importing…",
-      "success": "{count} training(s) imported to your calendar.",
+      "success": {
+        "importedOne": "1 training successfully imported.",
+        "importedMany": "{count} trainings successfully imported.",
+        "skippedOne": "1 duplicate skipped.",
+        "skippedMany": "{count} duplicates skipped."
+      },
       "failedTitle": "We found issues in your spreadsheet",
       "rowError": "Row {row} • {col}: {error}",
       "close": "Close"
@@ -490,5 +495,56 @@
       }
     ],
     "outro": "I don't need you to repeat every number I sent. I want interpretation, comparison against my history, and implications for the planning."
+  },
+  "home": {
+    "actions": {
+      "goToCycles": "Go to cycles",
+      "goToTrainings": "Go to workouts"
+    },
+    "pageTitle": "Dashboard • Kinesis",
+    "hero": {
+      "loading": "Finding today's inspiration…",
+      "ariaLabel": "Daily inspiration",
+      "fallbackQuotes": [
+        { "text": "Run when you can, walk if you have to, crawl if you must; just never give up.", "author": "Dean Karnazes" },
+        { "text": "The pain you feel today will be the strength you feel tomorrow.", "author": "Unknown" },
+        { "text": "Suffer the discomfort of discipline, or the pain of regret.", "author": "Jim Rohn" },
+        { "text": "Every run starts with a single step.", "author": "Unknown" },
+        { "text": "Iron sharpens iron, and miles make champions.", "author": "Kinesis Coach" }
+      ]
+    },
+    "cycle": {
+      "title": "Current Training Cycle",
+      "emptyTitle": "No active training cycle",
+      "emptyText": "Start planning your next goal.",
+      "startButton": "Plan next cycle",
+      "weekLabel": "Week {current} of {total}",
+      "weekOnly": "Week {current}",
+      "targetLabel": "Target: ",
+      "dateLabel": "Target date",
+      "percentLabel": "{percent}%",
+      "progressAria": "Training cycle progress",
+      "daysRemaining": {
+        "one": "1 day remaining",
+        "many": "{count} days remaining",
+        "today": "Today",
+        "over": "Ended"
+      }
+    },
+    "metrics": {
+      "title": "This Week",
+      "distance": "Total Distance",
+      "time": "Total Time",
+      "trackerAria": "Workouts by day, Monday to Sunday"
+    },
+    "days": {
+      "mon": "Mon",
+      "tue": "Tue",
+      "wed": "Wed",
+      "thu": "Thu",
+      "fri": "Fri",
+      "sat": "Sat",
+      "sun": "Sun"
+    }
   }
 }

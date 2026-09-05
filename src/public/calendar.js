@@ -1,5 +1,5 @@
 import { updateCalendarPreference, fetchCalendarTrainings, importTrainingsFile, fetchActiveCycle } from './shared/api.js';
-import { initShell, getShellI18n, refreshIcons } from './shared/shell.js';
+import { initShell, getShellI18n, refreshIcons, showShellToast } from './shared/shell.js';
 import { translate } from './shared/i18n.js';
 
 export const WEEK_START_STORAGE_KEY = 'training-assistant:first-day-of-week';
@@ -274,15 +274,9 @@ function setupCalendarPage() {
 
   const importBtn = document.getElementById('importBtn');
   const importInput = document.getElementById('importInput');
-  const importBanner = document.getElementById('importBanner');
   const importModal = document.getElementById('importModal');
   const importErrorList = document.getElementById('importErrorList');
   const importModalClose = document.getElementById('importModalClose');
-
-  function showBanner(text) {
-    importBanner.textContent = text;
-    importBanner.classList.remove('hidden');
-  }
 
   function showImportErrors(error) {
     const entries = importErrorEntries(error);
@@ -316,15 +310,33 @@ function setupCalendarPage() {
 
     importBtn.disabled = true;
     importBtn.classList.add('loading');
-    showBanner(t('calendar.import.loading'));
     try {
       const result = await importTrainingsFile(file);
       await reloadTrainings();
-      showBanner(t('calendar.import.success', { count: result.imported }));
+      showShellToast(
+        i18n.messages,
+        'calendar.import.success.importedMany',
+        'success',
+        3500,
+        {
+          lines: [
+            {
+              key: result.imported === 1
+                ? 'calendar.import.success.importedOne'
+                : 'calendar.import.success.importedMany',
+              params: { count: result.imported ?? 0 },
+            },
+            {
+              key: result.skipped === 1
+                ? 'calendar.import.success.skippedOne'
+                : 'calendar.import.success.skippedMany',
+              params: { count: result.skipped ?? 0 },
+            },
+          ],
+        }
+      );
     } catch (error) {
       showImportErrors(error);
-      showBanner('');
-      importBanner.classList.add('hidden');
     } finally {
       importBtn.disabled = false;
       importBtn.classList.remove('loading');

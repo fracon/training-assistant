@@ -29,7 +29,7 @@ function stubStorage(initial = {}) {
 }
 
 const NAV_ITEMS = [
-  { id: 'dashboard', labelKey: 'shell.nav.home', href: null, disabled: true, icon: 'layout-dashboard' },
+  { id: 'dashboard', labelKey: 'shell.nav.home', href: '/home.html', disabled: false, icon: 'layout-dashboard' },
   { id: 'ai-coach', labelKey: 'shell.nav.requestWorkouts', href: '/ai-coach.html', disabled: false, icon: 'bot' },
   { id: 'calendar', labelKey: 'shell.nav.workouts', href: '/calendar.html', disabled: false, icon: 'calendar-days' },
   { id: 'shoes', labelKey: 'shell.nav.shoes', href: '/shoes.html', disabled: false, icon: 'footprints' },
@@ -68,18 +68,18 @@ test('sidebar navigation follows Home, Request Workouts, Workouts, Shoes', () =>
   assert.deepEqual(
     NAV_ITEMS.map((item) => item.id),
     ['dashboard', 'ai-coach', 'calendar', 'shoes'],
-    'Home placeholder first, then request workouts, then workouts, then shoes'
+    'Home dashboard first, then request workouts, then workouts, then shoes'
   );
   assert.deepEqual(
     NAV_ITEMS.map((item) => [item.id, item.disabled]),
     [
-      ['dashboard', true],
+      ['dashboard', false],
       ['ai-coach', false],
       ['calendar', false],
       ['shoes', false],
     ]
   );
-  assert.equal(NAV_ITEMS[0].href, null, 'the Home badge item stays a coming-soon placeholder');
+  assert.equal(NAV_ITEMS[0].href, '/home.html', 'the Home item opens the dashboard');
   assert.equal(NAV_ITEMS[1].href, '/ai-coach.html');
   assert.equal(NAV_ITEMS[2].href, '/calendar.html');
   assert.equal(NAV_ITEMS[3].href, '/shoes.html');
@@ -811,6 +811,12 @@ test('the shell owns a dedicated toast so password feedback renders on every pag
   const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
 
   assert.match(js, /export function showShellToast\(/, 'the toast helper is exported');
+  assert.match(js, /translate\(messages, key, params\)/, 'toast messages support localized count parameters');
+  assert.match(js, /toast-line/, 'toast supports stacked message lines');
+  assert.match(js, /lineEl\.textContent = translate\(messages, line\.key, line\.params\)/);
+  const theme = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'theme.css'), 'utf8');
+  assert.match(theme, /\.toast-text \{[^}]*display:\s*flex[^}]*flex-direction:\s*column/);
+  assert.match(theme, /\.toast-line \{[^}]*display:\s*block/);
   assert.match(js, /toast\.id = 'shellToast'/, 'the shell toast has a stable id');
   assert.match(js, /toast\.classList\.toggle\('toast-error', type === 'error'\)/, 'errors switch the toast tone');
   assert.match(js, /setTimeout\(\(\) => toast\.classList\.remove\('visible'\), duration\)/, 'the toast auto-hides');

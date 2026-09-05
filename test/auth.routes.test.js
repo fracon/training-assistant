@@ -256,7 +256,7 @@ test('anonymous visitors hitting protected paths are redirected to the login pag
   const db = createDatabase({ filename: ':memory:' });
   const app = await buildServer({ db });
 
-  for (const url of ['/', '/training-result.html', '/cycles.html']) {
+  for (const url of ['/', '/home.html', '/training-result.html', '/cycles.html']) {
     const response = await app.inject({ method: 'GET', url });
     assert.equal(response.statusCode, 302, url);
     assert.equal(response.headers.location, '/login.html', url);
@@ -347,28 +347,19 @@ test('non-calendar pages ship the user menu bundle, immune to the cycle guard', 
   db.close();
 });
 
-test('GET / routes authenticated users without an active cycle to the cycles page', async () => {
+test('GET / routes authenticated users to the home dashboard regardless of cycle state', async () => {
   const db = createDatabase({ filename: ':memory:' });
   const app = await buildServer({ db });
   const { cookiePair } = await registerAndLogin(app);
 
-  const response = await app.inject({
+  const withoutCycle = await app.inject({
     method: 'GET',
     url: '/',
     headers: { cookie: cookiePair },
   });
 
-  assert.equal(response.statusCode, 302);
-  assert.equal(response.headers.location, '/cycles.html');
-
-  await app.close();
-  db.close();
-});
-
-test('GET / routes authenticated users with an active cycle to the calendar', async () => {
-  const db = createDatabase({ filename: ':memory:' });
-  const app = await buildServer({ db });
-  const { cookiePair } = await registerAndLogin(app);
+  assert.equal(withoutCycle.statusCode, 302);
+  assert.equal(withoutCycle.headers.location, '/home.html');
 
   const created = await app.inject({
     method: 'POST',
@@ -378,14 +369,39 @@ test('GET / routes authenticated users with an active cycle to the calendar', as
   });
   assert.equal(created.statusCode, 201);
 
-  const response = await app.inject({
+  const withCycle = await app.inject({
     method: 'GET',
     url: '/',
     headers: { cookie: cookiePair },
   });
 
-  assert.equal(response.statusCode, 302);
-  assert.equal(response.headers.location, '/calendar.html');
+  assert.equal(withCycle.statusCode, 302);
+  assert.equal(withCycle.headers.location, '/home.html');
+
+  await app.close();
+  db.close();
+});
+
+test('GET /home.html is gated and serves the dashboard to authenticated users', async () => {
+  const db = createDatabase({ filename: ':memory:' });
+  const app = await buildServer({ db });
+  const { cookiePair } = await registerAndLogin(app);
+
+  const anonymous = await app.inject({ method: 'GET', url: '/home.html' });
+  assert.equal(anonymous.statusCode, 302);
+  assert.equal(anonymous.headers.location, '/login.html');
+
+  const authenticated = await app.inject({
+    method: 'GET',
+    url: '/home.html',
+    headers: { cookie: cookiePair },
+  });
+  assert.equal(authenticated.statusCode, 200);
+  assert.match(authenticated.body, /id="heroBanner"/);
+  assert.match(authenticated.body, /id="cycleOverviewTitle"/);
+  assert.match(authenticated.body, /home\.js/);
+  assert.match(authenticated.body, /shared\/shell\.js/);
+  assert.match(authenticated.body, /shared\/shell\.css/);
 
   await app.close();
   db.close();

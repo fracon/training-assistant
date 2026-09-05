@@ -47,7 +47,12 @@
       "title": "Importar treinos",
       "hint": "Escolha uma planilha .xlsx ou .xls com as colunas: Dia, Período, Tipo, Treino, Detalhes, FC alvo, RPE, Tênis, Previsão no horário, Observações.",
       "loading": "Importando…",
-      "success": "{count} treino(s) importados para o seu calendário.",
+      "success": {
+        "importedOne": "1 treino importado com sucesso.",
+        "importedMany": "{count} treinos importados com sucesso.",
+        "skippedOne": "1 duplicado ignorado.",
+        "skippedMany": "{count} duplicados ignorados."
+      },
       "failedTitle": "Encontramos problemas na sua planilha",
       "rowError": "Linha {row} • {col}: {error}",
       "close": "Fechar"
@@ -490,5 +495,56 @@
       }
     ],
     "outro": "Não preciso que você repita todos os números que enviei. Quero interpretação, comparação com meu histórico e implicações para o planejamento."
+  },
+  "home": {
+    "actions": {
+      "goToCycles": "Ir para ciclos",
+      "goToTrainings": "Ir para treinos"
+    },
+    "pageTitle": "Painel • Kinesis",
+    "hero": {
+      "loading": "Buscando a inspiração de hoje…",
+      "ariaLabel": "Inspiração diária",
+      "fallbackQuotes": [
+        { "text": "Corra quando puder, ande se precisar, arraste-se se necessário; mas nunca desista.", "author": "Dean Karnazes" },
+        { "text": "A dor que você sente hoje será a força que você sentirá amanhã.", "author": "Desconhecido" },
+        { "text": "Suporte o desconforto da disciplina, ou a dor do arrependimento.", "author": "Jim Rohn" },
+        { "text": "Todo treino começa com um único passo.", "author": "Desconhecido" },
+        { "text": "Ferro afia ferro, e quilômetros constroem campeões.", "author": "Coach Kinesis" }
+      ]
+    },
+    "cycle": {
+      "title": "Ciclo de Treino Atual",
+      "emptyTitle": "Nenhum ciclo de treino ativo",
+      "emptyText": "Comece a planejar o seu próximo objetivo.",
+      "startButton": "Planejar próximo ciclo",
+      "weekLabel": "Semana {current} de {total}",
+      "weekOnly": "Semana {current}",
+      "targetLabel": "Alvo: ",
+      "dateLabel": "Data alvo",
+      "percentLabel": "{percent}%",
+      "progressAria": "Progresso do ciclo de treino",
+      "daysRemaining": {
+        "one": "1 dia restante",
+        "many": "{count} dias restantes",
+        "today": "Hoje",
+        "over": "Encerrado"
+      }
+    },
+    "metrics": {
+      "title": "Esta Semana",
+      "distance": "Distância Total",
+      "time": "Tempo Total",
+      "trackerAria": "Treinos por dia, de segunda a domingo"
+    },
+    "days": {
+      "mon": "Seg",
+      "tue": "Ter",
+      "wed": "Qua",
+      "thu": "Qui",
+      "fri": "Sex",
+      "sat": "Sáb",
+      "sun": "Dom"
+    }
   }
 }
