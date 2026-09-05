@@ -1,4 +1,4 @@
-import { updateCalendarPreference, fetchCalendarTrainings, importTrainingsFile } from './shared/api.js';
+import { updateCalendarPreference, fetchCalendarTrainings, importTrainingsFile, fetchActiveCycle } from './shared/api.js';
 import { initShell, getShellI18n, refreshIcons } from './shared/shell.js';
 import { translate } from './shared/i18n.js';
 
@@ -359,6 +359,12 @@ function setupCalendarPage() {
 export async function initCalendar() {
   const user = await initShell({ active: 'calendar' });
   if (!user) return null;
+
+  const activeCycle = await fetchActiveCycle();
+  if (!activeCycle) {
+    window.location.href = '/cycles.html';
+    return null;
+  }
 
   const page = setupCalendarPage();
   page.start(user);

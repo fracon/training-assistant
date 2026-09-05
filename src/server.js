@@ -63,6 +63,10 @@ const FIELD_MAP = {
   feedback_livre: 'feedbackLivre',
 };
 
+function homeDestination(db, userId) {
+  return getActiveCycle(db, userId) ? '/calendar.html' : '/cycles.html';
+}
+
 function parseRpe(raw) {
   if (raw === undefined) return { ok: true, value: null };
   const trimmed = String(raw).trim();
@@ -93,10 +97,11 @@ async function buildServer(options = {}) {
   };
 
   app.get('/', async (request, reply) => {
-    if (!sessionOf(request)) {
+    const session = sessionOf(request);
+    if (!session) {
       return reply.redirect('/login.html');
     }
-    return reply.sendFile('training-result.html');
+    return reply.redirect(homeDestination(options.db, session.user.id));
   });
 
   app.get('/training-result.html', async (request, reply) => {
@@ -107,8 +112,12 @@ async function buildServer(options = {}) {
   });
 
   app.get('/calendar.html', async (request, reply) => {
-    if (!sessionOf(request)) {
+    const session = sessionOf(request);
+    if (!session) {
       return reply.redirect('/login.html');
+    }
+    if (!getActiveCycle(options.db, session.user.id)) {
+      return reply.redirect('/cycles.html');
     }
     return reply.sendFile('calendar.html');
   });

@@ -309,7 +309,7 @@ test('GET /cycles.html serves the cycles page to authenticated users', async () 
   db.close();
 });
 
-test('GET / serves the TrainingResult tool to authenticated users', async () => {
+test('GET / routes authenticated users without an active cycle to the cycles page', async () => {
   const db = createDatabase({ filename: ':memory:' });
   const app = await buildServer({ db });
   const { cookiePair } = await registerAndLogin(app);
@@ -320,11 +320,34 @@ test('GET / serves the TrainingResult tool to authenticated users', async () => 
     headers: { cookie: cookiePair },
   });
 
-  assert.equal(response.statusCode, 200);
-  assert.match(response.headers['content-type'], /text\/html/);
-  assert.match(response.body, /Training Session/);
-  assert.match(response.body, /id="feedbackNotas"/);
-  assert.match(response.body, /training-result\.js/);
+  assert.equal(response.statusCode, 302);
+  assert.equal(response.headers.location, '/cycles.html');
+
+  await app.close();
+  db.close();
+});
+
+test('GET / routes authenticated users with an active cycle to the calendar', async () => {
+  const db = createDatabase({ filename: ':memory:' });
+  const app = await buildServer({ db });
+  const { cookiePair } = await registerAndLogin(app);
+
+  const created = await app.inject({
+    method: 'POST',
+    url: '/api/cycles',
+    headers: { cookie: cookiePair },
+    payload: { objective: 'Base phase' },
+  });
+  assert.equal(created.statusCode, 201);
+
+  const response = await app.inject({
+    method: 'GET',
+    url: '/',
+    headers: { cookie: cookiePair },
+  });
+
+  assert.equal(response.statusCode, 302);
+  assert.equal(response.headers.location, '/calendar.html');
 
   await app.close();
   db.close();
@@ -740,12 +763,28 @@ test('week start updates require an authenticated session', async () => {
   await app.close();
 });
 
-test('calendar page is gated and served to authenticated users', async () => {
+test('calendar page requires an active training cycle', async () => {
   const { app, cookiePair } = await calendarScenario();
 
   const anonymous = await app.inject({ method: 'GET', url: '/calendar.html' });
   assert.equal(anonymous.statusCode, 302);
   assert.equal(anonymous.headers.location, '/login.html');
+
+  const withoutCycle = await app.inject({
+    method: 'GET',
+    url: '/calendar.html',
+    headers: { cookie: cookiePair },
+  });
+  assert.equal(withoutCycle.statusCode, 302);
+  assert.equal(withoutCycle.headers.location, '/cycles.html');
+
+  const created = await app.inject({
+    method: 'POST',
+    url: '/api/cycles',
+    headers: { cookie: cookiePair },
+    payload: { objective: 'Anaerobic block' },
+  });
+  assert.equal(created.statusCode, 201);
 
   const authenticated = await app.inject({
     method: 'GET',
