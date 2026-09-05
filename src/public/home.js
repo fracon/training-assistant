@@ -7,14 +7,15 @@ export const QUOTE_TIMEOUT_MS = 3000;
 export const DAY_MS = 86400000;
 export const DEFAULT_DISPLAY_LANGUAGE = 'en-US';
 
-// Deterministic hero rotation: collisions on day-of-week remain harmless
-// because the rotation is stable across the whole day, never per page load.
+// Static Unsplash image URLs avoid the retired source.unsplash.com proxy. Every
+// selected photo is a curated running/runner/marathon image; Math.random still
+// selects a different image whenever the dashboard initializes.
 export const HERO_IMAGES = [
   'https://images.unsplash.com/photo-1461896836934-ffe607ba8211?auto=format&fit=crop&w=1600&q=80',
   'https://images.unsplash.com/photo-1486218119243-13883505764c?auto=format&fit=crop&w=1600&q=80',
-  'https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=1600&q=80',
-  'https://images.unsplash.com/photo-1506748686214-e9df14d4d9d0?auto=format&fit=crop&w=1600&q=80',
-  'https://images.unsplash.com/photo-1454496522488-7a8e488e8606?auto=format&fit=crop&w=1600&q=80',
+  'https://images.unsplash.com/photo-1552674605-db6ffd4facb5?auto=format&fit=crop&w=1600&q=80',
+  'https://images.unsplash.com/photo-1551632811-561732d1e306?auto=format&fit=crop&w=1600&q=80',
+  'https://images.unsplash.com/photo-1571008887538-b36bb32fefb8?auto=format&fit=crop&w=1600&q=80',
 ];
 
 export function startOfDay(date) {
@@ -28,12 +29,13 @@ export function isoDate(date) {
   return `${year}-${month}-${day}`;
 }
 
-export function heroImageIndex(date = new Date()) {
-  return date.getDay() % HERO_IMAGES.length;
+export function heroImageIndex(random = Math.random) {
+  const roll = typeof random === 'function' ? random() : Math.random();
+  return Math.min(HERO_IMAGES.length - 1, Math.max(0, Math.floor(roll * HERO_IMAGES.length)));
 }
 
-export function heroImageFor(date = new Date()) {
-  return HERO_IMAGES[heroImageIndex(date)] ?? HERO_IMAGES[0];
+export function heroImageFor(random = Math.random) {
+  return HERO_IMAGES[heroImageIndex(random)] ?? HERO_IMAGES[0];
 }
 
 // The dashboard week always runs Monday → Sunday regardless of the

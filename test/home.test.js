@@ -240,16 +240,15 @@ test('startOfDay and isoDate normalize local dates into YYYY-MM-DD keys', () => 
   assert.equal(late.getHours(), 0, 'midnight start trims the time fraction');
 });
 
-test('hero image rotation is deterministic and day-of-week based', () => {
-  const sunday = new Date(2026, 7, 16);
-  const monday = new Date(2026, 7, 17);
-  const saturday = new Date(2026, 7, 22);
-  assert.equal(heroImageIndex(sunday), 0);
-  assert.equal(heroImageIndex(monday), 1);
-  assert.equal(heroImageIndex(saturday), 6 % HERO_IMAGES.length);
-  assert.equal(heroImageFor(monday), HERO_IMAGES[1]);
+test('hero image selection randomizes across running-only Unsplash sources', () => {
+  assert.equal(heroImageIndex(() => 0), 0);
+  assert.equal(heroImageIndex(() => 0.99), HERO_IMAGES.length - 1);
+  assert.equal(heroImageIndex(() => -1), 0);
+  assert.equal(heroImageIndex(() => 2), HERO_IMAGES.length - 1);
+  assert.equal(heroImageFor(() => 0.4), HERO_IMAGES[2]);
   for (const url of HERO_IMAGES) {
-    assert.match(url, /^https:\/\/images\.unsplash\.com\//);
+    assert.match(url, /^https:\/\/images\.unsplash\.com\/photo-/);
+    assert.match(url, /auto=format&fit=crop&w=1600&q=80/);
   }
 });
 
@@ -266,14 +265,14 @@ test('the monday start and week window always span Monday through Sunday', () =>
   assert.equal(Math.round((parseIsoDate(week.end) - parseIsoDate(week.start)) / 86400000), 6);
 });
 
-test('weekRange and heroImageFor read a stubbed now for the default bucket', () => {
+test('weekRange remains independent from randomized hero selection', () => {
   const stub = stubDate(2026, 7, 20);
   globalThis.Date = stub.StubDate;
   try {
     const week = weekRange();
     assert.equal(week.start, '2026-08-17');
     assert.equal(week.end, '2026-08-23');
-    assert.equal(heroImageFor(), HERO_IMAGES[4]);
+    assert.equal(heroImageFor(() => 0.8), HERO_IMAGES[4]);
   } finally {
     stub.restore();
   }
