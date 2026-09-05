@@ -47,7 +47,11 @@
 }
 
 .hero-quote p {
+  display: table;
   margin: 0 0 0.55rem;
+  padding: 0.45rem 0.7rem;
+  border-radius: 8px;
+  background-color: rgba(0, 0, 0, 0.6);
   font-size: 1.12rem;
   font-weight: 600;
   line-height: 1.45;
@@ -55,7 +59,11 @@
 }
 
 .hero-quote-author {
+  display: table;
   margin: 0;
+  padding: 0.3rem 0.55rem;
+  border-radius: 6px;
+  background-color: rgba(0, 0, 0, 0.6);
   font-size: 0.82rem;
   font-weight: 500;
   opacity: 0.85;
