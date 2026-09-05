@@ -13,6 +13,7 @@ const {
   ZENQUOTES_URL,
   QUOTE_TIMEOUT_MS,
   HERO_IMAGES,
+  HERO_FALLBACK_IMAGE,
   startOfDay,
   isoDate,
   heroImageIndex,
@@ -36,6 +37,8 @@ const {
   normalizeZenQuote,
   loadQuote,
   applyHeroImage,
+  loadImage,
+  preloadHeroImage,
   WEEKDAY_KEYS,
   weekDays,
   trainingDaySet,
@@ -245,7 +248,7 @@ test('hero image selection randomizes across running-only Unsplash sources', () 
   assert.equal(heroImageIndex(() => 0.99), HERO_IMAGES.length - 1);
   assert.equal(heroImageIndex(() => -1), 0);
   assert.equal(heroImageIndex(() => 2), HERO_IMAGES.length - 1);
-  assert.equal(heroImageFor(() => 0.4), HERO_IMAGES[2]);
+  assert.equal(heroImageFor(() => 0.6), HERO_IMAGES[2]);
   for (const url of HERO_IMAGES) {
     assert.match(url, /^https:\/\/images\.unsplash\.com\/photo-/);
     assert.match(url, /auto=format&fit=crop&w=1600&q=80/);
@@ -272,7 +275,7 @@ test('weekRange remains independent from randomized hero selection', () => {
     const week = weekRange();
     assert.equal(week.start, '2026-08-17');
     assert.equal(week.end, '2026-08-23');
-    assert.equal(heroImageFor(() => 0.8), HERO_IMAGES[4]);
+    assert.equal(heroImageFor(() => 0.8), HERO_IMAGES[3]);
   } finally {
     stub.restore();
   }
@@ -760,6 +763,50 @@ test('applyHeroImage sets the CSS var used by the dark overlay hero', () => {
   applyHeroImage(banner, null);
   applyHeroImage(banner, 42);
   assert.equal(banner.style.values['--hero-image'], 'url("https://example.com/stage.jpg")');
+});
+
+test('loadImage resolves on preload success and rejects on image errors', async () => {
+  const instances = [];
+  class SuccessfulImage {
+    constructor() { instances.push(this); }
+    set src(value) { this.url = value; }
+  }
+  const success = loadImage('https://example.com/ok.jpg', SuccessfulImage);
+  instances[0].onload();
+  assert.equal(await success, 'https://example.com/ok.jpg');
+
+  class FailedImage {
+    constructor() { instances.push(this); }
+    set src(value) { this.url = value; }
+  }
+  const failure = loadImage('https://example.com/missing.jpg', FailedImage);
+  instances[1].onerror();
+  await assert.rejects(failure, /Unable to load hero image/);
+  await assert.rejects(loadImage('x', null), /preloading is unavailable/);
+});
+
+test('preloadHeroImage applies the remote image only after success', async () => {
+  const banner = {
+    style: {
+      values: {},
+      setProperty(name, value) { this.values[name] = value; },
+    },
+  };
+  let nextImage;
+  class ImageStub {
+    constructor() { nextImage = this; }
+    set src(value) { this.url = value; }
+  }
+  const success = preloadHeroImage(banner, 'https://example.com/ok.jpg', ImageStub);
+  assert.equal(banner.style.values['--hero-image'], undefined);
+  nextImage.onload();
+  assert.equal(await success, 'https://example.com/ok.jpg');
+  assert.equal(banner.style.values['--hero-image'], 'url("https://example.com/ok.jpg")');
+
+  const failure = preloadHeroImage(banner, 'https://example.com/404.jpg', ImageStub);
+  nextImage.onerror();
+  assert.equal(await failure, HERO_FALLBACK_IMAGE);
+  assert.equal(banner.style.values['--hero-image'], `url("${HERO_FALLBACK_IMAGE}")`);
 });
 
 function fakeCycleEl() {
