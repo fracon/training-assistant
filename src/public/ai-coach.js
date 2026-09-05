@@ -2,6 +2,7 @@ import { initShell, getShellI18n, refreshIcons } from './shared/shell.js';
 import { translate, normalizeClientLanguage } from './shared/i18n.js';
 import { fetchShoes } from './shared/api.js';
 import { fetchActiveCycle, fetchCalendarTrainings } from './shared/api.js';
+import { formatDate as formatLocalizedDate } from './shared/date.js';
 
 // Verbatim Portuguese briefing for the external AI Coach.
 // The wording below is a hard requirement — do not translate, rewrite
@@ -237,7 +238,7 @@ export function nextMonday(from = new Date()) {
 
 // DD/MM/YYYY — the format expected by {{DATA_DA_SEGUNDA}}.
 export function formatDiaSlashes(date) {
-  return `${pad2(date.getDate())}/${pad2(date.getMonth() + 1)}/${date.getFullYear()}`;
+  return formatLocalizedDate(date, 'pt-BR');
 }
 
 function contextValue(value) {
@@ -245,10 +246,7 @@ function contextValue(value) {
 }
 
 function formatContextDate(value, lang) {
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return lang === 'pt-BR' ? formatDiaSlashes(value) : dateInputValue(value);
-  }
-  return contextValue(value);
+  return formatLocalizedDate(value, lang) || contextValue(value);
 }
 
 function formatCycleContext(cycle = {}, previousWeek = {}, lang = 'pt-BR') {
@@ -405,7 +403,7 @@ export function buildPrompt({ targetDate, disponibilidade = {}, contexto = '', l
   let prompt = replaceAll(
     template,
     '{{DATA_DA_SEGUNDA}}',
-    formatDiaSlashes(targetDate)
+    formatLocalizedDate(targetDate, templateLang)
   );
   for (const [token, value] of Object.entries(formatCycleContext(cycle, previousWeek, templateLang))) {
     prompt = replaceAll(prompt, token, value);

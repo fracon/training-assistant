@@ -44,6 +44,8 @@ follow-up changes:
 6. **Form Element Consistency:** All form inputs (`input`, `textarea`, `select`) must share a unified design system. They must use the standard earthy surface background, consistent rounded borders, identical padding, and native styling must be overridden (`appearance: none` for selects with custom SVG chevrons). Never use default browser white backgrounds for form controls.
 7. **Tooltips:** NEVER use the native HTML `title` attribute. Always use the custom Kinesis tooltip component — a child `<div class="custom-tooltip">` inside the trigger element, styled via CSS (dark `var(--ink)` background, `0.15s` opacity transition, `z-index: 50`). This ensures visual consistency and eliminates native rendering delays.
 
+8. **Golden Rule for Dates:** All dates displayed in the application MUST use the central date formatting utility and respect the active i18n locale. Hardcoded or ad-hoc date formatting inside components or services is strictly prohibited.
+
 ## 🌐 i18n Lifecycle and Dynamic DOM Reactivity
 
 These rules are immutable and derive from real production bugs where dynamically injected UI failed to update on language switch and ghost elements lingered in the DOM. They must never be violated by future work:

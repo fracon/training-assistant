@@ -50,6 +50,15 @@ The generated briefing is fully localized: the Portuguese (`pt-BR`) and English 
 - **Responsive weekly metrics** — completed workout distance and duration are read from the calendar API (`fit_distance`/`fit_duration`), normalized, summed, and formatted in dashboard units.
 - **Accessible quote hero** — a random running-focused Unsplash image is selected at initialization. Loading text, quote text, and author each have dark semitransparent contrast backdrops for legibility over bright photos.
 
+### Date and Locale Architecture
+
+All user-facing dates go through `src/public/shared/date.js`, the shared formatter used by the dashboard, cycle cards, workout sessions, and AI Coach prompt context. It parses date-only ISO values without timezone drift and uses `Intl.DateTimeFormat` with the active language:
+
+- Portuguese (`pt`/`pt-BR`): `DD/MM/YYYY` (for example, `05/09/2026`)
+- English (`en`/`en-US`): `MM/DD/YYYY` (for example, `09/05/2026`)
+
+Components must not reverse ISO strings, concatenate date parts, or otherwise format dates locally. The same locale-aware utility is used when a date is rendered in the UI or inserted into a localized prompt, keeping language changes consistent across the application.
+
 ### Excel Training Import
 
 The Calendar page imports `.xlsx`/`.xls` plans and validates every row before persistence. Duplicate prevention uses the exact composite signature **Date (`dia`) + Training Name (`treino`) + Description (`detalhes`)**. Rows matching a stored training or repeated within the same workbook are skipped; workouts on the same date with a different name or description remain valid and are imported.

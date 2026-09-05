@@ -43,6 +43,7 @@ test('resolveSessionId bounces to the calendar when no id is present', () => {
 test('formatDateLabel renders DD/MM/YYYY labels', () => {
   assert.equal(formatDateLabel('2026-08-24'), '24/08/2026');
   assert.equal(formatDateLabel('1999-12-01'), '01/12/1999');
+  assert.equal(formatDateLabel('2026-08-24', 'en-US'), '08/24/2026');
 });
 
 test('formatDateLabel degrades gracefully on unexpected dia values', () => {
@@ -815,6 +816,7 @@ test('training-result.js wires toggling, saving, generation and i18n refreshes',
   assert.match(js, /setTimeout\(/, 'Copied! feedback restores itself after a moment');
 
   assert.match(js, /addEventListener\('app:languagechange'/);
+  assert.match(js, /dateEl\.textContent = formatDateLabel\(training\.dia, i18n\.language\)/);
   assert.match(
     js,
     /if \(!generateBtn\.disabled\) generateLabel\.textContent = t\('session\.generatePrompt'\);\s*\n\s*if \(!copyPromptBtn\.disabled\) copyLabel\.textContent = t\('session\.copyPrompt'\);\s*\n\s*renderFitDropzoneState\(\);/,
