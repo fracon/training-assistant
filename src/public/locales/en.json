@@ -490,5 +490,35 @@
       }
     ],
     "outro": "I don't need you to repeat every number I sent. I want interpretation, comparison against my history, and implications for the planning."
+  },
+  "home": {
+    "pageTitle": "Dashboard • Kinesis",
+    "hero": {
+      "loading": "Finding today's inspiration…",
+      "ariaLabel": "Daily inspiration",
+      "fallbackQuotes": [
+        { "text": "Run when you can, walk if you have to, crawl if you must; just never give up.", "author": "Dean Karnazes" },
+        { "text": "The pain you feel today will be the strength you feel tomorrow.", "author": "Unknown" },
+        { "text": "Suffer the discomfort of discipline, or the pain of regret.", "author": "Jim Rohn" },
+        { "text": "Every run starts with a single step.", "author": "Unknown" },
+        { "text": "Iron sharpens iron, and miles make champions.", "author": "Kinesis Coach" }
+      ]
+    },
+    "cycle": {
+      "title": "Current Training Cycle",
+      "emptyTitle": "No active training cycle",
+      "emptyText": "Start planning your next goal.",
+      "startButton": "Plan next cycle",
+      "weekLabel": "Week {current} of {total}",
+      "weekOnly": "Week {current}",
+      "targetLabel": "Target date",
+      "percentLabel": "{percent}%",
+      "progressAria": "Training cycle progress"
+    },
+    "metrics": {
+      "title": "This Week",
+      "distance": "Total Distance",
+      "time": "Total Time"
+    }
   }
 }

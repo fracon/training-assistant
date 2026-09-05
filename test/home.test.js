@@ -1,0 +1,454 @@
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { readFileSync } = require('node:fs');
+const { join } = require('node:path');
+
+const publicDir = join(__dirname, '..', 'src', 'public');
+const en = require(join(publicDir, 'locales', 'en.json'));
+const pt = require(join(publicDir, 'locales', 'pt.json'));
+
+const {
+  ZENQUOTES_URL,
+  QUOTE_TIMEOUT_MS,
+  HERO_IMAGES,
+  startOfDay,
+  isoDate,
+  heroImageIndex,
+  heroImageFor,
+  mondayOfWeek,
+  weekRange,
+  trainingsInRange,
+  parseDurationToSeconds,
+  accumulateWeeklyMetrics,
+  formatDistanceKm,
+  formatDuration,
+  parseIsoDate,
+  weeksBetween,
+  currentWeekNumber,
+  cycleProgress,
+  cycleWeekText,
+  cycleCardContent,
+  metricsCardContent,
+  randomFallbackQuote,
+  normalizeZenQuote,
+  loadQuote,
+  applyHeroImage,
+} = require(join(publicDir, 'home.js'));
+
+function readHomeHtml() {
+  return readFileSync(join(publicDir, 'home.html'), 'utf8');
+}
+
+function readHomeJs() {
+  return readFileSync(join(publicDir, 'home.js'), 'utf8');
+}
+
+function readHomeCss() {
+  return readFileSync(join(publicDir, 'home.css'), 'utf8');
+}
+
+function stubDate(year, month, day) {
+  const RealDate = globalThis.Date;
+  const fixed = new RealDate(year, month, day, 10, 0, 0);
+  class StubDate extends RealDate {
+    constructor(...args) {
+      if (args.length === 0) super(fixed.getTime());
+      else super(...args);
+    }
+    static now() {
+      return fixed.getTime();
+    }
+  }
+  return { StubDate, restore: () => { globalThis.Date = RealDate; } };
+}
+
+// ── HTML structure ─────────────────────────────────────────────
+
+test('home.html ships the hero, cycle, and metrics dashboard skeleton', () => {
+  const html = readHomeHtml();
+  assert.match(html, /id="heroBanner"/);
+  assert.match(html, /id="heroQuoteLoading"/);
+  assert.match(html, /id="heroQuote"/);
+  assert.match(html, /id="heroQuoteText"/);
+  assert.match(html, /id="heroQuoteAuthor"/);
+  assert.match(html, /id="cycleEmpty"/);
+  assert.match(html, /id="cycleActive"/);
+  assert.match(html, /id="cycleName"/);
+  assert.match(html, /id="cycleTarget"/);
+  assert.match(html, /id="cycleWeek"/);
+  assert.match(html, /id="cycleProgressRow"/);
+  assert.match(html, /id="cycleProgressBar"/);
+  assert.match(html, /id="cyclePercent"/);
+  assert.match(html, /id="weeklyDistanceValue"/);
+  assert.match(html, /id="weeklyTimeValue"/);
+  assert.match(html, /home\.js/);
+  assert.match(html, /shared\/shell\.js/);
+  assert.match(html, /shared\/shell\.css/);
+  assert.match(html, /home\.css/);
+});
+
+test('home.html wires every dashboard label to i18n keys shared by both locales', () => {
+  const html = readHomeHtml();
+  const expectedKeys = [
+    'home.pageTitle',
+    'home.hero.loading',
+    'home.hero.ariaLabel',
+    'home.cycle.title',
+    'home.cycle.emptyTitle',
+    'home.cycle.emptyText',
+    'home.cycle.startButton',
+    'home.cycle.targetLabel',
+    'home.cycle.progressAria',
+    'home.metrics.title',
+    'home.metrics.distance',
+    'home.metrics.time',
+  ];
+  for (const key of expectedKeys) {
+    assert.ok(html.includes(key), `home.html must reference ${key}`);
+    const lookup = (messages) =>
+      key.split('.').reduce((acc, part) => (acc == null ? acc : acc[part]), messages);
+    assert.equal(typeof lookup(en), 'string', `en.json missing ${key}`);
+    assert.equal(typeof lookup(pt), 'string', `pt.json missing ${key}`);
+  }
+  assert.match(html, /data-i18n-aria-label="home\.hero\.ariaLabel"/);
+  assert.match(html, /data-i18n-aria-label="home\.cycle\.progressAria"/);
+  assert.match(html, /class="btn-primary"\s+href="\/cycles\.html"/);
+});
+
+test('home.html fallback quotes stay plural and authored in both locales', () => {
+  for (const messages of [en, pt]) {
+    const quotes = messages.home.hero.fallbackQuotes;
+    assert.ok(Array.isArray(quotes) && quotes.length >= 5, 'at least five fallback quotes');
+    for (const quote of quotes) {
+      assert.equal(typeof quote.text, 'string', 'quote text is present');
+      assert.equal(typeof quote.author, 'string', 'quote author is present');
+    }
+  }
+  const html = readHomeHtml();
+  assert.ok(!html.includes(' title='), 'no native HTML title attributes leak a tooltip');
+});
+
+// ── Date, ranges and hero rotation ─────────────────────────────
+
+test('startOfDay and isoDate normalize local dates into YYYY-MM-DD keys', () => {
+  assert.equal(isoDate(new Date(2026, 7, 17)), '2026-08-17');
+  assert.equal(isoDate(new Date(2026, 0, 3)), '2026-01-03');
+  const late = startOfDay(new Date(2026, 7, 17, 23, 59, 59));
+  assert.equal(late.getHours(), 0, 'midnight start trims the time fraction');
+});
+
+test('hero image rotation is deterministic and day-of-week based', () => {
+  const sunday = new Date(2026, 7, 16);
+  const monday = new Date(2026, 7, 17);
+  const saturday = new Date(2026, 7, 22);
+  assert.equal(heroImageIndex(sunday), 0);
+  assert.equal(heroImageIndex(monday), 1);
+  assert.equal(heroImageIndex(saturday), 6 % HERO_IMAGES.length);
+  assert.equal(heroImageFor(monday), HERO_IMAGES[1]);
+  for (const url of HERO_IMAGES) {
+    assert.match(url, /^https:\/\/images\.unsplash\.com\//);
+  }
+});
+
+test('the monday start and week window always span Monday through Sunday', () => {
+  const thursday = new Date(2026, 7, 20);
+  assert.equal(isoDate(mondayOfWeek(thursday)), '2026-08-17');
+  const saturday = new Date(2026, 7, 8);
+  assert.equal(isoDate(mondayOfWeek(saturday)), '2026-08-03');
+  const sunday = new Date(2026, 7, 23);
+  assert.equal(isoDate(mondayOfWeek(sunday)), '2026-08-17');
+  const week = weekRange(thursday);
+  assert.equal(week.start, '2026-08-17');
+  assert.equal(week.end, '2026-08-23', 'seven days after the Monday');
+  assert.equal(Math.round((parseIsoDate(week.end) - parseIsoDate(week.start)) / 86400000), 6);
+});
+
+test('weekRange and heroImageFor read a stubbed now for the default bucket', () => {
+  const stub = stubDate(2026, 7, 20);
+  globalThis.Date = stub.StubDate;
+  try {
+    const week = weekRange();
+    assert.equal(week.start, '2026-08-17');
+    assert.equal(week.end, '2026-08-23');
+    assert.equal(heroImageFor(), HERO_IMAGES[4]);
+  } finally {
+    stub.restore();
+  }
+});
+
+// ── Trainings windowing and metrics ────────────────────────────
+
+test('trainingsInRange keeps only entries whose dia falls inside the window', () => {
+  const trainings = [
+    { dia: '2026-08-16', tipo: 'Out' },
+    { dia: '2026-08-17', tipo: 'In' },
+    { dia: '2026-08-23', tipo: 'In' },
+    { dia: '2026-08-24', tipo: 'Out' },
+    { dia: undefined, tipo: 'Ghost' },
+    'junk',
+  ];
+  const picked = trainingsInRange(trainings, '2026-08-17', '2026-08-23');
+  assert.deepEqual(
+    picked.map((t) => t.tipo),
+    ['In', 'In']
+  );
+  assert.deepEqual(trainingsInRange(null, '2026-08-17', '2026-08-23'), []);
+  assert.deepEqual(trainingsInRange(undefined, '2026-08-17', '2026-08-23'), []);
+});
+
+test('parseDurationToSeconds accepts H:MM, MM:SS and H:MM:SS variants', () => {
+  assert.equal(parseDurationToSeconds('1:23:45'), 5025);
+  assert.equal(parseDurationToSeconds('1:30:00'), 5400);
+  assert.equal(parseDurationToSeconds('45:30'), 2730);
+  assert.equal(parseDurationToSeconds('9'), 9);
+  assert.equal(parseDurationToSeconds('0:00'), 0);
+  assert.equal(parseDurationToSeconds(''), 0);
+  assert.equal(parseDurationToSeconds('   '), 0);
+  assert.equal(parseDurationToSeconds(null), 0);
+  assert.equal(parseDurationToSeconds(undefined), 0);
+  assert.equal(parseDurationToSeconds(123), 0);
+  assert.equal(parseDurationToSeconds('1:x'), 0);
+  assert.equal(parseDurationToSeconds('a:b:c'), 0);
+});
+
+test('accumulateWeeklyMetrics sums distance and duration across the window (with junk discipline)', () => {
+  const totals = accumulateWeeklyMetrics([
+    { dia: '2026-08-17', fit_distance: 12.5, fit_duration: '1:15:00' },
+    { dia: '2026-08-20', fit_distance: 7, fit_duration: '40:00' },
+    { dia: '2026-08-23', fit_distance: -3, fit_duration: '60:00' },
+    { dia: '2026-08-23', fit_distance: 'junk', fit_duration: '' },
+    null,
+  ]);
+  assert.equal(totals.distanceKm, 19.5, 'negative and malformed distances are ignored');
+  assert.equal(totals.durationSeconds, 10500, 'empty durations contribute nothing');
+  assert.deepEqual(accumulateWeeklyMetrics(null), { distanceKm: 0, durationSeconds: 0 });
+  assert.deepEqual(accumulateWeeklyMetrics([]), { distanceKm: 0, durationSeconds: 0 });
+});
+
+test('formatters render distances and durations in the agreed dashboard units', () => {
+  assert.equal(formatDistanceKm(0), '0.00 km');
+  assert.equal(formatDistanceKm(15.034), '15.03 km');
+  assert.equal(formatDistanceKm(null), '0.00 km');
+  assert.equal(formatDuration(0), '0h 00m');
+  assert.equal(formatDuration(60), '0h 01m');
+  assert.equal(formatDuration(90), '0h 02m');
+  assert.equal(formatDuration(3600), '1h 00m');
+  assert.equal(formatDuration(4860), '1h 21m');
+  assert.equal(formatDuration(86340), '23h 59m');
+});
+
+// ── Cycle math ─────────────────────────────────────────────────
+
+test('parseIsoDate accepts clean dates and rejects junk', () => {
+  assert.equal(parseIsoDate('2026-08-17').getDate(), 17);
+  assert.equal(parseIsoDate('2026-08-17').getMonth(), 7);
+  assert.equal(parseIsoDate(null), null);
+  assert.equal(parseIsoDate('17-08-2026'), null);
+  assert.equal(parseIsoDate('2026-13-40'), null);
+});
+
+test('weeksBetween rounds partial weeks up and clamps to at least one', () => {
+  assert.equal(weeksBetween('2026-08-17', '2026-08-23'), 1);
+  assert.equal(weeksBetween('2026-08-17', '2026-08-30'), 2);
+  assert.equal(weeksBetween('2026-08-17', '2026-08-25'), 2, '8 days is two calendar weeks');
+  assert.equal(weeksBetween('2026-08-17', '2026-08-17'), 1);
+  assert.equal(weeksBetween('2026-08-25', '2026-08-17'), 1, 'reversed dates clamp to one week');
+  assert.equal(weeksBetween(null, '2026-08-17'), null);
+});
+
+test('currentWeekNumber counts from the cycle start, never dropping below one', () => {
+  assert.equal(currentWeekNumber('2026-08-17', new Date(2026, 7, 17)), 1);
+  assert.equal(currentWeekNumber('2026-08-17', new Date(2026, 7, 23)), 1);
+  assert.equal(currentWeekNumber('2026-08-17', new Date(2026, 7, 24)), 2);
+  assert.equal(currentWeekNumber('2026-08-17', new Date(2026, 7, 10)), 1, 'before start is week one');
+  assert.equal(currentWeekNumber(null, new Date(2026, 7, 24)), null);
+  assert.equal(currentWeekNumber('2026-08-17', new Date(2026, 6, 24)), 1);
+});
+
+test('cycleProgress yields week number, total weeks and a clamped percent', () => {
+  const today = new Date(2026, 7, 24);
+  assert.deepEqual(
+    cycleProgress({ start_date: '2026-08-17', target_date: '2026-09-06' }, today),
+    { current: 2, total: 3, percent: 67 }
+  );
+  assert.equal(
+    cycleProgress({ start_date: '2026-08-17', target_date: '2026-09-06' }, new Date(2026, 7, 17)).percent,
+    33
+  );
+  const overrun = cycleProgress({ start_date: '2026-08-17', target_date: '2026-09-06' }, new Date(2026, 8, 14));
+  assert.deepEqual(overrun, { current: 3, total: 3, percent: 100 }, 'past the target the ring clamps');
+  const openEnded = cycleProgress({ start_date: '2026-08-17' }, today);
+  assert.deepEqual(openEnded, { current: 2, total: null, percent: null });
+  assert.equal(cycleProgress(null, today), null);
+  assert.equal(cycleProgress({}, today), null);
+});
+
+test('cycleWeekText localizes week progress and falls back to week-only for open-ended cycles', () => {
+  assert.equal(
+    cycleWeekText(en, { current: 2, total: 3 }),
+    'Week 2 of 3'
+  );
+  assert.equal(
+    cycleWeekText(pt, { current: 2, total: 3 }),
+    'Semana 2 de 3'
+  );
+  assert.equal(cycleWeekText(en, { current: 2, total: null }), 'Week 2');
+  assert.equal(cycleWeekText(en, {}), '');
+});
+
+test('cycleCardContent maps a cycle into dashboard card data in the active language', () => {
+  const content = cycleCardContent(
+    {
+      start_date: '2026-08-17',
+      target_date: '2026-09-06',
+      objective: 'Base phase · 60km',
+      distance: 60,
+    },
+    en,
+    new Date(2026, 7, 24)
+  );
+  assert.equal(content.name, 'Base phase · 60km');
+  assert.equal(content.targetDate, '2026-09-06');
+  assert.equal(content.weekText, 'Week 2 of 3');
+  assert.equal(content.percent, 67);
+  assert.equal(content.hasProgress, true);
+  assert.equal(cycleCardContent(null, en, new Date(2026, 7, 24)), null);
+});
+
+test('metricsCardContent formats the dashboard totals', () => {
+  assert.deepEqual(metricsCardContent({ distanceKm: 19.5, durationSeconds: 8100 }), {
+    distance: '19.50 km',
+    time: '2h 15m',
+  });
+  assert.deepEqual(metricsCardContent({}), { distance: '0.00 km', time: '0h 00m' });
+  assert.deepEqual(metricsCardContent(null), { distance: '0.00 km', time: '0h 00m' });
+});
+
+// ── Quote loading (fetch + timeout + fallback) ─────────────────
+
+test('randomFallbackQuote picks a deterministic quote from the active dictionary', () => {
+  const first = randomFallbackQuote(en, () => 0);
+  const last = randomFallbackQuote(en, () => 0.999);
+  assert.equal(first, en.home.hero.fallbackQuotes[0]);
+  assert.equal(last, en.home.hero.fallbackQuotes[en.home.hero.fallbackQuotes.length - 1]);
+  const over = randomFallbackQuote(en, () => 5);
+  assert.equal(over, en.home.hero.fallbackQuotes[en.home.hero.fallbackQuotes.length - 1]);
+  assert.equal(randomFallbackQuote({}, () => 0), null);
+});
+
+test('normalizeZenQuote extracts text and author from both payload shapes', () => {
+  assert.deepEqual(normalizeZenQuote([{ q: '  Run today.  ', a: '  Coach  ' }]), {
+    text: 'Run today.',
+    author: 'Coach',
+  });
+  assert.deepEqual(normalizeZenQuote({ q: 'Go', a: 'ZenQuotes' }), { text: 'Go', author: 'ZenQuotes' });
+  assert.equal(normalizeZenQuote(null), null);
+  assert.equal(normalizeZenQuote({}), null);
+  assert.equal(normalizeZenQuote([{ q: '' }]), null);
+  assert.equal(normalizeZenQuote('junk'), null);
+});
+
+test('loadQuote resolves the API quote and tags it as coming from the API', async () => {
+  const quote = await loadQuote({
+    fetchImpl: async () => ({
+      ok: true,
+      json: async () => [{ q: 'Run today.', a: 'Coach' }],
+    }),
+  });
+  assert.deepEqual(quote, { text: 'Run today.', author: 'Coach', source: 'api' });
+  assert.match(ZENQUOTES_URL, /^https:\/\/zenquotes\.io\//);
+});
+
+test('loadQuote falls back to the local dictionary on network errors and bad payloads', async () => {
+  const options = { messages: en, random: () => 0 };
+  const network = await loadQuote({
+    ...options,
+    fetchImpl: async () => {
+      throw new Error('offline');
+    },
+  });
+  assert.equal(network.source, 'fallback');
+  assert.equal(network.text, en.home.hero.fallbackQuotes[0].text);
+
+  const badStatus = await loadQuote({
+    ...options,
+    fetchImpl: async () => ({ ok: false, json: async () => ({}) }),
+  });
+  assert.equal(badStatus.source, 'fallback');
+
+  const junk = await loadQuote({
+    ...options,
+    fetchImpl: async () => ({ ok: true, json: async () => ({ z: 1 }) }),
+  });
+  assert.equal(junk.source, 'fallback');
+});
+
+test('loadQuote with no fallback quotes resolves to null without throwing', async () => {
+  const result = await loadQuote({
+    messages: {},
+    fetchImpl: async () => {
+      throw new Error('offline');
+    },
+  });
+  assert.equal(result, null);
+});
+
+test('loadQuote aborts the ZenQuotes request after the timeout and falls back', async () => {
+  assert.equal(QUOTE_TIMEOUT_MS, 3000);
+  const fetchImpl = (url, { signal }) =>
+    new Promise((resolve, reject) => {
+      signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+    });
+  const quote = await loadQuote({ fetchImpl, messages: en, random: () => 0.5, timeoutMs: 5 });
+  assert.equal(quote.source, 'fallback');
+  assert.equal(quote.text, en.home.hero.fallbackQuotes[Math.floor(0.5 * en.home.hero.fallbackQuotes.length)].text);
+});
+
+// ── DOM side-effects (hand-rolled runtime) ─────────────────────
+
+test('applyHeroImage sets the CSS var used by the dark overlay hero', () => {
+  const banner = {
+    style: {
+      values: {},
+      setProperty(name, value) {
+        this.values[name] = value;
+      },
+    },
+  };
+  applyHeroImage(banner, 'https://example.com/stage.jpg');
+  assert.equal(banner.style.values['--hero-image'], 'url("https://example.com/stage.jpg")');
+  applyHeroImage(null, 'https://example.com/stage.jpg');
+  applyHeroImage(banner, null);
+  applyHeroImage(banner, 42);
+  assert.equal(banner.style.values['--hero-image'], 'url("https://example.com/stage.jpg")');
+});
+
+// ── JS source invariants ───────────────────────────────────────
+
+test('home.js keeps the dashboard wiring declarative and reactive', () => {
+  const js = readHomeJs();
+  assert.match(js, /import \{ fetchActiveCycle, fetchCalendarTrainings \} from '\.\/shared\/api\.js'/);
+  assert.match(js, /import \{ initShell, getShellI18n \} from '\.\/shared\/shell\.js'/);
+  assert.match(js, /initShell\(\{ active: 'dashboard' \}\)/);
+  assert.match(js, /new AbortController\(\)/);
+  assert.match(js, /setTimeout\(\(\) => controller\.abort\(\), timeoutMs\)/);
+  assert.match(js, /'app:languagechange'/);
+  assert.match(js, /setProperty\('--hero-image'/);
+  assert.match(js, /fetchCalendarTrainings\(range\.start, range\.end\)/);
+  assert.match(
+    js,
+    /loadQuote\(\{ messages: i18n \? i18n\.messages : \{\} \}\)/,
+    'the quote lookup resolves messages inside the call, never at module scope'
+  );
+});
+
+test('home.css presents the hero and cards inside the earthy shared tokens', () => {
+  const css = readHomeCss();
+  assert.match(css, /@import url\('\.\/shared\/theme\.css'\)/);
+  assert.match(css, /linear-gradient\(rgba\(0, 0, 0, 0\.5\), rgba\(0, 0, 0, 0\.5\)\)/);
+  assert.match(css, /var\(--hero-image/);
+  assert.match(css, /var\(--accent-deep\)/);
+  assert.match(css, /var\(--bg\)/);
+});

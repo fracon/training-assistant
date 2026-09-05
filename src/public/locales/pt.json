@@ -490,5 +490,35 @@
       }
     ],
     "outro": "Não preciso que você repita todos os números que enviei. Quero interpretação, comparação com meu histórico e implicações para o planejamento."
+  },
+  "home": {
+    "pageTitle": "Painel • Kinesis",
+    "hero": {
+      "loading": "Buscando a inspiração de hoje…",
+      "ariaLabel": "Inspiração diária",
+      "fallbackQuotes": [
+        { "text": "Corra quando puder, ande se precisar, arraste-se se necessário; mas nunca desista.", "author": "Dean Karnazes" },
+        { "text": "A dor que você sente hoje será a força que você sentirá amanhã.", "author": "Desconhecido" },
+        { "text": "Suporte o desconforto da disciplina, ou a dor do arrependimento.", "author": "Jim Rohn" },
+        { "text": "Todo treino começa com um único passo.", "author": "Desconhecido" },
+        { "text": "Ferro afia ferro, e quilômetros constroem campeões.", "author": "Coach Kinesis" }
+      ]
+    },
+    "cycle": {
+      "title": "Ciclo de Treino Atual",
+      "emptyTitle": "Nenhum ciclo de treino ativo",
+      "emptyText": "Comece a planejar o seu próximo objetivo.",
+      "startButton": "Planejar próximo ciclo",
+      "weekLabel": "Semana {current} de {total}",
+      "weekOnly": "Semana {current}",
+      "targetLabel": "Data alvo",
+      "percentLabel": "{percent}%",
+      "progressAria": "Progresso do ciclo de treino"
+    },
+    "metrics": {
+      "title": "Esta Semana",
+      "distance": "Distância Total",
+      "time": "Tempo Total"
+    }
   }
 }

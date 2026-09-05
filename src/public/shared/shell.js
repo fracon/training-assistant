@@ -15,17 +15,17 @@ export const FOOTER_CLASS_NAME = 'bottom-bar';
 export const VERSION_ENDPOINT = '/api/version';
 export const VERSION_FALLBACK_LABEL = 'v-.-.-';
 
-// Sidebar order: Home (coming soon) first, then cycles, then request
-// workouts, then review/log workouts. Ids and hrefs stay stable for route
-// matching. Items in CYCLE_DEPENDENT_ITEMS are dynamically disabled when
-// no active training cycle exists.
+// Sidebar order: Home first, then cycles, then request workouts, then
+// review/log workouts. Ids and hrefs stay stable for route matching. Items
+// in CYCLE_DEPENDENT_ITEMS are dynamically disabled when no active training
+// cycle exists.
 const NAV_ITEMS = [
   {
     id: 'dashboard',
     icon: 'layout-dashboard',
     labelKey: 'shell.nav.home',
-    href: null,
-    disabled: true,
+    href: '/home.html',
+    disabled: false,
   },
   {
     id: 'cycles',

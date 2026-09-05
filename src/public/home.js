@@ -1,0 +1,335 @@
+import { fetchActiveCycle, fetchCalendarTrainings } from './shared/api.js';
+import { initShell, getShellI18n } from './shared/shell.js';
+import { translate } from './shared/i18n.js';
+
+export const ZENQUOTES_URL = 'https://zenquotes.io/api/today';
+export const QUOTE_TIMEOUT_MS = 3000;
+export const DAY_MS = 86400000;
+
+// Deterministic hero rotation: collisions on day-of-week remain harmless
+// because the rotation is stable across the whole day, never per page load.
+export const HERO_IMAGES = [
+  'https://images.unsplash.com/photo-1461896836934-ffe607ba8211?auto=format&fit=crop&w=1600&q=80',
+  'https://images.unsplash.com/photo-1486218119243-13883505764c?auto=format&fit=crop&w=1600&q=80',
+  'https://images.unsplash.com/photo-1501785888041-af3ef285b470?auto=format&fit=crop&w=1600&q=80',
+  'https://images.unsplash.com/photo-1506748686214-e9df14d4d9d0?auto=format&fit=crop&w=1600&q=80',
+  'https://images.unsplash.com/photo-1454496522488-7a8e488e8606?auto=format&fit=crop&w=1600&q=80',
+];
+
+export function startOfDay(date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+export function isoDate(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+export function heroImageIndex(date = new Date()) {
+  return date.getDay() % HERO_IMAGES.length;
+}
+
+export function heroImageFor(date = new Date()) {
+  return HERO_IMAGES[heroImageIndex(date)] ?? HERO_IMAGES[0];
+}
+
+// The dashboard week always runs Monday → Sunday regardless of the
+// per-user calendar week-start preference.
+export function mondayOfWeek(date) {
+  const normalized = startOfDay(date);
+  const daysSinceMonday = (normalized.getDay() + 6) % 7;
+  normalized.setDate(normalized.getDate() - daysSinceMonday);
+  return normalized;
+}
+
+export function weekRange(today = new Date()) {
+  const start = mondayOfWeek(today);
+  const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6);
+  return { start: isoDate(start), end: isoDate(end) };
+}
+
+export function trainingsInRange(trainings, start, end) {
+  return (Array.isArray(trainings) ? trainings : []).filter(
+    (entry) =>
+      entry &&
+      typeof entry.dia === 'string' &&
+      entry.dia >= start &&
+      entry.dia <= end
+  );
+}
+
+// FIT durations are stored as "H:MM:SS" or "MM:SS"; malformed values are
+// treated as zero so a missing upload never taints the weekly total.
+export function parseDurationToSeconds(raw) {
+  if (typeof raw !== 'string' || raw.trim() === '') return 0;
+  const parts = raw.split(':').map(Number);
+  if (parts.length === 0 || parts.some((value) => !Number.isFinite(value))) return 0;
+  let total = 0;
+  for (const part of parts) total = total * 60 + part;
+  return total;
+}
+
+export function accumulateWeeklyMetrics(trainings) {
+  const list = Array.isArray(trainings) ? trainings : [];
+  let distanceKm = 0;
+  let durationSeconds = 0;
+  for (const entry of list) {
+    const distance = Number(entry?.fit_distance);
+    if (Number.isFinite(distance) && distance > 0) distanceKm += distance;
+    durationSeconds += parseDurationToSeconds(entry?.fit_duration);
+  }
+  return { distanceKm, durationSeconds };
+}
+
+export function formatDistanceKm(km) {
+  return `${Number(km || 0).toFixed(2)} km`;
+}
+
+export function formatDuration(seconds) {
+  const totalMinutes = Math.round((seconds || 0) / 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `${hours}h ${String(minutes).padStart(2, '0')}m`;
+}
+
+export function parseIsoDate(iso) {
+  if (typeof iso !== 'string') return null;
+  const parts = iso.split('-').map(Number);
+  if (parts.length !== 3 || parts.some((value) => !Number.isFinite(value))) return null;
+  const [year, month, day] = parts;
+  if (year < 1000 || month < 1 || month > 12 || day < 1 || day > 31) return null;
+  return new Date(year, month - 1, day);
+}
+
+export function weeksBetween(startIso, endIso) {
+  const start = parseIsoDate(startIso);
+  const end = parseIsoDate(endIso);
+  if (!start || !end) return null;
+  const days = Math.round((end - start) / DAY_MS);
+  return Math.max(1, Math.ceil(days / 7));
+}
+
+export function currentWeekNumber(startIso, today = new Date()) {
+  const start = parseIsoDate(startIso);
+  if (!start) return null;
+  const days = Math.round((startOfDay(today) - start) / DAY_MS);
+  if (days < 0) return 1;
+  return Math.floor(days / 7) + 1;
+}
+
+export function cycleProgress(cycle, today = new Date()) {
+  if (!cycle || typeof cycle.start_date !== 'string') return null;
+  const total = weeksBetween(cycle.start_date, cycle.target_date);
+  const current = currentWeekNumber(cycle.start_date, today);
+  if (current === null) return null;
+  if (total === null) {
+    return { current: Math.max(1, current), total: null, percent: null };
+  }
+  const clamped = Math.min(Math.max(1, current), total);
+  return { current: clamped, total, percent: Math.round((clamped / total) * 100) };
+}
+
+export function cycleWeekText(messages, progress) {
+  if (!progress || progress.current == null) return '';
+  if (progress.total == null) {
+    return translate(messages, 'home.cycle.weekOnly', { current: progress.current });
+  }
+  return translate(messages, 'home.cycle.weekLabel', {
+    current: progress.current,
+    total: progress.total,
+  });
+}
+
+export function cycleCardContent(cycle, messages, today = new Date()) {
+  if (!cycle) return null;
+  const progress = cycleProgress(cycle, today);
+  return {
+    name: cycle.objective || cycle.distance || '',
+    objective: cycle.objective || '',
+    targetDate: cycle.target_date || '',
+    weekText: cycleWeekText(messages, progress),
+    percent: progress ? progress.percent : null,
+    hasProgress: Boolean(progress && progress.total != null),
+  };
+}
+
+export function metricsCardContent(metrics) {
+  const { distanceKm = 0, durationSeconds = 0 } = metrics || {};
+  return { distance: formatDistanceKm(distanceKm), time: formatDuration(durationSeconds) };
+}
+
+export function randomFallbackQuote(messages, random = Math.random) {
+  const quotes = messages?.home?.hero?.fallbackQuotes;
+  if (!Array.isArray(quotes) || quotes.length === 0) return null;
+  const roll = random();
+  const index = Math.min(quotes.length - 1, Math.max(0, Math.floor(roll * quotes.length)));
+  return quotes[index] ?? null;
+}
+
+export function normalizeZenQuote(data) {
+  const entry = Array.isArray(data) ? data[0] : data;
+  if (!entry || typeof entry !== 'object') return null;
+  const text = entry.q;
+  if (typeof text !== 'string' || text.trim() === '') return null;
+  return { text: text.trim(), author: typeof entry.a === 'string' ? entry.a.trim() : '' };
+}
+
+// Fetches the daily quote with a hard timeout and a CORS/network-proof
+// fallback. Never throws: the caller always receives a quote object or null.
+export async function loadQuote({
+  fetchImpl = globalThis.fetch,
+  messages = {},
+  random = Math.random,
+  timeoutMs = QUOTE_TIMEOUT_MS,
+} = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetchImpl(ZENQUOTES_URL, { signal: controller.signal });
+    if (!response.ok) throw new Error('ZenQuotes request failed');
+    const data = await response.json();
+    const quote = normalizeZenQuote(data);
+    if (quote) return { ...quote, source: 'api' };
+    throw new Error('ZenQuotes returned no quote');
+  } catch {
+    const fallback = randomFallbackQuote(messages, random);
+    if (!fallback) return null;
+    return { text: fallback.text, author: fallback.author, source: 'fallback' };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export function applyHeroImage(banner, imageUrl) {
+  if (!banner || typeof imageUrl !== 'string') return;
+  banner.style.setProperty('--hero-image', `url("${imageUrl}")`);
+}
+
+function setupHomePage() {
+  const heroBanner = document.getElementById('heroBanner');
+  const quoteLoading = document.getElementById('heroQuoteLoading');
+  const quoteBlock = document.getElementById('heroQuote');
+  const quoteText = document.getElementById('heroQuoteText');
+  const quoteAuthor = document.getElementById('heroQuoteAuthor');
+  const cycleEmpty = document.getElementById('cycleEmpty');
+  const cycleActive = document.getElementById('cycleActive');
+  const cycleName = document.getElementById('cycleName');
+  const cycleTarget = document.getElementById('cycleTarget');
+  const cycleWeek = document.getElementById('cycleWeek');
+  const cycleProgressRow = document.getElementById('cycleProgressRow');
+  const cycleProgressBar = document.getElementById('cycleProgressBar');
+  const cyclePercent = document.getElementById('cyclePercent');
+  const weeklyDistance = document.getElementById('weeklyDistanceValue');
+  const weeklyTime = document.getElementById('weeklyTimeValue');
+
+  const state = {
+    cycle: null,
+    distanceKm: 0,
+    durationSeconds: 0,
+    quoteSource: 'api',
+  };
+
+  let i18n = null;
+
+  function t(key, params) {
+    return translate(i18n ? i18n.messages : {}, key, params);
+  }
+
+  function renderQuote(quote) {
+    if (!quote) return;
+    if (quoteLoading) quoteLoading.classList.add('hidden');
+    if (quoteBlock) quoteBlock.classList.remove('hidden');
+    if (quoteText) quoteText.textContent = quote.text;
+    if (quoteAuthor) quoteAuthor.textContent = quote.author;
+  }
+
+  function renderCycle() {
+    if (!cycleEmpty || !cycleActive) return;
+    const hasCycle = Boolean(state.cycle);
+    cycleEmpty.classList.toggle('hidden', hasCycle);
+    cycleActive.classList.toggle('hidden', !hasCycle);
+    if (!hasCycle) return;
+    const content = cycleCardContent(state.cycle, i18n ? i18n.messages : {});
+    if (cycleName) cycleName.textContent = content.name;
+    if (cycleTarget) cycleTarget.textContent = content.targetDate;
+    if (cycleWeek) cycleWeek.textContent = content.weekText;
+    if (cycleProgressRow) cycleProgressRow.classList.toggle('hidden', !content.hasProgress);
+    if (cycleProgressBar && content.percent != null) cycleProgressBar.value = content.percent;
+    if (cyclePercent) {
+      cyclePercent.textContent =
+        content.percent == null ? '' : t('home.cycle.percentLabel', { percent: content.percent });
+    }
+  }
+
+  function renderMetrics() {
+    const content = metricsCardContent({
+      distanceKm: state.distanceKm,
+      durationSeconds: state.durationSeconds,
+    });
+    if (weeklyDistance) weeklyDistance.textContent = content.distance;
+    if (weeklyTime) weeklyTime.textContent = content.time;
+  }
+
+  function render() {
+    renderCycle();
+    renderMetrics();
+  }
+
+  async function loadCycle() {
+    state.cycle = await fetchActiveCycle();
+    renderCycle();
+  }
+
+  async function loadMetrics() {
+    const range = weekRange();
+    const trainings = await fetchCalendarTrainings(range.start, range.end);
+    const metrics = accumulateWeeklyMetrics(trainingsInRange(trainings, range.start, range.end));
+    state.distanceKm = metrics.distanceKm;
+    state.durationSeconds = metrics.durationSeconds;
+    renderMetrics();
+  }
+
+  async function loadHeroQuote() {
+    const quote = await loadQuote({ messages: i18n ? i18n.messages : {} });
+    state.quoteSource = quote ? quote.source : 'fallback';
+    renderQuote(quote);
+  }
+
+  // Dynamic content (fallback quotes, cycle card, metric values) re-renders
+  // in the active dictionary. A live ZenQuotes quote is left untouched so a
+  // language toggle never flashes a replacement over the API text.
+  document.addEventListener('app:languagechange', () => {
+    render();
+    if (state.quoteSource === 'fallback' && i18n) {
+      renderQuote(randomFallbackQuote(i18n.messages));
+    }
+  });
+
+  return {
+    getState: () => ({ ...state }),
+    start(user) {
+      if (!user) return null;
+      i18n = getShellI18n();
+      applyHeroImage(heroBanner, heroImageFor());
+      loadHeroQuote();
+      loadCycle();
+      loadMetrics();
+      return user;
+    },
+  };
+}
+
+export async function initHomePage() {
+  const user = await initShell({ active: 'dashboard' });
+  if (!user) return null;
+
+  const page = setupHomePage();
+  page.start(user);
+  return user;
+}
+
+if (typeof document !== 'undefined' && document.getElementById('appView')) {
+  initHomePage().catch(() => window.location.replace('/login.html'));
+}
