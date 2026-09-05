@@ -240,7 +240,7 @@ export function cycleCardContent(cycle, messages, today = new Date(), language =
   const daysRemaining = daysRemainingUntil(cycle.target_date, today);
   return {
     name: cycle.objective || cycle.distance || '',
-    objective: cycle.objective || '',
+    objective: cycle.primary_goal || '',
     targetDate: cycle.target_date || '',
     targetDisplay: formatTargetDate(cycle.target_date, language),
     daysRemaining,
@@ -372,7 +372,7 @@ function setupHomePage() {
     const content = cycleCardContent(state.cycle, messages, new Date(), language);
     if (cycleName) cycleName.textContent = content.name;
     if (cycleObjective) {
-      if (content.objective && content.objective !== content.name) {
+      if (content.objective) {
         cycleObjective.textContent = content.objective;
         cycleObjective.classList.remove('hidden');
       } else {

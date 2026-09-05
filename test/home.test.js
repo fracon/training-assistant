@@ -388,13 +388,15 @@ test('cycleCardContent maps a cycle into dashboard card data in the active langu
       start_date: '2026-08-17',
       target_date: '2026-09-06',
       objective: 'Base phase · 60km',
+      primary_goal: 'Maintain consistent weekly volume',
+      secondary_goal: 'Finish every planned run',
       distance: 60,
     },
     en,
     new Date(2026, 7, 24)
   );
   assert.equal(content.name, 'Base phase · 60km');
-  assert.equal(content.objective, 'Base phase · 60km');
+  assert.equal(content.objective, 'Maintain consistent weekly volume');
   assert.equal(content.targetDate, '2026-09-06');
   assert.equal(content.targetDisplay, '2026-09-06', 'English keeps the ISO sortable date');
   assert.equal(content.daysRemaining, 13, 'the countdown bridges the current date to the target');
@@ -405,15 +407,44 @@ test('cycleCardContent maps a cycle into dashboard card data in the active langu
   assert.equal(cycleCardContent(null, en, new Date(2026, 7, 24)), null);
 });
 
+test('cycleCardContent maps the cycle name from "objective" and the goal from "primary_goal" independently', () => {
+  const content = cycleCardContent(
+    {
+      start_date: '2026-08-17',
+      target_date: '2026-09-13',
+      objective: 'Maratona de Lisboa',
+      primary_goal: 'Correr a Maratona abaixo de 3h30',
+      distance: 120,
+    },
+    pt,
+    new Date(2026, 8, 9)
+  );
+  assert.equal(content.name, 'Maratona de Lisboa', 'the title comes from the "Objetivo" field (objective)');
+  assert.equal(content.objective, 'Correr a Maratona abaixo de 3h30', 'the subtitle comes from the "Meta principal" field (primary_goal)');
+  assert.notEqual(content.name, content.objective, 'title and goal render independently');
+});
+
+test('cycleCardContent falls back to a distance-based name when the objective field is empty', () => {
+  const unnamed = cycleCardContent({ target_date: '2026-09-13', distance: 60, primary_goal: 'Goal' }, en);
+  assert.equal(unnamed.name, 60, 'name degrades to the distance value');
+  assert.equal(unnamed.objective, 'Goal');
+});
+
 test('cycleCardContent formats the target date as dd/mm/yyyy for Portuguese', () => {
   const ptContent = cycleCardContent(
-    { start_date: '2026-08-17', target_date: '2026-09-13', objective: 'Base' },
+    {
+      start_date: '2026-08-17',
+      target_date: '2026-09-13',
+      objective: 'Base',
+      primary_goal: 'Manter o volume semanal',
+    },
     pt,
     new Date(2026, 8, 9),
     'pt-BR'
   );
   assert.equal(ptContent.targetDisplay, '13/09/2026');
   assert.equal(ptContent.targetDate, '2026-09-13');
+  assert.equal(ptContent.objective, 'Manter o volume semanal', 'the pt-BR goal rides along untouched');
   assert.equal(ptContent.daysRemaining, 4);
   assert.equal(ptContent.daysRemainingText, '4 dias restantes', 'the countdown pluralizes in pt');
 });
@@ -798,7 +829,14 @@ test('home.js keeps the dashboard wiring declarative and reactive', () => {
     /const language = i18n \? i18n\.language : DEFAULT_DISPLAY_LANGUAGE;/,
     'the active language drives the target-date formatting and countdown'
   );
+  assert.match(js, /if \(cycleName\) cycleName\.textContent = content\.name;/);
   assert.match(js, /if \(cycleObjective\) \{\s*\n\s*if \(content\.objective/);
+  assert.match(js, /cycleObjective\.classList\.add\('hidden'\);/);
+  assert.equal(
+    /content\.objective !== content\.name/.test(js),
+    false,
+    'the subtitle no longer echoes the title; the goal renders independently'
+  );
   assert.match(js, /if \(cycleDaysLeft\) cycleDaysLeft\.textContent = content\.daysRemainingText;/);
   assert.match(js, /if \(cycleTarget\) cycleTarget\.textContent = content\.targetDisplay;/);
   assert.match(
