@@ -101,6 +101,10 @@ test('home.html ships the hero, cycle, and metrics dashboard skeleton', () => {
   assert.match(html, /class="dashboard-grid vertical"/);
   assert.match(html, /class="week-tracker"/);
   assert.match(html, /class="week-tracker-days"/);
+  assert.ok(
+    html.indexOf('<div class="week-tracker"') < html.indexOf('<div class="metrics-grid">'),
+    'the weekly tracker appears before the summary metrics'
+  );
   assert.match(html, /home\.js/);
   assert.match(html, /shared\/shell\.js/);
   assert.match(html, /shared\/shell\.css/);
@@ -913,7 +917,8 @@ test('home.css stacks the dashboard widgets full-width and styles the week track
     /\.metrics-grid \{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/,
     'the distance/time tiles keep their two-up layout inside the full-width card'
   );
-  assert.match(css, /\.week-tracker \{[^}]*border-top:\s*1px solid var\(--line\)/);
+  assert.match(css, /\.week-tracker \{[^}]*border-bottom:\s*1px solid var\(--line\)/);
+  assert.match(css, /\.week-tracker \{[^}]*margin:\s*0 0 1rem/);
   assert.match(css, /\.week-tracker-days \{[^}]*display:\s*flex/);
   assert.match(css, /\.week-tracker-days \{[^}]*align-items:\s*center/);
   assert.match(css, /\.week-day \{[^}]*border:\s*0;[^}]*border-radius:\s*999px/);
