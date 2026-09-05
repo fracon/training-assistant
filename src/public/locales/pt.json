@@ -493,8 +493,8 @@
   },
   "home": {
     "actions": {
-      "goToCycles": "Ir para ciclos →",
-      "goToTrainings": "Ir para treinos →"
+      "goToCycles": "Ir para ciclos",
+      "goToTrainings": "Ir para treinos"
     },
     "pageTitle": "Painel • Kinesis",
     "hero": {

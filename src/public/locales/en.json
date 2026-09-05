@@ -493,8 +493,8 @@
   },
   "home": {
     "actions": {
-      "goToCycles": "Go to cycles →",
-      "goToTrainings": "Go to workouts →"
+      "goToCycles": "Go to cycles",
+      "goToTrainings": "Go to workouts"
     },
     "pageTitle": "Dashboard • Kinesis",
     "hero": {

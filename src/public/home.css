@@ -98,19 +98,30 @@
 }
 
 .card-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
+  width: 2rem;
+  height: 2rem;
   color: var(--accent-deep);
-  font-size: 0.75rem;
-  font-weight: 700;
+  border-radius: 999px;
   text-decoration: none;
   white-space: nowrap;
-  transition: color 0.15s ease, transform 0.15s ease;
+  transition: color 0.15s ease, background-color 0.15s ease, transform 0.15s ease;
 }
 
 .card-action:hover,
 .card-action:focus-visible {
   color: var(--accent);
+  background: var(--bg);
   transform: translateX(2px);
+}
+
+.card-action svg {
+  width: 1rem;
+  height: 1rem;
+  stroke-width: 2;
 }
 
 .card-section[aria-labelledby="weeklyMetricsTitle"] .section-header {
