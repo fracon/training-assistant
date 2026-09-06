@@ -14,6 +14,8 @@ test('shell exposes the preferences menu trigger and standardized modal', () => 
   assert.match(js, /preferences\.appendChild\(icon\('settings'\)\)/);
   assert.match(js, /data-i18n', 'shell\.preferences'/);
   assert.match(js, /export function openPreferencesModal/);
+  assert.match(js, /export async function saveUserPreferences/);
+  assert.match(js, /kinesis:preferences-changed/);
   assert.match(js, /password-modal-backdrop preferences-modal-backdrop/);
   assert.match(js, /modal-card password-modal-card preferences-modal-card/);
   assert.match(js, /id = 'preferencesForm'/);

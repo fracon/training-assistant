@@ -1,5 +1,12 @@
-import { updateCalendarPreference, fetchCalendarTrainings, importTrainingsFile, fetchActiveCycle } from './shared/api.js';
-import { initShell, getShellI18n, refreshIcons, showShellToast } from './shared/shell.js';
+import { fetchCalendarTrainings, importTrainingsFile, fetchActiveCycle } from './shared/api.js';
+import {
+  initShell,
+  getShellI18n,
+  getUserPreferences,
+  saveUserPreferences,
+  refreshIcons,
+  showShellToast,
+} from './shared/shell.js';
 import { translate } from './shared/i18n.js';
 
 export const WEEK_START_STORAGE_KEY = 'training-assistant:first-day-of-week';
@@ -238,7 +245,10 @@ function setupCalendarPage() {
     syncToggleButtons();
     render();
     try {
-      await updateCalendarPreference(next);
+      await saveUserPreferences({
+        ...getUserPreferences(),
+        first_day_of_week: next,
+      });
     } catch {
       /* offline - keep rendering with the local preference */
     }

@@ -396,6 +396,15 @@ test('calendar.js renders localized toggle texts and refreshes on language chang
   assert.match(js, /state\.firstDay = next/);
 });
 
+test('trainings week-start widget delegates changes to the global preference store', () => {
+  const js = readFileSync(join(publicDir, 'calendar.js'), 'utf8');
+
+  assert.match(js, /getUserPreferences/);
+  assert.match(js, /saveUserPreferences/);
+  assert.match(js, /first_day_of_week: next/);
+  assert.doesNotMatch(js, /updateCalendarPreference\(/);
+});
+
 test('calendar imports use the shell snackbar with imported and skipped counts', () => {
   const js = readFileSync(join(publicDir, 'calendar.js'), 'utf8');
   const html = readFileSync(join(publicDir, 'calendar.html'), 'utf8');

@@ -163,6 +163,15 @@ export function getUserPreferences() {
   return { ...userPreferences };
 }
 
+export async function saveUserPreferences(values) {
+  const saved = await updateUserPreferences(values);
+  userPreferences = writeUserPreferences(saved);
+  document.dispatchEvent(new CustomEvent('kinesis:preferences-changed', {
+    detail: { ...userPreferences },
+  }));
+  return { ...userPreferences };
+}
+
 export function getShellI18n() {
   return shellI18n;
 }
@@ -651,11 +660,7 @@ export function wirePreferencesForm(form, messages = shellI18n.messages) {
     submit.disabled = true;
     submitLabel.textContent = translate(activeMessages, 'preferences.saving');
     try {
-      const saved = await updateUserPreferences(values);
-      userPreferences = writeUserPreferences(saved);
-      document.dispatchEvent(new CustomEvent('kinesis:preferences-changed', {
-        detail: { ...userPreferences },
-      }));
+      await saveUserPreferences(values);
       showShellToast(activeMessages, 'preferences.saved');
       closePreferencesModal();
     } catch {
