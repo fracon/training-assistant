@@ -810,6 +810,13 @@ test('preferences updates reject unsupported values and anonymous requests', asy
     assert.equal(response.statusCode, 400);
     assert.deepEqual(response.json(), { error: 'Unsupported preference.' });
   }
+  const missingBody = await app.inject({
+    method: 'PATCH',
+    url: '/api/users/me/preferences',
+    headers: { cookie: cookiePair },
+  });
+  assert.equal(missingBody.statusCode, 400);
+  assert.deepEqual(missingBody.json(), { error: 'Unsupported preference.' });
   const anonymous = await app.inject({ method: 'PATCH', url: '/api/users/me/preferences', payload: {} });
   assert.equal(anonymous.statusCode, 401);
   await app.close();

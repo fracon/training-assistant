@@ -19,6 +19,7 @@ const {
   heroImageIndex,
   heroImageFor,
   mondayOfWeek,
+  startOfWeek,
   weekRange,
   trainingsInRange,
   parseDurationToSeconds,
@@ -40,6 +41,7 @@ const {
   loadImage,
   preloadHeroImage,
   WEEKDAY_KEYS,
+  weekdayKeys,
   weekDays,
   trainingDaySet,
   weekDayState,
@@ -266,6 +268,20 @@ test('the monday start and week window always span Monday through Sunday', () =>
   assert.equal(week.start, '2026-08-17');
   assert.equal(week.end, '2026-08-23', 'seven days after the Monday');
   assert.equal(Math.round((parseIsoDate(week.end) - parseIsoDate(week.start)) / 86400000), 6);
+});
+
+test('week calculations and tracker order honor a Sunday-start preference', () => {
+  const saturday = new Date(2026, 7, 8);
+  assert.equal(isoDate(startOfWeek(saturday, 'Sunday')), '2026-08-02');
+  assert.deepEqual(weekRange(new Date(2026, 7, 8), 'Sunday'), {
+    start: '2026-08-02',
+    end: '2026-08-08',
+  });
+  assert.deepEqual(weekdayKeys('Sunday'), [...WEEKDAY_KEYS.slice(-1), ...WEEKDAY_KEYS.slice(0, -1)]);
+  assert.deepEqual(
+    weekDays({ start: '2026-08-02', end: '2026-08-08' }, 'Sunday').map((day) => day.date),
+    ['2026-08-02', '2026-08-03', '2026-08-04', '2026-08-05', '2026-08-06', '2026-08-07', '2026-08-08']
+  );
 });
 
 test('weekRange remains independent from randomized hero selection', () => {
@@ -881,11 +897,13 @@ test('applyCycleVisibility tolerates missing containers without throwing', () =>
 test('home.js keeps the dashboard wiring declarative and reactive', () => {
   const js = readHomeJs();
   assert.match(js, /import \{ fetchActiveCycle, fetchCalendarTrainings \} from '\.\/shared\/api\.js'/);
-  assert.match(js, /import \{ initShell, getShellI18n \} from '\.\/shared\/shell\.js'/);
+  assert.match(js, /import \{ initShell, getShellI18n, getUserPreferences \} from '\.\/shared\/shell\.js'/);
   assert.match(js, /initShell\(\{ active: 'dashboard' \}\)/);
   assert.match(js, /new AbortController\(\)/);
   assert.match(js, /setTimeout\(\(\) => controller\.abort\(\), timeoutMs\)/);
   assert.match(js, /'app:languagechange'/);
+  assert.match(js, /'kinesis:preferences-changed'/);
+  assert.match(js, /state\.firstDay = getUserPreferences\(\)\.first_day_of_week/);
   assert.match(js, /setProperty\('--hero-image'/);
   assert.match(js, /fetchCalendarTrainings\(range\.start, range\.end\)/);
   assert.match(js, /quoteLoading\) quoteLoading\.classList\.add\('hidden'\)/);

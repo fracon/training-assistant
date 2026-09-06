@@ -392,6 +392,8 @@ test('calendar.js renders localized toggle texts and refreshes on language chang
   const handlerBody = js.slice(handlerStart, handlerEnd);
   assert.ok(handlerBody.includes('syncToggleButtons()'), 'toggle labels re-render instantly');
   assert.ok(handlerBody.includes('render()'), 'month title and grid headers re-render instantly');
+  assert.match(js, /addEventListener\('kinesis:preferences-changed'/);
+  assert.match(js, /state\.firstDay = next/);
 });
 
 test('calendar imports use the shell snackbar with imported and skipped counts', () => {

@@ -653,6 +653,9 @@ export function wirePreferencesForm(form, messages = shellI18n.messages) {
     try {
       const saved = await updateUserPreferences(values);
       userPreferences = writeUserPreferences(saved);
+      document.dispatchEvent(new CustomEvent('kinesis:preferences-changed', {
+        detail: { ...userPreferences },
+      }));
       showShellToast(activeMessages, 'preferences.saved');
       closePreferencesModal();
     } catch {

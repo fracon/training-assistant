@@ -1,5 +1,5 @@
 import { fetchActiveCycle, fetchCalendarTrainings } from './shared/api.js';
-import { initShell, getShellI18n } from './shared/shell.js';
+import { initShell, getShellI18n, getUserPreferences } from './shared/shell.js';
 import { translate } from './shared/i18n.js';
 import { formatDate as formatLocalizedDate } from './shared/date.js';
 
@@ -7,6 +7,7 @@ export const ZENQUOTES_URL = 'https://zenquotes.io/api/today';
 export const QUOTE_TIMEOUT_MS = 3000;
 export const DAY_MS = 86400000;
 export const DEFAULT_DISPLAY_LANGUAGE = 'en-US';
+export const SUPPORTED_WEEK_STARTS = ['Monday', 'Sunday'];
 
 // Static Unsplash image URLs avoid the retired source.unsplash.com proxy. Every
 // selected photo is a curated running/runner/marathon image; Math.random still
@@ -43,17 +44,22 @@ export function heroImageFor(random = Math.random) {
   return HERO_IMAGES[heroImageIndex(random)] ?? HERO_IMAGES[0];
 }
 
-// The dashboard week always runs Monday → Sunday regardless of the
-// per-user calendar week-start preference.
-export function mondayOfWeek(date) {
+// The dashboard week follows the user's preferred first day; Monday remains
+// the default for backwards compatibility.
+export function startOfWeek(date, firstDay = 'Monday') {
   const normalized = startOfDay(date);
-  const daysSinceMonday = (normalized.getDay() + 6) % 7;
-  normalized.setDate(normalized.getDate() - daysSinceMonday);
+  const startIndex = firstDay === 'Sunday' ? 0 : 1;
+  const daysSinceStart = (normalized.getDay() - startIndex + 7) % 7;
+  normalized.setDate(normalized.getDate() - daysSinceStart);
   return normalized;
 }
 
-export function weekRange(today = new Date()) {
-  const start = mondayOfWeek(today);
+export function mondayOfWeek(date) {
+  return startOfWeek(date, 'Monday');
+}
+
+export function weekRange(today = new Date(), firstDay = 'Monday') {
+  const start = startOfWeek(today, firstDay);
   const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6);
   return { start: isoDate(start), end: isoDate(end) };
 }
@@ -130,13 +136,20 @@ export const WEEKDAY_KEYS = [
   'home.days.sun',
 ];
 
-export function weekDays(range) {
+export function weekdayKeys(firstDay = 'Monday') {
+  return firstDay === 'Sunday'
+    ? [...WEEKDAY_KEYS.slice(-1), ...WEEKDAY_KEYS.slice(0, -1)]
+    : [...WEEKDAY_KEYS];
+}
+
+export function weekDays(range, firstDay = 'Monday') {
   const start = parseIsoDate(range?.start);
   if (!start) return [];
   const days = [];
-  for (let i = 0; i < WEEKDAY_KEYS.length; i += 1) {
+  const keys = weekdayKeys(firstDay);
+  for (let i = 0; i < keys.length; i += 1) {
     const date = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
-    days.push({ date: isoDate(date), key: WEEKDAY_KEYS[i] });
+    days.push({ date: isoDate(date), key: keys[i] });
   }
   return days;
 }
@@ -397,6 +410,7 @@ function setupHomePage() {
     quoteSource: 'api',
     range: null,
     trainingDates: new Set(),
+    firstDay: 'Monday',
   };
 
   let i18n = null;
@@ -453,7 +467,7 @@ function setupHomePage() {
 
   function renderWeekTracker() {
     if (!weekTrackerDays || !state.range) return;
-    const states = weekDayState(weekDays(state.range), state.trainingDates);
+    const states = weekDayState(weekDays(state.range, state.firstDay), state.trainingDates);
     renderWeekDays(weekTrackerDays, states, i18n ? i18n.messages : {});
   }
 
@@ -469,7 +483,7 @@ function setupHomePage() {
   }
 
   async function loadMetrics() {
-    const range = weekRange();
+    const range = weekRange(new Date(), state.firstDay);
     const trainings = await fetchCalendarTrainings(range.start, range.end);
     const weekTrainings = trainingsInRange(trainings, range.start, range.end);
     const metrics = accumulateWeeklyMetrics(weekTrainings);
@@ -498,11 +512,19 @@ function setupHomePage() {
     }
   });
 
+  document.addEventListener('kinesis:preferences-changed', (event) => {
+    const next = event.detail?.first_day_of_week;
+    if (!SUPPORTED_WEEK_STARTS.includes(next) || next === state.firstDay) return;
+    state.firstDay = next;
+    loadMetrics();
+  });
+
   return {
     getState: () => ({ ...state }),
     start(user) {
       if (!user) return null;
       i18n = getShellI18n();
+      state.firstDay = getUserPreferences().first_day_of_week;
       preloadHeroImage(heroBanner, heroImageFor());
       loadHeroQuote();
       loadCycle();

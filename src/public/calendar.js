@@ -272,6 +272,15 @@ function setupCalendarPage() {
 
   document.addEventListener('app:languagechange', render);
 
+  document.addEventListener('kinesis:preferences-changed', (event) => {
+    const next = event.detail?.first_day_of_week;
+    if (!SUPPORTED_WEEK_STARTS.includes(next) || next === state.firstDay) return;
+    state.firstDay = next;
+    saveStoredWeekStart(next);
+    syncToggleButtons();
+    render();
+  });
+
   const importBtn = document.getElementById('importBtn');
   const importInput = document.getElementById('importInput');
   const importModal = document.getElementById('importModal');
