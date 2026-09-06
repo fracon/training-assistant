@@ -173,19 +173,19 @@ test('formatAppVersion prefixes the fetched version and falls back to v-.-.-', (
   assert.equal(VERSION_FALLBACK_LABEL, 'v-.-.-');
 });
 
-test('the brand uses the official full and collapsed PNG assets in the sidebar', () => {
+test('the brand uses the official mark and translated name in the sidebar', () => {
   const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
 
   assert.ok(!js.includes('Training Assistant'), 'the old name is gone from the shell');
   assert.match(
     js,
-    /logo\.src = '\/assets\/brand\/logo\.png';[\s\S]*?logo\.alt = 'Kinesis Logo';/,
-    'the expanded sidebar uses the official logo'
+    /logoMark\.src = '\/assets\/brand\/logo-mark\.png';[\s\S]*?logoMark\.alt = 'Kinesis Logo';/,
+    'the sidebar uses the official mark'
   );
   assert.match(
     js,
-    /logoMark\.src = '\/assets\/brand\/logo-mark\.png';[\s\S]*?logoMark\.alt = 'Kinesis Logo';/,
-    'the collapsed sidebar uses the official mark'
+    /brandName\.setAttribute\('data-i18n', 'app\.name'\);[\s\S]*?brandName\.textContent = 'Kinesis';/,
+    'the sidebar keeps its translated name'
   );
   assert.ok(!js.includes("el('span', 'brand')"), 'no topbar brand span is built anymore');
   assert.ok(!js.includes("el('span', 'dot')"), 'the brand dot separator is gone');
@@ -198,8 +198,7 @@ test('the brand uses the official full and collapsed PNG assets in the sidebar',
     'action-only topbar hugs the right edge'
   );
   assert.match(css, /\.topbar \{[^}]*min-height:\s*2\.75rem/, 'the bar keeps its height without text flow');
-  assert.match(css, /\.app-shell\.collapsed \.brand-logo-full \{ display: none; \}/);
-  assert.match(css, /\.app-shell\.collapsed \.brand-logo-mark \{ display: block; \}/);
+  assert.match(css, /\.brand-logo-mark \{ width: 32px; height: 32px; \}/);
 
   assert.equal(en.app.name, 'Kinesis');
   assert.equal(pt.app.name, 'Kinesis');

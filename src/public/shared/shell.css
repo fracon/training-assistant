@@ -225,11 +225,7 @@ body.shell-mounted {
   flex-shrink: 0;
 }
 
-.brand-logo-full { width: 132px; height: 32px; }
-.brand-logo-mark { display: none; width: 32px; height: 32px; }
-
-.app-shell.collapsed .brand-logo-full { display: none; }
-.app-shell.collapsed .brand-logo-mark { display: block; }
+.brand-logo-mark { width: 32px; height: 32px; }
 
 .sidebar-nav {
   display: flex;

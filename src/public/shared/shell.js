@@ -180,14 +180,14 @@ function buildSidebar(activeId) {
   const aside = el('aside', 'sidebar');
 
   const brand = el('div', 'sidebar-brand');
-  const logo = el('img', 'brand-logo brand-logo-full');
-  logo.src = '/assets/brand/logo.png';
-  logo.alt = 'Kinesis Logo';
   const logoMark = el('img', 'brand-logo brand-logo-mark');
   logoMark.src = '/assets/brand/logo-mark.png';
   logoMark.alt = 'Kinesis Logo';
-  brand.appendChild(logo);
   brand.appendChild(logoMark);
+  const brandName = el('span', 'sidebar-label');
+  brandName.setAttribute('data-i18n', 'app.name');
+  brandName.textContent = 'Kinesis';
+  brand.appendChild(brandName);
   aside.appendChild(brand);
 
   const nav = el('nav', 'sidebar-nav');
