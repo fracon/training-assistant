@@ -1,8 +1,9 @@
-import { initShell, getShellI18n, refreshIcons } from './shared/shell.js';
+import { initShell, getShellI18n, getUserPreferences, refreshIcons } from './shared/shell.js';
 import { translate, normalizeClientLanguage } from './shared/i18n.js';
 import { fetchShoes } from './shared/api.js';
 import { fetchActiveCycle, fetchCalendarTrainings } from './shared/api.js';
 import { formatDate as formatLocalizedDate } from './shared/date.js';
+import { formatDistance, distancePromptUnit, temperaturePromptUnit } from './shared/units.js';
 
 // Verbatim Portuguese briefing for the external AI Coach.
 // The wording below is a hard requirement — do not translate, rewrite
@@ -13,13 +14,15 @@ export const PROMPT_TEMPLATE = `Quero que você gere minha planilha de treinos d
 
 CONTEXTO DO CICLO ATUAL
 
+Use {{DISTANCE_UNIT_LABEL}} for all distances and {{TEMPERATURE_UNIT_LABEL}} for all temperatures in the plan and weather forecast.
+
 Nome do ciclo: {{CYCLE_NAME}}
 Meta do ciclo: {{CYCLE_GOAL}}
 Data da prova-alvo: {{TARGET_RACE_DATE}}
 Semana atual: {{CURRENT_WEEK}}
 Dias restantes: {{DAYS_REMAINING}}
 Treinos concluídos na semana anterior: {{PREV_WEEK_TRAININGS}}
-Distância total da semana anterior (km): {{PREV_WEEK_DISTANCE_KM}}
+Distância total da semana anterior ({{DISTANCE_UNIT_LABEL}}): {{PREV_WEEK_DISTANCE_KM}}
 Tempo total da semana anterior (minutos): {{PREV_WEEK_TIME_MINUTES}}
 
 Use TODO o contexto disponível do meu treinamento, especialmente:
@@ -104,13 +107,15 @@ export const PROMPT_TEMPLATE_EN = `I want you to generate my running training sc
 
 CURRENT CYCLE CONTEXT
 
+Use {{DISTANCE_UNIT_LABEL}} for all distances and {{TEMPERATURE_UNIT_LABEL}} for all temperatures in the plan and weather forecast.
+
 Cycle name: {{CYCLE_NAME}}
 Cycle goal: {{CYCLE_GOAL}}
 Target race date: {{TARGET_RACE_DATE}}
 Current week: {{CURRENT_WEEK}}
 Days remaining: {{DAYS_REMAINING}}
 Completed trainings in the previous week: {{PREV_WEEK_TRAININGS}}
-Previous week total distance (km): {{PREV_WEEK_DISTANCE_KM}}
+Previous week total distance ({{DISTANCE_UNIT_LABEL}}): {{PREV_WEEK_DISTANCE_KM}}
 Previous week total time (minutes): {{PREV_WEEK_TIME_MINUTES}}
 
 Use ALL available context from my training, especially:
@@ -249,7 +254,7 @@ function formatContextDate(value, lang) {
   return formatLocalizedDate(value, lang) || contextValue(value);
 }
 
-function formatCycleContext(cycle = {}, previousWeek = {}, lang = 'pt-BR') {
+function formatCycleContext(cycle = {}, previousWeek = {}, lang = 'pt-BR', preferences = {}) {
   const currentWeek = cycle.currentWeek ?? cycle.current_week;
   const totalWeeks = cycle.totalWeeks ?? cycle.total_weeks;
   const weekText = currentWeek != null && totalWeeks != null
@@ -262,7 +267,16 @@ function formatCycleContext(cycle = {}, previousWeek = {}, lang = 'pt-BR') {
     '{{CURRENT_WEEK}}': weekText,
     '{{DAYS_REMAINING}}': contextValue(cycle.daysRemaining ?? cycle.days_remaining),
     '{{PREV_WEEK_TRAININGS}}': contextValue(previousWeek.completedTrainingsCount ?? previousWeek.completed_trainings_count),
-    '{{PREV_WEEK_DISTANCE_KM}}': contextValue(previousWeek.totalDistanceKm ?? previousWeek.total_distance_km),
+    '{{DISTANCE_UNIT_LABEL}}': distancePromptUnit(preferences.distance_unit),
+    '{{TEMPERATURE_UNIT_LABEL}}': temperaturePromptUnit(preferences.temperature_unit),
+    '{{PREV_WEEK_DISTANCE_KM}}': (() => {
+      const distance = previousWeek.totalDistanceKm ?? previousWeek.total_distance_km;
+      return distance == null || String(distance).trim() === ''
+        ? '-'
+        : preferences.distance_unit === 'mi'
+          ? formatDistance(distance, 'mi')
+          : contextValue(distance);
+    })(),
     '{{PREV_WEEK_TIME_MINUTES}}': contextValue(previousWeek.totalTimeMinutes ?? previousWeek.total_time_minutes),
   };
 }
@@ -331,10 +345,11 @@ export function cycleContext(cycle = {}, today = new Date()) {
   };
 }
 
-export function buildPromptContext({ cycle = {}, trainings = [], targetDate, today = new Date() }) {
+export function buildPromptContext({ cycle = {}, trainings = [], targetDate, today = new Date(), preferences = {} }) {
   return {
     cycle: cycleContext(cycle, today),
     previousWeek: previousWeekSummary(trainings, targetDate),
+    preferences,
   };
 }
 
@@ -374,7 +389,7 @@ function replaceAll(text, token, value) {
 // bullet line; when no active shoes exist a single fallback line is
 // returned instead. The block always includes the section title from the
 // locale messages.
-export function formatShoesBlock(shoes = [], messages = {}) {
+export function formatShoesBlock(shoes = [], messages = {}, preferences = {}) {
   const title = messages.aiCoach?.shoesSectionTitle || 'SHOES AVAILABLE FOR ROTATION';
   const fallback =
     messages.aiCoach?.shoesFallback || 'No specific shoes registered; use standard rotation.';
@@ -386,9 +401,13 @@ export function formatShoesBlock(shoes = [], messages = {}) {
     lines = [`- ${fallback}`];
   } else {
     lines = activeShoes.map((s) => {
-      let line = `- ${s.brand} ${s.model} (Current mileage: ${Number(s.mileage ?? 0)} km`;
+      const distanceUnit = preferences.distance_unit === 'mi' ? 'mi' : 'km';
+      const distanceDecimals = distanceUnit === 'mi' ? 2 : 0;
+      const currentMileage = formatDistance(s.mileage ?? 0, distanceUnit, distanceDecimals);
+      const targetPrefix = targetLabel.split('{target}')[0];
+      let line = `- ${s.brand} ${s.model} (Current mileage: ${currentMileage}`;
       if (s.target_mileage) {
-        line += `, ${targetLabel.replace('{target}', Number(s.target_mileage))}`;
+        line += `, ${targetPrefix}${formatDistance(s.target_mileage, distanceUnit, distanceDecimals)}`;
       }
       line += ')';
       return line;
@@ -397,7 +416,7 @@ export function formatShoesBlock(shoes = [], messages = {}) {
   return `${title}\n\n${lines.join('\n')}`;
 }
 
-export function buildPrompt({ targetDate, disponibilidade = {}, contexto = '', lang = 'pt-BR', shoes = [], messages = {}, cycle = {}, previousWeek = {} }) {
+export function buildPrompt({ targetDate, disponibilidade = {}, contexto = '', lang = 'pt-BR', shoes = [], messages = {}, cycle = {}, previousWeek = {}, preferences = {} }) {
   const templateLang = resolveTemplateLang(lang);
   const template = TEMPLATE_BY_LANG[templateLang];
   let prompt = replaceAll(
@@ -405,7 +424,7 @@ export function buildPrompt({ targetDate, disponibilidade = {}, contexto = '', l
     '{{DATA_DA_SEGUNDA}}',
     formatLocalizedDate(targetDate, templateLang)
   );
-  for (const [token, value] of Object.entries(formatCycleContext(cycle, previousWeek, templateLang))) {
+  for (const [token, value] of Object.entries(formatCycleContext(cycle, previousWeek, templateLang, preferences))) {
     prompt = replaceAll(prompt, token, value);
   }
   const availability = { ...availabilityDefaults(templateLang), ...disponibilidade };
@@ -414,7 +433,7 @@ export function buildPrompt({ targetDate, disponibilidade = {}, contexto = '', l
   }
   const notes = String(contexto).trim();
   prompt = replaceAll(prompt, '{{CONTEXTO_OPCIONAL}}', notes === '' ? '-' : notes);
-  prompt = replaceAll(prompt, '{{SHOES_BLOCK}}', formatShoesBlock(shoes, messages));
+  prompt = replaceAll(prompt, '{{SHOES_BLOCK}}', formatShoesBlock(shoes, messages, preferences));
   return prompt;
 }
 
@@ -539,7 +558,8 @@ function setupAiCoachPage() {
     }
     generateBtn.disabled = false;
 
-    const promptContext = buildPromptContext({ cycle: cycle || {}, trainings, targetDate });
+    const preferences = getUserPreferences();
+    const promptContext = buildPromptContext({ cycle: cycle || {}, trainings, targetDate, preferences });
 
     promptOutput.textContent = buildPrompt({
       targetDate,

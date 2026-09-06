@@ -535,6 +535,10 @@ test('metricsCardContent formats the dashboard totals', () => {
   });
   assert.deepEqual(metricsCardContent({}), { distance: '0.00 km', time: '0h 00m' });
   assert.deepEqual(metricsCardContent(null), { distance: '0.00 km', time: '0h 00m' });
+  assert.deepEqual(metricsCardContent({ distanceKm: 5, durationSeconds: 0 }, { distance_unit: 'mi' }), {
+    distance: '3.11 mi',
+    time: '0h 00m',
+  });
 });
 
 // ── Weekly 7-day tracker ───────────────────────────────────────
@@ -903,7 +907,7 @@ test('home.js keeps the dashboard wiring declarative and reactive', () => {
   assert.match(js, /setTimeout\(\(\) => controller\.abort\(\), timeoutMs\)/);
   assert.match(js, /'app:languagechange'/);
   assert.match(js, /'kinesis:preferences-changed'/);
-  assert.match(js, /state\.firstDay = getUserPreferences\(\)\.first_day_of_week/);
+  assert.match(js, /state\.firstDay = preferences\.first_day_of_week/);
   assert.match(js, /setProperty\('--hero-image'/);
   assert.match(js, /fetchCalendarTrainings\(range\.start, range\.end\)/);
   assert.match(js, /quoteLoading\) quoteLoading\.classList\.add\('hidden'\)/);

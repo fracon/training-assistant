@@ -651,7 +651,7 @@ test('training-result.html ships the expanded feedback grid and generator button
 test('training-result.js wires toggling, saving, generation and i18n refreshes', () => {
   const js = readFileSync(join(publicDir, 'training-result.js'), 'utf8');
 
-  assert.match(js, /import \{ initShell, getShellI18n \} from '\.\/shared\/shell\.js';/);
+  assert.match(js, /import \{ initShell, getShellI18n, getUserPreferences \} from '\.\/shared\/shell\.js';/);
   assert.match(js, /import \{ fetchTraining, saveTrainingFeedback, fetchShoes \} from '\.\/shared\/api\.js';/);
 
   assert.match(js, /smartwatchSelect\.addEventListener\('change', syncFitFieldVisibility\)/);
@@ -810,7 +810,7 @@ test('training-result.js wires toggling, saving, generation and i18n refreshes',
   );
 
   assert.match(js, /templateFor\(i18n\.language\)/);
-  assert.match(js, /collectPromptValues\(\{ training, form: collectFormState\(\), fitData \}\)/);
+  assert.match(js, /collectPromptValues\(\{ training, form: collectFormState\(\), fitData, preferences: getUserPreferences\(\) \}\)/);
   assert.match(js, /promptOutput\.value = promptText;/);
   assert.match(js, /promptSection\.hidden = false;/);
   assert.match(js, /setTimeout\(/, 'Copied! feedback restores itself after a moment');

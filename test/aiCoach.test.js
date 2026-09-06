@@ -116,14 +116,17 @@ test('the prompt template keeps the required Portuguese structure', () => {
   assert.ok(!PROMPT_TEMPLATE.includes('Exemplos:'), 'example list lives in the UI, not the prompt');
 
   const tokens = PROMPT_TEMPLATE.match(/\{\{[A-Z_]+\}\}/g) ?? [];
-  assert.equal(tokens.length, 18, 'the template carries all schedule and cycle-context placeholders');
+  assert.equal(tokens.length, 21, 'the template carries all schedule, cycle-context, and unit placeholders');
   assert.deepEqual(tokens, [
+    '{{DISTANCE_UNIT_LABEL}}',
+    '{{TEMPERATURE_UNIT_LABEL}}',
     '{{CYCLE_NAME}}',
     '{{CYCLE_GOAL}}',
     '{{TARGET_RACE_DATE}}',
     '{{CURRENT_WEEK}}',
     '{{DAYS_REMAINING}}',
     '{{PREV_WEEK_TRAININGS}}',
+    '{{DISTANCE_UNIT_LABEL}}',
     '{{PREV_WEEK_DISTANCE_KM}}',
     '{{PREV_WEEK_TIME_MINUTES}}',
     '{{DATA_DA_SEGUNDA}}',
@@ -478,6 +481,19 @@ test('buildPrompt injects localized cycle and previous-week context in English',
   assert.match(prompt, /Completed trainings in the previous week: 4/);
   assert.match(prompt, /Previous week total distance \(km\): 42\.5/);
   assert.match(prompt, /Previous week total time \(minutes\): 238/);
+});
+
+test('buildPrompt converts previous-week distance and instructs the coach to use imperial units', () => {
+  const prompt = buildPrompt({
+    targetDate: new Date(2026, 7, 31),
+    lang: 'en-US',
+    preferences: { distance_unit: 'mi', temperature_unit: 'F' },
+    previousWeek: { totalDistanceKm: 15, totalTimeMinutes: 90, completedTrainingsCount: 2 },
+  });
+
+  assert.match(prompt, /Use miles for all distances and °F for all temperatures/);
+  assert.match(prompt, /Previous week total distance \(miles\): 9\.32 mi/);
+  assert.doesNotMatch(prompt, /Previous week total distance \(km\)/);
 });
 
 test('buildPromptContext binds the active cycle and completed previous-week metrics', () => {

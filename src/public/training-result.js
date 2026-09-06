@@ -1,7 +1,8 @@
-import { initShell, getShellI18n } from './shared/shell.js';
+import { initShell, getShellI18n, getUserPreferences } from './shared/shell.js';
 import { translate } from './shared/i18n.js';
 import { formatDate as formatLocalizedDate, formatWeekday } from './shared/date.js';
 import { fetchTraining, saveTrainingFeedback, fetchShoes } from './shared/api.js';
+import { formatDistance, formatPaceFromMetric } from './shared/units.js';
 
 // Sessions open contextually via /training-result.html?id=<id>; without an
 // id there is nothing to show, so the page bounces back to the calendar.
@@ -203,7 +204,8 @@ export function painPromptText(hasPainValue, description, translate) {
 // Maps the loaded session row plus the current form state onto the shared
 // placeholder contract. FIT metrics come from persisted data when available,
 // falling back to dashes.
-export function collectPromptValues({ training, form, fitData }) {
+export function collectPromptValues({ training, form, fitData, preferences = {} }) {
+  const distanceUnit = preferences.distance_unit === 'mi' ? 'mi' : 'km';
   return {
     DATA: formatDateLabel(training.dia, form.language),
     DIA_SEMANA: weekdayLabel(training.dia, form.language),
@@ -213,8 +215,8 @@ export function collectPromptValues({ training, form, fitData }) {
     RPE_ALVO: training.rpe,
     TENIS: training.tenis,
     DURACAO: fitData?.fit_duration || '-',
-    DISTANCIA: fitData?.fit_distance != null ? `${fitData.fit_distance.toFixed(2)} km` : '-',
-    PACE_MEDIO: fitData?.fit_avg_pace ? `${fitData.fit_avg_pace} min/km` : '-',
+    DISTANCIA: fitData?.fit_distance != null ? formatDistance(fitData.fit_distance, distanceUnit) : '-',
+    PACE_MEDIO: fitData?.fit_avg_pace ? formatPaceFromMetric(fitData.fit_avg_pace, distanceUnit) : '-',
     FC_MEDIA: fitData?.fit_avg_hr || '-',
     FC_MAXIMA: fitData?.fit_max_hr || '-',
     DESNIVEL_POSITIVO: fitData?.fit_elevation_gain != null ? `${fitData.fit_elevation_gain} m` : '-',
@@ -229,7 +231,7 @@ export function collectPromptValues({ training, form, fitData }) {
     DOR_DESCONFORTO: form.pain_description,
     FEEDBACK: form.feedback_notas,
     ANEXAR_SCREENSHOT_GARMIN_OU_INSERIR_DADOS_DE_LAPS_AQUI: fitData?.laps?.length
-      ? buildLapsMarkdown(fitData.laps)
+      ? buildLapsMarkdown(fitData.laps, preferences)
       : form.fitAttached
         ? 'Ver anexo'
         : '-',
@@ -262,7 +264,8 @@ export function fitDropzonePrimaryHtml({ files, translate }) {
 // Builds a Markdown table from parsed FIT lap data so it can be injected
 // directly into the AI coach prompt. Returns an empty string when there are
 // no laps to display.
-export function buildLapsMarkdown(laps) {
+export function buildLapsMarkdown(laps, preferences = {}) {
+  const distanceUnit = preferences.distance_unit === 'mi' ? 'mi' : 'km';
   if (!Array.isArray(laps) || laps.length === 0) return '';
   const header = '| # | Type | Distance | Duration | Pace | HR avg. | Ascent |';
   const separator = '|---|------|----------|----------|------|---------|--------|';
@@ -272,7 +275,9 @@ export function buildLapsMarkdown(laps) {
     const pace = lap.avgPaceLabel ?? '-';
     const hr = lap.avgHeartRate ?? '-';
     const ascent = lap.ascentMeters != null ? `${lap.ascentMeters} m` : '-';
-    return `| ${lap.lap} | ${lap.stepType} | ${distance} km | ${duration} | ${pace} min/km | ${hr} | ${ascent} |`;
+    const paceLabel = pace === '-' ? `- min/${distanceUnit}` : formatPaceFromMetric(pace, distanceUnit);
+    const distanceValue = distance === '-' ? '-' : formatDistance(distance, distanceUnit).replace(/\s(km|mi)$/, '');
+    return `| ${lap.lap} | ${lap.stepType} | ${distanceValue} ${distanceUnit} | ${duration} | ${paceLabel} | ${hr} | ${ascent} |`;
   });
   return [header, separator, ...rows].join('\n');
 }
@@ -411,19 +416,20 @@ async function initTrainingResult() {
     }
     fitLapsSection.hidden = false;
     const fragment = document.createDocumentFragment();
+    const distanceUnit = getUserPreferences().distance_unit;
     for (const lap of laps) {
       const tr = document.createElement('tr');
       const distance = lap.distanceLabel ?? '-';
       const duration = lap.durationLabel ?? '-';
-      const pace = lap.avgPaceLabel ?? '-';
+      const pace = formatPaceFromMetric(lap.avgPaceLabel ?? '-', distanceUnit);
       const hr = lap.avgHeartRate ?? '-';
       const ascent = lap.ascentMeters != null ? `${lap.ascentMeters} m` : '-';
       tr.innerHTML = [
         `<td>${escapeHtmlText(String(lap.lap))}</td>`,
         `<td>${escapeHtmlText(lap.stepType)}</td>`,
-        `<td>${escapeHtmlText(distance)} km</td>`,
+        `<td>${escapeHtmlText(distance === '-' ? '-' : formatDistance(distance, distanceUnit).replace(/\s(km|mi)$/, ''))} ${distance === '-' ? '' : distanceUnit}</td>`,
         `<td>${escapeHtmlText(duration)}</td>`,
-        `<td>${escapeHtmlText(pace)} min/km</td>`,
+        `<td>${escapeHtmlText(pace)}</td>`,
         `<td>${escapeHtmlText(String(hr))}</td>`,
         `<td>${escapeHtmlText(ascent)}</td>`,
       ].join('');
@@ -440,10 +446,11 @@ async function initTrainingResult() {
     }
     fitDataSection.hidden = false;
     document.getElementById('fitDuration').textContent = fitData.fit_duration || '-';
+    const distanceUnit = getUserPreferences().distance_unit;
     document.getElementById('fitDistance').textContent =
-      fitData.fit_distance != null ? `${fitData.fit_distance.toFixed(2)} km` : '-';
+      fitData.fit_distance != null ? formatDistance(fitData.fit_distance, distanceUnit) : '-';
     document.getElementById('fitAvgPace').textContent =
-      fitData.fit_avg_pace ? `${fitData.fit_avg_pace} min/km` : '-';
+      fitData.fit_avg_pace ? formatPaceFromMetric(fitData.fit_avg_pace, distanceUnit) : '-';
     document.getElementById('fitAvgHr').textContent = fitData.fit_avg_hr ?? '-';
     document.getElementById('fitMaxHr').textContent = fitData.fit_max_hr ?? '-';
     document.getElementById('fitElevation').textContent =
@@ -622,7 +629,7 @@ async function initTrainingResult() {
   generateBtn.addEventListener('click', async () => {
     promptText = buildAnalysisPrompt(
       templateFor(i18n.language),
-      collectPromptValues({ training, form: collectFormState(), fitData })
+      collectPromptValues({ training, form: collectFormState(), fitData, preferences: getUserPreferences() })
     );
     promptOutput.value = promptText;
     promptSection.hidden = false;
@@ -675,6 +682,10 @@ async function initTrainingResult() {
     if (!copyPromptBtn.disabled) copyLabel.textContent = t('session.copyPrompt');
     renderFitDropzoneState();
     applyTooltips();
+  });
+
+  document.addEventListener('kinesis:preferences-changed', () => {
+    renderFitData();
   });
 }
 

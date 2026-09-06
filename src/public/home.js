@@ -2,6 +2,7 @@ import { fetchActiveCycle, fetchCalendarTrainings } from './shared/api.js';
 import { initShell, getShellI18n, getUserPreferences } from './shared/shell.js';
 import { translate } from './shared/i18n.js';
 import { formatDate as formatLocalizedDate } from './shared/date.js';
+import { formatDistance } from './shared/units.js';
 
 export const ZENQUOTES_URL = 'https://zenquotes.io/api/today';
 export const QUOTE_TIMEOUT_MS = 3000;
@@ -104,8 +105,8 @@ export function accumulateWeeklyMetrics(trainings) {
   return { distanceKm, durationSeconds };
 }
 
-export function formatDistanceKm(km) {
-  return `${Number(km || 0).toFixed(2)} km`;
+export function formatDistanceKm(km, distanceUnit = 'km') {
+  return formatDistance(Number(km || 0), distanceUnit);
 }
 
 export function formatDuration(seconds) {
@@ -291,9 +292,12 @@ export function cycleCardContent(cycle, messages, today = new Date(), language =
   };
 }
 
-export function metricsCardContent(metrics) {
+export function metricsCardContent(metrics, preferences = {}) {
   const { distanceKm = 0, durationSeconds = 0 } = metrics || {};
-  return { distance: formatDistanceKm(distanceKm), time: formatDuration(durationSeconds) };
+  return {
+    distance: formatDistanceKm(distanceKm, preferences.distance_unit),
+    time: formatDuration(durationSeconds),
+  };
 }
 
 // Renders one and only one cycle state. Every switch touches BOTH sibling
@@ -411,6 +415,8 @@ function setupHomePage() {
     range: null,
     trainingDates: new Set(),
     firstDay: 'Monday',
+    distanceUnit: 'km',
+    temperatureUnit: 'C',
   };
 
   let i18n = null;
@@ -460,7 +466,7 @@ function setupHomePage() {
     const content = metricsCardContent({
       distanceKm: state.distanceKm,
       durationSeconds: state.durationSeconds,
-    });
+    }, { distance_unit: state.distanceUnit });
     if (weeklyDistance) weeklyDistance.textContent = content.distance;
     if (weeklyTime) weeklyTime.textContent = content.time;
   }
@@ -514,9 +520,17 @@ function setupHomePage() {
 
   document.addEventListener('kinesis:preferences-changed', (event) => {
     const next = event.detail?.first_day_of_week;
-    if (!SUPPORTED_WEEK_STARTS.includes(next) || next === state.firstDay) return;
-    state.firstDay = next;
-    loadMetrics();
+    const nextDistance = event.detail?.distance_unit;
+    const weekChanged = SUPPORTED_WEEK_STARTS.includes(next) && next !== state.firstDay;
+    const distanceChanged = nextDistance === 'km' || nextDistance === 'mi';
+    if (distanceChanged) {
+      state.distanceUnit = nextDistance;
+      renderMetrics();
+    }
+    if (weekChanged) {
+      state.firstDay = next;
+      loadMetrics();
+    }
   });
 
   return {
@@ -524,7 +538,10 @@ function setupHomePage() {
     start(user) {
       if (!user) return null;
       i18n = getShellI18n();
-      state.firstDay = getUserPreferences().first_day_of_week;
+      const preferences = getUserPreferences();
+      state.firstDay = preferences.first_day_of_week;
+      state.distanceUnit = preferences.distance_unit;
+      state.temperatureUnit = preferences.temperature_unit;
       preloadHeroImage(heroBanner, heroImageFor());
       loadHeroQuote();
       loadCycle();
