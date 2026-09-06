@@ -102,6 +102,8 @@ test('findActiveSession hydrates the user for valid tokens', () => {
       last_name: null,
       preferred_lang: 'en-US',
       first_day_of_week: 'Monday',
+      distance_unit: 'km',
+      temperature_unit: 'C',
     },
   });
 

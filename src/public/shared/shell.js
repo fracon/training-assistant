@@ -1,10 +1,16 @@
-import { currentUser, signOut, changePassword } from './api.js';
+import { currentUser, signOut, changePassword, updateUserPreferences } from './api.js';
 import {
   createI18n,
   wireLanguageSwitcher,
   translate,
 } from './i18n.js';
 import { validatePasswordChange, MIN_PASSWORD_LENGTH } from './validators.js';
+import {
+  DEFAULT_USER_PREFERENCES,
+  normalizeUserPreferences,
+  readUserPreferences,
+  writeUserPreferences,
+} from './preferences.js';
 
 const SIDEBAR_STORAGE_KEY = 'training-assistant:sidebar-collapsed';
 const CYCLE_DEPENDENT_ITEMS = ['ai-coach', 'calendar'];
@@ -151,6 +157,21 @@ let shellI18n = createI18n({
   onChange: () => document.dispatchEvent(new CustomEvent('app:languagechange')),
 });
 
+let userPreferences = { ...DEFAULT_USER_PREFERENCES };
+
+export function getUserPreferences() {
+  return { ...userPreferences };
+}
+
+export async function saveUserPreferences(values) {
+  const saved = await updateUserPreferences(values);
+  userPreferences = writeUserPreferences(saved);
+  document.dispatchEvent(new CustomEvent('kinesis:preferences-changed', {
+    detail: { ...userPreferences },
+  }));
+  return { ...userPreferences };
+}
+
 export function getShellI18n() {
   return shellI18n;
 }
@@ -240,6 +261,15 @@ export function buildUserMenu() {
   changePasswordLabel.textContent = 'Change Password';
   changePassword.appendChild(changePasswordLabel);
   dropdown.appendChild(changePassword);
+  const preferences = el('button', 'user-menu-item');
+  preferences.type = 'button';
+  preferences.id = 'userPreferences';
+  preferences.appendChild(icon('settings'));
+  const preferencesLabel = el('span');
+  preferencesLabel.setAttribute('data-i18n', 'shell.preferences');
+  preferencesLabel.textContent = 'Preferences';
+  preferences.appendChild(preferencesLabel);
+  dropdown.appendChild(preferences);
   menu.appendChild(dropdown);
   return menu;
 }
@@ -507,6 +537,141 @@ export function openChangePasswordModal(messages = shellI18n.messages) {
   refreshIcons();
 }
 
+function buildPreferenceChoice(name, value, labelKey, checked) {
+  const label = el('label', 'preference-choice');
+  const input = document.createElement('input');
+  input.type = 'radio';
+  input.name = name;
+  input.value = value;
+  input.checked = checked;
+  label.appendChild(input);
+  const text = el('span');
+  text.setAttribute('data-i18n', labelKey);
+  text.textContent = translate(shellI18n.messages, labelKey);
+  label.appendChild(text);
+  return label;
+}
+
+function buildPreferenceGroup(name, labelKey, choices, selected) {
+  const field = el('fieldset', 'field preference-field');
+  const legend = el('legend', 'field-label');
+  legend.setAttribute('data-i18n', labelKey);
+  legend.textContent = translate(shellI18n.messages, labelKey);
+  field.appendChild(legend);
+  const options = el('div', 'preference-options');
+  for (const choice of choices) {
+    options.appendChild(buildPreferenceChoice(name, choice.value, choice.labelKey, choice.value === selected));
+  }
+  field.appendChild(options);
+  return field;
+}
+
+function syncPreferencesFields(form) {
+  for (const [name, value] of Object.entries(userPreferences)) {
+    const input = form.querySelector(`input[name="${name}"][value="${value}"]`);
+    if (input) input.checked = true;
+  }
+}
+
+export function openPreferencesModal(messages = shellI18n.messages) {
+  closeUserMenu();
+  const existing = document.getElementById('preferencesModal');
+  if (existing) {
+    existing.classList.remove('hidden');
+    syncPreferencesFields(document.getElementById('preferencesForm'));
+    translateAll(existing, messages);
+    refreshIcons();
+    return;
+  }
+
+  const backdrop = el('div', 'modal-backdrop password-modal-backdrop preferences-modal-backdrop');
+  backdrop.id = 'preferencesModal';
+  backdrop.setAttribute('role', 'dialog');
+  backdrop.setAttribute('aria-modal', 'true');
+  const card = el('div', 'modal-card password-modal-card preferences-modal-card');
+  card.setAttribute('role', 'document');
+  const header = el('div', 'modal-header');
+  const title = el('h2');
+  title.setAttribute('data-i18n', 'preferences.title');
+  title.textContent = translate(messages, 'preferences.title');
+  const close = el('button', 'modal-close');
+  close.type = 'button';
+  close.id = 'closePreferencesBtn';
+  close.setAttribute('data-i18n-aria-label', 'preferences.title');
+  close.setAttribute('aria-label', translate(messages, 'preferences.title'));
+  close.appendChild(icon('x'));
+  header.appendChild(title);
+  header.appendChild(close);
+  card.appendChild(header);
+
+  const form = el('form', 'password-form preferences-form');
+  form.id = 'preferencesForm';
+  form.appendChild(buildPreferenceGroup('first_day_of_week', 'preferences.firstDayLabel', [
+    { value: 'Monday', labelKey: 'preferences.firstDay.monday' },
+    { value: 'Sunday', labelKey: 'preferences.firstDay.sunday' },
+  ], userPreferences.first_day_of_week));
+  form.appendChild(buildPreferenceGroup('distance_unit', 'preferences.distanceLabel', [
+    { value: 'km', labelKey: 'preferences.distance.km' },
+    { value: 'mi', labelKey: 'preferences.distance.mi' },
+  ], userPreferences.distance_unit));
+  form.appendChild(buildPreferenceGroup('temperature_unit', 'preferences.temperatureLabel', [
+    { value: 'C', labelKey: 'preferences.temperature.celsius' },
+    { value: 'F', labelKey: 'preferences.temperature.fahrenheit' },
+  ], userPreferences.temperature_unit));
+  const actions = el('div', 'form-actions');
+  const submit = el('button', 'btn-primary');
+  submit.type = 'submit';
+  submit.id = 'preferencesSubmit';
+  submit.appendChild(icon('settings'));
+  const submitLabel = el('span');
+  submitLabel.setAttribute('data-i18n', 'preferences.save');
+  submitLabel.textContent = translate(messages, 'preferences.save');
+  submit.appendChild(submitLabel);
+  actions.appendChild(submit);
+  form.appendChild(actions);
+  card.appendChild(form);
+  backdrop.appendChild(card);
+  document.body.appendChild(backdrop);
+  translateAll(backdrop, messages);
+  wirePreferencesForm(form, messages);
+  backdrop.addEventListener('click', (event) => {
+    if (event.target === backdrop) closePreferencesModal();
+  });
+  close.addEventListener('click', closePreferencesModal);
+  refreshIcons();
+}
+
+export function closePreferencesModal() {
+  const modal = document.getElementById('preferencesModal');
+  if (modal) modal.classList.add('hidden');
+}
+
+export function wirePreferencesForm(form, messages = shellI18n.messages) {
+  const submit = form.querySelector('#preferencesSubmit');
+  const submitLabel = submit.querySelector('span');
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const activeMessages = shellI18n.messages;
+    const values = {
+      first_day_of_week: form.elements.first_day_of_week.value,
+      distance_unit: form.elements.distance_unit.value,
+      temperature_unit: form.elements.temperature_unit.value,
+    };
+    submit.disabled = true;
+    submitLabel.textContent = translate(activeMessages, 'preferences.saving');
+    try {
+      await saveUserPreferences(values);
+      showShellToast(activeMessages, 'preferences.saved');
+      closePreferencesModal();
+    } catch {
+      showShellToast(activeMessages, 'preferences.error', 'error');
+    } finally {
+      submit.disabled = false;
+      submitLabel.textContent = translate(activeMessages, 'preferences.save');
+    }
+  });
+}
+
 export function closeChangePasswordModal() {
   const modal = document.getElementById('changePasswordModal');
   if (!modal) return;
@@ -686,6 +851,7 @@ export function wireUserMenu() {
     if (event.key === 'Escape') {
       closeUserMenu();
       closeChangePasswordModal();
+      closePreferencesModal();
     }
   });
 
@@ -693,6 +859,9 @@ export function wireUserMenu() {
   // modal instead of merely collapsing the dropdown.
   document.getElementById('userChangePassword').addEventListener('click', () => {
     openChangePasswordModal();
+  });
+  document.getElementById('userPreferences').addEventListener('click', () => {
+    openPreferencesModal();
   });
 }
 
@@ -732,6 +901,13 @@ export async function initShell({ active } = {}) {
   await shellI18n.init(user.preferred_lang);
   syncToggleState(shellRoot, readSidebarCollapsed());
   refreshIcons();
+
+  userPreferences = writeUserPreferences({
+    ...readUserPreferences(),
+    first_day_of_week: user.first_day_of_week,
+    distance_unit: user.distance_unit,
+    temperature_unit: user.temperature_unit,
+  });
 
   setUserBadge(user);
   wireLogout();
@@ -785,6 +961,11 @@ export async function initShell({ active } = {}) {
     if (submit && !submit.disabled) {
       const label = submit.querySelector('span');
       if (label) label.textContent = translate(shellI18n.messages, 'password.submit');
+    }
+    const preferencesModal = document.getElementById('preferencesModal');
+    if (preferencesModal && !preferencesModal.classList.contains('hidden')) {
+      translateAll(preferencesModal, shellI18n.messages);
+      syncPreferencesFields(document.getElementById('preferencesForm'));
     }
   });
 

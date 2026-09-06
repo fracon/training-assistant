@@ -43,6 +43,10 @@ export function updateCalendarPreference(firstDay) {
   );
 }
 
+export function updateUserPreferences(preferences) {
+  return requestJson('/api/users/me/preferences', preferences, 'PATCH');
+}
+
 export function changePassword(payload) {
   return requestJson('/api/auth/password', payload, 'PUT');
 }

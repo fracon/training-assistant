@@ -24,7 +24,7 @@ test('cycles.html wires the shell, lucide and the full page', () => {
 
   assert.match(
     html,
-    /<title data-i18n="cycles\.pageTitle">Training Cycles • Kinesis<\/title>/,
+    /<title data-i18n="cycles\.pageTitle">Training Cycles - Kinesis<\/title>/,
     'the browser tab title is i18n-bound with the Kinesis suffix'
   );
   assert.match(html, /<h1 data-i18n="cycles\.title">Training Cycles<\/h1>/);
@@ -87,6 +87,17 @@ test('cycles.html form fields use data-i18n attributes for labels and placeholde
   assert.match(html, /data-i18n-placeholder="cycles\.otherEventsPlaceholder"/);
   assert.match(html, /data-i18n="cycles\.cancelForm"/);
   assert.match(html, /data-i18n="cycles\.saveCycle"/);
+});
+
+test('cycle date fields use the localized formatter while submitting ISO values', () => {
+  const html = readFileSync(join(publicDir, 'cycles.html'), 'utf8');
+  const js = readFileSync(join(publicDir, 'cycles.js'), 'utf8');
+  assert.match(html, /type="text" id="cycleTargetDate"/);
+  assert.match(html, /type="text" id="cycleStartDate"/);
+  assert.match(js, /formatDateInput/);
+  assert.match(js, /parseLocalizedDate/);
+  assert.match(js, /target_date: readDateInput\('cycleTargetDate', language\)/);
+  assert.match(js, /start_date: readDateInput\('cycleStartDate', language\)/);
 });
 
 test('cycles.html distance select has predefined options with i18n keys', () => {
@@ -285,7 +296,7 @@ test('cycles.js action handlers use i18n.messages not a stale closure', () => {
 
   assert.doesNotMatch(js, /const messages = i18n\.messages/);
 
-  assert.match(js, /openModal\('add',\s*null,\s*i18n\.messages\)/);
+  assert.match(js, /openModal\('add',\s*null,\s*i18n\.messages,\s*i18n\.language\)/);
   assert.match(js, /handleSubmit\(cycles,\s*i18n\.messages,\s*i18n\.language\)/);
   assert.match(js, /handleAction\(btn\.dataset\.action,\s*btn\.dataset\.id,\s*cycles,\s*i18n\.messages,\s*i18n\.language\)/);
   assert.match(js, /renderList\(cycles,\s*i18n\.messages,\s*i18n\.language\)/);
@@ -461,10 +472,10 @@ test('locale files expose every cycles string in both languages', () => {
   }
 
   assert.notEqual(en.cycles.title, pt.cycles.title);
-  assert.match(en.cycles.pageTitle, /• Kinesis$/);
-  assert.match(pt.cycles.pageTitle, /• Kinesis$/);
-  assert.equal(en.cycles.pageTitle, 'Training Cycles • Kinesis');
-  assert.equal(pt.cycles.pageTitle, 'Ciclos de Treino • Kinesis');
+  assert.match(en.cycles.pageTitle, /- Kinesis$/);
+  assert.match(pt.cycles.pageTitle, /- Kinesis$/);
+  assert.equal(en.cycles.pageTitle, 'Training Cycles - Kinesis');
+  assert.equal(pt.cycles.pageTitle, 'Ciclos de Treino - Kinesis');
   assert.equal(en.shell.nav.cycles, 'Training Cycles');
   assert.equal(pt.shell.nav.cycles, 'Ciclos de Treino');
 });

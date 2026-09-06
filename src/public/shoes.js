@@ -1,6 +1,7 @@
-import { initShell, getShellI18n, refreshIcons, showConfirm } from './shared/shell.js';
+import { initShell, getShellI18n, getUserPreferences, refreshIcons, showConfirm } from './shared/shell.js';
 import { translate } from './shared/i18n.js';
 import { fetchShoes, createShoe, updateShoe, deleteShoe } from './shared/api.js';
+import { formatDistance } from './shared/units.js';
 
 const STATUS_ACTIVE = 'active';
 const STATUS_RETIRED = 'retired';
@@ -40,13 +41,19 @@ export function validateShoeForm(brand, model, mileage, targetMileage) {
   return errors;
 }
 
-export function buildMileageDisplay(shoe, messages) {
+export function buildMileageDisplay(shoe, messages, preferences = {}) {
+  const unit = preferences.distance_unit === 'mi' ? 'mi' : 'km';
+  const decimals = unit === 'mi' ? 2 : 0;
+  const value = (raw) => unit === 'mi'
+    ? formatDistance(raw, unit, decimals)
+    : String(raw ?? 0);
   if (shoe.target_mileage != null && shoe.target_mileage > 0) {
     return t(messages, 'shoes.progress')
-      .replace('{current}', String(shoe.mileage ?? 0))
-      .replace('{target}', String(shoe.target_mileage));
+      .replace('{current}', value(shoe.mileage))
+      .replace('{target}', value(shoe.target_mileage))
+      .replace(/ km$/, unit === 'mi' ? '' : ' km');
   }
-  return `${shoe.mileage ?? 0} km`;
+  return formatDistance(shoe.mileage ?? 0, unit, decimals);
 }
 
 export function buildProgressPercent(shoe) {
@@ -71,10 +78,14 @@ function renderShoeCard(shoe, messages) {
         <div class="shoe-progress-bar">
           <div class="shoe-progress-fill" style="width: ${pct}%"></div>
         </div>
-        <span class="shoe-progress-text">${buildMileageDisplay(shoe, messages)}</span>
+        <span class="shoe-progress-text">${buildMileageDisplay(shoe, messages, getUserPreferences())}</span>
       </div>`;
   } else {
-    progressHtml = `<span class="shoe-mileage-only">${shoe.mileage ?? 0} km</span>`;
+    progressHtml = `<span class="shoe-mileage-only">${formatDistance(
+      shoe.mileage ?? 0,
+      getUserPreferences().distance_unit,
+      getUserPreferences().distance_unit === 'mi' ? 2 : 0
+    )}</span>`;
   }
 
   card.innerHTML = `
@@ -316,6 +327,10 @@ export async function initShoesPage() {
       saveLabel.textContent = translate(msgs, 'shoes.save');
       cancelBtn.textContent = translate(msgs, 'shoes.cancel');
     }
+  });
+
+  document.addEventListener('kinesis:preferences-changed', () => {
+    renderList(shoes, i18n.messages);
   });
 
   try {

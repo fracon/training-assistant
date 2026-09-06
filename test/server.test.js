@@ -354,6 +354,8 @@ test('POST /api/auth/register creates a user and never exposes the hash', async 
     last_name: 'Vilaça',
     preferred_lang: 'en-US',
     first_day_of_week: 'Monday',
+    distance_unit: 'km',
+    temperature_unit: 'C',
   });
   assert.ok(!response.body.includes('password_hash'));
 

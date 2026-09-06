@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title data-i18n="aiCoach.pageTitle">Request Workouts • Kinesis</title>
+  <title data-i18n="aiCoach.pageTitle">Request Workouts - Kinesis</title>
   <link rel="stylesheet" href="shared/shell.css">
   <link rel="stylesheet" href="ai-coach.css">
 </head>
@@ -18,7 +18,7 @@
       <form id="promptForm" class="prompt-form" novalidate>
         <div class="field">
           <label for="targetDate" data-i18n="aiCoach.targetDate">Target date</label>
-          <input type="date" id="targetDate" required>
+          <input type="text" id="targetDate" inputmode="numeric" placeholder="DD/MM/YYYY" autocomplete="off" required>
           <p class="field-hint" data-i18n="aiCoach.targetDateHint">Week to plan. Defaults to next Monday.</p>
         </div>
 

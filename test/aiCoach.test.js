@@ -116,14 +116,16 @@ test('the prompt template keeps the required Portuguese structure', () => {
   assert.ok(!PROMPT_TEMPLATE.includes('Exemplos:'), 'example list lives in the UI, not the prompt');
 
   const tokens = PROMPT_TEMPLATE.match(/\{\{[A-Z_]+\}\}/g) ?? [];
-  assert.equal(tokens.length, 18, 'the template carries all schedule and cycle-context placeholders');
+  assert.equal(tokens.length, 21, 'the template carries all schedule, cycle-context, and unit placeholders');
   assert.deepEqual(tokens, [
+    '{{UNIT_INSTRUCTION}}',
     '{{CYCLE_NAME}}',
     '{{CYCLE_GOAL}}',
     '{{TARGET_RACE_DATE}}',
     '{{CURRENT_WEEK}}',
     '{{DAYS_REMAINING}}',
     '{{PREV_WEEK_TRAININGS}}',
+    '{{DISTANCE_UNIT_LABEL}}',
     '{{PREV_WEEK_DISTANCE_KM}}',
     '{{PREV_WEEK_TIME_MINUTES}}',
     '{{DATA_DA_SEGUNDA}}',
@@ -136,6 +138,7 @@ test('the prompt template keeps the required Portuguese structure', () => {
     '{{DISP_SAB}}',
     '{{DISP_DOM}}',
     '{{CONTEXTO_OPCIONAL}}',
+    '{{WEATHER_EXAMPLE}}',
   ]);
 });
 
@@ -259,12 +262,13 @@ test('ai-coach.html wires the shell, lucide and the full form', () => {
 
   assert.match(
     html,
-    /<title data-i18n="aiCoach\.pageTitle">Request Workouts • Kinesis<\/title>/,
+    /<title data-i18n="aiCoach\.pageTitle">Request Workouts - Kinesis<\/title>/,
     'the browser tab title is i18n-bound with the Kinesis suffix'
   );
   assert.match(html, /<h1 data-i18n="aiCoach\.title">Request Workouts<\/h1>/);
 
-  assert.match(html, /type="date" id="targetDate"/);
+  assert.match(html, /type="text" id="targetDate"/);
+  assert.match(html, /inputmode="numeric"/);
   for (const id of ['dispSeg', 'dispTer', 'dispQua', 'dispQui', 'dispSex', 'dispSab', 'dispDom']) {
     assert.match(html, new RegExp(`id="${id}" value="Rotina normal"`));
   }
@@ -281,6 +285,14 @@ test('ai-coach.html wires the shell, lucide and the full form', () => {
   assert.match(html, /data-lucide="copy"/);
   assert.match(html, /<pre id="promptOutput"/);
   assert.match(html, /data-i18n="aiCoach\.title"/);
+});
+
+test('training request date input uses localized display with ISO state binding', () => {
+  const js = readFileSync(join(publicDir, 'ai-coach.js'), 'utf8');
+  assert.match(js, /formatDateInput/);
+  assert.match(js, /parseLocalizedDate/);
+  assert.match(js, /targetDateInput\.dataset\.iso/);
+  assert.match(js, /const targetDate = parseInputDate\(targetIso\)/);
 });
 
 test('the generate button matches the shared primary hover contract', () => {
@@ -331,10 +343,10 @@ test('locale files expose every ai-coach string in both languages', async () => 
   }
 
   assert.notEqual(en.aiCoach.title, pt.aiCoach.title);
-  assert.match(en.aiCoach.pageTitle, /• Kinesis$/);
-  assert.match(pt.aiCoach.pageTitle, /• Kinesis$/);
-  assert.equal(en.aiCoach.pageTitle, 'Request Workouts • Kinesis');
-  assert.equal(pt.aiCoach.pageTitle, 'Solicitar Treinos • Kinesis');
+  assert.match(en.aiCoach.pageTitle, /- Kinesis$/);
+  assert.match(pt.aiCoach.pageTitle, /- Kinesis$/);
+  assert.equal(en.aiCoach.pageTitle, 'Request Workouts - Kinesis');
+  assert.equal(pt.aiCoach.pageTitle, 'Solicitar Treinos - Kinesis');
   assert.equal(en.aiCoach.shoesSectionTitle, 'SHOES AVAILABLE FOR ROTATION');
   assert.equal(pt.aiCoach.shoesSectionTitle, 'TÊNIS DISPONÍVEIS PARA ROTAÇÃO');
 });
@@ -478,6 +490,31 @@ test('buildPrompt injects localized cycle and previous-week context in English',
   assert.match(prompt, /Completed trainings in the previous week: 4/);
   assert.match(prompt, /Previous week total distance \(km\): 42\.5/);
   assert.match(prompt, /Previous week total time \(minutes\): 238/);
+});
+
+test('buildPrompt converts previous-week distance and instructs the coach to use imperial units', () => {
+  const prompt = buildPrompt({
+    targetDate: new Date(2026, 7, 31),
+    lang: 'en-US',
+    preferences: { distance_unit: 'mi', temperature_unit: 'F' },
+    previousWeek: { totalDistanceKm: 15, totalTimeMinutes: 90, completedTrainingsCount: 2 },
+  });
+
+  assert.match(prompt, /Use miles for all distances and °F for all temperatures/);
+  assert.match(prompt, /Previous week total distance \(miles\): 9\.32 mi/);
+  assert.match(prompt, /Weather Forecast.*73–75 °F/s);
+  assert.doesNotMatch(prompt, /Previous week total distance \(km\)/);
+});
+
+test('buildPrompt localizes metric unit instructions and weather examples in Portuguese', () => {
+  const prompt = buildPrompt({
+    targetDate: new Date(2026, 7, 31),
+    lang: 'pt-BR',
+    preferences: { distance_unit: 'km', temperature_unit: 'C' },
+  });
+
+  assert.match(prompt, /Use quilômetros para todas as distâncias e °C para todas as temperaturas/);
+  assert.match(prompt, /Previsão do tempo.*\(ex: 23–24 °C, parcialmente nublado \(~12h\)\)/s);
 });
 
 test('buildPromptContext binds the active cycle and completed previous-week metrics', () => {

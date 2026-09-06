@@ -34,6 +34,13 @@ follow-up changes:
   loader must remain hidden once a quote is rendered (`.hero-loading.hidden`).
 - The branch has been validated repeatedly with `npm run test:coverage`; the
   required Statements, Branches, Functions, and Lines thresholds remain 100%.
+- The `feature/user-preferences` work is complete: the Preferences modal,
+  authenticated persistence, Calendar/Home synchronization, and Trainings
+  page two-way week-start binding are implemented and tested.
+- Distance and temperature conversions are centralized in
+  `src/public/shared/units.js`; UI values remain metric in storage and are
+  converted only for display or prompt generation according to the global
+  preferences store.
 
 ## 🏆 Golden Rules
 1. **Local-First & Privacy:** Never send `.FIT` data or user inputs to external cloud APIs for processing. All data parsing happens on the local server/browser.
@@ -45,6 +52,8 @@ follow-up changes:
 7. **Tooltips:** NEVER use the native HTML `title` attribute. Always use the custom Kinesis tooltip component — a child `<div class="custom-tooltip">` inside the trigger element, styled via CSS (dark `var(--ink)` background, `0.15s` opacity transition, `z-index: 50`). This ensures visual consistency and eliminates native rendering delays.
 
 8. **Golden Rule for Dates:** All dates displayed in the application MUST use the central date formatting utility and respect the active i18n locale. Hardcoded or ad-hoc date formatting inside components or services is strictly prohibited.
+9. **Golden Rule for Units:** All displayed distances and temperatures MUST use the centralized unit conversion utility and the active user preferences. Components and prompt templates must not hardcode `km`, `mi`, `°C`, or `°F` when rendering stored values.
+10. **Golden Rule for Versioning:** Always increment the application version before opening a Pull Request. You must strictly adhere to Semantic Versioning (SemVer) principles: MAJOR (incompatible API/architecture changes), MINOR (backward-compatible new features), and PATCH (backward-compatible bug fixes).
 
 ## 🌐 i18n Lifecycle and Dynamic DOM Reactivity
 

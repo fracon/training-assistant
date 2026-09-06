@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS users (
   last_name      TEXT,
   preferred_lang TEXT    NOT NULL DEFAULT 'en-US',
   first_day_of_week TEXT NOT NULL DEFAULT 'Monday',
+  distance_unit TEXT NOT NULL DEFAULT 'km',
+  temperature_unit TEXT NOT NULL DEFAULT 'C',
   created_at     TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -121,6 +123,12 @@ function migrateDatabase(db) {
     db.exec(
       "ALTER TABLE users ADD COLUMN first_day_of_week TEXT NOT NULL DEFAULT 'Monday'"
     );
+  }
+  if (!columns.some((column) => column.name === 'distance_unit')) {
+    db.exec("ALTER TABLE users ADD COLUMN distance_unit TEXT NOT NULL DEFAULT 'km'");
+  }
+  if (!columns.some((column) => column.name === 'temperature_unit')) {
+    db.exec("ALTER TABLE users ADD COLUMN temperature_unit TEXT NOT NULL DEFAULT 'C'");
   }
 
   const trainingColumns = db.pragma('table_info(trainings)');

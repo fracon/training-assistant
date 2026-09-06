@@ -4,7 +4,7 @@
   },
   "aiCoach": {
     "title": "Solicitar Treinos",
-    "pageTitle": "Solicitar Treinos • Kinesis",
+    "pageTitle": "Solicitar Treinos - Kinesis",
     "subtitle": "Monte um briefing detalhado para o seu coach de IA externo",
     "targetDate": "Data alvo",
     "targetDateHint": "Semana a ser planejada. Padrão: próxima segunda-feira.",
@@ -33,7 +33,7 @@
   },
   "calendar": {
     "title": "Treinos",
-    "pageTitle": "Treinos • Kinesis",
+    "pageTitle": "Treinos - Kinesis",
     "previousMonth": "Mês anterior",
     "nextMonth": "Próximo mês",
     "today": "Hoje",
@@ -87,13 +87,14 @@
     "logout": "Sair",
     "userMenu": "Menu da conta",
     "changePassword": "Alterar Senha",
+    "preferences": "Preferências",
     "confirm": {
       "yes": "Excluir",
       "no": "Cancelar"
     }
   },
   "login": {
-    "title": "Entrar • Kinesis",
+    "title": "Entrar - Kinesis",
     "heading": "Bem-vindo de volta",
     "subtitle": "Entre para manter seu diário de treinos em dia.",
     "emailLabel": "E-mail",
@@ -106,7 +107,7 @@
     "registeredBanner": "Conta criada! Entre para continuar."
   },
   "register": {
-    "title": "Criar Conta • Kinesis",
+    "title": "Criar Conta - Kinesis",
     "heading": "Crie sua conta",
     "subtitle": "Cadastre-se em segundos e mantenha todos os treinos em um só lugar.",
     "firstNameLabel": "Nome",
@@ -140,6 +141,19 @@
     "submitting": "Atualizando…",
     "toastSuccess": "Senha atualizada com sucesso!"
   },
+  "preferences": {
+    "title": "Preferências",
+    "firstDayLabel": "Primeiro dia da semana",
+    "firstDay": { "monday": "Segunda-feira", "sunday": "Domingo" },
+    "distanceLabel": "Unidade de distância",
+    "distance": { "km": "Quilómetros (km)", "mi": "Milhas (mi)" },
+    "temperatureLabel": "Unidade de temperatura",
+    "temperature": { "celsius": "Celsius (°C)", "fahrenheit": "Fahrenheit (°F)" },
+    "save": "Guardar preferências",
+    "saving": "A guardar…",
+    "saved": "Preferências guardadas com sucesso.",
+    "error": "Não foi possível guardar as preferências. Tente novamente."
+  },
   "auth": {
     "errors": {
       "currentRequired": "Informe sua senha atual.",
@@ -170,7 +184,7 @@
     "generic": "Algo deu errado. Tente novamente."
   },
   "training": {
-    "title": "Sessão de Treino • Kinesis"
+    "title": "Sessão de Treino - Kinesis"
   },
   "session": {
     "title": "Sessão de Treino",
@@ -267,7 +281,7 @@
   },
   "shoes": {
     "title": "Tênis",
-    "pageTitle": "Tênis • Kinesis",
+    "pageTitle": "Tênis - Kinesis",
     "subtitle": "Gerencie a rotação dos seus tênis de corrida",
     "addNew": "Cadastrar Tênis",
     "empty": "Nenhum tênis cadastrado ainda.",
@@ -313,7 +327,7 @@
   },
   "cycles": {
     "title": "Ciclos de Treino",
-    "pageTitle": "Ciclos de Treino • Kinesis",
+    "pageTitle": "Ciclos de Treino - Kinesis",
     "subtitle": "Gerencie seu macrociclo e blocos de treino",
     "addCycle": "Novo Ciclo",
     "empty": "Nenhum ciclo de treino ainda.",
@@ -501,7 +515,7 @@
       "goToCycles": "Ir para ciclos",
       "goToTrainings": "Ir para treinos"
     },
-    "pageTitle": "Painel • Kinesis",
+    "pageTitle": "Painel - Kinesis",
     "hero": {
       "loading": "Buscando a inspiração de hoje…",
       "ariaLabel": "Inspiração diária",

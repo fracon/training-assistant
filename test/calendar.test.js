@@ -207,10 +207,10 @@ test('calendar locale data is complete and parity-safe', () => {
   assert.equal(en.calendar.weekdaysShort[0], 'Mon');
   assert.equal(pt.calendar.weekdaysShort[0], 'Seg');
 
-  assert.match(en.calendar.pageTitle, /• Kinesis$/);
-  assert.match(pt.calendar.pageTitle, /• Kinesis$/);
-  assert.equal(en.calendar.pageTitle, 'Workouts • Kinesis');
-  assert.equal(pt.calendar.pageTitle, 'Treinos • Kinesis');
+  assert.match(en.calendar.pageTitle, /- Kinesis$/);
+  assert.match(pt.calendar.pageTitle, /- Kinesis$/);
+  assert.equal(en.calendar.pageTitle, 'Workouts - Kinesis');
+  assert.equal(pt.calendar.pageTitle, 'Treinos - Kinesis');
 });
 
 test('week-start label and toggle texts are translated with strict key parity', () => {
@@ -268,7 +268,7 @@ test('calendar header stacks title above a full-width actions row without a subt
 
   assert.match(
     html,
-    /<title data-i18n="calendar\.pageTitle">Workouts • Kinesis<\/title>/,
+    /<title data-i18n="calendar\.pageTitle">Workouts - Kinesis<\/title>/,
     'the browser tab title is i18n-bound with the Kinesis suffix'
   );
 
@@ -392,6 +392,17 @@ test('calendar.js renders localized toggle texts and refreshes on language chang
   const handlerBody = js.slice(handlerStart, handlerEnd);
   assert.ok(handlerBody.includes('syncToggleButtons()'), 'toggle labels re-render instantly');
   assert.ok(handlerBody.includes('render()'), 'month title and grid headers re-render instantly');
+  assert.match(js, /addEventListener\('kinesis:preferences-changed'/);
+  assert.match(js, /state\.firstDay = next/);
+});
+
+test('trainings week-start widget delegates changes to the global preference store', () => {
+  const js = readFileSync(join(publicDir, 'calendar.js'), 'utf8');
+
+  assert.match(js, /getUserPreferences/);
+  assert.match(js, /saveUserPreferences/);
+  assert.match(js, /first_day_of_week: next/);
+  assert.doesNotMatch(js, /updateCalendarPreference\(/);
 });
 
 test('calendar imports use the shell snackbar with imported and skipped counts', () => {
