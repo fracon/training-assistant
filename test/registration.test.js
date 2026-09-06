@@ -37,6 +37,8 @@ test('normalizeRegistration trims fields, lowercases the email and tolerates a m
       last_name: 'Vilaça',
       preferred_lang: 'en-US',
       first_day_of_week: 'Monday',
+      distance_unit: 'km',
+      temperature_unit: 'C',
     }
   );
 
@@ -47,6 +49,8 @@ test('normalizeRegistration trims fields, lowercases the email and tolerates a m
     last_name: '',
     preferred_lang: 'en-US',
     first_day_of_week: 'Monday',
+    distance_unit: 'km',
+    temperature_unit: 'C',
   });
 
   assert.deepEqual(normalizeRegistration({ email: 42 }), {
@@ -56,6 +60,8 @@ test('normalizeRegistration trims fields, lowercases the email and tolerates a m
     last_name: '',
     preferred_lang: 'en-US',
     first_day_of_week: 'Monday',
+    distance_unit: 'km',
+    temperature_unit: 'C',
   });
 });
 
@@ -67,6 +73,12 @@ test('normalizeRegistration canonicalizes the preferred language and defaults ju
 test('normalizeRegistration canonicalizes the first day of week', () => {
   assert.equal(normalizeRegistration({ first_day_of_week: ' sunday ' }).first_day_of_week, 'Sunday');
   assert.equal(normalizeRegistration({ first_day_of_week: 'Funday' }).first_day_of_week, 'Monday');
+});
+
+test('normalizeRegistration canonicalizes dashboard units', () => {
+  const result = normalizeRegistration({ distance_unit: ' MI ', temperature_unit: ' f ' });
+  assert.equal(result.distance_unit, 'mi');
+  assert.equal(result.temperature_unit, 'F');
 });
 
 test('validateRegistration reports every missing field at once', () => {
@@ -116,6 +128,8 @@ test('registerUser persists a hashed user and returns data without the hash', as
     last_name: 'Vilaça',
     preferred_lang: 'en-US',
     first_day_of_week: 'Monday',
+    distance_unit: 'km',
+    temperature_unit: 'C',
   });
   assert.equal('password_hash' in user, false);
 

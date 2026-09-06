@@ -87,6 +87,7 @@
     "logout": "Sair",
     "userMenu": "Menu da conta",
     "changePassword": "Alterar Senha",
+    "preferences": "Preferências",
     "confirm": {
       "yes": "Excluir",
       "no": "Cancelar"
@@ -139,6 +140,19 @@
     "submit": "Atualizar Senha",
     "submitting": "Atualizando…",
     "toastSuccess": "Senha atualizada com sucesso!"
+  },
+  "preferences": {
+    "title": "Preferências",
+    "firstDayLabel": "Primeiro dia da semana",
+    "firstDay": { "monday": "Segunda-feira", "sunday": "Domingo" },
+    "distanceLabel": "Unidade de distância",
+    "distance": { "km": "Quilómetros (km)", "mi": "Milhas (mi)" },
+    "temperatureLabel": "Unidade de temperatura",
+    "temperature": { "celsius": "Celsius (°C)", "fahrenheit": "Fahrenheit (°F)" },
+    "save": "Guardar preferências",
+    "saving": "A guardar…",
+    "saved": "Preferências guardadas com sucesso.",
+    "error": "Não foi possível guardar as preferências. Tente novamente."
   },
   "auth": {
     "errors": {

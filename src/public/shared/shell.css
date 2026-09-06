@@ -490,6 +490,53 @@ body.shell-mounted {
   border-radius: 10px;
 }
 
+/* Preferences intentionally reuses the password modal wrapper and form
+   rhythm; only the radio choice layout is specific to this modal. */
+.preferences-modal-card {
+  max-width: 460px;
+}
+
+.preferences-form .preference-field {
+  border: 0;
+  padding: 0;
+  margin: 0 0 1rem;
+}
+
+.preferences-form .preference-field .field-label {
+  display: block;
+  padding: 0;
+  margin-bottom: 0.45rem;
+}
+
+.preference-options {
+  display: flex;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.preference-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 7.5rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+.preference-choice:has(input:checked) {
+  border-color: var(--accent-deep);
+  background: rgba(111, 144, 112, 0.12);
+}
+
+.preference-choice input {
+  accent-color: var(--accent-deep);
+}
+
 .password-form .form-error.hidden {
   display: none;
 }

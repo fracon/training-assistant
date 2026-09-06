@@ -87,6 +87,7 @@
     "logout": "Logout",
     "userMenu": "Account menu",
     "changePassword": "Change Password",
+    "preferences": "Preferences",
     "confirm": {
       "yes": "Delete",
       "no": "Cancel"
@@ -139,6 +140,19 @@
     "submit": "Update Password",
     "submitting": "Updating…",
     "toastSuccess": "Password updated successfully!"
+  },
+  "preferences": {
+    "title": "Preferences",
+    "firstDayLabel": "First day of the week",
+    "firstDay": { "monday": "Monday", "sunday": "Sunday" },
+    "distanceLabel": "Distance unit",
+    "distance": { "km": "Kilometres (km)", "mi": "Miles (mi)" },
+    "temperatureLabel": "Temperature unit",
+    "temperature": { "celsius": "Celsius (°C)", "fahrenheit": "Fahrenheit (°F)" },
+    "save": "Save Preferences",
+    "saving": "Saving…",
+    "saved": "Preferences saved successfully.",
+    "error": "Could not save preferences. Please try again."
   },
   "auth": {
     "errors": {

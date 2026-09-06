@@ -47,6 +47,8 @@ test('login issues an http-only session cookie backed by a database row', async 
       last_name: 'Vilaça',
       preferred_lang: 'en-US',
       first_day_of_week: 'Monday',
+      distance_unit: 'km',
+      temperature_unit: 'C',
     },
   });
   assert.ok(!login.body.includes('password_hash'));
@@ -161,6 +163,8 @@ test('/api/me serves the authenticated profile from the session cookie', async (
       last_name: 'Vilaça',
       preferred_lang: 'en-US',
       first_day_of_week: 'Monday',
+      distance_unit: 'km',
+      temperature_unit: 'C',
     },
   });
 
@@ -765,6 +769,49 @@ test('authenticated users can update their week start preference', async () => {
   });
   assert.equal(me.json().user.first_day_of_week, 'Monday');
 
+  await app.close();
+  db.close();
+});
+
+test('authenticated users can update all dashboard preferences', async () => {
+  const { db, app, cookiePair } = await calendarScenario();
+  const update = await app.inject({
+    method: 'PATCH',
+    url: '/api/users/me/preferences',
+    headers: { cookie: cookiePair },
+    payload: { first_day_of_week: 'sunday', distance_unit: 'MI', temperature_unit: 'f' },
+  });
+  assert.equal(update.statusCode, 200);
+  assert.deepEqual(update.json(), {
+    first_day_of_week: 'Sunday',
+    distance_unit: 'mi',
+    temperature_unit: 'F',
+  });
+  assert.deepEqual(
+    db.prepare('SELECT first_day_of_week, distance_unit, temperature_unit FROM users WHERE email = ?')
+      .get('rafael@example.com'),
+    { first_day_of_week: 'Sunday', distance_unit: 'mi', temperature_unit: 'F' }
+  );
+  await app.close();
+  db.close();
+});
+
+test('preferences updates reject unsupported values and anonymous requests', async () => {
+  const { db, app, cookiePair } = await calendarScenario();
+  for (const payload of [
+    { first_day_of_week: 'Tuesday', distance_unit: 'km', temperature_unit: 'C' },
+    { first_day_of_week: 'Monday', distance_unit: 'yards', temperature_unit: 'C' },
+    { first_day_of_week: 'Monday', distance_unit: 'km', temperature_unit: 'K' },
+    {},
+  ]) {
+    const response = await app.inject({
+      method: 'PATCH', url: '/api/users/me/preferences', headers: { cookie: cookiePair }, payload,
+    });
+    assert.equal(response.statusCode, 400);
+    assert.deepEqual(response.json(), { error: 'Unsupported preference.' });
+  }
+  const anonymous = await app.inject({ method: 'PATCH', url: '/api/users/me/preferences', payload: {} });
+  assert.equal(anonymous.statusCode, 401);
   await app.close();
   db.close();
 });

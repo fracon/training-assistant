@@ -521,7 +521,7 @@ test('wireUserMenu binds the badge click to toggle helpers and the item to the m
   );
   assert.match(
     js,
-    /document\.addEventListener\('keydown', \(event\) => \{\s*\n\s*if \(event\.key === 'Escape'\) \{\s*\n\s*closeUserMenu\(\);\s*\n\s*closeChangePasswordModal\(\);\s*\n\s*\}\s*\n\s*\}\);/,
+    /document\.addEventListener\('keydown', \(event\) => \{\s*\n\s*if \(event\.key === 'Escape'\) \{\s*\n\s*closeUserMenu\(\);\s*\n\s*closeChangePasswordModal\(\);\s*\n\s*closePreferencesModal\(\);\s*\n\s*\}\s*\n\s*\}\);/,
     'escape closes the dropdown and any open modal'
   );
   assert.match(
@@ -685,6 +685,7 @@ test('the user menu injects a clickable dropdown and the change-password item op
     const badge = registry.get('userBadge');
     const dropdown = registry.get('userDropdown');
     const changePassword = registry.get('userChangePassword');
+    const preferences = registry.get('userPreferences');
 
     assert.ok(menu.className === 'user-menu', 'the wrapper renders as .user-menu');
     assert.equal(badge.tag, 'button', 'the badge renders as a button');
@@ -708,6 +709,9 @@ test('the user menu injects a clickable dropdown and the change-password item op
       'Change Password',
       'the change-password item keeps its label'
     );
+    assert.equal(preferences.className, 'user-menu-item');
+    assert.equal(preferences.children[0].attrs['data-lucide'], 'settings');
+    assert.equal(preferences.children[1].textContent, 'Preferences');
 
     wireUserMenu();
 
@@ -731,6 +735,13 @@ test('the user menu injects a clickable dropdown and the change-password item op
     assert.ok(closeBtn, 'the modal ships a dedicated close button');
     closeBtn.listeners['click'][0]();
     assert.ok(modal.classList.contains('hidden'), 'the close button hides the modal');
+
+    preferences.listeners['click'][0]();
+    const preferencesModal = document.getElementById('preferencesModal');
+    assert.ok(preferencesModal, 'clicking preferences builds the standardized modal');
+    assert.ok(!preferencesModal.classList.contains('hidden'));
+    document.getElementById('closePreferencesBtn').listeners['click'][0]();
+    assert.ok(preferencesModal.classList.contains('hidden'));
 
     changePassword.listeners['click'][0]();
     modal.listeners['click'][0]({ target: modal });

@@ -25,6 +25,12 @@ const {
   isSupportedWeekStart,
   normalizeWeekStart,
 } = require('./auth/weekStart');
+const {
+  isSupportedDistanceUnit,
+  normalizeDistanceUnit,
+  isSupportedTemperatureUnit,
+  normalizeTemperatureUnit,
+} = require('./auth/preferences');
 const ExcelJS = require('exceljs');
 const { parseSheet } = require('./trainingImport');
 const { buildMacrocyclePrompt } = require('./prompts');
@@ -257,6 +263,32 @@ async function buildServer(options = {}) {
         return { first_day_of_week: firstDay };
       }
     );
+
+    app.patch('/api/users/me/preferences', { preHandler: requireAuth }, async (request, reply) => {
+      const body = request.body ?? {};
+      const firstDay = body.first_day_of_week;
+      const distanceUnit = body.distance_unit;
+      const temperatureUnit = body.temperature_unit;
+      if (!isSupportedWeekStart(firstDay) ||
+          !isSupportedDistanceUnit(distanceUnit) ||
+          !isSupportedTemperatureUnit(temperatureUnit)) {
+        return reply.code(400).send({ error: 'Unsupported preference.' });
+      }
+      const normalized = {
+        first_day_of_week: normalizeWeekStart(firstDay),
+        distance_unit: normalizeDistanceUnit(distanceUnit),
+        temperature_unit: normalizeTemperatureUnit(temperatureUnit),
+      };
+      db.prepare(
+        'UPDATE users SET first_day_of_week = ?, distance_unit = ?, temperature_unit = ? WHERE id = ?'
+      ).run(
+        normalized.first_day_of_week,
+        normalized.distance_unit,
+        normalized.temperature_unit,
+        request.user.id
+      );
+      return normalized;
+    });
 
     app.get('/api/calendar/trainings', { preHandler: requireAuth }, async (request) => {
       const rawFrom = request.query?.from;
