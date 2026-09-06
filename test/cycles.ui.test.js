@@ -24,7 +24,7 @@ test('cycles.html wires the shell, lucide and the full page', () => {
 
   assert.match(
     html,
-    /<title data-i18n="cycles\.pageTitle">Training Cycles • Kinesis<\/title>/,
+    /<title data-i18n="cycles\.pageTitle">Training Cycles - Kinesis<\/title>/,
     'the browser tab title is i18n-bound with the Kinesis suffix'
   );
   assert.match(html, /<h1 data-i18n="cycles\.title">Training Cycles<\/h1>/);
@@ -472,10 +472,10 @@ test('locale files expose every cycles string in both languages', () => {
   }
 
   assert.notEqual(en.cycles.title, pt.cycles.title);
-  assert.match(en.cycles.pageTitle, /• Kinesis$/);
-  assert.match(pt.cycles.pageTitle, /• Kinesis$/);
-  assert.equal(en.cycles.pageTitle, 'Training Cycles • Kinesis');
-  assert.equal(pt.cycles.pageTitle, 'Ciclos de Treino • Kinesis');
+  assert.match(en.cycles.pageTitle, /- Kinesis$/);
+  assert.match(pt.cycles.pageTitle, /- Kinesis$/);
+  assert.equal(en.cycles.pageTitle, 'Training Cycles - Kinesis');
+  assert.equal(pt.cycles.pageTitle, 'Ciclos de Treino - Kinesis');
   assert.equal(en.shell.nav.cycles, 'Training Cycles');
   assert.equal(pt.shell.nav.cycles, 'Ciclos de Treino');
 });

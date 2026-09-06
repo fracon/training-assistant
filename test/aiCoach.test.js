@@ -262,7 +262,7 @@ test('ai-coach.html wires the shell, lucide and the full form', () => {
 
   assert.match(
     html,
-    /<title data-i18n="aiCoach\.pageTitle">Request Workouts • Kinesis<\/title>/,
+    /<title data-i18n="aiCoach\.pageTitle">Request Workouts - Kinesis<\/title>/,
     'the browser tab title is i18n-bound with the Kinesis suffix'
   );
   assert.match(html, /<h1 data-i18n="aiCoach\.title">Request Workouts<\/h1>/);
@@ -343,10 +343,10 @@ test('locale files expose every ai-coach string in both languages', async () => 
   }
 
   assert.notEqual(en.aiCoach.title, pt.aiCoach.title);
-  assert.match(en.aiCoach.pageTitle, /• Kinesis$/);
-  assert.match(pt.aiCoach.pageTitle, /• Kinesis$/);
-  assert.equal(en.aiCoach.pageTitle, 'Request Workouts • Kinesis');
-  assert.equal(pt.aiCoach.pageTitle, 'Solicitar Treinos • Kinesis');
+  assert.match(en.aiCoach.pageTitle, /- Kinesis$/);
+  assert.match(pt.aiCoach.pageTitle, /- Kinesis$/);
+  assert.equal(en.aiCoach.pageTitle, 'Request Workouts - Kinesis');
+  assert.equal(pt.aiCoach.pageTitle, 'Solicitar Treinos - Kinesis');
   assert.equal(en.aiCoach.shoesSectionTitle, 'SHOES AVAILABLE FOR ROTATION');
   assert.equal(pt.aiCoach.shoesSectionTitle, 'TÊNIS DISPONÍVEIS PARA ROTAÇÃO');
 });

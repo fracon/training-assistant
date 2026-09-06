@@ -207,10 +207,10 @@ test('calendar locale data is complete and parity-safe', () => {
   assert.equal(en.calendar.weekdaysShort[0], 'Mon');
   assert.equal(pt.calendar.weekdaysShort[0], 'Seg');
 
-  assert.match(en.calendar.pageTitle, /• Kinesis$/);
-  assert.match(pt.calendar.pageTitle, /• Kinesis$/);
-  assert.equal(en.calendar.pageTitle, 'Workouts • Kinesis');
-  assert.equal(pt.calendar.pageTitle, 'Treinos • Kinesis');
+  assert.match(en.calendar.pageTitle, /- Kinesis$/);
+  assert.match(pt.calendar.pageTitle, /- Kinesis$/);
+  assert.equal(en.calendar.pageTitle, 'Workouts - Kinesis');
+  assert.equal(pt.calendar.pageTitle, 'Treinos - Kinesis');
 });
 
 test('week-start label and toggle texts are translated with strict key parity', () => {
@@ -268,7 +268,7 @@ test('calendar header stacks title above a full-width actions row without a subt
 
   assert.match(
     html,
-    /<title data-i18n="calendar\.pageTitle">Workouts • Kinesis<\/title>/,
+    /<title data-i18n="calendar\.pageTitle">Workouts - Kinesis<\/title>/,
     'the browser tab title is i18n-bound with the Kinesis suffix'
   );
 

@@ -31,7 +31,7 @@ test('shoes.html wires the shell, lucide and the full page', () => {
 
   assert.match(
     html,
-    /<title data-i18n="shoes\.pageTitle">Shoes • Kinesis<\/title>/,
+    /<title data-i18n="shoes\.pageTitle">Shoes - Kinesis<\/title>/,
     'the browser tab title is i18n-bound with the Kinesis suffix'
   );
   assert.match(html, /<h1 data-i18n="shoes\.title">Shoes<\/h1>/);
@@ -291,10 +291,10 @@ test('locale files expose every shoes string in both languages', () => {
   }
 
   assert.notEqual(en.shoes.title, pt.shoes.title);
-  assert.match(en.shoes.pageTitle, /• Kinesis$/);
-  assert.match(pt.shoes.pageTitle, /• Kinesis$/);
-  assert.equal(en.shoes.pageTitle, 'Shoes • Kinesis');
-  assert.equal(pt.shoes.pageTitle, 'Tênis • Kinesis');
+  assert.match(en.shoes.pageTitle, /- Kinesis$/);
+  assert.match(pt.shoes.pageTitle, /- Kinesis$/);
+  assert.equal(en.shoes.pageTitle, 'Shoes - Kinesis');
+  assert.equal(pt.shoes.pageTitle, 'Tênis - Kinesis');
   assert.equal(en.shell.nav.shoes, 'Shoe Rotation');
   assert.equal(pt.shell.nav.shoes, 'Rotação de Tênis');
 });

@@ -4,7 +4,7 @@
   },
   "aiCoach": {
     "title": "Request Workouts",
-    "pageTitle": "Request Workouts • Kinesis",
+    "pageTitle": "Request Workouts - Kinesis",
     "subtitle": "Build a detailed briefing for your external AI coach",
     "targetDate": "Target date",
     "targetDateHint": "Week to plan. Defaults to next Monday.",
@@ -33,7 +33,7 @@
   },
   "calendar": {
     "title": "Workouts",
-    "pageTitle": "Workouts • Kinesis",
+    "pageTitle": "Workouts - Kinesis",
     "previousMonth": "Previous month",
     "nextMonth": "Next month",
     "today": "Today",
@@ -94,7 +94,7 @@
     }
   },
   "login": {
-    "title": "Sign In • Kinesis",
+    "title": "Sign In - Kinesis",
     "heading": "Welcome back",
     "subtitle": "Sign in to keep your training log on track.",
     "emailLabel": "Email",
@@ -107,7 +107,7 @@
     "registeredBanner": "Account created! Sign in to continue."
   },
   "register": {
-    "title": "Create Account • Kinesis",
+    "title": "Create Account - Kinesis",
     "heading": "Create your account",
     "subtitle": "Join in seconds and keep every workout in one place.",
     "firstNameLabel": "First Name",
@@ -184,7 +184,7 @@
     "generic": "Something went wrong. Please try again."
   },
   "training": {
-    "title": "Training Session • Kinesis"
+    "title": "Training Session - Kinesis"
   },
   "session": {
     "title": "Training Session",
@@ -281,7 +281,7 @@
   },
   "shoes": {
     "title": "Shoes",
-    "pageTitle": "Shoes • Kinesis",
+    "pageTitle": "Shoes - Kinesis",
     "subtitle": "Manage your running shoe rotation",
     "addNew": "Add Shoe",
     "empty": "No shoes registered yet.",
@@ -327,7 +327,7 @@
   },
   "cycles": {
     "title": "Training Cycles",
-    "pageTitle": "Training Cycles • Kinesis",
+    "pageTitle": "Training Cycles - Kinesis",
     "subtitle": "Manage your macrocycle and training blocks",
     "addCycle": "Add Cycle",
     "empty": "No training cycles yet.",
@@ -515,7 +515,7 @@
       "goToCycles": "Go to cycles",
       "goToTrainings": "Go to workouts"
     },
-    "pageTitle": "Dashboard • Kinesis",
+    "pageTitle": "Dashboard - Kinesis",
     "hero": {
       "loading": "Finding today's inspiration…",
       "ariaLabel": "Daily inspiration",
