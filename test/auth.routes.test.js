@@ -428,6 +428,8 @@ test('GET /login.html serves sign-in anonymously and redirects sessions home', a
     /<img class="auth-logo" src="\/assets\/brand\/logo-mark\.png" alt="Kinesis Logo">/,
     'login card shows the brand mark'
   );
+  const loginCss = readFileSync(join(publicDir, 'login.css'), 'utf8');
+  assert.match(loginCss, /\.auth-logo \{[\s\S]*?margin: 0 auto;/, 'login logo has no bottom margin');
   assert.match(anonymous.body, /class="auth-header"/, 'login has a minimal auth header');
   assert.match(anonymous.body, /data-lang="en-US"/, 'login header contains EN switcher');
   assert.match(anonymous.body, /data-lang="pt-BR"/, 'login header contains PT switcher');
