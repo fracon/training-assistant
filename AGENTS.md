@@ -10,6 +10,7 @@
 - **Deployment:** Self-hosted on ZimaOS via Docker Compose.
 - **CI/CD:** Automated via Self-Hosted GitHub Runner pushing to GitHub Container Registry (GHCR).
 - **Networking:** Exposed securely via Cloudflare Zero Trust Tunnels (HTTP on port 8081).
+- **Application version:** `0.1.1` (active development; see the versioning Golden Rule below).
 
 ## ✅ Current Implementation Status — `feature/home-dashboard`
 
@@ -41,6 +42,9 @@ follow-up changes:
   `src/public/shared/units.js`; UI values remain metric in storage and are
   converted only for display or prompt generation according to the global
   preferences store.
+- Official branding assets are stored in `src/public/assets/brand/` and wired
+  into every page's favicon plus the shared sidebar/login UI (`logo.png`,
+  `logo-mark.png`, and `favicon.png`).
 
 ## 🏆 Golden Rules
 1. **Local-First & Privacy:** Never send `.FIT` data or user inputs to external cloud APIs for processing. All data parsing happens on the local server/browser.

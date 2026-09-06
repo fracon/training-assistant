@@ -157,9 +157,9 @@ test('the footer carries only the app version, fetched from the backend', async 
 
 test('loadAppVersion resolves the packaged version and degrades to null on any failure', async () => {
   const ok = (body) => async () => ({ ok: true, json: async () => body });
-  assert.equal(require('../package.json').version, '0.1.0');
-  assert.equal(await loadAppVersion(ok({ version: '0.1.0' })), '0.1.0');
-  assert.equal(await loadAppVersion(async () => ({ ok: false, json: async () => ({ version: '0.1.0' }) })), null);
+  assert.equal(require('../package.json').version, '0.1.1');
+  assert.equal(await loadAppVersion(ok({ version: '0.1.1' })), '0.1.1');
+  assert.equal(await loadAppVersion(async () => ({ ok: false, json: async () => ({ version: '0.1.1' }) })), null);
   assert.equal(await loadAppVersion(ok({})), null, 'a malformed payload is treated as missing');
   assert.equal(await loadAppVersion(ok({ version: '' })), null);
   assert.equal(await loadAppVersion(ok({ version: 42 })), null);
@@ -173,16 +173,20 @@ test('formatAppVersion prefixes the fetched version and falls back to v-.-.-', (
   assert.equal(VERSION_FALLBACK_LABEL, 'v-.-.-');
 });
 
-test('the brand lives only in the sidebar as Kinesis', () => {
+test('the brand uses the official mark and translated name in the sidebar', () => {
   const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
 
   assert.ok(!js.includes('Training Assistant'), 'the old name is gone from the shell');
   assert.match(
     js,
-    /brandName\.setAttribute\('data-i18n', 'app\.name'\);/,
-    'the sidebar brand resolves through translations'
+    /logoMark\.src = '\/assets\/brand\/logo-mark\.png';[\s\S]*?logoMark\.alt = 'Kinesis Logo';/,
+    'the sidebar uses the official mark'
   );
-  assert.match(js, /brandName\.textContent = 'Kinesis';/, 'Kinesis is the pre-translation fallback');
+  assert.match(
+    js,
+    /brandName\.setAttribute\('data-i18n', 'app\.name'\);[\s\S]*?brandName\.textContent = 'Kinesis';/,
+    'the sidebar keeps its translated name'
+  );
   assert.ok(!js.includes("el('span', 'brand')"), 'no topbar brand span is built anymore');
   assert.ok(!js.includes("el('span', 'dot')"), 'the brand dot separator is gone');
   assert.ok(!js.includes("el('span', 'tagline')"), 'the topbar tagline is gone');
@@ -194,6 +198,7 @@ test('the brand lives only in the sidebar as Kinesis', () => {
     'action-only topbar hugs the right edge'
   );
   assert.match(css, /\.topbar \{[^}]*min-height:\s*2\.75rem/, 'the bar keeps its height without text flow');
+  assert.match(css, /\.brand-logo-mark \{ width: 32px; height: 32px; \}/);
 
   assert.equal(en.app.name, 'Kinesis');
   assert.equal(pt.app.name, 'Kinesis');

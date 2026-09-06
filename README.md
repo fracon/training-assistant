@@ -2,6 +2,8 @@
 
 A **secure, self-hosted, multi-user web application** for managing training logs — drop a Garmin `.FIT` file into the browser, add how the workout felt, and get back a ready-to-paste markdown prompt for your AI coach.
 
+Current application version: **0.1.1** (active development).
+
 Every account is protected with server-side sessions, every `.FIT` file is parsed locally on your own machine: no cloud parsing, no telemetry — your training data never leaves your hardware.
 
 ## Why
@@ -91,6 +93,19 @@ English template.
 The Calendar page imports `.xlsx`/`.xls` plans and validates every row before persistence. Duplicate prevention uses the exact composite signature **Date (`dia`) + Training Name (`treino`) + Description (`detalhes`)**. Rows matching a stored training or repeated within the same workbook are skipped; workouts on the same date with a different name or description remain valid and are imported.
 
 Import completion uses the shared Snackbar rather than a permanent inline banner. It renders two localized lines: successfully imported trainings and duplicate rows skipped, with singular/plural English and Brazilian Portuguese translations.
+
+### Branding Assets
+
+Official brand PNGs are kept under `src/public/assets/brand/`:
+
+- `logo.png` — expanded application logo fallback.
+- `logo-mark.png` — standalone mark used by the sidebar and login card.
+- `favicon.png` — centered 64×64 browser-tab icon.
+
+Every page references the favicon from this shared public path, while the
+sidebar switches between the mark and its translated **Kinesis** label according
+to its expanded or collapsed state. New brand assets should remain in this
+directory so all pages use one consistent identity.
 
 ## Quick Start (local development)
 
