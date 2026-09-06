@@ -2,7 +2,7 @@ import { initShell, getShellI18n, getUserPreferences, refreshIcons } from './sha
 import { translate, normalizeClientLanguage } from './shared/i18n.js';
 import { fetchShoes } from './shared/api.js';
 import { fetchActiveCycle, fetchCalendarTrainings } from './shared/api.js';
-import { formatDate as formatLocalizedDate } from './shared/date.js';
+import { formatDate as formatLocalizedDate, formatDateInput, parseLocalizedDate } from './shared/date.js';
 import { formatDistance, distancePromptUnit, temperaturePromptUnit } from './shared/units.js';
 
 // Verbatim Portuguese briefing for the external AI Coach.
@@ -508,7 +508,12 @@ function setupAiCoachPage() {
   const copyIconSlot = copyBtn.querySelector('.copy-icon');
   const copyLabel = document.getElementById('copyLabel');
 
-  targetDateInput.value = dateInputValue(nextMonday());
+  targetDateInput.dataset.iso = dateInputValue(nextMonday());
+  targetDateInput.value = formatDateInput(targetDateInput.dataset.iso, i18n.language);
+  targetDateInput.placeholder = i18n.language === 'pt-BR' ? 'DD/MM/YYYY' : 'MM/DD/YYYY';
+  targetDateInput.addEventListener('input', () => {
+    targetDateInput.dataset.iso = parseLocalizedDate(targetDateInput.value, i18n.language);
+  });
 
   // Fresh form: stamp the current language's default routine on all seven
   // day inputs and remember it so later language switches only rewrite
@@ -532,6 +537,10 @@ function setupAiCoachPage() {
       if (input) input.value = value;
     }
     lastRoutineDefault = nextDefault;
+    const targetIso = targetDateInput.dataset.iso || parseLocalizedDate(targetDateInput.value, i18n.language);
+    targetDateInput.dataset.iso = targetIso;
+    targetDateInput.value = targetIso ? formatDateInput(targetIso, i18n.language) : '';
+    targetDateInput.placeholder = i18n.language === 'pt-BR' ? 'DD/MM/YYYY' : 'MM/DD/YYYY';
   });
 
   let copiedTimer = null;
@@ -559,8 +568,8 @@ function setupAiCoachPage() {
       const input = document.getElementById(inputId);
       if (input) disponibilidade[day] = input.value;
     }
-    const targetDate =
-      parseInputDate(targetDateInput.value) ?? nextMonday();
+    const targetIso = targetDateInput.dataset.iso || parseLocalizedDate(targetDateInput.value, i18n.language);
+    const targetDate = parseInputDate(targetIso) ?? nextMonday();
 
     generateBtn.disabled = true;
     let shoes = [];

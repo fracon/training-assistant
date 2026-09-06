@@ -3,7 +3,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { dateLocale, formatDate, formatWeekday } = require('../src/public/shared/date.js');
+const {
+  dateLocale,
+  formatDate,
+  formatDateInput,
+  formatWeekday,
+  parseLocalizedDate,
+} = require('../src/public/shared/date.js');
 
 test('dateLocale resolves supported locale families and defaults to English', () => {
   assert.equal(dateLocale('pt-BR'), 'pt-BR');
@@ -25,9 +31,17 @@ test('formatDate rejects invalid or impossible dates', () => {
   assert.equal(formatDate(null, 'en-US'), '');
 });
 
+test('localized date inputs display and round-trip ISO values in PT and EN', () => {
+  assert.equal(formatDateInput('2026-09-05', 'pt-BR'), '05/09/2026');
+  assert.equal(formatDateInput('2026-09-05', 'en-US'), '09/05/2026');
+  assert.equal(parseLocalizedDate('05/09/2026', 'pt-BR'), '2026-09-05');
+  assert.equal(parseLocalizedDate('09/05/2026', 'en-US'), '2026-09-05');
+  assert.equal(parseLocalizedDate('31/02/2026', 'pt-BR'), '');
+  assert.equal(parseLocalizedDate('invalid', 'en-US'), '');
+});
+
 test('formatWeekday follows the active locale and rejects invalid values', () => {
   assert.equal(formatWeekday('2026-09-05', 'pt-BR'), 'sábado');
   assert.equal(formatWeekday('2026-09-05', 'en-US'), 'Saturday');
   assert.equal(formatWeekday('junk', 'pt-BR'), '');
 });
-

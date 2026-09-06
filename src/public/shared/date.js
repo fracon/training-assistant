@@ -30,6 +30,27 @@ export function formatDate(value, language = EN_LOCALE) {
   }).format(date);
 }
 
+export function parseLocalizedDate(value, language = EN_LOCALE) {
+  const text = String(value ?? '').trim();
+  const match = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(text);
+  if (!match) return '';
+  const first = Number(match[1]);
+  const second = Number(match[2]);
+  const year = Number(match[3]);
+  const pt = dateLocale(language) === PT_LOCALE;
+  const month = pt ? second : first;
+  const day = pt ? first : second;
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
+    return '';
+  }
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+export function formatDateInput(value, language = EN_LOCALE) {
+  return formatDate(value, language);
+}
+
 export function formatWeekday(value, language = EN_LOCALE) {
   const date = dateOnly(value);
   if (!date) return '';
@@ -38,4 +59,3 @@ export function formatWeekday(value, language = EN_LOCALE) {
     timeZone: 'UTC',
   }).format(date);
 }
-

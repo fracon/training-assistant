@@ -267,7 +267,8 @@ test('ai-coach.html wires the shell, lucide and the full form', () => {
   );
   assert.match(html, /<h1 data-i18n="aiCoach\.title">Request Workouts<\/h1>/);
 
-  assert.match(html, /type="date" id="targetDate"/);
+  assert.match(html, /type="text" id="targetDate"/);
+  assert.match(html, /inputmode="numeric"/);
   for (const id of ['dispSeg', 'dispTer', 'dispQua', 'dispQui', 'dispSex', 'dispSab', 'dispDom']) {
     assert.match(html, new RegExp(`id="${id}" value="Rotina normal"`));
   }
@@ -284,6 +285,14 @@ test('ai-coach.html wires the shell, lucide and the full form', () => {
   assert.match(html, /data-lucide="copy"/);
   assert.match(html, /<pre id="promptOutput"/);
   assert.match(html, /data-i18n="aiCoach\.title"/);
+});
+
+test('training request date input uses localized display with ISO state binding', () => {
+  const js = readFileSync(join(publicDir, 'ai-coach.js'), 'utf8');
+  assert.match(js, /formatDateInput/);
+  assert.match(js, /parseLocalizedDate/);
+  assert.match(js, /targetDateInput\.dataset\.iso/);
+  assert.match(js, /const targetDate = parseInputDate\(targetIso\)/);
 });
 
 test('the generate button matches the shared primary hover contract', () => {

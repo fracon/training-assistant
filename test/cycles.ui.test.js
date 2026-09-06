@@ -89,6 +89,17 @@ test('cycles.html form fields use data-i18n attributes for labels and placeholde
   assert.match(html, /data-i18n="cycles\.saveCycle"/);
 });
 
+test('cycle date fields use the localized formatter while submitting ISO values', () => {
+  const html = readFileSync(join(publicDir, 'cycles.html'), 'utf8');
+  const js = readFileSync(join(publicDir, 'cycles.js'), 'utf8');
+  assert.match(html, /type="text" id="cycleTargetDate"/);
+  assert.match(html, /type="text" id="cycleStartDate"/);
+  assert.match(js, /formatDateInput/);
+  assert.match(js, /parseLocalizedDate/);
+  assert.match(js, /target_date: readDateInput\('cycleTargetDate', language\)/);
+  assert.match(js, /start_date: readDateInput\('cycleStartDate', language\)/);
+});
+
 test('cycles.html distance select has predefined options with i18n keys', () => {
   const html = readFileSync(join(publicDir, 'cycles.html'), 'utf8');
   const distanceBlock = html.slice(
@@ -285,7 +296,7 @@ test('cycles.js action handlers use i18n.messages not a stale closure', () => {
 
   assert.doesNotMatch(js, /const messages = i18n\.messages/);
 
-  assert.match(js, /openModal\('add',\s*null,\s*i18n\.messages\)/);
+  assert.match(js, /openModal\('add',\s*null,\s*i18n\.messages,\s*i18n\.language\)/);
   assert.match(js, /handleSubmit\(cycles,\s*i18n\.messages,\s*i18n\.language\)/);
   assert.match(js, /handleAction\(btn\.dataset\.action,\s*btn\.dataset\.id,\s*cycles,\s*i18n\.messages,\s*i18n\.language\)/);
   assert.match(js, /renderList\(cycles,\s*i18n\.messages,\s*i18n\.language\)/);

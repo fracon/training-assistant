@@ -1,6 +1,6 @@
 import { initShell, getShellI18n, refreshIcons, showConfirm } from './shared/shell.js';
 import { translate } from './shared/i18n.js';
-import { formatDate as formatLocalizedDate } from './shared/date.js';
+import { formatDate as formatLocalizedDate, formatDateInput, parseLocalizedDate } from './shared/date.js';
 import {
   fetchCycles,
   fetchActiveCycle,
@@ -83,7 +83,7 @@ function renderList(cycles, messages, language = 'en-US') {
   refreshIcons();
 }
 
-function openModal(mode, cycle, messages) {
+function openModal(mode, cycle, messages, language = 'en-US') {
   const modal = document.getElementById('cycleModal');
   const titleEl = document.getElementById('cycleModalTitle');
   const form = document.getElementById('cycleForm');
@@ -100,11 +100,11 @@ function openModal(mode, cycle, messages) {
     titleEl.setAttribute('data-i18n', 'cycles.formTitleEdit');
     titleEl.textContent = t(messages, 'cycles.formTitleEdit');
     document.getElementById('cycleObjective').value = cycle.objective ?? '';
-    document.getElementById('cycleTargetDate').value = cycle.target_date ?? '';
+    setDateInput('cycleTargetDate', cycle.target_date, language);
     document.getElementById('cycleDistance').value = cycle.distance ?? '';
     document.getElementById('cycleRunBefore').value = cycle.run_before ?? '';
     document.getElementById('cycleRunCount').value = cycle.run_count ?? '';
-    document.getElementById('cycleStartDate').value = cycle.start_date ?? '';
+    setDateInput('cycleStartDate', cycle.start_date, language);
     document.getElementById('cyclePrimaryGoal').value = cycle.primary_goal ?? '';
     document.getElementById('cycleSecondaryGoal').value = cycle.secondary_goal ?? '';
     document.getElementById('cycleOtherEvents').value = cycle.other_events ?? '';
@@ -112,6 +112,8 @@ function openModal(mode, cycle, messages) {
     titleEl.setAttribute('data-i18n', 'cycles.formTitleAdd');
     titleEl.textContent = t(messages, 'cycles.formTitleAdd');
     form.reset();
+    setDateInput('cycleTargetDate', '', language);
+    setDateInput('cycleStartDate', '', language);
   }
 
   saveLabel.setAttribute('data-i18n', 'cycles.saveCycle');
@@ -121,6 +123,22 @@ function openModal(mode, cycle, messages) {
 
   modal.classList.remove('hidden');
   document.getElementById('cycleObjective').focus();
+}
+
+function setDateInput(id, iso, language) {
+  const input = document.getElementById(id);
+  if (!input) return;
+  input.dataset.iso = iso || '';
+  input.value = iso ? formatDateInput(iso, language) : '';
+  input.placeholder = language === 'pt-BR' ? 'DD/MM/YYYY' : 'MM/DD/YYYY';
+}
+
+function readDateInput(id, language) {
+  const input = document.getElementById(id);
+  if (!input) return null;
+  const iso = parseLocalizedDate(input.value, language);
+  input.dataset.iso = iso;
+  return iso || null;
 }
 
 function closeModal() {
@@ -170,11 +188,11 @@ async function handleSubmit(cycles, messages, language = 'en-US') {
 
   const payload = {
     objective,
-    target_date: document.getElementById('cycleTargetDate').value || null,
+    target_date: readDateInput('cycleTargetDate', language),
     distance: document.getElementById('cycleDistance').value || null,
     run_before: document.getElementById('cycleRunBefore').value || null,
     run_count: document.getElementById('cycleRunCount').value || null,
-    start_date: document.getElementById('cycleStartDate').value || null,
+    start_date: readDateInput('cycleStartDate', language),
     primary_goal: document.getElementById('cyclePrimaryGoal').value || null,
     secondary_goal: document.getElementById('cycleSecondaryGoal').value || null,
     other_events: document.getElementById('cycleOtherEvents').value || null,
@@ -221,7 +239,7 @@ async function handleSubmit(cycles, messages, language = 'en-US') {
 async function handleAction(action, id, cycles, messages, language = 'en-US') {
   if (action === 'edit') {
     const cycle = cycles.find((c) => String(c.id) === String(id));
-    if (cycle) openModal('edit', cycle, messages);
+    if (cycle) openModal('edit', cycle, messages, language);
     return;
   }
 
@@ -306,9 +324,16 @@ export async function initCyclesPage() {
   const form = document.getElementById('cycleForm');
   const cycleListEl = document.getElementById('cycleList');
 
-  addBtn.addEventListener('click', () => openModal('add', null, i18n.messages));
+  addBtn.addEventListener('click', () => openModal('add', null, i18n.messages, i18n.language));
   modalCloseBtn.addEventListener('click', closeModal);
   formCancelBtn.addEventListener('click', closeModal);
+
+  for (const id of ['cycleTargetDate', 'cycleStartDate']) {
+    document.getElementById(id).addEventListener('input', () => {
+      const input = document.getElementById(id);
+      input.dataset.iso = parseLocalizedDate(input.value, i18n.language);
+    });
+  }
 
   document.getElementById('cycleModal').addEventListener('click', (e) => {
     if (e.target.classList.contains('modal-backdrop')) closeModal();
@@ -334,7 +359,13 @@ export async function initCyclesPage() {
   document.addEventListener('app:languagechange', () => {
     const msgs = i18n.messages;
     document.title = translate(msgs, 'cycles.pageTitle');
-      renderList(cycles, msgs, i18n.language);
+    renderList(cycles, msgs, i18n.language);
+    for (const id of ['cycleTargetDate', 'cycleStartDate']) {
+      const input = document.getElementById(id);
+      const iso = input.dataset.iso || parseLocalizedDate(input.value, i18n.language);
+      setDateInput(id, iso, i18n.language);
+      input.placeholder = i18n.language === 'pt-BR' ? 'DD/MM/YYYY' : 'MM/DD/YYYY';
+    }
     checkActiveCycle(addBtn, msgs);
 
     const modal = document.getElementById('cycleModal');
