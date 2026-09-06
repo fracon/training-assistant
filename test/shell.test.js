@@ -157,8 +157,9 @@ test('the footer carries only the app version, fetched from the backend', async 
 
 test('loadAppVersion resolves the packaged version and degrades to null on any failure', async () => {
   const ok = (body) => async () => ({ ok: true, json: async () => body });
-  assert.equal(await loadAppVersion(ok({ version: '1.0.0' })), '1.0.0');
-  assert.equal(await loadAppVersion(async () => ({ ok: false, json: async () => ({ version: '1.0.0' }) })), null);
+  assert.equal(require('../package.json').version, '0.1.0');
+  assert.equal(await loadAppVersion(ok({ version: '0.1.0' })), '0.1.0');
+  assert.equal(await loadAppVersion(async () => ({ ok: false, json: async () => ({ version: '0.1.0' }) })), null);
   assert.equal(await loadAppVersion(ok({})), null, 'a malformed payload is treated as missing');
   assert.equal(await loadAppVersion(ok({ version: '' })), null);
   assert.equal(await loadAppVersion(ok({ version: 42 })), null);

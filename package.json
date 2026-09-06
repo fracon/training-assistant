@@ -1,6 +1,6 @@
 {
   "name": "training-assistant",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "description": "1-Page Minimalist .FIT Parser & AI Prompt Generator - Local & Offline",
   "main": "src/server.js",
   "engines": {
