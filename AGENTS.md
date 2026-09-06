@@ -10,7 +10,7 @@
 - **Deployment:** Self-hosted on ZimaOS via Docker Compose.
 - **CI/CD:** Automated via Self-Hosted GitHub Runner pushing to GitHub Container Registry (GHCR).
 - **Networking:** Exposed securely via Cloudflare Zero Trust Tunnels (HTTP on port 8081).
-- **Application version:** `0.1.0` (active development; see the versioning Golden Rule below).
+- **Application version:** `0.1.1` (active development; see the versioning Golden Rule below).
 
 ## ✅ Current Implementation Status — `feature/home-dashboard`
 
