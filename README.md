@@ -19,6 +19,23 @@ AI coaches are only as good as the data you give them. Exporting workouts by han
 - **Global route guards** — the Training Calendar is strictly gated: users without an active Training Cycle are redirected to the Cycles page by the server, and cycle-dependent navigation is disabled in the shell as a second line of defense.
 - **One-click logout** — invalidates the session on the server and clears the cookie.
 
+### User Preferences Module
+
+The user badge dropdown opens a standardized Preferences modal (sharing the
+Change Password modal structure) with three account-wide settings:
+
+- **First day of the week** — Monday or Sunday.
+- **Distance unit** — kilometres (`km`) or miles (`mi`).
+- **Temperature unit** — Celsius (`°C`) or Fahrenheit (`°F`).
+
+Preferences are persisted through the authenticated user API and mirrored in
+`localStorage` for immediate rendering. The Calendar/Trainings page's
+Seg/Dom start-of-week toggle is two-way bound to the same store: changing it
+updates the modal, Calendar grid, Home Dashboard “This Week” tracker, and its
+week boundaries. Unit changes are reflected in dashboard totals, shoe mileage,
+and training-session metrics without changing metric values stored by the
+backend.
+
 ### Training Log & AI Prompts
 - **Drag & drop `.FIT` upload** — or click to browse.
 - **Lap-by-lap metrics** extracted automatically:
@@ -58,6 +75,16 @@ All user-facing dates go through `src/public/shared/date.js`, the shared formatt
 - English (`en`/`en-US`): `MM/DD/YYYY` (for example, `09/05/2026`)
 
 Components must not reverse ISO strings, concatenate date parts, or otherwise format dates locally. The same locale-aware utility is used when a date is rendered in the UI or inserted into a localized prompt, keeping language changes consistent across the application.
+
+Distance and temperature display conversions follow the same preference store
+through `src/public/shared/units.js`: stored kilometres/Celsius values are
+converted to miles/Fahrenheit only at presentation time.
+
+The AI Coach prompt generator reads the active preferences when the prompt is
+generated. It converts previous-week distance totals, formats shoe and workout
+metrics in the selected unit, and inserts localized instructions and weather
+examples (for example, `23–24 °C` or `73–75 °F`) in the active Portuguese or
+English template.
 
 ### Excel Training Import
 
