@@ -118,8 +118,7 @@ test('the prompt template keeps the required Portuguese structure', () => {
   const tokens = PROMPT_TEMPLATE.match(/\{\{[A-Z_]+\}\}/g) ?? [];
   assert.equal(tokens.length, 21, 'the template carries all schedule, cycle-context, and unit placeholders');
   assert.deepEqual(tokens, [
-    '{{DISTANCE_UNIT_LABEL}}',
-    '{{TEMPERATURE_UNIT_LABEL}}',
+    '{{UNIT_INSTRUCTION}}',
     '{{CYCLE_NAME}}',
     '{{CYCLE_GOAL}}',
     '{{TARGET_RACE_DATE}}',
@@ -139,6 +138,7 @@ test('the prompt template keeps the required Portuguese structure', () => {
     '{{DISP_SAB}}',
     '{{DISP_DOM}}',
     '{{CONTEXTO_OPCIONAL}}',
+    '{{WEATHER_EXAMPLE}}',
   ]);
 });
 
@@ -493,7 +493,19 @@ test('buildPrompt converts previous-week distance and instructs the coach to use
 
   assert.match(prompt, /Use miles for all distances and °F for all temperatures/);
   assert.match(prompt, /Previous week total distance \(miles\): 9\.32 mi/);
+  assert.match(prompt, /Weather Forecast.*73–75 °F/s);
   assert.doesNotMatch(prompt, /Previous week total distance \(km\)/);
+});
+
+test('buildPrompt localizes metric unit instructions and weather examples in Portuguese', () => {
+  const prompt = buildPrompt({
+    targetDate: new Date(2026, 7, 31),
+    lang: 'pt-BR',
+    preferences: { distance_unit: 'km', temperature_unit: 'C' },
+  });
+
+  assert.match(prompt, /Use quilômetros para todas as distâncias e °C para todas as temperaturas/);
+  assert.match(prompt, /Previsão do tempo.*\(ex: 23–24 °C, parcialmente nublado \(~12h\)\)/s);
 });
 
 test('buildPromptContext binds the active cycle and completed previous-week metrics', () => {

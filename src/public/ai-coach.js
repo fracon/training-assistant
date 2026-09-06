@@ -14,7 +14,7 @@ export const PROMPT_TEMPLATE = `Quero que você gere minha planilha de treinos d
 
 CONTEXTO DO CICLO ATUAL
 
-Use {{DISTANCE_UNIT_LABEL}} for all distances and {{TEMPERATURE_UNIT_LABEL}} for all temperatures in the plan and weather forecast.
+{{UNIT_INSTRUCTION}}
 
 Nome do ciclo: {{CYCLE_NAME}}
 Meta do ciclo: {{CYCLE_GOAL}}
@@ -87,7 +87,7 @@ As colunas devem ser, nesta ordem: Data, Dia, Período, Tipo, Treino, Detalhes, 
 Exemplo estrutural:
 | Data | Dia | Período | Tipo | Treino | Detalhes | FC alvo | RPE | Tênis | Previsão do tempo | Observações |
 
-Use datas no formato DD/MM/YYYY. Em "Período", use o horário/período real esperado (ex: ~12h). Em "Previsão do tempo", informe de maneira compacta (ex: 23–24 °C, parcialmente nublado (~12h)). Não inclua linhas para musculação.
+Use datas no formato DD/MM/YYYY. Em "Período", use o horário/período real esperado (ex: ~12h). Em "Previsão do tempo", informe de maneira compacta {{WEATHER_EXAMPLE}}. Não inclua linhas para musculação.
 
 ARQUIVO EXCEL
 
@@ -107,7 +107,7 @@ export const PROMPT_TEMPLATE_EN = `I want you to generate my running training sc
 
 CURRENT CYCLE CONTEXT
 
-Use {{DISTANCE_UNIT_LABEL}} for all distances and {{TEMPERATURE_UNIT_LABEL}} for all temperatures in the plan and weather forecast.
+{{UNIT_INSTRUCTION}}
 
 Cycle name: {{CYCLE_NAME}}
 Cycle goal: {{CYCLE_GOAL}}
@@ -180,7 +180,7 @@ The columns must be, in this order: Date, Day, Period, Type, Workout, Details, T
 Structural example:
 | Date | Day | Period | Type | Workout | Details | Target HR | RPE | Shoe | Weather Forecast | Notes |
 
-Use dates in DD/MM/YYYY format. In "Period", use the actual expected time/period (e.g., ~12h or 8-9h). In "Weather Forecast", report compactly (e.g., 23-24 °C, partly cloudy (~12h)). Do not include rows for strength training.
+Use dates in DD/MM/YYYY format. In "Period", use the actual expected time/period (e.g., ~12h or 8-9h). In "Weather Forecast", report compactly {{WEATHER_EXAMPLE}}. Do not include rows for strength training.
 
 EXCEL FILE
 
@@ -261,6 +261,8 @@ function formatCycleContext(cycle = {}, previousWeek = {}, lang = 'pt-BR', prefe
     ? (lang === 'pt-BR' ? `Semana ${currentWeek} de ${totalWeeks}` : `Week ${currentWeek} of ${totalWeeks}`)
     : contextValue(currentWeek);
   return {
+    '{{UNIT_INSTRUCTION}}': unitInstruction(lang, preferences),
+    '{{WEATHER_EXAMPLE}}': weatherExample(lang, preferences),
     '{{CYCLE_NAME}}': contextValue(cycle.name ?? cycle.objective),
     '{{CYCLE_GOAL}}': contextValue(cycle.goal ?? cycle.primary_goal),
     '{{TARGET_RACE_DATE}}': formatContextDate(cycle.targetRaceDate ?? cycle.target_date, lang),
@@ -279,6 +281,24 @@ function formatCycleContext(cycle = {}, previousWeek = {}, lang = 'pt-BR', prefe
     })(),
     '{{PREV_WEEK_TIME_MINUTES}}': contextValue(previousWeek.totalTimeMinutes ?? previousWeek.total_time_minutes),
   };
+}
+
+function unitInstruction(lang, preferences = {}) {
+  const distance = preferences.distance_unit === 'mi'
+    ? (lang === 'pt-BR' ? 'milhas' : 'miles')
+    : (lang === 'pt-BR' ? 'quilômetros' : 'kilometers');
+  const temperature = preferences.temperature_unit === 'F' ? '°F' : '°C';
+  if (lang === 'pt-BR') {
+    return `Use ${distance} para todas as distâncias e ${temperature} para todas as temperaturas no plano e na previsão do tempo.`;
+  }
+  return `Use ${distance} for all distances and ${temperature} for all temperatures in the plan and weather forecast.`;
+}
+
+function weatherExample(lang, preferences = {}) {
+  const range = preferences.temperature_unit === 'F' ? '73–75 °F' : '23–24 °C';
+  return lang === 'pt-BR'
+    ? `(ex: ${range}, parcialmente nublado (~12h))`
+    : `(e.g., ${range}, partly cloudy (~12h))`;
 }
 
 const DAY_MS = 86400000;
