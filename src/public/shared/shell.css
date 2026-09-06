@@ -219,10 +219,17 @@ body.shell-mounted {
   white-space: nowrap;
 }
 
-.sidebar-brand svg {
-  color: var(--accent-deep);
+.brand-logo {
+  display: block;
+  object-fit: contain;
   flex-shrink: 0;
 }
+
+.brand-logo-full { width: 132px; height: 32px; }
+.brand-logo-mark { display: none; width: 32px; height: 32px; }
+
+.app-shell.collapsed .brand-logo-full { display: none; }
+.app-shell.collapsed .brand-logo-mark { display: block; }
 
 .sidebar-nav {
   display: flex;

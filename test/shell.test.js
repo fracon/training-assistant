@@ -173,16 +173,20 @@ test('formatAppVersion prefixes the fetched version and falls back to v-.-.-', (
   assert.equal(VERSION_FALLBACK_LABEL, 'v-.-.-');
 });
 
-test('the brand lives only in the sidebar as Kinesis', () => {
+test('the brand uses the official full and collapsed PNG assets in the sidebar', () => {
   const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
 
   assert.ok(!js.includes('Training Assistant'), 'the old name is gone from the shell');
   assert.match(
     js,
-    /brandName\.setAttribute\('data-i18n', 'app\.name'\);/,
-    'the sidebar brand resolves through translations'
+    /logo\.src = '\/assets\/brand\/logo\.png';[\s\S]*?logo\.alt = 'Kinesis Logo';/,
+    'the expanded sidebar uses the official logo'
   );
-  assert.match(js, /brandName\.textContent = 'Kinesis';/, 'Kinesis is the pre-translation fallback');
+  assert.match(
+    js,
+    /logoMark\.src = '\/assets\/brand\/logo-mark\.png';[\s\S]*?logoMark\.alt = 'Kinesis Logo';/,
+    'the collapsed sidebar uses the official mark'
+  );
   assert.ok(!js.includes("el('span', 'brand')"), 'no topbar brand span is built anymore');
   assert.ok(!js.includes("el('span', 'dot')"), 'the brand dot separator is gone');
   assert.ok(!js.includes("el('span', 'tagline')"), 'the topbar tagline is gone');
@@ -194,6 +198,8 @@ test('the brand lives only in the sidebar as Kinesis', () => {
     'action-only topbar hugs the right edge'
   );
   assert.match(css, /\.topbar \{[^}]*min-height:\s*2\.75rem/, 'the bar keeps its height without text flow');
+  assert.match(css, /\.app-shell\.collapsed \.brand-logo-full \{ display: none; \}/);
+  assert.match(css, /\.app-shell\.collapsed \.brand-logo-mark \{ display: block; \}/);
 
   assert.equal(en.app.name, 'Kinesis');
   assert.equal(pt.app.name, 'Kinesis');
