@@ -625,6 +625,75 @@ test('PATCH /api/trainings/:id toggles the smartwatch flag without touching othe
   assert.equal(row.feedback_notas, 'Pesado', 'previous notes untouched');
 });
 
+// ── DELETE /api/trainings/:id ──────────────────────────────────
+
+test('DELETE /api/trainings/:id requires authentication', async () => {
+  const { app } = await setup();
+  const response = await app.inject({ method: 'DELETE', url: '/api/trainings/1' });
+  assert.equal(response.statusCode, 401);
+});
+
+test('DELETE /api/trainings/:id rejects malformed ids', async () => {
+  const { app, cookie } = await setup();
+  for (const id of ['abc', '0', '-3']) {
+    const response = await app.inject({
+      method: 'DELETE',
+      url: `/api/trainings/${id}`,
+      headers: { cookie },
+    });
+    assert.equal(response.statusCode, 400, `id=${id}`);
+    assert.deepEqual(response.json(), { error: 'Invalid training id.' });
+  }
+});
+
+test('DELETE /api/trainings/:id answers 404 when the session does not exist', async () => {
+  const { app, cookie } = await setup();
+  const response = await app.inject({
+    method: 'DELETE',
+    url: '/api/trainings/999',
+    headers: { cookie },
+  });
+  assert.equal(response.statusCode, 404);
+  assert.deepEqual(response.json(), { error: 'Training not found.' });
+});
+
+test("DELETE /api/trainings/:id never removes other users' sessions", async () => {
+  const { db, app, cookie } = await setup();
+  db.prepare(
+    "INSERT INTO users (email, password_hash) VALUES ('peer@example.com', 'hash')"
+  ).run();
+  const peerId = db.prepare("SELECT id FROM users WHERE email = 'peer@example.com'").get().id;
+  const foreignId = seedTraining(db, { user_id: peerId });
+
+  const response = await app.inject({
+    method: 'DELETE',
+    url: `/api/trainings/${foreignId}`,
+    headers: { cookie },
+  });
+  assert.equal(response.statusCode, 404, 'a foreign id is indistinguishable from missing');
+
+  const surviving = db
+    .prepare('SELECT id FROM trainings WHERE id = ?')
+    .get(foreignId);
+  assert.ok(surviving, 'the peer-owned session remains untouched');
+});
+
+test('DELETE /api/trainings/:id removes a session owned by the caller', async () => {
+  const { db, app, cookie, userId } = await setup();
+  const id = seedTraining(db, { user_id: userId });
+
+  const response = await app.inject({
+    method: 'DELETE',
+    url: `/api/trainings/${id}`,
+    headers: { cookie },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.json(), { status: 'ok' });
+
+  const row = db.prepare('SELECT id FROM trainings WHERE id = ?').get(id);
+  assert.equal(row, undefined, 'the session row is gone after the delete');
+});
+
 // ── POST /api/trainings/:id/fit ─────────────────────────────────
 
 test('POST /api/trainings/:id/fit requires authentication', async () => {

@@ -19,7 +19,13 @@
       <p id="status" class="status" role="status"></p>
 
       <section class="card planned-card" aria-labelledby="plannedTitle">
-        <h2 id="plannedTitle" data-i18n="session.plannedHeading">Planned workout</h2>
+        <div class="card-head">
+          <h2 id="plannedTitle" data-i18n="session.plannedHeading">Planned workout</h2>
+          <button id="deleteTrainingBtn" class="btn-icon btn-danger" type="button" aria-label="Delete training">
+            <i data-lucide="trash-2" aria-hidden="true"></i>
+            <div class="custom-tooltip" data-i18n="session.deleteTooltip">Delete training</div>
+          </button>
+        </div>
         <dl class="planned-grid">
           <div class="planned-item">
             <dt data-i18n="session.fieldTipo">Type</dt>

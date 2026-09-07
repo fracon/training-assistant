@@ -98,6 +98,10 @@ export function saveTrainingFeedback(id, fields = {}) {
   );
 }
 
+export function deleteTraining(id) {
+  return requestJson(`/api/trainings/${id}`, null, 'DELETE');
+}
+
 export async function importTrainingsFile(file) {
   const form = new FormData();
   form.append('file', file);

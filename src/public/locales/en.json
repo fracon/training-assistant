@@ -249,6 +249,10 @@
     "copied": "Copied!",
     "save": "Save and back to calendar",
     "saving": "Saving…",
+    "deleteTooltip": "Delete training",
+    "deleteConfirmMessage": "Delete this training? This cannot be undone.",
+    "deleteSuccess": "Training deleted successfully!",
+    "deleteError": "Could not delete the training. Please try again.",
     "errors": {
       "load": "We could not load this training.",
       "notFound": "Training not found.",

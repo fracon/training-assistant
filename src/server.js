@@ -656,6 +656,26 @@ async function buildServer(options = {}) {
       }
     });
 
+    // Safely owns the session before deleting so a foreign id can never be
+    // removed through the calendar delete flow.
+    app.delete('/api/trainings/:id', { preHandler: requireAuth }, async (request, reply) => {
+      const id = Number(request.params.id);
+      if (!Number.isInteger(id) || id <= 0) {
+        return reply.code(400).send({ error: 'Invalid training id.' });
+      }
+
+      if (!findTraining.get(id, request.user.id)) {
+        return reply.code(404).send({ error: 'Training not found.' });
+      }
+
+      db.prepare('DELETE FROM trainings WHERE id = ? AND user_id = ?').run(
+        id,
+        request.user.id
+      );
+
+      return { status: 'ok' };
+    });
+
     // ── Training Cycles CRUD ────────────────────────────────────
     app.get('/api/cycles', { preHandler: requireAuth }, async (request) => {
       const cycles = getCyclesByUserId(db, request.user.id);

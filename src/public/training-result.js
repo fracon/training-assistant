@@ -1,7 +1,7 @@
-import { initShell, getShellI18n, getUserPreferences } from './shared/shell.js';
+import { initShell, getShellI18n, getUserPreferences, showConfirm, showShellToast } from './shared/shell.js';
 import { translate } from './shared/i18n.js';
 import { formatDate as formatLocalizedDate, formatWeekday } from './shared/date.js';
-import { fetchTraining, saveTrainingFeedback, fetchShoes } from './shared/api.js';
+import { fetchTraining, saveTrainingFeedback, fetchShoes, deleteTraining } from './shared/api.js';
 import { formatDistance, formatPaceFromMetric } from './shared/units.js';
 
 // Sessions open contextually via /training-result.html?id=<id>; without an
@@ -305,6 +305,34 @@ const PLANNED_FIELDS = [
   ['tenis', 'plannedTenis'],
 ];
 
+// Whole delete flow, kept dependency-injectable so it can be unit-tested
+// without a DOM. Returns true only when the session was actually removed.
+export async function handleTrainingDelete({
+  id,
+  messages,
+  confirm = showConfirm,
+  remove = deleteTraining,
+  toast = showShellToast,
+  redirect = () => window.location.replace('/calendar.html'),
+}) {
+  const t = (key) => translate(messages, key);
+  const confirmed = await confirm(
+    t('session.deleteConfirmMessage'),
+    t('shell.confirm.yes'),
+    t('shell.confirm.no')
+  );
+  if (!confirmed) return false;
+  try {
+    await remove(id);
+    toast(messages, 'session.deleteSuccess', 'success');
+    redirect();
+    return true;
+  } catch {
+    toast(messages, 'session.deleteError', 'error');
+    return false;
+  }
+}
+
 const HR_SOURCE_LABEL_KEYS = {
   chest_strap: 'session.hrSourceStrap',
   optical_watch: 'session.hrSourceOptical',
@@ -365,6 +393,7 @@ async function initTrainingResult() {
   const promptOutput = document.getElementById('promptOutput');
   const copyPromptBtn = document.getElementById('copyPromptBtn');
   const copyLabel = copyPromptBtn.querySelector('span');
+  const deleteTrainingBtn = document.getElementById('deleteTrainingBtn');
   const fitDataSection = document.getElementById('fitDataSection');
   const fitLapsSection = document.getElementById('fitLapsSection');
   const fitLapsBody = document.getElementById('fitLapsBody');
@@ -642,6 +671,16 @@ async function initTrainingResult() {
     copiedTimer = setTimeout(() => {
       copyLabel.textContent = t('session.copyPrompt');
     }, 2000);
+  });
+
+  deleteTrainingBtn.addEventListener('click', () => {
+    handleTrainingDelete({
+      id,
+      messages: i18n.messages,
+      confirm: showConfirm,
+      remove: deleteTraining,
+      toast: showShellToast,
+    });
   });
 
   fitFileInput.addEventListener('change', async () => {

@@ -23,6 +23,7 @@ const {
   escapeHtmlText,
   fitDropzonePrimaryHtml,
   buildLapsMarkdown,
+  handleTrainingDelete,
   PROMPT_TEMPLATE_PT,
   PROMPT_TEMPLATE_EN,
 } = require('../src/public/training-result.js');
@@ -362,6 +363,77 @@ test('escapeHtmlText neutralizes HTML-significant characters', () => {
   assert.equal(escapeHtmlText(42), '42');
 });
 
+test('handleTrainingDelete cancels and returns false without removing', async () => {
+  const messages = { session: {}, shell: { confirm: {} } };
+  const result = await handleTrainingDelete({
+    id: 7,
+    messages,
+    confirm: async () => false,
+    remove: async () => {
+      throw new Error('should not be called on cancel');
+    },
+    toast: () => {},
+    redirect: () => {
+      throw new Error('should not redirect on cancel');
+    },
+  });
+  assert.equal(result, false);
+});
+
+test('handleTrainingDelete removes the session and redirects on success', async () => {
+  const messages = {
+    session: { deleteConfirmMessage: 'Delete?' },
+    shell: { confirm: { yes: 'Delete', no: 'Cancel' } },
+  };
+  let removedId = null;
+  let toastKey = null;
+  let redirected = false;
+  const result = await handleTrainingDelete({
+    id: 7,
+    messages,
+    confirm: async () => true,
+    remove: async (id) => {
+      removedId = id;
+    },
+    toast: (m, key) => {
+      toastKey = key;
+    },
+    redirect: () => {
+      redirected = true;
+    },
+  });
+  assert.equal(result, true);
+  assert.equal(removedId, 7);
+  assert.equal(toastKey, 'session.deleteSuccess');
+  assert.equal(redirected, true);
+});
+
+test('handleTrainingDelete surfaces failures as an error toast without redirecting', async () => {
+  const messages = {
+    session: { deleteConfirmMessage: 'Delete?' },
+    shell: { confirm: { yes: 'Delete', no: 'Cancel' } },
+  };
+  let toastKey = null;
+  let redirected = false;
+  const result = await handleTrainingDelete({
+    id: 7,
+    messages,
+    confirm: async () => true,
+    remove: async () => {
+      throw new Error('server said no');
+    },
+    toast: (m, key) => {
+      toastKey = key;
+    },
+    redirect: () => {
+      redirected = true;
+    },
+  });
+  assert.equal(result, false);
+  assert.equal(toastKey, 'session.deleteError');
+  assert.equal(redirected, false);
+});
+
 test('buildLapsMarkdown returns empty string for missing or empty laps', () => {
   assert.equal(buildLapsMarkdown(null), '');
   assert.equal(buildLapsMarkdown(undefined), '');
@@ -646,13 +718,25 @@ test('training-result.html ships the expanded feedback grid and generator button
   for (const legacy of ['id="dropzone"', 'id="fileInput"', 'markdownPreview', 'copyBtn', 'form-state.js', 'shoeUsedPlaceholder']) {
     assert.ok(!html.includes(legacy), `${legacy} is gone from the refactored page`);
   }
+
+  assert.match(
+    html,
+    /<div class="card-head">\s*\n\s*<h2 id="plannedTitle" data-i18n="session\.plannedHeading">Planned workout<\/h2>\s*\n\s*<button id="deleteTrainingBtn" class="btn-icon btn-danger" type="button" aria-label="Delete training">/,
+    'the planned card header carries a dedicated delete button'
+  );
+  assert.match(
+    html,
+    /<i data-lucide="trash-2" aria-hidden="true"><\/i>\s*\n\s*<div class="custom-tooltip" data-i18n="session\.deleteTooltip">Delete training<\/div>/,
+    'the delete action ships a custom tooltip, never a native title'
+  );
+  assert.ok(!html.includes('title="'), 'no native title attributes sneak in');
 });
 
 test('training-result.js wires toggling, saving, generation and i18n refreshes', () => {
   const js = readFileSync(join(publicDir, 'training-result.js'), 'utf8');
 
-  assert.match(js, /import \{ initShell, getShellI18n, getUserPreferences \} from '\.\/shared\/shell\.js';/);
-  assert.match(js, /import \{ fetchTraining, saveTrainingFeedback, fetchShoes \} from '\.\/shared\/api\.js';/);
+  assert.match(js, /import \{ initShell, getShellI18n, getUserPreferences, showConfirm, showShellToast \} from '\.\/shared\/shell\.js';/);
+  assert.match(js, /import \{ fetchTraining, saveTrainingFeedback, fetchShoes, deleteTraining \} from '\.\/shared\/api\.js';/);
 
   assert.match(js, /smartwatchSelect\.addEventListener\('change', syncFitFieldVisibility\)/);
   assert.match(js, /fitField\.hidden = !isFitFieldVisible\(smartwatchSelect\.value\);/);
@@ -822,6 +906,17 @@ test('training-result.js wires toggling, saving, generation and i18n refreshes',
     /if \(!generateBtn\.disabled\) generateLabel\.textContent = t\('session\.generatePrompt'\);\s*\n\s*if \(!copyPromptBtn\.disabled\) copyLabel\.textContent = t\('session\.copyPrompt'\);\s*\n\s*renderFitDropzoneState\(\);/,
     'language switches re-render the dropzone and copy label with the new locale'
   );
+
+  assert.match(
+    js,
+    /deleteTrainingBtn\.addEventListener\('click', \(\) => \{\s*\n\s*handleTrainingDelete\(\{\s*\n\s*id,\s*\n\s*messages: i18n\.messages,\s*\n\s*confirm: showConfirm,\s*\n\s*remove: deleteTraining,\s*\n\s*toast: showShellToast,\s*\n\s*\}\);\s*\n\s*\}\);/,
+    'the delete button drives the shared confirm + delete + toast flow'
+  );
+  assert.match(
+    js,
+    /handleTrainingDelete\(\{[\s\S]*?id,[\s\S]*?messages: i18n\.messages,[\s\S]*?confirm: showConfirm,[\s\S]*?remove: deleteTraining,[\s\S]*?toast: showShellToast,[\s\S]*?\}\)/,
+    'the delete flow resolves translations from the active shell dictionary'
+  );
 });
 
 test('shared api client exposes the session endpoints', () => {
@@ -839,6 +934,11 @@ test('shared api client exposes the session endpoints', () => {
     js,
     /return requestJson\(\s*\n\s*`\/api\/trainings\/\$\{id\}`,\s*\n\s*fields,\s*\n\s*'PATCH'\s*\n\s*\);/,
     'the payload passes straight through using DB column names'
+  );
+  assert.match(
+    js,
+    /export function deleteTraining\(id\) \{\s*\n\s*return requestJson\(`\/api\/trainings\/\$\{id\}`,\s*null,\s*'DELETE'\);/,
+    'the delete helper issues a DELETE with no body'
   );
 });
 
@@ -901,6 +1001,10 @@ test('session locale namespace stays in parity across en-US and pt-BR', () => {
     'copied',
     'save',
     'saving',
+    'deleteTooltip',
+    'deleteConfirmMessage',
+    'deleteSuccess',
+    'deleteError',
     'errors.load',
     'errors.notFound',
     'errors.rpe',
@@ -1120,6 +1224,26 @@ test('training-result.css keeps the earthy premium aesthetic for the session vie
   assert.match(css, /select\.input-control \{[^}]*background-repeat:\s*no-repeat/);
   assert.match(css, /select\.input-control \{[^}]*background-position:\s*right 0\.6rem center/);
   assert.match(css, /select\.input-control \{[^}]*padding-right:\s*1\.9rem/, 'text clears the chevron');
+
+  assert.match(css, /\.card-head \{[^}]*display:\s*flex/, 'the planned card header lays its title and action out on one row');
+  assert.match(css, /\.card-head \{[^}]*justify-content:\s*space-between/, 'title and delete action push to opposite ends');
+  assert.match(css, /\.btn-icon\.btn-danger \{/, 'the delete action reuses the danger icon style');
+  assert.match(
+    css,
+    /\.btn-icon\.btn-danger:hover \{[^}]*color:\s*var\(--danger\)/,
+    'hovering the delete action turns it the earthy danger tone'
+  );
+  assert.match(
+    css,
+    /\.card-head \.custom-tooltip \{[^}]*background:\s*var\(--ink\)/,
+    'the delete tooltip uses the dark ink surface'
+  );
+  assert.match(css, /\.card-head \.custom-tooltip \{[^}]*z-index:\s*50/, 'the delete tooltip layers above surrounding content');
+  assert.match(
+    css,
+    /\.card-head \.btn-icon:hover \.custom-tooltip \{[^}]*opacity:\s*1/,
+    'the tooltip fades in on hover with the shared transition'
+  );
 
   const responsive = css.slice(css.indexOf('@media (max-width: 560px)'));
   assert.match(responsive, /\.feedback-grid \{\s*grid-template-columns: 1fr;/);

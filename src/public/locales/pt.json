@@ -249,6 +249,10 @@
     "copied": "Copiado!",
     "save": "Salvar e voltar ao calendário",
     "saving": "Salvando…",
+    "deleteTooltip": "Excluir treino",
+    "deleteConfirmMessage": "Excluir este treino? Esta ação não pode ser desfeita.",
+    "deleteSuccess": "Treino excluído com sucesso!",
+    "deleteError": "Não foi possível excluir o treino. Tente novamente.",
     "errors": {
       "load": "Não conseguimos carregar este treino.",
       "notFound": "Treino não encontrado.",

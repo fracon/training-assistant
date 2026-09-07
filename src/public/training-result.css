@@ -56,6 +56,82 @@ body {
   color: var(--accent-deep);
 }
 
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.card-head h2 {
+  margin: 0 0 14px;
+}
+
+.card-head .btn-icon {
+  position: relative;
+  margin-bottom: 14px;
+}
+
+.card-head .custom-tooltip {
+  position: absolute;
+  bottom: 110%;
+  right: 0;
+  transform: translateY(4px);
+  z-index: 50;
+  width: max-content;
+  max-width: 200px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--card);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.card-head .btn-icon:hover .custom-tooltip {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.btn-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.btn-icon:hover {
+  background: rgba(139, 129, 114, 0.1);
+  color: var(--ink);
+}
+
+.btn-icon.btn-danger {
+  color: var(--muted);
+}
+
+.btn-icon.btn-danger:hover {
+  background: rgba(165, 73, 47, 0.12);
+  color: var(--danger);
+}
+
 .planned-grid {
   margin: 0;
   display: grid;
