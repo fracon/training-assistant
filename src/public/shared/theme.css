@@ -439,31 +439,63 @@ input.input-error:focus-visible {
   border-top: 1px solid var(--line);
 }
 
-.btn-danger {
+/* Shared destructive/outline action buttons for the confirm modal. Scoped
+   under .confirm-actions so the footer renders identically on every page,
+   independent of page-level .btn-primary/.btn-secondary overrides. Both the
+   solid and outline variants build on the same base so they share an exact
+   matching padding, line-height and border width — the 1px outline border is
+   mirrored by a 1px transparent border on the solid button, guaranteeing
+   identical pixel heights. */
+.confirm-actions .btn {
+  box-sizing: border-box;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  border: none;
-  border-radius: 999px;
-  padding: 9px 18px;
-  background: var(--danger);
-  color: #fbfaf5;
   font: inherit;
-  font-weight: 600;
+  font-family: inherit;
   font-size: 0.88rem;
+  font-weight: 600;
+  line-height: 1;
+  border: 1px solid var(--danger);
+  border-radius: 999px;
+  padding: 0.625rem 1.25rem;
+  min-width: 120px;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
-.btn-danger:hover {
+.confirm-actions .btn:focus-visible {
+  outline: 2px solid var(--danger);
+  outline-offset: 2px;
+}
+
+.confirm-actions .btn-secondary {
+  background: transparent;
+  color: var(--danger);
+}
+
+.confirm-actions .btn-secondary:hover {
+  background-color: rgba(165, 73, 47, 0.08);
+  transform: translateY(-2px);
+}
+
+.confirm-actions .btn-secondary:active {
+  transform: scale(0.98);
+}
+
+.confirm-actions .btn-danger {
+  background: var(--danger);
+  color: #fbfaf5;
+}
+
+.confirm-actions .btn-danger:hover {
   transform: translateY(-2px);
   box-shadow: 0 8px 20px rgba(165, 73, 47, 0.3);
 }
 
-.btn-danger:focus-visible {
-  outline: 2px solid var(--danger);
-  outline-offset: 2px;
+.confirm-actions .btn-danger:active {
+  transform: scale(0.98);
 }
 
 /* ---------- Toast ---------- */

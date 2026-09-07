@@ -148,13 +148,13 @@ export function showConfirm({ title, message, icon = 'trash-2', confirmLabel, ca
 
     const cancelBtn = document.createElement('button');
     cancelBtn.type = 'button';
-    cancelBtn.className = 'btn-secondary';
+    cancelBtn.className = 'btn btn-secondary';
     cancelBtn.textContent = cancelLabel;
     cancelBtn.id = 'confirmCancelBtn';
 
     const confirmBtn = document.createElement('button');
     confirmBtn.type = 'button';
-    confirmBtn.className = 'btn-danger';
+    confirmBtn.className = 'btn btn-danger';
     confirmBtn.textContent = confirmLabel;
     confirmBtn.id = 'confirmOkBtn';
 

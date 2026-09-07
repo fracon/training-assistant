@@ -302,6 +302,8 @@ test('showConfirm renders a danger header with icon and a right-aligned footer',
   assert.match(js, /card\.appendChild\(header\);/);
   assert.match(js, /card\.appendChild\(body\);/);
   assert.match(js, /actions\.appendChild\(cancelBtn\);\s*\n\s*actions\.appendChild\(confirmBtn\);\s*\n\s*card\.appendChild\(actions\);/);
+  assert.match(js, /cancelBtn\.className = 'btn btn-secondary';/, 'the outline button shares the base .btn class');
+  assert.match(js, /confirmBtn\.className = 'btn btn-danger';/, 'the solid button shares the base .btn class');
 });
 
 test('confirm modal CSS matches the Kinesis design system', () => {
@@ -318,8 +320,16 @@ test('confirm modal CSS matches the Kinesis design system', () => {
   assert.match(theme, /\.confirm-actions \{[^}]*justify-content:\s*flex-end/, 'the footer actions align right');
   assert.match(theme, /\.confirm-actions \{[^}]*gap:\s*0\.75rem/, 'the footer buttons are evenly spaced');
   assert.match(theme, /\.confirm-actions \{[^}]*margin-top:\s*1\.25rem/, 'the footer separates from the body');
-  assert.match(theme, /\.btn-danger \{[^}]*background:\s*var\(--danger\)/);
-  assert.match(theme, /\.btn-danger \{[^}]*transition:\s*all 0\.2s ease/);
+  assert.match(theme, /\.confirm-actions \.btn \{[^}]*box-sizing:\s*border-box/, 'the shared base uses border-box sizing');
+  assert.match(theme, /\.confirm-actions \.btn \{[^}]*padding:\s*0\.625rem 1\.25rem/, 'both buttons share identical padding');
+  assert.match(theme, /\.confirm-actions \.btn \{[^}]*line-height:\s*1/, 'both buttons share the same line-height');
+  assert.match(theme, /\.confirm-actions \.btn \{[^}]*min-width:\s*120px/, 'footer buttons have a uniform min-width');
+  assert.match(theme, /\.confirm-actions \.btn \{[^}]*justify-content:\s*center/, 'the base centers its label');
+  assert.match(theme, /\.confirm-actions \.btn \{[^}]*align-items:\s*center/, 'the base centers its content vertically');
+  assert.match(theme, /\.confirm-actions \.btn \{[\s\S]*?border:\s*1px solid var\(--danger\)/, 'the solid and outline buttons share the same 1px border width');
+  assert.match(theme, /\.confirm-actions \.btn \{[^}]*transition:\s*all 0\.2s ease/, 'the base button animates smoothly');
+  assert.match(theme, /\.confirm-actions \.btn-secondary \{[^}]*background:\s*transparent/, 'the outline button stays transparent');
+  assert.match(theme, /\.confirm-actions \.btn-danger \{[^}]*background:\s*var\(--danger\)/, 'the solid button keeps the destructive fill');
 });
 
 /* ── Training Cycles sidebar guard ── */
