@@ -1,4 +1,4 @@
-import { initShell, getShellI18n, getUserPreferences, showConfirm, showShellToast } from './shared/shell.js';
+import { initShell, getShellI18n, getUserPreferences, showConfirm, showShellToast, refreshIcons } from './shared/shell.js';
 import { translate } from './shared/i18n.js';
 import { formatDate as formatLocalizedDate, formatWeekday } from './shared/date.js';
 import { fetchTraining, saveTrainingFeedback, fetchShoes, deleteTraining } from './shared/api.js';
@@ -520,6 +520,10 @@ async function initTrainingResult() {
   i18n = getShellI18n();
   document.title = t('training.title');
   applyTooltips();
+  // The shell may have injected sidebar/topbar markup around the session
+  // card; re-initializing Lucide ensures the card's trash icon is rendered
+  // as an SVG and never left as an empty <i> tag.
+  refreshIcons();
 
   setStatus(t('session.loading'));
   let training;

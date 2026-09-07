@@ -735,7 +735,7 @@ test('training-result.html ships the expanded feedback grid and generator button
 test('training-result.js wires toggling, saving, generation and i18n refreshes', () => {
   const js = readFileSync(join(publicDir, 'training-result.js'), 'utf8');
 
-  assert.match(js, /import \{ initShell, getShellI18n, getUserPreferences, showConfirm, showShellToast \} from '\.\/shared\/shell\.js';/);
+  assert.match(js, /import \{ initShell, getShellI18n, getUserPreferences, showConfirm, showShellToast, refreshIcons \} from '\.\/shared\/shell\.js';/);
   assert.match(js, /import \{ fetchTraining, saveTrainingFeedback, fetchShoes, deleteTraining \} from '\.\/shared\/api\.js';/);
 
   assert.match(js, /smartwatchSelect\.addEventListener\('change', syncFitFieldVisibility\)/);
@@ -916,6 +916,16 @@ test('training-result.js wires toggling, saving, generation and i18n refreshes',
     js,
     /handleTrainingDelete\(\{[\s\S]*?id,[\s\S]*?messages: i18n\.messages,[\s\S]*?confirm: showConfirm,[\s\S]*?remove: deleteTraining,[\s\S]*?toast: showShellToast,[\s\S]*?\}\)/,
     'the delete flow resolves translations from the active shell dictionary'
+  );
+  assert.match(
+    js,
+    /applyTooltips\(\);[\s\S]*?refreshIcons\(\);/,
+    'Lucide re-initializes after the shell mounts so the trash icon renders as an SVG'
+  );
+  assert.match(
+    js,
+    /refreshIcons\(\);\s*\n\s*setStatus\(t\('session\.loading'\)\);/,
+    'icon re-init happens before the session content is fetched'
   );
 });
 
@@ -1228,6 +1238,21 @@ test('training-result.css keeps the earthy premium aesthetic for the session vie
   assert.match(css, /\.card-head \{[^}]*display:\s*flex/, 'the planned card header lays its title and action out on one row');
   assert.match(css, /\.card-head \{[^}]*justify-content:\s*space-between/, 'title and delete action push to opposite ends');
   assert.match(css, /\.btn-icon\.btn-danger \{/, 'the delete action reuses the danger icon style');
+  assert.match(
+    css,
+    /\.btn-icon\.btn-danger \{[^}]*background:\s*transparent/,
+    'the danger icon stays transparent instead of inheriting the filled pill from theme.css'
+  );
+  assert.match(
+    css,
+    /\.btn-icon\.btn-danger \{[^}]*padding:\s*0;/,
+    'the icon zeroes its padding so the trash SVG keeps a square hit area'
+  );
+  assert.match(
+    css,
+    /\.btn-icon\.btn-danger \{[^}]*border-radius:\s*8px/,
+    'the danger icon drops the pill radius for a compact squared button'
+  );
   assert.match(
     css,
     /\.btn-icon\.btn-danger:hover \{[^}]*color:\s*var\(--danger\)/,

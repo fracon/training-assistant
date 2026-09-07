@@ -124,6 +124,9 @@ body {
 }
 
 .btn-icon.btn-danger {
+  padding: 0;
+  background: transparent;
+  border-radius: 8px;
   color: var(--muted);
 }
 
