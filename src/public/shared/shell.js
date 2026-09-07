@@ -101,7 +101,11 @@ export function refreshIcons() {
   }
 }
 
-export function showConfirm(message, confirmLabel, cancelLabel) {
+// Promise-based confirmation modal with a proper destructive-action hierarchy:
+// an icon + title header, a muted body message, and a right-aligned action
+// footer. Accepts an options object so every caller controls its own title,
+// message, icon and button labels.
+export function showConfirm({ title, message, icon = 'trash-2', confirmLabel, cancelLabel }) {
   return new Promise((resolve) => {
     const backdrop = document.createElement('div');
     backdrop.className = 'confirm-backdrop';
@@ -110,11 +114,34 @@ export function showConfirm(message, confirmLabel, cancelLabel) {
     card.className = 'confirm-card';
     card.setAttribute('role', 'alertdialog');
     card.setAttribute('aria-modal', 'true');
+    card.setAttribute('aria-labelledby', 'confirmTitle');
 
+    const header = document.createElement('div');
+    header.className = 'confirm-header';
+    const headerIcon = document.createElement('span');
+    headerIcon.className = 'confirm-icon';
+    if (icon) {
+      const iconEl = document.createElement('i');
+      iconEl.setAttribute('data-lucide', icon);
+      iconEl.setAttribute('aria-hidden', 'true');
+      headerIcon.appendChild(iconEl);
+    }
+    header.appendChild(headerIcon);
+
+    const titleEl = document.createElement('h3');
+    titleEl.className = 'confirm-title';
+    titleEl.id = 'confirmTitle';
+    titleEl.textContent = title;
+    header.appendChild(titleEl);
+    card.appendChild(header);
+
+    const body = document.createElement('div');
+    body.className = 'confirm-body';
     const msg = document.createElement('p');
     msg.className = 'confirm-message';
     msg.textContent = message;
-    card.appendChild(msg);
+    body.appendChild(msg);
+    card.appendChild(body);
 
     const actions = document.createElement('div');
     actions.className = 'confirm-actions';

@@ -278,12 +278,30 @@ test('showConfirm is exported and builds a Promise-based confirmation dialog', (
   assert.match(js, /return new Promise/);
   assert.match(js, /confirm-backdrop/);
   assert.match(js, /confirm-card/);
+  assert.match(js, /confirm-header/);
+  assert.match(js, /confirm-icon/);
+  assert.match(js, /confirm-title/);
+  assert.match(js, /confirm-body/);
   assert.match(js, /confirm-message/);
   assert.match(js, /confirmOkBtn/);
   assert.match(js, /confirmCancelBtn/);
   assert.match(js, /setAttribute\('role', 'alertdialog'\)/);
+  assert.match(js, /setAttribute\('aria-labelledby', 'confirmTitle'\)/);
+  assert.match(js, /titleEl\.textContent = title/);
+  assert.match(js, /msg\.textContent = message/);
   assert.match(js, /cleanup\(true\)/);
   assert.match(js, /cleanup\(false\)/);
+});
+
+test('showConfirm renders a danger header with icon and a right-aligned footer', () => {
+  const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
+  assert.match(js, /const headerIcon = document\.createElement\('span'\);/);
+  assert.match(js, /headerIcon\.className = 'confirm-icon';/);
+  assert.match(js, /iconEl\.setAttribute\('data-lucide', icon\);/);
+  assert.match(js, /header\.appendChild\(titleEl\);/);
+  assert.match(js, /card\.appendChild\(header\);/);
+  assert.match(js, /card\.appendChild\(body\);/);
+  assert.match(js, /actions\.appendChild\(cancelBtn\);\s*\n\s*actions\.appendChild\(confirmBtn\);\s*\n\s*card\.appendChild\(actions\);/);
 });
 
 test('confirm modal CSS matches the Kinesis design system', () => {
@@ -292,6 +310,14 @@ test('confirm modal CSS matches the Kinesis design system', () => {
   assert.match(theme, /\.confirm-backdrop \{[^}]*z-index:\s*9998/);
   assert.match(theme, /\.confirm-card \{[^}]*border-radius:\s*16px/);
   assert.match(theme, /\.confirm-card \{[^}]*background:\s*var\(--card\)/);
+  assert.match(theme, /\.confirm-header \{[^}]*display:\s*flex/);
+  assert.match(theme, /\.confirm-header \{[^}]*gap:\s*0\.75rem/);
+  assert.match(theme, /\.confirm-icon \{[^}]*color:\s*var\(--danger\)/, 'the icon chip uses the danger tone');
+  assert.match(theme, /\.confirm-title \{[^}]*font-weight:\s*700/, 'the title is bold and prominent');
+  assert.match(theme, /\.confirm-message \{[^}]*color:\s*var\(--muted\)/, 'the body message is muted');
+  assert.match(theme, /\.confirm-actions \{[^}]*justify-content:\s*flex-end/, 'the footer actions align right');
+  assert.match(theme, /\.confirm-actions \{[^}]*gap:\s*0\.75rem/, 'the footer buttons are evenly spaced');
+  assert.match(theme, /\.confirm-actions \{[^}]*margin-top:\s*1\.25rem/, 'the footer separates from the body');
   assert.match(theme, /\.btn-danger \{[^}]*background:\s*var\(--danger\)/);
   assert.match(theme, /\.btn-danger \{[^}]*transition:\s*all 0\.2s ease/);
 });

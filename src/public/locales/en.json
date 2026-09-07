@@ -250,6 +250,7 @@
     "save": "Save and back to calendar",
     "saving": "Saving…",
     "deleteTooltip": "Delete training",
+    "deleteConfirmTitle": "Delete training",
     "deleteConfirmMessage": "Delete this training? This cannot be undone.",
     "deleteSuccess": "Training deleted successfully!",
     "deleteError": "Could not delete the training. Please try again.",
@@ -313,6 +314,7 @@
     "retire": "Retire",
     "reactivate": "Reactivate",
     "delete": "Delete",
+    "deleteTitle": "Delete shoe",
     "deleteConfirm": "Are you sure you want to delete this shoe?",
     "formTitleAdd": "Add New Shoe",
     "formTitleEdit": "Edit Shoe",
@@ -378,6 +380,7 @@
     "promptTitle": "AI Coach Macrocycle Prompt",
     "copyPrompt": "Copy to Clipboard",
     "deleteConfirm": "Are you sure you want to cancel this cycle?",
+    "cancelTitle": "Cancel cycle",
     "confirm": {
       "yes": "Yes, cancel cycle",
       "no": "No, keep cycle"

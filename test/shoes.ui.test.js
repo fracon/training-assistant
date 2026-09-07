@@ -272,6 +272,7 @@ test('locale files expose every shoes string in both languages', () => {
     assert.equal(typeof messages.shoes.reactivate, 'string');
     assert.equal(typeof messages.shoes.delete, 'string');
     assert.equal(typeof messages.shoes.deleteConfirm, 'string');
+    assert.equal(typeof messages.shoes.deleteTitle, 'string');
     assert.equal(typeof messages.shoes.formTitleAdd, 'string');
     assert.equal(typeof messages.shoes.formTitleEdit, 'string');
     assert.equal(typeof messages.shoes.save, 'string');

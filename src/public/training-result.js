@@ -316,11 +316,13 @@ export async function handleTrainingDelete({
   redirect = () => window.location.replace('/calendar.html'),
 }) {
   const t = (key) => translate(messages, key);
-  const confirmed = await confirm(
-    t('session.deleteConfirmMessage'),
-    t('shell.confirm.yes'),
-    t('shell.confirm.no')
-  );
+  const confirmed = await confirm({
+    title: t('session.deleteConfirmTitle'),
+    message: t('session.deleteConfirmMessage'),
+    icon: 'trash-2',
+    confirmLabel: t('shell.confirm.yes'),
+    cancelLabel: t('shell.confirm.no'),
+  });
   if (!confirmed) return false;
   try {
     await remove(id);

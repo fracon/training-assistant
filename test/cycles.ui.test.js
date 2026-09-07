@@ -448,6 +448,7 @@ test('locale files expose every cycles string in both languages', () => {
     assert.equal(typeof messages.cycles.promptTitle, 'string');
     assert.equal(typeof messages.cycles.copyPrompt, 'string');
     assert.equal(typeof messages.cycles.deleteConfirm, 'string');
+    assert.equal(typeof messages.cycles.cancelTitle, 'string');
     assert.equal(typeof messages.cycles.confirm.yes, 'string');
     assert.equal(typeof messages.cycles.confirm.no, 'string');
     assert.equal(typeof messages.cycles.status.active, 'string');

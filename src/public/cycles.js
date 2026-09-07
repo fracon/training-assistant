@@ -254,11 +254,13 @@ async function handleAction(action, id, cycles, messages, language = 'en-US') {
   }
 
   if (action === 'cancel') {
-    if (!(await showConfirm(
-      t(messages, 'cycles.deleteConfirm'),
-      t(messages, 'cycles.confirm.yes'),
-      t(messages, 'cycles.confirm.no'),
-    ))) return;
+    if (!(await showConfirm({
+      title: t(messages, 'cycles.cancelTitle'),
+      message: t(messages, 'cycles.deleteConfirm'),
+      icon: 'trash-2',
+      confirmLabel: t(messages, 'cycles.confirm.yes'),
+      cancelLabel: t(messages, 'cycles.confirm.no'),
+    }))) return;
     await updateCycle(id, { status: 'cancelled' });
     const updated = await fetchCycles();
     cycles.length = 0;

@@ -250,6 +250,7 @@
     "save": "Salvar e voltar ao calendário",
     "saving": "Salvando…",
     "deleteTooltip": "Excluir treino",
+    "deleteConfirmTitle": "Excluir treino",
     "deleteConfirmMessage": "Excluir este treino? Esta ação não pode ser desfeita.",
     "deleteSuccess": "Treino excluído com sucesso!",
     "deleteError": "Não foi possível excluir o treino. Tente novamente.",
@@ -313,6 +314,7 @@
     "retire": "Aposentar",
     "reactivate": "Reativar",
     "delete": "Excluir",
+    "deleteTitle": "Excluir tênis",
     "deleteConfirm": "Tem certeza que deseja excluir este tênis?",
     "formTitleAdd": "Cadastrar Novo Tênis",
     "formTitleEdit": "Editar Tênis",
@@ -378,6 +380,7 @@
     "promptTitle": "Prompt Macrocycle – Coach IA",
     "copyPrompt": "Copiar para a área de transferência",
     "deleteConfirm": "Tem certeza que deseja cancelar este ciclo?",
+    "cancelTitle": "Cancelar ciclo",
     "confirm": {
       "yes": "Sim, cancelar o ciclo",
       "no": "Não, manter o ciclo"

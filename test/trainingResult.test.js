@@ -382,16 +382,23 @@ test('handleTrainingDelete cancels and returns false without removing', async ()
 
 test('handleTrainingDelete removes the session and redirects on success', async () => {
   const messages = {
-    session: { deleteConfirmMessage: 'Delete?' },
+    session: {
+      deleteConfirmTitle: 'Delete training',
+      deleteConfirmMessage: 'Delete?',
+    },
     shell: { confirm: { yes: 'Delete', no: 'Cancel' } },
   };
   let removedId = null;
   let toastKey = null;
   let redirected = false;
+  let confirmArgs = null;
   const result = await handleTrainingDelete({
     id: 7,
     messages,
-    confirm: async () => true,
+    confirm: async (args) => {
+      confirmArgs = args;
+      return true;
+    },
     remove: async (id) => {
       removedId = id;
     },
@@ -406,6 +413,11 @@ test('handleTrainingDelete removes the session and redirects on success', async 
   assert.equal(removedId, 7);
   assert.equal(toastKey, 'session.deleteSuccess');
   assert.equal(redirected, true);
+  assert.equal(confirmArgs.title, 'Delete training', 'the modal receives the localized title');
+  assert.equal(confirmArgs.message, 'Delete?', 'the modal receives the localized message');
+  assert.equal(confirmArgs.icon, 'trash-2', 'the modal uses the destructive trash icon');
+  assert.equal(confirmArgs.confirmLabel, 'Delete');
+  assert.equal(confirmArgs.cancelLabel, 'Cancel');
 });
 
 test('handleTrainingDelete surfaces failures as an error toast without redirecting', async () => {
@@ -1012,6 +1024,7 @@ test('session locale namespace stays in parity across en-US and pt-BR', () => {
     'save',
     'saving',
     'deleteTooltip',
+    'deleteConfirmTitle',
     'deleteConfirmMessage',
     'deleteSuccess',
     'deleteError',
