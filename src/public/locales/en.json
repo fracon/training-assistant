@@ -62,6 +62,11 @@
       "Monday": "Monday",
       "Sunday": "Sunday"
     },
+    "moreTooltip": "More trainings on this day",
+    "reschedule": {
+      "success": "Training moved to {date}.",
+      "error": "Could not move the training. Please try again."
+    },
     "months": [
       "January", "February", "March", "April", "May", "June",
       "July", "August", "September", "October", "November", "December"

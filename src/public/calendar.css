@@ -190,11 +190,48 @@
 }
 
 .day-cell .training-chip[data-training-id] {
-  cursor: pointer;
+  cursor: grab;
 }
 
 .day-cell .training-chip[data-training-id]:active {
   transform: scale(0.98);
+  cursor: grabbing;
+}
+
+.day-cell .training-chip.dragging {
+  opacity: 0.4;
+  cursor: grabbing;
+}
+
+.day-cell .training-chip.chip-more {
+  position: relative;
+}
+
+.day-cell .training-chip.chip-more .custom-tooltip {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%) translateY(-4px);
+  z-index: 50;
+  width: max-content;
+  max-width: 250px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--card);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  font-size: 0.8rem;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: normal;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.day-cell .training-chip.chip-more:hover .custom-tooltip {
+  opacity: 1;
+  transform: translateX(-50%) translateY(-8px);
 }
 
 .day-cell .chip-type {
@@ -339,6 +376,12 @@
 
 .day-cell.today {
   border-color: var(--accent-deep);
+  box-shadow: inset 0 0 0 1px var(--accent-deep);
+}
+
+.day-cell.drag-over {
+  border-color: var(--accent-deep);
+  background: rgba(111, 144, 112, 0.12);
   box-shadow: inset 0 0 0 1px var(--accent-deep);
 }
 

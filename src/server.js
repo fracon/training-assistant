@@ -81,6 +81,21 @@ function parseRpe(raw) {
   return { ok: true, value };
 }
 
+// Rescheduling dates travel as zero-padded ISO strings, the same format
+// the Excel importer writes into `dia`. Returns the validated YYYY-MM-DD
+// or null when the value is not a trustworthy calendar date.
+function normalizeIsoDate(value) {
+  if (typeof value !== 'string') return null;
+  const text = value.trim();
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (!match) return null;
+  const probe = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  const iso =
+    `${probe.getUTCFullYear()}-${String(probe.getUTCMonth() + 1).padStart(2, '0')}-` +
+    `${String(probe.getUTCDate()).padStart(2, '0')}`;
+  return iso === text ? text : null;
+}
+
 async function buildServer(options = {}) {
   const app = Fastify({ logger: false });
   await app.register(multipart, {
@@ -474,6 +489,16 @@ async function buildServer(options = {}) {
           });
         }
         updates.feedback_has_pain = value;
+      }
+
+      if (body.dia !== undefined) {
+        const dia = normalizeIsoDate(body.dia);
+        if (dia === null) {
+          return reply.code(400).send({
+            error: 'dia must be a valid date in YYYY-MM-DD format.',
+          });
+        }
+        updates.dia = dia;
       }
 
       const FEEDBACK_TEXT_FIELDS = [

@@ -351,6 +351,75 @@ test('PATCH /api/trainings/:id rejects unsupported pain answers', async () => {
   }
 });
 
+test('PATCH /api/trainings/:id reschedules a session to a new ISO date', async () => {
+  const { db, app, cookie, userId } = await setup();
+  const id = seedTraining(db, { user_id: userId, feedback_rpe: 4, feedback_notas: 'Forte' });
+
+  const response = await app.inject({
+    method: 'PATCH',
+    url: `/api/trainings/${id}`,
+    headers: { cookie },
+    payload: { dia: ' 2026-08-26 ' },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.json().training.dia, '2026-08-26');
+
+  const row = db
+    .prepare('SELECT dia, feedback_rpe, feedback_notas FROM trainings WHERE id = ?')
+    .get(id);
+  assert.equal(row.dia, '2026-08-26', 'the session moved to the new day');
+  assert.equal(row.feedback_rpe, 4, 'existing feedback untouched');
+  assert.equal(row.feedback_notas, 'Forte', 'existing notes untouched');
+});
+
+test('PATCH /api/trainings/:id combines a reschedule with feedback updates', async () => {
+  const { db, app, cookie, userId } = await setup();
+  const id = seedTraining(db, { user_id: userId });
+
+  const response = await app.inject({
+    method: 'PATCH',
+    url: `/api/trainings/${id}`,
+    headers: { cookie },
+    payload: { dia: '2026-09-01', feedback_rpe: 3, completed: true },
+  });
+  assert.equal(response.statusCode, 200);
+
+  const row = db
+    .prepare('SELECT dia, feedback_rpe, completed FROM trainings WHERE id = ?')
+    .get(id);
+  assert.equal(row.dia, '2026-09-01');
+  assert.equal(row.feedback_rpe, 3);
+  assert.equal(row.completed, 1);
+});
+
+test('PATCH /api/trainings/:id rejects invalid rescheduling dates', async () => {
+  const { db, app, cookie, userId } = await setup();
+  const id = seedTraining(db, { user_id: userId });
+  const error = { error: 'dia must be a valid date in YYYY-MM-DD format.' };
+
+  for (const dia of [
+    '26/08/2026',
+    '2026-9-7',
+    '2026-02-30',
+    '2026-13-01',
+    '',
+    20260826,
+    null,
+  ]) {
+    const response = await app.inject({
+      method: 'PATCH',
+      url: `/api/trainings/${id}`,
+      headers: { cookie },
+      payload: { dia },
+    });
+    assert.equal(response.statusCode, 400, `dia=${JSON.stringify(dia)}`);
+    assert.deepEqual(response.json(), error);
+  }
+
+  const row = db.prepare('SELECT dia FROM trainings WHERE id = ?').get(id);
+  assert.equal(row.dia, '2026-08-24', 'the original date is never clobbered');
+});
+
 test('PATCH /api/trainings/:id saves trimmed notes and persists every field', async () => {
   const { db, app, cookie, userId } = await setup();
   const id = seedTraining(db, { user_id: userId });

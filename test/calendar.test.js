@@ -20,6 +20,8 @@ const {
   buildCalendarCells,
   chipLines,
   trainingResultUrl,
+  isoFromGridKey,
+  rescheduledTrainings,
 } = require('../src/public/calendar.js');
 const en = require('../src/public/locales/en.json');
 const pt = require('../src/public/locales/pt.json');
@@ -533,18 +535,189 @@ test('training chips are wired as clickable links into the session page', () => 
   assert.ok(js.includes("window.location.href = trainingResultUrl(training.id)"));
 });
 
-test('calendar.css signals chip clickability without styling the overflow chip', () => {
+test('calendar.css signals chip draggability without styling the overflow chip', () => {
   const css = readFileSync(join(publicDir, 'calendar.css'), 'utf8');
 
   const cursorBlock = css.match(
     /\.day-cell \.training-chip\[data-training-id\] \{[^}]*\}/
   )?.[0];
   assert.ok(cursorBlock, '[data-training-id] cursor rule exists');
-  assert.match(cursorBlock, /cursor:\s*pointer/);
+  assert.match(cursorBlock, /cursor:\s*grab/);
 
   const activeBlock = css.match(
     /\.day-cell \.training-chip\[data-training-id\]:active \{[^}]*\}/
   )?.[0];
   assert.ok(activeBlock, ':active press feedback exists');
   assert.match(activeBlock, /transform: scale\(0\.98\)/);
+  assert.match(activeBlock, /cursor:\s*grabbing/);
+
+  const draggingBlock = css.match(
+    /\.day-cell \.training-chip\.dragging \{[^}]*\}/
+  )?.[0];
+  assert.ok(draggingBlock, 'the in-flight drag state has a rule');
+  assert.match(draggingBlock, /opacity:\s*0\.4/);
+  assert.match(draggingBlock, /cursor:\s*grabbing/);
+
+  const dropBlock = css.match(/\.day-cell\.drag-over \{[^}]*\}/)?.[0];
+  assert.ok(dropBlock, 'day cells highlight as drop targets');
+  assert.match(dropBlock, /border-color:\s*var\(--accent-deep\)/);
+});
+
+test('isoFromGridKey zero-pads bare grid keys back into DB ISO dates', () => {
+  assert.equal(isoFromGridKey('2026-9-7'), '2026-09-07');
+  assert.equal(isoFromGridKey('2026-1-1'), '2026-01-01');
+  assert.equal(isoFromGridKey('2026-12-31'), '2026-12-31');
+});
+
+test('rescheduledTrainings moves a training to the drop target day', () => {
+  const trainings = [
+    { id: 1, dia: '2026-08-24', treino: 'A' },
+    { id: 2, dia: '2026-08-25', treino: 'B' },
+  ];
+
+  const moved = rescheduledTrainings(trainings, '1', '2026-08-31');
+  assert.notEqual(moved, trainings, 'a new list is returned');
+  assert.equal(moved[0].dia, '2026-08-31');
+  assert.equal(moved[0].treino, 'A');
+  assert.equal(moved[1].dia, '2026-08-25', 'sibling trainings untouched');
+  assert.deepEqual(
+    trainings.map((training) => training.dia),
+    ['2026-08-24', '2026-08-25'],
+    'the input list is never mutated'
+  );
+
+  assert.equal(
+    rescheduledTrainings(trainings, '2', '2026-08-25'),
+    trainings,
+    'a no-op drop returns the same reference'
+  );
+  assert.equal(
+    rescheduledTrainings(trainings, '999', '2026-08-30'),
+    trainings,
+    'unknown ids are ignored'
+  );
+});
+
+test('chips are draggable and publish their training id through dataTransfer', () => {
+  const js = readFileSync(join(publicDir, 'calendar.js'), 'utf8');
+  const chipBody = js.slice(
+    js.indexOf("el('span', 'training-chip'"),
+    js.indexOf('cellNode.appendChild(chip)')
+  );
+
+  assert.match(chipBody, /chip\.draggable = true;/);
+  assert.match(
+    chipBody,
+    /dataTransfer\.setData\('text\/plain', String\(training\.id\)\);/,
+    'the training id rides the drag payload'
+  );
+  assert.match(chipBody, /classList\.add\('dragging'\)/, 'the source chip dims while flying');
+  assert.match(chipBody, /aria-grabbed/, 'drag state is mirrored for assistive tech');
+  assert.match(chipBody, /chip\.dataset\.trainingId = String\(training\.id\);/);
+  assert.match(chipBody, /trainingResultUrl\(training\.id\)/);
+});
+
+test('chips clear their drag state once the drag ends', () => {
+  const js = readFileSync(join(publicDir, 'calendar.js'), 'utf8');
+  const dragendStart = js.indexOf("addEventListener('dragend',");
+  assert.ok(dragendStart !== -1, 'a dragend listener is bound');
+  const dragendBody = js.slice(dragendStart, js.indexOf('});', dragendStart));
+
+  assert.match(dragendBody, /classList\.remove\('dragging'\)/);
+  assert.match(dragendBody, /setAttribute\('aria-grabbed', 'false'\)/);
+});
+
+test('day cells act as drop zones: dragover highlights, dragleave clears, drop reschedules', () => {
+  const js = readFileSync(join(publicDir, 'calendar.js'), 'utf8');
+
+  const dragoverStart = js.indexOf("addEventListener('dragover',");
+  assert.ok(dragoverStart !== -1, 'a dragover listener is bound');
+  const dragover = js.slice(dragoverStart, js.indexOf('});', dragoverStart));
+  assert.match(dragover, /event\.preventDefault\(\)/, 'the browser drop is allowed');
+  assert.match(dragover, /classList\.add\('drag-over'\)/, 'the cell highlights on hover');
+
+  const dragleaveStart = js.indexOf("addEventListener('dragleave',");
+  assert.ok(dragleaveStart !== -1, 'a dragleave listener is bound');
+  const dragleave = js.slice(dragleaveStart, js.indexOf('});', dragleaveStart));
+  assert.match(dragleave, /node\.contains\(event\.relatedTarget\)/, 'child targets keep the highlight');
+  assert.match(dragleave, /classList\.remove\('drag-over'\)/, 'the highlight clears on leave');
+
+  const dropStart = js.indexOf("addEventListener('drop',");
+  assert.ok(dropStart !== -1, 'a drop listener is bound');
+  const drop = js.slice(dropStart, js.indexOf('});', dropStart));
+  assert.match(drop, /event\.preventDefault\(\)/);
+  assert.match(drop, /getData\('text\/plain'\)/, 'the dropped training id is read back');
+  assert.match(drop, /handleRescheduleDrop\(trainingId, cell\.key\)/, 'the target cell day is sent along');
+});
+
+test('drop moves the chip day-first, persists via PATCH and toasts in both outcomes', () => {
+  const js = readFileSync(join(publicDir, 'calendar.js'), 'utf8');
+
+  assert.match(js, /const newIso = isoFromGridKey\(cellKey\);/);
+  assert.match(js, /const moved = rescheduledTrainings\(state\.trainings, trainingId, newIso\);/);
+  assert.match(js, /if \(moved === state\.trainings\) return;/);
+  assert.match(js, /state\.trainings = moved;/);
+  assert.match(js, /await updateTrainingDate\(trainingId, newIso\);/);
+  assert.match(js, /'calendar\.reschedule\.success'/);
+  assert.match(js, /formatDate\(newIso, i18n\.language\)/, 'the toast shows the localized moved date');
+  assert.match(js, /await reloadTrainings\(\)/, 'failures roll back to the server state');
+  assert.match(js, /'calendar\.reschedule\.error'/);
+});
+
+test('rescheduling travels through the shared training PATCH api', () => {
+  const api = readFileSync(join(publicDir, 'shared', 'api.js'), 'utf8');
+  assert.match(api, /export function updateTrainingDate\(id, date\)/);
+  assert.match(
+    api,
+    /requestJson\(`\/api\/trainings\/\$\{id\}`,\s*\{\s*dia:\s*date\s*\},\s*'PATCH'\)/,
+    'the PATCH body carries the zero-padded ISO date'
+  );
+
+  const js = readFileSync(join(publicDir, 'calendar.js'), 'utf8');
+  assert.match(
+    js,
+    /import \{ [^}]*updateTrainingDate[^}]*\} from '\.\/shared\/api\.js';/
+  );
+  assert.match(js, /import \{ formatDate \} from '\.\/shared\/date\.js';/);
+});
+
+test('reschedule toasts and the overflow hint are translated with key parity', () => {
+  assert.equal(en.calendar.moreTooltip, 'More trainings on this day');
+  assert.equal(pt.calendar.moreTooltip, 'Mais treinos neste dia');
+  assert.equal(en.calendar.reschedule.success, 'Training moved to {date}.');
+  assert.equal(pt.calendar.reschedule.success, 'Treino remarcado para {date}.');
+  assert.equal(
+    en.calendar.reschedule.error,
+    'Could not move the training. Please try again.'
+  );
+  assert.equal(
+    pt.calendar.reschedule.error,
+    'Não foi possível remarcar o treino. Tente novamente.'
+  );
+});
+
+test('the overflow chip hints through a custom tooltip, never a native title', () => {
+  const js = readFileSync(join(publicDir, 'calendar.js'), 'utf8');
+  assert.ok(!js.includes('more.title'), 'the native title on the overflow chip is removed');
+  assert.match(js, /moreTooltip\.textContent = t\('calendar\.moreTooltip'\);/);
+  assert.match(js, /el\('div', 'custom-tooltip'\)/);
+
+  const css = readFileSync(join(publicDir, 'calendar.css'), 'utf8');
+  const chipMoreBlock = css.match(/\.day-cell \.training-chip\.chip-more \{[^}]*\}/)?.[0] ?? '';
+  assert.match(chipMoreBlock, /position:\s*relative/, 'tooltip positioning anchor');
+
+  const tooltipBlock = css.match(
+    /\.day-cell \.training-chip\.chip-more \.custom-tooltip \{[^}]*\}/
+  )?.[0];
+  assert.ok(tooltipBlock, 'the overflow chip tooltip has a rule');
+  assert.match(tooltipBlock, /position:\s*absolute/);
+  assert.match(tooltipBlock, /bottom:\s*100%/);
+  assert.match(tooltipBlock, /pointer-events:\s*none/);
+  assert.match(tooltipBlock, /background:\s*var\(--ink\)/);
+
+  const hoverBlock = css.match(
+    /\.day-cell \.training-chip\.chip-more:hover \.custom-tooltip \{[^}]*\}/
+  )?.[0];
+  assert.ok(hoverBlock, 'the overflow chip tooltip reveals on hover');
+  assert.match(hoverBlock, /opacity:\s*1/);
 });

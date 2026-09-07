@@ -1,4 +1,4 @@
-import { fetchCalendarTrainings, importTrainingsFile, fetchActiveCycle } from './shared/api.js';
+import { fetchCalendarTrainings, importTrainingsFile, fetchActiveCycle, updateTrainingDate } from './shared/api.js';
 import {
   initShell,
   getShellI18n,
@@ -8,6 +8,7 @@ import {
   showShellToast,
 } from './shared/shell.js';
 import { translate } from './shared/i18n.js';
+import { formatDate } from './shared/date.js';
 
 export const WEEK_START_STORAGE_KEY = 'training-assistant:first-day-of-week';
 export const SUPPORTED_WEEK_STARTS = ['Monday', 'Sunday'];
@@ -131,6 +132,32 @@ export function trainingResultUrl(id) {
   return `/training-result.html?id=${id}`;
 }
 
+// Day cells expose bare-number keys ("2026-9-7"); rescheduling must write
+// back the same zero-padded ISO format the importer stores in `dia`.
+export function isoFromGridKey(key) {
+  const [year, month, day] = key.split('-').map(Number);
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+// Optimistic drag-and-drop reschedule: returns a brand-new list with the
+// dropped training moved to `newIso`, or the same reference when the id is
+// unknown or the training already sits on the target day.
+export function rescheduledTrainings(trainings, id, newIso) {
+  const targetId = String(id);
+  let moved = null;
+  for (const training of trainings) {
+    if (String(training.id) === targetId) {
+      if (training.dia === newIso) return trainings;
+      moved = { ...training, dia: newIso };
+      break;
+    }
+  }
+  if (!moved) return trainings;
+  return trainings.map((training) =>
+    String(training.id) === targetId ? moved : training
+  );
+}
+
 function setupCalendarPage() {
   const grid = document.getElementById('calendarGrid');
   const monthTitle = document.getElementById('monthTitle');
@@ -176,12 +203,25 @@ function setupCalendarPage() {
       chip.addEventListener('click', () => {
         window.location.href = trainingResultUrl(training.id);
       });
+      chip.draggable = true;
+      chip.setAttribute('aria-grabbed', 'false');
+      chip.addEventListener('dragstart', (event) => {
+        event.dataTransfer.setData('text/plain', String(training.id));
+        chip.classList.add('dragging');
+        chip.setAttribute('aria-grabbed', 'true');
+      });
+      chip.addEventListener('dragend', () => {
+        chip.classList.remove('dragging');
+        chip.setAttribute('aria-grabbed', 'false');
+      });
       cellNode.appendChild(chip);
     }
     if (dayTrainings.length > visible.length) {
       const more = el('span', 'training-chip chip-more');
       more.textContent = `+${dayTrainings.length - visible.length}`;
-      more.title = t('calendar.import.title');
+      const moreTooltip = el('div', 'custom-tooltip');
+      moreTooltip.textContent = t('calendar.moreTooltip');
+      more.appendChild(moreTooltip);
       cellNode.appendChild(more);
     }
   }
@@ -227,6 +267,23 @@ function setupCalendarPage() {
       const number = el('span', 'day-number');
       number.textContent = String(cell.dayNumber);
       node.appendChild(number);
+      node.addEventListener('dragover', (event) => {
+        event.preventDefault();
+        node.classList.add('drag-over');
+      });
+      node.addEventListener('dragleave', (event) => {
+        if (!event.relatedTarget || !node.contains(event.relatedTarget)) {
+          node.classList.remove('drag-over');
+        }
+      });
+      node.addEventListener('drop', (event) => {
+        event.preventDefault();
+        node.classList.remove('drag-over');
+        const trainingId = event.dataTransfer.getData('text/plain');
+        if (trainingId) {
+          handleRescheduleDrop(trainingId, cell.key);
+        }
+      });
       if (byDay.has(cell.key)) {
         appendTrainingChips(node, byDay.get(cell.key));
       }
@@ -320,6 +377,27 @@ function setupCalendarPage() {
   async function reloadTrainings() {
     state.trainings = await fetchCalendarTrainings();
     render();
+  }
+
+  async function handleRescheduleDrop(trainingId, cellKey) {
+    const newIso = isoFromGridKey(cellKey);
+    const moved = rescheduledTrainings(state.trainings, trainingId, newIso);
+    if (moved === state.trainings) return;
+    state.trainings = moved;
+    render();
+    try {
+      await updateTrainingDate(trainingId, newIso);
+      showShellToast(
+        i18n.messages,
+        'calendar.reschedule.success',
+        'success',
+        2500,
+        { date: formatDate(newIso, i18n.language) }
+      );
+    } catch {
+      await reloadTrainings();
+      showShellToast(i18n.messages, 'calendar.reschedule.error', 'error', 3000);
+    }
   }
 
   async function handleImportSelection() {

@@ -51,6 +51,10 @@ export function changePassword(payload) {
   return requestJson('/api/auth/password', payload, 'PUT');
 }
 
+export function updateTrainingDate(id, date) {
+  return requestJson(`/api/trainings/${id}`, { dia: date }, 'PATCH');
+}
+
 export async function fetchCalendarTrainings(from, to) {
   try {
     const params = new URLSearchParams();
