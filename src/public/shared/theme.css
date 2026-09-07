@@ -472,11 +472,16 @@ input.input-error:focus-visible {
 
 .confirm-actions .btn-secondary {
   background: transparent;
-  color: var(--danger);
+  border-color: var(--accent-deep);
+  color: var(--accent-deep);
+}
+
+.confirm-actions .btn-secondary:focus-visible {
+  outline-color: var(--accent-deep);
 }
 
 .confirm-actions .btn-secondary:hover {
-  background-color: rgba(165, 73, 47, 0.08);
+  background-color: rgba(111, 144, 112, 0.1);
   transform: translateY(-2px);
 }
 

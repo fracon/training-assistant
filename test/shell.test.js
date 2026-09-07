@@ -329,6 +329,9 @@ test('confirm modal CSS matches the Kinesis design system', () => {
   assert.match(theme, /\.confirm-actions \.btn \{[\s\S]*?border:\s*1px solid var\(--danger\)/, 'the solid and outline buttons share the same 1px border width');
   assert.match(theme, /\.confirm-actions \.btn \{[^}]*transition:\s*all 0\.2s ease/, 'the base button animates smoothly');
   assert.match(theme, /\.confirm-actions \.btn-secondary \{[^}]*background:\s*transparent/, 'the outline button stays transparent');
+  assert.match(theme, /\.confirm-actions \.btn-secondary \{[^}]*border-color:\s*var\(--accent-deep\)/, 'the cancel button uses the green outline');
+  assert.match(theme, /\.confirm-actions \.btn-secondary \{[^}]*color:\s*var\(--accent-deep\)/, 'the cancel button uses the green text');
+  assert.match(theme, /\.confirm-actions \.btn-secondary:focus-visible \{[^}]*outline-color:\s*var\(--accent-deep\)/, 'the cancel focus ring matches its green theme');
   assert.match(theme, /\.confirm-actions \.btn-danger \{[^}]*background:\s*var\(--danger\)/, 'the solid button keeps the destructive fill');
 });
 
