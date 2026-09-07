@@ -664,13 +664,18 @@ test('drop moves the chip day-first, persists via PATCH and toasts in both outco
   assert.match(js, /'calendar\.reschedule\.error'/);
 });
 
-test('rescheduling travels through the shared training PATCH api', () => {
+test('rescheduling travels through the dedicated /reschedule train', () => {
   const api = readFileSync(join(publicDir, 'shared', 'api.js'), 'utf8');
   assert.match(api, /export function updateTrainingDate\(id, date\)/);
   assert.match(
     api,
-    /requestJson\(`\/api\/trainings\/\$\{id\}`,\s*\{\s*dia:\s*date\s*\},\s*'PATCH'\)/,
-    'the PATCH body carries the zero-padded ISO date'
+    /requestJson\(`\/api\/trainings\/\$\{id\}\/reschedule`,\s*\{\s*date\s*\},\s*'PATCH'\)/,
+    'the dedicated endpoint receives exactly the date field'
+  );
+  assert.doesNotMatch(
+    api,
+    /trainings\/\$\{id\}`,\s*\{ dia/,
+    'the reschedule no longer hijacks the feedback PATCH route'
   );
 
   const js = readFileSync(join(publicDir, 'calendar.js'), 'utf8');

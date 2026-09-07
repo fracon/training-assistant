@@ -52,7 +52,7 @@ export function changePassword(payload) {
 }
 
 export function updateTrainingDate(id, date) {
-  return requestJson(`/api/trainings/${id}`, { dia: date }, 'PATCH');
+  return requestJson(`/api/trainings/${id}/reschedule`, { date }, 'PATCH');
 }
 
 export async function fetchCalendarTrainings(from, to) {

@@ -491,16 +491,6 @@ async function buildServer(options = {}) {
         updates.feedback_has_pain = value;
       }
 
-      if (body.dia !== undefined) {
-        const dia = normalizeIsoDate(body.dia);
-        if (dia === null) {
-          return reply.code(400).send({
-            error: 'dia must be a valid date in YYYY-MM-DD format.',
-          });
-        }
-        updates.dia = dia;
-      }
-
       const FEEDBACK_TEXT_FIELDS = [
         'feedback_shoe',
         'feedback_hr_source',
@@ -534,6 +524,41 @@ async function buildServer(options = {}) {
       db.prepare(
         `UPDATE trainings SET ${assignments} WHERE id = ? AND user_id = ?`
       ).run(...fields.map((field) => updates[field]), id, request.user.id);
+
+      return { training: findTraining.get(id, request.user.id) };
+    });
+
+    // Dedicated reschedule endpoint for the Calendar drag-and-drop flow.
+    // It accepts exactly one field (`date`, zero-padded YYYY-MM-DD) and
+    // never touches the feedback columns owned by PATCH /api/trainings/:id.
+    app.patch('/api/trainings/:id/reschedule', { preHandler: requireAuth }, async (request, reply) => {
+      const id = Number(request.params.id);
+      if (!Number.isInteger(id) || id <= 0) {
+        return reply.code(400).send({ error: 'Invalid training id.' });
+      }
+
+      const body = request.body ?? {};
+      const keys = Object.keys(body);
+      if (keys.length !== 1 || keys[0] !== 'date') {
+        return reply.code(400).send({ error: 'Request body must contain only the date field.' });
+      }
+
+      const date = normalizeIsoDate(body.date);
+      if (date === null) {
+        return reply.code(400).send({
+          error: 'date must be a valid date in YYYY-MM-DD format.',
+        });
+      }
+
+      if (!findTraining.get(id, request.user.id)) {
+        return reply.code(404).send({ error: 'Training not found.' });
+      }
+
+      db.prepare('UPDATE trainings SET dia = ? WHERE id = ? AND user_id = ?').run(
+        date,
+        id,
+        request.user.id
+      );
 
       return { training: findTraining.get(id, request.user.id) };
     });
