@@ -1181,3 +1181,13 @@ test('home.css styles the shoe rotation items with the traffic-light bar colors'
   assert.match(css, /\.shoes-list \{[^}]*list-style:\s*none;\s*\n\s*margin:\s*0;\s*\n\s*padding:\s*0/);
   assert.match(css, /\.shoe-widget-info \{[^}]*justify-content:\s*space-between/);
 });
+
+test('home.css keeps empty and populated shoe states mutually exclusive', () => {
+  const css = readHomeCss();
+  assert.match(css, /\.empty-state\.hidden \{[^}]*display:\s*none/);
+  assert.match(css, /\.shoes-list\.hidden \{[^}]*display:\s*none/);
+  const js = readFileSync(join(publicDir, 'home.js'), 'utf8');
+  assert.match(js, /shoesEmpty\.classList\.toggle\('hidden', active\.length > 0\)/);
+  assert.match(js, /shoesList\.classList\.toggle\('hidden', active\.length === 0\)/);
+  assert.match(js, /shoesList\.textContent = ''/);
+});
