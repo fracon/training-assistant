@@ -529,7 +529,14 @@
   "home": {
     "actions": {
       "goToCycles": "Ir para ciclos",
-      "goToTrainings": "Ir para treinos"
+      "goToTrainings": "Ir para treinos",
+      "goToShoes": "Ir para tênis de rotação"
+    },
+    "shoes": {
+      "title": "Meus Tênis",
+      "emptyTitle": "Nenhum tênis ativo",
+      "emptyText": "Cadastre seus tênis de corrida para acompanhar a quilometragem.",
+      "emptyCta": "Adicionar tênis"
     },
     "pageTitle": "Painel - Kinesis",
     "hero": {

@@ -529,7 +529,14 @@
   "home": {
     "actions": {
       "goToCycles": "Go to cycles",
-      "goToTrainings": "Go to workouts"
+      "goToTrainings": "Go to workouts",
+      "goToShoes": "Go to shoe rotation"
+    },
+    "shoes": {
+      "title": "My Shoes",
+      "emptyTitle": "No active shoes",
+      "emptyText": "Register your running shoes to track their mileage.",
+      "emptyCta": "Add shoes"
     },
     "pageTitle": "Dashboard - Kinesis",
     "hero": {

@@ -80,6 +80,23 @@
             </div>
           </div>
         </section>
+
+        <section class="card-section" aria-labelledby="shoesOverviewTitle">
+          <header class="section-header">
+            <h2 id="shoesOverviewTitle" data-i18n="home.shoes.title">My Shoes</h2>
+            <a class="card-action" href="/shoes.html" data-i18n-aria-label="home.actions.goToShoes">
+              <i data-lucide="external-link" aria-hidden="true"></i>
+            </a>
+          </header>
+
+          <div id="shoesEmpty" class="empty-state">
+            <h3 data-i18n="home.shoes.emptyTitle">No active shoes</h3>
+            <p data-i18n="home.shoes.emptyText">Register your running shoes to track their mileage.</p>
+            <a class="btn-primary" href="/shoes.html" data-i18n="home.shoes.emptyCta">Add shoes</a>
+          </div>
+
+          <ul id="shoesList" class="shoes-list hidden" role="list"></ul>
+        </section>
       </div>
     </div>
   </main>

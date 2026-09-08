@@ -34,6 +34,16 @@ const {
   cycleObjectiveText,
   cycleCardContent,
   metricsCardContent,
+  activeShoes,
+  shoeLifespanKm,
+  shoeLifePercent,
+  shoeLifeLevel,
+  shoeLifeBarWidth,
+  displayDistanceValue,
+  buildShoeDistanceText,
+  buildShoeWidgetMarkup,
+  DEFAULT_SHOE_LIFESPAN_KM,
+  DEFAULT_SHOE_LIFESPAN_MI,
   randomFallbackQuote,
   normalizeZenQuote,
   loadQuote,
@@ -105,6 +115,11 @@ test('home.html ships the hero, cycle, and metrics dashboard skeleton', () => {
   assert.match(html, /id="weekTrackerDays"/);
   assert.match(html, /class="card-action" href="\/cycles\.html" data-i18n-aria-label="home\.actions\.goToCycles"[\s\S]*?data-lucide="external-link"/);
   assert.match(html, /class="card-action" href="\/calendar\.html" data-i18n-aria-label="home\.actions\.goToTrainings"[\s\S]*?data-lucide="external-link"/);
+  assert.match(html, /class="card-action" href="\/shoes\.html" data-i18n-aria-label="home\.actions\.goToShoes"[\s\S]*?data-lucide="external-link"/);
+  assert.match(html, /id="shoesEmpty"/);
+  assert.match(html, /id="shoesList"/);
+  assert.match(html, /aria-labelledby="shoesOverviewTitle"/);
+  assert.match(html, /data-i18n="home\.shoes\.title"/);
   assert.match(html, /class="dashboard-grid vertical"/);
   assert.match(html, /class="week-tracker"/);
   assert.match(html, /class="week-tracker-days"/);
@@ -184,6 +199,7 @@ test('home.html wires every dashboard label to i18n keys shared by both locales'
     'home.pageTitle',
     'home.actions.goToCycles',
     'home.actions.goToTrainings',
+    'home.actions.goToShoes',
     'home.hero.loading',
     'home.hero.ariaLabel',
     'home.cycle.title',
@@ -195,6 +211,10 @@ test('home.html wires every dashboard label to i18n keys shared by both locales'
     'home.metrics.title',
     'home.metrics.distance',
     'home.metrics.time',
+    'home.shoes.title',
+    'home.shoes.emptyTitle',
+    'home.shoes.emptyText',
+    'home.shoes.emptyCta',
   ];
   for (const key of expectedKeys) {
     assert.ok(html.includes(key), `home.html must reference ${key}`);
@@ -539,6 +559,107 @@ test('metricsCardContent formats the dashboard totals', () => {
     distance: '3.11 mi',
     time: '0h 00m',
   });
+});
+
+// ── Shoe rotation widget ───────────────────────────────────────
+
+test('activeShoes keeps only the active status shoes', () => {
+  const shoes = [
+    { id: '1', status: 'active', brand: 'Nike', model: 'Pegasus' },
+    { id: '2', status: 'retired', brand: 'Asics', model: 'Nimbus' },
+    { id: '3', status: 'active', brand: 'New Balance', model: '1080' },
+  ];
+  assert.deepEqual(
+    activeShoes(shoes).map((shoe) => shoe.id),
+    ['1', '3']
+  );
+  assert.deepEqual(activeShoes([]), []);
+  assert.deepEqual(activeShoes(null), []);
+  assert.deepEqual(activeShoes([null, { status: 'retired' }]), []);
+});
+
+test('shoeLifespanKm falls back to the 500 km default without a target', () => {
+  assert.equal(shoeLifespanKm({ target_mileage: 800 }), 800);
+  assert.equal(shoeLifespanKm({ target_mileage: 0 }), DEFAULT_SHOE_LIFESPAN_KM);
+  assert.equal(shoeLifespanKm({ target_mileage: null }), DEFAULT_SHOE_LIFESPAN_KM);
+  assert.equal(shoeLifespanKm({}), DEFAULT_SHOE_LIFESPAN_KM);
+  assert.equal(shoeLifespanKm(null), DEFAULT_SHOE_LIFESPAN_KM);
+  assert.equal(DEFAULT_SHOE_LIFESPAN_KM, 500);
+  assert.equal(DEFAULT_SHOE_LIFESPAN_MI, 300);
+});
+
+test('shoeLifePercent is mileage over lifespan and ignores invalid input', () => {
+  assert.equal(shoeLifePercent({ mileage: 370, target_mileage: 500 }), 74);
+  assert.equal(shoeLifePercent({ mileage: 375, target_mileage: 500 }), 75);
+  assert.equal(shoeLifePercent({ mileage: 450, target_mileage: 500 }), 90);
+  assert.equal(shoeLifePercent({ mileage: 150 }), 30, 'default lifespan applies when no target is set');
+  assert.equal(shoeLifePercent({ mileage: -10 }), 0);
+  assert.equal(shoeLifePercent({ mileage: 'junk' }), 0);
+  assert.equal(shoeLifePercent(null), 0);
+  assert.equal(shoeLifePercent({ mileage: 600, target_mileage: 500 }), 120, 'over-lifespan shoes exceed 100%');
+});
+
+test('shoeLifeLevel marks the traffic-light thresholds at every boundary', () => {
+  assert.equal(shoeLifeLevel(0), 'ok');
+  assert.equal(shoeLifeLevel(74.9), 'ok');
+  assert.equal(shoeLifeLevel(74), 'ok', '74% is still green');
+  assert.equal(shoeLifeLevel(75), 'warn', '75% flips to yellow');
+  assert.equal(shoeLifeLevel(89), 'warn', '89% stays yellow');
+  assert.equal(shoeLifeLevel(90), 'critical', '90% flips to red');
+  assert.equal(shoeLifeLevel(100), 'critical');
+  assert.equal(shoeLifeLevel(140), 'critical');
+  assert.equal(shoeLifeLevel(Number.NaN), 'ok');
+});
+
+test('shoeLifeBarWidth clamps the bar to the 0-100 range', () => {
+  assert.equal(shoeLifeBarWidth(30), 30);
+  assert.equal(shoeLifeBarWidth(0), 0);
+  assert.equal(shoeLifeBarWidth(100), 100);
+  assert.equal(shoeLifeBarWidth(140), 100);
+  assert.equal(shoeLifeBarWidth(-5), 0);
+});
+
+test('buildShoeDistanceText renders current / lifespan in the preferred unit', () => {
+  assert.equal(buildShoeDistanceText({ mileage: 150, target_mileage: 500 }), '150 / 500 km');
+  assert.equal(
+    buildShoeDistanceText({ mileage: 150 }),
+    '150 / 500 km',
+    'the default 500 km lifespan is shown when no target exists'
+  );
+  assert.equal(buildShoeDistanceText({ mileage: 100 }, 'mi'), '62.14 / 300 mi', 'miles uses the 300 mi default');
+  assert.equal(
+    buildShoeDistanceText({ mileage: 150, target_mileage: 500 }, 'mi'),
+    '93.21 / 310.69 mi',
+    'an explicit target converts to miles'
+  );
+  assert.equal(buildShoeDistanceText({ mileage: 0 }, 'km'), '0 / 500 km');
+});
+
+test('buildShoeWidgetMarkup aggregates name, mileage text and traffic-light level', () => {
+  assert.deepEqual(
+    buildShoeWidgetMarkup({ brand: 'Nike', model: 'Pegasus', mileage: 150, target_mileage: 500 }),
+    {
+      name: 'Nike Pegasus',
+      distance: '150 / 500 km',
+      percent: 30,
+      level: 'ok',
+      width: 30,
+    }
+  );
+  assert.deepEqual(
+    buildShoeWidgetMarkup({ brand: 'Asics', model: 'Nimbus', mileage: 450, target_mileage: 500 }, 'mi'),
+    {
+      name: 'Asics Nimbus',
+      distance: '279.62 / 310.69 mi',
+      percent: 90,
+      level: 'critical',
+      width: 90,
+    }
+  );
+  assert.deepEqual(
+    buildShoeWidgetMarkup({ mileage: 375, target_mileage: 500 }),
+    { name: '', distance: '375 / 500 km', percent: 75, level: 'warn', width: 75 }
+  );
 });
 
 // ── Weekly 7-day tracker ───────────────────────────────────────
@@ -900,7 +1021,7 @@ test('applyCycleVisibility tolerates missing containers without throwing', () =>
 
 test('home.js keeps the dashboard wiring declarative and reactive', () => {
   const js = readHomeJs();
-  assert.match(js, /import \{ fetchActiveCycle, fetchCalendarTrainings \} from '\.\/shared\/api\.js'/);
+  assert.match(js, /import \{ fetchActiveCycle, fetchCalendarTrainings, fetchShoes \} from '\.\/shared\/api\.js'/);
   assert.match(js, /import \{ initShell, getShellI18n, getUserPreferences \} from '\.\/shared\/shell\.js'/);
   assert.match(js, /initShell\(\{ active: 'dashboard' \}\)/);
   assert.match(js, /new AbortController\(\)/);
@@ -923,6 +1044,9 @@ test('home.js keeps the dashboard wiring declarative and reactive', () => {
     'the language switch re-renders the cycle, metrics and week labels'
   );
   assert.match(js, /renderWeekTracker\(\);/);
+  assert.match(js, /renderShoesWidget\(\);/);
+  assert.match(js, /state\.shoes = await fetchShoes\(\);/);
+  assert.match(js, /loadShoes\(\);/);
   assert.match(js, /state\.trainingDates = trainingDaySet\(weekTrainings\)/);
   assert.match(js, /export function applyCycleVisibility/);
   assert.match(
@@ -1031,4 +1155,33 @@ test('home.css stacks the dashboard widgets full-width and styles the week track
   assert.match(css, /\.week-day svg \{[^}]*display:\s*inline-block/);
   assert.doesNotMatch(css, /\.week-day svg \{[^}]*transform:\s*rotate\(180deg\)/);
   assert.match(css, /\.week-day\.empty \{[^}]*background:\s*transparent;[^}]*color:\s*var\(--muted\)/);
+});
+
+test('home.css styles the shoe rotation items with the traffic-light bar colors', () => {
+  const css = readHomeCss();
+
+  assert.match(
+    css,
+    /\.shoe-widget-item \{[^}]*background:\s*var\(--bg\);\s*\n\s*border:\s*1px solid var\(--line\);\s*\n\s*border-radius:\s*14px/,
+    'each shoe renders as its own card in the earthy surface treatment'
+  );
+  assert.match(css, /\.shoe-widget-bar \{[^}]*border-radius:\s*999px;\s*\n\s*background:\s*var\(--line\);\s*\n\s*overflow:\s*hidden/);
+  assert.match(
+    css,
+    /\.shoe-widget-fill\.level-ok \{[^}]*background:\s*var\(--ok\)/,
+    '0-74% fills green via the shared success token'
+  );
+  assert.match(
+    css,
+    /\.shoe-widget-fill\.level-warn \{[^}]*background:\s*#c2933a/,
+    '75-89% fills amber'
+  );
+  assert.match(
+    css,
+    /\.shoe-widget-fill\.level-critical \{[^}]*background:\s*var\(--danger\)/,
+    '90%+ fills red via the shared danger token'
+  );
+  assert.match(css, /\.shoe-widget-fill \{[\s\S]*?transition:\s*width 0\.3s ease, background-color 0\.3s ease/);
+  assert.match(css, /\.shoes-list \{[^}]*list-style:\s*none;\s*\n\s*margin:\s*0;\s*\n\s*padding:\s*0/);
+  assert.match(css, /\.shoe-widget-info \{[^}]*justify-content:\s*space-between/);
 });
