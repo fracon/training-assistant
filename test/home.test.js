@@ -1106,7 +1106,7 @@ test('home.css lays out the cycle header, objective subtitle and compact progres
   assert.match(css, /\.cycle-card \.days-left \{[^}]*white-space:\s*nowrap/);
 });
 
-test('home.css stacks the dashboard widgets full-width and styles the week tracker', () => {
+test('home.css places weekly widgets side-by-side with equal-height responsive tracks', () => {
   const css = readHomeCss();
   assert.match(css, /\.hero-loading \{[^}]*display:\s*table[^}]*padding:\s*0\.45rem 0\.7rem[^}]*background-color:\s*rgba\(0, 0, 0, 0\.6\)/);
   assert.match(css, /\.hero-loading\.hidden \{[^}]*display:\s*none/);
@@ -1119,20 +1119,16 @@ test('home.css stacks the dashboard widgets full-width and styles the week track
   assert.match(css, /var\(--bg\)/);
   assert.match(
     css,
-    /\.dashboard-grid \{[^}]*display:\s*flex;\s*\n\s*flex-direction:\s*column/,
-    'the widget container stacks vertically'
+    /\.dashboard-grid \{[^}]*display:\s*grid;\s*\n\s*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);\s*\n\s*align-items:\s*stretch/,
+    'the widget container uses equal-height desktop grid tracks'
   );
   assert.match(
     css,
-    /\.dashboard-grid \.card-section \{[^}]*width:\s*100%/,
-    'each widget card stretches to the full container width'
+    /\.dashboard-grid \.card-section \{[^}]*width:\s*auto;[^}]*height:\s*100%/,
+    'each widget card fills its grid track height'
   );
-  const dashboardBlock = css.match(/\.dashboard-grid \{([^}]*)\}/);
-  assert.ok(dashboardBlock, 'the dashboard-grid rule exists');
-  assert.ok(
-    !dashboardBlock[1].includes('grid-template-columns'),
-    'the widget container no longer uses a grid column layout'
-  );
+  assert.match(css, /\.dashboard-grid > \.card-section:first-child \{[^}]*grid-column:\s*1 \/ -1/);
+  assert.match(css, /@media \(max-width: 760px\) \{[\s\S]*?\.dashboard-grid \{\s*grid-template-columns:\s*1fr;/);
   assert.match(
     css,
     /\.metrics-grid \{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/,

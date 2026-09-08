@@ -77,16 +77,23 @@
   opacity: 0.85;
 }
 
-/* ── Dashboard layout (stacked full-width widgets) ───────────── */
+/* ── Dashboard layout ───────────────────────────────────────── */
 
 .dashboard-grid {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
   gap: 1.2rem;
 }
 
 .dashboard-grid .card-section {
-  width: 100%;
+  width: auto;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.dashboard-grid > .card-section:first-child {
+  grid-column: 1 / -1;
 }
 
 .card-section {
@@ -414,6 +421,14 @@
 }
 
 @media (max-width: 760px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-grid > .card-section:first-child {
+    grid-column: auto;
+  }
+
   .metrics-grid {
     grid-template-columns: 1fr;
   }
