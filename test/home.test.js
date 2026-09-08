@@ -123,6 +123,10 @@ test('home.html ships the hero, cycle, and metrics dashboard skeleton', () => {
   assert.match(html, /class="dashboard-grid vertical"/);
   assert.match(html, /class="week-tracker"/);
   assert.match(html, /class="week-tracker-days"/);
+  assert.match(
+    html,
+    /<header class="section-header">[\s\S]*?<\/header>\s*<div class="weekly-metrics-body">[\s\S]*?class="week-tracker"/
+  );
   assert.doesNotMatch(html, /weeklyTrackerTitle|class="tracker-title"|data-i18n="home\.metrics\.tracker"/);
   assert.ok(
     html.indexOf('<div class="week-tracker"') < html.indexOf('<div class="metrics-grid">'),
@@ -1145,7 +1149,11 @@ test('home.css places weekly widgets side-by-side with equal-height responsive t
   );
   assert.match(
     css,
-    /\.card-section\[aria-labelledby="weeklyMetricsTitle"\] \{[^}]*display:\s*flex;[^}]*flex-direction:\s*column;[^}]*justify-content:\s*center/
+    /\.card-section\[aria-labelledby="weeklyMetricsTitle"\] \{[^}]*display:\s*flex;[^}]*flex-direction:\s*column;[^}]*justify-content:\s*flex-start/
+  );
+  assert.match(
+    css,
+    /\.weekly-metrics-body \{[^}]*display:\s*flex;[^}]*flex:\s*1;[^}]*flex-direction:\s*column;[^}]*justify-content:\s*center/
   );
   assert.match(css, /\.week-tracker-days \{[^}]*display:\s*flex/);
   assert.match(css, /\.week-tracker-days \{[^}]*align-items:\s*center/);

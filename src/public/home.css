@@ -154,6 +154,13 @@
 .card-section[aria-labelledby="weeklyMetricsTitle"] {
   display: flex;
   flex-direction: column;
+  justify-content: flex-start;
+}
+
+.weekly-metrics-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
   justify-content: center;
 }
 
