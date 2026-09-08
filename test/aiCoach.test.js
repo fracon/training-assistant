@@ -24,6 +24,11 @@ const {
   defaultRoutineFor,
   orderedDayKeys,
   buildDayRowHtml,
+  readDayInputState,
+  applyDayInputState,
+  renderDayGrid,
+  DAY_INPUT_IDS,
+  LOCATION_INPUT_IDS,
   buildPrompt,
   buildPromptContext,
   previousWeekSummary,
@@ -382,11 +387,96 @@ test('day cards render dynamically from the user week-start preference', () => {
 
   assert.match(js, /import \{ initShell, getShellI18n, getUserPreferences, refreshIcons \}/);
   assert.match(js, /const availabilityGrid = document\.getElementById\('availabilityGrid'\)/);
-  assert.match(js, /availabilityGrid\.innerHTML = orderedDayKeys\(getUserPreferences\(\)\.first_day_of_week\)/);
+  assert.match(js, /renderDayGrid\(\{/);
+  assert.match(js, /weekStart: getUserPreferences\(\)\.first_day_of_week/);
+  assert.match(js, /grid\.innerHTML = orderedDayKeys\(weekStart\)/);
   assert.match(js, /\.map\(\(day\) => buildDayRowHtml\(day/);
   assert.match(js, /data-i18n="aiCoach\.days\.\$\{DAY_LOCALE_KEYS\[day\]\}"/);
   assert.match(js, /kinesis:preferences-changed/);
   assert.ok(!js.includes('for (const inputId of Object.values(DAY_INPUT_IDS))'), 'input defaults flow through the renderer only');
+});
+
+test('day state is a day-keyed dictionary that round-trips both input fields', () => {
+  const dom = { values: {} };
+  const getValue = (id) => dom.values[id];
+  const setValue = (id, value) => { dom.values[id] = value; };
+
+  const state = readDayInputState(getValue);
+  assert.equal(Object.keys(state).length, 7, 'one record per day');
+  assert.ok(Object.keys(state).every((day) => 'availability' in state[day] && 'location' in state[day]));
+
+  dom.values[DAY_INPUT_IDS.segunda] = 'Rotina normal';
+  dom.values[LOCATION_INPUT_IDS.segunda] = 'Fânzeres';
+  applyDayInputState(readDayInputState(getValue), setValue);
+  assert.equal(dom.values[DAY_INPUT_IDS.segunda], 'Rotina normal');
+  assert.equal(dom.values[LOCATION_INPUT_IDS.segunda], 'Fânzeres');
+
+  const partial = { terceira: { availability: undefined, location: 'X' } };
+  applyDayInputState(partial, setValue);
+  assert.equal(dom.values[LOCATION_INPUT_IDS.terceira], undefined, 'unknown days and undefined fields are skipped');
+});
+
+test('changing the week start keeps the cascaded daily locations filled', () => {
+  const grid = { innerHTML: '' };
+  const dom = { values: {} };
+  const getValue = (id) => dom.values[id];
+  const setValue = (id, value) => { dom.values[id] = value; };
+
+  const render = (weekStart) => renderDayGrid({
+    weekStart,
+    routine: 'Rotina normal',
+    grid,
+    getValue,
+    setValue,
+  });
+
+  for (const id of Object.values(DAY_INPUT_IDS)) {
+    dom.values[id] = 'Rotina normal';
+  }
+
+  render('Monday');
+  assert.match(grid.innerHTML, /aiCoach\.days\.monday[\s\S]*aiCoach\.days\.sunday/, 'monday preference mounts Monday first');
+
+  const baseLocation = 'Fânzeres';
+  for (const id of Object.values(LOCATION_INPUT_IDS)) {
+    setValue(id, baseLocation);
+  }
+
+  render('Sunday');
+  assert.match(grid.innerHTML, /aiCoach\.days\.sunday[\s\S]*aiCoach\.days\.saturday/, 'sunday preference re-mounts Sunday first');
+  for (const id of Object.values(LOCATION_INPUT_IDS)) {
+    assert.equal(dom.values[id], baseLocation, `${id} keeps its cascaded value after the re-mount`);
+  }
+  for (const id of Object.values(DAY_INPUT_IDS)) {
+    assert.equal(dom.values[id], 'Rotina normal', `${id} keeps the routine default`);
+  }
+});
+
+test('manual location overrides survive a week-start re-mount', () => {
+  const grid = { innerHTML: '' };
+  const dom = { values: {} };
+  const getValue = (id) => dom.values[id];
+  const setValue = (id, value) => { dom.values[id] = value; };
+
+  const render = (weekStart) => renderDayGrid({
+    weekStart,
+    routine: 'Rotina normal',
+    grid,
+    getValue,
+    setValue,
+  });
+
+  render('Monday');
+  setValue(DAY_INPUT_IDS.quarta, 'Manhã');
+  setValue(LOCATION_INPUT_IDS.quarta, 'Estrada da Ponte');
+  setValue(LOCATION_INPUT_IDS.sabado, 'Fânzeres');
+
+  render('Sunday');
+
+  assert.equal(dom.values[DAY_INPUT_IDS.quarta], 'Manhã');
+  assert.equal(dom.values[LOCATION_INPUT_IDS.quarta], 'Estrada da Ponte');
+  assert.equal(dom.values[LOCATION_INPUT_IDS.sabado], 'Fânzeres');
+  assert.equal(dom.values[LOCATION_INPUT_IDS.domingo], undefined, 'the first Sunday mount fills no location default');
 });
 
 test('day-based location inputs are wired through LOCATION_INPUT_IDS', () => {

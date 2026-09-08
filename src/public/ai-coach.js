@@ -507,7 +507,7 @@ export function parseInputDate(value) {
   return new Date(year, month - 1, day);
 }
 
-const DAY_INPUT_IDS = {
+export const DAY_INPUT_IDS = {
   segunda: 'dispSeg',
   terca: 'dispTer',
   quarta: 'dispQua',
@@ -517,7 +517,7 @@ const DAY_INPUT_IDS = {
   domingo: 'dispDom',
 };
 
-const LOCATION_INPUT_IDS = {
+export const LOCATION_INPUT_IDS = {
   segunda: 'locSeg',
   terca: 'locTer',
   quarta: 'locQua',
@@ -533,6 +533,42 @@ export function buildDayRowHtml(day, { dayLabel, routine, locationPlaceholder })
   <input type="text" id="${DAY_INPUT_IDS[day]}" value="${routine}" autocomplete="off">
   <input type="text" id="${LOCATION_INPUT_IDS[day]}" data-i18n-placeholder="aiCoach.location" placeholder="${locationPlaceholder}" autocomplete="off">
 </div>`;
+}
+
+export function readDayInputState(getValue) {
+  const state = {};
+  for (const day of DAY_KEYS) {
+    state[day] = {
+      availability: getValue(DAY_INPUT_IDS[day]),
+      location: getValue(LOCATION_INPUT_IDS[day]),
+    };
+  }
+  return state;
+}
+
+export function applyDayInputState(state, setValue) {
+  for (const day of DAY_KEYS) {
+    const record = state[day] ?? {};
+    if (record.availability !== undefined) {
+      setValue(DAY_INPUT_IDS[day], record.availability);
+    }
+    if (record.location !== undefined) {
+      setValue(LOCATION_INPUT_IDS[day], record.location);
+    }
+  }
+}
+
+export function renderDayGrid({ weekStart = 'Monday', routine = '', dayLabel = (day) => day, locationPlaceholder = 'Location', grid, getValue, setValue }) {
+  const previous = readDayInputState(getValue);
+  grid.innerHTML = orderedDayKeys(weekStart)
+    .map((day) => buildDayRowHtml(day, {
+      dayLabel: dayLabel(day),
+      routine,
+      locationPlaceholder,
+    }))
+    .join('');
+  applyDayInputState(previous, setValue);
+  return grid.innerHTML;
 }
 
 const COPY_FEEDBACK_MS = 2000;
@@ -565,22 +601,18 @@ function setupAiCoachPage() {
 
   let lastRoutineDefault = t('aiCoach.defaultRoutine') || defaultRoutineFor(i18n.language);
   function renderDayRows() {
-    const previous = {};
-    for (const [day, inputId] of Object.entries(DAY_INPUT_IDS)) {
-      const input = document.getElementById(inputId);
-      if (input) previous[day] = input.value;
-    }
-    availabilityGrid.innerHTML = orderedDayKeys(getUserPreferences().first_day_of_week)
-      .map((day) => buildDayRowHtml(day, {
-        dayLabel: t(`aiCoach.days.${DAY_LOCALE_KEYS[day]}`) || day,
-        routine: lastRoutineDefault,
-        locationPlaceholder: t('aiCoach.location') || 'Location',
-      }))
-      .join('');
-    for (const [day, inputId] of Object.entries(DAY_INPUT_IDS)) {
-      const input = document.getElementById(inputId);
-      if (input && previous[day] !== undefined) input.value = previous[day];
-    }
+    renderDayGrid({
+      weekStart: getUserPreferences().first_day_of_week,
+      routine: lastRoutineDefault,
+      dayLabel: (day) => t(`aiCoach.days.${DAY_LOCALE_KEYS[day]}`) || day,
+      locationPlaceholder: t('aiCoach.location') || 'Location',
+      grid: availabilityGrid,
+      getValue: (id) => document.getElementById(id)?.value,
+      setValue: (id, value) => {
+        const input = document.getElementById(id);
+        if (input) input.value = value;
+      },
+    });
   }
   renderDayRows();
 
