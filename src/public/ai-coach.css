@@ -97,7 +97,7 @@
 
 .day-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   align-items: start;
   gap: 0.5rem;
   padding: 0.6rem;
@@ -113,10 +113,8 @@
   font-weight: 500;
 }
 
-@media (max-width: 560px) {
-  .day-row {
-    grid-template-columns: 1fr;
-  }
+.day-row input[type='text'] {
+  width: 100%;
 }
 
 /* Mirrors the training-result primary treatment exactly: solid sage pill,

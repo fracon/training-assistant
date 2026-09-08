@@ -316,21 +316,20 @@ test('training request date input uses localized display with ISO state binding'
   assert.match(js, /const targetDate = parseInputDate\(targetIso\)/);
 });
 
-test('availability day rows pair availability and location inputs side by side', () => {
+test('availability day rows stack the availability and location inputs vertically', () => {
   const css = readFileSync(join(publicDir, 'ai-coach.css'), 'utf8');
 
   assert.match(
     css,
-    /\.day-row \{[^}]*grid-template-columns:\s*1fr 1fr/,
-    'the availability and location inputs share one row'
+    /\.day-row \{[^}]*grid-template-columns:\s*1fr;/,
+    'the availability and location inputs stack in a single column'
   );
+  assert.match(css, /\.day-row \{[^}]*gap:\s*0\.5rem/, 'a vertical gap keeps the stacked inputs apart');
   assert.match(css, /\.day-row \.day-label \{[^}]*grid-column:\s*1 \/ -1/, 'the day label spans the full row');
   assert.match(css, /\.day-row \{[^}]*border-radius:\s*12px/, 'each day is grouped inside its own card');
-  assert.match(
-    css,
-    /@media \(max-width:\s*560px\) \{\s*\n\s*\.day-row \{\s*\n\s*grid-template-columns:\s*1fr;\s*\n\s*\}\s*\n\s*\}/,
-    'days stack vertically on narrow screens'
-  );
+  assert.match(css, /\.day-row input\[type='text'\] \{[^}]*width:\s*100%/, 'both inputs fill the full day-card width');
+  assert.ok(!css.includes('grid-template-columns: 1fr 1fr'), 'no side-by-side day layout remains');
+  assert.ok(!css.includes('@media (max-width: 560px)'), 'stacking no longer needs a mobile-only override');
 });
 
 test('day-based location inputs are wired through LOCATION_INPUT_IDS', () => {
