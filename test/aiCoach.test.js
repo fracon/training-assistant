@@ -309,7 +309,7 @@ test('ai-coach.html wires the shell, lucide and the full form', () => {
   assert.match(html, /<h1 data-i18n="aiCoach\.title">Request Workouts<\/h1>/);
 
   assert.match(html, /type="date" id="targetDate"[^>]*required/);
-  assert.match(html, /for="targetDate" data-i18n="aiCoach\.targetDate">[^<]*<span class="required-mark"/);
+  assert.match(html, /for="targetDate"><span data-i18n="aiCoach\.targetDate">[^<]*<\/span><span class="required-mark"/);
   assert.match(
     html,
     /class="availability-grid" id="availabilityGrid"[\s\S]*?<\/div>/,
@@ -324,7 +324,7 @@ test('ai-coach.html wires the shell, lucide and the full form', () => {
     /type="text" id="baseLocation" data-i18n-placeholder="aiCoach\.locationPlaceholder" placeholder="Ex: City, Country"/,
     'the base location input ships a generic, i18n-bound placeholder'
   );
-  assert.match(html, /for="baseLocation" data-i18n="aiCoach\.baseLocation"/);
+  assert.match(html, /for="baseLocation"><span data-i18n="aiCoach\.baseLocation"/);
   assert.match(html, /data-i18n="aiCoach\.baseLocationHint"/);
   assert.match(html, /<textarea id="optionalContext"/);
   assert.match(html, /type="submit" id="generateBtn" class="btn-primary"/);
@@ -400,12 +400,12 @@ test('buildDayRowHtml wires daily state to its own availability and location inp
     locationPlaceholder: 'Local',
   });
   assert.match(row, /^<div class="day-row">\s*<label for="dispSeg"/);
-  assert.match(row, /class="day-label" data-i18n="aiCoach\.days\.monday">Monday<span class="required-mark"/);
+  assert.match(row, /class="day-label"><span data-i18n="aiCoach\.days\.monday">Monday<\/span><span class="required-mark"/);
   assert.match(row, /id="dispSeg" value="Rotina normal" autocomplete="off"/);
   assert.match(row, /id="locSeg" data-i18n-placeholder="aiCoach\.location" placeholder="Local" autocomplete="off"/);
 
   const sundayRow = buildDayRowHtml('domingo', { dayLabel: 'Domingo', routine: 'rotina', locationPlaceholder: 'Local' });
-  assert.match(sundayRow, /data-i18n="aiCoach\.days\.sunday">Domingo<span class="required-mark"/);
+  assert.match(sundayRow, /data-i18n="aiCoach\.days\.sunday">Domingo<\/span><span class="required-mark"/);
   assert.match(sundayRow, /id="dispDom"/);
   assert.match(sundayRow, /id="locDom"/);
 });

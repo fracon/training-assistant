@@ -548,7 +548,7 @@ export function validatePromptFields({ targetDate = '', language = 'pt-BR', base
 
 export function buildDayRowHtml(day, { dayLabel, routine, locationPlaceholder }) {
   return `<div class="day-row">
-  <label for="${DAY_INPUT_IDS[day]}" class="day-label" data-i18n="aiCoach.days.${DAY_LOCALE_KEYS[day]}">${dayLabel}<span class="required-mark" aria-hidden="true">*</span></label>
+  <label for="${DAY_INPUT_IDS[day]}" class="day-label"><span data-i18n="aiCoach.days.${DAY_LOCALE_KEYS[day]}">${dayLabel}</span><span class="required-mark" aria-hidden="true">*</span></label>
   <input type="text" id="${DAY_INPUT_IDS[day]}" value="${routine}" autocomplete="off" required>
   <input type="text" id="${LOCATION_INPUT_IDS[day]}" data-i18n-placeholder="aiCoach.location" placeholder="${locationPlaceholder}" autocomplete="off" required>
 </div>`;
