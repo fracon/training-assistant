@@ -22,6 +22,8 @@ const {
   applyRoutineDefault,
   resolveTemplateLang,
   defaultRoutineFor,
+  orderedDayKeys,
+  buildDayRowHtml,
   buildPrompt,
   buildPromptContext,
   previousWeekSummary,
@@ -277,9 +279,14 @@ test('ai-coach.html wires the shell, lucide and the full form', () => {
 
   assert.match(html, /type="text" id="targetDate"/);
   assert.match(html, /inputmode="numeric"/);
-  for (const id of ['dispSeg', 'dispTer', 'dispQua', 'dispQui', 'dispSex', 'dispSab', 'dispDom']) {
-    assert.match(html, new RegExp(`id="${id}" value="Rotina normal"`));
-  }
+  assert.match(
+    html,
+    /class="availability-grid" id="availabilityGrid"[\s\S]*?<\/div>/,
+    'the day cards are rendered dynamically into the availability grid container'
+  );
+  assert.ok(!html.includes('id="dispSeg"'), 'no hardcoded day availability inputs remain in the page');
+  assert.ok(!html.includes('value="Rotina normal"'), 'day routines are injected by the renderer, not the page');
+  assert.ok(!html.includes('id="locSeg"'), 'no hardcoded day location inputs remain in the page');
   assert.match(html, /type="text" id="baseLocation"/);
   assert.match(
     html,
@@ -288,11 +295,6 @@ test('ai-coach.html wires the shell, lucide and the full form', () => {
   );
   assert.match(html, /for="baseLocation" data-i18n="aiCoach\.baseLocation"/);
   assert.match(html, /data-i18n="aiCoach\.baseLocationHint"/);
-  for (const id of ['locSeg', 'locTer', 'locQua', 'locQui', 'locSex', 'locSab', 'locDom']) {
-    assert.match(html, new RegExp(`id="${id}" data-i18n-placeholder="aiCoach\\.location"`));
-    assert.match(html, new RegExp(`id="${id}"[^>]*autocomplete="off"`));
-  }
-  assert.match(html, /class="day-label"/);
   assert.match(html, /<textarea id="optionalContext"/);
   assert.match(html, /type="submit" id="generateBtn" class="btn-primary"/);
   assert.ok(!html.includes('generate-btn'), 'the scoped generate-btn class is retired');
@@ -330,6 +332,61 @@ test('availability day rows stack the availability and location inputs verticall
   assert.match(css, /\.day-row input\[type='text'\] \{[^}]*width:\s*100%/, 'both inputs fill the full day-card width');
   assert.ok(!css.includes('grid-template-columns: 1fr 1fr'), 'no side-by-side day layout remains');
   assert.ok(!css.includes('@media (max-width: 560px)'), 'stacking no longer needs a mobile-only override');
+});
+
+test('orderedDayKeys starts the week on the preferred day', () => {
+  assert.deepEqual(orderedDayKeys('Monday'), [
+    'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado', 'domingo',
+  ], 'monday-preference renders Monday through Sunday');
+  assert.deepEqual(orderedDayKeys('Sunday'), [
+    'domingo', 'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado',
+  ], 'sunday-preference renders Sunday through Saturday');
+  assert.deepEqual(orderedDayKeys(), orderedDayKeys('Monday'), 'Monday is the default week start');
+  assert.equal(orderedDayKeys('Monday').length, 7);
+  assert.equal(orderedDayKeys('Sunday').length, 7);
+});
+
+test('the first rendered day card follows the week-start preference', () => {
+  const buildRows = (weekStart) => orderedDayKeys(weekStart).map((day) =>
+    buildDayRowHtml(day, { dayLabel: day, routine: 'Rotina normal', locationPlaceholder: 'Local' })
+  );
+
+  const mondayOrdered = buildRows('Monday');
+  assert.match(mondayOrdered[0], /aiCoach\.days\.monday/, 'monday preference leads with the Monday card');
+  assert.match(mondayOrdered[6], /aiCoach\.days\.sunday/, 'monday preference ends with the Sunday card');
+
+  const sundayOrdered = buildRows('Sunday');
+  assert.match(sundayOrdered[0], /aiCoach\.days\.sunday/, 'sunday preference leads with the Sunday card');
+  assert.match(sundayOrdered[6], /aiCoach\.days\.saturday/, 'sunday preference ends with the Saturday card');
+});
+
+test('buildDayRowHtml wires daily state to its own availability and location inputs', () => {
+  const row = buildDayRowHtml('segunda', {
+    dayLabel: 'Monday',
+    routine: 'Rotina normal',
+    locationPlaceholder: 'Local',
+  });
+  assert.match(row, /^<div class="day-row">\s*<label for="dispSeg"/);
+  assert.match(row, /class="day-label" data-i18n="aiCoach\.days\.monday">Monday<\/label>/);
+  assert.match(row, /id="dispSeg" value="Rotina normal" autocomplete="off"/);
+  assert.match(row, /id="locSeg" data-i18n-placeholder="aiCoach\.location" placeholder="Local" autocomplete="off"/);
+
+  const sundayRow = buildDayRowHtml('domingo', { dayLabel: 'Domingo', routine: 'rotina', locationPlaceholder: 'Local' });
+  assert.match(sundayRow, /data-i18n="aiCoach\.days\.sunday">Domingo<\/label>/);
+  assert.match(sundayRow, /id="dispDom"/);
+  assert.match(sundayRow, /id="locDom"/);
+});
+
+test('day cards render dynamically from the user week-start preference', () => {
+  const js = readFileSync(join(publicDir, 'ai-coach.js'), 'utf8');
+
+  assert.match(js, /import \{ initShell, getShellI18n, getUserPreferences, refreshIcons \}/);
+  assert.match(js, /const availabilityGrid = document\.getElementById\('availabilityGrid'\)/);
+  assert.match(js, /availabilityGrid\.innerHTML = orderedDayKeys\(getUserPreferences\(\)\.first_day_of_week\)/);
+  assert.match(js, /\.map\(\(day\) => buildDayRowHtml\(day/);
+  assert.match(js, /data-i18n="aiCoach\.days\.\$\{DAY_LOCALE_KEYS\[day\]\}"/);
+  assert.match(js, /kinesis:preferences-changed/);
+  assert.ok(!js.includes('for (const inputId of Object.values(DAY_INPUT_IDS))'), 'input defaults flow through the renderer only');
 });
 
 test('day-based location inputs are wired through LOCATION_INPUT_IDS', () => {

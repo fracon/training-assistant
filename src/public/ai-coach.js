@@ -196,6 +196,22 @@ If recent data indicates that the originally expected plan should be altered, pr
 
 const DAY_KEYS = ['segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado', 'domingo'];
 
+const DAY_LOCALE_KEYS = {
+  segunda: 'monday',
+  terca: 'tuesday',
+  quarta: 'wednesday',
+  quinta: 'thursday',
+  sexta: 'friday',
+  sabado: 'saturday',
+  domingo: 'sunday',
+};
+
+export function orderedDayKeys(weekStart = 'Monday') {
+  return weekStart === 'Sunday'
+    ? [DAY_KEYS[6], ...DAY_KEYS.slice(0, 6)]
+    : [...DAY_KEYS];
+}
+
 export const DEFAULT_ROUTINE_BY_LANG = {
   'en-US': 'Normal routine',
   'pt-BR': 'Rotina normal',
@@ -511,6 +527,14 @@ const LOCATION_INPUT_IDS = {
   domingo: 'locDom',
 };
 
+export function buildDayRowHtml(day, { dayLabel, routine, locationPlaceholder }) {
+  return `<div class="day-row">
+  <label for="${DAY_INPUT_IDS[day]}" class="day-label" data-i18n="aiCoach.days.${DAY_LOCALE_KEYS[day]}">${dayLabel}</label>
+  <input type="text" id="${DAY_INPUT_IDS[day]}" value="${routine}" autocomplete="off">
+  <input type="text" id="${LOCATION_INPUT_IDS[day]}" data-i18n-placeholder="aiCoach.location" placeholder="${locationPlaceholder}" autocomplete="off">
+</div>`;
+}
+
 const COPY_FEEDBACK_MS = 2000;
 
 function setupAiCoachPage() {
@@ -524,6 +548,7 @@ function setupAiCoachPage() {
   const targetDateInput = document.getElementById('targetDate');
   const optionalContextInput = document.getElementById('optionalContext');
   const baseLocationInput = document.getElementById('baseLocation');
+  const availabilityGrid = document.getElementById('availabilityGrid');
   const resultSection = document.getElementById('resultSection');
   const resultPlaceholder = document.getElementById('resultPlaceholder');
   const promptOutput = document.getElementById('promptOutput');
@@ -538,14 +563,31 @@ function setupAiCoachPage() {
     targetDateInput.dataset.iso = parseLocalizedDate(targetDateInput.value, i18n.language);
   });
 
-  // Fresh form: stamp the current language's default routine on all seven
-  // day inputs and remember it so later language switches only rewrite
-  // values the user has not customized yet.
   let lastRoutineDefault = t('aiCoach.defaultRoutine') || defaultRoutineFor(i18n.language);
-  for (const inputId of Object.values(DAY_INPUT_IDS)) {
-    const input = document.getElementById(inputId);
-    if (input) input.value = lastRoutineDefault;
+  function renderDayRows() {
+    const previous = {};
+    for (const [day, inputId] of Object.entries(DAY_INPUT_IDS)) {
+      const input = document.getElementById(inputId);
+      if (input) previous[day] = input.value;
+    }
+    availabilityGrid.innerHTML = orderedDayKeys(getUserPreferences().first_day_of_week)
+      .map((day) => buildDayRowHtml(day, {
+        dayLabel: t(`aiCoach.days.${DAY_LOCALE_KEYS[day]}`) || day,
+        routine: lastRoutineDefault,
+        locationPlaceholder: t('aiCoach.location') || 'Location',
+      }))
+      .join('');
+    for (const [day, inputId] of Object.entries(DAY_INPUT_IDS)) {
+      const input = document.getElementById(inputId);
+      if (input && previous[day] !== undefined) input.value = previous[day];
+    }
   }
+  renderDayRows();
+
+  document.addEventListener('kinesis:preferences-changed', (event) => {
+    const next = event.detail?.first_day_of_week;
+    if (next === 'Monday' || next === 'Sunday') renderDayRows();
+  });
 
   // The base location cascades to every day's location input. Each day can
   // still be overridden manually afterwards — a later base-location edit
