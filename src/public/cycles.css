@@ -201,6 +201,38 @@
   height: 15px;
 }
 
+.cycle-card-actions .btn-icon {
+  position: relative;
+}
+
+.cycle-card-actions .custom-tooltip {
+  position: absolute;
+  bottom: 110%;
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  z-index: 50;
+  width: max-content;
+  max-width: 220px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--card);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.cycle-card-actions .btn-icon:hover .custom-tooltip,
+.cycle-card-actions .btn-icon:focus-visible .custom-tooltip {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
 .btn-icon:hover {
   background: rgba(139, 129, 114, 0.1);
   color: var(--ink);

@@ -52,15 +52,19 @@ function renderCycleCard(cycle, messages, language = 'en-US') {
       ${cycle.status === 'active' ? `
         <button type="button" class="btn-icon cycle-edit-btn" data-action="edit" data-id="${cycle.id}" aria-label="${t(messages, 'cycles.edit')}">
           <i data-lucide="pencil"></i>
+          <div class="custom-tooltip" data-i18n="cycles.editTooltip">${escapeHtml(t(messages, 'cycles.editTooltip'))}</div>
         </button>
         <button type="button" class="btn-icon btn-ok cycle-complete-btn" data-action="complete" data-id="${cycle.id}" aria-label="${t(messages, 'cycles.complete')}">
           <i data-lucide="check-circle"></i>
+          <div class="custom-tooltip" data-i18n="cycles.completeTooltip">${escapeHtml(t(messages, 'cycles.completeTooltip'))}</div>
         </button>
         <button type="button" class="btn-icon btn-warn cycle-cancel-btn" data-action="cancel" data-id="${cycle.id}" aria-label="${t(messages, 'cycles.cancel')}">
           <i data-lucide="x-circle"></i>
+          <div class="custom-tooltip" data-i18n="cycles.cancelTooltip">${escapeHtml(t(messages, 'cycles.cancelTooltip'))}</div>
         </button>
         <button type="button" class="btn-icon cycle-prompt-btn" data-action="prompt" data-id="${cycle.id}" aria-label="${t(messages, 'cycles.generatePrompt')}">
           <i data-lucide="sparkles"></i>
+          <div class="custom-tooltip" data-i18n="cycles.promptTooltip">${escapeHtml(t(messages, 'cycles.promptTooltip'))}</div>
         </button>
       ` : ''}
     </div>`;

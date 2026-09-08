@@ -122,6 +122,30 @@ test('cycles.html addCycleBtn is wrapped with a custom tooltip', () => {
   assert.doesNotMatch(html, /id="addCycleBtn"[^>]*title=/, 'addCycleBtn must not have a native title attribute');
 });
 
+test('cycles.js renders localized custom tooltips for every cycle action', () => {
+  const js = readFileSync(join(publicDir, 'cycles.js'), 'utf8');
+  for (const [key, text] of [
+    ['editTooltip', 'Edit cycle'],
+    ['completeTooltip', 'Complete cycle'],
+    ['cancelTooltip', 'Cancel cycle'],
+    ['promptTooltip', 'Request AI training'],
+  ]) {
+    assert.match(js, new RegExp(`data-i18n="cycles\\.${key}"`));
+    assert.match(js, new RegExp(`t\\(messages, 'cycles\\.${key}'\\)`));
+    assert.equal(en.cycles[key], text);
+  }
+  assert.match(js, /class="custom-tooltip"/);
+  assert.doesNotMatch(js, /title=/, 'cycle actions must not use native title attributes');
+});
+
+test('cycles.css reveals action tooltips on hover and keyboard focus', () => {
+  const css = readFileSync(join(publicDir, 'cycles.css'), 'utf8');
+  assert.match(css, /\.cycle-card-actions \.custom-tooltip \{/);
+  assert.match(css, /\.cycle-card-actions \.btn-icon:hover \.custom-tooltip/);
+  assert.match(css, /\.cycle-card-actions \.btn-icon:focus-visible \.custom-tooltip/);
+  assert.match(css, /bottom:\s*110%/);
+});
+
 test('cycles.html modal is at body root level outside main', () => {
   const html = readFileSync(join(publicDir, 'cycles.html'), 'utf8');
   const mainClose = html.indexOf('</main>');
@@ -440,6 +464,10 @@ test('locale files expose every cycles string in both languages', () => {
     assert.equal(typeof messages.cycles.complete, 'string');
     assert.equal(typeof messages.cycles.cancel, 'string');
     assert.equal(typeof messages.cycles.generatePrompt, 'string');
+    assert.equal(typeof messages.cycles.editTooltip, 'string');
+    assert.equal(typeof messages.cycles.completeTooltip, 'string');
+    assert.equal(typeof messages.cycles.cancelTooltip, 'string');
+    assert.equal(typeof messages.cycles.promptTooltip, 'string');
     assert.equal(typeof messages.cycles.cancelForm, 'string');
     assert.equal(typeof messages.cycles.saveCycle, 'string');
     assert.equal(typeof messages.cycles.formTitleAdd, 'string');
