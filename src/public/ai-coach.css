@@ -97,15 +97,26 @@
 
 .day-row {
   display: grid;
-  grid-template-columns: 5.2rem 1fr;
-  align-items: center;
+  grid-template-columns: 1fr 1fr;
+  align-items: start;
   gap: 0.5rem;
+  padding: 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
 }
 
-.day-row label {
+.day-row .day-label {
+  grid-column: 1 / -1;
   color: var(--muted);
   font-size: 0.85rem;
   font-weight: 500;
+}
+
+@media (max-width: 560px) {
+  .day-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* Mirrors the training-result primary treatment exactly: solid sage pill,

@@ -8,8 +8,11 @@
     "subtitle": "Build a detailed briefing for your external AI coach",
     "targetDate": "Target date",
     "targetDateHint": "Week to plan. Defaults to next Monday.",
+    "baseLocation": "Base location",
+    "baseLocationHint": "Prefills every day's location. Override individual days in Availability.",
+    "location": "Location",
     "availability": "Availability",
-    "availabilityHint": "Tell the coach when you can run each day.",
+    "availabilityHint": "Tell the coach when/where you can run each day.",
     "defaultRoutine": "Normal routine",
     "days": {
       "monday": "Monday",

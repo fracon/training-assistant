@@ -8,8 +8,11 @@
     "subtitle": "Monte um briefing detalhado para o seu coach de IA externo",
     "targetDate": "Data alvo",
     "targetDateHint": "Semana a ser planejada. Padrão: próxima segunda-feira.",
+    "baseLocation": "Localidade base",
+    "baseLocationHint": "Prefilha a localização de todos os dias. Personalize cada dia em Disponibilidade.",
+    "location": "Local",
     "availability": "Disponibilidade",
-    "availabilityHint": "Informe ao coach quando você pode correr em cada dia.",
+    "availabilityHint": "Informe ao coach quando/onde você pode correr em cada dia.",
     "defaultRoutine": "Rotina normal",
     "days": {
       "monday": "Segunda",

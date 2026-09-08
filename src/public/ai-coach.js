@@ -47,13 +47,13 @@ A semana a ser planejada começa em:
 
 DISPONIBILIDADE
 
-Segunda: {{DISP_SEG}}
-Terça: {{DISP_TER}}
-Quarta: {{DISP_QUA}}
-Quinta: {{DISP_QUI}}
-Sexta: {{DISP_SEX}}
-Sábado: {{DISP_SAB}}
-Domingo: {{DISP_DOM}}
+- Segunda-feira: {{DISP_SEG}} (Local: {{LOCAL_SEG}})
+- Terça-feira: {{DISP_TER}} (Local: {{LOCAL_TER}})
+- Quarta-feira: {{DISP_QUA}} (Local: {{LOCAL_QUA}})
+- Quinta-feira: {{DISP_QUI}} (Local: {{LOCAL_QUI}})
+- Sexta-feira: {{DISP_SEX}} (Local: {{LOCAL_SEX}})
+- Sábado: {{DISP_SAB}} (Local: {{LOCAL_SAB}})
+- Domingo: {{DISP_DOM}} (Local: {{LOCAL_DOM}})
 
 Se eu não informar nenhuma restrição especial, considere minha rotina normal de corrida.
 
@@ -140,13 +140,13 @@ The week to be planned starts on:
 
 AVAILABILITY
 
-Monday: {{DISP_SEG}}
-Tuesday: {{DISP_TER}}
-Wednesday: {{DISP_QUA}}
-Thursday: {{DISP_QUI}}
-Friday: {{DISP_SEX}}
-Saturday: {{DISP_SAB}}
-Sunday: {{DISP_DOM}}
+- Monday: {{DISP_SEG}} (Location: {{LOCAL_SEG}})
+- Tuesday: {{DISP_TER}} (Location: {{LOCAL_TER}})
+- Wednesday: {{DISP_QUA}} (Location: {{LOCAL_QUA}})
+- Thursday: {{DISP_QUI}} (Location: {{LOCAL_QUI}})
+- Friday: {{DISP_SEX}} (Location: {{LOCAL_SEX}})
+- Saturday: {{DISP_SAB}} (Location: {{LOCAL_SAB}})
+- Sunday: {{DISP_DOM}} (Location: {{LOCAL_DOM}})
 
 If I do not provide any special restrictions, assume my normal running routine.
 
@@ -226,6 +226,16 @@ export const PLACEHOLDERS = {
   sexta: '{{DISP_SEX}}',
   sabado: '{{DISP_SAB}}',
   domingo: '{{DISP_DOM}}',
+};
+
+export const LOCATION_PLACEHOLDERS = {
+  segunda: '{{LOCAL_SEG}}',
+  terca: '{{LOCAL_TER}}',
+  quarta: '{{LOCAL_QUA}}',
+  quinta: '{{LOCAL_QUI}}',
+  sexta: '{{LOCAL_SEX}}',
+  sabado: '{{LOCAL_SAB}}',
+  domingo: '{{LOCAL_DOM}}',
 };
 
 export function pad2(value) {
@@ -436,7 +446,7 @@ export function formatShoesBlock(shoes = [], messages = {}, preferences = {}) {
   return `${title}\n\n${lines.join('\n')}`;
 }
 
-export function buildPrompt({ targetDate, disponibilidade = {}, contexto = '', lang = 'pt-BR', shoes = [], messages = {}, cycle = {}, previousWeek = {}, preferences = {} }) {
+export function buildPrompt({ targetDate, disponibilidade = {}, localizacao = {}, contexto = '', lang = 'pt-BR', shoes = [], messages = {}, cycle = {}, previousWeek = {}, preferences = {} }) {
   const templateLang = resolveTemplateLang(lang);
   const template = TEMPLATE_BY_LANG[templateLang];
   let prompt = replaceAll(
@@ -450,6 +460,8 @@ export function buildPrompt({ targetDate, disponibilidade = {}, contexto = '', l
   const availability = { ...availabilityDefaults(templateLang), ...disponibilidade };
   for (const day of DAY_KEYS) {
     prompt = replaceAll(prompt, PLACEHOLDERS[day], String(availability[day] ?? '').trim());
+    const location = String(localizacao[day] ?? '').trim();
+    prompt = replaceAll(prompt, LOCATION_PLACEHOLDERS[day], location === '' ? '-' : location);
   }
   const notes = String(contexto).trim();
   prompt = replaceAll(prompt, '{{CONTEXTO_OPCIONAL}}', notes === '' ? '-' : notes);
@@ -489,6 +501,16 @@ const DAY_INPUT_IDS = {
   domingo: 'dispDom',
 };
 
+const LOCATION_INPUT_IDS = {
+  segunda: 'locSeg',
+  terca: 'locTer',
+  quarta: 'locQua',
+  quinta: 'locQui',
+  sexta: 'locSex',
+  sabado: 'locSab',
+  domingo: 'locDom',
+};
+
 const COPY_FEEDBACK_MS = 2000;
 
 function setupAiCoachPage() {
@@ -501,6 +523,7 @@ function setupAiCoachPage() {
   const form = document.getElementById('promptForm');
   const targetDateInput = document.getElementById('targetDate');
   const optionalContextInput = document.getElementById('optionalContext');
+  const baseLocationInput = document.getElementById('baseLocation');
   const resultSection = document.getElementById('resultSection');
   const resultPlaceholder = document.getElementById('resultPlaceholder');
   const promptOutput = document.getElementById('promptOutput');
@@ -523,6 +546,16 @@ function setupAiCoachPage() {
     const input = document.getElementById(inputId);
     if (input) input.value = lastRoutineDefault;
   }
+
+  // The base location cascades to every day's location input. Each day can
+  // still be overridden manually afterwards — a later base-location edit
+  // simply rewrites all days again.
+  baseLocationInput.addEventListener('input', () => {
+    for (const inputId of Object.values(LOCATION_INPUT_IDS)) {
+      const input = document.getElementById(inputId);
+      if (input) input.value = baseLocationInput.value;
+    }
+  });
 
   document.addEventListener('app:languagechange', () => {
     const nextDefault = t('aiCoach.defaultRoutine') || defaultRoutineFor(i18n.language);
@@ -568,6 +601,11 @@ function setupAiCoachPage() {
       const input = document.getElementById(inputId);
       if (input) disponibilidade[day] = input.value;
     }
+    const localizacao = {};
+    for (const [day, inputId] of Object.entries(LOCATION_INPUT_IDS)) {
+      const input = document.getElementById(inputId);
+      if (input) localizacao[day] = input.value;
+    }
     const targetIso = targetDateInput.dataset.iso || parseLocalizedDate(targetDateInput.value, i18n.language);
     const targetDate = parseInputDate(targetIso) ?? nextMonday();
 
@@ -593,6 +631,7 @@ function setupAiCoachPage() {
     promptOutput.textContent = buildPrompt({
       targetDate,
       disponibilidade,
+      localizacao,
       contexto: optionalContextInput.value,
       lang: i18n.language,
       shoes,
