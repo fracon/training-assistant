@@ -10,6 +10,7 @@
     "targetDateHint": "Week to plan. Defaults to next Monday.",
     "baseLocation": "Base location",
     "baseLocationHint": "Prefills every day's location. Override individual days in Availability.",
+    "locationPlaceholder": "Ex: City, Country",
     "location": "Location",
     "availability": "Availability",
     "availabilityHint": "Tell the coach when/where you can run each day.",

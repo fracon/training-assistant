@@ -10,6 +10,7 @@
     "targetDateHint": "Semana a ser planejada. Padrão: próxima segunda-feira.",
     "baseLocation": "Localidade base",
     "baseLocationHint": "Prefilha a localização de todos os dias. Personalize cada dia em Disponibilidade.",
+    "locationPlaceholder": "Ex: Cidade, País",
     "location": "Local",
     "availability": "Disponibilidade",
     "availabilityHint": "Informe ao coach quando/onde você pode correr em cada dia.",

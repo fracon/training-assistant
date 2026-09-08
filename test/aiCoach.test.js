@@ -281,6 +281,11 @@ test('ai-coach.html wires the shell, lucide and the full form', () => {
     assert.match(html, new RegExp(`id="${id}" value="Rotina normal"`));
   }
   assert.match(html, /type="text" id="baseLocation"/);
+  assert.match(
+    html,
+    /type="text" id="baseLocation" data-i18n-placeholder="aiCoach\.locationPlaceholder" placeholder="Ex: City, Country"/,
+    'the base location input ships a generic, i18n-bound placeholder'
+  );
   assert.match(html, /for="baseLocation" data-i18n="aiCoach\.baseLocation"/);
   assert.match(html, /data-i18n="aiCoach\.baseLocationHint"/);
   for (const id of ['locSeg', 'locTer', 'locQua', 'locQui', 'locSex', 'locSab', 'locDom']) {
@@ -423,6 +428,7 @@ test('locale files expose every ai-coach string in both languages', async () => 
     assert.equal(typeof messages.aiCoach.targetDate, 'string');
     assert.equal(typeof messages.aiCoach.baseLocation, 'string');
     assert.equal(typeof messages.aiCoach.baseLocationHint, 'string');
+    assert.equal(typeof messages.aiCoach.locationPlaceholder, 'string');
     assert.equal(typeof messages.aiCoach.location, 'string');
     assert.equal(Object.keys(messages.aiCoach.days).length, 7);
     assert.equal(typeof messages.aiCoach.generate, 'string');
@@ -437,6 +443,8 @@ test('locale files expose every ai-coach string in both languages', async () => 
   assert.notEqual(en.aiCoach.title, pt.aiCoach.title);
   assert.equal(en.aiCoach.baseLocation, 'Base location');
   assert.equal(pt.aiCoach.baseLocation, 'Localidade base');
+  assert.equal(en.aiCoach.locationPlaceholder, 'Ex: City, Country');
+  assert.equal(pt.aiCoach.locationPlaceholder, 'Ex: Cidade, País');
   assert.equal(en.aiCoach.location, 'Location');
   assert.equal(pt.aiCoach.location, 'Local');
   assert.match(en.aiCoach.pageTitle, /- Kinesis$/);
@@ -897,4 +905,19 @@ test('the textarea placeholder is translated and swaps on language change', asyn
   assert.equal(translate(pt, 'aiCoach.contextPlaceholder'), expectedPt);
   assert.equal(typeof en.aiCoach.optionalContextPlaceholder, 'undefined', 'old key removed');
   assert.equal(typeof pt.aiCoach.optionalContextPlaceholder, 'undefined', 'old key removed');
+});
+
+test('the base location placeholder is generic and translated per language', async () => {
+  const { translate } = require('../src/public/shared/i18n.js');
+
+  const html = readFileSync(join(publicDir, 'ai-coach.html'), 'utf8');
+  assert.match(html, /id="baseLocation" data-i18n-placeholder="aiCoach\.locationPlaceholder" placeholder="Ex: City, Country"/);
+
+  const en = JSON.parse(readFileSync(join(publicDir, 'locales', 'en.json'), 'utf8'));
+  const pt = JSON.parse(readFileSync(join(publicDir, 'locales', 'pt.json'), 'utf8'));
+
+  assert.equal(en.aiCoach.locationPlaceholder, 'Ex: City, Country');
+  assert.equal(pt.aiCoach.locationPlaceholder, 'Ex: Cidade, País');
+  assert.equal(translate(en, 'aiCoach.locationPlaceholder'), 'Ex: City, Country');
+  assert.equal(translate(pt, 'aiCoach.locationPlaceholder'), 'Ex: Cidade, País');
 });
