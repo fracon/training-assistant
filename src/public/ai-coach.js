@@ -601,6 +601,7 @@ function setupAiCoachPage() {
 
   const form = document.getElementById('promptForm');
   const targetDateInput = document.getElementById('targetDate');
+  const targetDateDisplay = document.getElementById('targetDateDisplay');
   const optionalContextInput = document.getElementById('optionalContext');
   const baseLocationInput = document.getElementById('baseLocation');
   const availabilityGrid = document.getElementById('availabilityGrid');
@@ -614,9 +615,17 @@ function setupAiCoachPage() {
 
   targetDateInput.dataset.iso = dateInputValue(nextMonday());
   targetDateInput.value = targetDateInput.dataset.iso;
+  targetDateDisplay.value = formatLocalizedDate(targetDateInput.dataset.iso, i18n.language);
   targetDateInput.addEventListener('input', () => {
     targetDateInput.dataset.iso = normalizeTargetDate(targetDateInput.value, i18n.language);
+    targetDateDisplay.value = targetDateInput.dataset.iso
+      ? formatLocalizedDate(targetDateInput.dataset.iso, i18n.language)
+      : '';
     updateValidation();
+  });
+  targetDateDisplay.addEventListener('click', () => {
+    if (typeof targetDateInput.showPicker === 'function') targetDateInput.showPicker();
+    else targetDateInput.focus();
   });
 
   let lastRoutineDefault = t('aiCoach.defaultRoutine') || defaultRoutineFor(i18n.language);
@@ -701,6 +710,7 @@ function setupAiCoachPage() {
     const targetIso = targetDateInput.dataset.iso || normalizeTargetDate(targetDateInput.value, i18n.language);
     targetDateInput.dataset.iso = targetIso;
     targetDateInput.value = targetIso;
+    targetDateDisplay.value = targetIso ? formatLocalizedDate(targetIso, i18n.language) : '';
     updateValidation();
   });
 

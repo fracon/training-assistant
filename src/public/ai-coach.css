@@ -54,6 +54,7 @@
 }
 
 .field input[type='date'],
+.date-input-display,
 .field textarea,
 .day-row input[type='text'] {
   width: 100%;
@@ -63,6 +64,21 @@
   background: var(--bg);
   color: var(--ink);
   font-size: 0.95rem;
+}
+
+.iso-date-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.date-input-display {
+  cursor: pointer;
 }
 
 .field textarea {

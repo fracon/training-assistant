@@ -309,6 +309,7 @@ test('ai-coach.html wires the shell, lucide and the full form', () => {
   assert.match(html, /<h1 data-i18n="aiCoach\.title">Request Workouts<\/h1>/);
 
   assert.match(html, /type="date" id="targetDate"[^>]*required/);
+  assert.match(html, /type="text" id="targetDateDisplay" class="date-input-display"/);
   assert.match(html, /for="targetDate"><span data-i18n="aiCoach\.targetDate">[^<]*<\/span><span class="required-mark"/);
   assert.match(
     html,
@@ -345,6 +346,8 @@ test('training request date input uses localized display with ISO state binding'
   const js = readFileSync(join(publicDir, 'ai-coach.js'), 'utf8');
   assert.match(js, /normalizeTargetDate/);
   assert.match(js, /parseLocalizedDate/);
+  assert.match(js, /formatLocalizedDate\(targetDateInput\.dataset\.iso, i18n\.language\)/);
+  assert.match(js, /targetDateDisplay\.value = targetIso \? formatLocalizedDate/);
   assert.match(js, /targetDateInput\.dataset\.iso/);
   assert.match(js, /const targetDate = parseInputDate\(targetIso\)/);
 });

@@ -19,8 +19,9 @@
       <form id="promptForm" class="prompt-form" novalidate>
         <div class="field">
           <label for="targetDate"><span data-i18n="aiCoach.targetDate">Target date</span><span class="required-mark" aria-hidden="true">*</span></label>
-          <input type="date" id="targetDate" autocomplete="off" required>
-          <p class="field-hint" data-i18n="aiCoach.targetDateHint">Week to plan. Defaults to next Monday.</p>
+          <input type="date" id="targetDate" class="iso-date-input" autocomplete="off" required aria-hidden="true" tabindex="-1">
+          <input type="text" id="targetDateDisplay" class="date-input-display" readonly autocomplete="off" aria-describedby="targetDateHint">
+          <p id="targetDateHint" class="field-hint" data-i18n="aiCoach.targetDateHint">Week to plan. Defaults to next Monday.</p>
         </div>
 
         <div class="field">
