@@ -48,6 +48,11 @@
   font-size: 0.95rem;
 }
 
+.required-mark {
+  margin-left: 0.2rem;
+  color: var(--danger);
+}
+
 .field input[type='date'],
 .field textarea,
 .day-row input[type='text'] {
@@ -132,6 +137,11 @@
 .btn-primary:hover:not(:disabled) {
   background: #405c46;
   transform: translateY(-2px);
+}
+
+.btn-primary:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .result-section {

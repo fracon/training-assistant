@@ -18,19 +18,19 @@
 
       <form id="promptForm" class="prompt-form" novalidate>
         <div class="field">
-          <label for="targetDate" data-i18n="aiCoach.targetDate">Target date</label>
+          <label for="targetDate" data-i18n="aiCoach.targetDate">Target date<span class="required-mark" aria-hidden="true">*</span></label>
           <input type="text" id="targetDate" inputmode="numeric" placeholder="DD/MM/YYYY" autocomplete="off" required>
           <p class="field-hint" data-i18n="aiCoach.targetDateHint">Week to plan. Defaults to next Monday.</p>
         </div>
 
         <div class="field">
-          <label for="baseLocation" data-i18n="aiCoach.baseLocation">Base location</label>
+          <label for="baseLocation" data-i18n="aiCoach.baseLocation">Base location<span class="required-mark" aria-hidden="true">*</span></label>
           <input type="text" id="baseLocation" data-i18n-placeholder="aiCoach.locationPlaceholder" placeholder="Ex: City, Country" autocomplete="off">
           <p class="field-hint" data-i18n="aiCoach.baseLocationHint">Prefills every day's location. Override individual days in Availability.</p>
         </div>
 
         <fieldset class="availability-fieldset">
-          <legend data-i18n="aiCoach.availability">Availability</legend>
+          <legend data-i18n="aiCoach.availability">Availability<span class="required-mark" aria-hidden="true">*</span></legend>
           <p class="field-hint" data-i18n="aiCoach.availabilityHint">Tell the coach when/where you can run each day.</p>
           <div class="availability-grid" id="availabilityGrid"></div>
         </fieldset>

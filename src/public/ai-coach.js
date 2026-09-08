@@ -527,11 +527,21 @@ export const LOCATION_INPUT_IDS = {
   domingo: 'locDom',
 };
 
+export function validatePromptFields({ targetDate = '', language = 'pt-BR', baseLocation = '', disponibilidade = {}, localizacao = {} } = {}) {
+  const missing = [];
+  if (!parseLocalizedDate(targetDate, language)) missing.push('targetDate');
+  if (!DAY_KEYS.every((day) => String(disponibilidade[day] ?? '').trim())) missing.push('availability');
+  const hasBaseLocation = String(baseLocation ?? '').trim() !== '';
+  const hasDailyLocations = DAY_KEYS.every((day) => String(localizacao[day] ?? '').trim() !== '');
+  if (!hasBaseLocation && !hasDailyLocations) missing.push('location');
+  return { valid: missing.length === 0, missing };
+}
+
 export function buildDayRowHtml(day, { dayLabel, routine, locationPlaceholder }) {
   return `<div class="day-row">
-  <label for="${DAY_INPUT_IDS[day]}" class="day-label" data-i18n="aiCoach.days.${DAY_LOCALE_KEYS[day]}">${dayLabel}</label>
-  <input type="text" id="${DAY_INPUT_IDS[day]}" value="${routine}" autocomplete="off">
-  <input type="text" id="${LOCATION_INPUT_IDS[day]}" data-i18n-placeholder="aiCoach.location" placeholder="${locationPlaceholder}" autocomplete="off">
+  <label for="${DAY_INPUT_IDS[day]}" class="day-label" data-i18n="aiCoach.days.${DAY_LOCALE_KEYS[day]}">${dayLabel}<span class="required-mark" aria-hidden="true">*</span></label>
+  <input type="text" id="${DAY_INPUT_IDS[day]}" value="${routine}" autocomplete="off" required>
+  <input type="text" id="${LOCATION_INPUT_IDS[day]}" data-i18n-placeholder="aiCoach.location" placeholder="${locationPlaceholder}" autocomplete="off" required>
 </div>`;
 }
 
@@ -591,12 +601,14 @@ function setupAiCoachPage() {
   const copyBtn = document.getElementById('copyBtn');
   const copyIconSlot = copyBtn.querySelector('.copy-icon');
   const copyLabel = document.getElementById('copyLabel');
+  const generateBtn = document.getElementById('generateBtn');
 
   targetDateInput.dataset.iso = dateInputValue(nextMonday());
   targetDateInput.value = formatDateInput(targetDateInput.dataset.iso, i18n.language);
   targetDateInput.placeholder = i18n.language === 'pt-BR' ? 'DD/MM/YYYY' : 'MM/DD/YYYY';
   targetDateInput.addEventListener('input', () => {
     targetDateInput.dataset.iso = parseLocalizedDate(targetDateInput.value, i18n.language);
+    updateValidation();
   });
 
   let lastRoutineDefault = t('aiCoach.defaultRoutine') || defaultRoutineFor(i18n.language);
@@ -616,6 +628,38 @@ function setupAiCoachPage() {
   }
   renderDayRows();
 
+  function readFormFields() {
+    const disponibilidade = {};
+    for (const [day, inputId] of Object.entries(DAY_INPUT_IDS)) {
+      const input = document.getElementById(inputId);
+      if (input) disponibilidade[day] = input.value;
+    }
+    const localizacao = {};
+    for (const [day, inputId] of Object.entries(LOCATION_INPUT_IDS)) {
+      const input = document.getElementById(inputId);
+      if (input) localizacao[day] = input.value;
+    }
+    return { disponibilidade, localizacao };
+  }
+
+  function updateValidation() {
+    const { disponibilidade, localizacao } = readFormFields();
+    const validation = validatePromptFields({
+      targetDate: targetDateInput.value,
+      language: i18n.language,
+      baseLocation: baseLocationInput.value,
+      disponibilidade,
+      localizacao,
+    });
+    generateBtn.disabled = !validation.valid;
+    generateBtn.setAttribute('aria-disabled', String(!validation.valid));
+    targetDateInput.setAttribute('aria-invalid', String(validation.missing.includes('targetDate')));
+    baseLocationInput.setAttribute('aria-invalid', String(validation.missing.includes('location')));
+    return validation;
+  }
+
+  updateValidation();
+
   document.addEventListener('kinesis:preferences-changed', (event) => {
     const next = event.detail?.first_day_of_week;
     if (next === 'Monday' || next === 'Sunday') renderDayRows();
@@ -629,7 +673,9 @@ function setupAiCoachPage() {
       const input = document.getElementById(inputId);
       if (input) input.value = baseLocationInput.value;
     }
+    updateValidation();
   });
+  availabilityGrid.addEventListener('input', updateValidation);
 
   document.addEventListener('app:languagechange', () => {
     const nextDefault = t('aiCoach.defaultRoutine') || defaultRoutineFor(i18n.language);
@@ -648,6 +694,7 @@ function setupAiCoachPage() {
     targetDateInput.dataset.iso = targetIso;
     targetDateInput.value = targetIso ? formatDateInput(targetIso, i18n.language) : '';
     targetDateInput.placeholder = i18n.language === 'pt-BR' ? 'DD/MM/YYYY' : 'MM/DD/YYYY';
+    updateValidation();
   });
 
   let copiedTimer = null;
@@ -669,19 +716,11 @@ function setupAiCoachPage() {
 
   async function handleGenerate(event) {
     event.preventDefault();
-    const generateBtn = document.getElementById('generateBtn');
-    const disponibilidade = {};
-    for (const [day, inputId] of Object.entries(DAY_INPUT_IDS)) {
-      const input = document.getElementById(inputId);
-      if (input) disponibilidade[day] = input.value;
-    }
-    const localizacao = {};
-    for (const [day, inputId] of Object.entries(LOCATION_INPUT_IDS)) {
-      const input = document.getElementById(inputId);
-      if (input) localizacao[day] = input.value;
-    }
+    const { disponibilidade, localizacao } = readFormFields();
+    const validation = updateValidation();
+    if (!validation.valid) return;
     const targetIso = targetDateInput.dataset.iso || parseLocalizedDate(targetDateInput.value, i18n.language);
-    const targetDate = parseInputDate(targetIso) ?? nextMonday();
+    const targetDate = parseInputDate(targetIso);
 
     generateBtn.disabled = true;
     let shoes = [];
@@ -697,7 +736,7 @@ function setupAiCoachPage() {
     } catch {
       // Any unavailable context keeps prompt generation usable with dashes.
     }
-    generateBtn.disabled = false;
+    updateValidation();
 
     const preferences = getUserPreferences();
     const promptContext = buildPromptContext({ cycle: cycle || {}, trainings, targetDate, preferences });
