@@ -100,6 +100,7 @@ test('validatePromptFields requires a valid target date, locations and daily rou
     localizacao: {},
   };
   assert.deepEqual(validatePromptFields(complete), { valid: true, missing: [] });
+  assert.deepEqual(validatePromptFields({ ...complete, targetDate: '2026-08-31' }), { valid: true, missing: [] });
   assert.deepEqual(validatePromptFields({ ...complete, targetDate: '' }), { valid: false, missing: ['targetDate',] });
   assert.deepEqual(validatePromptFields({ ...complete, baseLocation: '', localizacao: {} }), { valid: false, missing: ['location'] });
   assert.deepEqual(
@@ -112,6 +113,7 @@ test('validatePromptFields requires a valid target date, locations and daily rou
     { valid: false, missing: ['availability'] }
   );
   assert.deepEqual(validatePromptFields({ ...complete, targetDate: '31/02/2026' }).missing, ['targetDate']);
+  assert.deepEqual(validatePromptFields({ ...complete, targetDate: '2026-02-30' }).missing, ['targetDate']);
 });
 
 test('the prompt template keeps the required Portuguese structure', () => {
@@ -306,8 +308,8 @@ test('ai-coach.html wires the shell, lucide and the full form', () => {
   );
   assert.match(html, /<h1 data-i18n="aiCoach\.title">Request Workouts<\/h1>/);
 
-  assert.match(html, /type="text" id="targetDate"/);
-  assert.match(html, /inputmode="numeric"/);
+  assert.match(html, /type="date" id="targetDate"[^>]*required/);
+  assert.match(html, /for="targetDate" data-i18n="aiCoach\.targetDate">[^<]*<span class="required-mark"/);
   assert.match(
     html,
     /class="availability-grid" id="availabilityGrid"[\s\S]*?<\/div>/,
@@ -341,7 +343,7 @@ test('ai-coach.html wires the shell, lucide and the full form', () => {
 
 test('training request date input uses localized display with ISO state binding', () => {
   const js = readFileSync(join(publicDir, 'ai-coach.js'), 'utf8');
-  assert.match(js, /formatDateInput/);
+  assert.match(js, /normalizeTargetDate/);
   assert.match(js, /parseLocalizedDate/);
   assert.match(js, /targetDateInput\.dataset\.iso/);
   assert.match(js, /const targetDate = parseInputDate\(targetIso\)/);

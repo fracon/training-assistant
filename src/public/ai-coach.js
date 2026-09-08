@@ -2,7 +2,7 @@ import { initShell, getShellI18n, getUserPreferences, refreshIcons } from './sha
 import { translate, normalizeClientLanguage } from './shared/i18n.js';
 import { fetchShoes } from './shared/api.js';
 import { fetchActiveCycle, fetchCalendarTrainings } from './shared/api.js';
-import { formatDate as formatLocalizedDate, formatDateInput, parseLocalizedDate } from './shared/date.js';
+import { formatDate as formatLocalizedDate, parseLocalizedDate } from './shared/date.js';
 import { formatDistance, distancePromptUnit, temperaturePromptUnit } from './shared/units.js';
 
 // Verbatim Portuguese briefing for the external AI Coach.
@@ -507,6 +507,15 @@ export function parseInputDate(value) {
   return new Date(year, month - 1, day);
 }
 
+function normalizeTargetDate(value, language) {
+  const text = String(value ?? '').trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    const date = parseInputDate(text);
+    return date && dateInputValue(date) === text ? text : '';
+  }
+  return parseLocalizedDate(text, language);
+}
+
 export const DAY_INPUT_IDS = {
   segunda: 'dispSeg',
   terca: 'dispTer',
@@ -529,7 +538,7 @@ export const LOCATION_INPUT_IDS = {
 
 export function validatePromptFields({ targetDate = '', language = 'pt-BR', baseLocation = '', disponibilidade = {}, localizacao = {} } = {}) {
   const missing = [];
-  if (!parseLocalizedDate(targetDate, language)) missing.push('targetDate');
+  if (!normalizeTargetDate(targetDate, language)) missing.push('targetDate');
   if (!DAY_KEYS.every((day) => String(disponibilidade[day] ?? '').trim())) missing.push('availability');
   const hasBaseLocation = String(baseLocation ?? '').trim() !== '';
   const hasDailyLocations = DAY_KEYS.every((day) => String(localizacao[day] ?? '').trim() !== '');
@@ -604,10 +613,9 @@ function setupAiCoachPage() {
   const generateBtn = document.getElementById('generateBtn');
 
   targetDateInput.dataset.iso = dateInputValue(nextMonday());
-  targetDateInput.value = formatDateInput(targetDateInput.dataset.iso, i18n.language);
-  targetDateInput.placeholder = i18n.language === 'pt-BR' ? 'DD/MM/YYYY' : 'MM/DD/YYYY';
+  targetDateInput.value = targetDateInput.dataset.iso;
   targetDateInput.addEventListener('input', () => {
-    targetDateInput.dataset.iso = parseLocalizedDate(targetDateInput.value, i18n.language);
+    targetDateInput.dataset.iso = normalizeTargetDate(targetDateInput.value, i18n.language);
     updateValidation();
   });
 
@@ -690,10 +698,9 @@ function setupAiCoachPage() {
       if (input) input.value = value;
     }
     lastRoutineDefault = nextDefault;
-    const targetIso = targetDateInput.dataset.iso || parseLocalizedDate(targetDateInput.value, i18n.language);
+    const targetIso = targetDateInput.dataset.iso || normalizeTargetDate(targetDateInput.value, i18n.language);
     targetDateInput.dataset.iso = targetIso;
-    targetDateInput.value = targetIso ? formatDateInput(targetIso, i18n.language) : '';
-    targetDateInput.placeholder = i18n.language === 'pt-BR' ? 'DD/MM/YYYY' : 'MM/DD/YYYY';
+    targetDateInput.value = targetIso;
     updateValidation();
   });
 
@@ -719,7 +726,7 @@ function setupAiCoachPage() {
     const { disponibilidade, localizacao } = readFormFields();
     const validation = updateValidation();
     if (!validation.valid) return;
-    const targetIso = targetDateInput.dataset.iso || parseLocalizedDate(targetDateInput.value, i18n.language);
+    const targetIso = targetDateInput.dataset.iso || normalizeTargetDate(targetDateInput.value, i18n.language);
     const targetDate = parseInputDate(targetIso);
 
     generateBtn.disabled = true;
