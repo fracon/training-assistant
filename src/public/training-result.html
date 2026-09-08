@@ -51,6 +51,10 @@
             <dt data-i18n="session.fieldTenis">Shoes</dt>
             <dd id="plannedTenis">-</dd>
           </div>
+          <div class="planned-item">
+            <dt data-i18n="session.fieldLocation">Location</dt>
+            <dd id="plannedLocation">-</dd>
+          </div>
         </dl>
       </section>
 
@@ -161,8 +165,11 @@
           <div class="field">
             <label class="field-label" for="feedbackWeather"
               data-i18n="session.fieldWeather">Temperature &amp; weather</label>
-            <input type="text" id="feedbackWeather" class="input-control"
-              autocomplete="off" data-i18n-placeholder="session.weatherPlaceholder">
+            <div class="weather-input-wrap">
+              <input type="text" id="feedbackWeather" class="input-control"
+                autocomplete="off" data-i18n-placeholder="session.weatherPlaceholder">
+              <span class="weather-spinner" id="weatherSpinner" aria-hidden="true" hidden></span>
+            </div>
           </div>
           <div class="field">
             <label class="field-label" for="feedbackTerrain"

@@ -33,6 +33,7 @@ const {
 } = require('./auth/preferences');
 const ExcelJS = require('exceljs');
 const { parseSheet } = require('./trainingImport');
+const { resolveTrainingWeather } = require('./weather');
 const { buildMacrocyclePrompt } = require('./prompts');
 const {
   ShoeError,
@@ -398,8 +399,8 @@ async function buildServer(options = {}) {
 
       const insert = db.prepare(
         `INSERT INTO trainings
-           (user_id, training_cycle_id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+           (user_id, training_cycle_id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes, location)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       );
       const insertMany = db.transaction((rows) => {
         for (const record of rows) {
@@ -415,7 +416,8 @@ async function buildServer(options = {}) {
             record.rpe,
             record.tenis,
             record.previsao,
-            record.observacoes
+            record.observacoes,
+            record.location === '' ? null : record.location
           );
         }
       });
@@ -428,7 +430,7 @@ async function buildServer(options = {}) {
     });
 
     const TRAINING_COLUMNS =
-      'id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes, feedback_rpe, feedback_notas, completed, has_smartwatch, feedback_shoe, feedback_hr_source, feedback_weather, feedback_terrain, feedback_breathing, feedback_muscle, feedback_energy, feedback_has_pain, feedback_pain, fit_duration, fit_distance, fit_avg_pace, fit_avg_hr, fit_max_hr, fit_elevation_gain, fit_summary_json';
+      'id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes, location, feedback_rpe, feedback_notas, completed, has_smartwatch, feedback_shoe, feedback_hr_source, feedback_weather, feedback_terrain, feedback_breathing, feedback_muscle, feedback_energy, feedback_has_pain, feedback_pain, fit_duration, fit_distance, fit_avg_pace, fit_avg_hr, fit_max_hr, fit_elevation_gain, fit_summary_json';
 
     const findTraining = db.prepare(
       `SELECT ${TRAINING_COLUMNS} FROM trainings WHERE id = ? AND user_id = ?`
@@ -444,6 +446,31 @@ async function buildServer(options = {}) {
         return reply.code(404).send({ error: 'Training not found.' });
       }
       return { training };
+    });
+
+    app.get('/api/weather', { preHandler: requireAuth }, async (request, reply) => {
+      const location =
+        typeof request.query?.location === 'string' ? request.query.location.trim() : '';
+      const date = normalizeIsoDate(request.query?.date);
+      if (location === '') {
+        return reply.code(400).send({ error: 'location is required.' });
+      }
+      if (date === null) {
+        return reply.code(400).send({ error: 'date must be a valid date in YYYY-MM-DD format.' });
+      }
+      const result = await resolveTrainingWeather(location, date, options.weatherFetch);
+      if (!result.ok) {
+        return reply.code(result.status).send({ error: result.error });
+      }
+      return reply.send({
+        location: result.location,
+        latitude: result.latitude,
+        longitude: result.longitude,
+        date: result.date,
+        temperature_c: result.temperature_c,
+        weather_code: result.weather_code,
+        source: result.source,
+      });
     });
 
     app.patch('/api/trainings/:id', { preHandler: requireAuth }, async (request, reply) => {

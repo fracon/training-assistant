@@ -448,6 +448,7 @@ test('migrateDatabase adds feedback columns to legacy trainings tables', () => {
     'feedback_has_pain',
     'feedback_pain',
     'training_cycle_id',
+    'location',
   ]) {
     assert.ok(columns.includes(name), `${name} column added`);
   }

@@ -98,6 +98,19 @@ export function saveTrainingFeedback(id, fields = {}) {
   );
 }
 
+export async function fetchWeather(location, date) {
+  try {
+    const params = new URLSearchParams({ location, date });
+    const response = await fetch(`/api/weather?${params.toString()}`, {
+      headers: { accept: 'application/json' },
+    });
+    if (!response.ok) return null;
+    return response.json();
+  } catch {
+    return null;
+  }
+}
+
 export function deleteTraining(id) {
   return requestJson(`/api/trainings/${id}`, null, 'DELETE');
 }

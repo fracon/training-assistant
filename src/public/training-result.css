@@ -360,6 +360,37 @@ select.input-control {
   box-shadow: 0 0 0 3px rgba(111, 144, 112, 0.18);
 }
 
+.weather-input-wrap {
+  position: relative;
+}
+
+.weather-input-wrap .input-control {
+  padding-right: 2.2rem;
+}
+
+.weather-spinner {
+  position: absolute;
+  right: 0.8rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--line-strong);
+  border-top-color: var(--accent-deep);
+  border-radius: 50%;
+  animation: weather-spin 0.7s linear infinite;
+}
+
+.weather-spinner[hidden] {
+  display: none;
+}
+
+@keyframes weather-spin {
+  to {
+    transform: translateY(-50%) rotate(360deg);
+  }
+}
+
 .form-actions {
   display: flex;
   flex-wrap: wrap;

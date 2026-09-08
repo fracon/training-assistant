@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS trainings (
   tenis       TEXT,
   previsao    TEXT,
   observacoes TEXT,
+  location    TEXT,
   feedback_rpe   INTEGER,
   feedback_notas TEXT,
   completed       INTEGER NOT NULL DEFAULT 0,
@@ -169,6 +170,10 @@ function migrateDatabase(db) {
     if (!trainingColumns.some((column) => column.name === name)) {
       db.exec(`ALTER TABLE trainings ADD COLUMN ${name} ${type}`);
     }
+  }
+
+  if (!trainingColumns.some((column) => column.name === 'location')) {
+    db.exec('ALTER TABLE trainings ADD COLUMN location TEXT');
   }
 
   // Migration: wipe legacy workouts and add training_cycle_id FK.

@@ -186,6 +186,8 @@ test('header aliases cover the Phase 7 eleven-column AI layout', () => {
     'previsao no horario': 'previsao',
     'previsao do tempo': 'previsao',
     observacoes: 'observacoes',
+    localizacao: 'location',
+    local: 'location',
     date: 'dia',
     day: 'dia_semana',
     period: 'periodo',
@@ -195,6 +197,7 @@ test('header aliases cover the Phase 7 eleven-column AI layout', () => {
     'target hr': 'fc_alvo',
     shoe: 'tenis',
     'weather forecast': 'previsao',
+    location: 'location',
     notes: 'observacoes',
   };
   assert.deepEqual(FIELD_BY_HEADER, expected);
@@ -225,12 +228,33 @@ test('parseSheet maps valid rows and normalizes Dia to ISO', () => {
     tenis: 'Adizero',
     previsao: '90 min',
     observacoes: 'Sentir leve',
+    location: '',
   });
   assert.equal(records[1].dia, '2026-08-25');
   assert.equal(records[1].dia_semana, 'Terça');
   assert.equal(records[1].tipo, 'Intervalado');
   assert.equal(records[1].periodo, '');
   assert.equal(records[2].dia, '2026-08-26', 'padded single-digit date parses');
+});
+
+test('parseSheet captures the planned location alongside the training row', () => {
+  const worksheet = fakeWorksheet([
+    fakeRow(1, ['Data', 'Dia', 'Tipo', 'Local']),
+    fakeRow(2, ['23/08/2026', 'Segunda', 'Corrida', 'Fânzeres']),
+    fakeRow(3, ['24/08/2026', 'Terça', 'Rodagem', '']),
+  ]);
+  const english = parseSheet(fakeWorksheet([
+    fakeRow(1, ['Date', 'Day', 'Type', 'Location']),
+    fakeRow(2, ['23/08/2026', 'Monday', 'Run', 'Porto']),
+  ]));
+
+  const { records, errors } = parseSheet(worksheet);
+  assert.deepEqual(errors, []);
+  assert.equal(records.length, 2);
+  assert.equal(records[0].location, 'Fânzeres');
+  assert.equal(records[0].dia, '2026-08-23');
+  assert.equal(records[1].location, '', 'blank cells keep the field empty');
+  assert.equal(english.records[0].location, 'Porto', 'English Location headers map too');
 });
 
 test('parseSheet accepts the Phase 7 layout: Data date plus Dia weekday string', () => {

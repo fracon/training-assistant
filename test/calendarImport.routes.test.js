@@ -244,6 +244,42 @@ test('import parses rows, normalizes Dia and persists trainings', async () => {
   await app.close();
 });
 
+test('import persists a planned location column and exposes it via the session API', async () => {
+  const { db, app, upload } = await setup();
+
+  const headers = ['Data', 'Dia', 'Tipo', 'Local'];
+  const buffer = await spreadsheetBuffer(headers, [
+    ['23/08/2026', 'Domingo', 'Corrida', 'Fânzeres'],
+    ['24/08/2026', 'Segunda', 'Rodagem', ''],
+  ]);
+  const response = await upload(buffer);
+  assert.equal(response.status, 200);
+
+  const rows = db
+    .prepare('SELECT dia, location FROM trainings ORDER BY dia')
+    .all();
+  assert.deepEqual(rows, [
+    { dia: '2026-08-23', location: 'Fânzeres' },
+    { dia: '2026-08-24', location: null },
+  ]);
+
+  const login = await app.inject({
+    method: 'POST',
+    url: '/api/auth/login',
+    payload: { email: REGISTER_PAYLOAD.email, password: REGISTER_PAYLOAD.password },
+  });
+  const cookie = [].concat(login.headers['set-cookie'] ?? [])[0].split(';')[0];
+  const session = await app.inject({
+    method: 'GET',
+    url: '/api/trainings/1',
+    headers: { cookie },
+  });
+  assert.equal(session.statusCode, 200);
+  assert.equal(session.json().training.location, 'Fânzeres');
+
+  await app.close();
+});
+
 test('import skips exact date/name/description duplicates while keeping distinct same-day workouts', async () => {
   const { db, app, upload, getTrainings } = await setup();
 

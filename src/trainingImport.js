@@ -19,6 +19,8 @@ const FIELD_BY_HEADER = {
   'previsao no horario': 'previsao',
   'previsao do tempo': 'previsao',
   observacoes: 'observacoes',
+  localizacao: 'location',
+  local: 'location',
   date: 'dia',
   day: 'dia_semana',
   period: 'periodo',
@@ -28,6 +30,7 @@ const FIELD_BY_HEADER = {
   'target hr': 'fc_alvo',
   shoe: 'tenis',
   'weather forecast': 'previsao',
+  location: 'location',
   notes: 'observacoes',
 };
 
@@ -44,6 +47,7 @@ const FIELD_ORDER = [
   'tenis',
   'previsao',
   'observacoes',
+  'location',
 ];
 
 function accentless(value) {
