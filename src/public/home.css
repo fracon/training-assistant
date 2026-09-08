@@ -151,6 +151,12 @@
   margin-bottom: 0.65rem;
 }
 
+.card-section[aria-labelledby="weeklyMetricsTitle"] {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
 /* ── Cycle overview ──────────────────────────────────────────── */
 
 .empty-state {

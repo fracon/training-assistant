@@ -1143,6 +1143,10 @@ test('home.css places weekly widgets side-by-side with equal-height responsive t
     /\.card-section\[aria-labelledby="weeklyMetricsTitle"\] \.section-header \{[^}]*margin-bottom:\s*0\.65rem/,
     'the tracker sits close beneath the This Week heading'
   );
+  assert.match(
+    css,
+    /\.card-section\[aria-labelledby="weeklyMetricsTitle"\] \{[^}]*display:\s*flex;[^}]*flex-direction:\s*column;[^}]*justify-content:\s*center/
+  );
   assert.match(css, /\.week-tracker-days \{[^}]*display:\s*flex/);
   assert.match(css, /\.week-tracker-days \{[^}]*align-items:\s*center/);
   assert.match(css, /\.week-day \{[^}]*border:\s*0;[^}]*border-radius:\s*999px/);
