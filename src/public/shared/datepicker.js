@@ -77,8 +77,9 @@ export function createDatePicker(input, { isoInput = null, getLanguage = () => '
     input.value = formatDate(selected, getLanguage());
   }
   function close() { popup.classList.add('hidden'); }
-  input.addEventListener('click', () => { render(); popup.classList.toggle('hidden'); });
+  input.addEventListener('click', (event) => { event.stopPropagation(); render(); popup.classList.toggle('hidden'); });
   popup.addEventListener('click', (event) => {
+    event.stopPropagation();
     const action = event.target.closest('[data-calendar-action]')?.dataset.calendarAction;
     if (action) { visibleMonth = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + (action === 'next' ? 1 : -1), 1); render(); return; }
     const day = event.target.closest('[data-date]')?.dataset.date;

@@ -204,11 +204,13 @@ select:focus-visible,
 .date-picker {
   position: relative;
   width: 100%;
+  cursor: pointer;
 }
 
 .date-picker > input {
   width: 100%;
   padding-right: 2.5rem;
+  cursor: pointer;
 }
 
 .date-picker-icon {
@@ -218,6 +220,7 @@ select:focus-visible,
   display: inline-flex;
   color: var(--muted);
   pointer-events: none;
+  cursor: pointer;
   transform: translateY(-50%);
 }
 
