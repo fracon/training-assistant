@@ -1,6 +1,6 @@
 {
   "name": "training-assistant",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Self-hosted running training assistant with FIT analysis, training cycles, calendar planning, and AI-ready coaching prompts",
   "main": "src/server.js",
   "engines": {
@@ -21,6 +21,7 @@
     "exceljs": "^4.4.0",
     "fastify": "^5.2.1",
     "fit-file-parser": "^1.9.6",
+    "unzipper": "^0.12.5",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

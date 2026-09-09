@@ -818,6 +818,16 @@ test('POST /api/trainings/:id/fit reports parse errors as 422', async () => {
   });
 });
 
+test('POST /api/trainings/:id/fit rejects a corrupt ZIP before changing the training', async () => {
+  const { db, app, cookie, userId } = await setup({ parseFitFile: async () => { throw new Error('parser should not run'); } });
+  const id = seedTraining(db, { user_id: userId });
+  db.prepare('UPDATE trainings SET fit_calories = 77 WHERE id = ?').run(id);
+  const response = await postFitParts(app, cookie, [{ name: 'file', fileName: 'broken.zip', value: 'not-a-zip' }]);
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.json().code, 'invalid_zip');
+  assert.equal(db.prepare('SELECT fit_calories FROM trainings WHERE id = ?').get(id).fit_calories, 77);
+});
+
 test('POST /api/trainings/:id/fit persists FIT metrics and returns them', async () => {
   const summary = makeFitSummary({
     totals: { durationSeconds: 5400, distanceKm: 12.5, avgPaceSecondsPerKm: 432, avgHeartRate: 160, maxHeartRate: 182, ascentMeters: 200, calories: 987.4 },
@@ -861,6 +871,22 @@ test('POST /api/trainings/:id/fit persists FIT metrics and returns them', async 
   assert.ok(parsed.totals);
   assert.equal(parsed.totals.calories, 987);
   assert.ok(parsed.laps);
+});
+
+test('POST /api/trainings/:id/fit extracts one nested FIT from a ZIP through the same parser pipeline', async () => {
+  const summary = makeFitSummary({ totals: { durationSeconds: 120, distanceKm: 1, calories: 42 } });
+  const { db, app, cookie, userId } = await setup({
+    parseFitFile: async (buffer) => {
+      assert.equal(buffer.toString(), 'FITDATA');
+      return summary;
+    },
+  });
+  const id = seedTraining(db, { user_id: userId });
+  const zip = Buffer.from('UEsDBBQAAAAAAAOlKV1ZbFHlBwAAAAcAAAATAAAAbmVzdGVkL2FjdGl2aXR5LmZpdEZJVERBVEFQSwECFAMUAAAAAAADpSldWWxR5QcAAAAHAAAAEwAAAAAAAAAAAAAAgAEAAAAAbmVzdGVkL2FjdGl2aXR5LmZpdFBLBQYAAAAAAQABAEEAAAA4AAAAAAA=', 'base64');
+  const response = await postFitParts(app, cookie, [{ name: 'file', fileName: 'export.zip', value: zip }]);
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.json().fit_calories, 42);
+  assert.equal(db.prepare('SELECT result_data_source, fit_calories FROM trainings WHERE id = ?').get(id).result_data_source, 'fit_upload');
 });
 
 test('POST /api/trainings/:id/fit canonicalizes every calorie value at persistence boundary', async () => {

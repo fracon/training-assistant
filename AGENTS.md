@@ -10,7 +10,7 @@
 - **Deployment:** Self-hosted on ZimaOS via Docker Compose.
 - **CI/CD:** Automated via Self-Hosted GitHub Runner pushing to GitHub Container Registry (GHCR).
 - **Networking:** Exposed securely via Cloudflare Zero Trust Tunnels (HTTP on port 8081).
-- **Application version:** `0.7.0` (active development; see the versioning Golden Rule below).
+- **Application version:** `0.8.0` (active development; see the versioning Golden Rule below).
 
 ## ✅ Current Implementation Status — `main`
 
@@ -61,8 +61,10 @@ feature branches must not be used as a base for future development:
   `manual` (`garmin_connect` is reserved). Aggregates remain in canonical
   metric fields for compatibility; manual results never create laps or a FIT
   summary, the backend alone calculates pace, and a confirmed FIT/manual
-  replacement clears incompatible data transactionally. ZIP imports and export
-  tutorials are separate future phases.
+  replacement clears incompatible data transactionally. FIT uploads also accept
+  a single validated FIT entry from a ZIP entirely in memory; ZIP imports retain
+  `fit_upload` provenance and never persist archive contents. Export tutorials
+  remain a separate future phase.
 
 ## 🏆 Golden Rules
 1. **Local-First & Privacy:** Never send `.FIT` data or user inputs to external cloud APIs for processing. All data parsing happens on the local server/browser.
@@ -189,6 +191,18 @@ Whenever starting the development of a new feature, you MUST follow this strict 
     - Schedule placeholders are replaced at generation time: `{{DATA_DA_SEGUNDA}}` (Target Date), the seven `{{DISP_…}}` availability fields, and `{{CONTEXTO_OPCIONAL}}` (optional notes). The cycle context and shoe block use the same localized replacement pass.
   - **i18n Coverage:** all UI chrome (labels, buttons, hints) must be translatable via `src/public/locales/en.json` / `pt.json`. Both prompt templates are embedded verbatim: Portuguese (`pt-BR`, default fallback) and English (`en-US`); the active UI language selects which one is generated. Placeholder names (`{{DATA_DA_SEGUNDA}}`, per-day `{{DISP_…}}`, `{{CONTEXTO_OPCIONAL}}`) stay identical in both templates.
   - **Dynamic cycle context binding [✅ IMPLEMENTED, commit `445e542`]:** on generation, `ai-coach.js` fetches the active cycle and the preceding week's calendar entries through the shared API module. It normalizes cycle aliases (`objective`/`primary_goal`), derives week progress and days remaining when needed, and injects completed-workout count, distance (km), and time (minutes) into the selected Portuguese or English prompt. This late-bound fetch keeps the prompt synchronized with application state and respects the i18n lifecycle rules.
+
+- **Phase 7.5: ZIP FIT Import [✅ FINISHED]**
+  - The authenticated FIT endpoint accepts direct `.FIT` files or `.ZIP`
+    archives containing exactly one FIT, including nested entries.
+  - ZIPs are inspected and extracted only in memory with bounded entry count,
+    decompressed FIT size, and total decompressed content; unsafe, encrypted,
+    corrupt, empty, or ambiguous archives are rejected before persistence.
+  - All regular entries are consumed sequentially before parsing (including
+    entries after the FIT); declared sizes are advisory and streamed byte counts
+    enforce the real limits. Known upload errors are localized in the UI.
+  - The extracted buffer shares the existing FIT parser, normalization,
+    transactional persistence, calorie handling, and `fit_upload` provenance.
 
 - **Phase 8: Garmin Automation (WebUSB / File System API) [🚧 PLANNED]**
   - Eliminate manual `.FIT` file drag-and-drop.
