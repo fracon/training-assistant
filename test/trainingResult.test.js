@@ -638,7 +638,7 @@ test('training-result.html ships the expanded feedback grid and generator button
     'the dropzone is laid out after the explicit source choice'
   );
   assert.match(html, /id="manualResultsField" hidden/);
-  for (const id of ['manualDistance', 'manualHours', 'manualMinutes', 'manualSeconds', 'manualAvgHr', 'manualMaxHr', 'manualElevation', 'manualCalories', 'saveManualResultsBtn', 'resultSourceBadge']) assert.match(html, new RegExp(`id="${id}"`));
+  for (const id of ['manualDistance', 'manualDistanceUnit', 'manualHours', 'manualMinutes', 'manualSeconds', 'manualAvgHr', 'manualMaxHr', 'manualElevation', 'manualCalories', 'saveManualResultsBtn', 'resultSourceBadge']) assert.match(html, new RegExp(`id="${id}"`));
 
   assert.match(html, /id="fitDataSection"[^>]*hidden/, 'FIT data section starts hidden');
   assert.match(html, /id="fitDuration"/);
@@ -955,7 +955,7 @@ test('training-result.js wires toggling, saving, generation and i18n refreshes',
   assert.match(js, /hasPainSelect\.value = savedHasPain \? 'yes' : 'no';/);
   assert.match(js, /painInput\.value = training\.feedback_pain \?\? '';/);
   assert.match(js, /hrSourceSelect\.value = training\.feedback_hr_source \?\? '';/);
-  assert.match(js, /syncResultSourceVisibility\(\);\s*\n\s*syncPainVisibility\(\);/);
+  assert.match(js, /syncResultSourceVisibility\(\);\s*\n\s*renderManualDistanceUnit\(\);\s*\n\s*syncPainVisibility\(\);/);
 
   assert.match(js, /feedback_hr_source: hrValue === '' \? null : hrValue,/);
   assert.match(js, /feedback_terrain: terrainInput\.value === '' \? null : terrainInput\.value,/);
@@ -1045,6 +1045,7 @@ test('training-result.js wires toggling, saving, generation and i18n refreshes',
 
   assert.match(js, /templateFor\(i18n\.language\)/);
   assert.match(js, /saveManualResultsBtn\.addEventListener\('click'/);
+  assert.match(js, /manualDistanceUnit\.textContent = getUserPreferences\(\)\.distance_unit === 'mi' \? 'mi' : 'km';/);
   assert.match(js, /confirm_replace_fit = true/);
   assert.match(js, /confirm_replace_manual/);
   assert.match(js, /collectPromptValues\(\{ training, form: collectFormState\(\), fitData, preferences: getUserPreferences\(\) \}\)/);

@@ -490,6 +490,7 @@ async function initTrainingResult() {
   const manualResultsField = document.getElementById('manualResultsField');
   const saveManualResultsBtn = document.getElementById('saveManualResultsBtn');
   const resultSourceBadge = document.getElementById('resultSourceBadge');
+  const manualDistanceUnit = document.getElementById('manualDistanceUnit');
   const manualInputs = {
     distance: document.getElementById('manualDistance'), hours: document.getElementById('manualHours'),
     minutes: document.getElementById('manualMinutes'), seconds: document.getElementById('manualSeconds'),
@@ -519,6 +520,9 @@ async function initTrainingResult() {
     const manual = resultSourceSelect.value === 'manual';
     fitField.hidden = manual;
     manualResultsField.hidden = !manual;
+  };
+  const renderManualDistanceUnit = () => {
+    manualDistanceUnit.textContent = getUserPreferences().distance_unit === 'mi' ? 'mi' : 'km';
   };
   resultSourceSelect.addEventListener('change', syncResultSourceVisibility);
 
@@ -743,6 +747,7 @@ async function initTrainingResult() {
   }
 
   syncResultSourceVisibility();
+  renderManualDistanceUnit();
   syncPainVisibility();
   await autoFillWeatherField();
   setStatus('');
@@ -928,6 +933,7 @@ async function initTrainingResult() {
   document.addEventListener('kinesis:preferences-changed', () => {
     renderFitData();
     renderWeatherAutofill();
+    renderManualDistanceUnit();
   });
 }
 
