@@ -349,9 +349,13 @@ async function buildServer(options = {}) {
       }
 
       let fileBuffer = null;
+      let fileName = '';
+      let fileMimeType = '';
       try {
         for await (const part of request.parts()) {
           if (part.type === 'file' && part.fieldname === 'file') {
+            fileName = part.filename;
+            fileMimeType = part.mimetype;
             fileBuffer = await part.toBuffer();
           }
         }
@@ -362,6 +366,17 @@ async function buildServer(options = {}) {
 
       if (!fileBuffer) {
         return reply.code(400).send({ error: 'Missing spreadsheet file.' });
+      }
+
+      const hasSpreadsheetExtension = /\.(xlsx|xls)$/i.test(fileName);
+      const hasSpreadsheetMimeType = [
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/vnd.ms-excel',
+      ].includes(fileMimeType);
+      if (!hasSpreadsheetExtension && !hasSpreadsheetMimeType) {
+        return reply.code(400).send({
+          error: 'Unsupported spreadsheet file. Please upload a valid .xlsx or .xls workbook.',
+        });
       }
 
       let workbook;
