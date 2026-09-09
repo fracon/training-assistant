@@ -1,7 +1,7 @@
 # 🧠 AI Agent Context & Guidelines: Kinesis
 
 ## 🎯 Project Overview
-"Kinesis" (formerly "Training Assistant") is a local-first, privacy-focused Node.js web application designed for runners. It parses Garmin `.FIT` files locally and combines them with user-inputted context (RPE, weather, gear, planned workout) to generate a highly structured, copy-pasteable prompt. This prompt is then fed by the user into an LLM (like ChatGPT or Claude) to act as a personalized running coach.
+"Kinesis" (formerly "Training Assistant") is a local-first, privacy-focused Node.js web application designed for runners. It parses activity `.FIT` files locally and combines them with user-inputted context (RPE, weather, gear, planned workout) to generate a highly structured, copy-pasteable prompt. This prompt is then fed by the user into an LLM (like ChatGPT or Claude) to act as a personalized running coach.
 
 ## 🛠️ Tech Stack & Infrastructure
 - **Backend:** Node.js (v24), Fastify, vanilla JavaScript.
@@ -10,7 +10,7 @@
 - **Deployment:** Self-hosted on ZimaOS via Docker Compose.
 - **CI/CD:** Automated via Self-Hosted GitHub Runner pushing to GitHub Container Registry (GHCR).
 - **Networking:** Exposed securely via Cloudflare Zero Trust Tunnels (HTTP on port 8081).
-- **Application version:** `0.8.0` (active development; see the versioning Golden Rule below).
+- **Application version:** `0.9.0` (active development; see the versioning Golden Rule below).
 
 ## ✅ Current Implementation Status — `main`
 
@@ -203,6 +203,10 @@ Whenever starting the development of a new feature, you MUST follow this strict 
     enforce the real limits. Known upload errors are localized in the UI.
   - The extracted buffer shares the existing FIT parser, normalization,
     transactional persistence, calorie handling, and `fit_upload` provenance.
+  - The Training Result includes a local-only multibrand import guide for
+    Garmin, COROS, Polar, Amazfit/Zepp, Huawei, Apple, and Samsung. It uses a
+    reviewed static catalog with official links and localized statuses; it
+    never requests credentials or calls manufacturer services.
 
 - **Phase 8: Garmin Automation (WebUSB / File System API) [🚧 PLANNED]**
   - Eliminate manual `.FIT` file drag-and-drop.
