@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user web application** for managing training logs — drop a Garmin `.FIT` file into the browser, add how the workout felt, and get back a ready-to-paste markdown prompt for your AI coach.
 
-Current application version: **0.6.3** (active development).
+Current application version: **0.6.4** (active development).
 
 Every account is protected with server-side sessions, every `.FIT` file is parsed locally on your own machine: no cloud parsing, no telemetry — your training data never leaves your hardware.
 
@@ -221,7 +221,7 @@ INSTRUÇÕES PARA A ANÁLISE
 - **Session tokens** — 32 bytes from `crypto.randomBytes` (256 bits of entropy), persisted server-side in SQLite with an expiry timestamp; expired sessions are purged on each login and rejected on lookup.
 - **Cookies** — `HttpOnly` (inaccessible to JavaScript), `Secure`, `SameSite=Lax`, scoped to `/`, cleared with matching attributes on logout.
 - **SQL injection prevention** — all database access goes through better-sqlite3 **prepared statements**; zero string interpolation anywhere near SQL.
-- **Database integrity** — WAL journal mode and enforced foreign keys with cascading deletes (users → sessions/workouts).
+- **Database integrity** — WAL journal mode and enforced foreign keys with cascading deletes (users → sessions/trainings).
 - **Route gating at the server** — pages and protected APIs validate the session against the database before rendering or responding.
 
 ## API
