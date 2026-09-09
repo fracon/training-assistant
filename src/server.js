@@ -6,6 +6,7 @@ const multipart = require('@fastify/multipart');
 const fastifyStatic = require('@fastify/static');
 const fastifyCookie = require('@fastify/cookie');
 const { parseFitFile } = require('./fitParser');
+const { normalizeManualResults } = require('./manualResults');
 const { generateMarkdown } = require('./markdownGenerator');
 const { registerUser, RegistrationError } = require('./auth/registration');
 const { loginUser, LoginError } = require('./auth/login');
@@ -460,7 +461,7 @@ async function buildServer(options = {}) {
     });
 
     const TRAINING_COLUMNS =
-      'id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes, location, feedback_rpe, feedback_notas, completed, has_smartwatch, feedback_shoe, feedback_hr_source, feedback_weather, feedback_terrain, feedback_breathing, feedback_muscle, feedback_energy, feedback_has_pain, feedback_pain, fit_duration, fit_distance, fit_avg_pace, fit_avg_hr, fit_max_hr, fit_elevation_gain, fit_summary_json';
+      'id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes, location, feedback_rpe, feedback_notas, completed, has_smartwatch, feedback_shoe, feedback_hr_source, feedback_weather, feedback_terrain, feedback_breathing, feedback_muscle, feedback_energy, feedback_has_pain, feedback_pain, fit_duration, fit_distance, fit_avg_pace, fit_avg_hr, fit_max_hr, fit_elevation_gain, fit_calories, fit_summary_json, result_data_source';
 
     const findTraining = db.prepare(
       `SELECT ${TRAINING_COLUMNS} FROM trainings WHERE id = ? AND user_id = ?`
@@ -620,6 +621,33 @@ async function buildServer(options = {}) {
       return { training: findTraining.get(id, request.user.id) };
     });
 
+    app.put('/api/trainings/:id/manual-results', { preHandler: requireAuth }, async (request, reply) => {
+      const id = Number(request.params.id);
+      if (!Number.isInteger(id) || id <= 0) {
+        return reply.code(400).send({ error: 'Invalid training id.' });
+      }
+      const normalized = normalizeManualResults(request.body ?? {});
+      if (!normalized.ok) return reply.code(400).send({ error: normalized.error });
+      const current = findTraining.get(id, request.user.id);
+      if (!current) return reply.code(404).send({ error: 'Training not found.' });
+      if (current.result_data_source === 'fit_upload' && !normalized.value.confirm_replace_fit) {
+        return reply.code(409).send({ error: 'Confirm FIT replacement before saving manual results.' });
+      }
+      const saveManual = db.transaction((values) => {
+        db.prepare(
+          `UPDATE trainings SET fit_duration = ?, fit_distance = ?, fit_avg_pace = ?,
+            fit_avg_hr = ?, fit_max_hr = ?, fit_elevation_gain = ?, fit_calories = ?,
+            fit_summary_json = NULL, result_data_source = 'manual', completed = 1
+           WHERE id = ? AND user_id = ?`
+        ).run(
+          values.fit_duration, values.distance_km, values.fit_avg_pace, values.avg_hr,
+          values.max_hr, values.elevation_gain_m, values.calories, id, request.user.id
+        );
+      });
+      saveManual(normalized.value);
+      return { training: findTraining.get(id, request.user.id) };
+    });
+
     app.post('/api/trainings/:id/fit', { preHandler: requireAuth }, async (request, reply) => {
       const id = Number(request.params.id);
       if (!Number.isInteger(id) || id <= 0) {
@@ -635,10 +663,13 @@ async function buildServer(options = {}) {
       }
 
       let fileBuffer = null;
+      let confirmReplaceManual = false;
       try {
         for await (const part of request.parts()) {
           if (part.type === 'file' && part.fieldname === 'file') {
             fileBuffer = await part.toBuffer();
+          } else if (part.type === 'field' && part.fieldname === 'confirm_replace_manual') {
+            confirmReplaceManual = part.value === 'true';
           }
         }
       } catch (error) {
@@ -648,6 +679,11 @@ async function buildServer(options = {}) {
 
       if (!fileBuffer) {
         return reply.code(400).send({ error: 'Missing .FIT file field.' });
+      }
+
+      const current = findTraining.get(id, request.user.id);
+      if (current.result_data_source === 'manual' && !confirmReplaceManual) {
+        return reply.code(409).send({ error: 'Confirm manual result replacement before uploading a FIT file.' });
       }
 
       try {
@@ -673,27 +709,33 @@ async function buildServer(options = {}) {
           laps: result.laps,
         });
 
-        db.prepare(
-          `UPDATE trainings SET
+        const saveFit = db.transaction(() => {
+          db.prepare(
+            `UPDATE trainings SET
             fit_duration = ?,
             fit_distance = ?,
             fit_avg_pace = ?,
             fit_avg_hr = ?,
             fit_max_hr = ?,
             fit_elevation_gain = ?,
-            fit_summary_json = ?
+            fit_calories = NULL,
+            fit_summary_json = ?,
+            result_data_source = 'fit_upload',
+            completed = 1
           WHERE id = ? AND user_id = ?`
-        ).run(
-          fitDuration,
-          fitDistance,
-          fitAvgPace,
-          fitAvgHr,
-          fitMaxHr,
-          fitElevation,
-          fitSummaryJson,
-          id,
-          request.user.id
-        );
+          ).run(
+            fitDuration,
+            fitDistance,
+            fitAvgPace,
+            fitAvgHr,
+            fitMaxHr,
+            fitElevation,
+            fitSummaryJson,
+            id,
+            request.user.id
+          );
+        });
+        saveFit();
 
         return {
           fit_duration: fitDuration,
@@ -702,6 +744,8 @@ async function buildServer(options = {}) {
           fit_avg_hr: fitAvgHr,
           fit_max_hr: fitMaxHr,
           fit_elevation_gain: fitElevation,
+          fit_calories: null,
+          result_data_source: 'fit_upload',
           laps: result.laps,
         };
       } catch (error) {

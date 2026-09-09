@@ -44,7 +44,28 @@ test('initializeDatabase applies pragmas and creates the schema', () => {
     undefined,
     'new databases do not create the legacy workouts table'
   );
+  const trainingColumns = db.pragma('table_info(trainings)').map((column) => column.name);
+  assert.ok(trainingColumns.includes('result_data_source'));
+  assert.ok(trainingColumns.includes('fit_calories'));
 
+  db.close();
+});
+
+test('migrateDatabase classifies existing FIT rows and leaves result-less rows as none', () => {
+  const db = createDatabase({ filename: ':memory:' });
+  db.prepare("INSERT INTO users (email, password_hash) VALUES ('source@example.com', 'hash')").run();
+  db.prepare("INSERT INTO trainings (user_id, dia, tipo, fit_duration, fit_distance, fit_summary_json) VALUES (1, '2026-08-20', 'Run', '30:00', 5, '{\"laps\":[]}')").run();
+  db.prepare("INSERT INTO trainings (user_id, dia, tipo) VALUES (1, '2026-08-21', 'Run')").run();
+  db.prepare("INSERT INTO trainings (user_id, dia, tipo, result_data_source, fit_distance) VALUES (1, '2026-08-22', 'Run', 'manual', 8)").run();
+  db.prepare("UPDATE trainings SET result_data_source = 'none' WHERE id IN (1, 2)").run();
+  migrateDatabase(db);
+  const rows = db.prepare('SELECT result_data_source, fit_distance FROM trainings ORDER BY id').all();
+  assert.deepEqual(rows, [
+    { result_data_source: 'fit_upload', fit_distance: 5 },
+    { result_data_source: 'none', fit_distance: null },
+    { result_data_source: 'manual', fit_distance: 8 },
+  ]);
+  assert.doesNotThrow(() => migrateDatabase(db));
   db.close();
 });
 
