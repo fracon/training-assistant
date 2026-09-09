@@ -1,7 +1,8 @@
-import { initShell, getShellI18n, getUserPreferences, refreshIcons, showConfirm } from './shared/shell.js';
+import { initShell, getShellI18n, getUserPreferences, refreshIcons } from './shared/shell.js';
 import { translate } from './shared/i18n.js';
 import { formatDate as formatLocalizedDate, formatDateInput, parseLocalizedDate } from './shared/date.js';
 import { createDatePicker, readDatePickerValue } from './shared/datepicker.js';
+import { showConfirm } from './shared/confirm-modal.js';
 import {
   fetchCycles,
   fetchActiveCycle,
@@ -254,7 +255,15 @@ async function handleAction(action, id, cycles, messages, language = 'en-US') {
   }
 
   if (action === 'complete') {
-    await updateCycle(id, { status: 'completed' });
+    if (!(await showConfirm({
+      title: t(messages, 'cycles.complete'),
+      message: t(messages, 'cycles.completeConfirm'),
+      icon: 'check-circle',
+      confirmText: t(messages, 'cycles.complete'),
+      cancelText: t(messages, 'cycles.confirm.no'),
+      confirmButtonClass: 'btn-primary',
+      onConfirm: () => updateCycle(id, { status: 'completed' }),
+    }))) return;
     const updated = await fetchCycles();
     cycles.length = 0;
     cycles.push(...updated);
@@ -268,10 +277,11 @@ async function handleAction(action, id, cycles, messages, language = 'en-US') {
       title: t(messages, 'cycles.cancelTitle'),
       message: t(messages, 'cycles.deleteConfirm'),
       icon: 'trash-2',
-      confirmLabel: t(messages, 'cycles.confirm.yes'),
-      cancelLabel: t(messages, 'cycles.confirm.no'),
+      confirmText: t(messages, 'cycles.confirm.yes'),
+      cancelText: t(messages, 'cycles.confirm.no'),
+      confirmButtonClass: 'btn-danger',
+      onConfirm: () => updateCycle(id, { status: 'cancelled' }),
     }))) return;
-    await updateCycle(id, { status: 'cancelled' });
     const updated = await fetchCycles();
     cycles.length = 0;
     cycles.push(...updated);

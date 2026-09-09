@@ -268,7 +268,7 @@ test('cycles.js wires the shell, language change listener, and i18n attributes',
   const js = readFileSync(join(publicDir, 'cycles.js'), 'utf8');
 
   assert.match(js, /import.*initShell.*from.*shared\/shell\.js/);
-  assert.match(js, /import.*showConfirm.*from.*shared\/shell\.js/);
+  assert.match(js, /import.*showConfirm.*from.*shared\/confirm-modal\.js/);
   assert.match(js, /import.*getShellI18n/);
   assert.match(js, /import.*refreshIcons.*from.*shared\/shell\.js/);
   assert.match(js, /import.*translate.*from.*shared\/i18n\.js/);
@@ -305,6 +305,11 @@ test('cycles.js handles complete, cancel, and prompt actions', () => {
   assert.match(js, /data-action="prompt"/);
   assert.match(js, /status:\s*'completed'/);
   assert.match(js, /status:\s*'cancelled'/);
+  assert.match(js, /cycles\.completeConfirm/);
+  assert.match(js, /confirmButtonClass:\s*'btn-primary'/);
+  assert.match(js, /confirmButtonClass:\s*'btn-danger'/);
+  assert.match(js, /onConfirm:\s*\(\) => updateCycle\(id, \{ status: 'completed' \}\)/);
+  assert.match(js, /onConfirm:\s*\(\) => updateCycle\(id, \{ status: 'cancelled' \}\)/);
 });
 
 test('cycles.js dispatches kinesis:cycle-changed after create, complete, and cancel', () => {

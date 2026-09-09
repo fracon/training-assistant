@@ -374,6 +374,7 @@
     "disabledTooltip": "Finalize ou cancele seu ciclo ativo primeiro.",
     "edit": "Editar",
     "complete": "Concluir",
+    "completeConfirm": "Tem certeza que deseja concluir este ciclo?",
     "cancel": "Cancelar",
     "generatePrompt": "Gerar prompt",
     "editTooltip": "Editar ciclo",

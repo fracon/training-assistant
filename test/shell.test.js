@@ -274,27 +274,30 @@ test('the topbar restores a working logout action once authenticated', () => {
 
 test('showConfirm is exported and builds a Promise-based confirmation dialog', () => {
   const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
-  assert.match(js, /export function showConfirm\(/);
-  assert.match(js, /return new Promise/);
-  assert.match(js, /confirm-backdrop/);
-  assert.match(js, /confirm-card/);
-  assert.match(js, /confirm-header/);
-  assert.match(js, /confirm-icon/);
-  assert.match(js, /confirm-title/);
-  assert.match(js, /confirm-body/);
-  assert.match(js, /confirm-message/);
-  assert.match(js, /confirmOkBtn/);
-  assert.match(js, /confirmCancelBtn/);
-  assert.match(js, /setAttribute\('role', 'alertdialog'\)/);
-  assert.match(js, /setAttribute\('aria-labelledby', 'confirmTitle'\)/);
-  assert.match(js, /titleEl\.textContent = title/);
-  assert.match(js, /msg\.textContent = message/);
-  assert.match(js, /cleanup\(true\)/);
-  assert.match(js, /cleanup\(false\)/);
+  const confirm = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'confirm-modal.js'), 'utf8');
+  assert.match(js, /import \{ showConfirm \} from '\.\/confirm-modal\.js'/);
+  assert.match(js, /export \{ showConfirm \} from '\.\/confirm-modal\.js'/);
+  assert.match(confirm, /export function showConfirm\(/);
+  assert.match(confirm, /return new Promise/);
+  assert.match(confirm, /confirm-backdrop/);
+  assert.match(confirm, /confirm-card/);
+  assert.match(confirm, /confirm-header/);
+  assert.match(confirm, /confirm-icon/);
+  assert.match(confirm, /confirm-title/);
+  assert.match(confirm, /confirm-body/);
+  assert.match(confirm, /confirm-message/);
+  assert.match(confirm, /confirmOkBtn/);
+  assert.match(confirm, /confirmCancelBtn/);
+  assert.match(confirm, /setAttribute\('role', 'alertdialog'\)/);
+  assert.match(confirm, /setAttribute\('aria-labelledby', 'confirmTitle'\)/);
+  assert.match(confirm, /titleEl\.textContent = title/);
+  assert.match(confirm, /msg\.textContent = message/);
+  assert.match(confirm, /cleanup\(true\)/);
+  assert.match(confirm, /cleanup\(false\)/);
 });
 
 test('showConfirm renders a danger header with icon and a right-aligned footer', () => {
-  const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
+  const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'confirm-modal.js'), 'utf8');
   assert.match(js, /const headerIcon = document\.createElement\('span'\);/);
   assert.match(js, /headerIcon\.className = 'confirm-icon';/);
   assert.match(js, /iconEl\.setAttribute\('data-lucide', icon\);/);
@@ -303,7 +306,9 @@ test('showConfirm renders a danger header with icon and a right-aligned footer',
   assert.match(js, /card\.appendChild\(body\);/);
   assert.match(js, /actions\.appendChild\(cancelBtn\);\s*\n\s*actions\.appendChild\(confirmBtn\);\s*\n\s*card\.appendChild\(actions\);/);
   assert.match(js, /cancelBtn\.className = 'btn btn-secondary';/, 'the outline button shares the base .btn class');
-  assert.match(js, /confirmBtn\.className = 'btn btn-danger';/, 'the solid button shares the base .btn class');
+  assert.match(js, /confirmBtn\.className = `btn \$\{confirmButtonClass\}`;/, 'the solid button variant is configurable');
+  assert.match(js, /confirmButtonClass = 'btn-danger'/, 'the confirm button variant is configurable');
+  assert.match(js, /typeof onConfirm === 'function'/, 'confirmed actions may run a callback');
 });
 
 test('confirm modal CSS matches the Kinesis design system', () => {
