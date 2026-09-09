@@ -25,22 +25,6 @@ CREATE TABLE IF NOT EXISTS sessions (
   created_at TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE TABLE IF NOT EXISTS workouts (
-  id           INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  day          TEXT,
-  period       TEXT,
-  type         TEXT,
-  workout      TEXT,
-  details      TEXT,
-  target_hr    TEXT,
-  rpe          INTEGER,
-  shoes        TEXT,
-  forecast     TEXT,
-  observations TEXT,
-  created_at   DATETIME NOT NULL DEFAULT (datetime('now'))
-);
-
 CREATE TABLE IF NOT EXISTS trainings (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -174,15 +158,6 @@ function migrateDatabase(db) {
 
   if (!trainingColumns.some((column) => column.name === 'location')) {
     db.exec('ALTER TABLE trainings ADD COLUMN location TEXT');
-  }
-
-  // Migration: wipe legacy workouts and add training_cycle_id FK.
-  const workoutColumns = db.pragma('table_info(workouts)');
-  if (workoutColumns.length > 0 && !workoutColumns.some((column) => column.name === 'training_cycle_id')) {
-    db.exec('DELETE FROM workouts');
-    db.exec(
-      "ALTER TABLE workouts ADD COLUMN training_cycle_id TEXT REFERENCES training_cycles(id) ON DELETE SET NULL"
-    );
   }
 
   const trainingsColumns = db.pragma('table_info(trainings)');

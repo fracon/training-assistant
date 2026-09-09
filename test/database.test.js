@@ -38,7 +38,12 @@ test('initializeDatabase applies pragmas and creates the schema', () => {
     )
     .all()
     .map((row) => row.name);
-  assert.deepEqual(objects, ['sessions', 'shoes', 'training_cycles', 'trainings', 'users', 'workouts']);
+  assert.deepEqual(objects, ['sessions', 'shoes', 'training_cycles', 'trainings', 'users']);
+  assert.equal(
+    db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'workouts'").get(),
+    undefined,
+    'new databases do not create the legacy workouts table'
+  );
 
   db.close();
 });
@@ -251,76 +256,49 @@ test('users store first and last names via prepared statements', () => {
   db.close();
 });
 
-test('workouts persist the full training plan row per user via prepared statements', () => {
-  const db = createDatabase({ filename: ':memory:' });
-
-  const { lastInsertRowid: userId } = db
-    .prepare('INSERT INTO users (email, password_hash) VALUES (?, ?)')
-    .run('planner@example.com', 'hash');
-
-  const insertWorkout = db.prepare(`
-    INSERT INTO workouts
-      (user_id, day, period, type, workout, details, target_hr, rpe, shoes, forecast, observations)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+test('migrateDatabase preserves existing legacy workouts without altering their data', () => {
+  const db = new Database(':memory:');
+  db.exec(`
+    CREATE TABLE users (
+      id INTEGER PRIMARY KEY,
+      email TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL
+    );
+    CREATE TABLE trainings (
+      id INTEGER PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      dia TEXT NOT NULL,
+      tipo TEXT NOT NULL
+    );
+    CREATE TABLE workouts (
+      id INTEGER PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      day TEXT
+    );
   `);
-  const { lastInsertRowid: workoutId } = insertWorkout.run(
-    userId,
-    '2026-08-24',
-    'Manhã',
-    'Intervalado',
-    '10x400m',
-    'Descanso de 90s entre as repetições',
-    '145–155 bpm',
-    4,
-    'Nimbus 26',
-    '22°C, céu aberto',
-    'Última série opcional'
+  db.prepare('INSERT INTO users (id, email, password_hash) VALUES (?, ?, ?)').run(
+    1,
+    'legacy-workout@example.com',
+    'hash'
+  );
+  db.prepare('INSERT INTO workouts (id, user_id, day) VALUES (?, ?, ?)').run(
+    1,
+    1,
+    '2026-08-24'
   );
 
-  const workout = db.prepare('SELECT * FROM workouts WHERE id = ?').get(workoutId);
-  assert.equal(workout.user_id, userId);
-  assert.equal(workout.day, '2026-08-24');
-  assert.equal(workout.period, 'Manhã');
-  assert.equal(workout.type, 'Intervalado');
-  assert.equal(workout.workout, '10x400m');
-  assert.equal(workout.details, 'Descanso de 90s entre as repetições');
-  assert.equal(workout.target_hr, '145–155 bpm');
-  assert.strictEqual(workout.rpe, 4);
-  assert.equal(workout.shoes, 'Nimbus 26');
-  assert.equal(workout.forecast, '22°C, céu aberto');
-  assert.equal(workout.observations, 'Última série opcional');
-  assert.match(workout.created_at, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+  migrateDatabase(db);
 
-  insertWorkout.run(userId, '2026-08-25', 'Tarde', 'Regenerativo', '8km fácil', null, null, 2, null, null, null);
-  const plan = db
-    .prepare('SELECT day FROM workouts WHERE user_id = ? ORDER BY day')
-    .all(userId)
-    .map((row) => row.day);
-  assert.deepEqual(plan, ['2026-08-24', '2026-08-25']);
-
-  db.close();
-});
-
-test('workouts enforce foreign keys and cascade on user delete', () => {
-  const db = createDatabase({ filename: ':memory:' });
-
-  assert.throws(
-    () =>
-      db
-        .prepare('INSERT INTO workouts (user_id, day) VALUES (?, ?)')
-        .run(99999, '2026-08-24'),
-    /FOREIGN KEY constraint failed/
+  assert.deepEqual(
+    db.prepare('SELECT id, user_id, day FROM workouts').all(),
+    [{ id: 1, user_id: 1, day: '2026-08-24' }],
+    'legacy data is retained because this cleanup never drops or mutates existing tables'
   );
-
-  const { lastInsertRowid: userId } = db
-    .prepare('INSERT INTO users (email, password_hash) VALUES (?, ?)')
-    .run('cascade-plan@example.com', 'hash');
-  db.prepare('INSERT INTO workouts (user_id, day) VALUES (?, ?)').run(userId, '2026-08-24');
-
-  db.prepare('DELETE FROM users WHERE id = ?').run(userId);
-
-  const remaining = db.prepare('SELECT COUNT(*) AS total FROM workouts').get();
-  assert.equal(remaining.total, 0);
+  assert.equal(
+    db.pragma('table_info(workouts)').some((column) => column.name === 'training_cycle_id'),
+    false,
+    'the obsolete table is not migrated further'
+  );
 
   db.close();
 });
