@@ -154,10 +154,11 @@ Configuration via environment variables:
 | `PORT` | `3000` | HTTP port |
 | `HOST` | `127.0.0.1` | Bind address |
 | `DATABASE_FILE` | `<cwd>/data/database.sqlite` | SQLite database location |
-| `UNSPLASH_API_KEY` | _optional_ | Unsplash API key for the running-photo hero. Kinesis works fully without it (or when Unsplash is unavailable), using a bundled local fallback image. Responses are cached for 20 minutes to minimize API calls. |
+| `UNSPLASH_ACCESS_KEY` | _optional_ | Unsplash Access Key sent as `Authorization: Client-ID ...` for the running-photo hero. Responses are cached for 20 minutes to minimize API calls. |
+| `UNSPLASH_API_KEY` | _optional alias_ | Backwards-compatible alias for `UNSPLASH_ACCESS_KEY`; Kinesis works without either key by using the bundled local fallback image. |
 
-For local setup, copy `.env.example` to `.env`, put your Unsplash Client ID in
-`UNSPLASH_API_KEY`, and start with `node --env-file=.env src/start.js` (or export
+For local setup, copy `.env.example` to `.env`, put your Unsplash **Access Key**
+in `UNSPLASH_ACCESS_KEY`, and start with `node --env-file=.env src/start.js` (or export
 the variable before `npm start`). For Docker Compose, put the same variable in
 the `.env` file beside `docker-compose.yml`; Compose passes it into the server
 container. The key is server-only and must never be placed in frontend files or

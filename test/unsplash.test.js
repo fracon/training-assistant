@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { fetchHeroImage, LOCAL_HERO_IMAGES, UNSPLASH_URL, localHero, createHeroImageLoader } = require('../src/unsplash');
+const { fetchHeroImage, LOCAL_HERO_IMAGES, UNSPLASH_URL, localHero, createHeroImageLoader, resolveAccessKey } = require('../src/unsplash');
 
 test('fetchHeroImage returns the Unsplash image and attribution on success', async () => {
   const calls = [];
@@ -25,6 +25,21 @@ test('fetchHeroImage returns the Unsplash image and attribution on success', asy
   assert.equal(calls[0].options.headers.authorization, 'Client-ID test-key');
   assert.equal(calls[1].url, 'https://api.unsplash.com/photos/mock/download');
   assert.equal(calls[1].options.headers.authorization, 'Client-ID test-key');
+});
+
+test('resolveAccessKey prefers the explicit key, then Access Key, then legacy API key', () => {
+  const previousAccess = process.env.UNSPLASH_ACCESS_KEY;
+  const previousApi = process.env.UNSPLASH_API_KEY;
+  process.env.UNSPLASH_ACCESS_KEY = 'access-key';
+  process.env.UNSPLASH_API_KEY = 'legacy-key';
+  assert.equal(resolveAccessKey(), 'access-key');
+  assert.equal(resolveAccessKey('explicit-key'), 'explicit-key');
+  delete process.env.UNSPLASH_ACCESS_KEY;
+  assert.equal(resolveAccessKey(), 'legacy-key');
+  if (previousAccess === undefined) delete process.env.UNSPLASH_ACCESS_KEY;
+  else process.env.UNSPLASH_ACCESS_KEY = previousAccess;
+  if (previousApi === undefined) delete process.env.UNSPLASH_API_KEY;
+  else process.env.UNSPLASH_API_KEY = previousApi;
 });
 
 test('createHeroImageLoader caches a successful response until its TTL expires', async () => {
