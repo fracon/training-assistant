@@ -4,7 +4,7 @@ import { fetchShoes } from './shared/api.js';
 import { fetchActiveCycle, fetchCalendarTrainings } from './shared/api.js';
 import { formatDate as formatLocalizedDate, parseLocalizedDate } from './shared/date.js';
 import { formatDistance, distancePromptUnit, temperaturePromptUnit } from './shared/units.js';
-import { createDatePicker } from './shared/datepicker.js';
+import { createDatePicker, readDatePickerValue } from './shared/datepicker.js';
 
 // Verbatim Portuguese briefing for the external AI Coach.
 // The wording below is a hard requirement — do not translate, rewrite
@@ -517,6 +517,14 @@ function normalizeTargetDate(value, language) {
   return parseLocalizedDate(text, language);
 }
 
+// The DatePicker owns the ISO value; never read the localized display input
+// when building the prompt. Its getter also keeps this binding resilient to
+// future DatePicker implementations that do not expose a dataset value.
+export function readTargetDateIso(input, picker, language = 'pt-BR') {
+  const pickerValue = picker?.getValue?.();
+  return pickerValue || readDatePickerValue(input) || normalizeTargetDate(input?.value, language);
+}
+
 export const DAY_INPUT_IDS = {
   segunda: 'dispSeg',
   terca: 'dispTer',
@@ -656,7 +664,7 @@ function setupAiCoachPage() {
   function updateValidation() {
     const { disponibilidade, localizacao } = readFormFields();
     const validation = validatePromptFields({
-      targetDate: targetDateInput.value,
+      targetDate: readTargetDateIso(targetDateInput, targetDatePicker, i18n.language),
       language: i18n.language,
       baseLocation: baseLocationInput.value,
       disponibilidade,
@@ -701,7 +709,7 @@ function setupAiCoachPage() {
       if (input) input.value = value;
     }
     lastRoutineDefault = nextDefault;
-    const targetIso = targetDateInput.dataset.iso || normalizeTargetDate(targetDateInput.value, i18n.language);
+    const targetIso = readTargetDateIso(targetDateInput, targetDatePicker, i18n.language);
     targetDateInput.dataset.iso = targetIso;
     targetDateInput.value = targetIso;
     targetDatePicker.refresh();
@@ -730,7 +738,7 @@ function setupAiCoachPage() {
     const { disponibilidade, localizacao } = readFormFields();
     const validation = updateValidation();
     if (!validation.valid) return;
-    const targetIso = targetDateInput.dataset.iso || normalizeTargetDate(targetDateInput.value, i18n.language);
+    const targetIso = readTargetDateIso(targetDateInput, targetDatePicker, i18n.language);
     const targetDate = parseInputDate(targetIso);
 
     generateBtn.disabled = true;

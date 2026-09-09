@@ -18,6 +18,7 @@ const {
   formatDiaSlashes,
   dateInputValue,
   parseInputDate,
+  readTargetDateIso,
   availabilityDefaults,
   applyRoutineDefault,
   resolveTemplateLang,
@@ -77,6 +78,17 @@ test('parseInputDate reads the date input as a local date', () => {
   assert.equal(parseInputDate(''), null);
   assert.equal(parseInputDate('junk'), null);
   assert.equal(parseInputDate(undefined), null);
+});
+
+test('readTargetDateIso uses the DatePicker ISO value for prompt generation', () => {
+  const input = { value: '14/09/2026', dataset: { iso: '2026-09-14' } };
+  const picker = { getValue: () => '2026-09-07' };
+  const iso = readTargetDateIso(input, picker, 'pt-BR');
+  const prompt = buildPrompt({ targetDate: parseInputDate(iso) });
+
+  assert.equal(iso, '2026-09-07');
+  assert.ok(prompt.includes('A semana a ser planejada começa em:\n07/09/2026'));
+  assert.ok(!prompt.includes('14/09/2026'));
 });
 
 test('availability defaults to the standard routine on all seven days', () => {
@@ -350,6 +362,7 @@ test('training request date input uses localized display with ISO state binding'
   assert.match(js, /createDatePicker\(targetDateDisplay/);
   assert.match(js, /getLanguage: \(\) => i18n\.language/);
   assert.match(js, /targetDateInput\.dataset\.iso/);
+  assert.match(js, /readTargetDateIso\(targetDateInput, targetDatePicker, i18n\.language\)/);
   assert.match(js, /const targetDate = parseInputDate\(targetIso\)/);
 });
 
