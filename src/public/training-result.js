@@ -976,6 +976,12 @@ async function initTrainingResult() {
   fitFileInput.addEventListener('change', async () => {
     if (!fitFileInput.files || fitFileInput.files.length === 0 || !currentTrainingId) return;
     const file = fitFileInput.files[0];
+    if (!/\.(fit|zip)$/i.test(file.name)) {
+      setStatus(t('session.fitUnsupported'), 'error');
+      fitFileInput.value = '';
+      renderFitDropzoneState();
+      return;
+    }
     if (training.result_data_source === 'manual') {
       const confirmed = await showConfirm({
         title: t('session.replaceManualTitle'), message: t('session.replaceManualMessage'), icon: 'triangle-alert',

@@ -713,10 +713,10 @@ test('collectPromptValues falls back to Ver anexo when FIT attached but no laps'
 });
 
 test('fitDropzonePrimaryHtml renders the drag invitation while empty', () => {
-  const translate = (key) => (key === 'session.fitDragText' ? 'Drag your <strong>.FIT</strong> file here' : key);
+  const translate = (key) => (key === 'session.fitDragText' ? 'Drag your <strong>.FIT</strong> or <strong>.ZIP</strong> file here' : key);
   assert.equal(
     fitDropzonePrimaryHtml({ files: [], translate }),
-    'Drag your <strong>.FIT</strong> file here'
+    'Drag your <strong>.FIT</strong> or <strong>.ZIP</strong> file here'
   );
   assert.equal(fitDropzonePrimaryHtml({ files: null, translate }), translate('session.fitDragText'));
 });
@@ -739,7 +739,7 @@ test('training-result.html ships the expanded feedback grid and generator button
 
   assert.match(html, /<div class="feedback-grid">/);
   assert.match(html, /<select id="resultSourceSelect" class="input-control">/);
-  assert.match(html, /data-i18n="session\.resultSourceFit">Import FIT file/);
+  assert.match(html, /data-i18n="session\.resultSourceFit">Import FIT or ZIP file/);
   assert.match(html, /data-i18n="session\.resultSourceManual">Enter data manually/);
   assert.match(html, /<div class="field fit-field" id="fitField">/);
   assert.match(
@@ -749,12 +749,12 @@ test('training-result.html ships the expanded feedback grid and generator button
   );
   assert.match(
     html,
-    /<input type="file" id="fitFile" accept="\.fit" style="display: none;">/,
+    /<input type="file" id="fitFile" accept="\.fit,\.zip" style="display: none;">/,
     'the native input stays in the DOM but is visually hidden'
   );
   assert.match(
     html,
-    /<span data-i18n-html="session\.fitDragText">Drag your <strong>\.FIT<\/strong> file here<\/span>/,
+    /<span data-i18n-html="session\.fitDragText">Drag your <strong>\.FIT<\/strong> or <strong>\.ZIP<\/strong> file here<\/span>/,
     'the primary dropzone line ships translated markup'
   );
   assert.match(
@@ -1304,6 +1304,7 @@ test('session locale namespace stays in parity across en-US and pt-BR', () => {
     'fitDragText',
     'fitClickText',
     'fitSelected',
+    'fitUnsupported',
     'fitDataHeading',
     'fitDuration',
     'fitDistance',
@@ -1414,12 +1415,14 @@ test('session locale namespace stays in parity across en-US and pt-BR', () => {
     'Como foi o treino? Sono, clima, sensações gerais...'
   );
 
-  assert.equal(en.session.fitDragText, 'Drag your <strong>.FIT</strong> file here');
-  assert.equal(pt.session.fitDragText, 'Arraste seu arquivo <strong>.FIT</strong> aqui');
+  assert.equal(en.session.fitDragText, 'Drag your <strong>.FIT</strong> or <strong>.ZIP</strong> file here');
+  assert.equal(pt.session.fitDragText, 'Arraste seu arquivo <strong>.FIT</strong> ou <strong>.ZIP</strong> aqui');
   assert.equal(en.session.fitClickText, 'or click to select from your computer');
   assert.equal(pt.session.fitClickText, 'ou clique para selecionar do computador');
   assert.equal(en.session.fitSelected, 'File selected: ');
   assert.equal(pt.session.fitSelected, 'Arquivo selecionado: ');
+  assert.equal(en.session.fitUnsupported, 'Please select a .FIT or .ZIP file.');
+  assert.equal(pt.session.fitUnsupported, 'Selecione um arquivo .FIT ou .ZIP.');
 
   const PAIN_I18N = {
     common: {

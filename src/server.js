@@ -6,6 +6,7 @@ const multipart = require('@fastify/multipart');
 const fastifyStatic = require('@fastify/static');
 const fastifyCookie = require('@fastify/cookie');
 const { parseFitFile, normalizeCalories } = require('./fitParser');
+const { FitUploadError, resolveFitBuffer } = require('./fitUpload');
 const { normalizeManualResults } = require('./manualResults');
 const { generateMarkdown } = require('./markdownGenerator');
 const { registerUser, RegistrationError } = require('./auth/registration');
@@ -668,10 +669,12 @@ async function buildServer(options = {}) {
       }
 
       let fileBuffer = null;
+      let fileName = '';
       let confirmReplaceManual = false;
       try {
         for await (const part of request.parts()) {
           if (part.type === 'file' && part.fieldname === 'file') {
+            fileName = part.filename;
             fileBuffer = await part.toBuffer();
           } else if (part.type === 'field' && part.fieldname === 'confirm_replace_manual') {
             confirmReplaceManual = part.value === 'true';
@@ -692,7 +695,8 @@ async function buildServer(options = {}) {
       }
 
       try {
-        const result = await parseFile(fileBuffer);
+        const fitBuffer = await resolveFitBuffer({ buffer: fileBuffer, filename: fileName });
+        const result = await parseFile(fitBuffer);
         const durationSec = result.totals?.durationSeconds || 0;
         const hours = Math.floor(durationSec / 3600);
         const minutes = Math.floor((durationSec % 3600) / 60);
@@ -761,6 +765,9 @@ async function buildServer(options = {}) {
         };
       } catch (error) {
         request.log.error(error);
+        if (error instanceof FitUploadError) {
+          return reply.code(400).send({ error: error.message, code: error.code });
+        }
         return reply.code(422).send({
           error: 'Could not parse the .FIT file.',
           detail: error.message,

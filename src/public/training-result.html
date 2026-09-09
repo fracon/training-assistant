@@ -80,15 +80,15 @@
           <div class="field field-wide">
             <label class="field-label" for="resultSourceSelect" data-i18n="session.resultSourceLabel">How would you like to register the result?</label>
             <select id="resultSourceSelect" class="input-control">
-              <option value="fit" data-i18n="session.resultSourceFit">Import FIT file</option>
+              <option value="fit" data-i18n="session.resultSourceFit">Import FIT or ZIP file</option>
               <option value="manual" data-i18n="session.resultSourceManual">Enter data manually</option>
             </select>
           </div>
           <div class="field fit-field" id="fitField">
             <label for="fitFile" class="file-dropzone" id="fitDropzone">
-              <input type="file" id="fitFile" accept=".fit" style="display: none;">
+              <input type="file" id="fitFile" accept=".fit,.zip" style="display: none;">
               <div class="dropzone-text-primary">
-                <span data-i18n-html="session.fitDragText">Drag your <strong>.FIT</strong> file here</span>
+                <span data-i18n-html="session.fitDragText">Drag your <strong>.FIT</strong> or <strong>.ZIP</strong> file here</span>
               </div>
               <div class="dropzone-text-secondary" data-i18n="session.fitClickText">or click to select from your computer</div>
             </label>
