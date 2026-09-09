@@ -334,6 +334,9 @@ test('GET /api/version exposes the packaged app version', async () => {
   const response = await app.inject({ method: 'GET', url: '/api/version' });
   assert.equal(response.statusCode, 200);
   assert.deepEqual(response.json(), { version: require('../package.json').version });
+  assert.match(response.headers['cache-control'], /no-store/);
+  assert.equal(response.headers.pragma, 'no-cache');
+  assert.equal(response.headers.expires, '0');
 });
 
 test('the default parser rejects garbage uploads end-to-end', async () => {

@@ -224,6 +224,53 @@ test('PATCH /api/trainings/:id requires authentication', async () => {
   assert.equal(response.statusCode, 401);
 });
 
+test('PUT /api/trainings/:id/manual-results persists canonical metrics and calculated pace', async () => {
+  const { db, app, cookie, userId } = await setup();
+  const id = seedTraining(db, { user_id: userId });
+  const response = await app.inject({ method: 'PUT', url: `/api/trainings/${id}/manual-results`, headers: { cookie }, payload: { distance_km: 10.25, duration_seconds: 3725, avg_hr: 151, max_hr: 166, elevation_gain_m: 104, calories: 742 } });
+  assert.equal(response.statusCode, 200);
+  const row = response.json().training;
+  assert.equal(row.result_data_source, 'manual');
+  assert.equal(row.fit_duration, '1:02:05');
+  assert.equal(row.fit_avg_pace, '6:03');
+  assert.equal(row.fit_distance, 10.25);
+  assert.equal(row.fit_calories, 742);
+  assert.equal(row.fit_summary_json, null);
+  assert.equal(row.completed, 1);
+});
+
+test('manual results require authentication, ownership, valid values, and an explicit FIT replacement confirmation', async () => {
+  const { db, app, cookie, userId } = await setup();
+  const id = seedTraining(db, { user_id: userId });
+  db.prepare("UPDATE trainings SET result_data_source = 'fit_upload', fit_distance = 5, fit_duration = '30:00', fit_summary_json = '{\"laps\":[1]}' WHERE id = ?").run(id);
+  const unauthenticated = await app.inject({ method: 'PUT', url: `/api/trainings/${id}/manual-results`, payload: { distance_km: 5, duration_seconds: 1800 } });
+  assert.equal(unauthenticated.statusCode, 401);
+  const conflict = await app.inject({ method: 'PUT', url: `/api/trainings/${id}/manual-results`, headers: { cookie }, payload: { distance_km: 5, duration_seconds: 1800 } });
+  assert.equal(conflict.statusCode, 409);
+  const invalid = await app.inject({ method: 'PUT', url: `/api/trainings/${id}/manual-results`, headers: { cookie }, payload: { distance_km: 5, duration_seconds: 1800, max_hr: 120, avg_hr: 130, user_id: userId } });
+  assert.equal(invalid.statusCode, 400);
+  const replaced = await app.inject({ method: 'PUT', url: `/api/trainings/${id}/manual-results`, headers: { cookie }, payload: { distance_km: 5, duration_seconds: 1800, confirm_replace_fit: true } });
+  assert.equal(replaced.statusCode, 200);
+  assert.equal(replaced.json().training.fit_summary_json, null);
+  assert.equal(replaced.json().training.result_data_source, 'manual');
+});
+
+test('manual results reject malformed ids and missing or foreign trainings', async () => {
+  const { db, app, cookie } = await setup();
+  for (const id of ['zero', '0']) {
+    const response = await app.inject({ method: 'PUT', url: `/api/trainings/${id}/manual-results`, headers: { cookie }, payload: { distance_km: 1, duration_seconds: 60 } });
+    assert.equal(response.statusCode, 400);
+  }
+  const missing = await app.inject({ method: 'PUT', url: '/api/trainings/999/manual-results', headers: { cookie }, payload: { distance_km: 1, duration_seconds: 60 } });
+  assert.equal(missing.statusCode, 404);
+  db.prepare("INSERT INTO users (email, password_hash) VALUES ('manual-peer@example.com', 'hash')").run();
+  const foreign = seedTraining(db, { user_id: 2 });
+  const denied = await app.inject({ method: 'PUT', url: `/api/trainings/${foreign}/manual-results`, headers: { cookie }, payload: { distance_km: 1, duration_seconds: 60 } });
+  assert.equal(denied.statusCode, 404);
+  const noBody = await app.inject({ method: 'PUT', url: '/api/trainings/1/manual-results', headers: { cookie } });
+  assert.equal(noBody.statusCode, 400);
+});
+
 test('PATCH /api/trainings/:id rejects malformed ids', async () => {
   const { app, cookie } = await setup();
   for (const id of ['abc', '0']) {
@@ -773,7 +820,7 @@ test('POST /api/trainings/:id/fit reports parse errors as 422', async () => {
 
 test('POST /api/trainings/:id/fit persists FIT metrics and returns them', async () => {
   const summary = makeFitSummary({
-    totals: { durationSeconds: 5400, distanceKm: 12.5, avgPaceSecondsPerKm: 432, avgHeartRate: 160, maxHeartRate: 182, ascentMeters: 200 },
+    totals: { durationSeconds: 5400, distanceKm: 12.5, avgPaceSecondsPerKm: 432, avgHeartRate: 160, maxHeartRate: 182, ascentMeters: 200, calories: 987.4 },
     activity: { sport: 'running', startTime: '2026-08-24T07:00:00Z', endTime: '2026-08-24T08:30:00Z' },
     laps: [{ lap: 1, duration: 5400, stepType: 'Run', durationLabel: '1:30:00', cumulativeSeconds: 5400, cumulativeLabel: '1:30:00', distanceKm: 12.5, distanceLabel: '12.50', avgPaceSecondsPerKm: 432, avgPaceLabel: '7:12', bestPaceSecondsPerKm: null, bestPaceLabel: '--:--', avgHeartRate: 160, maxHeartRate: 182, ascentMeters: 200, descentMeters: null, avgCadenceSpm: null, maxCadenceSpm: null, strideMeters: null, calories: null }],
   });
@@ -796,10 +843,11 @@ test('POST /api/trainings/:id/fit persists FIT metrics and returns them', async 
   assert.equal(payload.fit_avg_hr, 160);
   assert.equal(payload.fit_max_hr, 182);
   assert.equal(payload.fit_elevation_gain, 200);
+  assert.equal(payload.fit_calories, 987);
   assert.ok(Array.isArray(payload.laps));
 
   const row = db
-    .prepare('SELECT fit_duration, fit_distance, fit_avg_pace, fit_avg_hr, fit_max_hr, fit_elevation_gain, fit_summary_json FROM trainings WHERE id = ?')
+    .prepare('SELECT fit_duration, fit_distance, fit_avg_pace, fit_avg_hr, fit_max_hr, fit_elevation_gain, fit_calories, fit_summary_json FROM trainings WHERE id = ?')
     .get(id);
   assert.equal(row.fit_duration, '1:30:00');
   assert.equal(row.fit_distance, 12.5);
@@ -807,10 +855,53 @@ test('POST /api/trainings/:id/fit persists FIT metrics and returns them', async 
   assert.equal(row.fit_avg_hr, 160);
   assert.equal(row.fit_max_hr, 182);
   assert.equal(row.fit_elevation_gain, 200);
+  assert.equal(row.fit_calories, 987);
   const parsed = JSON.parse(row.fit_summary_json);
   assert.ok(parsed.activity);
   assert.ok(parsed.totals);
+  assert.equal(parsed.totals.calories, 987);
   assert.ok(parsed.laps);
+});
+
+test('POST /api/trainings/:id/fit canonicalizes every calorie value at persistence boundary', async () => {
+  const cases = [
+    [454, 454],
+    [12.4, 12],
+    [12.6, 13],
+    [0, 0],
+    [null, null],
+    [undefined, null],
+    [-1, null],
+    [Number.NaN, null],
+    [Number.POSITIVE_INFINITY, null],
+    ['invalid', null],
+  ];
+
+  for (const [input, expected] of cases) {
+    const summary = makeFitSummary({ totals: { calories: input } });
+    const { db, app, cookie, userId } = await setup({ parseFitFile: stubParse(summary) });
+    const id = seedTraining(db, { user_id: userId });
+    const response = await postFitParts(app, cookie, [{ name: 'file', fileName: 'run.fit', value: 'x' }]);
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.json().fit_calories, expected);
+    const row = db.prepare('SELECT fit_calories, fit_summary_json FROM trainings WHERE id = ?').get(id);
+    assert.equal(row.fit_calories, expected);
+    assert.equal(JSON.parse(row.fit_summary_json).totals.calories, expected);
+  }
+});
+
+test('POST /api/trainings/:id/fit requires confirmation before replacing manual data and clears manual-only calories', async () => {
+  const { db, app, cookie, userId } = await setup({ parseFitFile: stubParse() });
+  const id = seedTraining(db, { user_id: userId });
+  db.prepare("UPDATE trainings SET result_data_source = 'manual', fit_distance = 5, fit_duration = '30:00', fit_calories = 400 WHERE id = ?").run(id);
+  const withoutConfirmation = await postFitParts(app, cookie, [{ name: 'file', fileName: 'run.fit', value: 'x' }]);
+  assert.equal(withoutConfirmation.statusCode, 409);
+  const confirmed = await postFitParts(app, cookie, [{ name: 'confirm_replace_manual', value: 'true' }, { name: 'file', fileName: 'run.fit', value: 'x' }]);
+  assert.equal(confirmed.statusCode, 200);
+  const row = db.prepare('SELECT result_data_source, fit_summary_json, fit_calories FROM trainings WHERE id = ?').get(id);
+  assert.equal(row.result_data_source, 'fit_upload');
+  assert.ok(row.fit_summary_json);
+  assert.equal(row.fit_calories, null);
 });
 
 test('POST /api/trainings/:id/fit formats minutes-only duration when under one hour', async () => {

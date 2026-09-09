@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user web application** for managing training logs — drop a Garmin `.FIT` file into the browser, add how the workout felt, and get back a ready-to-paste markdown prompt for your AI coach.
 
-Current application version: **0.6.4** (active development).
+Current application version: **0.7.0** (active development).
 
 Every account is protected with server-side sessions, every `.FIT` file is parsed locally on your own machine: no cloud parsing, no telemetry — your training data never leaves your hardware.
 
@@ -39,6 +39,7 @@ and training-session metrics without changing metric values stored by the
 backend.
 
 ### Training Log & AI Prompts
+- **Manual workout results** — when a Garmin file is unavailable, record total distance, duration (hours/minutes/seconds), average/max HR, elevation gain, and calories directly against the planned training. Distance and duration are required; the server stores distance in canonical kilometres and calculates the rounded average pace.
 - **Drag & drop `.FIT` upload** — or click to browse.
 - **Lap-by-lap metrics** extracted automatically:
   - Duration & cumulative time
@@ -54,6 +55,25 @@ backend.
 - **One-click copy** — review the generated markdown on screen, then copy it straight to your clipboard.
 - **Smart form memory** — repetitive fields (shoes, HR source, terrain) are saved in `localStorage` and pre-filled next time.
 - **Strict input handling** — `.FIT` files only, 10 MB size limit, 10 s parse timeout, clear error messages for unreadable files.
+
+Every realized result has one persisted source: `none`, `fit_upload`, or `manual` (`garmin_connect` is reserved for a future integration). A manual result intentionally has no synthetic FIT summary or laps. Replacing FIT data with manual aggregates, or manual aggregates with a FIT upload, requires explicit confirmation and executes atomically; the outgoing source's incompatible data is cleared. The result screen marks the source clearly, and its analysis prompt identifies manual data, notes the absence of laps, and states that Kinesis calculated pace from distance and duration. Since dashboard, calendar, and AI Coach already aggregate the canonical training metrics, manual results participate in weekly totals without a second source of truth.
+
+Manual metrics are saved as part of either final result-page action: **Save and back to calendar** persists them before feedback and redirects only after both succeed; **Generate analysis prompt** persists them first so the prompt uses the backend-calculated pace and current provenance. The screen avoids reposting an unchanged manual result by comparing canonical metric values.
+
+Calories are available for both result sources. For FIT uploads, Kinesis reads the
+authoritative activity/session total (`sessions[0].total_calories`) exposed by
+`fitParser` as `summary.totals.calories`; per-lap calorie values remain available
+for the detailed table but are never summed into the activity total. Values are
+normalized to a finite, non-negative integer (real zero is preserved), while
+missing or invalid values remain `null`. Manual calories use the same
+`fit_calories` field, and replacing one source with another replaces its calorie
+value as well. No calorie estimates are generated. Older FIT summaries that do
+not contain an authoritative total are not backfilled from laps; re-uploading
+the file is required to recover calories safely.
+
+### Running version in the footer
+
+The footer fetches the version from the backend process at `/api/version` with cache disabled (`Cache-Control: no-store` and `fetch(..., { cache: 'no-store' })`). It therefore reflects the version actually running on the server, rather than a cached response. Updating `package.json` alone cannot update an already-running Node process: restart local development if its watcher does not reload package metadata, and rebuild/pull the new Docker image then restart the container in deployment. Cache prevention avoids stale responses; it cannot make a backend still running `0.6.4` report `0.7.0`.
 
 #### Dynamic Training Prompt Generator
 
@@ -171,8 +191,8 @@ committed to Git.
 ## Usage
 
 1. Open the app — you are presented with the **Sign In** page. New here? Follow **Register** to create an account (first name, last name, email, password of at least 8 characters).
-2. After signing in you reach the **Training Result** page: fill in what you can — planned session details, conditions, gear, perceived effort (RPE 1–5), and feedback. Only the `.FIT` file is mandatory.
-3. Drop your `.FIT` file onto the dropzone.
+2. After signing in you reach the **Training Result** page: fill in what you can — planned session details, conditions, gear, perceived effort (RPE 1–5), and feedback.
+3. Choose **Import FIT file** for detailed lap data, or **Enter data manually** to register aggregated results without a watch export. Manual entries require distance and duration; FIT remains the detailed-data path.
 4. Review the parsed laps table and the generated prompt rendered on screen.
 5. Click **Copiar Prompt** and paste it into your favorite AI assistant.
 6. When you're done, hit **Logout** in the header — the session is destroyed server-side.
@@ -196,6 +216,7 @@ DADOS DO TREINO REALIZADO
 Duração total: 30:04
 Distância total: 5.00 km
 Pace médio: 6:01 min/km
+Calorias: 742 kcal
 FC média: 151 bpm
 FC máxima: 162 bpm
 Desnível positivo: 22 m
@@ -225,6 +246,18 @@ INSTRUÇÕES PARA A ANÁLISE
 - **Route gating at the server** — pages and protected APIs validate the session against the database before rendering or responding.
 
 ## API
+
+### `PUT /api/trainings/:id/manual-results`
+
+Stores one manual realized result for an authenticated user's planned training.
+The JSON body accepts canonical `distance_km` and `duration_seconds` (both
+required), plus optional `avg_hr`, `max_hr`, `elevation_gain_m`, and
+`calories`. The server validates every value, calculates `fit_avg_pace`, sets
+`result_data_source` to `manual`, and returns the updated training. Replacing
+an existing FIT result requires `confirm_replace_fit: true`; this removes the
+stored FIT summary/laps in the same SQLite transaction. No external service is
+used. ZIP Garmin exports and mobile/desktop export guidance belong to later
+phases and are intentionally not implemented here.
 
 All endpoints except registration and login require a valid session cookie (`ta_session`). Use a cookie jar when scripting:
 

@@ -77,12 +77,11 @@
             </div>
           </div>
 
-          <div class="field">
-            <label class="field-label" for="smartwatchSelect"
-              data-i18n="session.fieldSmartwatch">Smartwatch used?</label>
-            <select id="smartwatchSelect" class="input-control">
-              <option value="sim" selected data-i18n="session.smartwatchYes">Yes</option>
-              <option value="nao" data-i18n="session.smartwatchNo">No</option>
+          <div class="field field-wide">
+            <label class="field-label" for="resultSourceSelect" data-i18n="session.resultSourceLabel">How would you like to register the result?</label>
+            <select id="resultSourceSelect" class="input-control">
+              <option value="fit" data-i18n="session.resultSourceFit">Import FIT file</option>
+              <option value="manual" data-i18n="session.resultSourceManual">Enter data manually</option>
             </select>
           </div>
           <div class="field fit-field" id="fitField">
@@ -95,8 +94,19 @@
             </label>
           </div>
 
+          <div class="field field-wide manual-results-field" id="manualResultsField" hidden>
+            <div class="manual-results-grid">
+              <div class="field"><label class="field-label" for="manualDistance"><span data-i18n="session.manualDistance">Total distance</span> (<span id="manualDistanceUnit">km</span>) *</label><input type="number" id="manualDistance" class="input-control" min="0" step="0.01" inputmode="decimal" required></div>
+              <div class="field manual-duration-field"><span class="field-label"><span data-i18n="session.manualDuration">Total duration</span> *</span><div class="duration-controls"><input type="number" id="manualHours" class="input-control" min="0" step="1" inputmode="numeric" data-i18n-placeholder="session.hoursPlaceholder" placeholder="Hours"><input type="number" id="manualMinutes" class="input-control" min="0" max="59" step="1" inputmode="numeric" data-i18n-placeholder="session.minutesPlaceholder" placeholder="Minutes"><input type="number" id="manualSeconds" class="input-control" min="0" max="59" step="1" inputmode="numeric" data-i18n-placeholder="session.secondsPlaceholder" placeholder="Seconds"></div></div>
+              <div class="field"><label class="field-label" for="manualAvgHr" data-i18n="session.manualAvgHr">Average HR</label><input type="number" id="manualAvgHr" class="input-control" min="1" step="1"></div>
+              <div class="field"><label class="field-label" for="manualMaxHr" data-i18n="session.manualMaxHr">Maximum HR</label><input type="number" id="manualMaxHr" class="input-control" min="1" step="1"></div>
+              <div class="field"><label class="field-label" for="manualElevation" data-i18n="session.manualElevation">Elevation gain (m)</label><input type="number" id="manualElevation" class="input-control" min="0" step="0.1"></div>
+              <div class="field"><label class="field-label" for="manualCalories" data-i18n="session.resultCalories">Calories</label><input type="number" id="manualCalories" class="input-control" min="0" step="1"></div>
+            </div>
+          </div>
+
           <div class="field field-wide fit-data-section" id="fitDataSection" hidden>
-            <h3 class="fit-data-title" data-i18n="session.fitDataHeading">Parsed FIT Data</h3>
+            <div class="result-data-head"><h3 class="fit-data-title" data-i18n="session.fitDataHeading">Workout result</h3><span id="resultSourceBadge" class="result-source-badge"></span></div>
             <dl class="fit-data-grid">
               <div class="fit-data-item">
                 <dt data-i18n="session.fitDuration">Duration</dt>
@@ -122,6 +132,7 @@
                 <dt data-i18n="session.fitElevation">Elevation Gain</dt>
                 <dd id="fitElevation">-</dd>
               </div>
+              <div class="fit-data-item"><dt data-i18n="session.resultCalories">Calories</dt><dd id="fitCalories">-</dd></div>
             </dl>
             <div class="fit-laps-section" id="fitLapsSection" hidden>
               <h3 class="fit-data-title" data-i18n="session.fitLapsHeading">Lap by Lap</h3>

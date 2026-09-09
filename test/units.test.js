@@ -12,6 +12,14 @@ test('distance conversion and formatting support metric and imperial units', () 
   assert.equal(units.formatDistance('bad', 'mi'), '0.00 mi');
 });
 
+test('distance input conversion preserves a valid value while retaining blank and invalid edits', () => {
+  assert.equal(units.convertDistanceInputValue(10, 'km', 'mi'), 6.214);
+  assert.equal(units.convertDistanceInputValue(6.214, 'mi', 'km'), 10);
+  assert.equal(units.convertDistanceInputValue(12.3456, 'km', 'km'), 12.346);
+  assert.equal(units.convertDistanceInputValue('', 'km', 'mi'), null);
+  assert.equal(units.convertDistanceInputValue('not-ready', 'km', 'mi'), null);
+});
+
 test('temperature conversion and formatting support Celsius and Fahrenheit', () => {
   assert.equal(units.convertCelsius(25, 'C'), 25);
   assert.equal(units.convertCelsius(25, 'F'), 77);

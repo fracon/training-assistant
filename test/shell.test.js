@@ -10,6 +10,7 @@ const {
   writeSidebarCollapsed,
   FOOTER_ELEMENT_TAG,
   FOOTER_CLASS_NAME,
+  VERSION_ENDPOINT,
   VERSION_FALLBACK_LABEL,
   loadAppVersion,
   formatAppVersion,
@@ -157,13 +158,20 @@ test('the footer carries only the app version, fetched from the backend', async 
 
 test('loadAppVersion resolves the packaged version and degrades to null on any failure', async () => {
   const ok = (body) => async () => ({ ok: true, json: async () => body });
-  assert.equal(require('../package.json').version, '0.6.4');
-  assert.equal(await loadAppVersion(ok({ version: '0.6.4' })), '0.6.4');
-  assert.equal(await loadAppVersion(async () => ({ ok: false, json: async () => ({ version: '0.6.4' }) })), null);
+  assert.equal(require('../package.json').version, '0.7.0');
+  const calls = [];
+  assert.equal(await loadAppVersion(async (...args) => {
+    calls.push(args);
+    return { ok: true, json: async () => ({ version: '0.7.0' }) };
+  }), '0.7.0');
+  assert.deepEqual(calls, [[VERSION_ENDPOINT, { cache: 'no-store' }]]);
+  assert.equal(await loadAppVersion(async () => ({ ok: false, json: async () => ({ version: '0.7.0' }) })), null);
   assert.equal(await loadAppVersion(ok({})), null, 'a malformed payload is treated as missing');
   assert.equal(await loadAppVersion(ok({ version: '' })), null);
   assert.equal(await loadAppVersion(ok({ version: 42 })), null);
   assert.equal(await loadAppVersion(undefined), null, 'an unreachable backend falls back gracefully');
+  const shell = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
+  assert.ok(!shell.includes('0.7.0'), 'the frontend does not hardcode the current version');
 });
 
 test('formatAppVersion prefixes the fetched version and falls back to v-.-.-', () => {

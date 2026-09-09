@@ -1,8 +1,8 @@
 import { initShell, getShellI18n, getUserPreferences, showConfirm, showShellToast, refreshIcons } from './shared/shell.js';
 import { translate } from './shared/i18n.js';
 import { formatDate as formatLocalizedDate, formatWeekday } from './shared/date.js';
-import { fetchTraining, saveTrainingFeedback, fetchShoes, deleteTraining, fetchWeather } from './shared/api.js';
-import { formatDistance, formatPaceFromMetric, formatTemperature } from './shared/units.js';
+import { fetchTraining, saveTrainingFeedback, saveManualTrainingResults, fetchShoes, deleteTraining, fetchWeather } from './shared/api.js';
+import { KM_TO_MILES, convertDistanceInputValue, convertDistanceToKm, formatDistance, formatPaceFromMetric, formatTemperature } from './shared/units.js';
 
 // Sessions open contextually via /training-result.html?id=<id>; without an
 // id there is nothing to show, so the page bounces back to the calendar.
@@ -84,6 +84,92 @@ export function isFitFieldVisible(smartwatchValue) {
   return smartwatchValue === 'sim';
 }
 
+export function manualResultsPayload(values, distanceUnit = 'km') {
+  const hours = Number(values.hours || 0);
+  const minutes = Number(values.minutes || 0);
+  const seconds = Number(values.seconds || 0);
+  const distance = Number(values.distance);
+  if (!Number.isFinite(distance) || distance <= 0 || !Number.isInteger(hours) || hours < 0 ||
+    !Number.isInteger(minutes) || minutes < 0 || minutes > 59 ||
+    !Number.isInteger(seconds) || seconds < 0 || seconds > 59) return null;
+  const duration_seconds = hours * 3600 + minutes * 60 + seconds;
+  if (duration_seconds <= 0) return null;
+  const optionalNumber = (value) => String(value ?? '').trim() === '' ? null : Number(value);
+  return {
+    distance_km: convertDistanceToKm(distance, distanceUnit), duration_seconds,
+    avg_hr: optionalNumber(values.avg_hr), max_hr: optionalNumber(values.max_hr),
+    elevation_gain_m: optionalNumber(values.elevation_gain_m), calories: optionalNumber(values.calories),
+  };
+}
+
+export function syncManualDistanceUnit({ value, previousUnit = 'km', nextUnit = 'km' }) {
+  const previous = previousUnit === 'mi' ? 'mi' : 'km';
+  const next = nextUnit === 'mi' ? 'mi' : 'km';
+  if (previous === next) return { value, unit: next, changed: false };
+  const converted = convertDistanceInputValue(value, previous, next);
+  return { value: converted === null ? value : String(converted), unit: next, changed: converted !== null };
+}
+
+export function resolveResultSource(training = {}, fitData = {}) {
+  const source = fitData?.result_data_source ?? training?.result_data_source;
+  return source === 'manual' || source === 'fit_upload' ? source : 'none';
+}
+
+export function resultSourceBadgeKey(source) {
+  if (source === 'manual') return 'session.sourceManualBadge';
+  if (source === 'fit_upload') return 'session.sourceFitBadge';
+  return null;
+}
+
+function durationSeconds(value) {
+  const parts = String(value ?? '').split(':').map(Number);
+  if (parts.length === 2 && parts.every(Number.isInteger)) return parts[0] * 60 + parts[1];
+  if (parts.length === 3 && parts.every(Number.isInteger)) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  return null;
+}
+
+export function manualResultsMatchTraining(payload, training = {}) {
+  if (training.result_data_source !== 'manual') return false;
+  const optionalFields = [
+    ['avg_hr', 'fit_avg_hr'],
+    ['max_hr', 'fit_max_hr'],
+    ['elevation_gain_m', 'fit_elevation_gain'],
+    ['calories', 'fit_calories'],
+  ];
+  return Number(training.fit_distance) === payload.distance_km
+    && durationSeconds(training.fit_duration) === payload.duration_seconds
+    && optionalFields.every(([payloadKey, trainingKey]) => (training[trainingKey] ?? null) === payload[payloadKey]);
+}
+
+// Both terminal actions use this single workflow. It returns expected user
+// outcomes instead of throwing for a normal cancellation or invalid form.
+export async function persistManualResultsIfNeeded({
+  selectedSource,
+  values,
+  distanceUnit,
+  training,
+  save,
+  confirmReplaceFit,
+  applyResponse,
+}) {
+  if (selectedSource !== 'manual') return { status: 'not-needed' };
+  const payload = manualResultsPayload(values, distanceUnit);
+  if (!payload) return { status: 'invalid' };
+  if (manualResultsMatchTraining(payload, training)) return { status: 'not-needed' };
+  if (training.result_data_source === 'fit_upload') {
+    const confirmed = await confirmReplaceFit();
+    if (!confirmed) return { status: 'cancelled' };
+    payload.confirm_replace_fit = true;
+  }
+  try {
+    const response = await save(payload);
+    applyResponse(response);
+    return { status: 'saved', response };
+  } catch (error) {
+    return { status: 'error', error };
+  }
+}
+
 // Local weekday name ('YYYY-MM-DD' parsed as a local date, never UTC).
 export function weekdayLabel(iso, language) {
   return formatWeekday(iso, language);
@@ -105,9 +191,11 @@ RPE alvo: {{RPE_ALVO}}
 Tênis: {{TENIS}}
 
 DADOS DO TREINO REALIZADO
+Fonte dos dados do treino: {{FONTE_DADOS}}{{OBSERVACAO_FONTE}}
 Duração total: {{DURACAO}}
 Distância total: {{DISTANCIA}}
-Pace médio: {{PACE_MEDIO}}
+Pace médio: {{PACE_MEDIO}}{{OBSERVACAO_PACE}}
+Calorias: {{CALORIAS}}
 FC média: {{FC_MEDIA}}
 FC máxima: {{FC_MAXIMA}}
 Desnível positivo: {{DESNIVEL_POSITIVO}}
@@ -170,9 +258,11 @@ Target RPE: {{RPE_ALVO}}
 Shoe: {{TENIS}}
 
 REALIZED WORKOUT DATA
+Workout data source: {{FONTE_DADOS}}{{OBSERVACAO_FONTE}}
 Total duration: {{DURACAO}}
 Total distance: {{DISTANCIA}}
-Average pace: {{PACE_MEDIO}}
+Average pace: {{PACE_MEDIO}}{{OBSERVACAO_PACE}}
+Calories: {{CALORIAS}}
 Average HR: {{FC_MEDIA}}
 Max HR: {{FC_MAXIMA}}
 Elevation gain: {{DESNIVEL_POSITIVO}}
@@ -231,9 +321,10 @@ export function templateFor(lang) {
 export function buildAnalysisPrompt(template, values) {
   let output = template;
   for (const [key, value] of Object.entries(values)) {
+    const optionalNarrative = key === 'OBSERVACAO_FONTE' || key === 'OBSERVACAO_PACE';
     const replacement =
       value === undefined || value === null || String(value).trim() === ''
-        ? '-'
+        ? (optionalNarrative ? '' : '-')
         : String(value);
     output = output.split(`{{${key}}}`).join(replacement);
   }
@@ -256,6 +347,14 @@ export function painPromptText(hasPainValue, description, translate) {
 // falling back to dashes.
 export function collectPromptValues({ training, form, fitData, preferences = {} }) {
   const distanceUnit = preferences.distance_unit === 'mi' ? 'mi' : 'km';
+  const source = resolveResultSource(training, fitData);
+  const manual = source === 'manual';
+  const english = form.language === 'en-US';
+  const sourceText = source === 'manual'
+    ? (english ? 'Manually entered by the user' : 'Inserção manual pelo usuário')
+    : source === 'fit_upload'
+      ? (english ? 'FIT file' : 'Arquivo FIT')
+      : (english ? 'Not provided' : 'Não informada');
   return {
     DATA: formatDateLabel(training.dia, form.language),
     DIA_SEMANA: weekdayLabel(training.dia, form.language),
@@ -264,9 +363,17 @@ export function collectPromptValues({ training, form, fitData, preferences = {} 
     FC_ALVO: training.fc_alvo,
     RPE_ALVO: training.rpe,
     TENIS: training.tenis,
+    FONTE_DADOS: sourceText,
+    OBSERVACAO_FONTE: manual ? (english
+      ? '\nNote: the aggregate data below was entered manually. No detailed lap data from a FIT file is available.'
+      : '\nObservação: os dados agregados abaixo foram informados manualmente. Não há dados detalhados de voltas provenientes de um arquivo FIT.') : '',
     DURACAO: fitData?.fit_duration || '-',
     DISTANCIA: fitData?.fit_distance != null ? formatDistance(fitData.fit_distance, distanceUnit) : '-',
     PACE_MEDIO: fitData?.fit_avg_pace ? formatPaceFromMetric(fitData.fit_avg_pace, distanceUnit) : '-',
+    CALORIAS: fitData?.fit_calories == null ? '-' : `${fitData.fit_calories} kcal`,
+    OBSERVACAO_PACE: manual && fitData?.fit_avg_pace ? (english
+      ? '\nAverage pace calculated by Kinesis from total distance and duration.'
+      : '\nPace médio calculado pelo Kinesis a partir da distância e duração totais.') : '',
     FC_MEDIA: fitData?.fit_avg_hr || '-',
     FC_MAXIMA: fitData?.fit_max_hr || '-',
     DESNIVEL_POSITIVO: fitData?.fit_elevation_gain != null ? `${fitData.fit_elevation_gain} m` : '-',
@@ -280,11 +387,13 @@ export function collectPromptValues({ training, form, fitData, preferences = {} 
     ENERGIA_FINAL: form.energy_label,
     DOR_DESCONFORTO: form.pain_description,
     FEEDBACK: form.feedback_notas,
-    ANEXAR_SCREENSHOT_GARMIN_OU_INSERIR_DADOS_DE_LAPS_AQUI: fitData?.laps?.length
-      ? buildLapsMarkdown(fitData.laps, preferences)
-      : form.fitAttached
-        ? 'Ver anexo'
-        : '-',
+    ANEXAR_SCREENSHOT_GARMIN_OU_INSERIR_DADOS_DE_LAPS_AQUI: source !== 'fit_upload'
+      ? '-'
+      : fitData?.laps?.length
+        ? buildLapsMarkdown(fitData.laps, preferences)
+        : form.fitAttached
+          ? 'Ver anexo'
+          : '-',
   };
 }
 
@@ -425,7 +534,7 @@ async function initTrainingResult() {
   const saveBtn = document.getElementById('saveBtn');
   const rpeSelector = document.getElementById('feedbackRpe');
   const notesInput = document.getElementById('feedbackNotas');
-  const smartwatchSelect = document.getElementById('smartwatchSelect');
+  const resultSourceSelect = document.getElementById('resultSourceSelect');
   const fitField = document.getElementById('fitField');
   const fitFileInput = document.getElementById('fitFile');
   const fitDropzone = document.getElementById('fitDropzone');
@@ -451,12 +560,22 @@ async function initTrainingResult() {
   const fitDataSection = document.getElementById('fitDataSection');
   const fitLapsSection = document.getElementById('fitLapsSection');
   const fitLapsBody = document.getElementById('fitLapsBody');
+  const manualResultsField = document.getElementById('manualResultsField');
+  const resultSourceBadge = document.getElementById('resultSourceBadge');
+  const manualDistanceUnit = document.getElementById('manualDistanceUnit');
+  const manualInputs = {
+    distance: document.getElementById('manualDistance'), hours: document.getElementById('manualHours'),
+    minutes: document.getElementById('manualMinutes'), seconds: document.getElementById('manualSeconds'),
+    avg_hr: document.getElementById('manualAvgHr'), max_hr: document.getElementById('manualMaxHr'),
+    elevation_gain_m: document.getElementById('manualElevation'), calories: document.getElementById('manualCalories'),
+  };
 
   let i18n = null;
   let copiedTimer = null;
   let fitData = null;
   let currentTrainingId = null;
   let promptText = '';
+  let manualDistanceInputUnit = 'km';
   const t = (key) => translate(i18n ? i18n.messages : {}, key);
 
   const applyTooltips = () => {
@@ -470,10 +589,25 @@ async function initTrainingResult() {
     statusEl.dataset.tone = tone;
   };
 
-  const syncFitFieldVisibility = () => {
-    fitField.hidden = !isFitFieldVisible(smartwatchSelect.value);
+  const syncResultSourceVisibility = () => {
+    const manual = resultSourceSelect.value === 'manual';
+    fitField.hidden = manual;
+    manualResultsField.hidden = !manual;
   };
-  smartwatchSelect.addEventListener('change', syncFitFieldVisibility);
+  const renderManualDistanceUnit = ({ convertExisting = false } = {}) => {
+    const nextUnit = getUserPreferences().distance_unit === 'mi' ? 'mi' : 'km';
+    if (convertExisting) {
+      const synced = syncManualDistanceUnit({
+        value: manualInputs.distance.value,
+        previousUnit: manualDistanceInputUnit,
+        nextUnit,
+      });
+      manualInputs.distance.value = synced.value;
+    }
+    manualDistanceInputUnit = nextUnit;
+    manualDistanceUnit.textContent = nextUnit;
+  };
+  resultSourceSelect.addEventListener('change', syncResultSourceVisibility);
 
   // The dropzone mirrors the hidden input's state: the drag invitation while
   // empty, the chosen file name once one is picked.
@@ -523,8 +657,13 @@ async function initTrainingResult() {
   };
 
   const renderFitData = () => {
-    if (!fitData) {
+    const source = resolveResultSource(training, fitData);
+    if (!fitData || source === 'none') {
       fitDataSection.hidden = true;
+      resultSourceBadge.hidden = true;
+      resultSourceBadge.textContent = '';
+      fitLapsSection.hidden = true;
+      fitLapsBody.innerHTML = '';
       return;
     }
     fitDataSection.hidden = false;
@@ -538,6 +677,10 @@ async function initTrainingResult() {
     document.getElementById('fitMaxHr').textContent = fitData.fit_max_hr ?? '-';
     document.getElementById('fitElevation').textContent =
       fitData.fit_elevation_gain != null ? `${fitData.fit_elevation_gain} m` : '-';
+    document.getElementById('fitCalories').textContent = fitData.fit_calories ?? '-';
+    const badgeKey = resultSourceBadgeKey(source);
+    resultSourceBadge.hidden = badgeKey === null;
+    resultSourceBadge.textContent = badgeKey ? t(badgeKey) : '';
     renderLapsTable();
   };
 
@@ -650,15 +793,10 @@ async function initTrainingResult() {
     (training.feedback_has_pain === null && Boolean(training.feedback_pain));
   hasPainSelect.value = savedHasPain ? 'yes' : 'no';
   painInput.value = training.feedback_pain ?? '';
-  smartwatchSelect.value =
-    training.has_smartwatch === null || training.has_smartwatch === undefined
-      ? 'sim'
-      : training.has_smartwatch
-        ? 'sim'
-        : 'nao';
+  resultSourceSelect.value = training.result_data_source === 'manual' ? 'manual' : 'fit';
   hrSourceSelect.value = training.feedback_hr_source ?? '';
 
-  if (training.fit_duration) {
+  if (training.fit_duration && training.result_data_source !== 'none') {
     let laps = [];
     if (training.fit_summary_json) {
       try {
@@ -673,12 +811,31 @@ async function initTrainingResult() {
       fit_avg_hr: training.fit_avg_hr,
       fit_max_hr: training.fit_max_hr,
       fit_elevation_gain: training.fit_elevation_gain,
+      fit_calories: training.fit_calories,
+      result_data_source: training.result_data_source,
       laps,
     };
     renderFitData();
   }
 
-  syncFitFieldVisibility();
+  if (training.result_data_source === 'manual') {
+    const seconds = String(training.fit_duration ?? '0:0').split(':').map(Number);
+    const total = seconds.reduce((sum, value) => sum * 60 + (Number.isFinite(value) ? value : 0), 0);
+    const distanceUnit = getUserPreferences().distance_unit;
+    manualInputs.distance.value = distanceUnit === 'mi'
+      ? (Number(training.fit_distance ?? 0) * KM_TO_MILES).toFixed(2)
+      : training.fit_distance ?? '';
+    manualInputs.hours.value = Math.floor(total / 3600) || '';
+    manualInputs.minutes.value = Math.floor((total % 3600) / 60) || '';
+    manualInputs.seconds.value = total % 60 || '';
+    manualInputs.avg_hr.value = training.fit_avg_hr ?? '';
+    manualInputs.max_hr.value = training.fit_max_hr ?? '';
+    manualInputs.elevation_gain_m.value = training.fit_elevation_gain ?? '';
+    manualInputs.calories.value = training.fit_calories ?? '';
+  }
+
+  syncResultSourceVisibility();
+  renderManualDistanceUnit();
   syncPainVisibility();
   await autoFillWeatherField();
   setStatus('');
@@ -694,7 +851,6 @@ async function initTrainingResult() {
     return {
       feedback_rpe: normalizeFeedbackRpe(rpeSelector.querySelector('input[type="radio"]:checked')?.value ?? ''),
       feedback_notas: notesInput.value,
-      has_smartwatch: isFitFieldVisible(smartwatchSelect.value),
       feedback_shoe: shoeSelect.value,
       feedback_hr_source: hrValue === '' ? null : hrValue,
       feedback_weather: weatherInput.value,
@@ -716,6 +872,32 @@ async function initTrainingResult() {
     };
   };
 
+  const manualInputValues = () => Object.fromEntries(
+    Object.entries(manualInputs).map(([key, input]) => [key, input.value])
+  );
+  const applyManualResults = (response) => {
+    training = response.training;
+    fitData = { ...training, laps: [] };
+    resultSourceSelect.value = 'manual';
+    renderFitData();
+  };
+  const persistManualResults = () => persistManualResultsIfNeeded({
+    selectedSource: resultSourceSelect.value,
+    values: manualInputValues(),
+    distanceUnit: getUserPreferences().distance_unit,
+    training,
+    save: (payload) => saveManualTrainingResults(id, payload),
+    confirmReplaceFit: () => showConfirm({
+      title: t('session.replaceFitTitle'), message: t('session.replaceFitMessage'), icon: 'triangle-alert',
+      confirmLabel: t('session.replaceConfirm'), cancelLabel: t('shell.confirm.no'),
+    }),
+    applyResponse: applyManualResults,
+  });
+  const reportManualPersistence = (result) => {
+    if (result.status === 'invalid') setStatus(t('session.errors.manualValidation'), 'error');
+    if (result.status === 'error') setStatus(result.error?.message || t('session.errors.manualSave'), 'error');
+  };
+
   saveBtn.addEventListener('click', async () => {
     const state = collectFormState();
     if (Number.isNaN(state.feedback_rpe)) {
@@ -725,6 +907,11 @@ async function initTrainingResult() {
     saveBtn.disabled = true;
     saveBtn.textContent = t('session.saving');
     try {
+      const manualResult = await persistManualResults();
+      if (manualResult.status === 'invalid' || manualResult.status === 'cancelled' || manualResult.status === 'error') {
+        reportManualPersistence(manualResult);
+        return;
+      }
       const {
         hr_source_label,
         terrain_label,
@@ -739,19 +926,32 @@ async function initTrainingResult() {
       await saveTrainingFeedback(id, payload);
       window.location.href = '/calendar.html';
     } catch {
+      setStatus(t('session.errors.save'), 'error');
+    } finally {
       saveBtn.disabled = false;
       saveBtn.textContent = t('session.save');
-      setStatus(t('session.errors.save'), 'error');
     }
   });
 
   generateBtn.addEventListener('click', async () => {
-    promptText = buildAnalysisPrompt(
-      templateFor(i18n.language),
-      collectPromptValues({ training, form: collectFormState(), fitData, preferences: getUserPreferences() })
-    );
-    promptOutput.value = promptText;
-    promptSection.hidden = false;
+    generateBtn.disabled = true;
+    generateLabel.textContent = t('session.generatingPrompt');
+    try {
+      const manualResult = await persistManualResults();
+      if (manualResult.status === 'invalid' || manualResult.status === 'cancelled' || manualResult.status === 'error') {
+        reportManualPersistence(manualResult);
+        return;
+      }
+      promptText = buildAnalysisPrompt(
+        templateFor(i18n.language),
+        collectPromptValues({ training, form: collectFormState(), fitData, preferences: getUserPreferences() })
+      );
+      promptOutput.value = promptText;
+      promptSection.hidden = false;
+    } finally {
+      generateBtn.disabled = false;
+      generateLabel.textContent = t('session.generatePrompt');
+    }
   });
 
   copyPromptBtn.addEventListener('click', async () => {
@@ -776,8 +976,20 @@ async function initTrainingResult() {
   fitFileInput.addEventListener('change', async () => {
     if (!fitFileInput.files || fitFileInput.files.length === 0 || !currentTrainingId) return;
     const file = fitFileInput.files[0];
+    if (training.result_data_source === 'manual') {
+      const confirmed = await showConfirm({
+        title: t('session.replaceManualTitle'), message: t('session.replaceManualMessage'), icon: 'triangle-alert',
+        confirmLabel: t('session.replaceConfirm'), cancelLabel: t('shell.confirm.no'),
+      });
+      if (!confirmed) {
+        fitFileInput.value = '';
+        renderFitDropzoneState();
+        return;
+      }
+    }
     const formData = new FormData();
     formData.append('file', file);
+    if (training.result_data_source === 'manual') formData.append('confirm_replace_manual', 'true');
     try {
       const response = await fetch(`/api/trainings/${currentTrainingId}/fit`, {
         method: 'POST',
@@ -795,8 +1007,11 @@ async function initTrainingResult() {
         fit_avg_hr: result.fit_avg_hr,
         fit_max_hr: result.fit_max_hr,
         fit_elevation_gain: result.fit_elevation_gain,
+        fit_calories: result.fit_calories,
+        result_data_source: result.result_data_source,
         laps: result.laps || [],
       };
+      training = { ...training, ...fitData };
       renderFitData();
     } catch (error) {
       setStatus(error.message || t('session.errors.fitUpload'), 'error');
@@ -811,12 +1026,14 @@ async function initTrainingResult() {
     if (!copyPromptBtn.disabled) copyLabel.textContent = t('session.copyPrompt');
     renderFitDropzoneState();
     renderWeatherAutofill();
+    renderFitData();
     applyTooltips();
   });
 
   document.addEventListener('kinesis:preferences-changed', () => {
     renderFitData();
     renderWeatherAutofill();
+    renderManualDistanceUnit({ convertExisting: true });
   });
 }
 

@@ -108,6 +108,10 @@ export function saveTrainingFeedback(id, fields = {}) {
   );
 }
 
+export function saveManualTrainingResults(id, fields = {}) {
+  return requestJson(`/api/trainings/${id}/manual-results`, fields, 'PUT');
+}
+
 export async function fetchWeather(location, date) {
   try {
     const params = new URLSearchParams({ location, date });

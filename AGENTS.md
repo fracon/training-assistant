@@ -10,7 +10,7 @@
 - **Deployment:** Self-hosted on ZimaOS via Docker Compose.
 - **CI/CD:** Automated via Self-Hosted GitHub Runner pushing to GitHub Container Registry (GHCR).
 - **Networking:** Exposed securely via Cloudflare Zero Trust Tunnels (HTTP on port 8081).
-- **Application version:** `0.6.4` (active development; see the versioning Golden Rule below).
+- **Application version:** `0.7.0` (active development; see the versioning Golden Rule below).
 
 ## ✅ Current Implementation Status — `main`
 
@@ -57,6 +57,12 @@ feature branches must not be used as a base for future development:
 - Official branding assets are stored in `src/public/assets/brand/` and wired
   into every page's favicon plus the shared sidebar/login UI (`logo.png`,
   `logo-mark.png`, and `favicon.png`).
+- Realized training metrics have one explicit source: `none`, `fit_upload`, or
+  `manual` (`garmin_connect` is reserved). Aggregates remain in canonical
+  metric fields for compatibility; manual results never create laps or a FIT
+  summary, the backend alone calculates pace, and a confirmed FIT/manual
+  replacement clears incompatible data transactionally. ZIP imports and export
+  tutorials are separate future phases.
 
 ## 🏆 Golden Rules
 1. **Local-First & Privacy:** Never send `.FIT` data or user inputs to external cloud APIs for processing. All data parsing happens on the local server/browser.

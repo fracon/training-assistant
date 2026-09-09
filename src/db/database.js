@@ -59,7 +59,9 @@ CREATE TABLE IF NOT EXISTS trainings (
   fit_avg_hr         INTEGER,
   fit_max_hr         INTEGER,
   fit_elevation_gain REAL,
+  fit_calories       INTEGER,
   fit_summary_json   TEXT,
+  result_data_source TEXT NOT NULL DEFAULT 'none',
   created_at  DATETIME NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -149,7 +151,9 @@ function migrateDatabase(db) {
     ['fit_avg_hr', 'INTEGER'],
     ['fit_max_hr', 'INTEGER'],
     ['fit_elevation_gain', 'REAL'],
+    ['fit_calories', 'INTEGER'],
     ['fit_summary_json', 'TEXT'],
+    ["result_data_source", "TEXT NOT NULL DEFAULT 'none'"],
   ]) {
     if (!trainingColumns.some((column) => column.name === name)) {
       db.exec(`ALTER TABLE trainings ADD COLUMN ${name} ${type}`);
@@ -159,6 +163,18 @@ function migrateDatabase(db) {
   if (!trainingColumns.some((column) => column.name === 'location')) {
     db.exec('ALTER TABLE trainings ADD COLUMN location TEXT');
   }
+
+  // Existing results were necessarily uploaded FIT files before provenance was
+  // introduced. Only classify unclassified rows, keeping repeat migrations
+  // harmless and never overwriting a future supported source.
+  db.prepare(
+    `UPDATE trainings SET result_data_source = 'fit_upload'
+     WHERE result_data_source = 'none' AND (
+       COALESCE(TRIM(fit_summary_json), '') <> '' OR fit_duration IS NOT NULL OR
+       fit_distance IS NOT NULL OR fit_avg_pace IS NOT NULL OR fit_avg_hr IS NOT NULL OR
+       fit_max_hr IS NOT NULL OR fit_elevation_gain IS NOT NULL
+     )`
+  ).run();
 
   const workoutsTable = db
     .prepare(

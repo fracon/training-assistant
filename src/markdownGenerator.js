@@ -113,6 +113,7 @@ function buildValues(summary, feedback, t) {
       totals.avgPaceSecondsPerKm == null
         ? t.notInformed
         : `${totals.avgPaceLabel} min/km`,
+    '{{CALORIAS}}': totals.calories == null ? t.notInformed : `${totals.calories} kcal`,
     '{{FC_MEDIA}}': totals.avgHeartRate == null ? t.notInformed : `${totals.avgHeartRate} bpm`,
     '{{FC_MAXIMA}}': totals.maxHeartRate == null ? t.notInformed : `${totals.maxHeartRate} bpm`,
     '{{DESNIVEL_POSITIVO}}':
@@ -166,6 +167,7 @@ function buildTemplate(t) {
     `${t.fieldTotalDuration}: {{DURACAO}}`,
     `${t.fieldTotalDistance}: {{DISTANCIA}}`,
     `${t.fieldAvgPace}: {{PACE_MEDIO}}`,
+    `${t.fieldCalories}: {{CALORIAS}}`,
     `${t.fieldAvgHr}: {{FC_MEDIA}}`,
     `${t.fieldMaxHr}: {{FC_MAXIMA}}`,
     `${t.fieldElevation}: {{DESNIVEL_POSITIVO}}`,
