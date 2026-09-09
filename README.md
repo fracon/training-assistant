@@ -91,7 +91,11 @@ English template.
 
 ### Excel Training Import
 
-The Calendar page imports `.xlsx`/`.xls` plans and validates every row before persistence. Header aliases are recognized in both languages — the planned **Location** column is captured too (`Local` / `Location` / `localizacao`). Duplicate prevention uses the exact composite signature **Date (`dia`) + Training Name (`treino`) + Description (`detalhes`)**. Rows matching a stored training or repeated within the same workbook are skipped; workouts on the same date with a different name or description remain valid and are imported.
+The Calendar page imports `.xlsx`/`.xls` plans and validates every row before persistence. The backend uses the SheetJS [`xlsx`](https://www.npmjs.com/package/xlsx) reader for workbook parsing, which tolerates namespace-prefixed XML emitted by Excel, LibreOffice, Google Sheets, and Numbers. The normalized rows then pass through `src/trainingImport.js`, which maps Portuguese and English aliases (including `Data`, `Dia`, `Período`, `Tipo`, `Treino`, `Detalhes`, `FC alvo`, `RPE`, `Tênis`, `Previsão do tempo`, `Observações`, and `Local`) into the application schema.
+
+Upload validation accepts the standard Excel MIME types and falls back to the `.xlsx`/`.xls` filename extension when browsers send generic types such as `application/octet-stream` or `application/zip`. SheetJS performs the structural parsing; genuinely corrupt buffers receive a 400 response instead of crashing the server. Excel serial dates are normalized to the correct calendar day before persistence, including workbooks whose XML contains namespace prefixes.
+
+Duplicate prevention uses the exact composite signature **Date (`dia`) + Training Name (`treino`) + Description (`detalhes`)**. Rows matching a stored training or repeated within the same workbook are skipped; workouts on the same date with a different name or description remain valid and are imported.
 
 Import completion uses the shared Snackbar rather than a permanent inline banner. It renders two localized lines: successfully imported trainings and duplicate rows skipped, with singular/plural English and Brazilian Portuguese translations.
 
@@ -329,7 +333,7 @@ Every primary flow is a standalone page (no single-page hacks, no overlapping la
 | Calendar | `src/public/calendar.html/.css/.js` | Monthly training calendar and deduplicating Excel import |
 | AI Coach | `src/public/ai-coach.html/.css/.js` | Local prompt builder for weekly coaching plans |
 
-Shared code lives in `src/public/shared/`: `theme.css` (earthy color tokens, DM Sans, resets), `validators.js` and `api.js` ES modules imported by the page scripts.
+Shared code lives in `src/public/shared/`: `theme.css` (earthy color tokens, DM Sans, resets), `validators.js` and `api.js` ES modules imported by the page scripts. Backend spreadsheet parsing is provided by the `xlsx` (SheetJS) dependency and normalized centrally in `src/trainingImport.js`.
 
 ## Project Structure
 

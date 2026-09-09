@@ -28,6 +28,12 @@ decisions intact when making follow-up changes:
   **Date (`dia`) + Training Name (`treino`) + Description (`detalhes`)**.
   Existing rows and repeats within one workbook are skipped, while distinct
   workouts on the same date are retained.
+- Spreadsheet uploads accept standard Excel MIME types or a valid `.xlsx`/`.xls`
+  extension when browsers provide generic MIME types. Production workbook
+  parsing uses SheetJS (`xlsx`) so namespace-prefixed XML from Excel-compatible
+  exporters is supported; `src/trainingImport.js` adapts the parsed row arrays,
+  maps Portuguese/English headers, and normalizes Excel serial dates before the
+  existing validation and persistence flow.
 - Calendar training chips support native drag-and-drop rescheduling with
   optimistic rendering, a dedicated persistence endpoint, and localized success
   or failure feedback.
