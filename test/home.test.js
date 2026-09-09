@@ -1037,6 +1037,8 @@ test('home.js keeps the dashboard wiring declarative and reactive', () => {
   assert.match(js, /setProperty\('--hero-image'/);
   assert.match(js, /fetchHeroImage\(\)/);
   assert.match(js, /heroCredit/);
+  assert.match(js, /utm_source=Kinesis&utm_medium=referral/);
+  assert.match(js, /Photo by /);
   assert.match(js, /fetchCalendarTrainings\(range\.start, range\.end\)/);
   assert.match(js, /quoteLoading\) quoteLoading\.classList\.add\('hidden'\)/);
   assert.match(js, /quoteBlock\) quoteBlock\.classList\.remove\('hidden'\)/);

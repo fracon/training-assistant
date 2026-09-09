@@ -505,7 +505,18 @@ function setupHomePage() {
       heroCredit.classList.add('hidden');
       return;
     }
-    heroCredit.textContent = t('home.hero.photoCredit', { author: state.heroCredit });
+    const { author, authorUrl } = state.heroCredit;
+    const tracking = 'utm_source=Kinesis&utm_medium=referral';
+    const authorLink = document.createElement('a');
+    authorLink.href = `${authorUrl}${authorUrl.includes('?') ? '&' : '?'}${tracking}`;
+    authorLink.textContent = author;
+    const unsplashLink = document.createElement('a');
+    unsplashLink.href = `https://unsplash.com/?${tracking}`;
+    unsplashLink.textContent = 'Unsplash';
+    heroCredit.textContent = 'Photo by ';
+    heroCredit.appendChild(authorLink);
+    heroCredit.appendChild(document.createTextNode(' on '));
+    heroCredit.appendChild(unsplashLink);
     heroCredit.classList.remove('hidden');
   }
 
@@ -513,7 +524,9 @@ function setupHomePage() {
     const result = await fetchHeroImage();
     const imageUrl = result?.url || HERO_FALLBACK_IMAGE;
     const applied = await preloadHeroImage(heroBanner, imageUrl);
-    state.heroCredit = result?.source === 'unsplash' && applied === imageUrl ? result.author : null;
+    state.heroCredit = result?.source === 'unsplash' && applied === imageUrl && result.author && result.authorUrl
+      ? { author: result.author, authorUrl: result.authorUrl }
+      : null;
     renderHeroCredit();
   }
 

@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { fetchHeroImage, LOCAL_HERO_IMAGES, UNSPLASH_URL, localHero } = require('../src/unsplash');
+const { fetchHeroImage, LOCAL_HERO_IMAGES, UNSPLASH_URL, localHero, createHeroImageLoader } = require('../src/unsplash');
 
 test('fetchHeroImage returns the Unsplash image and attribution on success', async () => {
   const calls = [];
@@ -13,7 +13,7 @@ test('fetchHeroImage returns the Unsplash image and attribution on success', asy
       return {
         ok: true,
         async json() {
-          return { urls: { regular: 'https://images.unsplash.com/running.jpg' }, user: { name: 'Runner', links: { html: 'https://unsplash.com/@runner' } } };
+          return { urls: { regular: 'https://images.unsplash.com/running.jpg' }, user: { name: 'Runner', links: { html: 'https://unsplash.com/@runner' } }, links: { download_location: 'https://api.unsplash.com/photos/mock/download' } };
         },
       };
     },
@@ -23,6 +23,25 @@ test('fetchHeroImage returns the Unsplash image and attribution on success', asy
   assert.equal(result.author, 'Runner');
   assert.equal(calls[0].url, UNSPLASH_URL);
   assert.equal(calls[0].options.headers.authorization, 'Client-ID test-key');
+  assert.equal(calls[1].url, 'https://api.unsplash.com/photos/mock/download');
+  assert.equal(calls[1].options.headers.authorization, 'Client-ID test-key');
+});
+
+test('createHeroImageLoader caches a successful response until its TTL expires', async () => {
+  let clock = 1000;
+  let calls = 0;
+  const loader = createHeroImageLoader({ ttlMs: 100, now: () => clock });
+  const fetchImpl = async () => {
+    calls += 1;
+    return { ok: true, async json() { return { urls: { regular: 'https://images.unsplash.com/cached.jpg' }, user: { name: 'Cached', links: { html: 'https://unsplash.com/@cached' } }, links: { download_location: 'https://example.com/download' } }; } };
+  };
+  const first = await loader({ apiKey: 'cache-key', fetchImpl });
+  const second = await loader({ apiKey: 'cache-key', fetchImpl });
+  assert.deepEqual(second, first);
+  assert.equal(calls, 2, 'one image request plus one download trigger');
+  clock = 1101;
+  await loader({ apiKey: 'cache-key', fetchImpl });
+  assert.equal(calls, 4, 'a new image and download request occur after expiry');
 });
 
 test('fetchHeroImage tolerates optional response metadata and disabled fetch clients', async () => {

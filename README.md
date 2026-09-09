@@ -68,7 +68,7 @@ The generated briefing is fully localized: the Portuguese (`pt-BR`) and English 
 - **Card navigation** — subtle Lucide `external-link` actions link the cycle card to `/cycles.html` and the weekly card to `/calendar.html`.
 - **Responsive weekly metrics** — completed workout distance and duration are read from the calendar API (`fit_distance`/`fit_duration`), normalized, summed, and formatted in dashboard units.
 - **Shoe Rotation widget** — tracks active shoes and renders a dynamic “traffic light” progress bar (green → yellow → red) showing each pair's mileage against its useful lifespan, so runners know at a glance when it is time to replace their gear. Wear level uses the per-shoe target mileage (defaulting to 500 km / 300 mi), distances respect the dashboard unit preference, and the bar turns yellow at 75% and red at 90% of usable life.
-- **Accessible quote hero** — a random running-focused Unsplash image is selected at initialization. Loading text, quote text, and author each have dark semitransparent contrast backdrops for legibility over bright photos.
+- **Accessible quote hero** — the dashboard requests a running-focused image through the optional Unsplash proxy. The server keeps the response in a 20-minute in-memory TTL cache (protecting the 1,000 requests/hour production limit), triggers the required download event, hotlinks the returned image, and renders explicit photographer/Unsplash attribution. Missing keys, rate limits, and network failures use a bundled local image without disrupting the dashboard. Loading text, quote text, and author each have dark semitransparent contrast backdrops for legibility over bright photos.
 
 ### Date and Locale Architecture
 
@@ -154,7 +154,7 @@ Configuration via environment variables:
 | `PORT` | `3000` | HTTP port |
 | `HOST` | `127.0.0.1` | Bind address |
 | `DATABASE_FILE` | `<cwd>/data/database.sqlite` | SQLite database location |
-| `UNSPLASH_API_KEY` | _optional_ | Unsplash API key for an infinite running-photo hero. Without it (or when Unsplash is unavailable), Kinesis automatically uses a bundled local fallback image. |
+| `UNSPLASH_API_KEY` | _optional_ | Unsplash API key for the running-photo hero. Kinesis works fully without it (or when Unsplash is unavailable), using a bundled local fallback image. Responses are cached for 20 minutes to minimize API calls. |
 
 ## Usage
 

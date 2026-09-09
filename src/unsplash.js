@@ -1,6 +1,7 @@
 'use strict';
 
-const UNSPLASH_URL = 'https://api.unsplash.com/photos/random?query=running,marathon,track,athletics&orientation=landscape';
+const UNSPLASH_URL = 'https://api.unsplash.com/photos/random?query=running,marathon,track&orientation=landscape';
+const HERO_CACHE_TTL_MS = 20 * 60 * 1000;
 const LOCAL_HERO_IMAGES = ['/assets/brand/kinesis_icon.png'];
 
 function localHero(random = Math.random) {
@@ -9,25 +10,37 @@ function localHero(random = Math.random) {
   return { url: LOCAL_HERO_IMAGES[index], source: 'local', author: null, authorUrl: null };
 }
 
-async function fetchHeroImage({ apiKey = process.env.UNSPLASH_API_KEY, fetchImpl = globalThis.fetch, random = Math.random } = {}) {
-  if (!apiKey || typeof fetchImpl !== 'function') return localHero(random);
-  try {
-    const response = await fetchImpl(UNSPLASH_URL, {
-      headers: { accept: 'application/json', authorization: `Client-ID ${apiKey}` },
-    });
-    if (!response.ok) throw new Error(`Unsplash responded with ${response.status}`);
-    const payload = await response.json();
-    const url = payload?.urls?.regular;
-    if (typeof url !== 'string' || url.trim() === '') throw new Error('Unsplash response has no image URL');
-    return {
-      url,
-      source: 'unsplash',
-      author: payload.user?.name || null,
-      authorUrl: payload.user?.links?.html || null,
-    };
-  } catch {
-    return localHero(random);
-  }
+function createHeroImageLoader({ ttlMs = HERO_CACHE_TTL_MS, now = Date.now } = {}) {
+  let cached = null;
+  return async function loadHeroImage({ apiKey = process.env.UNSPLASH_API_KEY, fetchImpl = globalThis.fetch, random = Math.random } = {}) {
+    if (!apiKey || typeof fetchImpl !== 'function') return localHero(random);
+    if (cached && cached.apiKey === apiKey && cached.fetchImpl === fetchImpl && cached.expiresAt > now()) return cached.value;
+    try {
+      const response = await fetchImpl(UNSPLASH_URL, {
+        headers: { accept: 'application/json', authorization: `Client-ID ${apiKey}` },
+      });
+      if (!response.ok) throw new Error(`Unsplash responded with ${response.status}`);
+      const payload = await response.json();
+      const url = payload?.urls?.regular;
+      if (typeof url !== 'string' || url.trim() === '') throw new Error('Unsplash response has no image URL');
+      const downloadLocation = payload?.links?.download_location;
+      if (typeof downloadLocation === 'string' && downloadLocation.trim() !== '') {
+        await fetchImpl(downloadLocation, { headers: { accept: 'application/json', authorization: `Client-ID ${apiKey}` } });
+      }
+      const value = {
+        url,
+        source: 'unsplash',
+        author: payload.user?.name || null,
+        authorUrl: payload.user?.links?.html || null,
+      };
+      cached = { apiKey, fetchImpl, expiresAt: now() + ttlMs, value };
+      return value;
+    } catch {
+      return localHero(random);
+    }
+  };
 }
 
-module.exports = { UNSPLASH_URL, LOCAL_HERO_IMAGES, fetchHeroImage, localHero };
+const fetchHeroImage = createHeroImageLoader();
+
+module.exports = { UNSPLASH_URL, HERO_CACHE_TTL_MS, LOCAL_HERO_IMAGES, createHeroImageLoader, fetchHeroImage, localHero };
