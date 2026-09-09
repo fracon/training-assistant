@@ -38,14 +38,14 @@ async function spreadsheetBuffer(headers, rows) {
   return Buffer.from(await workbook.xlsx.writeBuffer());
 }
 
-function multipartBody(boundary, filename, buffer) {
+function multipartBody(boundary, filename, buffer, contentType = 'application/octet-stream') {
   const parts = [];
   if (buffer !== null) {
     parts.push(
       Buffer.from(
         `--${boundary}\r\n` +
           `content-disposition: form-data; name="file"; filename="${filename}"\r\n` +
-          `content-type: application/octet-stream\r\n\r\n`
+          `content-type: ${contentType}\r\n\r\n`
       )
     );
     parts.push(buffer);
@@ -99,9 +99,14 @@ async function setup({ maxFileSizeBytes } = {}) {
 
   await createActiveCycle(app, cookiePair);
 
-  const upload = async (buffer, filename = 'planilha.xlsx', cookies = cookiePair) => {
+  const upload = async (
+    buffer,
+    filename = 'planilha.xlsx',
+    cookies = cookiePair,
+    contentType = 'application/octet-stream'
+  ) => {
     const boundary = `----trainingassistant${Date.now()}${Math.random().toString(16).slice(2)}`;
-    const body = multipartBody(boundary, filename, buffer ?? null);
+    const body = multipartBody(boundary, filename, buffer ?? null, contentType);
     const response = await httpRequest(
       base,
       '/api/calendar/import',
@@ -203,12 +208,38 @@ test('import rejects requests without a file part', async () => {
 test('import rejects buffers that are not valid spreadsheets', async () => {
   const { app, upload } = await setup();
 
-  const response = await upload(Buffer.from('this is not a spreadsheet'));
+  const response = await upload(Buffer.from('PK\x05\x06' + '\0'.repeat(18)));
   assert.equal(response.status, 400);
   assert.deepEqual(await response.json(), {
     error: 'Unsupported spreadsheet file. Please upload a valid .xlsx or .xls workbook.',
   });
 
+  await app.close();
+});
+
+test('import accepts a valid xlsx when the browser sends a generic MIME type', async () => {
+  const { app, upload } = await setup();
+  const buffer = await spreadsheetBuffer(HEADERS, [
+    ['23/08/2026', 'Domingo', 'Manhã', 'Corrida', 'Leve', '', '', '', '', '', ''],
+  ]);
+
+  const response = await upload(buffer, 'valid.xlsx', undefined, 'application/zip');
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { imported: 1, skipped: 0 });
+  await app.close();
+});
+
+test('import rejects files without a spreadsheet MIME type or extension', async () => {
+  const { app, upload } = await setup();
+  const buffer = await spreadsheetBuffer(HEADERS, [['23/08/2026', '', 'Corrida']]);
+
+  const response = await upload(buffer, 'valid.txt', undefined, 'application/octet-stream');
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    error: 'Unsupported spreadsheet file. Please upload a valid .xlsx or .xls workbook.',
+  });
   await app.close();
 });
 

@@ -65,7 +65,7 @@ function pad2(number) {
 // Excel serial dates count days since 1899-12-30 (including the Lotus 1-2-3
 // 1900 leap-year bug offset).
 function isoFromSerial(serial) {
-  const ms = Math.round(serial * 86400000);
+  const ms = Math.round(serial) * 86400000;
   const date = new Date(Date.UTC(1899, 11, 30) + ms);
   return `${date.getUTCFullYear()}-${pad2(date.getUTCMonth() + 1)}-${pad2(date.getUTCDate())}`;
 }
@@ -201,12 +201,16 @@ function parseSheet(worksheet) {
     let filledCells = 0;
     let soleText = '';
     for (const [column, field] of Object.entries(fieldsByColumn)) {
-      const text = cellToText(cellValue(Number(column)));
+      const rawValue = cellValue(Number(column));
+      const text = field === 'dia' && typeof rawValue === 'number'
+        ? rawValue
+        : cellToText(rawValue);
+      const displayText = cellToText(text);
       values[field] = text;
-      if (text !== '') {
+      if (displayText !== '') {
         hasContent = true;
         filledCells += 1;
-        soleText = text;
+        soleText = displayText;
       }
     }
     if (!hasContent) return;
@@ -253,6 +257,25 @@ function parseSheet(worksheet) {
   return { records, errors };
 }
 
+// Converts SheetJS' header:1 row arrays to the small worksheet surface used
+// by parseSheet. Keeping this adapter here preserves all existing validation,
+// localization and duplicate-signature behavior for every workbook reader.
+function parseRows(rows) {
+  return parseSheet({
+    eachRow(_options, callback) {
+      rows.forEach((values, index) => {
+        callback({
+          number: index + 1,
+          cellCount: values.length,
+          getCell(column) {
+            return { value: values[column - 1] };
+          },
+        });
+      });
+    },
+  });
+}
+
 module.exports = {
   FIELD_BY_HEADER,
   FIELD_ORDER,
@@ -265,4 +288,5 @@ module.exports = {
   normalizeDia,
   cellToText,
   parseSheet,
+  parseRows,
 };
