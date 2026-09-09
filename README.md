@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user web application** for managing training logs — drop a Garmin `.FIT` file into the browser, add how the workout felt, and get back a ready-to-paste markdown prompt for your AI coach.
 
-Current application version: **0.6.0** (active development).
+Current application version: **0.6.1** (active development).
 
 Every account is protected with server-side sessions, every `.FIT` file is parsed locally on your own machine: no cloud parsing, no telemetry — your training data never leaves your hardware.
 
@@ -155,13 +155,13 @@ Configuration via environment variables:
 | `HOST` | `127.0.0.1` | Bind address |
 | `DATABASE_FILE` | `<cwd>/data/database.sqlite` | SQLite database location |
 | `UNSPLASH_ACCESS_KEY` | _optional_ | Unsplash Access Key sent as `Authorization: Client-ID ...` for the running-photo hero. Responses are cached for 20 minutes to minimize API calls. |
-| `UNSPLASH_API_KEY` | _optional alias_ | Backwards-compatible alias for `UNSPLASH_ACCESS_KEY`; Kinesis works without either key by using the bundled local fallback image. |
 
 For local setup, copy `.env.example` to `.env`, put your Unsplash **Access Key**
 in `UNSPLASH_ACCESS_KEY`, and start with `node --env-file=.env src/start.js` (or export
 the variable before `npm start`). For Docker Compose, put the same variable in
 the `.env` file beside `docker-compose.yml`; Compose passes it into the server
-container. The key is server-only and must never be placed in frontend files or
+container. Kinesis works without the key by using the bundled local fallback
+image. The key is server-only and must never be placed in frontend files or
 committed to Git.
 
 ## Usage
