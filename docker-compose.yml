@@ -5,5 +5,7 @@ services:
     restart: unless-stopped
     ports:
       - "8081:3000"
+    environment:
+      UNSPLASH_API_KEY: ${UNSPLASH_API_KEY:-}
     volumes:
       - ./data:/app/data
