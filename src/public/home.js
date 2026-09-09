@@ -1,4 +1,4 @@
-import { fetchActiveCycle, fetchCalendarTrainings, fetchShoes } from './shared/api.js';
+import { fetchActiveCycle, fetchCalendarTrainings, fetchShoes, fetchHeroImage } from './shared/api.js';
 import { initShell, getShellI18n, getUserPreferences } from './shared/shell.js';
 import { translate } from './shared/i18n.js';
 import { formatDate as formatLocalizedDate } from './shared/date.js';
@@ -453,6 +453,7 @@ function setupHomePage() {
   const quoteBlock = document.getElementById('heroQuote');
   const quoteText = document.getElementById('heroQuoteText');
   const quoteAuthor = document.getElementById('heroQuoteAuthor');
+  const heroCredit = document.getElementById('heroCredit');
   const cycleEmpty = document.getElementById('cycleEmpty');
   const cycleActive = document.getElementById('cycleActive');
   const cycleName = document.getElementById('cycleName');
@@ -480,6 +481,7 @@ function setupHomePage() {
     distanceUnit: 'km',
     temperatureUnit: 'C',
     shoes: [],
+    heroCredit: null,
   };
 
   let i18n = null;
@@ -494,6 +496,25 @@ function setupHomePage() {
     if (quoteBlock) quoteBlock.classList.remove('hidden');
     if (quoteText) quoteText.textContent = quote.text;
     if (quoteAuthor) quoteAuthor.textContent = quote.author;
+  }
+
+  function renderHeroCredit() {
+    if (!heroCredit) return;
+    if (!state.heroCredit || !i18n) {
+      heroCredit.textContent = '';
+      heroCredit.classList.add('hidden');
+      return;
+    }
+    heroCredit.textContent = t('home.hero.photoCredit', { author: state.heroCredit });
+    heroCredit.classList.remove('hidden');
+  }
+
+  async function loadHeroImage() {
+    const result = await fetchHeroImage();
+    const imageUrl = result?.url || HERO_FALLBACK_IMAGE;
+    const applied = await preloadHeroImage(heroBanner, imageUrl);
+    state.heroCredit = result?.source === 'unsplash' && applied === imageUrl ? result.author : null;
+    renderHeroCredit();
   }
 
   function renderCycle() {
@@ -615,6 +636,7 @@ function setupHomePage() {
   // text.
   document.addEventListener('app:languagechange', () => {
     render();
+    renderHeroCredit();
     if (state.quoteSource === 'fallback' && i18n) {
       renderQuote(randomFallbackQuote(i18n.messages));
     }
@@ -645,7 +667,7 @@ function setupHomePage() {
       state.firstDay = preferences.first_day_of_week;
       state.distanceUnit = preferences.distance_unit;
       state.temperatureUnit = preferences.temperature_unit;
-      preloadHeroImage(heroBanner, heroImageFor());
+      loadHeroImage();
       loadHeroQuote();
       loadCycle();
       loadMetrics();

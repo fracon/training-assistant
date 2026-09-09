@@ -578,6 +578,7 @@
     "hero": {
       "loading": "Buscando a inspiração de hoje…",
       "ariaLabel": "Inspiração diária",
+      "photoCredit": "Foto de {author} no Unsplash",
       "fallbackQuotes": [
         { "text": "Corra quando puder, ande se precisar, arraste-se se necessário; mas nunca desista.", "author": "Dean Karnazes" },
         { "text": "A dor que você sente hoje será a força que você sentirá amanhã.", "author": "Desconhecido" },

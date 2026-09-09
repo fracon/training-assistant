@@ -77,6 +77,22 @@
   opacity: 0.85;
 }
 
+.hero-credit {
+  position: absolute;
+  right: 0.75rem;
+  bottom: 0.55rem;
+  z-index: 1;
+  margin: 0;
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  font-size: 0.65rem;
+  opacity: 0.85;
+}
+
+.hero-credit.hidden { display: none; }
+
 /* ── Dashboard layout ───────────────────────────────────────── */
 
 .dashboard-grid {

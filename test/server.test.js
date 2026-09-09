@@ -305,6 +305,23 @@ test('authenticated uploads render the prompt in the user preferred language', a
   db.close();
 });
 
+test('GET /api/hero-image returns the mocked Unsplash payload for an authenticated user', async () => {
+  const db = createDatabase({ filename: ':memory:' });
+  const app = await buildServer({
+    db,
+    sessionCookieSecure: false,
+    fetchHeroImage: async () => ({ url: 'https://images.unsplash.com/mock-running.jpg', source: 'unsplash', author: 'Runner' }),
+  });
+  await app.inject({ method: 'POST', url: '/api/auth/register', payload: { email: 'hero@example.com', password: 'super-secret-1', first_name: 'Hero', last_name: 'Runner' } });
+  const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: 'hero@example.com', password: 'super-secret-1' } });
+  const cookie = [].concat(login.headers['set-cookie'] ?? [])[0].split(';')[0];
+  const response = await app.inject({ method: 'GET', url: '/api/hero-image', headers: { cookie } });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.json().url, 'https://images.unsplash.com/mock-running.jpg');
+  await app.close();
+  db.close();
+});
+
 test('GET / redirects anonymous visitors to the login page', async () => {
   const app = await buildServer({ parseFitFile: stubParse() });
   const response = await app.inject({ method: 'GET', url: '/' });

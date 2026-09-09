@@ -100,6 +100,7 @@ test('home.html ships the hero, cycle, and metrics dashboard skeleton', () => {
   assert.match(html, /id="heroQuote"/);
   assert.match(html, /id="heroQuoteText"/);
   assert.match(html, /id="heroQuoteAuthor"/);
+  assert.match(html, /id="heroCredit" class="hero-credit hidden"/);
   assert.match(html, /id="cycleEmpty"/);
   assert.match(html, /id="cycleActive"/);
   assert.match(html, /id="cycleName"/);
@@ -1025,7 +1026,7 @@ test('applyCycleVisibility tolerates missing containers without throwing', () =>
 
 test('home.js keeps the dashboard wiring declarative and reactive', () => {
   const js = readHomeJs();
-  assert.match(js, /import \{ fetchActiveCycle, fetchCalendarTrainings, fetchShoes \} from '\.\/shared\/api\.js'/);
+  assert.match(js, /import \{ fetchActiveCycle, fetchCalendarTrainings, fetchShoes, fetchHeroImage \} from '\.\/shared\/api\.js'/);
   assert.match(js, /import \{ initShell, getShellI18n, getUserPreferences \} from '\.\/shared\/shell\.js'/);
   assert.match(js, /initShell\(\{ active: 'dashboard' \}\)/);
   assert.match(js, /new AbortController\(\)/);
@@ -1034,6 +1035,8 @@ test('home.js keeps the dashboard wiring declarative and reactive', () => {
   assert.match(js, /'kinesis:preferences-changed'/);
   assert.match(js, /state\.firstDay = preferences\.first_day_of_week/);
   assert.match(js, /setProperty\('--hero-image'/);
+  assert.match(js, /fetchHeroImage\(\)/);
+  assert.match(js, /heroCredit/);
   assert.match(js, /fetchCalendarTrainings\(range\.start, range\.end\)/);
   assert.match(js, /quoteLoading\) quoteLoading\.classList\.add\('hidden'\)/);
   assert.match(js, /quoteBlock\) quoteBlock\.classList\.remove\('hidden'\)/);
@@ -1121,6 +1124,7 @@ test('home.css places weekly widgets side-by-side with equal-height responsive t
   assert.match(css, /var\(--hero-image/);
   assert.match(css, /var\(--accent-deep\)/);
   assert.match(css, /var\(--bg\)/);
+  assert.match(css, /\.hero-credit \{[^}]*position:\s*absolute[^}]*background:\s*rgba\(0, 0, 0, 0\.5\)/);
   assert.match(
     css,
     /\.dashboard-grid \{[^}]*display:\s*grid;\s*\n\s*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);\s*\n\s*align-items:\s*stretch/,

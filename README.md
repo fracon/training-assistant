@@ -154,6 +154,7 @@ Configuration via environment variables:
 | `PORT` | `3000` | HTTP port |
 | `HOST` | `127.0.0.1` | Bind address |
 | `DATABASE_FILE` | `<cwd>/data/database.sqlite` | SQLite database location |
+| `UNSPLASH_API_KEY` | _optional_ | Unsplash API key for an infinite running-photo hero. Without it (or when Unsplash is unavailable), Kinesis automatically uses a bundled local fallback image. |
 
 ## Usage
 

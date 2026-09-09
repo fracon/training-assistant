@@ -578,6 +578,7 @@
     "hero": {
       "loading": "Finding today's inspiration…",
       "ariaLabel": "Daily inspiration",
+      "photoCredit": "Photo by {author} on Unsplash",
       "fallbackQuotes": [
         { "text": "Run when you can, walk if you have to, crawl if you must; just never give up.", "author": "Dean Karnazes" },
         { "text": "The pain you feel today will be the strength you feel tomorrow.", "author": "Unknown" },

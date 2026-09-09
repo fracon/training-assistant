@@ -35,6 +35,7 @@ const ExcelJS = require('exceljs');
 const { parseSheet } = require('./trainingImport');
 const { resolveTrainingWeather } = require('./weather');
 const { buildMacrocyclePrompt } = require('./prompts');
+const { fetchHeroImage } = require('./unsplash');
 const {
   ShoeError,
   createShoe,
@@ -110,6 +111,7 @@ async function buildServer(options = {}) {
 
   const parseFile = options.parseFitFile || parseFitFile;
   const changeUserPassword = options.changeUserPassword || changePassword;
+  const loadHeroImage = options.fetchHeroImage || fetchHeroImage;
 
   const sessionOf = (request) => {
     if (!options.db) return null;
@@ -232,6 +234,10 @@ async function buildServer(options = {}) {
 
     app.get('/api/me', { preHandler: requireAuth }, async (request) => {
       return { user: request.user };
+    });
+
+    app.get('/api/hero-image', { preHandler: requireAuth }, async () => {
+      return loadHeroImage({ fetchImpl: options.unsplashFetch || globalThis.fetch });
     });
 
     app.put('/api/auth/password', { preHandler: requireAuth }, async (request, reply) => {

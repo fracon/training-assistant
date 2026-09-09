@@ -27,6 +27,16 @@ export function signIn(email, password) {
   return requestJson('/api/auth/login', { email, password });
 }
 
+export async function fetchHeroImage() {
+  try {
+    const response = await fetch('/api/hero-image', { headers: { accept: 'application/json' } });
+    if (!response.ok) return null;
+    return response.json();
+  } catch {
+    return null;
+  }
+}
+
 export function registerAccount(payload) {
   return requestJson('/api/auth/register', payload);
 }
