@@ -370,6 +370,18 @@ test('availability day rows stack the availability and location inputs verticall
   assert.match(css, /\.btn-primary:disabled \{[^}]*cursor:\s*not-allowed[^}]*opacity:\s*0\.55/);
 });
 
+test('ai-coach layout stays within the viewport without horizontal overflow', () => {
+  const css = readFileSync(join(publicDir, 'ai-coach.css'), 'utf8');
+
+  assert.match(css, /\.ai-coach-page \{[^}]*width:\s*100%;[^}]*max-width:\s*720px;[^}]*overflow-x:\s*hidden/);
+  assert.match(css, /\.prompt-form,\s*\n\.result-section \{[^}]*width:\s*100%;[^}]*min-width:\s*0/);
+  assert.match(css, /\.availability-grid \{[^}]*min-width:\s*0/);
+  assert.match(css, /\.day-row \{[^}]*min-width:\s*0/);
+  assert.match(css, /\.result-header \{[^}]*min-width:\s*0[^}]*flex-wrap:\s*wrap/);
+  assert.match(css, /\.result-header h2 \{[^}]*min-width:\s*0/);
+  assert.match(css, /\.prompt-output \{[^}]*width:\s*100%;[^}]*max-width:\s*100%/);
+});
+
 test('orderedDayKeys starts the week on the preferred day', () => {
   assert.deepEqual(orderedDayKeys('Monday'), [
     'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado', 'domingo',
