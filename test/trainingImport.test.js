@@ -14,6 +14,7 @@ const {
   normalizeDia,
   cellToText,
   parseSheet,
+  parseRows,
 } = require('../src/trainingImport');
 
 function fakeRow(number, values) {
@@ -235,6 +236,29 @@ test('parseSheet maps valid rows and normalizes Dia to ISO', () => {
   assert.equal(records[1].tipo, 'Intervalado');
   assert.equal(records[1].periodo, '');
   assert.equal(records[2].dia, '2026-08-26', 'padded single-digit date parses');
+});
+
+test('parseRows adapts SheetJS header arrays to the import parser', () => {
+  const { records, errors } = parseRows([
+    ['Data', 'Dia', 'Tipo', 'Treino'],
+    [46257, 'Domingo', 'Corrida', 'Longão'],
+  ]);
+
+  assert.deepEqual(errors, []);
+  assert.deepEqual(records[0], {
+    dia: '2026-08-23',
+    dia_semana: 'Domingo',
+    periodo: '',
+    tipo: 'Corrida',
+    treino: 'Longão',
+    detalhes: '',
+    fc_alvo: '',
+    rpe: '',
+    tenis: '',
+    previsao: '',
+    observacoes: '',
+    location: '',
+  });
 });
 
 test('parseSheet captures the planned location alongside the training row', () => {

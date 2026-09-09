@@ -208,7 +208,7 @@ test('import rejects requests without a file part', async () => {
 test('import rejects buffers that are not valid spreadsheets', async () => {
   const { app, upload } = await setup();
 
-  const response = await upload(Buffer.from('this is not a spreadsheet'));
+  const response = await upload(Buffer.from('PK\x05\x06' + '\0'.repeat(18)));
   assert.equal(response.status, 400);
   assert.deepEqual(await response.json(), {
     error: 'Unsupported spreadsheet file. Please upload a valid .xlsx or .xls workbook.',

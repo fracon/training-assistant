@@ -31,8 +31,8 @@ const {
   isSupportedTemperatureUnit,
   normalizeTemperatureUnit,
 } = require('./auth/preferences');
-const ExcelJS = require('exceljs');
-const { parseSheet } = require('./trainingImport');
+const XLSX = require('xlsx');
+const { parseRows } = require('./trainingImport');
 const { resolveTrainingWeather } = require('./weather');
 const { buildMacrocyclePrompt } = require('./prompts');
 const { fetchHeroImage } = require('./unsplash');
@@ -373,7 +373,12 @@ async function buildServer(options = {}) {
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         'application/vnd.ms-excel',
       ].includes(fileMimeType);
-      if (!hasSpreadsheetExtension && !hasSpreadsheetMimeType) {
+      const isXlsx = /\.xlsx$/i.test(fileName);
+      const hasZipSignature = fileBuffer.subarray(0, 2).equals(Buffer.from('PK'));
+      if (
+        (!hasSpreadsheetExtension && !hasSpreadsheetMimeType) ||
+        (isXlsx && !hasZipSignature)
+      ) {
         return reply.code(400).send({
           error: 'Unsupported spreadsheet file. Please upload a valid .xlsx or .xls workbook.',
         });
@@ -381,8 +386,7 @@ async function buildServer(options = {}) {
 
       let workbook;
       try {
-        workbook = new ExcelJS.Workbook();
-        await workbook.xlsx.load(fileBuffer);
+        workbook = XLSX.read(fileBuffer, { type: 'buffer' });
       } catch (error) {
         request.log.warn(error);
         return reply.code(400).send({
@@ -390,12 +394,17 @@ async function buildServer(options = {}) {
         });
       }
 
-      const worksheet = workbook.worksheets[0];
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = sheetName ? workbook.Sheets[sheetName] : null;
       if (!worksheet) {
         return reply.code(400).send({ error: 'The spreadsheet has no sheets.' });
       }
 
-      const { records, errors } = parseSheet(worksheet);
+      const { records, errors } = parseRows(XLSX.utils.sheet_to_json(worksheet, {
+        header: 1,
+        defval: '',
+        raw: true,
+      }));
       if (errors.length > 0) {
         return reply.code(400).send({ errors });
       }
