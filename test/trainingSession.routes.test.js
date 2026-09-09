@@ -351,6 +351,133 @@ test('PATCH /api/trainings/:id rejects unsupported pain answers', async () => {
   }
 });
 
+test('PATCH /api/trainings/:id/reschedule requires authentication', async () => {
+  const { app } = await setup();
+  const response = await app.inject({
+    method: 'PATCH',
+    url: '/api/trainings/1/reschedule',
+    payload: { date: '2026-08-26' },
+  });
+  assert.equal(response.statusCode, 401);
+});
+
+test('PATCH /api/trainings/:id/reschedule rejects malformed ids', async () => {
+  const { app, cookie } = await setup();
+  for (const id of ['abc', '0']) {
+    const response = await app.inject({
+      method: 'PATCH',
+      url: `/api/trainings/${id}/reschedule`,
+      headers: { cookie },
+      payload: { date: '2026-08-26' },
+    });
+    assert.equal(response.statusCode, 400, `id=${id}`);
+    assert.deepEqual(response.json(), { error: 'Invalid training id.' });
+  }
+});
+
+test('PATCH /api/trainings/:id/reschedule demands exactly the date field', async () => {
+  const { app, cookie } = await setup();
+  const error = { error: 'Request body must contain only the date field.' };
+
+  for (const payload of [{}, { booked: '2026-08-26' }, { date: 'x', extra: true }]) {
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/trainings/1/reschedule',
+      headers: { cookie },
+      payload,
+    });
+    assert.equal(response.statusCode, 400, `payload=${JSON.stringify(payload)}`);
+    assert.deepEqual(response.json(), error);
+  }
+
+  const noBody = await app.inject({
+    method: 'PATCH',
+    url: '/api/trainings/1/reschedule',
+    headers: { cookie },
+  });
+  assert.equal(noBody.statusCode, 400);
+  assert.deepEqual(noBody.json(), error);
+});
+
+test('PATCH /api/trainings/:id/reschedule rejects missing, non-string, or impossible dates', async () => {
+  const { app, cookie } = await setup();
+  const error = { error: 'date must be a valid date in YYYY-MM-DD format.' };
+
+  for (const date of ['26/08/2026', '2026-9-7', '2026-02-30', '2026-13-01', '', null, 20260826]) {
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/trainings/1/reschedule',
+      headers: { cookie },
+      payload: { date },
+    });
+    assert.equal(response.statusCode, 400, `date=${JSON.stringify(date)}`);
+    assert.deepEqual(response.json(), error);
+  }
+});
+
+test('PATCH /api/trainings/:id/reschedule answers 404 when the session does not exist', async () => {
+  const { app, cookie } = await setup();
+  const response = await app.inject({
+    method: 'PATCH',
+    url: '/api/trainings/999/reschedule',
+    headers: { cookie },
+    payload: { date: '2026-08-26' },
+  });
+  assert.equal(response.statusCode, 404);
+  assert.deepEqual(response.json(), { error: 'Training not found.' });
+});
+
+test('PATCH /api/trainings/:id/reschedule moves a session and leaves feedback untouched', async () => {
+  const { db, app, cookie, userId } = await setup();
+  const id = seedTraining(db, {
+    user_id: userId,
+    feedback_rpe: 4,
+    feedback_notas: 'Forte',
+    completed: 1,
+  });
+
+  const response = await app.inject({
+    method: 'PATCH',
+    url: `/api/trainings/${id}/reschedule`,
+    headers: { cookie },
+    payload: { date: ' 2026-08-26 ' },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.json().training.dia, '2026-08-26');
+
+  const row = db
+    .prepare('SELECT dia, feedback_rpe, feedback_notas, completed FROM trainings WHERE id = ?')
+    .get(id);
+  assert.equal(row.dia, '2026-08-26', 'the session moved to the new day');
+  assert.equal(row.feedback_rpe, 4, 'existing feedback untouched');
+  assert.equal(row.feedback_notas, 'Forte', 'existing notes untouched');
+  assert.equal(row.completed, 1, 'the completion state survives a reschedule');
+});
+
+test('PATCH /api/trainings/:id/reschedule only ever rewrites the date column', async () => {
+  const { db, app, cookie, userId } = await setup();
+  const id = seedTraining(db, { user_id: userId });
+
+  const repeated = await app.inject({
+    method: 'PATCH',
+    url: `/api/trainings/${id}/reschedule`,
+    headers: { cookie },
+    payload: { date: '2026-08-24' },
+  });
+  assert.equal(repeated.statusCode, 200);
+  assert.equal(repeated.json().training.dia, '2026-08-24', 'same-day reschedules are a no-op');
+
+  const row = db
+    .prepare('SELECT periodo, tipo, treino, detalhes, fc_alvo, rpe FROM trainings WHERE id = ?')
+    .get(id);
+  assert.equal(row.periodo, 'Manhã');
+  assert.equal(row.tipo, 'Corrida');
+  assert.equal(row.treino, '6 × 1 km forte');
+  assert.equal(row.detalhes, 'Aquecer 15 min + 6 tiros');
+  assert.equal(row.fc_alvo, '150-160 bpm');
+  assert.equal(row.rpe, '4');
+});
+
 test('PATCH /api/trainings/:id saves trimmed notes and persists every field', async () => {
   const { db, app, cookie, userId } = await setup();
   const id = seedTraining(db, { user_id: userId });
@@ -496,6 +623,75 @@ test('PATCH /api/trainings/:id toggles the smartwatch flag without touching othe
   assert.equal(row.has_smartwatch, 0, 'smartwatch flag flipped to no');
   assert.equal(row.feedback_rpe, 2, 'previous RPE untouched');
   assert.equal(row.feedback_notas, 'Pesado', 'previous notes untouched');
+});
+
+// ── DELETE /api/trainings/:id ──────────────────────────────────
+
+test('DELETE /api/trainings/:id requires authentication', async () => {
+  const { app } = await setup();
+  const response = await app.inject({ method: 'DELETE', url: '/api/trainings/1' });
+  assert.equal(response.statusCode, 401);
+});
+
+test('DELETE /api/trainings/:id rejects malformed ids', async () => {
+  const { app, cookie } = await setup();
+  for (const id of ['abc', '0', '-3']) {
+    const response = await app.inject({
+      method: 'DELETE',
+      url: `/api/trainings/${id}`,
+      headers: { cookie },
+    });
+    assert.equal(response.statusCode, 400, `id=${id}`);
+    assert.deepEqual(response.json(), { error: 'Invalid training id.' });
+  }
+});
+
+test('DELETE /api/trainings/:id answers 404 when the session does not exist', async () => {
+  const { app, cookie } = await setup();
+  const response = await app.inject({
+    method: 'DELETE',
+    url: '/api/trainings/999',
+    headers: { cookie },
+  });
+  assert.equal(response.statusCode, 404);
+  assert.deepEqual(response.json(), { error: 'Training not found.' });
+});
+
+test("DELETE /api/trainings/:id never removes other users' sessions", async () => {
+  const { db, app, cookie } = await setup();
+  db.prepare(
+    "INSERT INTO users (email, password_hash) VALUES ('peer@example.com', 'hash')"
+  ).run();
+  const peerId = db.prepare("SELECT id FROM users WHERE email = 'peer@example.com'").get().id;
+  const foreignId = seedTraining(db, { user_id: peerId });
+
+  const response = await app.inject({
+    method: 'DELETE',
+    url: `/api/trainings/${foreignId}`,
+    headers: { cookie },
+  });
+  assert.equal(response.statusCode, 404, 'a foreign id is indistinguishable from missing');
+
+  const surviving = db
+    .prepare('SELECT id FROM trainings WHERE id = ?')
+    .get(foreignId);
+  assert.ok(surviving, 'the peer-owned session remains untouched');
+});
+
+test('DELETE /api/trainings/:id removes a session owned by the caller', async () => {
+  const { db, app, cookie, userId } = await setup();
+  const id = seedTraining(db, { user_id: userId });
+
+  const response = await app.inject({
+    method: 'DELETE',
+    url: `/api/trainings/${id}`,
+    headers: { cookie },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.deepEqual(response.json(), { status: 'ok' });
+
+  const row = db.prepare('SELECT id FROM trainings WHERE id = ?').get(id);
+  assert.equal(row, undefined, 'the session row is gone after the delete');
 });
 
 // ── POST /api/trainings/:id/fit ─────────────────────────────────

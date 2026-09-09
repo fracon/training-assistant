@@ -1,8 +1,8 @@
-import { initShell, getShellI18n, getUserPreferences } from './shared/shell.js';
+import { initShell, getShellI18n, getUserPreferences, showConfirm, showShellToast, refreshIcons } from './shared/shell.js';
 import { translate } from './shared/i18n.js';
 import { formatDate as formatLocalizedDate, formatWeekday } from './shared/date.js';
-import { fetchTraining, saveTrainingFeedback, fetchShoes } from './shared/api.js';
-import { formatDistance, formatPaceFromMetric } from './shared/units.js';
+import { fetchTraining, saveTrainingFeedback, fetchShoes, deleteTraining, fetchWeather } from './shared/api.js';
+import { formatDistance, formatPaceFromMetric, formatTemperature } from './shared/units.js';
 
 // Sessions open contextually via /training-result.html?id=<id>; without an
 // id there is nothing to show, so the page bounces back to the calendar.
@@ -27,6 +27,56 @@ export function normalizeFeedbackRpe(raw) {
   if (trimmed === '') return null;
   const value = Number(trimmed);
   return Number.isInteger(value) && value >= 1 && value <= 5 ? value : NaN;
+}
+
+export const WEATHER_CODE_LABEL_KEYS = {
+  0: 'weather.0',
+  1: 'weather.1',
+  2: 'weather.2',
+  3: 'weather.3',
+  45: 'weather.45',
+  48: 'weather.48',
+  51: 'weather.51',
+  53: 'weather.53',
+  55: 'weather.55',
+  56: 'weather.56',
+  57: 'weather.57',
+  61: 'weather.61',
+  63: 'weather.63',
+  65: 'weather.65',
+  66: 'weather.66',
+  67: 'weather.67',
+  71: 'weather.71',
+  73: 'weather.73',
+  75: 'weather.75',
+  77: 'weather.77',
+  80: 'weather.80',
+  81: 'weather.81',
+  82: 'weather.82',
+  85: 'weather.85',
+  86: 'weather.86',
+  95: 'weather.95',
+  96: 'weather.96',
+  99: 'weather.99',
+};
+export const WEATHER_UNKNOWN_KEY = 'weather.unknown';
+
+export function weatherLabelKey(code) {
+  return WEATHER_CODE_LABEL_KEYS[code] ?? WEATHER_UNKNOWN_KEY;
+}
+
+export function shouldAutoFillWeather(training, currentValue = '') {
+  return (
+    String(training?.location ?? '').trim() !== '' &&
+    String(currentValue ?? '').trim() === ''
+  );
+}
+
+export function formatWeatherAutofill(weather, translateFn, unit = 'C') {
+  if (!weather || typeof weather.temperature_c !== 'number') return '';
+  const temperature = formatTemperature(weather.temperature_c, unit);
+  const label = translateFn(weatherLabelKey(weather.weather_code));
+  return `${temperature}, ${label}`;
 }
 
 // The .FIT upload only makes sense when a watch was actually used.
@@ -303,7 +353,38 @@ const PLANNED_FIELDS = [
   ['fc_alvo', 'plannedFcAlvo'],
   ['rpe', 'plannedRpe'],
   ['tenis', 'plannedTenis'],
+  ['location', 'plannedLocation'],
 ];
+
+// Whole delete flow, kept dependency-injectable so it can be unit-tested
+// without a DOM. Returns true only when the session was actually removed.
+export async function handleTrainingDelete({
+  id,
+  messages,
+  confirm = showConfirm,
+  remove = deleteTraining,
+  toast = showShellToast,
+  redirect = () => window.location.replace('/calendar.html'),
+}) {
+  const t = (key) => translate(messages, key);
+  const confirmed = await confirm({
+    title: t('session.deleteConfirmTitle'),
+    message: t('session.deleteConfirmMessage'),
+    icon: 'trash-2',
+    confirmLabel: t('shell.confirm.yes'),
+    cancelLabel: t('shell.confirm.no'),
+  });
+  if (!confirmed) return false;
+  try {
+    await remove(id);
+    toast(messages, 'session.deleteSuccess', 'success');
+    redirect();
+    return true;
+  } catch {
+    toast(messages, 'session.deleteError', 'error');
+    return false;
+  }
+}
 
 const HR_SOURCE_LABEL_KEYS = {
   chest_strap: 'session.hrSourceStrap',
@@ -352,6 +433,7 @@ async function initTrainingResult() {
   const shoeSelect = document.getElementById('feedbackShoe');
   const hrSourceSelect = document.getElementById('hrSourceSelect');
   const weatherInput = document.getElementById('feedbackWeather');
+  const weatherSpinner = document.getElementById('weatherSpinner');
   const terrainInput = document.getElementById('feedbackTerrain');
   const breathingInput = document.getElementById('feedbackBreathing');
   const muscleInput = document.getElementById('feedbackMuscle');
@@ -365,6 +447,7 @@ async function initTrainingResult() {
   const promptOutput = document.getElementById('promptOutput');
   const copyPromptBtn = document.getElementById('copyPromptBtn');
   const copyLabel = copyPromptBtn.querySelector('span');
+  const deleteTrainingBtn = document.getElementById('deleteTrainingBtn');
   const fitDataSection = document.getElementById('fitDataSection');
   const fitLapsSection = document.getElementById('fitLapsSection');
   const fitLapsBody = document.getElementById('fitLapsBody');
@@ -481,6 +564,37 @@ async function initTrainingResult() {
   };
   hasPainSelect.addEventListener('change', syncPainVisibility);
 
+  let weatherAutofilled = false;
+  let lastWeatherResult = null;
+
+  const renderWeatherAutofill = () => {
+    if (weatherAutofilled && lastWeatherResult) {
+      weatherInput.value = formatWeatherAutofill(
+        lastWeatherResult,
+        t,
+        getUserPreferences().temperature_unit
+      );
+    }
+  };
+
+  const autoFillWeatherField = async () => {
+    if (!shouldAutoFillWeather(training, weatherInput.value)) return;
+    weatherSpinner.hidden = false;
+    weatherInput.setAttribute('aria-busy', 'true');
+    try {
+      const result = await fetchWeather(training.location, training.dia);
+      const text = formatWeatherAutofill(result, t, getUserPreferences().temperature_unit);
+      if (text !== '') {
+        weatherInput.value = text;
+        weatherAutofilled = true;
+        lastWeatherResult = result;
+      }
+    } finally {
+      weatherSpinner.hidden = true;
+      weatherInput.removeAttribute('aria-busy');
+    }
+  };
+
   const id = resolveSessionId(window.location.search);
   if (!id) {
     window.location.href = '/calendar.html';
@@ -491,6 +605,10 @@ async function initTrainingResult() {
   i18n = getShellI18n();
   document.title = t('training.title');
   applyTooltips();
+  // The shell may have injected sidebar/topbar markup around the session
+  // card; re-initializing Lucide ensures the card's trash icon is rendered
+  // as an SVG and never left as an empty <i> tag.
+  refreshIcons();
 
   setStatus(t('session.loading'));
   let training;
@@ -562,6 +680,7 @@ async function initTrainingResult() {
 
   syncFitFieldVisibility();
   syncPainVisibility();
+  await autoFillWeatherField();
   setStatus('');
 
   const collectFormState = () => {
@@ -644,6 +763,16 @@ async function initTrainingResult() {
     }, 2000);
   });
 
+  deleteTrainingBtn.addEventListener('click', () => {
+    handleTrainingDelete({
+      id,
+      messages: i18n.messages,
+      confirm: showConfirm,
+      remove: deleteTraining,
+      toast: showShellToast,
+    });
+  });
+
   fitFileInput.addEventListener('change', async () => {
     if (!fitFileInput.files || fitFileInput.files.length === 0 || !currentTrainingId) return;
     const file = fitFileInput.files[0];
@@ -681,11 +810,13 @@ async function initTrainingResult() {
     if (!generateBtn.disabled) generateLabel.textContent = t('session.generatePrompt');
     if (!copyPromptBtn.disabled) copyLabel.textContent = t('session.copyPrompt');
     renderFitDropzoneState();
+    renderWeatherAutofill();
     applyTooltips();
   });
 
   document.addEventListener('kinesis:preferences-changed', () => {
     renderFitData();
+    renderWeatherAutofill();
   });
 }
 

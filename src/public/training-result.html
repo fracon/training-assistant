@@ -19,7 +19,13 @@
       <p id="status" class="status" role="status"></p>
 
       <section class="card planned-card" aria-labelledby="plannedTitle">
-        <h2 id="plannedTitle" data-i18n="session.plannedHeading">Planned workout</h2>
+        <div class="card-head">
+          <h2 id="plannedTitle" data-i18n="session.plannedHeading">Planned workout</h2>
+          <button id="deleteTrainingBtn" class="btn-icon btn-danger" type="button" aria-label="Delete training">
+            <i data-lucide="trash-2" aria-hidden="true"></i>
+            <div class="custom-tooltip" data-i18n="session.deleteTooltip">Delete training</div>
+          </button>
+        </div>
         <dl class="planned-grid">
           <div class="planned-item">
             <dt data-i18n="session.fieldTipo">Type</dt>
@@ -44,6 +50,10 @@
           <div class="planned-item">
             <dt data-i18n="session.fieldTenis">Shoes</dt>
             <dd id="plannedTenis">-</dd>
+          </div>
+          <div class="planned-item">
+            <dt data-i18n="session.fieldLocation">Location</dt>
+            <dd id="plannedLocation">-</dd>
           </div>
         </dl>
       </section>
@@ -155,8 +165,11 @@
           <div class="field">
             <label class="field-label" for="feedbackWeather"
               data-i18n="session.fieldWeather">Temperature &amp; weather</label>
-            <input type="text" id="feedbackWeather" class="input-control"
-              autocomplete="off" data-i18n-placeholder="session.weatherPlaceholder">
+            <div class="weather-input-wrap">
+              <input type="text" id="feedbackWeather" class="input-control"
+                autocomplete="off" data-i18n-placeholder="session.weatherPlaceholder">
+              <span class="weather-spinner" id="weatherSpinner" aria-hidden="true" hidden></span>
+            </div>
           </div>
           <div class="field">
             <label class="field-label" for="feedbackTerrain"

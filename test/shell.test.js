@@ -157,9 +157,9 @@ test('the footer carries only the app version, fetched from the backend', async 
 
 test('loadAppVersion resolves the packaged version and degrades to null on any failure', async () => {
   const ok = (body) => async () => ({ ok: true, json: async () => body });
-  assert.equal(require('../package.json').version, '0.1.1');
-  assert.equal(await loadAppVersion(ok({ version: '0.1.1' })), '0.1.1');
-  assert.equal(await loadAppVersion(async () => ({ ok: false, json: async () => ({ version: '0.1.1' }) })), null);
+  assert.equal(require('../package.json').version, '0.6.0');
+  assert.equal(await loadAppVersion(ok({ version: '0.6.0' })), '0.6.0');
+  assert.equal(await loadAppVersion(async () => ({ ok: false, json: async () => ({ version: '0.6.0' }) })), null);
   assert.equal(await loadAppVersion(ok({})), null, 'a malformed payload is treated as missing');
   assert.equal(await loadAppVersion(ok({ version: '' })), null);
   assert.equal(await loadAppVersion(ok({ version: 42 })), null);
@@ -274,16 +274,41 @@ test('the topbar restores a working logout action once authenticated', () => {
 
 test('showConfirm is exported and builds a Promise-based confirmation dialog', () => {
   const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
-  assert.match(js, /export function showConfirm\(/);
-  assert.match(js, /return new Promise/);
-  assert.match(js, /confirm-backdrop/);
-  assert.match(js, /confirm-card/);
-  assert.match(js, /confirm-message/);
-  assert.match(js, /confirmOkBtn/);
-  assert.match(js, /confirmCancelBtn/);
-  assert.match(js, /setAttribute\('role', 'alertdialog'\)/);
-  assert.match(js, /cleanup\(true\)/);
-  assert.match(js, /cleanup\(false\)/);
+  const confirm = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'confirm-modal.js'), 'utf8');
+  assert.match(js, /import \{ showConfirm \} from '\.\/confirm-modal\.js'/);
+  assert.match(js, /export \{ showConfirm \} from '\.\/confirm-modal\.js'/);
+  assert.match(confirm, /export function showConfirm\(/);
+  assert.match(confirm, /return new Promise/);
+  assert.match(confirm, /confirm-backdrop/);
+  assert.match(confirm, /confirm-card/);
+  assert.match(confirm, /confirm-header/);
+  assert.match(confirm, /confirm-icon/);
+  assert.match(confirm, /confirm-title/);
+  assert.match(confirm, /confirm-body/);
+  assert.match(confirm, /confirm-message/);
+  assert.match(confirm, /confirmOkBtn/);
+  assert.match(confirm, /confirmCancelBtn/);
+  assert.match(confirm, /setAttribute\('role', 'alertdialog'\)/);
+  assert.match(confirm, /setAttribute\('aria-labelledby', 'confirmTitle'\)/);
+  assert.match(confirm, /titleEl\.textContent = title/);
+  assert.match(confirm, /msg\.textContent = message/);
+  assert.match(confirm, /cleanup\(true\)/);
+  assert.match(confirm, /cleanup\(false\)/);
+});
+
+test('showConfirm renders a danger header with icon and a right-aligned footer', () => {
+  const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'confirm-modal.js'), 'utf8');
+  assert.match(js, /const headerIcon = document\.createElement\('span'\);/);
+  assert.match(js, /headerIcon\.className = 'confirm-icon';/);
+  assert.match(js, /iconEl\.setAttribute\('data-lucide', icon\);/);
+  assert.match(js, /header\.appendChild\(titleEl\);/);
+  assert.match(js, /card\.appendChild\(header\);/);
+  assert.match(js, /card\.appendChild\(body\);/);
+  assert.match(js, /actions\.appendChild\(cancelBtn\);\s*\n\s*actions\.appendChild\(confirmBtn\);\s*\n\s*card\.appendChild\(actions\);/);
+  assert.match(js, /cancelBtn\.className = 'btn btn-secondary';/, 'the outline button shares the base .btn class');
+  assert.match(js, /confirmBtn\.className = `btn \$\{confirmButtonClass\}`;/, 'the solid button variant is configurable');
+  assert.match(js, /confirmButtonClass = 'btn-danger'/, 'the confirm button variant is configurable');
+  assert.match(js, /typeof onConfirm === 'function'/, 'confirmed actions may run a callback');
 });
 
 test('confirm modal CSS matches the Kinesis design system', () => {
@@ -292,8 +317,27 @@ test('confirm modal CSS matches the Kinesis design system', () => {
   assert.match(theme, /\.confirm-backdrop \{[^}]*z-index:\s*9998/);
   assert.match(theme, /\.confirm-card \{[^}]*border-radius:\s*16px/);
   assert.match(theme, /\.confirm-card \{[^}]*background:\s*var\(--card\)/);
-  assert.match(theme, /\.btn-danger \{[^}]*background:\s*var\(--danger\)/);
-  assert.match(theme, /\.btn-danger \{[^}]*transition:\s*all 0\.2s ease/);
+  assert.match(theme, /\.confirm-header \{[^}]*display:\s*flex/);
+  assert.match(theme, /\.confirm-header \{[^}]*gap:\s*0\.75rem/);
+  assert.match(theme, /\.confirm-icon \{[^}]*color:\s*var\(--danger\)/, 'the icon chip uses the danger tone');
+  assert.match(theme, /\.confirm-title \{[^}]*font-weight:\s*700/, 'the title is bold and prominent');
+  assert.match(theme, /\.confirm-message \{[^}]*color:\s*var\(--muted\)/, 'the body message is muted');
+  assert.match(theme, /\.confirm-actions \{[^}]*justify-content:\s*flex-end/, 'the footer actions align right');
+  assert.match(theme, /\.confirm-actions \{[^}]*gap:\s*0\.75rem/, 'the footer buttons are evenly spaced');
+  assert.match(theme, /\.confirm-actions \{[^}]*margin-top:\s*1\.25rem/, 'the footer separates from the body');
+  assert.match(theme, /\.confirm-actions \.btn \{[^}]*box-sizing:\s*border-box/, 'the shared base uses border-box sizing');
+  assert.match(theme, /\.confirm-actions \.btn \{[^}]*padding:\s*0\.625rem 1\.25rem/, 'both buttons share identical padding');
+  assert.match(theme, /\.confirm-actions \.btn \{[^}]*line-height:\s*1/, 'both buttons share the same line-height');
+  assert.match(theme, /\.confirm-actions \.btn \{[^}]*min-width:\s*120px/, 'footer buttons have a uniform min-width');
+  assert.match(theme, /\.confirm-actions \.btn \{[^}]*justify-content:\s*center/, 'the base centers its label');
+  assert.match(theme, /\.confirm-actions \.btn \{[^}]*align-items:\s*center/, 'the base centers its content vertically');
+  assert.match(theme, /\.confirm-actions \.btn \{[\s\S]*?border:\s*1px solid var\(--danger\)/, 'the solid and outline buttons share the same 1px border width');
+  assert.match(theme, /\.confirm-actions \.btn \{[^}]*transition:\s*all 0\.2s ease/, 'the base button animates smoothly');
+  assert.match(theme, /\.confirm-actions \.btn-secondary \{[^}]*background:\s*transparent/, 'the outline button stays transparent');
+  assert.match(theme, /\.confirm-actions \.btn-secondary \{[^}]*border-color:\s*var\(--accent-deep\)/, 'the cancel button uses the green outline');
+  assert.match(theme, /\.confirm-actions \.btn-secondary \{[^}]*color:\s*var\(--accent-deep\)/, 'the cancel button uses the green text');
+  assert.match(theme, /\.confirm-actions \.btn-secondary:focus-visible \{[^}]*outline-color:\s*var\(--accent-deep\)/, 'the cancel focus ring matches its green theme');
+  assert.match(theme, /\.confirm-actions \.btn-danger \{[^}]*background:\s*var\(--danger\)/, 'the solid button keeps the destructive fill');
 });
 
 /* ── Training Cycles sidebar guard ── */

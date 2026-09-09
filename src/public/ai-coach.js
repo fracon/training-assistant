@@ -2,8 +2,9 @@ import { initShell, getShellI18n, getUserPreferences, refreshIcons } from './sha
 import { translate, normalizeClientLanguage } from './shared/i18n.js';
 import { fetchShoes } from './shared/api.js';
 import { fetchActiveCycle, fetchCalendarTrainings } from './shared/api.js';
-import { formatDate as formatLocalizedDate, formatDateInput, parseLocalizedDate } from './shared/date.js';
+import { formatDate as formatLocalizedDate, parseLocalizedDate } from './shared/date.js';
 import { formatDistance, distancePromptUnit, temperaturePromptUnit } from './shared/units.js';
+import { createDatePicker } from './shared/datepicker.js';
 
 // Verbatim Portuguese briefing for the external AI Coach.
 // The wording below is a hard requirement — do not translate, rewrite
@@ -47,13 +48,13 @@ A semana a ser planejada começa em:
 
 DISPONIBILIDADE
 
-Segunda: {{DISP_SEG}}
-Terça: {{DISP_TER}}
-Quarta: {{DISP_QUA}}
-Quinta: {{DISP_QUI}}
-Sexta: {{DISP_SEX}}
-Sábado: {{DISP_SAB}}
-Domingo: {{DISP_DOM}}
+- Segunda-feira: {{DISP_SEG}} (Local: {{LOCAL_SEG}})
+- Terça-feira: {{DISP_TER}} (Local: {{LOCAL_TER}})
+- Quarta-feira: {{DISP_QUA}} (Local: {{LOCAL_QUA}})
+- Quinta-feira: {{DISP_QUI}} (Local: {{LOCAL_QUI}})
+- Sexta-feira: {{DISP_SEX}} (Local: {{LOCAL_SEX}})
+- Sábado: {{DISP_SAB}} (Local: {{LOCAL_SAB}})
+- Domingo: {{DISP_DOM}} (Local: {{LOCAL_DOM}})
 
 Se eu não informar nenhuma restrição especial, considere minha rotina normal de corrida.
 
@@ -140,13 +141,13 @@ The week to be planned starts on:
 
 AVAILABILITY
 
-Monday: {{DISP_SEG}}
-Tuesday: {{DISP_TER}}
-Wednesday: {{DISP_QUA}}
-Thursday: {{DISP_QUI}}
-Friday: {{DISP_SEX}}
-Saturday: {{DISP_SAB}}
-Sunday: {{DISP_DOM}}
+- Monday: {{DISP_SEG}} (Location: {{LOCAL_SEG}})
+- Tuesday: {{DISP_TER}} (Location: {{LOCAL_TER}})
+- Wednesday: {{DISP_QUA}} (Location: {{LOCAL_QUA}})
+- Thursday: {{DISP_QUI}} (Location: {{LOCAL_QUI}})
+- Friday: {{DISP_SEX}} (Location: {{LOCAL_SEX}})
+- Saturday: {{DISP_SAB}} (Location: {{LOCAL_SAB}})
+- Sunday: {{DISP_DOM}} (Location: {{LOCAL_DOM}})
 
 If I do not provide any special restrictions, assume my normal running routine.
 
@@ -196,6 +197,22 @@ If recent data indicates that the originally expected plan should be altered, pr
 
 const DAY_KEYS = ['segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado', 'domingo'];
 
+const DAY_LOCALE_KEYS = {
+  segunda: 'monday',
+  terca: 'tuesday',
+  quarta: 'wednesday',
+  quinta: 'thursday',
+  sexta: 'friday',
+  sabado: 'saturday',
+  domingo: 'sunday',
+};
+
+export function orderedDayKeys(weekStart = 'Monday') {
+  return weekStart === 'Sunday'
+    ? [DAY_KEYS[6], ...DAY_KEYS.slice(0, 6)]
+    : [...DAY_KEYS];
+}
+
 export const DEFAULT_ROUTINE_BY_LANG = {
   'en-US': 'Normal routine',
   'pt-BR': 'Rotina normal',
@@ -226,6 +243,16 @@ export const PLACEHOLDERS = {
   sexta: '{{DISP_SEX}}',
   sabado: '{{DISP_SAB}}',
   domingo: '{{DISP_DOM}}',
+};
+
+export const LOCATION_PLACEHOLDERS = {
+  segunda: '{{LOCAL_SEG}}',
+  terca: '{{LOCAL_TER}}',
+  quarta: '{{LOCAL_QUA}}',
+  quinta: '{{LOCAL_QUI}}',
+  sexta: '{{LOCAL_SEX}}',
+  sabado: '{{LOCAL_SAB}}',
+  domingo: '{{LOCAL_DOM}}',
 };
 
 export function pad2(value) {
@@ -436,7 +463,7 @@ export function formatShoesBlock(shoes = [], messages = {}, preferences = {}) {
   return `${title}\n\n${lines.join('\n')}`;
 }
 
-export function buildPrompt({ targetDate, disponibilidade = {}, contexto = '', lang = 'pt-BR', shoes = [], messages = {}, cycle = {}, previousWeek = {}, preferences = {} }) {
+export function buildPrompt({ targetDate, disponibilidade = {}, localizacao = {}, contexto = '', lang = 'pt-BR', shoes = [], messages = {}, cycle = {}, previousWeek = {}, preferences = {} }) {
   const templateLang = resolveTemplateLang(lang);
   const template = TEMPLATE_BY_LANG[templateLang];
   let prompt = replaceAll(
@@ -450,6 +477,8 @@ export function buildPrompt({ targetDate, disponibilidade = {}, contexto = '', l
   const availability = { ...availabilityDefaults(templateLang), ...disponibilidade };
   for (const day of DAY_KEYS) {
     prompt = replaceAll(prompt, PLACEHOLDERS[day], String(availability[day] ?? '').trim());
+    const location = String(localizacao[day] ?? '').trim();
+    prompt = replaceAll(prompt, LOCATION_PLACEHOLDERS[day], location === '' ? '-' : location);
   }
   const notes = String(contexto).trim();
   prompt = replaceAll(prompt, '{{CONTEXTO_OPCIONAL}}', notes === '' ? '-' : notes);
@@ -479,7 +508,16 @@ export function parseInputDate(value) {
   return new Date(year, month - 1, day);
 }
 
-const DAY_INPUT_IDS = {
+function normalizeTargetDate(value, language) {
+  const text = String(value ?? '').trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    const date = parseInputDate(text);
+    return date && dateInputValue(date) === text ? text : '';
+  }
+  return parseLocalizedDate(text, language);
+}
+
+export const DAY_INPUT_IDS = {
   segunda: 'dispSeg',
   terca: 'dispTer',
   quarta: 'dispQua',
@@ -488,6 +526,70 @@ const DAY_INPUT_IDS = {
   sabado: 'dispSab',
   domingo: 'dispDom',
 };
+
+export const LOCATION_INPUT_IDS = {
+  segunda: 'locSeg',
+  terca: 'locTer',
+  quarta: 'locQua',
+  quinta: 'locQui',
+  sexta: 'locSex',
+  sabado: 'locSab',
+  domingo: 'locDom',
+};
+
+export function validatePromptFields({ targetDate = '', language = 'pt-BR', baseLocation = '', disponibilidade = {}, localizacao = {} } = {}) {
+  const missing = [];
+  if (!normalizeTargetDate(targetDate, language)) missing.push('targetDate');
+  if (!DAY_KEYS.every((day) => String(disponibilidade[day] ?? '').trim())) missing.push('availability');
+  const hasBaseLocation = String(baseLocation ?? '').trim() !== '';
+  const hasDailyLocations = DAY_KEYS.every((day) => String(localizacao[day] ?? '').trim() !== '');
+  if (!hasBaseLocation && !hasDailyLocations) missing.push('location');
+  return { valid: missing.length === 0, missing };
+}
+
+export function buildDayRowHtml(day, { dayLabel, routine, locationPlaceholder }) {
+  return `<div class="day-row">
+  <label for="${DAY_INPUT_IDS[day]}" class="day-label"><span data-i18n="aiCoach.days.${DAY_LOCALE_KEYS[day]}">${dayLabel}</span><span class="required-mark" aria-hidden="true">*</span></label>
+  <input type="text" id="${DAY_INPUT_IDS[day]}" value="${routine}" autocomplete="off" required>
+  <input type="text" id="${LOCATION_INPUT_IDS[day]}" data-i18n-placeholder="aiCoach.location" placeholder="${locationPlaceholder}" autocomplete="off" required>
+</div>`;
+}
+
+export function readDayInputState(getValue) {
+  const state = {};
+  for (const day of DAY_KEYS) {
+    state[day] = {
+      availability: getValue(DAY_INPUT_IDS[day]),
+      location: getValue(LOCATION_INPUT_IDS[day]),
+    };
+  }
+  return state;
+}
+
+export function applyDayInputState(state, setValue) {
+  for (const day of DAY_KEYS) {
+    const record = state[day] ?? {};
+    if (record.availability !== undefined) {
+      setValue(DAY_INPUT_IDS[day], record.availability);
+    }
+    if (record.location !== undefined) {
+      setValue(LOCATION_INPUT_IDS[day], record.location);
+    }
+  }
+}
+
+export function renderDayGrid({ weekStart = 'Monday', routine = '', dayLabel = (day) => day, locationPlaceholder = 'Location', grid, getValue, setValue }) {
+  const previous = readDayInputState(getValue);
+  grid.innerHTML = orderedDayKeys(weekStart)
+    .map((day) => buildDayRowHtml(day, {
+      dayLabel: dayLabel(day),
+      routine,
+      locationPlaceholder,
+    }))
+    .join('');
+  applyDayInputState(previous, setValue);
+  return grid.innerHTML;
+}
 
 const COPY_FEEDBACK_MS = 2000;
 
@@ -500,29 +602,91 @@ function setupAiCoachPage() {
 
   const form = document.getElementById('promptForm');
   const targetDateInput = document.getElementById('targetDate');
+  const targetDateDisplay = document.getElementById('targetDateDisplay');
   const optionalContextInput = document.getElementById('optionalContext');
+  const baseLocationInput = document.getElementById('baseLocation');
+  const availabilityGrid = document.getElementById('availabilityGrid');
   const resultSection = document.getElementById('resultSection');
-  const resultPlaceholder = document.getElementById('resultPlaceholder');
   const promptOutput = document.getElementById('promptOutput');
   const copyBtn = document.getElementById('copyBtn');
   const copyIconSlot = copyBtn.querySelector('.copy-icon');
   const copyLabel = document.getElementById('copyLabel');
+  const generateBtn = document.getElementById('generateBtn');
 
   targetDateInput.dataset.iso = dateInputValue(nextMonday());
-  targetDateInput.value = formatDateInput(targetDateInput.dataset.iso, i18n.language);
-  targetDateInput.placeholder = i18n.language === 'pt-BR' ? 'DD/MM/YYYY' : 'MM/DD/YYYY';
-  targetDateInput.addEventListener('input', () => {
-    targetDateInput.dataset.iso = parseLocalizedDate(targetDateInput.value, i18n.language);
+  targetDateInput.value = targetDateInput.dataset.iso;
+  const targetDatePicker = createDatePicker(targetDateDisplay, {
+    isoInput: targetDateInput,
+    getLanguage: () => i18n.language,
+    getWeekStart: () => getUserPreferences().first_day_of_week,
+    onChange: () => updateValidation(),
   });
 
-  // Fresh form: stamp the current language's default routine on all seven
-  // day inputs and remember it so later language switches only rewrite
-  // values the user has not customized yet.
   let lastRoutineDefault = t('aiCoach.defaultRoutine') || defaultRoutineFor(i18n.language);
-  for (const inputId of Object.values(DAY_INPUT_IDS)) {
-    const input = document.getElementById(inputId);
-    if (input) input.value = lastRoutineDefault;
+  function renderDayRows() {
+    renderDayGrid({
+      weekStart: getUserPreferences().first_day_of_week,
+      routine: lastRoutineDefault,
+      dayLabel: (day) => t(`aiCoach.days.${DAY_LOCALE_KEYS[day]}`) || day,
+      locationPlaceholder: t('aiCoach.location') || 'Location',
+      grid: availabilityGrid,
+      getValue: (id) => document.getElementById(id)?.value,
+      setValue: (id, value) => {
+        const input = document.getElementById(id);
+        if (input) input.value = value;
+      },
+    });
   }
+  renderDayRows();
+
+  function readFormFields() {
+    const disponibilidade = {};
+    for (const [day, inputId] of Object.entries(DAY_INPUT_IDS)) {
+      const input = document.getElementById(inputId);
+      if (input) disponibilidade[day] = input.value;
+    }
+    const localizacao = {};
+    for (const [day, inputId] of Object.entries(LOCATION_INPUT_IDS)) {
+      const input = document.getElementById(inputId);
+      if (input) localizacao[day] = input.value;
+    }
+    return { disponibilidade, localizacao };
+  }
+
+  function updateValidation() {
+    const { disponibilidade, localizacao } = readFormFields();
+    const validation = validatePromptFields({
+      targetDate: targetDateInput.value,
+      language: i18n.language,
+      baseLocation: baseLocationInput.value,
+      disponibilidade,
+      localizacao,
+    });
+    generateBtn.disabled = !validation.valid;
+    generateBtn.setAttribute('aria-disabled', String(!validation.valid));
+    targetDateInput.setAttribute('aria-invalid', String(validation.missing.includes('targetDate')));
+    baseLocationInput.setAttribute('aria-invalid', String(validation.missing.includes('location')));
+    return validation;
+  }
+
+  updateValidation();
+
+  document.addEventListener('kinesis:preferences-changed', (event) => {
+    const next = event.detail?.first_day_of_week;
+    if (next === 'Monday' || next === 'Sunday') renderDayRows();
+  });
+
+  // The base location cascades to every day's location input. Each day can
+  // still be overridden manually afterwards — a later base-location edit
+  // simply rewrites all days again.
+  baseLocationInput.addEventListener('input', () => {
+    for (const inputId of Object.values(LOCATION_INPUT_IDS)) {
+      const input = document.getElementById(inputId);
+      if (input) input.value = baseLocationInput.value;
+    }
+    updateValidation();
+  });
+  availabilityGrid.addEventListener('input', updateValidation);
 
   document.addEventListener('app:languagechange', () => {
     const nextDefault = t('aiCoach.defaultRoutine') || defaultRoutineFor(i18n.language);
@@ -537,10 +701,11 @@ function setupAiCoachPage() {
       if (input) input.value = value;
     }
     lastRoutineDefault = nextDefault;
-    const targetIso = targetDateInput.dataset.iso || parseLocalizedDate(targetDateInput.value, i18n.language);
+    const targetIso = targetDateInput.dataset.iso || normalizeTargetDate(targetDateInput.value, i18n.language);
     targetDateInput.dataset.iso = targetIso;
-    targetDateInput.value = targetIso ? formatDateInput(targetIso, i18n.language) : '';
-    targetDateInput.placeholder = i18n.language === 'pt-BR' ? 'DD/MM/YYYY' : 'MM/DD/YYYY';
+    targetDateInput.value = targetIso;
+    targetDatePicker.refresh();
+    updateValidation();
   });
 
   let copiedTimer = null;
@@ -562,14 +727,11 @@ function setupAiCoachPage() {
 
   async function handleGenerate(event) {
     event.preventDefault();
-    const generateBtn = document.getElementById('generateBtn');
-    const disponibilidade = {};
-    for (const [day, inputId] of Object.entries(DAY_INPUT_IDS)) {
-      const input = document.getElementById(inputId);
-      if (input) disponibilidade[day] = input.value;
-    }
-    const targetIso = targetDateInput.dataset.iso || parseLocalizedDate(targetDateInput.value, i18n.language);
-    const targetDate = parseInputDate(targetIso) ?? nextMonday();
+    const { disponibilidade, localizacao } = readFormFields();
+    const validation = updateValidation();
+    if (!validation.valid) return;
+    const targetIso = targetDateInput.dataset.iso || normalizeTargetDate(targetDateInput.value, i18n.language);
+    const targetDate = parseInputDate(targetIso);
 
     generateBtn.disabled = true;
     let shoes = [];
@@ -585,7 +747,7 @@ function setupAiCoachPage() {
     } catch {
       // Any unavailable context keeps prompt generation usable with dashes.
     }
-    generateBtn.disabled = false;
+    updateValidation();
 
     const preferences = getUserPreferences();
     const promptContext = buildPromptContext({ cycle: cycle || {}, trainings, targetDate, preferences });
@@ -593,6 +755,7 @@ function setupAiCoachPage() {
     promptOutput.textContent = buildPrompt({
       targetDate,
       disponibilidade,
+      localizacao,
       contexto: optionalContextInput.value,
       lang: i18n.language,
       shoes,
@@ -600,7 +763,6 @@ function setupAiCoachPage() {
       ...promptContext,
     });
     resultSection.classList.remove('hidden');
-    resultPlaceholder.classList.add('hidden');
     promptOutput.scrollTop = 0;
   }
 

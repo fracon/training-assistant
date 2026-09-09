@@ -20,6 +20,7 @@
             <footer id="heroQuoteAuthor" class="hero-quote-author"></footer>
           </blockquote>
         </div>
+        <p id="heroCredit" class="hero-credit hidden"></p>
       </section>
 
       <div class="dashboard-grid vertical">
@@ -64,21 +65,40 @@
             </a>
           </header>
 
-          <div class="week-tracker">
-            <div id="weekTrackerDays" class="week-tracker-days" role="list"
-              data-i18n-aria-label="home.metrics.trackerAria"></div>
+          <div class="weekly-metrics-body">
+            <div class="week-tracker">
+              <div id="weekTrackerDays" class="week-tracker-days" role="list"
+                data-i18n-aria-label="home.metrics.trackerAria"></div>
+            </div>
+
+            <div class="metrics-grid">
+              <div class="metric-tile">
+                <span class="metric-label" data-i18n="home.metrics.distance">Total Distance</span>
+                <span id="weeklyDistanceValue" class="metric-value">0.00 km</span>
+              </div>
+              <div class="metric-tile">
+                <span class="metric-label" data-i18n="home.metrics.time">Total Time</span>
+                <span id="weeklyTimeValue" class="metric-value">0h 00m</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card-section" aria-labelledby="shoesOverviewTitle">
+          <header class="section-header">
+            <h2 id="shoesOverviewTitle" data-i18n="home.shoes.title">My Shoes</h2>
+            <a class="card-action" href="/shoes.html" data-i18n-aria-label="home.actions.goToShoes">
+              <i data-lucide="external-link" aria-hidden="true"></i>
+            </a>
+          </header>
+
+          <div id="shoesEmpty" class="empty-state">
+            <h3 data-i18n="home.shoes.emptyTitle">No active shoes</h3>
+            <p data-i18n="home.shoes.emptyText">Register your running shoes to track their mileage.</p>
+            <a class="btn-primary" href="/shoes.html" data-i18n="home.shoes.emptyCta">Add shoes</a>
           </div>
 
-          <div class="metrics-grid">
-            <div class="metric-tile">
-              <span class="metric-label" data-i18n="home.metrics.distance">Total Distance</span>
-              <span id="weeklyDistanceValue" class="metric-value">0.00 km</span>
-            </div>
-            <div class="metric-tile">
-              <span class="metric-label" data-i18n="home.metrics.time">Total Time</span>
-              <span id="weeklyTimeValue" class="metric-value">0h 00m</span>
-            </div>
-          </div>
+          <ul id="shoesList" class="shoes-list hidden" role="list"></ul>
         </section>
       </div>
     </div>

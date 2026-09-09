@@ -11,6 +11,9 @@ import {
   readUserPreferences,
   writeUserPreferences,
 } from './preferences.js';
+import { showConfirm } from './confirm-modal.js';
+
+export { showConfirm } from './confirm-modal.js';
 
 const SIDEBAR_STORAGE_KEY = 'training-assistant:sidebar-collapsed';
 const CYCLE_DEPENDENT_ITEMS = ['ai-coach', 'calendar'];
@@ -99,57 +102,6 @@ export function refreshIcons() {
   } catch {
     /* CDN unavailable - labels still render without icons */
   }
-}
-
-export function showConfirm(message, confirmLabel, cancelLabel) {
-  return new Promise((resolve) => {
-    const backdrop = document.createElement('div');
-    backdrop.className = 'confirm-backdrop';
-
-    const card = document.createElement('div');
-    card.className = 'confirm-card';
-    card.setAttribute('role', 'alertdialog');
-    card.setAttribute('aria-modal', 'true');
-
-    const msg = document.createElement('p');
-    msg.className = 'confirm-message';
-    msg.textContent = message;
-    card.appendChild(msg);
-
-    const actions = document.createElement('div');
-    actions.className = 'confirm-actions';
-
-    const cancelBtn = document.createElement('button');
-    cancelBtn.type = 'button';
-    cancelBtn.className = 'btn-secondary';
-    cancelBtn.textContent = cancelLabel;
-    cancelBtn.id = 'confirmCancelBtn';
-
-    const confirmBtn = document.createElement('button');
-    confirmBtn.type = 'button';
-    confirmBtn.className = 'btn-danger';
-    confirmBtn.textContent = confirmLabel;
-    confirmBtn.id = 'confirmOkBtn';
-
-    actions.appendChild(cancelBtn);
-    actions.appendChild(confirmBtn);
-    card.appendChild(actions);
-    backdrop.appendChild(card);
-    document.body.appendChild(backdrop);
-
-    if (typeof lucide !== 'undefined') lucide.createIcons({ nodes: [backdrop] });
-
-    function cleanup(result) {
-      backdrop.remove();
-      resolve(result);
-    }
-
-    confirmBtn.addEventListener('click', () => cleanup(true), { once: true });
-    cancelBtn.addEventListener('click', () => cleanup(false), { once: true });
-    backdrop.addEventListener('click', (e) => {
-      if (e.target === backdrop) cleanup(false);
-    }, { once: true });
-  });
 }
 
 let shellI18n = createI18n({

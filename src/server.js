@@ -33,7 +33,9 @@ const {
 } = require('./auth/preferences');
 const ExcelJS = require('exceljs');
 const { parseSheet } = require('./trainingImport');
+const { resolveTrainingWeather } = require('./weather');
 const { buildMacrocyclePrompt } = require('./prompts');
+const { fetchHeroImage } = require('./unsplash');
 const {
   ShoeError,
   createShoe,
@@ -81,6 +83,21 @@ function parseRpe(raw) {
   return { ok: true, value };
 }
 
+// Rescheduling dates travel as zero-padded ISO strings, the same format
+// the Excel importer writes into `dia`. Returns the validated YYYY-MM-DD
+// or null when the value is not a trustworthy calendar date.
+function normalizeIsoDate(value) {
+  if (typeof value !== 'string') return null;
+  const text = value.trim();
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (!match) return null;
+  const probe = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  const iso =
+    `${probe.getUTCFullYear()}-${String(probe.getUTCMonth() + 1).padStart(2, '0')}-` +
+    `${String(probe.getUTCDate()).padStart(2, '0')}`;
+  return iso === text ? text : null;
+}
+
 async function buildServer(options = {}) {
   const app = Fastify({ logger: false });
   await app.register(multipart, {
@@ -94,6 +111,7 @@ async function buildServer(options = {}) {
 
   const parseFile = options.parseFitFile || parseFitFile;
   const changeUserPassword = options.changeUserPassword || changePassword;
+  const loadHeroImage = options.fetchHeroImage || fetchHeroImage;
 
   const sessionOf = (request) => {
     if (!options.db) return null;
@@ -216,6 +234,10 @@ async function buildServer(options = {}) {
 
     app.get('/api/me', { preHandler: requireAuth }, async (request) => {
       return { user: request.user };
+    });
+
+    app.get('/api/hero-image', { preHandler: requireAuth }, async () => {
+      return loadHeroImage({ fetchImpl: options.unsplashFetch || globalThis.fetch });
     });
 
     app.put('/api/auth/password', { preHandler: requireAuth }, async (request, reply) => {
@@ -383,8 +405,8 @@ async function buildServer(options = {}) {
 
       const insert = db.prepare(
         `INSERT INTO trainings
-           (user_id, training_cycle_id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+           (user_id, training_cycle_id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes, location)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       );
       const insertMany = db.transaction((rows) => {
         for (const record of rows) {
@@ -400,7 +422,8 @@ async function buildServer(options = {}) {
             record.rpe,
             record.tenis,
             record.previsao,
-            record.observacoes
+            record.observacoes,
+            record.location === '' ? null : record.location
           );
         }
       });
@@ -413,7 +436,7 @@ async function buildServer(options = {}) {
     });
 
     const TRAINING_COLUMNS =
-      'id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes, feedback_rpe, feedback_notas, completed, has_smartwatch, feedback_shoe, feedback_hr_source, feedback_weather, feedback_terrain, feedback_breathing, feedback_muscle, feedback_energy, feedback_has_pain, feedback_pain, fit_duration, fit_distance, fit_avg_pace, fit_avg_hr, fit_max_hr, fit_elevation_gain, fit_summary_json';
+      'id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes, location, feedback_rpe, feedback_notas, completed, has_smartwatch, feedback_shoe, feedback_hr_source, feedback_weather, feedback_terrain, feedback_breathing, feedback_muscle, feedback_energy, feedback_has_pain, feedback_pain, fit_duration, fit_distance, fit_avg_pace, fit_avg_hr, fit_max_hr, fit_elevation_gain, fit_summary_json';
 
     const findTraining = db.prepare(
       `SELECT ${TRAINING_COLUMNS} FROM trainings WHERE id = ? AND user_id = ?`
@@ -429,6 +452,31 @@ async function buildServer(options = {}) {
         return reply.code(404).send({ error: 'Training not found.' });
       }
       return { training };
+    });
+
+    app.get('/api/weather', { preHandler: requireAuth }, async (request, reply) => {
+      const location =
+        typeof request.query?.location === 'string' ? request.query.location.trim() : '';
+      const date = normalizeIsoDate(request.query?.date);
+      if (location === '') {
+        return reply.code(400).send({ error: 'location is required.' });
+      }
+      if (date === null) {
+        return reply.code(400).send({ error: 'date must be a valid date in YYYY-MM-DD format.' });
+      }
+      const result = await resolveTrainingWeather(location, date, options.weatherFetch);
+      if (!result.ok) {
+        return reply.code(result.status).send({ error: result.error });
+      }
+      return reply.send({
+        location: result.location,
+        latitude: result.latitude,
+        longitude: result.longitude,
+        date: result.date,
+        temperature_c: result.temperature_c,
+        weather_code: result.weather_code,
+        source: result.source,
+      });
     });
 
     app.patch('/api/trainings/:id', { preHandler: requireAuth }, async (request, reply) => {
@@ -509,6 +557,41 @@ async function buildServer(options = {}) {
       db.prepare(
         `UPDATE trainings SET ${assignments} WHERE id = ? AND user_id = ?`
       ).run(...fields.map((field) => updates[field]), id, request.user.id);
+
+      return { training: findTraining.get(id, request.user.id) };
+    });
+
+    // Dedicated reschedule endpoint for the Calendar drag-and-drop flow.
+    // It accepts exactly one field (`date`, zero-padded YYYY-MM-DD) and
+    // never touches the feedback columns owned by PATCH /api/trainings/:id.
+    app.patch('/api/trainings/:id/reschedule', { preHandler: requireAuth }, async (request, reply) => {
+      const id = Number(request.params.id);
+      if (!Number.isInteger(id) || id <= 0) {
+        return reply.code(400).send({ error: 'Invalid training id.' });
+      }
+
+      const body = request.body ?? {};
+      const keys = Object.keys(body);
+      if (keys.length !== 1 || keys[0] !== 'date') {
+        return reply.code(400).send({ error: 'Request body must contain only the date field.' });
+      }
+
+      const date = normalizeIsoDate(body.date);
+      if (date === null) {
+        return reply.code(400).send({
+          error: 'date must be a valid date in YYYY-MM-DD format.',
+        });
+      }
+
+      if (!findTraining.get(id, request.user.id)) {
+        return reply.code(404).send({ error: 'Training not found.' });
+      }
+
+      db.prepare('UPDATE trainings SET dia = ? WHERE id = ? AND user_id = ?').run(
+        date,
+        id,
+        request.user.id
+      );
 
       return { training: findTraining.get(id, request.user.id) };
     });
@@ -604,6 +687,26 @@ async function buildServer(options = {}) {
           detail: error.message,
         });
       }
+    });
+
+    // Safely owns the session before deleting so a foreign id can never be
+    // removed through the calendar delete flow.
+    app.delete('/api/trainings/:id', { preHandler: requireAuth }, async (request, reply) => {
+      const id = Number(request.params.id);
+      if (!Number.isInteger(id) || id <= 0) {
+        return reply.code(400).send({ error: 'Invalid training id.' });
+      }
+
+      if (!findTraining.get(id, request.user.id)) {
+        return reply.code(404).send({ error: 'Training not found.' });
+      }
+
+      db.prepare('DELETE FROM trainings WHERE id = ? AND user_id = ?').run(
+        id,
+        request.user.id
+      );
+
+      return { status: 'ok' };
     });
 
     // ── Training Cycles CRUD ────────────────────────────────────

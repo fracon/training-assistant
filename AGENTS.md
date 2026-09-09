@@ -10,13 +10,13 @@
 - **Deployment:** Self-hosted on ZimaOS via Docker Compose.
 - **CI/CD:** Automated via Self-Hosted GitHub Runner pushing to GitHub Container Registry (GHCR).
 - **Networking:** Exposed securely via Cloudflare Zero Trust Tunnels (HTTP on port 8081).
-- **Application version:** `0.1.1` (active development; see the versioning Golden Rule below).
+- **Application version:** `0.6.0` (active development; see the versioning Golden Rule below).
 
-## ✅ Current Implementation Status — `feature/home-dashboard`
+## ✅ Current Implementation Status — `feature/calendar-dnd`
 
-The Home Dashboard and its supporting Calendar import flow are implemented and
-polished on the active feature branch. Keep these decisions intact when making
-follow-up changes:
+The Home Dashboard, Calendar, weather integration, and supporting import flows
+are implemented and polished on the active feature branch. Keep these
+decisions intact when making follow-up changes:
 
 - The dashboard renders the cycle title/goal independently, places the weekly
   tracker before the metric tiles, and uses minimalist active-day pills with
@@ -28,6 +28,11 @@ follow-up changes:
   **Date (`dia`) + Training Name (`treino`) + Description (`detalhes`)**.
   Existing rows and repeats within one workbook are skipped, while distinct
   workouts on the same date are retained.
+- Calendar training chips support native drag-and-drop rescheduling with
+  optimistic rendering, a dedicated persistence endpoint, and localized success
+  or failure feedback.
+- Planned training locations are imported and can trigger a keyless Open-Meteo
+  weather lookup with archive-to-forecast fallback and unit-aware rendering.
 - Import feedback uses the shared shell Snackbar with two localized lines for
   imported and skipped counts; do not reintroduce a permanent inline banner.
 - The hero selects a random running-only Unsplash image on initialization.
@@ -58,6 +63,7 @@ follow-up changes:
 8. **Golden Rule for Dates:** All dates displayed in the application MUST use the central date formatting utility and respect the active i18n locale. Hardcoded or ad-hoc date formatting inside components or services is strictly prohibited.
 9. **Golden Rule for Units:** All displayed distances and temperatures MUST use the centralized unit conversion utility and the active user preferences. Components and prompt templates must not hardcode `km`, `mi`, `°C`, or `°F` when rendering stored values.
 10. **Golden Rule for Versioning:** Always increment the application version before opening a Pull Request. You must strictly adhere to Semantic Versioning (SemVer) principles: MAJOR (incompatible API/architecture changes), MINOR (backward-compatible new features), and PATCH (backward-compatible bug fixes).
+11. **GOLDEN RULE - DATE INPUTS:** Never use raw text inputs or uncontrolled native `<input type="date">` elements for dates. All date inputs must strictly use the centralized DatePicker component to ensure the visual format, calendar language, and user's week-start preferences are explicitly controlled and reactive to `app:languagechange`.
 
 ## 🌐 i18n Lifecycle and Dynamic DOM Reactivity
 
@@ -96,7 +102,7 @@ Whenever starting the development of a new feature, you MUST follow this strict 
   - GitHub Actions Workflow (GHCR publishing).
   - ZimaOS `docker-compose.yml` & Cloudflare Tunnel mapping.
 
-- **Phase 3: Authentication [⏳ ON-HOLD / NEXT]**
+- **Phase 3: Authentication [✅ FINISHED]**
   - Implement a secure authentication system to protect the application from unauthorized access.
 
 - **Phase 3.5: Shoe Rotation Feature [✅ FINISHED]**
@@ -105,7 +111,7 @@ Whenever starting the development of a new feature, you MUST follow this strict 
   - UI/UX fixes: stale i18n closure fix, status badge i18n, toast redesign (top-right, Lucide icon).
   - Shared abstractions: `showConfirm()` in `shell.js` (Promise-based confirm modal), `.btn-danger`/`.confirm-backdrop`/`.confirm-card` in `theme.css`, `shell.confirm.{yes,no}` i18n keys.
 
-- **Phase 4: Internationalization (i18n) [🚧 PLANNED]**
+- **Phase 4: Internationalization (i18n) [✅ FINISHED]**
   - Deliver a seamless cross-device language experience with a highly polished, minimalist UI.
   - **Languages Supported:** American English (`en-US`) and Brazilian Portuguese (`pt-BR`).
   - **Default Language:** `en-US` is the default fallback everywhere.
@@ -138,6 +144,7 @@ Whenever starting the development of a new feature, you MUST follow this strict 
 - **Phase 6: Calendar View [✅ FINISHED]**
   - **Feature Scope:**
     - **Monthly View Only (Initially):** a classic monthly grid layout (weeks as rows, days as cells). No week/agenda views in this phase.
+    - **Drag-and-drop rescheduling:** training chips can be moved between day cells and persist through the dedicated reschedule API.
     - **First Day of the Week Toggle:** users must be able to choose whether the calendar week starts on Monday or Sunday.
     - **Default State:** Monday MUST be the default first day of the week everywhere (DB default, localStorage fallback, and initial render).
   - **Architecture & Technical Constraints:**
@@ -148,7 +155,8 @@ Whenever starting the development of a new feature, you MUST follow this strict 
     - Add a new column to the `users` table: `first_day_of_week` (e.g., TEXT storing `'Monday' | 'Sunday'`, defaulting to `'Monday'`), via an idempotent migration in `migrateDatabase()` like the i18n rollout.
     - The preference must be returned by login and `GET /api/me`, and synced to `localStorage` upon login/`/api/me` for immediate synchronous client-side rendering (same pattern used for `preferred_lang`).
     - Expose a protected update endpoint (mirroring `PATCH /api/users/me/language`) and place the Mon/Sun toggle in the Topbar or within the Calendar view header.
-  - **i18n Coverage:** month names and days of the week must be fully translatable using the existing `src/public/locales/en.json` / `pt.json`; the locale key-parity test must keep both files in sync.
+    - **i18n Coverage:** month names and days of the week must be fully translatable using the existing `src/public/locales/en.json` / `pt.json`; the locale key-parity test must keep both files in sync.
+    - **Weather integration:** imported locations feed the authenticated Open-Meteo proxy and editable weather field auto-fill.
 
 - **Phase 7: AI Coach Prompt Generator [✅ FINISHED]**
   - **Feature Scope:** a dedicated tool page that builds a highly detailed, pre-formatted prompt for an external AI Coach (ChatGPT/Claude) to plan the next training week. The user copies the generated text and pastes it into their LLM of choice — nothing is ever sent anywhere by this app (local-first rule).

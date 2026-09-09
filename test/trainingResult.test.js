@@ -23,6 +23,12 @@ const {
   escapeHtmlText,
   fitDropzonePrimaryHtml,
   buildLapsMarkdown,
+  handleTrainingDelete,
+  weatherLabelKey,
+  shouldAutoFillWeather,
+  formatWeatherAutofill,
+  WEATHER_CODE_LABEL_KEYS,
+  WEATHER_UNKNOWN_KEY,
   PROMPT_TEMPLATE_PT,
   PROMPT_TEMPLATE_EN,
 } = require('../src/public/training-result.js');
@@ -59,7 +65,62 @@ test('plannedValue renders a dash placeholder for empty planned fields', () => {
   assert.equal(plannedValue(training, 'treino'), '-');
   assert.equal(plannedValue(training, 'detalhes'), '-');
   assert.equal(plannedValue(training, 'fc_alvo'), '-');
+  assert.equal(plannedValue(training, 'location'), '-');
   assert.equal(plannedValue(undefined, 'tipo'), '-');
+});
+
+test('session weather helpers resolve localized labels and autofill text', () => {
+  assert.equal(weatherLabelKey(3), 'weather.3');
+  assert.equal(weatherLabelKey(999), WEATHER_UNKNOWN_KEY);
+  assert.equal(WEATHER_CODE_LABEL_KEYS[61], 'weather.61');
+  assert.equal(WEATHER_UNKNOWN_KEY, 'weather.unknown');
+  assert.equal(en.weather['3'], 'Overcast');
+  assert.equal(pt.weather['3'], 'Encoberto');
+  assert.equal(en.weather['61'], 'Light rain');
+  assert.equal(pt.weather['61'], 'Chuva leve');
+  assert.equal(en.weather.unknown, 'Weather unknown');
+  assert.equal(pt.weather.unknown, 'Clima desconhecido');
+});
+
+test('shouldAutoFillWeather only fires for a planned location on a blank field', () => {
+  assert.equal(shouldAutoFillWeather({ location: 'Porto' }, ''), true);
+  assert.equal(shouldAutoFillWeather({ location: ' Porto ' }, null), true);
+  assert.equal(shouldAutoFillWeather({ location: '' }, ''), false, 'no location');
+  assert.equal(shouldAutoFillWeather({ location: null }, ''), false, 'null location');
+  assert.equal(
+    shouldAutoFillWeather({ location: 'Porto' }, '22°C, Overcast'),
+    false,
+    'a typed override is never overwritten'
+  );
+});
+
+test('formatWeatherAutofill renders temperature in the preferred unit with the weather label', () => {
+  const translateFn = (key) => ({ 'weather.3': 'Overcast' }[key] ?? '');
+  assert.equal(
+    formatWeatherAutofill({ temperature_c: 22, weather_code: 3 }, translateFn, 'C'),
+    '22 °C, Overcast'
+  );
+  assert.equal(
+    formatWeatherAutofill({ temperature_c: -1.5, weather_code: 3 }, translateFn, 'C'),
+    '-2 °C, Overcast'
+  );
+  assert.equal(formatWeatherAutofill(null, translateFn, 'C'), '');
+  assert.equal(formatWeatherAutofill({ weather_code: 3 }, translateFn, 'C'), '');
+});
+
+test('lookup(weather, key) works for WMO codes even when missing expected entries', () => {
+  assert.equal(en.weather['0'], 'Clear');
+  assert.equal(pt.weather['95'], 'Tempestade');
+});
+
+test('weather locale namespace covers every WMO key in both languages', () => {
+  const codes = [0, 1, 2, 3, 45, 48, 51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 71, 73, 75, 77, 80, 81, 82, 85, 86, 95, 96, 99, 'unknown'];
+  for (const code of codes) {
+    assert.equal(typeof en.weather[code], 'string', `en.weather.${code}`);
+    assert.equal(typeof pt.weather[code], 'string', `pt.weather.${code}`);
+  }
+  assert.equal(en.session.fieldLocation, 'Location');
+  assert.equal(pt.session.fieldLocation, 'Local');
 });
 
 test('normalizeFeedbackRpe keeps blank answers as null and valid integers as numbers', () => {
@@ -362,6 +423,89 @@ test('escapeHtmlText neutralizes HTML-significant characters', () => {
   assert.equal(escapeHtmlText(42), '42');
 });
 
+test('handleTrainingDelete cancels and returns false without removing', async () => {
+  const messages = { session: {}, shell: { confirm: {} } };
+  const result = await handleTrainingDelete({
+    id: 7,
+    messages,
+    confirm: async () => false,
+    remove: async () => {
+      throw new Error('should not be called on cancel');
+    },
+    toast: () => {},
+    redirect: () => {
+      throw new Error('should not redirect on cancel');
+    },
+  });
+  assert.equal(result, false);
+});
+
+test('handleTrainingDelete removes the session and redirects on success', async () => {
+  const messages = {
+    session: {
+      deleteConfirmTitle: 'Delete training',
+      deleteConfirmMessage: 'Delete?',
+    },
+    shell: { confirm: { yes: 'Delete', no: 'Cancel' } },
+  };
+  let removedId = null;
+  let toastKey = null;
+  let redirected = false;
+  let confirmArgs = null;
+  const result = await handleTrainingDelete({
+    id: 7,
+    messages,
+    confirm: async (args) => {
+      confirmArgs = args;
+      return true;
+    },
+    remove: async (id) => {
+      removedId = id;
+    },
+    toast: (m, key) => {
+      toastKey = key;
+    },
+    redirect: () => {
+      redirected = true;
+    },
+  });
+  assert.equal(result, true);
+  assert.equal(removedId, 7);
+  assert.equal(toastKey, 'session.deleteSuccess');
+  assert.equal(redirected, true);
+  assert.equal(confirmArgs.title, 'Delete training', 'the modal receives the localized title');
+  assert.equal(confirmArgs.message, 'Delete?', 'the modal receives the localized message');
+  assert.equal(confirmArgs.icon, 'trash-2', 'the modal uses the destructive trash icon');
+  assert.equal(confirmArgs.confirmLabel, 'Delete');
+  assert.equal(confirmArgs.cancelLabel, 'Cancel');
+});
+
+test('handleTrainingDelete surfaces failures as an error toast without redirecting', async () => {
+  const messages = {
+    session: { deleteConfirmMessage: 'Delete?' },
+    shell: { confirm: { yes: 'Delete', no: 'Cancel' } },
+  };
+  let toastKey = null;
+  let redirected = false;
+  const result = await handleTrainingDelete({
+    id: 7,
+    messages,
+    confirm: async () => true,
+    remove: async () => {
+      throw new Error('server said no');
+    },
+    toast: (m, key) => {
+      toastKey = key;
+    },
+    redirect: () => {
+      redirected = true;
+    },
+  });
+  assert.equal(result, false);
+  assert.equal(toastKey, 'session.deleteError');
+  assert.equal(redirected, false);
+});
+
 test('buildLapsMarkdown returns empty string for missing or empty laps', () => {
   assert.equal(buildLapsMarkdown(null), '');
   assert.equal(buildLapsMarkdown(undefined), '');
@@ -646,13 +790,48 @@ test('training-result.html ships the expanded feedback grid and generator button
   for (const legacy of ['id="dropzone"', 'id="fileInput"', 'markdownPreview', 'copyBtn', 'form-state.js', 'shoeUsedPlaceholder']) {
     assert.ok(!html.includes(legacy), `${legacy} is gone from the refactored page`);
   }
+
+  assert.match(
+    html,
+    /<div class="card-head">\s*\n\s*<h2 id="plannedTitle" data-i18n="session\.plannedHeading">Planned workout<\/h2>\s*\n\s*<button id="deleteTrainingBtn" class="btn-icon btn-danger" type="button" aria-label="Delete training">/,
+    'the planned card header carries a dedicated delete button'
+  );
+  assert.match(
+    html,
+    /<i data-lucide="trash-2" aria-hidden="true"><\/i>\s*\n\s*<div class="custom-tooltip" data-i18n="session\.deleteTooltip">Delete training<\/div>/,
+    'the delete action ships a custom tooltip, never a native title'
+  );
+  assert.ok(!html.includes('title="'), 'no native title attributes sneak in');
+});
+
+test('training-result.html ships the planned location field and weather spinner', () => {
+  const html = readFileSync(join(publicDir, 'training-result.html'), 'utf8');
+
+  assert.match(
+    html,
+    /<dt data-i18n="session\.fieldLocation">Location<\/dt>\s*\n\s*<dd id="plannedLocation">-/,
+    'the planned card renders a translatable Location row'
+  );
+  assert.match(html, /<dd id="plannedLocation"[^>]*>/);
+  assert.match(
+    html,
+    /<div class="weather-input-wrap">\s*\n\s*<input type="text" id="feedbackWeather" class="input-control"/,
+    'the weather input is wrapped to reserve room for the spinner'
+  );
+  assert.match(
+    html,
+    /<span class="weather-spinner" id="weatherSpinner" aria-hidden="true" hidden><\/span>/,
+    'the auto-fill spinner ships hidden until the readout is fetched'
+  );
+  assert.ok(!html.includes('title="'), 'no native title attributes sneak in');
 });
 
 test('training-result.js wires toggling, saving, generation and i18n refreshes', () => {
   const js = readFileSync(join(publicDir, 'training-result.js'), 'utf8');
 
-  assert.match(js, /import \{ initShell, getShellI18n, getUserPreferences \} from '\.\/shared\/shell\.js';/);
-  assert.match(js, /import \{ fetchTraining, saveTrainingFeedback, fetchShoes \} from '\.\/shared\/api\.js';/);
+  assert.match(js, /import \{ initShell, getShellI18n, getUserPreferences, showConfirm, showShellToast, refreshIcons \} from '\.\/shared\/shell\.js';/);
+  assert.match(js, /import \{ fetchTraining, saveTrainingFeedback, fetchShoes, deleteTraining, fetchWeather \} from '\.\/shared\/api\.js';/);
+  assert.match(js, /import \{ formatDistance, formatPaceFromMetric, formatTemperature \} from '\.\/shared\/units\.js';/);
 
   assert.match(js, /smartwatchSelect\.addEventListener\('change', syncFitFieldVisibility\)/);
   assert.match(js, /fitField\.hidden = !isFitFieldVisible\(smartwatchSelect\.value\);/);
@@ -708,6 +887,32 @@ test('training-result.js wires toggling, saving, generation and i18n refreshes',
   assert.match(js, /const shoeSelect = document\.getElementById\('feedbackShoe'\);/);
   assert.match(js, /shoeSelect\.value = training\.feedback_shoe \?\? '';/);
   assert.match(js, /weatherInput\.value = training\.feedback_weather \?\? '';/);
+  assert.match(js, /const weatherSpinner = document\.getElementById\('weatherSpinner'\);/);
+  assert.match(
+    js,
+    /const PLANNED_FIELDS = \[[\s\S]*?\['location', 'plannedLocation'\],/,
+    'the planned location binds to its own summary field'
+  );
+  assert.match(
+    js,
+    /const autoFillWeatherField = async \(\) => \{\s*\n\s*if \(!shouldAutoFillWeather\(training, weatherInput\.value\)\) return;/,
+    'auto-fill bails out when the field already holds a manual override'
+  );
+  assert.match(js, /weatherSpinner\.hidden = false;\s*\n\s*weatherInput\.setAttribute\('aria-busy', 'true'\);/);
+  assert.match(js, /const result = await fetchWeather\(training\.location, training\.dia\);/);
+  assert.match(
+    js,
+    /if \(text !== ''\) \{\s*\n\s*weatherInput\.value = text;\s*\n\s*weatherAutofilled = true;/,
+    'a successful readout marks the field as auto-filled'
+  );
+  assert.match(js, /weatherSpinner\.hidden = true;\s*\n\s*weatherInput\.removeAttribute\('aria-busy'\);/);
+  assert.match(
+    js,
+    /renderWeatherAutofill = \(\) => \{\s*\n\s*if \(weatherAutofilled && lastWeatherResult\) \{/,
+    'only auto-filled values re-render on later preference/language changes'
+  );
+  assert.match(js, /await autoFillWeatherField\(\);/);
+  assert.match(js, /renderWeatherAutofill\(\);[\s\S]*?renderWeatherAutofill\(\);/);
   assert.match(js, /terrainInput\.value = training\.feedback_terrain \?\? '';/);
   assert.match(js, /breathingInput\.value = training\.feedback_breathing \?\? '';/);
   assert.match(js, /muscleInput\.value = training\.feedback_muscle \?\? '';/);
@@ -720,7 +925,7 @@ test('training-result.js wires toggling, saving, generation and i18n refreshes',
   assert.match(js, /hasPainSelect\.value = savedHasPain \? 'yes' : 'no';/);
   assert.match(js, /painInput\.value = training\.feedback_pain \?\? '';/);
   assert.match(js, /hrSourceSelect\.value = training\.feedback_hr_source \?\? '';/);
-  assert.match(js, /syncFitFieldVisibility\(\);\s*\n\s*syncPainVisibility\(\);\s*\n\s*setStatus\(''\);/);
+  assert.match(js, /syncFitFieldVisibility\(\);\s*\n\s*syncPainVisibility\(\);\s*\n\s*await autoFillWeatherField\(\);\s*\n\s*setStatus\(''\);/);
 
   assert.match(js, /has_smartwatch: isFitFieldVisible\(smartwatchSelect\.value\),/);
   assert.match(js, /feedback_hr_source: hrValue === '' \? null : hrValue,/);
@@ -822,6 +1027,27 @@ test('training-result.js wires toggling, saving, generation and i18n refreshes',
     /if \(!generateBtn\.disabled\) generateLabel\.textContent = t\('session\.generatePrompt'\);\s*\n\s*if \(!copyPromptBtn\.disabled\) copyLabel\.textContent = t\('session\.copyPrompt'\);\s*\n\s*renderFitDropzoneState\(\);/,
     'language switches re-render the dropzone and copy label with the new locale'
   );
+
+  assert.match(
+    js,
+    /deleteTrainingBtn\.addEventListener\('click', \(\) => \{\s*\n\s*handleTrainingDelete\(\{\s*\n\s*id,\s*\n\s*messages: i18n\.messages,\s*\n\s*confirm: showConfirm,\s*\n\s*remove: deleteTraining,\s*\n\s*toast: showShellToast,\s*\n\s*\}\);\s*\n\s*\}\);/,
+    'the delete button drives the shared confirm + delete + toast flow'
+  );
+  assert.match(
+    js,
+    /handleTrainingDelete\(\{[\s\S]*?id,[\s\S]*?messages: i18n\.messages,[\s\S]*?confirm: showConfirm,[\s\S]*?remove: deleteTraining,[\s\S]*?toast: showShellToast,[\s\S]*?\}\)/,
+    'the delete flow resolves translations from the active shell dictionary'
+  );
+  assert.match(
+    js,
+    /applyTooltips\(\);[\s\S]*?refreshIcons\(\);/,
+    'Lucide re-initializes after the shell mounts so the trash icon renders as an SVG'
+  );
+  assert.match(
+    js,
+    /refreshIcons\(\);\s*\n\s*setStatus\(t\('session\.loading'\)\);/,
+    'icon re-init happens before the session content is fetched'
+  );
 });
 
 test('shared api client exposes the session endpoints', () => {
@@ -840,6 +1066,23 @@ test('shared api client exposes the session endpoints', () => {
     /return requestJson\(\s*\n\s*`\/api\/trainings\/\$\{id\}`,\s*\n\s*fields,\s*\n\s*'PATCH'\s*\n\s*\);/,
     'the payload passes straight through using DB column names'
   );
+  assert.match(
+    js,
+    /export function deleteTraining\(id\) \{\s*\n\s*return requestJson\(`\/api\/trainings\/\$\{id\}`,\s*null,\s*'DELETE'\);/,
+    'the delete helper issues a DELETE with no body'
+  );
+  assert.match(js, /export async function fetchWeather\(location, date\) \{/);
+  assert.match(js, /const params = new URLSearchParams\(\{ location, date \}\);/);
+  assert.match(
+    js,
+    /const response = await fetch\(`\/api\/weather\?\$\{params\.toString\(\)\}`, \{\s*\n\s*headers: \{ accept: 'application\/json' \},\s*\n\s*\}\);/,
+    'fetchWeather proxies the Open-Meteo readout to the protected endpoint'
+  );
+  assert.match(
+    js,
+    /if \(!response\.ok\) return null;\s*\n\s*return response\.json\(\);\s*\n\s*\} catch \{\s*\n\s*return null;/,
+    'weather failures resolve silently to null so autofill can remain optional'
+  );
 });
 
 test('session locale namespace stays in parity across en-US and pt-BR', () => {
@@ -853,6 +1096,7 @@ test('session locale namespace stays in parity across en-US and pt-BR', () => {
     'fieldFcAlvo',
     'fieldRpe',
     'fieldTenis',
+    'fieldLocation',
     'feedbackHeading',
     'realizedRpeLabel',
     'rpeLabel1',
@@ -901,6 +1145,11 @@ test('session locale namespace stays in parity across en-US and pt-BR', () => {
     'copied',
     'save',
     'saving',
+    'deleteTooltip',
+    'deleteConfirmTitle',
+    'deleteConfirmMessage',
+    'deleteSuccess',
+    'deleteError',
     'errors.load',
     'errors.notFound',
     'errors.rpe',
@@ -1120,6 +1369,59 @@ test('training-result.css keeps the earthy premium aesthetic for the session vie
   assert.match(css, /select\.input-control \{[^}]*background-repeat:\s*no-repeat/);
   assert.match(css, /select\.input-control \{[^}]*background-position:\s*right 0\.6rem center/);
   assert.match(css, /select\.input-control \{[^}]*padding-right:\s*1\.9rem/, 'text clears the chevron');
+
+  assert.match(css, /\.weather-input-wrap \{[^}]*position:\s*relative/, 'the weather field reserves room for the spinner');
+  assert.match(
+    css,
+    /\.weather-input-wrap \.input-control \{[^}]*padding-right:\s*2\.2rem/,
+    'typed weather text clears the loading ring'
+  );
+  assert.match(
+    css,
+    /\.weather-spinner \{[^}]*animation:\s*weather-spin 0\.7s linear infinite/,
+    'the weather ring spins until the readout resolves'
+  );
+  assert.match(css, /\.weather-spinner\[hidden\] \{[^}]*display:\s*none/, 'the ring hides cleanly between requests');
+  assert.match(
+    css,
+    /@keyframes weather-spin \{[^}]*to \{[^}]*rotate\(360deg\)/,
+    'the ring spins a full turn on a single keyframe'
+  );
+
+  assert.match(css, /\.card-head \{[^}]*display:\s*flex/, 'the planned card header lays its title and action out on one row');
+  assert.match(css, /\.card-head \{[^}]*justify-content:\s*space-between/, 'title and delete action push to opposite ends');
+  assert.match(css, /\.btn-icon\.btn-danger \{/, 'the delete action reuses the danger icon style');
+  assert.match(
+    css,
+    /\.btn-icon\.btn-danger \{[^}]*background:\s*transparent/,
+    'the danger icon stays transparent instead of inheriting the filled pill from theme.css'
+  );
+  assert.match(
+    css,
+    /\.btn-icon\.btn-danger \{[^}]*padding:\s*0;/,
+    'the icon zeroes its padding so the trash SVG keeps a square hit area'
+  );
+  assert.match(
+    css,
+    /\.btn-icon\.btn-danger \{[^}]*border-radius:\s*8px/,
+    'the danger icon drops the pill radius for a compact squared button'
+  );
+  assert.match(
+    css,
+    /\.btn-icon\.btn-danger:hover \{[^}]*color:\s*var\(--danger\)/,
+    'hovering the delete action turns it the earthy danger tone'
+  );
+  assert.match(
+    css,
+    /\.card-head \.custom-tooltip \{[^}]*background:\s*var\(--ink\)/,
+    'the delete tooltip uses the dark ink surface'
+  );
+  assert.match(css, /\.card-head \.custom-tooltip \{[^}]*z-index:\s*50/, 'the delete tooltip layers above surrounding content');
+  assert.match(
+    css,
+    /\.card-head \.btn-icon:hover \.custom-tooltip \{[^}]*opacity:\s*1/,
+    'the tooltip fades in on hover with the shared transition'
+  );
 
   const responsive = css.slice(css.indexOf('@media (max-width: 560px)'));
   assert.match(responsive, /\.feedback-grid \{\s*grid-template-columns: 1fr;/);

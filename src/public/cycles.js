@@ -1,6 +1,8 @@
-import { initShell, getShellI18n, refreshIcons, showConfirm } from './shared/shell.js';
+import { initShell, getShellI18n, getUserPreferences, refreshIcons } from './shared/shell.js';
 import { translate } from './shared/i18n.js';
 import { formatDate as formatLocalizedDate, formatDateInput, parseLocalizedDate } from './shared/date.js';
+import { createDatePicker, readDatePickerValue } from './shared/datepicker.js';
+import { showConfirm } from './shared/confirm-modal.js';
 import {
   fetchCycles,
   fetchActiveCycle,
@@ -52,15 +54,19 @@ function renderCycleCard(cycle, messages, language = 'en-US') {
       ${cycle.status === 'active' ? `
         <button type="button" class="btn-icon cycle-edit-btn" data-action="edit" data-id="${cycle.id}" aria-label="${t(messages, 'cycles.edit')}">
           <i data-lucide="pencil"></i>
+          <div class="custom-tooltip" data-i18n="cycles.editTooltip">${escapeHtml(t(messages, 'cycles.editTooltip'))}</div>
         </button>
         <button type="button" class="btn-icon btn-ok cycle-complete-btn" data-action="complete" data-id="${cycle.id}" aria-label="${t(messages, 'cycles.complete')}">
           <i data-lucide="check-circle"></i>
+          <div class="custom-tooltip" data-i18n="cycles.completeTooltip">${escapeHtml(t(messages, 'cycles.completeTooltip'))}</div>
         </button>
         <button type="button" class="btn-icon btn-warn cycle-cancel-btn" data-action="cancel" data-id="${cycle.id}" aria-label="${t(messages, 'cycles.cancel')}">
           <i data-lucide="x-circle"></i>
+          <div class="custom-tooltip" data-i18n="cycles.cancelTooltip">${escapeHtml(t(messages, 'cycles.cancelTooltip'))}</div>
         </button>
         <button type="button" class="btn-icon cycle-prompt-btn" data-action="prompt" data-id="${cycle.id}" aria-label="${t(messages, 'cycles.generatePrompt')}">
           <i data-lucide="sparkles"></i>
+          <div class="custom-tooltip" data-i18n="cycles.promptTooltip">${escapeHtml(t(messages, 'cycles.promptTooltip'))}</div>
         </button>
       ` : ''}
     </div>`;
@@ -128,6 +134,10 @@ function openModal(mode, cycle, messages, language = 'en-US') {
 function setDateInput(id, iso, language) {
   const input = document.getElementById(id);
   if (!input) return;
+  if (input.datePicker) {
+    input.datePicker.setValue(iso || '');
+    return;
+  }
   input.dataset.iso = iso || '';
   input.value = iso ? formatDateInput(iso, language) : '';
   input.placeholder = language === 'pt-BR' ? 'DD/MM/YYYY' : 'MM/DD/YYYY';
@@ -136,6 +146,7 @@ function setDateInput(id, iso, language) {
 function readDateInput(id, language) {
   const input = document.getElementById(id);
   if (!input) return null;
+  if (input.datePicker) return readDatePickerValue(input);
   const iso = parseLocalizedDate(input.value, language);
   input.dataset.iso = iso;
   return iso || null;
@@ -244,7 +255,15 @@ async function handleAction(action, id, cycles, messages, language = 'en-US') {
   }
 
   if (action === 'complete') {
-    await updateCycle(id, { status: 'completed' });
+    if (!(await showConfirm({
+      title: t(messages, 'cycles.complete'),
+      message: t(messages, 'cycles.completeConfirm'),
+      icon: 'check-circle',
+      confirmText: t(messages, 'cycles.complete'),
+      cancelText: t(messages, 'cycles.confirm.no'),
+      confirmButtonClass: 'btn-primary',
+      onConfirm: () => updateCycle(id, { status: 'completed' }),
+    }))) return;
     const updated = await fetchCycles();
     cycles.length = 0;
     cycles.push(...updated);
@@ -254,12 +273,15 @@ async function handleAction(action, id, cycles, messages, language = 'en-US') {
   }
 
   if (action === 'cancel') {
-    if (!(await showConfirm(
-      t(messages, 'cycles.deleteConfirm'),
-      t(messages, 'cycles.confirm.yes'),
-      t(messages, 'cycles.confirm.no'),
-    ))) return;
-    await updateCycle(id, { status: 'cancelled' });
+    if (!(await showConfirm({
+      title: t(messages, 'cycles.cancelTitle'),
+      message: t(messages, 'cycles.deleteConfirm'),
+      icon: 'trash-2',
+      confirmText: t(messages, 'cycles.confirm.yes'),
+      cancelText: t(messages, 'cycles.confirm.no'),
+      confirmButtonClass: 'btn-danger',
+      onConfirm: () => updateCycle(id, { status: 'cancelled' }),
+    }))) return;
     const updated = await fetchCycles();
     cycles.length = 0;
     cycles.push(...updated);
@@ -324,16 +346,16 @@ export async function initCyclesPage() {
   const form = document.getElementById('cycleForm');
   const cycleListEl = document.getElementById('cycleList');
 
+  for (const id of ['cycleTargetDate', 'cycleStartDate']) {
+    createDatePicker(document.getElementById(id), {
+      getLanguage: () => i18n.language,
+      getWeekStart: () => getUserPreferences().first_day_of_week,
+    });
+  }
+
   addBtn.addEventListener('click', () => openModal('add', null, i18n.messages, i18n.language));
   modalCloseBtn.addEventListener('click', closeModal);
   formCancelBtn.addEventListener('click', closeModal);
-
-  for (const id of ['cycleTargetDate', 'cycleStartDate']) {
-    document.getElementById(id).addEventListener('input', () => {
-      const input = document.getElementById(id);
-      input.dataset.iso = parseLocalizedDate(input.value, i18n.language);
-    });
-  }
 
   document.getElementById('cycleModal').addEventListener('click', (e) => {
     if (e.target.classList.contains('modal-backdrop')) closeModal();
@@ -381,7 +403,9 @@ export async function initCyclesPage() {
 
     const promptModal = document.getElementById('promptModal');
     if (!promptModal.classList.contains('hidden')) {
+      const promptTitle = promptModal.querySelector('[data-i18n="cycles.promptTitle"]');
       const copyLabel = document.querySelector('#promptCopyBtn span');
+      if (promptTitle) promptTitle.textContent = translate(msgs, 'cycles.promptTitle');
       if (copyLabel) copyLabel.textContent = translate(msgs, 'cycles.copyPrompt');
     }
   });

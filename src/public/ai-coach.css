@@ -1,9 +1,11 @@
 @import url('./shared/theme.css');
 
 .ai-coach-page {
+  width: 100%;
   max-width: 720px;
   margin: 0 auto;
   padding: 1.5rem 1rem 3rem;
+  overflow-x: hidden;
 }
 
 .ai-coach-header {
@@ -24,6 +26,8 @@
 
 .prompt-form,
 .result-section {
+  width: 100%;
+  min-width: 0;
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 16px;
@@ -48,7 +52,13 @@
   font-size: 0.95rem;
 }
 
+.required-mark {
+  margin-left: 0.2rem;
+  color: var(--danger);
+}
+
 .field input[type='date'],
+.date-input-display,
 .field textarea,
 .day-row input[type='text'] {
   width: 100%;
@@ -58,6 +68,21 @@
   background: var(--bg);
   color: var(--ink);
   font-size: 0.95rem;
+}
+
+.iso-date-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.date-input-display {
+  cursor: pointer;
 }
 
 .field textarea {
@@ -89,6 +114,7 @@
 }
 
 .availability-grid {
+  min-width: 0;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 0.6rem 0.9rem;
@@ -96,16 +122,26 @@
 }
 
 .day-row {
+  min-width: 0;
   display: grid;
-  grid-template-columns: 5.2rem 1fr;
-  align-items: center;
+  grid-template-columns: 1fr;
+  align-items: start;
   gap: 0.5rem;
+  padding: 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
 }
 
-.day-row label {
+.day-row .day-label {
+  grid-column: 1 / -1;
   color: var(--muted);
   font-size: 0.85rem;
   font-weight: 500;
+}
+
+.day-row input[type='text'] {
+  width: 100%;
 }
 
 /* Mirrors the training-result primary treatment exactly: solid sage pill,
@@ -125,19 +161,27 @@
   transform: translateY(-2px);
 }
 
+.btn-primary:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .result-section {
   margin-top: 1.25rem;
 }
 
 .result-header {
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
+  flex-wrap: wrap;
   margin-bottom: 0.75rem;
 }
 
 .result-header h2 {
+  min-width: 0;
   margin: 0;
   font-size: 1.05rem;
   font-weight: 700;
@@ -174,6 +218,8 @@
 }
 
 .prompt-output {
+  width: 100%;
+  max-width: 100%;
   margin: 0;
   padding: 1rem;
   max-height: 60vh;
@@ -187,11 +233,4 @@
   font-size: 0.88rem;
   line-height: 1.5;
   user-select: all;
-}
-
-.result-placeholder {
-  margin-top: 1.25rem;
-  text-align: center;
-  color: var(--muted);
-  font-size: 0.9rem;
 }

@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user web application** for managing training logs — drop a Garmin `.FIT` file into the browser, add how the workout felt, and get back a ready-to-paste markdown prompt for your AI coach.
 
-Current application version: **0.1.1** (active development).
+Current application version: **0.6.0** (active development).
 
 Every account is protected with server-side sessions, every `.FIT` file is parsed locally on your own machine: no cloud parsing, no telemetry — your training data never leaves your hardware.
 
@@ -67,7 +67,8 @@ The generated briefing is fully localized: the Portuguese (`pt-BR`) and English 
 - **Weekly tracker first** — the “This Week” card places the Monday–Sunday tracker above accumulated distance/time tiles. Active days use compact minimalist pills with a Lucide `sport-shoe` icon; empty days remain muted and borderless.
 - **Card navigation** — subtle Lucide `external-link` actions link the cycle card to `/cycles.html` and the weekly card to `/calendar.html`.
 - **Responsive weekly metrics** — completed workout distance and duration are read from the calendar API (`fit_distance`/`fit_duration`), normalized, summed, and formatted in dashboard units.
-- **Accessible quote hero** — a random running-focused Unsplash image is selected at initialization. Loading text, quote text, and author each have dark semitransparent contrast backdrops for legibility over bright photos.
+- **Shoe Rotation widget** — tracks active shoes and renders a dynamic “traffic light” progress bar (green → yellow → red) showing each pair's mileage against its useful lifespan, so runners know at a glance when it is time to replace their gear. Wear level uses the per-shoe target mileage (defaulting to 500 km / 300 mi), distances respect the dashboard unit preference, and the bar turns yellow at 75% and red at 90% of usable life.
+- **Accessible quote hero** — the dashboard requests a running-focused image through the optional Unsplash proxy. The server keeps the response in a 20-minute in-memory TTL cache (protecting the 1,000 requests/hour production limit), triggers the required download event, hotlinks the returned image, and renders explicit photographer/Unsplash attribution. Missing keys, rate limits, and network failures use a bundled local image without disrupting the dashboard. Loading text, quote text, and author each have dark semitransparent contrast backdrops for legibility over bright photos.
 
 ### Date and Locale Architecture
 
@@ -90,7 +91,7 @@ English template.
 
 ### Excel Training Import
 
-The Calendar page imports `.xlsx`/`.xls` plans and validates every row before persistence. Duplicate prevention uses the exact composite signature **Date (`dia`) + Training Name (`treino`) + Description (`detalhes`)**. Rows matching a stored training or repeated within the same workbook are skipped; workouts on the same date with a different name or description remain valid and are imported.
+The Calendar page imports `.xlsx`/`.xls` plans and validates every row before persistence. Header aliases are recognized in both languages — the planned **Location** column is captured too (`Local` / `Location` / `localizacao`). Duplicate prevention uses the exact composite signature **Date (`dia`) + Training Name (`treino`) + Description (`detalhes`)**. Rows matching a stored training or repeated within the same workbook are skipped; workouts on the same date with a different name or description remain valid and are imported.
 
 Import completion uses the shared Snackbar rather than a permanent inline banner. It renders two localized lines: successfully imported trainings and duplicate rows skipped, with singular/plural English and Brazilian Portuguese translations.
 
@@ -106,6 +107,25 @@ Every page references the favicon from this shared public path, while the
 sidebar switches between the mark and its translated **Kinesis** label according
 to its expanded or collapsed state. New brand assets should remain in this
 directory so all pages use one consistent identity.
+
+### Weather Auto-Fill (Open-Meteo)
+
+The Training Feedback view shows the planned **Location** from the imported plan
+next to the other planned-workout fields. When a training has a location and the
+weather field is still blank, the page asks the backend for that day's weather
+readout and pre-fills the editable input (e.g. `22 °C, Overcast`). The field
+stays fully editable — a manually typed value is never overwritten.
+
+The integration is completely **keyless** and uses [Open-Meteo](https://open-meteo.com/):
+
+- **Geocoding:** `https://geocoding-api.open-meteo.com/v1/search` resolves the planned location name to coordinates (`name`, `count=1`, `format=json`).
+- **Historical weather:** `https://archive-api.open-meteo.com/v1/archive` returns the past day's max temperature and WMO weather code (`temperature_2m_max`, `weather_code`, `timezone=auto`).
+- **Recent dates:** when the archive cannot answer, the request automatically falls back to the live forecast at `https://api.open-meteo.com/v1/forecast`.
+
+The API always returns metric Celsius; the frontend converts it to the user's
+preferred temperature unit and translates the WMO code through the shared
+`weather.*` locale keys. Runs occur under the request limits and requirements of
+Open-Meteo's free tier — no API key, account, or `.env` value is needed.
 
 ## Quick Start (local development)
 
@@ -134,6 +154,15 @@ Configuration via environment variables:
 | `PORT` | `3000` | HTTP port |
 | `HOST` | `127.0.0.1` | Bind address |
 | `DATABASE_FILE` | `<cwd>/data/database.sqlite` | SQLite database location |
+| `UNSPLASH_ACCESS_KEY` | _optional_ | Unsplash Access Key sent as `Authorization: Client-ID ...` for the running-photo hero. Responses are cached for 20 minutes to minimize API calls. |
+| `UNSPLASH_API_KEY` | _optional alias_ | Backwards-compatible alias for `UNSPLASH_ACCESS_KEY`; Kinesis works without either key by using the bundled local fallback image. |
+
+For local setup, copy `.env.example` to `.env`, put your Unsplash **Access Key**
+in `UNSPLASH_ACCESS_KEY`, and start with `node --env-file=.env src/start.js` (or export
+the variable before `npm start`). For Docker Compose, put the same variable in
+the `.env` file beside `docker-compose.yml`; Compose passes it into the server
+container. The key is server-only and must never be placed in frontend files or
+committed to Git.
 
 ## Usage
 
@@ -261,6 +290,31 @@ curl -b jar.txt -F "file=@workout.fit" -F "tipo_treino=Longão" -F "rpe_percebid
 | `401` | No valid session |
 | `413` | File exceeds the 10 MB limit |
 | `422` | File could not be parsed or contains no lap records |
+
+#### `GET /api/weather`
+
+Resolves a planned location to a daily weather readout (max temperature in
+Celsius + WMO code) via Open-Meteo. Keyless — no credentials required by the
+upstream service.
+
+| Query param | Required | Description |
+|---|---|---|
+| `location` | yes | Free-text place name, geocoded server-side |
+| `date` | yes | Training date in `YYYY-MM-DD` |
+
+```bash
+curl -b jar.txt "http://127.0.0.1:3000/api/weather?location=Fânzeres&date=2026-08-23"
+```
+
+Returns `200` with `{ location, latitude, longitude, date, temperature_c, weather_code, source }`, where `source` is `archive` (past days) or `forecast` (fallback for recent dates).
+
+| Status | Meaning |
+|---|---|
+| `200` | Success — weather readout with source and coordinates |
+| `400` | Missing `location` or invalid `date` |
+| `401` | No valid session |
+| `404` | Location could not be geocoded |
+| `502` | Open-Meteo is unreachable and no fallback answered |
 
 ## Frontend Architecture
 

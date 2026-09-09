@@ -8,8 +8,12 @@
     "subtitle": "Monte um briefing detalhado para o seu coach de IA externo",
     "targetDate": "Data alvo",
     "targetDateHint": "Semana a ser planejada. Padrão: próxima segunda-feira.",
+    "baseLocation": "Localidade base",
+    "baseLocationHint": "Prefilha a localização de todos os dias. Personalize cada dia em Disponibilidade.",
+    "locationPlaceholder": "Ex: Cidade, País",
+    "location": "Local",
     "availability": "Disponibilidade",
-    "availabilityHint": "Informe ao coach quando você pode correr em cada dia.",
+    "availabilityHint": "Informe ao coach quando/onde você pode correr em cada dia.",
     "defaultRoutine": "Rotina normal",
     "days": {
       "monday": "Segunda",
@@ -24,7 +28,6 @@
     "contextPlaceholder": "Exemplos: viagem, alteração de horário, pouco sono, fadiga, dor/desconforto, compromisso de trabalho, impossibilidade de correr, preferência de tênis...",
     "generate": "Gerar Prompt",
     "resultTitle": "Prompt gerado",
-    "resultPlaceholder": "Preencha o formulário e gere o seu prompt.",
     "copy": "Copiar para a área de transferência",
     "copied": "Copiado!",
     "shoesSectionTitle": "TÊNIS DISPONÍVEIS PARA ROTAÇÃO",
@@ -61,6 +64,11 @@
     "weekStart": {
       "Monday": "Segunda-feira",
       "Sunday": "Domingo"
+    },
+    "moreTooltip": "Mais treinos neste dia",
+    "reschedule": {
+      "success": "Treino remarcado para {date}.",
+      "error": "Não foi possível remarcar o treino. Tente novamente."
     },
     "months": [
       "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
@@ -196,6 +204,7 @@
     "fieldFcAlvo": "FC alvo",
     "fieldRpe": "RPE alvo",
     "fieldTenis": "Tênis",
+    "fieldLocation": "Local",
     "feedbackHeading": "Seu feedback",
     "realizedRpeLabel": "RPE realizado (1 a 5)",
     "rpeLabel1": "1 - Muito Fácil",
@@ -244,6 +253,11 @@
     "copied": "Copiado!",
     "save": "Salvar e voltar ao calendário",
     "saving": "Salvando…",
+    "deleteTooltip": "Excluir treino",
+    "deleteConfirmTitle": "Excluir treino",
+    "deleteConfirmMessage": "Excluir este treino? Esta ação não pode ser desfeita.",
+    "deleteSuccess": "Treino excluído com sucesso!",
+    "deleteError": "Não foi possível excluir o treino. Tente novamente.",
     "errors": {
       "load": "Não conseguimos carregar este treino.",
       "notFound": "Treino não encontrado.",
@@ -304,6 +318,7 @@
     "retire": "Aposentar",
     "reactivate": "Reativar",
     "delete": "Excluir",
+    "deleteTitle": "Excluir tênis",
     "deleteConfirm": "Tem certeza que deseja excluir este tênis?",
     "formTitleAdd": "Cadastrar Novo Tênis",
     "formTitleEdit": "Editar Tênis",
@@ -359,16 +374,22 @@
     "disabledTooltip": "Finalize ou cancele seu ciclo ativo primeiro.",
     "edit": "Editar",
     "complete": "Concluir",
+    "completeConfirm": "Tem certeza que deseja concluir este ciclo?",
     "cancel": "Cancelar",
     "generatePrompt": "Gerar prompt",
+    "editTooltip": "Editar ciclo",
+    "completeTooltip": "Concluir ciclo",
+    "cancelTooltip": "Cancelar ciclo",
+    "promptTooltip": "Solicitar treino com IA",
     "cancelForm": "Cancelar",
     "saveCycle": "Salvar Ciclo",
     "formTitleAdd": "Cadastrar Novo Ciclo",
     "formTitleEdit": "Editar Ciclo",
     "saving": "Salvando…",
-    "promptTitle": "Prompt Macrocycle – Coach IA",
+    "promptTitle": "Prompt do Macrociclo – Coach IA",
     "copyPrompt": "Copiar para a área de transferência",
     "deleteConfirm": "Tem certeza que deseja cancelar este ciclo?",
+    "cancelTitle": "Cancelar ciclo",
     "confirm": {
       "yes": "Sim, cancelar o ciclo",
       "no": "Não, manter o ciclo"
@@ -510,10 +531,48 @@
     ],
     "outro": "Não preciso que você repita todos os números que enviei. Quero interpretação, comparação com meu histórico e implicações para o planejamento."
   },
+  "weather": {
+    "0": "Céu limpo",
+    "1": "Predominantemente limpo",
+    "2": "Parcialmente nublado",
+    "3": "Encoberto",
+    "45": "Nevoeiro",
+    "48": "Nevoeiro com geada",
+    "51": "Garoa leve",
+    "53": "Garoa",
+    "55": "Garoa densa",
+    "56": "Garoa congelante",
+    "57": "Garoa congelante densa",
+    "61": "Chuva leve",
+    "63": "Chuva",
+    "65": "Chuva forte",
+    "66": "Chuva congelante",
+    "67": "Chuva congelante forte",
+    "71": "Neve leve",
+    "73": "Neve",
+    "75": "Neve forte",
+    "77": "Grãos de neve",
+    "80": "Pancadas de chuva leves",
+    "81": "Pancadas de chuva",
+    "82": "Pancadas de chuva fortes",
+    "85": "Pancadas de neve leves",
+    "86": "Pancadas de neve fortes",
+    "95": "Tempestade",
+    "96": "Tempestade com granizo leve",
+    "99": "Tempestade com granizo forte",
+    "unknown": "Clima desconhecido"
+  },
   "home": {
     "actions": {
       "goToCycles": "Ir para ciclos",
-      "goToTrainings": "Ir para treinos"
+      "goToTrainings": "Ir para treinos",
+      "goToShoes": "Ir para tênis de rotação"
+    },
+    "shoes": {
+      "title": "Meus Tênis",
+      "emptyTitle": "Nenhum tênis ativo",
+      "emptyText": "Cadastre seus tênis de corrida para acompanhar a quilometragem.",
+      "emptyCta": "Adicionar tênis"
     },
     "pageTitle": "Painel - Kinesis",
     "hero": {

@@ -262,11 +262,13 @@ async function handleAction(action, id, shoes, messages) {
   }
 
   if (action === 'delete') {
-    if (!(await showConfirm(
-      t(messages, 'shoes.deleteConfirm'),
-      t(messages, 'shell.confirm.yes'),
-      t(messages, 'shell.confirm.no'),
-    ))) return;
+    if (!(await showConfirm({
+      title: t(messages, 'shoes.deleteTitle'),
+      message: t(messages, 'shoes.deleteConfirm'),
+      icon: 'trash-2',
+      confirmLabel: t(messages, 'shell.confirm.yes'),
+      cancelLabel: t(messages, 'shell.confirm.no'),
+    }))) return;
     try {
       await deleteShoe(id);
       const updated = await fetchShoes();

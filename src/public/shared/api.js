@@ -27,6 +27,16 @@ export function signIn(email, password) {
   return requestJson('/api/auth/login', { email, password });
 }
 
+export async function fetchHeroImage() {
+  try {
+    const response = await fetch('/api/hero-image', { headers: { accept: 'application/json' } });
+    if (!response.ok) return null;
+    return response.json();
+  } catch {
+    return null;
+  }
+}
+
 export function registerAccount(payload) {
   return requestJson('/api/auth/register', payload);
 }
@@ -49,6 +59,10 @@ export function updateUserPreferences(preferences) {
 
 export function changePassword(payload) {
   return requestJson('/api/auth/password', payload, 'PUT');
+}
+
+export function updateTrainingDate(id, date) {
+  return requestJson(`/api/trainings/${id}/reschedule`, { date }, 'PATCH');
 }
 
 export async function fetchCalendarTrainings(from, to) {
@@ -92,6 +106,23 @@ export function saveTrainingFeedback(id, fields = {}) {
     fields,
     'PATCH'
   );
+}
+
+export async function fetchWeather(location, date) {
+  try {
+    const params = new URLSearchParams({ location, date });
+    const response = await fetch(`/api/weather?${params.toString()}`, {
+      headers: { accept: 'application/json' },
+    });
+    if (!response.ok) return null;
+    return response.json();
+  } catch {
+    return null;
+  }
+}
+
+export function deleteTraining(id) {
+  return requestJson(`/api/trainings/${id}`, null, 'DELETE');
 }
 
 export async function importTrainingsFile(file) {

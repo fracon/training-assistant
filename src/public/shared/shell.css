@@ -39,7 +39,14 @@ body.shell-mounted {
   flex: 1;
   min-width: 0;
   min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
+}
+
+.main-content > main {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
 }
 
 /* Firefox-only scrollbar fallback */

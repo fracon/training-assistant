@@ -18,44 +18,22 @@
 
       <form id="promptForm" class="prompt-form" novalidate>
         <div class="field">
-          <label for="targetDate" data-i18n="aiCoach.targetDate">Target date</label>
-          <input type="text" id="targetDate" inputmode="numeric" placeholder="DD/MM/YYYY" autocomplete="off" required>
-          <p class="field-hint" data-i18n="aiCoach.targetDateHint">Week to plan. Defaults to next Monday.</p>
+          <label for="targetDate"><span data-i18n="aiCoach.targetDate">Target date</span><span class="required-mark" aria-hidden="true">*</span></label>
+          <input type="date" id="targetDate" class="iso-date-input" autocomplete="off" required aria-hidden="true" tabindex="-1">
+          <input type="text" id="targetDateDisplay" class="date-input-display" readonly autocomplete="off" aria-describedby="targetDateHint">
+          <p id="targetDateHint" class="field-hint" data-i18n="aiCoach.targetDateHint">Week to plan. Defaults to next Monday.</p>
+        </div>
+
+        <div class="field">
+          <label for="baseLocation"><span data-i18n="aiCoach.baseLocation">Base location</span><span class="required-mark" aria-hidden="true">*</span></label>
+          <input type="text" id="baseLocation" data-i18n-placeholder="aiCoach.locationPlaceholder" placeholder="Ex: City, Country" autocomplete="off">
+          <p class="field-hint" data-i18n="aiCoach.baseLocationHint">Prefills every day's location. Override individual days in Availability.</p>
         </div>
 
         <fieldset class="availability-fieldset">
-          <legend data-i18n="aiCoach.availability">Availability</legend>
-          <p class="field-hint" data-i18n="aiCoach.availabilityHint">Tell the coach when you can run each day.</p>
-          <div class="availability-grid">
-            <div class="day-row">
-              <label for="dispSeg" data-i18n="aiCoach.days.monday">Monday</label>
-              <input type="text" id="dispSeg" value="Rotina normal">
-            </div>
-            <div class="day-row">
-              <label for="dispTer" data-i18n="aiCoach.days.tuesday">Tuesday</label>
-              <input type="text" id="dispTer" value="Rotina normal">
-            </div>
-            <div class="day-row">
-              <label for="dispQua" data-i18n="aiCoach.days.wednesday">Wednesday</label>
-              <input type="text" id="dispQua" value="Rotina normal">
-            </div>
-            <div class="day-row">
-              <label for="dispQui" data-i18n="aiCoach.days.thursday">Thursday</label>
-              <input type="text" id="dispQui" value="Rotina normal">
-            </div>
-            <div class="day-row">
-              <label for="dispSex" data-i18n="aiCoach.days.friday">Friday</label>
-              <input type="text" id="dispSex" value="Rotina normal">
-            </div>
-            <div class="day-row">
-              <label for="dispSab" data-i18n="aiCoach.days.saturday">Saturday</label>
-              <input type="text" id="dispSab" value="Rotina normal">
-            </div>
-            <div class="day-row">
-              <label for="dispDom" data-i18n="aiCoach.days.sunday">Sunday</label>
-              <input type="text" id="dispDom" value="Rotina normal">
-            </div>
-          </div>
+          <legend><span data-i18n="aiCoach.availability">Availability</span><span class="required-mark" aria-hidden="true">*</span></legend>
+          <p class="field-hint" data-i18n="aiCoach.availabilityHint">Tell the coach when/where you can run each day.</p>
+          <div class="availability-grid" id="availabilityGrid"></div>
         </fieldset>
 
         <div class="field">
@@ -81,9 +59,6 @@
         <pre id="promptOutput" class="prompt-output" tabindex="0"></pre>
       </section>
 
-      <p id="resultPlaceholder" class="result-placeholder" data-i18n="aiCoach.resultPlaceholder">
-        Fill in the form and generate your prompt.
-      </p>
     </section>
   </main>
 

@@ -1,4 +1,4 @@
-import { fetchActiveCycle, fetchCalendarTrainings } from './shared/api.js';
+import { fetchActiveCycle, fetchCalendarTrainings, fetchShoes, fetchHeroImage } from './shared/api.js';
 import { initShell, getShellI18n, getUserPreferences } from './shared/shell.js';
 import { translate } from './shared/i18n.js';
 import { formatDate as formatLocalizedDate } from './shared/date.js';
@@ -300,6 +300,66 @@ export function metricsCardContent(metrics, preferences = {}) {
   };
 }
 
+const SHOE_STATUS_ACTIVE = 'active';
+
+export const DEFAULT_SHOE_LIFESPAN_KM = 500;
+export const DEFAULT_SHOE_LIFESPAN_MI = 300;
+
+export function activeShoes(shoes) {
+  return (Array.isArray(shoes) ? shoes : []).filter(
+    (shoe) => shoe && shoe.status === SHOE_STATUS_ACTIVE
+  );
+}
+
+export function shoeLifespanKm(shoe) {
+  const target = Number(shoe?.target_mileage);
+  if (Number.isFinite(target) && target > 0) return target;
+  return DEFAULT_SHOE_LIFESPAN_KM;
+}
+
+export function shoeLifePercent(shoe) {
+  const mileage = Number(shoe?.mileage);
+  if (!Number.isFinite(mileage) || mileage < 0) return 0;
+  return (mileage / shoeLifespanKm(shoe)) * 100;
+}
+
+export function shoeLifeLevel(percent) {
+  if (percent >= 90) return 'critical';
+  if (percent >= 75) return 'warn';
+  return 'ok';
+}
+
+export function shoeLifeBarWidth(percent) {
+  return Math.min(100, Math.max(0, percent));
+}
+
+export function displayDistanceValue(valueKm, unit = 'km') {
+  const normalized = unit === 'mi' ? 'mi' : 'km';
+  const decimals = normalized === 'mi' ? 2 : 0;
+  return formatDistance(valueKm, normalized, decimals).replace(` ${normalized}`, '');
+}
+
+export function buildShoeDistanceText(shoe, unit = 'km') {
+  const normalized = unit === 'mi' ? 'mi' : 'km';
+  const current = displayDistanceValue(Number(shoe?.mileage ?? 0), normalized);
+  const target = Number(shoe?.target_mileage);
+  const max = Number.isFinite(target) && target > 0
+    ? displayDistanceValue(target, normalized)
+    : String(normalized === 'mi' ? DEFAULT_SHOE_LIFESPAN_MI : DEFAULT_SHOE_LIFESPAN_KM);
+  return `${current} / ${max} ${normalized}`;
+}
+
+export function buildShoeWidgetMarkup(shoe, unit = 'km') {
+  const percent = shoeLifePercent(shoe);
+  return {
+    name: `${shoe?.brand ?? ''} ${shoe?.model ?? ''}`.trim(),
+    distance: buildShoeDistanceText(shoe, unit),
+    percent,
+    level: shoeLifeLevel(percent),
+    width: shoeLifeBarWidth(percent),
+  };
+}
+
 // Renders one and only one cycle state. Every switch touches BOTH sibling
 // containers, backed by the .hidden class, an aria-hidden mirror, and an
 // inline display fallback so a stylesheet regression can never make the
@@ -393,6 +453,7 @@ function setupHomePage() {
   const quoteBlock = document.getElementById('heroQuote');
   const quoteText = document.getElementById('heroQuoteText');
   const quoteAuthor = document.getElementById('heroQuoteAuthor');
+  const heroCredit = document.getElementById('heroCredit');
   const cycleEmpty = document.getElementById('cycleEmpty');
   const cycleActive = document.getElementById('cycleActive');
   const cycleName = document.getElementById('cycleName');
@@ -406,6 +467,8 @@ function setupHomePage() {
   const weeklyDistance = document.getElementById('weeklyDistanceValue');
   const weeklyTime = document.getElementById('weeklyTimeValue');
   const weekTrackerDays = document.getElementById('weekTrackerDays');
+  const shoesEmpty = document.getElementById('shoesEmpty');
+  const shoesList = document.getElementById('shoesList');
 
   const state = {
     cycle: null,
@@ -417,6 +480,8 @@ function setupHomePage() {
     firstDay: 'Monday',
     distanceUnit: 'km',
     temperatureUnit: 'C',
+    shoes: [],
+    heroCredit: null,
   };
 
   let i18n = null;
@@ -431,6 +496,38 @@ function setupHomePage() {
     if (quoteBlock) quoteBlock.classList.remove('hidden');
     if (quoteText) quoteText.textContent = quote.text;
     if (quoteAuthor) quoteAuthor.textContent = quote.author;
+  }
+
+  function renderHeroCredit() {
+    if (!heroCredit) return;
+    if (!state.heroCredit || !i18n) {
+      heroCredit.textContent = '';
+      heroCredit.classList.add('hidden');
+      return;
+    }
+    const { author, authorUrl } = state.heroCredit;
+    const tracking = 'utm_source=Kinesis&utm_medium=referral';
+    const authorLink = document.createElement('a');
+    authorLink.href = `${authorUrl}${authorUrl.includes('?') ? '&' : '?'}${tracking}`;
+    authorLink.textContent = author;
+    const unsplashLink = document.createElement('a');
+    unsplashLink.href = `https://unsplash.com/?${tracking}`;
+    unsplashLink.textContent = 'Unsplash';
+    heroCredit.textContent = 'Photo by ';
+    heroCredit.appendChild(authorLink);
+    heroCredit.appendChild(document.createTextNode(' on '));
+    heroCredit.appendChild(unsplashLink);
+    heroCredit.classList.remove('hidden');
+  }
+
+  async function loadHeroImage() {
+    const result = await fetchHeroImage();
+    const imageUrl = result?.url || HERO_FALLBACK_IMAGE;
+    const applied = await preloadHeroImage(heroBanner, imageUrl);
+    state.heroCredit = result?.source === 'unsplash' && applied === imageUrl && result.author && result.authorUrl
+      ? { author: result.author, authorUrl: result.authorUrl }
+      : null;
+    renderHeroCredit();
   }
 
   function renderCycle() {
@@ -477,10 +574,44 @@ function setupHomePage() {
     renderWeekDays(weekTrackerDays, states, i18n ? i18n.messages : {});
   }
 
+  function renderShoesWidget() {
+    if (!shoesList || !shoesEmpty) return;
+    const active = activeShoes(state.shoes);
+    shoesEmpty.classList.toggle('hidden', active.length > 0);
+    shoesEmpty.setAttribute('aria-hidden', String(active.length > 0));
+    shoesList.classList.toggle('hidden', active.length === 0);
+    shoesList.textContent = '';
+    for (const shoe of active) {
+      const markup = buildShoeWidgetMarkup(shoe, state.distanceUnit);
+      const item = document.createElement('li');
+      item.className = 'shoe-widget-item';
+      const info = document.createElement('div');
+      info.className = 'shoe-widget-info';
+      const name = document.createElement('span');
+      name.className = 'shoe-widget-name';
+      name.textContent = markup.name;
+      const distance = document.createElement('span');
+      distance.className = 'shoe-widget-distance';
+      distance.textContent = markup.distance;
+      info.appendChild(name);
+      info.appendChild(distance);
+      const bar = document.createElement('div');
+      bar.className = 'shoe-widget-bar';
+      const fill = document.createElement('div');
+      fill.className = `shoe-widget-fill level-${markup.level}`;
+      fill.style.width = `${markup.width}%`;
+      bar.appendChild(fill);
+      item.appendChild(info);
+      item.appendChild(bar);
+      shoesList.appendChild(item);
+    }
+  }
+
   function render() {
     renderCycle();
     renderMetrics();
     renderWeekTracker();
+    renderShoesWidget();
   }
 
   async function loadCycle() {
@@ -501,6 +632,11 @@ function setupHomePage() {
     renderWeekTracker();
   }
 
+  async function loadShoes() {
+    state.shoes = await fetchShoes();
+    renderShoesWidget();
+  }
+
   async function loadHeroQuote() {
     const quote = await loadQuote({ messages: i18n ? i18n.messages : {} });
     state.quoteSource = quote ? quote.source : 'fallback';
@@ -513,6 +649,7 @@ function setupHomePage() {
   // text.
   document.addEventListener('app:languagechange', () => {
     render();
+    renderHeroCredit();
     if (state.quoteSource === 'fallback' && i18n) {
       renderQuote(randomFallbackQuote(i18n.messages));
     }
@@ -526,6 +663,7 @@ function setupHomePage() {
     if (distanceChanged) {
       state.distanceUnit = nextDistance;
       renderMetrics();
+      renderShoesWidget();
     }
     if (weekChanged) {
       state.firstDay = next;
@@ -542,10 +680,11 @@ function setupHomePage() {
       state.firstDay = preferences.first_day_of_week;
       state.distanceUnit = preferences.distance_unit;
       state.temperatureUnit = preferences.temperature_unit;
-      preloadHeroImage(heroBanner, heroImageFor());
+      loadHeroImage();
       loadHeroQuote();
       loadCycle();
       loadMetrics();
+      loadShoes();
       return user;
     },
   };

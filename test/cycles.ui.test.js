@@ -122,6 +122,30 @@ test('cycles.html addCycleBtn is wrapped with a custom tooltip', () => {
   assert.doesNotMatch(html, /id="addCycleBtn"[^>]*title=/, 'addCycleBtn must not have a native title attribute');
 });
 
+test('cycles.js renders localized custom tooltips for every cycle action', () => {
+  const js = readFileSync(join(publicDir, 'cycles.js'), 'utf8');
+  for (const [key, text] of [
+    ['editTooltip', 'Edit cycle'],
+    ['completeTooltip', 'Complete cycle'],
+    ['cancelTooltip', 'Cancel cycle'],
+    ['promptTooltip', 'Request AI training'],
+  ]) {
+    assert.match(js, new RegExp(`data-i18n="cycles\\.${key}"`));
+    assert.match(js, new RegExp(`t\\(messages, 'cycles\\.${key}'\\)`));
+    assert.equal(en.cycles[key], text);
+  }
+  assert.match(js, /class="custom-tooltip"/);
+  assert.doesNotMatch(js, /title=/, 'cycle actions must not use native title attributes');
+});
+
+test('cycles.css reveals action tooltips on hover and keyboard focus', () => {
+  const css = readFileSync(join(publicDir, 'cycles.css'), 'utf8');
+  assert.match(css, /\.cycle-card-actions \.custom-tooltip \{/);
+  assert.match(css, /\.cycle-card-actions \.btn-icon:hover \.custom-tooltip/);
+  assert.match(css, /\.cycle-card-actions \.btn-icon:focus-visible \.custom-tooltip/);
+  assert.match(css, /bottom:\s*110%/);
+});
+
 test('cycles.html modal is at body root level outside main', () => {
   const html = readFileSync(join(publicDir, 'cycles.html'), 'utf8');
   const mainClose = html.indexOf('</main>');
@@ -210,6 +234,10 @@ test('cycles.css form modal matches shoes.css modal-backdrop structure', () => {
   assert.match(css, /\.modal-backdrop\.hidden \{/);
   assert.match(css, /\.modal-card \{/);
   assert.match(css, /\.modal-card \{[^}]*max-width:\s*440px/);
+  assert.match(css, /\.modal-card \{[^}]*max-height:\s*80vh/);
+  assert.match(css, /\.modal-card \{[^}]*overflow-y:\s*auto/);
+  assert.match(css, /\.modal-card \{[^}]*scrollbar-gutter:\s*stable both-edges/);
+  assert.match(css, /\.modal-card \{[^}]*padding:\s*1\.25rem 1\.5rem/);
   assert.match(css, /\.modal-card \{[^}]*border-radius:\s*20px/);
   assert.match(css, /@keyframes modal-rise/);
   assert.match(css, /\.modal-header \{/);
@@ -240,7 +268,7 @@ test('cycles.js wires the shell, language change listener, and i18n attributes',
   const js = readFileSync(join(publicDir, 'cycles.js'), 'utf8');
 
   assert.match(js, /import.*initShell.*from.*shared\/shell\.js/);
-  assert.match(js, /import.*showConfirm.*from.*shared\/shell\.js/);
+  assert.match(js, /import.*showConfirm.*from.*shared\/confirm-modal\.js/);
   assert.match(js, /import.*getShellI18n/);
   assert.match(js, /import.*refreshIcons.*from.*shared\/shell\.js/);
   assert.match(js, /import.*translate.*from.*shared\/i18n\.js/);
@@ -277,6 +305,11 @@ test('cycles.js handles complete, cancel, and prompt actions', () => {
   assert.match(js, /data-action="prompt"/);
   assert.match(js, /status:\s*'completed'/);
   assert.match(js, /status:\s*'cancelled'/);
+  assert.match(js, /cycles\.completeConfirm/);
+  assert.match(js, /confirmButtonClass:\s*'btn-primary'/);
+  assert.match(js, /confirmButtonClass:\s*'btn-danger'/);
+  assert.match(js, /onConfirm:\s*\(\) => updateCycle\(id, \{ status: 'completed' \}\)/);
+  assert.match(js, /onConfirm:\s*\(\) => updateCycle\(id, \{ status: 'cancelled' \}\)/);
 });
 
 test('cycles.js dispatches kinesis:cycle-changed after create, complete, and cancel', () => {
@@ -440,6 +473,10 @@ test('locale files expose every cycles string in both languages', () => {
     assert.equal(typeof messages.cycles.complete, 'string');
     assert.equal(typeof messages.cycles.cancel, 'string');
     assert.equal(typeof messages.cycles.generatePrompt, 'string');
+    assert.equal(typeof messages.cycles.editTooltip, 'string');
+    assert.equal(typeof messages.cycles.completeTooltip, 'string');
+    assert.equal(typeof messages.cycles.cancelTooltip, 'string');
+    assert.equal(typeof messages.cycles.promptTooltip, 'string');
     assert.equal(typeof messages.cycles.cancelForm, 'string');
     assert.equal(typeof messages.cycles.saveCycle, 'string');
     assert.equal(typeof messages.cycles.formTitleAdd, 'string');
@@ -448,6 +485,7 @@ test('locale files expose every cycles string in both languages', () => {
     assert.equal(typeof messages.cycles.promptTitle, 'string');
     assert.equal(typeof messages.cycles.copyPrompt, 'string');
     assert.equal(typeof messages.cycles.deleteConfirm, 'string');
+    assert.equal(typeof messages.cycles.cancelTitle, 'string');
     assert.equal(typeof messages.cycles.confirm.yes, 'string');
     assert.equal(typeof messages.cycles.confirm.no, 'string');
     assert.equal(typeof messages.cycles.status.active, 'string');
@@ -478,6 +516,8 @@ test('locale files expose every cycles string in both languages', () => {
   assert.equal(pt.cycles.pageTitle, 'Ciclos de Treino - Kinesis');
   assert.equal(en.shell.nav.cycles, 'Training Cycles');
   assert.equal(pt.shell.nav.cycles, 'Ciclos de Treino');
+  assert.equal(en.cycles.promptTitle, 'AI Coach Macrocycle Prompt');
+  assert.equal(pt.cycles.promptTitle, 'Prompt do Macrociclo – Coach IA');
 });
 
 /* ── API client functions ── */

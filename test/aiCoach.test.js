@@ -11,6 +11,7 @@ const {
   PROMPT_TEMPLATE,
   PROMPT_TEMPLATE_EN,
   PLACEHOLDERS,
+  LOCATION_PLACEHOLDERS,
   DEFAULT_ROUTINE_BY_LANG,
   pad2,
   nextMonday,
@@ -21,6 +22,14 @@ const {
   applyRoutineDefault,
   resolveTemplateLang,
   defaultRoutineFor,
+  orderedDayKeys,
+  buildDayRowHtml,
+  readDayInputState,
+  applyDayInputState,
+  renderDayGrid,
+  DAY_INPUT_IDS,
+  LOCATION_INPUT_IDS,
+  validatePromptFields,
   buildPrompt,
   buildPromptContext,
   previousWeekSummary,
@@ -82,6 +91,31 @@ test('availability defaults to the standard routine on all seven days', () => {
   });
 });
 
+test('validatePromptFields requires a valid target date, locations and daily routines', () => {
+  const complete = {
+    targetDate: '31/08/2026',
+    language: 'pt-BR',
+    baseLocation: 'Fânzeres',
+    disponibilidade: Object.fromEntries(Object.keys(DAY_INPUT_IDS).map((day) => [day, 'Rotina normal'])),
+    localizacao: {},
+  };
+  assert.deepEqual(validatePromptFields(complete), { valid: true, missing: [] });
+  assert.deepEqual(validatePromptFields({ ...complete, targetDate: '2026-08-31' }), { valid: true, missing: [] });
+  assert.deepEqual(validatePromptFields({ ...complete, targetDate: '' }), { valid: false, missing: ['targetDate',] });
+  assert.deepEqual(validatePromptFields({ ...complete, baseLocation: '', localizacao: {} }), { valid: false, missing: ['location'] });
+  assert.deepEqual(
+    validatePromptFields({ ...complete, baseLocation: '', localizacao: Object.fromEntries(Object.keys(DAY_INPUT_IDS).map((day) => [day, 'Porto'])) }),
+    { valid: true, missing: [] },
+    'individual day locations can satisfy the location requirement'
+  );
+  assert.deepEqual(
+    validatePromptFields({ ...complete, disponibilidade: { ...complete.disponibilidade, domingo: ' ' } }),
+    { valid: false, missing: ['availability'] }
+  );
+  assert.deepEqual(validatePromptFields({ ...complete, targetDate: '31/02/2026' }).missing, ['targetDate']);
+  assert.deepEqual(validatePromptFields({ ...complete, targetDate: '2026-02-30' }).missing, ['targetDate']);
+});
+
 test('the prompt template keeps the required Portuguese structure', () => {
   assert.match(PROMPT_TEMPLATE, /DATA DA SEMANA/);
   assert.match(PROMPT_TEMPLATE, /DISPONIBILIDADE/);
@@ -116,7 +150,7 @@ test('the prompt template keeps the required Portuguese structure', () => {
   assert.ok(!PROMPT_TEMPLATE.includes('Exemplos:'), 'example list lives in the UI, not the prompt');
 
   const tokens = PROMPT_TEMPLATE.match(/\{\{[A-Z_]+\}\}/g) ?? [];
-  assert.equal(tokens.length, 21, 'the template carries all schedule, cycle-context, and unit placeholders');
+  assert.equal(tokens.length, 28, 'the template carries the schedule, location, cycle-context, and unit placeholders');
   assert.deepEqual(tokens, [
     '{{UNIT_INSTRUCTION}}',
     '{{CYCLE_NAME}}',
@@ -131,12 +165,19 @@ test('the prompt template keeps the required Portuguese structure', () => {
     '{{DATA_DA_SEGUNDA}}',
     '{{SHOES_BLOCK}}',
     '{{DISP_SEG}}',
+    '{{LOCAL_SEG}}',
     '{{DISP_TER}}',
+    '{{LOCAL_TER}}',
     '{{DISP_QUA}}',
+    '{{LOCAL_QUA}}',
     '{{DISP_QUI}}',
+    '{{LOCAL_QUI}}',
     '{{DISP_SEX}}',
+    '{{LOCAL_SEX}}',
     '{{DISP_SAB}}',
+    '{{LOCAL_SAB}}',
     '{{DISP_DOM}}',
+    '{{LOCAL_DOM}}',
     '{{CONTEXTO_OPCIONAL}}',
     '{{WEATHER_EXAMPLE}}',
   ]);
@@ -159,8 +200,8 @@ test('buildPrompt replaces every placeholder with user values', () => {
 
   assert.ok(!prompt.includes('{{'), 'no placeholder survives generation');
   assert.ok(prompt.includes('A semana a ser planejada começa em:\n31/08/2026'));
-  assert.ok(prompt.includes('Segunda: Manhã, antes das 8h'));
-  assert.ok(prompt.includes('Domingo: Manhã, entre 8h e 9h'));
+  assert.ok(prompt.includes('- Segunda-feira: Manhã, antes das 8h (Local: -)'));
+  assert.ok(prompt.includes('- Domingo: Manhã, entre 8h e 9h (Local: -)'));
   assert.ok(prompt.includes('viagem na terça; pouco sono na quinta.'));
 });
 
@@ -203,8 +244,8 @@ test('buildPrompt falls back to defaults for untouched days and context', () => 
     contexto: '',
   });
 
-  assert.ok(prompt.includes('Segunda: Rotina normal'));
-  assert.ok(prompt.includes('Quarta: Só à noite'));
+  assert.ok(prompt.includes('- Segunda-feira: Rotina normal (Local: -)'));
+  assert.ok(prompt.includes('- Quarta-feira: Só à noite (Local: -)'));
   assert.ok(prompt.includes('\n-\n'), 'empty context renders a dash placeholder value');
 });
 
@@ -214,7 +255,7 @@ test('buildPrompt trims whitespace from availability and context', () => {
     disponibilidade: { segunda: '  Tarde  ' },
     contexto: '  calor forte previsto  ',
   });
-  assert.ok(prompt.includes('Segunda: Tarde\n'));
+  assert.ok(prompt.includes('- Segunda-feira: Tarde (Local: -)\n'));
   assert.ok(prompt.includes('\ncalor forte previsto\n'));
 });
 
@@ -267,11 +308,25 @@ test('ai-coach.html wires the shell, lucide and the full form', () => {
   );
   assert.match(html, /<h1 data-i18n="aiCoach\.title">Request Workouts<\/h1>/);
 
-  assert.match(html, /type="text" id="targetDate"/);
-  assert.match(html, /inputmode="numeric"/);
-  for (const id of ['dispSeg', 'dispTer', 'dispQua', 'dispQui', 'dispSex', 'dispSab', 'dispDom']) {
-    assert.match(html, new RegExp(`id="${id}" value="Rotina normal"`));
-  }
+  assert.match(html, /type="date" id="targetDate"[^>]*required/);
+  assert.match(html, /type="text" id="targetDateDisplay" class="date-input-display"/);
+  assert.match(html, /for="targetDate"><span data-i18n="aiCoach\.targetDate">[^<]*<\/span><span class="required-mark"/);
+  assert.match(
+    html,
+    /class="availability-grid" id="availabilityGrid"[\s\S]*?<\/div>/,
+    'the day cards are rendered dynamically into the availability grid container'
+  );
+  assert.ok(!html.includes('id="dispSeg"'), 'no hardcoded day availability inputs remain in the page');
+  assert.ok(!html.includes('value="Rotina normal"'), 'day routines are injected by the renderer, not the page');
+  assert.ok(!html.includes('id="locSeg"'), 'no hardcoded day location inputs remain in the page');
+  assert.match(html, /type="text" id="baseLocation"/);
+  assert.match(
+    html,
+    /type="text" id="baseLocation" data-i18n-placeholder="aiCoach\.locationPlaceholder" placeholder="Ex: City, Country"/,
+    'the base location input ships a generic, i18n-bound placeholder'
+  );
+  assert.match(html, /for="baseLocation"><span data-i18n="aiCoach\.baseLocation"/);
+  assert.match(html, /data-i18n="aiCoach\.baseLocationHint"/);
   assert.match(html, /<textarea id="optionalContext"/);
   assert.match(html, /type="submit" id="generateBtn" class="btn-primary"/);
   assert.ok(!html.includes('generate-btn'), 'the scoped generate-btn class is retired');
@@ -285,14 +340,246 @@ test('ai-coach.html wires the shell, lucide and the full form', () => {
   assert.match(html, /data-lucide="copy"/);
   assert.match(html, /<pre id="promptOutput"/);
   assert.match(html, /data-i18n="aiCoach\.title"/);
+  assert.ok(!html.includes('resultPlaceholder'), 'the obsolete result placeholder is removed');
 });
 
 test('training request date input uses localized display with ISO state binding', () => {
   const js = readFileSync(join(publicDir, 'ai-coach.js'), 'utf8');
-  assert.match(js, /formatDateInput/);
+  assert.match(js, /normalizeTargetDate/);
   assert.match(js, /parseLocalizedDate/);
+  assert.match(js, /createDatePicker\(targetDateDisplay/);
+  assert.match(js, /getLanguage: \(\) => i18n\.language/);
   assert.match(js, /targetDateInput\.dataset\.iso/);
   assert.match(js, /const targetDate = parseInputDate\(targetIso\)/);
+});
+
+test('availability day rows stack the availability and location inputs vertically', () => {
+  const css = readFileSync(join(publicDir, 'ai-coach.css'), 'utf8');
+
+  assert.match(
+    css,
+    /\.day-row \{[^}]*grid-template-columns:\s*1fr;/,
+    'the availability and location inputs stack in a single column'
+  );
+  assert.match(css, /\.day-row \{[^}]*gap:\s*0\.5rem/, 'a vertical gap keeps the stacked inputs apart');
+  assert.match(css, /\.day-row \.day-label \{[^}]*grid-column:\s*1 \/ -1/, 'the day label spans the full row');
+  assert.match(css, /\.day-row \{[^}]*border-radius:\s*12px/, 'each day is grouped inside its own card');
+  assert.match(css, /\.day-row input\[type='text'\] \{[^}]*width:\s*100%/, 'both inputs fill the full day-card width');
+  assert.ok(!css.includes('grid-template-columns: 1fr 1fr'), 'no side-by-side day layout remains');
+  assert.ok(!css.includes('@media (max-width: 560px)'), 'stacking no longer needs a mobile-only override');
+  assert.match(css, /\.required-mark \{[^}]*color:\s*var\(--danger\)/);
+  assert.match(css, /\.btn-primary:disabled \{[^}]*cursor:\s*not-allowed[^}]*opacity:\s*0\.55/);
+});
+
+test('ai-coach layout stays within the viewport without horizontal overflow', () => {
+  const css = readFileSync(join(publicDir, 'ai-coach.css'), 'utf8');
+  const shell = readFileSync(join(publicDir, 'shared', 'shell.css'), 'utf8');
+
+  assert.match(css, /\.ai-coach-page \{[^}]*width:\s*100%;[^}]*max-width:\s*720px;[^}]*overflow-x:\s*hidden/);
+  assert.match(css, /\.prompt-form,\s*\n\.result-section \{[^}]*width:\s*100%;[^}]*min-width:\s*0/);
+  assert.match(css, /\.availability-grid \{[^}]*min-width:\s*0/);
+  assert.match(css, /\.day-row \{[^}]*min-width:\s*0/);
+  assert.match(css, /\.result-header \{[^}]*min-width:\s*0[^}]*flex-wrap:\s*wrap/);
+  assert.match(css, /\.result-header h2 \{[^}]*min-width:\s*0/);
+  assert.match(css, /\.prompt-output \{[^}]*width:\s*100%;[^}]*max-width:\s*100%/);
+  assert.match(shell, /\.main-content \{[^}]*overflow-x:\s*hidden;[^}]*overflow-y:\s*auto/);
+  assert.match(shell, /\.main-content > main \{[^}]*width:\s*100%;[^}]*min-width:\s*0;[^}]*max-width:\s*100%/);
+});
+
+test('orderedDayKeys starts the week on the preferred day', () => {
+  assert.deepEqual(orderedDayKeys('Monday'), [
+    'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado', 'domingo',
+  ], 'monday-preference renders Monday through Sunday');
+  assert.deepEqual(orderedDayKeys('Sunday'), [
+    'domingo', 'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado',
+  ], 'sunday-preference renders Sunday through Saturday');
+  assert.deepEqual(orderedDayKeys(), orderedDayKeys('Monday'), 'Monday is the default week start');
+  assert.equal(orderedDayKeys('Monday').length, 7);
+  assert.equal(orderedDayKeys('Sunday').length, 7);
+});
+
+test('the first rendered day card follows the week-start preference', () => {
+  const buildRows = (weekStart) => orderedDayKeys(weekStart).map((day) =>
+    buildDayRowHtml(day, { dayLabel: day, routine: 'Rotina normal', locationPlaceholder: 'Local' })
+  );
+
+  const mondayOrdered = buildRows('Monday');
+  assert.match(mondayOrdered[0], /aiCoach\.days\.monday/, 'monday preference leads with the Monday card');
+  assert.match(mondayOrdered[6], /aiCoach\.days\.sunday/, 'monday preference ends with the Sunday card');
+
+  const sundayOrdered = buildRows('Sunday');
+  assert.match(sundayOrdered[0], /aiCoach\.days\.sunday/, 'sunday preference leads with the Sunday card');
+  assert.match(sundayOrdered[6], /aiCoach\.days\.saturday/, 'sunday preference ends with the Saturday card');
+});
+
+test('buildDayRowHtml wires daily state to its own availability and location inputs', () => {
+  const row = buildDayRowHtml('segunda', {
+    dayLabel: 'Monday',
+    routine: 'Rotina normal',
+    locationPlaceholder: 'Local',
+  });
+  assert.match(row, /^<div class="day-row">\s*<label for="dispSeg"/);
+  assert.match(row, /class="day-label"><span data-i18n="aiCoach\.days\.monday">Monday<\/span><span class="required-mark"/);
+  assert.match(row, /id="dispSeg" value="Rotina normal" autocomplete="off"/);
+  assert.match(row, /id="locSeg" data-i18n-placeholder="aiCoach\.location" placeholder="Local" autocomplete="off"/);
+
+  const sundayRow = buildDayRowHtml('domingo', { dayLabel: 'Domingo', routine: 'rotina', locationPlaceholder: 'Local' });
+  assert.match(sundayRow, /data-i18n="aiCoach\.days\.sunday">Domingo<\/span><span class="required-mark"/);
+  assert.match(sundayRow, /id="dispDom"/);
+  assert.match(sundayRow, /id="locDom"/);
+});
+
+test('day cards render dynamically from the user week-start preference', () => {
+  const js = readFileSync(join(publicDir, 'ai-coach.js'), 'utf8');
+
+  assert.match(js, /import \{ initShell, getShellI18n, getUserPreferences, refreshIcons \}/);
+  assert.match(js, /const availabilityGrid = document\.getElementById\('availabilityGrid'\)/);
+  assert.match(js, /renderDayGrid\(\{/);
+  assert.match(js, /weekStart: getUserPreferences\(\)\.first_day_of_week/);
+  assert.match(js, /grid\.innerHTML = orderedDayKeys\(weekStart\)/);
+  assert.match(js, /\.map\(\(day\) => buildDayRowHtml\(day/);
+  assert.match(js, /data-i18n="aiCoach\.days\.\$\{DAY_LOCALE_KEYS\[day\]\}"/);
+  assert.match(js, /kinesis:preferences-changed/);
+  assert.ok(!js.includes('for (const inputId of Object.values(DAY_INPUT_IDS))'), 'input defaults flow through the renderer only');
+});
+
+test('day state is a day-keyed dictionary that round-trips both input fields', () => {
+  const dom = { values: {} };
+  const getValue = (id) => dom.values[id];
+  const setValue = (id, value) => { dom.values[id] = value; };
+
+  const state = readDayInputState(getValue);
+  assert.equal(Object.keys(state).length, 7, 'one record per day');
+  assert.ok(Object.keys(state).every((day) => 'availability' in state[day] && 'location' in state[day]));
+
+  dom.values[DAY_INPUT_IDS.segunda] = 'Rotina normal';
+  dom.values[LOCATION_INPUT_IDS.segunda] = 'Fânzeres';
+  applyDayInputState(readDayInputState(getValue), setValue);
+  assert.equal(dom.values[DAY_INPUT_IDS.segunda], 'Rotina normal');
+  assert.equal(dom.values[LOCATION_INPUT_IDS.segunda], 'Fânzeres');
+
+  const partial = { terceira: { availability: undefined, location: 'X' } };
+  applyDayInputState(partial, setValue);
+  assert.equal(dom.values[LOCATION_INPUT_IDS.terceira], undefined, 'unknown days and undefined fields are skipped');
+});
+
+test('changing the week start keeps the cascaded daily locations filled', () => {
+  const grid = { innerHTML: '' };
+  const dom = { values: {} };
+  const getValue = (id) => dom.values[id];
+  const setValue = (id, value) => { dom.values[id] = value; };
+
+  const render = (weekStart) => renderDayGrid({
+    weekStart,
+    routine: 'Rotina normal',
+    grid,
+    getValue,
+    setValue,
+  });
+
+  for (const id of Object.values(DAY_INPUT_IDS)) {
+    dom.values[id] = 'Rotina normal';
+  }
+
+  render('Monday');
+  assert.match(grid.innerHTML, /aiCoach\.days\.monday[\s\S]*aiCoach\.days\.sunday/, 'monday preference mounts Monday first');
+
+  const baseLocation = 'Fânzeres';
+  for (const id of Object.values(LOCATION_INPUT_IDS)) {
+    setValue(id, baseLocation);
+  }
+
+  render('Sunday');
+  assert.match(grid.innerHTML, /aiCoach\.days\.sunday[\s\S]*aiCoach\.days\.saturday/, 'sunday preference re-mounts Sunday first');
+  for (const id of Object.values(LOCATION_INPUT_IDS)) {
+    assert.equal(dom.values[id], baseLocation, `${id} keeps its cascaded value after the re-mount`);
+  }
+  for (const id of Object.values(DAY_INPUT_IDS)) {
+    assert.equal(dom.values[id], 'Rotina normal', `${id} keeps the routine default`);
+  }
+});
+
+test('manual location overrides survive a week-start re-mount', () => {
+  const grid = { innerHTML: '' };
+  const dom = { values: {} };
+  const getValue = (id) => dom.values[id];
+  const setValue = (id, value) => { dom.values[id] = value; };
+
+  const render = (weekStart) => renderDayGrid({
+    weekStart,
+    routine: 'Rotina normal',
+    grid,
+    getValue,
+    setValue,
+  });
+
+  render('Monday');
+  setValue(DAY_INPUT_IDS.quarta, 'Manhã');
+  setValue(LOCATION_INPUT_IDS.quarta, 'Estrada da Ponte');
+  setValue(LOCATION_INPUT_IDS.sabado, 'Fânzeres');
+
+  render('Sunday');
+
+  assert.equal(dom.values[DAY_INPUT_IDS.quarta], 'Manhã');
+  assert.equal(dom.values[LOCATION_INPUT_IDS.quarta], 'Estrada da Ponte');
+  assert.equal(dom.values[LOCATION_INPUT_IDS.sabado], 'Fânzeres');
+  assert.equal(dom.values[LOCATION_INPUT_IDS.domingo], undefined, 'the first Sunday mount fills no location default');
+});
+
+test('day-based location inputs are wired through LOCATION_INPUT_IDS', () => {
+  assert.deepEqual(LOCATION_PLACEHOLDERS, {
+    segunda: '{{LOCAL_SEG}}',
+    terca: '{{LOCAL_TER}}',
+    quarta: '{{LOCAL_QUA}}',
+    quinta: '{{LOCAL_QUI}}',
+    sexta: '{{LOCAL_SEX}}',
+    sabado: '{{LOCAL_SAB}}',
+    domingo: '{{LOCAL_DOM}}',
+  });
+  assert.equal(Object.keys(LOCATION_PLACEHOLDERS).length, 7);
+  assert.deepEqual(Object.keys(PLACEHOLDERS), Object.keys(LOCATION_PLACEHOLDERS));
+});
+
+test('buildPrompt injects a per-day location after the availability text', () => {
+  const prompt = buildPrompt({
+    targetDate: new Date(2026, 7, 31),
+    localizacao: {
+      segunda: 'Parque da Cidade',
+      sabado: 'Fânzeres',
+    },
+  });
+
+  assert.ok(prompt.includes('- Segunda-feira: Rotina normal (Local: Parque da Cidade)'));
+  assert.ok(prompt.includes('- Sábado: Rotina normal (Local: Fânzeres)'));
+  assert.ok(prompt.includes('- Terça-feira: Rotina normal (Local: -)'), 'unset days render the dash placeholder');
+  assert.ok(!prompt.includes('{{LOCAL_'), 'no location placeholder survives generation');
+});
+
+test('buildPrompt injects English locations with the Location label', () => {
+  const prompt = buildPrompt({
+    targetDate: new Date(2026, 7, 31),
+    lang: 'en-US',
+    localizacao: {
+      domingo: 'Riverfront',
+    },
+  });
+
+  assert.ok(prompt.includes('- Sunday: Normal routine (Location: Riverfront)'));
+  assert.ok(prompt.includes('- Monday: Normal routine (Location: -)'));
+  assert.ok(!prompt.includes('{{LOCAL_'));
+});
+
+test('buildPrompt trims location whitespace and cascades an empty override to a dash', () => {
+  const prompt = buildPrompt({
+    targetDate: new Date(2026, 7, 31),
+    localizacao: {
+      quarta: '  Estrada da Ponte  ',
+      sexta: '',
+    },
+  });
+
+  assert.ok(prompt.includes('- Quarta-feira: Rotina normal (Local: Estrada da Ponte)'));
+  assert.ok(prompt.includes('- Sexta-feira: Rotina normal (Local: -)'));
 });
 
 test('the generate button matches the shared primary hover contract', () => {
@@ -332,6 +619,10 @@ test('locale files expose every ai-coach string in both languages', async () => 
     assert.equal(typeof messages.aiCoach.title, 'string');
     assert.equal(typeof messages.aiCoach.pageTitle, 'string');
     assert.equal(typeof messages.aiCoach.targetDate, 'string');
+    assert.equal(typeof messages.aiCoach.baseLocation, 'string');
+    assert.equal(typeof messages.aiCoach.baseLocationHint, 'string');
+    assert.equal(typeof messages.aiCoach.locationPlaceholder, 'string');
+    assert.equal(typeof messages.aiCoach.location, 'string');
     assert.equal(Object.keys(messages.aiCoach.days).length, 7);
     assert.equal(typeof messages.aiCoach.generate, 'string');
     assert.equal(typeof messages.aiCoach.copy, 'string');
@@ -343,6 +634,12 @@ test('locale files expose every ai-coach string in both languages', async () => 
   }
 
   assert.notEqual(en.aiCoach.title, pt.aiCoach.title);
+  assert.equal(en.aiCoach.baseLocation, 'Base location');
+  assert.equal(pt.aiCoach.baseLocation, 'Localidade base');
+  assert.equal(en.aiCoach.locationPlaceholder, 'Ex: City, Country');
+  assert.equal(pt.aiCoach.locationPlaceholder, 'Ex: Cidade, País');
+  assert.equal(en.aiCoach.location, 'Location');
+  assert.equal(pt.aiCoach.location, 'Local');
   assert.match(en.aiCoach.pageTitle, /- Kinesis$/);
   assert.match(pt.aiCoach.pageTitle, /- Kinesis$/);
   assert.equal(en.aiCoach.pageTitle, 'Request Workouts - Kinesis');
@@ -452,8 +749,8 @@ test('buildPrompt generates the English template in English mode', () => {
 
   assert.ok(prompt.startsWith('I want you to generate my running training schedule'));
   assert.ok(prompt.includes('The week to be planned starts on:\n08/31/2026'));
-  assert.ok(prompt.includes('Monday: Normal routine'));
-  assert.ok(prompt.includes('Sunday: Normal routine'));
+  assert.ok(prompt.includes('- Monday: Normal routine (Location: -)'));
+  assert.ok(prompt.includes('- Sunday: Normal routine (Location: -)'));
   assert.ok(!prompt.includes('Rotina normal'), 'no Portuguese leftovers in EN output');
   assert.ok(!prompt.includes('{{'));
   assert.ok(prompt.includes('traveling on Tuesday'));
@@ -582,7 +879,7 @@ test('buildPrompt keeps the Portuguese template by default and for unknown langu
       lang,
     });
     assert.ok(prompt.startsWith('Quero que você gere minha planilha de treinos'));
-    assert.ok(prompt.includes('Segunda: Rotina normal'));
+    assert.ok(prompt.includes('- Segunda-feira: Rotina normal (Local: -)'));
     assert.ok(!prompt.includes('{{'));
   }
 });
@@ -594,8 +891,8 @@ test('buildPrompt merges user values over language-aware defaults', () => {
     contexto: '',
     lang: 'en-US',
   });
-  assert.ok(prompt.includes('Monday: Evening only'));
-  assert.ok(prompt.includes('Tuesday: Normal routine'));
+  assert.ok(prompt.includes('- Monday: Evening only (Location: -)'));
+  assert.ok(prompt.includes('- Tuesday: Normal routine (Location: -)'));
 });
 
 test('formatShoesBlock renders active shoes with mileage and target', () => {
@@ -733,9 +1030,20 @@ test('ai-coach.js wires the guarded language-change listener and lang-aware gene
   assert.match(js, /async function handleGenerate/);
   assert.match(js, /await fetchShoes\(\)/);
   assert.match(js, /generateBtn\.disabled = true/);
-  assert.match(js, /generateBtn\.disabled = false/);
+  assert.match(js, /generateBtn\.disabled = !validation\.valid/);
   assert.match(js, /shoes,/);
   assert.match(js, /messages: i18n\.messages/);
+  assert.ok(!js.includes('resultPlaceholder'), 'the removed placeholder has no stale JavaScript references');
+});
+
+test('base location cascades to every day and location state feeds the prompt', () => {
+  const js = readFileSync(join(publicDir, 'ai-coach.js'), 'utf8');
+
+  assert.match(js, /baseLocationInput\.addEventListener\('input'/, 'typing the base location refreshes all days');
+  assert.match(js, /LOCATION_INPUT_IDS/);
+  assert.match(js, /const localizacao = \{\};/);
+  assert.match(js, /localizacao\[day\] = input\.value/);
+  assert.match(js, /localizacao,/);
 });
 
 test('generated prompts no longer embed the context examples', () => {
@@ -791,4 +1099,19 @@ test('the textarea placeholder is translated and swaps on language change', asyn
   assert.equal(translate(pt, 'aiCoach.contextPlaceholder'), expectedPt);
   assert.equal(typeof en.aiCoach.optionalContextPlaceholder, 'undefined', 'old key removed');
   assert.equal(typeof pt.aiCoach.optionalContextPlaceholder, 'undefined', 'old key removed');
+});
+
+test('the base location placeholder is generic and translated per language', async () => {
+  const { translate } = require('../src/public/shared/i18n.js');
+
+  const html = readFileSync(join(publicDir, 'ai-coach.html'), 'utf8');
+  assert.match(html, /id="baseLocation" data-i18n-placeholder="aiCoach\.locationPlaceholder" placeholder="Ex: City, Country"/);
+
+  const en = JSON.parse(readFileSync(join(publicDir, 'locales', 'en.json'), 'utf8'));
+  const pt = JSON.parse(readFileSync(join(publicDir, 'locales', 'pt.json'), 'utf8'));
+
+  assert.equal(en.aiCoach.locationPlaceholder, 'Ex: City, Country');
+  assert.equal(pt.aiCoach.locationPlaceholder, 'Ex: Cidade, País');
+  assert.equal(translate(en, 'aiCoach.locationPlaceholder'), 'Ex: City, Country');
+  assert.equal(translate(pt, 'aiCoach.locationPlaceholder'), 'Ex: Cidade, País');
 });
