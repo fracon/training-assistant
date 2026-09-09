@@ -2,7 +2,7 @@ import { initShell, getShellI18n, getUserPreferences, showConfirm, showShellToas
 import { translate } from './shared/i18n.js';
 import { formatDate as formatLocalizedDate, formatWeekday } from './shared/date.js';
 import { fetchTraining, saveTrainingFeedback, saveManualTrainingResults, fetchShoes, deleteTraining, fetchWeather } from './shared/api.js';
-import { KM_TO_MILES, convertDistanceToKm, formatDistance, formatPaceFromMetric, formatTemperature } from './shared/units.js';
+import { KM_TO_MILES, convertDistanceInputValue, convertDistanceToKm, formatDistance, formatPaceFromMetric, formatTemperature } from './shared/units.js';
 
 // Sessions open contextually via /training-result.html?id=<id>; without an
 // id there is nothing to show, so the page bounces back to the calendar.
@@ -102,6 +102,25 @@ export function manualResultsPayload(values, distanceUnit = 'km') {
   };
 }
 
+export function syncManualDistanceUnit({ value, previousUnit = 'km', nextUnit = 'km' }) {
+  const previous = previousUnit === 'mi' ? 'mi' : 'km';
+  const next = nextUnit === 'mi' ? 'mi' : 'km';
+  if (previous === next) return { value, unit: next, changed: false };
+  const converted = convertDistanceInputValue(value, previous, next);
+  return { value: converted === null ? value : String(converted), unit: next, changed: converted !== null };
+}
+
+export function resolveResultSource(training = {}, fitData = {}) {
+  const source = fitData?.result_data_source ?? training?.result_data_source;
+  return source === 'manual' || source === 'fit_upload' ? source : 'none';
+}
+
+export function resultSourceBadgeKey(source) {
+  if (source === 'manual') return 'session.sourceManualBadge';
+  if (source === 'fit_upload') return 'session.sourceFitBadge';
+  return null;
+}
+
 // Local weekday name ('YYYY-MM-DD' parsed as a local date, never UTC).
 export function weekdayLabel(iso, language) {
   return formatWeekday(iso, language);
@@ -123,12 +142,10 @@ RPE alvo: {{RPE_ALVO}}
 Tênis: {{TENIS}}
 
 DADOS DO TREINO REALIZADO
-Fonte dos dados do treino: {{FONTE_DADOS}}
-{{OBSERVACAO_FONTE}}
+Fonte dos dados do treino: {{FONTE_DADOS}}{{OBSERVACAO_FONTE}}
 Duração total: {{DURACAO}}
 Distância total: {{DISTANCIA}}
-Pace médio: {{PACE_MEDIO}}
-{{OBSERVACAO_PACE}}
+Pace médio: {{PACE_MEDIO}}{{OBSERVACAO_PACE}}
 FC média: {{FC_MEDIA}}
 FC máxima: {{FC_MAXIMA}}
 Desnível positivo: {{DESNIVEL_POSITIVO}}
@@ -191,12 +208,10 @@ Target RPE: {{RPE_ALVO}}
 Shoe: {{TENIS}}
 
 REALIZED WORKOUT DATA
-Workout data source: {{FONTE_DADOS}}
-{{OBSERVACAO_FONTE}}
+Workout data source: {{FONTE_DADOS}}{{OBSERVACAO_FONTE}}
 Total duration: {{DURACAO}}
 Total distance: {{DISTANCIA}}
-Average pace: {{PACE_MEDIO}}
-{{OBSERVACAO_PACE}}
+Average pace: {{PACE_MEDIO}}{{OBSERVACAO_PACE}}
 Average HR: {{FC_MEDIA}}
 Max HR: {{FC_MAXIMA}}
 Elevation gain: {{DESNIVEL_POSITIVO}}
@@ -281,8 +296,14 @@ export function painPromptText(hasPainValue, description, translate) {
 // falling back to dashes.
 export function collectPromptValues({ training, form, fitData, preferences = {} }) {
   const distanceUnit = preferences.distance_unit === 'mi' ? 'mi' : 'km';
-  const manual = fitData?.result_data_source === 'manual' || training.result_data_source === 'manual';
+  const source = resolveResultSource(training, fitData);
+  const manual = source === 'manual';
   const english = form.language === 'en-US';
+  const sourceText = source === 'manual'
+    ? (english ? 'Manually entered by the user' : 'Inserção manual pelo usuário')
+    : source === 'fit_upload'
+      ? (english ? 'FIT file' : 'Arquivo FIT')
+      : (english ? 'Not provided' : 'Não informada');
   return {
     DATA: formatDateLabel(training.dia, form.language),
     DIA_SEMANA: weekdayLabel(training.dia, form.language),
@@ -291,16 +312,16 @@ export function collectPromptValues({ training, form, fitData, preferences = {} 
     FC_ALVO: training.fc_alvo,
     RPE_ALVO: training.rpe,
     TENIS: training.tenis,
-    FONTE_DADOS: manual ? (english ? 'Manually entered by the user' : 'Inserção manual pelo usuário') : (english ? 'FIT file' : 'Arquivo FIT'),
+    FONTE_DADOS: sourceText,
     OBSERVACAO_FONTE: manual ? (english
-      ? 'Note: the aggregate data below was entered manually. No detailed lap data from a FIT file is available.'
-      : 'Observação: os dados agregados abaixo foram informados manualmente. Não há dados detalhados de voltas provenientes de um arquivo FIT.') : '',
+      ? '\nNote: the aggregate data below was entered manually. No detailed lap data from a FIT file is available.'
+      : '\nObservação: os dados agregados abaixo foram informados manualmente. Não há dados detalhados de voltas provenientes de um arquivo FIT.') : '',
     DURACAO: fitData?.fit_duration || '-',
     DISTANCIA: fitData?.fit_distance != null ? formatDistance(fitData.fit_distance, distanceUnit) : '-',
     PACE_MEDIO: fitData?.fit_avg_pace ? formatPaceFromMetric(fitData.fit_avg_pace, distanceUnit) : '-',
-    OBSERVACAO_PACE: fitData?.fit_avg_pace ? (english
-      ? 'Average pace calculated by Kinesis from total distance and duration.'
-      : 'Pace médio calculado pelo Kinesis a partir da distância e duração totais.') : '',
+    OBSERVACAO_PACE: manual && fitData?.fit_avg_pace ? (english
+      ? '\nAverage pace calculated by Kinesis from total distance and duration.'
+      : '\nPace médio calculado pelo Kinesis a partir da distância e duração totais.') : '',
     FC_MEDIA: fitData?.fit_avg_hr || '-',
     FC_MAXIMA: fitData?.fit_max_hr || '-',
     DESNIVEL_POSITIVO: fitData?.fit_elevation_gain != null ? `${fitData.fit_elevation_gain} m` : '-',
@@ -314,7 +335,7 @@ export function collectPromptValues({ training, form, fitData, preferences = {} 
     ENERGIA_FINAL: form.energy_label,
     DOR_DESCONFORTO: form.pain_description,
     FEEDBACK: form.feedback_notas,
-    ANEXAR_SCREENSHOT_GARMIN_OU_INSERIR_DADOS_DE_LAPS_AQUI: manual
+    ANEXAR_SCREENSHOT_GARMIN_OU_INSERIR_DADOS_DE_LAPS_AQUI: source !== 'fit_upload'
       ? '-'
       : fitData?.laps?.length
         ? buildLapsMarkdown(fitData.laps, preferences)
@@ -503,6 +524,7 @@ async function initTrainingResult() {
   let fitData = null;
   let currentTrainingId = null;
   let promptText = '';
+  let manualDistanceInputUnit = 'km';
   const t = (key) => translate(i18n ? i18n.messages : {}, key);
 
   const applyTooltips = () => {
@@ -521,8 +543,18 @@ async function initTrainingResult() {
     fitField.hidden = manual;
     manualResultsField.hidden = !manual;
   };
-  const renderManualDistanceUnit = () => {
-    manualDistanceUnit.textContent = getUserPreferences().distance_unit === 'mi' ? 'mi' : 'km';
+  const renderManualDistanceUnit = ({ convertExisting = false } = {}) => {
+    const nextUnit = getUserPreferences().distance_unit === 'mi' ? 'mi' : 'km';
+    if (convertExisting) {
+      const synced = syncManualDistanceUnit({
+        value: manualInputs.distance.value,
+        previousUnit: manualDistanceInputUnit,
+        nextUnit,
+      });
+      manualInputs.distance.value = synced.value;
+    }
+    manualDistanceInputUnit = nextUnit;
+    manualDistanceUnit.textContent = nextUnit;
   };
   resultSourceSelect.addEventListener('change', syncResultSourceVisibility);
 
@@ -574,8 +606,13 @@ async function initTrainingResult() {
   };
 
   const renderFitData = () => {
-    if (!fitData) {
+    const source = resolveResultSource(training, fitData);
+    if (!fitData || source === 'none') {
       fitDataSection.hidden = true;
+      resultSourceBadge.hidden = true;
+      resultSourceBadge.textContent = '';
+      fitLapsSection.hidden = true;
+      fitLapsBody.innerHTML = '';
       return;
     }
     fitDataSection.hidden = false;
@@ -590,9 +627,9 @@ async function initTrainingResult() {
     document.getElementById('fitElevation').textContent =
       fitData.fit_elevation_gain != null ? `${fitData.fit_elevation_gain} m` : '-';
     document.getElementById('fitCalories').textContent = fitData.fit_calories ?? '-';
-    resultSourceBadge.textContent = fitData.result_data_source === 'manual'
-      ? t('session.sourceManualBadge')
-      : t('session.sourceFitBadge');
+    const badgeKey = resultSourceBadgeKey(source);
+    resultSourceBadge.hidden = badgeKey === null;
+    resultSourceBadge.textContent = badgeKey ? t(badgeKey) : '';
     renderLapsTable();
   };
 
@@ -933,7 +970,7 @@ async function initTrainingResult() {
   document.addEventListener('kinesis:preferences-changed', () => {
     renderFitData();
     renderWeatherAutofill();
-    renderManualDistanceUnit();
+    renderManualDistanceUnit({ convertExisting: true });
   });
 }
 

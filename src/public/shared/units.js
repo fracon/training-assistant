@@ -23,6 +23,18 @@ export function convertDistanceToKm(value, unit = 'km') {
   return normalizeDistanceUnit(unit) === 'mi' ? distance * MILES_TO_KM : distance;
 }
 
+// Input values need different invalid-value semantics from display helpers:
+// preserve an unfinished or invalid edit instead of coercing it to zero.
+export function convertDistanceInputValue(value, fromUnit = 'km', toUnit = 'km', decimals = 3) {
+  const text = String(value ?? '').trim();
+  if (text === '') return null;
+  const distance = Number(text);
+  if (!Number.isFinite(distance)) return null;
+  const kilometers = convertDistanceToKm(distance, fromUnit);
+  const converted = convertDistanceFromKm(kilometers, toUnit);
+  return Number(converted.toFixed(decimals));
+}
+
 export function convertCelsius(value, unit = 'C') {
   const celsius = Number(value);
   if (!Number.isFinite(celsius)) return 0;

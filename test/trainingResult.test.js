@@ -14,6 +14,9 @@ const {
   normalizeFeedbackRpe,
   isFitFieldVisible,
   manualResultsPayload,
+  syncManualDistanceUnit,
+  resolveResultSource,
+  resultSourceBadgeKey,
   weekdayLabel,
   resolveTemplateLang,
   templateFor,
@@ -153,6 +156,38 @@ test('manualResultsPayload converts preferred miles to canonical km and validate
   });
   assert.equal(manualResultsPayload({ distance: '1', hours: '0', minutes: '60', seconds: '0' }), null);
   assert.equal(manualResultsPayload({ distance: '', hours: '0', minutes: '1', seconds: '0' }), null);
+});
+
+test('manual distance unit synchronization preserves canonical distance without converting blanks or invalid edits', () => {
+  const miles = syncManualDistanceUnit({ value: '10', previousUnit: 'km', nextUnit: 'mi' });
+  assert.deepEqual(miles, { value: '6.214', unit: 'mi', changed: true });
+  const kilometers = syncManualDistanceUnit({ value: miles.value, previousUnit: miles.unit, nextUnit: 'km' });
+  assert.deepEqual(kilometers, { value: '10', unit: 'km', changed: true });
+  assert.deepEqual(syncManualDistanceUnit({ value: '10.25', previousUnit: 'km', nextUnit: 'km' }), { value: '10.25', unit: 'km', changed: false });
+  assert.deepEqual(syncManualDistanceUnit({ value: '', previousUnit: 'km', nextUnit: 'mi' }), { value: '', unit: 'mi', changed: false });
+  assert.deepEqual(syncManualDistanceUnit({ value: 'unfinished', previousUnit: 'km', nextUnit: 'mi' }), { value: 'unfinished', unit: 'mi', changed: false });
+  let state = { value: '12.345', unit: 'km' };
+  for (let index = 0; index < 4; index += 1) {
+    state = syncManualDistanceUnit({ value: state.value, previousUnit: state.unit, nextUnit: state.unit === 'km' ? 'mi' : 'km' });
+  }
+  assert.equal(state.unit, 'km');
+  assert.ok(Math.abs(Number(state.value) - 12.345) <= 0.001);
+  assert.ok(Math.abs(manualResultsPayload({ distance: miles.value, hours: '1', minutes: '', seconds: '', avg_hr: '', max_hr: '', elevation_gain_m: '', calories: '' }, 'mi').distance_km - 10) < 0.001);
+});
+
+test('result source resolution and badge keys handle manual, FIT, none, and legacy omissions explicitly', () => {
+  assert.equal(resolveResultSource({ result_data_source: 'manual' }), 'manual');
+  assert.equal(resolveResultSource({ result_data_source: 'fit_upload' }), 'fit_upload');
+  assert.equal(resolveResultSource({ result_data_source: 'none' }), 'none');
+  assert.equal(resolveResultSource({}), 'none');
+  assert.equal(resolveResultSource({ result_data_source: 'fit_upload' }, { result_data_source: 'manual' }), 'manual');
+  assert.equal(resultSourceBadgeKey('manual'), 'session.sourceManualBadge');
+  assert.equal(resultSourceBadgeKey('fit_upload'), 'session.sourceFitBadge');
+  assert.equal(resultSourceBadgeKey('none'), null);
+  assert.equal(pt.session.sourceManualBadge, 'Dados inseridos manualmente');
+  assert.equal(en.session.sourceManualBadge, 'Manually entered data');
+  assert.equal(pt.session.sourceFitBadge, 'Dados extraídos do arquivo FIT');
+  assert.equal(en.session.sourceFitBadge, 'Data extracted from the FIT file');
 });
 
 test('weekdayLabel resolves localized weekday names from ISO dates', () => {
@@ -375,6 +410,40 @@ test('collectPromptValues identifies manual data, calculated pace, and never inv
   assert.equal(english.OBSERVACAO_FONTE, '');
 });
 
+test('collectPromptValues resolves provenance explicitly in both languages and limits pace notes to manual results', () => {
+  const sourceValues = (source, language, pace = '6:00') => collectPromptValues({
+    training: { ...baseTraining, result_data_source: source },
+    form: baseForm({ language }),
+    fitData: pace === null ? { result_data_source: source, laps: [] } : { result_data_source: source, fit_avg_pace: pace, laps: [{ lap: 1 }] },
+  });
+  const manualPt = sourceValues('manual', 'pt-BR');
+  const manualEn = sourceValues('manual', 'en-US');
+  assert.equal(manualPt.FONTE_DADOS, 'Inserção manual pelo usuário');
+  assert.equal(manualEn.FONTE_DADOS, 'Manually entered by the user');
+  assert.match(manualPt.OBSERVACAO_PACE, /calculado pelo Kinesis/);
+  assert.match(manualEn.OBSERVACAO_PACE, /calculated by Kinesis/);
+  assert.equal(sourceValues('manual', 'pt-BR', null).OBSERVACAO_PACE, '');
+  for (const [source, language, label] of [
+    ['fit_upload', 'pt-BR', 'Arquivo FIT'], ['fit_upload', 'en-US', 'FIT file'],
+    ['none', 'pt-BR', 'Não informada'], ['none', 'en-US', 'Not provided'],
+  ]) {
+    const values = sourceValues(source, language);
+    assert.equal(values.FONTE_DADOS, label);
+    assert.equal(values.OBSERVACAO_FONTE, '');
+    assert.equal(values.OBSERVACAO_PACE, '');
+    if (source === 'none') assert.equal(values.ANEXAR_SCREENSHOT_GARMIN_OU_INSERIR_DADOS_DE_LAPS_AQUI, '-');
+  }
+  const legacy = collectPromptValues({ training: baseTraining, form: baseForm({ language: 'pt-BR' }), fitData: { laps: [] } });
+  assert.equal(legacy.FONTE_DADOS, 'Não informada');
+  assert.equal(legacy.OBSERVACAO_PACE, '');
+  const nonePtPrompt = buildAnalysisPrompt(PROMPT_TEMPLATE_PT, sourceValues('none', 'pt-BR'));
+  const noneEnPrompt = buildAnalysisPrompt(PROMPT_TEMPLATE_EN, sourceValues('none', 'en-US'));
+  assert.match(nonePtPrompt, /Fonte dos dados do treino: Não informada/);
+  assert.doesNotMatch(nonePtPrompt, /Fonte dos dados do treino: Arquivo FIT|Pace médio calculado pelo Kinesis/);
+  assert.match(noneEnPrompt, /Workout data source: Not provided/);
+  assert.doesNotMatch(noneEnPrompt, /Workout data source: FIT file|Average pace calculated by Kinesis/);
+});
+
 test('painPromptText reports no pain unless the user answered yes', () => {
   const t = (key) => `t:${key}`;
 
@@ -405,7 +474,7 @@ test('painPromptText marks a bare yes without any typed description', () => {
 
 test('collectPromptValues points detailed data at the attachment only with a FIT file', () => {
   const attached = collectPromptValues({
-    training: baseTraining,
+    training: { ...baseTraining, result_data_source: 'fit_upload' },
     form: baseForm({ fitAttached: true }),
   });
   assert.equal(attached.ANEXAR_SCREENSHOT_GARMIN_OU_INSERIR_DADOS_DE_LAPS_AQUI, 'Ver anexo');
@@ -568,7 +637,7 @@ test('collectPromptValues injects Markdown lap table when fitData has laps', () 
       { lap: 1, stepType: 'Run', distanceLabel: '10.00', durationLabel: '1:00:00', avgPaceLabel: '6:00', avgHeartRate: 155, ascentMeters: 120 },
     ],
   };
-  const values = collectPromptValues({ training: baseTraining, form: baseForm(), fitData });
+  const values = collectPromptValues({ training: { ...baseTraining, result_data_source: 'fit_upload' }, form: baseForm(), fitData: { ...fitData, result_data_source: 'fit_upload' } });
   const md = values.ANEXAR_SCREENSHOT_GARMIN_OU_INSERIR_DADOS_DE_LAPS_AQUI;
   assert.ok(md.includes('| # | Type | Distance | Duration | Pace | HR avg. | Ascent |'));
   assert.ok(md.includes('| 1 | Run | 10.00 km | 1:00:00 | 6:00 min/km | 155 | 120 m |'));
@@ -576,9 +645,9 @@ test('collectPromptValues injects Markdown lap table when fitData has laps', () 
 
 test('collectPromptValues falls back to Ver anexo when FIT attached but no laps', () => {
   const values = collectPromptValues({
-    training: baseTraining,
+    training: { ...baseTraining, result_data_source: 'fit_upload' },
     form: baseForm({ fitAttached: true }),
-    fitData: { fit_duration: '1:00:00', laps: [] },
+    fitData: { result_data_source: 'fit_upload', fit_duration: '1:00:00', laps: [] },
   });
   assert.equal(values.ANEXAR_SCREENSHOT_GARMIN_OU_INSERIR_DADOS_DE_LAPS_AQUI, 'Ver anexo');
 });
@@ -1045,7 +1114,8 @@ test('training-result.js wires toggling, saving, generation and i18n refreshes',
 
   assert.match(js, /templateFor\(i18n\.language\)/);
   assert.match(js, /saveManualResultsBtn\.addEventListener\('click'/);
-  assert.match(js, /manualDistanceUnit\.textContent = getUserPreferences\(\)\.distance_unit === 'mi' \? 'mi' : 'km';/);
+  assert.match(js, /manualDistanceUnit\.textContent = nextUnit;/);
+  assert.match(js, /renderManualDistanceUnit\(\{ convertExisting: true \}\)/);
   assert.match(js, /confirm_replace_fit = true/);
   assert.match(js, /confirm_replace_manual/);
   assert.match(js, /collectPromptValues\(\{ training, form: collectFormState\(\), fitData, preferences: getUserPreferences\(\) \}\)/);
