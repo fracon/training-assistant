@@ -372,6 +372,7 @@ test('availability day rows stack the availability and location inputs verticall
 
 test('ai-coach layout stays within the viewport without horizontal overflow', () => {
   const css = readFileSync(join(publicDir, 'ai-coach.css'), 'utf8');
+  const shell = readFileSync(join(publicDir, 'shared', 'shell.css'), 'utf8');
 
   assert.match(css, /\.ai-coach-page \{[^}]*width:\s*100%;[^}]*max-width:\s*720px;[^}]*overflow-x:\s*hidden/);
   assert.match(css, /\.prompt-form,\s*\n\.result-section \{[^}]*width:\s*100%;[^}]*min-width:\s*0/);
@@ -380,6 +381,8 @@ test('ai-coach layout stays within the viewport without horizontal overflow', ()
   assert.match(css, /\.result-header \{[^}]*min-width:\s*0[^}]*flex-wrap:\s*wrap/);
   assert.match(css, /\.result-header h2 \{[^}]*min-width:\s*0/);
   assert.match(css, /\.prompt-output \{[^}]*width:\s*100%;[^}]*max-width:\s*100%/);
+  assert.match(shell, /\.main-content \{[^}]*overflow-x:\s*hidden;[^}]*overflow-y:\s*auto/);
+  assert.match(shell, /\.main-content > main \{[^}]*width:\s*100%;[^}]*min-width:\s*0;[^}]*max-width:\s*100%/);
 });
 
 test('orderedDayKeys starts the week on the preferred day', () => {
