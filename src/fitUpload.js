@@ -14,8 +14,44 @@ class FitUploadError extends Error {
   }
 }
 
+function normalizeEntryName(name) {
+  return typeof name === 'string' ? name.replaceAll('\\', '/') : '';
+}
+
 function isUnsafePath(name) {
-  return name.startsWith('/') || name.split('/').includes('..') || /^[A-Za-z]:[\\/]/.test(name);
+  const normalized = normalizeEntryName(name);
+  return !normalized || normalized.includes('\0') || normalized.startsWith('/')
+    || normalized.startsWith('//') || normalized.split('/').includes('..')
+    || /^[A-Za-z]:\//.test(normalized);
+}
+
+function isRegularFile(entry) {
+  const mode = Number(entry.externalFileAttributes) >>> 16;
+  if (!mode) return entry.type !== 'Directory';
+  const type = mode & 0o170000;
+  return type === 0 || type === 0o100000;
+}
+
+async function readStreamWithLimit(stream, maxBytes, errorFactory, onChunk, streamErrorFactory = errorFactory) {
+  const chunks = [];
+  let total = 0;
+  try {
+    for await (const rawChunk of stream) {
+      const chunk = Buffer.isBuffer(rawChunk) ? rawChunk : Buffer.from(rawChunk);
+      total += chunk.length;
+      if (total > maxBytes) {
+        stream.destroy?.();
+        throw errorFactory();
+      }
+      if (onChunk) onChunk(chunk);
+      else chunks.push(chunk);
+    }
+  } catch (error) {
+    stream.destroy?.();
+    if (error instanceof FitUploadError) throw error;
+    throw streamErrorFactory(error);
+  }
+  return Buffer.concat(chunks);
 }
 
 async function readZipFit(buffer) {
@@ -31,9 +67,10 @@ async function readZipFit(buffer) {
   const candidates = [];
   let totalDeclared = 0;
   for (const entry of directory.files) {
-    const name = entry.path;
+    const name = normalizeEntryName(entry.path);
     if (isUnsafePath(name)) throw new FitUploadError('unsafe_entry', 'The ZIP file contains an unsafe entry name.');
     if (entry.type === 'Directory' || name.startsWith('__MACOSX/')) continue;
+    if (!isRegularFile(entry)) throw new FitUploadError('unsafe_entry', 'The ZIP file contains an unsafe entry name.');
     const declared = Number(entry.uncompressedSize);
     if (Number.isFinite(declared) && declared >= 0) {
       totalDeclared += declared;
@@ -46,14 +83,25 @@ async function readZipFit(buffer) {
   if (candidates.length > 1) throw new FitUploadError('multiple_fit', 'The ZIP file contains more than one FIT file.');
   const entry = candidates[0];
   if (entry.flags & 1) throw new FitUploadError('encrypted_zip', 'Encrypted ZIP entries are not supported.');
-  let extracted;
-  try {
-    extracted = await entry.buffer();
-  } catch {
-    throw new FitUploadError('invalid_zip', 'The ZIP file is invalid or corrupted.');
+  let totalReal = 0;
+  for (const current of directory.files) {
+    const name = normalizeEntryName(current.path);
+    if (current.type === 'Directory' || name.startsWith('__MACOSX/')) continue;
+    const isCandidate = current === entry;
+    const chunks = isCandidate ? [] : null;
+    const stream = current.stream();
+    const remainingTotal = MAX_ZIP_TOTAL_BYTES - totalReal;
+    const limit = isCandidate ? Math.min(MAX_FIT_BYTES, remainingTotal) : remainingTotal;
+    await readStreamWithLimit(stream, limit, () => new FitUploadError(
+      isCandidate ? 'fit_too_large' : 'zip_too_large',
+      isCandidate ? 'The FIT file exceeds the decompressed size limit.' : 'The ZIP contents exceed the decompressed size limit.'
+    ), (chunk) => {
+      totalReal += chunk.length;
+      if (isCandidate) chunks.push(chunk);
+    }, () => new FitUploadError('invalid_zip', 'The ZIP file is invalid or corrupted.'));
+    if (isCandidate) return Buffer.concat(chunks);
   }
-  if (extracted.length > MAX_FIT_BYTES) throw new FitUploadError('fit_too_large', 'The FIT file exceeds the decompressed size limit.');
-  return extracted;
+/* c8 ignore next -- candidate existence is guaranteed by the preceding check. */
 }
 
 async function resolveFitBuffer({ buffer, filename = '' }) {
@@ -71,6 +119,9 @@ module.exports = {
   MAX_ZIP_ENTRIES,
   MAX_ZIP_TOTAL_BYTES,
   FitUploadError,
+  readStreamWithLimit,
+  normalizeEntryName,
+  isRegularFile,
   isUnsafePath,
   resolveFitBuffer,
 };

@@ -286,7 +286,16 @@
       "save": "Não conseguimos salvar seu feedback. Tente novamente.",
     "fitUpload": "Não foi possível enviar o arquivo FIT. Tente novamente.",
     "manualValidation": "Informe uma distância e duração válidas antes de salvar.",
-    "manualSave": "Não foi possível salvar os dados manuais. Tente novamente."
+    "manualSave": "Não foi possível salvar os dados manuais. Tente novamente.",
+    "fitInvalidFile": "O arquivo enviado é inválido.",
+    "fitInvalidZip": "O arquivo ZIP é inválido ou está corrompido.",
+    "fitMissingInZip": "O arquivo ZIP não contém um arquivo FIT.",
+    "fitMultipleInZip": "O arquivo ZIP contém mais de um arquivo FIT.",
+    "fitEncryptedZip": "Arquivos ZIP criptografados não são suportados.",
+    "fitUnsafeZip": "O arquivo ZIP contém uma entrada insegura.",
+    "fitTooManyEntries": "O arquivo ZIP contém entradas demais.",
+    "fitTooLarge": "O arquivo FIT excede o tamanho permitido.",
+    "fitZipTooLarge": "O conteúdo descomprimido do ZIP excede o tamanho permitido."
     }
   },
   "terrain": {

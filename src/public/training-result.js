@@ -420,6 +420,24 @@ export function fitDropzonePrimaryHtml({ files, translate }) {
   return `${prefix}<strong>${escapeHtmlText(file.name)}</strong>`;
 }
 
+const FIT_UPLOAD_ERROR_KEYS = {
+  invalid_file: 'session.errors.fitInvalidFile',
+  invalid_zip: 'session.errors.fitInvalidZip',
+  missing_fit: 'session.errors.fitMissingInZip',
+  multiple_fit: 'session.errors.fitMultipleInZip',
+  encrypted_zip: 'session.errors.fitEncryptedZip',
+  unsafe_entry: 'session.errors.fitUnsafeZip',
+  too_many_entries: 'session.errors.fitTooManyEntries',
+  fit_too_large: 'session.errors.fitTooLarge',
+  zip_too_large: 'session.errors.fitZipTooLarge',
+  unsupported_type: 'session.errors.fitUnsupportedType',
+};
+
+export function fitUploadErrorMessage(code, translate) {
+  const key = FIT_UPLOAD_ERROR_KEYS[code];
+  return key ? translate(key) : translate('session.errors.fitUpload');
+}
+
 // Builds a Markdown table from parsed FIT lap data so it can be injected
 // directly into the AI coach prompt. Returns an empty string when there are
 // no laps to display.
@@ -1003,7 +1021,7 @@ async function initTrainingResult() {
       });
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
-        throw new Error(payload.error || 'Upload failed');
+        throw new Error(payload.code ? fitUploadErrorMessage(payload.code, t) : t('session.errors.fitUpload'));
       }
       const result = await response.json();
       fitData = {

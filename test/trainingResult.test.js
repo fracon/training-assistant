@@ -28,6 +28,7 @@ const {
   copyAnalysisPrompt,
   escapeHtmlText,
   fitDropzonePrimaryHtml,
+  fitUploadErrorMessage,
   buildLapsMarkdown,
   handleTrainingDelete,
   weatherLabelKey,
@@ -1350,6 +1351,15 @@ test('session locale namespace stays in parity across en-US and pt-BR', () => {
     'errors.fitUpload',
     'errors.manualValidation',
     'errors.manualSave',
+    'errors.fitInvalidFile',
+    'errors.fitInvalidZip',
+    'errors.fitMissingInZip',
+    'errors.fitMultipleInZip',
+    'errors.fitEncryptedZip',
+    'errors.fitUnsafeZip',
+    'errors.fitTooManyEntries',
+    'errors.fitTooLarge',
+    'errors.fitZipTooLarge',
   ];
 
   const lookup = (source, key) =>
@@ -1482,6 +1492,14 @@ test('session locale namespace stays in parity across en-US and pt-BR', () => {
 
   assert.equal(en.shell.nav.training, undefined);
   assert.equal(pt.shell.nav.training, undefined);
+});
+
+test('fit upload error codes resolve through localized messages with a safe fallback', () => {
+  const translate = (key) => key;
+  for (const code of ['invalid_file', 'invalid_zip', 'missing_fit', 'multiple_fit', 'encrypted_zip', 'unsafe_entry', 'too_many_entries', 'fit_too_large', 'zip_too_large', 'unsupported_type']) {
+    assert.match(fitUploadErrorMessage(code, translate), /^session\.errors\./);
+  }
+  assert.equal(fitUploadErrorMessage('unknown', translate), 'session.errors.fitUpload');
 });
 
 test('training-result.css keeps the earthy premium aesthetic for the session view', () => {

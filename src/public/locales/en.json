@@ -286,7 +286,16 @@
       "save": "We could not save your feedback. Please try again.",
     "fitUpload": "Could not upload the FIT file. Please try again.",
     "manualValidation": "Enter a valid distance and duration before saving.",
-    "manualSave": "Could not save manual results. Please try again."
+    "manualSave": "Could not save manual results. Please try again.",
+    "fitInvalidFile": "The uploaded file is invalid.",
+    "fitInvalidZip": "The ZIP file is invalid or corrupted.",
+    "fitMissingInZip": "The ZIP file does not contain a FIT file.",
+    "fitMultipleInZip": "The ZIP file contains more than one FIT file.",
+    "fitEncryptedZip": "Encrypted ZIP files are not supported.",
+    "fitUnsafeZip": "The ZIP file contains an unsafe entry.",
+    "fitTooManyEntries": "The ZIP file contains too many entries.",
+    "fitTooLarge": "The FIT file exceeds the allowed size.",
+    "fitZipTooLarge": "The decompressed ZIP contents exceed the allowed size."
     }
   },
   "terrain": {
