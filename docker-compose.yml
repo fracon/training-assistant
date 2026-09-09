@@ -7,6 +7,5 @@ services:
       - "8081:3000"
     environment:
       UNSPLASH_ACCESS_KEY: ${UNSPLASH_ACCESS_KEY:-}
-      UNSPLASH_API_KEY: ${UNSPLASH_API_KEY:-}
     volumes:
       - ./data:/app/data
