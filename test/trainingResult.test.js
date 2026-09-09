@@ -274,6 +274,7 @@ const SHARED_PLACEHOLDERS = [
   'DISTANCIA',
   'PACE_MEDIO',
   'OBSERVACAO_PACE',
+  'CALORIAS',
   'FC_MEDIA',
   'FC_MAXIMA',
   'DESNIVEL_POSITIVO',
@@ -416,6 +417,7 @@ test('collectPromptValues maps planned data, form state and FIT placeholders', (
   );
   assert.equal(values.FEEDBACK, 'Boa sensação');
   assert.equal(values.ANEXAR_SCREENSHOT_GARMIN_OU_INSERIR_DADOS_DE_LAPS_AQUI, '-');
+  assert.equal(values.CALORIAS, '-');
 });
 
 test('collectPromptValues uses persisted FIT data when available', () => {
@@ -432,6 +434,7 @@ test('collectPromptValues uses persisted FIT data when available', () => {
   assert.equal(values.DURACAO, '1:23:45');
   assert.equal(values.DISTANCIA, '15.03 km');
   assert.equal(values.PACE_MEDIO, '5:34 min/km');
+  assert.equal(values.CALORIAS, '-');
   assert.equal(values.FC_MEDIA, 152);
   assert.equal(values.FC_MAXIMA, 171);
   assert.equal(values.DESNIVEL_POSITIVO, '320 m');
@@ -484,6 +487,21 @@ test('collectPromptValues resolves provenance explicitly in both languages and l
   assert.doesNotMatch(nonePtPrompt, /Fonte dos dados do treino: Arquivo FIT|Pace médio calculado pelo Kinesis/);
   assert.match(noneEnPrompt, /Workout data source: Not provided/);
   assert.doesNotMatch(noneEnPrompt, /Workout data source: FIT file|Average pace calculated by Kinesis/);
+});
+
+test('collectPromptValues formats FIT, manual, missing, and zero calories without calculation claims', () => {
+  const makeValues = (source, calories, language = 'pt-BR') => collectPromptValues({
+    training: { ...baseTraining, result_data_source: source },
+    form: baseForm({ language }),
+    fitData: { result_data_source: source, fit_calories: calories, fit_avg_pace: '6:00', laps: [] },
+  });
+  assert.equal(makeValues('fit_upload', 454).CALORIAS, '454 kcal');
+  assert.equal(makeValues('manual', 742, 'en-US').CALORIAS, '742 kcal');
+  assert.equal(makeValues('fit_upload', 0).CALORIAS, '0 kcal');
+  assert.equal(makeValues('none', null).CALORIAS, '-');
+  const prompt = buildAnalysisPrompt(PROMPT_TEMPLATE_PT, makeValues('fit_upload', 454));
+  assert.match(prompt, /Calorias: 454 kcal/);
+  assert.doesNotMatch(prompt, /calorias foram calculadas|calculado pelo Kinesis a partir da distância/);
 });
 
 test('painPromptText reports no pain unless the user answered yes', () => {
@@ -1274,7 +1292,7 @@ test('session locale namespace stays in parity across en-US and pt-BR', () => {
     'manualAvgHr',
     'manualMaxHr',
     'manualElevation',
-    'manualCalories',
+    'resultCalories',
     'generatingPrompt',
     'sourceManualBadge',
     'sourceFitBadge',

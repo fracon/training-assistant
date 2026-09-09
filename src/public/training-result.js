@@ -195,6 +195,7 @@ Fonte dos dados do treino: {{FONTE_DADOS}}{{OBSERVACAO_FONTE}}
 Duração total: {{DURACAO}}
 Distância total: {{DISTANCIA}}
 Pace médio: {{PACE_MEDIO}}{{OBSERVACAO_PACE}}
+Calorias: {{CALORIAS}}
 FC média: {{FC_MEDIA}}
 FC máxima: {{FC_MAXIMA}}
 Desnível positivo: {{DESNIVEL_POSITIVO}}
@@ -261,6 +262,7 @@ Workout data source: {{FONTE_DADOS}}{{OBSERVACAO_FONTE}}
 Total duration: {{DURACAO}}
 Total distance: {{DISTANCIA}}
 Average pace: {{PACE_MEDIO}}{{OBSERVACAO_PACE}}
+Calories: {{CALORIAS}}
 Average HR: {{FC_MEDIA}}
 Max HR: {{FC_MAXIMA}}
 Elevation gain: {{DESNIVEL_POSITIVO}}
@@ -368,6 +370,7 @@ export function collectPromptValues({ training, form, fitData, preferences = {} 
     DURACAO: fitData?.fit_duration || '-',
     DISTANCIA: fitData?.fit_distance != null ? formatDistance(fitData.fit_distance, distanceUnit) : '-',
     PACE_MEDIO: fitData?.fit_avg_pace ? formatPaceFromMetric(fitData.fit_avg_pace, distanceUnit) : '-',
+    CALORIAS: fitData?.fit_calories == null ? '-' : `${fitData.fit_calories} kcal`,
     OBSERVACAO_PACE: manual && fitData?.fit_avg_pace ? (english
       ? '\nAverage pace calculated by Kinesis from total distance and duration.'
       : '\nPace médio calculado pelo Kinesis a partir da distância e duração totais.') : '',

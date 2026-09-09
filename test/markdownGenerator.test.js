@@ -74,6 +74,7 @@ const FULL_SUMMARY = {
     avgHeartRate: 151,
     maxHeartRate: 162,
     ascentMeters: 22,
+    calories: 742,
   },
 };
 
@@ -112,6 +113,7 @@ const TOKENS = [
   '{{DURACAO}}',
   '{{DISTANCIA}}',
   '{{PACE_MEDIO}}',
+  '{{CALORIAS}}',
   '{{FC_MEDIA}}',
   '{{FC_MAXIMA}}',
   '{{DESNIVEL_POSITIVO}}',
@@ -142,6 +144,7 @@ function expectedTokenValues(lang) {
     '{{DURACAO}}': '30:04',
     '{{DISTANCIA}}': '5.00 km',
     '{{PACE_MEDIO}}': '6:01 min/km',
+    '{{CALORIAS}}': '742 kcal',
     '{{FC_MEDIA}}': '151 bpm',
     '{{FC_MAXIMA}}': '162 bpm',
     '{{DESNIVEL_POSITIVO}}': '22 m',
@@ -223,6 +226,7 @@ function buildRawTemplateForTest(messages) {
     `${t.fieldTotalDuration}: {{DURACAO}}`,
     `${t.fieldTotalDistance}: {{DISTANCIA}}`,
     `${t.fieldAvgPace}: {{PACE_MEDIO}}`,
+    `${t.fieldCalories}: {{CALORIAS}}`,
     `${t.fieldAvgHr}: {{FC_MEDIA}}`,
     `${t.fieldMaxHr}: {{FC_MAXIMA}}`,
     `${t.fieldElevation}: {{DESNIVEL_POSITIVO}}`,

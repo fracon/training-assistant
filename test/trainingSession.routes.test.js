@@ -820,7 +820,7 @@ test('POST /api/trainings/:id/fit reports parse errors as 422', async () => {
 
 test('POST /api/trainings/:id/fit persists FIT metrics and returns them', async () => {
   const summary = makeFitSummary({
-    totals: { durationSeconds: 5400, distanceKm: 12.5, avgPaceSecondsPerKm: 432, avgHeartRate: 160, maxHeartRate: 182, ascentMeters: 200 },
+    totals: { durationSeconds: 5400, distanceKm: 12.5, avgPaceSecondsPerKm: 432, avgHeartRate: 160, maxHeartRate: 182, ascentMeters: 200, calories: 987.4 },
     activity: { sport: 'running', startTime: '2026-08-24T07:00:00Z', endTime: '2026-08-24T08:30:00Z' },
     laps: [{ lap: 1, duration: 5400, stepType: 'Run', durationLabel: '1:30:00', cumulativeSeconds: 5400, cumulativeLabel: '1:30:00', distanceKm: 12.5, distanceLabel: '12.50', avgPaceSecondsPerKm: 432, avgPaceLabel: '7:12', bestPaceSecondsPerKm: null, bestPaceLabel: '--:--', avgHeartRate: 160, maxHeartRate: 182, ascentMeters: 200, descentMeters: null, avgCadenceSpm: null, maxCadenceSpm: null, strideMeters: null, calories: null }],
   });
@@ -843,10 +843,11 @@ test('POST /api/trainings/:id/fit persists FIT metrics and returns them', async 
   assert.equal(payload.fit_avg_hr, 160);
   assert.equal(payload.fit_max_hr, 182);
   assert.equal(payload.fit_elevation_gain, 200);
+    assert.equal(payload.fit_calories, 987.4);
   assert.ok(Array.isArray(payload.laps));
 
   const row = db
-    .prepare('SELECT fit_duration, fit_distance, fit_avg_pace, fit_avg_hr, fit_max_hr, fit_elevation_gain, fit_summary_json FROM trainings WHERE id = ?')
+    .prepare('SELECT fit_duration, fit_distance, fit_avg_pace, fit_avg_hr, fit_max_hr, fit_elevation_gain, fit_calories, fit_summary_json FROM trainings WHERE id = ?')
     .get(id);
   assert.equal(row.fit_duration, '1:30:00');
   assert.equal(row.fit_distance, 12.5);
@@ -854,9 +855,11 @@ test('POST /api/trainings/:id/fit persists FIT metrics and returns them', async 
   assert.equal(row.fit_avg_hr, 160);
   assert.equal(row.fit_max_hr, 182);
   assert.equal(row.fit_elevation_gain, 200);
+  assert.equal(row.fit_calories, 987.4);
   const parsed = JSON.parse(row.fit_summary_json);
   assert.ok(parsed.activity);
   assert.ok(parsed.totals);
+  assert.equal(parsed.totals.calories, 987.4);
   assert.ok(parsed.laps);
 });
 

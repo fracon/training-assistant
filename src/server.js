@@ -708,6 +708,7 @@ async function buildServer(options = {}) {
         const fitAvgHr = result.totals?.avgHeartRate ?? null;
         const fitMaxHr = result.totals?.maxHeartRate ?? null;
         const fitElevation = result.totals?.ascentMeters ?? null;
+        const fitCalories = result.totals?.calories ?? null;
         const fitSummaryJson = JSON.stringify({
           activity: result.activity,
           totals: result.totals,
@@ -723,7 +724,7 @@ async function buildServer(options = {}) {
             fit_avg_hr = ?,
             fit_max_hr = ?,
             fit_elevation_gain = ?,
-            fit_calories = NULL,
+            fit_calories = ?,
             fit_summary_json = ?,
             result_data_source = 'fit_upload',
             completed = 1
@@ -735,6 +736,7 @@ async function buildServer(options = {}) {
             fitAvgHr,
             fitMaxHr,
             fitElevation,
+            fitCalories,
             fitSummaryJson,
             id,
             request.user.id
@@ -749,7 +751,7 @@ async function buildServer(options = {}) {
           fit_avg_hr: fitAvgHr,
           fit_max_hr: fitMaxHr,
           fit_elevation_gain: fitElevation,
-          fit_calories: null,
+          fit_calories: fitCalories,
           result_data_source: 'fit_upload',
           laps: result.laps,
         };

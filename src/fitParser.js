@@ -23,6 +23,13 @@ function pickNumberAny(source, keys) {
   return null;
 }
 
+function normalizeCalories(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const calories = Number(value);
+  if (!Number.isFinite(calories) || calories < 0) return null;
+  return Math.round(calories);
+}
+
 function round(value, decimals) {
   return Math.round(value * 10 ** decimals) / 10 ** decimals;
 }
@@ -99,7 +106,7 @@ function buildLapView(lap, index, cumulativeBefore) {
   };
 }
 
-function buildTotals(views) {
+function buildTotals(views, calories = null) {
   let durationSeconds = 0;
   let hrWeighted = 0;
   let hrWeight = 0;
@@ -144,6 +151,7 @@ function buildTotals(views) {
     avgHeartRate: hrWeight > 0 ? Math.round(hrWeighted / hrWeight) : null,
     maxHeartRate: maxHeartRates.length ? Math.max(...maxHeartRates) : null,
     ascentMeters: hasAscent ? round(ascentSum, 1) : null,
+    calories,
   };
 }
 
@@ -166,7 +174,12 @@ function summarize(data) {
       endTime: toIso(session.timestamp),
     },
     laps: lapViews,
-    totals: buildTotals(lapViews),
+    // The session total is authoritative. Lap calories remain available in
+    // each lap, but are not summed because exporters may report cumulative
+    // values and doing so could double-count the activity.
+    totals: buildTotals(lapViews, normalizeCalories(
+      session.total_calories ?? session.totalCalories ?? session.calories
+    )),
   };
 }
 
@@ -203,4 +216,5 @@ module.exports = {
   formatDuration,
   formatPace,
   formatDistance,
+  normalizeCalories,
 };

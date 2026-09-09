@@ -10,6 +10,7 @@ const {
   formatDuration,
   formatPace,
   formatDistance,
+  normalizeCalories,
 } = require('../src/fitParser');
 
 function makeLap(overrides = {}) {
@@ -66,6 +67,15 @@ test('formatDistance renders km labels', () => {
   assert.equal(formatDistance(1.2344), '1.23');
 });
 
+test('normalizeCalories preserves valid zero, rounds fractions, and rejects missing or unsafe values', () => {
+  assert.equal(normalizeCalories(454), 454);
+  assert.equal(normalizeCalories(0), 0);
+  assert.equal(normalizeCalories(12.6), 13);
+  for (const value of [null, undefined, '', Number.NaN, Number.POSITIVE_INFINITY, -1, 'not-a-number']) {
+    assert.equal(normalizeCalories(value), null);
+  }
+});
+
 test('resolveStepType maps intensity and sub_sport to workout steps', () => {
   assert.equal(resolveStepType({ intensity: 'warmup' }), 'Warmup');
   assert.equal(resolveStepType({ sub_sport: 'warm_up' }), 'Warmup');
@@ -83,7 +93,7 @@ test('summarize builds cumulative lap views from session data', () => {
         makeLap(),
         makeLap({ message_index: 1, intensity: 'rest', total_elapsed_time: 120, total_distance: 0, max_speed: 12 }),
         makeLap({ message_index: 2, total_elapsed_time: 480.2, total_distance: 1600 }),
-      ]),
+      ], { total_calories: 0.4 }),
     ],
   });
 
@@ -132,6 +142,7 @@ test('summarize builds cumulative lap views from session data', () => {
     avgHeartRate: 150,
     maxHeartRate: 162,
     ascentMeters: 30,
+    calories: 0,
   });
 });
 
@@ -151,6 +162,7 @@ test('summarize tolerates missing fields and falls back gracefully', () => {
     avgHeartRate: null,
     maxHeartRate: null,
     ascentMeters: null,
+    calories: null,
   });
 
   const noLaps = summarize({ sessions: [{ sport: 'cycling' }] });
@@ -218,6 +230,7 @@ test('summarize computes totals across mixed lap quality', () => {
     avgHeartRate: 150,
     maxHeartRate: 162,
     ascentMeters: 20,
+    calories: null,
   });
 });
 
@@ -398,6 +411,7 @@ test('parseFitFile decodes a synthetic binary Garmin-style FIT file', async () =
     avgHeartRate: 150,
     maxHeartRate: 162,
     ascentMeters: 17,
+    calories: null,
   });
 });
 

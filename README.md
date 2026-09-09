@@ -60,6 +60,17 @@ Every realized result has one persisted source: `none`, `fit_upload`, or `manual
 
 Manual metrics are saved as part of either final result-page action: **Save and back to calendar** persists them before feedback and redirects only after both succeed; **Generate analysis prompt** persists them first so the prompt uses the backend-calculated pace and current provenance. The screen avoids reposting an unchanged manual result by comparing canonical metric values.
 
+Calories are available for both result sources. For FIT uploads, Kinesis reads the
+authoritative activity/session total (`sessions[0].total_calories`) exposed by
+`fitParser` as `summary.totals.calories`; per-lap calorie values remain available
+for the detailed table but are never summed into the activity total. Values are
+normalized to a finite, non-negative integer (real zero is preserved), while
+missing or invalid values remain `null`. Manual calories use the same
+`fit_calories` field, and replacing one source with another replaces its calorie
+value as well. No calorie estimates are generated. Older FIT summaries that do
+not contain an authoritative total are not backfilled from laps; re-uploading
+the file is required to recover calories safely.
+
 ### Running version in the footer
 
 The footer fetches the version from the backend process at `/api/version` with cache disabled (`Cache-Control: no-store` and `fetch(..., { cache: 'no-store' })`). It therefore reflects the version actually running on the server, rather than a cached response. Updating `package.json` alone cannot update an already-running Node process: restart local development if its watcher does not reload package metadata, and rebuild/pull the new Docker image then restart the container in deployment. Cache prevention avoids stale responses; it cannot make a backend still running `0.6.4` report `0.7.0`.
@@ -205,6 +216,7 @@ DADOS DO TREINO REALIZADO
 Duração total: 30:04
 Distância total: 5.00 km
 Pace médio: 6:01 min/km
+Calorias: 742 kcal
 FC média: 151 bpm
 FC máxima: 162 bpm
 Desnível positivo: 22 m
