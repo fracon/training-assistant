@@ -234,6 +234,10 @@ test('cycles.css form modal matches shoes.css modal-backdrop structure', () => {
   assert.match(css, /\.modal-backdrop\.hidden \{/);
   assert.match(css, /\.modal-card \{/);
   assert.match(css, /\.modal-card \{[^}]*max-width:\s*440px/);
+  assert.match(css, /\.modal-card \{[^}]*max-height:\s*80vh/);
+  assert.match(css, /\.modal-card \{[^}]*overflow-y:\s*auto/);
+  assert.match(css, /\.modal-card \{[^}]*scrollbar-gutter:\s*stable both-edges/);
+  assert.match(css, /\.modal-card \{[^}]*padding:\s*1\.25rem 1\.5rem/);
   assert.match(css, /\.modal-card \{[^}]*border-radius:\s*20px/);
   assert.match(css, /@keyframes modal-rise/);
   assert.match(css, /\.modal-header \{/);
