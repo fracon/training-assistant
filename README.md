@@ -58,6 +58,12 @@ backend.
 
 Every realized result has one persisted source: `none`, `fit_upload`, or `manual` (`garmin_connect` is reserved for a future integration). A manual result intentionally has no synthetic FIT summary or laps. Replacing FIT data with manual aggregates, or manual aggregates with a FIT upload, requires explicit confirmation and executes atomically; the outgoing source's incompatible data is cleared. The result screen marks the source clearly, and its analysis prompt identifies manual data, notes the absence of laps, and states that Kinesis calculated pace from distance and duration. Since dashboard, calendar, and AI Coach already aggregate the canonical training metrics, manual results participate in weekly totals without a second source of truth.
 
+Manual metrics are saved as part of either final result-page action: **Save and back to calendar** persists them before feedback and redirects only after both succeed; **Generate analysis prompt** persists them first so the prompt uses the backend-calculated pace and current provenance. The screen avoids reposting an unchanged manual result by comparing canonical metric values.
+
+### Running version in the footer
+
+The footer fetches the version from the backend process at `/api/version` with cache disabled (`Cache-Control: no-store` and `fetch(..., { cache: 'no-store' })`). It therefore reflects the version actually running on the server, rather than a cached response. Updating `package.json` alone cannot update an already-running Node process: restart local development if its watcher does not reload package metadata, and rebuild/pull the new Docker image then restart the container in deployment. Cache prevention avoids stale responses; it cannot make a backend still running `0.6.4` report `0.7.0`.
+
 #### Dynamic Training Prompt Generator
 
 The **AI Coach** page builds the weekly training request from the latest local application state when the user submits the form. It fetches the active cycle and injects its cycle name, goal, target race date, current week/total weeks, and days remaining immediately after the prompt introduction. It also fetches the previous week's calendar entries and summarizes completed workouts as a count, total distance in kilometres, and total time in minutes. Missing values use the prompt's `-` fallback, while valid stored values are preserved and formatted for the selected language.

@@ -180,7 +180,12 @@ async function buildServer(options = {}) {
     return reply.sendFile('register.html');
   });
 
-  app.get('/api/version', async () => ({ version: APP_VERSION }));
+  app.get('/api/version', async (_request, reply) => {
+    reply.header('Cache-Control', 'no-store, no-cache, must-revalidate');
+    reply.header('Pragma', 'no-cache');
+    reply.header('Expires', '0');
+    return { version: APP_VERSION };
+  });
 
   if (options.db) {
     const db = options.db;

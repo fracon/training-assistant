@@ -275,7 +275,7 @@ function buildTopbar() {
 // non-200, malformed payload) degrades to null so the footer can fall back.
 export async function loadAppVersion(fetchImpl = globalThis.fetch) {
   try {
-    const response = await fetchImpl(VERSION_ENDPOINT);
+    const response = await fetchImpl(VERSION_ENDPOINT, { cache: 'no-store' });
     if (!response.ok) return null;
     const data = await response.json();
     if (typeof data?.version !== 'string' || data.version === '') return null;
