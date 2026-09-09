@@ -239,6 +239,34 @@ body {
   margin-top: 0.5rem;
 }
 
+.import-help-trigger { align-self: center; margin-top: 10px; }
+.import-help-dialog { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 20px; background: rgba(45, 42, 36, 0.48); }
+.import-help-dialog[hidden] { display: none; }
+.import-help-card { width: min(680px, 100%); max-height: min(760px, calc(100vh - 40px)); overflow-y: auto; scrollbar-gutter: stable; padding: 24px; border: 1px solid var(--line); border-radius: 18px; background: var(--card); color: var(--ink); box-shadow: 0 18px 50px rgba(45, 42, 36, 0.24); }
+.import-help-open { overflow: hidden; }
+.import-help-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.import-help-header h2 { margin: 0; font-size: 1.25rem; }
+.import-help-card p { color: var(--muted); line-height: 1.5; }
+.import-help-accepted, .import-help-formats { margin: 12px 0; font-size: 0.86rem; }
+.import-help-provider-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0; }
+.import-help-provider-list button { border: 1px solid var(--line-strong); border-radius: 999px; padding: 8px 12px; background: var(--bg); color: var(--muted); cursor: pointer; font: inherit; }
+.import-help-provider-list button.active, .import-help-provider-list button:focus-visible { border-color: var(--accent); background: var(--accent); color: var(--card); outline: none; }
+.import-help-status { display: inline-block; margin: 2px 0 10px; padding: 5px 10px; border-radius: 999px; background: rgba(111, 144, 112, 0.15); color: var(--accent-deep); font-size: 0.78rem; font-weight: 700; }
+.import-help-status[data-compatibility='unsupported'] { background: rgba(165, 73, 47, 0.12); color: var(--danger); }
+.import-help-status[data-compatibility='unverified'], .import-help-status[data-compatibility='conditional'] { background: rgba(181, 133, 58, 0.14); color: #7d5d25; }
+.import-help-steps { padding-left: 22px; color: var(--ink); line-height: 1.55; }
+.import-help-card > a { display: inline-block; margin: 8px 0 18px; color: var(--accent-deep); }
+.import-help-manual { border-top: 1px solid var(--line); padding-top: 16px; }
+.import-help-manual h3 { margin: 0; font-size: 0.98rem; }
+.import-help-manual p { margin: 6px 0 12px; }
+@media (max-width: 560px) {
+  .import-help-dialog { padding: 8px; align-items: end; }
+  .import-help-card { max-height: calc(100vh - 16px); padding: 18px; border-radius: 18px 18px 0 0; }
+  .import-help-provider-list { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; }
+  .import-help-provider-list button { flex: 0 0 auto; min-height: 42px; }
+}
+@media (prefers-reduced-motion: reduce) { .import-help-card, .import-help-dialog { scroll-behavior: auto; transition: none; } }
+
 .file-dropzone:hover {
   border-color: var(--accent-deep);
   background-color: rgba(111, 144, 112, 0.08);
