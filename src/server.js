@@ -5,7 +5,7 @@ const Fastify = require('fastify');
 const multipart = require('@fastify/multipart');
 const fastifyStatic = require('@fastify/static');
 const fastifyCookie = require('@fastify/cookie');
-const { parseFitFile } = require('./fitParser');
+const { parseFitFile, normalizeCalories } = require('./fitParser');
 const { normalizeManualResults } = require('./manualResults');
 const { generateMarkdown } = require('./markdownGenerator');
 const { registerUser, RegistrationError } = require('./auth/registration');
@@ -708,10 +708,14 @@ async function buildServer(options = {}) {
         const fitAvgHr = result.totals?.avgHeartRate ?? null;
         const fitMaxHr = result.totals?.maxHeartRate ?? null;
         const fitElevation = result.totals?.ascentMeters ?? null;
-        const fitCalories = result.totals?.calories ?? null;
+        const fitCalories = normalizeCalories(result.totals?.calories);
+        const canonicalTotals = {
+          ...result.totals,
+          calories: fitCalories,
+        };
         const fitSummaryJson = JSON.stringify({
           activity: result.activity,
-          totals: result.totals,
+          totals: canonicalTotals,
           laps: result.laps,
         });
 

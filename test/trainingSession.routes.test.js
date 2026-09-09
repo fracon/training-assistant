@@ -843,7 +843,7 @@ test('POST /api/trainings/:id/fit persists FIT metrics and returns them', async 
   assert.equal(payload.fit_avg_hr, 160);
   assert.equal(payload.fit_max_hr, 182);
   assert.equal(payload.fit_elevation_gain, 200);
-    assert.equal(payload.fit_calories, 987.4);
+  assert.equal(payload.fit_calories, 987);
   assert.ok(Array.isArray(payload.laps));
 
   const row = db
@@ -855,12 +855,39 @@ test('POST /api/trainings/:id/fit persists FIT metrics and returns them', async 
   assert.equal(row.fit_avg_hr, 160);
   assert.equal(row.fit_max_hr, 182);
   assert.equal(row.fit_elevation_gain, 200);
-  assert.equal(row.fit_calories, 987.4);
+  assert.equal(row.fit_calories, 987);
   const parsed = JSON.parse(row.fit_summary_json);
   assert.ok(parsed.activity);
   assert.ok(parsed.totals);
-  assert.equal(parsed.totals.calories, 987.4);
+  assert.equal(parsed.totals.calories, 987);
   assert.ok(parsed.laps);
+});
+
+test('POST /api/trainings/:id/fit canonicalizes every calorie value at persistence boundary', async () => {
+  const cases = [
+    [454, 454],
+    [12.4, 12],
+    [12.6, 13],
+    [0, 0],
+    [null, null],
+    [undefined, null],
+    [-1, null],
+    [Number.NaN, null],
+    [Number.POSITIVE_INFINITY, null],
+    ['invalid', null],
+  ];
+
+  for (const [input, expected] of cases) {
+    const summary = makeFitSummary({ totals: { calories: input } });
+    const { db, app, cookie, userId } = await setup({ parseFitFile: stubParse(summary) });
+    const id = seedTraining(db, { user_id: userId });
+    const response = await postFitParts(app, cookie, [{ name: 'file', fileName: 'run.fit', value: 'x' }]);
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.json().fit_calories, expected);
+    const row = db.prepare('SELECT fit_calories, fit_summary_json FROM trainings WHERE id = ?').get(id);
+    assert.equal(row.fit_calories, expected);
+    assert.equal(JSON.parse(row.fit_summary_json).totals.calories, expected);
+  }
 });
 
 test('POST /api/trainings/:id/fit requires confirmation before replacing manual data and clears manual-only calories', async () => {
