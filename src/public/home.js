@@ -598,7 +598,7 @@ function setupHomePage() {
       const bar = document.createElement('div');
       bar.className = 'shoe-widget-bar';
       const fill = document.createElement('div');
-      fill.className = `shoe-widget-fill ${markup.level}`;
+      fill.className = `shoe-widget-fill level-${markup.level}`;
       fill.style.width = `${markup.width}%`;
       bar.appendChild(fill);
       item.appendChild(info);

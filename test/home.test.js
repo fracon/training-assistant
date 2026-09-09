@@ -1054,6 +1054,7 @@ test('home.js keeps the dashboard wiring declarative and reactive', () => {
   );
   assert.match(js, /renderWeekTracker\(\);/);
   assert.match(js, /renderShoesWidget\(\);/);
+  assert.match(js, /fill\.className = `shoe-widget-fill level-\$\{markup\.level\}`/);
   assert.match(js, /state\.shoes = await fetchShoes\(\);/);
   assert.match(js, /loadShoes\(\);/);
   assert.match(js, /state\.trainingDates = trainingDaySet\(weekTrainings\)/);
