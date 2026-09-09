@@ -256,19 +256,38 @@ test('users store first and last names via prepared statements', () => {
   db.close();
 });
 
-test('migrateDatabase preserves existing legacy workouts without altering their data', () => {
+test('migrateDatabase removes the obsolete workouts table from existing databases', () => {
   const db = new Database(':memory:');
   db.exec(`
     CREATE TABLE users (
       id INTEGER PRIMARY KEY,
       email TEXT NOT NULL UNIQUE,
-      password_hash TEXT NOT NULL
+      password_hash TEXT NOT NULL,
+      preferred_lang TEXT NOT NULL DEFAULT 'en-US',
+      first_day_of_week TEXT NOT NULL DEFAULT 'Monday',
+      distance_unit TEXT NOT NULL DEFAULT 'km',
+      temperature_unit TEXT NOT NULL DEFAULT 'C'
+    );
+    CREATE TABLE sessions (
+      id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL
+    );
+    CREATE TABLE training_cycles (
+      id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL
     );
     CREATE TABLE trainings (
       id INTEGER PRIMARY KEY,
       user_id INTEGER NOT NULL,
+      training_cycle_id TEXT,
       dia TEXT NOT NULL,
       tipo TEXT NOT NULL
+    );
+    CREATE TABLE shoes (
+      id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      brand TEXT NOT NULL,
+      model TEXT NOT NULL
     );
     CREATE TABLE workouts (
       id INTEGER PRIMARY KEY,
@@ -281,6 +300,17 @@ test('migrateDatabase preserves existing legacy workouts without altering their 
     'legacy-workout@example.com',
     'hash'
   );
+  db.prepare('INSERT INTO sessions (id, user_id) VALUES (?, ?)').run('legacy-session', 1);
+  db.prepare('INSERT INTO training_cycles (id, user_id) VALUES (?, ?)').run('legacy-cycle', 1);
+  db.prepare(
+    'INSERT INTO trainings (id, user_id, training_cycle_id, dia, tipo) VALUES (?, ?, ?, ?, ?)'
+  ).run(1, 1, 'legacy-cycle', '2026-08-24', 'Corrida');
+  db.prepare('INSERT INTO shoes (id, user_id, brand, model) VALUES (?, ?, ?, ?)').run(
+    'legacy-shoe',
+    1,
+    'Asics',
+    'Novablast'
+  );
   db.prepare('INSERT INTO workouts (id, user_id, day) VALUES (?, ?, ?)').run(
     1,
     1,
@@ -289,15 +319,31 @@ test('migrateDatabase preserves existing legacy workouts without altering their 
 
   migrateDatabase(db);
 
+  const tables = db
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+    .all()
+    .map((row) => row.name);
   assert.deepEqual(
-    db.prepare('SELECT id, user_id, day FROM workouts').all(),
-    [{ id: 1, user_id: 1, day: '2026-08-24' }],
-    'legacy data is retained because this cleanup never drops or mutates existing tables'
+    tables,
+    ['sessions', 'shoes', 'training_cycles', 'trainings', 'users'],
+    'only the obsolete workouts table is removed'
   );
+  assert.deepEqual(
+    {
+      users: db.prepare('SELECT COUNT(*) AS total FROM users').get().total,
+      sessions: db.prepare('SELECT COUNT(*) AS total FROM sessions').get().total,
+      training_cycles: db.prepare('SELECT COUNT(*) AS total FROM training_cycles').get().total,
+      trainings: db.prepare('SELECT COUNT(*) AS total FROM trainings').get().total,
+      shoes: db.prepare('SELECT COUNT(*) AS total FROM shoes').get().total,
+    },
+    { users: 1, sessions: 1, training_cycles: 1, trainings: 1, shoes: 1 },
+    'current tables and their unrelated data are retained'
+  );
+
+  assert.doesNotThrow(() => migrateDatabase(db), 'the cleanup migration is idempotent');
   assert.equal(
-    db.pragma('table_info(workouts)').some((column) => column.name === 'training_cycle_id'),
-    false,
-    'the obsolete table is not migrated further'
+    db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'workouts'").get(),
+    undefined
   );
 
   db.close();

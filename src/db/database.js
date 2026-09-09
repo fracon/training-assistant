@@ -160,6 +160,17 @@ function migrateDatabase(db) {
     db.exec('ALTER TABLE trainings ADD COLUMN location TEXT');
   }
 
+  const workoutsTable = db
+    .prepare(
+      `SELECT name
+       FROM sqlite_master
+       WHERE type = 'table' AND name = ?`
+    )
+    .get('workouts');
+  if (workoutsTable) {
+    db.exec('DROP TABLE workouts');
+  }
+
   const trainingsColumns = db.pragma('table_info(trainings)');
   if (trainingsColumns.length > 0 && !trainingsColumns.some((column) => column.name === 'training_cycle_id')) {
     db.exec('DELETE FROM trainings');
