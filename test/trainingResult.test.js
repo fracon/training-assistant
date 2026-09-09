@@ -17,6 +17,8 @@ const {
   syncManualDistanceUnit,
   resolveResultSource,
   resultSourceBadgeKey,
+  manualResultsMatchTraining,
+  persistManualResultsIfNeeded,
   weekdayLabel,
   resolveTemplateLang,
   templateFor,
@@ -173,6 +175,46 @@ test('manual distance unit synchronization preserves canonical distance without 
   assert.equal(state.unit, 'km');
   assert.ok(Math.abs(Number(state.value) - 12.345) <= 0.001);
   assert.ok(Math.abs(manualResultsPayload({ distance: miles.value, hours: '1', minutes: '', seconds: '', avg_hr: '', max_hr: '', elevation_gain_m: '', calories: '' }, 'mi').distance_km - 10) < 0.001);
+});
+
+test('manual persistence runs only when needed and reports validation, cancellation, save, and API failures', async () => {
+  const values = { distance: '10', hours: '1', minutes: '0', seconds: '0', avg_hr: '', max_hr: '', elevation_gain_m: '', calories: '' };
+  const manualTraining = { result_data_source: 'manual', fit_distance: 10, fit_duration: '1:00:00', fit_avg_hr: null, fit_max_hr: null, fit_elevation_gain: null, fit_calories: null };
+  assert.equal(manualResultsMatchTraining(manualResultsPayload(values), manualTraining), true);
+  assert.equal(manualResultsMatchTraining(manualResultsPayload({ ...values, calories: '1' }), manualTraining), false);
+  let calls = 0;
+  const save = async () => { calls += 1; return { training: manualTraining }; };
+  assert.deepEqual(await persistManualResultsIfNeeded({ selectedSource: 'fit', values, distanceUnit: 'km', training: {}, save, confirmReplaceFit: async () => true, applyResponse: () => {} }), { status: 'not-needed' });
+  assert.deepEqual(await persistManualResultsIfNeeded({ selectedSource: 'manual', values: { ...values, distance: '' }, distanceUnit: 'km', training: {}, save, confirmReplaceFit: async () => true, applyResponse: () => {} }), { status: 'invalid' });
+  assert.deepEqual(await persistManualResultsIfNeeded({ selectedSource: 'manual', values, distanceUnit: 'km', training: manualTraining, save, confirmReplaceFit: async () => true, applyResponse: () => {} }), { status: 'not-needed' });
+  assert.equal(calls, 0, 'unchanged manual data never posts again');
+  const cancelled = await persistManualResultsIfNeeded({ selectedSource: 'manual', values, distanceUnit: 'km', training: { ...manualTraining, result_data_source: 'fit_upload' }, save, confirmReplaceFit: async () => false, applyResponse: () => {} });
+  assert.equal(cancelled.status, 'cancelled');
+  assert.equal(calls, 0);
+  let applied = null;
+  const saved = await persistManualResultsIfNeeded({ selectedSource: 'manual', values, distanceUnit: 'km', training: { ...manualTraining, fit_distance: 9 }, save: async (payload) => { calls += 1; assert.equal(payload.confirm_replace_fit, undefined); return { training: manualTraining }; }, confirmReplaceFit: async () => true, applyResponse: (response) => { applied = response.training; } });
+  assert.equal(saved.status, 'saved');
+  assert.equal(calls, 1);
+  assert.equal(applied, manualTraining);
+  const failed = await persistManualResultsIfNeeded({ selectedSource: 'manual', values, distanceUnit: 'km', training: { ...manualTraining, fit_distance: 9 }, save: async () => { throw new Error('offline'); }, confirmReplaceFit: async () => true, applyResponse: () => {} });
+  assert.equal(failed.status, 'error');
+  assert.equal(failed.error.message, 'offline');
+});
+
+test('manual persistence confirms a FIT replacement once and sends canonical values', async () => {
+  const values = { distance: '6.214', hours: '1', minutes: '', seconds: '', avg_hr: '150', max_hr: '160', elevation_gain_m: '100', calories: '500' };
+  let confirmations = 0;
+  let posted;
+  const result = await persistManualResultsIfNeeded({
+    selectedSource: 'manual', values, distanceUnit: 'mi', training: { result_data_source: 'fit_upload' },
+    confirmReplaceFit: async () => { confirmations += 1; return true; },
+    save: async (payload) => { posted = payload; return { training: { result_data_source: 'manual' } }; },
+    applyResponse: () => {},
+  });
+  assert.equal(result.status, 'saved');
+  assert.equal(confirmations, 1);
+  assert.equal(posted.confirm_replace_fit, true);
+  assert.ok(Math.abs(posted.distance_km - 10) < 0.001);
 });
 
 test('result source resolution and badge keys handle manual, FIT, none, and legacy omissions explicitly', () => {
@@ -707,7 +749,8 @@ test('training-result.html ships the expanded feedback grid and generator button
     'the dropzone is laid out after the explicit source choice'
   );
   assert.match(html, /id="manualResultsField" hidden/);
-  for (const id of ['manualDistance', 'manualDistanceUnit', 'manualHours', 'manualMinutes', 'manualSeconds', 'manualAvgHr', 'manualMaxHr', 'manualElevation', 'manualCalories', 'saveManualResultsBtn', 'resultSourceBadge']) assert.match(html, new RegExp(`id="${id}"`));
+  for (const id of ['manualDistance', 'manualDistanceUnit', 'manualHours', 'manualMinutes', 'manualSeconds', 'manualAvgHr', 'manualMaxHr', 'manualElevation', 'manualCalories', 'resultSourceBadge']) assert.match(html, new RegExp(`id="${id}"`));
+  assert.ok(!html.includes('saveManualResultsBtn'), 'manual metrics have no intermediate save control');
 
   assert.match(html, /id="fitDataSection"[^>]*hidden/, 'FIT data section starts hidden');
   assert.match(html, /id="fitDuration"/);
@@ -926,6 +969,7 @@ test('training-result.html ships the planned location field and weather spinner'
 
 test('training-result.js wires toggling, saving, generation and i18n refreshes', () => {
   const js = readFileSync(join(publicDir, 'training-result.js'), 'utf8');
+  const markup = readFileSync(join(publicDir, 'training-result.html'), 'utf8');
 
   assert.match(js, /import \{ initShell, getShellI18n, getUserPreferences, showConfirm, showShellToast, refreshIcons \} from '\.\/shared\/shell\.js';/);
   assert.match(js, /saveManualTrainingResults/);
@@ -1113,7 +1157,14 @@ test('training-result.js wires toggling, saving, generation and i18n refreshes',
   );
 
   assert.match(js, /templateFor\(i18n\.language\)/);
-  assert.match(js, /saveManualResultsBtn\.addEventListener\('click'/);
+  assert.ok(!js.includes('saveManualResultsBtn'), 'the removed control has no stale JavaScript reference');
+  assert.ok(!markup.includes('Save manual results'), 'the obsolete intermediate action is removed from markup');
+  assert.ok(!readFileSync(join(publicDir, 'training-result.css'), 'utf8').includes('.manual-results-field .btn-primary'), 'the retired intermediate-button CSS is removed');
+  assert.match(js, /persistManualResultsIfNeeded\(\{/);
+  assert.match(js, /const manualResult = await persistManualResults\(\);/);
+  assert.equal((js.match(/const manualResult = await persistManualResults\(\);/g) || []).length, 2, 'each terminal action runs the shared persistence flow once');
+  assert.ok(js.indexOf('const manualResult = await persistManualResults();') < js.indexOf('await saveTrainingFeedback(id, payload);'), 'feedback follows manual persistence');
+  assert.ok(js.lastIndexOf('const manualResult = await persistManualResults();') < js.lastIndexOf('buildAnalysisPrompt('), 'prompt generation follows manual persistence');
   assert.match(js, /manualDistanceUnit\.textContent = nextUnit;/);
   assert.match(js, /renderManualDistanceUnit\(\{ convertExisting: true \}\)/);
   assert.match(js, /confirm_replace_fit = true/);
@@ -1224,8 +1275,7 @@ test('session locale namespace stays in parity across en-US and pt-BR', () => {
     'manualMaxHr',
     'manualElevation',
     'manualCalories',
-    'saveManualResults',
-    'manualSaved',
+    'generatingPrompt',
     'sourceManualBadge',
     'sourceFitBadge',
     'replaceFitTitle',

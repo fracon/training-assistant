@@ -121,6 +121,55 @@ export function resultSourceBadgeKey(source) {
   return null;
 }
 
+function durationSeconds(value) {
+  const parts = String(value ?? '').split(':').map(Number);
+  if (parts.length === 2 && parts.every(Number.isInteger)) return parts[0] * 60 + parts[1];
+  if (parts.length === 3 && parts.every(Number.isInteger)) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  return null;
+}
+
+export function manualResultsMatchTraining(payload, training = {}) {
+  if (training.result_data_source !== 'manual') return false;
+  const optionalFields = [
+    ['avg_hr', 'fit_avg_hr'],
+    ['max_hr', 'fit_max_hr'],
+    ['elevation_gain_m', 'fit_elevation_gain'],
+    ['calories', 'fit_calories'],
+  ];
+  return Number(training.fit_distance) === payload.distance_km
+    && durationSeconds(training.fit_duration) === payload.duration_seconds
+    && optionalFields.every(([payloadKey, trainingKey]) => (training[trainingKey] ?? null) === payload[payloadKey]);
+}
+
+// Both terminal actions use this single workflow. It returns expected user
+// outcomes instead of throwing for a normal cancellation or invalid form.
+export async function persistManualResultsIfNeeded({
+  selectedSource,
+  values,
+  distanceUnit,
+  training,
+  save,
+  confirmReplaceFit,
+  applyResponse,
+}) {
+  if (selectedSource !== 'manual') return { status: 'not-needed' };
+  const payload = manualResultsPayload(values, distanceUnit);
+  if (!payload) return { status: 'invalid' };
+  if (manualResultsMatchTraining(payload, training)) return { status: 'not-needed' };
+  if (training.result_data_source === 'fit_upload') {
+    const confirmed = await confirmReplaceFit();
+    if (!confirmed) return { status: 'cancelled' };
+    payload.confirm_replace_fit = true;
+  }
+  try {
+    const response = await save(payload);
+    applyResponse(response);
+    return { status: 'saved', response };
+  } catch (error) {
+    return { status: 'error', error };
+  }
+}
+
 // Local weekday name ('YYYY-MM-DD' parsed as a local date, never UTC).
 export function weekdayLabel(iso, language) {
   return formatWeekday(iso, language);
@@ -509,7 +558,6 @@ async function initTrainingResult() {
   const fitLapsSection = document.getElementById('fitLapsSection');
   const fitLapsBody = document.getElementById('fitLapsBody');
   const manualResultsField = document.getElementById('manualResultsField');
-  const saveManualResultsBtn = document.getElementById('saveManualResultsBtn');
   const resultSourceBadge = document.getElementById('resultSourceBadge');
   const manualDistanceUnit = document.getElementById('manualDistanceUnit');
   const manualInputs = {
@@ -821,6 +869,32 @@ async function initTrainingResult() {
     };
   };
 
+  const manualInputValues = () => Object.fromEntries(
+    Object.entries(manualInputs).map(([key, input]) => [key, input.value])
+  );
+  const applyManualResults = (response) => {
+    training = response.training;
+    fitData = { ...training, laps: [] };
+    resultSourceSelect.value = 'manual';
+    renderFitData();
+  };
+  const persistManualResults = () => persistManualResultsIfNeeded({
+    selectedSource: resultSourceSelect.value,
+    values: manualInputValues(),
+    distanceUnit: getUserPreferences().distance_unit,
+    training,
+    save: (payload) => saveManualTrainingResults(id, payload),
+    confirmReplaceFit: () => showConfirm({
+      title: t('session.replaceFitTitle'), message: t('session.replaceFitMessage'), icon: 'triangle-alert',
+      confirmLabel: t('session.replaceConfirm'), cancelLabel: t('shell.confirm.no'),
+    }),
+    applyResponse: applyManualResults,
+  });
+  const reportManualPersistence = (result) => {
+    if (result.status === 'invalid') setStatus(t('session.errors.manualValidation'), 'error');
+    if (result.status === 'error') setStatus(result.error?.message || t('session.errors.manualSave'), 'error');
+  };
+
   saveBtn.addEventListener('click', async () => {
     const state = collectFormState();
     if (Number.isNaN(state.feedback_rpe)) {
@@ -830,6 +904,11 @@ async function initTrainingResult() {
     saveBtn.disabled = true;
     saveBtn.textContent = t('session.saving');
     try {
+      const manualResult = await persistManualResults();
+      if (manualResult.status === 'invalid' || manualResult.status === 'cancelled' || manualResult.status === 'error') {
+        reportManualPersistence(manualResult);
+        return;
+      }
       const {
         hr_source_label,
         terrain_label,
@@ -844,50 +923,31 @@ async function initTrainingResult() {
       await saveTrainingFeedback(id, payload);
       window.location.href = '/calendar.html';
     } catch {
+      setStatus(t('session.errors.save'), 'error');
+    } finally {
       saveBtn.disabled = false;
       saveBtn.textContent = t('session.save');
-      setStatus(t('session.errors.save'), 'error');
     }
   });
 
   generateBtn.addEventListener('click', async () => {
-    promptText = buildAnalysisPrompt(
-      templateFor(i18n.language),
-      collectPromptValues({ training, form: collectFormState(), fitData, preferences: getUserPreferences() })
-    );
-    promptOutput.value = promptText;
-    promptSection.hidden = false;
-  });
-
-  saveManualResultsBtn.addEventListener('click', async () => {
-    const payload = manualResultsPayload(
-      Object.fromEntries(Object.entries(manualInputs).map(([key, input]) => [key, input.value])),
-      getUserPreferences().distance_unit
-    );
-    if (!payload) {
-      setStatus(t('session.errors.manualValidation'), 'error');
-      return;
-    }
-    if (training.result_data_source === 'fit_upload') {
-      const confirmed = await showConfirm({
-        title: t('session.replaceFitTitle'), message: t('session.replaceFitMessage'), icon: 'triangle-alert',
-        confirmLabel: t('session.replaceConfirm'), cancelLabel: t('shell.confirm.no'),
-      });
-      if (!confirmed) return;
-      payload.confirm_replace_fit = true;
-    }
-    saveManualResultsBtn.disabled = true;
+    generateBtn.disabled = true;
+    generateLabel.textContent = t('session.generatingPrompt');
     try {
-      const response = await saveManualTrainingResults(id, payload);
-      training = response.training;
-      fitData = { ...training, laps: [] };
-      resultSourceSelect.value = 'manual';
-      renderFitData();
-      setStatus(t('session.manualSaved'));
-    } catch (error) {
-      setStatus(error.message || t('session.errors.manualSave'), 'error');
+      const manualResult = await persistManualResults();
+      if (manualResult.status === 'invalid' || manualResult.status === 'cancelled' || manualResult.status === 'error') {
+        reportManualPersistence(manualResult);
+        return;
+      }
+      promptText = buildAnalysisPrompt(
+        templateFor(i18n.language),
+        collectPromptValues({ training, form: collectFormState(), fitData, preferences: getUserPreferences() })
+      );
+      promptOutput.value = promptText;
+      promptSection.hidden = false;
     } finally {
-      saveManualResultsBtn.disabled = false;
+      generateBtn.disabled = false;
+      generateLabel.textContent = t('session.generatePrompt');
     }
   });
 

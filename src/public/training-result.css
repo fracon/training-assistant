@@ -207,8 +207,6 @@ body {
   gap: 8px;
 }
 
-.manual-results-field .btn-primary { margin-top: 2px; }
-
 .result-data-head {
   display: flex;
   align-items: center;
