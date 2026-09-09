@@ -340,6 +340,7 @@ test('ai-coach.html wires the shell, lucide and the full form', () => {
   assert.match(html, /data-lucide="copy"/);
   assert.match(html, /<pre id="promptOutput"/);
   assert.match(html, /data-i18n="aiCoach\.title"/);
+  assert.ok(!html.includes('resultPlaceholder'), 'the obsolete result placeholder is removed');
 });
 
 test('training request date input uses localized display with ISO state binding', () => {
@@ -1032,6 +1033,7 @@ test('ai-coach.js wires the guarded language-change listener and lang-aware gene
   assert.match(js, /generateBtn\.disabled = !validation\.valid/);
   assert.match(js, /shoes,/);
   assert.match(js, /messages: i18n\.messages/);
+  assert.ok(!js.includes('resultPlaceholder'), 'the removed placeholder has no stale JavaScript references');
 });
 
 test('base location cascades to every day and location state feeds the prompt', () => {

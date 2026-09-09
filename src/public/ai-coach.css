@@ -234,10 +234,3 @@
   line-height: 1.5;
   user-select: all;
 }
-
-.result-placeholder {
-  margin-top: 1.25rem;
-  text-align: center;
-  color: var(--muted);
-  font-size: 0.9rem;
-}

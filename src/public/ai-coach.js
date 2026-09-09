@@ -607,7 +607,6 @@ function setupAiCoachPage() {
   const baseLocationInput = document.getElementById('baseLocation');
   const availabilityGrid = document.getElementById('availabilityGrid');
   const resultSection = document.getElementById('resultSection');
-  const resultPlaceholder = document.getElementById('resultPlaceholder');
   const promptOutput = document.getElementById('promptOutput');
   const copyBtn = document.getElementById('copyBtn');
   const copyIconSlot = copyBtn.querySelector('.copy-icon');
@@ -764,7 +763,6 @@ function setupAiCoachPage() {
       ...promptContext,
     });
     resultSection.classList.remove('hidden');
-    resultPlaceholder.classList.add('hidden');
     promptOutput.scrollTop = 0;
   }
 
