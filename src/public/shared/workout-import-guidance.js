@@ -8,8 +8,8 @@ export const WORKOUT_IMPORT_PROVIDERS = Object.freeze([
   },
   {
     id: 'coros', name: 'COROS', compatibility: 'direct',
-    formats: ['fit', 'zip-fit'], source: 'https://support.coros.com/hc/en-us/articles/360043975752-Exporting-Workout-Data-and-Uploading-to-3rd-Party-Apps', verifiedAt: '2026-09-09',
-    stepCount: 5,
+    formats: ['fit'], source: 'https://support.coros.com/hc/en-us/articles/360043975752-Exporting-Workout-Data-and-Uploading-to-3rd-Party-Apps', verifiedAt: '2026-09-09',
+    stepCount: 6,
   },
   {
     id: 'polar', name: 'Polar', compatibility: 'direct',
@@ -106,8 +106,7 @@ export function createImportGuidance({ trigger, dialog, translate, onManual }) {
     providerList.querySelectorAll('[data-provider-id]').forEach((button) => {
       const active = button.dataset.providerId === provider.id;
       button.classList.toggle('active', active);
-      button.setAttribute('aria-selected', String(active));
-      button.tabIndex = active ? 0 : -1;
+      button.setAttribute('aria-pressed', String(active));
     });
   };
   const close = () => {
@@ -119,7 +118,10 @@ export function createImportGuidance({ trigger, dialog, translate, onManual }) {
   const onKeydown = (event) => {
     if (event.key === 'Escape') { event.preventDefault(); close(); return; }
     if (event.key !== 'Tab') return;
-    const focusable = [...dialog.querySelectorAll('button, a[href]')].filter((element) => !element.disabled && !element.hidden);
+    const focusable = [...dialog.querySelectorAll('button, a[href]')].filter((element) => {
+      if (element.disabled || element.hidden || element.getAttribute('tabindex') === '-1') return false;
+      return !element.closest('[hidden]');
+    });
     if (focusable.length === 0) return;
     const first = focusable[0]; const last = focusable[focusable.length - 1];
     if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }

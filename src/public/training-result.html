@@ -284,14 +284,14 @@
       </header>
       <p id="importHelpDescription" data-import-help-description></p>
       <div class="import-help-accepted" data-i18n="session.importHelp.accepted">Accepted formats: .FIT or .ZIP with exactly one .FIT</div>
-      <div class="import-help-provider-list" data-import-help-providers role="tablist" data-i18n-aria-label="session.importHelp.providersLabel" aria-label="Workout platforms">
-        <button type="button" role="tab" data-provider-id="garmin" aria-selected="true">Garmin</button>
-        <button type="button" role="tab" data-provider-id="coros" aria-selected="false" tabindex="-1">COROS</button>
-        <button type="button" role="tab" data-provider-id="polar" aria-selected="false" tabindex="-1">Polar</button>
-        <button type="button" role="tab" data-provider-id="amazfit-zepp" aria-selected="false" tabindex="-1">Amazfit/Zepp</button>
-        <button type="button" role="tab" data-provider-id="huawei" aria-selected="false" tabindex="-1">Huawei</button>
-        <button type="button" role="tab" data-provider-id="apple" aria-selected="false" tabindex="-1">Apple</button>
-        <button type="button" role="tab" data-provider-id="samsung" aria-selected="false" tabindex="-1">Samsung</button>
+      <div class="import-help-provider-list" data-import-help-providers role="group" data-i18n-aria-label="session.importHelp.providersLabel" aria-label="Workout platforms">
+        <button type="button" data-provider-id="garmin" aria-pressed="true">Garmin</button>
+        <button type="button" data-provider-id="coros" aria-pressed="false">COROS</button>
+        <button type="button" data-provider-id="polar" aria-pressed="false">Polar</button>
+        <button type="button" data-provider-id="amazfit-zepp" aria-pressed="false">Amazfit/Zepp</button>
+        <button type="button" data-provider-id="huawei" aria-pressed="false">Huawei</button>
+        <button type="button" data-provider-id="apple" aria-pressed="false">Apple</button>
+        <button type="button" data-provider-id="samsung" aria-pressed="false">Samsung</button>
       </div>
       <div class="import-help-status" data-import-help-status></div>
       <p class="import-help-formats"><strong data-i18n="session.importHelp.exportFormat">Export format:</strong> <span data-import-help-formats></span></p>

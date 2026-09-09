@@ -250,7 +250,7 @@ body {
 .import-help-accepted, .import-help-formats { margin: 12px 0; font-size: 0.86rem; }
 .import-help-provider-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0; }
 .import-help-provider-list button { border: 1px solid var(--line-strong); border-radius: 999px; padding: 8px 12px; background: var(--bg); color: var(--muted); cursor: pointer; font: inherit; }
-.import-help-provider-list button.active, .import-help-provider-list button:focus-visible { border-color: var(--accent); background: var(--accent); color: var(--card); outline: none; }
+.import-help-provider-list button.active, .import-help-provider-list button[aria-pressed='true'], .import-help-provider-list button:focus-visible { border-color: var(--accent); background: var(--accent); color: var(--card); outline: none; }
 .import-help-status { display: inline-block; margin: 2px 0 10px; padding: 5px 10px; border-radius: 999px; background: rgba(111, 144, 112, 0.15); color: var(--accent-deep); font-size: 0.78rem; font-weight: 700; }
 .import-help-status[data-compatibility='unsupported'] { background: rgba(165, 73, 47, 0.12); color: var(--danger); }
 .import-help-status[data-compatibility='unverified'], .import-help-status[data-compatibility='conditional'] { background: rgba(181, 133, 58, 0.14); color: #7d5d25; }
