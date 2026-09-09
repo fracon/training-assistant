@@ -393,7 +393,9 @@ export async function initCyclesPage() {
 
     const promptModal = document.getElementById('promptModal');
     if (!promptModal.classList.contains('hidden')) {
+      const promptTitle = promptModal.querySelector('[data-i18n="cycles.promptTitle"]');
       const copyLabel = document.querySelector('#promptCopyBtn span');
+      if (promptTitle) promptTitle.textContent = translate(msgs, 'cycles.promptTitle');
       if (copyLabel) copyLabel.textContent = translate(msgs, 'cycles.copyPrompt');
     }
   });

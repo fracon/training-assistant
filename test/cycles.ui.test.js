@@ -511,6 +511,8 @@ test('locale files expose every cycles string in both languages', () => {
   assert.equal(pt.cycles.pageTitle, 'Ciclos de Treino - Kinesis');
   assert.equal(en.shell.nav.cycles, 'Training Cycles');
   assert.equal(pt.shell.nav.cycles, 'Ciclos de Treino');
+  assert.equal(en.cycles.promptTitle, 'AI Coach Macrocycle Prompt');
+  assert.equal(pt.cycles.promptTitle, 'Prompt do Macrociclo – Coach IA');
 });
 
 /* ── API client functions ── */
