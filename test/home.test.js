@@ -1127,6 +1127,9 @@ test('home.css places weekly widgets side-by-side with equal-height responsive t
   assert.match(css, /var\(--accent-deep\)/);
   assert.match(css, /var\(--bg\)/);
   assert.match(css, /\.hero-credit \{[^}]*position:\s*absolute[^}]*background:\s*rgba\(0, 0, 0, 0\.5\)/);
+  assert.match(css, /\.hero-credit \{[^}]*color:\s*rgba\(255, 255, 255, 0\.82\)/);
+  assert.match(css, /\.hero-credit a \{[^}]*color:\s*inherit[^}]*text-decoration:\s*none/);
+  assert.match(css, /\.hero-credit a:hover,\s*\n\.hero-credit a:focus-visible \{[^}]*text-decoration:\s*underline/);
   assert.match(
     css,
     /\.dashboard-grid \{[^}]*display:\s*grid;\s*\n\s*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);\s*\n\s*align-items:\s*stretch/,

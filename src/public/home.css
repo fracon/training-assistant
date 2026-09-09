@@ -86,10 +86,23 @@
   padding: 0.2rem 0.4rem;
   border-radius: 4px;
   background: rgba(0, 0, 0, 0.5);
-  color: #fff;
+  color: rgba(255, 255, 255, 0.82);
   font-size: 0.72rem;
-  font-weight: 600;
+  font-weight: 500;
   opacity: 0.85;
+}
+
+.hero-credit a {
+  color: inherit;
+  text-decoration: none;
+  transition: color 0.15s ease, opacity 0.15s ease;
+}
+
+.hero-credit a:hover,
+.hero-credit a:focus-visible {
+  color: #fff;
+  text-decoration: underline;
+  opacity: 0.9;
 }
 
 .hero-credit.hidden { display: none; }
