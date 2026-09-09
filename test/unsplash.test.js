@@ -44,6 +44,20 @@ test('createHeroImageLoader caches a successful response until its TTL expires',
   assert.equal(calls, 4, 'a new image and download request occur after expiry');
 });
 
+test('download registration failures do not discard a valid Unsplash image', async () => {
+  let calls = 0;
+  const result = await createHeroImageLoader()({
+    apiKey: 'download-key',
+    fetchImpl: async () => {
+      calls += 1;
+      if (calls === 2) throw new Error('download endpoint unavailable');
+      return { ok: true, async json() { return { urls: { regular: 'https://images.unsplash.com/still-valid.jpg' }, links: { download_location: 'https://example.com/download' } }; } };
+    },
+  });
+  assert.equal(result.source, 'unsplash');
+  assert.equal(result.url, 'https://images.unsplash.com/still-valid.jpg');
+});
+
 test('fetchHeroImage tolerates optional response metadata and disabled fetch clients', async () => {
   const withoutFetch = await fetchHeroImage({ apiKey: 'test-key', fetchImpl: null, random: () => -1 });
   assert.equal(withoutFetch.source, 'local');

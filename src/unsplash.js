@@ -25,7 +25,11 @@ function createHeroImageLoader({ ttlMs = HERO_CACHE_TTL_MS, now = Date.now } = {
       if (typeof url !== 'string' || url.trim() === '') throw new Error('Unsplash response has no image URL');
       const downloadLocation = payload?.links?.download_location;
       if (typeof downloadLocation === 'string' && downloadLocation.trim() !== '') {
-        await fetchImpl(downloadLocation, { headers: { accept: 'application/json', authorization: `Client-ID ${apiKey}` } });
+        try {
+          await fetchImpl(downloadLocation, { headers: { accept: 'application/json', authorization: `Client-ID ${apiKey}` } });
+        } catch {
+          // Download registration is best-effort; keep the valid image usable.
+        }
       }
       const value = {
         url,
