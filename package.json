@@ -1,7 +1,7 @@
 {
   "name": "training-assistant",
   "version": "0.6.3",
-  "description": "1-Page Minimalist .FIT Parser & AI Prompt Generator - Local & Offline",
+  "description": "Self-hosted running training assistant with FIT analysis, training cycles, calendar planning, and AI-ready coaching prompts",
   "main": "src/server.js",
   "engines": {
     "node": ">=24"

@@ -12,11 +12,12 @@
 - **Networking:** Exposed securely via Cloudflare Zero Trust Tunnels (HTTP on port 8081).
 - **Application version:** `0.6.3` (active development; see the versioning Golden Rule below).
 
-## ✅ Current Implementation Status — `feature/calendar-dnd`
+## ✅ Current Implementation Status — `main`
 
 The Home Dashboard, Calendar, weather integration, and supporting import flows
-are implemented and polished on the active feature branch. Keep these
-decisions intact when making follow-up changes:
+are integrated and polished on `main`. Keep these decisions intact when making
+follow-up changes. New work must branch from an updated `main`; historical
+feature branches must not be used as a base for future development:
 
 - The dashboard renders the cycle title/goal independently, places the weekly
   tracker before the metric tiles, and uses minimalist active-day pills with
@@ -44,7 +45,7 @@ decisions intact when making follow-up changes:
 - The hero selects a random running-only Unsplash image on initialization.
   Loading text, quote text, and author all use dark contrast backdrops, and the
   loader must remain hidden once a quote is rendered (`.hero-loading.hidden`).
-- The branch has been validated repeatedly with `npm run test:coverage`; the
+- The integrated implementation has been validated repeatedly with `npm run test:coverage`; the
   required Statements, Branches, Functions, and Lines thresholds remain 100%.
 - The `feature/user-preferences` work is complete: the Preferences modal,
   authenticated persistence, Calendar/Home synchronization, and Trainings
