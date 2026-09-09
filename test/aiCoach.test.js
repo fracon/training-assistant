@@ -346,8 +346,8 @@ test('training request date input uses localized display with ISO state binding'
   const js = readFileSync(join(publicDir, 'ai-coach.js'), 'utf8');
   assert.match(js, /normalizeTargetDate/);
   assert.match(js, /parseLocalizedDate/);
-  assert.match(js, /formatLocalizedDate\(targetDateInput\.dataset\.iso, i18n\.language\)/);
-  assert.match(js, /targetDateDisplay\.value = targetIso \? formatLocalizedDate/);
+  assert.match(js, /createDatePicker\(targetDateDisplay/);
+  assert.match(js, /getLanguage: \(\) => i18n\.language/);
   assert.match(js, /targetDateInput\.dataset\.iso/);
   assert.match(js, /const targetDate = parseInputDate\(targetIso\)/);
 });

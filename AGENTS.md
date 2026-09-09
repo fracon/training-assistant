@@ -63,6 +63,7 @@ decisions intact when making follow-up changes:
 8. **Golden Rule for Dates:** All dates displayed in the application MUST use the central date formatting utility and respect the active i18n locale. Hardcoded or ad-hoc date formatting inside components or services is strictly prohibited.
 9. **Golden Rule for Units:** All displayed distances and temperatures MUST use the centralized unit conversion utility and the active user preferences. Components and prompt templates must not hardcode `km`, `mi`, `°C`, or `°F` when rendering stored values.
 10. **Golden Rule for Versioning:** Always increment the application version before opening a Pull Request. You must strictly adhere to Semantic Versioning (SemVer) principles: MAJOR (incompatible API/architecture changes), MINOR (backward-compatible new features), and PATCH (backward-compatible bug fixes).
+11. **GOLDEN RULE - DATE INPUTS:** Never use raw text inputs or uncontrolled native `<input type="date">` elements for dates. All date inputs must strictly use the centralized DatePicker component to ensure the visual format, calendar language, and user's week-start preferences are explicitly controlled and reactive to `app:languagechange`.
 
 ## 🌐 i18n Lifecycle and Dynamic DOM Reactivity
 

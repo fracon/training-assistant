@@ -4,6 +4,7 @@ import { fetchShoes } from './shared/api.js';
 import { fetchActiveCycle, fetchCalendarTrainings } from './shared/api.js';
 import { formatDate as formatLocalizedDate, parseLocalizedDate } from './shared/date.js';
 import { formatDistance, distancePromptUnit, temperaturePromptUnit } from './shared/units.js';
+import { createDatePicker } from './shared/datepicker.js';
 
 // Verbatim Portuguese briefing for the external AI Coach.
 // The wording below is a hard requirement — do not translate, rewrite
@@ -615,17 +616,11 @@ function setupAiCoachPage() {
 
   targetDateInput.dataset.iso = dateInputValue(nextMonday());
   targetDateInput.value = targetDateInput.dataset.iso;
-  targetDateDisplay.value = formatLocalizedDate(targetDateInput.dataset.iso, i18n.language);
-  targetDateInput.addEventListener('input', () => {
-    targetDateInput.dataset.iso = normalizeTargetDate(targetDateInput.value, i18n.language);
-    targetDateDisplay.value = targetDateInput.dataset.iso
-      ? formatLocalizedDate(targetDateInput.dataset.iso, i18n.language)
-      : '';
-    updateValidation();
-  });
-  targetDateDisplay.addEventListener('click', () => {
-    if (typeof targetDateInput.showPicker === 'function') targetDateInput.showPicker();
-    else targetDateInput.focus();
+  const targetDatePicker = createDatePicker(targetDateDisplay, {
+    isoInput: targetDateInput,
+    getLanguage: () => i18n.language,
+    getWeekStart: () => getUserPreferences().first_day_of_week,
+    onChange: () => updateValidation(),
   });
 
   let lastRoutineDefault = t('aiCoach.defaultRoutine') || defaultRoutineFor(i18n.language);
@@ -710,7 +705,7 @@ function setupAiCoachPage() {
     const targetIso = targetDateInput.dataset.iso || normalizeTargetDate(targetDateInput.value, i18n.language);
     targetDateInput.dataset.iso = targetIso;
     targetDateInput.value = targetIso;
-    targetDateDisplay.value = targetIso ? formatLocalizedDate(targetIso, i18n.language) : '';
+    targetDatePicker.refresh();
     updateValidation();
   });
 
