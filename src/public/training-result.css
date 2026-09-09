@@ -193,6 +193,39 @@ body {
   display: none;
 }
 
+.manual-results-field[hidden] { display: none; }
+
+.manual-results-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 18px;
+}
+
+.duration-controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.manual-results-field .btn-primary { margin-top: 2px; }
+
+.result-data-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.result-source-badge {
+  border-radius: 999px;
+  background: rgba(111, 144, 112, 0.15);
+  color: var(--accent-deep);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  padding: 5px 9px;
+}
+
 .file-dropzone {
   display: flex;
   flex-direction: column;

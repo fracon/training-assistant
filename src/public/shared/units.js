@@ -15,6 +15,14 @@ export function convertDistanceFromKm(value, unit = 'km') {
   return normalizeDistanceUnit(unit) === 'mi' ? kilometers * KM_TO_MILES : kilometers;
 }
 
+// Form controls display the preferred unit while SQLite remains metric. This
+// inverse keeps conversion centralized rather than leaking it into pages.
+export function convertDistanceToKm(value, unit = 'km') {
+  const distance = Number(value);
+  if (!Number.isFinite(distance)) return 0;
+  return normalizeDistanceUnit(unit) === 'mi' ? distance * MILES_TO_KM : distance;
+}
+
 export function convertCelsius(value, unit = 'C') {
   const celsius = Number(value);
   if (!Number.isFinite(celsius)) return 0;

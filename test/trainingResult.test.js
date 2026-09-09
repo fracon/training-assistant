@@ -13,6 +13,7 @@ const {
   plannedValue,
   normalizeFeedbackRpe,
   isFitFieldVisible,
+  manualResultsPayload,
   weekdayLabel,
   resolveTemplateLang,
   templateFor,
@@ -146,6 +147,14 @@ test('.FIT upload visibility follows the smartwatch answer', () => {
   assert.equal(isFitFieldVisible(undefined), false);
 });
 
+test('manualResultsPayload converts preferred miles to canonical km and validates duration controls', () => {
+  assert.deepEqual(manualResultsPayload({ distance: '6.21371', hours: '1', minutes: '2', seconds: '5', avg_hr: '', max_hr: '166', elevation_gain_m: '104', calories: '742' }, 'mi'), {
+    distance_km: 10, duration_seconds: 3725, avg_hr: null, max_hr: 166, elevation_gain_m: 104, calories: 742,
+  });
+  assert.equal(manualResultsPayload({ distance: '1', hours: '0', minutes: '60', seconds: '0' }), null);
+  assert.equal(manualResultsPayload({ distance: '', hours: '0', minutes: '1', seconds: '0' }), null);
+});
+
 test('weekdayLabel resolves localized weekday names from ISO dates', () => {
   assert.equal(weekdayLabel('2026-08-24', 'pt-BR'), 'segunda-feira');
   assert.equal(weekdayLabel('2026-08-24', 'en-US'), 'Monday');
@@ -182,9 +191,12 @@ const SHARED_PLACEHOLDERS = [
   'FC_ALVO',
   'RPE_ALVO',
   'TENIS',
+  'FONTE_DADOS',
+  'OBSERVACAO_FONTE',
   'DURACAO',
   'DISTANCIA',
   'PACE_MEDIO',
+  'OBSERVACAO_PACE',
   'FC_MEDIA',
   'FC_MAXIMA',
   'DESNIVEL_POSITIVO',
@@ -243,7 +255,7 @@ test('the embedded briefings stay verbatim with their fifteen instructions', () 
 });
 
 test('buildAnalysisPrompt fills every placeholder and dashes out blank answers', () => {
-  const values = Object.fromEntries(SHARED_PLACEHOLDERS.map((key, index) => [key, index === 0 ? '' : `v-${index}`]));
+  const values = Object.fromEntries(SHARED_PLACEHOLDERS.map((key, index) => [key, index === 0 || key.startsWith('OBSERVACAO_') ? '' : `v-${index}`]));
   const output = buildAnalysisPrompt(PROMPT_TEMPLATE_PT, values);
 
   assert.ok(!output.includes('{{'), 'no placeholder survives');
@@ -346,6 +358,21 @@ test('collectPromptValues uses persisted FIT data when available', () => {
   assert.equal(values.FC_MEDIA, 152);
   assert.equal(values.FC_MAXIMA, 171);
   assert.equal(values.DESNIVEL_POSITIVO, '320 m');
+});
+
+test('collectPromptValues identifies manual data, calculated pace, and never invents FIT laps', () => {
+  const values = collectPromptValues({
+    training: { ...baseTraining, result_data_source: 'manual' },
+    form: baseForm({ language: 'pt-BR', fitAttached: true }),
+    fitData: { result_data_source: 'manual', fit_duration: '1:02:05', fit_distance: 10.25, fit_avg_pace: '6:03', laps: [{ lap: 1 }] },
+  });
+  assert.equal(values.FONTE_DADOS, 'Inserção manual pelo usuário');
+  assert.match(values.OBSERVACAO_FONTE, /dados agregados abaixo foram informados manualmente/);
+  assert.match(values.OBSERVACAO_PACE, /calculado pelo Kinesis/);
+  assert.equal(values.ANEXAR_SCREENSHOT_GARMIN_OU_INSERIR_DADOS_DE_LAPS_AQUI, '-');
+  const english = collectPromptValues({ training: { ...baseTraining, result_data_source: 'fit_upload' }, form: baseForm({ language: 'en-US' }), fitData: { result_data_source: 'fit_upload', laps: [] } });
+  assert.equal(english.FONTE_DADOS, 'FIT file');
+  assert.equal(english.OBSERVACAO_FONTE, '');
 });
 
 test('painPromptText reports no pain unless the user answered yes', () => {
@@ -582,9 +609,9 @@ test('training-result.html ships the expanded feedback grid and generator button
   assert.match(html, /<script src="training-result\.js" type="module"><\/script>/);
 
   assert.match(html, /<div class="feedback-grid">/);
-  assert.match(html, /<select id="smartwatchSelect" class="input-control">/);
-  assert.match(html, /<option value="sim" selected data-i18n="session\.smartwatchYes">Yes<\/option>/);
-  assert.match(html, /<option value="nao" data-i18n="session\.smartwatchNo">No<\/option>/);
+  assert.match(html, /<select id="resultSourceSelect" class="input-control">/);
+  assert.match(html, /data-i18n="session\.resultSourceFit">Import FIT file/);
+  assert.match(html, /data-i18n="session\.resultSourceManual">Enter data manually/);
   assert.match(html, /<div class="field fit-field" id="fitField">/);
   assert.match(
     html,
@@ -607,9 +634,11 @@ test('training-result.html ships the expanded feedback grid and generator button
   );
   assert.match(
     html,
-    /id="smartwatchSelect"[\s\S]*?class="field fit-field" id="fitField"/,
-    'the dropzone is laid out after the smartwatch answer'
+    /id="resultSourceSelect"[\s\S]*?class="field fit-field" id="fitField"/,
+    'the dropzone is laid out after the explicit source choice'
   );
+  assert.match(html, /id="manualResultsField" hidden/);
+  for (const id of ['manualDistance', 'manualHours', 'manualMinutes', 'manualSeconds', 'manualAvgHr', 'manualMaxHr', 'manualElevation', 'manualCalories', 'saveManualResultsBtn', 'resultSourceBadge']) assert.match(html, new RegExp(`id="${id}"`));
 
   assert.match(html, /id="fitDataSection"[^>]*hidden/, 'FIT data section starts hidden');
   assert.match(html, /id="fitDuration"/);
@@ -830,11 +859,12 @@ test('training-result.js wires toggling, saving, generation and i18n refreshes',
   const js = readFileSync(join(publicDir, 'training-result.js'), 'utf8');
 
   assert.match(js, /import \{ initShell, getShellI18n, getUserPreferences, showConfirm, showShellToast, refreshIcons \} from '\.\/shared\/shell\.js';/);
-  assert.match(js, /import \{ fetchTraining, saveTrainingFeedback, fetchShoes, deleteTraining, fetchWeather \} from '\.\/shared\/api\.js';/);
-  assert.match(js, /import \{ formatDistance, formatPaceFromMetric, formatTemperature \} from '\.\/shared\/units\.js';/);
+  assert.match(js, /saveManualTrainingResults/);
+  assert.match(js, /convertDistanceToKm/);
 
-  assert.match(js, /smartwatchSelect\.addEventListener\('change', syncFitFieldVisibility\)/);
-  assert.match(js, /fitField\.hidden = !isFitFieldVisible\(smartwatchSelect\.value\);/);
+  assert.match(js, /resultSourceSelect\.addEventListener\('change', syncResultSourceVisibility\)/);
+  assert.match(js, /fitField\.hidden = manual;/);
+  assert.match(js, /manualResultsField\.hidden = !manual;/);
 
   assert.match(
     js,
@@ -925,9 +955,8 @@ test('training-result.js wires toggling, saving, generation and i18n refreshes',
   assert.match(js, /hasPainSelect\.value = savedHasPain \? 'yes' : 'no';/);
   assert.match(js, /painInput\.value = training\.feedback_pain \?\? '';/);
   assert.match(js, /hrSourceSelect\.value = training\.feedback_hr_source \?\? '';/);
-  assert.match(js, /syncFitFieldVisibility\(\);\s*\n\s*syncPainVisibility\(\);\s*\n\s*await autoFillWeatherField\(\);\s*\n\s*setStatus\(''\);/);
+  assert.match(js, /syncResultSourceVisibility\(\);\s*\n\s*syncPainVisibility\(\);/);
 
-  assert.match(js, /has_smartwatch: isFitFieldVisible\(smartwatchSelect\.value\),/);
   assert.match(js, /feedback_hr_source: hrValue === '' \? null : hrValue,/);
   assert.match(js, /feedback_terrain: terrainInput\.value === '' \? null : terrainInput\.value,/);
   assert.match(js, /feedback_breathing:\s*\n\s*breathingInput\.value === '' \? null : breathingInput\.value,/);
@@ -1015,6 +1044,9 @@ test('training-result.js wires toggling, saving, generation and i18n refreshes',
   );
 
   assert.match(js, /templateFor\(i18n\.language\)/);
+  assert.match(js, /saveManualResultsBtn\.addEventListener\('click'/);
+  assert.match(js, /confirm_replace_fit = true/);
+  assert.match(js, /confirm_replace_manual/);
   assert.match(js, /collectPromptValues\(\{ training, form: collectFormState\(\), fitData, preferences: getUserPreferences\(\) \}\)/);
   assert.match(js, /promptOutput\.value = promptText;/);
   assert.match(js, /promptSection\.hidden = false;/);
@@ -1109,6 +1141,27 @@ test('session locale namespace stays in parity across en-US and pt-BR', () => {
     'fieldSmartwatch',
     'smartwatchYes',
     'smartwatchNo',
+    'resultSourceLabel',
+    'resultSourceFit',
+    'resultSourceManual',
+    'manualDistance',
+    'manualDuration',
+    'hoursPlaceholder',
+    'minutesPlaceholder',
+    'secondsPlaceholder',
+    'manualAvgHr',
+    'manualMaxHr',
+    'manualElevation',
+    'manualCalories',
+    'saveManualResults',
+    'manualSaved',
+    'sourceManualBadge',
+    'sourceFitBadge',
+    'replaceFitTitle',
+    'replaceFitMessage',
+    'replaceManualTitle',
+    'replaceManualMessage',
+    'replaceConfirm',
     'fitDragText',
     'fitClickText',
     'fitSelected',
@@ -1155,6 +1208,8 @@ test('session locale namespace stays in parity across en-US and pt-BR', () => {
     'errors.rpe',
     'errors.save',
     'errors.fitUpload',
+    'errors.manualValidation',
+    'errors.manualSave',
   ];
 
   const lookup = (source, key) =>
