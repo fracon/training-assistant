@@ -60,8 +60,10 @@ FIT results can be uploaded directly or inside a ZIP exported by a training
 service. ZIP processing is local and memory-only: directories and macOS metadata
 are ignored, while archives with zero or multiple FIT files are rejected. The
 upload is limited to 10 MB, at most 100 entries, 10 MB per decompressed FIT, and
-25 MB total decompressed content. Encrypted, corrupt, unsafe, or over-limit
-archives fail before any training data is changed. ZIP uploads retain the
+25 MB total decompressed content. All regular entries are validated and consumed
+sequentially (the FIT may appear anywhere); declared sizes are only an early
+rejection and actual streamed bytes are authoritative. Encrypted, corrupt,
+unsafe, or over-limit archives fail before any training data is changed. ZIP uploads retain the
 `fit_upload` provenance and never persist the archive or extracted file.
 
 Every realized result has one persisted source: `none`, `fit_upload`, or `manual` (`garmin_connect` is reserved for a future integration). A manual result intentionally has no synthetic FIT summary or laps. Replacing FIT data with manual aggregates, or manual aggregates with a FIT upload, requires explicit confirmation and executes atomically; the outgoing source's incompatible data is cleared. The result screen marks the source clearly, and its analysis prompt identifies manual data, notes the absence of laps, and states that Kinesis calculated pace from distance and duration. Since dashboard, calendar, and AI Coach already aggregate the canonical training metrics, manual results participate in weekly totals without a second source of truth.

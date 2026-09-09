@@ -1494,12 +1494,23 @@ test('session locale namespace stays in parity across en-US and pt-BR', () => {
   assert.equal(pt.shell.nav.training, undefined);
 });
 
-test('fit upload error codes resolve through localized messages with a safe fallback', () => {
-  const translate = (key) => key;
-  for (const code of ['invalid_file', 'invalid_zip', 'missing_fit', 'multiple_fit', 'encrypted_zip', 'unsafe_entry', 'too_many_entries', 'fit_too_large', 'zip_too_large', 'unsupported_type']) {
-    assert.match(fitUploadErrorMessage(code, translate), /^session\.errors\./);
+test('fit upload error codes resolve through the real localized dictionaries with a safe fallback', () => {
+  const lookup = (messages, key) => key.split('.').reduce((value, part) => value?.[part], messages);
+  const codes = ['invalid_file', 'invalid_zip', 'missing_fit', 'multiple_fit', 'encrypted_zip', 'unsafe_entry', 'too_many_entries', 'fit_too_large', 'zip_too_large', 'unsupported_type'];
+  for (const code of codes) {
+    const key = fitUploadErrorMessage(code, (candidate) => candidate);
+    assert.match(key, /^session\.errors\./);
+    const english = lookup(en, key);
+    const portuguese = lookup(pt, key);
+    assert.equal(typeof english, 'string', `missing EN translation for ${code}`);
+    assert.equal(typeof portuguese, 'string', `missing PT translation for ${code}`);
+    assert.notEqual(english, key);
+    assert.notEqual(portuguese, key);
   }
-  assert.equal(fitUploadErrorMessage('unknown', translate), 'session.errors.fitUpload');
+  const translate = (messages) => (key) => lookup(messages, key) ?? key;
+  assert.equal(fitUploadErrorMessage('unsupported_type', translate(en)), 'Please upload a .FIT or .ZIP file.');
+  assert.equal(fitUploadErrorMessage('unsupported_type', translate(pt)), 'Envie um arquivo .FIT ou .ZIP.');
+  assert.equal(fitUploadErrorMessage('unknown', translate(pt)), pt.session.errors.fitUpload);
 });
 
 test('training-result.css keeps the earthy premium aesthetic for the session view', () => {

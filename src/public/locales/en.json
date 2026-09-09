@@ -295,7 +295,8 @@
     "fitUnsafeZip": "The ZIP file contains an unsafe entry.",
     "fitTooManyEntries": "The ZIP file contains too many entries.",
     "fitTooLarge": "The FIT file exceeds the allowed size.",
-    "fitZipTooLarge": "The decompressed ZIP contents exceed the allowed size."
+    "fitZipTooLarge": "The decompressed ZIP contents exceed the allowed size.",
+    "fitUnsupportedType": "Please upload a .FIT or .ZIP file."
     }
   },
   "terrain": {

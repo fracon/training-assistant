@@ -59,7 +59,7 @@ test('resolveFitBuffer accepts direct FIT files case-insensitively', async () =>
 test('resolveFitBuffer extracts exactly one FIT from ZIP root, subdirectories, and ignores metadata', async () => {
   const fit = Buffer.from('binary-fit');
   const result = await resolveFitBuffer({
-    buffer: zip([{ name: '__MACOSX/', data: '' }, { name: 'folder/activity.FIT', data: fit }]),
+    buffer: zip([{ name: '__MACOSX/', data: '' }, { name: '__MACOSX/._meta', data: 'metadata' }, { name: 'folder/activity.FIT', data: fit }]),
     filename: 'export.zip',
   });
   assert.deepEqual(result, fit);
@@ -68,6 +68,15 @@ test('resolveFitBuffer extracts exactly one FIT from ZIP root, subdirectories, a
 test('resolveFitBuffer streams and discards non-FIT regular entries before extracting the candidate', async () => {
   const fit = Buffer.from('binary-fit');
   const result = await resolveFitBuffer({ buffer: zip([{ name: 'notes.txt', data: 'metadata' }, { name: 'activity.fit', data: fit }]), filename: 'export.zip' });
+  assert.deepEqual(result, fit);
+});
+
+test('resolveFitBuffer consumes regular entries after the FIT before returning it', async () => {
+  const fit = Buffer.from('binary-fit');
+  const result = await resolveFitBuffer({
+    buffer: zip([{ name: 'activity.fit', data: fit }, { name: 'metadata.bin', data: 'trailing metadata' }]),
+    filename: 'export.zip',
+  });
   assert.deepEqual(result, fit);
 });
 
@@ -97,6 +106,12 @@ test('resolveFitBuffer enforces FIT, entry, entry-count, and total decompressed 
   ]) }), /ZIP contents exceed/);
   await assert.rejects(resolveFitBuffer({ filename: 'a.zip', buffer: zip([{ name: 'a.fit', data: Buffer.alloc(MAX_FIT_BYTES + 1), declaredSize: 1 }]) }), /FIT file exceeds/);
   await assert.rejects(resolveFitBuffer({ filename: 'a.zip', buffer: zip([{ name: 'x.bin', data: Buffer.alloc(MAX_ZIP_TOTAL_BYTES + 1), declaredSize: 1 }, { name: 'a.fit', data: 'x', declaredSize: 1 }]) }), /ZIP contents exceed/);
+  await assert.rejects(resolveFitBuffer({ filename: 'a.zip', buffer: zip([
+    { name: 'metadata.bin', data: Buffer.alloc(20 * 1024 * 1024), declaredSize: 1 },
+    { name: 'a.fit', data: Buffer.alloc(6 * 1024 * 1024), declaredSize: 1 },
+  ]) }), /ZIP contents exceed/);
+  const auxiliary = await resolveFitBuffer({ filename: 'a.zip', buffer: zip([{ name: 'metadata.bin', data: Buffer.alloc(12 * 1024 * 1024) }, { name: 'a.fit', data: 'x' }]) });
+  assert.deepEqual(auxiliary, Buffer.from('x'), 'non-FIT entries may exceed the individual FIT limit when the ZIP total is valid');
   const entries = Array.from({ length: MAX_ZIP_ENTRIES + 1 }, (_, i) => ({ name: `f${i}.txt`, data: '' }));
   await assert.rejects(resolveFitBuffer({ filename: 'a.zip', buffer: zip(entries) }), /too many entries/);
 });

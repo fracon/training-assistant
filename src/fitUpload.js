@@ -65,43 +65,46 @@ async function readZipFit(buffer) {
     throw new FitUploadError('too_many_entries', 'The ZIP file contains too many entries.');
   }
   const candidates = [];
+  const validatedEntries = [];
   let totalDeclared = 0;
   for (const entry of directory.files) {
     const name = normalizeEntryName(entry.path);
     if (isUnsafePath(name)) throw new FitUploadError('unsafe_entry', 'The ZIP file contains an unsafe entry name.');
-    if (entry.type === 'Directory' || name.startsWith('__MACOSX/')) continue;
+    if (entry.type === 'Directory') continue;
     if (!isRegularFile(entry)) throw new FitUploadError('unsafe_entry', 'The ZIP file contains an unsafe entry name.');
+    if (entry.flags & 1) throw new FitUploadError('encrypted_zip', 'Encrypted ZIP entries are not supported.');
+    // macOS metadata is validated structurally, then ignored without decompression.
+    if (name.startsWith('__MACOSX/')) continue;
     const declared = Number(entry.uncompressedSize);
     if (Number.isFinite(declared) && declared >= 0) {
       totalDeclared += declared;
-      if (declared > MAX_FIT_BYTES) throw new FitUploadError('fit_too_large', 'The FIT file exceeds the decompressed size limit.');
+      if (/\.fit$/i.test(name) && declared > MAX_FIT_BYTES) throw new FitUploadError('fit_too_large', 'The FIT file exceeds the decompressed size limit.');
       if (totalDeclared > MAX_ZIP_TOTAL_BYTES) throw new FitUploadError('zip_too_large', 'The ZIP contents exceed the decompressed size limit.');
     }
+    validatedEntries.push(entry);
     if (/\.fit$/i.test(name)) candidates.push(entry);
   }
   if (candidates.length === 0) throw new FitUploadError('missing_fit', 'The ZIP file does not contain a FIT file.');
   if (candidates.length > 1) throw new FitUploadError('multiple_fit', 'The ZIP file contains more than one FIT file.');
   const entry = candidates[0];
-  if (entry.flags & 1) throw new FitUploadError('encrypted_zip', 'Encrypted ZIP entries are not supported.');
   let totalReal = 0;
-  for (const current of directory.files) {
-    const name = normalizeEntryName(current.path);
-    if (current.type === 'Directory' || name.startsWith('__MACOSX/')) continue;
+  let fitBuffer = null;
+  for (const current of validatedEntries) {
     const isCandidate = current === entry;
-    const chunks = isCandidate ? [] : null;
+    const chunks = isCandidate ? [] : undefined;
     const stream = current.stream();
-    const remainingTotal = MAX_ZIP_TOTAL_BYTES - totalReal;
-    const limit = isCandidate ? Math.min(MAX_FIT_BYTES, remainingTotal) : remainingTotal;
-    await readStreamWithLimit(stream, limit, () => new FitUploadError(
+    const overflowError = () => new FitUploadError(
       isCandidate ? 'fit_too_large' : 'zip_too_large',
       isCandidate ? 'The FIT file exceeds the decompressed size limit.' : 'The ZIP contents exceed the decompressed size limit.'
-    ), (chunk) => {
+    );
+    await readStreamWithLimit(stream, isCandidate ? MAX_FIT_BYTES : MAX_ZIP_TOTAL_BYTES, overflowError, (chunk) => {
       totalReal += chunk.length;
+      if (totalReal > MAX_ZIP_TOTAL_BYTES) throw new FitUploadError('zip_too_large', 'The ZIP contents exceed the decompressed size limit.');
       if (isCandidate) chunks.push(chunk);
     }, () => new FitUploadError('invalid_zip', 'The ZIP file is invalid or corrupted.'));
-    if (isCandidate) return Buffer.concat(chunks);
+    if (isCandidate) fitBuffer = Buffer.concat(chunks);
   }
-/* c8 ignore next -- candidate existence is guaranteed by the preceding check. */
+  return fitBuffer;
 }
 
 async function resolveFitBuffer({ buffer, filename = '' }) {

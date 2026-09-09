@@ -198,6 +198,9 @@ Whenever starting the development of a new feature, you MUST follow this strict 
   - ZIPs are inspected and extracted only in memory with bounded entry count,
     decompressed FIT size, and total decompressed content; unsafe, encrypted,
     corrupt, empty, or ambiguous archives are rejected before persistence.
+  - All regular entries are consumed sequentially before parsing (including
+    entries after the FIT); declared sizes are advisory and streamed byte counts
+    enforce the real limits. Known upload errors are localized in the UI.
   - The extracted buffer shares the existing FIT parser, normalization,
     transactional persistence, calorie handling, and `fit_upload` provenance.
 
