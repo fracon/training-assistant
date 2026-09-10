@@ -79,6 +79,15 @@ CREATE TABLE IF NOT EXISTS shoes (
   updated_at     TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS training_shoe_mileage (
+  training_id INTEGER PRIMARY KEY REFERENCES trainings(id) ON DELETE CASCADE,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  shoe_id     TEXT    NOT NULL REFERENCES shoes(id) ON DELETE CASCADE,
+  distance    REAL    NOT NULL CHECK (distance > 0),
+  created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+  updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS training_cycles (
   id             TEXT    PRIMARY KEY,
   user_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -171,7 +180,8 @@ function migrateDatabase(db) {
   }
 
   // Link legacy labels without changing the authoritative mileage users have
-  // already entered. base_mileage separates that baseline from derived runs.
+  // already entered. Historical distances are deliberately not put in the
+  // ledger because whether they are already included cannot be inferred.
   db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
     name TEXT PRIMARY KEY,
     applied_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -198,17 +208,32 @@ function migrateDatabase(db) {
                    WHERE s.user_id = trainings.user_id
                      AND TRIM(s.brand || ' ' || s.model) = TRIM(trainings.feedback_shoe));
 
-      UPDATE shoes
-         SET base_mileage = mileage - COALESCE((
-           SELECT SUM(CASE WHEN t.completed = 1 AND t.fit_distance > 0
-                           THEN t.fit_distance ELSE 0 END)
-             FROM trainings t WHERE t.feedback_shoe_id = shoes.id
-         ), 0),
-             updated_at = datetime('now');
+      UPDATE shoes SET base_mileage = mileage, updated_at = datetime('now');
     `);
     db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(marker);
   });
   if (canRepairShoes) repair();
+
+  // Repair databases that briefly used a derived baseline without a ledger.
+  // The current total remains authoritative; resetting the non-negative base
+  // to that total and starting an empty ledger avoids inventing history.
+  const ledgerMarker = '2026-09-shoe-mileage-ledger-v2';
+  const initializeLedger = db.transaction(() => {
+    if (db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(ledgerMarker)) return;
+    if (hasShoesTable && trainingColumns.length > 0) {
+      db.exec(`CREATE TABLE IF NOT EXISTS training_shoe_mileage (
+        training_id INTEGER PRIMARY KEY REFERENCES trainings(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        shoe_id TEXT NOT NULL REFERENCES shoes(id) ON DELETE CASCADE,
+        distance REAL NOT NULL CHECK (distance > 0),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`);
+    }
+    if (canRepairShoes) db.exec('UPDATE shoes SET base_mileage = MAX(0, mileage)');
+    db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(ledgerMarker);
+  });
+  initializeLedger();
 
   // Existing results were necessarily uploaded FIT files before provenance was
   // introduced. Only classify unclassified rows, keeping repeat migrations

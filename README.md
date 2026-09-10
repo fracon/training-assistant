@@ -2,21 +2,24 @@
 
 A **secure, self-hosted, multi-user web application** for managing training logs — drop a Garmin `.FIT` file into the browser, add how the workout felt, and get back a ready-to-paste markdown prompt for your AI coach.
 
-Current application version: **0.9.2** (active development).
+Current application version: **0.9.3** (active development).
 
 ### Shoe mileage integrity
 
-For each shoe, `shoes.base_mileage` records the user-maintained starting mileage and `shoes.mileage` is that baseline plus the
-canonical `fit_distance` (kilometres) of every completed training whose
-`feedback_shoe_id` points to that shoe. The backend reconciles the old and new
-training contribution in the same SQLite transaction whenever feedback,
-completion, results, or deletion changes; clients never increment mileage.
+For each shoe, `shoes.base_mileage` is a non-negative user-authoritative
+baseline. `shoes.mileage` is that baseline plus only the canonical training
+distances recorded in the per-training `training_shoe_mileage` ledger. The
+backend reconciles each unique ledger entry in the same SQLite transaction as
+feedback, completion, result, shoe-swap, or deletion changes. Editing the
+displayed total intentionally rebases the shoe and clears its applied ledger;
+those workouts then become historical and cannot be subtracted later.
 
 The idempotent `2026-09-shoe-mileage-accounting-v1` migration adds the stable
 shoe relationship, links historical `feedback_shoe` labels only when exactly
 one same-user shoe matches, and leaves ambiguous labels untouched. It derives a
-separate baseline so the user's existing authoritative total does not change;
-the durable marker in `schema_migrations` makes this conversion idempotent.
+non-negative baseline equal to the user's existing authoritative total and an
+empty ledger, so ambiguous historical runs are never added or subtracted. The
+durable v2 marker in `schema_migrations` makes this conversion idempotent.
 
 Every account is protected with server-side sessions, every `.FIT` file is parsed locally on your own machine: no cloud parsing, no telemetry — your training data never leaves your hardware.
 

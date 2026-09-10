@@ -18,6 +18,9 @@ function fixture() {
               VALUES ('a', 1, 'Acme', 'A', 5, 'active'),
                      ('b', 1, 'Acme', 'B', 2, 'retired'),
                      ('foreign', 2, 'Acme', 'F', 50, 'active')`).run();
+  db.prepare(`INSERT INTO trainings (id, user_id, dia, tipo) VALUES
+              (5, 1, '2026-01-01', 'Run'), (7, 1, '2026-01-02', 'Run'),
+              (9, 1, '2026-01-03', 'Run'), (42, 1, '2026-01-04', 'Run')`).run();
   return db;
 }
 
@@ -33,8 +36,8 @@ test('contribution accepts only completed, associated, positive finite canonical
 
 test('reconciliation applies only deltas for save retries, corrections, swaps and removals', () => {
   const db = fixture();
-  const row = (shoe, distance, completed = 1) => ({ feedback_shoe_id: shoe, fit_distance: distance, completed });
-  reconcileShoeMileage(db, 1, null, row('a', 10));
+  const row = (shoe, distance, completed = 1) => ({ id: 42, feedback_shoe_id: shoe, fit_distance: distance, completed });
+  reconcileShoeMileage(db, 1, { id: 42, completed: 0 }, row('a', 10));
   reconcileShoeMileage(db, 1, row('a', 10), row('a', 10));
   reconcileShoeMileage(db, 1, row('a', 10), row('a', 12));
   reconcileShoeMileage(db, 1, row('a', 12), row('a', 8));
@@ -43,8 +46,33 @@ test('reconciliation applies only deltas for save retries, corrections, swaps an
   assert.deepEqual(db.prepare('SELECT id, mileage FROM shoes WHERE user_id = 1 ORDER BY id').all(), [
     { id: 'a', mileage: 5 }, { id: 'b', mileage: 2 },
   ]);
-  reconcileShoeMileage(db, 1, row('a', 100), null);
-  assert.equal(db.prepare("SELECT mileage FROM shoes WHERE id = 'a'").get().mileage, 0);
+  assert.deepEqual(db.prepare('SELECT * FROM training_shoe_mileage').all(), []);
+  db.close();
+});
+
+test('an unrecorded historical contribution is never added or subtracted', () => {
+  const db = fixture();
+  reconcileShoeMileage(db, 1, null, null);
+  const historical = { id: 7, completed: 1, feedback_shoe_id: 'a', fit_distance: 10 };
+  reconcileShoeMileage(db, 1, historical, { ...historical, fit_distance: 12 });
+  reconcileShoeMileage(db, 1, historical, null);
+  assert.equal(db.prepare("SELECT mileage FROM shoes WHERE id = 'a'").get().mileage, 5);
+  assert.deepEqual(db.prepare('SELECT * FROM training_shoe_mileage').all(), []);
+  db.close();
+});
+
+test('a recorded training can be removed and reattached reversibly', () => {
+  const db = fixture();
+  const detached = { id: 9, completed: 1, feedback_shoe_id: null, fit_distance: 10 };
+  const attached = { ...detached, feedback_shoe_id: 'a' };
+  reconcileShoeMileage(db, 1, detached, attached);
+  assert.equal(db.prepare("SELECT mileage FROM shoes WHERE id = 'a'").get().mileage, 15);
+  reconcileShoeMileage(db, 1, attached, detached);
+  assert.equal(db.prepare("SELECT mileage FROM shoes WHERE id = 'a'").get().mileage, 5);
+  reconcileShoeMileage(db, 1, detached, attached);
+  assert.equal(db.prepare("SELECT mileage FROM shoes WHERE id = 'a'").get().mileage, 15);
+  assert.deepEqual(db.prepare('SELECT training_id, shoe_id, distance FROM training_shoe_mileage').all(),
+    [{ training_id: 9, shoe_id: 'a', distance: 10 }]);
   db.close();
 });
 
@@ -61,7 +89,7 @@ test('shoe ownership resolution supports clears and rejects malformed or foreign
   assert.throws(() => resolveOwnedShoe(db, 1, 4), ShoeMileageError);
   assert.throws(() => resolveOwnedShoe(db, 1, 'foreign'), /authenticated user/);
   assert.throws(
-    () => reconcileShoeMileage(db, 1, null, { completed: 1, feedback_shoe_id: 'foreign', fit_distance: 4 }),
+    () => reconcileShoeMileage(db, 1, { id: 5, completed: 0 }, { id: 5, completed: 1, feedback_shoe_id: 'foreign', fit_distance: 4 }),
     ShoeMileageError
   );
   assert.equal(db.prepare("SELECT mileage FROM shoes WHERE id = 'foreign'").get().mileage, 50);
@@ -70,16 +98,16 @@ test('shoe ownership resolution supports clears and rejects malformed or foreign
 
 test('a persistence failure rolls back both a training mutation and its mileage delta', () => {
   const db = fixture();
-  db.prepare("INSERT INTO trainings (user_id, dia, tipo, completed, fit_distance, feedback_shoe_id) VALUES (1, '2026-01-01', 'Run', 0, 10, 'a')").run();
+  db.prepare("INSERT INTO trainings (id, user_id, dia, tipo, completed, fit_distance, feedback_shoe_id) VALUES (100, 1, '2026-01-01', 'Run', 0, 10, 'a')").run();
   db.exec("CREATE TRIGGER reject_mileage BEFORE UPDATE OF mileage ON shoes BEGIN SELECT RAISE(ABORT, 'failure'); END");
   const save = db.transaction(() => {
-    const before = db.prepare('SELECT * FROM trainings WHERE id = 1').get();
-    db.prepare('UPDATE trainings SET completed = 1 WHERE id = 1').run();
-    const after = db.prepare('SELECT * FROM trainings WHERE id = 1').get();
+    const before = db.prepare('SELECT * FROM trainings WHERE id = 100').get();
+    db.prepare('UPDATE trainings SET completed = 1 WHERE id = 100').run();
+    const after = db.prepare('SELECT * FROM trainings WHERE id = 100').get();
     reconcileShoeMileage(db, 1, before, after);
   });
   assert.throws(() => save(), /failure/);
-  assert.equal(db.prepare('SELECT completed FROM trainings WHERE id = 1').get().completed, 0);
+  assert.equal(db.prepare('SELECT completed FROM trainings WHERE id = 100').get().completed, 0);
   assert.equal(db.prepare("SELECT mileage FROM shoes WHERE id = 'a'").get().mileage, 5);
   db.close();
 });

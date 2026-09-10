@@ -17,21 +17,42 @@ function contribution(training) {
 }
 
 function reconcileShoeMileage(db, userId, before, after) {
+  const trainingId = after?.id ?? before?.id;
   const previous = contribution(before);
   const next = contribution(after);
+  const recorded = trainingId == null ? null : db.prepare(
+    'SELECT shoe_id AS shoeId, distance FROM training_shoe_mileage WHERE training_id = ? AND user_id = ?'
+  ).get(trainingId, userId);
+
+  // A qualifying contribution which predates the ledger is intentionally
+  // historical: changing or deleting it must never subtract distance that this
+  // system cannot prove it added. A later detach/reattach begins new accounting.
+  if (!recorded && previous) return;
+
   const deltas = new Map();
-  if (previous) deltas.set(previous.shoeId, -previous.distance);
+  if (recorded) deltas.set(recorded.shoeId, -recorded.distance);
   if (next) deltas.set(next.shoeId, (deltas.get(next.shoeId) || 0) + next.distance);
 
   const update = db.prepare(
     `UPDATE shoes
-       SET mileage = MAX(0, mileage + ?), updated_at = datetime('now')
+       SET mileage = mileage + ?, updated_at = datetime('now')
      WHERE id = ? AND user_id = ?`
   );
   for (const [shoeId, delta] of deltas) {
     if (delta !== 0 && update.run(delta, shoeId, userId).changes !== 1) {
       throw new ShoeMileageError('Selected shoe does not belong to the authenticated user.');
     }
+  }
+
+  if (recorded && !next) {
+    db.prepare('DELETE FROM training_shoe_mileage WHERE training_id = ? AND user_id = ?')
+      .run(trainingId, userId);
+  } else if (next) {
+    db.prepare(`INSERT INTO training_shoe_mileage (training_id, user_id, shoe_id, distance)
+      VALUES (?, ?, ?, ?)
+      ON CONFLICT(training_id) DO UPDATE SET shoe_id = excluded.shoe_id,
+        distance = excluded.distance, updated_at = datetime('now')`)
+      .run(trainingId, userId, next.shoeId, next.distance);
   }
 }
 

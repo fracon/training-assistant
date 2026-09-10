@@ -38,7 +38,7 @@ test('initializeDatabase applies pragmas and creates the schema', () => {
     )
     .all()
     .map((row) => row.name);
-  assert.deepEqual(objects, ['schema_migrations', 'sessions', 'shoes', 'training_cycles', 'trainings', 'users']);
+  assert.deepEqual(objects, ['schema_migrations', 'sessions', 'shoes', 'training_cycles', 'training_shoe_mileage', 'trainings', 'users']);
   assert.equal(
     db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'workouts'").get(),
     undefined,
@@ -56,7 +56,7 @@ test('shoe mileage migration links unique labels without changing authoritative 
   const db = createDatabase({ filename: ':memory:' });
   db.prepare("INSERT INTO users (email, password_hash) VALUES ('runner@test', 'x'), ('peer@test', 'x')").run();
   db.prepare(`INSERT INTO shoes (id, user_id, brand, model, mileage, status) VALUES
-    ('unique', 1, 'Acme', 'Fast', 20, 'active'),
+    ('unique', 1, 'Acme', 'Fast', 5, 'active'),
     ('dup1', 1, 'Acme', 'Same', 1, 'active'), ('dup2', 1, 'Acme', 'Same', 2, 'active'),
     ('peer', 2, 'Acme', 'Fast', 30, 'active')`).run();
   db.prepare(`INSERT INTO trainings
@@ -70,8 +70,10 @@ test('shoe mileage migration links unique labels without changing authoritative 
   const rows = db.prepare('SELECT feedback_shoe_id FROM trainings ORDER BY id').all();
   assert.deepEqual(rows, [{ feedback_shoe_id: 'unique' }, { feedback_shoe_id: null }, { feedback_shoe_id: 'unique' }]);
   assert.deepEqual(db.prepare("SELECT mileage, base_mileage FROM shoes WHERE id = 'unique'").get(),
-    { mileage: 20, base_mileage: 10 });
+    { mileage: 5, base_mileage: 5 });
   assert.equal(db.prepare("SELECT mileage FROM shoes WHERE id = 'peer'").get().mileage, 30);
+  assert.deepEqual(db.prepare('SELECT * FROM training_shoe_mileage').all(), []);
+  assert.ok(db.prepare("SELECT 1 FROM schema_migrations WHERE name = '2026-09-shoe-mileage-ledger-v2'").get());
   db.close();
 });
 
@@ -370,7 +372,7 @@ test('migrateDatabase removes the obsolete workouts table from existing database
     .map((row) => row.name);
   assert.deepEqual(
     tables,
-    ['schema_migrations', 'sessions', 'shoes', 'training_cycles', 'trainings', 'users'],
+    ['schema_migrations', 'sessions', 'shoes', 'training_cycles', 'training_shoe_mileage', 'trainings', 'users'],
     'only the obsolete workouts table is removed'
   );
   assert.deepEqual(

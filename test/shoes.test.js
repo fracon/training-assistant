@@ -260,6 +260,21 @@ test('updateShoe modifies fields and returns the updated row', () => {
   db.close();
 });
 
+test('updating total below applied contributions rebases without a negative baseline', () => {
+  const db = createDatabase({ filename: ':memory:' });
+  const userId = seedUser(db);
+  const shoe = createShoe(db, userId, { brand: 'Nike', model: 'Pegasus', mileage: 100 });
+  db.prepare("INSERT INTO trainings (user_id, dia, tipo) VALUES (?, '2026-01-01', 'Run')").run(userId);
+  db.prepare(`INSERT INTO training_shoe_mileage (training_id, user_id, shoe_id, distance)
+              VALUES (1, ?, ?, 40)`).run(userId, shoe.id);
+  db.prepare('UPDATE shoes SET mileage = 140 WHERE id = ?').run(shoe.id);
+  const updated = updateShoe(db, shoe.id, userId, { mileage: 10 });
+  assert.equal(updated.mileage, 10);
+  assert.equal(updated.base_mileage, 10);
+  assert.deepEqual(db.prepare('SELECT * FROM training_shoe_mileage').all(), []);
+  db.close();
+});
+
 test('updateShoe returns null when shoe does not exist', () => {
   const db = createDatabase({ filename: ':memory:' });
   const userId = seedUser(db);
