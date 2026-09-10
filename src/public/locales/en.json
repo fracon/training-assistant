@@ -247,7 +247,8 @@
     "fitSelected": "File selected: ",
     "fitUnsupported": "Please select a .FIT or .ZIP file.",
     "importHelp": {
-      "open": "How do I import my workout?",
+      "openShort": "How to import?",
+      "openAriaLabel": "How to import a workout file",
       "close": "Close import guide",
       "title": "Import your workout",
       "description": "Kinesis currently accepts a FIT file or a ZIP containing exactly one FIT file. Choose your watch platform to see the available export options.",

@@ -236,10 +236,15 @@ body {
   transition: border-color 0.2s ease, background-color 0.2s ease;
   background-color: var(--card);
   text-align: center;
-  margin-top: 0.5rem;
+  margin-top: 0;
 }
 
-.import-help-trigger { align-self: center; margin-top: 10px; }
+.fit-upload-header { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin-bottom: 0.5rem; }
+.fit-upload-label { color: var(--ink); font-size: 0.85rem; font-weight: 600; }
+.import-help-trigger { display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; min-height: 2rem; padding: 0.25rem 0.375rem; border: 0; border-radius: 0.375rem; background: transparent; color: var(--accent-deep); font: inherit; font-size: 0.875rem; font-weight: 600; cursor: pointer; transition: color 0.15s ease, text-decoration-color 0.15s ease; }
+.import-help-trigger svg { width: 15px; height: 15px; }
+.import-help-trigger:hover { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+.import-help-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .import-help-dialog { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 20px; background: rgba(45, 42, 36, 0.48); }
 .import-help-dialog[hidden] { display: none; }
 .import-help-card { width: min(680px, 100%); max-height: min(760px, calc(100vh - 40px)); overflow-y: auto; scrollbar-gutter: stable; padding: 24px; border: 1px solid var(--line); border-radius: 18px; background: var(--card); color: var(--ink); box-shadow: 0 18px 50px rgba(45, 42, 36, 0.24); }
@@ -260,6 +265,7 @@ body {
 .import-help-manual h3 { margin: 0; font-size: 0.98rem; }
 .import-help-manual p { margin: 6px 0 12px; }
 @media (max-width: 560px) {
+  .fit-upload-header { flex-wrap: wrap; }
   .import-help-dialog { padding: 8px; align-items: end; }
   .import-help-card { max-height: calc(100vh - 16px); padding: 18px; border-radius: 18px 18px 0 0; }
   .import-help-provider-list { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; }

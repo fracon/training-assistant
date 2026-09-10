@@ -247,7 +247,8 @@
     "fitSelected": "Arquivo selecionado: ",
     "fitUnsupported": "Selecione um arquivo .FIT ou .ZIP.",
     "importHelp": {
-      "open": "Como importar meu treino?",
+      "openShort": "Como importar?",
+      "openAriaLabel": "Como importar um arquivo de treino",
       "close": "Fechar guia de importação",
       "title": "Importe seu treino",
       "description": "O Kinesis aceita atualmente um arquivo FIT ou um ZIP contendo exatamente um arquivo FIT. Escolha a plataforma do seu relógio para consultar as opções de exportação disponíveis.",

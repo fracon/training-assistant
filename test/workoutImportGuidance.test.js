@@ -50,7 +50,23 @@ test('COROS guidance matches the official app export flow in both locales', asyn
 
 test('training result exposes the translated multibrand guide without native title or remote scripts', () => {
   const html = readFileSync(join(__dirname, '..', 'src', 'public', 'training-result.html'), 'utf8');
-  assert.match(html, /id="importHelpBtn"[^>]*type="button"/);
+  const headerIndex = html.indexOf('class="fit-upload-header"');
+  const helpIndex = html.indexOf('id="importHelpBtn"');
+  const dropzoneIndex = html.indexOf('id="fitDropzone"');
+  assert.ok(headerIndex >= 0 && headerIndex < helpIndex && helpIndex < dropzoneIndex);
+  assert.match(html, /class="fit-upload-header"[\s\S]*data-i18n="session\.resultSourceFit"/);
+  assert.match(html, /id="importHelpBtn"[^>]*class="import-help-trigger"[^>]*type="button"/);
+  assert.match(html, /id="importHelpBtn"[^>]*data-i18n-aria-label="session\.importHelp\.openAriaLabel"/);
+  assert.match(html, /id="importHelpBtn"[\s\S]*data-i18n="session\.importHelp\.openShort"/);
+  assert.match(html, /data-lucide="circle-help" aria-hidden="true"/);
+  assert.doesNotMatch(html, /id="importHelpBtn"[^>]*btn-secondary/);
+  assert.doesNotMatch(html.slice(0, dropzoneIndex), /<label[^>]*id="importHelpBtn"/);
+  assert.equal(lookup(en, 'session.importHelp.openShort'), 'How to import?');
+  assert.equal(lookup(pt, 'session.importHelp.openShort'), 'Como importar?');
+  assert.equal(lookup(en, 'session.importHelp.openAriaLabel'), 'How to import a workout file');
+  assert.equal(lookup(pt, 'session.importHelp.openAriaLabel'), 'Como importar um arquivo de treino');
+  assert.equal(lookup(en, 'session.importHelp.open'), undefined);
+  assert.equal(lookup(pt, 'session.importHelp.open'), undefined);
   assert.match(html, /id="importHelpDialog"[^>]*role="dialog"[^>]*aria-modal="true"/);
   assert.match(html, /data-provider-id="garmin"/);
   assert.match(html, /data-provider-id="samsung"/);
@@ -65,4 +81,13 @@ test('training result exposes the translated multibrand guide without native tit
   assert.match(html, /target="_blank" rel="noopener noreferrer"/);
   assert.doesNotMatch(html, /<script[^>]+src="https?:\/\/(?!unpkg\.com\/lucide)/i);
   assert.doesNotMatch(html, /\stitle=/i);
+});
+
+test('import guidance trigger keeps the compact responsive ghost layout', () => {
+  const css = readFileSync(join(__dirname, '..', 'src', 'public', 'training-result.css'), 'utf8');
+  assert.match(css, /\.fit-upload-header\s*\{[^}]*display:\s*flex[^}]*justify-content:\s*space-between/);
+  assert.match(css, /\.import-help-trigger\s*\{[^}]*border:\s*0[^}]*background:\s*transparent[^}]*cursor:\s*pointer/);
+  assert.match(css, /\.import-help-trigger:focus-visible\s*\{[^}]*outline:/);
+  assert.match(css, /@media \(max-width: 560px\)[\s\S]*\.fit-upload-header\s*\{\s*flex-wrap:\s*wrap;/);
+  assert.doesNotMatch(css, /\.import-help-trigger\s*\{[^}]*align-self:\s*center[^}]*margin-top:/);
 });

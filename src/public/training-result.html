@@ -85,6 +85,13 @@
             </select>
           </div>
           <div class="field fit-field" id="fitField">
+            <div class="fit-upload-header">
+              <span class="fit-upload-label" data-i18n="session.resultSourceFit">Import FIT or ZIP file</span>
+              <button id="importHelpBtn" class="import-help-trigger" type="button" data-i18n-aria-label="session.importHelp.openAriaLabel">
+                <i data-lucide="circle-help" aria-hidden="true"></i>
+                <span data-i18n="session.importHelp.openShort">How to import?</span>
+              </button>
+            </div>
             <label for="fitFile" class="file-dropzone" id="fitDropzone">
               <input type="file" id="fitFile" accept=".fit,.zip" style="display: none;">
               <div class="dropzone-text-primary">
@@ -92,7 +99,6 @@
               </div>
               <div class="dropzone-text-secondary" data-i18n="session.fitClickText">or click to select from your computer</div>
             </label>
-            <button id="importHelpBtn" class="btn-secondary import-help-trigger" type="button" data-i18n="session.importHelp.open">How do I import my workout?</button>
           </div>
 
           <div class="field field-wide manual-results-field" id="manualResultsField" hidden>
