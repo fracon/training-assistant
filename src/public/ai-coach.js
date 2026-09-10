@@ -83,12 +83,12 @@ INSTRUÇÕES PARA MONTAR A SEMANA
 FORMATO DA PLANILHA
 
 Mantenha EXATAMENTE o formato de tabela que já utilizamos, adicionando apenas "Data" como a PRIMEIRA coluna.
-As colunas devem ser, nesta ordem: Data, Dia, Período, Tipo, Treino, Detalhes, FC alvo, RPE, Tênis, Previsão do tempo, Observações.
+As colunas devem ser, nesta ordem: Data, Dia, Período, Tipo, Treino, Detalhes, FC alvo, RPE, Tênis, Localização, Previsão do tempo, Observações.
 
 Exemplo estrutural:
-| Data | Dia | Período | Tipo | Treino | Detalhes | FC alvo | RPE | Tênis | Previsão do tempo | Observações |
+| Data | Dia | Período | Tipo | Treino | Detalhes | FC alvo | RPE | Tênis | Localização | Previsão do tempo | Observações |
 
-Use datas no formato DD/MM/YYYY. Em "Período", use o horário/período real esperado (ex: ~12h). Em "Previsão do tempo", informe de maneira compacta {{WEATHER_EXAMPLE}}. Não inclua linhas para musculação.
+Use datas no formato DD/MM/YYYY. Em "Período", use o horário/período real esperado (ex: ~12h). Em "Localização", copie exatamente a localidade informada para cada dia, preservando acentos, espaços, pontuação e nomes em outros idiomas, sem traduzir, normalizar, geocodificar, substituir pela localidade habitual ou inferir a partir da previsão do tempo. Em "Previsão do tempo", informe de maneira compacta {{WEATHER_EXAMPLE}}. Não inclua linhas para musculação.
 
 ARQUIVO EXCEL
 
@@ -176,12 +176,12 @@ INSTRUCTIONS FOR PLANNING THE WEEK
 SPREADSHEET FORMAT
 
 Keep EXACTLY the table format we already use, adding only "Data" (Date) as the FIRST column.
-The columns must be, in this order: Date, Day, Period, Type, Workout, Details, Target HR, RPE, Shoe, Weather Forecast, Notes.
+The columns must be, in this order: Date, Day, Period, Type, Workout, Details, Target HR, RPE, Shoe, Location, Weather Forecast, Notes.
 
 Structural example:
-| Date | Day | Period | Type | Workout | Details | Target HR | RPE | Shoe | Weather Forecast | Notes |
+| Date | Day | Period | Type | Workout | Details | Target HR | RPE | Shoe | Location | Weather Forecast | Notes |
 
-Use dates in DD/MM/YYYY format. In "Period", use the actual expected time/period (e.g., ~12h or 8-9h). In "Weather Forecast", report compactly {{WEATHER_EXAMPLE}}. Do not include rows for strength training.
+Use dates in DD/MM/YYYY format. In "Period", use the actual expected time/period (e.g., ~12h or 8-9h). In "Location", copy the location provided for each day exactly, preserving accents, spaces, punctuation, and names in other languages, without translating, normalizing, geocoding, replacing it with the usual location, or inferring it from the weather forecast. In "Weather Forecast", report compactly {{WEATHER_EXAMPLE}}. Do not include rows for strength training.
 
 EXCEL FILE
 

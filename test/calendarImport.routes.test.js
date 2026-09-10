@@ -278,7 +278,7 @@ test('import parses rows, normalizes Dia and persists trainings', async () => {
 test('import persists a planned location column and exposes it via the session API', async () => {
   const { db, app, upload } = await setup();
 
-  const headers = ['Data', 'Dia', 'Tipo', 'Local'];
+  const headers = ['Data', 'Dia', 'Tipo', 'Localização'];
   const buffer = await spreadsheetBuffer(headers, [
     ['23/08/2026', 'Domingo', 'Corrida', 'Fânzeres'],
     ['24/08/2026', 'Segunda', 'Rodagem', ''],
@@ -307,6 +307,30 @@ test('import persists a planned location column and exposes it via the session A
   });
   assert.equal(session.statusCode, 200);
   assert.equal(session.json().training.location, 'Fânzeres');
+
+  await app.close();
+});
+
+test('English AI Coach location survives Excel import, persistence, and session retrieval verbatim', async () => {
+  const { db, app, upload } = await setup();
+  const location = 'Parc de la Tête-d’Or — Łódź, sector A!';
+  const buffer = await spreadsheetBuffer(
+    ['Date', 'Day', 'Period', 'Type', 'Workout', 'Details', 'Target HR', 'RPE', 'Shoe', 'Location', 'Weather Forecast', 'Notes'],
+    [['23/08/2026', 'Sunday', 'Morning', 'Run', 'Long run', 'Zone 2', '150', '3', 'Adizero', location, '73 °F', 'Easy']]
+  );
+  const response = await upload(buffer);
+  assert.equal(response.status, 200);
+  assert.equal(db.prepare('SELECT location FROM trainings').get().location, location);
+
+  const login = await app.inject({
+    method: 'POST',
+    url: '/api/auth/login',
+    payload: { email: REGISTER_PAYLOAD.email, password: REGISTER_PAYLOAD.password },
+  });
+  const cookie = [].concat(login.headers['set-cookie'] ?? [])[0].split(';')[0];
+  const session = await app.inject({ method: 'GET', url: '/api/trainings/1', headers: { cookie } });
+  assert.equal(session.statusCode, 200);
+  assert.equal(session.json().training.location, location);
 
   await app.close();
 });

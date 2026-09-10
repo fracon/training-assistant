@@ -281,6 +281,28 @@ test('parseSheet captures the planned location alongside the training row', () =
   assert.equal(english.records[0].location, 'Porto', 'English Location headers map too');
 });
 
+test('parseSheet preserves the AI Coach 12-column PT/EN location contract and legacy blanks', () => {
+  const portuguese = parseSheet(fakeWorksheet([
+    fakeRow(1, ['Data', 'Dia', 'Período', 'Tipo', 'Treino', 'Detalhes', 'FC alvo', 'RPE', 'Tênis', 'Localização', 'Previsão do tempo', 'Observações']),
+    fakeRow(2, ['23/08/2026', 'Domingo', 'Manhã', 'Corrida', 'Longão', 'Z2', '150', '3', 'Adizero', 'São João — Łódź, setor A!', '23 °C', 'Leve']),
+  ]));
+  const english = parseSheet(fakeWorksheet([
+    fakeRow(1, ['Date', 'Day', 'Period', 'Type', 'Workout', 'Details', 'Target HR', 'RPE', 'Shoe', 'Location', 'Weather Forecast', 'Notes']),
+    fakeRow(2, ['24/08/2026', 'Monday', 'Morning', 'Run', 'Easy', 'Z2', '150', '3', 'Adizero', 'Parc de la Tête-d’Or (Lyon)', '73 °F', 'Easy']),
+  ]));
+  const legacy = parseSheet(fakeWorksheet([
+    fakeRow(1, ['Data', 'Dia', 'Tipo', 'Treino']),
+    fakeRow(2, ['25/08/2026', 'Terça', 'Corrida', 'Fácil']),
+  ]));
+
+  assert.deepEqual(portuguese.errors, []);
+  assert.equal(portuguese.records[0].location, 'São João — Łódź, setor A!');
+  assert.deepEqual(english.errors, []);
+  assert.equal(english.records[0].location, 'Parc de la Tête-d’Or (Lyon)');
+  assert.deepEqual(legacy.errors, []);
+  assert.equal(legacy.records[0].location, '', 'old spreadsheets remain valid without a location column');
+});
+
 test('parseSheet accepts the Phase 7 layout: Data date plus Dia weekday string', () => {
   const worksheet = fakeWorksheet([
     fakeRow(1, ['Data', 'Dia', 'Tipo']),

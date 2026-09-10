@@ -138,8 +138,10 @@ test('the prompt template keeps the required Portuguese structure', () => {
   assert.match(PROMPT_TEMPLATE, /Fânzeres, Gondomar, Portugal/);
   assert.match(
     PROMPT_TEMPLATE,
-    /\| Data \| Dia \| Período \| Tipo \| Treino \| Detalhes \| FC alvo \| RPE \| Tênis \| Previsão do tempo \| Observações \|/
+    /\| Data \| Dia \| Período \| Tipo \| Treino \| Detalhes \| FC alvo \| RPE \| Tênis \| Localização \| Previsão do tempo \| Observações \|/
   );
+  assert.match(PROMPT_TEMPLATE, /copie exatamente a localidade informada para cada dia/);
+  assert.match(PROMPT_TEMPLATE, /sem traduzir, normalizar, geocodificar, substituir pela localidade habitual ou inferir a partir da previsão do tempo/);
   assert.match(PROMPT_TEMPLATE, /15\. O objetivo não é maximizar cada treino individualmente\./);
   assert.match(
     PROMPT_TEMPLATE,
@@ -724,8 +726,10 @@ test('both templates carry the identical placeholder contract', () => {
   assert.match(PROMPT_TEMPLATE_EN, /Fânzeres, Gondomar, Portugal/);
   assert.match(
     PROMPT_TEMPLATE_EN,
-    /\| Date \| Day \| Period \| Type \| Workout \| Details \| Target HR \| RPE \| Shoe \| Weather Forecast \| Notes \|/
+    /\| Date \| Day \| Period \| Type \| Workout \| Details \| Target HR \| RPE \| Shoe \| Location \| Weather Forecast \| Notes \|/
   );
+  assert.match(PROMPT_TEMPLATE_EN, /copy the location provided for each day exactly/);
+  assert.match(PROMPT_TEMPLATE_EN, /without translating, normalizing, geocoding, replacing it with the usual location, or inferring it from the weather forecast/);
   assert.match(
     PROMPT_TEMPLATE_EN,
     /If recent data indicates that the originally expected plan should be altered, prioritize the correct adaptation/
