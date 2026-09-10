@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user web application** for managing training logs — drop a Garmin `.FIT` file into the browser, add how the workout felt, and get back a ready-to-paste markdown prompt for your AI coach.
 
-Current application version: **0.8.0** (active development).
+Current application version: **0.9.0** (active development).
 
 Every account is protected with server-side sessions, every `.FIT` file is parsed locally on your own machine: no cloud parsing, no telemetry — your training data never leaves your hardware.
 
@@ -65,6 +65,16 @@ sequentially (the FIT may appear anywhere); declared sizes are only an early
 rejection and actual streamed bytes are authoritative. Encrypted, corrupt,
 unsafe, or over-limit archives fail before any training data is changed. ZIP uploads retain the
 `fit_upload` provenance and never persist the archive or extracted file.
+
+The Training Result page includes a neutral, multibrand import guide for
+Garmin, COROS, Polar, Amazfit/Zepp, Huawei, Apple, and Samsung. It links only
+to official support documentation verified on 2026-09-09, explains whether a
+FIT/ZIP-FIT path is direct, conditional, unsupported, or unverified, and always
+offers manual entry as a fallback. The guide does not request credentials,
+connect to manufacturer APIs, or send telemetry. See
+[`docs/workout-import-compatibility.md`](docs/workout-import-compatibility.md)
+for the audited matrix and sources. GPX, TCX, XML, CSV, and JSON imports remain
+future work and are not made compatible by renaming their extensions.
 
 Every realized result has one persisted source: `none`, `fit_upload`, or `manual` (`garmin_connect` is reserved for a future integration). A manual result intentionally has no synthetic FIT summary or laps. Replacing FIT data with manual aggregates, or manual aggregates with a FIT upload, requires explicit confirmation and executes atomically; the outgoing source's incompatible data is cleared. The result screen marks the source clearly, and its analysis prompt identifies manual data, notes the absence of laps, and states that Kinesis calculated pace from distance and duration. Since dashboard, calendar, and AI Coach already aggregate the canonical training metrics, manual results participate in weekly totals without a second source of truth.
 

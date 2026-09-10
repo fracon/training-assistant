@@ -3,6 +3,7 @@ import { translate } from './shared/i18n.js';
 import { formatDate as formatLocalizedDate, formatWeekday } from './shared/date.js';
 import { fetchTraining, saveTrainingFeedback, saveManualTrainingResults, fetchShoes, deleteTraining, fetchWeather } from './shared/api.js';
 import { KM_TO_MILES, convertDistanceInputValue, convertDistanceToKm, formatDistance, formatPaceFromMetric, formatTemperature } from './shared/units.js';
+import { createImportGuidance } from './shared/workout-import-guidance.js';
 
 // Sessions open contextually via /training-result.html?id=<id>; without an
 // id there is nothing to show, so the page bounces back to the calendar.
@@ -581,6 +582,8 @@ async function initTrainingResult() {
   const manualResultsField = document.getElementById('manualResultsField');
   const resultSourceBadge = document.getElementById('resultSourceBadge');
   const manualDistanceUnit = document.getElementById('manualDistanceUnit');
+  const importHelpBtn = document.getElementById('importHelpBtn');
+  const importHelpDialog = document.getElementById('importHelpDialog');
   const manualInputs = {
     distance: document.getElementById('manualDistance'), hours: document.getElementById('manualHours'),
     minutes: document.getElementById('manualMinutes'), seconds: document.getElementById('manualSeconds'),
@@ -764,6 +767,16 @@ async function initTrainingResult() {
 
   await initShell();
   i18n = getShellI18n();
+  const importGuidance = createImportGuidance({
+    trigger: importHelpBtn,
+    dialog: importHelpDialog,
+    translate: t,
+    onManual: () => {
+      resultSourceSelect.value = 'manual';
+      syncResultSourceVisibility();
+      manualInputs.distance.focus();
+    },
+  });
   document.title = t('training.title');
   applyTooltips();
   // The shell may have injected sidebar/topbar markup around the session
@@ -1052,6 +1065,7 @@ async function initTrainingResult() {
     renderWeatherAutofill();
     renderFitData();
     applyTooltips();
+    importGuidance.render();
   });
 
   document.addEventListener('kinesis:preferences-changed', () => {
