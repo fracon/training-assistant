@@ -58,7 +58,8 @@ test('training result exposes the translated multibrand guide without native tit
   assert.match(html, /id="importHelpBtn"[^>]*class="import-help-trigger"[^>]*type="button"/);
   assert.match(html, /id="importHelpBtn"[^>]*data-i18n-aria-label="session\.importHelp\.openAriaLabel"/);
   assert.match(html, /id="importHelpBtn"[\s\S]*data-i18n="session\.importHelp\.openShort"/);
-  assert.match(html, /data-lucide="circle-help" aria-hidden="true"/);
+  assert.match(html, /data-lucide="book-open" aria-hidden="true"/);
+  assert.doesNotMatch(html, /id="importHelpBtn"[\s\S]*data-lucide="circle-help"/);
   assert.doesNotMatch(html, /id="importHelpBtn"[^>]*btn-secondary/);
   assert.doesNotMatch(html.slice(0, dropzoneIndex), /<label[^>]*id="importHelpBtn"/);
   assert.equal(lookup(en, 'session.importHelp.openShort'), 'How to import?');
