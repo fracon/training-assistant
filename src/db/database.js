@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS trainings (
   completed       INTEGER NOT NULL DEFAULT 0,
   has_smartwatch     INTEGER NOT NULL DEFAULT 1,
   feedback_shoe      TEXT,
+  feedback_shoe_id   TEXT REFERENCES shoes(id) ON DELETE SET NULL,
   feedback_hr_source TEXT,
   feedback_weather   TEXT,
   feedback_terrain   TEXT,
@@ -119,6 +120,9 @@ function migrateDatabase(db) {
   }
 
   const trainingColumns = db.pragma('table_info(trainings)');
+  const hasShoesTable = Boolean(db.prepare(
+    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'shoes'"
+  ).get());
   if (!trainingColumns.some((column) => column.name === 'feedback_rpe')) {
     db.exec('ALTER TABLE trainings ADD COLUMN feedback_rpe INTEGER');
   }
@@ -137,6 +141,7 @@ function migrateDatabase(db) {
   }
   for (const [name, type] of [
     ['feedback_shoe', 'TEXT'],
+    ['feedback_shoe_id', hasShoesTable ? 'TEXT REFERENCES shoes(id) ON DELETE SET NULL' : 'TEXT'],
     ['feedback_hr_source', 'TEXT'],
     ['feedback_weather', 'TEXT'],
     ['feedback_terrain', 'TEXT'],
@@ -163,6 +168,44 @@ function migrateDatabase(db) {
   if (!trainingColumns.some((column) => column.name === 'location')) {
     db.exec('ALTER TABLE trainings ADD COLUMN location TEXT');
   }
+
+  // Link a legacy label only when it identifies exactly one shoe owned by the
+  // same user. Ambiguous labels remain historical text and are never guessed.
+  // The migration marker makes the production mileage repair safe to retry.
+  db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
+    name TEXT PRIMARY KEY,
+    applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`);
+  const shoeColumns = db.pragma('table_info(shoes)').map((column) => column.name);
+  const canRepairShoes = ['id', 'user_id', 'brand', 'model', 'mileage', 'updated_at']
+    .every((name) => shoeColumns.includes(name));
+  const repair = db.transaction(() => {
+    const marker = '2026-09-shoe-mileage-accounting-v1';
+    if (db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(marker)) return;
+    db.exec(`
+      UPDATE trainings
+         SET feedback_shoe_id = (
+           SELECT MIN(s.id) FROM shoes s
+            WHERE s.user_id = trainings.user_id
+              AND TRIM(s.brand || ' ' || s.model) = TRIM(trainings.feedback_shoe)
+         )
+       WHERE feedback_shoe_id IS NULL
+         AND COALESCE(TRIM(feedback_shoe), '') <> ''
+         AND 1 = (SELECT COUNT(*) FROM shoes s
+                   WHERE s.user_id = trainings.user_id
+                     AND TRIM(s.brand || ' ' || s.model) = TRIM(trainings.feedback_shoe));
+
+      UPDATE shoes
+         SET mileage = mileage + COALESCE((
+           SELECT SUM(CASE WHEN t.completed = 1 AND t.fit_distance > 0
+                           THEN t.fit_distance ELSE 0 END)
+             FROM trainings t WHERE t.feedback_shoe_id = shoes.id
+         ), 0),
+             updated_at = datetime('now');
+    `);
+    db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(marker);
+  });
+  if (canRepairShoes) repair();
 
   // Existing results were necessarily uploaded FIT files before provenance was
   // introduced. Only classify unclassified rows, keeping repeat migrations

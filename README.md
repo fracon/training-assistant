@@ -2,7 +2,22 @@
 
 A **secure, self-hosted, multi-user web application** for managing training logs — drop a Garmin `.FIT` file into the browser, add how the workout felt, and get back a ready-to-paste markdown prompt for your AI coach.
 
-Current application version: **0.9.0** (active development).
+Current application version: **0.9.1** (active development).
+
+### Shoe mileage integrity
+
+For each shoe, `shoes.mileage` is its user-maintained starting mileage plus the
+canonical `fit_distance` (kilometres) of every completed training whose
+`feedback_shoe_id` points to that shoe. The backend reconciles the old and new
+training contribution in the same SQLite transaction whenever feedback,
+completion, results, or deletion changes; clients never increment mileage.
+
+The idempotent `2026-09-shoe-mileage-accounting-v1` migration adds the stable
+shoe relationship, links historical `feedback_shoe` labels only when exactly
+one same-user shoe matches, and leaves ambiguous labels untouched. It then adds
+the previously missing completed-training contributions to production mileage
+once and records a durable marker in `schema_migrations`, so startup retries do
+not double-count repaired records.
 
 Every account is protected with server-side sessions, every `.FIT` file is parsed locally on your own machine: no cloud parsing, no telemetry — your training data never leaves your hardware.
 

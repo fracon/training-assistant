@@ -1047,7 +1047,7 @@ test('training-result.js wires toggling, saving, generation and i18n refreshes',
   );
   assert.match(js, /feedback_rpe: normalizeFeedbackRpe\(rpeSelector\.querySelector\('input\[type="radio"\]:checked'\)/);
   assert.match(js, /const shoeSelect = document\.getElementById\('feedbackShoe'\);/);
-  assert.match(js, /shoeSelect\.value = training\.feedback_shoe \?\? '';/);
+  assert.match(js, /shoeSelect\.value = training\.feedback_shoe_id/);
   assert.match(js, /weatherInput\.value = training\.feedback_weather \?\? '';/);
   assert.match(js, /const weatherSpinner = document\.getElementById\('weatherSpinner'\);/);
   assert.match(
@@ -1160,6 +1160,7 @@ test('training-result.js wires toggling, saving, generation and i18n refreshes',
     new RegExp(
       [
         'const \\{',
+        '\\s*feedback_shoe,',
         '\\s*hr_source_label,',
         '\\s*terrain_label,',
         '\\s*breathing_label,',

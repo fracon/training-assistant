@@ -711,9 +711,17 @@ async function initTrainingResult() {
     for (const shoe of shoes) {
       const option = document.createElement('option');
       const label = shoe.brand && shoe.model ? `${shoe.brand} ${shoe.model}` : shoe.model || shoe.brand || shoe.id;
-      option.value = label;
+      option.value = shoe.id;
       option.textContent = label;
       shoeSelect.appendChild(option);
+    }
+    if (!training.feedback_shoe_id && training.feedback_shoe) {
+      const legacy = document.createElement('option');
+      legacy.value = '';
+      legacy.textContent = training.feedback_shoe;
+      legacy.disabled = true;
+      legacy.selected = true;
+      shoeSelect.appendChild(legacy);
     }
   };
 
@@ -812,7 +820,7 @@ async function initTrainingResult() {
     if (savedRadio) savedRadio.checked = true;
   }
   notesInput.value = training.feedback_notas ?? '';
-  shoeSelect.value = training.feedback_shoe ?? '';
+  if (training.feedback_shoe_id) shoeSelect.value = training.feedback_shoe_id;
   weatherInput.value = training.feedback_weather ?? '';
   terrainInput.value = training.feedback_terrain ?? '';
   breathingInput.value = training.feedback_breathing ?? '';
@@ -882,7 +890,10 @@ async function initTrainingResult() {
     return {
       feedback_rpe: normalizeFeedbackRpe(rpeSelector.querySelector('input[type="radio"]:checked')?.value ?? ''),
       feedback_notas: notesInput.value,
-      feedback_shoe: shoeSelect.value,
+      feedback_shoe_id: shoeSelect.value || null,
+      feedback_shoe: shoeSelect.selectedOptions[0]?.textContent === '–'
+        ? ''
+        : shoeSelect.selectedOptions[0]?.textContent ?? training.feedback_shoe ?? '',
       feedback_hr_source: hrValue === '' ? null : hrValue,
       feedback_weather: weatherInput.value,
       feedback_terrain: terrainInput.value === '' ? null : terrainInput.value,
@@ -944,6 +955,7 @@ async function initTrainingResult() {
         return;
       }
       const {
+        feedback_shoe,
         hr_source_label,
         terrain_label,
         breathing_label,
