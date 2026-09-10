@@ -254,6 +254,7 @@ test('updateShoe modifies fields and returns the updated row', () => {
   const shoe = createShoe(db, userId, { brand: 'Nike', model: 'Pegasus', mileage: 100 });
   const updated = updateShoe(db, shoe.id, userId, { mileage: 200, status: 'retired' });
   assert.equal(updated.mileage, 200);
+  assert.equal(updated.base_mileage, 200);
   assert.equal(updated.status, 'retired');
   assert.equal(updated.brand, 'Nike', 'untouched field preserved');
   db.close();

@@ -715,6 +715,14 @@ async function initTrainingResult() {
       option.textContent = label;
       shoeSelect.appendChild(option);
     }
+    if (training.feedback_shoe_id && !shoes.some((shoe) => shoe.id === training.feedback_shoe_id)) {
+      const persisted = document.createElement('option');
+      persisted.value = training.feedback_shoe_id;
+      persisted.textContent = training.feedback_shoe || training.feedback_shoe_id;
+      persisted.disabled = true;
+      persisted.selected = true;
+      shoeSelect.appendChild(persisted);
+    }
     if (!training.feedback_shoe_id && training.feedback_shoe) {
       const legacy = document.createElement('option');
       legacy.value = '';
@@ -724,6 +732,8 @@ async function initTrainingResult() {
       shoeSelect.appendChild(legacy);
     }
   };
+  let shoeSelectionChanged = false;
+  shoeSelect.addEventListener('change', () => { shoeSelectionChanged = true; });
 
   // The pain description only exists when pain was reported; hiding it also
   // discards any typed text so stale descriptions never reach the payload.
@@ -887,10 +897,9 @@ async function initTrainingResult() {
     const muscleKey = MUSCLE_LABEL_KEYS[muscleInput.value];
     const energyKey = ENERGY_LABEL_KEYS[energyInput.value];
     const hasPainValue = hasPainSelect.value;
-    return {
+    const state = {
       feedback_rpe: normalizeFeedbackRpe(rpeSelector.querySelector('input[type="radio"]:checked')?.value ?? ''),
       feedback_notas: notesInput.value,
-      feedback_shoe_id: shoeSelect.value || null,
       feedback_shoe: shoeSelect.selectedOptions[0]?.textContent === '–'
         ? ''
         : shoeSelect.selectedOptions[0]?.textContent ?? training.feedback_shoe ?? '',
@@ -912,6 +921,8 @@ async function initTrainingResult() {
       language: i18n.language,
       fitAttached: Boolean(fitFileInput.files && fitFileInput.files.length > 0),
     };
+    if (shoeSelectionChanged) state.feedback_shoe_id = shoeSelect.value || null;
+    return state;
   };
 
   const manualInputValues = () => Object.fromEntries(

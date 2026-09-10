@@ -52,7 +52,7 @@ test('initializeDatabase applies pragmas and creates the schema', () => {
   db.close();
 });
 
-test('shoe mileage migration links only unique owner labels and repairs production rows once', () => {
+test('shoe mileage migration links unique labels without changing authoritative production totals', () => {
   const db = createDatabase({ filename: ':memory:' });
   db.prepare("INSERT INTO users (email, password_hash) VALUES ('runner@test', 'x'), ('peer@test', 'x')").run();
   db.prepare(`INSERT INTO shoes (id, user_id, brand, model, mileage, status) VALUES
@@ -69,7 +69,8 @@ test('shoe mileage migration links only unique owner labels and repairs producti
   migrateDatabase(db);
   const rows = db.prepare('SELECT feedback_shoe_id FROM trainings ORDER BY id').all();
   assert.deepEqual(rows, [{ feedback_shoe_id: 'unique' }, { feedback_shoe_id: null }, { feedback_shoe_id: 'unique' }]);
-  assert.equal(db.prepare("SELECT mileage FROM shoes WHERE id = 'unique'").get().mileage, 30);
+  assert.deepEqual(db.prepare("SELECT mileage, base_mileage FROM shoes WHERE id = 'unique'").get(),
+    { mileage: 20, base_mileage: 10 });
   assert.equal(db.prepare("SELECT mileage FROM shoes WHERE id = 'peer'").get().mileage, 30);
   db.close();
 });

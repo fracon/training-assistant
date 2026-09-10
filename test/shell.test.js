@@ -158,12 +158,12 @@ test('the footer carries only the app version, fetched from the backend', async 
 
 test('loadAppVersion resolves the packaged version and degrades to null on any failure', async () => {
   const ok = (body) => async () => ({ ok: true, json: async () => body });
-  assert.equal(require('../package.json').version, '0.9.1');
+  assert.equal(require('../package.json').version, '0.9.2');
   const calls = [];
   assert.equal(await loadAppVersion(async (...args) => {
     calls.push(args);
-    return { ok: true, json: async () => ({ version: '0.9.1' }) };
-  }), '0.9.1');
+    return { ok: true, json: async () => ({ version: '0.9.2' }) };
+  }), '0.9.2');
   assert.deepEqual(calls, [[VERSION_ENDPOINT, { cache: 'no-store' }]]);
   assert.equal(await loadAppVersion(async () => ({ ok: false, json: async () => ({ version: '0.9.0' }) })), null);
   assert.equal(await loadAppVersion(ok({})), null, 'a malformed payload is treated as missing');

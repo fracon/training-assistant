@@ -8,6 +8,7 @@ const {
   contribution,
   reconcileShoeMileage,
   resolveOwnedShoe,
+  resolveOwnedShoeLabel,
 } = require('../src/shoeMileage');
 
 function fixture() {
@@ -52,6 +53,11 @@ test('shoe ownership resolution supports clears and rejects malformed or foreign
   assert.equal(resolveOwnedShoe(db, 1, null), null);
   assert.equal(resolveOwnedShoe(db, 1, ''), null);
   assert.equal(resolveOwnedShoe(db, 1, 'a').model, 'A');
+  assert.equal(resolveOwnedShoeLabel(db, 1, ' Acme A ').id, 'a');
+  assert.equal(resolveOwnedShoeLabel(db, 1, ''), null);
+  assert.equal(resolveOwnedShoeLabel(db, 1, null), null);
+  assert.throws(() => resolveOwnedShoeLabel(db, 1, 4), /must be a string/);
+  assert.throws(() => resolveOwnedShoeLabel(db, 1, 'missing'), /exactly one/);
   assert.throws(() => resolveOwnedShoe(db, 1, 4), ShoeMileageError);
   assert.throws(() => resolveOwnedShoe(db, 1, 'foreign'), /authenticated user/);
   assert.throws(

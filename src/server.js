@@ -11,6 +11,7 @@ const { normalizeManualResults } = require('./manualResults');
 const {
   reconcileShoeMileage,
   resolveOwnedShoe,
+  resolveOwnedShoeLabel,
 } = require('./shoeMileage');
 const { generateMarkdown } = require('./markdownGenerator');
 const { registerUser, RegistrationError } = require('./auth/registration');
@@ -471,7 +472,9 @@ async function buildServer(options = {}) {
     });
 
     const TRAINING_COLUMNS =
-      'id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes, location, feedback_rpe, feedback_notas, completed, has_smartwatch, feedback_shoe, feedback_shoe_id, feedback_hr_source, feedback_weather, feedback_terrain, feedback_breathing, feedback_muscle, feedback_energy, feedback_has_pain, feedback_pain, fit_duration, fit_distance, fit_avg_pace, fit_avg_hr, fit_max_hr, fit_elevation_gain, fit_calories, fit_summary_json, result_data_source';
+      `id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes, location, feedback_rpe, feedback_notas, completed, has_smartwatch,
+       COALESCE((SELECT TRIM(s.brand || ' ' || s.model) FROM shoes s WHERE s.id = feedback_shoe_id), feedback_shoe) AS feedback_shoe,
+       feedback_shoe_id, feedback_hr_source, feedback_weather, feedback_terrain, feedback_breathing, feedback_muscle, feedback_energy, feedback_has_pain, feedback_pain, fit_duration, fit_distance, fit_avg_pace, fit_avg_hr, fit_max_hr, fit_elevation_gain, fit_calories, fit_summary_json, result_data_source`;
 
     const findTraining = db.prepare(
       `SELECT ${TRAINING_COLUMNS} FROM trainings WHERE id = ? AND user_id = ?`
@@ -528,6 +531,10 @@ async function buildServer(options = {}) {
           const shoe = resolveOwnedShoe(db, request.user.id, body.feedback_shoe_id);
           updates.feedback_shoe_id = shoe?.id ?? null;
           updates.feedback_shoe = shoe ? `${shoe.brand} ${shoe.model}`.trim() : null;
+        } else if (body.feedback_shoe !== undefined) {
+          const shoe = resolveOwnedShoeLabel(db, request.user.id, body.feedback_shoe);
+          updates.feedback_shoe_id = shoe?.id ?? null;
+          updates.feedback_shoe = shoe ? `${shoe.brand} ${shoe.model}`.trim() : null;
         }
       } catch (error) {
         return reply.code(error.status).send({ error: error.message });
@@ -570,7 +577,6 @@ async function buildServer(options = {}) {
       }
 
       const FEEDBACK_TEXT_FIELDS = [
-        'feedback_shoe',
         'feedback_hr_source',
         'feedback_weather',
         'feedback_terrain',

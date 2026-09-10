@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS shoes (
   brand          TEXT    NOT NULL,
   model          TEXT    NOT NULL,
   mileage        REAL    NOT NULL DEFAULT 0.0,
+  base_mileage   REAL    NOT NULL DEFAULT 0.0,
   target_mileage REAL,
   status         TEXT    NOT NULL DEFAULT 'active',
   created_at     TEXT    NOT NULL DEFAULT (datetime('now')),
@@ -169,15 +170,17 @@ function migrateDatabase(db) {
     db.exec('ALTER TABLE trainings ADD COLUMN location TEXT');
   }
 
-  // Link a legacy label only when it identifies exactly one shoe owned by the
-  // same user. Ambiguous labels remain historical text and are never guessed.
-  // The migration marker makes the production mileage repair safe to retry.
+  // Link legacy labels without changing the authoritative mileage users have
+  // already entered. base_mileage separates that baseline from derived runs.
   db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
     name TEXT PRIMARY KEY,
     applied_at TEXT NOT NULL DEFAULT (datetime('now'))
   )`);
+  if (hasShoesTable && !db.pragma('table_info(shoes)').some((column) => column.name === 'base_mileage')) {
+    db.exec('ALTER TABLE shoes ADD COLUMN base_mileage REAL NOT NULL DEFAULT 0.0');
+  }
   const shoeColumns = db.pragma('table_info(shoes)').map((column) => column.name);
-  const canRepairShoes = ['id', 'user_id', 'brand', 'model', 'mileage', 'updated_at']
+  const canRepairShoes = ['id', 'user_id', 'brand', 'model', 'mileage', 'base_mileage', 'updated_at']
     .every((name) => shoeColumns.includes(name));
   const repair = db.transaction(() => {
     const marker = '2026-09-shoe-mileage-accounting-v1';
@@ -196,7 +199,7 @@ function migrateDatabase(db) {
                      AND TRIM(s.brand || ' ' || s.model) = TRIM(trainings.feedback_shoe));
 
       UPDATE shoes
-         SET mileage = mileage + COALESCE((
+         SET base_mileage = mileage - COALESCE((
            SELECT SUM(CASE WHEN t.completed = 1 AND t.fit_distance > 0
                            THEN t.fit_distance ELSE 0 END)
              FROM trainings t WHERE t.feedback_shoe_id = shoes.id

@@ -49,4 +49,17 @@ function resolveOwnedShoe(db, userId, shoeId) {
   return shoe;
 }
 
-module.exports = { ShoeMileageError, contribution, reconcileShoeMileage, resolveOwnedShoe };
+function resolveOwnedShoeLabel(db, userId, label) {
+  if (label === null || (typeof label === 'string' && label.trim() === '')) return null;
+  if (typeof label !== 'string') throw new ShoeMileageError('feedback_shoe must be a string.');
+  const matches = db.prepare(
+    `SELECT id, brand, model FROM shoes
+      WHERE user_id = ? AND TRIM(brand || ' ' || model) = TRIM(?)`
+  ).all(userId, label);
+  if (matches.length !== 1) {
+    throw new ShoeMileageError('feedback_shoe must identify exactly one owned shoe.');
+  }
+  return matches[0];
+}
+
+module.exports = { ShoeMileageError, contribution, reconcileShoeMileage, resolveOwnedShoe, resolveOwnedShoeLabel };

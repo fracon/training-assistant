@@ -71,9 +71,9 @@ function createShoe(db, userId, body) {
   const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
 
   db.prepare(
-    `INSERT INTO shoes (id, user_id, brand, model, mileage, target_mileage, status, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`
-  ).run(id, userId, input.brand, input.model, input.mileage, input.target_mileage, input.status);
+    `INSERT INTO shoes (id, user_id, brand, model, mileage, base_mileage, target_mileage, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`
+  ).run(id, userId, input.brand, input.model, input.mileage, input.mileage, input.target_mileage, input.status);
 
   return db.prepare('SELECT * FROM shoes WHERE id = ?').get(id);
 }
@@ -110,6 +110,7 @@ function updateShoe(db, id, userId, updates) {
     if (typeof mileage !== 'number' || Number.isNaN(mileage) || mileage < 0) {
       throw new ShoeError('mileage must be a non-negative number.', 400);
     }
+    fields.base_mileage = Number(existing.base_mileage) + mileage - Number(existing.mileage);
     fields.mileage = mileage;
   }
   if (updates.target_mileage !== undefined) {
