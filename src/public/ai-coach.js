@@ -72,7 +72,7 @@ INSTRUÇÕES PARA MONTAR A SEMANA
 6. Nos treinos de qualidade, especifique claramente: aquecimento; quantidade e duração dos blocos; recuperação; intensidade/FC/RPE; desaquecimento.
 7. Nos longos, especifique claramente cada parte do treino. Caso exista bloco controlado/progressivo, deixe explícito que ele deve ser realizado por esforço e indique o RPE esperado.
 8. Considere que meu percurso habitual possui bastante subida. Não determine que eu persiga pace nas subidas. FC pode subir significativamente nesses trechos; considere principalmente esforço e respiração.
-9. Considere temperatura e condições meteorológicas. Pesquise a previsão para Fânzeres, Gondomar, Portugal, especificamente no horário aproximado do treino: treinos durante a semana: aproximadamente 12h; longo de domingo: entre 8h e 9h.
+9. Considere temperatura e condições meteorológicas. Para cada treino, pesquise a previsão usando a localidade informada para aquele dia no bloco de disponibilidade e o horário/período aproximado da sessão: treinos durante a semana: aproximadamente 12h; longo de domingo: entre 8h e 9h. Use a localidade habitual somente como fallback quando o dia não tiver uma localidade própria; se nenhuma localidade válida existir, não invente uma.
 10. A previsão deve corresponder ao horário do treino, e não simplesmente à mínima/máxima diária.
 11. Se houver previsão de calor forte, adapte o treino quando necessário e deixe isso explícito nas observações. Não prescreva intensidade inadequada apenas para manter o planejamento original.
 12. Escolha o tênis mais apropriado para cada sessão considerando os tênis que tenho disponíveis, o tipo de treino e nosso histórico recente com cada um.
@@ -82,7 +82,7 @@ INSTRUÇÕES PARA MONTAR A SEMANA
 
 FORMATO DA PLANILHA
 
-Mantenha EXATAMENTE o formato de tabela que já utilizamos, adicionando apenas "Data" como a PRIMEIRA coluna.
+Use exatamente o formato de 12 colunas definido abaixo.
 As colunas devem ser, nesta ordem: Data, Dia, Período, Tipo, Treino, Detalhes, FC alvo, RPE, Tênis, Localização, Previsão do tempo, Observações.
 
 Exemplo estrutural:
@@ -165,7 +165,7 @@ INSTRUCTIONS FOR PLANNING THE WEEK
 6. For quality workouts, clearly specify: warm-up; number and duration of blocks; recovery; intensity/HR/RPE; cool-down.
 7. For long runs, clearly specify each part of the workout. If there is a controlled/progressive block, make it explicit that it should be done by effort and indicate the expected RPE.
 8. Consider that my usual route has plenty of hills. Do not dictate that I chase pace on uphills. HR may rise significantly in these sections; consider effort and breathing primarily.
-9. Consider temperature and weather conditions. Check the forecast for Fânzeres, Gondomar, Portugal, specifically around the workout time: weekday runs: approximately 12 PM; Sunday long run: between 8 AM and 9 AM.
+9. Consider temperature and weather conditions. For each workout, check the forecast using the location provided for that day in the availability block and the session's approximate time/period: weekday runs around 12 PM; Sunday long run between 8 AM and 9 AM. Use the usual location only as a fallback when that day has no specific location; if no valid location exists, do not invent one.
 10. The forecast must match the workout time, not just the daily min/max.
 11. If strong heat is forecasted, adapt the workout when necessary and make this explicit in the notes. Do not prescribe inappropriate intensity just to maintain the original plan.
 12. Choose the most appropriate shoe for each session considering the shoes I have available, the type of workout, and our recent history with each.
@@ -175,7 +175,7 @@ INSTRUCTIONS FOR PLANNING THE WEEK
 
 SPREADSHEET FORMAT
 
-Keep EXACTLY the table format we already use, adding only "Data" (Date) as the FIRST column.
+Use exactly the 12-column format defined below.
 The columns must be, in this order: Date, Day, Period, Type, Workout, Details, Target HR, RPE, Shoe, Location, Weather Forecast, Notes.
 
 Structural example:

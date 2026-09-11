@@ -152,7 +152,9 @@ The AI Coach prompt generator reads the active preferences when the prompt is
 generated. It converts previous-week distance totals, formats shoe and workout
 metrics in the selected unit, and inserts localized instructions and weather
 examples (for example, `23–24 °C` or `73–75 °F`) in the active Portuguese or
-English template.
+English template. Weather guidance uses each day's supplied location and
+session time, falling back to the usual location only when that day has no
+specific location; it has no mandatory geographic default.
 
 ### Excel Training Import
 

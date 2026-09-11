@@ -135,7 +135,12 @@ test('the prompt template keeps the required Portuguese structure', () => {
   assert.match(PROMPT_TEMPLATE, /INSTRUÇÕES PARA MONTAR A SEMANA/);
   assert.match(PROMPT_TEMPLATE, /FORMATO DA PLANILHA/);
   assert.match(PROMPT_TEMPLATE, /ARQUIVO EXCEL/);
-  assert.match(PROMPT_TEMPLATE, /Fânzeres, Gondomar, Portugal/);
+  assert.doesNotMatch(PROMPT_TEMPLATE, /Fânzeres, Gondomar, Portugal/);
+  assert.match(PROMPT_TEMPLATE, /formato de 12 colunas definido abaixo/);
+  assert.match(PROMPT_TEMPLATE, /localidade informada para aquele dia/);
+  assert.match(PROMPT_TEMPLATE, /localidade habitual somente como fallback/);
+  assert.match(PROMPT_TEMPLATE, /se nenhuma localidade válida existir, não invente uma/);
+  assert.doesNotMatch(PROMPT_TEMPLATE, /adicionando apenas ["“]Data["”]?/);
   assert.match(
     PROMPT_TEMPLATE,
     /\| Data \| Dia \| Período \| Tipo \| Treino \| Detalhes \| FC alvo \| RPE \| Tênis \| Localização \| Previsão do tempo \| Observações \|/
@@ -723,7 +728,12 @@ test('both templates carry the identical placeholder contract', () => {
   assert.match(PROMPT_TEMPLATE_EN, /INSTRUCTIONS FOR PLANNING THE WEEK/);
   assert.match(PROMPT_TEMPLATE_EN, /SPREADSHEET FORMAT/);
   assert.match(PROMPT_TEMPLATE_EN, /EXCEL FILE/);
-  assert.match(PROMPT_TEMPLATE_EN, /Fânzeres, Gondomar, Portugal/);
+  assert.doesNotMatch(PROMPT_TEMPLATE_EN, /Fânzeres, Gondomar, Portugal/);
+  assert.match(PROMPT_TEMPLATE_EN, /exactly the 12-column format defined below/);
+  assert.match(PROMPT_TEMPLATE_EN, /location provided for that day/);
+  assert.match(PROMPT_TEMPLATE_EN, /usual location only as a fallback/);
+  assert.match(PROMPT_TEMPLATE_EN, /if no valid location exists, do not invent one/);
+  assert.doesNotMatch(PROMPT_TEMPLATE_EN, /adding only ["“]Data["”]?/);
   assert.match(
     PROMPT_TEMPLATE_EN,
     /\| Date \| Day \| Period \| Type \| Workout \| Details \| Target HR \| RPE \| Shoe \| Location \| Weather Forecast \| Notes \|/

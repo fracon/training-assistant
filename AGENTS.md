@@ -10,7 +10,7 @@
 - **Deployment:** Self-hosted on ZimaOS via Docker Compose.
 - **CI/CD:** Automated via Self-Hosted GitHub Runner pushing to GitHub Container Registry (GHCR).
 - **Networking:** Exposed securely via Cloudflare Zero Trust Tunnels (HTTP on port 8081).
-- **Application version:** `0.9.1` (active development; see the versioning Golden Rule below).
+- **Application version:** `0.9.4` (active development; see the versioning Golden Rule below).
 
 ## ✅ Current Implementation Status — `main`
 
@@ -187,7 +187,7 @@ Whenever starting the development of a new feature, you MUST follow this strict 
     - A **"Generate Prompt"** button that replaces the placeholders in the template and renders the final text in a copyable block with a **"Copy to Clipboard"** action (with success feedback).
   - **The Prompt Template Requirement (CRITICAL):**
     - The exact Portuguese prompt template provided by the user MUST be strictly used verbatim — no rewriting, translation, or "improvements" to its wording.
-    - The template contains specific personal rules: Fânzeres weather context, RPE progression rules, shoe rotation, and a strict Excel-style output format for the weekly plan.
+    - The template contains RPE progression rules, shoe rotation, daily-location weather guidance with a usual-location fallback, and a strict 12-column Excel-style output format for the weekly plan.
     - Schedule placeholders are replaced at generation time: `{{DATA_DA_SEGUNDA}}` (Target Date), the seven `{{DISP_…}}` availability fields, and `{{CONTEXTO_OPCIONAL}}` (optional notes). The cycle context and shoe block use the same localized replacement pass.
   - **i18n Coverage:** all UI chrome (labels, buttons, hints) must be translatable via `src/public/locales/en.json` / `pt.json`. Both prompt templates are embedded verbatim: Portuguese (`pt-BR`, default fallback) and English (`en-US`); the active UI language selects which one is generated. Placeholder names (`{{DATA_DA_SEGUNDA}}`, per-day `{{DISP_…}}`, `{{CONTEXTO_OPCIONAL}}`) stay identical in both templates.
   - **Dynamic cycle context binding [✅ IMPLEMENTED, commit `445e542`]:** on generation, `ai-coach.js` fetches the active cycle and the preceding week's calendar entries through the shared API module. It normalizes cycle aliases (`objective`/`primary_goal`), derives week progress and days remaining when needed, and injects completed-workout count, distance (km), and time (minutes) into the selected Portuguese or English prompt. This late-bound fetch keeps the prompt synchronized with application state and respects the i18n lifecycle rules.
