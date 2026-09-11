@@ -71,9 +71,9 @@ function createShoe(db, userId, body) {
   const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
 
   db.prepare(
-    `INSERT INTO shoes (id, user_id, brand, model, mileage, target_mileage, status, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`
-  ).run(id, userId, input.brand, input.model, input.mileage, input.target_mileage, input.status);
+    `INSERT INTO shoes (id, user_id, brand, model, mileage, base_mileage, target_mileage, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`
+  ).run(id, userId, input.brand, input.model, input.mileage, input.mileage, input.target_mileage, input.status);
 
   return db.prepare('SELECT * FROM shoes WHERE id = ?').get(id);
 }
@@ -110,6 +110,7 @@ function updateShoe(db, id, userId, updates) {
     if (typeof mileage !== 'number' || Number.isNaN(mileage) || mileage < 0) {
       throw new ShoeError('mileage must be a non-negative number.', 400);
     }
+    fields.base_mileage = mileage;
     fields.mileage = mileage;
   }
   if (updates.target_mileage !== undefined) {
@@ -137,9 +138,19 @@ function updateShoe(db, id, userId, updates) {
   }
 
   const assignments = keys.map((k) => `${k} = ?`).join(', ');
-  db.prepare(
-    `UPDATE shoes SET ${assignments}, updated_at = datetime('now') WHERE id = ? AND user_id = ?`
-  ).run(...keys.map((k) => fields[k]), id, userId);
+  const save = db.transaction(() => {
+    // Editing the displayed total is an authoritative reset. Contributions
+    // already represented by that value become history, so later edits cannot
+    // subtract them and the new baseline can never be negative.
+    if (fields.mileage !== undefined) {
+      db.prepare('DELETE FROM training_shoe_mileage WHERE shoe_id = ? AND user_id = ?')
+        .run(id, userId);
+    }
+    db.prepare(
+      `UPDATE shoes SET ${assignments}, updated_at = datetime('now') WHERE id = ? AND user_id = ?`
+    ).run(...keys.map((k) => fields[k]), id, userId);
+  });
+  save();
 
   return getShoeById(db, id, userId);
 }

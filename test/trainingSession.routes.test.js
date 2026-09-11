@@ -204,6 +204,7 @@ test('GET /api/trainings/:id returns the planned session with its feedback state
   assert.equal(training.completed, 0);
   assert.equal(training.has_smartwatch, 1, 'smartwatch defaults to yes');
   assert.equal(training.feedback_shoe, null);
+  assert.equal(training.feedback_shoe_id, null);
   assert.equal(training.feedback_hr_source, null);
   assert.equal(training.feedback_weather, null);
   assert.equal(training.feedback_terrain, null);
@@ -212,6 +213,76 @@ test('GET /api/trainings/:id returns the planned session with its feedback state
   assert.equal(training.feedback_energy, null);
   assert.equal(training.feedback_has_pain, null);
   assert.equal(training.feedback_pain, null);
+});
+
+test('shoe mileage follows feedback, manual distance edits, completion, swaps and deletion', async () => {
+  const { db, app, cookie, userId } = await setup();
+  const id = seedTraining(db, { user_id: userId });
+  db.prepare(`INSERT INTO shoes (id, user_id, brand, model, mileage, status)
+              VALUES ('shoe-a', ?, 'Acme', 'A', 3, 'active'),
+                     ('shoe-b', ?, 'Acme', 'B', 7, 'retired')`).run(userId, userId);
+
+  let response = await app.inject({ method: 'PATCH', url: `/api/trainings/${id}`,
+    headers: { cookie }, payload: { feedback_shoe_id: 'shoe-a' } });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.json().training.feedback_shoe, 'Acme A');
+  assert.equal(response.json().training.feedback_shoe_id, 'shoe-a');
+
+  response = await app.inject({ method: 'PUT', url: `/api/trainings/${id}/manual-results`,
+    headers: { cookie }, payload: { distance_km: 10, duration_seconds: 3600 } });
+  assert.equal(response.statusCode, 200);
+  assert.equal(db.prepare("SELECT mileage FROM shoes WHERE id='shoe-a'").get().mileage, 13);
+
+  await app.inject({ method: 'PUT', url: `/api/trainings/${id}/manual-results`,
+    headers: { cookie }, payload: { distance_km: 12, duration_seconds: 4000 } });
+  assert.equal(db.prepare("SELECT mileage FROM shoes WHERE id='shoe-a'").get().mileage, 15);
+  await app.inject({ method: 'PATCH', url: `/api/trainings/${id}`,
+    headers: { cookie }, payload: { completed: false } });
+  assert.equal(db.prepare("SELECT mileage FROM shoes WHERE id='shoe-a'").get().mileage, 3);
+  await app.inject({ method: 'PATCH', url: `/api/trainings/${id}`,
+    headers: { cookie }, payload: { completed: true, feedback_shoe_id: 'shoe-b' } });
+  assert.equal(db.prepare("SELECT mileage FROM shoes WHERE id='shoe-a'").get().mileage, 3);
+  assert.equal(db.prepare("SELECT mileage FROM shoes WHERE id='shoe-b'").get().mileage, 19);
+  await app.inject({ method: 'PATCH', url: `/api/trainings/${id}`,
+    headers: { cookie }, payload: { feedback_shoe_id: null } });
+  assert.equal(db.prepare("SELECT mileage FROM shoes WHERE id='shoe-b'").get().mileage, 7);
+  await app.inject({ method: 'PATCH', url: `/api/trainings/${id}`,
+    headers: { cookie }, payload: { feedback_shoe_id: 'shoe-b' } });
+  await app.inject({ method: 'DELETE', url: `/api/trainings/${id}`, headers: { cookie } });
+  assert.equal(db.prepare("SELECT mileage FROM shoes WHERE id='shoe-b'").get().mileage, 7);
+});
+
+test('feedback shoe IDs are typed and owner isolated', async () => {
+  const { db, app, cookie, userId } = await setup();
+  const id = seedTraining(db, { user_id: userId, completed: 1 });
+  db.prepare("INSERT INTO users (email, password_hash) VALUES ('foreign-shoe@test', 'x')").run();
+  const foreignUser = db.prepare("SELECT id FROM users WHERE email='foreign-shoe@test'").get().id;
+  db.prepare("INSERT INTO shoes (id, user_id, brand, model, mileage, status) VALUES ('foreign-shoe', ?, 'X', 'Y', 9, 'active')").run(foreignUser);
+  for (const feedback_shoe_id of [42, 'foreign-shoe', 'missing']) {
+    const response = await app.inject({ method: 'PATCH', url: `/api/trainings/${id}`,
+      headers: { cookie }, payload: { feedback_shoe_id } });
+    assert.equal(response.statusCode, 400);
+  }
+  assert.equal(db.prepare("SELECT mileage FROM shoes WHERE id='foreign-shoe'").get().mileage, 9);
+});
+
+test('legacy label writes resolve uniquely, clear explicitly, and shoe renames drive current display', async () => {
+  const { db, app, cookie, userId } = await setup();
+  const id = seedTraining(db, { user_id: userId });
+  db.prepare("UPDATE trainings SET feedback_shoe='Historical Label' WHERE id=?").run(id);
+  db.prepare("INSERT INTO shoes (id, user_id, brand, model, mileage, status) VALUES ('legacy', ?, 'Acme', 'One', 20, 'active')").run(userId);
+  let response = await app.inject({ method: 'PATCH', url: `/api/trainings/${id}`, headers: { cookie },
+    payload: { feedback_notas: 'preserve' } });
+  assert.equal(response.json().training.feedback_shoe, 'Historical Label');
+  response = await app.inject({ method: 'PATCH', url: `/api/trainings/${id}`, headers: { cookie },
+    payload: { feedback_shoe: 'Acme One' } });
+  assert.equal(response.json().training.feedback_shoe_id, 'legacy');
+  db.prepare("UPDATE shoes SET brand='New', model='Name' WHERE id='legacy'").run();
+  response = await app.inject({ method: 'GET', url: `/api/trainings/${id}`, headers: { cookie } });
+  assert.equal(response.json().training.feedback_shoe, 'New Name');
+  response = await app.inject({ method: 'PATCH', url: `/api/trainings/${id}`, headers: { cookie },
+    payload: { feedback_shoe: '' } });
+  assert.equal(response.json().training.feedback_shoe, null);
 });
 
 test('PATCH /api/trainings/:id requires authentication', async () => {
@@ -360,7 +431,7 @@ test('PATCH /api/trainings/:id answers 404 when the session does not exist', asy
 
 test('PATCH /api/trainings/:id rejects non-string feedback text fields', async () => {
   const { app, cookie } = await setup();
-  const response = await app.inject({
+  let response = await app.inject({
     method: 'PATCH',
     url: '/api/trainings/1',
     headers: { cookie },
@@ -368,6 +439,10 @@ test('PATCH /api/trainings/:id rejects non-string feedback text fields', async (
   });
   assert.equal(response.statusCode, 400);
   assert.deepEqual(response.json(), { error: 'feedback_shoe must be a string.' });
+  response = await app.inject({ method: 'PATCH', url: '/api/trainings/1', headers: { cookie },
+    payload: { feedback_weather: 5 } });
+  assert.equal(response.statusCode, 400);
+  assert.deepEqual(response.json(), { error: 'feedback_weather must be a string.' });
 });
 
 test('PATCH /api/trainings/:id rejects non-boolean smartwatch flags', async () => {
@@ -528,6 +603,7 @@ test('PATCH /api/trainings/:id/reschedule only ever rewrites the date column', a
 test('PATCH /api/trainings/:id saves trimmed notes and persists every field', async () => {
   const { db, app, cookie, userId } = await setup();
   const id = seedTraining(db, { user_id: userId });
+  db.prepare("INSERT INTO shoes (id, user_id, brand, model, mileage, status) VALUES ('nimbus', ?, 'Nimbus', '26', 0, 'active')").run(userId);
 
   const response = await app.inject({
     method: 'PATCH',

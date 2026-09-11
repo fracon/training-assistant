@@ -8,6 +8,11 @@ const fastifyCookie = require('@fastify/cookie');
 const { parseFitFile, normalizeCalories } = require('./fitParser');
 const { FitUploadError, resolveFitBuffer } = require('./fitUpload');
 const { normalizeManualResults } = require('./manualResults');
+const {
+  reconcileShoeMileage,
+  resolveOwnedShoe,
+  resolveOwnedShoeLabel,
+} = require('./shoeMileage');
 const { generateMarkdown } = require('./markdownGenerator');
 const { registerUser, RegistrationError } = require('./auth/registration');
 const { loginUser, LoginError } = require('./auth/login');
@@ -467,7 +472,9 @@ async function buildServer(options = {}) {
     });
 
     const TRAINING_COLUMNS =
-      'id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes, location, feedback_rpe, feedback_notas, completed, has_smartwatch, feedback_shoe, feedback_hr_source, feedback_weather, feedback_terrain, feedback_breathing, feedback_muscle, feedback_energy, feedback_has_pain, feedback_pain, fit_duration, fit_distance, fit_avg_pace, fit_avg_hr, fit_max_hr, fit_elevation_gain, fit_calories, fit_summary_json, result_data_source';
+      `id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes, location, feedback_rpe, feedback_notas, completed, has_smartwatch,
+       COALESCE((SELECT TRIM(s.brand || ' ' || s.model) FROM shoes s WHERE s.id = feedback_shoe_id), feedback_shoe) AS feedback_shoe,
+       feedback_shoe_id, feedback_hr_source, feedback_weather, feedback_terrain, feedback_breathing, feedback_muscle, feedback_energy, feedback_has_pain, feedback_pain, fit_duration, fit_distance, fit_avg_pace, fit_avg_hr, fit_max_hr, fit_elevation_gain, fit_calories, fit_summary_json, result_data_source`;
 
     const findTraining = db.prepare(
       `SELECT ${TRAINING_COLUMNS} FROM trainings WHERE id = ? AND user_id = ?`
@@ -519,6 +526,20 @@ async function buildServer(options = {}) {
       const body = request.body ?? {};
       const updates = {};
 
+      try {
+        if (body.feedback_shoe_id !== undefined) {
+          const shoe = resolveOwnedShoe(db, request.user.id, body.feedback_shoe_id);
+          updates.feedback_shoe_id = shoe?.id ?? null;
+          updates.feedback_shoe = shoe ? `${shoe.brand} ${shoe.model}`.trim() : null;
+        } else if (body.feedback_shoe !== undefined) {
+          const shoe = resolveOwnedShoeLabel(db, request.user.id, body.feedback_shoe);
+          updates.feedback_shoe_id = shoe?.id ?? null;
+          updates.feedback_shoe = shoe ? `${shoe.brand} ${shoe.model}`.trim() : null;
+        }
+      } catch (error) {
+        return reply.code(error.status).send({ error: error.message });
+      }
+
       if (body.feedback_rpe !== undefined) {
         const parsed = parseRpe(body.feedback_rpe);
         if (!parsed.ok) {
@@ -556,7 +577,6 @@ async function buildServer(options = {}) {
       }
 
       const FEEDBACK_TEXT_FIELDS = [
-        'feedback_shoe',
         'feedback_hr_source',
         'feedback_weather',
         'feedback_terrain',
@@ -585,9 +605,15 @@ async function buildServer(options = {}) {
       }
 
       const assignments = fields.map((field) => `${field} = ?`).join(', ');
-      db.prepare(
-        `UPDATE trainings SET ${assignments} WHERE id = ? AND user_id = ?`
-      ).run(...fields.map((field) => updates[field]), id, request.user.id);
+      const saveFeedback = db.transaction(() => {
+        const before = findTraining.get(id, request.user.id);
+        db.prepare(
+          `UPDATE trainings SET ${assignments} WHERE id = ? AND user_id = ?`
+        ).run(...fields.map((field) => updates[field]), id, request.user.id);
+        const after = findTraining.get(id, request.user.id);
+        reconcileShoeMileage(db, request.user.id, before, after);
+      });
+      saveFeedback();
 
       return { training: findTraining.get(id, request.user.id) };
     });
@@ -640,6 +666,7 @@ async function buildServer(options = {}) {
         return reply.code(409).send({ error: 'Confirm FIT replacement before saving manual results.' });
       }
       const saveManual = db.transaction((values) => {
+        const before = findTraining.get(id, request.user.id);
         db.prepare(
           `UPDATE trainings SET fit_duration = ?, fit_distance = ?, fit_avg_pace = ?,
             fit_avg_hr = ?, fit_max_hr = ?, fit_elevation_gain = ?, fit_calories = ?,
@@ -649,6 +676,7 @@ async function buildServer(options = {}) {
           values.fit_duration, values.distance_km, values.fit_avg_pace, values.avg_hr,
           values.max_hr, values.elevation_gain_m, values.calories, id, request.user.id
         );
+        reconcileShoeMileage(db, request.user.id, before, findTraining.get(id, request.user.id));
       });
       saveManual(normalized.value);
       return { training: findTraining.get(id, request.user.id) };
@@ -724,6 +752,7 @@ async function buildServer(options = {}) {
         });
 
         const saveFit = db.transaction(() => {
+          const before = findTraining.get(id, request.user.id);
           db.prepare(
             `UPDATE trainings SET
             fit_duration = ?,
@@ -749,6 +778,7 @@ async function buildServer(options = {}) {
             id,
             request.user.id
           );
+          reconcileShoeMileage(db, request.user.id, before, findTraining.get(id, request.user.id));
         });
         saveFit();
 
@@ -787,10 +817,12 @@ async function buildServer(options = {}) {
         return reply.code(404).send({ error: 'Training not found.' });
       }
 
-      db.prepare('DELETE FROM trainings WHERE id = ? AND user_id = ?').run(
-        id,
-        request.user.id
-      );
+      const removeTraining = db.transaction(() => {
+        const before = findTraining.get(id, request.user.id);
+        reconcileShoeMileage(db, request.user.id, before, null);
+        db.prepare('DELETE FROM trainings WHERE id = ? AND user_id = ?').run(id, request.user.id);
+      });
+      removeTraining();
 
       return { status: 'ok' };
     });

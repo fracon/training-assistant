@@ -171,6 +171,34 @@ export async function persistManualResultsIfNeeded({
   }
 }
 
+// Both terminal actions persist the complete form before doing anything
+// action-specific. The caller supplies the current state and the API hooks so
+// the ordering remains explicit and easy to test.
+export async function persistCurrentTrainingState({
+  collectState,
+  persistManual,
+  saveFeedback,
+  applyTraining,
+}) {
+  const collected = collectState();
+  if (collected?.status === 'invalid') return collected;
+  let manualResult;
+  try {
+    manualResult = await persistManual();
+  } catch (error) {
+    return { status: 'error', error, stage: 'result' };
+  }
+  if (['invalid', 'cancelled', 'error'].includes(manualResult.status)) return manualResult;
+  try {
+    const response = await saveFeedback(collected.payload);
+    if (!response?.training) return { status: 'error', error: new Error('Invalid training response.') };
+    applyTraining(response.training);
+    return { status: 'saved', training: response.training };
+  } catch (error) {
+    return { status: 'error', error, stage: 'feedback' };
+  }
+}
+
 // Local weekday name ('YYYY-MM-DD' parsed as a local date, never UTC).
 export function weekdayLabel(iso, language) {
   return formatWeekday(iso, language);
@@ -341,6 +369,45 @@ export function painPromptText(hasPainValue, description, translate) {
   }
   const trimmed = String(description ?? '').trim();
   return trimmed !== '' ? trimmed : translate('feedback.yesWithoutDescription');
+}
+
+// Converts the persisted training row into the prompt's feedback shape. The
+// row is authoritative after a save; only locale-derived labels and the
+// temporary attachment indicator come from the presentation context.
+export function buildCanonicalPromptForm(training = {}, {
+  language = 'pt-BR',
+  messages = {},
+  fitAttached = false,
+} = {}) {
+  const t = (key) => translate(messages, key);
+  const hrKey = HR_SOURCE_LABEL_KEYS[training.feedback_hr_source];
+  const terrainKey = TERRAIN_LABEL_KEYS[training.feedback_terrain];
+  const breathingKey = BREATHING_LABEL_KEYS[training.feedback_breathing];
+  const muscleKey = MUSCLE_LABEL_KEYS[training.feedback_muscle];
+  const energyKey = ENERGY_LABEL_KEYS[training.feedback_energy];
+  const hasPain = training.feedback_has_pain === 'yes' ||
+    (training.feedback_has_pain == null && Boolean(training.feedback_pain));
+  return {
+    feedback_rpe: training.feedback_rpe ?? null,
+    feedback_notas: training.feedback_notas ?? '',
+    feedback_shoe: training.feedback_shoe ?? '',
+    feedback_hr_source: training.feedback_hr_source ?? null,
+    hr_source_label: hrKey ? t(hrKey) : '',
+    feedback_weather: training.feedback_weather ?? '',
+    feedback_terrain: training.feedback_terrain ?? null,
+    terrain_label: terrainKey ? t(terrainKey) : '',
+    feedback_breathing: training.feedback_breathing ?? null,
+    breathing_label: breathingKey ? t(breathingKey) : '',
+    feedback_muscle: training.feedback_muscle ?? null,
+    muscle_label: muscleKey ? t(muscleKey) : '',
+    feedback_energy: training.feedback_energy ?? null,
+    energy_label: energyKey ? t(energyKey) : '',
+    feedback_has_pain: hasPain ? 'yes' : 'no',
+    feedback_pain: training.feedback_pain ?? '',
+    pain_description: painPromptText(hasPain ? 'yes' : 'no', training.feedback_pain, t),
+    language,
+    fitAttached,
+  };
 }
 
 // Maps the loaded session row plus the current form state onto the shared
@@ -711,11 +778,29 @@ async function initTrainingResult() {
     for (const shoe of shoes) {
       const option = document.createElement('option');
       const label = shoe.brand && shoe.model ? `${shoe.brand} ${shoe.model}` : shoe.model || shoe.brand || shoe.id;
-      option.value = label;
+      option.value = shoe.id;
       option.textContent = label;
       shoeSelect.appendChild(option);
     }
+    if (training.feedback_shoe_id && !shoes.some((shoe) => shoe.id === training.feedback_shoe_id)) {
+      const persisted = document.createElement('option');
+      persisted.value = training.feedback_shoe_id;
+      persisted.textContent = training.feedback_shoe || training.feedback_shoe_id;
+      persisted.disabled = true;
+      persisted.selected = true;
+      shoeSelect.appendChild(persisted);
+    }
+    if (!training.feedback_shoe_id && training.feedback_shoe) {
+      const legacy = document.createElement('option');
+      legacy.value = '';
+      legacy.textContent = training.feedback_shoe;
+      legacy.disabled = true;
+      legacy.selected = true;
+      shoeSelect.appendChild(legacy);
+    }
   };
+  let shoeSelectionChanged = false;
+  shoeSelect.addEventListener('change', () => { shoeSelectionChanged = true; });
 
   // The pain description only exists when pain was reported; hiding it also
   // discards any typed text so stale descriptions never reach the payload.
@@ -812,7 +897,7 @@ async function initTrainingResult() {
     if (savedRadio) savedRadio.checked = true;
   }
   notesInput.value = training.feedback_notas ?? '';
-  shoeSelect.value = training.feedback_shoe ?? '';
+  if (training.feedback_shoe_id) shoeSelect.value = training.feedback_shoe_id;
   weatherInput.value = training.feedback_weather ?? '';
   terrainInput.value = training.feedback_terrain ?? '';
   breathingInput.value = training.feedback_breathing ?? '';
@@ -879,10 +964,12 @@ async function initTrainingResult() {
     const muscleKey = MUSCLE_LABEL_KEYS[muscleInput.value];
     const energyKey = ENERGY_LABEL_KEYS[energyInput.value];
     const hasPainValue = hasPainSelect.value;
-    return {
+    const state = {
       feedback_rpe: normalizeFeedbackRpe(rpeSelector.querySelector('input[type="radio"]:checked')?.value ?? ''),
       feedback_notas: notesInput.value,
-      feedback_shoe: shoeSelect.value,
+      feedback_shoe: shoeSelect.selectedOptions[0]?.textContent === '–'
+        ? ''
+        : shoeSelect.selectedOptions[0]?.textContent ?? training.feedback_shoe ?? '',
       feedback_hr_source: hrValue === '' ? null : hrValue,
       feedback_weather: weatherInput.value,
       feedback_terrain: terrainInput.value === '' ? null : terrainInput.value,
@@ -901,6 +988,8 @@ async function initTrainingResult() {
       language: i18n.language,
       fitAttached: Boolean(fitFileInput.files && fitFileInput.files.length > 0),
     };
+    if (shoeSelectionChanged) state.feedback_shoe_id = shoeSelect.value || null;
+    return state;
   };
 
   const manualInputValues = () => Object.fromEntries(
@@ -924,63 +1013,99 @@ async function initTrainingResult() {
     }),
     applyResponse: applyManualResults,
   });
-  const reportManualPersistence = (result) => {
-    if (result.status === 'invalid') setStatus(t('session.errors.manualValidation'), 'error');
-    if (result.status === 'error') setStatus(result.error?.message || t('session.errors.manualSave'), 'error');
+  const applyCanonicalTraining = (canonical) => {
+    const laps = canonical.result_data_source === 'fit_upload' ? (fitData?.laps || []) : [];
+    training = canonical;
+    fitData = { ...canonical, laps };
+    resultSourceSelect.value = canonical.result_data_source === 'manual' ? 'manual' : 'fit';
+    renderFitData();
+  };
+  const feedbackPayload = (state) => {
+    const {
+      feedback_shoe,
+      hr_source_label,
+      terrain_label,
+      breathing_label,
+      muscle_label,
+      energy_label,
+      pain_description,
+      language,
+      fitAttached,
+      ...payload
+    } = state;
+    if (training.result_data_source === 'manual' || training.result_data_source === 'fit_upload') {
+      payload.completed = true;
+    }
+    return payload;
+  };
+  const persistCurrentState = () => persistCurrentTrainingState({
+    collectState: () => {
+      const state = collectFormState();
+      return Number.isNaN(state.feedback_rpe)
+        ? { status: 'invalid', error: 'rpe' }
+        : { payload: feedbackPayload(state) };
+    },
+    persistManual: persistManualResults,
+    saveFeedback: (payload) => saveTrainingFeedback(id, payload),
+    applyTraining: applyCanonicalTraining,
+  });
+  const reportPersistenceFailure = (result) => {
+    if (result.status === 'invalid') {
+      setStatus(result.error === 'rpe' ? t('session.errors.rpe') : t('session.errors.manualValidation'), 'error');
+    }
+    if (result.status === 'error') {
+      setStatus(result.stage === 'feedback' ? t('session.errors.save') : result.error?.message || t('session.errors.manualSave'), 'error');
+    }
   };
 
   saveBtn.addEventListener('click', async () => {
-    const state = collectFormState();
-    if (Number.isNaN(state.feedback_rpe)) {
-      setStatus(t('session.errors.rpe'), 'error');
-      return;
-    }
     saveBtn.disabled = true;
+    generateBtn.disabled = true;
     saveBtn.textContent = t('session.saving');
     try {
-      const manualResult = await persistManualResults();
-      if (manualResult.status === 'invalid' || manualResult.status === 'cancelled' || manualResult.status === 'error') {
-        reportManualPersistence(manualResult);
+      const result = await persistCurrentState();
+      if (result.status === 'invalid' || result.status === 'cancelled' || result.status === 'error') {
+        reportPersistenceFailure(result);
         return;
       }
-      const {
-        hr_source_label,
-        terrain_label,
-        breathing_label,
-        muscle_label,
-        energy_label,
-        pain_description,
-        language,
-        fitAttached,
-        ...payload
-      } = state;
-      await saveTrainingFeedback(id, payload);
       window.location.href = '/calendar.html';
     } catch {
       setStatus(t('session.errors.save'), 'error');
     } finally {
       saveBtn.disabled = false;
+      generateBtn.disabled = false;
       saveBtn.textContent = t('session.save');
     }
   });
 
   generateBtn.addEventListener('click', async () => {
     generateBtn.disabled = true;
+    saveBtn.disabled = true;
     generateLabel.textContent = t('session.generatingPrompt');
     try {
-      const manualResult = await persistManualResults();
-      if (manualResult.status === 'invalid' || manualResult.status === 'cancelled' || manualResult.status === 'error') {
-        reportManualPersistence(manualResult);
+      const result = await persistCurrentState();
+      if (result.status === 'invalid' || result.status === 'cancelled' || result.status === 'error') {
+        reportPersistenceFailure(result);
         return;
       }
       promptText = buildAnalysisPrompt(
         templateFor(i18n.language),
-        collectPromptValues({ training, form: collectFormState(), fitData, preferences: getUserPreferences() })
+        collectPromptValues({
+          training,
+          form: buildCanonicalPromptForm(training, {
+            language: i18n.language,
+            messages: i18n.messages,
+            fitAttached: Boolean(fitFileInput.files && fitFileInput.files.length > 0),
+          }),
+          fitData,
+          preferences: getUserPreferences(),
+        })
       );
       promptOutput.value = promptText;
       promptSection.hidden = false;
     } finally {
       generateBtn.disabled = false;
+      saveBtn.disabled = false;
       generateLabel.textContent = t('session.generatePrompt');
     }
   });
