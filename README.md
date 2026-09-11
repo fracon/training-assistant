@@ -21,6 +21,14 @@ non-negative baseline equal to the user's existing authoritative total and an
 empty ledger, so ambiguous historical runs are never added or subtracted. The
 durable v2 marker in `schema_migrations` makes this conversion idempotent.
 
+An associated completed workout without a ledger entry is treated as historical:
+direct shoe swaps, distance edits, and deletions leave mileage unchanged rather
+than guessing at a prior contribution. To start accounting, the workout must
+first be detached and later reattached, which creates one reversible ledger
+entry. Legacy shoe labels remain a presentation fallback when loading the
+associated shoe is not possible; FIT, ZIP-extracted FIT, and manual results all
+use canonical `fit_distance` in kilometres.
+
 Every account is protected with server-side sessions, every `.FIT` file is parsed locally on your own machine: no cloud parsing, no telemetry — your training data never leaves your hardware.
 
 ## Why

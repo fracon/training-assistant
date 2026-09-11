@@ -54,10 +54,28 @@ test('an unrecorded historical contribution is never added or subtracted', () =>
   const db = fixture();
   reconcileShoeMileage(db, 1, null, null);
   const historical = { id: 7, completed: 1, feedback_shoe_id: 'a', fit_distance: 10 };
+  reconcileShoeMileage(db, 1, historical, { ...historical, feedback_shoe_id: 'b' });
   reconcileShoeMileage(db, 1, historical, { ...historical, fit_distance: 12 });
   reconcileShoeMileage(db, 1, historical, null);
-  assert.equal(db.prepare("SELECT mileage FROM shoes WHERE id = 'a'").get().mileage, 5);
+  assert.deepEqual(db.prepare('SELECT id, mileage FROM shoes WHERE user_id = 1 ORDER BY id').all(), [
+    { id: 'a', mileage: 5 }, { id: 'b', mileage: 2 },
+  ]);
   assert.deepEqual(db.prepare('SELECT * FROM training_shoe_mileage').all(), []);
+  db.close();
+});
+
+test('a recorded contribution remains user-scoped and never drives mileage below zero', () => {
+  const db = fixture();
+  db.prepare("INSERT INTO trainings (id, user_id, dia, tipo) VALUES (200, 2, '2026-01-05', 'Run')").run();
+  db.prepare("INSERT INTO training_shoe_mileage (training_id, user_id, shoe_id, distance) VALUES (200, 2, 'foreign', 20)").run();
+  db.prepare("UPDATE shoes SET mileage = 0 WHERE id = 'a'").run();
+  const before = { id: 42, completed: 1, feedback_shoe_id: 'a', fit_distance: 10 };
+  db.prepare("INSERT INTO training_shoe_mileage (training_id, user_id, shoe_id, distance) VALUES (42, 1, 'a', 10)").run();
+  reconcileShoeMileage(db, 1, before, null);
+  assert.equal(db.prepare("SELECT mileage FROM shoes WHERE id = 'a'").get().mileage, 0);
+  assert.equal(db.prepare("SELECT mileage FROM shoes WHERE id = 'foreign'").get().mileage, 50);
+  assert.equal(db.prepare("SELECT 1 FROM training_shoe_mileage WHERE training_id = 42").get(), undefined);
+  assert.ok(db.prepare("SELECT 1 FROM training_shoe_mileage WHERE training_id = 200 AND user_id = 2").get());
   db.close();
 });
 

@@ -35,7 +35,7 @@ function reconcileShoeMileage(db, userId, before, after) {
 
   const update = db.prepare(
     `UPDATE shoes
-       SET mileage = mileage + ?, updated_at = datetime('now')
+       SET mileage = MAX(0, mileage + ?), updated_at = datetime('now')
      WHERE id = ? AND user_id = ?`
   );
   for (const [shoeId, delta] of deltas) {
