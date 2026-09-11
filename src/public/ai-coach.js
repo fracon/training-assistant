@@ -463,7 +463,7 @@ export function formatShoesBlock(shoes = [], messages = {}, preferences = {}) {
   return `${title}\n\n${lines.join('\n')}`;
 }
 
-export function buildPrompt({ targetDate, disponibilidade = {}, localizacao = {}, contexto = '', lang = 'pt-BR', shoes = [], messages = {}, cycle = {}, previousWeek = {}, preferences = {} }) {
+export function buildPrompt({ targetDate, disponibilidade = {}, localizacao = {}, baseLocation = '', contexto = '', lang = 'pt-BR', shoes = [], messages = {}, cycle = {}, previousWeek = {}, preferences = {} }) {
   const templateLang = resolveTemplateLang(lang);
   const template = TEMPLATE_BY_LANG[templateLang];
   let prompt = replaceAll(
@@ -475,10 +475,12 @@ export function buildPrompt({ targetDate, disponibilidade = {}, localizacao = {}
     prompt = replaceAll(prompt, token, value);
   }
   const availability = { ...availabilityDefaults(templateLang), ...disponibilidade };
+  const fallbackLocation = String(baseLocation ?? '').trim();
   for (const day of DAY_KEYS) {
     prompt = replaceAll(prompt, PLACEHOLDERS[day], String(availability[day] ?? '').trim());
-    const location = String(localizacao[day] ?? '').trim();
-    prompt = replaceAll(prompt, LOCATION_PLACEHOLDERS[day], location === '' ? '-' : location);
+    const dailyLocation = String(localizacao[day] ?? '').trim();
+    const effectiveLocation = dailyLocation || fallbackLocation || '-';
+    prompt = replaceAll(prompt, LOCATION_PLACEHOLDERS[day], effectiveLocation);
   }
   const notes = String(contexto).trim();
   prompt = replaceAll(prompt, '{{CONTEXTO_OPCIONAL}}', notes === '' ? '-' : notes);
@@ -559,7 +561,7 @@ export function buildDayRowHtml(day, { dayLabel, routine, locationPlaceholder })
   return `<div class="day-row">
   <label for="${DAY_INPUT_IDS[day]}" class="day-label"><span data-i18n="aiCoach.days.${DAY_LOCALE_KEYS[day]}">${dayLabel}</span><span class="required-mark" aria-hidden="true">*</span></label>
   <input type="text" id="${DAY_INPUT_IDS[day]}" value="${routine}" autocomplete="off" required>
-  <input type="text" id="${LOCATION_INPUT_IDS[day]}" data-i18n-placeholder="aiCoach.location" placeholder="${locationPlaceholder}" autocomplete="off" required>
+  <input type="text" id="${LOCATION_INPUT_IDS[day]}" data-i18n-placeholder="aiCoach.location" placeholder="${locationPlaceholder}" autocomplete="off">
 </div>`;
 }
 
@@ -764,6 +766,7 @@ function setupAiCoachPage() {
       targetDate,
       disponibilidade,
       localizacao,
+      baseLocation: baseLocationInput.value,
       contexto: optionalContextInput.value,
       lang: i18n.language,
       shoes,
