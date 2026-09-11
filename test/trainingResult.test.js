@@ -25,6 +25,7 @@ const {
   templateFor,
   buildAnalysisPrompt,
   collectPromptValues,
+  buildCanonicalPromptForm,
   painPromptText,
   copyAnalysisPrompt,
   escapeHtmlText,
@@ -453,6 +454,47 @@ test('collectPromptValues maps planned data, form state and FIT placeholders', (
   assert.equal(values.FEEDBACK, 'Boa sensação');
   assert.equal(values.ANEXAR_SCREENSHOT_GARMIN_OU_INSERIR_DADOS_DE_LAPS_AQUI, '-');
   assert.equal(values.CALORIAS, '-');
+});
+
+test('buildCanonicalPromptForm uses persisted feedback and only presentation context from the UI', () => {
+  const canonical = {
+    ...baseTraining,
+    feedback_rpe: 4,
+    feedback_notas: '  texto normalizado pelo backend  ',
+    feedback_shoe: 'Nimbus Canonical',
+    feedback_shoe_id: 'shoe-canonical',
+    feedback_hr_source: 'chest_strap',
+    feedback_weather: '20 C, céu limpo',
+    feedback_terrain: 'trail',
+    feedback_breathing: 'controlled',
+    feedback_muscle: 'light',
+    feedback_energy: 'surplus',
+    feedback_has_pain: 'no',
+    feedback_pain: null,
+  };
+  const persisted = buildCanonicalPromptForm(canonical, { language: 'pt-BR', messages: pt, fitAttached: false });
+  assert.equal(persisted.feedback_shoe, 'Nimbus Canonical');
+  assert.equal(persisted.feedback_rpe, 4);
+  assert.equal(persisted.feedback_notas, '  texto normalizado pelo backend  ');
+  assert.equal(persisted.feedback_weather, '20 C, céu limpo');
+  assert.equal(persisted.terrain_label, 'Terra/Trilha');
+  assert.equal(persisted.hr_source_label, 'Cinta peitoral');
+  assert.equal(persisted.breathing_label, 'Controlada');
+  assert.equal(persisted.muscle_label, 'Leve');
+  assert.equal(persisted.energy_label, 'Sobrava energia');
+  assert.equal(persisted.pain_description, 'Nenhuma / Sem dor relatada');
+  assert.equal(persisted.language, 'pt-BR');
+});
+
+test('canonical prompt form preserves FIT attachment context and manual no-lap behavior', () => {
+  const canonical = { ...baseTraining, result_data_source: 'fit_upload', feedback_shoe: 'COROS Pace', feedback_has_pain: 'yes', feedback_pain: 'Calf tightness' };
+  const form = buildCanonicalPromptForm(canonical, { language: 'en-US', messages: en, fitAttached: true });
+  assert.equal(form.feedback_shoe, 'COROS Pace');
+  assert.equal(form.pain_description, 'Calf tightness');
+  assert.equal(form.language, 'en-US');
+  assert.equal(form.fitAttached, true);
+  const manual = buildCanonicalPromptForm({ ...canonical, result_data_source: 'manual' }, { language: 'en-US', messages: en });
+  assert.equal(manual.fitAttached, false);
 });
 
 test('collectPromptValues uses persisted FIT data when available', () => {
@@ -1227,7 +1269,8 @@ test('training-result.js wires toggling, saving, generation and i18n refreshes',
   assert.match(js, /renderManualDistanceUnit\(\{ convertExisting: true \}\)/);
   assert.match(js, /confirm_replace_fit = true/);
   assert.match(js, /confirm_replace_manual/);
-  assert.match(js, /collectPromptValues\(\{ training, form: collectFormState\(\), fitData, preferences: getUserPreferences\(\) \}\)/);
+  assert.match(js, /buildCanonicalPromptForm\(training,\s*\{[\s\S]*messages: i18n\.messages/);
+  assert.doesNotMatch(js, /collectPromptValues\(\{ training, form: collectFormState\(\), fitData/);
   assert.match(js, /promptOutput\.value = promptText;/);
   assert.match(js, /promptSection\.hidden = false;/);
   assert.match(js, /setTimeout\(/, 'Copied! feedback restores itself after a moment');

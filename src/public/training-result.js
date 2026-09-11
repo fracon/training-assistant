@@ -371,6 +371,45 @@ export function painPromptText(hasPainValue, description, translate) {
   return trimmed !== '' ? trimmed : translate('feedback.yesWithoutDescription');
 }
 
+// Converts the persisted training row into the prompt's feedback shape. The
+// row is authoritative after a save; only locale-derived labels and the
+// temporary attachment indicator come from the presentation context.
+export function buildCanonicalPromptForm(training = {}, {
+  language = 'pt-BR',
+  messages = {},
+  fitAttached = false,
+} = {}) {
+  const t = (key) => translate(messages, key);
+  const hrKey = HR_SOURCE_LABEL_KEYS[training.feedback_hr_source];
+  const terrainKey = TERRAIN_LABEL_KEYS[training.feedback_terrain];
+  const breathingKey = BREATHING_LABEL_KEYS[training.feedback_breathing];
+  const muscleKey = MUSCLE_LABEL_KEYS[training.feedback_muscle];
+  const energyKey = ENERGY_LABEL_KEYS[training.feedback_energy];
+  const hasPain = training.feedback_has_pain === 'yes' ||
+    (training.feedback_has_pain == null && Boolean(training.feedback_pain));
+  return {
+    feedback_rpe: training.feedback_rpe ?? null,
+    feedback_notas: training.feedback_notas ?? '',
+    feedback_shoe: training.feedback_shoe ?? '',
+    feedback_hr_source: training.feedback_hr_source ?? null,
+    hr_source_label: hrKey ? t(hrKey) : '',
+    feedback_weather: training.feedback_weather ?? '',
+    feedback_terrain: training.feedback_terrain ?? null,
+    terrain_label: terrainKey ? t(terrainKey) : '',
+    feedback_breathing: training.feedback_breathing ?? null,
+    breathing_label: breathingKey ? t(breathingKey) : '',
+    feedback_muscle: training.feedback_muscle ?? null,
+    muscle_label: muscleKey ? t(muscleKey) : '',
+    feedback_energy: training.feedback_energy ?? null,
+    energy_label: energyKey ? t(energyKey) : '',
+    feedback_has_pain: hasPain ? 'yes' : 'no',
+    feedback_pain: training.feedback_pain ?? '',
+    pain_description: painPromptText(hasPain ? 'yes' : 'no', training.feedback_pain, t),
+    language,
+    fitAttached,
+  };
+}
+
 // Maps the loaded session row plus the current form state onto the shared
 // placeholder contract. FIT metrics come from persisted data when available,
 // falling back to dashes.
@@ -1051,7 +1090,16 @@ async function initTrainingResult() {
       }
       promptText = buildAnalysisPrompt(
         templateFor(i18n.language),
-        collectPromptValues({ training, form: collectFormState(), fitData, preferences: getUserPreferences() })
+        collectPromptValues({
+          training,
+          form: buildCanonicalPromptForm(training, {
+            language: i18n.language,
+            messages: i18n.messages,
+            fitAttached: Boolean(fitFileInput.files && fitFileInput.files.length > 0),
+          }),
+          fitData,
+          preferences: getUserPreferences(),
+        })
       );
       promptOutput.value = promptText;
       promptSection.hidden = false;
