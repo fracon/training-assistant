@@ -301,7 +301,7 @@
     "fieldBreathing": "Breathing",
     "fieldMuscle": "Muscle sensation",
     "fieldEnergy": "Energy at finish",
-    "generatePrompt": "Generate analysis prompt",
+    "generatePrompt": "Save and Generate Analysis Prompt",
     "promptHeading": "Generated Prompt",
     "copyPrompt": "Copy to clipboard",
     "copied": "Copied!",

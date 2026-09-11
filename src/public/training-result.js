@@ -171,6 +171,34 @@ export async function persistManualResultsIfNeeded({
   }
 }
 
+// Both terminal actions persist the complete form before doing anything
+// action-specific. The caller supplies the current state and the API hooks so
+// the ordering remains explicit and easy to test.
+export async function persistCurrentTrainingState({
+  collectState,
+  persistManual,
+  saveFeedback,
+  applyTraining,
+}) {
+  const collected = collectState();
+  if (collected?.status === 'invalid') return collected;
+  let manualResult;
+  try {
+    manualResult = await persistManual();
+  } catch (error) {
+    return { status: 'error', error, stage: 'result' };
+  }
+  if (['invalid', 'cancelled', 'error'].includes(manualResult.status)) return manualResult;
+  try {
+    const response = await saveFeedback(collected.payload);
+    if (!response?.training) return { status: 'error', error: new Error('Invalid training response.') };
+    applyTraining(response.training);
+    return { status: 'saved', training: response.training };
+  } catch (error) {
+    return { status: 'error', error, stage: 'feedback' };
+  }
+}
+
 // Local weekday name ('YYYY-MM-DD' parsed as a local date, never UTC).
 export function weekdayLabel(iso, language) {
   return formatWeekday(iso, language);
@@ -946,54 +974,79 @@ async function initTrainingResult() {
     }),
     applyResponse: applyManualResults,
   });
-  const reportManualPersistence = (result) => {
-    if (result.status === 'invalid') setStatus(t('session.errors.manualValidation'), 'error');
-    if (result.status === 'error') setStatus(result.error?.message || t('session.errors.manualSave'), 'error');
+  const applyCanonicalTraining = (canonical) => {
+    const laps = canonical.result_data_source === 'fit_upload' ? (fitData?.laps || []) : [];
+    training = canonical;
+    fitData = { ...canonical, laps };
+    resultSourceSelect.value = canonical.result_data_source === 'manual' ? 'manual' : 'fit';
+    renderFitData();
+  };
+  const feedbackPayload = (state) => {
+    const {
+      feedback_shoe,
+      hr_source_label,
+      terrain_label,
+      breathing_label,
+      muscle_label,
+      energy_label,
+      pain_description,
+      language,
+      fitAttached,
+      ...payload
+    } = state;
+    if (training.result_data_source === 'manual' || training.result_data_source === 'fit_upload') {
+      payload.completed = true;
+    }
+    return payload;
+  };
+  const persistCurrentState = () => persistCurrentTrainingState({
+    collectState: () => {
+      const state = collectFormState();
+      return Number.isNaN(state.feedback_rpe)
+        ? { status: 'invalid', error: 'rpe' }
+        : { payload: feedbackPayload(state) };
+    },
+    persistManual: persistManualResults,
+    saveFeedback: (payload) => saveTrainingFeedback(id, payload),
+    applyTraining: applyCanonicalTraining,
+  });
+  const reportPersistenceFailure = (result) => {
+    if (result.status === 'invalid') {
+      setStatus(result.error === 'rpe' ? t('session.errors.rpe') : t('session.errors.manualValidation'), 'error');
+    }
+    if (result.status === 'error') {
+      setStatus(result.stage === 'feedback' ? t('session.errors.save') : result.error?.message || t('session.errors.manualSave'), 'error');
+    }
   };
 
   saveBtn.addEventListener('click', async () => {
-    const state = collectFormState();
-    if (Number.isNaN(state.feedback_rpe)) {
-      setStatus(t('session.errors.rpe'), 'error');
-      return;
-    }
     saveBtn.disabled = true;
+    generateBtn.disabled = true;
     saveBtn.textContent = t('session.saving');
     try {
-      const manualResult = await persistManualResults();
-      if (manualResult.status === 'invalid' || manualResult.status === 'cancelled' || manualResult.status === 'error') {
-        reportManualPersistence(manualResult);
+      const result = await persistCurrentState();
+      if (result.status === 'invalid' || result.status === 'cancelled' || result.status === 'error') {
+        reportPersistenceFailure(result);
         return;
       }
-      const {
-        feedback_shoe,
-        hr_source_label,
-        terrain_label,
-        breathing_label,
-        muscle_label,
-        energy_label,
-        pain_description,
-        language,
-        fitAttached,
-        ...payload
-      } = state;
-      await saveTrainingFeedback(id, payload);
       window.location.href = '/calendar.html';
     } catch {
       setStatus(t('session.errors.save'), 'error');
     } finally {
       saveBtn.disabled = false;
+      generateBtn.disabled = false;
       saveBtn.textContent = t('session.save');
     }
   });
 
   generateBtn.addEventListener('click', async () => {
     generateBtn.disabled = true;
+    saveBtn.disabled = true;
     generateLabel.textContent = t('session.generatingPrompt');
     try {
-      const manualResult = await persistManualResults();
-      if (manualResult.status === 'invalid' || manualResult.status === 'cancelled' || manualResult.status === 'error') {
-        reportManualPersistence(manualResult);
+      const result = await persistCurrentState();
+      if (result.status === 'invalid' || result.status === 'cancelled' || result.status === 'error') {
+        reportPersistenceFailure(result);
         return;
       }
       promptText = buildAnalysisPrompt(
@@ -1004,6 +1057,7 @@ async function initTrainingResult() {
       promptSection.hidden = false;
     } finally {
       generateBtn.disabled = false;
+      saveBtn.disabled = false;
       generateLabel.textContent = t('session.generatePrompt');
     }
   });

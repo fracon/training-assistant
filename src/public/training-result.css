@@ -490,6 +490,12 @@ select.input-control {
   color: var(--accent-deep);
 }
 
+.form-actions .btn-primary,
+.form-actions .btn-secondary {
+  white-space: normal;
+  text-align: center;
+}
+
 .btn-secondary svg {
   width: 16px;
   height: 16px;

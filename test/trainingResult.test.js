@@ -19,6 +19,7 @@ const {
   resultSourceBadgeKey,
   manualResultsMatchTraining,
   persistManualResultsIfNeeded,
+  persistCurrentTrainingState,
   weekdayLabel,
   resolveTemplateLang,
   templateFor,
@@ -216,6 +217,39 @@ test('manual persistence confirms a FIT replacement once and sends canonical val
   assert.equal(confirmations, 1);
   assert.equal(posted.confirm_replace_fit, true);
   assert.ok(Math.abs(posted.distance_km - 10) < 0.001);
+});
+
+test('persistCurrentTrainingState saves the result before feedback and returns canonical training', async () => {
+  const calls = [];
+  let applied;
+  const canonical = { id: 7, completed: 1, result_data_source: 'manual', fit_distance: 10, feedback_shoe_id: 'shoe-a' };
+  const result = await persistCurrentTrainingState({
+    collectState: () => ({ payload: { completed: true, feedback_shoe_id: 'shoe-a' } }),
+    persistManual: async () => { calls.push('result'); return { status: 'saved' }; },
+    saveFeedback: async (payload) => { calls.push(['feedback', payload]); return { training: canonical }; },
+    applyTraining: (training) => { calls.push('apply'); applied = training; },
+  });
+  assert.deepEqual(calls, ['result', ['feedback', { completed: true, feedback_shoe_id: 'shoe-a' }], 'apply']);
+  assert.equal(result.status, 'saved');
+  assert.equal(result.training, canonical);
+  assert.equal(applied, canonical);
+});
+
+test('persistCurrentTrainingState blocks feedback and prompt continuation on validation, cancellation, or API failure', async () => {
+  let feedbackCalls = 0;
+  const base = {
+    collectState: () => ({ payload: {} }),
+    saveFeedback: async () => { feedbackCalls += 1; return { training: {} }; },
+    applyTraining: () => {},
+  };
+  assert.deepEqual(await persistCurrentTrainingState({ ...base, collectState: () => ({ status: 'invalid' }), persistManual: async () => ({ status: 'not-needed' }) }), { status: 'invalid' });
+  assert.deepEqual(await persistCurrentTrainingState({ ...base, persistManual: async () => ({ status: 'cancelled' }) }), { status: 'cancelled' });
+  const failed = await persistCurrentTrainingState({ ...base, persistManual: async () => ({ status: 'not-needed' }), saveFeedback: async () => { feedbackCalls += 1; throw new Error('feedback failed'); } });
+  assert.equal(failed.status, 'error');
+  assert.equal(failed.stage, 'feedback');
+  assert.equal(feedbackCalls, 1);
+  const resultFailed = await persistCurrentTrainingState({ ...base, persistManual: async () => { throw new Error('result failed'); } });
+  assert.equal(resultFailed.stage, 'result');
 });
 
 test('result source resolution and badge keys handle manual, FIT, none, and legacy omissions explicitly', () => {
@@ -936,6 +970,8 @@ test('training-result.html ships the expanded feedback grid and generator button
   );
   assert.match(html, /<i data-lucide="sparkles" aria-hidden="true"><\/i>/);
   assert.match(html, /data-i18n="session\.generatePrompt"/);
+  assert.match(en.session.generatePrompt, /^Save and Generate Analysis Prompt$/);
+  assert.match(pt.session.generatePrompt, /^Salvar e Gerar Prompt de Análise$/);
   assert.match(html, /<button id="saveBtn" class="btn-secondary" type="button"/);
 
   assert.match(html, /<select id="feedbackShoe" class="input-control">/, 'shoe is a select dropdown, not free text');
@@ -1181,10 +1217,12 @@ test('training-result.js wires toggling, saving, generation and i18n refreshes',
   assert.ok(!markup.includes('Save manual results'), 'the obsolete intermediate action is removed from markup');
   assert.ok(!readFileSync(join(publicDir, 'training-result.css'), 'utf8').includes('.manual-results-field .btn-primary'), 'the retired intermediate-button CSS is removed');
   assert.match(js, /persistManualResultsIfNeeded\(\{/);
-  assert.match(js, /const manualResult = await persistManualResults\(\);/);
-  assert.equal((js.match(/const manualResult = await persistManualResults\(\);/g) || []).length, 2, 'each terminal action runs the shared persistence flow once');
-  assert.ok(js.indexOf('const manualResult = await persistManualResults();') < js.indexOf('await saveTrainingFeedback(id, payload);'), 'feedback follows manual persistence');
-  assert.ok(js.lastIndexOf('const manualResult = await persistManualResults();') < js.lastIndexOf('buildAnalysisPrompt('), 'prompt generation follows manual persistence');
+  assert.match(js, /persistCurrentTrainingState\(\{/);
+  assert.equal((js.match(/persistCurrentState\(\);/g) || []).length, 2, 'both terminal actions share one persistence flow');
+  assert.ok(js.indexOf('persistManual: persistManualResults') < js.indexOf('saveFeedback: \(payload\) => saveTrainingFeedback'), 'manual result precedes feedback');
+  assert.ok(js.lastIndexOf('const result = await persistCurrentState();') < js.lastIndexOf('buildAnalysisPrompt('), 'prompt generation follows complete persistence');
+  assert.match(js, /generateBtn\.disabled = true;\s*\n\s*saveBtn\.disabled = true;/);
+  assert.match(js, /saveBtn\.disabled = false;\s*\n\s*generateLabel\.textContent/);
   assert.match(js, /manualDistanceUnit\.textContent = nextUnit;/);
   assert.match(js, /renderManualDistanceUnit\(\{ convertExisting: true \}\)/);
   assert.match(js, /confirm_replace_fit = true/);
@@ -1553,6 +1591,7 @@ test('training-result.css keeps the earthy premium aesthetic for the session vie
   assert.match(css, /\.dropzone-text-secondary \{[^}]*margin-top:\s*0\.25rem/);
   assert.match(css, /\.pain-field\[hidden\] \{[^}]*display:\s*none/, 'the pain description hides until pain is reported');
   assert.match(css, /\.form-actions \{[^}]*display:\s*flex/);
+  assert.match(css, /\.form-actions \.btn-primary,[\s\S]*white-space:\s*normal/);
   assert.match(css, /\.btn-secondary \{[^}]*border:\s*1px solid var\(--accent-deep\)/);
   assert.match(css, /\.btn-secondary svg \{[^}]*width:\s*16px/);
   assert.match(

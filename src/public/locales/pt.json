@@ -301,7 +301,7 @@
     "fieldBreathing": "Respiração",
     "fieldMuscle": "Sensação muscular",
     "fieldEnergy": "Energia ao terminar",
-    "generatePrompt": "Gerar Prompt de Análise",
+    "generatePrompt": "Salvar e Gerar Prompt de Análise",
     "promptHeading": "Prompt Gerado",
     "copyPrompt": "Copiar para a área de transferência",
     "copied": "Copiado!",
