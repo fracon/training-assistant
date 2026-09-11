@@ -46,9 +46,9 @@
     "gridLabel": "Monthly calendar",
     "import": {
       "button": "Import trainings",
-      "tooltip": "Imports Excel files (.xlsx, .xls).\n\nExpected format (11 columns):\n• Date (mandatory, DD/MM/YYYY)\n• Day\n• Period\n• Type (mandatory)\n• Workout\n• Details\n• Target HR\n• RPE\n• Shoe\n• Weather Forecast\n• Notes\n\n* Do not include note rows or merged cells.",
+      "tooltip": "Imports Excel files (.xlsx, .xls).\n\nExpected format (12 columns):\n• Date (mandatory, DD/MM/YYYY)\n• Day\n• Period\n• Type (mandatory)\n• Workout\n• Details\n• Target HR\n• RPE\n• Shoe\n• Location\n• Weather Forecast\n• Notes\n\n* Do not include note rows or merged cells.",
       "title": "Import trainings",
-      "hint": "Pick a .xlsx or .xls spreadsheet with columns: Dia, Período, Tipo, Treino, Detalhes, FC alvo, RPE, Tênis, Previsão no horário, Observações.",
+      "hint": "Pick a .xlsx or .xls spreadsheet with columns: Date, Day, Period, Type, Workout, Details, Target HR, RPE, Shoe, Location, Weather Forecast, Notes.",
       "loading": "Importing…",
       "success": {
         "importedOne": "1 training successfully imported.",

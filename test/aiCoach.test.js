@@ -121,6 +121,11 @@ test('validatePromptFields requires a valid target date, locations and daily rou
     'individual day locations can satisfy the location requirement'
   );
   assert.deepEqual(
+    validatePromptFields({ ...complete, baseLocation: '', localizacao: { segunda: 'Porto' } }),
+    { valid: false, missing: ['location'] },
+    'without a base, every day needs an explicit location'
+  );
+  assert.deepEqual(
     validatePromptFields({ ...complete, disponibilidade: { ...complete.disponibilidade, domingo: ' ' } }),
     { valid: false, missing: ['availability'] }
   );
@@ -135,11 +140,18 @@ test('the prompt template keeps the required Portuguese structure', () => {
   assert.match(PROMPT_TEMPLATE, /INSTRUÇÕES PARA MONTAR A SEMANA/);
   assert.match(PROMPT_TEMPLATE, /FORMATO DA PLANILHA/);
   assert.match(PROMPT_TEMPLATE, /ARQUIVO EXCEL/);
-  assert.match(PROMPT_TEMPLATE, /Fânzeres, Gondomar, Portugal/);
+  assert.doesNotMatch(PROMPT_TEMPLATE, /Fânzeres, Gondomar, Portugal/);
+  assert.match(PROMPT_TEMPLATE, /formato de 12 colunas definido abaixo/);
+  assert.match(PROMPT_TEMPLATE, /localidade informada para aquele dia/);
+  assert.match(PROMPT_TEMPLATE, /localidade habitual somente como fallback/);
+  assert.match(PROMPT_TEMPLATE, /se nenhuma localidade válida existir, não invente uma/);
+  assert.doesNotMatch(PROMPT_TEMPLATE, /adicionando apenas ["“]Data["”]?/);
   assert.match(
     PROMPT_TEMPLATE,
-    /\| Data \| Dia \| Período \| Tipo \| Treino \| Detalhes \| FC alvo \| RPE \| Tênis \| Previsão do tempo \| Observações \|/
+    /\| Data \| Dia \| Período \| Tipo \| Treino \| Detalhes \| FC alvo \| RPE \| Tênis \| Localização \| Previsão do tempo \| Observações \|/
   );
+  assert.match(PROMPT_TEMPLATE, /copie exatamente a localidade informada para cada dia/);
+  assert.match(PROMPT_TEMPLATE, /sem traduzir, normalizar, geocodificar, substituir pela localidade habitual ou inferir a partir da previsão do tempo/);
   assert.match(PROMPT_TEMPLATE, /15\. O objetivo não é maximizar cada treino individualmente\./);
   assert.match(
     PROMPT_TEMPLATE,
@@ -433,8 +445,9 @@ test('buildDayRowHtml wires daily state to its own availability and location inp
   });
   assert.match(row, /^<div class="day-row">\s*<label for="dispSeg"/);
   assert.match(row, /class="day-label"><span data-i18n="aiCoach\.days\.monday">Monday<\/span><span class="required-mark"/);
-  assert.match(row, /id="dispSeg" value="Rotina normal" autocomplete="off"/);
+  assert.match(row, /id="dispSeg" value="Rotina normal" autocomplete="off" required/);
   assert.match(row, /id="locSeg" data-i18n-placeholder="aiCoach\.location" placeholder="Local" autocomplete="off"/);
+  assert.doesNotMatch(row, /id="locSeg"[^>]*required/, 'daily location can be empty when the base is used as fallback');
 
   const sundayRow = buildDayRowHtml('domingo', { dayLabel: 'Domingo', routine: 'rotina', locationPlaceholder: 'Local' });
   assert.match(sundayRow, /data-i18n="aiCoach\.days\.sunday">Domingo<\/span><span class="required-mark"/);
@@ -566,6 +579,35 @@ test('buildPrompt injects a per-day location after the availability text', () =>
   assert.ok(prompt.includes('- Sábado: Rotina normal (Local: Fânzeres)'));
   assert.ok(prompt.includes('- Terça-feira: Rotina normal (Local: -)'), 'unset days render the dash placeholder');
   assert.ok(!prompt.includes('{{LOCAL_'), 'no location placeholder survives generation');
+});
+
+test('buildPrompt uses the base location only for empty daily overrides', () => {
+  const prompt = buildPrompt({
+    targetDate: new Date(2026, 7, 31),
+    baseLocation: '  Fânzeres, Gondomar  ',
+    localizacao: {
+      segunda: ' Porto ',
+      terca: '',
+      quarta: 'Las Palmas de Gran Canaria, España',
+    },
+  });
+
+  assert.ok(prompt.includes('- Segunda-feira: Rotina normal (Local: Porto)'));
+  assert.ok(prompt.includes('- Terça-feira: Rotina normal (Local: Fânzeres, Gondomar)'));
+  assert.ok(prompt.includes('- Quarta-feira: Rotina normal (Local: Las Palmas de Gran Canaria, España)'));
+  assert.ok(prompt.includes('- Domingo: Rotina normal (Local: Fânzeres, Gondomar)'));
+});
+
+test('buildPrompt applies the same daily-over-base fallback in English', () => {
+  const prompt = buildPrompt({
+    targetDate: new Date(2026, 7, 31),
+    lang: 'en-US',
+    baseLocation: 'Lisbon, Portugal',
+    localizacao: { segunda: 'Porto' },
+  });
+
+  assert.ok(prompt.includes('- Monday: Normal routine (Location: Porto)'));
+  assert.ok(prompt.includes('- Sunday: Normal routine (Location: Lisbon, Portugal)'));
 });
 
 test('buildPrompt injects English locations with the Location label', () => {
@@ -721,11 +763,18 @@ test('both templates carry the identical placeholder contract', () => {
   assert.match(PROMPT_TEMPLATE_EN, /INSTRUCTIONS FOR PLANNING THE WEEK/);
   assert.match(PROMPT_TEMPLATE_EN, /SPREADSHEET FORMAT/);
   assert.match(PROMPT_TEMPLATE_EN, /EXCEL FILE/);
-  assert.match(PROMPT_TEMPLATE_EN, /Fânzeres, Gondomar, Portugal/);
+  assert.doesNotMatch(PROMPT_TEMPLATE_EN, /Fânzeres, Gondomar, Portugal/);
+  assert.match(PROMPT_TEMPLATE_EN, /exactly the 12-column format defined below/);
+  assert.match(PROMPT_TEMPLATE_EN, /location provided for that day/);
+  assert.match(PROMPT_TEMPLATE_EN, /usual location only as a fallback/);
+  assert.match(PROMPT_TEMPLATE_EN, /if no valid location exists, do not invent one/);
+  assert.doesNotMatch(PROMPT_TEMPLATE_EN, /adding only ["“]Data["”]?/);
   assert.match(
     PROMPT_TEMPLATE_EN,
-    /\| Date \| Day \| Period \| Type \| Workout \| Details \| Target HR \| RPE \| Shoe \| Weather Forecast \| Notes \|/
+    /\| Date \| Day \| Period \| Type \| Workout \| Details \| Target HR \| RPE \| Shoe \| Location \| Weather Forecast \| Notes \|/
   );
+  assert.match(PROMPT_TEMPLATE_EN, /copy the location provided for each day exactly/);
+  assert.match(PROMPT_TEMPLATE_EN, /without translating, normalizing, geocoding, replacing it with the usual location, or inferring it from the weather forecast/);
   assert.match(
     PROMPT_TEMPLATE_EN,
     /If recent data indicates that the originally expected plan should be altered, prioritize the correct adaptation/
@@ -1057,6 +1106,7 @@ test('base location cascades to every day and location state feeds the prompt', 
   assert.match(js, /const localizacao = \{\};/);
   assert.match(js, /localizacao\[day\] = input\.value/);
   assert.match(js, /localizacao,/);
+  assert.match(js, /baseLocation: baseLocationInput\.value/);
 });
 
 test('generated prompts no longer embed the context examples', () => {
