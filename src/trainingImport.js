@@ -2,7 +2,7 @@
 
 // Header aliases are accent-less, lowercase keys so "Período", "PERIODO" and
 // "periodo" all resolve to the same field.
-// Phase 7 AI sheets carry 11 columns: "Data" holds the real date (mapped to
+// Phase 7 AI sheets carry 12 columns: "Data" holds the real date (mapped to
 // the internal dia), while "Dia" holds a weekday string like "Segunda"
 // (captured as dia_semana and never date-validated). The DB keeps using
 // `dia` for the ISO date, so no migration is needed.
