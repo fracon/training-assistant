@@ -419,6 +419,8 @@ test('GET /login.html serves sign-in anonymously and redirects sessions home', a
   const anonymous = await app.inject({ method: 'GET', url: '/login.html' });
   assert.equal(anonymous.statusCode, 200);
   assert.match(anonymous.body, /Sign In/);
+  assert.match(anonymous.body, /data-i18n="login\.heading">Welcome to Kinesis<\/h1>/);
+  assert.doesNotMatch(anonymous.body, /Welcome back/);
   assert.match(anonymous.body, /id="loginForm"/);
   assert.match(anonymous.body, /href="\/register\.html"/);
   assert.match(anonymous.body, /login\.js/);

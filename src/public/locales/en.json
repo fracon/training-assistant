@@ -103,7 +103,7 @@
   },
   "login": {
     "title": "Sign In - Kinesis",
-    "heading": "Welcome back",
+    "heading": "Welcome to Kinesis",
     "subtitle": "Sign in to keep your training log on track.",
     "emailLabel": "Email",
     "emailPlaceholder": "you@example.com",
