@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user web application** for managing training logs — drop a Garmin `.FIT` file into the browser, add how the workout felt, and get back a ready-to-paste markdown prompt for your AI coach.
 
-Current application version: **0.9.4** (active development).
+Current application version: **0.9.5** (active development).
 
 ### Shoe mileage integrity
 
