@@ -124,6 +124,9 @@ async function buildServer(options = {}) {
     if (!options.db) return null;
     return findActiveSession(options.db, request.cookies[SESSION_COOKIE_NAME]);
   };
+  const requireAuth = options.db
+    ? createRequireAuth(options.db)
+    : async (_request, reply) => reply.code(401).send({ error: 'Authentication required.' });
 
   app.get('/', async (request, reply) => {
     const session = sessionOf(request);
@@ -195,7 +198,6 @@ async function buildServer(options = {}) {
 
   if (options.db) {
     const db = options.db;
-    const requireAuth = createRequireAuth(db);
 
     app.post('/api/auth/register', async (request, reply) => {
       try {
@@ -925,7 +927,7 @@ async function buildServer(options = {}) {
     });
   }
 
-  app.post('/api/fit/parse', async (request, reply) => {
+  app.post('/api/fit/parse', { preHandler: requireAuth }, async (request, reply) => {
     if (!request.isMultipart()) {
       return reply.code(400).send({ error: 'Expected multipart/form-data upload.' });
     }
@@ -974,7 +976,7 @@ async function buildServer(options = {}) {
       }
       feedback.rpeAlvo = rpeAlvo.value;
       feedback.rpePercebido = rpePercebido.value;
-      const lang = sessionOf(request)?.user.preferred_lang ?? DEFAULT_LANGUAGE;
+      const lang = sessionOf(request)?.user.preferred_lang || DEFAULT_LANGUAGE;
       const markdown = generateMarkdown(summary, feedback, lang);
       return reply.send({
         fileName,
