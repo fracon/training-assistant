@@ -45,6 +45,42 @@ export function onboardingPlanActions(hasActiveCycle) {
   return { primaryHref: '/cycles.html', primaryKey: 'planCycleAction', secondaryHref: null };
 }
 
+export function updateOnboardingDialogA11y(dialog, slide) {
+  if (!dialog || !slide) return false;
+  const title = slide.querySelector('h2[id]');
+  const description = slide.querySelector('[id^="onboardingWelcomeDescription"]');
+  if (!title || !description) return false;
+  dialog.setAttribute('aria-labelledby', title.id);
+  dialog.setAttribute('aria-describedby', description.id);
+  return true;
+}
+
+export function visibleOnboardingFocusableElements(dialog) {
+  return [...(dialog?.querySelectorAll('a, button') ?? [])].filter((element) => {
+    return !element.disabled && !element.closest('[hidden]');
+  });
+}
+
+export function trapOnboardingFocus(event, dialog, activeTitle) {
+  if (event.key !== 'Tab') return false;
+  const focusables = visibleOnboardingFocusableElements(dialog);
+  if (focusables.length === 0) return false;
+  const first = focusables[0];
+  const last = focusables[focusables.length - 1];
+  const active = document.activeElement;
+  if (event.shiftKey && (active === first || active === activeTitle)) {
+    event.preventDefault();
+    last.focus();
+    return true;
+  }
+  if (!event.shiftKey && (active === last || active === activeTitle)) {
+    event.preventDefault();
+    first.focus();
+    return true;
+  }
+  return false;
+}
+
 export function onboardingPresentation(state = {}) {
   const progress = calculateOnboardingProgress(state);
   if (!isNewUserOnboarding(state)) {

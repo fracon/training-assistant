@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<body>
+  <section id="dialog" role="dialog" aria-labelledby="initialTitle" aria-describedby="initialDescription">
+    <article id="slide0" data-onboarding-welcome-slide="0">
+      <h2 id="initialTitle" tabindex="-1">Shoes</h2><p id="onboardingWelcomeDescription0">Track shoes.</p><a id="shoeAction" href="/shoes.html">Add shoes</a>
+    </article>
+    <article id="slide1" data-onboarding-welcome-slide="1" hidden>
+      <h2 id="cycleTitle" tabindex="-1">Cycle</h2><p id="onboardingWelcomeDescription1">Plan a cycle.</p><a id="cycleAction" href="/cycles.html">Create cycle</a>
+    </article>
+    <article id="slide2" data-onboarding-welcome-slide="2" hidden>
+      <h2 id="planTitle" tabindex="-1">Plan</h2><p id="onboardingWelcomeDescription2">Add workouts.</p><a id="planAction" href="/calendar.html">Add workouts</a>
+      <a id="planSecondary" href="/calendar.html" hidden>Import</a>
+    </article>
+    <button id="previous" hidden>Back</button><button id="next">Next</button><button id="later">Skip</button>
+  </section>
+  <script type="module">
+    import { trapOnboardingFocus, updateOnboardingDialogA11y, visibleOnboardingFocusableElements } from '/src/public/shared/onboarding.js';
+
+    const dialog = document.getElementById('dialog');
+    const slide0 = document.getElementById('slide0');
+    const slide1 = document.getElementById('slide1');
+    const title1 = document.getElementById('cycleTitle');
+    const visibleIds = () => visibleOnboardingFocusableElements(dialog).map((element) => element.id);
+    const checks = [];
+
+    checks.push(updateOnboardingDialogA11y(dialog, slide0));
+    checks.push(dialog.getAttribute('aria-labelledby') === 'initialTitle');
+    checks.push(dialog.getAttribute('aria-describedby') === 'onboardingWelcomeDescription0');
+    slide0.hidden = true;
+    slide1.hidden = false;
+    checks.push(updateOnboardingDialogA11y(dialog, slide1));
+    checks.push(dialog.getAttribute('aria-labelledby') === 'cycleTitle');
+    checks.push(dialog.getAttribute('aria-describedby') === 'onboardingWelcomeDescription1');
+    checks.push(visibleIds().join(',') === 'cycleAction,next,later');
+
+    title1.focus();
+    const backwards = new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, cancelable: true });
+    trapOnboardingFocus(backwards, dialog, title1);
+    checks.push(backwards.defaultPrevented && document.activeElement.id === 'later');
+    const forwards = new KeyboardEvent('keydown', { key: 'Tab', cancelable: true });
+    trapOnboardingFocus(forwards, dialog, document.activeElement);
+    checks.push(forwards.defaultPrevented && document.activeElement.id === 'cycleAction');
+    document.body.dataset.a11yResult = checks.every(Boolean) ? 'pass' : JSON.stringify(checks);
+  </script>
+</body>
+</html>

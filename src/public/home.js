@@ -3,7 +3,7 @@ import { initShell, getShellI18n, getUserPreferences, showShellToast } from './s
 import { translate } from './shared/i18n.js';
 import { formatDate as formatLocalizedDate } from './shared/date.js';
 import { formatDistance } from './shared/units.js';
-import { calculateOnboardingProgress, isNewUserOnboarding, shouldShowWelcome, onboardingPresentation, onboardingPlanActions, onboardingSlideNavigation, backgroundInertTargets } from './shared/onboarding.js';
+import { calculateOnboardingProgress, isNewUserOnboarding, shouldShowWelcome, onboardingPresentation, onboardingPlanActions, onboardingSlideNavigation, updateOnboardingDialogA11y, trapOnboardingFocus, backgroundInertTargets } from './shared/onboarding.js';
 
 export const ZENQUOTES_URL = 'https://zenquotes.io/api/today';
 export const QUOTE_TIMEOUT_MS = 3000;
@@ -474,6 +474,7 @@ function setupHomePage() {
   const onboardingComplete = document.getElementById('onboardingComplete');
   const onboardingProgress = document.getElementById('onboardingProgress');
   const onboardingWelcome = document.getElementById('onboardingWelcome');
+  const onboardingDialog = onboardingWelcome?.querySelector('[role="dialog"]');
   const onboardingHide = document.getElementById('onboardingHide');
   const onboardingReopen = document.getElementById('onboardingReopen');
   const onboardingReopenHidden = document.getElementById('onboardingReopenHidden');
@@ -659,9 +660,7 @@ function setupHomePage() {
       if (step) step.textContent = progressLabel;
     }
     const activeTitle = onboardingWelcomeSlides[welcomeSlide]?.querySelector('h2');
-    if (activeTitle) onboardingWelcome.setAttribute('aria-labelledby', activeTitle.id);
-    const activeDescription = onboardingWelcomeSlides[welcomeSlide]?.querySelector('[id^="onboardingWelcomeDescription"]');
-    if (activeDescription) onboardingWelcome.setAttribute('aria-describedby', activeDescription.id);
+    updateOnboardingDialogA11y(onboardingDialog, onboardingWelcomeSlides[welcomeSlide]);
     onboardingPrevious.hidden = navigation.isFirst;
     onboardingNext.hidden = navigation.isLast;
     for (const [index, control] of onboardingSlideControls.entries()) {
@@ -842,19 +841,11 @@ function setupHomePage() {
       return;
     }
     if (event.key !== 'Tab') return;
-    const focusables = [...onboardingWelcome.querySelectorAll('a, button')].filter((element) => {
-      return !element.disabled && !element.closest('[hidden]');
-    });
-    if (focusables.length === 0) return;
-    const first = focusables[0];
-    const last = focusables[focusables.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
+    trapOnboardingFocus(
+      event,
+      onboardingDialog,
+      onboardingWelcomeSlides[welcomeSlide]?.querySelector('h2')
+    );
   });
   onboardingHide?.addEventListener('click', () => toggleGuide(true));
   onboardingReopen?.addEventListener('click', () => toggleGuide(false));

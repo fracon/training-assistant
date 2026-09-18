@@ -5,8 +5,18 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { existsSync, mkdtempSync, readFileSync } = require('node:fs');
-const { execFileSync } = require('node:child_process');
+const { execFile, execFileSync } = require('node:child_process');
+const { createServer } = require('node:http');
+const { once } = require('node:events');
 const { tmpdir } = require('node:os');
+const { promisify } = require('node:util');
+
+const execFileAsync = promisify(execFile);
+
+function findChrome() {
+  return ['/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser']
+    .find((candidate) => existsSync(candidate));
+}
 
 test('onboarding progress exposes three data-derived steps', async () => {
   const module = await import(pathToFileURL(path.join(__dirname, '../src/public/shared/onboarding.js')));
@@ -116,9 +126,8 @@ test('result guidance is limited to the first unrecorded workout for new users',
 });
 
 test('browser CSS makes every hidden onboarding root actually invisible', () => {
-  const chrome = ['/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser']
-    .find((candidate) => existsSync(candidate));
-  if (!chrome) return;
+  const chrome = findChrome();
+  assert.ok(chrome, 'Chrome is required for onboarding browser validation.');
   const css = readFileSync(path.join(__dirname, '../src/public/home.css'), 'utf8');
   const onboardingCss = css.slice(css.indexOf('.onboarding-guide,'), css.indexOf('/* ── Hero Banner'));
   const html = `<!doctype html><style>${onboardingCss}</style>
@@ -135,4 +144,45 @@ test('browser CSS makes every hidden onboarding root actually invisible', () => 
     `data:text/html;charset=utf-8,${encodeURIComponent(html)}`,
   ], { encoding: 'utf8', timeout: 15000, stdio: ['ignore', 'pipe', 'ignore'] });
   assert.match(output, /data-hidden-displays="none,none,none,none"/);
+});
+
+test('browser dialog a11y follows the active slide and traps Shift+Tab from its title', async () => {
+  const chrome = findChrome();
+  assert.ok(chrome, 'Chrome is required for onboarding focus validation.');
+  const root = path.join(__dirname, '..');
+  const server = createServer((request, response) => {
+    const requested = decodeURIComponent((request.url || '/').split('?')[0]);
+    const relative = requested === '/' ? 'test/onboarding-a11y.html' : requested.replace(/^\/+/, '');
+    if (relative.includes('..')) {
+      response.writeHead(404);
+      response.end();
+      return;
+    }
+    try {
+      const file = readFileSync(path.join(root, relative));
+      const type = relative.endsWith('.js') ? 'text/javascript' : 'text/html';
+      response.writeHead(200, { 'content-type': `${type}; charset=utf-8` });
+      response.end(file);
+    } catch {
+      response.writeHead(404);
+      response.end();
+    }
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const port = server.address().port;
+  let output;
+  try {
+    const result = await execFileAsync(chrome, [
+      '--headless=new', '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage',
+      '--no-first-run', `--user-data-dir=${mkdtempSync(`${tmpdir()}/kinesis-onboarding-a11y-`)}`,
+      '--virtual-time-budget=3000', '--dump-dom',
+      `http://127.0.0.1:${port}/test/onboarding-a11y.html`,
+    ], { encoding: 'utf8', timeout: 15000, maxBuffer: 1024 * 1024 });
+    output = result.stdout;
+  } finally {
+    server.close();
+    await once(server, 'close');
+  }
+  assert.match(output, /data-a11y-result="pass"/);
 });
