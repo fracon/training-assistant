@@ -73,6 +73,9 @@ function getOnboardingState(db, userId) {
     "SELECT 1 FROM training_cycles WHERE user_id = ? AND status = 'active' LIMIT 1"
   ).get(userId);
   const trainings = db.prepare('SELECT 1 FROM trainings WHERE user_id = ? LIMIT 1').get(userId);
+  const firstTraining = db.prepare(
+    'SELECT id FROM trainings WHERE user_id = ? ORDER BY id LIMIT 1'
+  ).get(userId);
   const steps = {
     shoes: Boolean(shoes),
     cycle: Boolean(cycle),
@@ -86,6 +89,7 @@ function getOnboardingState(db, userId) {
     completed,
     total: 3,
     complete: completed === 3,
+    firstTrainingId: firstTraining?.id ?? null,
   };
 }
 

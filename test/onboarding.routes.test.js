@@ -28,6 +28,7 @@ test('onboarding is derived from owned data and presentation preferences', async
     status: 'new', guideHidden: false,
     steps: { shoes: false, cycle: false, trainings: false },
     completed: 0, total: 3, complete: false,
+    firstTrainingId: null,
   });
 
   response = await app.inject({ method: 'PATCH', url: '/api/onboarding/presentation', headers: { cookie }, payload: {} });
@@ -57,6 +58,7 @@ test('onboarding is derived from owned data and presentation preferences', async
   response = await app.inject({ method: 'GET', url: '/api/onboarding', headers: { cookie } });
   assert.equal(response.json().onboarding.complete, true);
   assert.equal(response.json().onboarding.completed, 3);
+  assert.equal(response.json().onboarding.firstTrainingId, 1);
   await app.close();
   db.close();
 });

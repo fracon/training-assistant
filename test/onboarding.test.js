@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
+const { readFileSync } = require('node:fs');
 
 test('onboarding progress exposes three data-derived steps', async () => {
   const module = await import(pathToFileURL(path.join(__dirname, '../src/public/shared/onboarding.js')));
@@ -21,6 +22,7 @@ test('onboarding progress exposes three data-derived steps', async () => {
 test('onboarding UI keeps the existing destinations and accessibility hooks', () => {
   const fs = require('node:fs');
   const home = fs.readFileSync(path.join(__dirname, '../src/public/home.html'), 'utf8');
+  const homeJs = fs.readFileSync(path.join(__dirname, '../src/public/home.js'), 'utf8');
   assert.match(home, /href="\/shoes\.html"/);
   assert.match(home, /href="\/cycles\.html"/);
   assert.match(home, /href="\/ai-coach\.html"/);
@@ -28,4 +30,26 @@ test('onboarding UI keeps the existing destinations and accessibility hooks', ()
   assert.match(home, /aria-labelledby="onboardingWelcomeTitle"/);
   assert.match(home, /onboardingHide/);
   assert.match(home, /onboardingReopenHidden/);
+  assert.match(home, /aria-modal="true"/);
+  assert.match(homeJs, /const next = response\?\.onboarding/);
+  assert.match(homeJs, /event\.key === 'Escape'/);
+  assert.match(homeJs, /setAttribute\('inert', ''\)/);
+  assert.match(homeJs, /onboardingContinue\?\.focus\(\)/);
+  assert.match(home, /onboarding-shoes\.png/);
+  assert.match(home, /onboarding-cycle\.png/);
+  assert.match(home, /onboarding-plan\.png/);
+  for (const asset of ['onboarding-shoes.png', 'onboarding-cycle.png', 'onboarding-plan.png']) {
+    assert.ok(require('node:fs').existsSync(path.join(__dirname, '../src/public/assets/onboarding', asset)), `${asset} is committed at the HTML path`);
+  }
+});
+
+test('result guidance is limited to the first unrecorded workout for new users', async () => {
+  const { shouldShowOnboardingResultHint } = await import(pathToFileURL(path.join(__dirname, '../src/public/training-result.js')));
+  assert.equal(shouldShowOnboardingResultHint({ status: 'new', firstTrainingId: 4 }, { result_data_source: 'none' }, 4), true);
+  assert.equal(shouldShowOnboardingResultHint({ status: 'active', firstTrainingId: 4 }, { result_data_source: 'manual' }, 4), false);
+  assert.equal(shouldShowOnboardingResultHint({ status: 'active', firstTrainingId: 4 }, { result_data_source: 'fit_upload' }, 4), false);
+  assert.equal(shouldShowOnboardingResultHint({ status: 'active', firstTrainingId: 4 }, { result_data_source: 'none' }, 5), false);
+  assert.equal(shouldShowOnboardingResultHint({ status: 'legacy', firstTrainingId: 4 }, { result_data_source: 'none' }, 4), false);
+  const css = readFileSync(path.join(__dirname, '../src/public/home.css'), 'utf8');
+  assert.doesNotMatch(css, /var\(--surface\)|var\(--wash\)/);
 });

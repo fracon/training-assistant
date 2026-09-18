@@ -5,6 +5,12 @@ import { fetchTraining, saveTrainingFeedback, saveManualTrainingResults, fetchSh
 import { KM_TO_MILES, convertDistanceInputValue, convertDistanceToKm, formatDistance, formatPaceFromMetric, formatTemperature } from './shared/units.js';
 import { createImportGuidance } from './shared/workout-import-guidance.js';
 
+export function shouldShowOnboardingResultHint(onboarding, training, trainingId) {
+  return onboarding?.status !== 'legacy' &&
+    training?.result_data_source === 'none' &&
+    Number(onboarding?.firstTrainingId) === Number(trainingId);
+}
+
 // Sessions open contextually via /training-result.html?id=<id>; without an
 // id there is nothing to show, so the page bounces back to the calendar.
 export function resolveSessionId(search) {
@@ -670,7 +676,7 @@ async function initTrainingResult() {
 
   async function loadOnboardingHint() {
     const onboarding = await fetchOnboarding();
-    if (onboardingResultHint && onboarding && onboarding.status !== 'legacy' && !training?.result_data_source) {
+    if (onboardingResultHint && shouldShowOnboardingResultHint(onboarding, training, currentTrainingId)) {
       onboardingResultHint.hidden = false;
     }
   }

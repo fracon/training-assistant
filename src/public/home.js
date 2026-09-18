@@ -1,5 +1,5 @@
 import { fetchActiveCycle, fetchCalendarTrainings, fetchShoes, fetchHeroImage, fetchOnboarding, updateOnboardingPresentation } from './shared/api.js';
-import { initShell, getShellI18n, getUserPreferences } from './shared/shell.js';
+import { initShell, getShellI18n, getUserPreferences, showShellToast } from './shared/shell.js';
 import { translate } from './shared/i18n.js';
 import { formatDate as formatLocalizedDate } from './shared/date.js';
 import { formatDistance } from './shared/units.js';
@@ -497,6 +497,8 @@ function setupHomePage() {
   };
 
   let i18n = null;
+  let welcomeReturnFocus = null;
+  let welcomeWasOpen = false;
 
   function t(key, params) {
     return translate(i18n ? i18n.messages : {}, key, params);
@@ -632,19 +634,50 @@ function setupHomePage() {
       step.classList.toggle('is-complete', done);
       step.setAttribute('aria-current', progress.nextStep === step.dataset.onboardingStep ? 'step' : 'false');
     });
-    onboardingWelcome.hidden = !shouldShowWelcome(onboarding);
+    const shouldOpen = shouldShowWelcome(onboarding);
+    if (shouldOpen && !welcomeWasOpen) {
+      welcomeReturnFocus = document.activeElement;
+      onboardingWelcome.hidden = false;
+      onboardingWelcome.setAttribute('aria-hidden', 'false');
+      document.getElementById('appView')?.setAttribute('inert', '');
+      onboardingContinue?.focus();
+    } else if (!shouldOpen && welcomeWasOpen) {
+      onboardingWelcome.hidden = true;
+      onboardingWelcome.setAttribute('aria-hidden', 'true');
+      document.getElementById('appView')?.removeAttribute('inert');
+      if (welcomeReturnFocus && typeof welcomeReturnFocus.focus === 'function') welcomeReturnFocus.focus();
+      welcomeReturnFocus = null;
+    } else {
+      onboardingWelcome.hidden = !shouldOpen;
+      onboardingWelcome.setAttribute('aria-hidden', String(!shouldOpen));
+    }
+    welcomeWasOpen = shouldOpen;
   }
 
   async function dismissWelcome() {
     if (!state.onboarding) return;
-    state.onboarding = await updateOnboardingPresentation({ welcome_dismissed: true });
-    renderOnboarding();
+    try {
+      const response = await updateOnboardingPresentation({ welcome_dismissed: true });
+      const next = response?.onboarding;
+      if (!next?.status || !next.steps) throw new Error('Invalid onboarding response.');
+      state.onboarding = next;
+      renderOnboarding();
+    } catch {
+      showShellToast(i18n?.messages ?? {}, 'home.onboarding.saveError', 'error');
+    }
   }
 
   async function toggleGuide(hidden) {
     if (!state.onboarding) return;
-    state.onboarding = await updateOnboardingPresentation({ guide_hidden: hidden });
-    renderOnboarding();
+    try {
+      const response = await updateOnboardingPresentation({ guide_hidden: hidden });
+      const next = response?.onboarding;
+      if (!next?.status || !next.steps) throw new Error('Invalid onboarding response.');
+      state.onboarding = next;
+      renderOnboarding();
+    } catch {
+      showShellToast(i18n?.messages ?? {}, 'home.onboarding.saveError', 'error');
+    }
   }
 
   function render() {
@@ -706,6 +739,26 @@ function setupHomePage() {
   onboardingLater?.addEventListener('click', dismissWelcome);
   onboardingWelcome?.addEventListener('click', (event) => {
     if (event.target.dataset.onboardingDismiss === 'true') dismissWelcome();
+  });
+  document.addEventListener('keydown', (event) => {
+    if (!welcomeWasOpen) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      dismissWelcome();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const focusables = [onboardingContinue, onboardingLater].filter((element) => element && !element.disabled);
+    if (focusables.length === 0) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
   });
   onboardingHide?.addEventListener('click', () => toggleGuide(true));
   onboardingReopen?.addEventListener('click', () => toggleGuide(false));

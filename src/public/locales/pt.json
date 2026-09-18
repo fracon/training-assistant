@@ -707,7 +707,8 @@
       "planAlt": "Um plano semanal de treino",
       "resultTitle": "Pronto para registrar seu primeiro resultado?",
       "resultText": "Use FIT ou ZIP para dados detalhados, ou informe os totais manualmente.",
-      "resultGuide": "Abrir guia de importação"
+      "resultGuide": "Abrir guia de importação",
+      "saveError": "Não foi possível salvar sua preferência de onboarding. Tente novamente."
     },
     "days": {
       "mon": "Seg",

@@ -707,7 +707,8 @@
       "planAlt": "A weekly training plan",
       "resultTitle": "Ready for your first result?",
       "resultText": "Use FIT or ZIP for detailed data, or enter the totals manually.",
-      "resultGuide": "Open import guide"
+      "resultGuide": "Open import guide",
+      "saveError": "Your onboarding preference could not be saved. Please try again."
     },
     "days": {
       "mon": "Mon",
