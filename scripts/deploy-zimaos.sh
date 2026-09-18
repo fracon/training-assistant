@@ -9,4 +9,4 @@ docker compose pull
 echo "Restarting container..."
 docker compose up -d
 
-echo "Deployment finished. Training Assistant: http://localhost:8080"
+echo "Deployment finished. Training Assistant: http://localhost:8081"
