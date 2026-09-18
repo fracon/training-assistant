@@ -4,7 +4,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { readFileSync } = require('node:fs');
+const { existsSync, mkdtempSync, readFileSync } = require('node:fs');
+const { execFileSync } = require('node:child_process');
+const { tmpdir } = require('node:os');
 
 test('onboarding progress exposes three data-derived steps', async () => {
   const module = await import(pathToFileURL(path.join(__dirname, '../src/public/shared/onboarding.js')));
@@ -76,4 +78,26 @@ test('result guidance is limited to the first unrecorded workout for new users',
   assert.equal(shouldShowOnboardingResultHint({ status: 'legacy', firstTrainingId: 4 }, { result_data_source: 'none' }, 4), false);
   const css = readFileSync(path.join(__dirname, '../src/public/home.css'), 'utf8');
   assert.doesNotMatch(css, /var\(--surface\)|var\(--wash\)/);
+});
+
+test('browser CSS makes every hidden onboarding root actually invisible', () => {
+  const chrome = ['/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser']
+    .find((candidate) => existsSync(candidate));
+  if (!chrome) return;
+  const css = readFileSync(path.join(__dirname, '../src/public/home.css'), 'utf8');
+  const onboardingCss = css.slice(css.indexOf('.onboarding-guide,'), css.indexOf('/* ── Hero Banner'));
+  const html = `<!doctype html><style>${onboardingCss}</style>
+    <section id="onboardingGuide" class="onboarding-guide" hidden></section>
+    <section id="onboardingComplete" class="onboarding-complete" hidden></section>
+    <div id="onboardingReopenBar" class="onboarding-reopen-bar" hidden></div>
+    <div id="onboardingWelcome" class="onboarding-welcome" hidden></div>
+    <script>document.body.dataset.hiddenDisplays = ['onboardingGuide','onboardingComplete','onboardingReopenBar','onboardingWelcome']
+      .map((id) => getComputedStyle(document.getElementById(id)).display).join(',');</script>`;
+  const profile = mkdtempSync(`${tmpdir()}/kinesis-onboarding-chrome-`);
+  const output = execFileSync(chrome, [
+    '--headless=new', '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage',
+    '--no-first-run', `--user-data-dir=${profile}`, '--dump-dom',
+    `data:text/html;charset=utf-8,${encodeURIComponent(html)}`,
+  ], { encoding: 'utf8', timeout: 15000, stdio: ['ignore', 'pipe', 'ignore'] });
+  assert.match(output, /data-hidden-displays="none,none,none,none"/);
 });

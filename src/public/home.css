@@ -12,6 +12,16 @@
   background: var(--card);
 }
 
+/* These roots also have flex/grid declarations below. Keep the native hidden
+   contract authoritative so a presentation state never leaves a duplicate
+   completion or reopen control in the layout. */
+.onboarding-guide[hidden],
+.onboarding-complete[hidden],
+.onboarding-reopen-bar[hidden],
+.onboarding-welcome[hidden] {
+  display: none !important;
+}
+
 .onboarding-header, .onboarding-complete, .onboarding-reopen-bar {
   display: flex;
   align-items: center;
