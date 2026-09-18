@@ -21,6 +21,21 @@ test('onboarding progress exposes three data-derived steps', async () => {
   assert.equal(module.isNewUserOnboarding({ status: 'legacy' }), false);
 });
 
+test('welcome carousel moves one slide at a time and gates workout actions on an active cycle', async () => {
+  const { onboardingPlanActions, onboardingSlideNavigation } = await import(pathToFileURL(path.join(__dirname, '../src/public/shared/onboarding.js')));
+  assert.deepEqual(onboardingSlideNavigation(0), { current: 0, previous: 0, next: 1, isFirst: true, isLast: false });
+  assert.deepEqual(onboardingSlideNavigation(1), { current: 1, previous: 0, next: 2, isFirst: false, isLast: false });
+  assert.deepEqual(onboardingSlideNavigation(2), { current: 2, previous: 1, next: 2, isFirst: false, isLast: true });
+  assert.equal(onboardingSlideNavigation(-1).current, 0);
+  assert.equal(onboardingSlideNavigation(99).current, 2);
+  assert.deepEqual(onboardingPlanActions(false), {
+    primaryHref: '/cycles.html', primaryKey: 'planCycleAction', secondaryHref: null,
+  });
+  assert.deepEqual(onboardingPlanActions(true), {
+    primaryHref: '/ai-coach.html', primaryKey: 'aiAction', secondaryHref: '/calendar.html',
+  });
+});
+
 test('completed guide presentation supports conclusion, reopen, hide, and reload', async () => {
   const { onboardingPresentation } = await import(pathToFileURL(path.join(__dirname, '../src/public/shared/onboarding.js')));
   const complete = { status: 'active', guideHidden: false, steps: { shoes: true, cycle: true, trainings: true } };
@@ -53,20 +68,40 @@ test('onboarding UI keeps the existing destinations and accessibility hooks', ()
   assert.match(home, /href="\/cycles\.html"/);
   assert.match(home, /href="\/ai-coach\.html"/);
   assert.match(home, /href="\/calendar\.html"/);
-  assert.match(home, /aria-labelledby="onboardingWelcomeTitle"/);
+  assert.match(home, /aria-labelledby="onboardingWelcomeTitle0"/);
   assert.match(home, /onboardingHide/);
   assert.match(home, /onboardingReopenHidden/);
   assert.match(home, /aria-modal="true"/);
   assert.match(homeJs, /const next = response\?\.onboarding/);
   assert.match(homeJs, /event\.key === 'Escape'/);
   assert.match(homeJs, /setAttribute\('inert', ''\)/);
-  assert.match(homeJs, /onboardingContinue\?\.focus\(\)/);
-  assert.match(home, /onboarding-shoes\.png/);
-  assert.match(home, /onboarding-cycle\.png/);
-  assert.match(home, /onboarding-plan\.png/);
+  assert.match(homeJs, /focusWelcomeTitle\(\)/);
+  const slides = [...home.matchAll(/<article class="onboarding-welcome-slide" data-onboarding-welcome-slide="(\d+)"[\s\S]*?<\/article>/g)];
+  assert.equal(slides.length, 3);
+  for (const [index, asset] of ['onboarding-shoes.png', 'onboarding-cycle.png', 'onboarding-plan.png'].entries()) {
+    assert.match(slides[index][0], new RegExp(`/assets/onboarding/${asset}`));
+  }
+  assert.match(home, /id="onboardingPrevious"[^>]*hidden/);
+  assert.match(home, /id="onboardingNext"/);
+  assert.equal((home.match(/data-onboarding-slide-control=/g) || []).length, 3);
+  assert.match(homeJs, /event\.currentTarget\.getAttribute\('href'\)/);
+  assert.match(homeJs, /window\.location\.href = destination/);
   for (const asset of ['onboarding-shoes.png', 'onboarding-cycle.png', 'onboarding-plan.png']) {
     assert.ok(require('node:fs').existsSync(path.join(__dirname, '../src/public/assets/onboarding', asset)), `${asset} is committed at the HTML path`);
   }
+});
+
+test('welcome carousel copy is translated and action labels match their destinations', () => {
+  const en = JSON.parse(readFileSync(path.join(__dirname, '../src/public/locales/en.json'), 'utf8'));
+  const pt = JSON.parse(readFileSync(path.join(__dirname, '../src/public/locales/pt.json'), 'utf8'));
+  assert.equal(en.home.onboarding.shoesAction, 'Add my shoes');
+  assert.equal(pt.home.onboarding.shoesAction, 'Cadastrar meus tênis');
+  assert.equal(en.home.onboarding.stepProgress, '{current} of {total}');
+  assert.equal(pt.home.onboarding.stepProgress, '{current} de {total}');
+  assert.equal(en.home.onboarding.planTitle, 'Add workouts to your calendar');
+  assert.equal(pt.home.onboarding.planTitle, 'Adicione treinos ao calendário');
+  assert.equal(en.home.onboarding.planCycleAction, 'Create my cycle first');
+  assert.equal(pt.home.onboarding.planCycleAction, 'Criar meu ciclo primeiro');
 });
 
 test('result guidance is limited to the first unrecorded workout for new users', async () => {

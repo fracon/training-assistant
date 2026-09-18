@@ -3,7 +3,7 @@ import { initShell, getShellI18n, getUserPreferences, showShellToast } from './s
 import { translate } from './shared/i18n.js';
 import { formatDate as formatLocalizedDate } from './shared/date.js';
 import { formatDistance } from './shared/units.js';
-import { calculateOnboardingProgress, isNewUserOnboarding, shouldShowWelcome, onboardingPresentation, backgroundInertTargets } from './shared/onboarding.js';
+import { calculateOnboardingProgress, isNewUserOnboarding, shouldShowWelcome, onboardingPresentation, onboardingPlanActions, onboardingSlideNavigation, backgroundInertTargets } from './shared/onboarding.js';
 
 export const ZENQUOTES_URL = 'https://zenquotes.io/api/today';
 export const QUOTE_TIMEOUT_MS = 3000;
@@ -478,8 +478,13 @@ function setupHomePage() {
   const onboardingReopen = document.getElementById('onboardingReopen');
   const onboardingReopenHidden = document.getElementById('onboardingReopenHidden');
   const onboardingReopenBar = document.getElementById('onboardingReopenBar');
-  const onboardingContinue = document.getElementById('onboardingContinue');
+  const onboardingPrevious = document.getElementById('onboardingPrevious');
+  const onboardingNext = document.getElementById('onboardingNext');
   const onboardingLater = document.getElementById('onboardingLater');
+  const onboardingPlanPrerequisite = document.getElementById('onboardingPlanPrerequisite');
+  const onboardingWelcomeSlides = [...document.querySelectorAll('[data-onboarding-welcome-slide]')];
+  const onboardingSlideControls = [...document.querySelectorAll('[data-onboarding-slide-control]')];
+  const onboardingWelcomeActions = [...document.querySelectorAll('[data-onboarding-action]')];
 
   const state = {
     cycle: null,
@@ -494,11 +499,18 @@ function setupHomePage() {
     shoes: [],
     heroCredit: null,
     onboarding: null,
+    cycleLoaded: false,
   };
 
   let i18n = null;
   let welcomeReturnFocus = null;
   let welcomeWasOpen = false;
+  let welcomeSlide = 0;
+
+  function focusWelcomeTitle() {
+    const title = onboardingWelcomeSlides[welcomeSlide]?.querySelector('h2');
+    title?.focus();
+  }
   let inertBackgroundElements = new Set();
 
   function setWelcomeBackgroundInert(inert) {
@@ -632,6 +644,47 @@ function setupHomePage() {
     }
   }
 
+  function renderWelcomeCarousel() {
+    const navigation = onboardingSlideNavigation(welcomeSlide, onboardingWelcomeSlides.length);
+    welcomeSlide = navigation.current;
+    const progressLabel = t('home.onboarding.stepProgress', {
+      current: welcomeSlide + 1,
+      total: onboardingWelcomeSlides.length,
+    });
+    for (const [index, slide] of onboardingWelcomeSlides.entries()) {
+      const active = index === welcomeSlide;
+      slide.hidden = !active;
+      slide.setAttribute('aria-hidden', String(!active));
+      const step = slide.querySelector('.onboarding-welcome-step');
+      if (step) step.textContent = progressLabel;
+    }
+    const activeTitle = onboardingWelcomeSlides[welcomeSlide]?.querySelector('h2');
+    if (activeTitle) onboardingWelcome.setAttribute('aria-labelledby', activeTitle.id);
+    const activeDescription = onboardingWelcomeSlides[welcomeSlide]?.querySelector('[id^="onboardingWelcomeDescription"]');
+    if (activeDescription) onboardingWelcome.setAttribute('aria-describedby', activeDescription.id);
+    onboardingPrevious.hidden = navigation.isFirst;
+    onboardingNext.hidden = navigation.isLast;
+    for (const [index, control] of onboardingSlideControls.entries()) {
+      control.setAttribute('aria-current', index === welcomeSlide ? 'step' : 'false');
+    }
+
+    const hasCycle = state.cycleLoaded && Boolean(state.cycle);
+    if (onboardingPlanPrerequisite) onboardingPlanPrerequisite.hidden = hasCycle || welcomeSlide !== 2;
+    const planAction = onboardingWelcomeActions.find((action) => action.closest('[data-onboarding-welcome-slide="2"]'));
+    const planSecondary = document.querySelector('.onboarding-welcome-action-secondary');
+    const planActions = onboardingPlanActions(hasCycle);
+    if (planAction) {
+      planAction.href = planActions.primaryHref;
+      planAction.dataset.i18n = `home.onboarding.${planActions.primaryKey}`;
+      planAction.textContent = t(planAction.dataset.i18n);
+    }
+    if (planSecondary) {
+      planSecondary.hidden = !planActions.secondaryHref;
+      planSecondary.href = planActions.secondaryHref ?? '/cycles.html';
+      planSecondary.textContent = t('home.onboarding.importAction');
+    }
+  }
+
   function renderOnboarding() {
     const onboarding = state.onboarding;
     if (!onboarding || !isNewUserOnboarding(onboarding)) return;
@@ -646,13 +699,15 @@ function setupHomePage() {
       step.classList.toggle('is-complete', done);
       step.setAttribute('aria-current', progress.nextStep === step.dataset.onboardingStep ? 'step' : 'false');
     });
+    renderWelcomeCarousel();
     const shouldOpen = shouldShowWelcome(onboarding);
     if (shouldOpen && !welcomeWasOpen) {
       welcomeReturnFocus = document.activeElement;
       onboardingWelcome.hidden = false;
       onboardingWelcome.setAttribute('aria-hidden', 'false');
       setWelcomeBackgroundInert(true);
-      onboardingContinue?.focus();
+      renderWelcomeCarousel();
+      focusWelcomeTitle();
     } else if (!shouldOpen && welcomeWasOpen) {
       onboardingWelcome.hidden = true;
       onboardingWelcome.setAttribute('aria-hidden', 'true');
@@ -667,16 +722,24 @@ function setupHomePage() {
   }
 
   async function dismissWelcome() {
-    if (!state.onboarding) return;
+    if (!state.onboarding) return false;
     try {
       const response = await updateOnboardingPresentation({ welcome_dismissed: true });
       const next = response?.onboarding;
       if (!next?.status || !next.steps) throw new Error('Invalid onboarding response.');
       state.onboarding = { ...next, guideOpen: false };
       renderOnboarding();
+      return true;
     } catch {
       showShellToast(i18n?.messages ?? {}, 'home.onboarding.saveError', 'error');
+      return false;
     }
+  }
+
+  async function followWelcomeAction(event) {
+    event.preventDefault();
+    const destination = event.currentTarget.getAttribute('href');
+    if (await dismissWelcome()) window.location.href = destination;
   }
 
   async function toggleGuide(hidden) {
@@ -702,7 +765,9 @@ function setupHomePage() {
 
   async function loadCycle() {
     state.cycle = await fetchActiveCycle();
+    state.cycleLoaded = true;
     renderCycle();
+    renderWelcomeCarousel();
   }
 
   async function loadMetrics() {
@@ -747,11 +812,28 @@ function setupHomePage() {
     renderOnboarding();
   });
 
-  onboardingContinue?.addEventListener('click', dismissWelcome);
   onboardingLater?.addEventListener('click', dismissWelcome);
   onboardingWelcome?.addEventListener('click', (event) => {
     if (event.target.dataset.onboardingDismiss === 'true') dismissWelcome();
   });
+  onboardingPrevious?.addEventListener('click', () => {
+    welcomeSlide = onboardingSlideNavigation(welcomeSlide, onboardingWelcomeSlides.length).previous;
+    renderWelcomeCarousel();
+    focusWelcomeTitle();
+  });
+  onboardingNext?.addEventListener('click', () => {
+    welcomeSlide = onboardingSlideNavigation(welcomeSlide, onboardingWelcomeSlides.length).next;
+    renderWelcomeCarousel();
+    focusWelcomeTitle();
+  });
+  onboardingSlideControls.forEach((control) => {
+    control.addEventListener('click', () => {
+      welcomeSlide = Number(control.dataset.onboardingSlideControl);
+      renderWelcomeCarousel();
+      focusWelcomeTitle();
+    });
+  });
+  onboardingWelcomeActions.forEach((action) => action.addEventListener('click', followWelcomeAction));
   document.addEventListener('keydown', (event) => {
     if (!welcomeWasOpen) return;
     if (event.key === 'Escape') {
@@ -760,7 +842,9 @@ function setupHomePage() {
       return;
     }
     if (event.key !== 'Tab') return;
-    const focusables = [onboardingContinue, onboardingLater].filter((element) => element && !element.disabled);
+    const focusables = [...onboardingWelcome.querySelectorAll('a, button')].filter((element) => {
+      return !element.disabled && !element.closest('[hidden]');
+    });
     if (focusables.length === 0) return;
     const first = focusables[0];
     const last = focusables[focusables.length - 1];

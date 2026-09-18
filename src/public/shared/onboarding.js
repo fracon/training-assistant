@@ -26,6 +26,25 @@ export function shouldShowWelcome(state) {
   return isNewUserOnboarding(state) && state?.status === 'new';
 }
 
+export function onboardingSlideNavigation(index, total = ONBOARDING_TOTAL_STEPS) {
+  const last = Math.max(0, total - 1);
+  const current = Math.max(0, Math.min(Number(index) || 0, last));
+  return {
+    current,
+    previous: Math.max(0, current - 1),
+    next: Math.min(last, current + 1),
+    isFirst: current === 0,
+    isLast: current === last,
+  };
+}
+
+export function onboardingPlanActions(hasActiveCycle) {
+  if (hasActiveCycle) {
+    return { primaryHref: '/ai-coach.html', primaryKey: 'aiAction', secondaryHref: '/calendar.html' };
+  }
+  return { primaryHref: '/cycles.html', primaryKey: 'planCycleAction', secondaryHref: null };
+}
+
 export function onboardingPresentation(state = {}) {
   const progress = calculateOnboardingProgress(state);
   if (!isNewUserOnboarding(state)) {
