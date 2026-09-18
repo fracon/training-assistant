@@ -1,7 +1,7 @@
 import { initShell, getShellI18n, getUserPreferences, showConfirm, showShellToast, refreshIcons } from './shared/shell.js';
 import { translate } from './shared/i18n.js';
 import { formatDate as formatLocalizedDate, formatWeekday } from './shared/date.js';
-import { fetchTraining, saveTrainingFeedback, saveManualTrainingResults, fetchShoes, deleteTraining, fetchWeather } from './shared/api.js';
+import { fetchTraining, saveTrainingFeedback, saveManualTrainingResults, fetchShoes, deleteTraining, fetchWeather, fetchOnboarding } from './shared/api.js';
 import { KM_TO_MILES, convertDistanceInputValue, convertDistanceToKm, formatDistance, formatPaceFromMetric, formatTemperature } from './shared/units.js';
 import { createImportGuidance } from './shared/workout-import-guidance.js';
 
@@ -651,6 +651,8 @@ async function initTrainingResult() {
   const manualDistanceUnit = document.getElementById('manualDistanceUnit');
   const importHelpBtn = document.getElementById('importHelpBtn');
   const importHelpDialog = document.getElementById('importHelpDialog');
+  const onboardingResultHint = document.getElementById('onboardingResultHint');
+  const onboardingResultGuide = document.getElementById('onboardingResultGuide');
   const manualInputs = {
     distance: document.getElementById('manualDistance'), hours: document.getElementById('manualHours'),
     minutes: document.getElementById('manualMinutes'), seconds: document.getElementById('manualSeconds'),
@@ -665,6 +667,13 @@ async function initTrainingResult() {
   let promptText = '';
   let manualDistanceInputUnit = 'km';
   const t = (key) => translate(i18n ? i18n.messages : {}, key);
+
+  async function loadOnboardingHint() {
+    const onboarding = await fetchOnboarding();
+    if (onboardingResultHint && onboarding && onboarding.status !== 'legacy' && !training?.result_data_source) {
+      onboardingResultHint.hidden = false;
+    }
+  }
 
   const applyTooltips = () => {
     rpeSelector.querySelectorAll('[data-i18n]').forEach((el) => {
@@ -862,6 +871,7 @@ async function initTrainingResult() {
       manualInputs.distance.focus();
     },
   });
+  onboardingResultGuide?.addEventListener('click', () => importHelpBtn?.click());
   document.title = t('training.title');
   applyTooltips();
   // The shell may have injected sidebar/topbar markup around the session
@@ -1192,6 +1202,8 @@ async function initTrainingResult() {
     applyTooltips();
     importGuidance.render();
   });
+
+  loadOnboardingHint();
 
   document.addEventListener('kinesis:preferences-changed', () => {
     renderFitData();

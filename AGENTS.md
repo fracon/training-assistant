@@ -10,11 +10,11 @@
 - **Deployment:** Self-hosted on ZimaOS via Docker Compose.
 - **CI/CD:** Automated via Self-Hosted GitHub Runner pushing to GitHub Container Registry (GHCR).
 - **Networking:** Exposed securely via Cloudflare Zero Trust Tunnels (HTTP on port 8081).
-- **Application version:** `0.9.6` (active development; see the versioning Golden Rule below).
+- **Application version:** `0.10.0` (active development; see the versioning Golden Rule below).
 
 ## ✅ Current Implementation Status — `main`
 
-The Home Dashboard, Calendar, weather integration, and supporting import flows
+The Home Dashboard, Calendar, onboarding, weather integration, and supporting import flows
 are integrated and polished on `main`. Keep these decisions intact when making
 follow-up changes. New work must branch from an updated `main`; historical
 feature branches must not be used as a base for future development:
@@ -66,6 +66,11 @@ feature branches must not be used as a base for future development:
   `fit_upload` provenance and never persist archive contents. The Training
   Result includes the reviewed multibrand import/export guide; it is implemented
   and must not be described as future work.
+
+- New-user onboarding is implemented on `home.html`: its three-step progress is derived from
+  owned shoes, an active cycle, and owned planned trainings. Legacy users are marked during
+  migration and do not receive the first-login welcome modal. Presentation preferences are
+  stored per user; progress is never duplicated in the database.
 
 ## 🏆 Golden Rules
 1. **Local-First & Privacy:** FIT files and training data are parsed and processed locally. The optional weather integration sends only a planned location to Open-Meteo, and the optional dashboard hero requests a generic running image from Unsplash; neither receives FIT files or training data.

@@ -23,6 +23,36 @@
         <p id="heroCredit" class="hero-credit hidden"></p>
       </section>
 
+      <section id="onboardingGuide" class="onboarding-guide card-section" hidden aria-labelledby="onboardingTitle">
+        <div class="onboarding-header">
+          <div>
+            <p class="eyebrow" data-i18n="home.onboarding.next">Next step</p>
+            <h2 id="onboardingTitle" data-i18n="home.onboarding.guideTitle">Prepare your training space</h2>
+            <p id="onboardingProgress" class="onboarding-progress"></p>
+          </div>
+          <button id="onboardingHide" class="btn-quiet" type="button" data-i18n="home.onboarding.hide">Hide guide</button>
+        </div>
+        <div class="onboarding-steps" role="list">
+          <article class="onboarding-step" data-onboarding-step="shoes" role="listitem">
+            <img src="/assets/onboarding/onboarding-shoes.png" data-i18n-alt="home.onboarding.shoesAlt" alt="Running shoes ready for training" loading="lazy">
+            <div class="onboarding-step-body"><h3 data-i18n="home.onboarding.shoesTitle">Add your running shoes</h3><p data-i18n="home.onboarding.shoesText">Kinesis tracks mileage when you record training results.</p><a class="btn-secondary" href="/shoes.html" data-i18n="home.onboarding.shoesAction">Add shoes</a></div>
+          </article>
+          <article class="onboarding-step" data-onboarding-step="cycle" role="listitem">
+            <img src="/assets/onboarding/onboarding-cycle.png" data-i18n-alt="home.onboarding.cycleAlt" alt="A training cycle mapped out" loading="lazy">
+            <div class="onboarding-step-body"><h3 data-i18n="home.onboarding.cycleTitle">Create your first cycle</h3><p data-i18n="home.onboarding.cycleText">Set a goal and give your training a clear direction.</p><a class="btn-secondary" href="/cycles.html" data-i18n="home.onboarding.cycleAction">Create cycle</a></div>
+          </article>
+          <article class="onboarding-step" data-onboarding-step="trainings" role="listitem">
+            <img src="/assets/onboarding/onboarding-plan.png" data-i18n-alt="home.onboarding.planAlt" alt="A weekly training plan" loading="lazy">
+            <div class="onboarding-step-body"><h3 data-i18n="home.onboarding.planTitle">Prepare your workouts</h3><p data-i18n="home.onboarding.planText">Generate a plan with AI Coach or import a spreadsheet you already have.</p><div class="onboarding-actions"><a class="btn-secondary" href="/ai-coach.html" data-i18n="home.onboarding.aiAction">Build with AI Coach</a><a class="btn-quiet" href="/calendar.html" data-i18n="home.onboarding.importAction">Import a spreadsheet</a></div></div>
+          </article>
+        </div>
+      </section>
+      <section id="onboardingComplete" class="onboarding-complete card-section" hidden aria-live="polite">
+        <div><h2 data-i18n="home.onboarding.completeTitle">Your training space is ready</h2><p data-i18n="home.onboarding.completeText">You can revisit these tips whenever you need them.</p></div>
+        <button id="onboardingReopen" class="btn-quiet" type="button" data-i18n="home.onboarding.reopen">Open setup guide</button>
+      </section>
+      <div id="onboardingReopenBar" class="onboarding-reopen-bar" hidden><button id="onboardingReopenHidden" class="btn-quiet" type="button" data-i18n="home.onboarding.reopen">Open setup guide</button></div>
+
       <div class="dashboard-grid vertical">
         <section class="card-section" aria-labelledby="cycleOverviewTitle">
           <header class="section-header">
@@ -103,6 +133,14 @@
       </div>
     </div>
   </main>
+
+  <div id="onboardingWelcome" class="onboarding-welcome" hidden>
+    <div class="onboarding-welcome-backdrop" data-onboarding-dismiss="true"></div>
+    <section class="onboarding-welcome-card" role="dialog" aria-modal="true" aria-labelledby="onboardingWelcomeTitle">
+      <img src="/assets/onboarding/onboarding-shoes.png" alt="" aria-hidden="true">
+      <div><p class="eyebrow">Kinesis</p><h2 id="onboardingWelcomeTitle" data-i18n="home.onboarding.welcomeTitle">Welcome to Kinesis</h2><p data-i18n="home.onboarding.welcomeText">Set up your training space and turn your plan into consistent progress.</p><p class="onboarding-welcome-next" data-i18n="home.onboarding.welcomeNext">Start by adding the shoes you run in.</p><div class="onboarding-actions"><button id="onboardingContinue" class="btn-primary" type="button" data-i18n="home.onboarding.continue">Let's get started</button><button id="onboardingLater" class="btn-quiet" type="button" data-i18n="home.onboarding.later">Not now</button></div></div>
+    </section>
+  </div>
 
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="shared/shell.js" type="module"></script>

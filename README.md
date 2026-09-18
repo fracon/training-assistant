@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user web application** for managing training logs — drop a Garmin `.FIT` file into the browser, add how the workout felt, and get back a ready-to-paste markdown prompt for your AI coach.
 
-Current application version: **0.9.6** (active development).
+Current application version: **0.10.0** (active development).
 
 ### Shoe mileage integrity
 
@@ -32,6 +32,12 @@ use canonical `fit_distance` in kilometres.
 Every account is protected with server-side sessions. FIT files and training data are processed locally on your machine; the optional weather auto-fill sends only the planned location to Open-Meteo, and the dashboard's optional running-photo request sends a generic running image query to Unsplash. No FIT file or training data is sent to either service.
 
 ## Why
+
+New accounts see a compact onboarding guide on the home dashboard. Its three
+steps are derived from the authenticated user's shoes, active cycle, and
+planned trainings; hiding the guide stores only a presentation preference.
+Existing accounts are marked as legacy during migration and do not receive the
+first-visit welcome modal.
 
 AI coaches are only as good as the data you give them. Exporting workouts by hand means losing detail. Kinesis turns the raw `.FIT` file your watch already recorded into a structured, metric-rich review request in seconds — so every recommendation from your AI coach is grounded in real numbers.
 
@@ -407,6 +413,14 @@ Returns `200` with `{ location, latitude, longitude, date, temperature_c, weathe
 | `404` | Location could not be geocoded |
 | `502` | Open-Meteo is unreachable and no fallback answered |
 
+#### `GET /api/onboarding`
+
+Returns the authenticated user's onboarding state and three data-derived steps
+(`shoes`, `cycle`, and `trainings`). It returns `401` without a session.
+`PATCH /api/onboarding/presentation` accepts only the boolean
+`welcome_dismissed` and/or `guide_hidden` preferences and returns refreshed
+state; unsupported or non-boolean values return `400`.
+
 ## Frontend Architecture
 
 Every primary flow is a standalone page (no single-page hacks, no overlapping layout states):
@@ -415,8 +429,8 @@ Every primary flow is a standalone page (no single-page hacks, no overlapping la
 |---|---|---|
 | Login | `src/public/login.html/.css/.js` | Sign-in form only |
 | Register | `src/public/register.html/.css/.js` | Sign-up form with aggregated validation errors and success toast |
-| TrainingResult | `src/public/training-result.html/.css/.js` | The FIT parser tool, gated behind a session |
-| Home | `src/public/home.html/.css/.js` | Authenticated dashboard with cycle, weekly metrics, tracker, and quote hero |
+| TrainingResult | `src/public/training-result.html/.css/.js` | Contextual FIT/ZIP and manual result capture, gated behind a session |
+| Home | `src/public/home.html/.css/.js` | Authenticated dashboard with onboarding, cycle, weekly metrics, tracker, and quote hero |
 | Calendar | `src/public/calendar.html/.css/.js` | Monthly training calendar and deduplicating Excel import |
 | AI Coach | `src/public/ai-coach.html/.css/.js` | Local prompt builder for weekly coaching plans |
 
@@ -436,7 +450,7 @@ Shared code lives in `src/public/shared/`: `theme.css` (earthy color tokens, DM 
 │   ├── auth/                   # passwords (scrypt), registration, login, sessions, requireAuth
 │   ├── db/                     # SQLite setup (better-sqlite3, WAL, FKs, schema)
 │   └── public/                 # Multi-page frontend (auth, home, calendar, AI Coach, FIT session)
-│       └── shared/             # theme.css + ES modules (shell, i18n, validators, API helpers)
+│       └── shared/             # theme.css + ES modules (shell, i18n, validators, onboarding, API helpers)
 ├── scripts/
 │   ├── tryRealFit.js           # CLI sanity check: parse a real file or generate a synthetic .FIT
 │   └── deploy-zimaos.sh        # Server-side helper: docker compose pull && up -d

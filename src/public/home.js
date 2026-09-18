@@ -1,8 +1,9 @@
-import { fetchActiveCycle, fetchCalendarTrainings, fetchShoes, fetchHeroImage } from './shared/api.js';
+import { fetchActiveCycle, fetchCalendarTrainings, fetchShoes, fetchHeroImage, fetchOnboarding, updateOnboardingPresentation } from './shared/api.js';
 import { initShell, getShellI18n, getUserPreferences } from './shared/shell.js';
 import { translate } from './shared/i18n.js';
 import { formatDate as formatLocalizedDate } from './shared/date.js';
 import { formatDistance } from './shared/units.js';
+import { calculateOnboardingProgress, isNewUserOnboarding, shouldShowWelcome } from './shared/onboarding.js';
 
 export const ZENQUOTES_URL = 'https://zenquotes.io/api/today';
 export const QUOTE_TIMEOUT_MS = 3000;
@@ -469,6 +470,16 @@ function setupHomePage() {
   const weekTrackerDays = document.getElementById('weekTrackerDays');
   const shoesEmpty = document.getElementById('shoesEmpty');
   const shoesList = document.getElementById('shoesList');
+  const onboardingGuide = document.getElementById('onboardingGuide');
+  const onboardingComplete = document.getElementById('onboardingComplete');
+  const onboardingProgress = document.getElementById('onboardingProgress');
+  const onboardingWelcome = document.getElementById('onboardingWelcome');
+  const onboardingHide = document.getElementById('onboardingHide');
+  const onboardingReopen = document.getElementById('onboardingReopen');
+  const onboardingReopenHidden = document.getElementById('onboardingReopenHidden');
+  const onboardingReopenBar = document.getElementById('onboardingReopenBar');
+  const onboardingContinue = document.getElementById('onboardingContinue');
+  const onboardingLater = document.getElementById('onboardingLater');
 
   const state = {
     cycle: null,
@@ -482,6 +493,7 @@ function setupHomePage() {
     temperatureUnit: 'C',
     shoes: [],
     heroCredit: null,
+    onboarding: null,
   };
 
   let i18n = null;
@@ -607,11 +619,40 @@ function setupHomePage() {
     }
   }
 
+  function renderOnboarding() {
+    const onboarding = state.onboarding;
+    if (!onboarding || !isNewUserOnboarding(onboarding)) return;
+    const progress = calculateOnboardingProgress(onboarding);
+    if (onboardingProgress) onboardingProgress.textContent = t('home.onboarding.progress', { completed: progress.completed });
+    onboardingGuide.hidden = Boolean(onboarding.guideHidden || progress.complete);
+    onboardingComplete.hidden = !progress.complete;
+    onboardingReopenBar.hidden = !onboarding.guideHidden || progress.complete;
+    document.querySelectorAll('[data-onboarding-step]').forEach((step) => {
+      const done = progress.steps[step.dataset.onboardingStep];
+      step.classList.toggle('is-complete', done);
+      step.setAttribute('aria-current', progress.nextStep === step.dataset.onboardingStep ? 'step' : 'false');
+    });
+    onboardingWelcome.hidden = !shouldShowWelcome(onboarding);
+  }
+
+  async function dismissWelcome() {
+    if (!state.onboarding) return;
+    state.onboarding = await updateOnboardingPresentation({ welcome_dismissed: true });
+    renderOnboarding();
+  }
+
+  async function toggleGuide(hidden) {
+    if (!state.onboarding) return;
+    state.onboarding = await updateOnboardingPresentation({ guide_hidden: hidden });
+    renderOnboarding();
+  }
+
   function render() {
     renderCycle();
     renderMetrics();
     renderWeekTracker();
     renderShoesWidget();
+    renderOnboarding();
   }
 
   async function loadCycle() {
@@ -637,6 +678,11 @@ function setupHomePage() {
     renderShoesWidget();
   }
 
+  async function loadOnboarding() {
+    state.onboarding = await fetchOnboarding();
+    renderOnboarding();
+  }
+
   async function loadHeroQuote() {
     const quote = await loadQuote({ messages: i18n ? i18n.messages : {} });
     state.quoteSource = quote ? quote.source : 'fallback';
@@ -653,7 +699,17 @@ function setupHomePage() {
     if (state.quoteSource === 'fallback' && i18n) {
       renderQuote(randomFallbackQuote(i18n.messages));
     }
+    renderOnboarding();
   });
+
+  onboardingContinue?.addEventListener('click', dismissWelcome);
+  onboardingLater?.addEventListener('click', dismissWelcome);
+  onboardingWelcome?.addEventListener('click', (event) => {
+    if (event.target.dataset.onboardingDismiss === 'true') dismissWelcome();
+  });
+  onboardingHide?.addEventListener('click', () => toggleGuide(true));
+  onboardingReopen?.addEventListener('click', () => toggleGuide(false));
+  onboardingReopenHidden?.addEventListener('click', () => toggleGuide(false));
 
   document.addEventListener('kinesis:preferences-changed', (event) => {
     const next = event.detail?.first_day_of_week;
@@ -685,6 +741,7 @@ function setupHomePage() {
       loadCycle();
       loadMetrics();
       loadShoes();
+      loadOnboarding();
       return user;
     },
   };

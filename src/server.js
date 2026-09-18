@@ -64,6 +64,31 @@ const { version: APP_VERSION } = require('../package.json');
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
+function getOnboardingState(db, userId) {
+  const user = db.prepare(
+    'SELECT onboarding_status, onboarding_guide_hidden FROM users WHERE id = ?'
+  ).get(userId);
+  const shoes = db.prepare('SELECT 1 FROM shoes WHERE user_id = ? LIMIT 1').get(userId);
+  const cycle = db.prepare(
+    "SELECT 1 FROM training_cycles WHERE user_id = ? AND status = 'active' LIMIT 1"
+  ).get(userId);
+  const trainings = db.prepare('SELECT 1 FROM trainings WHERE user_id = ? LIMIT 1').get(userId);
+  const steps = {
+    shoes: Boolean(shoes),
+    cycle: Boolean(cycle),
+    trainings: Boolean(trainings),
+  };
+  const completed = Object.values(steps).filter(Boolean).length;
+  return {
+    status: user.onboarding_status,
+    guideHidden: Boolean(user.onboarding_guide_hidden),
+    steps,
+    completed,
+    total: 3,
+    complete: completed === 3,
+  };
+}
+
 const FIELD_MAP = {
   tipo_treino: 'tipoTreino',
   treino_planejado: 'treinoPlanejado',
@@ -248,6 +273,40 @@ async function buildServer(options = {}) {
 
     app.get('/api/me', { preHandler: requireAuth }, async (request) => {
       return { user: request.user };
+    });
+
+    app.get('/api/onboarding', { preHandler: requireAuth }, async (request) => {
+      return { onboarding: getOnboardingState(db, request.user.id) };
+    });
+
+    app.patch('/api/onboarding/presentation', { preHandler: requireAuth }, async (request, reply) => {
+      const body = request.body ?? {};
+      const keys = Object.keys(body);
+      const supported = ['welcome_dismissed', 'guide_hidden'];
+      if (keys.length === 0 || keys.some((key) => !supported.includes(key))) {
+        return reply.code(400).send({ error: 'Unsupported onboarding preference.' });
+      }
+      if (body.welcome_dismissed !== undefined && typeof body.welcome_dismissed !== 'boolean') {
+        return reply.code(400).send({ error: 'welcome_dismissed must be a boolean.' });
+      }
+      if (body.guide_hidden !== undefined && typeof body.guide_hidden !== 'boolean') {
+        return reply.code(400).send({ error: 'guide_hidden must be a boolean.' });
+      }
+      const update = db.transaction(() => {
+        if (body.welcome_dismissed === true) {
+          db.prepare(
+            "UPDATE users SET onboarding_status = CASE WHEN onboarding_status = 'new' THEN 'active' ELSE onboarding_status END WHERE id = ?"
+          ).run(request.user.id);
+        }
+        if (body.guide_hidden !== undefined) {
+          db.prepare('UPDATE users SET onboarding_guide_hidden = ? WHERE id = ?').run(
+            body.guide_hidden ? 1 : 0,
+            request.user.id
+          );
+        }
+      });
+      update();
+      return { onboarding: getOnboardingState(db, request.user.id) };
     });
 
     app.get('/api/hero-image', { preHandler: requireAuth }, async () => {
