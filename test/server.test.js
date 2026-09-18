@@ -178,6 +178,41 @@ test('POST /api/fit/parse rejects non-multipart requests', async () => {
   db.close();
 });
 
+test('POST /api/fit/parse authenticates before processing multipart uploads with a database', async () => {
+  let parseCalls = 0;
+  const { app, db, cookie } = await authenticatedApp({
+    parseFitFile: async () => {
+      parseCalls += 1;
+      return GOOD_SUMMARY;
+    },
+  });
+  const body = multipart([
+    { name: 'file', fileName: 'run.fit', value: Buffer.from('FITDATA') },
+  ]);
+
+  const anonymous = await app.inject({
+    method: 'POST',
+    url: '/api/fit/parse',
+    headers: body.headers,
+    payload: body.payload,
+  });
+  assert.equal(anonymous.statusCode, 401);
+  assert.deepEqual(anonymous.json(), { error: 'Authentication required.' });
+  assert.equal(parseCalls, 0);
+
+  const authenticated = await app.inject({
+    method: 'POST',
+    url: '/api/fit/parse',
+    headers: { ...body.headers, cookie },
+    payload: body.payload,
+  });
+  assert.equal(authenticated.statusCode, 200);
+  assert.equal(parseCalls, 1);
+
+  await app.close();
+  db.close();
+});
+
 test('POST /api/fit/parse requires a file field', async () => {
   const { app, db, cookie } = await authenticatedApp({ parseFitFile: stubParse() });
   const response = await postParts(app, [{ name: 'feedback_livre', value: 'no file here' }], cookie);

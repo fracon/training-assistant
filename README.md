@@ -103,7 +103,14 @@ future work and are not made compatible by renaming their extensions.
 
 Every realized result has one persisted source: `none`, `fit_upload`, or `manual` (`garmin_connect` is reserved for a future integration). A manual result intentionally has no synthetic FIT summary or laps. Replacing FIT data with manual aggregates, or manual aggregates with a FIT upload, requires explicit confirmation and executes atomically; the outgoing source's incompatible data is cleared. The result screen marks the source clearly, and its analysis prompt identifies manual data, notes the absence of laps, and states that Kinesis calculated pace from distance and duration. Since dashboard, calendar, and AI Coach already aggregate the canonical training metrics, manual results participate in weekly totals without a second source of truth.
 
-The final result-page actions persist the complete result and feedback before continuing: **Save and back to calendar** saves the manual/FIT result and all feedback, then returns to the Calendar; **Save and Generate Analysis Prompt** saves the required result and complete feedback first, then generates the prompt from the canonical training state returned by the backend, including backend-calculated pace and current provenance. The screen avoids reposting an unchanged manual result by comparing canonical metric values.
+The FIT result is persisted as soon as the upload to `/api/trainings/:id/fit`
+completes. The final result-page actions then persist the manual result when
+needed and save the complete feedback before continuing: **Save and back to
+calendar** returns to the Calendar after saving; **Save and Generate Analysis
+Prompt** generates the prompt only after that feedback save, using the
+canonical training state returned by the backend, including backend-calculated
+pace and current provenance. The screen avoids reposting an unchanged manual
+result by comparing canonical metric values.
 
 Calories are available for both result sources. For FIT uploads, Kinesis reads the
 authoritative activity/session total (`sessions[0].total_calories`) exposed by
