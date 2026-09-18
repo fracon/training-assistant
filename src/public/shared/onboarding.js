@@ -25,3 +25,24 @@ export function isNewUserOnboarding(state) {
 export function shouldShowWelcome(state) {
   return isNewUserOnboarding(state) && state?.status === 'new';
 }
+
+export function onboardingPresentation(state = {}) {
+  const progress = calculateOnboardingProgress(state);
+  if (!isNewUserOnboarding(state)) {
+    return { ...progress, guideOpen: false, guideVisible: false, completionVisible: false, reopenVisible: false };
+  }
+  const guideOpen = progress.complete ? Boolean(state.guideOpen) : !state.guideHidden;
+  return {
+    ...progress,
+    guideOpen,
+    guideVisible: guideOpen,
+    completionVisible: progress.complete && !guideOpen,
+    reopenVisible: !progress.complete && !guideOpen,
+  };
+}
+
+export function backgroundInertTargets(elements, modal) {
+  return [...(elements ?? [])].filter(
+    (element) => element !== modal && !element.hasAttribute('inert')
+  );
+}

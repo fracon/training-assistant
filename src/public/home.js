@@ -3,7 +3,7 @@ import { initShell, getShellI18n, getUserPreferences, showShellToast } from './s
 import { translate } from './shared/i18n.js';
 import { formatDate as formatLocalizedDate } from './shared/date.js';
 import { formatDistance } from './shared/units.js';
-import { calculateOnboardingProgress, isNewUserOnboarding, shouldShowWelcome } from './shared/onboarding.js';
+import { calculateOnboardingProgress, isNewUserOnboarding, shouldShowWelcome, onboardingPresentation, backgroundInertTargets } from './shared/onboarding.js';
 
 export const ZENQUOTES_URL = 'https://zenquotes.io/api/today';
 export const QUOTE_TIMEOUT_MS = 3000;
@@ -499,6 +499,17 @@ function setupHomePage() {
   let i18n = null;
   let welcomeReturnFocus = null;
   let welcomeWasOpen = false;
+  let inertBackgroundElements = new Set();
+
+  function setWelcomeBackgroundInert(inert) {
+    if (inert) {
+      inertBackgroundElements = new Set(backgroundInertTargets(document.body.children, onboardingWelcome));
+      for (const element of inertBackgroundElements) element.setAttribute('inert', '');
+      return;
+    }
+    for (const element of inertBackgroundElements) element.removeAttribute('inert');
+    inertBackgroundElements.clear();
+  }
 
   function t(key, params) {
     return translate(i18n ? i18n.messages : {}, key, params);
@@ -624,11 +635,12 @@ function setupHomePage() {
   function renderOnboarding() {
     const onboarding = state.onboarding;
     if (!onboarding || !isNewUserOnboarding(onboarding)) return;
+    const presentation = onboardingPresentation(onboarding);
     const progress = calculateOnboardingProgress(onboarding);
     if (onboardingProgress) onboardingProgress.textContent = t('home.onboarding.progress', { completed: progress.completed });
-    onboardingGuide.hidden = Boolean(onboarding.guideHidden || progress.complete);
-    onboardingComplete.hidden = !progress.complete;
-    onboardingReopenBar.hidden = !onboarding.guideHidden || progress.complete;
+    onboardingGuide.hidden = !presentation.guideVisible;
+    onboardingComplete.hidden = !presentation.completionVisible;
+    onboardingReopenBar.hidden = !presentation.reopenVisible;
     document.querySelectorAll('[data-onboarding-step]').forEach((step) => {
       const done = progress.steps[step.dataset.onboardingStep];
       step.classList.toggle('is-complete', done);
@@ -639,12 +651,12 @@ function setupHomePage() {
       welcomeReturnFocus = document.activeElement;
       onboardingWelcome.hidden = false;
       onboardingWelcome.setAttribute('aria-hidden', 'false');
-      document.getElementById('appView')?.setAttribute('inert', '');
+      setWelcomeBackgroundInert(true);
       onboardingContinue?.focus();
     } else if (!shouldOpen && welcomeWasOpen) {
       onboardingWelcome.hidden = true;
       onboardingWelcome.setAttribute('aria-hidden', 'true');
-      document.getElementById('appView')?.removeAttribute('inert');
+      setWelcomeBackgroundInert(false);
       if (welcomeReturnFocus && typeof welcomeReturnFocus.focus === 'function') welcomeReturnFocus.focus();
       welcomeReturnFocus = null;
     } else {
@@ -660,7 +672,7 @@ function setupHomePage() {
       const response = await updateOnboardingPresentation({ welcome_dismissed: true });
       const next = response?.onboarding;
       if (!next?.status || !next.steps) throw new Error('Invalid onboarding response.');
-      state.onboarding = next;
+      state.onboarding = { ...next, guideOpen: false };
       renderOnboarding();
     } catch {
       showShellToast(i18n?.messages ?? {}, 'home.onboarding.saveError', 'error');
@@ -673,7 +685,7 @@ function setupHomePage() {
       const response = await updateOnboardingPresentation({ guide_hidden: hidden });
       const next = response?.onboarding;
       if (!next?.status || !next.steps) throw new Error('Invalid onboarding response.');
-      state.onboarding = next;
+      state.onboarding = { ...next, guideOpen: !hidden };
       renderOnboarding();
     } catch {
       showShellToast(i18n?.messages ?? {}, 'home.onboarding.saveError', 'error');

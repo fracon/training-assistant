@@ -19,6 +19,30 @@ test('onboarding progress exposes three data-derived steps', async () => {
   assert.equal(module.isNewUserOnboarding({ status: 'legacy' }), false);
 });
 
+test('completed guide presentation supports conclusion, reopen, hide, and reload', async () => {
+  const { onboardingPresentation } = await import(pathToFileURL(path.join(__dirname, '../src/public/shared/onboarding.js')));
+  const complete = { status: 'active', guideHidden: false, steps: { shoes: true, cycle: true, trainings: true } };
+  assert.deepEqual(
+    onboardingPresentation(complete),
+    { steps: complete.steps, completed: 3, total: 3, complete: true, nextStep: null, guideOpen: false, guideVisible: false, completionVisible: true, reopenVisible: false }
+  );
+  const reopened = { ...complete, guideOpen: true };
+  assert.equal(onboardingPresentation(reopened).guideVisible, true);
+  assert.equal(onboardingPresentation(reopened).completionVisible, false);
+  const hidden = { ...complete, guideHidden: true, guideOpen: false };
+  assert.equal(onboardingPresentation(hidden).guideVisible, false);
+  assert.equal(onboardingPresentation(hidden).completionVisible, true);
+  assert.equal(onboardingPresentation({ ...hidden }).completed, 3);
+});
+
+test('welcome inert targeting excludes the dialog and preserves previously inert elements', async () => {
+  const { backgroundInertTargets } = await import(pathToFileURL(path.join(__dirname, '../src/public/shared/onboarding.js')));
+  const modal = {};
+  const shell = { hasAttribute: () => false };
+  const alreadyInert = { hasAttribute: () => true };
+  assert.deepEqual(backgroundInertTargets([shell, modal, alreadyInert], modal), [shell]);
+});
+
 test('onboarding UI keeps the existing destinations and accessibility hooks', () => {
   const fs = require('node:fs');
   const home = fs.readFileSync(path.join(__dirname, '../src/public/home.html'), 'utf8');
