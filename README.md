@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user web application** for managing training logs — drop a Garmin `.FIT` file into the browser, add how the workout felt, and get back a ready-to-paste markdown prompt for your AI coach.
 
-Current application version: **0.9.5** (active development).
+Current application version: **0.9.6** (active development).
 
 ### Shoe mileage integrity
 
@@ -29,7 +29,7 @@ entry. Legacy shoe labels remain a presentation fallback when loading the
 associated shoe is not possible; FIT, ZIP-extracted FIT, and manual results all
 use canonical `fit_distance` in kilometres.
 
-Every account is protected with server-side sessions, every `.FIT` file is parsed locally on your own machine: no cloud parsing, no telemetry — your training data never leaves your hardware.
+Every account is protected with server-side sessions. FIT files and training data are processed locally on your machine; the optional weather auto-fill sends only the planned location to Open-Meteo, and the dashboard's optional running-photo request sends a generic running image query to Unsplash. No FIT file or training data is sent to either service.
 
 ## Why
 
@@ -103,7 +103,14 @@ future work and are not made compatible by renaming their extensions.
 
 Every realized result has one persisted source: `none`, `fit_upload`, or `manual` (`garmin_connect` is reserved for a future integration). A manual result intentionally has no synthetic FIT summary or laps. Replacing FIT data with manual aggregates, or manual aggregates with a FIT upload, requires explicit confirmation and executes atomically; the outgoing source's incompatible data is cleared. The result screen marks the source clearly, and its analysis prompt identifies manual data, notes the absence of laps, and states that Kinesis calculated pace from distance and duration. Since dashboard, calendar, and AI Coach already aggregate the canonical training metrics, manual results participate in weekly totals without a second source of truth.
 
-Manual metrics are saved as part of either final result-page action: **Save and back to calendar** persists them before feedback and redirects only after both succeed; **Generate analysis prompt** persists them first so the prompt uses the backend-calculated pace and current provenance. The screen avoids reposting an unchanged manual result by comparing canonical metric values.
+The FIT result is persisted as soon as the upload to `/api/trainings/:id/fit`
+completes. The final result-page actions then persist the manual result when
+needed and save the complete feedback before continuing: **Save and back to
+calendar** returns to the Calendar after saving; **Save and Generate Analysis
+Prompt** generates the prompt only after that feedback save, using the
+canonical training state returned by the backend, including backend-calculated
+pace and current provenance. The screen avoids reposting an unchanged manual
+result by comparing canonical metric values.
 
 Calories are available for both result sources. For FIT uploads, Kinesis reads the
 authoritative activity/session total (`sessions[0].total_calories`) exposed by
@@ -214,9 +221,9 @@ Then open <http://127.0.0.1:3000> — you'll land on the login page. Create an a
 | `npm start` | Start the server |
 | `npm run dev` | Start with auto-reload on file changes |
 | `npm test` | Run the test suite |
-| `npm run test:coverage` | Run tests with c8 — enforces **100%** statements, branches, functions, lines |
+| `npm run test:coverage` | Run tests with c8 — enforces **100%** statements, branches, functions, and lines in instrumented backend files |
 
-> **The 100% Rule:** every new feature, page, or shared module must ship with tests that keep **coverage strictly at 100%** across all four metrics (Statements, Branches, Functions, Lines). `npm run test:coverage` is the gate — if it drops below 100%, the missing tests must be written before any commit.
+> **The 100% Rule:** `npm run test:coverage` enforces 100% Statements, Branches, Functions, and Lines for the files instrumented by c8 (`src/**`, excluding `src/public/**` and `src/start.js`). Frontend behavior remains test-mandatory when it changes, but `src/public/**` is not included in that instrumentation percentage.
 
 Configuration via environment variables:
 
@@ -238,10 +245,10 @@ committed to Git.
 ## Usage
 
 1. Open the app — you are presented with the **Sign In** page. New here? Follow **Register** to create an account (first name, last name, email, password of at least 8 characters).
-2. After signing in you reach the **Training Result** page: fill in what you can — planned session details, conditions, gear, perceived effort (RPE 1–5), and feedback.
-3. Choose **Import FIT file** for detailed lap data, or **Enter data manually** to register aggregated results without a watch export. Manual entries require distance and duration; FIT remains the detailed-data path.
-4. Review the parsed laps table and the generated prompt rendered on screen.
-5. Click **Copiar Prompt** and paste it into your favorite AI assistant.
+2. After signing in you reach the **Home** dashboard. Open the Calendar, select a planned training, and complete the Training Result form with conditions, gear, perceived effort (RPE 1–5), and feedback.
+3. In **How would you like to register the result?**, choose **Import FIT or ZIP file** for detailed activity data, or **Enter data manually** for aggregate distance and duration (with optional HR, elevation, and calories).
+4. Review the result and feedback. Choose **Save and back to calendar** to persist and return, or **Save and Generate Analysis Prompt** to persist the complete state and render the canonical prompt.
+5. In the generated prompt section, select **Copy to clipboard** and paste it into your favorite AI assistant.
 6. When you're done, hit **Logout** in the header — the session is destroyed server-side.
 
 The generated prompt follows an exact PT-BR template (defined in `src/markdownGenerator.js`). A trimmed excerpt:
@@ -303,10 +310,10 @@ required), plus optional `avg_hr`, `max_hr`, `elevation_gain_m`, and
 `result_data_source` to `manual`, and returns the updated training. Replacing
 an existing FIT result requires `confirm_replace_fit: true`; this removes the
 stored FIT summary/laps in the same SQLite transaction. No external service is
-used. ZIP Garmin exports and mobile/desktop export guidance belong to later
-phases and are intentionally not implemented here.
+used. ZIP Garmin exports and the mobile/desktop export guidance are available
+in the Training Result import guide.
 
-All endpoints except registration and login require a valid session cookie (`ta_session`). Use a cookie jar when scripting:
+All protected API endpoints require a valid session cookie (`ta_session`). Use a cookie jar when scripting:
 
 ### Public — Authentication
 

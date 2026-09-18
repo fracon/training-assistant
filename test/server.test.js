@@ -86,14 +86,36 @@ function multipart(parts) {
   };
 }
 
-async function postParts(app, parts) {
+async function postParts(app, parts, cookie) {
   const body = multipart(parts);
   return app.inject({
     method: 'POST',
     url: '/api/fit/parse',
-    headers: body.headers,
+    headers: cookie ? { ...body.headers, cookie } : body.headers,
     payload: body.payload,
   });
+}
+
+async function authenticatedApp(options = {}) {
+  const db = createDatabase({ filename: ':memory:' });
+  const app = await buildServer({ ...options, db, sessionCookieSecure: false });
+  await app.inject({
+    method: 'POST',
+    url: '/api/auth/register',
+    payload: {
+      email: 'fit-parser@example.com',
+      password: 'super-secret-1',
+      first_name: 'Fit',
+      last_name: 'Parser',
+    },
+  });
+  const login = await app.inject({
+    method: 'POST',
+    url: '/api/auth/login',
+    payload: { email: 'fit-parser@example.com', password: 'super-secret-1' },
+  });
+  const cookie = [].concat(login.headers['set-cookie'] ?? [])[0].split(';')[0];
+  return { app, db, cookie };
 }
 
 function fullFormFields() {
@@ -132,59 +154,107 @@ test('parseRpe rejects non-integers and out-of-range values', () => {
 });
 
 test('POST /api/fit/parse rejects non-multipart requests', async () => {
-  const app = await buildServer({ parseFitFile: stubParse() });
-  const response = await app.inject({
+  const anonymousApp = await buildServer({ parseFitFile: stubParse() });
+  const anonymous = await anonymousApp.inject({
     method: 'POST',
     url: '/api/fit/parse',
     headers: { 'content-type': 'application/json' },
     payload: {},
   });
+  assert.equal(anonymous.statusCode, 401);
+  assert.deepEqual(anonymous.json(), { error: 'Authentication required.' });
+
+  const { app, db, cookie } = await authenticatedApp({ parseFitFile: stubParse() });
+  const response = await app.inject({
+    method: 'POST',
+    url: '/api/fit/parse',
+    headers: { 'content-type': 'application/json', cookie },
+    payload: {},
+  });
   assert.equal(response.statusCode, 400);
   assert.deepEqual(response.json(), { error: 'Expected multipart/form-data upload.' });
+  await anonymousApp.close();
+  await app.close();
+  db.close();
+});
+
+test('POST /api/fit/parse authenticates before processing multipart uploads with a database', async () => {
+  let parseCalls = 0;
+  const { app, db, cookie } = await authenticatedApp({
+    parseFitFile: async () => {
+      parseCalls += 1;
+      return GOOD_SUMMARY;
+    },
+  });
+  const body = multipart([
+    { name: 'file', fileName: 'run.fit', value: Buffer.from('FITDATA') },
+  ]);
+
+  const anonymous = await app.inject({
+    method: 'POST',
+    url: '/api/fit/parse',
+    headers: body.headers,
+    payload: body.payload,
+  });
+  assert.equal(anonymous.statusCode, 401);
+  assert.deepEqual(anonymous.json(), { error: 'Authentication required.' });
+  assert.equal(parseCalls, 0);
+
+  const authenticated = await app.inject({
+    method: 'POST',
+    url: '/api/fit/parse',
+    headers: { ...body.headers, cookie },
+    payload: body.payload,
+  });
+  assert.equal(authenticated.statusCode, 200);
+  assert.equal(parseCalls, 1);
+
+  await app.close();
+  db.close();
 });
 
 test('POST /api/fit/parse requires a file field', async () => {
-  const app = await buildServer({ parseFitFile: stubParse() });
-  const response = await postParts(app, [{ name: 'feedback_livre', value: 'no file here' }]);
+  const { app, db, cookie } = await authenticatedApp({ parseFitFile: stubParse() });
+  const response = await postParts(app, [{ name: 'feedback_livre', value: 'no file here' }], cookie);
   assert.equal(response.statusCode, 400);
   assert.deepEqual(response.json(), { error: 'Missing .FIT file field.' });
 });
 
 test('POST /api/fit/parse only accepts .FIT extensions', async () => {
-  const app = await buildServer({ parseFitFile: stubParse() });
+  const { app, db, cookie } = await authenticatedApp({ parseFitFile: stubParse() });
   const response = await postParts(app, [
     { name: 'file', fileName: 'activity.txt', value: 'plain text' },
-  ]);
+  ], cookie);
   assert.equal(response.statusCode, 400);
   assert.deepEqual(response.json(), { error: 'Only .FIT files are supported.' });
 });
 
 test('POST /api/fit/parse validates the planned rpe field', async () => {
-  const app = await buildServer({ parseFitFile: stubParse() });
+  const { app, db, cookie } = await authenticatedApp({ parseFitFile: stubParse() });
   const response = await postParts(app, [
     { name: 'file', fileName: 'run.fit', value: 'binary' },
     { name: 'rpe_alvo', value: 'eleven' },
-  ]);
+  ], cookie);
   assert.equal(response.statusCode, 400);
   assert.deepEqual(response.json(), { error: 'rpe must be an integer between 1 and 5.' });
 });
 
 test('POST /api/fit/parse validates the perceived rpe field', async () => {
-  const app = await buildServer({ parseFitFile: stubParse() });
+  const { app, db, cookie } = await authenticatedApp({ parseFitFile: stubParse() });
   const response = await postParts(app, [
     { name: 'file', fileName: 'run.fit', value: 'binary' },
     { name: 'rpe_alvo', value: '' },
     { name: 'rpe_percebido', value: '6' },
-  ]);
+  ], cookie);
   assert.equal(response.statusCode, 400);
   assert.deepEqual(response.json(), { error: 'rpe must be an integer between 1 and 5.' });
 });
 
 test('POST /api/fit/parse reports unreadable files as 422', async () => {
-  const app = await buildServer({ parseFitFile: failingParse() });
+  const { app, db, cookie } = await authenticatedApp({ parseFitFile: failingParse() });
   const response = await postParts(app, [
     { name: 'file', fileName: 'run.fit', value: 'binary' },
-  ]);
+  ], cookie);
   assert.equal(response.statusCode, 422);
   assert.deepEqual(response.json(), {
     error: 'Could not read lap data from this .FIT file.',
@@ -193,23 +263,23 @@ test('POST /api/fit/parse reports unreadable files as 422', async () => {
 });
 
 test('POST /api/fit/parse enforces the configured size limit', async () => {
-  const app = await buildServer({
+  const { app, db, cookie } = await authenticatedApp({
     parseFitFile: failingParse(),
     maxFileSizeBytes: 8,
   });
   const response = await postParts(app, [
     { name: 'file', fileName: 'run.fit', value: Buffer.alloc(64, 1) },
-  ]);
+  ], cookie);
   assert.equal(response.statusCode, 413);
   assert.deepEqual(response.json(), { error: 'File exceeds the size limit.' });
 });
 
 test('POST /api/fit/parse renders the full coach prompt from the complete payload', async () => {
-  const app = await buildServer({ parseFitFile: stubParse() });
+  const { app, db, cookie } = await authenticatedApp({ parseFitFile: stubParse() });
   const response = await postParts(app, [
     { name: 'file', fileName: 'WORKOUT.FIT', value: Buffer.from([0x0c, 0x00]) },
     ...fullFormFields(),
-  ]);
+  ], cookie);
   assert.equal(response.statusCode, 200);
 
   const payload = response.json();
@@ -254,10 +324,10 @@ test('POST /api/fit/parse renders the full coach prompt from the complete payloa
 });
 
 test('POST /api/fit/parse tolerates an empty form payload', async () => {
-  const app = await buildServer({ parseFitFile: stubParse() });
+  const { app, db, cookie } = await authenticatedApp({ parseFitFile: stubParse() });
   const response = await postParts(app, [
     { name: 'file', fileName: 'run.fit', value: 'binary' },
-  ]);
+  ], cookie);
   assert.equal(response.statusCode, 200);
   const payload = response.json();
   assert.ok(payload.markdown.includes('Workout type: not informed'));
@@ -301,6 +371,16 @@ test('authenticated uploads render the prompt in the user preferred language', a
   const payload = response.json();
   assert.ok(payload.markdown.includes('Tipo de treino: não informado'));
 
+  db.prepare("UPDATE users SET preferred_lang = '' WHERE id = 1").run();
+  const fallbackResponse = await app.inject({
+    method: 'POST',
+    url: '/api/fit/parse',
+    headers: { cookie: cookiePair, ...multipartBody.headers },
+    payload: multipartBody.payload,
+  });
+  assert.equal(fallbackResponse.statusCode, 200);
+  assert.ok(fallbackResponse.json().markdown.includes('Workout type: not informed'));
+
   await app.close();
   db.close();
 });
@@ -340,14 +420,16 @@ test('GET /api/version exposes the packaged app version', async () => {
 });
 
 test('the default parser rejects garbage uploads end-to-end', async () => {
-  const app = await buildServer();
+  const { app, db, cookie } = await authenticatedApp();
   const emptyFitFile = Buffer.from([
     14, 16, 32, 0, 0, 0, 0, 0, 46, 70, 73, 84, 98, 239, 0, 0,
   ]);
   const response = await postParts(app, [
     { name: 'file', fileName: 'garbage.fit', value: emptyFitFile },
-  ]);
+  ], cookie);
   assert.equal(response.statusCode, 422);
+  await app.close();
+  db.close();
 });
 
 test('POST /api/auth/register creates a user and never exposes the hash', async () => {
