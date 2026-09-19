@@ -349,7 +349,7 @@ test('dashboard onboarding cards render accessible states and aligned actions in
         const body=card.querySelector('.onboarding-step-body');
         return{
           key,done,next,card:rect(card),image:rect(card.querySelector('img')),body:rect(body),actionArea:rect(actions),actionAreaHidden:actions.hidden,
-          links:links.map((link)=>({href:new URL(link.href).pathname,rect:rect(link),visible:visible(link),color:getComputedStyle(link).color,decoration:getComputedStyle(link).textDecorationLine})),
+          links:links.map((link)=>{const style=getComputedStyle(link);const label=link.querySelector('span');const icon=link.querySelector('svg');return{href:new URL(link.href).pathname,classes:[...link.classList],rect:rect(link),label:rect(label),icon:rect(icon),iconHidden:icon.getAttribute('aria-hidden'),iconFocusable:icon.getAttribute('focusable'),iconTabIndex:icon.getAttribute('tabindex'),iconStroke:getComputedStyle(icon).stroke,color:style.color,background:style.backgroundColor,borderStyle:style.borderStyle,borderWidth:style.borderWidth,shadow:style.boxShadow,decoration:style.textDecorationLine,fontWeight:style.fontWeight}}),
           completeBadge:{hidden:completeBadge.hidden,text:completeBadge.innerText.trim(),rect:rect(completeBadge),color:getComputedStyle(completeBadge).color,opacity:getComputedStyle(completeBadge).opacity,description:card.getAttribute('aria-describedby'),iconHidden:completeBadge.querySelector('svg').getAttribute('aria-hidden')},
           nextBadge:{hidden:nextBadge.hidden,text:nextBadge.innerText.trim(),color:getComputedStyle(nextBadge).color},
           ariaCurrent:card.getAttribute('aria-current'),ariaDescribedBy:card.getAttribute('aria-describedby'),borderColor:getComputedStyle(card).borderTopColor,opacity:getComputedStyle(card).opacity,imageFilter:getComputedStyle(card.querySelector('img')).filter,
@@ -357,10 +357,11 @@ test('dashboard onboarding cards render accessible states and aligned actions in
         };
       });
       const sheet=[...document.styleSheets].find((candidate)=>candidate.href?.endsWith('/home.css'));
+      const actionRules=[...(sheet?.cssRules??[])].filter((rule)=>rule.selectorText?.split(',').some((selector)=>selector.trim()==='.onboarding-step-action:visited'));
+      const visitedRule=actionRules.some((rule)=>rule.style.color==='var(--accent-deep)'&&rule.style.textDecoration==='none'&&rule.style.backgroundColor==='transparent'&&rule.style.borderStyle==='none');
       const selectors=[...(sheet?.cssRules??[])].map((rule)=>rule.selectorText??'').join(',');
-      const visitedRule=selectors.includes('.onboarding-step-action:visited');
       const explicitStates=['link','visited','hover','focus-visible','active'].every((state)=>selectors.includes('.onboarding-step-action:'+state));
-      const focusTarget=guide.querySelector('[data-onboarding-actions]:not([hidden]) a')??document.getElementById('onboardingHide');
+      const focusTarget=guide.querySelector('[data-onboarding-actions]:not([hidden]) a[href="/ai-coach.html"]')??document.getElementById('onboardingHide');
       focusTarget.focus({preventScroll:true});
       const focus={matches:focusTarget.matches(':focus-visible'),outline:getComputedStyle(focusTarget).outlineStyle};
       return{lang,count,progress:document.getElementById('onboardingProgress').textContent,listRole:guide.querySelector('.onboarding-steps').getAttribute('role'),listItemCount:cards.filter((card)=>card.getAttribute('role')==='listitem').length,cards:states,visitedRule,explicitStates,
@@ -396,7 +397,7 @@ test('dashboard onboarding cards render accessible states and aligned actions in
   try {
     for (const [width, height] of [[1280, 800], [390, 844]]) {
       results.push(await runChromeAtViewport(chrome, `http://127.0.0.1:${port}/`, {
-        width, height, mobile: width < 600, focusSelector: '#onboardingHide', verifyTabNextSelector: '.onboarding-step-action-primary', verifyTabFollowingSelector: '.onboarding-step-action-text', screenshotSuffix: '-dashboard',
+        width, height, mobile: width < 600, focusSelector: '#onboardingHide', verifyTabNextSelector: 'a[href="/ai-coach.html"]', verifyTabFollowingSelector: 'a[href="/calendar.html"]', screenshotSuffix: '-dashboard',
       }));
     }
   } finally {
@@ -414,6 +415,17 @@ test('dashboard onboarding cards render accessible states and aligned actions in
       assert.equal(sample.visitedRule, true, 'dashboard CSS explicitly styles visited onboarding links');
       assert.equal(sample.explicitStates, true, 'link, visited, hover, focus-visible, and active states are explicitly styled');
       assert.ok(sample.cards.every((card) => card.opacity === '1'), 'pending and completed cards do not use disabled-looking opacity');
+      const allActions = sample.cards.flatMap((card) => card.links);
+      assert.ok(allActions.every((link) => link.classes.includes('onboarding-step-action')), 'every onboarding destination uses the one shared action class');
+      assert.ok(allActions.every((link) => !link.classes.includes('onboarding-step-action-primary') && !link.classes.includes('onboarding-step-action-text')), 'filled and text-only action variants are gone');
+      assert.deepEqual(allActions.map((link) => link.href), ['/shoes.html','/cycles.html','/ai-coach.html','/calendar.html']);
+      assert.ok(allActions.every((link) => link.background === 'rgba(0, 0, 0, 0)' && link.borderStyle === 'none' && link.borderWidth === '0px' && link.shadow === 'none'), 'actions have a transparent, borderless, shadowless resting style');
+      assert.ok(allActions.every((link) => link.decoration === 'none'), 'actions never use native link underlining');
+      assert.ok(allActions.every((link) => link.iconHidden === 'true' && link.iconFocusable === 'false' && link.iconTabIndex === null), 'the trailing chevrons are decorative and not focusable');
+      assert.ok(allActions.every((link) => link.icon.x >= link.label.right - 0.5 && link.icon.y + link.icon.height / 2 >= link.rect.y && link.icon.y + link.icon.height / 2 <= link.rect.bottom), 'each chevron follows its label and is vertically centered');
+      assert.ok(allActions.every((link) => link.iconStroke === link.color), 'chevrons follow the action text via currentColor');
+      assert.ok(allActions.every((link) => !link.visible || link.rect.height >= 40), 'every available action keeps a comfortable pointer target');
+      assert.ok(allActions.every((link) => link.color === 'rgb(76, 110, 81)'), 'all action colors use the Kinesis green token, never native purple or blue');
       assert.ok(sample.cards.every((card) => card.actionX.length === 0 || card.actionX.every((x) => Math.abs(x - card.actionX[0]) < 0.5)), 'each card action stack shares its left edge');
       const alignedActionOffsets = sample.cards.flatMap((card) => card.actionX.slice(0, 1));
       assert.ok(alignedActionOffsets.every((x) => Math.abs(x - alignedActionOffsets[0]) < 0.5), 'all card primary actions share the same left alignment');
@@ -453,6 +465,8 @@ test('dashboard onboarding cards render accessible states and aligned actions in
       assert.equal(workoutCard.links[0].href, '/ai-coach.html');
       assert.equal(workoutCard.links[1].href, '/calendar.html');
       assert.ok(Math.abs(workoutCard.links[0].rect.x - workoutCard.links[1].rect.x) < 0.5, 'AI Coach and spreadsheet actions align on the same left axis');
+      assert.equal(workoutCard.links[1].classes.includes('onboarding-step-action-secondary'), true, 'spreadsheet import is a subtle secondary in the shared action family');
+      assert.equal(workoutCard.links[1].fontWeight, '500');
       if (sample.viewportWidth >= 760) {
         assert.ok(Math.abs(sample.cards[0].card.height - sample.cards[1].card.height) < 0.5);
         assert.ok(Math.abs(sample.cards[1].card.height - sample.cards[2].card.height) < 0.5, 'cards have equal height within their desktop row');

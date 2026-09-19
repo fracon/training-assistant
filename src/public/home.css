@@ -46,20 +46,14 @@
 .onboarding-step-actions[hidden] { display: none !important; }
 .onboarding-step-action,
 .onboarding-step-action:link,
-.onboarding-step-action:visited { display: inline-flex; max-width: 100%; min-height: 2.5rem; align-items: center; justify-content: flex-start; padding: 0.45rem 0.8rem; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--card); color: var(--accent-deep); font: inherit; font-size: 0.84rem; font-weight: 600; line-height: 1.25; text-align: left; text-decoration: none; cursor: pointer; transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease; }
-.onboarding-step-action:hover { border-color: var(--accent); background: var(--bg); color: var(--ink); text-decoration: none; }
+.onboarding-step-action:visited { display: inline-flex; max-width: 100%; min-height: 2.5rem; align-items: center; justify-content: flex-start; gap: 0.4rem; padding: 0.45rem 0.55rem; border: 0; border-radius: 9px; background: transparent; box-shadow: none; color: var(--accent-deep); font: inherit; font-size: 0.84rem; font-weight: 600; line-height: 1.25; text-align: left; text-decoration: none; white-space: nowrap; cursor: pointer; transition: background-color 0.15s ease, color 0.15s ease; }
+.onboarding-step-action:hover { background: var(--bg); color: var(--ink); text-decoration: none; }
 .onboarding-step-action:focus-visible { outline: 2px solid var(--accent-deep); outline-offset: 2px; text-decoration: none; }
 .onboarding-step-action:active { background: var(--line); color: var(--ink); text-decoration: none; }
-.onboarding-step-action-primary,
-.onboarding-step-action-primary:link,
-.onboarding-step-action-primary:visited { border-color: var(--accent-deep); background: var(--accent-deep); color: var(--card); }
-.onboarding-step-action-primary:hover,
-.onboarding-step-action-primary:active { border-color: var(--ok); background: var(--ok); color: var(--card); }
-.onboarding-step-action-text,
-.onboarding-step-action-text:link,
-.onboarding-step-action-text:visited { border-color: transparent; background: transparent; color: var(--accent-deep); font-weight: 500; }
-.onboarding-step-action-text:hover,
-.onboarding-step-action-text:active { border-color: transparent; background: var(--bg); color: var(--ink); }
+.onboarding-step-action-secondary,
+.onboarding-step-action-secondary:link,
+.onboarding-step-action-secondary:visited { font-weight: 500; }
+.onboarding-step-action-icon { width: 0.85rem; height: 0.85rem; flex: 0 0 auto; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .onboarding-state-badge { position: absolute; z-index: 1; top: 0.65rem; left: 0.65rem; display: inline-flex; min-height: 1.8rem; align-items: center; gap: 0.35rem; padding: 0.25rem 0.55rem; border: 1px solid var(--line); border-radius: 999px; background: var(--card); font-size: 0.72rem; font-weight: 600; line-height: 1.2; }
 .onboarding-state-badge[hidden] { display: none !important; }
 .onboarding-complete-badge { color: var(--ok); }
