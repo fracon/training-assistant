@@ -740,10 +740,14 @@ function setupHomePage() {
 
   function closeWelcome() {
     if (welcomeSession.mode === 'preview') {
-      const returnFocus = welcomeReturnFocus;
+      const returnFocus = onboardingPreview?.isConnected ? onboardingPreview : welcomeReturnFocus;
       welcomeSession.close();
       renderOnboarding();
-      if (returnFocus?.isConnected && onboardingWelcome.hidden) returnFocus.focus();
+      if (returnFocus?.isConnected && onboardingWelcome.hidden) {
+        window.requestAnimationFrame(() => {
+          if (onboardingWelcome.hidden && !returnFocus.closest('[inert]')) returnFocus.focus();
+        });
+      }
       return;
     }
     dismissWelcome();

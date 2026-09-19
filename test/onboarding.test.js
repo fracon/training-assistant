@@ -12,6 +12,8 @@ const { tmpdir } = require('node:os');
 const { promisify } = require('node:util');
 const { setTimeout: delay } = require('node:timers/promises');
 const { createHash } = require('node:crypto');
+const { buildServer } = require('../src/server');
+const { createDatabase } = require('../src/db/database');
 
 const execFileAsync = promisify(execFile);
 
@@ -20,7 +22,7 @@ function findChrome() {
     .find((candidate) => existsSync(candidate));
 }
 
-async function runChromeAtViewport(chrome, url, { width, height, mobile }) {
+async function runChromeAtViewport(chrome, url, { width, height, mobile, cookie = null, probeExpression = null }) {
   const portServer = createServer();
   portServer.listen(0, '127.0.0.1');
   await once(portServer, 'listening');
@@ -72,6 +74,11 @@ async function runChromeAtViewport(chrome, url, { width, height, mobile }) {
     await command('Runtime.enable');
     await command('Network.enable');
     await command('Network.setCacheDisabled', { cacheDisabled: true });
+    if (cookie) {
+      const result = await command('Network.setCookie', { name: 'ta_session', value: cookie, url });
+      assert.equal(result.success, true, 'Chrome accepted the authenticated test session cookie.');
+      await command('Network.setExtraHTTPHeaders', { headers: { Cookie: `ta_session=${cookie}` } });
+    }
     await command('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile });
     const loaded = new Promise((resolve) => {
       const listener = (event) => {
@@ -85,16 +92,22 @@ async function runChromeAtViewport(chrome, url, { width, height, mobile }) {
     });
     await command('Page.navigate', { url });
     await Promise.race([loaded, delay(15000).then(() => { throw new Error('Chrome page load timed out.'); })]);
+    const expression = probeExpression
+      ? `(async()=>({probe:await (${probeExpression}),viewport:{width:innerWidth,height:innerHeight}}))()`
+      : '({result:document.body.dataset.visualResult,error:document.body.dataset.visualError,viewport:{width:innerWidth,height:innerHeight}})';
     const evaluation = await command('Runtime.evaluate', {
-      expression: '({result:document.body.dataset.visualResult,error:document.body.dataset.visualError,viewport:{width:innerWidth,height:innerHeight}})',
+      expression,
+      awaitPromise: Boolean(probeExpression),
       returnByValue: true,
     });
     const value = evaluation.result?.value;
     assert.ok(value, `Chrome evaluated visual measurements: ${JSON.stringify(evaluation.exceptionDetails ?? {})}`);
     assert.equal(evaluation.exceptionDetails, undefined, `Chrome page probe completed: ${JSON.stringify(evaluation.exceptionDetails ?? {})}`);
     assert.deepEqual(value.viewport, { width, height }, `Chrome returned viewport measurement: ${JSON.stringify(evaluation)}`);
-    assert.equal(value.error, undefined, value.error);
-    assert.ok(value.result, 'visual measurement script completed');
+    if (!probeExpression) {
+      assert.equal(value.error, undefined, value.error);
+      assert.ok(value.result, 'visual measurement script completed');
+    }
     if (process.env.ONBOARDING_VISUAL_REPORT === '1') {
       const screenshot = await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
       writeFileSync(`/tmp/kinesis-onboarding-${width}x${height}.png`, Buffer.from(screenshot.data, 'base64'));
@@ -106,7 +119,7 @@ async function runChromeAtViewport(chrome, url, { width, height, mobile }) {
       returnByValue: true,
     });
     if (focusEvaluation.result?.value) value.keyboardFocusOutline = focusEvaluation.result.value;
-    return { ...JSON.parse(value.result), keyboardFocusOutline: value.keyboardFocusOutline };
+    return probeExpression ? value.probe : { ...JSON.parse(value.result), keyboardFocusOutline: value.keyboardFocusOutline };
   } finally {
     try { socket?.close(); } catch {}
     processHandle.kill();
@@ -277,8 +290,7 @@ test('real welcome markup keeps carousel geometry stable on desktop and mobile w
   assert.ok(modalStart >= 0 && modalEnd > modalStart, 'the real welcome dialog markup is embedded in the browser fixture');
   const imagePath = path.join(publicDir, 'assets/onboarding/onboarding-shoes.png');
   const imageHash = createHash('sha256').update(readFileSync(imagePath)).digest('hex');
-  const previousImage = execFileSync('git', ['show', 'HEAD:src/public/assets/onboarding/onboarding-shoes.png'], { maxBuffer: 10 * 1024 * 1024 });
-  assert.notEqual(imageHash, createHash('sha256').update(previousImage).digest('hex'), 'the supplied replacement image is a real binary change');
+  assert.equal(imageHash, 'a9cdfe175cb3824e451c8ca5ebf25bd5ea965e7192a04c1f219addedb671135b', 'the supplied replacement image is the expected committed binary');
   const versionedModal = home.slice(modalStart, modalEnd)
     .replace(' class="onboarding-welcome" hidden', ' class="onboarding-welcome"')
     .replaceAll('/assets/onboarding/', `/assets/onboarding/?unused=`)
@@ -451,6 +463,71 @@ test('real welcome markup keeps carousel geometry stable on desktop and mobile w
         slides: measurements.map((sample) => ({ slide: sample.index + 1, image: { width: sample.media.width, height: sample.media.height }, contentOverflow: sample.contentOverflow })),
       }));
     }
+  }
+});
+
+test('the complete authenticated dashboard allows a non-persistent welcome preview for legacy users', async () => {
+  const chrome = findChrome();
+  assert.ok(chrome, 'Chrome is required for full-dashboard onboarding validation.');
+  const db = createDatabase({ filename: ':memory:' });
+  const app = await buildServer({ db, sessionCookieSecure: false });
+  try {
+    await app.inject({ method: 'POST', url: '/api/auth/register', payload: {
+      email: 'welcome-preview@example.com', password: 'preview-secret', first_name: 'Preview', last_name: 'Runner',
+    } });
+    db.prepare("UPDATE users SET onboarding_status = 'legacy' WHERE email = ?").run('welcome-preview@example.com');
+    const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: {
+      email: 'welcome-preview@example.com', password: 'preview-secret',
+    } });
+    assert.equal(login.statusCode, 200);
+    const cookie = [].concat(login.headers['set-cookie'] ?? [])[0].split(';')[0].split('=')[1];
+    const cookieHeader = `ta_session=${cookie}`;
+    const onboardingResponse = await app.inject({ method: 'GET', url: '/api/onboarding', headers: { cookie: cookieHeader } });
+    assert.equal(onboardingResponse.statusCode, 200);
+    const before = onboardingResponse.json().onboarding;
+    assert.equal(before.status, 'legacy');
+    const appUrl = await app.listen({ port: 0, host: '127.0.0.1' });
+    const probeExpression = `new Promise((resolve,reject)=>{
+      const deadline=Date.now()+15000;
+      let status=null, initiallyVisible=null;
+      fetch('/api/onboarding').then(response=>response.json()).then(payload=>{status=payload.onboarding?.status;});
+      const attempt=()=>{
+        const preview=document.getElementById('onboardingPreview');
+        const modal=document.getElementById('onboardingWelcome');
+        const dialog=modal?.querySelector('[role="dialog"]');
+        if(preview && modal && status){
+          if(initiallyVisible===null) initiallyVisible=!modal.hidden;
+          if(modal.hidden) preview.click();
+        }
+        if(preview && modal && status && !modal.hidden && dialog?.getAttribute('aria-labelledby')==='onboardingWelcomeTitle0'){
+          const opened={status,initiallyVisible,focused:document.activeElement.id==='onboardingWelcomeTitle0',backgroundInert:[...document.body.children].filter(node=>node!==modal).every(node=>node.inert),dialogCount:document.querySelectorAll('[role="dialog"]').length};
+          document.getElementById('onboardingLater').click();
+          requestAnimationFrame(()=>requestAnimationFrame(()=>{
+            const closed={hidden:modal.hidden,restoredFocus:document.activeElement===preview,backgroundReleased:!preview.closest('#appView').inert};
+            preview.click();
+            resolve({opened,closed,reopened:!modal.hidden && dialog.getAttribute('aria-labelledby')==='onboardingWelcomeTitle0',label:preview.textContent.trim()});
+          }));
+          return;
+        }
+        if(Date.now()>deadline){reject(new Error('Full dashboard preview timed out: '+JSON.stringify({url:location.href,status,button:Boolean(preview),body:document.body.innerText.slice(0,250)})));return;}
+        setTimeout(attempt,100);
+      };
+      attempt();
+    })`;
+    const result = await runChromeAtViewport(chrome, appUrl, {
+      width: 1280, height: 800, mobile: false, cookie, probeExpression,
+    });
+    assert.deepEqual(result.opened, {
+      status: 'legacy', initiallyVisible: false, focused: true, backgroundInert: true, dialogCount: 1,
+    });
+    assert.deepEqual(result.closed, { hidden: true, restoredFocus: true, backgroundReleased: true });
+    assert.equal(result.reopened, true);
+    assert.equal(result.label, 'Preview welcome');
+    const after = (await app.inject({ method: 'GET', url: '/api/onboarding', headers: { cookie: cookieHeader } })).json().onboarding;
+    assert.deepEqual(after, before, 'preview did not modify status, progress, or presentation preferences');
+  } finally {
+    await app.close();
+    db.close();
   }
 });
 
