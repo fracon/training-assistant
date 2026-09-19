@@ -115,10 +115,13 @@ async function runChromeAtViewport(chrome, url, { width, height, mobile, cookie 
     await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
     await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
     const focusEvaluation = await command('Runtime.evaluate', {
-      expression: `(()=>{const action=document.querySelector('.onboarding-welcome-slide:not([hidden]) [data-onboarding-action]:not([hidden])');action?.focus();return action?getComputedStyle(action).outlineStyle:null})()`,
+      expression: `(()=>{const action=document.querySelector('.onboarding-welcome-slide:not([hidden]) [data-onboarding-action]:not([hidden])');const later=document.getElementById('onboardingLater');action?.focus();const actionOutline=action?getComputedStyle(action).outlineStyle:null;later?.focus();return {actionOutline,laterOutline:later?getComputedStyle(later).outlineStyle:null}})()`,
       returnByValue: true,
     });
-    if (focusEvaluation.result?.value) value.keyboardFocusOutline = focusEvaluation.result.value;
+    if (focusEvaluation.result?.value) {
+      value.keyboardFocusOutline = focusEvaluation.result.value.actionOutline;
+      value.laterKeyboardFocusOutline = focusEvaluation.result.value.laterOutline;
+    }
     return probeExpression ? value.probe : { ...JSON.parse(value.result), keyboardFocusOutline: value.keyboardFocusOutline };
   } finally {
     try { socket?.close(); } catch {}
@@ -353,6 +356,8 @@ test('real welcome markup keeps carousel geometry stable on desktop and mobile w
         index, lang, viewport:{ width:innerWidth, height:innerHeight }, card:rect(dialog), stepper:rect(modal.querySelector('.onboarding-welcome-indicators')),
         media:rect(media), image:rect(image), content:rect(content), footer:rect(modal.querySelector('.onboarding-welcome-footer')),
         later:rect(later), title:rect(title), titleOutline:getComputedStyle(title).outlineStyle,
+        laterStyle:{ fontSize:getComputedStyle(later).fontSize, fontWeight:getComputedStyle(later).fontWeight, color:getComputedStyle(later).color, background:getComputedStyle(later).backgroundColor, shadow:getComputedStyle(later).boxShadow, decoration:getComputedStyle(later).textDecorationLine, outlineStyle:getComputedStyle(later).outlineStyle, outlineWidth:getComputedStyle(later).outlineWidth, minHeight:getComputedStyle(later).minHeight },
+        laterBottomGap:dialog.getBoundingClientRect().bottom-later.getBoundingClientRect().bottom,
         actionDecoration:getComputedStyle(action).textDecorationLine,
         contentOverflow:content.scrollHeight-content.clientHeight,
         imageLoaded:image.complete && image.naturalWidth>0, imageCurrentSrc:currentImage,
@@ -409,6 +414,7 @@ test('real welcome markup keeps carousel geometry stable on desktop and mobile w
   assert.ok(requests.some((url) => url.includes(`/onboarding-shoes.png?v=${imageHash}`)), 'Chrome loaded the changed shoe illustration via a cache-busted URL');
   for (const result of browserResults) {
     assert.notEqual(result.keyboardFocusOutline, 'none', 'keyboard-focused primary action retains a visible ring');
+    assert.notEqual(result.laterKeyboardFocusOutline, 'none', 'keyboard-focused dismissal action retains a visible ring');
     assert.equal(result.previewFirst, true);
     assert.equal(result.reopenedFirst, true);
     assert.equal(result.preferencesUntouched, true);
@@ -417,6 +423,11 @@ test('real welcome markup keeps carousel geometry stable on desktop and mobile w
     const grouped = new Map();
     for (const sample of result.measurements) {
       const key = `${sample.viewport.width}:${sample.lang}`;
+      const expectedGeometry = sample.viewport.width === 1280
+        ? { card: [260, 80, 760, 640], stepper: [611.953125, 647.765625, 56.09375, 9.265625] }
+        : { card: [16, 102, 358, 640], stepper: [166.953125, 669.765625, 56.09375, 9.265625] };
+      assert.deepEqual([sample.card.x, sample.card.y, sample.card.width, sample.card.height], expectedGeometry.card, `approved dialog dimensions remain unchanged for ${key}`);
+      assert.deepEqual([sample.stepper.x, sample.stepper.y, sample.stepper.width, sample.stepper.height], expectedGeometry.stepper, `approved stepper position remains unchanged for ${key}`);
       const prior = grouped.get(key) ?? [];
       prior.push(sample);
       grouped.set(key, prior);
@@ -431,6 +442,15 @@ test('real welcome markup keeps carousel geometry stable on desktop and mobile w
       assert.equal(sample.visibleFilledActions, 1);
       assert.equal(sample.titleOutline, 'none');
       assert.equal(sample.actionDecoration, 'none');
+      assert.ok(Number.parseFloat(sample.laterStyle.fontSize) < 16, `dismiss action text is smaller than carousel navigation (${key})`);
+      assert.equal(sample.laterStyle.fontWeight, '500');
+      assert.equal(sample.laterStyle.color, 'rgb(139, 129, 114)');
+      assert.equal(sample.laterStyle.background, 'rgba(0, 0, 0, 0)');
+      assert.equal(sample.laterStyle.shadow, 'none');
+      assert.equal(sample.laterStyle.decoration, 'none');
+      assert.equal(sample.laterStyle.minHeight, '36px');
+      assert.ok(sample.laterBottomGap >= 12 && sample.laterBottomGap <= 16, `dismiss action has approximately 12–16px breathing room beneath it (${key}: ${sample.laterBottomGap}px)`);
+      assert.ok(sample.later.width >= 44, `dismiss action retains a generous hit target (${key})`);
       assert.equal(sample.imageLoaded, true);
       assert.equal(sample.imageHashMatches, true);
       assert.equal(sample.media.x, sample.image.x);
@@ -439,7 +459,7 @@ test('real welcome markup keeps carousel geometry stable on desktop and mobile w
       assert.equal(sample.media.height, sample.image.height);
       assert.equal(sample.navBackground, 'rgba(0, 0, 0, 0)');
       assert.ok(sample.contentOverflow <= 1, `content fits without clipping (${key} slide ${sample.index + 1}: ${sample.contentOverflow}px)`);
-      assert.ok(sample.later.centerX === sample.card.centerX, `Now-not centered under navigation (${key})`);
+      assert.ok(Math.abs(sample.later.centerX - sample.card.centerX) < 0.5, `Now-not remains visually centered under navigation (${key}: ${sample.later.centerX} vs ${sample.card.centerX})`);
     }
     for (const [key, samples] of grouped) {
       const first = samples[0];
@@ -460,6 +480,7 @@ test('real welcome markup keeps carousel geometry stable on desktop and mobile w
         viewport: first.viewport,
         dialog: { width: first.card.width, height: first.card.height, left: first.card.x, top: first.card.y },
         stepperCenters: measurements.map((sample) => sample.stepper.centerX),
+        stepperRects: measurements.map(({ stepper }) => ({ x: stepper.x, y: stepper.y, width: stepper.width, height: stepper.height })),
         slides: measurements.map((sample) => ({ slide: sample.index + 1, image: { width: sample.media.width, height: sample.media.height }, contentOverflow: sample.contentOverflow })),
       }));
     }

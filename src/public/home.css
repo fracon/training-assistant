@@ -97,7 +97,10 @@
 .onboarding-welcome-indicator { width: 0.58rem; height: 0.58rem; padding: 0; border: 0; border-radius: 999px; background: var(--line-strong); cursor: pointer; }
 .onboarding-welcome-indicator[aria-current="step"] { width: 1.45rem; background: var(--accent); }
 .onboarding-welcome-indicator:focus-visible { outline: 2px solid var(--accent-deep); outline-offset: 3px; }
-.onboarding-welcome-later { grid-column: 1 / -1; justify-self: center; min-height: 2.25rem; margin: 0; padding: 0.35rem 0.7rem; }
+.onboarding-welcome-later { position: relative; top: -0.8rem; grid-column: 1 / -1; justify-self: center; min-height: 2.25rem; margin: 0; padding: 0.35rem 0.7rem; color: var(--muted); font-size: 0.86rem; font-weight: 500; background: transparent; box-shadow: none; }
+.onboarding-welcome-later:hover { color: var(--ink); background: transparent; }
+.onboarding-welcome-later:focus-visible { background: transparent; }
+.onboarding-welcome-later:active { color: var(--accent-deep); background: transparent; box-shadow: none; }
 .onboarding-preview-tools { display: flex; justify-content: flex-end; padding-top: 0.5rem; }
 .onboarding-preview-tools .btn-quiet { color: var(--muted); font-size: 0.78rem; }
 
