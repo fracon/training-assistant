@@ -3,7 +3,7 @@ import { initShell, getShellI18n, getUserPreferences, showShellToast } from './s
 import { translate } from './shared/i18n.js';
 import { formatDate as formatLocalizedDate } from './shared/date.js';
 import { formatDistance } from './shared/units.js';
-import { calculateOnboardingProgress, isNewUserOnboarding, onboardingPresentation, onboardingPlanActions, onboardingSlideNavigation, updateOnboardingDialogA11y, trapOnboardingFocus, createWelcomePreviewSession, backgroundInertTargets } from './shared/onboarding.js';
+import { calculateOnboardingProgress, renderOnboardingStepStates, isNewUserOnboarding, onboardingPresentation, onboardingPlanActions, onboardingSlideNavigation, updateOnboardingDialogA11y, trapOnboardingFocus, createWelcomePreviewSession, backgroundInertTargets } from './shared/onboarding.js';
 
 export const ZENQUOTES_URL = 'https://zenquotes.io/api/today';
 export const QUOTE_TIMEOUT_MS = 3000;
@@ -694,11 +694,7 @@ function setupHomePage() {
       onboardingGuide.hidden = !presentation.guideVisible;
       onboardingComplete.hidden = !presentation.completionVisible;
       onboardingReopenBar.hidden = !presentation.reopenVisible;
-      document.querySelectorAll('[data-onboarding-step]').forEach((step) => {
-        const done = progress.steps[step.dataset.onboardingStep];
-        step.classList.toggle('is-complete', done);
-        step.setAttribute('aria-current', progress.nextStep === step.dataset.onboardingStep ? 'step' : 'false');
-      });
+      renderOnboardingStepStates(onboardingGuide, progress.steps, progress.nextStep);
     }
     renderWelcomeCarousel();
     const shouldOpen = welcomeSession.ensureAutomatic(onboarding);

@@ -22,7 +22,7 @@ function findChrome() {
     .find((candidate) => existsSync(candidate));
 }
 
-async function runChromeAtViewport(chrome, url, { width, height, mobile, cookie = null, probeExpression = null }) {
+async function runChromeAtViewport(chrome, url, { width, height, mobile, cookie = null, probeExpression = null, focusSelector = null, verifyTabNextSelector = null, verifyTabFollowingSelector = null, screenshotSuffix = '' }) {
   const portServer = createServer();
   portServer.listen(0, '127.0.0.1');
   await once(portServer, 'listening');
@@ -110,19 +110,40 @@ async function runChromeAtViewport(chrome, url, { width, height, mobile, cookie 
     }
     if (process.env.ONBOARDING_VISUAL_REPORT === '1') {
       const screenshot = await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
-      writeFileSync(`/tmp/kinesis-onboarding-${width}x${height}.png`, Buffer.from(screenshot.data, 'base64'));
+      writeFileSync(`/tmp/kinesis-onboarding-${width}x${height}${screenshotSuffix}.png`, Buffer.from(screenshot.data, 'base64'));
     }
     await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
     await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
     const focusEvaluation = await command('Runtime.evaluate', {
-      expression: `(()=>{const action=document.querySelector('.onboarding-welcome-slide:not([hidden]) [data-onboarding-action]:not([hidden])');const later=document.getElementById('onboardingLater');action?.focus();const actionOutline=action?getComputedStyle(action).outlineStyle:null;later?.focus();return {actionOutline,laterOutline:later?getComputedStyle(later).outlineStyle:null}})()`,
+      expression: focusSelector
+        ? `(()=>{const control=document.querySelector(${JSON.stringify(focusSelector)});control?.focus();return {actionOutline:control?getComputedStyle(control).outlineStyle:null,actionVisible:control?.matches(':focus-visible')??false}})()`
+        : `(()=>{const action=document.querySelector('.onboarding-welcome-slide:not([hidden]) [data-onboarding-action]:not([hidden])');const later=document.getElementById('onboardingLater');action?.focus();const actionOutline=action?getComputedStyle(action).outlineStyle:null;later?.focus();return {actionOutline,laterOutline:later?getComputedStyle(later).outlineStyle:null}})()`,
       returnByValue: true,
     });
     if (focusEvaluation.result?.value) {
       value.keyboardFocusOutline = focusEvaluation.result.value.actionOutline;
+      value.keyboardFocusVisible = focusEvaluation.result.value.actionVisible;
       value.laterKeyboardFocusOutline = focusEvaluation.result.value.laterOutline;
     }
-    return probeExpression ? value.probe : { ...JSON.parse(value.result), keyboardFocusOutline: value.keyboardFocusOutline };
+    if (verifyTabNextSelector) {
+      await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
+      await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
+      const nextFocus = await command('Runtime.evaluate', {
+        expression: `document.activeElement.matches(${JSON.stringify(verifyTabNextSelector)})`,
+        returnByValue: true,
+      });
+      value.keyboardNextMatches = nextFocus.result?.value === true;
+      if (verifyTabFollowingSelector) {
+        await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
+        await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
+        const followingFocus = await command('Runtime.evaluate', {
+          expression: `document.activeElement.matches(${JSON.stringify(verifyTabFollowingSelector)})`,
+          returnByValue: true,
+        });
+        value.keyboardFollowingMatches = followingFocus.result?.value === true;
+      }
+    }
+    return probeExpression ? value.probe : { ...JSON.parse(value.result), keyboardFocusOutline: value.keyboardFocusOutline, keyboardFocusVisible: value.keyboardFocusVisible, keyboardNextMatches: value.keyboardNextMatches, keyboardFollowingMatches: value.keyboardFollowingMatches };
   } finally {
     try { socket?.close(); } catch {}
     processHandle.kill();
@@ -219,6 +240,7 @@ test('onboarding UI keeps the existing destinations and accessibility hooks', ()
   assert.match(home, /onboardingReopenHidden/);
   assert.match(home, /aria-modal="true"/);
   assert.match(homeJs, /const next = response\?\.onboarding/);
+  assert.match(homeJs, /renderOnboardingStepStates\(onboardingGuide, progress\.steps, progress\.nextStep\)/);
   assert.match(homeJs, /event\.key === 'Escape'/);
   assert.match(homeJs, /setAttribute\('inert', ''\)/);
   assert.match(homeJs, /focusWelcomeTitle\(\)/);
@@ -280,6 +302,171 @@ test('browser CSS makes every hidden onboarding root actually invisible', () => 
     `data:text/html;charset=utf-8,${encodeURIComponent(html)}`,
   ], { encoding: 'utf8', timeout: 15000, stdio: ['ignore', 'pipe', 'ignore'] });
   assert.match(output, /data-hidden-displays="none,none,none,none"/);
+});
+
+test('dashboard onboarding cards render accessible states and aligned actions in English and Portuguese', async () => {
+  const chrome = findChrome();
+  assert.ok(chrome, 'Chrome is required for dashboard onboarding visual validation.');
+  const root = path.join(__dirname, '..');
+  const publicDir = path.join(root, 'src/public');
+  const home = readFileSync(path.join(publicDir, 'home.html'), 'utf8');
+  const sectionStart = home.indexOf('<section id="onboardingGuide"');
+  const sectionEnd = home.indexOf('</section>', sectionStart) + '</section>'.length;
+  assert.ok(sectionStart >= 0 && sectionEnd > sectionStart, 'the real dashboard onboarding section exists');
+  const guideMarkup = home.slice(sectionStart, sectionEnd).replace(' class="onboarding-guide card-section" hidden', ' class="onboarding-guide card-section"');
+  const locales = {
+    en: JSON.parse(readFileSync(path.join(publicDir, 'locales/en.json'), 'utf8')),
+    pt: JSON.parse(readFileSync(path.join(publicDir, 'locales/pt.json'), 'utf8')),
+  };
+  const browserScript = `
+    import { renderOnboardingStepStates } from '/shared/onboarding.js';
+    import { applyTranslations, translate } from '/shared/i18n.js';
+    const locales=${JSON.stringify(locales)};
+    const guide=document.getElementById('onboardingGuide');
+    const cards=[...guide.querySelectorAll('[data-onboarding-step]')];
+    const states=[
+      {steps:{shoes:false,cycle:false,trainings:false},next:'shoes'},
+      {steps:{shoes:true,cycle:false,trainings:false},next:'cycle'},
+      {steps:{shoes:true,cycle:true,trainings:false},next:'trainings'},
+      {steps:{shoes:true,cycle:true,trainings:true},next:null},
+    ];
+    const samples=[];
+    function rect(element){const r=element.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height,right:r.right,bottom:r.bottom};}
+    function visible(element){return !element.closest('[hidden]')&&getComputedStyle(element).display!=='none'&&element.getClientRects().length>0;}
+    function measure(lang,count,state){
+      const messages=locales[lang];
+      applyTranslations(guide,messages);
+      document.getElementById('onboardingProgress').textContent=translate(messages,'home.onboarding.progress',{completed:count});
+      renderOnboardingStepStates(guide,state.steps,state.next);
+      const states=cards.map((card)=>{
+        const key=card.dataset.onboardingStep;
+        const done=state.steps[key];
+        const next=state.next===key;
+        const completeBadge=card.querySelector('[data-onboarding-complete]');
+        const nextBadge=card.querySelector('[data-onboarding-next]');
+        const actions=card.querySelector('[data-onboarding-actions]');
+        const links=[...actions.querySelectorAll('a')];
+        const body=card.querySelector('.onboarding-step-body');
+        return{
+          key,done,next,card:rect(card),image:rect(card.querySelector('img')),body:rect(body),actionArea:rect(actions),actionAreaHidden:actions.hidden,
+          links:links.map((link)=>({href:new URL(link.href).pathname,rect:rect(link),visible:visible(link),color:getComputedStyle(link).color,decoration:getComputedStyle(link).textDecorationLine})),
+          completeBadge:{hidden:completeBadge.hidden,text:completeBadge.innerText.trim(),rect:rect(completeBadge),color:getComputedStyle(completeBadge).color,opacity:getComputedStyle(completeBadge).opacity,description:card.getAttribute('aria-describedby'),iconHidden:completeBadge.querySelector('svg').getAttribute('aria-hidden')},
+          nextBadge:{hidden:nextBadge.hidden,text:nextBadge.innerText.trim(),color:getComputedStyle(nextBadge).color},
+          ariaCurrent:card.getAttribute('aria-current'),ariaDescribedBy:card.getAttribute('aria-describedby'),borderColor:getComputedStyle(card).borderTopColor,opacity:getComputedStyle(card).opacity,imageFilter:getComputedStyle(card.querySelector('img')).filter,
+          actionX:links.filter(visible).map((link)=>rect(link).x-body.getBoundingClientRect().x-getComputedStyle(body).paddingLeft.replace('px','')),
+        };
+      });
+      const sheet=[...document.styleSheets].find((candidate)=>candidate.href?.endsWith('/home.css'));
+      const selectors=[...(sheet?.cssRules??[])].map((rule)=>rule.selectorText??'').join(',');
+      const visitedRule=selectors.includes('.onboarding-step-action:visited');
+      const explicitStates=['link','visited','hover','focus-visible','active'].every((state)=>selectors.includes('.onboarding-step-action:'+state));
+      const focusTarget=guide.querySelector('[data-onboarding-actions]:not([hidden]) a')??document.getElementById('onboardingHide');
+      focusTarget.focus({preventScroll:true});
+      const focus={matches:focusTarget.matches(':focus-visible'),outline:getComputedStyle(focusTarget).outlineStyle};
+      return{lang,count,progress:document.getElementById('onboardingProgress').textContent,listRole:guide.querySelector('.onboarding-steps').getAttribute('role'),listItemCount:cards.filter((card)=>card.getAttribute('role')==='listitem').length,cards:states,visitedRule,explicitStates,
+        hide:{color:getComputedStyle(document.getElementById('onboardingHide')).color,background:getComputedStyle(document.getElementById('onboardingHide')).backgroundColor,fontWeight:getComputedStyle(document.getElementById('onboardingHide')).fontWeight},focus,
+        scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth};
+    }
+    window.__onboardingVisual=()=>{
+      for(const lang of ['en','pt']) states.forEach((state,count)=>samples.push(measure(lang,count,state)));
+      measure('pt',2,states[2]);
+      window.scrollTo(0,0);
+      document.body.dataset.visualResult=JSON.stringify({samples});
+    };
+    try{window.__onboardingVisual();}catch(error){document.body.dataset.visualError=error.stack||String(error);}
+  `;
+  const documentHtml = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/shared/shell.css"><link rel="stylesheet" href="/home.css"></head><body><main id="appView"><div class="home-page">${guideMarkup}</div></main><script>window.addEventListener('error',event=>{document.body.dataset.visualError=event.message});window.addEventListener('unhandledrejection',event=>{document.body.dataset.visualError=String(event.reason)});</script><script type="module">${browserScript}</script></body></html>`;
+  const server = createServer((request, response) => {
+    const requestPath = decodeURIComponent((request.url || '/').split('?')[0]);
+    const relative = requestPath === '/' ? null : requestPath.replace(/^\/+/, '');
+    try {
+      const body = relative ? readFileSync(path.join(publicDir, relative)) : documentHtml;
+      const type = relative?.endsWith('.css') ? 'text/css' : relative?.endsWith('.js') ? 'text/javascript' : relative?.endsWith('.json') ? 'application/json' : 'text/html';
+      response.writeHead(200, { 'content-type': `${type}; charset=utf-8`, 'cache-control': 'no-store' });
+      response.end(body);
+    } catch {
+      response.writeHead(404);
+      response.end();
+    }
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const port = server.address().port;
+  const results = [];
+  try {
+    for (const [width, height] of [[1280, 800], [390, 844]]) {
+      results.push(await runChromeAtViewport(chrome, `http://127.0.0.1:${port}/`, {
+        width, height, mobile: width < 600, focusSelector: '#onboardingHide', verifyTabNextSelector: '.onboarding-step-action-primary', verifyTabFollowingSelector: '.onboarding-step-action-text', screenshotSuffix: '-dashboard',
+      }));
+    }
+  } finally {
+    server.close();
+    await once(server, 'close');
+  }
+  for (const browserResult of results) {
+    const samples = browserResult.samples;
+    assert.equal(samples.length, 8, 'four derived progress states were tested in both locales');
+    for (const sample of samples) {
+      const expectedProgress = sample.lang === 'pt' ? `${sample.count} de 3 etapas` : `${sample.count} of 3 steps`;
+      assert.equal(sample.progress, expectedProgress);
+      assert.equal(sample.listRole, 'list');
+      assert.equal(sample.listItemCount, 3);
+      assert.equal(sample.visitedRule, true, 'dashboard CSS explicitly styles visited onboarding links');
+      assert.equal(sample.explicitStates, true, 'link, visited, hover, focus-visible, and active states are explicitly styled');
+      assert.ok(sample.cards.every((card) => card.opacity === '1'), 'pending and completed cards do not use disabled-looking opacity');
+      assert.ok(sample.cards.every((card) => card.actionX.length === 0 || card.actionX.every((x) => Math.abs(x - card.actionX[0]) < 0.5)), 'each card action stack shares its left edge');
+      const alignedActionOffsets = sample.cards.flatMap((card) => card.actionX.slice(0, 1));
+      assert.ok(alignedActionOffsets.every((x) => Math.abs(x - alignedActionOffsets[0]) < 0.5), 'all card primary actions share the same left alignment');
+      assert.ok(sample.scrollWidth <= sample.viewportWidth, 'dashboard guide has no horizontal overflow');
+      assert.notEqual(sample.hide.color, 'rgb(111, 0, 255)', 'hide guide uses the theme, not browser link styling');
+      assert.equal(sample.hide.background, 'rgba(0, 0, 0, 0)');
+      assert.equal(sample.hide.fontWeight, '500');
+      const expectedCompleted = ['shoes', 'cycle', 'trainings'].slice(0, sample.count);
+      const expectedNext = ['shoes', 'cycle', 'trainings'][sample.count] ?? null;
+      assert.deepEqual(sample.cards.filter((card) => card.done).map((card) => card.key), expectedCompleted);
+      assert.deepEqual(sample.cards.filter((card) => card.next).map((card) => card.key), expectedNext ? [expectedNext] : []);
+      for (const card of sample.cards) {
+        assert.equal(card.completeBadge.hidden, !card.done);
+        assert.equal(card.completeBadge.iconHidden, 'true');
+        assert.equal(card.completeBadge.opacity, '1');
+        if (card.done) {
+          assert.ok(Math.abs(card.completeBadge.rect.x - card.card.x - 11.4) < 1.5, 'completion badge sits consistently over the card image');
+          assert.ok(Math.abs(card.completeBadge.rect.y - card.card.y - 11.4) < 1.5, 'completion badge is placed consistently at the image start');
+        }
+        assert.equal(card.completeBadge.text, sample.lang === 'pt' ? 'Concluído' : 'Completed');
+        assert.equal(card.completeBadge.description, card.done ? `onboarding${card.key[0].toUpperCase()}${card.key.slice(1)}Complete` : null);
+        assert.equal(card.actionAreaHidden, card.done);
+        assert.equal(card.links.every((link) => link.rect.height >= 36 || !link.visible), true, 'visible action targets retain a comfortable click area');
+        assert.equal(card.ariaDescribedBy, card.done ? card.completeBadge.description : null);
+        assert.ok(card.links.every((link) => link.visible !== card.done), 'completed step actions disappear from both pointer and keyboard interaction');
+        assert.equal(card.nextBadge.hidden, !card.next);
+        assert.equal(card.nextBadge.text, sample.lang === 'pt' ? 'Próximo' : 'Next');
+        assert.equal(card.ariaCurrent, card.next ? 'step' : 'false');
+        assert.ok(card.links.every((link) => link.decoration === 'none'));
+        assert.ok(card.links.every((link) => ['rgb(76, 110, 81)','rgb(253, 251, 246)','rgb(139, 129, 114)'].includes(link.color)), 'onboarding links use theme colors rather than native blue or purple');
+        if (card.next) {
+          assert.equal(card.borderColor, 'rgb(111, 144, 112)');
+          assert.equal(card.nextBadge.color, 'rgb(76, 110, 81)');
+        }
+      }
+      const workoutCard = sample.cards[2];
+      assert.equal(workoutCard.links[0].href, '/ai-coach.html');
+      assert.equal(workoutCard.links[1].href, '/calendar.html');
+      assert.ok(Math.abs(workoutCard.links[0].rect.x - workoutCard.links[1].rect.x) < 0.5, 'AI Coach and spreadsheet actions align on the same left axis');
+      if (sample.viewportWidth >= 760) {
+        assert.ok(Math.abs(sample.cards[0].card.height - sample.cards[1].card.height) < 0.5);
+        assert.ok(Math.abs(sample.cards[1].card.height - sample.cards[2].card.height) < 0.5, 'cards have equal height within their desktop row');
+        const visibleActionBottoms = sample.cards.filter((card) => !card.actionAreaHidden).map((card) => card.actionArea.bottom);
+        assert.ok(visibleActionBottoms.length < 2 || Math.max(...visibleActionBottoms) - Math.min(...visibleActionBottoms) < 1, 'visible action areas align along the bottom of the card bodies');
+      }
+    }
+    assert.ok(browserResult.keyboardFocusVisible && browserResult.keyboardFocusOutline !== 'none', 'Chrome shows a visible ring after keyboard navigation reaches an onboarding action');
+    assert.equal(browserResult.keyboardNextMatches, true, 'Tab after the hide control skips actions for the two completed steps and reaches AI Coach');
+    assert.equal(browserResult.keyboardFollowingMatches, true, 'the following Tab advances from AI Coach to spreadsheet import');
+  }
+  if (process.env.ONBOARDING_VISUAL_REPORT === '1') {
+    results.forEach((result) => console.log(JSON.stringify(result.samples.find((sample) => sample.lang === 'pt' && sample.count === 2))));
+  }
 });
 
 test('real welcome markup keeps carousel geometry stable on desktop and mobile with cache-busted assets', async () => {

@@ -18,6 +18,29 @@ export function calculateOnboardingProgress(state = {}) {
   };
 }
 
+export function renderOnboardingStepStates(root, steps = {}, nextStep = null) {
+  const cards = root?.querySelectorAll?.('[data-onboarding-step]');
+  if (!cards) return 0;
+  cards.forEach((card) => {
+    const key = card.dataset.onboardingStep;
+    const complete = Boolean(steps[key]);
+    const next = !complete && key === nextStep;
+    const completedBadge = card.querySelector('[data-onboarding-complete]');
+    const nextBadge = card.querySelector('[data-onboarding-next]');
+    const actions = card.querySelector('[data-onboarding-actions]');
+    card.classList.toggle('is-complete', complete);
+    card.setAttribute('aria-current', next ? 'step' : 'false');
+    if (completedBadge) {
+      completedBadge.hidden = !complete;
+      if (complete && completedBadge.id) card.setAttribute('aria-describedby', completedBadge.id);
+      else card.removeAttribute('aria-describedby');
+    }
+    if (nextBadge) nextBadge.hidden = !next;
+    if (actions) actions.hidden = complete;
+  });
+  return cards.length;
+}
+
 export function isNewUserOnboarding(state) {
   return state?.status === 'new' || state?.status === 'active';
 }

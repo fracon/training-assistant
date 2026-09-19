@@ -690,6 +690,8 @@
       "stepThree": "Etapa 3: Adicione treinos",
       "guideTitle": "Prepare seu espaço de treino",
       "progress": "{completed} de 3 etapas",
+      "completed": "Concluído",
+      "nextBadge": "Próximo",
       "hide": "Ocultar guia",
       "reopen": "Abrir guia de configuração",
       "next": "Próxima etapa",

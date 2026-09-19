@@ -690,6 +690,8 @@
       "stepThree": "Step 3: Add workouts",
       "guideTitle": "Prepare your training space",
       "progress": "{completed} of 3 steps",
+      "completed": "Completed",
+      "nextBadge": "Next",
       "hide": "Hide guide",
       "reopen": "Open setup guide",
       "next": "Next step",
