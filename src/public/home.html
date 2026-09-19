@@ -131,6 +131,11 @@
           <ul id="shoesList" class="shoes-list hidden" role="list"></ul>
         </section>
       </div>
+
+      <!-- TEMPORARY VISUAL-VALIDATION CONTROL: remove before PR #37 is merged. -->
+      <div class="onboarding-preview-tools">
+        <button id="onboardingPreview" class="btn-quiet" type="button" data-i18n="home.onboarding.previewWelcome">Preview welcome</button>
+      </div>
     </div>
   </main>
 
@@ -174,13 +179,13 @@
         </article>
       </div>
       <div class="onboarding-welcome-footer">
-        <button id="onboardingPrevious" class="btn-quiet" type="button" data-i18n="home.onboarding.previous" hidden>Back</button>
+        <div class="onboarding-welcome-nav-slot onboarding-welcome-nav-slot-start"><button id="onboardingPrevious" class="onboarding-welcome-nav-control" type="button" hidden><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="m12.5 4.5-5.5 5.5 5.5 5.5" /></svg><span data-i18n="home.onboarding.previous">Back</span></button></div>
         <div class="onboarding-welcome-indicators" role="group" aria-label="Onboarding steps" data-i18n-aria-label="home.onboarding.stepsLabel">
           <button type="button" class="onboarding-welcome-indicator" data-onboarding-slide-control="0" aria-label="Step 1" data-i18n-aria-label="home.onboarding.stepOne" aria-current="step"></button>
           <button type="button" class="onboarding-welcome-indicator" data-onboarding-slide-control="1" aria-label="Step 2" data-i18n-aria-label="home.onboarding.stepTwo"></button>
           <button type="button" class="onboarding-welcome-indicator" data-onboarding-slide-control="2" aria-label="Step 3" data-i18n-aria-label="home.onboarding.stepThree"></button>
         </div>
-        <button id="onboardingNext" class="btn-primary" type="button" data-i18n="home.onboarding.nextSlide">Next</button>
+        <div class="onboarding-welcome-nav-slot onboarding-welcome-nav-slot-end"><button id="onboardingNext" class="onboarding-welcome-nav-control" type="button"><span data-i18n="home.onboarding.nextSlide">Next</span><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="m7.5 4.5 5.5 5.5-5.5 5.5" /></svg></button></div>
       </div>
       <button id="onboardingLater" class="btn-quiet onboarding-welcome-later" type="button" data-i18n="home.onboarding.later">Skip for now</button>
     </section>

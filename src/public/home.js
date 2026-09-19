@@ -3,7 +3,7 @@ import { initShell, getShellI18n, getUserPreferences, showShellToast } from './s
 import { translate } from './shared/i18n.js';
 import { formatDate as formatLocalizedDate } from './shared/date.js';
 import { formatDistance } from './shared/units.js';
-import { calculateOnboardingProgress, isNewUserOnboarding, shouldShowWelcome, onboardingPresentation, onboardingPlanActions, onboardingSlideNavigation, updateOnboardingDialogA11y, trapOnboardingFocus, backgroundInertTargets } from './shared/onboarding.js';
+import { calculateOnboardingProgress, isNewUserOnboarding, onboardingPresentation, onboardingPlanActions, onboardingSlideNavigation, updateOnboardingDialogA11y, trapOnboardingFocus, createWelcomePreviewSession, backgroundInertTargets } from './shared/onboarding.js';
 
 export const ZENQUOTES_URL = 'https://zenquotes.io/api/today';
 export const QUOTE_TIMEOUT_MS = 3000;
@@ -475,6 +475,7 @@ function setupHomePage() {
   const onboardingProgress = document.getElementById('onboardingProgress');
   const onboardingWelcome = document.getElementById('onboardingWelcome');
   const onboardingDialog = onboardingWelcome?.querySelector('[role="dialog"]');
+  const onboardingPreview = document.getElementById('onboardingPreview');
   const onboardingHide = document.getElementById('onboardingHide');
   const onboardingReopen = document.getElementById('onboardingReopen');
   const onboardingReopenHidden = document.getElementById('onboardingReopenHidden');
@@ -506,10 +507,10 @@ function setupHomePage() {
   let i18n = null;
   let welcomeReturnFocus = null;
   let welcomeWasOpen = false;
-  let welcomeSlide = 0;
+  const welcomeSession = createWelcomePreviewSession();
 
   function focusWelcomeTitle() {
-    const title = onboardingWelcomeSlides[welcomeSlide]?.querySelector('h2');
+    const title = onboardingWelcomeSlides[welcomeSession.slide]?.querySelector('h2');
     title?.focus();
   }
   let inertBackgroundElements = new Set();
@@ -646,8 +647,8 @@ function setupHomePage() {
   }
 
   function renderWelcomeCarousel() {
+    const welcomeSlide = welcomeSession.setSlide(welcomeSession.slide, onboardingWelcomeSlides.length);
     const navigation = onboardingSlideNavigation(welcomeSlide, onboardingWelcomeSlides.length);
-    welcomeSlide = navigation.current;
     const progressLabel = t('home.onboarding.stepProgress', {
       current: welcomeSlide + 1,
       total: onboardingWelcomeSlides.length,
@@ -686,20 +687,21 @@ function setupHomePage() {
 
   function renderOnboarding() {
     const onboarding = state.onboarding;
-    if (!onboarding || !isNewUserOnboarding(onboarding)) return;
-    const presentation = onboardingPresentation(onboarding);
-    const progress = calculateOnboardingProgress(onboarding);
-    if (onboardingProgress) onboardingProgress.textContent = t('home.onboarding.progress', { completed: progress.completed });
-    onboardingGuide.hidden = !presentation.guideVisible;
-    onboardingComplete.hidden = !presentation.completionVisible;
-    onboardingReopenBar.hidden = !presentation.reopenVisible;
-    document.querySelectorAll('[data-onboarding-step]').forEach((step) => {
-      const done = progress.steps[step.dataset.onboardingStep];
-      step.classList.toggle('is-complete', done);
-      step.setAttribute('aria-current', progress.nextStep === step.dataset.onboardingStep ? 'step' : 'false');
-    });
+    if (onboarding && isNewUserOnboarding(onboarding)) {
+      const presentation = onboardingPresentation(onboarding);
+      const progress = calculateOnboardingProgress(onboarding);
+      if (onboardingProgress) onboardingProgress.textContent = t('home.onboarding.progress', { completed: progress.completed });
+      onboardingGuide.hidden = !presentation.guideVisible;
+      onboardingComplete.hidden = !presentation.completionVisible;
+      onboardingReopenBar.hidden = !presentation.reopenVisible;
+      document.querySelectorAll('[data-onboarding-step]').forEach((step) => {
+        const done = progress.steps[step.dataset.onboardingStep];
+        step.classList.toggle('is-complete', done);
+        step.setAttribute('aria-current', progress.nextStep === step.dataset.onboardingStep ? 'step' : 'false');
+      });
+    }
     renderWelcomeCarousel();
-    const shouldOpen = shouldShowWelcome(onboarding);
+    const shouldOpen = welcomeSession.ensureAutomatic(onboarding);
     if (shouldOpen && !welcomeWasOpen) {
       welcomeReturnFocus = document.activeElement;
       onboardingWelcome.hidden = false;
@@ -727,6 +729,7 @@ function setupHomePage() {
       const next = response?.onboarding;
       if (!next?.status || !next.steps) throw new Error('Invalid onboarding response.');
       state.onboarding = { ...next, guideOpen: false };
+      welcomeSession.close();
       renderOnboarding();
       return true;
     } catch {
@@ -735,9 +738,26 @@ function setupHomePage() {
     }
   }
 
+  function closeWelcome() {
+    if (welcomeSession.mode === 'preview') {
+      const returnFocus = welcomeReturnFocus;
+      welcomeSession.close();
+      renderOnboarding();
+      if (returnFocus?.isConnected && onboardingWelcome.hidden) returnFocus.focus();
+      return;
+    }
+    dismissWelcome();
+  }
+
   async function followWelcomeAction(event) {
     event.preventDefault();
     const destination = event.currentTarget.getAttribute('href');
+    if (welcomeSession.mode === 'preview') {
+      welcomeSession.close();
+      renderOnboarding();
+      window.location.href = destination;
+      return;
+    }
     if (await dismissWelcome()) window.location.href = destination;
   }
 
@@ -811,40 +831,45 @@ function setupHomePage() {
     renderOnboarding();
   });
 
-  onboardingLater?.addEventListener('click', dismissWelcome);
+  onboardingLater?.addEventListener('click', closeWelcome);
   onboardingWelcome?.addEventListener('click', (event) => {
-    if (event.target.dataset.onboardingDismiss === 'true') dismissWelcome();
+    if (event.target.dataset.onboardingDismiss === 'true') closeWelcome();
   });
   onboardingPrevious?.addEventListener('click', () => {
-    welcomeSlide = onboardingSlideNavigation(welcomeSlide, onboardingWelcomeSlides.length).previous;
+    welcomeSession.setSlide(onboardingSlideNavigation(welcomeSession.slide, onboardingWelcomeSlides.length).previous, onboardingWelcomeSlides.length);
     renderWelcomeCarousel();
     focusWelcomeTitle();
   });
   onboardingNext?.addEventListener('click', () => {
-    welcomeSlide = onboardingSlideNavigation(welcomeSlide, onboardingWelcomeSlides.length).next;
+    welcomeSession.setSlide(onboardingSlideNavigation(welcomeSession.slide, onboardingWelcomeSlides.length).next, onboardingWelcomeSlides.length);
     renderWelcomeCarousel();
     focusWelcomeTitle();
   });
   onboardingSlideControls.forEach((control) => {
     control.addEventListener('click', () => {
-      welcomeSlide = Number(control.dataset.onboardingSlideControl);
+      welcomeSession.setSlide(Number(control.dataset.onboardingSlideControl), onboardingWelcomeSlides.length);
       renderWelcomeCarousel();
       focusWelcomeTitle();
     });
   });
   onboardingWelcomeActions.forEach((action) => action.addEventListener('click', followWelcomeAction));
+  onboardingPreview?.addEventListener('click', () => {
+    welcomeReturnFocus = onboardingPreview;
+    welcomeSession.openPreview();
+    renderOnboarding();
+  });
   document.addEventListener('keydown', (event) => {
     if (!welcomeWasOpen) return;
     if (event.key === 'Escape') {
       event.preventDefault();
-      dismissWelcome();
+      closeWelcome();
       return;
     }
     if (event.key !== 'Tab') return;
     trapOnboardingFocus(
       event,
       onboardingDialog,
-      onboardingWelcomeSlides[welcomeSlide]?.querySelector('h2')
+      onboardingWelcomeSlides[welcomeSession.slide]?.querySelector('h2')
     );
   });
   onboardingHide?.addEventListener('click', () => toggleGuide(true));
