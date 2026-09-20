@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS users (
   first_day_of_week TEXT NOT NULL DEFAULT 'Monday',
   distance_unit TEXT NOT NULL DEFAULT 'km',
   temperature_unit TEXT NOT NULL DEFAULT 'C',
-  onboarding_status TEXT NOT NULL DEFAULT 'legacy',
+  onboarding_status TEXT NOT NULL DEFAULT 'active',
   onboarding_guide_hidden INTEGER NOT NULL DEFAULT 0,
   created_at     TEXT    NOT NULL DEFAULT (datetime('now'))
 );
@@ -136,6 +136,9 @@ function migrateDatabase(db) {
   if (!columns.some((column) => column.name === 'onboarding_guide_hidden')) {
     db.exec('ALTER TABLE users ADD COLUMN onboarding_guide_hidden INTEGER NOT NULL DEFAULT 0');
   }
+  // Accounts present before the two-state onboarding model were assigned
+  // `legacy`; treat them as active without changing their presentation choices.
+  db.prepare("UPDATE users SET onboarding_status = 'active' WHERE onboarding_status = 'legacy'").run();
 
   const trainingColumns = db.pragma('table_info(trainings)');
   const hasShoesTable = Boolean(db.prepare(
@@ -254,6 +257,21 @@ function migrateDatabase(db) {
        fit_max_hr IS NOT NULL OR fit_elevation_gain IS NOT NULL
      )`
   ).run();
+
+  // FIT pace was briefly stored as decimal minutes (for example 6.53), while
+  // the application contract is elapsed minutes:seconds (6:32). Convert only
+  // recognized old FIT values; repeated initialization is naturally idempotent.
+  const oldFitPaces = db.prepare(
+    "SELECT id, fit_avg_pace FROM trainings WHERE result_data_source = 'fit_upload' AND fit_avg_pace IS NOT NULL"
+  ).all();
+  const updateFitPace = db.prepare('UPDATE trainings SET fit_avg_pace = ? WHERE id = ?');
+  for (const row of oldFitPaces) {
+    const match = /^(\d+)\.(\d{2})$/.exec(String(row.fit_avg_pace));
+    if (!match) continue;
+    const minutes = Number(match[1]);
+    const seconds = Math.round(Number(`0.${match[2]}`) * 60);
+    updateFitPace.run(`${minutes + Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`, row.id);
+  }
 
   const workoutsTable = db
     .prepare(

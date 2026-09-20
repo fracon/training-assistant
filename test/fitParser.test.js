@@ -11,6 +11,8 @@ const {
   formatPace,
   formatDistance,
   normalizeCalories,
+  resolveActivityTotals,
+  resolveAscent,
 } = require('../src/fitParser');
 
 function makeLap(overrides = {}) {
@@ -58,6 +60,7 @@ test('formatPace renders min/km labels with rounding', () => {
   assert.equal(formatPace(-3), '--:--');
   assert.equal(formatPace(270), '4:30');
   assert.equal(formatPace(300.4), '5:00');
+  assert.equal(formatPace(299.5), '5:00', 'half seconds round up to the next second');
   assert.equal(formatPace(299.7), '5:00');
 });
 
@@ -229,7 +232,7 @@ test('summarize computes totals across mixed lap quality', () => {
     avgPaceLabel: '3:40',
     avgHeartRate: 150,
     maxHeartRate: 162,
-    ascentMeters: 20,
+    ascentMeters: null,
     calories: null,
   });
 });
@@ -245,6 +248,19 @@ test('summarize reports zero-distance workouts without a pace average', () => {
   assert.equal(treadmill.totals.durationLabel, '10:00');
 });
 
+test('invalid negative lap distance, duration, ascent and descent are excluded from display totals', () => {
+  const summary = summarize({ sessions: [{ laps: [makeLap({
+    total_timer_time: -1, total_elapsed_time: -2, total_distance: -100,
+    total_ascent: -20, total_descent: -30,
+  })] }] });
+  assert.equal(summary.laps[0].duration, null);
+  assert.equal(summary.laps[0].distanceKm, null);
+  assert.equal(summary.laps[0].ascentMeters, null);
+  assert.equal(summary.laps[0].descentMeters, null);
+  assert.equal(summary.totals.distanceKm, null);
+  assert.equal(summary.totals.ascentMeters, null);
+});
+
 test('summarize skips pace when no lap carries a duration', () => {
   const distanceOnly = summarize({
     sessions: [
@@ -253,8 +269,124 @@ test('summarize skips pace when no lap carries a duration', () => {
   });
   assert.equal(distanceOnly.totals.durationSeconds, 0);
   assert.equal(distanceOnly.totals.durationLabel, '00:00');
-  assert.equal(distanceOnly.totals.distanceKm, 1);
+  assert.equal(distanceOnly.totals.distanceKm, null, 'a distance without a compatible duration is not used alone');
   assert.equal(distanceOnly.totals.avgPaceLabel, '--:--');
+});
+
+test('activity summary prefers session timer and distance, rounds pace to the nearest second', () => {
+  const summary = summarize({ sessions: [{
+    total_timer_time: 5401.707,
+    total_elapsed_time: 5401.707,
+    total_distance: 13785.17,
+    total_ascent: 320,
+    avg_speed: 9.1872,
+    laps: [makeLap({ total_timer_time: 5401.707, total_elapsed_time: 5401.707, total_distance: 13786, total_ascent: 317 })],
+  }] });
+  assert.equal(summary.totals.durationSeconds, 5401.71);
+  assert.equal(summary.totals.durationLabel, '1:30:02');
+  assert.equal(summary.totals.distanceKm, 13.785);
+  assert.equal(summary.totals.avgPaceSecondsPerKm, 391.8);
+  assert.equal(summary.totals.avgPaceLabel, '6:32');
+  assert.equal(summary.totals.ascentMeters, 320);
+});
+
+test('timer time wins over elapsed time and elapsed is the session fallback', () => {
+  const timer = summarize({ sessions: [{
+    total_timer_time: 1500, total_elapsed_time: 1800, total_distance: 5000,
+    laps: [makeLap({ total_timer_time: 1500, total_elapsed_time: 1800, total_distance: 5000 })],
+  }] });
+  assert.equal(timer.totals.durationSeconds, 1500);
+  assert.equal(timer.totals.avgPaceLabel, '5:00');
+
+  const elapsed = resolveActivityTotals({ total_timer_time: Number.NaN, total_elapsed_time: 1800, total_distance: 5000 }, [], [], []);
+  assert.deepEqual(elapsed, { durationSeconds: 1800, distanceKm: 5 });
+  assert.deepEqual(resolveActivityTotals({ total_timer_time: -1, total_elapsed_time: 0, total_distance: 5000, avg_speed: 10 }, [], [], []), {
+    durationSeconds: 1800, distanceKm: 5,
+  });
+});
+
+test('consistent laps are a same-source fallback before records', () => {
+  assert.deepEqual(resolveActivityTotals({}, [
+    { total_timer_time: 300, total_elapsed_time: 400, total_distance: 1000 },
+    { total_timer_time: 600, total_elapsed_time: 700, total_distance: 2000 },
+  ], [], []), { durationSeconds: 900, distanceKm: 3 });
+  assert.deepEqual(resolveActivityTotals({}, [
+    { total_elapsed_time: 300, total_distance: 1000 },
+    { total_elapsed_time: 600, total_distance: 2000 },
+  ], [], []), { durationSeconds: 900, distanceKm: 3 });
+  assert.equal(resolveActivityTotals({}, [{ total_timer_time: 300, total_distance: 1000 }, { total_distance: 500 }], [], []), null);
+  assert.equal(resolveActivityTotals({}, [{ total_timer_time: 0, total_distance: 0 }], [], []), null);
+});
+
+test('records provide a controlled distance and active-time fallback', () => {
+  const records = [
+    { timestamp: new Date('2026-01-01T00:00:00Z'), distance: 0 },
+    { timestamp: new Date('2026-01-01T00:00:10Z'), distance: 500 },
+    { timestamp: new Date('2026-01-01T00:00:20Z'), distance: 400 },
+    { timestamp: new Date('2026-01-01T00:00:30Z'), distance: 900 },
+  ];
+  assert.deepEqual(resolveActivityTotals({}, [], records, [
+    { event: 'timer', event_type: 'start', timestamp: new Date('2026-01-01T00:00:00Z') },
+    { event: 'timer', event_type: 'stop', timestamp: new Date('2026-01-01T00:00:12Z') },
+    { event: 'timer', event_type: 'resume', timestamp: new Date('2026-01-01T00:00:20Z') },
+    { event: 'timer', event_type: 'stop_all', timestamp: new Date('2026-01-01T00:00:30Z') },
+  ]), { durationSeconds: 22, distanceKm: 1 });
+  assert.deepEqual(resolveActivityTotals({}, [], records, []), { durationSeconds: 30, distanceKm: 1 });
+  assert.equal(resolveActivityTotals({}, [], [{ timestamp: 'bad', distance: 1 }, null], []), null);
+  assert.equal(resolveActivityTotals({}, [], [{ timestamp: 1, distance: -1 }, { timestamp: 2, distance: 2 }], []), null);
+  const equalTime = [
+    { timestamp: 1704067200000, distance: 0 },
+    { timestamp: 1704067200000, distance: 100 },
+  ];
+  assert.equal(resolveActivityTotals({}, [], equalTime, null), null, 'zero elapsed records cannot provide a duration');
+  assert.equal(resolveActivityTotals({}, [], [
+    { timestamp: new Date(Number.NaN), distance: 0 },
+    { timestamp: Number.NaN, distance: 50 },
+    { timestamp: ' ', distance: 100 },
+    { timestamp: 'not-a-date', distance: 200 },
+  ], []), null, 'invalid Date and strings are ignored');
+  assert.deepEqual(resolveActivityTotals({}, [], [
+    { timestamp: 1704067200000, distance: 0 },
+    { timestamp: 1704067210000, distance: 500 },
+  ], null), { durationSeconds: 10, distanceKm: 0.5 }, 'finite numeric timestamps and a non-array event source use elapsed fallback');
+  assert.deepEqual(resolveActivityTotals({}, [], [
+    { timestamp: '2026-01-01T00:00:00Z', distance: 0 },
+    { timestamp: '2026-01-01T00:00:10Z', distance: 500 },
+  ], [
+    { event: 'timer', event_type: 'start', timestamp: '2026-01-01T00:00:00Z' },
+  ]), { durationSeconds: 10, distanceKm: 0.5 }, 'an open timer interval ends at the last record');
+  assert.equal(resolveActivityTotals({}, [], [
+    { timestamp: 1704067200000, distance: 0 },
+    { timestamp: 1704067210000, distance: 500 },
+  ], [
+    { event: 'timer', event_type: 'stop_all', timestamp: 1704067205000 },
+  ]), null, 'stop without a preceding start contributes no active duration');
+  assert.equal(resolveActivityTotals({}, [], [
+    { timestamp: 1704067200000, distance: 0 },
+    { timestamp: 1704067200000, distance: 500 },
+  ], [
+    { event: 'timer', event_type: 'start', timestamp: 1704067200000 },
+    { event: 'timer', event_type: 'stop', timestamp: 1704067200000 },
+  ]), null, 'zero-length timer intervals cannot supply activity duration');
+});
+
+test('ascent uses only valid positive rises and prefers session then complete laps', () => {
+  const altitudes = [100, 120, 110, 90, 105, 105].map((altitude) => ({ altitude }));
+  assert.equal(resolveAscent({ total_ascent: 40 }, [{ total_ascent: 99 }], altitudes), 40);
+  assert.equal(resolveAscent({ total_ascent: 0 }, [], altitudes), 0);
+  assert.equal(resolveAscent({ total_ascent: -1 }, [{ total_ascent: 12 }, { total_ascent: 8 }], altitudes), 20);
+  assert.equal(resolveAscent({}, [{ total_ascent: 12 }, { total_ascent: null }], altitudes), 35);
+  assert.equal(resolveAscent({}, [], [
+    { enhanced_altitude: 100, altitude: 500 },
+    { enhanced_altitude: 125, altitude: 510 },
+    { enhanced_altitude: 105, altitude: 520 },
+    { enhanced_altitude: 130, altitude: 530 },
+  ]), 50);
+  assert.equal(resolveAscent({}, [], [
+    { altitude: 100 }, { altitude: 80 }, { altitude: 95 }, { altitude: 92 }, { altitude: 110 },
+  ]), 33);
+  assert.equal(resolveAscent({}, [], [{ altitude: 100 }, { altitude: Number.NaN }, { altitude: 90 }]), null);
+  assert.equal(resolveAscent({}, [], [{ enhanced_altitude: 10, altitude: 10 }, { altitude: 30 }]), null, 'enhanced and standard altitude are never mixed');
 });
 
 test('summarize falls back to top-level laps in list mode output', () => {

@@ -12,7 +12,7 @@ const DEFAULT_PARSER_OPTIONS = {
 const PARSE_TIMEOUT_MS = 10000;
 
 function pickNumber(source, key) {
-  return Number.isFinite(source[key]) ? source[key] : null;
+  return Number.isFinite(source?.[key]) ? source[key] : null;
 }
 
 function pickNumberAny(source, keys) {
@@ -21,6 +21,16 @@ function pickNumberAny(source, keys) {
     if (value !== null) return value;
   }
   return null;
+}
+
+function nonNegativeNumber(source, key) {
+  const value = pickNumber(source, key);
+  return value !== null && value >= 0 ? value : null;
+}
+
+function positiveNumber(source, key) {
+  const value = pickNumber(source, key);
+  return value !== null && value > 0 ? value : null;
 }
 
 function normalizeCalories(value) {
@@ -71,8 +81,9 @@ function resolveStepType(lap) {
 }
 
 function buildLapView(lap, index, cumulativeBefore) {
-  const duration = pickNumber(lap, 'total_elapsed_time');
-  const distanceMeters = pickNumber(lap, 'total_distance');
+  const duration = nonNegativeNumber(lap, 'total_timer_time') ??
+    nonNegativeNumber(lap, 'total_elapsed_time');
+  const distanceMeters = nonNegativeNumber(lap, 'total_distance');
   const distanceKm = distanceMeters === null ? null : distanceMeters / 1000;
   const maxSpeedKmh = pickNumber(lap, 'max_speed');
   const avgPace =
@@ -97,8 +108,8 @@ function buildLapView(lap, index, cumulativeBefore) {
     bestPaceLabel: formatPace(bestPace),
     avgHeartRate: pickNumber(lap, 'avg_heart_rate'),
     maxHeartRate: pickNumber(lap, 'max_heart_rate'),
-    ascentMeters: pickNumber(lap, 'total_ascent'),
-    descentMeters: pickNumber(lap, 'total_descent'),
+    ascentMeters: nonNegativeNumber(lap, 'total_ascent'),
+    descentMeters: nonNegativeNumber(lap, 'total_descent'),
     avgCadenceSpm: pickNumberAny(lap, ['avg_running_cadence', 'avg_cadence']),
     maxCadenceSpm: pickNumberAny(lap, ['max_running_cadence', 'max_cadence']),
     strideMeters: pickNumber(lap, 'avg_stride_length'),
@@ -106,15 +117,137 @@ function buildLapView(lap, index, cumulativeBefore) {
   };
 }
 
-function buildTotals(views, calories = null) {
+function consistentLapTotals(laps) {
+  if (laps.length === 0) return null;
+  const hasAllTimer = laps.every((lap) => nonNegativeNumber(lap, 'total_timer_time') !== null);
+  const hasAllElapsed = laps.every((lap) => nonNegativeNumber(lap, 'total_elapsed_time') !== null);
+  const durationField = hasAllTimer ? 'total_timer_time' : hasAllElapsed ? 'total_elapsed_time' : null;
+  if (!durationField || !laps.every((lap) => nonNegativeNumber(lap, 'total_distance') !== null)) return null;
+  const durationSeconds = laps.reduce((sum, lap) => sum + nonNegativeNumber(lap, durationField), 0);
+  const distanceMeters = laps.reduce((sum, lap) => sum + nonNegativeNumber(lap, 'total_distance'), 0);
+  return durationSeconds > 0 && distanceMeters >= 0
+    ? { durationSeconds, distanceKm: distanceMeters / 1000 }
+    : null;
+}
+
+function timestampMilliseconds(value) {
+  if (value instanceof Date) return Number.isFinite(value.getTime()) ? value.getTime() : null;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value !== 'string' || value.trim() === '') return null;
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? time : null;
+}
+
+function recordDuration(records, events) {
+  const recordTimes = records.map((record) => timestampMilliseconds(record?.timestamp))
+    .filter((value) => value !== null);
+  if (recordTimes.length < 2) return null;
+  const end = Math.max(...recordTimes);
+  const timerEvents = (Array.isArray(events) ? events : [])
+    .filter((event) => event?.event === 'timer' && timestampMilliseconds(event.timestamp) !== null)
+    .map((event) => ({ type: event.event_type, time: timestampMilliseconds(event.timestamp) }))
+    .sort((a, b) => a.time - b.time);
+  if (timerEvents.length === 0) {
+    const elapsed = (end - Math.min(...recordTimes)) / 1000;
+    return elapsed > 0 ? elapsed : null;
+  }
+
+  let startedAt = null;
+  let total = 0;
+  for (const event of timerEvents) {
+    if (event.type === 'start' || event.type === 'resume') {
+      if (startedAt === null) startedAt = event.time;
+    } else if (['stop', 'stop_all', 'stop_disable', 'stop_disable_all'].includes(event.type) && startedAt !== null) {
+      total += Math.max(0, event.time - startedAt);
+      startedAt = null;
+    }
+  }
+  if (startedAt !== null) total += Math.max(0, end - startedAt);
+  const seconds = total / 1000;
+  return seconds > 0 ? seconds : null;
+}
+
+function recordDistance(records) {
+  let previous = null;
+  let total = 0;
+  let pairs = 0;
+  for (const record of records) {
+    const distance = nonNegativeNumber(record, 'distance');
+    if (distance === null) {
+      previous = null;
+      continue;
+    }
+    if (previous !== null) {
+      if (distance >= previous) {
+        total += distance - previous;
+        pairs += 1;
+      }
+    }
+    previous = distance;
+  }
+  return pairs > 0 && total > 0 ? total / 1000 : null;
+}
+
+function recordAscent(records) {
+  const field = records.some((record) => Number.isFinite(record?.enhanced_altitude))
+    ? 'enhanced_altitude'
+    : 'altitude';
+  let previous = null;
+  let ascent = 0;
+  let pairs = 0;
+  for (const record of records) {
+    const altitude = pickNumber(record, field);
+    if (altitude === null) {
+      previous = null;
+      continue;
+    }
+    if (previous !== null) {
+      ascent += Math.max(0, altitude - previous);
+      pairs += 1;
+    }
+    previous = altitude;
+  }
+  return pairs > 0 ? ascent : null;
+}
+
+function resolveActivityTotals(session, laps, records, events) {
+  const sessionDistance = nonNegativeNumber(session, 'total_distance');
+  const sessionTimer = positiveNumber(session, 'total_timer_time');
+  const sessionElapsed = positiveNumber(session, 'total_elapsed_time');
+  const sessionDuration = sessionTimer ?? sessionElapsed;
+  if (sessionDistance !== null && sessionDuration !== null) {
+    return { durationSeconds: sessionDuration, distanceKm: sessionDistance / 1000 };
+  }
+  const averageSpeed = positiveNumber(session, 'avg_speed');
+  if (sessionDistance !== null && averageSpeed !== null) {
+    return {
+      durationSeconds: sessionDistance / (averageSpeed * 1000 / 3600),
+      distanceKm: sessionDistance / 1000,
+    };
+  }
+  const lapTotals = consistentLapTotals(laps);
+  if (lapTotals) return lapTotals;
+  const distanceKm = recordDistance(records);
+  const durationSeconds = recordDuration(records, events);
+  return distanceKm !== null && durationSeconds !== null
+    ? { durationSeconds, distanceKm }
+    : null;
+}
+
+function resolveAscent(session, laps, records) {
+  const sessionAscent = nonNegativeNumber(session, 'total_ascent');
+  if (sessionAscent !== null) return sessionAscent;
+  if (laps.length > 0 && laps.every((lap) => nonNegativeNumber(lap, 'total_ascent') !== null)) {
+    return laps.reduce((sum, lap) => sum + nonNegativeNumber(lap, 'total_ascent'), 0);
+  }
+  return recordAscent(records);
+}
+
+function buildTotals(views, calories = null, activity = null, ascentMeters = null) {
   let durationSeconds = 0;
   let hrWeighted = 0;
   let hrWeight = 0;
   const maxHeartRates = [];
-  let distanceKmSum = 0;
-  let hasDistance = false;
-  let ascentSum = 0;
-  let hasAscent = false;
 
   for (const view of views) {
     if (view.duration !== null) {
@@ -125,32 +258,26 @@ function buildTotals(views, calories = null) {
       }
     }
     if (view.maxHeartRate !== null) maxHeartRates.push(view.maxHeartRate);
-    if (view.distanceKm !== null) {
-      hasDistance = true;
-      distanceKmSum += view.distanceKm;
-    }
-    if (view.ascentMeters !== null) {
-      hasAscent = true;
-      ascentSum += view.ascentMeters;
-    }
   }
 
-  const distanceKm = hasDistance ? round(distanceKmSum, 3) : null;
+  const duration = activity?.durationSeconds ?? durationSeconds;
+  const preciseDistanceKm = activity?.distanceKm ?? null;
+  const distanceKm = preciseDistanceKm === null ? null : round(preciseDistanceKm, 3);
   const avgPaceSecondsPerKm =
-    distanceKm !== null && distanceKm > 0 && durationSeconds > 0
-      ? round(durationSeconds / distanceKm, 1)
+    preciseDistanceKm !== null && preciseDistanceKm > 0 && duration > 0
+      ? round(duration / preciseDistanceKm, 1)
       : null;
 
   return {
-    durationSeconds: round(durationSeconds, 2),
-    durationLabel: formatDuration(durationSeconds),
+    durationSeconds: round(duration, 2),
+    durationLabel: formatDuration(duration),
     distanceKm,
     distanceLabel: formatDistance(distanceKm),
     avgPaceSecondsPerKm,
     avgPaceLabel: formatPace(avgPaceSecondsPerKm),
     avgHeartRate: hrWeight > 0 ? Math.round(hrWeighted / hrWeight) : null,
     maxHeartRate: maxHeartRates.length ? Math.max(...maxHeartRates) : null,
-    ascentMeters: hasAscent ? round(ascentSum, 1) : null,
+    ascentMeters: ascentMeters === null ? null : round(ascentMeters, 1),
     calories,
   };
 }
@@ -161,6 +288,8 @@ function summarize(data) {
   const sessionLaps = Array.isArray(session.laps) ? session.laps : [];
   const topLevelLaps = Array.isArray(source.laps) ? source.laps : [];
   const laps = sessionLaps.length ? sessionLaps : topLevelLaps;
+  const records = Array.isArray(source.records) ? source.records : [];
+  const events = Array.isArray(source.events) ? source.events : [];
   let cumulative = 0;
   const lapViews = laps.map((lap, index) => {
     const view = buildLapView(lap ?? {}, index, cumulative);
@@ -177,9 +306,12 @@ function summarize(data) {
     // The session total is authoritative. Lap calories remain available in
     // each lap, but are not summed because exporters may report cumulative
     // values and doing so could double-count the activity.
-    totals: buildTotals(lapViews, normalizeCalories(
-      session.total_calories ?? session.totalCalories ?? session.calories
-    )),
+    totals: buildTotals(
+      lapViews,
+      normalizeCalories(session.total_calories ?? session.totalCalories ?? session.calories),
+      resolveActivityTotals(session, laps, records, events),
+      resolveAscent(session, laps, records)
+    ),
   };
 }
 
@@ -217,4 +349,6 @@ module.exports = {
   formatPace,
   formatDistance,
   normalizeCalories,
+  resolveActivityTotals,
+  resolveAscent,
 };

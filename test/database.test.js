@@ -203,10 +203,12 @@ test('migrateDatabase adds first_day_of_week to partially migrated tables', () =
   assert.ok(columns.includes('first_day_of_week'));
 
   const row = db
-    .prepare('SELECT preferred_lang, first_day_of_week FROM users WHERE email = ?')
+    .prepare('SELECT preferred_lang, first_day_of_week, onboarding_status, onboarding_guide_hidden FROM users WHERE email = ?')
     .get('partial@example.com');
   assert.equal(row.preferred_lang, 'pt-BR');
   assert.equal(row.first_day_of_week, 'Sunday', 'existing values are preserved');
+  assert.equal(row.onboarding_status, 'active', 'a representative pre-onboarding user table migrates to active');
+  assert.equal(row.onboarding_guide_hidden, 0, 'the new presentation preference gets a default without altering other user data');
 
   const fresh = db
     .prepare('INSERT INTO users (email, password_hash) VALUES (?, ?) RETURNING first_day_of_week')
@@ -220,6 +222,49 @@ test('initializeDatabase is safe to run on already-migrated databases', () => {
   const first = createDatabase({ filename: ':memory:' });
   assert.doesNotThrow(() => initializeDatabase(first));
   first.close();
+});
+
+test('onboarding migration converts legacy accounts to active idempotently without changing their data', () => {
+  const db = createDatabase({ filename: ':memory:' });
+  db.prepare("INSERT INTO users (email, password_hash) VALUES ('old-account@example.com', 'hash')").run();
+  db.prepare("UPDATE users SET onboarding_status = 'legacy', onboarding_guide_hidden = 1 WHERE email = 'old-account@example.com'").run();
+  db.prepare("INSERT INTO shoes (id, user_id, brand, model, mileage) VALUES ('old-shoe', 1, 'Acme', 'Runner', 27)").run();
+  db.prepare("INSERT INTO training_cycles (id, user_id, objective) VALUES ('old-cycle', 1, 'Race')").run();
+  db.prepare("INSERT INTO trainings (user_id, training_cycle_id, dia, tipo, fit_duration, fit_distance, result_data_source) VALUES (1, 'old-cycle', '2026-09-20', 'Run', '30:00', 5, 'manual')").run();
+
+  migrateDatabase(db);
+  migrateDatabase(db);
+
+  assert.deepEqual(db.prepare("SELECT onboarding_status, onboarding_guide_hidden FROM users WHERE id = 1").get(), {
+    onboarding_status: 'active', onboarding_guide_hidden: 1,
+  });
+  assert.deepEqual(db.prepare('SELECT COUNT(*) AS count FROM shoes').get(), { count: 1 });
+  assert.deepEqual(db.prepare('SELECT COUNT(*) AS count FROM training_cycles').get(), { count: 1 });
+  assert.deepEqual(db.prepare('SELECT fit_duration, fit_distance, result_data_source FROM trainings').get(), {
+    fit_duration: '30:00', fit_distance: 5, result_data_source: 'manual',
+  });
+  db.close();
+});
+
+test('database migration converts old decimal-minute FIT paces into idempotent mm:ss values', () => {
+  const db = createDatabase({ filename: ':memory:' });
+  db.prepare("INSERT INTO users (email, password_hash) VALUES ('pace@example.com', 'hash')").run();
+  db.prepare(`INSERT INTO trainings (user_id, dia, tipo, result_data_source, fit_avg_pace)
+    VALUES (1, '2026-09-20', 'Run', 'fit_upload', '6.53'),
+           (1, '2026-09-20', 'Run', 'fit_upload', '5.00'),
+           (1, '2026-09-20', 'Run', 'manual', '6.53'),
+           (1, '2026-09-20', 'Run', 'fit_upload', '6:32'),
+           (1, '2026-09-20', 'Run', 'none', '7.20')`).run();
+  migrateDatabase(db);
+  migrateDatabase(db);
+  assert.deepEqual(db.prepare('SELECT result_data_source, fit_avg_pace FROM trainings ORDER BY id').all(), [
+    { result_data_source: 'fit_upload', fit_avg_pace: '6:32' },
+    { result_data_source: 'fit_upload', fit_avg_pace: '5:00' },
+    { result_data_source: 'manual', fit_avg_pace: '6.53' },
+    { result_data_source: 'fit_upload', fit_avg_pace: '6:32' },
+    { result_data_source: 'fit_upload', fit_avg_pace: '7:12' },
+  ]);
+  db.close();
 });
 
 test('in-memory database stores users and sessions via prepared statements', () => {

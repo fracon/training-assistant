@@ -5,7 +5,7 @@ const Fastify = require('fastify');
 const multipart = require('@fastify/multipart');
 const fastifyStatic = require('@fastify/static');
 const fastifyCookie = require('@fastify/cookie');
-const { parseFitFile, normalizeCalories } = require('./fitParser');
+const { parseFitFile, normalizeCalories, formatDuration, formatPace } = require('./fitParser');
 const { FitUploadError, resolveFitBuffer } = require('./fitUpload');
 const { normalizeManualResults } = require('./manualResults');
 const {
@@ -538,8 +538,14 @@ async function buildServer(options = {}) {
 
     const TRAINING_COLUMNS =
       `id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes, location, feedback_rpe, feedback_notas, completed, has_smartwatch,
-       COALESCE((SELECT TRIM(s.brand || ' ' || s.model) FROM shoes s WHERE s.id = feedback_shoe_id), feedback_shoe) AS feedback_shoe,
-       feedback_shoe_id, feedback_hr_source, feedback_weather, feedback_terrain, feedback_breathing, feedback_muscle, feedback_energy, feedback_has_pain, feedback_pain, fit_duration, fit_distance, fit_avg_pace, fit_avg_hr, fit_max_hr, fit_elevation_gain, fit_calories, fit_summary_json, result_data_source`;
+       CASE
+         WHEN feedback_shoe_id IS NULL THEN feedback_shoe
+         WHEN EXISTS (SELECT 1 FROM shoes s WHERE s.id = feedback_shoe_id AND s.user_id = trainings.user_id)
+           THEN (SELECT TRIM(s.brand || ' ' || s.model) FROM shoes s WHERE s.id = feedback_shoe_id AND s.user_id = trainings.user_id)
+         ELSE NULL
+       END AS feedback_shoe,
+       CASE WHEN EXISTS (SELECT 1 FROM shoes s WHERE s.id = feedback_shoe_id AND s.user_id = trainings.user_id) THEN feedback_shoe_id ELSE NULL END AS feedback_shoe_id,
+       feedback_hr_source, feedback_weather, feedback_terrain, feedback_breathing, feedback_muscle, feedback_energy, feedback_has_pain, feedback_pain, fit_duration, fit_distance, fit_avg_pace, fit_avg_hr, fit_max_hr, fit_elevation_gain, fit_calories, fit_summary_json, result_data_source`;
 
     const findTraining = db.prepare(
       `SELECT ${TRAINING_COLUMNS} FROM trainings WHERE id = ? AND user_id = ?`
@@ -790,17 +796,13 @@ async function buildServer(options = {}) {
       try {
         const fitBuffer = await resolveFitBuffer({ buffer: fileBuffer, filename: fileName });
         const result = await parseFile(fitBuffer);
-        const durationSec = result.totals?.durationSeconds || 0;
-        const hours = Math.floor(durationSec / 3600);
-        const minutes = Math.floor((durationSec % 3600) / 60);
-        const seconds = Math.floor(durationSec % 60);
-        const fitDuration = hours > 0
-          ? `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
-          : `${minutes}:${String(seconds).padStart(2, '0')}`;
+        const fitDuration = result.totals?.durationSeconds > 0
+          ? (result.totals.durationLabel ?? formatDuration(result.totals.durationSeconds))
+          : '0:00';
 
         const fitDistance = result.totals?.distanceKm ?? 0;
         const fitAvgPace = result.totals?.avgPaceSecondsPerKm != null
-          ? (result.totals.avgPaceSecondsPerKm / 60).toFixed(2)
+          ? (result.totals.avgPaceLabel ?? formatPace(result.totals.avgPaceSecondsPerKm))
           : null;
         const fitAvgHr = result.totals?.avgHeartRate ?? null;
         const fitMaxHr = result.totals?.maxHeartRate ?? null;

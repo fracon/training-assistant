@@ -1,14 +1,18 @@
 import { initShell, getShellI18n, getUserPreferences, showConfirm, showShellToast, refreshIcons } from './shared/shell.js';
 import { translate } from './shared/i18n.js';
 import { formatDate as formatLocalizedDate, formatWeekday } from './shared/date.js';
-import { fetchTraining, saveTrainingFeedback, saveManualTrainingResults, fetchShoes, deleteTraining, fetchWeather, fetchOnboarding } from './shared/api.js';
+import { fetchTraining, saveTrainingFeedback, saveManualTrainingResults, fetchShoes, deleteTraining, fetchWeather } from './shared/api.js';
 import { KM_TO_MILES, convertDistanceInputValue, convertDistanceToKm, formatDistance, formatPaceFromMetric, formatTemperature } from './shared/units.js';
 import { createImportGuidance } from './shared/workout-import-guidance.js';
 
-export function shouldShowOnboardingResultHint(onboarding, training, trainingId) {
-  return onboarding?.status !== 'legacy' &&
-    training?.result_data_source === 'none' &&
-    Number(onboarding?.firstTrainingId) === Number(trainingId);
+export function shouldShowOnboardingResultHint(training) {
+  return training?.result_data_source === 'none';
+}
+
+export function selectableFeedbackShoes(shoes, selectedId = null) {
+  const owned = Array.isArray(shoes) ? shoes : [];
+  return owned.filter((shoe) => shoe.status === 'active' ||
+    (shoe.status === 'retired' && shoe.id === selectedId));
 }
 
 // Sessions open contextually via /training-result.html?id=<id>; without an
@@ -674,11 +678,8 @@ async function initTrainingResult() {
   let manualDistanceInputUnit = 'km';
   const t = (key) => translate(i18n ? i18n.messages : {}, key);
 
-  async function loadOnboardingHint() {
-    const onboarding = await fetchOnboarding();
-    if (onboardingResultHint && shouldShowOnboardingResultHint(onboarding, training, currentTrainingId)) {
-      onboardingResultHint.hidden = false;
-    }
+  function syncOnboardingResultHint() {
+    if (onboardingResultHint) onboardingResultHint.hidden = !shouldShowOnboardingResultHint(training);
   }
 
   const applyTooltips = () => {
@@ -790,14 +791,16 @@ async function initTrainingResult() {
   const loadShoes = async () => {
     const shoes = await fetchShoes();
     shoeSelect.innerHTML = '<option value="">–</option>';
-    for (const shoe of shoes) {
+    const selectable = selectableFeedbackShoes(shoes, training.feedback_shoe_id);
+    for (const shoe of selectable) {
       const option = document.createElement('option');
       const label = shoe.brand && shoe.model ? `${shoe.brand} ${shoe.model}` : shoe.model || shoe.brand || shoe.id;
       option.value = shoe.id;
-      option.textContent = label;
+      option.textContent = shoe.status === 'retired' ? `${label} (${t('shoes.status.retired')})` : label;
+      option.disabled = shoe.status === 'retired';
       shoeSelect.appendChild(option);
     }
-    if (training.feedback_shoe_id && !shoes.some((shoe) => shoe.id === training.feedback_shoe_id)) {
+    if (training.feedback_shoe_id && !selectable.some((shoe) => shoe.id === training.feedback_shoe_id)) {
       const persisted = document.createElement('option');
       persisted.value = training.feedback_shoe_id;
       persisted.textContent = training.feedback_shoe || training.feedback_shoe_id;
@@ -1016,6 +1019,7 @@ async function initTrainingResult() {
     fitData = { ...training, laps: [] };
     resultSourceSelect.value = 'manual';
     renderFitData();
+    syncOnboardingResultHint();
   };
   const persistManualResults = () => persistManualResultsIfNeeded({
     selectedSource: resultSourceSelect.value,
@@ -1035,6 +1039,7 @@ async function initTrainingResult() {
     fitData = { ...canonical, laps };
     resultSourceSelect.value = canonical.result_data_source === 'manual' ? 'manual' : 'fit';
     renderFitData();
+    syncOnboardingResultHint();
   };
   const feedbackPayload = (state) => {
     const {
@@ -1191,6 +1196,7 @@ async function initTrainingResult() {
       };
       training = { ...training, ...fitData };
       renderFitData();
+      syncOnboardingResultHint();
     } catch (error) {
       setStatus(error.message || t('session.errors.fitUpload'), 'error');
     }
@@ -1209,7 +1215,7 @@ async function initTrainingResult() {
     importGuidance.render();
   });
 
-  loadOnboardingHint();
+  syncOnboardingResultHint();
 
   document.addEventListener('kinesis:preferences-changed', () => {
     renderFitData();

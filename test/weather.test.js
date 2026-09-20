@@ -37,11 +37,11 @@ function routeFetch(routes) {
   };
 }
 
-test('buildGeoUrl targets the Open-Meteo geocoding search with a single result', () => {
+test('buildGeoUrl targets Open-Meteo with enough candidates to validate locality context', () => {
   const url = buildGeoUrl('Fânzeres');
   assert.ok(url.startsWith(`${GEOCODING_URL}?`));
   assert.ok(url.includes(`name=${encodeURIComponent('Fânzeres')}`));
-  assert.ok(url.includes('count=1'));
+  assert.ok(url.includes('count=10'));
   assert.ok(url.includes('format=json'));
 });
 
@@ -71,26 +71,32 @@ test('httpJson rejects non-ok responses so callers can fall back or surface erro
   await assert.rejects(() => httpJson('https://example.test/x', failingFetch()), /failed \(502\)/);
 });
 
-test('geocodeLocation returns the first result carrying usable coordinates', async () => {
+test('geocodeLocation accepts an exact matching locality and stops at the first reliable query', async () => {
+  let calls = 0;
   const fetchImpl = routeFetch([
     [
       GEOCODING_URL,
-      () => ({
+      ({ url }) => {
+        calls += 1;
+        assert.equal(new URL(url).searchParams.get('name'), 'Fânzeres, Gondomar, Porto, Portugal');
+        return ({
         ok: true,
         json: async () => ({
           results: [
-            { name: 'Fânzeres', latitude: 41.15, longitude: -8.61 },
-            { name: 'Elsewhere', latitude: 1, longitude: 2 },
+            { name: 'Fânzeres', admin1: 'Porto District', admin2: 'Gondomar Municipality', country: 'Portugal', country_code: 'PT', latitude: 41.16754, longitude: -8.52981 },
+            { name: 'Fânzeres', admin1: 'Other', country: 'Elsewhere', latitude: 1, longitude: 2 },
           ],
         }),
-      }),
+      });
+      },
     ],
   ]);
-  const geo = await geocodeLocation('Fânzeres', fetchImpl);
-  assert.deepEqual(geo, { name: 'Fânzeres', latitude: 41.15, longitude: -8.61 });
+  const geo = await geocodeLocation('Fânzeres, Gondomar, Porto, Portugal', fetchImpl);
+  assert.deepEqual(geo, { name: 'Fânzeres', latitude: 41.16754, longitude: -8.52981 });
+  assert.equal(calls, 1);
 });
 
-test('geocodeLocation skips coordinate-less entries and falls back to the input name', async () => {
+test('geocodeLocation skips coordinate-less entries and retains only a matching locality', async () => {
   const fetchImpl = routeFetch([
     [
       GEOCODING_URL,
@@ -98,8 +104,8 @@ test('geocodeLocation skips coordinate-less entries and falls back to the input 
         ok: true,
         json: async () => ({
           results: [
-            { name: 'No coords yet' },
-            { name: '', latitude: 9, longitude: -7 },
+            { name: 'Fallback place' },
+            { name: 'Fallback place', latitude: 9, longitude: -7 },
           ],
         }),
       }),
@@ -124,6 +130,53 @@ test('geocodeLocation returns null when no usable result exists', async () => {
     jsonFetch({ results: [{ name: 'X' }] })
   );
   assert.equal(coordinateLess, null);
+  assert.equal(await geocodeLocation(null, jsonFetch({ results: [] })), null);
+  assert.equal(await geocodeLocation('', jsonFetch({ results: [] })), null);
+});
+
+test('geocodeLocation falls back from full text to locality and validates administrative context', async () => {
+  const calls = [];
+  const fetchImpl = async (rawUrl) => {
+    const url = new URL(rawUrl);
+    calls.push(url.searchParams.get('name'));
+    const results = url.searchParams.get('name') === 'Fânzeres'
+      ? [{ name: 'Fânzeres', admin1: 'Porto District', admin2: 'Gondomar Municipality', country: 'Portugal', country_code: 'PT', latitude: 41.16754, longitude: -8.52981 }]
+      : [];
+    return { ok: true, json: async () => ({ results }) };
+  };
+  assert.deepEqual(await geocodeLocation('Fânzeres, Gondomar', fetchImpl), {
+    name: 'Fânzeres', latitude: 41.16754, longitude: -8.52981,
+  });
+  assert.deepEqual(calls, ['Fânzeres, Gondomar', 'Fânzeres']);
+});
+
+test('geocodeLocation retries without diacritics and refuses ambiguous or incompatible countries', async () => {
+  const calls = [];
+  const fetchImpl = async (rawUrl) => {
+    const query = new URL(rawUrl).searchParams.get('name');
+    calls.push(query);
+    const results = query === 'Fânzeres, Gondomar'
+      ? [{ name: 'Fânzeres', admin2: 'Elsewhere', country: 'Portugal', latitude: 1, longitude: 2 }, { name: 'Fânzeres', admin2: 'Elsewhere', country: 'Brazil', latitude: 3, longitude: 4 }]
+      : query === 'Fânzeres'
+        ? []
+      : query === 'Fanzeres, Gondomar'
+        ? [{ name: 'Fanzeres', admin1: 'Porto', admin2: 'Gondomar', country: 'Portugal', latitude: 41, longitude: -8 }]
+        : [];
+    return { ok: true, json: async () => ({ results }) };
+  };
+  assert.deepEqual(await geocodeLocation('Fânzeres, Gondomar', fetchImpl), {
+    name: 'Fanzeres', latitude: 41, longitude: -8,
+  });
+  assert.deepEqual(calls, ['Fânzeres, Gondomar', 'Fânzeres', 'Fanzeres, Gondomar']);
+
+  const ambiguous = await geocodeLocation('Fânzeres', async () => ({
+    ok: true,
+    json: async () => ({ results: [
+      { name: 'Fânzeres', country: 'Portugal', latitude: 1, longitude: 2 },
+      { name: 'Fânzeres', country: 'Brazil', latitude: 3, longitude: 4 },
+    ] }),
+  }));
+  assert.equal(ambiguous, null, 'do not silently choose between incompatible places');
 });
 
 test('extractDaily reads the temperature and weather code from a daily payload', () => {

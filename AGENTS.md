@@ -8,7 +8,7 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.10.0`); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.10.1`); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
@@ -49,6 +49,26 @@ migration patterns.
   fabricate FIT summaries or laps. Confirmed FIT/manual replacement clears
   incompatible data transactionally. ZIP contents are validated and processed
   in memory and are not persisted.
+- FIT pace uses session distance paired with valid `total_timer_time`, then
+  session elapsed time, session average speed, complete internally consistent
+  laps, and finally paired record distance/active duration. Never mix distance
+  and duration from different sources. Store min/km as `m:ss`, rounded to the
+  nearest second. Elevation prefers valid session `total_ascent`, then complete
+  lap ascent totals, then positive deltas between consecutive valid records of
+  one selected altitude field. Never add absolute deltas or combine session,
+  lap, and record totals.
+- Result-page guidance is visible only when canonical `result_data_source` is
+  `none`; FIT/ZIP, manual, and supported future sources hide it. Do not infer
+  result existence from displayed fields.
+- Feedback shoe selection offers active shoes. A same-user retired shoe already
+  associated with a training remains displayed as disabled historical context;
+  unrelated feedback saves preserve it. Replacing it with an active shoe
+  starts ledger accounting on the replacement and never subtracts an
+  unledgered historical distance from the retired shoe.
+- Weather geocoding tries normalized full location, locality before the first
+  comma, then diacritic-free variants. Validate context against administrative
+  and country fields; reject ambiguous/incompatible matches and preserve the
+  exact user-entered location in the training.
 - Spreadsheet import deduplicates by exact **Date (`dia`) + Training Name
   (`treino`) + Description (`detalhes`)**. Calendar drag-and-drop rescheduling
   persists through its dedicated endpoint. Keep the shared Snackbar behavior
@@ -78,9 +98,10 @@ visited page, or slide.
   with the refreshed `{ onboarding: ... }` state. The endpoint updates in one
   transaction and recomputes derived state for its response.
 - Registration explicitly creates users with `onboarding_status='new'`.
-  Database initialization idempotently adds `onboarding_status` with default
-  `'legacy'` and `onboarding_guide_hidden` with default `0`; this keeps existing
-  accounts from receiving the automatic welcome. These are the persisted
+  New databases default the status to `'active'`; initialization idempotently
+  converts historical `'legacy'` rows to `'active'` while preserving user data
+  and guide-hidden preferences. Existing accounts do not receive the automatic
+  welcome. These are the persisted
   onboarding fields; do not add stored step counters or completion booleans.
 - `welcome_dismissed: true` changes `new` to `active`; there is no separate
   persisted welcome-dismissed boolean. Other statuses are not promoted by that
@@ -95,7 +116,7 @@ visited page, or slide.
 ### Presentation, navigation, and accessibility
 
 - A genuinely new (`new`) account receives the three-slide PT/EN welcome
-  automatically. Legacy accounts do not. “Agora não” / “Not now” persists
+  automatically. Existing (`active`) accounts do not. “Agora não” / “Not now” persists
   `welcome_dismissed`; it does not block access to the app. The three primary
   actions link to existing shoes and cycle flows. The workout-plan slide opens
   AI Coach/import when an active cycle exists; otherwise it directs the user to
@@ -106,7 +127,7 @@ visited page, or slide.
   layout (`hidden` keeps it out of layout and keyboard navigation); there is no
   permanent completion card or dashboard reopen bar. The user menu's **Guia de
   configuração / Setup guide** opens it on demand, including for completed and
-  legacy accounts. Opening it is transient: it changes no progress, status,
+  active accounts. Opening it is transient: it changes no progress, status,
   welcome preference, or guide-hidden preference. Hiding it closes it and may
   persist only `guide_hidden=true`.
 - In the dashboard, the shared shell requests opening through the local
@@ -137,7 +158,7 @@ Use the existing `node:test` suites. Onboarding behavior is covered primarily
 by `test/onboarding.test.js` and `test/onboarding.routes.test.js`, with shared
 menu integration in `test/shell.test.js`; run the relevant frontend/browser
 tests whenever those behaviors change. Test both PT and EN, ownership, new and
-legacy accounts, incomplete/hidden/completed states, transient navigation,
+existing accounts, incomplete/hidden/completed states, transient navigation,
 focus and keyboard behavior, and ensure `[hidden]` elements are not visible or
 focusable when changing onboarding UI.
 
