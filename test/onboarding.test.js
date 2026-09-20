@@ -22,7 +22,7 @@ function findChrome() {
     .find((candidate) => existsSync(candidate));
 }
 
-async function runChromeAtViewport(chrome, url, { width, height, mobile, cookie = null, probeExpression = null, focusSelector = null, verifyTabNextSelector = null, verifyTabFollowingSelector = null, screenshotSuffix = '', keyboardActivateMenuItem = false, clickMenuItemAndFollowNavigation = false }) {
+async function runChromeAtViewport(chrome, url, { width, height, mobile, cookie = null, probeExpression = null, focusSelector = null, verifyTabNextSelector = null, verifyTabFollowingSelector = null, screenshotSuffix = '', keyboardActivateMenuItem = false, clickMenuItemAndFollowNavigation = false, verifyUserMenuTabOrder = false }) {
   const portServer = createServer();
   portServer.listen(0, '127.0.0.1');
   await once(portServer, 'listening');
@@ -131,9 +131,26 @@ async function runChromeAtViewport(chrome, url, { width, height, mobile, cookie 
       await Promise.race([navigation, delay(16000).then(() => { throw new Error('Dashboard navigation timed out.'); })]);
       await Promise.race([nextLoad, delay(15000).then(() => { throw new Error('Dashboard reload timed out.'); })]);
     }
+    if (verifyUserMenuTabOrder) {
+      await command('Runtime.evaluate', {
+        expression: `new Promise((resolve,reject)=>{const end=Date.now()+12000;const attempt=()=>{const badge=document.getElementById('userBadge');const dropdown=document.getElementById('userDropdown');if(document.body.classList.contains('shell-mounted')&&badge&&!badge.hidden&&dropdown){badge.click();badge.focus();resolve(true);return}if(Date.now()>end){reject(new Error('User menu did not mount for keyboard-order validation')) ;return}setTimeout(attempt,50)};attempt()})`,
+        awaitPromise: true,
+        returnByValue: true,
+      });
+      const tabOrder = [];
+      for (let index = 0; index < 3; index += 1) {
+        await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
+        await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
+        const focus = await command('Runtime.evaluate', { expression: 'document.activeElement?.id', returnByValue: true });
+        tabOrder.push(focus.result?.value ?? null);
+      }
+      await command('Runtime.evaluate', { expression: `window.__userMenuTabOrder=${JSON.stringify(tabOrder)}`, returnByValue: true });
+      await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+      await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    }
     const expression = probeExpression
-      ? `(async()=>({probe:await (${probeExpression}),viewport:{width:innerWidth,height:innerHeight}}))()`
-      : '({result:document.body.dataset.visualResult,error:document.body.dataset.visualError,viewport:{width:innerWidth,height:innerHeight}})';
+      ? `(async()=>({probe:await (${probeExpression}),viewport:{width:innerWidth,height:innerHeight},userMenuTabOrder:window.__userMenuTabOrder??null}))()`
+      : '({result:document.body.dataset.visualResult,error:document.body.dataset.visualError,viewport:{width:innerWidth,height:innerHeight},userMenuTabOrder:window.__userMenuTabOrder??null})';
     const evaluation = await command('Runtime.evaluate', {
       expression,
       awaitPromise: Boolean(probeExpression),
@@ -190,6 +207,7 @@ async function runChromeAtViewport(chrome, url, { width, height, mobile, cookie 
         tabActiveElementId: value.tabActiveElementId,
         keyboardNextMatches: value.keyboardNextMatches,
         keyboardFollowingMatches: value.keyboardFollowingMatches,
+        userMenuTabOrder: value.userMenuTabOrder,
       });
       return value.probe;
     }
@@ -229,39 +247,21 @@ test('welcome carousel moves one slide at a time and gates workout actions on an
   });
 });
 
-test('temporary welcome preview is available across account states and never mutates persisted presentation', async () => {
-  const { createWelcomePreviewSession } = await import(pathToFileURL(path.join(__dirname, '../src/public/shared/onboarding.js')));
-  const session = createWelcomePreviewSession();
-  const persisted = {
-    new: { status: 'new', welcomeDismissed: false, guideHidden: false, steps: { shoes: false, cycle: false, trainings: false } },
-    legacy: { status: 'legacy', welcomeDismissed: true, guideHidden: true, steps: { shoes: true, cycle: false, trainings: false } },
-    completed: { status: 'active', welcomeDismissed: true, guideHidden: false, steps: { shoes: true, cycle: true, trainings: true } },
-  };
-  const snapshots = structuredClone(persisted);
-  for (const onboarding of Object.values(persisted)) {
-    session.openPreview();
-    assert.equal(session.mode, 'preview');
-    assert.equal(session.slide, 0);
-    assert.equal(session.ensureAutomatic(onboarding), true);
-    session.setSlide(2, 3);
-    assert.equal(session.slide, 2);
-    session.close();
-    assert.equal(session.ensureAutomatic(onboarding), false);
-  }
-  assert.deepEqual(persisted, snapshots);
-  assert.equal(session.openPreview(), undefined);
-  assert.equal(session.slide, 0, 'every preview opens on slide one');
-});
-
-test('an explicit setup-guide request suppresses automatic welcome only for the current session', async () => {
-  const { createWelcomePreviewSession } = await import(pathToFileURL(path.join(__dirname, '../src/public/shared/onboarding.js')));
-  const session = createWelcomePreviewSession();
+test('welcome session opens for new accounts and explicit guide requests suppress it for this visit', async () => {
+  const { createWelcomeSession } = await import(pathToFileURL(path.join(__dirname, '../src/public/shared/onboarding.js')));
+  const session = createWelcomeSession();
   const fresh = { status: 'new', welcomeDismissed: false, guideHidden: false };
+  assert.equal(session.slide, 0);
+  assert.equal(session.ensureAutomatic(fresh), true, 'a new account receives the automatic welcome');
+  assert.equal(session.ensureAutomatic({ status: 'active' }), false, 'the persisted dismissal transitions the account out of first-visit status');
+  assert.equal(session.ensureAutomatic({ status: 'legacy', welcomeDismissed: false }), false, 'legacy accounts never receive the automatic modal');
+  session.setSlide(2, 3);
+  assert.equal(session.slide, 2, 'the automatic welcome retains carousel navigation state');
   session.suppressAutomatic();
   assert.equal(session.ensureAutomatic(fresh), false);
   assert.equal(fresh.status, 'new');
   assert.equal(fresh.welcomeDismissed, false);
-  const nextVisit = createWelcomePreviewSession();
+  const nextVisit = createWelcomeSession();
   assert.equal(nextVisit.ensureAutomatic(fresh), true, 'the in-memory suppression does not persist across a new page visit');
 });
 
@@ -312,6 +312,7 @@ test('onboarding UI keeps the existing destinations and accessibility hooks', ()
   assert.match(home, /onboardingHide/);
   assert.match(home, /id="onboardingTitle"[^>]*tabindex="-1"/);
   assert.doesNotMatch(home, /onboardingComplete|onboardingReopen|onboarding-reopen-bar/);
+  assert.doesNotMatch(home, /onboardingPreview|Preview welcome|Testar boas-vindas/);
   assert.match(home, /aria-modal="true"/);
   assert.match(homeJs, /const next = response\?\.onboarding/);
   assert.match(homeJs, /renderOnboardingStepStates\(onboardingGuide, progress\.steps, progress\.nextStep\)/);
@@ -320,8 +321,10 @@ test('onboarding UI keeps the existing destinations and accessibility hooks', ()
   assert.match(homeJs, /guideExplicitlyOpen/);
   const homeCss = fs.readFileSync(path.join(__dirname, '../src/public/home.css'), 'utf8');
   assert.doesNotMatch(homeCss, /\.onboarding-complete\s*\{|\.onboarding-reopen-bar/);
+  assert.doesNotMatch(homeCss, /onboarding-preview-tools/);
   for (const locale of ['en', 'pt']) {
     const messages = JSON.parse(fs.readFileSync(path.join(__dirname, `../src/public/locales/${locale}.json`), 'utf8'));
+    assert.equal(messages.home.onboarding.previewWelcome, undefined);
     assert.equal(messages.home.onboarding.reopen, undefined);
     assert.equal(messages.home.onboarding.completeTitle, undefined);
     assert.equal(messages.home.onboarding.completeText, undefined);
@@ -586,7 +589,7 @@ test('real welcome markup keeps carousel geometry stable on desktop and mobile w
   const en = JSON.parse(readFileSync(path.join(publicDir, 'locales/en.json'), 'utf8'));
   const pt = JSON.parse(readFileSync(path.join(publicDir, 'locales/pt.json'), 'utf8'));
   const browserScript = `
-    import { createWelcomePreviewSession, updateOnboardingDialogA11y, trapOnboardingFocus, visibleOnboardingFocusableElements } from '/shared/onboarding.js';
+    import { createWelcomeSession, updateOnboardingDialogA11y, trapOnboardingFocus, visibleOnboardingFocusableElements } from '/shared/onboarding.js';
     const locales = ${JSON.stringify({ en: en.home.onboarding, pt: pt.home.onboarding })};
     const modal = document.getElementById('onboardingWelcome');
     const dialog = modal.querySelector('[role="dialog"]');
@@ -594,14 +597,10 @@ test('real welcome markup keeps carousel geometry stable on desktop and mobile w
     const previous = document.getElementById('onboardingPrevious');
     const next = document.getElementById('onboardingNext');
     const dots = [...modal.querySelectorAll('[data-onboarding-slide-control]')];
-    const preview = document.getElementById('onboardingPreview');
     const later = document.getElementById('onboardingLater');
-    const session = createWelcomePreviewSession();
-    const storedPrefs = { status: 'legacy', welcomeDismissed: true, guideHidden: true, steps: { shoes: true, cycle: true, trainings: true } };
-    const persistedBefore = JSON.stringify(storedPrefs);
-    let openCount = 0;
-    preview.addEventListener('click', () => { openCount += 1; session.openPreview(); modal.hidden = false; render(0, 'en'); });
-    later.addEventListener('click', () => { session.close(); modal.hidden = true; });
+    const session = createWelcomeSession();
+    const openedAutomatically = session.ensureAutomatic({ status: 'new' });
+    modal.hidden = !openedAutomatically;
     function text(key, lang) { return locales[lang][key.split('.').pop()]; }
     function render(index, lang) {
       slides.forEach((slide, i) => { slide.hidden = i !== index; slide.setAttribute('aria-hidden', String(i !== index)); });
@@ -655,18 +654,13 @@ test('real welcome markup keeps carousel geometry stable on desktop and mobile w
       });
     }
     window.__run = () => {
+      if (!openedAutomatically) throw new Error('A new account should automatically open the welcome dialog.');
       for (const lang of ['en','pt']) for (let index=0; index<3; index+=1) measureSlide(index, lang);
-      preview.click();
-      const previewFirst = session.mode === 'preview' && session.slide === 0 && !modal.hidden;
-      later.click();
-      preview.click();
-      const reopenedFirst = session.mode === 'preview' && session.slide === 0 && !modal.hidden && openCount === 2;
-      const preferencesUntouched = JSON.stringify(storedPrefs) === persistedBefore;
-      document.body.dataset.visualResult = JSON.stringify({ measurements, previewFirst, reopenedFirst, preferencesUntouched, openCount, oneDialog:document.querySelectorAll('[role="dialog"]').length === 1 });
+      document.body.dataset.visualResult = JSON.stringify({ measurements, openedAutomatically, oneDialog:document.querySelectorAll('[role="dialog"]').length === 1 });
     };
     try { window.__run(); } catch (error) { document.body.dataset.visualError = error.stack || String(error); }
   `;
-  const documentHtml = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/home.css"></head><body><main id="appView"><button id="onboardingPreview" data-i18n="home.onboarding.previewWelcome">Preview welcome</button></main>${versionedModal}<script>window.addEventListener('error',event=>{document.body.dataset.visualError=event.message});window.addEventListener('unhandledrejection',event=>{document.body.dataset.visualError=String(event.reason)});</script><script type="module">${browserScript}</script></body></html>`;
+  const documentHtml = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/home.css"></head><body><main id="appView"></main>${versionedModal}<script>window.addEventListener('error',event=>{document.body.dataset.visualError=event.message});window.addEventListener('unhandledrejection',event=>{document.body.dataset.visualError=String(event.reason)});</script><script type="module">${browserScript}</script></body></html>`;
   const requests = [];
   const server = createServer((request, response) => {
     const requestPath = decodeURIComponent((request.url || '/').split('?')[0]);
@@ -700,11 +694,8 @@ test('real welcome markup keeps carousel geometry stable on desktop and mobile w
   for (const result of browserResults) {
     assert.notEqual(result.keyboardFocusOutline, 'none', 'keyboard-focused primary action retains a visible ring');
     assert.notEqual(result.laterKeyboardFocusOutline, 'none', 'keyboard-focused dismissal action retains a visible ring');
-    assert.equal(result.previewFirst, true);
-    assert.equal(result.reopenedFirst, true);
-    assert.equal(result.preferencesUntouched, true);
+    assert.equal(result.openedAutomatically, true);
     assert.equal(result.oneDialog, true);
-    assert.equal(result.openCount, 2);
     const grouped = new Map();
     for (const sample of result.measurements) {
       const key = `${sample.viewport.width}:${sample.lang}`;
@@ -772,65 +763,56 @@ test('real welcome markup keeps carousel geometry stable on desktop and mobile w
   }
 });
 
-test('the complete authenticated dashboard allows a non-persistent welcome preview for legacy users', async () => {
+test('a new account gets the real automatic welcome and Not now persists dismissal in Chrome', async () => {
   const chrome = findChrome();
-  assert.ok(chrome, 'Chrome is required for full-dashboard onboarding validation.');
+  assert.ok(chrome, 'Chrome is required for first-visit welcome validation.');
   const db = createDatabase({ filename: ':memory:' });
   const app = await buildServer({ db, sessionCookieSecure: false });
   try {
-    await app.inject({ method: 'POST', url: '/api/auth/register', payload: {
-      email: 'welcome-preview@example.com', password: 'preview-secret', first_name: 'Preview', last_name: 'Runner',
+    const registration = await app.inject({ method: 'POST', url: '/api/auth/register', payload: {
+      email: 'welcome-first-visit@example.com', password: 'welcome-secret', first_name: 'New', last_name: 'Runner',
     } });
-    db.prepare("UPDATE users SET onboarding_status = 'legacy' WHERE email = ?").run('welcome-preview@example.com');
+    assert.equal(registration.statusCode, 201);
     const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: {
-      email: 'welcome-preview@example.com', password: 'preview-secret',
+      email: 'welcome-first-visit@example.com', password: 'welcome-secret',
     } });
     assert.equal(login.statusCode, 200);
     const cookie = [].concat(login.headers['set-cookie'] ?? [])[0].split(';')[0].split('=')[1];
     const cookieHeader = `ta_session=${cookie}`;
-    const onboardingResponse = await app.inject({ method: 'GET', url: '/api/onboarding', headers: { cookie: cookieHeader } });
-    assert.equal(onboardingResponse.statusCode, 200);
-    const before = onboardingResponse.json().onboarding;
-    assert.equal(before.status, 'legacy');
+    const before = (await app.inject({ method: 'GET', url: '/api/onboarding', headers: { cookie: cookieHeader } })).json().onboarding;
+    assert.equal(before.status, 'new');
     const appUrl = await app.listen({ port: 0, host: '127.0.0.1' });
-    const probeExpression = `new Promise((resolve,reject)=>{
+    const probeExpression = `new Promise(async(resolve,reject)=>{
       const deadline=Date.now()+15000;
-      let status=null, initiallyVisible=null;
-      fetch('/api/onboarding').then(response=>response.json()).then(payload=>{status=payload.onboarding?.status;});
-      const attempt=()=>{
-        const preview=document.getElementById('onboardingPreview');
-        const modal=document.getElementById('onboardingWelcome');
-        const dialog=modal?.querySelector('[role="dialog"]');
-        if(preview && modal && status){
-          if(initiallyVisible===null) initiallyVisible=!modal.hidden;
-          if(modal.hidden) preview.click();
-        }
-        if(preview && modal && status && !modal.hidden && dialog?.getAttribute('aria-labelledby')==='onboardingWelcomeTitle0'){
-          const opened={status,initiallyVisible,focused:document.activeElement.id==='onboardingWelcomeTitle0',backgroundInert:[...document.body.children].filter(node=>node!==modal).every(node=>node.inert),dialogCount:document.querySelectorAll('[role="dialog"]').length};
-          document.getElementById('onboardingLater').click();
-          requestAnimationFrame(()=>requestAnimationFrame(()=>{
-            const closed={hidden:modal.hidden,restoredFocus:document.activeElement===preview,backgroundReleased:!preview.closest('#appView').inert};
-            preview.click();
-            resolve({opened,closed,reopened:!modal.hidden && dialog.getAttribute('aria-labelledby')==='onboardingWelcomeTitle0',label:preview.textContent.trim()});
-          }));
-          return;
-        }
-        if(Date.now()>deadline){reject(new Error('Full dashboard preview timed out: '+JSON.stringify({url:location.href,status,button:Boolean(preview),body:document.body.innerText.slice(0,250)})));return;}
-        setTimeout(attempt,100);
-      };
-      attempt();
+      const wait=async(predicate)=>{while(Date.now()<deadline){if(await predicate())return true;await new Promise(r=>setTimeout(r,60))}throw new Error('First-visit welcome transition timed out')};
+      try{
+        const modal=document.getElementById('onboardingWelcome');const dialog=modal.querySelector('[role="dialog"]');
+        await wait(()=>document.body.classList.contains('shell-mounted')&&!modal.hidden&&document.activeElement.id==='onboardingWelcomeTitle0');
+        const opened={visible:!modal.hidden,focused:document.activeElement.id,backgroundInert:[...document.body.children].filter(node=>node!==modal).every(node=>node.inert),dialogCount:document.querySelectorAll('[role="dialog"]').length,previewAbsent:!document.getElementById('onboardingPreview')};
+        document.getElementById('onboardingLater').click();
+        await wait(async()=>modal.hidden&&(await fetch('/api/onboarding').then(response=>response.json())).onboarding?.status==='active');
+        await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+        const closed={hidden:modal.hidden,backgroundReleased:[...document.body.children].filter(node=>node!==modal).every(node=>!node.inert),guideVisible:!document.getElementById('onboardingGuide').hidden};
+        const saved=(await fetch('/api/onboarding').then(response=>response.json())).onboarding;
+        resolve({opened,closed,status:saved.status});
+      }catch(error){reject(error)}
     })`;
     const result = await runChromeAtViewport(chrome, appUrl, {
       width: 1280, height: 800, mobile: false, cookie, probeExpression,
     });
-    assert.deepEqual(result.opened, {
-      status: 'legacy', initiallyVisible: false, focused: true, backgroundInert: true, dialogCount: 1,
-    });
-    assert.deepEqual(result.closed, { hidden: true, restoredFocus: true, backgroundReleased: true });
-    assert.equal(result.reopened, true);
-    assert.equal(result.label, 'Preview welcome');
+    assert.deepEqual(result.opened, { visible: true, focused: 'onboardingWelcomeTitle0', backgroundInert: true, dialogCount: 1, previewAbsent: true });
+    assert.deepEqual(result.closed, { hidden: true, backgroundReleased: true, guideVisible: true });
+    assert.equal(result.status, 'active', 'Not now persists the presentation preference by transitioning a first-visit account to active');
     const after = (await app.inject({ method: 'GET', url: '/api/onboarding', headers: { cookie: cookieHeader } })).json().onboarding;
-    assert.deepEqual(after, before, 'preview did not modify status, progress, or presentation preferences');
+    assert.equal(after.status, 'active', 'the persisted state suppresses welcome on return');
+    assert.deepEqual(after.steps, before.steps, 'welcome dismissal never marks setup steps complete');
+    const reload = await runChromeAtViewport(chrome, appUrl, {
+      width: 390, height: 844, mobile: true, cookie,
+      probeExpression: `new Promise((resolve,reject)=>{const end=Date.now()+15000;const check=async()=>{const modal=document.getElementById('onboardingWelcome');const state=await fetch('/api/onboarding').then(r=>r.json()).catch(()=>null);if(modal&&state?.onboarding?.status==='active'&&document.body.classList.contains('shell-mounted')){await new Promise(r=>setTimeout(r,100));resolve({hidden:modal.hidden,status:state.onboarding.status,guideVisible:!document.getElementById('onboardingGuide').hidden});return}if(Date.now()>end){reject(new Error('Dismissed welcome reopened after reload'));return}setTimeout(check,60)};check()})`,
+    });
+    assert.equal(reload.hidden, true);
+    assert.equal(reload.status, 'active');
+    assert.equal(reload.guideVisible, true);
   } finally {
     await app.close();
     db.close();
@@ -902,29 +884,32 @@ test('authenticated setup guide menu handles visible, hidden, completed, and leg
   try {
     const visibleProbe = `new Promise(async(resolve,reject)=>{
       try{await (${waitForGuide('Guia de configuração','0 de 3 etapas', '&& !guide.hidden && modal.hidden')});
-        const guide=document.getElementById('onboardingGuide');const title=document.getElementById('onboardingTitle');
+        const guide=document.getElementById('onboardingGuide');const title=document.getElementById('onboardingTitle');const item=document.getElementById('userSetupGuide');
         const home=[...document.querySelector('.home-page').children].filter(node=>!node.hidden&&getComputedStyle(node).display!=='none');
         const rect=(node)=>{const r=node.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height,bottom:r.bottom}};
-        resolve({visible:!guide.hidden,focused:title===document.activeElement,progress:document.getElementById('onboardingProgress').innerText.trim(),firstVisibleChildren:home.slice(0,2).map(node=>node.className),removed:['onboardingComplete','onboardingReopen','onboardingReopenHidden','onboardingReopenBar'].every(id=>!document.getElementById(id)),cycleTop:rect(document.querySelector('.dashboard-grid > .card-section:first-child')).y,guideRect:rect(guide),welcomeHidden:document.getElementById('onboardingWelcome').hidden,scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth});
+        resolve({visible:!guide.hidden,focused:title===document.activeElement,progress:document.getElementById('onboardingProgress').innerText.trim(),setupGuideLabel:item.innerText.trim(),firstVisibleChildren:home.slice(0,2).map(node=>node.className),removed:['onboardingComplete','onboardingReopen','onboardingReopenHidden','onboardingReopenBar'].every(id=>!document.getElementById(id)),previewAbsent:!document.getElementById('onboardingPreview'),cycleTop:rect(document.querySelector('.dashboard-grid > .card-section:first-child')).y,guideRect:rect(guide),welcomeHidden:document.getElementById('onboardingWelcome').hidden,scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth});
       }catch(error){reject(error)}
     })`;
     const visibleResult = await runChromeAtViewport(chrome, appUrl.replace(/\/$/, '') + '/home.html', {
-      width: 1280, height: 800, mobile: false, cookie: visible.cookie, probeExpression: visibleProbe, screenshotSuffix: '-setup-visible',
+      width: 1280, height: 800, mobile: false, cookie: visible.cookie, probeExpression: visibleProbe, screenshotSuffix: '-setup-visible', verifyUserMenuTabOrder: true,
     });
     assert.equal(visibleResult.visible, true);
     assert.equal(visibleResult.focused, false, 'normal dashboard presentation does not steal focus');
     assert.equal(visibleResult.progress, '0 de 3 etapas');
+    assert.equal(visibleResult.setupGuideLabel, 'Guia de configuração');
+    assert.deepEqual(visibleResult.userMenuTabOrder, ['userSetupGuide', 'userChangePassword', 'userPreferences']);
     assert.deepEqual(visibleResult.firstVisibleChildren, ['hero', 'onboarding-guide card-section'], 'an incomplete, unhidden checklist remains directly beneath the hero');
     assert.equal(visibleResult.removed, true);
+    assert.equal(visibleResult.previewAbsent, true);
     assert.equal(visibleResult.welcomeHidden, true, 'active legacy-style accounts do not get a welcome modal');
     assert.ok(visibleResult.scrollWidth <= visibleResult.viewportWidth);
 
     const hiddenProbe = `new Promise(async(resolve,reject)=>{
       try{await (${waitForGuide('Setup guide','1 of 3 steps', '&& !guide.hidden && modal.hidden')});
         await new Promise(resolve=>setTimeout(resolve,500));
-        const before=await fetch('/api/onboarding').then(response=>response.json());
+        const before=await fetch('/api/onboarding').then(response=>response.json());const item=document.getElementById('userSetupGuide');
         const guideRect=document.getElementById('onboardingGuide').getBoundingClientRect();const scrollArea=document.querySelector('.main-content').getBoundingClientRect();
-        resolve({visible:!document.getElementById('onboardingGuide').hidden,focused:document.activeElement.id,keyboardState:window.__setupGuideKeyboardState,progress:document.getElementById('onboardingProgress').innerText.trim(),menuClosed:document.getElementById('userDropdown').classList.contains('hidden'),welcomeHidden:document.getElementById('onboardingWelcome').hidden,guideHidden:before.onboarding.guideHidden,status:before.onboarding.status,completed:[...document.querySelectorAll('[data-onboarding-complete]')].filter(node=>!node.hidden).length,scrollTop:document.querySelector('.main-content').scrollTop,guideTop:guideRect.top,guideBottom:guideRect.bottom,scrollAreaTop:scrollArea.top,scrollAreaBottom:scrollArea.bottom,scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth});
+        resolve({visible:!document.getElementById('onboardingGuide').hidden,focused:document.activeElement.id,keyboardState:window.__setupGuideKeyboardState,progress:document.getElementById('onboardingProgress').innerText.trim(),setupGuideLabel:item.innerText.trim(),menuClosed:document.getElementById('userDropdown').classList.contains('hidden'),welcomeHidden:document.getElementById('onboardingWelcome').hidden,guideHidden:before.onboarding.guideHidden,status:before.onboarding.status,completed:[...document.querySelectorAll('[data-onboarding-complete]')].filter(node=>!node.hidden).length,scrollTop:document.querySelector('.main-content').scrollTop,guideTop:guideRect.top,guideBottom:guideRect.bottom,scrollAreaTop:scrollArea.top,scrollAreaBottom:scrollArea.bottom,scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth});
       }catch(error){reject(error)}
     })`;
     const hiddenResult = await runChromeAtViewport(chrome, appUrl.replace(/\/$/, '') + '/home.html', {
@@ -933,6 +918,7 @@ test('authenticated setup guide menu handles visible, hidden, completed, and leg
     assert.equal(hiddenResult.visible, true);
     assert.equal(hiddenResult.focused, 'onboardingTitle', 'keyboard activation moves focus only after revealing the title');
     assert.equal(hiddenResult.progress, '1 of 3 steps');
+    assert.equal(hiddenResult.setupGuideLabel, 'Setup guide');
     assert.equal(hiddenResult.menuClosed, true);
     assert.equal(hiddenResult.welcomeHidden, true);
     assert.equal(hiddenResult.guideHidden, true, 'opening from the menu does not mutate the saved hidden preference');
@@ -976,13 +962,12 @@ test('authenticated setup guide menu handles visible, hidden, completed, and leg
         const menuClosed=document.getElementById('userDropdown').classList.contains('hidden');
         const completeCount=[...document.querySelectorAll('[data-onboarding-complete]')].filter(node=>!node.hidden).length;
         const allActionsHidden=[...document.querySelectorAll('[data-onboarding-actions]')].every(node=>node.hidden);
-        const previewHidden=modal.hidden;
         document.getElementById('onboardingHide').click();
         await wait(()=>guide.hidden&&document.activeElement.id==='userBadge');
         const afterHide=await fetch('/api/onboarding').then(response=>response.json());
         const userAfter=await fetch('/api/me').then(response=>response.json());
         const home=[...document.querySelector('.home-page').children].filter(node=>!node.hidden&&getComputedStyle(node).display!=='none');
-        resolve({initiallyHidden,focus:'onboardingTitle',progress:document.getElementById('onboardingProgress').innerText.trim(),completeCount,allActionsHidden,menuClosed,previewHidden,unchangedByOpen:JSON.stringify(before.onboarding)===JSON.stringify(after.onboarding)&&before.onboarding.status===after.onboarding.status,threeComplete:after.onboarding.complete,hiddenAfter:guide.hidden,hideFocus:document.activeElement.id,hiddenPreference:afterHide.onboarding.guideHidden,afterHideStatus:afterHide.onboarding.status,preferences:{langBefore:userBefore.user.preferred_lang,langAfter:userAfter.user.preferred_lang},removed:['onboardingComplete','onboardingReopen','onboardingReopenHidden','onboardingReopenBar'].every(id=>!document.getElementById(id)),firstVisibleChildren:home.slice(0,2).map(node=>node.className),cycleTop:document.querySelector('.dashboard-grid > .card-section:first-child').getBoundingClientRect().top,heroBottom:document.getElementById('heroBanner').getBoundingClientRect().bottom,scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth});
+        resolve({initiallyHidden,focus:'onboardingTitle',progress:document.getElementById('onboardingProgress').innerText.trim(),completeCount,allActionsHidden,menuClosed,welcomeStayedHidden:modal.hidden,unchangedByOpen:JSON.stringify(before.onboarding)===JSON.stringify(after.onboarding)&&before.onboarding.status===after.onboarding.status,threeComplete:after.onboarding.complete,hiddenAfter:guide.hidden,hideFocus:document.activeElement.id,hiddenPreference:afterHide.onboarding.guideHidden,afterHideStatus:afterHide.onboarding.status,preferences:{langBefore:userBefore.user.preferred_lang,langAfter:userAfter.user.preferred_lang},removed:['onboardingComplete','onboardingReopen','onboardingReopenHidden','onboardingReopenBar'].every(id=>!document.getElementById(id)),previewAbsent:!document.getElementById('onboardingPreview'),firstVisibleChildren:home.slice(0,2).map(node=>node.className),cycleTop:document.querySelector('.dashboard-grid > .card-section:first-child').getBoundingClientRect().top,heroBottom:document.getElementById('heroBanner').getBoundingClientRect().bottom,scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth});
       }catch(error){reject(error)}
     })`;
     const completeResult = await runChromeAtViewport(chrome, appUrl.replace(/\/$/, '') + '/home.html', {
@@ -993,7 +978,8 @@ test('authenticated setup guide menu handles visible, hidden, completed, and leg
     assert.equal(completeResult.completeCount, 3);
     assert.equal(completeResult.allActionsHidden, true);
     assert.equal(completeResult.menuClosed, true);
-    assert.equal(completeResult.previewHidden, true, 'the menu never opens the welcome modal');
+    assert.equal(completeResult.welcomeStayedHidden, true, 'the setup-guide menu never opens the welcome modal');
+    assert.equal(completeResult.previewAbsent, true);
     assert.equal(completeResult.unchangedByOpen, true, 'opening the guide does not persist onboarding state');
     assert.equal(completeResult.threeComplete, true);
     assert.equal(completeResult.hiddenAfter, true);

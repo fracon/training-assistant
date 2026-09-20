@@ -104,21 +104,11 @@ export function trapOnboardingFocus(event, dialog, activeTitle) {
   return false;
 }
 
-export function createWelcomePreviewSession() {
-  let mode = null;
+export function createWelcomeSession() {
   let slide = 0;
   let suppressAutomaticWelcome = false;
   return {
-    get mode() { return mode; },
     get slide() { return slide; },
-    openPreview() {
-      mode = 'preview';
-      slide = 0;
-    },
-    openAutomatic() {
-      mode = 'automatic';
-      slide = 0;
-    },
     suppressAutomatic() {
       suppressAutomaticWelcome = true;
     },
@@ -127,17 +117,7 @@ export function createWelcomePreviewSession() {
       return slide;
     },
     ensureAutomatic(onboarding) {
-      if (mode === null && !suppressAutomaticWelcome && shouldShowWelcome(onboarding)) {
-        mode = 'automatic';
-        slide = 0;
-      }
-      return mode === 'preview' || (mode === 'automatic' && shouldShowWelcome(onboarding));
-    },
-    close() {
-      const closedMode = mode;
-      if (mode === 'preview') suppressAutomaticWelcome = true;
-      mode = null;
-      return { closedMode, mode, slide, suppressAutomaticWelcome };
+      return !suppressAutomaticWelcome && shouldShowWelcome(onboarding);
     },
   };
 }

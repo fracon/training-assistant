@@ -3,7 +3,7 @@ import { initShell, getShellI18n, getUserPreferences, showShellToast } from './s
 import { translate } from './shared/i18n.js';
 import { formatDate as formatLocalizedDate } from './shared/date.js';
 import { formatDistance } from './shared/units.js';
-import { calculateOnboardingProgress, renderOnboardingStepStates, onboardingPresentation, consumeSetupGuideSignal, onboardingPlanActions, onboardingSlideNavigation, updateOnboardingDialogA11y, trapOnboardingFocus, createWelcomePreviewSession, backgroundInertTargets } from './shared/onboarding.js';
+import { calculateOnboardingProgress, renderOnboardingStepStates, onboardingPresentation, consumeSetupGuideSignal, onboardingPlanActions, onboardingSlideNavigation, updateOnboardingDialogA11y, trapOnboardingFocus, createWelcomeSession, backgroundInertTargets } from './shared/onboarding.js';
 
 export const ZENQUOTES_URL = 'https://zenquotes.io/api/today';
 export const QUOTE_TIMEOUT_MS = 3000;
@@ -474,7 +474,6 @@ function setupHomePage() {
   const onboardingProgress = document.getElementById('onboardingProgress');
   const onboardingWelcome = document.getElementById('onboardingWelcome');
   const onboardingDialog = onboardingWelcome?.querySelector('[role="dialog"]');
-  const onboardingPreview = document.getElementById('onboardingPreview');
   const onboardingHide = document.getElementById('onboardingHide');
   const onboardingPrevious = document.getElementById('onboardingPrevious');
   const onboardingNext = document.getElementById('onboardingNext');
@@ -507,7 +506,7 @@ function setupHomePage() {
   let guideOpenPending = consumeSetupGuideSignal(window.location.href, (url) => {
     window.history.replaceState(window.history.state, '', url);
   });
-  const welcomeSession = createWelcomePreviewSession();
+  const welcomeSession = createWelcomeSession();
 
   function focusSetupGuide() {
     window.requestAnimationFrame(() => {
@@ -746,7 +745,6 @@ function setupHomePage() {
       const next = response?.onboarding;
       if (!next?.status || !next.steps) throw new Error('Invalid onboarding response.');
       state.onboarding = next;
-      welcomeSession.close();
       renderOnboarding();
       return true;
     } catch {
@@ -756,29 +754,12 @@ function setupHomePage() {
   }
 
   function closeWelcome() {
-    if (welcomeSession.mode === 'preview') {
-      const returnFocus = onboardingPreview?.isConnected ? onboardingPreview : welcomeReturnFocus;
-      welcomeSession.close();
-      renderOnboarding();
-      if (returnFocus?.isConnected && onboardingWelcome.hidden) {
-        window.requestAnimationFrame(() => {
-          if (onboardingWelcome.hidden && !returnFocus.closest('[inert]')) returnFocus.focus();
-        });
-      }
-      return;
-    }
     dismissWelcome();
   }
 
   async function followWelcomeAction(event) {
     event.preventDefault();
     const destination = event.currentTarget.getAttribute('href');
-    if (welcomeSession.mode === 'preview') {
-      welcomeSession.close();
-      renderOnboarding();
-      window.location.href = destination;
-      return;
-    }
     if (await dismissWelcome()) window.location.href = destination;
   }
 
@@ -879,11 +860,6 @@ function setupHomePage() {
     });
   });
   onboardingWelcomeActions.forEach((action) => action.addEventListener('click', followWelcomeAction));
-  onboardingPreview?.addEventListener('click', () => {
-    welcomeReturnFocus = onboardingPreview;
-    welcomeSession.openPreview();
-    renderOnboarding();
-  });
   document.addEventListener('keydown', (event) => {
     if (!welcomeWasOpen) return;
     if (event.key === 'Escape') {

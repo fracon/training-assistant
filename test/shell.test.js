@@ -755,6 +755,11 @@ test('the user menu injects a clickable dropdown and the change-password item op
     const changePassword = registry.get('userChangePassword');
     const preferences = registry.get('userPreferences');
     const setupGuide = registry.get('userSetupGuide');
+    assert.deepEqual(
+      dropdown.children.map((item) => item.id),
+      ['userSetupGuide', 'userChangePassword', 'userPreferences'],
+      'DOM and natural keyboard order is Setup guide, Change Password, then Preferences'
+    );
 
     assert.ok(menu.className === 'user-menu', 'the wrapper renders as .user-menu');
     assert.equal(badge.tag, 'button', 'the badge renders as a button');

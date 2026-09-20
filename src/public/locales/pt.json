@@ -680,7 +680,6 @@
       "trackerAria": "Treinos por dia, de segunda a domingo"
     },
     "onboarding": {
-      "previewWelcome": "Testar boas-vindas",
       "later": "Agora não",
       "stepProgress": "{current} de {total}",
       "previous": "Voltar",

@@ -115,9 +115,6 @@
 .onboarding-welcome-later:hover { color: var(--ink); background: transparent; }
 .onboarding-welcome-later:focus-visible { background: transparent; }
 .onboarding-welcome-later:active { color: var(--accent-deep); background: transparent; box-shadow: none; }
-.onboarding-preview-tools { display: flex; justify-content: flex-end; padding-top: 0.5rem; }
-.onboarding-preview-tools .btn-quiet { color: var(--muted); font-size: 0.78rem; }
-
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; } }
 
 /* ── Hero Banner ─────────────────────────────────────────────── */

@@ -207,6 +207,17 @@ export function buildUserMenu() {
   menu.appendChild(badge);
   const dropdown = el('div', 'user-dropdown hidden');
   dropdown.id = 'userDropdown';
+  const setupGuide = el('button', 'user-menu-item');
+  setupGuide.type = 'button';
+  setupGuide.id = 'userSetupGuide';
+  const setupGuideIcon = icon('list-checks');
+  setupGuideIcon.setAttribute('aria-hidden', 'true');
+  setupGuide.appendChild(setupGuideIcon);
+  const setupGuideLabel = el('span');
+  setupGuideLabel.setAttribute('data-i18n', 'shell.setupGuide');
+  setupGuideLabel.textContent = 'Setup guide';
+  setupGuide.appendChild(setupGuideLabel);
+  dropdown.appendChild(setupGuide);
   const changePassword = el('button', 'user-menu-item');
   changePassword.type = 'button';
   changePassword.id = 'userChangePassword';
@@ -225,17 +236,6 @@ export function buildUserMenu() {
   preferencesLabel.textContent = 'Preferences';
   preferences.appendChild(preferencesLabel);
   dropdown.appendChild(preferences);
-  const setupGuide = el('button', 'user-menu-item');
-  setupGuide.type = 'button';
-  setupGuide.id = 'userSetupGuide';
-  const setupGuideIcon = icon('list-checks');
-  setupGuideIcon.setAttribute('aria-hidden', 'true');
-  setupGuide.appendChild(setupGuideIcon);
-  const setupGuideLabel = el('span');
-  setupGuideLabel.setAttribute('data-i18n', 'shell.setupGuide');
-  setupGuideLabel.textContent = 'Setup guide';
-  setupGuide.appendChild(setupGuideLabel);
-  dropdown.appendChild(setupGuide);
   menu.appendChild(dropdown);
   return menu;
 }
