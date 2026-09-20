@@ -22,7 +22,7 @@ function findChrome() {
     .find((candidate) => existsSync(candidate));
 }
 
-async function runChromeAtViewport(chrome, url, { width, height, mobile, cookie = null, probeExpression = null, focusSelector = null, verifyTabNextSelector = null, verifyTabFollowingSelector = null, screenshotSuffix = '' }) {
+async function runChromeAtViewport(chrome, url, { width, height, mobile, cookie = null, probeExpression = null, focusSelector = null, verifyTabNextSelector = null, verifyTabFollowingSelector = null, screenshotSuffix = '', keyboardActivateMenuItem = false, clickMenuItemAndFollowNavigation = false }) {
   const portServer = createServer();
   portServer.listen(0, '127.0.0.1');
   await once(portServer, 'listening');
@@ -92,6 +92,45 @@ async function runChromeAtViewport(chrome, url, { width, height, mobile, cookie 
     });
     await command('Page.navigate', { url });
     await Promise.race([loaded, delay(15000).then(() => { throw new Error('Chrome page load timed out.'); })]);
+    if (keyboardActivateMenuItem) {
+      await command('Runtime.evaluate', {
+        expression: `new Promise((resolve,reject)=>{const end=Date.now()+12000;let opened=false;const attempt=()=>{const badge=document.querySelector('#userBadge');const item=document.querySelector('#userSetupGuide');const dropdown=document.querySelector('#userDropdown');if(document.body.classList.contains('shell-mounted')&&badge&&item&&!badge.hidden){if(!opened){window.__setupGuideEventCount=0;document.addEventListener('kinesis:open-setup-guide',()=>window.__setupGuideEventCount++);badge.click();opened=true}if(dropdown&&!dropdown.classList.contains('hidden')){item.focus();resolve(true);return}}if(Date.now()>end){reject(new Error('Authenticated shell menu did not mount')) ;return}setTimeout(attempt,50)};attempt()})`,
+        awaitPromise: true,
+        returnByValue: true,
+      });
+      await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13, text: '\r', unmodifiedText: '\r' });
+      await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 });
+      await command('Runtime.evaluate', { expression: `window.__setupGuideKeyboardState={focus:document.activeElement?.id,menuOpen:!document.getElementById('userDropdown')?.classList.contains('hidden'),guideHidden:document.getElementById('onboardingGuide')?.hidden,eventCount:window.__setupGuideEventCount,url:location.href}`, returnByValue: true });
+    }
+    if (clickMenuItemAndFollowNavigation) {
+      const navigation = new Promise((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('Setup guide menu navigation timed out.')), 15000);
+        const listener = (event) => {
+          const message = JSON.parse(event.data);
+          if (message.method !== 'Page.frameNavigated' || message.params.frame.parentId) return;
+          if (!message.params.frame.url.includes('/home.html?')) return;
+          clearTimeout(timer);
+          socket.removeEventListener('message', listener);
+          resolve();
+        };
+        socket.addEventListener('message', listener);
+      });
+      const nextLoad = new Promise((resolve) => {
+        const listener = (event) => {
+          if (JSON.parse(event.data).method !== 'Page.loadEventFired') return;
+          socket.removeEventListener('message', listener);
+          resolve();
+        };
+        socket.addEventListener('message', listener);
+      });
+      await command('Runtime.evaluate', {
+        expression: `new Promise((resolve,reject)=>{const end=Date.now()+12000;let opened=false;const attempt=()=>{const badge=document.querySelector('#userBadge');const item=document.querySelector('#userSetupGuide');const dropdown=document.querySelector('#userDropdown');if(document.body.classList.contains('shell-mounted')&&badge&&item&&!badge.hidden){if(!opened){badge.click();opened=true}if(dropdown&&!dropdown.classList.contains('hidden')){item.click();resolve(true);return}}if(Date.now()>end){reject(new Error('Authenticated shell menu did not mount')) ;return}setTimeout(attempt,50)};attempt()})`,
+        awaitPromise: true,
+        returnByValue: true,
+      });
+      await Promise.race([navigation, delay(16000).then(() => { throw new Error('Dashboard navigation timed out.'); })]);
+      await Promise.race([nextLoad, delay(15000).then(() => { throw new Error('Dashboard reload timed out.'); })]);
+    }
     const expression = probeExpression
       ? `(async()=>({probe:await (${probeExpression}),viewport:{width:innerWidth,height:innerHeight}}))()`
       : '({result:document.body.dataset.visualResult,error:document.body.dataset.visualError,viewport:{width:innerWidth,height:innerHeight}})';
@@ -116,14 +155,15 @@ async function runChromeAtViewport(chrome, url, { width, height, mobile, cookie 
     await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
     const focusEvaluation = await command('Runtime.evaluate', {
       expression: focusSelector
-        ? `(()=>{const control=document.querySelector(${JSON.stringify(focusSelector)});control?.focus();return {actionOutline:control?getComputedStyle(control).outlineStyle:null,actionVisible:control?.matches(':focus-visible')??false}})()`
-        : `(()=>{const action=document.querySelector('.onboarding-welcome-slide:not([hidden]) [data-onboarding-action]:not([hidden])');const later=document.getElementById('onboardingLater');action?.focus();const actionOutline=action?getComputedStyle(action).outlineStyle:null;later?.focus();return {actionOutline,laterOutline:later?getComputedStyle(later).outlineStyle:null}})()`,
+        ? `(()=>{const tabActiveElementId=document.activeElement?.id;const control=document.querySelector(${JSON.stringify(focusSelector)});control?.focus();return {tabActiveElementId,actionOutline:control?getComputedStyle(control).outlineStyle:null,actionVisible:control?.matches(':focus-visible')??false}})()`
+        : `(()=>{const tabActiveElementId=document.activeElement?.id;const action=document.querySelector('.onboarding-welcome-slide:not([hidden]) [data-onboarding-action]:not([hidden])');const later=document.getElementById('onboardingLater');action?.focus();const actionOutline=action?getComputedStyle(action).outlineStyle:null;later?.focus();return {tabActiveElementId,actionOutline,laterOutline:later?getComputedStyle(later).outlineStyle:null}})()`,
       returnByValue: true,
     });
     if (focusEvaluation.result?.value) {
       value.keyboardFocusOutline = focusEvaluation.result.value.actionOutline;
       value.keyboardFocusVisible = focusEvaluation.result.value.actionVisible;
       value.laterKeyboardFocusOutline = focusEvaluation.result.value.laterOutline;
+      value.tabActiveElementId = focusEvaluation.result.value.tabActiveElementId;
     }
     if (verifyTabNextSelector) {
       await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
@@ -143,7 +183,17 @@ async function runChromeAtViewport(chrome, url, { width, height, mobile, cookie 
         value.keyboardFollowingMatches = followingFocus.result?.value === true;
       }
     }
-    return probeExpression ? value.probe : { ...JSON.parse(value.result), keyboardFocusOutline: value.keyboardFocusOutline, keyboardFocusVisible: value.keyboardFocusVisible, keyboardNextMatches: value.keyboardNextMatches, keyboardFollowingMatches: value.keyboardFollowingMatches };
+    if (probeExpression) {
+      Object.assign(value.probe, {
+        keyboardFocusOutline: value.keyboardFocusOutline,
+        keyboardFocusVisible: value.keyboardFocusVisible,
+        tabActiveElementId: value.tabActiveElementId,
+        keyboardNextMatches: value.keyboardNextMatches,
+        keyboardFollowingMatches: value.keyboardFollowingMatches,
+      });
+      return value.probe;
+    }
+    return { ...JSON.parse(value.result), keyboardFocusOutline: value.keyboardFocusOutline, keyboardFocusVisible: value.keyboardFocusVisible, tabActiveElementId: value.tabActiveElementId, keyboardNextMatches: value.keyboardNextMatches, keyboardFollowingMatches: value.keyboardFollowingMatches };
   } finally {
     try { socket?.close(); } catch {}
     processHandle.kill();
@@ -203,20 +253,43 @@ test('temporary welcome preview is available across account states and never mut
   assert.equal(session.slide, 0, 'every preview opens on slide one');
 });
 
-test('completed guide presentation supports conclusion, reopen, hide, and reload', async () => {
+test('an explicit setup-guide request suppresses automatic welcome only for the current session', async () => {
+  const { createWelcomePreviewSession } = await import(pathToFileURL(path.join(__dirname, '../src/public/shared/onboarding.js')));
+  const session = createWelcomePreviewSession();
+  const fresh = { status: 'new', welcomeDismissed: false, guideHidden: false };
+  session.suppressAutomatic();
+  assert.equal(session.ensureAutomatic(fresh), false);
+  assert.equal(fresh.status, 'new');
+  assert.equal(fresh.welcomeDismissed, false);
+  const nextVisit = createWelcomePreviewSession();
+  assert.equal(nextVisit.ensureAutomatic(fresh), true, 'the in-memory suppression does not persist across a new page visit');
+});
+
+test('guide presentation keeps completed and legacy onboarding hidden until explicitly requested', async () => {
   const { onboardingPresentation } = await import(pathToFileURL(path.join(__dirname, '../src/public/shared/onboarding.js')));
   const complete = { status: 'active', guideHidden: false, steps: { shoes: true, cycle: true, trainings: true } };
   assert.deepEqual(
     onboardingPresentation(complete),
-    { steps: complete.steps, completed: 3, total: 3, complete: true, nextStep: null, guideOpen: false, guideVisible: false, completionVisible: true, reopenVisible: false }
+    { steps: complete.steps, completed: 3, total: 3, complete: true, nextStep: null, guideVisible: false }
   );
-  const reopened = { ...complete, guideOpen: true };
-  assert.equal(onboardingPresentation(reopened).guideVisible, true);
-  assert.equal(onboardingPresentation(reopened).completionVisible, false);
-  const hidden = { ...complete, guideHidden: true, guideOpen: false };
+  assert.equal(onboardingPresentation(complete, true).guideVisible, true, 'completed users can open the checklist on demand');
+  const hidden = { status: 'active', guideHidden: true, steps: { shoes: true, cycle: false, trainings: false } };
   assert.equal(onboardingPresentation(hidden).guideVisible, false);
-  assert.equal(onboardingPresentation(hidden).completionVisible, true);
-  assert.equal(onboardingPresentation({ ...hidden }).completed, 3);
+  assert.equal(onboardingPresentation(hidden, true).guideVisible, true, 'opening hidden guidance is transient');
+  const legacy = { status: 'legacy', guideHidden: false, steps: { shoes: true, cycle: false, trainings: true } };
+  assert.equal(onboardingPresentation(legacy).guideVisible, false);
+  assert.equal(onboardingPresentation(legacy, true).guideVisible, true, 'legacy progress is shown only after an explicit request');
+  assert.equal(onboardingPresentation(legacy, true).completed, 2);
+});
+
+test('the transient setup-guide URL signal is consumed while preserving query and hash', async () => {
+  const { consumeSetupGuideSignal } = await import(pathToFileURL(path.join(__dirname, '../src/public/shared/onboarding.js')));
+  const replacements = [];
+  assert.equal(consumeSetupGuideSignal('https://kinesis.test/home.html?keep=one&openSetupGuide=1&also=two#cycle', (url) => replacements.push(url)), true);
+  assert.deepEqual(replacements, ['/home.html?keep=one&also=two#cycle']);
+  assert.equal(consumeSetupGuideSignal('https://kinesis.test/home.html?keep=one#cycle', (url) => replacements.push(url)), false);
+  assert.equal(consumeSetupGuideSignal('https://kinesis.test/home.html?openSetupGuide=0', (url) => replacements.push(url)), false);
+  assert.equal(replacements.length, 1, 'refreshing the cleaned URL cannot reopen the guide');
 });
 
 test('welcome inert targeting excludes the dialog and preserves previously inert elements', async () => {
@@ -237,10 +310,23 @@ test('onboarding UI keeps the existing destinations and accessibility hooks', ()
   assert.match(home, /href="\/calendar\.html"/);
   assert.match(home, /aria-labelledby="onboardingWelcomeTitle0"/);
   assert.match(home, /onboardingHide/);
-  assert.match(home, /onboardingReopenHidden/);
+  assert.match(home, /id="onboardingTitle"[^>]*tabindex="-1"/);
+  assert.doesNotMatch(home, /onboardingComplete|onboardingReopen|onboarding-reopen-bar/);
   assert.match(home, /aria-modal="true"/);
   assert.match(homeJs, /const next = response\?\.onboarding/);
   assert.match(homeJs, /renderOnboardingStepStates\(onboardingGuide, progress\.steps, progress\.nextStep\)/);
+  assert.match(homeJs, /consumeSetupGuideSignal\(window\.location\.href/);
+  assert.match(homeJs, /kinesis:open-setup-guide/);
+  assert.match(homeJs, /guideExplicitlyOpen/);
+  const homeCss = fs.readFileSync(path.join(__dirname, '../src/public/home.css'), 'utf8');
+  assert.doesNotMatch(homeCss, /\.onboarding-complete\s*\{|\.onboarding-reopen-bar/);
+  for (const locale of ['en', 'pt']) {
+    const messages = JSON.parse(fs.readFileSync(path.join(__dirname, `../src/public/locales/${locale}.json`), 'utf8'));
+    assert.equal(messages.home.onboarding.reopen, undefined);
+    assert.equal(messages.home.onboarding.completeTitle, undefined);
+    assert.equal(messages.home.onboarding.completeText, undefined);
+    assert.equal(messages.home.onboarding.completeToast, undefined);
+  }
   assert.match(homeJs, /event\.key === 'Escape'/);
   assert.match(homeJs, /setAttribute\('inert', ''\)/);
   assert.match(homeJs, /focusWelcomeTitle\(\)/);
@@ -283,17 +369,15 @@ test('result guidance is limited to the first unrecorded workout for new users',
   assert.doesNotMatch(css, /var\(--surface\)|var\(--wash\)/);
 });
 
-test('browser CSS makes every hidden onboarding root actually invisible', () => {
+test('browser CSS makes the hidden onboarding guide and welcome modal actually invisible', () => {
   const chrome = findChrome();
   assert.ok(chrome, 'Chrome is required for onboarding browser validation.');
   const css = readFileSync(path.join(__dirname, '../src/public/home.css'), 'utf8');
-  const onboardingCss = css.slice(css.indexOf('.onboarding-guide,'), css.indexOf('/* ── Hero Banner'));
+  const onboardingCss = css.slice(css.indexOf('.onboarding-guide {'), css.indexOf('/* ── Hero Banner'));
   const html = `<!doctype html><style>${onboardingCss}</style>
     <section id="onboardingGuide" class="onboarding-guide" hidden></section>
-    <section id="onboardingComplete" class="onboarding-complete" hidden></section>
-    <div id="onboardingReopenBar" class="onboarding-reopen-bar" hidden></div>
     <div id="onboardingWelcome" class="onboarding-welcome" hidden></div>
-    <script>document.body.dataset.hiddenDisplays = ['onboardingGuide','onboardingComplete','onboardingReopenBar','onboardingWelcome']
+    <script>document.body.dataset.hiddenDisplays = ['onboardingGuide','onboardingWelcome']
       .map((id) => getComputedStyle(document.getElementById(id)).display).join(',');</script>`;
   const profile = mkdtempSync(`${tmpdir()}/kinesis-onboarding-chrome-`);
   const output = execFileSync(chrome, [
@@ -301,7 +385,7 @@ test('browser CSS makes every hidden onboarding root actually invisible', () => 
     '--no-first-run', `--user-data-dir=${profile}`, '--dump-dom',
     `data:text/html;charset=utf-8,${encodeURIComponent(html)}`,
   ], { encoding: 'utf8', timeout: 15000, stdio: ['ignore', 'pipe', 'ignore'] });
-  assert.match(output, /data-hidden-displays="none,none,none,none"/);
+  assert.match(output, /data-hidden-displays="none,none"/);
 });
 
 test('dashboard onboarding cards render accessible states and aligned actions in English and Portuguese', async () => {
@@ -747,6 +831,239 @@ test('the complete authenticated dashboard allows a non-persistent welcome previ
     assert.equal(result.label, 'Preview welcome');
     const after = (await app.inject({ method: 'GET', url: '/api/onboarding', headers: { cookie: cookieHeader } })).json().onboarding;
     assert.deepEqual(after, before, 'preview did not modify status, progress, or presentation preferences');
+  } finally {
+    await app.close();
+    db.close();
+  }
+});
+
+test('authenticated setup guide menu handles visible, hidden, completed, and legacy onboarding in Chrome', async () => {
+  const chrome = findChrome();
+  assert.ok(chrome, 'Chrome is required for authenticated setup-guide navigation validation.');
+  const db = createDatabase({ filename: ':memory:' });
+  const app = await buildServer({ db, sessionCookieSecure: false, unsplashFetch: async () => { throw new Error('Disable external hero requests in browser verification.'); } });
+
+  async function account({ email, language, status, hidden, steps = {} }) {
+    const registered = await app.inject({
+      method: 'POST', url: '/api/auth/register',
+      payload: { email, password: 'setup-guide-secret', first_name: 'Setup', last_name: 'Runner', preferred_lang: language },
+    });
+    assert.equal(registered.statusCode, 201);
+    const userId = db.prepare('SELECT id FROM users WHERE email = ?').get(email).id;
+    db.prepare('UPDATE users SET onboarding_status = ?, onboarding_guide_hidden = ? WHERE id = ?')
+      .run(status, hidden ? 1 : 0, userId);
+    const cycleId = `guide-cycle-${userId}`;
+    if (steps.shoes) {
+      db.prepare('INSERT INTO shoes (id, user_id, brand, model) VALUES (?, ?, ?, ?)')
+        .run(`guide-shoe-${userId}`, userId, 'Kinesis', 'Guide shoe');
+    }
+    if (steps.cycle) {
+      db.prepare('INSERT INTO training_cycles (id, user_id, objective, status) VALUES (?, ?, ?, ?)')
+        .run(cycleId, userId, 'Guide test cycle', 'active');
+    }
+    if (steps.trainings) {
+      db.prepare('INSERT INTO trainings (user_id, training_cycle_id, dia, tipo, treino) VALUES (?, ?, ?, ?, ?)')
+        .run(userId, steps.cycle ? cycleId : null, '2026-09-20', 'Run', 'Guide test workout');
+    }
+    const login = await app.inject({
+      method: 'POST', url: '/api/auth/login',
+      payload: { email, password: 'setup-guide-secret' },
+    });
+    assert.equal(login.statusCode, 200);
+    const cookie = [].concat(login.headers['set-cookie'] ?? [])[0].split(';')[0].split('=')[1];
+    return { cookie, userId };
+  }
+
+  const visible = await account({ email: 'guide-visible@example.com', language: 'pt-BR', status: 'active', hidden: false });
+  const hidden = await account({ email: 'guide-hidden@example.com', language: 'en-US', status: 'active', hidden: true, steps: { shoes: true } });
+  const complete = await account({ email: 'guide-complete@example.com', language: 'pt-BR', status: 'active', hidden: false, steps: { shoes: true, cycle: true, trainings: true } });
+  const legacy = await account({ email: 'guide-legacy@example.com', language: 'en-US', status: 'legacy', hidden: true, steps: { shoes: true } });
+  const firstVisit = await account({ email: 'guide-first-visit@example.com', language: 'en-US', status: 'new', hidden: false });
+
+  const appUrl = await app.listen({ port: 0, host: '127.0.0.1' });
+  const waitForGuide = (expectedText, expectedProgress, extra = '') => `new Promise((resolve,reject)=>{
+    const deadline=Date.now()+15000;
+    const check=async()=>{
+      const guide=document.getElementById('onboardingGuide');
+      const title=document.getElementById('onboardingTitle');
+      const item=document.getElementById('userSetupGuide');
+      const modal=document.getElementById('onboardingWelcome');
+      if(guide&&title&&item&&!document.getElementById('userBadge').hidden&&document.body.classList.contains('shell-mounted')){
+        const payload=await fetch('/api/onboarding').then(response=>response.json()).catch(()=>null);
+        const ready=payload?.onboarding&&${JSON.stringify(expectedText)}===item.innerText.trim()&&${JSON.stringify(expectedProgress)}===document.getElementById('onboardingProgress').innerText.trim()${extra};
+        if(ready){resolve(true);return}
+      }
+      if(Date.now()>deadline){reject(new Error('Setup guide UI timed out: '+JSON.stringify({url:location.href,guide:guide?.hidden,title:title?.innerText,item:item?.innerText,progress:document.getElementById('onboardingProgress')?.innerText,keyboard:window.__setupGuideKeyboardState,body:document.body.innerText.slice(0,300)})));return}
+      setTimeout(check,60);
+    };
+    check();
+  })`;
+
+  try {
+    const visibleProbe = `new Promise(async(resolve,reject)=>{
+      try{await (${waitForGuide('Guia de configuração','0 de 3 etapas', '&& !guide.hidden && modal.hidden')});
+        const guide=document.getElementById('onboardingGuide');const title=document.getElementById('onboardingTitle');
+        const home=[...document.querySelector('.home-page').children].filter(node=>!node.hidden&&getComputedStyle(node).display!=='none');
+        const rect=(node)=>{const r=node.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height,bottom:r.bottom}};
+        resolve({visible:!guide.hidden,focused:title===document.activeElement,progress:document.getElementById('onboardingProgress').innerText.trim(),firstVisibleChildren:home.slice(0,2).map(node=>node.className),removed:['onboardingComplete','onboardingReopen','onboardingReopenHidden','onboardingReopenBar'].every(id=>!document.getElementById(id)),cycleTop:rect(document.querySelector('.dashboard-grid > .card-section:first-child')).y,guideRect:rect(guide),welcomeHidden:document.getElementById('onboardingWelcome').hidden,scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth});
+      }catch(error){reject(error)}
+    })`;
+    const visibleResult = await runChromeAtViewport(chrome, appUrl.replace(/\/$/, '') + '/home.html', {
+      width: 1280, height: 800, mobile: false, cookie: visible.cookie, probeExpression: visibleProbe, screenshotSuffix: '-setup-visible',
+    });
+    assert.equal(visibleResult.visible, true);
+    assert.equal(visibleResult.focused, false, 'normal dashboard presentation does not steal focus');
+    assert.equal(visibleResult.progress, '0 de 3 etapas');
+    assert.deepEqual(visibleResult.firstVisibleChildren, ['hero', 'onboarding-guide card-section'], 'an incomplete, unhidden checklist remains directly beneath the hero');
+    assert.equal(visibleResult.removed, true);
+    assert.equal(visibleResult.welcomeHidden, true, 'active legacy-style accounts do not get a welcome modal');
+    assert.ok(visibleResult.scrollWidth <= visibleResult.viewportWidth);
+
+    const hiddenProbe = `new Promise(async(resolve,reject)=>{
+      try{await (${waitForGuide('Setup guide','1 of 3 steps', '&& !guide.hidden && modal.hidden')});
+        await new Promise(resolve=>setTimeout(resolve,500));
+        const before=await fetch('/api/onboarding').then(response=>response.json());
+        const guideRect=document.getElementById('onboardingGuide').getBoundingClientRect();const scrollArea=document.querySelector('.main-content').getBoundingClientRect();
+        resolve({visible:!document.getElementById('onboardingGuide').hidden,focused:document.activeElement.id,keyboardState:window.__setupGuideKeyboardState,progress:document.getElementById('onboardingProgress').innerText.trim(),menuClosed:document.getElementById('userDropdown').classList.contains('hidden'),welcomeHidden:document.getElementById('onboardingWelcome').hidden,guideHidden:before.onboarding.guideHidden,status:before.onboarding.status,completed:[...document.querySelectorAll('[data-onboarding-complete]')].filter(node=>!node.hidden).length,scrollTop:document.querySelector('.main-content').scrollTop,guideTop:guideRect.top,guideBottom:guideRect.bottom,scrollAreaTop:scrollArea.top,scrollAreaBottom:scrollArea.bottom,scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth});
+      }catch(error){reject(error)}
+    })`;
+    const hiddenResult = await runChromeAtViewport(chrome, appUrl.replace(/\/$/, '') + '/home.html', {
+      width: 390, height: 844, mobile: true, cookie: hidden.cookie, probeExpression: hiddenProbe, keyboardActivateMenuItem: true, focusSelector: '#onboardingTitle', screenshotSuffix: '-setup-hidden-open',
+    });
+    assert.equal(hiddenResult.visible, true);
+    assert.equal(hiddenResult.focused, 'onboardingTitle', 'keyboard activation moves focus only after revealing the title');
+    assert.equal(hiddenResult.progress, '1 of 3 steps');
+    assert.equal(hiddenResult.menuClosed, true);
+    assert.equal(hiddenResult.welcomeHidden, true);
+    assert.equal(hiddenResult.guideHidden, true, 'opening from the menu does not mutate the saved hidden preference');
+    assert.equal(hiddenResult.status, 'active');
+    assert.equal(hiddenResult.completed, 1);
+    assert.ok(hiddenResult.scrollTop > 0 || (hiddenResult.guideTop >= hiddenResult.scrollAreaTop && hiddenResult.guideBottom <= hiddenResult.scrollAreaBottom), 'the mobile dashboard scrolls the guide into view or leaves it fully visible');
+    assert.ok(hiddenResult.scrollWidth <= hiddenResult.viewportWidth);
+    assert.equal(hiddenResult.tabActiveElementId, 'onboardingHide', 'Tab from the focused guide title enters the visible checklist controls');
+
+    const firstVisitProbe = `new Promise(async(resolve,reject)=>{
+      try{await (${waitForGuide('Setup guide','0 of 3 steps', '&& !guide.hidden && modal.hidden')});
+        const before=await fetch('/api/onboarding').then(response=>response.json());
+        const after=await fetch('/api/onboarding').then(response=>response.json());
+        resolve({visible:!document.getElementById('onboardingGuide').hidden,focused:document.activeElement.id,welcomeHidden:document.getElementById('onboardingWelcome').hidden,statusBefore:before.onboarding.status,statusAfter:after.onboarding.status,unchanged:JSON.stringify(before.onboarding)===JSON.stringify(after.onboarding),url:location.pathname+location.search+location.hash,menuClosed:document.getElementById('userDropdown').classList.contains('hidden')});
+      }catch(error){reject(error)}
+    })`;
+    const firstVisitResult = await runChromeAtViewport(chrome, appUrl.replace(/\/$/, '') + '/shoes.html?keep=new#first', {
+      width: 1280, height: 800, mobile: false, cookie: firstVisit.cookie, probeExpression: firstVisitProbe, clickMenuItemAndFollowNavigation: true, focusSelector: '#onboardingTitle', screenshotSuffix: '-setup-new-user',
+    });
+    assert.equal(firstVisitResult.visible, true);
+    assert.equal(firstVisitResult.focused, 'onboardingTitle');
+    assert.equal(firstVisitResult.welcomeHidden, true, 'explicit guide navigation does not trigger first-visit welcome');
+    assert.equal(firstVisitResult.statusBefore, 'new');
+    assert.equal(firstVisitResult.statusAfter, 'new', 'opening the guide does not activate or dismiss the welcome preference');
+    assert.equal(firstVisitResult.unchanged, true);
+    assert.equal(firstVisitResult.url, '/home.html?keep=new#first');
+    assert.equal(firstVisitResult.menuClosed, true);
+
+    const completeProbe = `new Promise(async(resolve,reject)=>{
+      const wait=async(predicate)=>{const end=Date.now()+15000;while(Date.now()<end){if(await predicate())return true;await new Promise(r=>setTimeout(r,60))}throw new Error('Onboarding transition timed out')};
+      try{
+        const guide=document.getElementById('onboardingGuide');const modal=document.getElementById('onboardingWelcome');
+        await wait(async()=>document.body.classList.contains('shell-mounted')&&document.getElementById('userSetupGuide')&&modal.hidden);
+        await new Promise(r=>setTimeout(r,200));
+        const initiallyHidden=guide.hidden;
+        const before=await fetch('/api/onboarding').then(response=>response.json());
+        const userBefore=await fetch('/api/me').then(response=>response.json());
+        document.getElementById('userBadge').click();document.getElementById('userSetupGuide').click();
+        await wait(()=>!guide.hidden&&document.activeElement.id==='onboardingTitle');
+        const after=await fetch('/api/onboarding').then(response=>response.json());
+        const menuClosed=document.getElementById('userDropdown').classList.contains('hidden');
+        const completeCount=[...document.querySelectorAll('[data-onboarding-complete]')].filter(node=>!node.hidden).length;
+        const allActionsHidden=[...document.querySelectorAll('[data-onboarding-actions]')].every(node=>node.hidden);
+        const previewHidden=modal.hidden;
+        document.getElementById('onboardingHide').click();
+        await wait(()=>guide.hidden&&document.activeElement.id==='userBadge');
+        const afterHide=await fetch('/api/onboarding').then(response=>response.json());
+        const userAfter=await fetch('/api/me').then(response=>response.json());
+        const home=[...document.querySelector('.home-page').children].filter(node=>!node.hidden&&getComputedStyle(node).display!=='none');
+        resolve({initiallyHidden,focus:'onboardingTitle',progress:document.getElementById('onboardingProgress').innerText.trim(),completeCount,allActionsHidden,menuClosed,previewHidden,unchangedByOpen:JSON.stringify(before.onboarding)===JSON.stringify(after.onboarding)&&before.onboarding.status===after.onboarding.status,threeComplete:after.onboarding.complete,hiddenAfter:guide.hidden,hideFocus:document.activeElement.id,hiddenPreference:afterHide.onboarding.guideHidden,afterHideStatus:afterHide.onboarding.status,preferences:{langBefore:userBefore.user.preferred_lang,langAfter:userAfter.user.preferred_lang},removed:['onboardingComplete','onboardingReopen','onboardingReopenHidden','onboardingReopenBar'].every(id=>!document.getElementById(id)),firstVisibleChildren:home.slice(0,2).map(node=>node.className),cycleTop:document.querySelector('.dashboard-grid > .card-section:first-child').getBoundingClientRect().top,heroBottom:document.getElementById('heroBanner').getBoundingClientRect().bottom,scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth});
+      }catch(error){reject(error)}
+    })`;
+    const completeResult = await runChromeAtViewport(chrome, appUrl.replace(/\/$/, '') + '/home.html', {
+      width: 1280, height: 800, mobile: false, cookie: complete.cookie, probeExpression: completeProbe, focusSelector: '#userBadge', screenshotSuffix: '-setup-complete',
+    });
+    assert.equal(completeResult.initiallyHidden, true, 'completion removes the guide from the dashboard by default');
+    assert.equal(completeResult.progress, '3 de 3 etapas');
+    assert.equal(completeResult.completeCount, 3);
+    assert.equal(completeResult.allActionsHidden, true);
+    assert.equal(completeResult.menuClosed, true);
+    assert.equal(completeResult.previewHidden, true, 'the menu never opens the welcome modal');
+    assert.equal(completeResult.unchangedByOpen, true, 'opening the guide does not persist onboarding state');
+    assert.equal(completeResult.threeComplete, true);
+    assert.equal(completeResult.hiddenAfter, true);
+    assert.equal(completeResult.hideFocus, 'userBadge', 'hiding the guide returns focus to the stable account menu trigger');
+    assert.equal(completeResult.hiddenPreference, true);
+    assert.equal(completeResult.afterHideStatus, 'active');
+    assert.deepEqual(completeResult.preferences, { langBefore: 'pt-BR', langAfter: 'pt-BR' });
+    assert.equal(completeResult.removed, true);
+    assert.deepEqual(completeResult.firstVisibleChildren, ['hero', 'dashboard-grid vertical']);
+    assert.ok(completeResult.cycleTop >= completeResult.heroBottom);
+    assert.ok(completeResult.scrollWidth <= completeResult.viewportWidth);
+
+    const completeReloadProbe = `new Promise((resolve,reject)=>{
+      const deadline=Date.now()+15000;const check=async()=>{const guide=document.getElementById('onboardingGuide');const modal=document.getElementById('onboardingWelcome');const state=await fetch('/api/onboarding').then(r=>r.json()).catch(()=>null);if(guide&&modal&&state?.onboarding?.complete&&document.body.classList.contains('shell-mounted')){await new Promise(r=>setTimeout(r,120));resolve({guideHidden:guide.hidden,welcomeHidden:modal.hidden,complete:state.onboarding.complete,signalAbsent:!new URL(location.href).searchParams.has('openSetupGuide'),oldCardsAbsent:['onboardingComplete','onboardingReopen','onboardingReopenHidden','onboardingReopenBar'].every(id=>!document.getElementById(id)),scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth});return}if(Date.now()>deadline){reject(new Error('Completed dashboard refresh timed out')) ;return}setTimeout(check,60)};check()})`;
+    const completeReload = await runChromeAtViewport(chrome, appUrl.replace(/\/$/, '') + '/home.html', {
+      width: 390, height: 844, mobile: true, cookie: complete.cookie, probeExpression: completeReloadProbe, screenshotSuffix: '-setup-complete-reload',
+    });
+    assert.equal(completeReload.guideHidden, true);
+    assert.equal(completeReload.welcomeHidden, true);
+    assert.equal(completeReload.complete, true);
+    assert.equal(completeReload.signalAbsent, true);
+    assert.equal(completeReload.oldCardsAbsent, true);
+    assert.ok(completeReload.scrollWidth <= completeReload.viewportWidth);
+
+    const legacyProbe = `new Promise(async(resolve,reject)=>{
+      const wait=async(predicate)=>{const end=Date.now()+15000;while(Date.now()<end){if(await predicate())return;await new Promise(r=>setTimeout(r,60))}throw new Error('Legacy setup guide transition timed out')};
+      try{
+        await wait(()=>document.body.classList.contains('shell-mounted')&&document.getElementById('userSetupGuide'));
+        const modal=document.getElementById('onboardingWelcome');await new Promise(r=>setTimeout(r,150));
+        const before=await fetch('/api/onboarding').then(response=>response.json());
+        const welcomeInitiallyHidden=modal.hidden;
+        document.getElementById('userBadge').click();document.getElementById('userSetupGuide').click();
+        await wait(()=>!document.getElementById('onboardingGuide').hidden&&document.activeElement.id==='onboardingTitle'&&!new URL(location.href).searchParams.has('openSetupGuide'));
+        const after=await fetch('/api/onboarding').then(response=>response.json());
+        const user=await fetch('/api/me').then(response=>response.json());
+        const result={url:location.pathname+location.search+location.hash,visible:!document.getElementById('onboardingGuide').hidden,focused:document.activeElement.id,progress:document.getElementById('onboardingProgress').innerText.trim(),welcomeHidden:modal.hidden,welcomeInitiallyHidden,statusBefore:before.onboarding.status,statusAfter:after.onboarding.status,steps:after.onboarding.steps,guideHiddenBefore:before.onboarding.guideHidden,guideHiddenAfter:after.onboarding.guideHidden,unchanged:JSON.stringify(before.onboarding)===JSON.stringify(after.onboarding),userLanguage:user.user.preferred_lang,menuClosed:document.getElementById('userDropdown').classList.contains('hidden'),removed:['onboardingComplete','onboardingReopen','onboardingReopenHidden','onboardingReopenBar'].every(id=>!document.getElementById(id)),scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth};
+        resolve(result);
+      }catch(error){reject(error)}
+    })`;
+    const legacyUrl = appUrl.replace(/\/$/, '') + '/shoes.html?keep=one&openSetupGuide=0#shoes';
+    const legacyResult = await runChromeAtViewport(chrome, legacyUrl, {
+      width: 1280, height: 800, mobile: false, cookie: legacy.cookie, probeExpression: legacyProbe, clickMenuItemAndFollowNavigation: true, focusSelector: '#onboardingTitle', screenshotSuffix: '-setup-legacy',
+    });
+    assert.equal(legacyResult.url, '/home.html?keep=one#shoes', 'the signal is consumed while retaining other URL state and the hash');
+    assert.equal(legacyResult.visible, true);
+    assert.equal(legacyResult.focused, 'onboardingTitle');
+    assert.equal(legacyResult.progress, '1 of 3 steps');
+    assert.equal(legacyResult.welcomeInitiallyHidden, true);
+    assert.equal(legacyResult.welcomeHidden, true);
+    assert.equal(legacyResult.statusBefore, 'legacy');
+    assert.equal(legacyResult.statusAfter, 'legacy');
+    assert.deepEqual(legacyResult.steps, { shoes: true, cycle: false, trainings: false });
+    assert.equal(legacyResult.guideHiddenBefore, true);
+    assert.equal(legacyResult.guideHiddenAfter, true);
+    assert.equal(legacyResult.unchanged, true);
+    assert.equal(legacyResult.userLanguage, 'en-US');
+    assert.equal(legacyResult.menuClosed, true);
+    assert.equal(legacyResult.removed, true);
+    assert.ok(legacyResult.scrollWidth <= legacyResult.viewportWidth);
+
+    const reloadProbe = `new Promise((resolve,reject)=>{
+      const deadline=Date.now()+15000;const check=async()=>{const guide=document.getElementById('onboardingGuide');const modal=document.getElementById('onboardingWelcome');const item=document.getElementById('userSetupGuide');const status=await fetch('/api/onboarding').then(r=>r.json()).catch(()=>null);if(guide&&modal&&item&&status?.onboarding?.status==='legacy'&&document.body.classList.contains('shell-mounted')){await new Promise(r=>setTimeout(r,150));resolve({guideHidden:guide.hidden,welcomeHidden:modal.hidden,signalAbsent:!new URL(location.href).searchParams.has('openSetupGuide'),status:status.onboarding.status,oldCardsAbsent:['onboardingComplete','onboardingReopen','onboardingReopenHidden','onboardingReopenBar'].every(id=>!document.getElementById(id))});return}if(Date.now()>deadline){reject(new Error('Legacy refresh timed out')) ;return}setTimeout(check,60)};check()})`;
+    const legacyReload = await runChromeAtViewport(chrome, appUrl.replace(/\/$/, '') + '/home.html?keep=one#shoes', {
+      width: 390, height: 844, mobile: true, cookie: legacy.cookie, probeExpression: reloadProbe, screenshotSuffix: '-setup-legacy-reload',
+    });
+    assert.equal(legacyReload.guideHidden, true);
+    assert.equal(legacyReload.welcomeHidden, true);
+    assert.equal(legacyReload.signalAbsent, true);
+    assert.equal(legacyReload.status, 'legacy');
+    assert.equal(legacyReload.oldCardsAbsent, true);
   } finally {
     await app.close();
     db.close();

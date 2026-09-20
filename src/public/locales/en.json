@@ -96,6 +96,7 @@
     "userMenu": "Account menu",
     "changePassword": "Change Password",
     "preferences": "Preferences",
+    "setupGuide": "Setup guide",
     "confirm": {
       "yes": "Delete",
       "no": "Cancel"
@@ -693,11 +694,7 @@
       "completed": "Completed",
       "nextBadge": "Next",
       "hide": "Hide guide",
-      "reopen": "Open setup guide",
       "next": "Next step",
-      "completeTitle": "Your training space is ready",
-      "completeText": "You can revisit these tips whenever you need them.",
-      "completeToast": "Setup complete — your training space is ready.",
       "shoesTitle": "Add your running shoes",
       "shoesText": "Kinesis tracks mileage when you record training results.",
       "shoesAction": "Add my shoes",

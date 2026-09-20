@@ -3,7 +3,7 @@ import { initShell, getShellI18n, getUserPreferences, showShellToast } from './s
 import { translate } from './shared/i18n.js';
 import { formatDate as formatLocalizedDate } from './shared/date.js';
 import { formatDistance } from './shared/units.js';
-import { calculateOnboardingProgress, renderOnboardingStepStates, isNewUserOnboarding, onboardingPresentation, onboardingPlanActions, onboardingSlideNavigation, updateOnboardingDialogA11y, trapOnboardingFocus, createWelcomePreviewSession, backgroundInertTargets } from './shared/onboarding.js';
+import { calculateOnboardingProgress, renderOnboardingStepStates, onboardingPresentation, consumeSetupGuideSignal, onboardingPlanActions, onboardingSlideNavigation, updateOnboardingDialogA11y, trapOnboardingFocus, createWelcomePreviewSession, backgroundInertTargets } from './shared/onboarding.js';
 
 export const ZENQUOTES_URL = 'https://zenquotes.io/api/today';
 export const QUOTE_TIMEOUT_MS = 3000;
@@ -471,15 +471,11 @@ function setupHomePage() {
   const shoesEmpty = document.getElementById('shoesEmpty');
   const shoesList = document.getElementById('shoesList');
   const onboardingGuide = document.getElementById('onboardingGuide');
-  const onboardingComplete = document.getElementById('onboardingComplete');
   const onboardingProgress = document.getElementById('onboardingProgress');
   const onboardingWelcome = document.getElementById('onboardingWelcome');
   const onboardingDialog = onboardingWelcome?.querySelector('[role="dialog"]');
   const onboardingPreview = document.getElementById('onboardingPreview');
   const onboardingHide = document.getElementById('onboardingHide');
-  const onboardingReopen = document.getElementById('onboardingReopen');
-  const onboardingReopenHidden = document.getElementById('onboardingReopenHidden');
-  const onboardingReopenBar = document.getElementById('onboardingReopenBar');
   const onboardingPrevious = document.getElementById('onboardingPrevious');
   const onboardingNext = document.getElementById('onboardingNext');
   const onboardingLater = document.getElementById('onboardingLater');
@@ -507,7 +503,34 @@ function setupHomePage() {
   let i18n = null;
   let welcomeReturnFocus = null;
   let welcomeWasOpen = false;
+  let guideExplicitlyOpen = false;
+  let guideOpenPending = consumeSetupGuideSignal(window.location.href, (url) => {
+    window.history.replaceState(window.history.state, '', url);
+  });
   const welcomeSession = createWelcomePreviewSession();
+
+  function focusSetupGuide() {
+    window.requestAnimationFrame(() => {
+      if (!onboardingGuide || onboardingGuide.hidden) return;
+      const title = onboardingGuide.querySelector('#onboardingTitle');
+      if (!title) return;
+      const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      onboardingGuide.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'start' });
+      title.focus({ preventScroll: true });
+    });
+  }
+
+  function requestSetupGuide() {
+    welcomeSession.suppressAutomatic();
+    guideOpenPending = true;
+    if (!state.onboarding) return false;
+    guideOpenPending = false;
+    guideExplicitlyOpen = true;
+    renderOnboarding();
+    if (onboardingGuide.hidden) return false;
+    focusSetupGuide();
+    return true;
+  }
 
   function focusWelcomeTitle() {
     const title = onboardingWelcomeSlides[welcomeSession.slide]?.querySelector('h2');
@@ -687,17 +710,15 @@ function setupHomePage() {
 
   function renderOnboarding() {
     const onboarding = state.onboarding;
-    if (onboarding && isNewUserOnboarding(onboarding)) {
-      const presentation = onboardingPresentation(onboarding);
+    if (onboarding) {
+      const presentation = onboardingPresentation(onboarding, guideExplicitlyOpen);
       const progress = calculateOnboardingProgress(onboarding);
       if (onboardingProgress) onboardingProgress.textContent = t('home.onboarding.progress', { completed: progress.completed });
       onboardingGuide.hidden = !presentation.guideVisible;
-      onboardingComplete.hidden = !presentation.completionVisible;
-      onboardingReopenBar.hidden = !presentation.reopenVisible;
       renderOnboardingStepStates(onboardingGuide, progress.steps, progress.nextStep);
     }
     renderWelcomeCarousel();
-    const shouldOpen = welcomeSession.ensureAutomatic(onboarding);
+    const shouldOpen = !guideOpenPending && !guideExplicitlyOpen && welcomeSession.ensureAutomatic(onboarding);
     if (shouldOpen && !welcomeWasOpen) {
       welcomeReturnFocus = document.activeElement;
       onboardingWelcome.hidden = false;
@@ -724,7 +745,7 @@ function setupHomePage() {
       const response = await updateOnboardingPresentation({ welcome_dismissed: true });
       const next = response?.onboarding;
       if (!next?.status || !next.steps) throw new Error('Invalid onboarding response.');
-      state.onboarding = { ...next, guideOpen: false };
+      state.onboarding = next;
       welcomeSession.close();
       renderOnboarding();
       return true;
@@ -761,14 +782,18 @@ function setupHomePage() {
     if (await dismissWelcome()) window.location.href = destination;
   }
 
-  async function toggleGuide(hidden) {
+  async function hideGuide() {
     if (!state.onboarding) return;
     try {
-      const response = await updateOnboardingPresentation({ guide_hidden: hidden });
+      const response = await updateOnboardingPresentation({ guide_hidden: true });
       const next = response?.onboarding;
       if (!next?.status || !next.steps) throw new Error('Invalid onboarding response.');
-      state.onboarding = { ...next, guideOpen: !hidden };
+      state.onboarding = next;
+      guideExplicitlyOpen = false;
       renderOnboarding();
+      window.requestAnimationFrame(() => {
+        if (onboardingGuide.hidden) document.getElementById('userBadge')?.focus();
+      });
     } catch {
       showShellToast(i18n?.messages ?? {}, 'home.onboarding.saveError', 'error');
     }
@@ -810,6 +835,7 @@ function setupHomePage() {
   async function loadOnboarding() {
     state.onboarding = await fetchOnboarding();
     renderOnboarding();
+    if (guideOpenPending) requestSetupGuide();
   }
 
   async function loadHeroQuote() {
@@ -872,9 +898,8 @@ function setupHomePage() {
       onboardingWelcomeSlides[welcomeSession.slide]?.querySelector('h2')
     );
   });
-  onboardingHide?.addEventListener('click', () => toggleGuide(true));
-  onboardingReopen?.addEventListener('click', () => toggleGuide(false));
-  onboardingReopenHidden?.addEventListener('click', () => toggleGuide(false));
+  onboardingHide?.addEventListener('click', hideGuide);
+  document.addEventListener('kinesis:open-setup-guide', requestSetupGuide);
 
   document.addEventListener('kinesis:preferences-changed', (event) => {
     const next = event.detail?.first_day_of_week;

@@ -121,6 +121,7 @@ test('every sidebar label key resolves in both locale files', () => {
     'shell.logout',
     'shell.userMenu',
     'shell.changePassword',
+    'shell.setupGuide',
     'shell.confirm.yes',
     'shell.confirm.no',
   ];
@@ -474,7 +475,7 @@ test('shell.css gives nav-item flex layout so the soon-chip does not overlap the
 
 /* ── Global user menu (dropdown + chevron) ── */
 
-test('buildUserMenu nests the chevron in the badge and ships the change-password item', () => {
+test('buildUserMenu nests the chevron in the badge and ships authenticated menu items', () => {
   const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
 
   assert.match(js, /export function buildUserMenu\(\)/, 'the user menu factory is exported');
@@ -506,6 +507,10 @@ test('buildUserMenu nests the chevron in the badge and ships the change-password
     /changePasswordLabel\.textContent = 'Change Password';/,
     'the item has a visible fallback string'
   );
+  assert.match(js, /setupGuide\.id = 'userSetupGuide';/);
+  assert.match(js, /const setupGuideIcon = icon\('list-checks'\);/);
+  assert.match(js, /setupGuideIcon\.setAttribute\('aria-hidden', 'true'\);/, 'the guide icon is decorative');
+  assert.match(js, /setupGuideLabel\.setAttribute\('data-i18n', 'shell\.setupGuide'\)/);
 
   const css = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.css'), 'utf8');
   assert.match(css, /\.user-menu \{[^}]*position:\s*relative/, 'the menu anchors the dropdown');
@@ -542,6 +547,7 @@ test('buildUserMenu nests the chevron in the badge and ships the change-password
     /\.user-menu-item:hover \{[^}]*background:\s*rgba\(111, 144, 112, 0\.12\);/,
     'the hover state is clearly visible against the dropdown'
   );
+  assert.match(css, /\.user-menu-item:focus-visible \{[^}]*outline:\s*2px solid var\(--accent-deep\)/, 'account menu items retain visible keyboard focus');
 });
 
 test('wireUserMenu binds the badge click to toggle helpers and the item to the modal', () => {
@@ -720,7 +726,10 @@ test('the user menu injects a clickable dropdown and the change-password item op
   }
 
   const originalDocument = globalThis.document;
+  const originalWindow = globalThis.window;
   const body = fakeEl('body');
+  const dispatchedEvents = [];
+  globalThis.window = { location: { pathname: '/home.html', href: 'https://kinesis.test/home.html', origin: 'https://kinesis.test', assign: (url) => dispatchedEvents.push(url) } };
   globalThis.document = {
     createElement: fakeEl,
     body,
@@ -728,6 +737,7 @@ test('the user menu injects a clickable dropdown and the change-password item op
     addEventListener: (type, fn) => {
       (docListeners[type] ??= []).push(fn);
     },
+    dispatchEvent: (event) => dispatchedEvents.push(event.type),
     querySelectorAll: () => [],
   };
 
@@ -744,6 +754,7 @@ test('the user menu injects a clickable dropdown and the change-password item op
     const dropdown = registry.get('userDropdown');
     const changePassword = registry.get('userChangePassword');
     const preferences = registry.get('userPreferences');
+    const setupGuide = registry.get('userSetupGuide');
 
     assert.ok(menu.className === 'user-menu', 'the wrapper renders as .user-menu');
     assert.equal(badge.tag, 'button', 'the badge renders as a button');
@@ -770,6 +781,12 @@ test('the user menu injects a clickable dropdown and the change-password item op
     assert.equal(preferences.className, 'user-menu-item');
     assert.equal(preferences.children[0].attrs['data-lucide'], 'settings');
     assert.equal(preferences.children[1].textContent, 'Preferences');
+    assert.equal(setupGuide.tag, 'button');
+    assert.equal(setupGuide.className, 'user-menu-item');
+    assert.equal(setupGuide.children[0].attrs['data-lucide'], 'list-checks');
+    assert.equal(setupGuide.children[0].attrs['aria-hidden'], 'true');
+    assert.equal(setupGuide.children[1].attrs['data-i18n'], 'shell.setupGuide');
+    assert.equal(setupGuide.children[1].textContent, 'Setup guide');
 
     wireUserMenu();
 
@@ -801,6 +818,15 @@ test('the user menu injects a clickable dropdown and the change-password item op
     document.getElementById('closePreferencesBtn').listeners['click'][0]();
     assert.ok(preferencesModal.classList.contains('hidden'));
 
+    badge.listeners['click'][0]({ stopPropagation() {} });
+    setupGuide.listeners['click'][0]();
+    assert.ok(dropdown.classList.contains('hidden'), 'activating the guide closes the user dropdown');
+    assert.equal(dispatchedEvents.at(-1), 'kinesis:open-setup-guide', 'the dashboard uses an event without navigation');
+    globalThis.window.location.pathname = '/shoes.html';
+    globalThis.window.location.href = 'https://kinesis.test/shoes.html?keep=1#shoes';
+    setupGuide.listeners['click'][0]();
+    assert.equal(dispatchedEvents.at(-1), '/home.html?keep=1&openSetupGuide=1#shoes', 'other pages navigate with a transient signal while retaining relevant URL state');
+
     changePassword.listeners['click'][0]();
     modal.listeners['click'][0]({ target: modal });
     assert.ok(modal.classList.contains('hidden'), 'clicking the backdrop closes the modal');
@@ -820,6 +846,7 @@ test('the user menu injects a clickable dropdown and the change-password item op
     assert.equal(badge.attrs['aria-expanded'], 'false', 'outside click resets the aria state');
   } finally {
     globalThis.document = originalDocument;
+    globalThis.window = originalWindow;
   }
 });
 
@@ -927,6 +954,11 @@ test('the change-password menu item links to the modal label through the shell n
   assert.equal(pt.shell.changePassword, 'Alterar Senha');
   assert.equal(en.password.menuLabel, en.shell.changePassword);
   assert.equal(pt.password.menuLabel, pt.shell.changePassword);
+});
+
+test('the setup-guide account menu label is localized', () => {
+  assert.equal(en.shell.setupGuide, 'Setup guide');
+  assert.equal(pt.shell.setupGuide, 'Guia de configuração');
 });
 
 test('reapplyPasswordErrors re-renders visible errors in the new language', () => {

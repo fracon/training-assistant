@@ -119,6 +119,9 @@ export function createWelcomePreviewSession() {
       mode = 'automatic';
       slide = 0;
     },
+    suppressAutomatic() {
+      suppressAutomaticWelcome = true;
+    },
     setSlide(index, total) {
       slide = onboardingSlideNavigation(index, total).current;
       return slide;
@@ -139,19 +142,22 @@ export function createWelcomePreviewSession() {
   };
 }
 
-export function onboardingPresentation(state = {}) {
+export function onboardingPresentation(state = {}, explicitlyOpen = false) {
   const progress = calculateOnboardingProgress(state);
-  if (!isNewUserOnboarding(state)) {
-    return { ...progress, guideOpen: false, guideVisible: false, completionVisible: false, reopenVisible: false };
-  }
-  const guideOpen = progress.complete ? Boolean(state.guideOpen) : !state.guideHidden;
+  const hasKnownStatus = ['new', 'active', 'legacy'].includes(state?.status);
+  const automaticallyVisible = isNewUserOnboarding(state) && !progress.complete && !state.guideHidden;
   return {
     ...progress,
-    guideOpen,
-    guideVisible: guideOpen,
-    completionVisible: progress.complete && !guideOpen,
-    reopenVisible: !progress.complete && !guideOpen,
+    guideVisible: hasKnownStatus && (explicitlyOpen || automaticallyVisible),
   };
+}
+
+export function consumeSetupGuideSignal(href, replaceUrl) {
+  const url = new URL(href);
+  if (url.searchParams.get('openSetupGuide') !== '1') return false;
+  url.searchParams.delete('openSetupGuide');
+  replaceUrl(`${url.pathname}${url.search}${url.hash}`);
+  return true;
 }
 
 export function backgroundInertTargets(elements, modal) {

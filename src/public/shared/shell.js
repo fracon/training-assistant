@@ -225,6 +225,17 @@ export function buildUserMenu() {
   preferencesLabel.textContent = 'Preferences';
   preferences.appendChild(preferencesLabel);
   dropdown.appendChild(preferences);
+  const setupGuide = el('button', 'user-menu-item');
+  setupGuide.type = 'button';
+  setupGuide.id = 'userSetupGuide';
+  const setupGuideIcon = icon('list-checks');
+  setupGuideIcon.setAttribute('aria-hidden', 'true');
+  setupGuide.appendChild(setupGuideIcon);
+  const setupGuideLabel = el('span');
+  setupGuideLabel.setAttribute('data-i18n', 'shell.setupGuide');
+  setupGuideLabel.textContent = 'Setup guide';
+  setupGuide.appendChild(setupGuideLabel);
+  dropdown.appendChild(setupGuide);
   menu.appendChild(dropdown);
   return menu;
 }
@@ -817,6 +828,21 @@ export function wireUserMenu() {
   });
   document.getElementById('userPreferences').addEventListener('click', () => {
     openPreferencesModal();
+  });
+  document.getElementById('userSetupGuide').addEventListener('click', () => {
+    closeUserMenu();
+    if (window.location.pathname === '/home.html') {
+      document.dispatchEvent(new CustomEvent('kinesis:open-setup-guide'));
+      return;
+    }
+    const currentUrl = new URL(window.location.href);
+    const destination = new URL('/home.html', window.location.origin);
+    for (const [key, value] of currentUrl.searchParams) {
+      if (key !== 'openSetupGuide') destination.searchParams.append(key, value);
+    }
+    destination.searchParams.set('openSetupGuide', '1');
+    destination.hash = currentUrl.hash;
+    window.location.assign(`${destination.pathname}${destination.search}${destination.hash}`);
   });
 }
 

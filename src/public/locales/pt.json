@@ -96,6 +96,7 @@
     "userMenu": "Menu da conta",
     "changePassword": "Alterar Senha",
     "preferences": "Preferências",
+    "setupGuide": "Guia de configuração",
     "confirm": {
       "yes": "Excluir",
       "no": "Cancelar"
@@ -693,11 +694,7 @@
       "completed": "Concluído",
       "nextBadge": "Próximo",
       "hide": "Ocultar guia",
-      "reopen": "Abrir guia de configuração",
       "next": "Próxima etapa",
-      "completeTitle": "Seu espaço de treino está pronto",
-      "completeText": "Você pode rever estas orientações quando quiser.",
-      "completeToast": "Configuração concluída — seu espaço de treino está pronto.",
       "shoesTitle": "Cadastre seus tênis",
       "shoesText": "O Kinesis acompanha a rodagem quando você registra os resultados dos treinos.",
       "shoesAction": "Cadastrar meus tênis",
