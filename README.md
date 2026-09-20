@@ -1,6 +1,6 @@
 # Kinesis
 
-A **secure, self-hosted, multi-user web application** for managing training logs — drop a Garmin `.FIT` file into the browser, add how the workout felt, and get back a ready-to-paste markdown prompt for your AI coach.
+A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized prompts for an AI coach.
 
 Current application version: **0.10.0** (active development).
 
@@ -29,15 +29,15 @@ entry. Legacy shoe labels remain a presentation fallback when loading the
 associated shoe is not possible; FIT, ZIP-extracted FIT, and manual results all
 use canonical `fit_distance` in kilometres.
 
-Every account is protected with server-side sessions. FIT files and training data are processed locally on your machine; the optional weather auto-fill sends only the planned location to Open-Meteo, and the dashboard's optional running-photo request sends a generic running image query to Unsplash. No FIT file or training data is sent to either service.
+Authenticated pages and APIs use server-side sessions. FIT files and workout data are processed by the Kinesis application server, not sent to external processing services. Optional weather lookup sends the planned location and date to Open-Meteo. If `UNSPLASH_ACCESS_KEY` (or its accepted legacy alias `UNSPLASH_API_KEY`) is configured, the Kinesis server asks Unsplash for a generic running image and registers the image download. The dashboard makes a daily quote request to ZenQuotes and falls back to bundled localized quotes. These integrations do not send FIT files, workout data, or user-entered training context; as with other network requests, providers may receive connection metadata such as the requesting IP address.
 
 ## Why
 
-New accounts see a compact onboarding guide on the home dashboard. Its three
-steps are derived from the authenticated user's shoes, active cycle, and
-planned trainings; hiding the guide stores only a presentation preference.
-Existing accounts are marked as legacy during migration and do not receive the
-first-visit welcome modal.
+New accounts receive a short PT/EN welcome carousel and a non-blocking setup
+guide. The guide's three steps are derived from that user's shoes, active cycle,
+and planned workout records. Dismissing welcome or hiding the guide changes only
+presentation state; opening the guide from the user menu is transient. Legacy
+accounts do not receive welcome automatically.
 
 AI coaches are only as good as the data you give them. Exporting workouts by hand means losing detail. Kinesis turns the raw `.FIT` file your watch already recorded into a structured, metric-rich review request in seconds — so every recommendation from your AI coach is grounded in real numbers.
 
@@ -47,9 +47,10 @@ AI coaches are only as good as the data you give them. Exporting workouts by han
 - **User accounts & security** — email/password registration and sign-in backed by Node's native `crypto` (`scrypt`) password hashing.
 - **Secure sessions** — 256-bit random session tokens stored in SQLite, delivered as `HttpOnly` / `Secure` / `SameSite=Lax` cookies with server-side expiry.
 - **Server-side route gating** — unauthenticated visitors are redirected to the login page by Fastify itself; the training tool is never rendered without a valid session.
-- **User dropdown menu** — the user badge in the topbar opens a dropdown with account actions, including **Change Password**.
+- **User dropdown menu** — the authenticated user badge opens **Setup guide**, **Change Password**, and **Preferences**. Logout remains a separate topbar action.
 - **Secure change password flow** — a dedicated modal with client-side validation that accumulates every problem into a robust grouped error box (the only error surface — no stray inline hints), backed by hardened `scrypt` verification of the current password before re-hashing and storing the new one.
 - **Global route guards** — the Training Calendar is strictly gated: users without an active Training Cycle are redirected to the Cycles page by the server, and cycle-dependent navigation is disabled in the shell as a second line of defense.
+- **New-user onboarding** — the first-visit welcome and three-step setup checklist are available in English and Brazilian Portuguese. The guide can be reopened from the user dropdown without changing progress or presentation preferences.
 - **One-click logout** — invalidates the session on the server and clears the cookie.
 
 ### User Preferences Module
@@ -80,7 +81,7 @@ backend.
   - Ascent / descent (m)
   - Average & max cadence (steps/min)
   - Stride length (m) & calories (kcal)
-- **Structured coach prompt** — planned vs. realized workout, conditions, equipment, perceived effort (RPE 1–5), breathing/muscle/energy feedback, and free-form notes are merged into a professional PT-BR coaching template.
+- **Structured coach prompt** — planned vs. realized workout, conditions, equipment, perceived effort (RPE 1–5), breathing/muscle/energy feedback, and free-form notes are merged into a localized Portuguese or English coaching template.
 - **Workout totals computed automatically** — total duration, distance, average pace, weighted average HR, max HR, and ascent.
 - **Step classification** — laps labeled as Warmup, Run, Rest, or Cooldown when intensity data is present.
 - **One-click copy** — review the generated markdown on screen, then copy it straight to your clipboard.
@@ -131,7 +132,7 @@ the file is required to recover calories safely.
 
 ### Running version in the footer
 
-The footer fetches the version from the backend process at `/api/version` with cache disabled (`Cache-Control: no-store` and `fetch(..., { cache: 'no-store' })`). It therefore reflects the version actually running on the server, rather than a cached response. Updating `package.json` alone cannot update an already-running Node process: restart local development if its watcher does not reload package metadata, and rebuild/pull the new Docker image then restart the container in deployment. Cache prevention avoids stale responses; it cannot make a backend still running `0.6.4` report `0.7.0`.
+The footer fetches `/api/version` without caching, so it reflects the running backend process. Restart the local process or rebuild and restart the deployed container after changing the application version.
 
 #### Dynamic Training Prompt Generator
 
@@ -142,11 +143,47 @@ The generated briefing is fully localized: the Portuguese (`pt-BR`) and English 
 ### Home Dashboard
 
 - **Current cycle overview** — cycle title, primary goal, target date, progress, and localized metadata render independently.
-- **Weekly tracker first** — the “This Week” card places the Monday–Sunday tracker above accumulated distance/time tiles. Active days use compact minimalist pills with a Lucide `sport-shoe` icon; empty days remain muted and borderless.
+- **Weekly tracker first** — the “This Week” card places the week tracker above accumulated distance/time tiles. Its order follows the account's Monday/Sunday week-start preference. Active days use compact pills with a Lucide `sport-shoe` icon.
 - **Card navigation** — subtle Lucide `external-link` actions link the cycle card to `/cycles.html` and the weekly card to `/calendar.html`.
 - **Responsive weekly metrics** — completed workout distance and duration are read from the calendar API (`fit_distance`/`fit_duration`), normalized, summed, and formatted in dashboard units.
 - **Shoe Rotation widget** — tracks active shoes and renders a dynamic “traffic light” progress bar (green → yellow → red) showing each pair's mileage against its useful lifespan, so runners know at a glance when it is time to replace their gear. Wear level uses the per-shoe target mileage (defaulting to 500 km / 300 mi), distances respect the dashboard unit preference, and the bar turns yellow at 75% and red at 90% of usable life.
-- **Accessible quote hero** — the dashboard requests a running-focused image through the optional Unsplash proxy. The server keeps the response in a 20-minute in-memory TTL cache (protecting the 1,000 requests/hour production limit), triggers the required download event, hotlinks the returned image, and renders explicit photographer/Unsplash attribution. Missing keys, rate limits, and network failures use a bundled local image without disrupting the dashboard. Loading text, quote text, and author each have dark semitransparent contrast backdrops for legibility over bright photos.
+- **Accessible quote hero** — the dashboard can request a generic running image through the optional Unsplash API proxy. The server caches the result in memory for 20 minutes, registers the required download event, hotlinks the returned image, and renders photographer/Unsplash attribution. Without a key or if the request fails, it uses a bundled local image. The browser makes a daily ZenQuotes request for the quote where available; failures use localized bundled quotes. Neither request includes workout data or user-entered training context, though network providers may see the requester’s connection metadata. Loading text, quote text, and author each have dark semitransparent contrast backdrops for legibility over bright photos.
+
+### New-user onboarding
+
+While a newly registered account has onboarding status `new`, the dashboard
+automatically shows a three-slide welcome modal: add shoes, create a cycle, and
+prepare workouts. Its primary links lead to
+the existing shoe and cycle flows. The workout-planning slide opens AI Coach or
+spreadsheet import when a cycle exists; otherwise it directs the user to create
+the required cycle first. The welcome is not a required tour. “Not now” persists
+dismissal by changing
+`onboarding_status` from `new` to `active` through the presentation endpoint.
+
+The compact checklist appears automatically while incomplete and not hidden by
+the saved preference. Its steps are calculated from data owned by the signed-in
+user: at least one shoe row, an active cycle, and at least one planned training
+row. Seeing a screen or choosing an action does not complete a step. Newly
+registered users start with status `new`; existing database users receive
+`legacy` as the default when the migration adds the status column, so they do
+not get the welcome automatically. Legacy accounts can still open the guide.
+
+When the three steps are complete, or the user hides the checklist, it is absent
+from the normal dashboard layout. The user can open **Setup guide** / **Guia de
+configuração** from the account menu on any authenticated page. On the dashboard
+the shell sends a page-local event; elsewhere it navigates to
+`/home.html?openSetupGuide=1`. The dashboard consumes that exact signal and
+removes it from the URL while preserving other query parameters and the hash.
+This opening is transient: it changes no progress, onboarding status, or saved
+presentation preference. An explicitly opened guide can show all completed
+steps, including for legacy accounts; opening the guide does not open the welcome
+modal. “Hide guide” saves only the per-user
+hidden preference; it does not change step data. An incomplete checklist appears
+automatically only while `guide_hidden` is false; after completion it remains
+absent unless explicitly opened from the menu.
+
+The backend contract, persisted fields, derived response fields, and migration
+defaults are documented under [Onboarding API](#onboarding-api).
 
 ### Date and Locale Architecture
 
@@ -220,7 +257,7 @@ npm install
 npm start
 ```
 
-Then open <http://127.0.0.1:3000> — you'll land on the login page. Create an account (first run) and sign in to reach the training tool. The SQLite database is created automatically at `data/database.sqlite`.
+Then open <http://127.0.0.1:3000> — you'll land on the login page. Create an account (first run) and sign in to reach the dashboard. The SQLite database is created automatically at `data/database.sqlite` unless `DATABASE_FILE` overrides it.
 
 | Command | Description |
 |---|---|
@@ -240,9 +277,13 @@ Configuration via environment variables:
 | `DATABASE_FILE` | `<cwd>/data/database.sqlite` | SQLite database location |
 | `UNSPLASH_ACCESS_KEY` | _optional_ | Unsplash Access Key sent as `Authorization: Client-ID ...` for the running-photo hero. Responses are cached for 20 minutes to minimize API calls. |
 
-For local setup, copy `.env.example` to `.env`, put your Unsplash **Access Key**
-in `UNSPLASH_ACCESS_KEY`, and start with `node --env-file=.env src/start.js` (or export
-the variable before `npm start`). For Docker Compose, put the same variable in
+`UNSPLASH_API_KEY` is also accepted as a legacy alias by the server. `dotenv`
+loads `.env` from the process working directory at startup; the environment
+values above are the supported runtime configuration.
+
+For local setup, optionally copy `.env.example` to `.env` and put your Unsplash **Access Key**
+in `UNSPLASH_ACCESS_KEY`; `dotenv` loads `.env` when `npm start` runs. The server also accepts the legacy
+`UNSPLASH_API_KEY` alias. For Docker Compose, put the Access Key variable in
 the `.env` file beside `docker-compose.yml`; Compose passes it into the server
 container. Kinesis works without the key by using the bundled local fallback
 image. The key is server-only and must never be placed in frontend files or
@@ -250,14 +291,15 @@ committed to Git.
 
 ## Usage
 
-1. Open the app — you are presented with the **Sign In** page. New here? Follow **Register** to create an account (first name, last name, email, password of at least 8 characters).
-2. After signing in you reach the **Home** dashboard. Open the Calendar, select a planned training, and complete the Training Result form with conditions, gear, perceived effort (RPE 1–5), and feedback.
-3. In **How would you like to register the result?**, choose **Import FIT or ZIP file** for detailed activity data, or **Enter data manually** for aggregate distance and duration (with optional HR, elevation, and calories).
-4. Review the result and feedback. Choose **Save and back to calendar** to persist and return, or **Save and Generate Analysis Prompt** to persist the complete state and render the canonical prompt.
-5. In the generated prompt section, select **Copy to clipboard** and paste it into your favorite AI assistant.
-6. When you're done, hit **Logout** in the header — the session is destroyed server-side.
+1. Open **Sign In**. Create an account through **Register** (first name, last name, email, and password of at least 8 characters) or sign in to an existing account.
+2. A new account is offered the optional PT/EN welcome carousel. Use its actions to register shoes, create a cycle, then prepare workouts with AI Coach or import an Excel plan. You may skip it and use the application freely; the dashboard checklist tracks data actually saved.
+3. Open the **Calendar**, choose a planned training, and enter conditions, shoes, perceived effort (RPE 1–5), and feedback on its result page.
+4. Choose **Import FIT or ZIP file** for activity data, or **Enter data manually** for aggregate distance and duration (with optional heart rate, elevation, and calories). A FIT/ZIP upload is persisted when its upload request succeeds.
+5. **Save and back to calendar** saves any pending manual result and complete feedback, then returns to the calendar. **Save and Generate Analysis Prompt** saves those data first, then generates the prompt from the canonical training state returned by the backend.
+6. Copy the generated prompt to your chosen AI assistant. Kinesis does not send the prompt to an LLM.
+7. Use **Logout** in the top bar to end the server-side session.
 
-The generated prompt follows an exact PT-BR template (defined in `src/markdownGenerator.js`). A trimmed excerpt:
+The result-analysis prompt is localized in Portuguese or English. A Portuguese excerpt:
 
 ```markdown
 Analise o treino de corrida abaixo considerando todo o histórico do meu treinamento…
@@ -306,6 +348,79 @@ INSTRUÇÕES PARA A ANÁLISE
 - **Route gating at the server** — pages and protected APIs validate the session against the database before rendering or responding.
 
 ## API
+
+Except for the public version and authentication routes, these API endpoints
+require the authenticated `ta_session` cookie. Protected data reads and writes
+are scoped to the signed-in user's records.
+
+### Route index
+
+| Method and path | Access | Purpose |
+|---|---|---|
+| `GET /api/version` | Public | Running application version |
+| `POST /api/auth/register` | Public | Create account |
+| `POST /api/auth/login` | Public | Authenticate and set session cookie |
+| `POST /api/auth/logout` | Public | Invalidate the current session if present and clear cookie |
+| `GET /api/me` | Session | Current account and preferences |
+| `GET /api/onboarding` | Session | Data-derived onboarding state |
+| `PATCH /api/onboarding/presentation` | Session | Update welcome/guide presentation preferences |
+| `GET /api/hero-image` | Session | Optional Unsplash image proxy/fallback |
+| `PUT /api/auth/password` | Session | Change password |
+| `PATCH /api/users/me/language` | Session | Update language preference |
+| `PATCH /api/users/me/calendar-preference` | Session | Update week-start preference |
+| `PATCH /api/users/me/preferences` | Session | Update distance/temperature preferences |
+| `GET /api/calendar/trainings` | Session | Read calendar trainings |
+| `POST /api/calendar/import` | Session | Import spreadsheet rows |
+| `GET /api/trainings/:id` | Session | Read one owned training |
+| `PATCH /api/trainings/:id` | Session | Update training fields and feedback |
+| `PATCH /api/trainings/:id/reschedule` | Session | Reschedule an owned training |
+| `PUT /api/trainings/:id/manual-results` | Session | Save manual result |
+| `POST /api/trainings/:id/fit` | Session | Upload and persist FIT or single-FIT ZIP result |
+| `DELETE /api/trainings/:id` | Session | Delete an owned training |
+| `POST /api/fit/parse` | Session | Parse a FIT upload and return analysis data |
+| `GET /api/weather` | Session | Resolve planned location and date through Open-Meteo |
+| `GET /api/cycles` | Session | List owned cycles |
+| `GET /api/cycles/active` | Session | Read active cycle |
+| `POST /api/cycles` | Session | Create cycle |
+| `PUT /api/cycles/:id` | Session | Update owned cycle |
+| `DELETE /api/cycles/:id` | Session | Delete owned cycle |
+| `GET /api/cycles/:id/prompt` | Session | Read cycle prompt context |
+| `GET /api/shoes` | Session | List owned shoes |
+| `POST /api/shoes` | Session | Create shoe |
+| `PUT /api/shoes/:id` | Session | Update owned shoe |
+| `DELETE /api/shoes/:id` | Session | Delete owned shoe |
+
+Endpoint-specific validation and error statuses are described below where
+documented; inspect the route handlers in `src/server.js` and their route
+modules for the complete response contract.
+
+### Onboarding API
+
+`GET /api/onboarding` requires a valid session, returns `401` otherwise, and
+responds `200` with `{ "onboarding": state }`. The state fields are `status`
+(`new`, `active`, or `legacy`), `guideHidden`, `steps` (`shoes`, `cycle`,
+`trainings` booleans), `completed`, `total` (3), `complete`, and
+`firstTrainingId` (number or `null`). Step completion is derived from records
+owned by the authenticated user: any shoe, an active cycle, and any planned
+training row, respectively.
+
+`PATCH /api/onboarding/presentation` also requires a session. Its JSON body must
+contain one or both of `welcome_dismissed` and `guide_hidden`, each a boolean.
+An empty body/object, unknown key, or non-boolean value returns `400`; a valid
+request returns `200` with `{ "onboarding": <refreshed state> }`. The persisted
+columns are `users.onboarding_status` and `users.onboarding_guide_hidden`:
+
+- `welcome_dismissed: true` changes only status `new` to `active`; no separate
+  dismissed boolean is stored, and other statuses remain unchanged.
+- `guide_hidden` stores the per-user presentation preference as integer 0/1.
+- Neither preference stores progress; progress is recalculated from owned data.
+- Registration explicitly creates users with status `new`. The idempotent
+  schema initialization adds the status column with default `legacy` and the
+  hidden preference with default `0`, so existing accounts do not receive the
+  welcome automatically and their checklist is initially unhidden.
+
+`openSetupGuide=1` is a transient frontend navigation signal, not an API field
+or persisted preference.
 
 ### `PUT /api/trainings/:id/manual-results`
 
@@ -413,28 +528,22 @@ Returns `200` with `{ location, latitude, longitude, date, temperature_c, weathe
 | `404` | Location could not be geocoded |
 | `502` | Open-Meteo is unreachable and no fallback answered |
 
-#### `GET /api/onboarding`
-
-Returns the authenticated user's onboarding state and three data-derived steps
-(`shoes`, `cycle`, and `trainings`). It returns `401` without a session.
-`PATCH /api/onboarding/presentation` accepts only the boolean
-`welcome_dismissed` and/or `guide_hidden` preferences and returns refreshed
-state; unsupported or non-boolean values return `400`.
-
 ## Frontend Architecture
 
 Every primary flow is a standalone page (no single-page hacks, no overlapping layout states):
 
 | Page | Files | Purpose |
 |---|---|---|
-| Login | `src/public/login.html/.css/.js` | Sign-in form only |
-| Register | `src/public/register.html/.css/.js` | Sign-up form with aggregated validation errors and success toast |
-| TrainingResult | `src/public/training-result.html/.css/.js` | Contextual FIT/ZIP and manual result capture, gated behind a session |
-| Home | `src/public/home.html/.css/.js` | Authenticated dashboard with onboarding, cycle, weekly metrics, tracker, and quote hero |
-| Calendar | `src/public/calendar.html/.css/.js` | Monthly training calendar and deduplicating Excel import |
-| AI Coach | `src/public/ai-coach.html/.css/.js` | Local prompt builder for weekly coaching plans |
+| Login | `src/public/login.html` · `src/public/login.css` · `src/public/login.js` | Sign-in form only |
+| Register | `src/public/register.html` · `src/public/register.css` · `src/public/register.js` | Sign-up form with aggregated validation errors and success toast |
+| Training result | `src/public/training-result.html` · `src/public/training-result.css` · `src/public/training-result.js` | Contextual FIT/ZIP and manual result capture, gated behind a session |
+| Home | `src/public/home.html` · `src/public/home.css` · `src/public/home.js` | Authenticated dashboard with onboarding, cycle, weekly metrics, tracker, and quote hero |
+| Calendar | `src/public/calendar.html` · `src/public/calendar.css` · `src/public/calendar.js` | Monthly training calendar and deduplicating Excel import |
+| AI Coach | `src/public/ai-coach.html` · `src/public/ai-coach.css` · `src/public/ai-coach.js` | Local prompt builder for weekly coaching plans |
+| Cycles | `src/public/cycles.html` · `src/public/cycles.css` · `src/public/cycles.js` | Training-cycle management |
+| Shoes | `src/public/shoes.html` · `src/public/shoes.css` · `src/public/shoes.js` | Shoe rotation and mileage management |
 
-Shared code lives in `src/public/shared/`: `theme.css` (earthy color tokens, DM Sans, resets), `validators.js` and `api.js` ES modules imported by the page scripts. Backend spreadsheet parsing is provided by the `xlsx` (SheetJS) dependency and normalized centrally in `src/trainingImport.js`.
+Shared code lives in `src/public/shared/`: `shell.js` injects the authenticated shell and user menu; `onboarding.js` owns welcome/checklist state and the transient guide signal; `i18n.js` and `locales/` provide PT/EN; `theme.css` owns tokens and shared controls; `api.js`, validators, date, units, preferences, and supporting modules are reused by pages. `src/trainingImport.js` normalizes SheetJS workbook data on the backend.
 
 ## Project Structure
 
@@ -443,22 +552,33 @@ Shared code lives in `src/public/shared/`: `theme.css` (earthy color tokens, DM 
 │   └── workflows/
 │       └── docker-publish.yml  # CI/CD: build & push image to GHCR on pushes to main
 ├── src/
-│   ├── server.js               # Fastify app: route gating, auth endpoints, .FIT parsing
-│   ├── start.js                # Entry point (reads PORT/HOST/DATABASE_FILE env vars)
+│   ├── server.js               # Fastify route registration, page gating and shared APIs
+│   ├── start.js                # Entry point (PORT/HOST/DATABASE_FILE and dotenv)
 │   ├── fitParser.js            # .FIT → normalized activity/lap/totals summary
-│   ├── markdownGenerator.js    # Summary + form payload → PT-BR AI coach prompt
-│   ├── auth/                   # passwords (scrypt), registration, login, sessions, requireAuth
-│   ├── db/                     # SQLite setup (better-sqlite3, WAL, FKs, schema)
-│   └── public/                 # Multi-page frontend (auth, home, calendar, AI Coach, FIT session)
-│       └── shared/             # theme.css + ES modules (shell, i18n, validators, onboarding, API helpers)
+│   ├── markdownGenerator.js    # Training feedback → localized analysis prompt
+│   ├── auth/                   # Passwords (scrypt), registration, sessions and auth guard
+│   ├── db/                     # SQLite schema, initialization and idempotent migrations
+│   ├── cycles.js               # Training-cycle persistence and prompt context
+│   ├── shoes.js                # Shoe data and mileage ledger
+│   ├── trainingImport.js       # Workbook row validation and normalization
+│   └── public/                 # Standalone login/register/home/result/calendar/coach/cycles/shoes pages
+│       ├── locales/            # English and Brazilian Portuguese dictionaries
+│       └── shared/             # Shell, onboarding, i18n, theme, API, date, units, preferences
 ├── scripts/
 │   ├── tryRealFit.js           # CLI sanity check: parse a real file or generate a synthetic .FIT
+│   ├── update-qa-location.js   # QA-only mutation of fixed-date rows in local data/database.sqlite
 │   └── deploy-zimaos.sh        # Server-side helper: docker compose pull && up -d
 ├── test/                       # node:test suites + .FIT fixture builder helper
 ├── Dockerfile                  # Production image (node:24-alpine)
 ├── docker-compose.yml          # ZimaOS production deployment
-└── package.json
+├── docs/                       # Product and import compatibility documentation
+├── .env.example                # Optional Unsplash key template
+├── package.json                # Version and npm scripts
+└── package-lock.json           # Locked dependency tree
 ```
+
+`scripts/update-qa-location.js` is a QA-only data-writing utility for the
+specific date encoded in that script; do not run it against production data.
 
 ---
 
@@ -511,6 +631,8 @@ services:
     restart: unless-stopped
     ports:
       - "8081:3000"
+    environment:
+      - UNSPLASH_ACCESS_KEY=${UNSPLASH_ACCESS_KEY:-}
     volumes:
       - ./data:/app/data
 ```
@@ -562,7 +684,7 @@ node scripts/tryRealFit.js path/to/activity.fit
 - [Fastify](https://fastify.dev/) with `@fastify/multipart`, `@fastify/static`, and `@fastify/cookie`
 - [better-sqlite3](https://github.com/WiseLibs/better-sqlite3) for storage — strictly prepared statements, WAL mode, enforced foreign keys
 - [fit-file-parser](https://www.npmjs.com/package/fit-file-parser) for binary `.FIT` decoding
-- Multi-page vanilla HTML/CSS/JS frontend (login / register / training-result) with shared ES modules and DM Sans typography — zero build step
+- Multi-page vanilla HTML/CSS/JS frontend (login, register, dashboard, training result, calendar, AI Coach, cycles, shoes) with shared ES modules, PT/EN translations, and DM Sans — zero build step
 - Authentication built on Node's native `node:crypto` (`scrypt` hashing, timing-safe comparison, `randomBytes` session tokens)
 - [`node --test`](https://nodejs.org/api/test.html) + [c8](https://github.com/bcoe/c8) for testing with a hard 100% coverage gate
 - Docker (`node:24-alpine`) deployed on ZimaOS via Docker Compose
