@@ -63,8 +63,8 @@ async function registerUser(db, payload) {
   const passwordHash = await hashPassword(registration.password);
   const result = db
     .prepare(
-      `INSERT INTO users (email, password_hash, first_name, last_name, preferred_lang, first_day_of_week, distance_unit, temperature_unit)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO users (email, password_hash, first_name, last_name, preferred_lang, first_day_of_week, distance_unit, temperature_unit, onboarding_status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'new')`
     )
     .run(
       registration.email,

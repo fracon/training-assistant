@@ -1,8 +1,9 @@
-import { fetchActiveCycle, fetchCalendarTrainings, fetchShoes, fetchHeroImage } from './shared/api.js';
-import { initShell, getShellI18n, getUserPreferences } from './shared/shell.js';
+import { fetchActiveCycle, fetchCalendarTrainings, fetchShoes, fetchHeroImage, fetchOnboarding, updateOnboardingPresentation } from './shared/api.js';
+import { initShell, getShellI18n, getUserPreferences, showShellToast } from './shared/shell.js';
 import { translate } from './shared/i18n.js';
 import { formatDate as formatLocalizedDate } from './shared/date.js';
 import { formatDistance } from './shared/units.js';
+import { calculateOnboardingProgress, renderOnboardingStepStates, onboardingPresentation, consumeSetupGuideSignal, onboardingPlanActions, onboardingSlideNavigation, updateOnboardingDialogA11y, trapOnboardingFocus, createWelcomeSession, backgroundInertTargets } from './shared/onboarding.js';
 
 export const ZENQUOTES_URL = 'https://zenquotes.io/api/today';
 export const QUOTE_TIMEOUT_MS = 3000;
@@ -469,6 +470,19 @@ function setupHomePage() {
   const weekTrackerDays = document.getElementById('weekTrackerDays');
   const shoesEmpty = document.getElementById('shoesEmpty');
   const shoesList = document.getElementById('shoesList');
+  const onboardingGuide = document.getElementById('onboardingGuide');
+  const onboardingEyebrow = document.getElementById('onboardingEyebrow');
+  const onboardingProgress = document.getElementById('onboardingProgress');
+  const onboardingWelcome = document.getElementById('onboardingWelcome');
+  const onboardingDialog = onboardingWelcome?.querySelector('[role="dialog"]');
+  const onboardingHide = document.getElementById('onboardingHide');
+  const onboardingPrevious = document.getElementById('onboardingPrevious');
+  const onboardingNext = document.getElementById('onboardingNext');
+  const onboardingLater = document.getElementById('onboardingLater');
+  const onboardingPlanPrerequisite = document.getElementById('onboardingPlanPrerequisite');
+  const onboardingWelcomeSlides = [...document.querySelectorAll('[data-onboarding-welcome-slide]')];
+  const onboardingSlideControls = [...document.querySelectorAll('[data-onboarding-slide-control]')];
+  const onboardingWelcomeActions = [...document.querySelectorAll('[data-onboarding-action]')];
 
   const state = {
     cycle: null,
@@ -482,9 +496,57 @@ function setupHomePage() {
     temperatureUnit: 'C',
     shoes: [],
     heroCredit: null,
+    onboarding: null,
+    cycleLoaded: false,
   };
 
   let i18n = null;
+  let welcomeReturnFocus = null;
+  let welcomeWasOpen = false;
+  let guideExplicitlyOpen = false;
+  let guideOpenPending = consumeSetupGuideSignal(window.location.href, (url) => {
+    window.history.replaceState(window.history.state, '', url);
+  });
+  const welcomeSession = createWelcomeSession();
+
+  function focusSetupGuide() {
+    window.requestAnimationFrame(() => {
+      if (!onboardingGuide || onboardingGuide.hidden) return;
+      const title = onboardingGuide.querySelector('#onboardingTitle');
+      if (!title) return;
+      const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      onboardingGuide.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'start' });
+      title.focus({ preventScroll: true });
+    });
+  }
+
+  function requestSetupGuide() {
+    welcomeSession.suppressAutomatic();
+    guideOpenPending = true;
+    if (!state.onboarding) return false;
+    guideOpenPending = false;
+    guideExplicitlyOpen = true;
+    renderOnboarding();
+    if (onboardingGuide.hidden) return false;
+    focusSetupGuide();
+    return true;
+  }
+
+  function focusWelcomeTitle() {
+    const title = onboardingWelcomeSlides[welcomeSession.slide]?.querySelector('h2');
+    title?.focus();
+  }
+  let inertBackgroundElements = new Set();
+
+  function setWelcomeBackgroundInert(inert) {
+    if (inert) {
+      inertBackgroundElements = new Set(backgroundInertTargets(document.body.children, onboardingWelcome));
+      for (const element of inertBackgroundElements) element.setAttribute('inert', '');
+      return;
+    }
+    for (const element of inertBackgroundElements) element.removeAttribute('inert');
+    inertBackgroundElements.clear();
+  }
 
   function t(key, params) {
     return translate(i18n ? i18n.messages : {}, key, params);
@@ -607,16 +669,136 @@ function setupHomePage() {
     }
   }
 
+  function renderWelcomeCarousel() {
+    const welcomeSlide = welcomeSession.setSlide(welcomeSession.slide, onboardingWelcomeSlides.length);
+    const navigation = onboardingSlideNavigation(welcomeSlide, onboardingWelcomeSlides.length);
+    const progressLabel = t('home.onboarding.stepProgress', {
+      current: welcomeSlide + 1,
+      total: onboardingWelcomeSlides.length,
+    });
+    for (const [index, slide] of onboardingWelcomeSlides.entries()) {
+      const active = index === welcomeSlide;
+      slide.hidden = !active;
+      slide.setAttribute('aria-hidden', String(!active));
+      const step = slide.querySelector('.onboarding-welcome-step');
+      if (step) step.textContent = progressLabel;
+    }
+    const activeTitle = onboardingWelcomeSlides[welcomeSlide]?.querySelector('h2');
+    updateOnboardingDialogA11y(onboardingDialog, onboardingWelcomeSlides[welcomeSlide]);
+    onboardingPrevious.hidden = navigation.isFirst;
+    onboardingNext.hidden = navigation.isLast;
+    for (const [index, control] of onboardingSlideControls.entries()) {
+      control.setAttribute('aria-current', index === welcomeSlide ? 'step' : 'false');
+    }
+
+    const hasCycle = state.cycleLoaded && Boolean(state.cycle);
+    if (onboardingPlanPrerequisite) onboardingPlanPrerequisite.hidden = hasCycle || welcomeSlide !== 2;
+    const planAction = onboardingWelcomeActions.find((action) => action.closest('[data-onboarding-welcome-slide="2"]'));
+    const planSecondary = document.querySelector('.onboarding-welcome-action-secondary');
+    const planActions = onboardingPlanActions(hasCycle);
+    if (planAction) {
+      planAction.href = planActions.primaryHref;
+      planAction.dataset.i18n = `home.onboarding.${planActions.primaryKey}`;
+      planAction.textContent = t(planAction.dataset.i18n);
+    }
+    if (planSecondary) {
+      planSecondary.hidden = !planActions.secondaryHref;
+      planSecondary.href = planActions.secondaryHref ?? '/cycles.html';
+      planSecondary.textContent = t('home.onboarding.importAction');
+    }
+  }
+
+  function renderOnboarding() {
+    const onboarding = state.onboarding;
+    if (onboarding) {
+      const presentation = onboardingPresentation(onboarding, guideExplicitlyOpen);
+      const progress = calculateOnboardingProgress(onboarding);
+      if (onboardingEyebrow) {
+        onboardingEyebrow.textContent = t(progress.complete
+          ? 'home.onboarding.setupComplete'
+          : 'home.onboarding.nextStep');
+      }
+      if (onboardingProgress) onboardingProgress.textContent = t('home.onboarding.progress', { completed: progress.completed });
+      onboardingGuide.hidden = !presentation.guideVisible;
+      renderOnboardingStepStates(onboardingGuide, progress.steps, progress.nextStep);
+    }
+    renderWelcomeCarousel();
+    const shouldOpen = !guideOpenPending && !guideExplicitlyOpen && welcomeSession.ensureAutomatic(onboarding);
+    if (shouldOpen && !welcomeWasOpen) {
+      welcomeReturnFocus = document.activeElement;
+      onboardingWelcome.hidden = false;
+      onboardingWelcome.setAttribute('aria-hidden', 'false');
+      setWelcomeBackgroundInert(true);
+      renderWelcomeCarousel();
+      focusWelcomeTitle();
+    } else if (!shouldOpen && welcomeWasOpen) {
+      onboardingWelcome.hidden = true;
+      onboardingWelcome.setAttribute('aria-hidden', 'true');
+      setWelcomeBackgroundInert(false);
+      if (welcomeReturnFocus && typeof welcomeReturnFocus.focus === 'function') welcomeReturnFocus.focus();
+      welcomeReturnFocus = null;
+    } else {
+      onboardingWelcome.hidden = !shouldOpen;
+      onboardingWelcome.setAttribute('aria-hidden', String(!shouldOpen));
+    }
+    welcomeWasOpen = shouldOpen;
+  }
+
+  async function dismissWelcome() {
+    if (!state.onboarding) return false;
+    try {
+      const response = await updateOnboardingPresentation({ welcome_dismissed: true });
+      const next = response?.onboarding;
+      if (!next?.status || !next.steps) throw new Error('Invalid onboarding response.');
+      state.onboarding = next;
+      renderOnboarding();
+      return true;
+    } catch {
+      showShellToast(i18n?.messages ?? {}, 'home.onboarding.saveError', 'error');
+      return false;
+    }
+  }
+
+  function closeWelcome() {
+    dismissWelcome();
+  }
+
+  async function followWelcomeAction(event) {
+    event.preventDefault();
+    const destination = event.currentTarget.getAttribute('href');
+    if (await dismissWelcome()) window.location.href = destination;
+  }
+
+  async function hideGuide() {
+    if (!state.onboarding) return;
+    try {
+      const response = await updateOnboardingPresentation({ guide_hidden: true });
+      const next = response?.onboarding;
+      if (!next?.status || !next.steps) throw new Error('Invalid onboarding response.');
+      state.onboarding = next;
+      guideExplicitlyOpen = false;
+      renderOnboarding();
+      window.requestAnimationFrame(() => {
+        if (onboardingGuide.hidden) document.getElementById('userBadge')?.focus();
+      });
+    } catch {
+      showShellToast(i18n?.messages ?? {}, 'home.onboarding.saveError', 'error');
+    }
+  }
+
   function render() {
     renderCycle();
     renderMetrics();
     renderWeekTracker();
     renderShoesWidget();
+    renderOnboarding();
   }
 
   async function loadCycle() {
     state.cycle = await fetchActiveCycle();
+    state.cycleLoaded = true;
     renderCycle();
+    renderWelcomeCarousel();
   }
 
   async function loadMetrics() {
@@ -637,6 +819,12 @@ function setupHomePage() {
     renderShoesWidget();
   }
 
+  async function loadOnboarding() {
+    state.onboarding = await fetchOnboarding();
+    renderOnboarding();
+    if (guideOpenPending) requestSetupGuide();
+  }
+
   async function loadHeroQuote() {
     const quote = await loadQuote({ messages: i18n ? i18n.messages : {} });
     state.quoteSource = quote ? quote.source : 'fallback';
@@ -653,7 +841,47 @@ function setupHomePage() {
     if (state.quoteSource === 'fallback' && i18n) {
       renderQuote(randomFallbackQuote(i18n.messages));
     }
+    renderOnboarding();
   });
+
+  onboardingLater?.addEventListener('click', closeWelcome);
+  onboardingWelcome?.addEventListener('click', (event) => {
+    if (event.target.dataset.onboardingDismiss === 'true') closeWelcome();
+  });
+  onboardingPrevious?.addEventListener('click', () => {
+    welcomeSession.setSlide(onboardingSlideNavigation(welcomeSession.slide, onboardingWelcomeSlides.length).previous, onboardingWelcomeSlides.length);
+    renderWelcomeCarousel();
+    focusWelcomeTitle();
+  });
+  onboardingNext?.addEventListener('click', () => {
+    welcomeSession.setSlide(onboardingSlideNavigation(welcomeSession.slide, onboardingWelcomeSlides.length).next, onboardingWelcomeSlides.length);
+    renderWelcomeCarousel();
+    focusWelcomeTitle();
+  });
+  onboardingSlideControls.forEach((control) => {
+    control.addEventListener('click', () => {
+      welcomeSession.setSlide(Number(control.dataset.onboardingSlideControl), onboardingWelcomeSlides.length);
+      renderWelcomeCarousel();
+      focusWelcomeTitle();
+    });
+  });
+  onboardingWelcomeActions.forEach((action) => action.addEventListener('click', followWelcomeAction));
+  document.addEventListener('keydown', (event) => {
+    if (!welcomeWasOpen) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeWelcome();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    trapOnboardingFocus(
+      event,
+      onboardingDialog,
+      onboardingWelcomeSlides[welcomeSession.slide]?.querySelector('h2')
+    );
+  });
+  onboardingHide?.addEventListener('click', hideGuide);
+  document.addEventListener('kinesis:open-setup-guide', requestSetupGuide);
 
   document.addEventListener('kinesis:preferences-changed', (event) => {
     const next = event.detail?.first_day_of_week;
@@ -685,6 +913,7 @@ function setupHomePage() {
       loadCycle();
       loadMetrics();
       loadShoes();
+      loadOnboarding();
       return user;
     },
   };

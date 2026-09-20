@@ -1,5 +1,10 @@
 @import url('./shared/theme.css');
 
+.onboarding-result-hint { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin: 0 0 1rem; padding: 1rem 1.15rem; border: 1px solid var(--line); border-radius: 14px; background: var(--wash); }
+.onboarding-result-hint h2 { margin: 0 0 0.25rem; font-size: 1rem; }
+.onboarding-result-hint p { margin: 0; color: var(--muted); font-size: 0.88rem; }
+@media (max-width: 640px) { .onboarding-result-hint { align-items: flex-start; flex-direction: column; } }
+
 body {
   margin: 0;
   background: var(--bg);

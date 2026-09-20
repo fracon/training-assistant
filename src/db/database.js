@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS users (
   first_day_of_week TEXT NOT NULL DEFAULT 'Monday',
   distance_unit TEXT NOT NULL DEFAULT 'km',
   temperature_unit TEXT NOT NULL DEFAULT 'C',
+  onboarding_status TEXT NOT NULL DEFAULT 'legacy',
+  onboarding_guide_hidden INTEGER NOT NULL DEFAULT 0,
   created_at     TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -127,6 +129,12 @@ function migrateDatabase(db) {
   }
   if (!columns.some((column) => column.name === 'temperature_unit')) {
     db.exec("ALTER TABLE users ADD COLUMN temperature_unit TEXT NOT NULL DEFAULT 'C'");
+  }
+  if (!columns.some((column) => column.name === 'onboarding_status')) {
+    db.exec("ALTER TABLE users ADD COLUMN onboarding_status TEXT NOT NULL DEFAULT 'legacy'");
+  }
+  if (!columns.some((column) => column.name === 'onboarding_guide_hidden')) {
+    db.exec('ALTER TABLE users ADD COLUMN onboarding_guide_hidden INTEGER NOT NULL DEFAULT 0');
   }
 
   const trainingColumns = db.pragma('table_info(trainings)');

@@ -1,217 +1,176 @@
-# 🧠 AI Agent Context & Guidelines: Kinesis
+# Kinesis — Agent Guidelines
 
-## 🎯 Project Overview
-"Kinesis" (formerly "Training Assistant") is a local-first, privacy-focused Node.js web application designed for runners. It parses activity `.FIT` files locally and combines them with user-inputted context (RPE, weather, gear, planned workout) to generate a highly structured, copy-pasteable prompt. This prompt is then fed by the user into an LLM (like ChatGPT or Claude) to act as a personalized running coach.
+## Project and architecture
 
-## 🛠️ Tech Stack & Infrastructure
-- **Backend:** Node.js (v24), Fastify, vanilla JavaScript.
-- **Frontend:** HTML5, Vanilla JS, CSS3 (Custom properties, CSS Grid/Flexbox).
-- **UI/UX Theme:** Premium, minimalist, earthy tones (sage green, cream), utilizing "DM Sans" font.
-- **Deployment:** Self-hosted on ZimaOS via Docker Compose.
-- **CI/CD:** Automated via Self-Hosted GitHub Runner pushing to GitHub Container Registry (GHCR).
-- **Networking:** Exposed securely via Cloudflare Zero Trust Tunnels (HTTP on port 8081).
-- **Application version:** `0.9.6` (active development; see the versioning Golden Rule below).
+Kinesis is a self-hosted, multi-user running application. The server is Node.js
+24, Fastify, and SQLite (`better-sqlite3`); the frontend is a multi-page,
+vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
+system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
+uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
+with a Cloudflare Tunnel in front. Application version is maintained in
+`package.json` and `package-lock.json` (currently `0.10.0`); follow the SemVer
+rule below.
 
-## ✅ Current Implementation Status — `main`
+Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
+home dashboard, contextual training result, calendar, AI Coach, cycles, and
+shoes. Shared frontend responsibilities live under
+`src/public/shared/`: `shell.js` injects navigation and account controls;
+`onboarding.js` contains onboarding state/presentation helpers;
+`i18n.js` and `locales/en.json` / `locales/pt.json` provide English and Brazilian
+Portuguese; `api.js` handles API requests; theme, date, units, preferences,
+validation, and other reusable utilities remain shared. Keep dynamically
+rendered content reactive to `app:languagechange` or use `data-i18n`.
 
-The Home Dashboard, Calendar, weather integration, and supporting import flows
-are integrated and polished on `main`. Keep these decisions intact when making
-follow-up changes. New work must branch from an updated `main`; historical
-feature branches must not be used as a base for future development:
+Backend route registration and page gating live in `src/server.js`; auth and
+domain modules are under `src/auth/`, `src/db/`, and the domain modules in
+`src/`. Database schema, initialization, and idempotent migrations are managed
+by `src/db/database.js`. Ownership checks must scope reads and writes to the
+authenticated user. New schema changes must follow the existing idempotent
+migration patterns.
 
-- The dashboard renders the cycle title/goal independently, places the weekly
-  tracker before the metric tiles, and uses minimalist active-day pills with
-  the exact Lucide `sport-shoe` icon plus card-level `external-link` actions.
-- Weekly distance and duration accumulate from `fit_distance` and
-  `fit_duration` values returned by the calendar API, with safe numeric/string
-  parsing and localized display formatting.
-- Excel imports deduplicate by the exact composite signature
-  **Date (`dia`) + Training Name (`treino`) + Description (`detalhes`)**.
-  Existing rows and repeats within one workbook are skipped, while distinct
-  workouts on the same date are retained.
-- Spreadsheet uploads accept standard Excel MIME types or a valid `.xlsx`/`.xls`
-  extension when browsers provide generic MIME types. Production workbook
-  parsing uses SheetJS (`xlsx`) so namespace-prefixed XML from Excel-compatible
-  exporters is supported; `src/trainingImport.js` adapts the parsed row arrays,
-  maps Portuguese/English headers, and normalizes Excel serial dates before the
-  existing validation and persistence flow.
-- Calendar training chips support native drag-and-drop rescheduling with
-  optimistic rendering, a dedicated persistence endpoint, and localized success
-  or failure feedback.
-- Planned training locations are imported and can trigger a keyless Open-Meteo
-  weather lookup with archive-to-forecast fallback and unit-aware rendering.
-- Import feedback uses the shared shell Snackbar with two localized lines for
-  imported and skipped counts; do not reintroduce a permanent inline banner.
-- The hero selects a random running-only Unsplash image on initialization.
-  Loading text, quote text, and author all use dark contrast backdrops, and the
-  loader must remain hidden once a quote is rendered (`.hero-loading.hidden`).
-- The integrated implementation has been validated repeatedly with `npm run test:coverage`; the
-  required Statements, Branches, Functions, and Lines thresholds remain 100%.
-- The `feature/user-preferences` work is complete: the Preferences modal,
-  authenticated persistence, Calendar/Home synchronization, and Trainings
-  page two-way week-start binding are implemented and tested.
-- Distance and temperature conversions are centralized in
-  `src/public/shared/units.js`; UI values remain metric in storage and are
-  converted only for display or prompt generation according to the global
-  preferences store.
-- Official branding assets are stored in `src/public/assets/brand/` and wired
-  into every page's favicon plus the shared sidebar/login UI (`logo.png`,
-  `logo-mark.png`, and `favicon.png`).
-- Realized training metrics have one explicit source: `none`, `fit_upload`, or
-  `manual` (`garmin_connect` is reserved). Aggregates remain in canonical
-  metric fields for compatibility; manual results never create laps or a FIT
-  summary, the backend alone calculates pace, and a confirmed FIT/manual
-  replacement clears incompatible data transactionally. FIT uploads also accept
-  a single validated FIT entry from a ZIP entirely in memory; ZIP imports retain
-  `fit_upload` provenance and never persist archive contents. The Training
-  Result includes the reviewed multibrand import/export guide; it is implemented
-  and must not be described as future work.
+## Current product behavior and invariants
 
-## 🏆 Golden Rules
-1. **Local-First & Privacy:** FIT files and training data are parsed and processed locally. The optional weather integration sends only a planned location to Open-Meteo, and the optional dashboard hero requests a generic running image from Unsplash; neither receives FIT files or training data.
-2. **Test Coverage (The 100% Rule):** `npm run test:coverage` must remain at 100% Statements, Branches, Functions, and Lines for files instrumented by c8 (`src/**`, excluding `src/public/**` and `src/start.js`). Frontend tests remain mandatory whenever frontend behavior changes.
-3. **No Bloatware:** Stick to Vanilla JS and pure CSS. Do not introduce heavy frontend frameworks (React/Vue/Tailwind) unless explicitly requested and justified.
-4. **Infrastructure Immutability:** Do not alter Docker or GitHub Actions configurations without explicit permission. The current ZimaOS/Cloudflare setup (port 8081) is finalized.
-5. **UI Consistency:** Any new UI elements must match the existing modern, high-density, cozy aesthetic.
-6. **Form Element Consistency:** All form inputs (`input`, `textarea`, `select`) must share a unified design system. They must use the standard earthy surface background, consistent rounded borders, identical padding, and native styling must be overridden (`appearance: none` for selects with custom SVG chevrons). Never use default browser white backgrounds for form controls.
-7. **Tooltips:** NEVER use the native HTML `title` attribute. Always use the custom Kinesis tooltip component — a child `<div class="custom-tooltip">` inside the trigger element, styled via CSS (dark `var(--ink)` background, `0.15s` opacity transition, `z-index: 50`). This ensures visual consistency and eliminates native rendering delays.
+- Sessions are server-side and protected APIs use the shared `requireAuth`
+  guard. Anonymous requests to `/` are sent to login; authenticated `/` requests
+  redirect to `/home.html`. `/training-result.html` is a protected contextual
+  page for a specific training. The Calendar page requires an active cycle and
+  redirects to cycle management when there is none.
+- The app supports planning and importing workouts, AI Coach prompt generation,
+  calendar scheduling, manual and FIT results, single-FIT ZIP upload, shoe
+  rotation, and a per-training shoe-mileage ledger. FIT/ZIP parsing and workout
+  data processing are local to the application. Optional weather lookup sends
+  the planned location/date to Open-Meteo. Optional Unsplash requests use a
+  generic running-image query and register the download; the browser may make
+  a daily quote request to ZenQuotes. These requests must not include workout
+  or FIT data or user-entered training context (network services can still
+  receive ordinary connection metadata).
+- Result provenance is `none`, `fit_upload`, or `manual` (`garmin_connect` is
+  reserved). The backend calculates canonical pace. Manual results do not
+  fabricate FIT summaries or laps. Confirmed FIT/manual replacement clears
+  incompatible data transactionally. ZIP contents are validated and processed
+  in memory and are not persisted.
+- Spreadsheet import deduplicates by exact **Date (`dia`) + Training Name
+  (`treino`) + Description (`detalhes`)**. Calendar drag-and-drop rescheduling
+  persists through its dedicated endpoint. Keep the shared Snackbar behavior
+  for import feedback; do not restore a permanent inline banner.
+- Distances and temperatures are stored in canonical metric units and converted
+  for display/prompt generation through `src/public/shared/units.js`. Displayed
+  dates use the shared locale-aware date formatter. Date inputs use the shared
+  DatePicker component, not raw text or uncontrolled native date inputs.
 
-8. **Golden Rule for Dates:** All dates displayed in the application MUST use the central date formatting utility and respect the active i18n locale. Hardcoded or ad-hoc date formatting inside components or services is strictly prohibited.
-9. **Golden Rule for Units:** All displayed distances and temperatures MUST use the centralized unit conversion utility and the active user preferences. Components and prompt templates must not hardcode `km`, `mi`, `°C`, or `°F` when rendering stored values.
-10. **Golden Rule for Versioning:** Always increment the application version before opening a Pull Request. You must strictly adhere to Semantic Versioning (SemVer) principles: MAJOR (incompatible API/architecture changes), MINOR (backward-compatible new features), and PATCH (backward-compatible bug fixes).
-11. **GOLDEN RULE - DATE INPUTS:** Never use raw text inputs or uncontrolled native `<input type="date">` elements for dates. All date inputs must strictly use the centralized DatePicker component to ensure the visual format, calendar language, and user's week-start preferences are explicitly controlled and reactive to `app:languagechange`.
+## Onboarding architecture and contract
 
-## 🌐 i18n Lifecycle and Dynamic DOM Reactivity
+The frontend onboarding experience is implemented by `src/public/shared/onboarding.js`,
+the dashboard markup/styles/scripts (`home.html`, `home.css`, `home.js`), shared
+shell menu logic in `shell.js`, locale dictionaries, and the backend routes in
+`src/server.js`. The backend owns persistence and calculates progress; the
+frontend renders and navigates but must never infer completion from a click,
+visited page, or slide.
 
-These rules are immutable and derive from real production bugs where dynamically injected UI failed to update on language switch and ghost elements lingered in the DOM. They must never be violated by future work:
+### API and stored state
 
-1. **LATE EVALUATION:** Never evaluate or cache i18n strings at the top level of a module or upon component initialization if the strings are used in user-triggered events. Always resolve `i18n.messages` INSIDE the event handler (e.g., form submit) to ensure the currently active language dictionary is used.
-2. **DYNAMIC REACTIVITY:** Any dynamically generated text (e.g., JS-injected validation errors, toasts, modals) MUST either use `data-i18n` attributes so the global scanner (`applyTranslations`) can translate them, OR explicitly listen to the global language switch event (`app:languagechange`) to trigger a re-render of the text in the active dictionary.
-3. **DOM CLEANUP:** When refactoring UI patterns (e.g., moving from inline errors to grouped alert boxes), strictly verify and remove all legacy HTML/JS/CSS references to avoid "ghost" elements — no orphaned hint text, dead selectors, or stale keys in the DOM.
+- `GET /api/onboarding` is authenticated. It returns HTTP 200 with
+  `{ onboarding: { status, guideHidden, steps, completed, total, complete,
+  firstTrainingId } }`; anonymous requests return 401.
+- `PATCH /api/onboarding/presentation` is authenticated. Its JSON body accepts
+  one or both boolean keys `welcome_dismissed` and `guide_hidden`; empty bodies,
+  unknown keys, and non-boolean values return 400. A valid patch returns 200
+  with the refreshed `{ onboarding: ... }` state. The endpoint updates in one
+  transaction and recomputes derived state for its response.
+- Registration explicitly creates users with `onboarding_status='new'`.
+  Database initialization idempotently adds `onboarding_status` with default
+  `'legacy'` and `onboarding_guide_hidden` with default `0`; this keeps existing
+  accounts from receiving the automatic welcome. These are the persisted
+  onboarding fields; do not add stored step counters or completion booleans.
+- `welcome_dismissed: true` changes `new` to `active`; there is no separate
+  persisted welcome-dismissed boolean. Other statuses are not promoted by that
+  update. `guide_hidden` stores only the user's checklist presentation
+  preference. Both fields are user-scoped.
+- `steps.shoes` is true when the user owns at least one shoe; `steps.cycle` is
+  true when the user owns an active cycle; `steps.trainings` is true when the
+  user owns at least one planned training. `completed`, `total` (3), `complete`,
+  and `firstTrainingId` are derived from those owned records. Progress is never
+  persisted separately.
 
-## 🎨 Frontend Architecture (Immutable)
+### Presentation, navigation, and accessibility
 
-These rules codify the Phase 3 refactor and must never be violated by future work:
+- A genuinely new (`new`) account receives the three-slide PT/EN welcome
+  automatically. Legacy accounts do not. “Agora não” / “Not now” persists
+  `welcome_dismissed`; it does not block access to the app. The three primary
+  actions link to existing shoes and cycle flows. The workout-plan slide opens
+  AI Coach/import when an active cycle exists; otherwise it directs the user to
+  create the required cycle first. Explicitly opening the setup guide does not
+  open the welcome dialog.
+- The checklist is shown normally only while incomplete and not hidden. A
+  completed or hidden checklist remains hidden and absent from the dashboard
+  layout (`hidden` keeps it out of layout and keyboard navigation); there is no
+  permanent completion card or dashboard reopen bar. The user menu's **Guia de
+  configuração / Setup guide** opens it on demand, including for completed and
+  legacy accounts. Opening it is transient: it changes no progress, status,
+  welcome preference, or guide-hidden preference. Hiding it closes it and may
+  persist only `guide_hidden=true`.
+- In the dashboard, the shared shell requests opening through the local
+  `kinesis:open-setup-guide` event. From another page it navigates to
+  `/home.html?openSetupGuide=1`. `onboarding.js` consumes exactly the value `1`
+  and removes that parameter with `history.replaceState`, preserving other
+  query parameters and the hash. Do not persist this transient signal or cause
+  a reload/reopen after it has been consumed.
+- The shell exposes the setup-guide action only in the authenticated user menu;
+  it closes the menu when activated. It must not know dashboard card internals.
+  The dashboard owns rendering, focus, scrolling, and hiding. Focus the guide
+  heading only after the guide is visible; respect reduced-motion preferences.
+  When hiding from an explicit menu action, return focus to a stable visible
+  control. No hidden control may remain in the tab order.
+- Keep the welcome dialog's accessible name/description synchronized to the
+  active slide. Preserve initial focus, Tab/Shift+Tab containment, Escape,
+  focus restoration, and background `inert`. Programmatically focused
+  non-interactive headings may suppress their own outline, but never remove
+  visible focus styling from interactive controls. CSS must not override the
+  browser's `[hidden]` behavior for onboarding elements.
+- Resolve translated strings at action time. Dynamically rendered checklist,
+  dialog, and menu content must update on language changes without duplicate
+  listeners or stale/unused DOM, CSS, or translation keys.
 
-1. **Multi-Page Principle:** No single-page hacks or overlapping layout states. Every primary screen or user flow (e.g., Login, Register, TrainingResult/Dashboard) **must** reside in its own dedicated, standalone files following the `<page>.html` / `<page>.css` / `<page>.js` convention (`src/public/login.html`, `src/public/register.html`, `src/public/training-result.html`).
-2. **Shared Abstractions & Modularization:** Common styling tokens (earthy color variables, fonts, resets) are centralized in shared assets (e.g., `src/public/shared/theme.css`), imported by every page stylesheet. Reusable logic (validators, API helpers) must be abstracted into ES modules under `src/public/shared/` (e.g., `validators.js`, `api.js`) and imported by the page scripts — never duplicated across pages.
-3. **Server-Side Routing & Gating:** Fastify must strictly handle access control at the server level: unauthenticated requests to root or protected paths redirect to `login.html`; an authenticated request to `/` redirects to `/home.html`; `/training-result.html` remains a protected, contextual page for one training result; authenticated users are redirected away from auth pages back to `/`.
-4. **Testing Mandate:** All new pages and modular components must ship with accompanying tests. Frontend tests are required for changed frontend behavior, while `npm run test:coverage` measures only the c8-instrumented backend scope described above.
+## Testing and verification
 
-## 💻 Development Workflow
-Whenever starting the development of a new feature, you MUST follow this strict git workflow:
-1. **Branching:** Create and checkout a new branch named `feature/<feature-name>`. Do NOT develop directly on the `main` branch.
-2. **Implementation:** Develop the requested feature and write/update the corresponding tests.
-3. **Verification:** Always execute the test suite (`npm run test:coverage`).
-4. **Coverage Check:** Verify that Statements, Branches, Functions, and Lines remain at exactly 100% for the c8-instrumented scope. If it drops, write the missing tests before proceeding.
-5. **Commit:** Only after tests pass and coverage is at 100%, commit the changes to the feature branch with a descriptive conventional commit message.
+Use the existing `node:test` suites. Onboarding behavior is covered primarily
+by `test/onboarding.test.js` and `test/onboarding.routes.test.js`, with shared
+menu integration in `test/shell.test.js`; run the relevant frontend/browser
+tests whenever those behaviors change. Test both PT and EN, ownership, new and
+legacy accounts, incomplete/hidden/completed states, transient navigation,
+focus and keyboard behavior, and ensure `[hidden]` elements are not visible or
+focusable when changing onboarding UI.
 
-## 🗺️ Project Phases & Status
+`npm run test:coverage` enforces exactly 100% Statements, Branches, Functions,
+and Lines for c8-instrumented files under `src/**`, excluding `src/public/**`
+and `src/start.js`. This percentage is not instrumentation coverage of the
+frontend. Frontend behavior tests remain mandatory when corresponding frontend
+behavior changes. Run `git diff --check` before committing.
 
-- **Phase 1: Core MVP & UI [✅ FINISHED]**
-  - Fastify server setup & FIT file parsing.
-  - High-density form UI, modern typography (DM Sans), 1-5 RPE scale.
-  - Prompt generation logic and 100% test coverage.
+## Golden rules
 
-- **Phase 2: Self-Hosted Infrastructure & CI/CD [✅ FINISHED]**
-  - Dockerfile (node-24-alpine).
-  - GitHub Actions Workflow (GHCR publishing).
-  - ZimaOS `docker-compose.yml` & Cloudflare Tunnel mapping.
-
-- **Phase 3: Authentication [✅ FINISHED]**
-  - Implement a secure authentication system to protect the application from unauthorized access.
-
-- **Phase 3.5: Shoe Rotation Feature [✅ FINISHED]**
-  - Backend CRUD: `shoes` table, `src/shoes.js`, inline routes in `server.js`, 100% test coverage.
-  - Frontend UI: `shoes.html`/`shoes.js`/`shoes.css`, sidebar nav item, i18n, modal CRUD.
-  - UI/UX fixes: stale i18n closure fix, status badge i18n, toast redesign (top-right, Lucide icon).
-  - Shared abstractions: `showConfirm()` in `shell.js` (Promise-based confirm modal), `.btn-danger`/`.confirm-backdrop`/`.confirm-card` in `theme.css`, `shell.confirm.{yes,no}` i18n keys.
-
-- **Phase 4: Internationalization (i18n) [✅ FINISHED]**
-  - Deliver a seamless cross-device language experience with a highly polished, minimalist UI.
-  - **Languages Supported:** American English (`en-US`) and Brazilian Portuguese (`pt-BR`).
-  - **Default Language:** `en-US` is the default fallback everywhere.
-  - **Storage & Data Structure:** translations live in dedicated JSON files (e.g., `src/public/locales/en.json`, `src/public/locales/pt.json`). Strictly Vanilla JS — no heavy third-party i18n libraries.
-  - **Full Scope Coverage:** both the Frontend UI (`login`, `register`, `training-result`) and the Backend AI Prompt Generator (`src/markdownGenerator.js`) must be translatable.
-  - **Mechanics, Database & State Management:**
-    - Update the SQLite schema: add a `preferred_lang` column to the `users` table.
-    - The Registration UI must include a language selection input to capture this preference upon account creation.
-    - The frontend uses `localStorage` for immediate, synchronous client-side rendering.
-    - Upon successful login (or via the `GET /api/me` route), the frontend reads `preferred_lang` from the database and updates `localStorage` to ensure cross-device consistency.
-    - Toggling the language instantly updates the UI, writes `localStorage`, and fires a background API call syncing the preference back to the user's database record.
-  - **UI Placement & UX:**
-    - A clean, minimalist language switcher (e.g., a simple "EN | PT" text toggle), located in the top-right corner of the screen across all pages.
-    - On public pages (`login.html`, `register.html`) it sits alone in the top-right; on authenticated pages (`training-result.html`) it sits in the topbar directly next to the user badge and Logout button.
-
-- **Phase 5: App Shell & Home UI Layout [✅ FINISHED]**
-  - Elevate the UI to a modern SaaS application standard with a polished master layout.
-  - **Goal:** create a master layout file (`src/public/home.html`) that serves as the main entry point for authenticated users, replacing/absorbing `training-result.html`.
-  - **Layout Structure (Modern SaaS Design):**
-    - **Header/Topbar:** retain the exact header we already built (user badge, i18n language switcher, Logout button).
-    - **Sidebar (Left Menu):**
-      - Implement a vertical navigation menu on the left side.
-      - Menu items must contain both an **Icon** (SVG or minimal icon set) and a **Label** (translatable via our i18n system).
-      - Must be **collapsible/expandable**: when expanded, shows icon + label; when collapsed, the sidebar shrinks laterally, hiding the text and smoothly centering only the icons.
-      - Must use smooth CSS transitions for the collapse/expand animation.
-    - **Main Content Area (Center/Right):** the large remaining portion of the screen where specific feature content (like the FIT file parser today, future calendars, or settings) will be rendered or injected.
-  - **Aesthetic:** strictly adhere to the existing minimalist, earthy theme (DM Sans, sage/cream/charcoal colors). It must look highly polished and premium.
-  - **Technical Constraints:** strictly Vanilla HTML/CSS/JS. No heavy frameworks. Re-use existing shared CSS tokens.
-
-- **Phase 6: Calendar View [✅ FINISHED]**
-  - **Feature Scope:**
-    - **Monthly View Only (Initially):** a classic monthly grid layout (weeks as rows, days as cells). No week/agenda views in this phase.
-    - **Drag-and-drop rescheduling:** training chips can be moved between day cells and persist through the dedicated reschedule API.
-    - **First Day of the Week Toggle:** users must be able to choose whether the calendar week starts on Monday or Sunday.
-    - **Default State:** Monday MUST be the default first day of the week everywhere (DB default, localStorage fallback, and initial render).
-  - **Architecture & Technical Constraints:**
-    - **Multi-Page Adherence:** built as a standalone feature page following the strict convention: `src/public/calendar.html` / `calendar.css` / `calendar.js`.
-    - **App Shell Integration:** `calendar.html` MUST import `shared/shell.js` so the Topbar and Sidebar are automatically injected (the UI layout work is already done; mark Calendar as the active nav item and enable it).
-    - **Vanilla JS Only:** use the native JavaScript `Date` object for all calendar math. Do NOT introduce heavy libraries (Moment.js, date-fns, etc.). Use CSS Grid for the monthly layout, re-using existing shared CSS tokens.
-  - **Database & State Management:**
-    - Add a new column to the `users` table: `first_day_of_week` (e.g., TEXT storing `'Monday' | 'Sunday'`, defaulting to `'Monday'`), via an idempotent migration in `migrateDatabase()` like the i18n rollout.
-    - The preference must be returned by login and `GET /api/me`, and synced to `localStorage` upon login/`/api/me` for immediate synchronous client-side rendering (same pattern used for `preferred_lang`).
-    - Expose a protected update endpoint (mirroring `PATCH /api/users/me/language`) and place the Mon/Sun toggle in the Topbar or within the Calendar view header.
-    - **i18n Coverage:** month names and days of the week must be fully translatable using the existing `src/public/locales/en.json` / `pt.json`; the locale key-parity test must keep both files in sync.
-    - **Weather integration:** imported locations feed the authenticated Open-Meteo proxy and editable weather field auto-fill.
-
-- **Phase 7: AI Coach Prompt Generator [✅ FINISHED]**
-  - **Feature Scope:** a dedicated tool page that builds a highly detailed, pre-formatted prompt for an external AI Coach (ChatGPT/Claude) to plan the next training week. The user copies the generated text and pastes it into their LLM of choice — nothing is ever sent anywhere by this app (local-first rule).
-  - **Architecture & Multi-Page Adherence:**
-    - Standalone page following the strict convention: `src/public/ai-coach.html` / `ai-coach.css` / `ai-coach.js`.
-    - MUST import `shared/shell.js` so the Topbar and Sidebar are automatically injected; mark "AI Coach" as the active nav item.
-    - Add a new Sidebar navigation item (e.g., **"AI Coach"**) with a Lucide icon (`bot` or `sparkles`), label translatable via i18n locales.
-    - Strictly Vanilla JS — no external libraries. Re-use existing shared CSS tokens and the earthy aesthetic.
-  - **Form Variables:**
-    - `Target Date`: defaults to the date of the *next* Monday (auto-computed on load, still editable).
-    - `Availability`: 7 input fields, Monday through Sunday, each defaulting to a standard routine text.
-    - `Optional Context`: a `<textarea>` for free-form notes (e.g., "traveling on Tuesday").
-    - A **"Generate Prompt"** button that replaces the placeholders in the template and renders the final text in a copyable block with a **"Copy to Clipboard"** action (with success feedback).
-  - **The Prompt Template Requirement (CRITICAL):**
-    - The exact Portuguese prompt template provided by the user MUST be strictly used verbatim — no rewriting, translation, or "improvements" to its wording.
-    - The template contains RPE progression rules, shoe rotation, daily-location weather guidance with a usual-location fallback, and a strict 12-column Excel-style output format for the weekly plan.
-    - Schedule placeholders are replaced at generation time: `{{DATA_DA_SEGUNDA}}` (Target Date), the seven `{{DISP_…}}` availability fields, and `{{CONTEXTO_OPCIONAL}}` (optional notes). The cycle context and shoe block use the same localized replacement pass.
-  - **i18n Coverage:** all UI chrome (labels, buttons, hints) must be translatable via `src/public/locales/en.json` / `pt.json`. Both prompt templates are embedded verbatim: Portuguese (`pt-BR`, default fallback) and English (`en-US`); the active UI language selects which one is generated. Placeholder names (`{{DATA_DA_SEGUNDA}}`, per-day `{{DISP_…}}`, `{{CONTEXTO_OPCIONAL}}`) stay identical in both templates.
-  - **Dynamic cycle context binding [✅ IMPLEMENTED, commit `445e542`]:** on generation, `ai-coach.js` fetches the active cycle and the preceding week's calendar entries through the shared API module. It normalizes cycle aliases (`objective`/`primary_goal`), derives week progress and days remaining when needed, and injects completed-workout count, distance (km), and time (minutes) into the selected Portuguese or English prompt. This late-bound fetch keeps the prompt synchronized with application state and respects the i18n lifecycle rules.
-
-- **Phase 7.5: ZIP FIT Import [✅ FINISHED]**
-  - The authenticated FIT endpoint accepts direct `.FIT` files or `.ZIP`
-    archives containing exactly one FIT, including nested entries.
-  - ZIPs are inspected and extracted only in memory with bounded entry count,
-    decompressed FIT size, and total decompressed content; unsafe, encrypted,
-    corrupt, empty, or ambiguous archives are rejected before persistence.
-  - All regular entries are consumed sequentially before parsing (including
-    entries after the FIT); declared sizes are advisory and streamed byte counts
-    enforce the real limits. Known upload errors are localized in the UI.
-  - The extracted buffer shares the existing FIT parser, normalization,
-    transactional persistence, calorie handling, and `fit_upload` provenance.
-  - The Training Result includes a local-only multibrand import guide for
-    Garmin, COROS, Polar, Amazfit/Zepp, Huawei, Apple, and Samsung. It uses a
-    reviewed static catalog with official links and localized statuses; it
-    never requests credentials or calls manufacturer services.
-
-- **Phase 8: Garmin Automation (WebUSB / File System API) [🚧 PLANNED]**
-  - Eliminate manual `.FIT` file drag-and-drop.
-  - Implement direct read access to connected Garmin watch via browser APIs.
-
-- **Phase 9: Advanced LLM Integration [🚧 PLANNED]**
-  - Potential direct API connection to LLMs for automated response rendering within the UI.
+1. **Local-first privacy:** never send FIT files or workout data to an external
+   cloud API for processing. Preserve only the defined integrations: Open-Meteo
+   receives planned location/date, Unsplash receives a generic image request,
+   and the browser sends ZenQuotes a daily quote request; none may receive
+   workout/FIT data or user-entered training context.
+2. **Vanilla frontend:** do not add a framework or dependency for functionality
+   the current HTML/CSS/ES-module architecture can provide.
+3. **Infrastructure:** do not alter Docker, Compose, or GitHub Actions without
+   explicit authorization. The deployment mapping is host `8081` to container
+   `3000`.
+4. **UI and forms:** use existing theme tokens and shared controls. Inputs,
+   textareas, and selects must follow the shared form styling; selects use the
+   established custom chevron treatment.
+5. **Tooltips:** never use native `title`; use the Kinesis custom tooltip
+   component.
+6. **Dates and units:** use the shared date formatter/DatePicker and unit
+   conversion utilities. Do not locally format dates or hardcode display units
+   for stored values.
+7. **SemVer:** increment the application version before opening a PR. Use
+   MAJOR for incompatible changes, MINOR for backward-compatible features, and
+   PATCH for backward-compatible fixes. Keep `package.json`,
+   `package-lock.json`, and documented version references consistent.
+8. **Git workflow:** develop on a task-appropriate branch, not directly on
+   `main`; test, inspect `git diff --check`, and commit descriptively only after
+   required verification passes.

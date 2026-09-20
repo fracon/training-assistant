@@ -57,6 +57,21 @@ export function updateUserPreferences(preferences) {
   return requestJson('/api/users/me/preferences', preferences, 'PATCH');
 }
 
+export async function fetchOnboarding() {
+  try {
+    const response = await fetch('/api/onboarding', { headers: { accept: 'application/json' } });
+    if (!response.ok) return null;
+    const payload = await response.json();
+    return payload.onboarding ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function updateOnboardingPresentation(presentation) {
+  return requestJson('/api/onboarding/presentation', presentation, 'PATCH');
+}
+
 export function changePassword(payload) {
   return requestJson('/api/auth/password', payload, 'PUT');
 }
