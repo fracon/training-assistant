@@ -102,8 +102,9 @@ visited page, or slide.
   create the required cycle first. Explicitly opening the setup guide does not
   open the welcome dialog.
 - The checklist is shown normally only while incomplete and not hidden. A
-  completed or hidden checklist is absent from the dashboard DOM/layout (no
-  completion card or dashboard reopen bar). The user menu's **Guia de
+  completed or hidden checklist remains hidden and absent from the dashboard
+  layout (`hidden` keeps it out of layout and keyboard navigation); there is no
+  permanent completion card or dashboard reopen bar. The user menu's **Guia de
   configuração / Setup guide** opens it on demand, including for completed and
   legacy accounts. Opening it is transient: it changes no progress, status,
   welcome preference, or guide-hidden preference. Hiding it closes it and may

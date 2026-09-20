@@ -311,6 +311,7 @@ test('onboarding UI keeps the existing destinations and accessibility hooks', ()
   assert.match(home, /aria-labelledby="onboardingWelcomeTitle0"/);
   assert.match(home, /onboardingHide/);
   assert.match(home, /id="onboardingTitle"[^>]*tabindex="-1"/);
+  assert.match(home, /id="onboardingEyebrow"[^>]*data-i18n="home\.onboarding\.nextStep"/);
   assert.doesNotMatch(home, /onboardingComplete|onboardingReopen|onboarding-reopen-bar/);
   assert.doesNotMatch(home, /onboardingPreview|Preview welcome|Testar boas-vindas/);
   assert.match(home, /aria-modal="true"/);
@@ -359,6 +360,10 @@ test('welcome carousel copy is translated and action labels match their destinat
   assert.equal(pt.home.onboarding.planTitle, 'Adicione treinos ao calendário');
   assert.equal(en.home.onboarding.planCycleAction, 'Create my cycle first');
   assert.equal(pt.home.onboarding.planCycleAction, 'Criar meu ciclo primeiro');
+  assert.equal(en.home.onboarding.nextStep, 'Next step');
+  assert.equal(pt.home.onboarding.nextStep, 'Próxima etapa');
+  assert.equal(en.home.onboarding.setupComplete, 'Setup complete');
+  assert.equal(pt.home.onboarding.setupComplete, 'Configuração concluída');
 });
 
 test('result guidance is limited to the first unrecorded workout for new users', async () => {
@@ -858,7 +863,7 @@ test('authenticated setup guide menu handles visible, hidden, completed, and leg
 
   const visible = await account({ email: 'guide-visible@example.com', language: 'pt-BR', status: 'active', hidden: false });
   const hidden = await account({ email: 'guide-hidden@example.com', language: 'en-US', status: 'active', hidden: true, steps: { shoes: true } });
-  const complete = await account({ email: 'guide-complete@example.com', language: 'pt-BR', status: 'active', hidden: false, steps: { shoes: true, cycle: true, trainings: true } });
+  const complete = await account({ email: 'guide-complete@example.com', language: 'en-US', status: 'active', hidden: false, steps: { shoes: true, cycle: true, trainings: true } });
   const legacy = await account({ email: 'guide-legacy@example.com', language: 'en-US', status: 'legacy', hidden: true, steps: { shoes: true } });
   const firstVisit = await account({ email: 'guide-first-visit@example.com', language: 'en-US', status: 'new', hidden: false });
 
@@ -887,7 +892,7 @@ test('authenticated setup guide menu handles visible, hidden, completed, and leg
         const guide=document.getElementById('onboardingGuide');const title=document.getElementById('onboardingTitle');const item=document.getElementById('userSetupGuide');
         const home=[...document.querySelector('.home-page').children].filter(node=>!node.hidden&&getComputedStyle(node).display!=='none');
         const rect=(node)=>{const r=node.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height,bottom:r.bottom}};
-        resolve({visible:!guide.hidden,focused:title===document.activeElement,progress:document.getElementById('onboardingProgress').innerText.trim(),setupGuideLabel:item.innerText.trim(),firstVisibleChildren:home.slice(0,2).map(node=>node.className),removed:['onboardingComplete','onboardingReopen','onboardingReopenHidden','onboardingReopenBar'].every(id=>!document.getElementById(id)),previewAbsent:!document.getElementById('onboardingPreview'),cycleTop:rect(document.querySelector('.dashboard-grid > .card-section:first-child')).y,guideRect:rect(guide),welcomeHidden:document.getElementById('onboardingWelcome').hidden,scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth});
+        resolve({visible:!guide.hidden,focused:title===document.activeElement,progress:document.getElementById('onboardingProgress').innerText.trim(),eyebrow:document.getElementById('onboardingEyebrow').textContent.trim(),setupGuideLabel:item.innerText.trim(),firstVisibleChildren:home.slice(0,2).map(node=>node.className),removed:['onboardingComplete','onboardingReopen','onboardingReopenHidden','onboardingReopenBar'].every(id=>!document.getElementById(id)),previewAbsent:!document.getElementById('onboardingPreview'),cycleTop:rect(document.querySelector('.dashboard-grid > .card-section:first-child')).y,guideRect:rect(guide),welcomeHidden:document.getElementById('onboardingWelcome').hidden,scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth});
       }catch(error){reject(error)}
     })`;
     const visibleResult = await runChromeAtViewport(chrome, appUrl.replace(/\/$/, '') + '/home.html', {
@@ -897,6 +902,7 @@ test('authenticated setup guide menu handles visible, hidden, completed, and leg
     assert.equal(visibleResult.focused, false, 'normal dashboard presentation does not steal focus');
     assert.equal(visibleResult.progress, '0 de 3 etapas');
     assert.equal(visibleResult.setupGuideLabel, 'Guia de configuração');
+    assert.equal(visibleResult.eyebrow, 'Próxima etapa', 'incomplete Portuguese guide uses the next-step label');
     assert.deepEqual(visibleResult.userMenuTabOrder, ['userSetupGuide', 'userChangePassword', 'userPreferences']);
     assert.deepEqual(visibleResult.firstVisibleChildren, ['hero', 'onboarding-guide card-section'], 'an incomplete, unhidden checklist remains directly beneath the hero');
     assert.equal(visibleResult.removed, true);
@@ -909,7 +915,7 @@ test('authenticated setup guide menu handles visible, hidden, completed, and leg
         await new Promise(resolve=>setTimeout(resolve,500));
         const before=await fetch('/api/onboarding').then(response=>response.json());const item=document.getElementById('userSetupGuide');
         const guideRect=document.getElementById('onboardingGuide').getBoundingClientRect();const scrollArea=document.querySelector('.main-content').getBoundingClientRect();
-        resolve({visible:!document.getElementById('onboardingGuide').hidden,focused:document.activeElement.id,keyboardState:window.__setupGuideKeyboardState,progress:document.getElementById('onboardingProgress').innerText.trim(),setupGuideLabel:item.innerText.trim(),menuClosed:document.getElementById('userDropdown').classList.contains('hidden'),welcomeHidden:document.getElementById('onboardingWelcome').hidden,guideHidden:before.onboarding.guideHidden,status:before.onboarding.status,completed:[...document.querySelectorAll('[data-onboarding-complete]')].filter(node=>!node.hidden).length,scrollTop:document.querySelector('.main-content').scrollTop,guideTop:guideRect.top,guideBottom:guideRect.bottom,scrollAreaTop:scrollArea.top,scrollAreaBottom:scrollArea.bottom,scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth});
+        resolve({visible:!document.getElementById('onboardingGuide').hidden,focused:document.activeElement.id,keyboardState:window.__setupGuideKeyboardState,progress:document.getElementById('onboardingProgress').innerText.trim(),eyebrow:document.getElementById('onboardingEyebrow').textContent.trim(),setupGuideLabel:item.innerText.trim(),menuClosed:document.getElementById('userDropdown').classList.contains('hidden'),welcomeHidden:document.getElementById('onboardingWelcome').hidden,guideHidden:before.onboarding.guideHidden,status:before.onboarding.status,completed:[...document.querySelectorAll('[data-onboarding-complete]')].filter(node=>!node.hidden).length,scrollTop:document.querySelector('.main-content').scrollTop,guideTop:guideRect.top,guideBottom:guideRect.bottom,scrollAreaTop:scrollArea.top,scrollAreaBottom:scrollArea.bottom,scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth});
       }catch(error){reject(error)}
     })`;
     const hiddenResult = await runChromeAtViewport(chrome, appUrl.replace(/\/$/, '') + '/home.html', {
@@ -918,6 +924,7 @@ test('authenticated setup guide menu handles visible, hidden, completed, and leg
     assert.equal(hiddenResult.visible, true);
     assert.equal(hiddenResult.focused, 'onboardingTitle', 'keyboard activation moves focus only after revealing the title');
     assert.equal(hiddenResult.progress, '1 of 3 steps');
+    assert.equal(hiddenResult.eyebrow, 'Next step', 'incomplete English guide uses the next-step label');
     assert.equal(hiddenResult.setupGuideLabel, 'Setup guide');
     assert.equal(hiddenResult.menuClosed, true);
     assert.equal(hiddenResult.welcomeHidden, true);
@@ -959,34 +966,44 @@ test('authenticated setup guide menu handles visible, hidden, completed, and leg
         document.getElementById('userBadge').click();document.getElementById('userSetupGuide').click();
         await wait(()=>!guide.hidden&&document.activeElement.id==='onboardingTitle');
         const after=await fetch('/api/onboarding').then(response=>response.json());
+        const userAfterOpen=await fetch('/api/me').then(response=>response.json());
         const menuClosed=document.getElementById('userDropdown').classList.contains('hidden');
         const completeCount=[...document.querySelectorAll('[data-onboarding-complete]')].filter(node=>!node.hidden).length;
         const allActionsHidden=[...document.querySelectorAll('[data-onboarding-actions]')].every(node=>node.hidden);
+        const eyebrow=document.getElementById('onboardingEyebrow');const completeEnglish=eyebrow.textContent.trim();
+        document.querySelector('.lang-switch [data-lang="pt-BR"]').click();
+        await wait(()=>document.documentElement.lang==='pt-BR'&&eyebrow.textContent.trim()==='Configuração concluída');
+        const completePortuguese=eyebrow.textContent.trim();
+        document.querySelector('.lang-switch [data-lang="en-US"]').click();
+        await wait(()=>document.documentElement.lang==='en-US'&&eyebrow.textContent.trim()==='Setup complete');
+        const completeEnglishAfterToggle=eyebrow.textContent.trim();
         document.getElementById('onboardingHide').click();
         await wait(()=>guide.hidden&&document.activeElement.id==='userBadge');
         const afterHide=await fetch('/api/onboarding').then(response=>response.json());
         const userAfter=await fetch('/api/me').then(response=>response.json());
         const home=[...document.querySelector('.home-page').children].filter(node=>!node.hidden&&getComputedStyle(node).display!=='none');
-        resolve({initiallyHidden,focus:'onboardingTitle',progress:document.getElementById('onboardingProgress').innerText.trim(),completeCount,allActionsHidden,menuClosed,welcomeStayedHidden:modal.hidden,unchangedByOpen:JSON.stringify(before.onboarding)===JSON.stringify(after.onboarding)&&before.onboarding.status===after.onboarding.status,threeComplete:after.onboarding.complete,hiddenAfter:guide.hidden,hideFocus:document.activeElement.id,hiddenPreference:afterHide.onboarding.guideHidden,afterHideStatus:afterHide.onboarding.status,preferences:{langBefore:userBefore.user.preferred_lang,langAfter:userAfter.user.preferred_lang},removed:['onboardingComplete','onboardingReopen','onboardingReopenHidden','onboardingReopenBar'].every(id=>!document.getElementById(id)),previewAbsent:!document.getElementById('onboardingPreview'),firstVisibleChildren:home.slice(0,2).map(node=>node.className),cycleTop:document.querySelector('.dashboard-grid > .card-section:first-child').getBoundingClientRect().top,heroBottom:document.getElementById('heroBanner').getBoundingClientRect().bottom,scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth});
+        resolve({initiallyHidden,focus:'onboardingTitle',progress:document.getElementById('onboardingProgress').innerText.trim(),eyebrows:{english:completeEnglish,portuguese:completePortuguese,englishAfterToggle:completeEnglishAfterToggle},completeCount,allActionsHidden,menuClosed,welcomeStayedHidden:modal.hidden,unchangedByOpen:JSON.stringify(before.onboarding)===JSON.stringify(after.onboarding)&&before.onboarding.status===after.onboarding.status,preferencesUnchangedByOpen:userBefore.user.preferred_lang===userAfterOpen.user.preferred_lang&&userBefore.user.distance_unit===userAfterOpen.user.distance_unit&&userBefore.user.temperature_unit===userAfterOpen.user.temperature_unit&&userBefore.user.first_day_of_week===userAfterOpen.user.first_day_of_week,threeComplete:after.onboarding.complete,hiddenAfter:guide.hidden,hideFocus:document.activeElement.id,hiddenPreference:afterHide.onboarding.guideHidden,afterHideStatus:afterHide.onboarding.status,preferences:{langBefore:userBefore.user.preferred_lang,langAfter:userAfter.user.preferred_lang},removed:['onboardingComplete','onboardingReopen','onboardingReopenHidden','onboardingReopenBar'].every(id=>!document.getElementById(id)),previewAbsent:!document.getElementById('onboardingPreview'),firstVisibleChildren:home.slice(0,2).map(node=>node.className),cycleTop:document.querySelector('.dashboard-grid > .card-section:first-child').getBoundingClientRect().top,heroBottom:document.getElementById('heroBanner').getBoundingClientRect().bottom,scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth});
       }catch(error){reject(error)}
     })`;
     const completeResult = await runChromeAtViewport(chrome, appUrl.replace(/\/$/, '') + '/home.html', {
       width: 1280, height: 800, mobile: false, cookie: complete.cookie, probeExpression: completeProbe, focusSelector: '#userBadge', screenshotSuffix: '-setup-complete',
     });
     assert.equal(completeResult.initiallyHidden, true, 'completion removes the guide from the dashboard by default');
-    assert.equal(completeResult.progress, '3 de 3 etapas');
+    assert.equal(completeResult.progress, '3 of 3 steps');
+    assert.deepEqual(completeResult.eyebrows, { english: 'Setup complete', portuguese: 'Configuração concluída', englishAfterToggle: 'Setup complete' });
     assert.equal(completeResult.completeCount, 3);
     assert.equal(completeResult.allActionsHidden, true);
     assert.equal(completeResult.menuClosed, true);
     assert.equal(completeResult.welcomeStayedHidden, true, 'the setup-guide menu never opens the welcome modal');
     assert.equal(completeResult.previewAbsent, true);
     assert.equal(completeResult.unchangedByOpen, true, 'opening the guide does not persist onboarding state');
+    assert.equal(completeResult.preferencesUnchangedByOpen, true, 'opening the guide does not persist account preferences');
     assert.equal(completeResult.threeComplete, true);
     assert.equal(completeResult.hiddenAfter, true);
     assert.equal(completeResult.hideFocus, 'userBadge', 'hiding the guide returns focus to the stable account menu trigger');
     assert.equal(completeResult.hiddenPreference, true);
     assert.equal(completeResult.afterHideStatus, 'active');
-    assert.deepEqual(completeResult.preferences, { langBefore: 'pt-BR', langAfter: 'pt-BR' });
+    assert.deepEqual(completeResult.preferences, { langBefore: 'en-US', langAfter: 'en-US' });
     assert.equal(completeResult.removed, true);
     assert.deepEqual(completeResult.firstVisibleChildren, ['hero', 'dashboard-grid vertical']);
     assert.ok(completeResult.cycleTop >= completeResult.heroBottom);

@@ -471,6 +471,7 @@ function setupHomePage() {
   const shoesEmpty = document.getElementById('shoesEmpty');
   const shoesList = document.getElementById('shoesList');
   const onboardingGuide = document.getElementById('onboardingGuide');
+  const onboardingEyebrow = document.getElementById('onboardingEyebrow');
   const onboardingProgress = document.getElementById('onboardingProgress');
   const onboardingWelcome = document.getElementById('onboardingWelcome');
   const onboardingDialog = onboardingWelcome?.querySelector('[role="dialog"]');
@@ -712,6 +713,11 @@ function setupHomePage() {
     if (onboarding) {
       const presentation = onboardingPresentation(onboarding, guideExplicitlyOpen);
       const progress = calculateOnboardingProgress(onboarding);
+      if (onboardingEyebrow) {
+        onboardingEyebrow.textContent = t(progress.complete
+          ? 'home.onboarding.setupComplete'
+          : 'home.onboarding.nextStep');
+      }
       if (onboardingProgress) onboardingProgress.textContent = t('home.onboarding.progress', { completed: progress.completed });
       onboardingGuide.hidden = !presentation.guideVisible;
       renderOnboardingStepStates(onboardingGuide, progress.steps, progress.nextStep);
