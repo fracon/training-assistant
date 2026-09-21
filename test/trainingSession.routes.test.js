@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 
 const { buildServer } = require('../src/server');
 const { createDatabase } = require('../src/db/database');
+const { parseFitFile } = require('../src/fitParser');
 
 const REGISTER_PAYLOAD = {
   email: 'Session@Example.com',
@@ -1008,6 +1009,34 @@ test('POST /api/trainings/:id/fit extracts one nested FIT from a ZIP through the
   assert.equal(response.statusCode, 200);
   assert.equal(response.json().fit_calories, 42);
   assert.equal(db.prepare('SELECT result_data_source, fit_calories FROM trainings WHERE id = ?').get(id).result_data_source, 'fit_upload');
+});
+
+test('POST /api/trainings/:id/fit persists elapsed fallback totals from direct FIT and ZIP parses', async () => {
+  const fitData = {
+    sessions: [{ sport: 'running', laps: [
+      { total_timer_time: 0, total_elapsed_time: 60, total_distance: 1000 },
+    ] }],
+  };
+  class StubFitParser {
+    parse(_buffer, callback) { callback(null, fitData); }
+  }
+  const parseFromFixture = (buffer) => parseFitFile(buffer, { FitParser: StubFitParser });
+  const { db, app, cookie, userId } = await setup({ parseFitFile: parseFromFixture });
+  const trainingId = seedTraining(db, { user_id: userId });
+  const zip = Buffer.from('UEsDBBQAAAAAAAOlKV1ZbFHlBwAAAAcAAAATAAAAbmVzdGVkL2FjdGl2aXR5LmZpdEZJVERBVEFQSwECFAMUAAAAAAADpSldWWxR5QcAAAAHAAAAEwAAAAAAAAAAAAAAgAEAAAAAbmVzdGVkL2FjdGl2aXR5LmZpdFBLBQYAAAAAAQABAEEAAAA4AAAAAAA=', 'base64');
+
+  for (const [filename, contents] of [
+    ['run.fit', Buffer.from('FITDATA')],
+    ['run.zip', zip],
+  ]) {
+    const response = await postFitParts(app, cookie, [{ name: 'file', fileName: filename, value: contents }]);
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.json().fit_duration, '01:00');
+    assert.equal(response.json().fit_distance, 1);
+    assert.equal(response.json().fit_avg_pace, '1:00');
+    const row = db.prepare('SELECT fit_duration, fit_distance, fit_avg_pace, result_data_source FROM trainings WHERE id = ?').get(trainingId);
+    assert.deepEqual(row, { fit_duration: '01:00', fit_distance: 1, fit_avg_pace: '1:00', result_data_source: 'fit_upload' });
+  }
 });
 
 test('POST /api/trainings/:id/fit canonicalizes every calorie value at persistence boundary', async () => {

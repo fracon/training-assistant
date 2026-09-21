@@ -81,13 +81,18 @@ function resolveStepType(lap) {
 }
 
 function buildLapView(lap, index, cumulativeBefore) {
-  const duration = nonNegativeNumber(lap, 'total_timer_time') ??
-    nonNegativeNumber(lap, 'total_elapsed_time');
+  const timerDuration = nonNegativeNumber(lap, 'total_timer_time');
+  const elapsedDuration = nonNegativeNumber(lap, 'total_elapsed_time');
+  const duration = timerDuration > 0
+    ? timerDuration
+    : elapsedDuration > 0
+      ? elapsedDuration
+      : timerDuration ?? elapsedDuration;
   const distanceMeters = nonNegativeNumber(lap, 'total_distance');
   const distanceKm = distanceMeters === null ? null : distanceMeters / 1000;
   const maxSpeedKmh = pickNumber(lap, 'max_speed');
   const avgPace =
-    duration !== null && distanceKm !== null && distanceKm > 0
+    duration !== null && duration > 0 && distanceKm !== null && distanceKm > 0
       ? duration / distanceKm
       : null;
   const bestPace =
@@ -119,15 +124,18 @@ function buildLapView(lap, index, cumulativeBefore) {
 
 function consistentLapTotals(laps) {
   if (laps.length === 0) return null;
-  const hasAllTimer = laps.every((lap) => nonNegativeNumber(lap, 'total_timer_time') !== null);
-  const hasAllElapsed = laps.every((lap) => nonNegativeNumber(lap, 'total_elapsed_time') !== null);
-  const durationField = hasAllTimer ? 'total_timer_time' : hasAllElapsed ? 'total_elapsed_time' : null;
-  if (!durationField || !laps.every((lap) => nonNegativeNumber(lap, 'total_distance') !== null)) return null;
-  const durationSeconds = laps.reduce((sum, lap) => sum + nonNegativeNumber(lap, durationField), 0);
+  if (!laps.every((lap) => nonNegativeNumber(lap, 'total_distance') !== null)) return null;
   const distanceMeters = laps.reduce((sum, lap) => sum + nonNegativeNumber(lap, 'total_distance'), 0);
-  return durationSeconds > 0 && distanceMeters >= 0
-    ? { durationSeconds, distanceKm: distanceMeters / 1000 }
-    : null;
+  if (!Number.isFinite(distanceMeters)) return null;
+
+  for (const durationField of ['total_timer_time', 'total_elapsed_time']) {
+    if (!laps.every((lap) => nonNegativeNumber(lap, durationField) !== null)) continue;
+    const durationSeconds = laps.reduce((sum, lap) => sum + nonNegativeNumber(lap, durationField), 0);
+    if (Number.isFinite(durationSeconds) && durationSeconds > 0) {
+      return { durationSeconds, distanceKm: distanceMeters / 1000 };
+    }
+  }
+  return null;
 }
 
 function timestampMilliseconds(value) {

@@ -316,6 +316,97 @@ test('consistent laps are a same-source fallback before records', () => {
   ], [], []), { durationSeconds: 900, distanceKm: 3 });
   assert.equal(resolveActivityTotals({}, [{ total_timer_time: 300, total_distance: 1000 }, { total_distance: 500 }], [], []), null);
   assert.equal(resolveActivityTotals({}, [{ total_timer_time: 0, total_distance: 0 }], [], []), null);
+  assert.equal(resolveActivityTotals({}, [
+    { total_timer_time: Number.MAX_VALUE, total_distance: 1000 },
+    { total_timer_time: Number.MAX_VALUE, total_distance: 1000 },
+  ], [], []), null, 'non-finite aggregate sums are not accepted as lap totals');
+  assert.equal(resolveActivityTotals({}, [
+    { total_timer_time: 1, total_distance: Number.MAX_VALUE },
+    { total_timer_time: 1, total_distance: Number.MAX_VALUE },
+  ], [], []), null, 'non-finite aggregate distance is not accepted');
+});
+
+test('zero lap timer totals fall back consistently to elapsed time', () => {
+  const summary = summarize({ sessions: [makeSession([
+    makeLap({ total_timer_time: 0, total_elapsed_time: 30, total_distance: 500 }),
+    makeLap({ message_index: 1, total_timer_time: 0, total_elapsed_time: 45, total_distance: 750 }),
+  ])] });
+
+  assert.equal(summary.totals.durationSeconds, 75);
+  assert.equal(summary.totals.distanceKm, 1.25);
+  assert.equal(summary.totals.avgPaceSecondsPerKm, 60);
+  assert.equal(summary.totals.avgPaceLabel, '1:00');
+  assert.deepEqual(summary.laps.map(({ duration, durationLabel, cumulativeLabel }) => ({ duration, durationLabel, cumulativeLabel })), [
+    { duration: 30, durationLabel: '00:30', cumulativeLabel: '00:30' },
+    { duration: 45, durationLabel: '00:45', cumulativeLabel: '01:15' },
+  ]);
+});
+
+test('positive lap timer remains preferred over positive elapsed and drives cumulative views', () => {
+  const summary = summarize({ sessions: [makeSession([
+    makeLap({ total_timer_time: 20, total_elapsed_time: 30, total_distance: 500 }),
+    makeLap({ message_index: 1, total_timer_time: 40, total_elapsed_time: 50, total_distance: 1000 }),
+  ])] });
+
+  assert.equal(summary.totals.durationSeconds, 60);
+  assert.equal(summary.totals.distanceKm, 1.5);
+  assert.equal(summary.totals.avgPaceSecondsPerKm, 40);
+  assert.deepEqual(summary.laps.map(({ duration, cumulativeSeconds, cumulativeLabel }) => ({ duration, cumulativeSeconds, cumulativeLabel })), [
+    { duration: 20, cumulativeSeconds: 20, cumulativeLabel: '00:20' },
+    { duration: 40, cumulativeSeconds: 60, cumulativeLabel: '01:00' },
+  ]);
+});
+
+test('lap elapsed fallback requires a complete set and otherwise uses record totals', () => {
+  const laps = [
+    { total_timer_time: 0, total_elapsed_time: 10, total_distance: 500 },
+    { total_timer_time: 0, total_distance: 500 },
+  ];
+  const records = [
+    { timestamp: 1704067200000, distance: 0 },
+    { timestamp: 1704067210000, distance: 500 },
+  ];
+  assert.deepEqual(resolveActivityTotals({}, laps, records, []), { durationSeconds: 10, distanceKm: 0.5 });
+});
+
+test('invalid or zero lap durations do not create pace and records remain the fallback', () => {
+  const zeroDuration = summarize({ sessions: [makeSession([
+    makeLap({ total_timer_time: 0, total_elapsed_time: 0, total_distance: 1000 }),
+  ])] });
+  assert.equal(zeroDuration.laps[0].duration, 0);
+  assert.equal(zeroDuration.laps[0].durationLabel, '00:00');
+  assert.equal(zeroDuration.laps[0].avgPaceSecondsPerKm, null);
+  assert.equal(zeroDuration.laps[0].avgPaceLabel, '--:--');
+  assert.equal(zeroDuration.totals.durationSeconds, 0);
+  assert.equal(zeroDuration.totals.avgPaceSecondsPerKm, null);
+  assert.equal(zeroDuration.totals.avgPaceLabel, '--:--');
+
+  const invalidLaps = [
+    { total_timer_time: 0, total_elapsed_time: Number.NaN, total_distance: 500 },
+    { total_timer_time: 0, total_elapsed_time: -5, total_distance: 500 },
+  ];
+  assert.deepEqual(resolveActivityTotals({}, invalidLaps, [
+    { timestamp: 1704067200000, distance: 0 },
+    { timestamp: 1704067210000, distance: 500 },
+  ], []), { durationSeconds: 10, distanceKm: 0.5 });
+});
+
+test('missing timer and invalid values retain elapsed fallback while invalid lap data is rejected', () => {
+  const summary = summarize({ sessions: [makeSession([
+    makeLap({ total_timer_time: undefined, total_elapsed_time: 12, total_distance: 300 }),
+    makeLap({ total_timer_time: Number.POSITIVE_INFINITY, total_elapsed_time: 18, total_distance: 700 }),
+  ])] });
+  assert.equal(summary.totals.durationSeconds, 30);
+  assert.equal(summary.totals.distanceKm, 1);
+  assert.equal(summary.totals.avgPaceLabel, '0:30');
+  assert.deepEqual(summary.laps.map((lap) => lap.duration), [12, 18]);
+
+  const invalid = summarize({ sessions: [makeSession([
+    makeLap({ total_timer_time: -1, total_elapsed_time: -2, total_distance: 1000 }),
+  ])] });
+  assert.equal(invalid.laps[0].duration, null);
+  assert.equal(invalid.laps[0].avgPaceLabel, '--:--');
+  assert.equal(invalid.totals.durationSeconds, 0);
 });
 
 test('records provide a controlled distance and active-time fallback', () => {
