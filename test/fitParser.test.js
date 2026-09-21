@@ -357,6 +357,40 @@ test('positive lap timer remains preferred over positive elapsed and drives cumu
   ]);
 });
 
+test('a zero timer on a distance-bearing lap rejects the entire timer aggregate', () => {
+  const summary = summarize({ sessions: [makeSession([
+    makeLap({ total_timer_time: 0, total_elapsed_time: 300, total_distance: 1000 }),
+    makeLap({ message_index: 1, total_timer_time: 300, total_elapsed_time: 300, total_distance: 1000 }),
+  ])] });
+
+  assert.equal(summary.totals.durationSeconds, 600);
+  assert.equal(summary.totals.distanceKm, 2);
+  assert.equal(summary.totals.avgPaceLabel, '5:00');
+});
+
+test('zero-distance rest laps do not invalidate timer totals or add elapsed time', () => {
+  const summary = summarize({ sessions: [makeSession([
+    makeLap({ total_timer_time: 100, total_elapsed_time: 100, total_distance: 1000 }),
+    makeLap({ message_index: 1, intensity: 'rest', total_timer_time: 0, total_elapsed_time: 200, total_distance: 0 }),
+  ])] });
+
+  assert.equal(summary.totals.durationSeconds, 100);
+  assert.equal(summary.totals.distanceKm, 1);
+  assert.equal(summary.totals.avgPaceLabel, '1:40');
+  assert.deepEqual(summary.laps.map(({ duration, cumulativeSeconds }) => ({ duration, cumulativeSeconds })), [
+    { duration: 100, cumulativeSeconds: 100 },
+    { duration: 200, cumulativeSeconds: 300 },
+  ]);
+
+  const timedRest = summarize({ sessions: [makeSession([
+    makeLap({ total_timer_time: 100, total_elapsed_time: 100, total_distance: 1000 }),
+    makeLap({ message_index: 1, intensity: 'rest', total_timer_time: 20, total_elapsed_time: 120, total_distance: 0 }),
+  ])] });
+  assert.equal(timedRest.totals.durationSeconds, 120);
+  assert.equal(timedRest.totals.distanceKm, 1);
+  assert.equal(timedRest.totals.avgPaceLabel, '2:00');
+});
+
 test('lap elapsed fallback requires a complete set and otherwise uses record totals', () => {
   const laps = [
     { total_timer_time: 0, total_elapsed_time: 10, total_distance: 500 },
@@ -407,6 +441,18 @@ test('missing timer and invalid values retain elapsed fallback while invalid lap
   assert.equal(invalid.laps[0].duration, null);
   assert.equal(invalid.laps[0].avgPaceLabel, '--:--');
   assert.equal(invalid.totals.durationSeconds, 0);
+});
+
+test('partially missing or invalid timers reject the whole timer set for complete elapsed totals', () => {
+  for (const timer of [undefined, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+    const summary = summarize({ sessions: [makeSession([
+      makeLap({ total_timer_time: timer, total_elapsed_time: 300, total_distance: 1000 }),
+      makeLap({ message_index: 1, total_timer_time: 300, total_elapsed_time: 300, total_distance: 1000 }),
+    ])] });
+    assert.equal(summary.totals.durationSeconds, 600, `timer ${String(timer)} must reject the mixed timer set`);
+    assert.equal(summary.totals.distanceKm, 2);
+    assert.equal(summary.totals.avgPaceLabel, '5:00');
+  }
 });
 
 test('records provide a controlled distance and active-time fallback', () => {

@@ -129,8 +129,12 @@ function consistentLapTotals(laps) {
   if (!Number.isFinite(distanceMeters)) return null;
 
   for (const durationField of ['total_timer_time', 'total_elapsed_time']) {
-    if (!laps.every((lap) => nonNegativeNumber(lap, durationField) !== null)) continue;
-    const durationSeconds = laps.reduce((sum, lap) => sum + nonNegativeNumber(lap, durationField), 0);
+    const lapDurations = laps.map((lap) => nonNegativeNumber(lap, durationField));
+    if (lapDurations.some((duration) => duration === null)) continue;
+    if (durationField === 'total_timer_time' && laps.some((lap, index) => (
+      nonNegativeNumber(lap, 'total_distance') > 0 && lapDurations[index] === 0
+    ))) continue;
+    const durationSeconds = lapDurations.reduce((sum, duration) => sum + duration, 0);
     if (Number.isFinite(durationSeconds) && durationSeconds > 0) {
       return { durationSeconds, distanceKm: distanceMeters / 1000 };
     }
