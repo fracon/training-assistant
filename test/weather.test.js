@@ -243,6 +243,31 @@ test('country aliases do not weaken administrative matching or candidate ambigui
   assert.equal(ambiguous, null, 'multiple otherwise-compatible coordinates remain ambiguous');
 });
 
+test('geocodeLocation accepts recognized administrative abbreviations in country context', async () => {
+  const brazil = { name: 'São Paulo', admin1: 'São Paulo', country: 'Brazil', country_code: 'BR', latitude: -23.55, longitude: -46.63 };
+  const portland = { name: 'Portland', admin1: 'Oregon', country: 'United States', country_code: 'US', latitude: 45.52, longitude: -122.68 };
+  const resolve = (location, candidate) => geocodeLocation(location, jsonFetch({ results: [candidate] }));
+
+  for (const location of ['São Paulo, SP, Brasil', 'São Paulo, SP, BR', 'São Paulo, São Paulo, Brasil', '  são paulo , sp , brAsil ']) {
+    assert.deepEqual(await resolve(location, brazil), { name: 'São Paulo', latitude: -23.55, longitude: -46.63 }, location);
+  }
+  for (const location of ['Portland, OR, US', 'Portland, Oregon, United States']) {
+    assert.deepEqual(await resolve(location, portland), { name: 'Portland', latitude: 45.52, longitude: -122.68 }, location);
+  }
+
+  assert.equal(await resolve('Portland, CA, US', portland), null, 'California code does not match Oregon');
+  assert.equal(await resolve('São Paulo, SP, Portugal', brazil), null, 'country context remains mandatory');
+  assert.equal(await resolve('São Paulo, OR, Brasil', brazil), null, 'US abbreviation is not reused in Brazil');
+  assert.equal(await resolve('São Paulo, ZZ, Brasil', brazil), null, 'unknown administrative codes are rejected');
+  assert.deepEqual(await resolve('São Paulo, SP, Brasil', brazil), {
+    name: 'São Paulo', latitude: -23.55, longitude: -46.63,
+  });
+  assert.equal(await geocodeLocation('São Paulo, SP, Brasil', jsonFetch({ results: [
+    brazil,
+    { ...brazil, latitude: -22.9, longitude: -47.06 },
+  ] })), null, 'multiple matching candidates remain ambiguous');
+});
+
 test('Fanzeres and Fânzeres with Gondomar context resolve the same mocked locality', async () => {
   for (const location of ['Fânzeres, Gondomar', 'Fanzeres, Gondomar']) {
     const geo = await geocodeLocation(location, async (rawUrl) => {

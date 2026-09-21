@@ -3,6 +3,11 @@
 const GEOCODING_URL = 'https://geocoding-api.open-meteo.com/v1/search';
 const ARCHIVE_URL = 'https://archive-api.open-meteo.com/v1/archive';
 const FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
+const {
+  isKnownAdministrativeAbbreviation,
+  resolveAdministrativeSubdivision,
+  matchesAdministrativeSubdivision,
+} = require('./adminSubdivisions');
 
 function buildGeoUrl(name) {
   const params = new URLSearchParams({ name, count: '10', format: 'json' });
@@ -60,6 +65,11 @@ function candidateMatchesContext(candidate, context) {
   return context.every((part) => {
     const countryCode = canonicalizeCountry(part, candidate?.country_code);
     if (countryCode !== null) return true;
+    if (/^[a-z]{2}$/.test(part)) {
+      if (!isKnownAdministrativeAbbreviation(part)) return false;
+      const subdivision = resolveAdministrativeSubdivision(part, candidate?.country_code);
+      return matchesAdministrativeSubdivision(administrativeFields, subdivision);
+    }
     if (administrativeFields.some((field) => field.includes(part))) return true;
     return !hasCountryCode && countryFields.some((field) => field.includes(part));
   });

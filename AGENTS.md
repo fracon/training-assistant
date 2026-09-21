@@ -68,8 +68,11 @@ migration patterns.
 - Weather geocoding tries normalized full location, locality before the first
   comma, then diacritic-free variants. Validate context against administrative
   fields and canonicalize country names in English/Portuguese or ISO alpha-2
-  codes against the candidate country code; reject ambiguous/incompatible
-  matches and preserve the exact user-entered location in the training.
+  codes against the candidate country code. Recognized administrative
+  abbreviations are resolved only within that canonical country (the catalog
+  covers all Brazilian states and U.S. states plus District of Columbia);
+  reject unknown or incompatible abbreviations and ambiguous matches. Preserve
+  the exact user-entered location in the training.
 - Spreadsheet import deduplicates by exact **Date (`dia`) + Training Name
   (`treino`) + Description (`detalhes`)**. Calendar drag-and-drop rescheduling
   persists through its dedicated endpoint. Keep the shared Snackbar behavior

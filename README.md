@@ -264,7 +264,7 @@ stays fully editable — a manually typed value is never overwritten.
 
 The integration is completely **keyless** and uses [Open-Meteo](https://open-meteo.com/):
 
-- **Geocoding:** `https://geocoding-api.open-meteo.com/v1/search` searches up to 10 candidates. It tries normalized full location text, locality before the first comma, then diacritic-free variants. Supplied context is checked against administrative and country fields; ambiguous or incompatible matches are rejected.
+- **Geocoding:** `https://geocoding-api.open-meteo.com/v1/search` searches up to 10 candidates. It tries normalized full location text, locality before the first comma, then diacritic-free variants. Country names and ISO alpha-2 codes are canonicalized; recognized Brazilian state and U.S. state (including DC) abbreviations are checked only within their country. Supplied context is checked against administrative and country fields; unknown, ambiguous, or incompatible matches are rejected.
 - **Historical weather:** `https://archive-api.open-meteo.com/v1/archive` returns the past day's max temperature and WMO weather code (`temperature_2m_max`, `weather_code`, `timezone=auto`).
 - **Recent dates:** when the archive cannot answer, the request automatically falls back to the live forecast at `https://api.open-meteo.com/v1/forecast`.
 
