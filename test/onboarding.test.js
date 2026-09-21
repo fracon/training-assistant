@@ -1195,6 +1195,134 @@ test('authenticated training-result guidance and feedback shoes render by canoni
   }
 });
 
+test('authenticated result shoe options retranslate live without refetching or changing selection', async () => {
+  const chrome = findChrome();
+  assert.ok(chrome, 'Chrome is required for live feedback-shoe language validation.');
+  const db = createDatabase({ filename: ':memory:' });
+  const app = await buildServer({ db, sessionCookieSecure: false, unsplashFetch: async () => { throw new Error('No external hero request in browser tests.'); } });
+  let shoeListRequests = 0;
+  const languageChangeSnapshots = [];
+  app.addHook('onRequest', async (request) => {
+    if (request.method === 'GET' && request.url === '/api/shoes') shoeListRequests += 1;
+  });
+  app.addHook('onResponse', async (request) => {
+    if (request.method === 'PATCH' && request.url === '/api/users/me/language') {
+      languageChangeSnapshots.push({
+        trainings: db.prepare('SELECT id, feedback_shoe_id, feedback_shoe, feedback_notas FROM trainings ORDER BY id').all(),
+        shoes: db.prepare("SELECT id,mileage FROM shoes WHERE id LIKE 'shoe-language-%' ORDER BY id").all(),
+      });
+    }
+  });
+  try {
+    const email = 'shoe-language-browser@example.com';
+    assert.equal((await app.inject({ method: 'POST', url: '/api/auth/register', payload: {
+      email, password: 'shoe-language-secret', first_name: 'Shoe', last_name: 'Runner', preferred_lang: 'en-US',
+    } })).statusCode, 201);
+    const userId = db.prepare('SELECT id FROM users WHERE email = ?').get(email).id;
+    const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email, password: 'shoe-language-secret' } });
+    const cookie = [].concat(login.headers['set-cookie'] ?? [])[0].split(';')[0].split('=')[1];
+    db.prepare(`INSERT INTO shoes (id,user_id,brand,model,status,mileage) VALUES
+      ('shoe-language-active',?,'Kinesis','Active','active',20),
+      ('shoe-language-retired-current',?,'Kinesis','Retired Current','retired',42),
+      ('shoe-language-retired-other',?,'Kinesis','Retired Other','retired',18)`).run(userId, userId, userId);
+    const retiredId = db.prepare(`INSERT INTO trainings (user_id,dia,tipo,treino,result_data_source,completed,fit_distance,
+      feedback_shoe_id,feedback_shoe) VALUES (?, '2026-09-20','Run','Retired association','none',1,5,
+      'shoe-language-retired-current','Kinesis Retired Current')`).run(userId).lastInsertRowid;
+    const activeId = db.prepare(`INSERT INTO trainings (user_id,dia,tipo,treino,result_data_source,completed,fit_distance)
+      VALUES (?, '2026-09-20','Run','New active selection','none',1,5)`).run(userId).lastInsertRowid;
+    const legacyId = db.prepare(`INSERT INTO trainings (user_id,dia,tipo,treino,result_data_source,feedback_shoe)
+      VALUES (?, '2026-09-20','Run','Legacy shoe label','none','Historical shoe label')`).run(userId).lastInsertRowid;
+    const appUrl = await app.listen({ port: 0, host: '127.0.0.1' });
+    const probe = (id, mode) => `new Promise(async(resolve,reject)=>{
+      const wait=async(predicate,label='UI')=>{const end=Date.now()+12000;while(Date.now()<end){if(await predicate())return;await new Promise(r=>setTimeout(r,50))}throw new Error('Shoe language '+label+' timed out: '+JSON.stringify({ready:document.body.classList.contains('shell-mounted'),lang:document.documentElement.lang,select:!!document.getElementById('feedbackShoe'),options:document.getElementById('feedbackShoe')?.options.length,errors:document.body.innerText.slice(0,400)}))};
+      try{
+        await wait(()=>document.body.classList.contains('shell-mounted')&&document.getElementById('feedbackShoe')?.options.length>1,'options');
+        const select=document.getElementById('feedbackShoe');
+        const retired=()=>[...select.options].find(option=>option.value==='shoe-language-retired-current');
+        const before={value:select.value,retiredText:retired()?.textContent.trim()??null,retiredDisabled:retired()?.disabled??null,
+          otherRetiredPresent:[...select.options].some(option=>option.value==='shoe-language-retired-other'),
+          legacyLabel:[...select.options].find(option=>option.dataset.legacyLabel==='true')?.textContent.trim()??null,
+          legacySelected:select.selectedOptions[0]?.dataset.legacyLabel==='true',
+          placeholder:select.options[0]?.textContent.trim()};
+        if('${mode}'==='active'){
+          select.value='shoe-language-active';select.dispatchEvent(new Event('change',{bubbles:true}));
+        }
+        const selectedBefore=select.value;
+        const savedBefore=await fetch('/api/trainings/${id}').then(r=>r.json());
+        document.querySelector('.lang-switch [data-lang="pt-BR"]').click();
+        await wait(()=>document.documentElement.lang==='pt-BR','Portuguese switch');
+        const portuguese=retired()?.textContent.trim()??null;
+        const valueInPortuguese=select.value;
+        document.querySelector('.lang-switch [data-lang="en-US"]').click();
+        await wait(()=>document.documentElement.lang==='en-US','English switch back');
+        const englishAgain=retired()?.textContent.trim()??null;
+        const selectionAfter=select.value;
+        const activeElementAfterLanguage=document.activeElement?.id;
+        const savedAfter=await fetch('/api/trainings/${id}').then(r=>r.json());
+        const feedbackPayload='${mode}'==='active' ? {feedback_shoe_id:select.value} : {feedback_notas:'preserve existing retired association'};
+        const saveResponse=await fetch('/api/trainings/${id}',{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(feedbackPayload)});
+        const saved=await saveResponse.json();
+        if(!saveResponse.ok)throw new Error('Saving after language switch failed: '+JSON.stringify(saved));
+        select.focus();
+        const focused=document.activeElement===select;
+        resolve({lang:document.documentElement.lang,before,selectedBefore,portuguese,valueInPortuguese,englishAgain,selectionAfter,
+          activeElementAfterLanguage,focused,savedBefore:savedBefore.training,savedAfterLanguages:savedAfter.training,
+          saved:saved.training,disabledRetired:retired()?.disabled??null,placeholder:select.options[0]?.textContent.trim(),
+          legacySelected:select.selectedOptions[0]?.dataset.legacyLabel==='true',scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth});
+      }catch(error){reject(error)}
+    })`;
+    const cases = [
+      { id: retiredId, mode: 'retired', width: 1280, height: 800 },
+      { id: activeId, mode: 'active', width: 390, height: 844 },
+      { id: legacyId, mode: 'active', width: 1280, height: 800 },
+    ];
+    for (const scenario of cases) {
+      const shoeMileageBefore = db.prepare("SELECT id,mileage FROM shoes WHERE id LIKE 'shoe-language-%' ORDER BY id").all();
+      const feedbackBefore = db.prepare('SELECT id,feedback_shoe_id,feedback_shoe,feedback_notas FROM trainings WHERE id=?').get(scenario.id);
+      const requestCountBefore = shoeListRequests;
+      const languageSnapshotCountBefore = languageChangeSnapshots.length;
+      const result = await runChromeAtViewport(chrome, `${appUrl}/training-result.html?id=${scenario.id}`, {
+        width: scenario.width, height: scenario.height, mobile: scenario.width < 600, cookie,
+        probeExpression: probe(scenario.id, scenario.mode), verifyTabNextSelector: '#feedbackWeather',
+        screenshotSuffix: `-shoe-language-${scenario.mode}-${scenario.width}`,
+      });
+      assert.equal(result.lang, 'en-US');
+      assert.equal(result.before.placeholder, '–');
+      const expectedRetiredLabel = scenario.mode === 'retired';
+      assert.equal(result.portuguese, expectedRetiredLabel ? 'Kinesis Retired Current (Aposentado)' : null);
+      assert.equal(result.englishAgain, expectedRetiredLabel ? 'Kinesis Retired Current (Retired)' : null);
+      assert.equal(result.disabledRetired, expectedRetiredLabel ? true : null);
+      assert.equal(result.before.otherRetiredPresent, false);
+      assert.equal(result.focused, true);
+      assert.equal(result.keyboardNextMatches, true, `the focused shoe select keeps its normal next Tab target (${result.tabActiveElementId})`);
+      const expectedSelection = scenario.mode === 'retired' ? 'shoe-language-retired-current' : 'shoe-language-active';
+      assert.equal(result.selectedBefore, expectedSelection);
+      assert.equal(result.valueInPortuguese, expectedSelection);
+      assert.equal(result.selectionAfter, expectedSelection, 'language changes preserve the current choice');
+      assert.ok(result.scrollWidth <= result.viewportWidth);
+      assert.deepEqual(result.savedAfterLanguages, result.savedBefore,
+        'changing language does not change persisted training feedback');
+      const languageSnapshots = languageChangeSnapshots.slice(languageSnapshotCountBefore);
+      assert.equal(languageSnapshots.length, 2, 'both live language changes completed their preference request');
+      for (const snapshot of languageSnapshots) {
+        assert.deepEqual(snapshot.shoes, shoeMileageBefore, 'changing language does not change shoe mileage');
+        assert.deepEqual(snapshot.trainings.find((training) => training.id === scenario.id), feedbackBefore,
+          'changing language does not change this training feedback');
+      }
+      assert.equal(shoeListRequests - requestCountBefore, 1, 'one initial list request and no refetches on language changes');
+      assert.equal(result.saved.feedback_shoe_id, scenario.mode === 'retired' ? 'shoe-language-retired-current' : 'shoe-language-active');
+      if (scenario.id === legacyId) {
+        assert.equal(result.before.legacyLabel, 'Historical shoe label');
+        assert.equal(result.before.legacySelected, true, 'the legacy label remains selected before a replacement is chosen');
+        assert.equal(result.legacySelected, false, 'the explicit active selection replaces the non-owned legacy label');
+      }
+    }
+  } finally {
+    try { await app.close(); } catch {}
+    db.close();
+  }
+});
+
 test('browser dialog a11y follows the active slide and traps Shift+Tab from its title', async () => {
   const chrome = findChrome();
   assert.ok(chrome, 'Chrome is required for onboarding focus validation.');

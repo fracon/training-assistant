@@ -788,10 +788,16 @@ async function initTrainingResult() {
     renderLapsTable();
   };
 
-  const loadShoes = async () => {
-    const shoes = await fetchShoes();
+  let feedbackShoes = [];
+  let shoeOptionsLoaded = false;
+  let shoeSelectionChanged = false;
+  const renderFeedbackShoes = () => {
+    if (!shoeOptionsLoaded) return;
+    const selectedOption = shoeSelect.selectedOptions[0];
+    const selectedValue = shoeSelect.value;
+    const selectedLegacyLabel = selectedOption?.dataset.legacyLabel === 'true';
     shoeSelect.innerHTML = '<option value="">–</option>';
-    const selectable = selectableFeedbackShoes(shoes, training.feedback_shoe_id);
+    const selectable = selectableFeedbackShoes(feedbackShoes, training.feedback_shoe_id);
     for (const shoe of selectable) {
       const option = document.createElement('option');
       const label = shoe.brand && shoe.model ? `${shoe.brand} ${shoe.model}` : shoe.model || shoe.brand || shoe.id;
@@ -813,11 +819,23 @@ async function initTrainingResult() {
       legacy.value = '';
       legacy.textContent = training.feedback_shoe;
       legacy.disabled = true;
-      legacy.selected = true;
+      legacy.dataset.legacyLabel = 'true';
+      legacy.selected = selectedLegacyLabel || (!shoeSelectionChanged && !selectedValue && !training.feedback_shoe_id);
       shoeSelect.appendChild(legacy);
     }
+    if (selectedLegacyLabel && shoeSelect.querySelector('option[data-legacy-label="true"]')) {
+      shoeSelect.querySelector('option[data-legacy-label="true"]').selected = true;
+    } else if (selectedValue && [...shoeSelect.options].some((option) => option.value === selectedValue)) {
+      shoeSelect.value = selectedValue;
+    } else if (training.feedback_shoe_id) {
+      shoeSelect.value = training.feedback_shoe_id;
+    }
   };
-  let shoeSelectionChanged = false;
+  const loadShoes = async () => {
+    feedbackShoes = await fetchShoes();
+    shoeOptionsLoaded = true;
+    renderFeedbackShoes();
+  };
   shoeSelect.addEventListener('change', () => { shoeSelectionChanged = true; });
 
   // The pain description only exists when pain was reported; hiding it also
@@ -1211,6 +1229,7 @@ async function initTrainingResult() {
     renderFitDropzoneState();
     renderWeatherAutofill();
     renderFitData();
+    renderFeedbackShoes();
     applyTooltips();
     importGuidance.render();
   });

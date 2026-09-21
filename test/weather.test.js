@@ -10,6 +10,7 @@ const {
   buildGeoUrl,
   buildDailyUrl,
   httpJson,
+  canonicalizeCountry,
   geocodeLocation,
   extractDaily,
   readEndpoint,
@@ -116,6 +117,11 @@ test('geocodeLocation skips coordinate-less entries and retains only a matching 
     latitude: 9,
     longitude: -7,
   });
+
+  const textCountryFallback = await geocodeLocation('Fallback place, Portugal', jsonFetch({ results: [
+    { name: 'Fallback place', country: 'Portugal', latitude: 9, longitude: -7 },
+  ] }));
+  assert.deepEqual(textCountryFallback, { name: 'Fallback place', latitude: 9, longitude: -7 });
 });
 
 test('geocodeLocation returns null when no usable result exists', async () => {
@@ -177,6 +183,77 @@ test('geocodeLocation retries without diacritics and refuses ambiguous or incomp
     ] }),
   }));
   assert.equal(ambiguous, null, 'do not silently choose between incompatible places');
+});
+
+test('country context canonicalizes ISO codes and Portuguese or English country names', async () => {
+  for (const country of ['Brasil', 'Brazil', 'BR', 'bRaSiL']) {
+    const fetchImpl = async (rawUrl) => {
+      assert.equal(new URL(rawUrl).searchParams.get('name'), 'São Paulo, ' + country);
+      return { ok: true, json: async () => ({ results: [
+        { name: 'São Paulo', country: 'Brazil', country_code: 'BR', latitude: -23.55, longitude: -46.63 },
+      ] }) };
+    };
+    assert.deepEqual(await geocodeLocation(`São Paulo, ${country}`, fetchImpl), {
+      name: 'São Paulo', latitude: -23.55, longitude: -46.63,
+    }, `${country} matches the Open-Meteo Brazil/BR candidate`);
+  }
+
+  for (const country of ['Portugal', 'PT', 'portugal']) {
+    assert.deepEqual(await geocodeLocation(`Porto, ${country}`, async () => ({
+      ok: true,
+      json: async () => ({ results: [
+        { name: 'Porto', country: 'Portugal', country_code: 'PT', latitude: 41.15, longitude: -8.61 },
+      ] }),
+    })), { name: 'Porto', latitude: 41.15, longitude: -8.61 });
+  }
+
+  assert.equal(canonicalizeCountry('México', 'MX'), 'MX');
+  assert.equal(canonicalizeCountry('Mexico', 'MX'), 'MX');
+  assert.equal(canonicalizeCountry('mx', 'MX'), 'MX');
+  assert.equal(canonicalizeCountry('Gondomar', 'PT'), null, 'administrative context is not canonicalized as a country');
+  assert.equal(canonicalizeCountry('Brasil', null), null);
+  assert.equal(canonicalizeCountry('', 'BR'), null);
+  assert.equal(canonicalizeCountry('ZZ', 'ZZ'), null, 'unknown codes are not accepted as ISO countries');
+});
+
+test('country aliases do not weaken administrative matching or candidate ambiguity checks', async () => {
+  const incompatible = await geocodeLocation('São Paulo, Gondomar', async () => ({
+    ok: true,
+    json: async () => ({ results: [
+      { name: 'São Paulo', country: 'Brazil', country_code: 'BR', latitude: -23.55, longitude: -46.63 },
+    ] }),
+  }));
+  assert.equal(incompatible, null, 'a non-country context must still match an administrative field');
+
+  const inconsistentCountry = await geocodeLocation('São Paulo, Brasil', async () => ({
+    ok: true,
+    json: async () => ({ results: [
+      { name: 'São Paulo', country: 'Brazil', country_code: 'PT', latitude: -23.55, longitude: -46.63 },
+    ] }),
+  }));
+  assert.equal(inconsistentCountry, null, 'localized country text cannot override an incompatible ISO candidate code');
+
+  const ambiguous = await geocodeLocation('São Paulo, Brasil', async () => ({
+    ok: true,
+    json: async () => ({ results: [
+      { name: 'São Paulo', country: 'Brazil', country_code: 'BR', latitude: -23.55, longitude: -46.63 },
+      { name: 'São Paulo', country: 'Brazil', country_code: 'BR', latitude: -22.9, longitude: -47.06 },
+    ] }),
+  }));
+  assert.equal(ambiguous, null, 'multiple otherwise-compatible coordinates remain ambiguous');
+});
+
+test('Fanzeres and Fânzeres with Gondomar context resolve the same mocked locality', async () => {
+  for (const location of ['Fânzeres, Gondomar', 'Fanzeres, Gondomar']) {
+    const geo = await geocodeLocation(location, async (rawUrl) => {
+      const query = new URL(rawUrl).searchParams.get('name');
+      const results = query === location ? [] : query === 'Fanzeres'
+        ? [{ name: 'Fânzeres', admin1: 'Porto District', admin2: 'Gondomar Municipality', country: 'Portugal', country_code: 'PT', latitude: 41.16754, longitude: -8.52981 }]
+        : [];
+      return { ok: true, json: async () => ({ results }) };
+    });
+    assert.deepEqual(geo, { name: 'Fânzeres', latitude: 41.16754, longitude: -8.52981 });
+  }
 });
 
 test('extractDaily reads the temperature and weather code from a daily payload', () => {
