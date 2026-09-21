@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 
 const { buildServer } = require('../src/server');
 const { createDatabase } = require('../src/db/database');
+const { parseFitFile } = require('../src/fitParser');
 
 const REGISTER_PAYLOAD = {
   email: 'Session@Example.com',
@@ -220,7 +221,7 @@ test('shoe mileage follows feedback, manual distance edits, completion, swaps an
   const id = seedTraining(db, { user_id: userId });
   db.prepare(`INSERT INTO shoes (id, user_id, brand, model, mileage, status)
               VALUES ('shoe-a', ?, 'Acme', 'A', 3, 'active'),
-                     ('shoe-b', ?, 'Acme', 'B', 7, 'retired')`).run(userId, userId);
+                     ('shoe-b', ?, 'Acme', 'B', 7, 'active')`).run(userId, userId);
 
   let response = await app.inject({ method: 'PATCH', url: `/api/trainings/${id}`,
     headers: { cookie }, payload: { feedback_shoe_id: 'shoe-a' } });
@@ -250,6 +251,51 @@ test('shoe mileage follows feedback, manual distance edits, completion, swaps an
     headers: { cookie }, payload: { feedback_shoe_id: 'shoe-b' } });
   await app.inject({ method: 'DELETE', url: `/api/trainings/${id}`, headers: { cookie } });
   assert.equal(db.prepare("SELECT mileage FROM shoes WHERE id='shoe-b'").get().mileage, 7);
+});
+
+test('retired feedback shoes stay visible only as a selected history and replacement reconciles mileage', async () => {
+  const { db, app, cookie, userId } = await setup();
+  const id = seedTraining(db, { user_id: userId, completed: 1, fit_distance: 10 });
+  db.prepare('UPDATE trainings SET fit_distance = 10, result_data_source = \'manual\' WHERE id = ?').run(id);
+  db.prepare(`INSERT INTO shoes (id, user_id, brand, model, mileage, status)
+    VALUES ('active-now', ?, 'Acme', 'Current', 3, 'active'),
+           ('retired-own', ?, 'Acme', 'Old', 42, 'retired')`).run(userId, userId);
+  db.prepare("INSERT INTO users (email, password_hash) VALUES ('other-shoe-owner@test', 'x')").run();
+  const foreignUserId = db.prepare("SELECT id FROM users WHERE email='other-shoe-owner@test'").get().id;
+  db.prepare("INSERT INTO shoes (id, user_id, brand, model, status) VALUES ('retired-foreign', ?, 'Other', 'Retired', 'retired')").run(foreignUserId);
+  db.prepare("UPDATE trainings SET feedback_shoe_id='retired-own', feedback_shoe='Acme Old' WHERE id=?").run(id);
+
+  const listing = await app.inject({ method: 'GET', url: '/api/shoes', headers: { cookie } });
+  assert.deepEqual(listing.json().shoes.map((shoe) => shoe.id).sort(), ['active-now', 'retired-own']);
+  db.prepare("UPDATE trainings SET feedback_shoe_id='retired-foreign', feedback_shoe='Foreign Retired' WHERE id=?").run(id);
+  const foreignHistory = await app.inject({ method: 'GET', url: `/api/trainings/${id}`, headers: { cookie } });
+  assert.equal(foreignHistory.json().training.feedback_shoe_id, null);
+  assert.equal(foreignHistory.json().training.feedback_shoe, null, 'foreign shoe details are not exposed even for a malformed historical association');
+  db.prepare("UPDATE trainings SET feedback_shoe_id='retired-own', feedback_shoe='Acme Old' WHERE id=?").run(id);
+  const selected = await app.inject({ method: 'GET', url: `/api/trainings/${id}`, headers: { cookie } });
+  assert.equal(selected.json().training.feedback_shoe_id, 'retired-own');
+  assert.equal(selected.json().training.feedback_shoe, 'Acme Old');
+  for (const feedback_shoe_id of ['retired-own', 'retired-foreign']) {
+    const denied = await app.inject({ method: 'PATCH', url: `/api/trainings/${id}`, headers: { cookie }, payload: { feedback_shoe_id } });
+    assert.equal(denied.statusCode, 400);
+  }
+
+  const saveUnchanged = await app.inject({ method: 'PATCH', url: `/api/trainings/${id}`, headers: { cookie }, payload: { feedback_notas: 'keep shoe history' } });
+  assert.equal(saveUnchanged.statusCode, 200);
+  assert.equal(saveUnchanged.json().training.feedback_shoe_id, 'retired-own');
+  assert.equal(db.prepare("SELECT mileage FROM shoes WHERE id='retired-own'").get().mileage, 42);
+
+  const replacement = await app.inject({ method: 'PATCH', url: `/api/trainings/${id}`, headers: { cookie }, payload: { feedback_shoe_id: 'active-now' } });
+  assert.equal(replacement.statusCode, 200);
+  assert.equal(replacement.json().training.feedback_shoe_id, 'active-now');
+  assert.equal(db.prepare("SELECT mileage FROM shoes WHERE id='active-now'").get().mileage, 13);
+  assert.equal(db.prepare("SELECT mileage FROM shoes WHERE id='retired-own'").get().mileage, 42);
+  assert.deepEqual(db.prepare('SELECT shoe_id, distance FROM training_shoe_mileage WHERE training_id=?').get(id), { shoe_id: 'active-now', distance: 10 });
+
+  await app.inject({ method: 'PUT', url: `/api/trainings/${id}/manual-results`, headers: { cookie }, payload: { distance_km: 12, duration_seconds: 3600 } });
+  assert.equal(db.prepare("SELECT mileage FROM shoes WHERE id='active-now'").get().mileage, 15);
+  await app.close();
+  db.close();
 });
 
 test('feedback shoe IDs are typed and owner isolated', async () => {
@@ -925,7 +971,7 @@ test('POST /api/trainings/:id/fit persists FIT metrics and returns them', async 
   const payload = response.json();
   assert.equal(payload.fit_duration, '1:30:00');
   assert.equal(payload.fit_distance, 12.5);
-  assert.equal(payload.fit_avg_pace, '7.20');
+  assert.equal(payload.fit_avg_pace, '7:12');
   assert.equal(payload.fit_avg_hr, 160);
   assert.equal(payload.fit_max_hr, 182);
   assert.equal(payload.fit_elevation_gain, 200);
@@ -937,7 +983,7 @@ test('POST /api/trainings/:id/fit persists FIT metrics and returns them', async 
     .get(id);
   assert.equal(row.fit_duration, '1:30:00');
   assert.equal(row.fit_distance, 12.5);
-  assert.equal(row.fit_avg_pace, '7.20');
+  assert.equal(row.fit_avg_pace, '7:12');
   assert.equal(row.fit_avg_hr, 160);
   assert.equal(row.fit_max_hr, 182);
   assert.equal(row.fit_elevation_gain, 200);
@@ -963,6 +1009,34 @@ test('POST /api/trainings/:id/fit extracts one nested FIT from a ZIP through the
   assert.equal(response.statusCode, 200);
   assert.equal(response.json().fit_calories, 42);
   assert.equal(db.prepare('SELECT result_data_source, fit_calories FROM trainings WHERE id = ?').get(id).result_data_source, 'fit_upload');
+});
+
+test('POST /api/trainings/:id/fit persists elapsed fallback totals from direct FIT and ZIP parses', async () => {
+  const fitData = {
+    sessions: [{ sport: 'running', laps: [
+      { total_timer_time: 0, total_elapsed_time: 60, total_distance: 1000 },
+    ] }],
+  };
+  class StubFitParser {
+    parse(_buffer, callback) { callback(null, fitData); }
+  }
+  const parseFromFixture = (buffer) => parseFitFile(buffer, { FitParser: StubFitParser });
+  const { db, app, cookie, userId } = await setup({ parseFitFile: parseFromFixture });
+  const trainingId = seedTraining(db, { user_id: userId });
+  const zip = Buffer.from('UEsDBBQAAAAAAAOlKV1ZbFHlBwAAAAcAAAATAAAAbmVzdGVkL2FjdGl2aXR5LmZpdEZJVERBVEFQSwECFAMUAAAAAAADpSldWWxR5QcAAAAHAAAAEwAAAAAAAAAAAAAAgAEAAAAAbmVzdGVkL2FjdGl2aXR5LmZpdFBLBQYAAAAAAQABAEEAAAA4AAAAAAA=', 'base64');
+
+  for (const [filename, contents] of [
+    ['run.fit', Buffer.from('FITDATA')],
+    ['run.zip', zip],
+  ]) {
+    const response = await postFitParts(app, cookie, [{ name: 'file', fileName: filename, value: contents }]);
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.json().fit_duration, '01:00');
+    assert.equal(response.json().fit_distance, 1);
+    assert.equal(response.json().fit_avg_pace, '1:00');
+    const row = db.prepare('SELECT fit_duration, fit_distance, fit_avg_pace, result_data_source FROM trainings WHERE id = ?').get(trainingId);
+    assert.deepEqual(row, { fit_duration: '01:00', fit_distance: 1, fit_avg_pace: '1:00', result_data_source: 'fit_upload' });
+  }
 });
 
 test('POST /api/trainings/:id/fit canonicalizes every calorie value at persistence boundary', async () => {

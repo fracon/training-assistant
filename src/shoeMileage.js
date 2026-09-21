@@ -24,10 +24,11 @@ function reconcileShoeMileage(db, userId, before, after) {
     'SELECT shoe_id AS shoeId, distance FROM training_shoe_mileage WHERE training_id = ? AND user_id = ?'
   ).get(trainingId, userId);
 
-  // A qualifying contribution which predates the ledger is intentionally
-  // historical: changing or deleting it must never subtract distance that this
-  // system cannot prove it added. A later detach/reattach begins new accounting.
-  if (!recorded && previous) return;
+  // Never subtract an unledgered historical distance from its old shoe. When
+  // the association is explicitly moved, however, begin ledger accounting on
+  // the newly selected shoe so future saves/replacements can reconcile it.
+  const historicalSwap = !recorded && previous && next && previous.shoeId !== next.shoeId;
+  if (!recorded && previous && !historicalSwap) return;
 
   const deltas = new Map();
   if (recorded) deltas.set(recorded.shoeId, -recorded.distance);
@@ -62,12 +63,15 @@ function resolveOwnedShoe(db, userId, shoeId) {
     throw new ShoeMileageError('feedback_shoe_id must be a string or null.');
   }
   const shoe = db.prepare(
-    'SELECT id, brand, model FROM shoes WHERE id = ? AND user_id = ?'
+    'SELECT id, brand, model, status FROM shoes WHERE id = ? AND user_id = ?'
   ).get(shoeId, userId);
   if (!shoe) {
     throw new ShoeMileageError('Selected shoe does not belong to the authenticated user.');
   }
-  return shoe;
+  if (shoe.status !== 'active') {
+    throw new ShoeMileageError('A retired shoe cannot be newly selected.');
+  }
+  return { id: shoe.id, brand: shoe.brand, model: shoe.model };
 }
 
 function resolveOwnedShoeLabel(db, userId, label) {
@@ -75,7 +79,7 @@ function resolveOwnedShoeLabel(db, userId, label) {
   if (typeof label !== 'string') throw new ShoeMileageError('feedback_shoe must be a string.');
   const matches = db.prepare(
     `SELECT id, brand, model FROM shoes
-      WHERE user_id = ? AND TRIM(brand || ' ' || model) = TRIM(?)`
+      WHERE user_id = ? AND status = 'active' AND TRIM(brand || ' ' || model) = TRIM(?)`
   ).all(userId, label);
   if (matches.length !== 1) {
     throw new ShoeMileageError('feedback_shoe must identify exactly one owned shoe.');

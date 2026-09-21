@@ -63,16 +63,16 @@ test('onboarding is derived from owned data and presentation preferences', async
   db.close();
 });
 
-test('legacy accounts stay out of the first-visit welcome and cannot see another user data', async () => {
+test('existing accounts are active, stay out of the first-visit welcome, and cannot see other users data', async () => {
   const db = createDatabase({ filename: ':memory:' });
   const app = await buildServer({ db, sessionCookieSecure: false });
-  const firstCookie = await userSession(app, 'legacy-onboarding@example.com', 'Legacy');
-  db.prepare("UPDATE users SET onboarding_status = 'legacy' WHERE email = ?").run('legacy-onboarding@example.com');
+  const firstCookie = await userSession(app, 'existing-onboarding@example.com', 'Existing');
+  db.prepare("UPDATE users SET onboarding_status = 'active' WHERE email = ?").run('existing-onboarding@example.com');
   const secondCookie = await userSession(app, 'other-onboarding@example.com', 'Other');
   db.prepare('INSERT INTO shoes (id, user_id, brand, model) VALUES (?, ?, ?, ?)').run('own-shoe', 1, 'Own', 'Shoe');
 
   let response = await app.inject({ method: 'GET', url: '/api/onboarding', headers: { cookie: firstCookie } });
-  assert.equal(response.json().onboarding.status, 'legacy');
+  assert.equal(response.json().onboarding.status, 'active');
   assert.equal(response.json().onboarding.steps.shoes, true);
   response = await app.inject({ method: 'GET', url: '/api/onboarding', headers: { cookie: secondCookie } });
   assert.equal(response.json().onboarding.steps.shoes, false);

@@ -41,12 +41,8 @@ export function renderOnboardingStepStates(root, steps = {}, nextStep = null) {
   return cards.length;
 }
 
-export function isNewUserOnboarding(state) {
-  return state?.status === 'new' || state?.status === 'active';
-}
-
 export function shouldShowWelcome(state) {
-  return isNewUserOnboarding(state) && state?.status === 'new';
+  return state?.status === 'new';
 }
 
 export function onboardingSlideNavigation(index, total = ONBOARDING_TOTAL_STEPS) {
@@ -124,8 +120,8 @@ export function createWelcomeSession() {
 
 export function onboardingPresentation(state = {}, explicitlyOpen = false) {
   const progress = calculateOnboardingProgress(state);
-  const hasKnownStatus = ['new', 'active', 'legacy'].includes(state?.status);
-  const automaticallyVisible = isNewUserOnboarding(state) && !progress.complete && !state.guideHidden;
+  const hasKnownStatus = ['new', 'active'].includes(state?.status);
+  const automaticallyVisible = hasKnownStatus && !progress.complete && !state.guideHidden;
   return {
     ...progress,
     guideVisible: hasKnownStatus && (explicitlyOpen || automaticallyVisible),

@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized prompts for an AI coach.
 
-Current application version: **0.10.0** (active development).
+Current application version: **0.10.1** (active development).
 
 ### Shoe mileage integrity
 
@@ -22,12 +22,20 @@ empty ledger, so ambiguous historical runs are never added or subtracted. The
 durable v2 marker in `schema_migrations` makes this conversion idempotent.
 
 An associated completed workout without a ledger entry is treated as historical:
-direct shoe swaps, distance edits, and deletions leave mileage unchanged rather
-than guessing at a prior contribution. To start accounting, the workout must
-first be detached and later reattached, which creates one reversible ledger
-entry. Legacy shoe labels remain a presentation fallback when loading the
+distance edits and deletions leave its shoe mileage unchanged rather than
+guessing at a prior contribution. An explicit swap to a different shoe starts
+accounting the workout distance on the newly selected shoe without subtracting
+the unknown historical contribution from the old shoe. Detaching and later
+reattaching a workout also starts one reversible ledger entry. Legacy shoe
+labels remain a presentation fallback when loading the
 associated shoe is not possible; FIT, ZIP-extracted FIT, and manual results all
 use canonical `fit_distance` in kilometres.
+
+The feedback shoe selector offers active shoes for new selections. A workout's
+same-user shoe that was retired later remains visible as a disabled historical
+selection; unrelated feedback saves preserve it. Replacing it with an active
+shoe starts mileage accounting on the replacement without subtracting an
+unledgered historical distance from the retired shoe.
 
 Authenticated pages and APIs use server-side sessions. FIT files and workout data are processed by the Kinesis application server, not sent to external processing services. Optional weather lookup sends the planned location and date to Open-Meteo. If `UNSPLASH_ACCESS_KEY` (or its accepted legacy alias `UNSPLASH_API_KEY`) is configured, the Kinesis server asks Unsplash for a generic running image and registers the image download. The dashboard makes a daily quote request to ZenQuotes and falls back to bundled localized quotes. These integrations do not send FIT files, workout data, or user-entered training context; as with other network requests, providers may receive connection metadata such as the requesting IP address.
 
@@ -36,8 +44,8 @@ Authenticated pages and APIs use server-side sessions. FIT files and workout dat
 New accounts receive a short PT/EN welcome carousel and a non-blocking setup
 guide. The guide's three steps are derived from that user's shoes, active cycle,
 and planned workout records. Dismissing welcome or hiding the guide changes only
-presentation state; opening the guide from the user menu is transient. Legacy
-accounts do not receive welcome automatically.
+presentation state; opening the guide from the user menu is transient. Existing
+accounts do not receive the welcome automatically.
 
 AI coaches are only as good as the data you give them. Exporting workouts by hand means losing detail. Kinesis turns the raw `.FIT` file your watch already recorded into a structured, metric-rich review request in seconds — so every recommendation from your AI coach is grounded in real numbers.
 
@@ -110,6 +118,23 @@ future work and are not made compatible by renaming their extensions.
 
 Every realized result has one persisted source: `none`, `fit_upload`, or `manual` (`garmin_connect` is reserved for a future integration). A manual result intentionally has no synthetic FIT summary or laps. Replacing FIT data with manual aggregates, or manual aggregates with a FIT upload, requires explicit confirmation and executes atomically; the outgoing source's incompatible data is cleared. The result screen marks the source clearly, and its analysis prompt identifies manual data, notes the absence of laps, and states that Kinesis calculated pace from distance and duration. Since dashboard, calendar, and AI Coach already aggregate the canonical training metrics, manual results participate in weekly totals without a second source of truth.
 
+FIT activity pace uses a valid session distance paired with valid
+`total_timer_time`, falling back to session elapsed time, session average speed,
+then complete internally consistent laps, and finally paired record-derived
+distance/active duration. Distance and duration are never mixed across
+sources. Pace is rounded to the nearest second and stored as `m:ss` min/km. An
+idempotent startup migration converts recognized old FIT decimal-minute values
+such as `6.53` to `6:32`. Elevation gain prefers session `total_ascent`, then
+complete lap ascent totals, then the sum of positive deltas between consecutive
+valid records from one selected altitude field. Descents are never added by
+absolute value; invalid samples break record sequences, and session, lap, and
+record totals are never combined.
+
+The contextual result-page guidance is visible only when the training's
+canonical `result_data_source` is `none`. A successfully saved FIT/ZIP, manual,
+or supported future source hides it; visible form values are not used to infer
+whether a result exists.
+
 The FIT result is persisted as soon as the upload to `/api/trainings/:id/fit`
 completes. The final result-page actions then persist the manual result when
 needed and save the complete feedback before continuing: **Save and back to
@@ -164,9 +189,9 @@ The compact checklist appears automatically while incomplete and not hidden by
 the saved preference. Its steps are calculated from data owned by the signed-in
 user: at least one shoe row, an active cycle, and at least one planned training
 row. Seeing a screen or choosing an action does not complete a step. Newly
-registered users start with status `new`; existing database users receive
-`legacy` as the default when the migration adds the status column, so they do
-not get the welcome automatically. Legacy accounts can still open the guide.
+registered users start with status `new`; existing rows with the historical
+`legacy` value are migrated idempotently to `active`. Existing accounts do not
+receive the welcome retroactively. Only `new` accounts receive it automatically.
 
 When the three steps are complete, or the user hides the checklist, it is absent
 from the normal dashboard layout. The user can open **Setup guide** / **Guia de
@@ -176,8 +201,8 @@ the shell sends a page-local event; elsewhere it navigates to
 removes it from the URL while preserving other query parameters and the hash.
 This opening is transient: it changes no progress, onboarding status, or saved
 presentation preference. An explicitly opened guide can show all completed
-steps, including for legacy accounts; opening the guide does not open the welcome
-modal. “Hide guide” saves only the per-user
+steps for any signed-in account; opening the guide does not open the welcome modal.
+“Hide guide” saves only the per-user
 hidden preference; it does not change step data. An incomplete checklist appears
 automatically only while `guide_hidden` is false; after completion it remains
 absent unless explicitly opened from the menu.
@@ -239,14 +264,16 @@ stays fully editable — a manually typed value is never overwritten.
 
 The integration is completely **keyless** and uses [Open-Meteo](https://open-meteo.com/):
 
-- **Geocoding:** `https://geocoding-api.open-meteo.com/v1/search` resolves the planned location name to coordinates (`name`, `count=1`, `format=json`).
+- **Geocoding:** `https://geocoding-api.open-meteo.com/v1/search` searches up to 10 candidates. It tries normalized full location text, locality before the first comma, then diacritic-free variants. Country names and ISO alpha-2 codes are canonicalized; recognized Brazilian state and U.S. state (including DC) abbreviations are checked only within their country. Supplied context is checked against administrative and country fields; unknown, ambiguous, or incompatible matches are rejected.
 - **Historical weather:** `https://archive-api.open-meteo.com/v1/archive` returns the past day's max temperature and WMO weather code (`temperature_2m_max`, `weather_code`, `timezone=auto`).
 - **Recent dates:** when the archive cannot answer, the request automatically falls back to the live forecast at `https://api.open-meteo.com/v1/forecast`.
 
 The API always returns metric Celsius; the frontend converts it to the user's
 preferred temperature unit and translates the WMO code through the shared
 `weather.*` locale keys. Runs occur under the request limits and requirements of
-Open-Meteo's free tier — no API key, account, or `.env` value is needed.
+Open-Meteo's free tier — no API key, account, or `.env` value is needed. Search
+normalization is temporary; the planned training keeps the exact location the
+user entered.
 
 ## Quick Start (local development)
 
@@ -398,7 +425,7 @@ modules for the complete response contract.
 
 `GET /api/onboarding` requires a valid session, returns `401` otherwise, and
 responds `200` with `{ "onboarding": state }`. The state fields are `status`
-(`new`, `active`, or `legacy`), `guideHidden`, `steps` (`shoes`, `cycle`,
+(`new` or `active`), `guideHidden`, `steps` (`shoes`, `cycle`,
 `trainings` booleans), `completed`, `total` (3), `complete`, and
 `firstTrainingId` (number or `null`). Step completion is derived from records
 owned by the authenticated user: any shoe, an active cycle, and any planned
@@ -414,10 +441,11 @@ columns are `users.onboarding_status` and `users.onboarding_guide_hidden`:
   dismissed boolean is stored, and other statuses remain unchanged.
 - `guide_hidden` stores the per-user presentation preference as integer 0/1.
 - Neither preference stores progress; progress is recalculated from owned data.
-- Registration explicitly creates users with status `new`. The idempotent
-  schema initialization adds the status column with default `legacy` and the
-  hidden preference with default `0`, so existing accounts do not receive the
-  welcome automatically and their checklist is initially unhidden.
+- Registration explicitly creates users with status `new`. New schemas default
+  to `active`; the idempotent migration adds the status column to older schemas
+  with a compatibility default and converts every existing `legacy`
+  value to `active`, preserving the guide-hidden preference and all user data.
+  The hidden preference defaults to `0`.
 
 `openSetupGuide=1` is a transient frontend navigation signal, not an API field
 or persisted preference.

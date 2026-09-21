@@ -50,17 +50,19 @@ test('reconciliation applies only deltas for save retries, corrections, swaps an
   db.close();
 });
 
-test('an unrecorded historical contribution is never added or subtracted', () => {
+test('historical mileage stays on its old shoe while an explicit replacement starts new ledger accounting', () => {
   const db = fixture();
   reconcileShoeMileage(db, 1, null, null);
   const historical = { id: 7, completed: 1, feedback_shoe_id: 'a', fit_distance: 10 };
-  reconcileShoeMileage(db, 1, historical, { ...historical, feedback_shoe_id: 'b' });
   reconcileShoeMileage(db, 1, historical, { ...historical, fit_distance: 12 });
   reconcileShoeMileage(db, 1, historical, null);
+  reconcileShoeMileage(db, 1, historical, { ...historical, feedback_shoe_id: 'b' });
   assert.deepEqual(db.prepare('SELECT id, mileage FROM shoes WHERE user_id = 1 ORDER BY id').all(), [
-    { id: 'a', mileage: 5 }, { id: 'b', mileage: 2 },
+    { id: 'a', mileage: 5 }, { id: 'b', mileage: 12 },
   ]);
-  assert.deepEqual(db.prepare('SELECT * FROM training_shoe_mileage').all(), []);
+  assert.deepEqual(db.prepare('SELECT training_id, shoe_id, distance FROM training_shoe_mileage').all(), [
+    { training_id: 7, shoe_id: 'b', distance: 10 },
+  ]);
   db.close();
 });
 
@@ -99,6 +101,7 @@ test('shoe ownership resolution supports clears and rejects malformed or foreign
   assert.equal(resolveOwnedShoe(db, 1, null), null);
   assert.equal(resolveOwnedShoe(db, 1, ''), null);
   assert.equal(resolveOwnedShoe(db, 1, 'a').model, 'A');
+  assert.throws(() => resolveOwnedShoe(db, 1, 'b'), /retired/);
   assert.equal(resolveOwnedShoeLabel(db, 1, ' Acme A ').id, 'a');
   assert.equal(resolveOwnedShoeLabel(db, 1, ''), null);
   assert.equal(resolveOwnedShoeLabel(db, 1, null), null);

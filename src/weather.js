@@ -3,10 +3,88 @@
 const GEOCODING_URL = 'https://geocoding-api.open-meteo.com/v1/search';
 const ARCHIVE_URL = 'https://archive-api.open-meteo.com/v1/archive';
 const FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
+const {
+  isKnownAdministrativeAbbreviation,
+  resolveAdministrativeSubdivision,
+  matchesAdministrativeSubdivision,
+} = require('./adminSubdivisions');
 
 function buildGeoUrl(name) {
-  const params = new URLSearchParams({ name, count: '1', format: 'json' });
+  const params = new URLSearchParams({ name, count: '10', format: 'json' });
   return `${GEOCODING_URL}?${params}`;
+}
+
+function normalizeGeoText(value) {
+  return String(value ?? '').normalize('NFC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('en-US');
+}
+
+function removeDiacritics(value) {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+const COUNTRY_DISPLAY_NAMES = ['en', 'pt'].map((locale) => new Intl.DisplayNames([locale], { type: 'region' }));
+
+function canonicalizeCountry(value, candidateCountryCode) {
+  const countryCode = String(candidateCountryCode ?? '').trim().toUpperCase();
+  if (!/^[A-Z]{2}$/.test(countryCode)) return null;
+  const normalized = removeDiacritics(normalizeGeoText(value));
+  if (!normalized) return null;
+  const displayNames = COUNTRY_DISPLAY_NAMES.map((names) => names.of(countryCode));
+  const fallbackNames = ['unknown region', 'regiao desconhecida'];
+  const isKnownCode = displayNames.some((name) => {
+    const normalizedName = removeDiacritics(normalizeGeoText(name));
+    return normalizedName !== countryCode.toLowerCase() && !fallbackNames.includes(normalizedName);
+  });
+  if (!isKnownCode) return null;
+  if (normalized === countryCode.toLowerCase()) return countryCode;
+  if (displayNames.some((name) => removeDiacritics(normalizeGeoText(name)) === normalized)) {
+    return countryCode;
+  }
+  return null;
+}
+
+function locationSearchPlan(name) {
+  const normalized = String(name ?? '').normalize('NFC').trim().replace(/\s+/g, ' ');
+  const components = normalized.split(',').map((part) => part.trim()).filter(Boolean);
+  const locality = components[0] ?? '';
+  const context = components.slice(1);
+  const queries = [normalized, locality, removeDiacritics(normalized), removeDiacritics(locality)];
+  return {
+    queries: [...new Set(queries.map((query) => query.trim()).filter(Boolean))],
+    locality: removeDiacritics(normalizeGeoText(locality)),
+    context: context.map((part) => removeDiacritics(normalizeGeoText(part))),
+  };
+}
+
+function candidateMatchesContext(candidate, context) {
+  const administrativeFields = ['admin1', 'admin2', 'admin3']
+    .map((key) => removeDiacritics(normalizeGeoText(candidate?.[key])));
+  const countryFields = ['country', 'country_code']
+    .map((key) => removeDiacritics(normalizeGeoText(candidate?.[key])));
+  const hasCountryCode = canonicalizeCountry(candidate?.country_code, candidate?.country_code) !== null;
+  return context.every((part) => {
+    const countryCode = canonicalizeCountry(part, candidate?.country_code);
+    if (countryCode !== null) return true;
+    if (/^[a-z]{2}$/.test(part)) {
+      if (!isKnownAdministrativeAbbreviation(part)) return false;
+      const subdivision = resolveAdministrativeSubdivision(part, candidate?.country_code);
+      return matchesAdministrativeSubdivision(administrativeFields, subdivision);
+    }
+    if (administrativeFields.some((field) => field.includes(part))) return true;
+    return !hasCountryCode && countryFields.some((field) => field.includes(part));
+  });
+}
+
+function chooseGeocodeResult(results, locality, context) {
+  const candidates = (Array.isArray(results) ? results : []).filter((result) => {
+    return Number.isFinite(result?.latitude) && Number.isFinite(result?.longitude) &&
+      removeDiacritics(normalizeGeoText(result.name)) === locality &&
+      candidateMatchesContext(result, context);
+  });
+  if (candidates.length === 0) return null;
+  const unique = new Map(candidates.map((candidate) => [`${candidate.latitude},${candidate.longitude}`, candidate]));
+  if (unique.size !== 1) return null;
+  return [...unique.values()][0];
 }
 
 function buildDailyUrl(endpoint, { latitude, longitude, date }) {
@@ -30,17 +108,19 @@ async function httpJson(url, fetchImpl = globalThis.fetch) {
 }
 
 async function geocodeLocation(name, fetchImpl = globalThis.fetch) {
-  const payload = await httpJson(buildGeoUrl(name), fetchImpl);
-  const results = Array.isArray(payload?.results) ? payload.results : [];
-  const first = results.find(
-    (result) => typeof result?.latitude === 'number' && typeof result?.longitude === 'number'
-  );
-  if (!first) return null;
-  return {
-    name: typeof first.name === 'string' && first.name.trim() !== '' ? first.name : name,
-    latitude: first.latitude,
-    longitude: first.longitude,
-  };
+  const plan = locationSearchPlan(name);
+  for (const query of plan.queries) {
+    const payload = await httpJson(buildGeoUrl(query), fetchImpl);
+    const match = chooseGeocodeResult(payload?.results, plan.locality, plan.context);
+    if (match) {
+      return {
+        name: match.name,
+        latitude: match.latitude,
+        longitude: match.longitude,
+      };
+    }
+  }
+  return null;
 }
 
 function extractDaily(payload) {
@@ -108,6 +188,11 @@ module.exports = {
   ARCHIVE_URL,
   FORECAST_URL,
   buildGeoUrl,
+  normalizeGeoText,
+  removeDiacritics,
+  canonicalizeCountry,
+  locationSearchPlan,
+  chooseGeocodeResult,
   buildDailyUrl,
   httpJson,
   geocodeLocation,

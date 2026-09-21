@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { existsSync, mkdtempSync, readFileSync, writeFileSync } = require('node:fs');
+const { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } = require('node:fs');
 const { execFile, execFileSync, spawn } = require('node:child_process');
 const { createServer } = require('node:http');
 const { once } = require('node:events');
@@ -14,6 +14,7 @@ const { setTimeout: delay } = require('node:timers/promises');
 const { createHash } = require('node:crypto');
 const { buildServer } = require('../src/server');
 const { createDatabase } = require('../src/db/database');
+const { buildFitFile } = require('./helpers/buildFitFile');
 
 const execFileAsync = promisify(execFile);
 
@@ -29,10 +30,11 @@ async function runChromeAtViewport(chrome, url, { width, height, mobile, cookie 
   const debugPort = portServer.address().port;
   portServer.close();
   await once(portServer, 'close');
+  const profileDirectory = mkdtempSync(`${tmpdir()}/kinesis-onboarding-cdp-`);
   const processHandle = spawn(chrome, [
     '--headless=new', '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage', '--no-first-run',
     '--remote-allow-origins=*', `--remote-debugging-port=${debugPort}`,
-    `--user-data-dir=${mkdtempSync(`${tmpdir()}/kinesis-onboarding-cdp-`)}`, 'about:blank',
+    `--user-data-dir=${profileDirectory}`, 'about:blank',
   ], { stdio: 'ignore' });
   let socket;
   try {
@@ -216,6 +218,7 @@ async function runChromeAtViewport(chrome, url, { width, height, mobile, cookie 
     try { socket?.close(); } catch {}
     processHandle.kill();
     await Promise.race([once(processHandle, 'close'), delay(2000)]);
+    rmSync(profileDirectory, { recursive: true, force: true });
   }
 }
 
@@ -227,9 +230,7 @@ test('onboarding progress exposes three data-derived steps', async () => {
   assert.equal(module.calculateOnboardingProgress({ steps: { shoes: true, cycle: true, trainings: true } }).complete, true);
   assert.equal(module.shouldShowWelcome({ status: 'new' }), true);
   assert.equal(module.shouldShowWelcome({ status: 'active' }), false);
-  assert.equal(module.shouldShowWelcome({ status: 'legacy' }), false);
-  assert.equal(module.isNewUserOnboarding({ status: 'active' }), true);
-  assert.equal(module.isNewUserOnboarding({ status: 'legacy' }), false);
+  assert.equal(module.shouldShowWelcome({ status: 'unknown' }), false);
 });
 
 test('welcome carousel moves one slide at a time and gates workout actions on an active cycle', async () => {
@@ -254,7 +255,7 @@ test('welcome session opens for new accounts and explicit guide requests suppres
   assert.equal(session.slide, 0);
   assert.equal(session.ensureAutomatic(fresh), true, 'a new account receives the automatic welcome');
   assert.equal(session.ensureAutomatic({ status: 'active' }), false, 'the persisted dismissal transitions the account out of first-visit status');
-  assert.equal(session.ensureAutomatic({ status: 'legacy', welcomeDismissed: false }), false, 'legacy accounts never receive the automatic modal');
+  assert.equal(session.ensureAutomatic({ status: 'active', welcomeDismissed: false }), false, 'existing accounts never receive the automatic modal');
   session.setSlide(2, 3);
   assert.equal(session.slide, 2, 'the automatic welcome retains carousel navigation state');
   session.suppressAutomatic();
@@ -265,7 +266,7 @@ test('welcome session opens for new accounts and explicit guide requests suppres
   assert.equal(nextVisit.ensureAutomatic(fresh), true, 'the in-memory suppression does not persist across a new page visit');
 });
 
-test('guide presentation keeps completed and legacy onboarding hidden until explicitly requested', async () => {
+test('guide presentation keeps completed and hidden onboarding out of layout until explicitly requested', async () => {
   const { onboardingPresentation } = await import(pathToFileURL(path.join(__dirname, '../src/public/shared/onboarding.js')));
   const complete = { status: 'active', guideHidden: false, steps: { shoes: true, cycle: true, trainings: true } };
   assert.deepEqual(
@@ -276,10 +277,10 @@ test('guide presentation keeps completed and legacy onboarding hidden until expl
   const hidden = { status: 'active', guideHidden: true, steps: { shoes: true, cycle: false, trainings: false } };
   assert.equal(onboardingPresentation(hidden).guideVisible, false);
   assert.equal(onboardingPresentation(hidden, true).guideVisible, true, 'opening hidden guidance is transient');
-  const legacy = { status: 'legacy', guideHidden: false, steps: { shoes: true, cycle: false, trainings: true } };
-  assert.equal(onboardingPresentation(legacy).guideVisible, false);
-  assert.equal(onboardingPresentation(legacy, true).guideVisible, true, 'legacy progress is shown only after an explicit request');
-  assert.equal(onboardingPresentation(legacy, true).completed, 2);
+  const existing = { status: 'active', guideHidden: false, steps: { shoes: true, cycle: false, trainings: true } };
+  assert.equal(onboardingPresentation(existing).guideVisible, true, 'active incomplete accounts see the checklist when not hidden');
+  assert.equal(onboardingPresentation(existing, true).guideVisible, true);
+  assert.equal(onboardingPresentation(existing, true).completed, 2);
 });
 
 test('the transient setup-guide URL signal is consumed while preserving query and hash', async () => {
@@ -366,13 +367,12 @@ test('welcome carousel copy is translated and action labels match their destinat
   assert.equal(pt.home.onboarding.setupComplete, 'Configuração concluída');
 });
 
-test('result guidance is limited to the first unrecorded workout for new users', async () => {
+test('result guidance follows only the canonical result provenance for every owned training', async () => {
   const { shouldShowOnboardingResultHint } = await import(pathToFileURL(path.join(__dirname, '../src/public/training-result.js')));
-  assert.equal(shouldShowOnboardingResultHint({ status: 'new', firstTrainingId: 4 }, { result_data_source: 'none' }, 4), true);
-  assert.equal(shouldShowOnboardingResultHint({ status: 'active', firstTrainingId: 4 }, { result_data_source: 'manual' }, 4), false);
-  assert.equal(shouldShowOnboardingResultHint({ status: 'active', firstTrainingId: 4 }, { result_data_source: 'fit_upload' }, 4), false);
-  assert.equal(shouldShowOnboardingResultHint({ status: 'active', firstTrainingId: 4 }, { result_data_source: 'none' }, 5), false);
-  assert.equal(shouldShowOnboardingResultHint({ status: 'legacy', firstTrainingId: 4 }, { result_data_source: 'none' }, 4), false);
+  assert.equal(shouldShowOnboardingResultHint({ result_data_source: 'none' }), true);
+  assert.equal(shouldShowOnboardingResultHint({ result_data_source: 'manual' }), false);
+  assert.equal(shouldShowOnboardingResultHint({ result_data_source: 'fit_upload' }), false);
+  assert.equal(shouldShowOnboardingResultHint({ result_data_source: 'garmin_connect' }), false);
   const css = readFileSync(path.join(__dirname, '../src/public/home.css'), 'utf8');
   assert.doesNotMatch(css, /var\(--surface\)|var\(--wash\)/);
 });
@@ -824,7 +824,7 @@ test('a new account gets the real automatic welcome and Not now persists dismiss
   }
 });
 
-test('authenticated setup guide menu handles visible, hidden, completed, and legacy onboarding in Chrome', async () => {
+test('authenticated setup guide menu handles visible, hidden, completed, and existing onboarding in Chrome', async () => {
   const chrome = findChrome();
   assert.ok(chrome, 'Chrome is required for authenticated setup-guide navigation validation.');
   const db = createDatabase({ filename: ':memory:' });
@@ -864,7 +864,7 @@ test('authenticated setup guide menu handles visible, hidden, completed, and leg
   const visible = await account({ email: 'guide-visible@example.com', language: 'pt-BR', status: 'active', hidden: false });
   const hidden = await account({ email: 'guide-hidden@example.com', language: 'en-US', status: 'active', hidden: true, steps: { shoes: true } });
   const complete = await account({ email: 'guide-complete@example.com', language: 'en-US', status: 'active', hidden: false, steps: { shoes: true, cycle: true, trainings: true } });
-  const legacy = await account({ email: 'guide-legacy@example.com', language: 'en-US', status: 'legacy', hidden: true, steps: { shoes: true } });
+  const existing = await account({ email: 'guide-existing@example.com', language: 'en-US', status: 'active', hidden: true, steps: { shoes: true } });
   const firstVisit = await account({ email: 'guide-first-visit@example.com', language: 'en-US', status: 'new', hidden: false });
 
   const appUrl = await app.listen({ port: 0, host: '127.0.0.1' });
@@ -907,7 +907,7 @@ test('authenticated setup guide menu handles visible, hidden, completed, and leg
     assert.deepEqual(visibleResult.firstVisibleChildren, ['hero', 'onboarding-guide card-section'], 'an incomplete, unhidden checklist remains directly beneath the hero');
     assert.equal(visibleResult.removed, true);
     assert.equal(visibleResult.previewAbsent, true);
-    assert.equal(visibleResult.welcomeHidden, true, 'active legacy-style accounts do not get a welcome modal');
+    assert.equal(visibleResult.welcomeHidden, true, 'active accounts do not get the first-visit welcome modal');
     assert.ok(visibleResult.scrollWidth <= visibleResult.viewportWidth);
 
     const hiddenProbe = `new Promise(async(resolve,reject)=>{
@@ -1021,8 +1021,8 @@ test('authenticated setup guide menu handles visible, hidden, completed, and leg
     assert.equal(completeReload.oldCardsAbsent, true);
     assert.ok(completeReload.scrollWidth <= completeReload.viewportWidth);
 
-    const legacyProbe = `new Promise(async(resolve,reject)=>{
-      const wait=async(predicate)=>{const end=Date.now()+15000;while(Date.now()<end){if(await predicate())return;await new Promise(r=>setTimeout(r,60))}throw new Error('Legacy setup guide transition timed out')};
+    const existingProbe = `new Promise(async(resolve,reject)=>{
+      const wait=async(predicate)=>{const end=Date.now()+15000;while(Date.now()<end){if(await predicate())return;await new Promise(r=>setTimeout(r,60))}throw new Error('Existing-account setup guide transition timed out')};
       try{
         await wait(()=>document.body.classList.contains('shell-mounted')&&document.getElementById('userSetupGuide'));
         const modal=document.getElementById('onboardingWelcome');await new Promise(r=>setTimeout(r,150));
@@ -1036,39 +1036,289 @@ test('authenticated setup guide menu handles visible, hidden, completed, and leg
         resolve(result);
       }catch(error){reject(error)}
     })`;
-    const legacyUrl = appUrl.replace(/\/$/, '') + '/shoes.html?keep=one&openSetupGuide=0#shoes';
-    const legacyResult = await runChromeAtViewport(chrome, legacyUrl, {
-      width: 1280, height: 800, mobile: false, cookie: legacy.cookie, probeExpression: legacyProbe, clickMenuItemAndFollowNavigation: true, focusSelector: '#onboardingTitle', screenshotSuffix: '-setup-legacy',
+    const existingUrl = appUrl.replace(/\/$/, '') + '/shoes.html?keep=one&openSetupGuide=0#shoes';
+    const existingResult = await runChromeAtViewport(chrome, existingUrl, {
+      width: 1280, height: 800, mobile: false, cookie: existing.cookie, probeExpression: existingProbe, clickMenuItemAndFollowNavigation: true, focusSelector: '#onboardingTitle', screenshotSuffix: '-setup-existing',
     });
-    assert.equal(legacyResult.url, '/home.html?keep=one#shoes', 'the signal is consumed while retaining other URL state and the hash');
-    assert.equal(legacyResult.visible, true);
-    assert.equal(legacyResult.focused, 'onboardingTitle');
-    assert.equal(legacyResult.progress, '1 of 3 steps');
-    assert.equal(legacyResult.welcomeInitiallyHidden, true);
-    assert.equal(legacyResult.welcomeHidden, true);
-    assert.equal(legacyResult.statusBefore, 'legacy');
-    assert.equal(legacyResult.statusAfter, 'legacy');
-    assert.deepEqual(legacyResult.steps, { shoes: true, cycle: false, trainings: false });
-    assert.equal(legacyResult.guideHiddenBefore, true);
-    assert.equal(legacyResult.guideHiddenAfter, true);
-    assert.equal(legacyResult.unchanged, true);
-    assert.equal(legacyResult.userLanguage, 'en-US');
-    assert.equal(legacyResult.menuClosed, true);
-    assert.equal(legacyResult.removed, true);
-    assert.ok(legacyResult.scrollWidth <= legacyResult.viewportWidth);
+    assert.equal(existingResult.url, '/home.html?keep=one#shoes', 'the signal is consumed while retaining other URL state and the hash');
+    assert.equal(existingResult.visible, true);
+    assert.equal(existingResult.focused, 'onboardingTitle');
+    assert.equal(existingResult.progress, '1 of 3 steps');
+    assert.equal(existingResult.welcomeInitiallyHidden, true);
+    assert.equal(existingResult.welcomeHidden, true);
+    assert.equal(existingResult.statusBefore, 'active');
+    assert.equal(existingResult.statusAfter, 'active');
+    assert.deepEqual(existingResult.steps, { shoes: true, cycle: false, trainings: false });
+    assert.equal(existingResult.guideHiddenBefore, true);
+    assert.equal(existingResult.guideHiddenAfter, true);
+    assert.equal(existingResult.unchanged, true);
+    assert.equal(existingResult.userLanguage, 'en-US');
+    assert.equal(existingResult.menuClosed, true);
+    assert.equal(existingResult.removed, true);
+    assert.ok(existingResult.scrollWidth <= existingResult.viewportWidth);
 
     const reloadProbe = `new Promise((resolve,reject)=>{
-      const deadline=Date.now()+15000;const check=async()=>{const guide=document.getElementById('onboardingGuide');const modal=document.getElementById('onboardingWelcome');const item=document.getElementById('userSetupGuide');const status=await fetch('/api/onboarding').then(r=>r.json()).catch(()=>null);if(guide&&modal&&item&&status?.onboarding?.status==='legacy'&&document.body.classList.contains('shell-mounted')){await new Promise(r=>setTimeout(r,150));resolve({guideHidden:guide.hidden,welcomeHidden:modal.hidden,signalAbsent:!new URL(location.href).searchParams.has('openSetupGuide'),status:status.onboarding.status,oldCardsAbsent:['onboardingComplete','onboardingReopen','onboardingReopenHidden','onboardingReopenBar'].every(id=>!document.getElementById(id))});return}if(Date.now()>deadline){reject(new Error('Legacy refresh timed out')) ;return}setTimeout(check,60)};check()})`;
-    const legacyReload = await runChromeAtViewport(chrome, appUrl.replace(/\/$/, '') + '/home.html?keep=one#shoes', {
-      width: 390, height: 844, mobile: true, cookie: legacy.cookie, probeExpression: reloadProbe, screenshotSuffix: '-setup-legacy-reload',
+      const deadline=Date.now()+15000;const check=async()=>{const guide=document.getElementById('onboardingGuide');const modal=document.getElementById('onboardingWelcome');const item=document.getElementById('userSetupGuide');const status=await fetch('/api/onboarding').then(r=>r.json()).catch(()=>null);if(guide&&modal&&item&&status?.onboarding?.status==='active'&&document.body.classList.contains('shell-mounted')){await new Promise(r=>setTimeout(r,150));resolve({guideHidden:guide.hidden,welcomeHidden:modal.hidden,signalAbsent:!new URL(location.href).searchParams.has('openSetupGuide'),status:status.onboarding.status,oldCardsAbsent:['onboardingComplete','onboardingReopen','onboardingReopenHidden','onboardingReopenBar'].every(id=>!document.getElementById(id))});return}if(Date.now()>deadline){reject(new Error('Existing-account refresh timed out')) ;return}setTimeout(check,60)};check()})`;
+    const existingReload = await runChromeAtViewport(chrome, appUrl.replace(/\/$/, '') + '/home.html?keep=one#shoes', {
+      width: 390, height: 844, mobile: true, cookie: existing.cookie, probeExpression: reloadProbe, screenshotSuffix: '-setup-existing-reload',
     });
-    assert.equal(legacyReload.guideHidden, true);
-    assert.equal(legacyReload.welcomeHidden, true);
-    assert.equal(legacyReload.signalAbsent, true);
-    assert.equal(legacyReload.status, 'legacy');
-    assert.equal(legacyReload.oldCardsAbsent, true);
+    assert.equal(existingReload.guideHidden, true);
+    assert.equal(existingReload.welcomeHidden, true);
+    assert.equal(existingReload.signalAbsent, true);
+    assert.equal(existingReload.status, 'active');
+    assert.equal(existingReload.oldCardsAbsent, true);
   } finally {
     await app.close();
+    db.close();
+  }
+});
+
+test('authenticated training-result guidance and feedback shoes render by canonical source in desktop and mobile Chrome', async () => {
+  const chrome = findChrome();
+  assert.ok(chrome, 'Chrome is required for authenticated result-page validation.');
+  const db = createDatabase({ filename: ':memory:' });
+  const app = await buildServer({ db, sessionCookieSecure: false, unsplashFetch: async () => { throw new Error('No external hero request in browser tests.'); } });
+  try {
+    const email = 'result-browser@example.com';
+    assert.equal((await app.inject({ method: 'POST', url: '/api/auth/register', payload: {
+      email, password: 'result-browser-secret', first_name: 'Result', last_name: 'Runner', preferred_lang: 'pt-BR',
+    } })).statusCode, 201);
+    const userId = db.prepare('SELECT id FROM users WHERE email = ?').get(email).id;
+    const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email, password: 'result-browser-secret' } });
+    const cookie = [].concat(login.headers['set-cookie'] ?? [])[0].split(';')[0].split('=')[1];
+    db.prepare(`INSERT INTO shoes (id,user_id,brand,model,status) VALUES
+      ('result-active',?,'Kinesis','Active','active'), ('result-retired',?,'Kinesis','Retired','retired')`).run(userId, userId);
+    db.prepare("INSERT INTO users (email,password_hash) VALUES ('result-foreign@example.com','hash')").run();
+    const foreignId = db.prepare("SELECT id FROM users WHERE email='result-foreign@example.com'").get().id;
+    db.prepare("INSERT INTO shoes (id,user_id,brand,model,status) VALUES ('result-foreign-retired',?,'Foreign','Shoe','retired')").run(foreignId);
+    for (const source of ['none', 'fit_upload', 'manual']) {
+      db.prepare(`INSERT INTO trainings (user_id,dia,tipo,treino,result_data_source,feedback_shoe_id,feedback_shoe,
+        fit_duration,fit_distance,fit_avg_pace,fit_summary_json) VALUES (?, '2026-09-20','Run','Browser workout',?,
+        'result-retired','Kinesis Retired','30:00',5,'6:00',?)`).run(userId, source,
+        source === 'fit_upload' ? JSON.stringify({ totals: { durationSeconds: 1800, distanceKm: 5 }, laps: [] }) : null);
+    }
+    const appUrl = await app.listen({ port: 0, host: '127.0.0.1' });
+    const probe = `new Promise(async(resolve,reject)=>{
+      const deadline=Date.now()+12000;
+      const check=async()=>{
+        const hint=document.getElementById('onboardingResultHint');
+        const select=document.getElementById('feedbackShoe');
+        const api=await fetch('/api/trainings/'+new URL(location.href).searchParams.get('id')).then(r=>r.json()).catch(()=>null);
+        if(hint&&select&&api?.training&&document.body.classList.contains('shell-mounted')){
+          await new Promise(r=>setTimeout(r,250));
+          const title=hint.querySelector('h2');
+          const rect=hint.getBoundingClientRect();
+          const initial={source:api.training.result_data_source,hidden:hint.hidden,display:getComputedStyle(hint).display,title:title.textContent.trim(),rect:{width:rect.width,height:rect.height},active:[...select.options].some(o=>o.value==='result-active'),retired:[...select.options].find(o=>o.value==='result-retired')?.textContent,retiredDisabled:[...select.options].find(o=>o.value==='result-retired')?.disabled,foreign:[...select.options].some(o=>o.value==='result-foreign-retired'),scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth};
+          if(api.training.result_data_source==='none'){
+            document.querySelector('.lang-switch [data-lang="en-US"]')?.click();
+            await new Promise(r=>setTimeout(r,100));
+            initial.englishTitle=title.textContent.trim();
+          }
+          resolve(initial);return;
+        }
+        if(Date.now()>deadline){reject(new Error('Authenticated training result page did not finish loading'));return}
+        setTimeout(check,50);
+      };
+      check();
+    })`;
+    for (const viewport of [{ width: 1280, height: 800, mobile: false }, { width: 390, height: 844, mobile: true }]) {
+      for (const [index, source] of ['none', 'fit_upload', 'manual'].entries()) {
+        await app.inject({ method: 'PATCH', url: '/api/users/me/language', headers: { cookie: `ta_session=${cookie}` }, payload: { preferred_lang: 'pt-BR' } });
+        const result = await runChromeAtViewport(chrome, `${appUrl}/training-result.html?id=${index + 1}`, {
+          ...viewport, cookie, probeExpression: probe, screenshotSuffix: `-result-${source}`,
+        });
+        assert.equal(result.source, source);
+        assert.equal(result.hidden, source !== 'none', `${source} visibility follows result_data_source`);
+        assert.equal(result.display === 'none', source !== 'none', `${source} hidden attribute removes rendered layout`);
+        assert.equal(result.active, true);
+        assert.equal(result.retired, 'Kinesis Retired (Aposentado)');
+        assert.equal(result.retiredDisabled, true);
+        assert.equal(result.foreign, false, 'the endpoint and page are scoped to the signed-in user');
+        assert.ok(result.scrollWidth <= result.viewportWidth, `${source} page fits ${viewport.width}px`);
+        if (source === 'none') {
+          assert.equal(result.title, 'Pronto para registrar o resultado deste treino?');
+          assert.equal(result.englishTitle, 'Ready to add this workout result?');
+          assert.ok(result.rect.width > 0 && result.rect.height > 0);
+        }
+      }
+    }
+
+    const liveTrainingId = db.prepare("INSERT INTO trainings (user_id,dia,tipo,treino,result_data_source) VALUES (?, '2026-09-20','Run','Live upload','none')").run(userId).lastInsertRowid;
+    const fitBase64 = buildFitFile().toString('base64');
+    const liveUploadProbe = `new Promise(async(resolve,reject)=>{
+      try{
+        const wait=async(predicate)=>{const end=Date.now()+12000;while(Date.now()<end){if(await predicate())return;await new Promise(r=>setTimeout(r,50))}throw new Error('Live FIT result state timed out')};
+        await wait(()=>document.body.classList.contains('shell-mounted')&&document.getElementById('onboardingResultHint')?.hidden===false);
+        const input=document.getElementById('fitFile');
+        const bytes=Uint8Array.from(atob('${fitBase64}'),c=>c.charCodeAt(0));
+        const transfer=new DataTransfer();transfer.items.add(new File([bytes],'synthetic.fit',{type:'application/octet-stream'}));input.files=transfer.files;
+        input.dispatchEvent(new Event('change',{bubbles:true}));
+        await wait(async()=>{const data=await fetch('/api/trainings/${liveTrainingId}').then(r=>r.json()).catch(()=>null);return data?.training?.result_data_source==='fit_upload'&&document.getElementById('onboardingResultHint').hidden});
+        resolve({source:(await fetch('/api/trainings/${liveTrainingId}').then(r=>r.json())).training.result_data_source,hidden:document.getElementById('onboardingResultHint').hidden,display:getComputedStyle(document.getElementById('onboardingResultHint')).display});
+      }catch(error){reject(error)}
+    })`;
+    const liveUpload = await runChromeAtViewport(chrome, `${appUrl}/training-result.html?id=${liveTrainingId}`, {
+      width: 1280, height: 800, mobile: false, cookie, probeExpression: liveUploadProbe, screenshotSuffix: '-result-live-fit',
+    });
+    assert.equal(liveUpload.source, 'fit_upload');
+    assert.equal(liveUpload.hidden, true);
+    assert.equal(liveUpload.display, 'none');
+
+    const liveManualId = db.prepare("INSERT INTO trainings (user_id,dia,tipo,treino,result_data_source) VALUES (?, '2026-09-20','Run','Live manual result','none')").run(userId).lastInsertRowid;
+    const manualProbe = `new Promise(async(resolve,reject)=>{
+      try{
+        const wait=async(predicate)=>{const end=Date.now()+12000;while(Date.now()<end){if(await predicate())return;await new Promise(r=>setTimeout(r,50))}throw new Error('Live manual result state timed out')};
+        await wait(()=>document.body.classList.contains('shell-mounted')&&document.getElementById('onboardingResultHint')?.hidden===false);
+        document.getElementById('resultSourceSelect').value='manual';
+        document.getElementById('resultSourceSelect').dispatchEvent(new Event('change',{bubbles:true}));
+        document.getElementById('manualDistance').value='5';
+        document.getElementById('manualHours').value='0';
+        document.getElementById('manualMinutes').value='30';
+        document.getElementById('manualSeconds').value='0';
+        document.getElementById('rpe-3').click();
+        document.getElementById('generateBtn').click();
+        await new Promise(r=>setTimeout(r,1800));
+        const state=await fetch('/api/trainings/${liveManualId}').then(r=>r.json());
+        resolve({source:state.training.result_data_source,hidden:document.getElementById('onboardingResultHint').hidden,display:getComputedStyle(document.getElementById('onboardingResultHint')).display,promptVisible:!document.getElementById('promptSection').hidden});
+      }catch(error){reject(error)}
+    })`;
+    const liveManual = await runChromeAtViewport(chrome, `${appUrl}/training-result.html?id=${liveManualId}`, {
+      width: 390, height: 844, mobile: true, cookie, probeExpression: manualProbe, screenshotSuffix: '-result-live-manual',
+    });
+    assert.equal(liveManual.source, 'manual');
+    assert.equal(liveManual.hidden, true);
+    assert.equal(liveManual.display, 'none');
+    assert.equal(liveManual.promptVisible, true, JSON.stringify(liveManual));
+  } finally {
+    await app.close();
+    db.close();
+  }
+});
+
+test('authenticated result shoe options retranslate live without refetching or changing selection', async () => {
+  const chrome = findChrome();
+  assert.ok(chrome, 'Chrome is required for live feedback-shoe language validation.');
+  const db = createDatabase({ filename: ':memory:' });
+  const app = await buildServer({ db, sessionCookieSecure: false, unsplashFetch: async () => { throw new Error('No external hero request in browser tests.'); } });
+  let shoeListRequests = 0;
+  const languageChangeSnapshots = [];
+  app.addHook('onRequest', async (request) => {
+    if (request.method === 'GET' && request.url === '/api/shoes') shoeListRequests += 1;
+  });
+  app.addHook('onResponse', async (request) => {
+    if (request.method === 'PATCH' && request.url === '/api/users/me/language') {
+      languageChangeSnapshots.push({
+        trainings: db.prepare('SELECT id, feedback_shoe_id, feedback_shoe, feedback_notas FROM trainings ORDER BY id').all(),
+        shoes: db.prepare("SELECT id,mileage FROM shoes WHERE id LIKE 'shoe-language-%' ORDER BY id").all(),
+      });
+    }
+  });
+  try {
+    const email = 'shoe-language-browser@example.com';
+    assert.equal((await app.inject({ method: 'POST', url: '/api/auth/register', payload: {
+      email, password: 'shoe-language-secret', first_name: 'Shoe', last_name: 'Runner', preferred_lang: 'en-US',
+    } })).statusCode, 201);
+    const userId = db.prepare('SELECT id FROM users WHERE email = ?').get(email).id;
+    const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email, password: 'shoe-language-secret' } });
+    const cookie = [].concat(login.headers['set-cookie'] ?? [])[0].split(';')[0].split('=')[1];
+    db.prepare(`INSERT INTO shoes (id,user_id,brand,model,status,mileage) VALUES
+      ('shoe-language-active',?,'Kinesis','Active','active',20),
+      ('shoe-language-retired-current',?,'Kinesis','Retired Current','retired',42),
+      ('shoe-language-retired-other',?,'Kinesis','Retired Other','retired',18)`).run(userId, userId, userId);
+    const retiredId = db.prepare(`INSERT INTO trainings (user_id,dia,tipo,treino,result_data_source,completed,fit_distance,
+      feedback_shoe_id,feedback_shoe) VALUES (?, '2026-09-20','Run','Retired association','none',1,5,
+      'shoe-language-retired-current','Kinesis Retired Current')`).run(userId).lastInsertRowid;
+    const activeId = db.prepare(`INSERT INTO trainings (user_id,dia,tipo,treino,result_data_source,completed,fit_distance)
+      VALUES (?, '2026-09-20','Run','New active selection','none',1,5)`).run(userId).lastInsertRowid;
+    const legacyId = db.prepare(`INSERT INTO trainings (user_id,dia,tipo,treino,result_data_source,feedback_shoe)
+      VALUES (?, '2026-09-20','Run','Legacy shoe label','none','Historical shoe label')`).run(userId).lastInsertRowid;
+    const appUrl = await app.listen({ port: 0, host: '127.0.0.1' });
+    const probe = (id, mode) => `new Promise(async(resolve,reject)=>{
+      const wait=async(predicate,label='UI')=>{const end=Date.now()+12000;while(Date.now()<end){if(await predicate())return;await new Promise(r=>setTimeout(r,50))}throw new Error('Shoe language '+label+' timed out: '+JSON.stringify({ready:document.body.classList.contains('shell-mounted'),lang:document.documentElement.lang,select:!!document.getElementById('feedbackShoe'),options:document.getElementById('feedbackShoe')?.options.length,errors:document.body.innerText.slice(0,400)}))};
+      try{
+        await wait(()=>document.body.classList.contains('shell-mounted')&&document.getElementById('feedbackShoe')?.options.length>1,'options');
+        const select=document.getElementById('feedbackShoe');
+        const retired=()=>[...select.options].find(option=>option.value==='shoe-language-retired-current');
+        const before={value:select.value,retiredText:retired()?.textContent.trim()??null,retiredDisabled:retired()?.disabled??null,
+          otherRetiredPresent:[...select.options].some(option=>option.value==='shoe-language-retired-other'),
+          legacyLabel:[...select.options].find(option=>option.dataset.legacyLabel==='true')?.textContent.trim()??null,
+          legacySelected:select.selectedOptions[0]?.dataset.legacyLabel==='true',
+          placeholder:select.options[0]?.textContent.trim()};
+        if('${mode}'==='active'){
+          select.value='shoe-language-active';select.dispatchEvent(new Event('change',{bubbles:true}));
+        }
+        const selectedBefore=select.value;
+        const savedBefore=await fetch('/api/trainings/${id}').then(r=>r.json());
+        document.querySelector('.lang-switch [data-lang="pt-BR"]').click();
+        await wait(()=>document.documentElement.lang==='pt-BR','Portuguese switch');
+        const portuguese=retired()?.textContent.trim()??null;
+        const valueInPortuguese=select.value;
+        document.querySelector('.lang-switch [data-lang="en-US"]').click();
+        await wait(()=>document.documentElement.lang==='en-US','English switch back');
+        const englishAgain=retired()?.textContent.trim()??null;
+        const selectionAfter=select.value;
+        const activeElementAfterLanguage=document.activeElement?.id;
+        const savedAfter=await fetch('/api/trainings/${id}').then(r=>r.json());
+        const feedbackPayload='${mode}'==='active' ? {feedback_shoe_id:select.value} : {feedback_notas:'preserve existing retired association'};
+        const saveResponse=await fetch('/api/trainings/${id}',{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(feedbackPayload)});
+        const saved=await saveResponse.json();
+        if(!saveResponse.ok)throw new Error('Saving after language switch failed: '+JSON.stringify(saved));
+        select.focus();
+        const focused=document.activeElement===select;
+        resolve({lang:document.documentElement.lang,before,selectedBefore,portuguese,valueInPortuguese,englishAgain,selectionAfter,
+          activeElementAfterLanguage,focused,savedBefore:savedBefore.training,savedAfterLanguages:savedAfter.training,
+          saved:saved.training,disabledRetired:retired()?.disabled??null,placeholder:select.options[0]?.textContent.trim(),
+          legacySelected:select.selectedOptions[0]?.dataset.legacyLabel==='true',scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth});
+      }catch(error){reject(error)}
+    })`;
+    const cases = [
+      { id: retiredId, mode: 'retired', width: 1280, height: 800 },
+      { id: activeId, mode: 'active', width: 390, height: 844 },
+      { id: legacyId, mode: 'active', width: 1280, height: 800 },
+    ];
+    for (const scenario of cases) {
+      const shoeMileageBefore = db.prepare("SELECT id,mileage FROM shoes WHERE id LIKE 'shoe-language-%' ORDER BY id").all();
+      const feedbackBefore = db.prepare('SELECT id,feedback_shoe_id,feedback_shoe,feedback_notas FROM trainings WHERE id=?').get(scenario.id);
+      const requestCountBefore = shoeListRequests;
+      const languageSnapshotCountBefore = languageChangeSnapshots.length;
+      const result = await runChromeAtViewport(chrome, `${appUrl}/training-result.html?id=${scenario.id}`, {
+        width: scenario.width, height: scenario.height, mobile: scenario.width < 600, cookie,
+        probeExpression: probe(scenario.id, scenario.mode), verifyTabNextSelector: '#feedbackWeather',
+        screenshotSuffix: `-shoe-language-${scenario.mode}-${scenario.width}`,
+      });
+      assert.equal(result.lang, 'en-US');
+      assert.equal(result.before.placeholder, '–');
+      const expectedRetiredLabel = scenario.mode === 'retired';
+      assert.equal(result.portuguese, expectedRetiredLabel ? 'Kinesis Retired Current (Aposentado)' : null);
+      assert.equal(result.englishAgain, expectedRetiredLabel ? 'Kinesis Retired Current (Retired)' : null);
+      assert.equal(result.disabledRetired, expectedRetiredLabel ? true : null);
+      assert.equal(result.before.otherRetiredPresent, false);
+      assert.equal(result.focused, true);
+      assert.equal(result.keyboardNextMatches, true, `the focused shoe select keeps its normal next Tab target (${result.tabActiveElementId})`);
+      const expectedSelection = scenario.mode === 'retired' ? 'shoe-language-retired-current' : 'shoe-language-active';
+      assert.equal(result.selectedBefore, expectedSelection);
+      assert.equal(result.valueInPortuguese, expectedSelection);
+      assert.equal(result.selectionAfter, expectedSelection, 'language changes preserve the current choice');
+      assert.ok(result.scrollWidth <= result.viewportWidth);
+      assert.deepEqual(result.savedAfterLanguages, result.savedBefore,
+        'changing language does not change persisted training feedback');
+      const languageSnapshots = languageChangeSnapshots.slice(languageSnapshotCountBefore);
+      assert.equal(languageSnapshots.length, 2, 'both live language changes completed their preference request');
+      for (const snapshot of languageSnapshots) {
+        assert.deepEqual(snapshot.shoes, shoeMileageBefore, 'changing language does not change shoe mileage');
+        assert.deepEqual(snapshot.trainings.find((training) => training.id === scenario.id), feedbackBefore,
+          'changing language does not change this training feedback');
+      }
+      assert.equal(shoeListRequests - requestCountBefore, 1, 'one initial list request and no refetches on language changes');
+      assert.equal(result.saved.feedback_shoe_id, scenario.mode === 'retired' ? 'shoe-language-retired-current' : 'shoe-language-active');
+      if (scenario.id === legacyId) {
+        assert.equal(result.before.legacyLabel, 'Historical shoe label');
+        assert.equal(result.before.legacySelected, true, 'the legacy label remains selected before a replacement is chosen');
+        assert.equal(result.legacySelected, false, 'the explicit active selection replaces the non-owned legacy label');
+      }
+    }
+  } finally {
+    try { await app.close(); } catch {}
     db.close();
   }
 });

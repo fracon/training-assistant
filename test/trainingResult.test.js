@@ -38,6 +38,8 @@ const {
   formatWeatherAutofill,
   WEATHER_CODE_LABEL_KEYS,
   WEATHER_UNKNOWN_KEY,
+  selectableFeedbackShoes,
+  shouldShowOnboardingResultHint,
   PROMPT_TEMPLATE_PT,
   PROMPT_TEMPLATE_EN,
 } = require('../src/public/training-result.js');
@@ -47,6 +49,35 @@ const pt = require('../src/public/locales/pt.json');
 test('resolveSessionId extracts the contextual id from the query string', () => {
   assert.equal(resolveSessionId('?id=42'), '42');
   assert.equal(resolveSessionId('?id=%20%207%20'), '7', 'surrounding whitespace is trimmed');
+});
+
+test('result guidance visibility follows none/manual/FIT/future canonical sources and is contextual per workout', () => {
+  assert.equal(shouldShowOnboardingResultHint({ result_data_source: 'none' }), true);
+  for (const source of ['manual', 'fit_upload', 'garmin_connect', 'future_source', null, undefined]) {
+    assert.equal(shouldShowOnboardingResultHint({ result_data_source: source }), false);
+  }
+  assert.equal(shouldShowOnboardingResultHint({}), false, 'missing source is not guessed from visible fields');
+});
+
+test('feedback shoe selection lists active shoes and only the currently associated retired shoe', () => {
+  const shoes = [
+    { id: 'active', status: 'active' },
+    { id: 'retired-current', status: 'retired' },
+    { id: 'retired-other', status: 'retired' },
+  ];
+  assert.deepEqual(selectableFeedbackShoes(shoes, 'retired-current').map(({ id }) => id), ['active', 'retired-current']);
+  assert.deepEqual(selectableFeedbackShoes(shoes).map(({ id }) => id), ['active']);
+  assert.deepEqual(selectableFeedbackShoes(null), []);
+});
+
+test('result guidance uses translated contextual copy and [hidden] explicitly removes its layout', () => {
+  const html = readFileSync(join(publicDir, 'training-result.html'), 'utf8');
+  const css = readFileSync(join(publicDir, 'training-result.css'), 'utf8');
+  assert.match(html, /id="onboardingResultHint"[^>]*hidden/);
+  assert.match(css, /\.onboarding-result-hint\[hidden\]\s*\{\s*display:\s*none\s*;/);
+  assert.equal(en.home.onboarding.resultTitle, 'Ready to add this workout result?');
+  assert.equal(pt.home.onboarding.resultTitle, 'Pronto para registrar o resultado deste treino?');
+  assert.match(html, /onboarding-result-guide[^>]*>[\s\S]*?<svg[^>]*aria-hidden="true"/);
 });
 
 test('resolveSessionId bounces to the calendar when no id is present', () => {
@@ -499,18 +530,18 @@ test('canonical prompt form preserves FIT attachment context and manual no-lap b
 
 test('collectPromptValues uses persisted FIT data when available', () => {
   const fitData = {
-    fit_duration: '1:23:45',
-    fit_distance: 15.03,
-    fit_avg_pace: '5:34',
+    fit_duration: '1:30:02',
+    fit_distance: 13.785,
+    fit_avg_pace: '6:32',
     fit_avg_hr: 152,
     fit_max_hr: 171,
     fit_elevation_gain: 320,
   };
   const values = collectPromptValues({ training: baseTraining, form: baseForm(), fitData });
 
-  assert.equal(values.DURACAO, '1:23:45');
-  assert.equal(values.DISTANCIA, '15.03 km');
-  assert.equal(values.PACE_MEDIO, '5:34 min/km');
+  assert.equal(values.DURACAO, '1:30:02');
+  assert.equal(values.DISTANCIA, '13.79 km');
+  assert.equal(values.PACE_MEDIO, '6:32 min/km');
   assert.equal(values.CALORIAS, '-');
   assert.equal(values.FC_MEDIA, 152);
   assert.equal(values.FC_MAXIMA, 171);
