@@ -44,8 +44,8 @@ Authenticated pages and APIs use server-side sessions. FIT files and workout dat
 New accounts receive a short PT/EN welcome carousel and a non-blocking setup
 guide. The guide's three steps are derived from that user's shoes, active cycle,
 and planned workout records. Dismissing welcome or hiding the guide changes only
-presentation state; opening the guide from the user menu is transient. Legacy
-accounts do not receive welcome automatically.
+presentation state; opening the guide from the user menu is transient. Existing
+accounts do not receive the welcome automatically.
 
 AI coaches are only as good as the data you give them. Exporting workouts by hand means losing detail. Kinesis turns the raw `.FIT` file your watch already recorded into a structured, metric-rich review request in seconds — so every recommendation from your AI coach is grounded in real numbers.
 
