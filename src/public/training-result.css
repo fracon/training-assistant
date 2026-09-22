@@ -149,7 +149,11 @@ body {
 }
 
 .planned-card .card-head {
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
+}
+
+.planned-card {
+  container: planned-card / inline-size;
 }
 
 .btn-icon {
@@ -343,6 +347,23 @@ body {
   .workout-creation-card { max-height: calc(100vh - 16px); padding: 18px; border-radius: 18px 18px 0 0; }
   .workout-creation-platform-list { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; }
   .workout-creation-platform-list button { flex: 0 0 auto; min-height: 42px; }
+}
+
+@container planned-card (max-width: 560px) {
+  .planned-card .card-head {
+    align-items: flex-start;
+  }
+
+  .planned-card .session-actions {
+    justify-content: flex-start;
+    width: 100%;
+  }
+
+  .planned-card .session-actions .workout-creation-trigger {
+    min-width: 0;
+    white-space: normal;
+    text-align: left;
+  }
 }
 @media (prefers-reduced-motion: reduce) { .import-help-card, .import-help-dialog { scroll-behavior: auto; transition: none; } }
 

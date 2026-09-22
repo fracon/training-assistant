@@ -1726,7 +1726,9 @@ test('training-result.css keeps the earthy premium aesthetic for the session vie
 
   assert.match(css, /\.card-head \{[^}]*display:\s*flex/, 'the planned card header lays its title and actions out on one row');
   assert.match(css, /\.card-head \{[^}]*justify-content:\s*space-between/, 'title and actions push to opposite ends');
-  assert.match(css, /\.planned-card \.card-head \{[^}]*flex-wrap:\s*nowrap/, 'desktop planned header stays on one row');
+  assert.match(css, /\.planned-card \.card-head \{[^}]*flex-wrap:\s*wrap/, 'planned header can wrap when its container is narrow');
+  assert.match(css, /\.planned-card \{[^}]*container:\s*planned-card \/ inline-size/, 'planned card exposes its available width to the responsive header');
+  assert.match(css, /@container planned-card \(max-width: 560px\)/, 'narrow planned cards stack their actions independently of the viewport');
   assert.match(css, /\.btn-icon\.btn-danger \{/, 'the delete action reuses the danger icon style');
   assert.match(
     css,

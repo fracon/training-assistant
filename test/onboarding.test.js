@@ -1310,25 +1310,33 @@ test('authenticated workout creation guide is independent, localized, and non-mu
     const probe = `new Promise(async(resolve,reject)=>{try{
       const wait=async(predicate)=>{const end=Date.now()+12000;while(Date.now()<end){if(await predicate())return;await new Promise(r=>setTimeout(r,50))}throw new Error('creation guide did not become ready')};
       await wait(()=>document.body.classList.contains('shell-mounted')&&document.getElementById('workoutCreationBtn'));
+      if(new URL(location.href).searchParams.get('collapsed')==='1'){
+        document.getElementById('sidebarToggle').click();
+        await wait(()=>document.querySelector('.app-shell')?.classList.contains('collapsed'));
+      }
       const before=await fetch('/api/trainings/${trainingId}').then(r=>r.json());
       const trigger=document.getElementById('workoutCreationBtn'); trigger.focus(); trigger.click();
       await wait(()=>document.getElementById('workoutCreationDialog')?.hidden===false);
       const dialog=document.getElementById('workoutCreationDialog');
       const header=document.querySelector('.session-header');
       const plannedCard=document.querySelector('.planned-card');
+      const cardRect=plannedCard.getBoundingClientRect();
+      const titleRect=plannedCard.querySelector('h2').getBoundingClientRect();
+      const actionsRect=document.querySelector('.planned-card .session-actions').getBoundingClientRect();
       const helpRect=trigger.getBoundingClientRect();
       const deleteRect=document.getElementById('deleteTrainingBtn').getBoundingClientRect();
-      const initial={hidden:dialog.hidden,focus:document.activeElement?.getAttribute('data-workout-create-close'),platforms:dialog.querySelectorAll('[data-workout-create-platform]').length,garmin:dialog.querySelector('[data-workout-create-title]').textContent,importHidden:document.getElementById('importHelpDialog').hidden,overflow:document.documentElement.scrollWidth<=innerWidth,headerContainsActions:header.contains(trigger)||header.contains(document.getElementById('deleteTrainingBtn')),cardContainsActions:plannedCard.contains(trigger)&&plannedCard.contains(document.getElementById('deleteTrainingBtn')),headerRect:{left:header.getBoundingClientRect().left,right:header.getBoundingClientRect().right},helpRect:{left:helpRect.left,right:helpRect.right,top:helpRect.top,bottom:helpRect.bottom},deleteRect:{left:deleteRect.left,right:deleteRect.right,top:deleteRect.top,bottom:deleteRect.bottom},ordered:helpRect.right<=deleteRect.left};
+      const initial={hidden:dialog.hidden,focus:document.activeElement?.getAttribute('data-workout-create-close'),platforms:dialog.querySelectorAll('[data-workout-create-platform]').length,garmin:document.querySelector('[data-workout-create-title]').textContent,importHidden:document.getElementById('importHelpDialog').hidden,overflow:document.documentElement.scrollWidth<=innerWidth,sidebarCollapsed:document.querySelector('.app-shell')?.classList.contains('collapsed'),headerContainsActions:header.contains(trigger)||header.contains(document.getElementById('deleteTrainingBtn')),cardContainsActions:plannedCard.contains(trigger)&&plannedCard.contains(document.getElementById('deleteTrainingBtn')),cardRect:{left:cardRect.left,right:cardRect.right,top:cardRect.top,bottom:cardRect.bottom},titleRect:{left:titleRect.left,right:titleRect.right,top:titleRect.top,bottom:titleRect.bottom},actionsRect:{left:actionsRect.left,right:actionsRect.right,top:actionsRect.top,bottom:actionsRect.bottom},headerRect:{left:header.getBoundingClientRect().left,right:header.getBoundingClientRect().right},helpRect:{left:helpRect.left,right:helpRect.right,top:helpRect.top,bottom:helpRect.bottom},deleteRect:{left:deleteRect.left,right:deleteRect.right,top:deleteRect.top,bottom:deleteRect.bottom},ordered:helpRect.right<=deleteRect.left,stacked:actionsRect.top>=titleRect.bottom};
       dialog.querySelector('[data-workout-create-platform="xiaomi"]').click();
       const xiaomi={status:dialog.querySelector('[data-workout-create-status]').textContent, fallback:dialog.querySelector('[data-workout-create-steps]').textContent};
       document.querySelector('.lang-switch [data-lang="pt-BR"]')?.click();
       await new Promise(r=>setTimeout(r,120));
-      const portuguese={title:dialog.querySelector('[data-workout-create-title]').textContent, fallback:dialog.querySelector('[data-workout-create-steps]').textContent,selected:dialog.querySelector('[data-workout-create-platform="xiaomi"]').getAttribute('aria-pressed')};
+      const portuguese={title:dialog.querySelector('[data-workout-create-title]').textContent, fallback:dialog.querySelector('[data-workout-create-steps]').textContent,selected:dialog.querySelector('[data-workout-create-platform="xiaomi"]').getAttribute('aria-pressed'),overflow:document.documentElement.scrollWidth<=innerWidth};
       document.querySelector('[data-workout-create-close]').click();
       const after=await fetch('/api/trainings/${trainingId}').then(r=>r.json());
       resolve({initial,xiaomi,portuguese,restored:document.activeElement===trigger,unchanged:JSON.stringify(before.training)===JSON.stringify(after.training)});
     }catch(error){reject(error)}})`;
-    for (const viewport of [{ width: 1280, height: 800, mobile: false }, { width: 390, height: 844, mobile: true }]) {
+    const viewports = [390, 560, 600, 640, 641, 650, 700, 768, 800, 1280].map((width) => ({ width, height: width === 390 ? 844 : 800, mobile: width < 600 }));
+    for (const viewport of viewports) {
       const result = await runChromeAtViewport(chrome, `${appUrl}/training-result.html?id=${trainingId}`, { ...viewport, cookie, probeExpression: probe, screenshotSuffix: `-creation-guide-${viewport.width}` });
       assert.equal(result.initial.hidden, false);
       assert.equal(result.initial.focus, '');
@@ -1336,8 +1344,12 @@ test('authenticated workout creation guide is independent, localized, and non-mu
       assert.match(result.initial.garmin, /Garmin/);
       assert.equal(result.initial.importHidden, true);
       assert.equal(result.initial.overflow, true);
+      assert.equal(result.initial.sidebarCollapsed, false);
       assert.equal(result.initial.headerContainsActions, false);
       assert.equal(result.initial.cardContainsActions, true);
+      assert.ok(result.initial.cardRect.left <= result.initial.titleRect.left && result.initial.titleRect.right <= result.initial.cardRect.right);
+      assert.ok(result.initial.cardRect.left <= result.initial.actionsRect.left && result.initial.actionsRect.right <= result.initial.cardRect.right);
+      assert.ok(result.initial.titleRect.bottom <= result.initial.actionsRect.top || result.initial.actionsRect.bottom <= result.initial.titleRect.top || result.initial.titleRect.right <= result.initial.actionsRect.left || result.initial.actionsRect.right <= result.initial.titleRect.left, 'title and actions do not overlap');
       assert.ok(result.initial.helpRect.right <= result.initial.deleteRect.left, 'help action precedes delete action without overlap');
       assert.ok(result.initial.helpRect.right > result.initial.helpRect.left);
       assert.ok(result.initial.deleteRect.right > result.initial.deleteRect.left);
@@ -1345,9 +1357,15 @@ test('authenticated workout creation guide is independent, localized, and non-mu
       assert.match(result.xiaomi.status, /Model|modelo/i);
       assert.match(result.portuguese.fallback, /Não foi possível/);
       assert.equal(result.portuguese.selected, 'true');
+      assert.equal(result.portuguese.overflow, true);
       assert.equal(result.restored, true);
       assert.equal(result.unchanged, true);
     }
+    const collapsed = await runChromeAtViewport(chrome, `${appUrl}/training-result.html?id=${trainingId}&collapsed=1`, { width: 641, height: 800, mobile: false, cookie, probeExpression: probe, screenshotSuffix: '-creation-guide-collapsed' });
+    assert.equal(collapsed.initial.sidebarCollapsed, true);
+    assert.equal(collapsed.initial.overflow, true);
+    assert.equal(collapsed.initial.cardContainsActions, true);
+    assert.ok(collapsed.initial.cardRect.left <= collapsed.initial.actionsRect.left && collapsed.initial.actionsRect.right <= collapsed.initial.cardRect.right);
   } finally {
     await app.close();
     db.close();
