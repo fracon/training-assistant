@@ -1729,6 +1729,10 @@ test('training-result.css keeps the earthy premium aesthetic for the session vie
   assert.match(css, /\.planned-card \.card-head \{[^}]*flex-wrap:\s*wrap/, 'planned header can wrap when its container is narrow');
   assert.match(css, /\.planned-card \{[^}]*container:\s*planned-card \/ inline-size/, 'planned card exposes its available width to the responsive header');
   assert.match(css, /@container planned-card \(max-width: 560px\)/, 'narrow planned cards stack their actions independently of the viewport');
+  assert.match(css, /\.workout-creation-platform-list button\.active, \.workout-creation-platform-list button\[aria-pressed='true'\] \{[^}]*background:\s*var\(--accent\)/, 'selected creation platforms keep their selected state styling');
+  assert.match(css, /\.workout-creation-platform-list button:focus-visible \{[^}]*outline:\s*2px solid var\(--ink\);[^}]*outline-offset:\s*3px/, 'creation platform focus has a distinct visible ring');
+  assert.match(css, /\.import-help-provider-list button\.active, \.import-help-provider-list button\[aria-pressed='true'\] \{[^}]*background:\s*var\(--accent\)/, 'selected import providers keep their selected state styling');
+  assert.match(css, /\.import-help-provider-list button:focus-visible \{[^}]*outline:\s*2px solid var\(--ink\);[^}]*outline-offset:\s*3px/, 'import provider focus has a distinct visible ring');
   assert.match(css, /\.btn-icon\.btn-danger \{/, 'the delete action reuses the danger icon style');
   assert.match(
     css,

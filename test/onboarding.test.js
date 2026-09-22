@@ -23,7 +23,7 @@ function findChrome() {
     .find((candidate) => existsSync(candidate));
 }
 
-async function runChromeAtViewport(chrome, url, { width, height, mobile, cookie = null, probeExpression = null, focusSelector = null, verifyTabNextSelector = null, verifyTabFollowingSelector = null, screenshotSuffix = '', keyboardActivateMenuItem = false, clickMenuItemAndFollowNavigation = false, verifyUserMenuTabOrder = false }) {
+async function runChromeAtViewport(chrome, url, { width, height, mobile, cookie = null, probeExpression = null, focusSelector = null, verifyTabNextSelector = null, verifyTabFollowingSelector = null, screenshotSuffix = '', keyboardActivateMenuItem = false, clickMenuItemAndFollowNavigation = false, verifyUserMenuTabOrder = false, keyboardFocusValidation = false, keyboardFocusLanguage = null }) {
   const portServer = createServer();
   portServer.listen(0, '127.0.0.1');
   await once(portServer, 'listening');
@@ -94,6 +94,52 @@ async function runChromeAtViewport(chrome, url, { width, height, mobile, cookie 
     });
     await command('Page.navigate', { url });
     await Promise.race([loaded, delay(15000).then(() => { throw new Error('Chrome page load timed out.'); })]);
+    if (keyboardFocusValidation) {
+      if (keyboardFocusLanguage) {
+        await command('Runtime.evaluate', {
+          expression: `new Promise((resolve,reject)=>{const end=Date.now()+12000;const attempt=()=>{const button=document.querySelector('.lang-switch [data-lang="${keyboardFocusLanguage}"]');if(button){button.click();const wait=()=>document.documentElement.lang==="${keyboardFocusLanguage}"?resolve(true):(Date.now()>end?reject(new Error('Keyboard focus validation language switch timed out')):setTimeout(wait,40));wait();return}if(Date.now()>end){reject(new Error('Keyboard focus validation language button did not mount'));return}setTimeout(attempt,40)};attempt()})`,
+          awaitPromise: true,
+          returnByValue: true,
+        });
+      }
+      const keyboardFocusState = {};
+      const validatePlatformList = async ({ name, trigger, dialog, item, count, activateIndex = 1 }) => {
+        await command('Runtime.evaluate', {
+          expression: `new Promise((resolve,reject)=>{const end=Date.now()+12000;const attempt=()=>{const trigger=document.querySelector(${JSON.stringify(trigger)});const dialog=document.querySelector(${JSON.stringify(dialog)});const close=dialog?.querySelector(${JSON.stringify(`[data-${name === 'creation' ? 'workout-create-close' : 'import-help-close'}`)});if(trigger&&dialog&&close){trigger.focus();trigger.click();if(!dialog.hidden){close.focus();if(document.activeElement===close){resolve(true);return}}}if(Date.now()>end){reject(new Error(${JSON.stringify(`${name} guide did not open with focusable close control`)}));return}setTimeout(attempt,40)};attempt()})`,
+          awaitPromise: true,
+          returnByValue: true,
+        });
+        const focused = [];
+        for (let index = 0; index < count; index += 1) {
+          await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, text: '\t', unmodifiedText: '\t' });
+          await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
+          const current = await command('Runtime.evaluate', {
+            expression: `(()=>{const element=document.activeElement;const style=getComputedStyle(element);return {id:element?.dataset?.${name === 'creation' ? 'workoutCreatePlatform' : 'providerId'}??element?.id,pressed:element?.getAttribute('aria-pressed'),outlineStyle:style.outlineStyle,outlineWidth:style.outlineWidth,outlineOffset:style.outlineOffset,outlineColor:style.outlineColor,rect:{left:element?.getBoundingClientRect().left,right:element?.getBoundingClientRect().right,top:element?.getBoundingClientRect().top,bottom:element?.getBoundingClientRect().bottom}}})()`,
+            returnByValue: true,
+          });
+          focused.push(current.result?.value);
+          if (index === activateIndex) {
+            await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Space', code: 'Space', windowsVirtualKeyCode: 32, text: ' ' });
+            await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Space', code: 'Space', windowsVirtualKeyCode: 32 });
+            await command('Runtime.evaluate', {
+              expression: `new Promise((resolve,reject)=>{const end=Date.now()+2000;const wait=()=>document.querySelector(${JSON.stringify(item)}[aria-pressed="true"]:focus-visible)?resolve(true):(Date.now()>end?reject(new Error(${JSON.stringify(`${name} keyboard activation did not preserve focus`)})):setTimeout(wait,20));wait()})`,
+              awaitPromise: true,
+              returnByValue: true,
+            });
+          }
+        }
+        await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+        await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+        const closed = await command('Runtime.evaluate', {
+          expression: `({hidden:document.querySelector(${JSON.stringify(dialog)})?.hidden,restored:document.activeElement===document.querySelector(${JSON.stringify(trigger)}),selected:document.querySelectorAll(${JSON.stringify(`${dialog} ${item}[aria-pressed="true"]`)}).length,overflow:document.documentElement.scrollWidth<=innerWidth})`,
+          returnByValue: true,
+        });
+        keyboardFocusState[name] = { focused, closed: closed.result?.value };
+      };
+      await validatePlatformList({ name: 'creation', trigger: '#workoutCreationBtn', dialog: '#workoutCreationDialog', item: '[data-workout-create-platform]', count: 8 });
+      await validatePlatformList({ name: 'import', trigger: '#importHelpBtn', dialog: '#importHelpDialog', item: '[data-provider-id]', count: 7 });
+      await command('Runtime.evaluate', { expression: `window.__keyboardFocusValidation=${JSON.stringify(keyboardFocusState)}`, returnByValue: true });
+    }
     if (keyboardActivateMenuItem) {
       await command('Runtime.evaluate', {
         expression: `new Promise((resolve,reject)=>{const end=Date.now()+12000;let opened=false;const attempt=()=>{const badge=document.querySelector('#userBadge');const item=document.querySelector('#userSetupGuide');const dropdown=document.querySelector('#userDropdown');if(document.body.classList.contains('shell-mounted')&&badge&&item&&!badge.hidden){if(!opened){window.__setupGuideEventCount=0;document.addEventListener('kinesis:open-setup-guide',()=>window.__setupGuideEventCount++);badge.click();opened=true}if(dropdown&&!dropdown.classList.contains('hidden')){item.focus();resolve(true);return}}if(Date.now()>end){reject(new Error('Authenticated shell menu did not mount')) ;return}setTimeout(attempt,50)};attempt()})`,
@@ -1435,6 +1481,54 @@ test('workout creation guide localizes while training data is still loading', as
     assert.equal(result.final.open, true);
     assert.deepEqual(result.errors, []);
     assert.equal(result.restored, true);
+  } finally {
+    try { await app.close(); } catch {}
+    db.close();
+  }
+});
+
+test('creation and import platform guides keep a visible keyboard focus ring', async () => {
+  const chrome = findChrome();
+  assert.ok(chrome, 'Chrome is required for platform focus validation.');
+  const db = createDatabase({ filename: ':memory:' });
+  const app = await buildServer({ db, sessionCookieSecure: false, unsplashFetch: async () => { throw new Error('No external hero request in browser tests.'); } });
+  try {
+    const email = 'platform-focus-browser@example.com';
+    await app.inject({ method: 'POST', url: '/api/auth/register', payload: { email, password: 'platform-focus-secret', first_name: 'Focus', last_name: 'Runner', preferred_lang: 'en-US' } });
+    const userId = db.prepare('SELECT id FROM users WHERE email = ?').get(email).id;
+    const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email, password: 'platform-focus-secret' } });
+    const cookie = [].concat(login.headers['set-cookie'] ?? [])[0].split(';')[0].split('=')[1];
+    const trainingId = db.prepare("INSERT INTO trainings (user_id,dia,tipo,treino,result_data_source) VALUES (?, '2026-09-20','Run','Platform focus','none')").run(userId).lastInsertRowid;
+    const appUrl = await app.listen({ port: 0, host: '127.0.0.1' });
+    for (const viewport of [
+      { width: 1280, height: 800, mobile: false, language: null },
+      { width: 390, height: 844, mobile: true, language: 'pt-BR' },
+    ]) {
+      const result = await runChromeAtViewport(chrome, `${appUrl}/training-result.html?id=${trainingId}`, {
+        ...viewport,
+        cookie,
+        keyboardFocusValidation: true,
+        keyboardFocusLanguage: viewport.language,
+        probeExpression: 'window.__keyboardFocusValidation',
+        screenshotSuffix: `-platform-focus-${viewport.width}`,
+      });
+      for (const guide of ['creation', 'import']) {
+        assert.equal(result[guide].focused.length, guide === 'creation' ? 8 : 7);
+        assert.equal(result[guide].focused[0].pressed, 'true', `${guide} starts with the selected platform focused: ${JSON.stringify(result[guide].focused[0])}`);
+        assert.ok(result[guide].focused.some((entry) => entry.pressed === 'false'), `${guide} visits an unselected platform`);
+        for (const entry of result[guide].focused) {
+          assert.notEqual(entry.outlineStyle, 'none', `${guide} focus is visibly outlined for ${entry.id}`);
+          assert.ok(Number.parseFloat(entry.outlineWidth) >= 2, `${guide} focus outline is at least 2px for ${entry.id}`);
+          assert.ok(Number.parseFloat(entry.outlineOffset) >= 2, `${guide} focus outline has an offset for ${entry.id}`);
+          assert.notEqual(entry.outlineColor, 'rgba(0, 0, 0, 0)', `${guide} focus outline has a visible color for ${entry.id}`);
+          assert.ok(entry.rect.right >= entry.rect.left && entry.rect.bottom >= entry.rect.top);
+        }
+        assert.equal(result[guide].closed.hidden, true);
+        assert.equal(result[guide].closed.restored, true);
+        assert.equal(result[guide].closed.selected, 1);
+        assert.equal(result[guide].closed.overflow, true);
+      }
+    }
   } finally {
     try { await app.close(); } catch {}
     db.close();
