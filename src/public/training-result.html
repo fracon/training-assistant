@@ -12,28 +12,27 @@
   <main id="appView">
     <section class="session-page">
       <header class="session-header">
-        <h1 data-i18n="session.title">Training Session</h1>
-        <p id="sessionDate" class="session-date"></p>
-        <button id="workoutCreationBtn" class="workout-creation-trigger" type="button" data-i18n-aria-label="session.workoutCreation.openAriaLabel">
-          <i data-lucide="list-plus" aria-hidden="true"></i>
-          <span data-i18n="session.workoutCreation.openShort">How to create a workout</span>
-        </button>
+        <div class="session-heading">
+          <h1 data-i18n="session.title">Training Session</h1>
+          <p id="sessionDate" class="session-date"></p>
+        </div>
+        <div class="session-actions" data-i18n-aria-label="session.actionsLabel" aria-label="Session actions">
+          <button id="workoutCreationBtn" class="workout-creation-trigger" type="button" data-i18n-aria-label="session.workoutCreation.openAriaLabel">
+            <i data-lucide="book-open" aria-hidden="true"></i>
+            <span data-i18n="session.workoutCreation.openShort">How do I create my workout?</span>
+          </button>
+          <button id="deleteTrainingBtn" class="btn-icon btn-danger" type="button" data-i18n-aria-label="session.deleteAriaLabel">
+            <i data-lucide="trash-2" aria-hidden="true"></i>
+            <div class="custom-tooltip" data-i18n="session.deleteTooltip">Delete workout</div>
+          </button>
+        </div>
       </header>
 
       <p id="status" class="status" role="status"></p>
 
-      <aside id="onboardingResultHint" class="onboarding-result-hint" hidden aria-labelledby="onboardingResultTitle">
-        <div class="onboarding-result-copy"><h2 id="onboardingResultTitle" data-i18n="home.onboarding.resultTitle">Ready to add this workout result?</h2><p data-i18n="home.onboarding.resultText">Use FIT or ZIP for detailed data, or enter the totals manually.</p></div>
-        <button id="onboardingResultGuide" class="onboarding-result-guide" type="button"><span data-i18n="home.onboarding.resultGuide">Open import guide</span><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M3 8h9M8 4l4 4-4 4"/></svg></button>
-      </aside>
-
       <section class="card planned-card" aria-labelledby="plannedTitle">
         <div class="card-head">
           <h2 id="plannedTitle" data-i18n="session.plannedHeading">Planned workout</h2>
-          <button id="deleteTrainingBtn" class="btn-icon btn-danger" type="button" aria-label="Delete training">
-            <i data-lucide="trash-2" aria-hidden="true"></i>
-            <div class="custom-tooltip" data-i18n="session.deleteTooltip">Delete training</div>
-          </button>
         </div>
         <dl class="planned-grid">
           <div class="planned-item">
@@ -325,7 +324,7 @@
   <div id="workoutCreationDialog" class="workout-creation-dialog" role="dialog" aria-modal="true" aria-labelledby="workoutCreationTitle" aria-describedby="workoutCreationDescription" hidden>
     <div class="workout-creation-card">
       <header class="import-help-header">
-        <h2 id="workoutCreationTitle" data-workout-create-title>How to create a workout</h2>
+        <h2 id="workoutCreationTitle" data-workout-create-title>How do I create my workout?</h2>
         <button class="btn-icon" type="button" data-workout-create-close data-i18n-aria-label="session.workoutCreation.close"><i data-lucide="x" aria-hidden="true"></i></button>
       </header>
       <p id="workoutCreationDescription" data-workout-create-description></p>

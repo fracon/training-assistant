@@ -46,8 +46,8 @@ test('creation guide exposes all platforms, safe links, and a separate dialog fr
 
 test('both locales contain translated guidance, limitations, and accessible labels', () => {
   for (const [messages, open, close, learn] of [
-    [en, 'How to create a workout', 'Close workout creation guide', 'Learn more in the official documentation'],
-    [pt, 'Como criar um treino', 'Fechar guia de criação de treino', 'Saiba mais na documentação oficial'],
+    [en, 'How do I create my workout?', 'Close workout creation guide', 'Learn more in the official documentation'],
+    [pt, 'Como criar meu treino?', 'Fechar guia de criação de treino', 'Saiba mais na documentação oficial'],
   ]) {
     assert.equal(lookup(messages, 'session.workoutCreation.openShort'), open);
     assert.equal(typeof lookup(messages, 'session.workoutCreation.close'), 'string');

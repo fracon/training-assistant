@@ -57,9 +57,9 @@ migration patterns.
   lap ascent totals, then positive deltas between consecutive valid records of
   one selected altitude field. Never add absolute deltas or combine session,
   lap, and record totals.
-- Result-page guidance is visible only when canonical `result_data_source` is
-  `none`; FIT/ZIP, manual, and supported future sources hide it. Do not infer
-  result existence from displayed fields.
+- The result page keeps its import guide beside the FIT/ZIP upload controls;
+  it is available regardless of whether the session has `none`, `manual`, or
+  `fit_upload` provenance. Do not infer result existence from displayed fields.
 - The Training Result page also has a separate, informational “How to create a
   workout” guide. Its declarative catalog lives in
   `src/public/shared/workout-creation-guidance.js` and is rendered by

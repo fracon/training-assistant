@@ -1,6 +1,6 @@
 # Structured workout creation compatibility (verified 2026-09-22)
 
-The Training Result page's **How to create a workout** guide is informational.
+The Training Result page's **How do I create my workout?** guide is informational.
 It does not log in to a manufacturer, call a manufacturer API, send Kinesis
 data, or synchronize a workout from Kinesis. The user creates and syncs the
 workout in the manufacturer's own app or device. Menu names and availability

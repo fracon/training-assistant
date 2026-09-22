@@ -197,6 +197,7 @@
   },
   "session": {
     "title": "Training Session",
+    "actionsLabel": "Session actions",
     "loading": "Loading training…",
     "plannedHeading": "Planned workout",
     "fieldTipo": "Type",
@@ -282,8 +283,8 @@
       "privacy": "Kinesis never asks for manufacturer credentials or accesses your watch account."
     },
     "workoutCreation": {
-      "openShort": "How to create a workout",
-      "openAriaLabel": "How to create a structured workout",
+      "openShort": "How do I create my workout?",
+      "openAriaLabel": "How do I create my workout?",
       "close": "Close workout creation guide",
       "description": "Create the workout in the manufacturer's app, then sync it to your compatible device. Menu names and features vary by model, operating system, firmware, app version, and region.",
       "platformsLabel": "Workout platforms",
@@ -398,7 +399,8 @@
     "save": "Save and back to calendar",
     "saving": "Saving…",
     "generatingPrompt": "Generating prompt…",
-    "deleteTooltip": "Delete training",
+    "deleteTooltip": "Delete workout",
+    "deleteAriaLabel": "Delete workout",
     "deleteConfirmTitle": "Delete training",
     "deleteConfirmMessage": "Delete this training? This cannot be undone.",
     "deleteSuccess": "Training deleted successfully!",
@@ -799,9 +801,6 @@
       "shoesAlt": "Running shoes ready for training",
       "cycleAlt": "A training cycle mapped out",
       "planAlt": "A weekly training plan",
-      "resultTitle": "Ready to add this workout result?",
-      "resultText": "Use FIT or ZIP for detailed data, or enter the totals manually.",
-      "resultGuide": "Open import guide",
       "saveError": "Your onboarding preference could not be saved. Please try again."
     },
     "days": {

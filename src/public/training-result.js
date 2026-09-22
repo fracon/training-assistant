@@ -6,10 +6,6 @@ import { KM_TO_MILES, convertDistanceInputValue, convertDistanceToKm, formatDist
 import { createImportGuidance } from './shared/workout-import-guidance.js';
 import { createWorkoutCreationGuidance } from './shared/workout-creation-guidance.js';
 
-export function shouldShowOnboardingResultHint(training) {
-  return training?.result_data_source === 'none';
-}
-
 export function selectableFeedbackShoes(shoes, selectedId = null) {
   const owned = Array.isArray(shoes) ? shoes : [];
   return owned.filter((shoe) => shoe.status === 'active' ||
@@ -664,8 +660,6 @@ async function initTrainingResult() {
   const importHelpDialog = document.getElementById('importHelpDialog');
   const workoutCreationBtn = document.getElementById('workoutCreationBtn');
   const workoutCreationDialog = document.getElementById('workoutCreationDialog');
-  const onboardingResultHint = document.getElementById('onboardingResultHint');
-  const onboardingResultGuide = document.getElementById('onboardingResultGuide');
   const manualInputs = {
     distance: document.getElementById('manualDistance'), hours: document.getElementById('manualHours'),
     minutes: document.getElementById('manualMinutes'), seconds: document.getElementById('manualSeconds'),
@@ -680,10 +674,6 @@ async function initTrainingResult() {
   let promptText = '';
   let manualDistanceInputUnit = 'km';
   const t = (key) => translate(i18n ? i18n.messages : {}, key);
-
-  function syncOnboardingResultHint() {
-    if (onboardingResultHint) onboardingResultHint.hidden = !shouldShowOnboardingResultHint(training);
-  }
 
   const applyTooltips = () => {
     rpeSelector.querySelectorAll('[data-i18n]').forEach((el) => {
@@ -906,7 +896,6 @@ async function initTrainingResult() {
     dialog: workoutCreationDialog,
     translate: t,
   });
-  onboardingResultGuide?.addEventListener('click', () => importHelpBtn?.click());
   document.title = t('training.title');
   applyTooltips();
   // The shell may have injected sidebar/topbar markup around the session
@@ -1045,7 +1034,6 @@ async function initTrainingResult() {
     fitData = { ...training, laps: [] };
     resultSourceSelect.value = 'manual';
     renderFitData();
-    syncOnboardingResultHint();
   };
   const persistManualResults = () => persistManualResultsIfNeeded({
     selectedSource: resultSourceSelect.value,
@@ -1065,7 +1053,6 @@ async function initTrainingResult() {
     fitData = { ...canonical, laps };
     resultSourceSelect.value = canonical.result_data_source === 'manual' ? 'manual' : 'fit';
     renderFitData();
-    syncOnboardingResultHint();
   };
   const feedbackPayload = (state) => {
     const {
@@ -1222,7 +1209,6 @@ async function initTrainingResult() {
       };
       training = { ...training, ...fitData };
       renderFitData();
-      syncOnboardingResultHint();
     } catch (error) {
       setStatus(error.message || t('session.errors.fitUpload'), 'error');
     }
@@ -1242,8 +1228,6 @@ async function initTrainingResult() {
     importGuidance.render();
     workoutCreationGuidance.render();
   });
-
-  syncOnboardingResultHint();
 
   document.addEventListener('kinesis:preferences-changed', () => {
     renderFitData();

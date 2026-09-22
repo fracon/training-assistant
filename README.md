@@ -116,8 +116,8 @@ connect to manufacturer APIs, or send telemetry. See
 for the audited matrix and sources. GPX, TCX, XML, CSV, and JSON imports remain
 future work and are not made compatible by renaming their extensions.
 
-The same page also offers **How to create a workout / Como criar um treino**
-near the session heading. This is an informational, localized guide for
+The same page also offers **How do I create my workout? / Como criar meu
+treino?** in the session header. This is an informational, localized guide for
 creating structured workouts in Garmin Connect, Apple Watch/iPhone, COROS,
 Polar Flow, Suunto, Samsung Health/Galaxy Watch, Xiaomi/Mi Fitness, and Huawei
 Health. It is separate from importing a completed result and does not connect to
@@ -143,10 +143,10 @@ valid records from one selected altitude field. Descents are never added by
 absolute value; invalid samples break record sequences, and session, lap, and
 record totals are never combined.
 
-The contextual result-page guidance is visible only when the training's
-canonical `result_data_source` is `none`. A successfully saved FIT/ZIP, manual,
-or supported future source hides it; visible form values are not used to infer
-whether a result exists.
+The result page keeps **How to import? / Como importar?** beside the FIT/ZIP
+upload controls. It is an independent import guide and remains available in
+sessions with no result, manual results, or FIT/ZIP results; result provenance
+is never inferred from visible form fields.
 
 The FIT result is persisted as soon as the upload to `/api/trainings/:id/fit`
 completes. The final result-page actions then persist the manual result when

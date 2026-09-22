@@ -197,6 +197,7 @@
   },
   "session": {
     "title": "Sessão de Treino",
+    "actionsLabel": "Ações da sessão",
     "loading": "Carregando treino…",
     "plannedHeading": "Treino planejado",
     "fieldTipo": "Tipo",
@@ -282,8 +283,8 @@
       "privacy": "O Kinesis nunca solicita credenciais do fabricante nem acessa sua conta do relógio."
     },
     "workoutCreation": {
-      "openShort": "Como criar um treino",
-      "openAriaLabel": "Como criar um treino estruturado",
+      "openShort": "Como criar meu treino?",
+      "openAriaLabel": "Como criar meu treino?",
       "close": "Fechar guia de criação de treino",
       "description": "Crie o treino no aplicativo do fabricante e depois sincronize-o com seu dispositivo compatível. Nomes de menus e recursos variam conforme modelo, sistema operacional, firmware, versão do aplicativo e região.",
       "platformsLabel": "Plataformas de treino",
@@ -399,6 +400,7 @@
     "saving": "Salvando…",
     "generatingPrompt": "Gerando prompt…",
     "deleteTooltip": "Excluir treino",
+    "deleteAriaLabel": "Excluir treino",
     "deleteConfirmTitle": "Excluir treino",
     "deleteConfirmMessage": "Excluir este treino? Esta ação não pode ser desfeita.",
     "deleteSuccess": "Treino excluído com sucesso!",
@@ -799,9 +801,6 @@
       "shoesAlt": "Tênis de corrida prontos para o treino",
       "cycleAlt": "Um ciclo de treino planejado",
       "planAlt": "Um plano semanal de treino",
-      "resultTitle": "Pronto para registrar o resultado deste treino?",
-      "resultText": "Use FIT ou ZIP para dados detalhados, ou informe os totais manualmente.",
-      "resultGuide": "Abrir guia de importação",
       "saveError": "Não foi possível salvar sua preferência de onboarding. Tente novamente."
     },
     "days": {

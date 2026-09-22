@@ -1,17 +1,5 @@
 @import url('./shared/theme.css');
 
-.onboarding-result-hint { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0.5rem 1.25rem; margin: 0 0 1rem; padding: 0.9rem 1.1rem; border: 1px solid var(--line); border-radius: 14px; background: var(--card); }
-.onboarding-result-hint[hidden] { display: none; }
-.onboarding-result-copy { min-width: 0; }
-.onboarding-result-hint h2 { margin: 0 0 0.25rem; font-size: 1rem; line-height: 1.35; }
-.onboarding-result-hint p { margin: 0; color: var(--muted); font-size: 0.88rem; line-height: 1.45; }
-.onboarding-result-guide { display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem; min-height: 2.5rem; padding: 0.5rem 0.6rem; border: 0; border-radius: 8px; background: transparent; box-shadow: none; color: var(--accent-deep); font: inherit; font-size: 0.88rem; font-weight: 600; text-decoration: none; white-space: nowrap; cursor: pointer; transition: color 0.15s ease, background-color 0.15s ease; }
-.onboarding-result-guide:hover { background: var(--wash); color: var(--accent-deep); text-decoration: none; }
-.onboarding-result-guide:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.onboarding-result-guide:active { background: var(--line); }
-.onboarding-result-guide svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; flex: 0 0 auto; }
-@media (max-width: 640px) { .onboarding-result-hint { grid-template-columns: minmax(0, 1fr); align-items: start; gap: 0.65rem; } .onboarding-result-guide { justify-self: start; white-space: normal; } }
-
 body {
   margin: 0;
   background: var(--bg);
@@ -35,7 +23,54 @@ body {
 }
 
 .session-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.session-heading {
+  min-width: 0;
+}
+
+.session-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.65rem;
+  flex: 0 0 auto;
+}
+
+.session-actions .custom-tooltip {
+  position: absolute;
+  bottom: 110%;
+  right: 0;
+  transform: translateY(4px);
+  z-index: 50;
+  width: max-content;
+  max-width: 200px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--card);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.session-actions .btn-icon {
   position: relative;
+}
+
+.session-actions .btn-icon:hover .custom-tooltip,
+.session-actions .btn-icon:focus-visible .custom-tooltip {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .workout-creation-trigger {
@@ -55,6 +90,10 @@ body {
   text-decoration: none;
   cursor: pointer;
   transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.session-actions .workout-creation-trigger {
+  margin-top: 0;
 }
 
 .workout-creation-trigger:hover,
@@ -114,38 +153,6 @@ body {
 
 .card-head h2 {
   margin: 0 0 14px;
-}
-
-.card-head .btn-icon {
-  position: relative;
-  margin-bottom: 14px;
-}
-
-.card-head .custom-tooltip {
-  position: absolute;
-  bottom: 110%;
-  right: 0;
-  transform: translateY(4px);
-  z-index: 50;
-  width: max-content;
-  max-width: 200px;
-  padding: 6px 10px;
-  border-radius: 6px;
-  background: var(--ink);
-  color: var(--card);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  font-size: 0.75rem;
-  font-weight: 500;
-  line-height: 1.4;
-  white-space: nowrap;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.15s ease, transform 0.15s ease;
-}
-
-.card-head .btn-icon:hover .custom-tooltip {
-  opacity: 1;
-  transform: translateY(0);
 }
 
 .btn-icon {
@@ -327,6 +334,9 @@ body {
 .workout-creation-note { margin: 14px 0 8px; font-size: 0.88rem; }
 .workout-creation-source { display: inline-block; margin: 8px 0 4px; color: var(--accent-deep); }
 @media (max-width: 560px) {
+  .session-header { align-items: stretch; flex-direction: column; gap: 0.75rem; }
+  .session-actions { justify-content: flex-start; width: 100%; }
+  .session-actions .workout-creation-trigger { min-width: 0; white-space: normal; text-align: left; }
   .fit-upload-header { flex-wrap: wrap; }
   .import-help-dialog { padding: 8px; align-items: end; }
   .import-help-card { max-height: calc(100vh - 16px); padding: 18px; border-radius: 18px 18px 0 0; }

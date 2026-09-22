@@ -367,16 +367,6 @@ test('welcome carousel copy is translated and action labels match their destinat
   assert.equal(pt.home.onboarding.setupComplete, 'Configuração concluída');
 });
 
-test('result guidance follows only the canonical result provenance for every owned training', async () => {
-  const { shouldShowOnboardingResultHint } = await import(pathToFileURL(path.join(__dirname, '../src/public/training-result.js')));
-  assert.equal(shouldShowOnboardingResultHint({ result_data_source: 'none' }), true);
-  assert.equal(shouldShowOnboardingResultHint({ result_data_source: 'manual' }), false);
-  assert.equal(shouldShowOnboardingResultHint({ result_data_source: 'fit_upload' }), false);
-  assert.equal(shouldShowOnboardingResultHint({ result_data_source: 'garmin_connect' }), false);
-  const css = readFileSync(path.join(__dirname, '../src/public/home.css'), 'utf8');
-  assert.doesNotMatch(css, /var\(--surface\)|var\(--wash\)/);
-});
-
 test('browser CSS makes the hidden onboarding guide and welcome modal actually invisible', () => {
   const chrome = findChrome();
   assert.ok(chrome, 'Chrome is required for onboarding browser validation.');
@@ -1101,19 +1091,11 @@ test('authenticated training-result guidance and feedback shoes render by canoni
     const probe = `new Promise(async(resolve,reject)=>{
       const deadline=Date.now()+12000;
       const check=async()=>{
-        const hint=document.getElementById('onboardingResultHint');
         const select=document.getElementById('feedbackShoe');
         const api=await fetch('/api/trainings/'+new URL(location.href).searchParams.get('id')).then(r=>r.json()).catch(()=>null);
-        if(hint&&select&&api?.training&&document.body.classList.contains('shell-mounted')){
+        if(select&&api?.training&&document.body.classList.contains('shell-mounted')){
           await new Promise(r=>setTimeout(r,250));
-          const title=hint.querySelector('h2');
-          const rect=hint.getBoundingClientRect();
-          const initial={source:api.training.result_data_source,hidden:hint.hidden,display:getComputedStyle(hint).display,title:title.textContent.trim(),rect:{width:rect.width,height:rect.height},active:[...select.options].some(o=>o.value==='result-active'),retired:[...select.options].find(o=>o.value==='result-retired')?.textContent,retiredDisabled:[...select.options].find(o=>o.value==='result-retired')?.disabled,foreign:[...select.options].some(o=>o.value==='result-foreign-retired'),scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth};
-          if(api.training.result_data_source==='none'){
-            document.querySelector('.lang-switch [data-lang="en-US"]')?.click();
-            await new Promise(r=>setTimeout(r,100));
-            initial.englishTitle=title.textContent.trim();
-          }
+          const initial={source:api.training.result_data_source,hintPresent:Boolean(document.getElementById('onboardingResultHint')),active:[...select.options].some(o=>o.value==='result-active'),retired:[...select.options].find(o=>o.value==='result-retired')?.textContent,retiredDisabled:[...select.options].find(o=>o.value==='result-retired')?.disabled,foreign:[...select.options].some(o=>o.value==='result-foreign-retired'),scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth};
           resolve(initial);return;
         }
         if(Date.now()>deadline){reject(new Error('Authenticated training result page did not finish loading'));return}
@@ -1128,67 +1110,15 @@ test('authenticated training-result guidance and feedback shoes render by canoni
           ...viewport, cookie, probeExpression: probe, screenshotSuffix: `-result-${source}`,
         });
         assert.equal(result.source, source);
-        assert.equal(result.hidden, source !== 'none', `${source} visibility follows result_data_source`);
-        assert.equal(result.display === 'none', source !== 'none', `${source} hidden attribute removes rendered layout`);
+        assert.equal(result.hintPresent, false, `${source} has no redundant result hint`);
         assert.equal(result.active, true);
         assert.equal(result.retired, 'Kinesis Retired (Aposentado)');
         assert.equal(result.retiredDisabled, true);
         assert.equal(result.foreign, false, 'the endpoint and page are scoped to the signed-in user');
         assert.ok(result.scrollWidth <= result.viewportWidth, `${source} page fits ${viewport.width}px`);
-        if (source === 'none') {
-          assert.equal(result.title, 'Pronto para registrar o resultado deste treino?');
-          assert.equal(result.englishTitle, 'Ready to add this workout result?');
-          assert.ok(result.rect.width > 0 && result.rect.height > 0);
-        }
       }
     }
 
-    const liveTrainingId = db.prepare("INSERT INTO trainings (user_id,dia,tipo,treino,result_data_source) VALUES (?, '2026-09-20','Run','Live upload','none')").run(userId).lastInsertRowid;
-    const fitBase64 = buildFitFile().toString('base64');
-    const liveUploadProbe = `new Promise(async(resolve,reject)=>{
-      try{
-        const wait=async(predicate)=>{const end=Date.now()+12000;while(Date.now()<end){if(await predicate())return;await new Promise(r=>setTimeout(r,50))}throw new Error('Live FIT result state timed out')};
-        await wait(()=>document.body.classList.contains('shell-mounted')&&document.getElementById('onboardingResultHint')?.hidden===false);
-        const input=document.getElementById('fitFile');
-        const bytes=Uint8Array.from(atob('${fitBase64}'),c=>c.charCodeAt(0));
-        const transfer=new DataTransfer();transfer.items.add(new File([bytes],'synthetic.fit',{type:'application/octet-stream'}));input.files=transfer.files;
-        input.dispatchEvent(new Event('change',{bubbles:true}));
-        await wait(async()=>{const data=await fetch('/api/trainings/${liveTrainingId}').then(r=>r.json()).catch(()=>null);return data?.training?.result_data_source==='fit_upload'&&document.getElementById('onboardingResultHint').hidden});
-        resolve({source:(await fetch('/api/trainings/${liveTrainingId}').then(r=>r.json())).training.result_data_source,hidden:document.getElementById('onboardingResultHint').hidden,display:getComputedStyle(document.getElementById('onboardingResultHint')).display});
-      }catch(error){reject(error)}
-    })`;
-    const liveUpload = await runChromeAtViewport(chrome, `${appUrl}/training-result.html?id=${liveTrainingId}`, {
-      width: 1280, height: 800, mobile: false, cookie, probeExpression: liveUploadProbe, screenshotSuffix: '-result-live-fit',
-    });
-    assert.equal(liveUpload.source, 'fit_upload');
-    assert.equal(liveUpload.hidden, true);
-    assert.equal(liveUpload.display, 'none');
-
-    const liveManualId = db.prepare("INSERT INTO trainings (user_id,dia,tipo,treino,result_data_source) VALUES (?, '2026-09-20','Run','Live manual result','none')").run(userId).lastInsertRowid;
-    const manualProbe = `new Promise(async(resolve,reject)=>{
-      try{
-        const wait=async(predicate)=>{const end=Date.now()+12000;while(Date.now()<end){if(await predicate())return;await new Promise(r=>setTimeout(r,50))}throw new Error('Live manual result state timed out')};
-        await wait(()=>document.body.classList.contains('shell-mounted')&&document.getElementById('onboardingResultHint')?.hidden===false);
-        document.getElementById('resultSourceSelect').value='manual';
-        document.getElementById('resultSourceSelect').dispatchEvent(new Event('change',{bubbles:true}));
-        document.getElementById('manualDistance').value='5';
-        document.getElementById('manualHours').value='0';
-        document.getElementById('manualMinutes').value='30';
-        document.getElementById('manualSeconds').value='0';
-        document.getElementById('rpe-3').click();
-        document.getElementById('generateBtn').click();
-        await new Promise(r=>setTimeout(r,1800));
-        const state=await fetch('/api/trainings/${liveManualId}').then(r=>r.json());
-        resolve({source:state.training.result_data_source,hidden:document.getElementById('onboardingResultHint').hidden,display:getComputedStyle(document.getElementById('onboardingResultHint')).display,promptVisible:!document.getElementById('promptSection').hidden});
-      }catch(error){reject(error)}
-    })`;
-    const liveManual = await runChromeAtViewport(chrome, `${appUrl}/training-result.html?id=${liveManualId}`, {
-      width: 390, height: 844, mobile: true, cookie, probeExpression: manualProbe, screenshotSuffix: '-result-live-manual',
-    });
-    assert.equal(liveManual.source, 'manual');
-    assert.equal(liveManual.hidden, true);
-    assert.equal(liveManual.display, 'none');
-    assert.equal(liveManual.promptVisible, true, JSON.stringify(liveManual));
   } finally {
     await app.close();
     db.close();
@@ -1384,7 +1314,10 @@ test('authenticated workout creation guide is independent, localized, and non-mu
       const trigger=document.getElementById('workoutCreationBtn'); trigger.focus(); trigger.click();
       await wait(()=>document.getElementById('workoutCreationDialog')?.hidden===false);
       const dialog=document.getElementById('workoutCreationDialog');
-      const initial={hidden:dialog.hidden,focus:document.activeElement?.getAttribute('data-workout-create-close'),platforms:dialog.querySelectorAll('[data-workout-create-platform]').length,garmin:dialog.querySelector('[data-workout-create-title]').textContent,importHidden:document.getElementById('importHelpDialog').hidden,overflow:document.documentElement.scrollWidth<=innerWidth};
+      const header=document.querySelector('.session-header');
+      const helpRect=trigger.getBoundingClientRect();
+      const deleteRect=document.getElementById('deleteTrainingBtn').getBoundingClientRect();
+      const initial={hidden:dialog.hidden,focus:document.activeElement?.getAttribute('data-workout-create-close'),platforms:dialog.querySelectorAll('[data-workout-create-platform]').length,garmin:dialog.querySelector('[data-workout-create-title]').textContent,importHidden:document.getElementById('importHelpDialog').hidden,overflow:document.documentElement.scrollWidth<=innerWidth,headerRect:{left:header.getBoundingClientRect().left,right:header.getBoundingClientRect().right},helpRect:{left:helpRect.left,right:helpRect.right,top:helpRect.top,bottom:helpRect.bottom},deleteRect:{left:deleteRect.left,right:deleteRect.right,top:deleteRect.top,bottom:deleteRect.bottom},ordered:helpRect.right<=deleteRect.left};
       dialog.querySelector('[data-workout-create-platform="xiaomi"]').click();
       const xiaomi={status:dialog.querySelector('[data-workout-create-status]').textContent, fallback:dialog.querySelector('[data-workout-create-steps]').textContent};
       document.querySelector('.lang-switch [data-lang="pt-BR"]')?.click();
@@ -1402,6 +1335,10 @@ test('authenticated workout creation guide is independent, localized, and non-mu
       assert.match(result.initial.garmin, /Garmin/);
       assert.equal(result.initial.importHidden, true);
       assert.equal(result.initial.overflow, true);
+      assert.ok(result.initial.helpRect.right <= result.initial.deleteRect.left, 'help action precedes delete action without overlap');
+      assert.ok(result.initial.helpRect.right > result.initial.helpRect.left);
+      assert.ok(result.initial.deleteRect.right > result.initial.deleteRect.left);
+      assert.ok(result.initial.helpRect.bottom > result.initial.helpRect.top);
       assert.match(result.xiaomi.status, /Model|modelo/i);
       assert.match(result.portuguese.fallback, /Não foi possível/);
       assert.equal(result.portuguese.selected, 'true');

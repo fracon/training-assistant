@@ -39,7 +39,6 @@ const {
   WEATHER_CODE_LABEL_KEYS,
   WEATHER_UNKNOWN_KEY,
   selectableFeedbackShoes,
-  shouldShowOnboardingResultHint,
   PROMPT_TEMPLATE_PT,
   PROMPT_TEMPLATE_EN,
 } = require('../src/public/training-result.js');
@@ -49,14 +48,6 @@ const pt = require('../src/public/locales/pt.json');
 test('resolveSessionId extracts the contextual id from the query string', () => {
   assert.equal(resolveSessionId('?id=42'), '42');
   assert.equal(resolveSessionId('?id=%20%207%20'), '7', 'surrounding whitespace is trimmed');
-});
-
-test('result guidance visibility follows none/manual/FIT/future canonical sources and is contextual per workout', () => {
-  assert.equal(shouldShowOnboardingResultHint({ result_data_source: 'none' }), true);
-  for (const source of ['manual', 'fit_upload', 'garmin_connect', 'future_source', null, undefined]) {
-    assert.equal(shouldShowOnboardingResultHint({ result_data_source: source }), false);
-  }
-  assert.equal(shouldShowOnboardingResultHint({}), false, 'missing source is not guessed from visible fields');
 });
 
 test('feedback shoe selection lists active shoes and only the currently associated retired shoe', () => {
@@ -70,14 +61,17 @@ test('feedback shoe selection lists active shoes and only the currently associat
   assert.deepEqual(selectableFeedbackShoes(null), []);
 });
 
-test('result guidance uses translated contextual copy and [hidden] explicitly removes its layout', () => {
+test('training session header keeps creation help before the localized destructive action', () => {
   const html = readFileSync(join(publicDir, 'training-result.html'), 'utf8');
   const css = readFileSync(join(publicDir, 'training-result.css'), 'utf8');
-  assert.match(html, /id="onboardingResultHint"[^>]*hidden/);
-  assert.match(css, /\.onboarding-result-hint\[hidden\]\s*\{\s*display:\s*none\s*;/);
-  assert.equal(en.home.onboarding.resultTitle, 'Ready to add this workout result?');
-  assert.equal(pt.home.onboarding.resultTitle, 'Pronto para registrar o resultado deste treino?');
-  assert.match(html, /onboarding-result-guide[^>]*>[\s\S]*?<svg[^>]*aria-hidden="true"/);
+  assert.doesNotMatch(html, /onboardingResultHint|onboardingResultGuide|onboarding-result-hint/);
+  assert.doesNotMatch(css, /onboarding-result-hint|onboarding-result-guide/);
+  assert.match(html, /<div class="session-actions"[^>]*>[\s\S]*id="workoutCreationBtn"[\s\S]*id="deleteTrainingBtn"/);
+  assert.equal(en.session.workoutCreation.openShort, 'How do I create my workout?');
+  assert.equal(pt.session.workoutCreation.openShort, 'Como criar meu treino?');
+  assert.match(html, /id="workoutCreationBtn"[\s\S]*data-lucide="book-open" aria-hidden="true"/);
+  assert.match(html, /id="deleteTrainingBtn"[^>]*data-i18n-aria-label="session\.deleteAriaLabel"/);
+  assert.match(html, /id="deleteTrainingBtn"[\s\S]*data-i18n="session\.deleteTooltip"/);
 });
 
 test('resolveSessionId bounces to the calendar when no id is present', () => {
@@ -1062,12 +1056,12 @@ test('training-result.html ships the expanded feedback grid and generator button
 
   assert.match(
     html,
-    /<div class="card-head">\s*\n\s*<h2 id="plannedTitle" data-i18n="session\.plannedHeading">Planned workout<\/h2>\s*\n\s*<button id="deleteTrainingBtn" class="btn-icon btn-danger" type="button" aria-label="Delete training">/,
-    'the planned card header carries a dedicated delete button'
+    /<header class="session-header">[\s\S]*<div class="session-actions"[^>]*>[\s\S]*<button id="workoutCreationBtn"[\s\S]*<button id="deleteTrainingBtn"/,
+    'the session header carries ordered help and delete actions'
   );
   assert.match(
     html,
-    /<i data-lucide="trash-2" aria-hidden="true"><\/i>\s*\n\s*<div class="custom-tooltip" data-i18n="session\.deleteTooltip">Delete training<\/div>/,
+    /<i data-lucide="trash-2" aria-hidden="true"><\/i>\s*\n\s*<div class="custom-tooltip" data-i18n="session\.deleteTooltip">Delete workout<\/div>/,
     'the delete action ships a custom tooltip, never a native title'
   );
   assert.ok(!html.includes('title="'), 'no native title attributes sneak in');
@@ -1753,13 +1747,13 @@ test('training-result.css keeps the earthy premium aesthetic for the session vie
   );
   assert.match(
     css,
-    /\.card-head \.custom-tooltip \{[^}]*background:\s*var\(--ink\)/,
+    /\.session-actions \.custom-tooltip \{[^}]*background:\s*var\(--ink\)/,
     'the delete tooltip uses the dark ink surface'
   );
-  assert.match(css, /\.card-head \.custom-tooltip \{[^}]*z-index:\s*50/, 'the delete tooltip layers above surrounding content');
+  assert.match(css, /\.session-actions \.custom-tooltip \{[^}]*z-index:\s*50/, 'the delete tooltip layers above surrounding content');
   assert.match(
     css,
-    /\.card-head \.btn-icon:hover \.custom-tooltip \{[^}]*opacity:\s*1/,
+    /\.session-actions \.btn-icon:hover \.custom-tooltip[^\{]*\{[^}]*opacity:\s*1/,
     'the tooltip fades in on hover with the shared transition'
   );
 
