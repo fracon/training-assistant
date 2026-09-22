@@ -671,6 +671,7 @@ async function initTrainingResult() {
   let copiedTimer = null;
   let fitData = null;
   let currentTrainingId = null;
+  let training = null;
   let promptText = '';
   let manualDistanceInputUnit = 'km';
   const t = (key) => translate(i18n ? i18n.messages : {}, key);
@@ -896,15 +897,30 @@ async function initTrainingResult() {
     dialog: workoutCreationDialog,
     translate: t,
   });
-  document.title = t('training.title');
-  applyTooltips();
+
+  const renderLocalizedUi = () => {
+    document.title = t('training.title');
+    if (training) dateEl.textContent = formatDateLabel(training.dia, i18n.language);
+    if (!saveBtn.disabled) saveBtn.textContent = t('session.save');
+    if (!generateBtn.disabled) generateLabel.textContent = t('session.generatePrompt');
+    if (!copyPromptBtn.disabled) copyLabel.textContent = t('session.copyPrompt');
+    renderFitDropzoneState();
+    renderWeatherAutofill();
+    renderFitData();
+    renderFeedbackShoes();
+    applyTooltips();
+    importGuidance.render();
+    workoutCreationGuidance.render();
+  };
+
+  document.addEventListener('app:languagechange', renderLocalizedUi);
+  renderLocalizedUi();
   // The shell may have injected sidebar/topbar markup around the session
   // card; re-initializing Lucide ensures the card's trash icon is rendered
   // as an SVG and never left as an empty <i> tag.
   refreshIcons();
 
   setStatus(t('session.loading'));
-  let training;
   try {
     training = await fetchTraining(id);
   } catch {
@@ -989,6 +1005,7 @@ async function initTrainingResult() {
   syncPainVisibility();
   await autoFillWeatherField();
   setStatus('');
+  renderLocalizedUi();
 
   const collectFormState = () => {
     const hrValue = hrSourceSelect.value;
@@ -1212,21 +1229,6 @@ async function initTrainingResult() {
     } catch (error) {
       setStatus(error.message || t('session.errors.fitUpload'), 'error');
     }
-  });
-
-  document.addEventListener('app:languagechange', () => {
-    document.title = t('training.title');
-    if (training) dateEl.textContent = formatDateLabel(training.dia, i18n.language);
-    if (!saveBtn.disabled) saveBtn.textContent = t('session.save');
-    if (!generateBtn.disabled) generateLabel.textContent = t('session.generatePrompt');
-    if (!copyPromptBtn.disabled) copyLabel.textContent = t('session.copyPrompt');
-    renderFitDropzoneState();
-    renderWeatherAutofill();
-    renderFitData();
-    renderFeedbackShoes();
-    applyTooltips();
-    importGuidance.render();
-    workoutCreationGuidance.render();
   });
 
   document.addEventListener('kinesis:preferences-changed', () => {

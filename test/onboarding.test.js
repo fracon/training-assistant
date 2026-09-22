@@ -1371,3 +1371,72 @@ test('authenticated workout creation guide is independent, localized, and non-mu
     db.close();
   }
 });
+
+test('workout creation guide localizes while training data is still loading', async () => {
+  const chrome = findChrome();
+  assert.ok(chrome, 'Chrome is required for delayed initialization validation.');
+  const db = createDatabase({ filename: ':memory:' });
+  const app = await buildServer({ db, sessionCookieSecure: false, unsplashFetch: async () => { throw new Error('No external hero request in browser tests.'); } });
+  let delayedTrainingId = null;
+  let delayedTrainingRequest = true;
+  app.addHook('onRequest', async (request) => {
+    if (delayedTrainingRequest && delayedTrainingId !== null && request.method === 'GET' && request.url === `/api/trainings/${delayedTrainingId}`) {
+      delayedTrainingRequest = false;
+      await delay(2500);
+    }
+  });
+  try {
+    const email = 'creation-guide-delayed@example.com';
+    await app.inject({ method: 'POST', url: '/api/auth/register', payload: { email, password: 'creation-guide-delayed-secret', first_name: 'Delayed', last_name: 'Runner', preferred_lang: 'en-US' } });
+    const userId = db.prepare('SELECT id FROM users WHERE email = ?').get(email).id;
+    const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email, password: 'creation-guide-delayed-secret' } });
+    const cookie = [].concat(login.headers['set-cookie'] ?? [])[0].split(';')[0].split('=')[1];
+    const trainingId = db.prepare("INSERT INTO trainings (user_id,dia,tipo,treino,result_data_source) VALUES (?, '2026-09-20','Run','Delayed creation guide','none')").run(userId).lastInsertRowid;
+    delayedTrainingId = trainingId;
+    const appUrl = await app.listen({ port: 0, host: '127.0.0.1' });
+    const probe = `new Promise(async(resolve,reject)=>{try{
+      const wait=async(predicate,label)=>{const end=Date.now()+12000;while(Date.now()<end){if(await predicate())return;await new Promise(r=>setTimeout(r,40))}throw new Error(label||'delayed creation guide did not become ready')};
+      await wait(()=>document.body.classList.contains('shell-mounted')&&document.getElementById('workoutCreationBtn'),'shell and trigger');
+      const errors=[]; window.addEventListener('error',event=>errors.push(event.message)); window.addEventListener('unhandledrejection',event=>errors.push(String(event.reason)));
+      const trigger=document.getElementById('workoutCreationBtn'); trigger.focus(); trigger.click();
+      await wait(()=>document.getElementById('workoutCreationDialog')?.hidden===false,'guide open');
+      const dialog=document.getElementById('workoutCreationDialog');
+      dialog.querySelector('[data-workout-create-platform="xiaomi"]').click();
+      const selectedBefore=dialog.querySelector('[data-workout-create-platform="xiaomi"]').getAttribute('aria-pressed');
+      document.querySelector('.lang-switch [data-lang="pt-BR"]').click();
+      await wait(()=>document.documentElement.lang==='pt-BR','Portuguese switch');
+      const during={title:dialog.querySelector('[data-workout-create-title]').textContent,description:dialog.querySelector('[data-workout-create-description]').textContent,status:dialog.querySelector('[data-workout-create-status]').textContent,steps:dialog.querySelector('[data-workout-create-steps]').textContent,note:dialog.querySelector('[data-workout-create-note]').textContent,link:dialog.querySelector('[data-workout-create-source]').textContent,platformsLabel:dialog.querySelector('[data-workout-create-platforms]').getAttribute('aria-label'),selected:dialog.querySelector('[data-workout-create-platform="xiaomi"]').getAttribute('aria-pressed'),open:!dialog.hidden};
+      await new Promise(r=>setTimeout(r,2800));
+      await wait(()=>document.getElementById('status')?.textContent==='','training load');
+      const afterLoad={title:dialog.querySelector('[data-workout-create-title]').textContent,selected:dialog.querySelector('[data-workout-create-platform="xiaomi"]').getAttribute('aria-pressed'),open:!dialog.hidden};
+      document.querySelector('.lang-switch [data-lang="en-US"]').click();
+      await wait(()=>document.documentElement.lang==='en-US','English switch back');
+      const final={title:dialog.querySelector('[data-workout-create-title]').textContent,description:dialog.querySelector('[data-workout-create-description]').textContent,selected:dialog.querySelector('[data-workout-create-platform="xiaomi"]').getAttribute('aria-pressed'),open:!dialog.hidden};
+      dialog.querySelector('[data-workout-create-close]').click();
+      resolve({during,afterLoad,final,selectedBefore,restored:document.activeElement===trigger,errors});
+    }catch(error){reject(error)}})`;
+    const result = await runChromeAtViewport(chrome, `${appUrl}/training-result.html?id=${trainingId}`, {
+      width: 1280, height: 800, mobile: false, cookie, probeExpression: probe, screenshotSuffix: '-creation-guide-delayed',
+    });
+    assert.equal(result.selectedBefore, 'true');
+    assert.match(result.during.title, /Xiaomi|Mi Fitness/);
+    assert.match(result.during.description, /^Crie o treino/);
+    assert.match(result.during.status, /Depende do modelo/);
+    assert.match(result.during.steps, /Não foi possível confirmar/);
+    assert.match(result.during.note, /informações oficiais/);
+    assert.match(result.during.link, /Saiba mais/);
+    assert.equal(result.during.platformsLabel, 'Plataformas de treino');
+    assert.equal(result.during.selected, 'true');
+    assert.equal(result.during.open, true);
+    assert.deepEqual(result.afterLoad, { title: 'Xiaomi / Mi Fitness', selected: 'true', open: true });
+    assert.match(result.final.title, /Xiaomi|Mi Fitness/);
+    assert.match(result.final.description, /^Create the workout/);
+    assert.equal(result.final.selected, 'true');
+    assert.equal(result.final.open, true);
+    assert.deepEqual(result.errors, []);
+    assert.equal(result.restored, true);
+  } finally {
+    try { await app.close(); } catch {}
+    db.close();
+  }
+});
