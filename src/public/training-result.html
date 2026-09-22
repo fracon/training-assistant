@@ -14,6 +14,10 @@
       <header class="session-header">
         <h1 data-i18n="session.title">Training Session</h1>
         <p id="sessionDate" class="session-date"></p>
+        <button id="workoutCreationBtn" class="workout-creation-trigger" type="button" data-i18n-aria-label="session.workoutCreation.openAriaLabel">
+          <i data-lucide="list-plus" aria-hidden="true"></i>
+          <span data-i18n="session.workoutCreation.openShort">How to create a workout</span>
+        </button>
       </header>
 
       <p id="status" class="status" role="status"></p>
@@ -315,6 +319,30 @@
         <p data-import-help-manual-description></p>
         <button type="button" class="btn-secondary" data-import-help-manual>Enter results manually</button>
       </section>
+    </div>
+  </div>
+
+  <div id="workoutCreationDialog" class="workout-creation-dialog" role="dialog" aria-modal="true" aria-labelledby="workoutCreationTitle" aria-describedby="workoutCreationDescription" hidden>
+    <div class="workout-creation-card">
+      <header class="import-help-header">
+        <h2 id="workoutCreationTitle" data-workout-create-title>How to create a workout</h2>
+        <button class="btn-icon" type="button" data-workout-create-close data-i18n-aria-label="session.workoutCreation.close"><i data-lucide="x" aria-hidden="true"></i></button>
+      </header>
+      <p id="workoutCreationDescription" data-workout-create-description></p>
+      <div class="workout-creation-platform-list" data-workout-create-platforms role="group" data-i18n-aria-label="session.workoutCreation.platformsLabel" aria-label="Workout platforms">
+        <button type="button" data-workout-create-platform="garmin" aria-pressed="true">Garmin Connect</button>
+        <button type="button" data-workout-create-platform="apple" aria-pressed="false">Apple Watch / iPhone</button>
+        <button type="button" data-workout-create-platform="coros" aria-pressed="false">COROS</button>
+        <button type="button" data-workout-create-platform="polar" aria-pressed="false">Polar Flow</button>
+        <button type="button" data-workout-create-platform="suunto" aria-pressed="false">Suunto</button>
+        <button type="button" data-workout-create-platform="samsung" aria-pressed="false">Samsung Health / Galaxy Watch</button>
+        <button type="button" data-workout-create-platform="xiaomi" aria-pressed="false">Xiaomi / Mi Fitness</button>
+        <button type="button" data-workout-create-platform="huawei" aria-pressed="false">Huawei Health</button>
+      </div>
+      <div class="workout-creation-status" data-workout-create-status></div>
+      <ol class="workout-creation-steps" data-workout-create-steps></ol>
+      <p class="workout-creation-note" data-workout-create-note></p>
+      <a class="workout-creation-source" data-workout-create-source href="https://support.garmin.com/en-CA/?faq=wZ52AaLbLG2GC1Lxu2l4k7&identifier=777730&tab=topics" target="_blank" rel="noopener noreferrer">Learn more</a>
     </div>
   </div>
 

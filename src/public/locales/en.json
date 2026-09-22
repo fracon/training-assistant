@@ -281,6 +281,95 @@
       "renameWarning": "Renaming a GPX, TCX, XML, CSV, or JSON file to .FIT does not convert it and will not make it compatible.",
       "privacy": "Kinesis never asks for manufacturer credentials or accesses your watch account."
     },
+    "workoutCreation": {
+      "openShort": "How to create a workout",
+      "openAriaLabel": "How to create a structured workout",
+      "close": "Close workout creation guide",
+      "description": "Create the workout in the manufacturer's app, then sync it to your compatible device. Menu names and features vary by model, operating system, firmware, app version, and region.",
+      "platformsLabel": "Workout platforms",
+      "learnMore": "Learn more in the official documentation",
+      "newTab": "opens in a new tab",
+      "compatibility": {
+        "full": "Structured workout creation confirmed",
+        "conditional": "Available on compatible models",
+        "model-dependent": "Model and region dependent"
+      },
+      "platforms": {
+        "garmin": {
+          "title": "Create a workout in Garmin Connect",
+          "step1": "Open Garmin Connect and go to the Workouts section.",
+          "step2": "Choose Create a Workout and select the sport, such as Run.",
+          "step3": "Add steps such as warm-up, run, recovery, and cool-down.",
+          "step4": "Set each step by time, distance, pace, heart rate, or another available target, and add repeats when needed.",
+          "step5": "Save the workout and choose Send to Device for a compatible Garmin device.",
+          "step6": "Sync the watch, then open the workout from the device's saved workouts before starting.",
+          "note": "Garmin documents this flow for compatible devices; available targets and menus vary by model."
+        },
+        "apple": {
+          "title": "Create a custom workout on Apple Watch",
+          "step1": "On Apple Watch, open Workout and choose the workout type.",
+          "step2": "Open Goals, choose Custom, then tap Add.",
+          "step3": "Add warm-up, work, recovery, and cool-down periods.",
+          "step4": "Set time, distance, open targets, pace, or heart-rate alerts where the workout supports them.",
+          "step5": "Save the custom workout on the watch.",
+          "step6": "Start it from the saved custom workouts in the Workout app when you are ready.",
+          "note": "Apple's documented creation flow is on the watch; available target types depend on workout type and watchOS."
+        },
+        "coros": {
+          "title": "Create a workout in COROS",
+          "step1": "In the COROS app, open Profile and choose Workout Library.",
+          "step2": "Tap Create, choose the activity, and add a name and description.",
+          "step3": "Add warm-up, training, rest, and cool-down exercises.",
+          "step4": "Set duration or distance and the available intensity target, such as pace, speed, power, cadence, or heart rate.",
+          "step5": "Save the workout in the library and sync it with the compatible watch.",
+          "step6": "Open the synced workout on the watch and start it from the activity workflow.",
+          "note": "Some activity types and target options are limited to selected COROS watches."
+        },
+        "polar": {
+          "title": "Create a target in Polar Flow",
+          "step1": "Open Polar Flow and choose Diary or the training targets area.",
+          "step2": "Create a phased target and choose the sport.",
+          "step3": "Add phases such as warm-up, work, recovery, and cool-down.",
+          "step4": "Set each phase by duration, distance, pace, heart rate, or another supported target.",
+          "step5": "Save the target and sync Polar Flow with a compatible watch.",
+          "step6": "Find the target in the watch's planned or saved training targets and start it.",
+          "note": "Polar Flow's target types and sync behavior depend on the compatible Polar product."
+        },
+        "suunto": {
+          "title": "Create a structured workout in Suunto",
+          "step1": "In Suunto app, tap the plus button or the watch sync view.",
+          "step2": "Choose Structured workouts and create a new workout.",
+          "step3": "Set the sport, name, description, and optional date.",
+          "step4": "Add warm-up, interval, recovery, and cool-down steps with duration and targets, then add repeats if needed.",
+          "step5": "Review, save, and let the paired watch sync the workout.",
+          "step6": "On the watch, find it in SuuntoPlus Guides or the scheduled workout and start it.",
+          "note": "Suunto states that structured workouts require a watch supporting SuuntoPlus Guides and that a guide cannot be combined with another SuuntoPlus guide during the same exercise."
+        },
+        "samsung": {
+          "title": "Use a workout routine in Samsung Health",
+          "step1": "In Samsung Health, open the Home tab and the exercise tile.",
+          "step2": "Tap More, then the plus button, and choose Create workout routine when available.",
+          "step3": "Choose the exercises or activities included in the routine and save it.",
+          "step4": "Open the Workout feature on the compatible Galaxy Watch to find the routine or selected exercise.",
+          "step5": "Start the workout on the watch and follow the available prompts.",
+          "note": "Samsung's official instructions confirm routines for supported Galaxy Watch models, but do not establish the same structured interval targets across every model or region."
+        },
+        "xiaomi": {
+          "title": "Xiaomi / Mi Fitness",
+          "fallback": "A single, current official flow for creating and syncing custom structured workouts could not be confirmed for every Xiaomi wearable. Check the instructions for your exact model, app version, firmware, and region; use the watch's supported activity or interval modes when available.",
+          "note": "The official Mi Fitness information describes workout options, but availability of custom structured workout creation and synchronization varies by device."
+        },
+        "huawei": {
+          "title": "Huawei Health",
+          "step1": "In Huawei Health, open Exercise and check whether Plan or a supported training plan is available.",
+          "step2": "Choose a supported running plan and complete its settings in the app.",
+          "step3": "Keep the wearable connected so the plan can sync to the device.",
+          "step4": "On the watch, open Workout > Courses and plans > Training plans when those menus exist on your model.",
+          "step5": "Select the course or plan and start it on the watch.",
+          "note": "Huawei documents smart running plans and interval features only for supported products. Custom step-by-step workout creation is not confirmed across all Huawei watches, bands, app versions, and regions."
+        }
+      }
+    },
     "fitDataHeading": "Workout result",
     "fitDuration": "Duration",
     "fitDistance": "Distance",

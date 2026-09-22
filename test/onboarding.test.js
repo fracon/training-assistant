@@ -1363,3 +1363,53 @@ test('browser dialog a11y follows the active slide and traps Shift+Tab from its 
   }
   assert.match(output, /data-a11y-result="pass"/);
 });
+
+test('authenticated workout creation guide is independent, localized, and non-mutating', async () => {
+  const chrome = findChrome();
+  assert.ok(chrome, 'Chrome is required for workout creation guide validation.');
+  const db = createDatabase({ filename: ':memory:' });
+  const app = await buildServer({ db, sessionCookieSecure: false, unsplashFetch: async () => { throw new Error('No external hero request in browser tests.'); } });
+  try {
+    const email = 'creation-guide-browser@example.com';
+    await app.inject({ method: 'POST', url: '/api/auth/register', payload: { email, password: 'creation-guide-secret', first_name: 'Guide', last_name: 'Runner', preferred_lang: 'en-US' } });
+    const userId = db.prepare('SELECT id FROM users WHERE email = ?').get(email).id;
+    const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email, password: 'creation-guide-secret' } });
+    const cookie = [].concat(login.headers['set-cookie'] ?? [])[0].split(';')[0].split('=')[1];
+    const trainingId = db.prepare("INSERT INTO trainings (user_id,dia,tipo,treino,result_data_source) VALUES (?, '2026-09-20','Run','Creation guide','none')").run(userId).lastInsertRowid;
+    const appUrl = await app.listen({ port: 0, host: '127.0.0.1' });
+    const probe = `new Promise(async(resolve,reject)=>{try{
+      const wait=async(predicate)=>{const end=Date.now()+12000;while(Date.now()<end){if(await predicate())return;await new Promise(r=>setTimeout(r,50))}throw new Error('creation guide did not become ready')};
+      await wait(()=>document.body.classList.contains('shell-mounted')&&document.getElementById('workoutCreationBtn'));
+      const before=await fetch('/api/trainings/${trainingId}').then(r=>r.json());
+      const trigger=document.getElementById('workoutCreationBtn'); trigger.focus(); trigger.click();
+      await wait(()=>document.getElementById('workoutCreationDialog')?.hidden===false);
+      const dialog=document.getElementById('workoutCreationDialog');
+      const initial={hidden:dialog.hidden,focus:document.activeElement?.getAttribute('data-workout-create-close'),platforms:dialog.querySelectorAll('[data-workout-create-platform]').length,garmin:dialog.querySelector('[data-workout-create-title]').textContent,importHidden:document.getElementById('importHelpDialog').hidden,overflow:document.documentElement.scrollWidth<=innerWidth};
+      dialog.querySelector('[data-workout-create-platform="xiaomi"]').click();
+      const xiaomi={status:dialog.querySelector('[data-workout-create-status]').textContent, fallback:dialog.querySelector('[data-workout-create-steps]').textContent};
+      document.querySelector('.lang-switch [data-lang="pt-BR"]')?.click();
+      await new Promise(r=>setTimeout(r,120));
+      const portuguese={title:dialog.querySelector('[data-workout-create-title]').textContent, fallback:dialog.querySelector('[data-workout-create-steps]').textContent,selected:dialog.querySelector('[data-workout-create-platform="xiaomi"]').getAttribute('aria-pressed')};
+      document.querySelector('[data-workout-create-close]').click();
+      const after=await fetch('/api/trainings/${trainingId}').then(r=>r.json());
+      resolve({initial,xiaomi,portuguese,restored:document.activeElement===trigger,unchanged:JSON.stringify(before.training)===JSON.stringify(after.training)});
+    }catch(error){reject(error)}})`;
+    for (const viewport of [{ width: 1280, height: 800, mobile: false }, { width: 390, height: 844, mobile: true }]) {
+      const result = await runChromeAtViewport(chrome, `${appUrl}/training-result.html?id=${trainingId}`, { ...viewport, cookie, probeExpression: probe, screenshotSuffix: `-creation-guide-${viewport.width}` });
+      assert.equal(result.initial.hidden, false);
+      assert.equal(result.initial.focus, '');
+      assert.equal(result.initial.platforms, 8);
+      assert.match(result.initial.garmin, /Garmin/);
+      assert.equal(result.initial.importHidden, true);
+      assert.equal(result.initial.overflow, true);
+      assert.match(result.xiaomi.status, /Model|modelo/i);
+      assert.match(result.portuguese.fallback, /Não foi possível/);
+      assert.equal(result.portuguese.selected, 'true');
+      assert.equal(result.restored, true);
+      assert.equal(result.unchanged, true);
+    }
+  } finally {
+    await app.close();
+    db.close();
+  }
+});

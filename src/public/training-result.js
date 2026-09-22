@@ -4,6 +4,7 @@ import { formatDate as formatLocalizedDate, formatWeekday } from './shared/date.
 import { fetchTraining, saveTrainingFeedback, saveManualTrainingResults, fetchShoes, deleteTraining, fetchWeather } from './shared/api.js';
 import { KM_TO_MILES, convertDistanceInputValue, convertDistanceToKm, formatDistance, formatPaceFromMetric, formatTemperature } from './shared/units.js';
 import { createImportGuidance } from './shared/workout-import-guidance.js';
+import { createWorkoutCreationGuidance } from './shared/workout-creation-guidance.js';
 
 export function shouldShowOnboardingResultHint(training) {
   return training?.result_data_source === 'none';
@@ -661,6 +662,8 @@ async function initTrainingResult() {
   const manualDistanceUnit = document.getElementById('manualDistanceUnit');
   const importHelpBtn = document.getElementById('importHelpBtn');
   const importHelpDialog = document.getElementById('importHelpDialog');
+  const workoutCreationBtn = document.getElementById('workoutCreationBtn');
+  const workoutCreationDialog = document.getElementById('workoutCreationDialog');
   const onboardingResultHint = document.getElementById('onboardingResultHint');
   const onboardingResultGuide = document.getElementById('onboardingResultGuide');
   const manualInputs = {
@@ -897,6 +900,11 @@ async function initTrainingResult() {
       syncResultSourceVisibility();
       manualInputs.distance.focus();
     },
+  });
+  const workoutCreationGuidance = createWorkoutCreationGuidance({
+    trigger: workoutCreationBtn,
+    dialog: workoutCreationDialog,
+    translate: t,
   });
   onboardingResultGuide?.addEventListener('click', () => importHelpBtn?.click());
   document.title = t('training.title');
@@ -1232,6 +1240,7 @@ async function initTrainingResult() {
     renderFeedbackShoes();
     applyTooltips();
     importGuidance.render();
+    workoutCreationGuidance.render();
   });
 
   syncOnboardingResultHint();
