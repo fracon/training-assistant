@@ -12,20 +12,8 @@
   <main id="appView">
     <section class="session-page">
       <header class="session-header">
-        <div class="session-heading">
-          <h1 data-i18n="session.title">Training Session</h1>
-          <p id="sessionDate" class="session-date"></p>
-        </div>
-        <div class="session-actions" data-i18n-aria-label="session.actionsLabel" aria-label="Session actions">
-          <button id="workoutCreationBtn" class="workout-creation-trigger" type="button" data-i18n-aria-label="session.workoutCreation.openAriaLabel">
-            <i data-lucide="book-open" aria-hidden="true"></i>
-            <span data-i18n="session.workoutCreation.openShort">How do I create my workout?</span>
-          </button>
-          <button id="deleteTrainingBtn" class="btn-icon btn-danger" type="button" data-i18n-aria-label="session.deleteAriaLabel">
-            <i data-lucide="trash-2" aria-hidden="true"></i>
-            <div class="custom-tooltip" data-i18n="session.deleteTooltip">Delete workout</div>
-          </button>
-        </div>
+        <h1 data-i18n="session.title">Training Session</h1>
+        <p id="sessionDate" class="session-date"></p>
       </header>
 
       <p id="status" class="status" role="status"></p>
@@ -33,6 +21,16 @@
       <section class="card planned-card" aria-labelledby="plannedTitle">
         <div class="card-head">
           <h2 id="plannedTitle" data-i18n="session.plannedHeading">Planned workout</h2>
+          <div class="session-actions" data-i18n-aria-label="session.actionsLabel" aria-label="Session actions">
+            <button id="workoutCreationBtn" class="workout-creation-trigger" type="button" data-i18n-aria-label="session.workoutCreation.openAriaLabel">
+              <i data-lucide="book-open" aria-hidden="true"></i>
+              <span data-i18n="session.workoutCreation.openShort">How do I create my workout?</span>
+            </button>
+            <button id="deleteTrainingBtn" class="btn-icon btn-danger" type="button" data-i18n-aria-label="session.deleteAriaLabel">
+              <i data-lucide="trash-2" aria-hidden="true"></i>
+              <div class="custom-tooltip" data-i18n="session.deleteTooltip">Delete workout</div>
+            </button>
+          </div>
         </div>
         <dl class="planned-grid">
           <div class="planned-item">

@@ -32,7 +32,10 @@ test('creation guide exposes all platforms, safe links, and a separate dialog fr
   const trigger = html.indexOf('id="workoutCreationBtn"');
   const planned = html.indexOf('id="plannedTitle"');
   const dialog = html.indexOf('id="workoutCreationDialog"');
-  assert.ok(trigger >= 0 && trigger < planned, 'creation action stays near the session context');
+  const generalHeader = html.match(/<header class="session-header">[\s\S]*?<\/header>/)?.[0] ?? '';
+  const plannedCard = html.match(/<section class="card planned-card"[^>]*>[\s\S]*?<\/section>/)?.[0] ?? '';
+  assert.doesNotMatch(generalHeader, /workoutCreationBtn|deleteTrainingBtn|session-actions/);
+  assert.ok(trigger >= planned && plannedCard.includes('id="workoutCreationBtn"') && plannedCard.includes('id="deleteTrainingBtn"'), 'creation action stays in the planned workout card');
   assert.ok(dialog > trigger);
   assert.match(html, /id="workoutCreationBtn"[^>]*data-i18n-aria-label="session\.workoutCreation\.openAriaLabel"/);
   assert.match(html, /id="workoutCreationDialog"[^>]*role="dialog"[^>]*aria-modal="true"/);

@@ -23,14 +23,7 @@ body {
 }
 
 .session-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
-.session-heading {
-  min-width: 0;
+  display: block;
 }
 
 .session-actions {
@@ -152,7 +145,11 @@ body {
 }
 
 .card-head h2 {
-  margin: 0 0 14px;
+  margin: 0;
+}
+
+.planned-card .card-head {
+  flex-wrap: nowrap;
 }
 
 .btn-icon {
@@ -334,9 +331,9 @@ body {
 .workout-creation-note { margin: 14px 0 8px; font-size: 0.88rem; }
 .workout-creation-source { display: inline-block; margin: 8px 0 4px; color: var(--accent-deep); }
 @media (max-width: 560px) {
-  .session-header { align-items: stretch; flex-direction: column; gap: 0.75rem; }
-  .session-actions { justify-content: flex-start; width: 100%; }
-  .session-actions .workout-creation-trigger { min-width: 0; white-space: normal; text-align: left; }
+  .planned-card .card-head { align-items: flex-start; flex-wrap: wrap; }
+  .planned-card .session-actions { justify-content: flex-start; width: 100%; }
+  .planned-card .session-actions .workout-creation-trigger { min-width: 0; white-space: normal; text-align: left; }
   .fit-upload-header { flex-wrap: wrap; }
   .import-help-dialog { padding: 8px; align-items: end; }
   .import-help-card { max-height: calc(100vh - 16px); padding: 18px; border-radius: 18px 18px 0 0; }

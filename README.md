@@ -117,7 +117,7 @@ for the audited matrix and sources. GPX, TCX, XML, CSV, and JSON imports remain
 future work and are not made compatible by renaming their extensions.
 
 The same page also offers **How do I create my workout? / Como criar meu
-treino?** in the session header. This is an informational, localized guide for
+treino?** in the internal header of the planned-workout card. This is an informational, localized guide for
 creating structured workouts in Garmin Connect, Apple Watch/iPhone, COROS,
 Polar Flow, Suunto, Samsung Health/Galaxy Watch, Xiaomi/Mi Fitness, and Huawei
 Health. It is separate from importing a completed result and does not connect to

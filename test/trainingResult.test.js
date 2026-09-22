@@ -66,7 +66,9 @@ test('training session header keeps creation help before the localized destructi
   const css = readFileSync(join(publicDir, 'training-result.css'), 'utf8');
   assert.doesNotMatch(html, /onboardingResultHint|onboardingResultGuide|onboarding-result-hint/);
   assert.doesNotMatch(css, /onboarding-result-hint|onboarding-result-guide/);
-  assert.match(html, /<div class="session-actions"[^>]*>[\s\S]*id="workoutCreationBtn"[\s\S]*id="deleteTrainingBtn"/);
+  assert.match(html, /<header class="session-header">[\s\S]*<h1[^>]*data-i18n="session\.title"[\s\S]*<p id="sessionDate"[^>]*>[\s\S]*<\/header>/);
+  assert.doesNotMatch(html.match(/<header class="session-header">[\s\S]*?<\/header>/)?.[0] ?? '', /workoutCreationBtn|deleteTrainingBtn|session-actions/);
+  assert.match(html, /<section class="card planned-card"[\s\S]*<div class="card-head">[\s\S]*<h2 id="plannedTitle"[\s\S]*<div class="session-actions"[^>]*>[\s\S]*id="workoutCreationBtn"[\s\S]*id="deleteTrainingBtn"[\s\S]*<\/div>[\s\S]*<\/div>/);
   assert.equal(en.session.workoutCreation.openShort, 'How do I create my workout?');
   assert.equal(pt.session.workoutCreation.openShort, 'Como criar meu treino?');
   assert.match(html, /id="workoutCreationBtn"[\s\S]*data-lucide="book-open" aria-hidden="true"/);
@@ -1056,8 +1058,8 @@ test('training-result.html ships the expanded feedback grid and generator button
 
   assert.match(
     html,
-    /<header class="session-header">[\s\S]*<div class="session-actions"[^>]*>[\s\S]*<button id="workoutCreationBtn"[\s\S]*<button id="deleteTrainingBtn"/,
-    'the session header carries ordered help and delete actions'
+    /<section class="card planned-card"[\s\S]*<div class="session-actions"[^>]*>[\s\S]*<button id="workoutCreationBtn"[\s\S]*<button id="deleteTrainingBtn"/,
+    'the planned card carries ordered help and delete actions'
   );
   assert.match(
     html,
@@ -1722,8 +1724,9 @@ test('training-result.css keeps the earthy premium aesthetic for the session vie
     'the ring spins a full turn on a single keyframe'
   );
 
-  assert.match(css, /\.card-head \{[^}]*display:\s*flex/, 'the planned card header lays its title and action out on one row');
-  assert.match(css, /\.card-head \{[^}]*justify-content:\s*space-between/, 'title and delete action push to opposite ends');
+  assert.match(css, /\.card-head \{[^}]*display:\s*flex/, 'the planned card header lays its title and actions out on one row');
+  assert.match(css, /\.card-head \{[^}]*justify-content:\s*space-between/, 'title and actions push to opposite ends');
+  assert.match(css, /\.planned-card \.card-head \{[^}]*flex-wrap:\s*nowrap/, 'desktop planned header stays on one row');
   assert.match(css, /\.btn-icon\.btn-danger \{/, 'the delete action reuses the danger icon style');
   assert.match(
     css,

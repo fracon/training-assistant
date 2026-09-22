@@ -1315,9 +1315,10 @@ test('authenticated workout creation guide is independent, localized, and non-mu
       await wait(()=>document.getElementById('workoutCreationDialog')?.hidden===false);
       const dialog=document.getElementById('workoutCreationDialog');
       const header=document.querySelector('.session-header');
+      const plannedCard=document.querySelector('.planned-card');
       const helpRect=trigger.getBoundingClientRect();
       const deleteRect=document.getElementById('deleteTrainingBtn').getBoundingClientRect();
-      const initial={hidden:dialog.hidden,focus:document.activeElement?.getAttribute('data-workout-create-close'),platforms:dialog.querySelectorAll('[data-workout-create-platform]').length,garmin:dialog.querySelector('[data-workout-create-title]').textContent,importHidden:document.getElementById('importHelpDialog').hidden,overflow:document.documentElement.scrollWidth<=innerWidth,headerRect:{left:header.getBoundingClientRect().left,right:header.getBoundingClientRect().right},helpRect:{left:helpRect.left,right:helpRect.right,top:helpRect.top,bottom:helpRect.bottom},deleteRect:{left:deleteRect.left,right:deleteRect.right,top:deleteRect.top,bottom:deleteRect.bottom},ordered:helpRect.right<=deleteRect.left};
+      const initial={hidden:dialog.hidden,focus:document.activeElement?.getAttribute('data-workout-create-close'),platforms:dialog.querySelectorAll('[data-workout-create-platform]').length,garmin:dialog.querySelector('[data-workout-create-title]').textContent,importHidden:document.getElementById('importHelpDialog').hidden,overflow:document.documentElement.scrollWidth<=innerWidth,headerContainsActions:header.contains(trigger)||header.contains(document.getElementById('deleteTrainingBtn')),cardContainsActions:plannedCard.contains(trigger)&&plannedCard.contains(document.getElementById('deleteTrainingBtn')),headerRect:{left:header.getBoundingClientRect().left,right:header.getBoundingClientRect().right},helpRect:{left:helpRect.left,right:helpRect.right,top:helpRect.top,bottom:helpRect.bottom},deleteRect:{left:deleteRect.left,right:deleteRect.right,top:deleteRect.top,bottom:deleteRect.bottom},ordered:helpRect.right<=deleteRect.left};
       dialog.querySelector('[data-workout-create-platform="xiaomi"]').click();
       const xiaomi={status:dialog.querySelector('[data-workout-create-status]').textContent, fallback:dialog.querySelector('[data-workout-create-steps]').textContent};
       document.querySelector('.lang-switch [data-lang="pt-BR"]')?.click();
@@ -1335,6 +1336,8 @@ test('authenticated workout creation guide is independent, localized, and non-mu
       assert.match(result.initial.garmin, /Garmin/);
       assert.equal(result.initial.importHidden, true);
       assert.equal(result.initial.overflow, true);
+      assert.equal(result.initial.headerContainsActions, false);
+      assert.equal(result.initial.cardContainsActions, true);
       assert.ok(result.initial.helpRect.right <= result.initial.deleteRect.left, 'help action precedes delete action without overlap');
       assert.ok(result.initial.helpRect.right > result.initial.helpRect.left);
       assert.ok(result.initial.deleteRect.right > result.initial.deleteRect.left);
