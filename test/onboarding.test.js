@@ -1372,14 +1372,19 @@ test('authenticated workout creation guide is independent, localized, and non-mu
       const helpRect=trigger.getBoundingClientRect();
       const deleteRect=document.getElementById('deleteTrainingBtn').getBoundingClientRect();
       const initial={hidden:dialog.hidden,focus:document.activeElement?.getAttribute('data-workout-create-close'),platforms:dialog.querySelectorAll('[data-workout-create-platform]').length,garmin:document.querySelector('[data-workout-create-title]').textContent,importHidden:document.getElementById('importHelpDialog').hidden,overflow:document.documentElement.scrollWidth<=innerWidth,sidebarCollapsed:document.querySelector('.app-shell')?.classList.contains('collapsed'),headerContainsActions:header.contains(trigger)||header.contains(document.getElementById('deleteTrainingBtn')),cardContainsActions:plannedCard.contains(trigger)&&plannedCard.contains(document.getElementById('deleteTrainingBtn')),cardRect:{left:cardRect.left,right:cardRect.right,top:cardRect.top,bottom:cardRect.bottom},titleRect:{left:titleRect.left,right:titleRect.right,top:titleRect.top,bottom:titleRect.bottom},actionsRect:{left:actionsRect.left,right:actionsRect.right,top:actionsRect.top,bottom:actionsRect.bottom},headerRect:{left:header.getBoundingClientRect().left,right:header.getBoundingClientRect().right},helpRect:{left:helpRect.left,right:helpRect.right,top:helpRect.top,bottom:helpRect.bottom},deleteRect:{left:deleteRect.left,right:deleteRect.right,top:deleteRect.top,bottom:deleteRect.bottom},ordered:helpRect.right<=deleteRect.left,stacked:actionsRect.top>=titleRect.bottom};
+      dialog.querySelector('[data-workout-create-platform="apple"]').click();
+      const apple={status:dialog.querySelector('[data-workout-create-status]').textContent,note:dialog.querySelector('[data-workout-create-note]').textContent,steps:dialog.querySelector('[data-workout-create-steps]').textContent,selected:dialog.querySelector('[data-workout-create-platform="apple"]').getAttribute('aria-pressed')};
       dialog.querySelector('[data-workout-create-platform="xiaomi"]').click();
-      const xiaomi={status:dialog.querySelector('[data-workout-create-status]').textContent, fallback:dialog.querySelector('[data-workout-create-steps]').textContent};
+      const xiaomi={status:dialog.querySelector('[data-workout-create-status]').textContent, fallback:dialog.querySelector('[data-workout-create-steps]').textContent,selected:dialog.querySelector('[data-workout-create-platform="xiaomi"]').getAttribute('aria-pressed')};
+      dialog.querySelector('[data-workout-create-platform="garmin"]').click();
+      const garmin={steps:dialog.querySelector('[data-workout-create-steps]').textContent,selected:dialog.querySelector('[data-workout-create-platform="garmin"]').getAttribute('aria-pressed')};
+      dialog.querySelector('[data-workout-create-platform="xiaomi"]').click();
       document.querySelector('.lang-switch [data-lang="pt-BR"]')?.click();
       await new Promise(r=>setTimeout(r,120));
       const portuguese={title:dialog.querySelector('[data-workout-create-title]').textContent, fallback:dialog.querySelector('[data-workout-create-steps]').textContent,selected:dialog.querySelector('[data-workout-create-platform="xiaomi"]').getAttribute('aria-pressed'),overflow:document.documentElement.scrollWidth<=innerWidth};
       document.querySelector('[data-workout-create-close]').click();
       const after=await fetch('/api/trainings/${trainingId}').then(r=>r.json());
-      resolve({initial,xiaomi,portuguese,restored:document.activeElement===trigger,unchanged:JSON.stringify(before.training)===JSON.stringify(after.training)});
+      resolve({initial,apple,xiaomi,garmin,portuguese,restored:document.activeElement===trigger,unchanged:JSON.stringify(before.training)===JSON.stringify(after.training)});
     }catch(error){reject(error)}})`;
     const viewports = [390, 560, 600, 640, 641, 650, 700, 768, 800, 1280].map((width) => ({ width, height: width === 390 ? 844 : 800, mobile: width < 600 }));
     for (const viewport of viewports) {
@@ -1400,7 +1405,13 @@ test('authenticated workout creation guide is independent, localized, and non-mu
       assert.ok(result.initial.helpRect.right > result.initial.helpRect.left);
       assert.ok(result.initial.deleteRect.right > result.initial.deleteRect.left);
       assert.ok(result.initial.helpRect.bottom > result.initial.helpRect.top);
+      assert.equal(result.apple.selected, 'true');
+      assert.match(result.apple.note, /watch|relógio/i);
+      assert.match(result.apple.steps, /Apple|relógio|watch/i);
       assert.match(result.xiaomi.status, /Model|modelo/i);
+      assert.equal(result.xiaomi.selected, 'true');
+      assert.equal(result.garmin.selected, 'true');
+      assert.match(result.garmin.steps, /Garmin|device|dispositivo/i);
       assert.match(result.portuguese.fallback, /Não foi possível/);
       assert.equal(result.portuguese.selected, 'true');
       assert.equal(result.portuguese.overflow, true);
