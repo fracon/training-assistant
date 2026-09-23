@@ -1466,7 +1466,7 @@ test('workout creation guide localizes while training data is still loading', as
     });
     assert.equal(result.selectedBefore, 'true');
     assert.match(result.during.title, /Xiaomi|Mi Fitness/);
-    assert.match(result.during.description, /^Crie o treino/);
+    assert.match(result.during.description, /^Siga as instruções da sua plataforma/);
     assert.match(result.during.status, /Depende do modelo/);
     assert.match(result.during.steps, /Não foi possível confirmar/);
     assert.match(result.during.note, /informações oficiais/);
@@ -1476,7 +1476,7 @@ test('workout creation guide localizes while training data is still loading', as
     assert.equal(result.during.open, true);
     assert.deepEqual(result.afterLoad, { title: 'Xiaomi / Mi Fitness', selected: 'true', open: true });
     assert.match(result.final.title, /Xiaomi|Mi Fitness/);
-    assert.match(result.final.description, /^Create the workout/);
+    assert.match(result.final.description, /^Follow the instructions for your platform/);
     assert.equal(result.final.selected, 'true');
     assert.equal(result.final.open, true);
     assert.deepEqual(result.errors, []);

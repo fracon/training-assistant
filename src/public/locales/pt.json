@@ -286,7 +286,7 @@
       "openShort": "Como criar meu treino?",
       "openAriaLabel": "Como criar meu treino?",
       "close": "Fechar guia de criação de treino",
-      "description": "Crie o treino no aplicativo do fabricante e depois sincronize-o com seu dispositivo compatível. Nomes de menus e recursos variam conforme modelo, sistema operacional, firmware, versão do aplicativo e região.",
+      "description": "Siga as instruções da sua plataforma para criar ou configurar o treino em um dispositivo compatível. Os nomes dos menus e os recursos disponíveis variam conforme modelo, sistema operacional, firmware, versão do aplicativo e região.",
       "platformsLabel": "Plataformas de treino",
       "learnMore": "Saiba mais na documentação oficial",
       "newTab": "abre em uma nova aba",

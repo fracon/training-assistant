@@ -56,7 +56,11 @@ test('both locales contain translated guidance, limitations, and accessible labe
     assert.equal(typeof lookup(messages, 'session.workoutCreation.close'), 'string');
     assert.equal(lookup(messages, 'session.workoutCreation.close'), close);
     assert.equal(lookup(messages, 'session.workoutCreation.learnMore'), learn);
-    assert.match(lookup(messages, 'session.workoutCreation.description'), /model|modelo/i);
+    const description = lookup(messages, 'session.workoutCreation.description');
+    assert.equal(description, open === 'Como criar meu treino?'
+      ? 'Siga as instruções da sua plataforma para criar ou configurar o treino em um dispositivo compatível. Os nomes dos menus e os recursos disponíveis variam conforme modelo, sistema operacional, firmware, versão do aplicativo e região.'
+      : 'Follow the instructions for your platform to create or configure the workout on a compatible device. Menu names and available features vary by model, operating system, firmware, app version, and region.');
+    assert.doesNotMatch(description, /manufacturer.?s? app|aplicativo do fabricante|sync|sincroniz/i);
     for (const id of ['garmin', 'apple', 'coros', 'polar', 'suunto', 'samsung', 'xiaomi', 'huawei']) {
       const base = `session.workoutCreation.platforms.${id}`;
       assert.ok(lookup(messages, `${base}.title`));
@@ -65,6 +69,23 @@ test('both locales contain translated guidance, limitations, and accessible labe
       else assert.ok(lookup(messages, `${base}.step1`));
     }
   }
+});
+
+test('shared workout-creation introduction stays neutral across platform-specific flows', () => {
+  for (const messages of [en, pt]) {
+    const description = lookup(messages, 'session.workoutCreation.description');
+    assert.match(description, /plataforma|platform/i);
+    assert.match(description, /dispositivo compatível|compatible device/i);
+    assert.match(description, /modelo|model/i);
+  }
+  assert.match(en.session.workoutCreation.platforms.apple.note, /watch/i);
+  assert.match(en.session.workoutCreation.platforms.xiaomi.fallback, /official|confirmed/i);
+  assert.match(en.session.workoutCreation.platforms.garmin.step1, /Garmin Connect/i);
+  assert.match(en.session.workoutCreation.platforms.garmin.step5, /send|device/i);
+  assert.match(pt.session.workoutCreation.platforms.apple.note, /relógio/i);
+  assert.match(pt.session.workoutCreation.platforms.xiaomi.fallback, /oficial|confirmad/i);
+  assert.match(pt.session.workoutCreation.platforms.garmin.step1, /Garmin Connect/i);
+  assert.match(pt.session.workoutCreation.platforms.garmin.step5, /envi|dispositivo/i);
 });
 
 test('creation guide keeps compatibility distinctions and has no session mutation hooks', () => {

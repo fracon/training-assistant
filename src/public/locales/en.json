@@ -286,7 +286,7 @@
       "openShort": "How do I create my workout?",
       "openAriaLabel": "How do I create my workout?",
       "close": "Close workout creation guide",
-      "description": "Create the workout in the manufacturer's app, then sync it to your compatible device. Menu names and features vary by model, operating system, firmware, app version, and region.",
+      "description": "Follow the instructions for your platform to create or configure the workout on a compatible device. Menu names and available features vary by model, operating system, firmware, app version, and region.",
       "platformsLabel": "Workout platforms",
       "learnMore": "Learn more in the official documentation",
       "newTab": "opens in a new tab",
