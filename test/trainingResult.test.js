@@ -39,7 +39,6 @@ const {
   WEATHER_CODE_LABEL_KEYS,
   WEATHER_UNKNOWN_KEY,
   selectableFeedbackShoes,
-  shouldShowOnboardingResultHint,
   PROMPT_TEMPLATE_PT,
   PROMPT_TEMPLATE_EN,
 } = require('../src/public/training-result.js');
@@ -49,14 +48,6 @@ const pt = require('../src/public/locales/pt.json');
 test('resolveSessionId extracts the contextual id from the query string', () => {
   assert.equal(resolveSessionId('?id=42'), '42');
   assert.equal(resolveSessionId('?id=%20%207%20'), '7', 'surrounding whitespace is trimmed');
-});
-
-test('result guidance visibility follows none/manual/FIT/future canonical sources and is contextual per workout', () => {
-  assert.equal(shouldShowOnboardingResultHint({ result_data_source: 'none' }), true);
-  for (const source of ['manual', 'fit_upload', 'garmin_connect', 'future_source', null, undefined]) {
-    assert.equal(shouldShowOnboardingResultHint({ result_data_source: source }), false);
-  }
-  assert.equal(shouldShowOnboardingResultHint({}), false, 'missing source is not guessed from visible fields');
 });
 
 test('feedback shoe selection lists active shoes and only the currently associated retired shoe', () => {
@@ -70,14 +61,19 @@ test('feedback shoe selection lists active shoes and only the currently associat
   assert.deepEqual(selectableFeedbackShoes(null), []);
 });
 
-test('result guidance uses translated contextual copy and [hidden] explicitly removes its layout', () => {
+test('training session header keeps creation help before the localized destructive action', () => {
   const html = readFileSync(join(publicDir, 'training-result.html'), 'utf8');
   const css = readFileSync(join(publicDir, 'training-result.css'), 'utf8');
-  assert.match(html, /id="onboardingResultHint"[^>]*hidden/);
-  assert.match(css, /\.onboarding-result-hint\[hidden\]\s*\{\s*display:\s*none\s*;/);
-  assert.equal(en.home.onboarding.resultTitle, 'Ready to add this workout result?');
-  assert.equal(pt.home.onboarding.resultTitle, 'Pronto para registrar o resultado deste treino?');
-  assert.match(html, /onboarding-result-guide[^>]*>[\s\S]*?<svg[^>]*aria-hidden="true"/);
+  assert.doesNotMatch(html, /onboardingResultHint|onboardingResultGuide|onboarding-result-hint/);
+  assert.doesNotMatch(css, /onboarding-result-hint|onboarding-result-guide/);
+  assert.match(html, /<header class="session-header">[\s\S]*<h1[^>]*data-i18n="session\.title"[\s\S]*<p id="sessionDate"[^>]*>[\s\S]*<\/header>/);
+  assert.doesNotMatch(html.match(/<header class="session-header">[\s\S]*?<\/header>/)?.[0] ?? '', /workoutCreationBtn|deleteTrainingBtn|session-actions/);
+  assert.match(html, /<section class="card planned-card"[\s\S]*<div class="card-head">[\s\S]*<h2 id="plannedTitle"[\s\S]*<div class="session-actions"[^>]*>[\s\S]*id="workoutCreationBtn"[\s\S]*id="deleteTrainingBtn"[\s\S]*<\/div>[\s\S]*<\/div>/);
+  assert.equal(en.session.workoutCreation.openShort, 'How do I create my workout?');
+  assert.equal(pt.session.workoutCreation.openShort, 'Como criar meu treino?');
+  assert.match(html, /id="workoutCreationBtn"[\s\S]*data-lucide="book-open" aria-hidden="true"/);
+  assert.match(html, /id="deleteTrainingBtn"[^>]*data-i18n-aria-label="session\.deleteAriaLabel"/);
+  assert.match(html, /id="deleteTrainingBtn"[\s\S]*data-i18n="session\.deleteTooltip"/);
 });
 
 test('resolveSessionId bounces to the calendar when no id is present', () => {
@@ -847,9 +843,11 @@ test('training-result.html ships the expanded feedback grid and generator button
 
   assert.match(html, /<div class="feedback-grid">/);
   assert.match(html, /<select id="resultSourceSelect" class="input-control">/);
+  assert.match(html, /<div class="result-source-header">[\s\S]*id="importHelpBtn"[\s\S]*<\/div>\s*<select id="resultSourceSelect"/);
   assert.match(html, /data-i18n="session\.resultSourceFit">Import FIT or ZIP file/);
   assert.match(html, /data-i18n="session\.resultSourceManual">Enter data manually/);
   assert.match(html, /<div class="field fit-field" id="fitField">/);
+  assert.doesNotMatch(html.match(/<div class="field fit-field" id="fitField">[\s\S]*?<\/div>\s*<div class="field field-wide manual-results-field/s)?.[0] ?? '', /importHelpBtn/);
   assert.match(
     html,
     /<label for="fitFile" class="file-dropzone" id="fitDropzone">/,
@@ -1062,12 +1060,12 @@ test('training-result.html ships the expanded feedback grid and generator button
 
   assert.match(
     html,
-    /<div class="card-head">\s*\n\s*<h2 id="plannedTitle" data-i18n="session\.plannedHeading">Planned workout<\/h2>\s*\n\s*<button id="deleteTrainingBtn" class="btn-icon btn-danger" type="button" aria-label="Delete training">/,
-    'the planned card header carries a dedicated delete button'
+    /<section class="card planned-card"[\s\S]*<div class="session-actions"[^>]*>[\s\S]*<button id="workoutCreationBtn"[\s\S]*<button id="deleteTrainingBtn"/,
+    'the planned card carries ordered help and delete actions'
   );
   assert.match(
     html,
-    /<i data-lucide="trash-2" aria-hidden="true"><\/i>\s*\n\s*<div class="custom-tooltip" data-i18n="session\.deleteTooltip">Delete training<\/div>/,
+    /<i data-lucide="trash-2" aria-hidden="true"><\/i>\s*\n\s*<div class="custom-tooltip" data-i18n="session\.deleteTooltip">Delete workout<\/div>/,
     'the delete action ships a custom tooltip, never a native title'
   );
   assert.ok(!html.includes('title="'), 'no native title attributes sneak in');
@@ -1728,8 +1726,15 @@ test('training-result.css keeps the earthy premium aesthetic for the session vie
     'the ring spins a full turn on a single keyframe'
   );
 
-  assert.match(css, /\.card-head \{[^}]*display:\s*flex/, 'the planned card header lays its title and action out on one row');
-  assert.match(css, /\.card-head \{[^}]*justify-content:\s*space-between/, 'title and delete action push to opposite ends');
+  assert.match(css, /\.card-head \{[^}]*display:\s*flex/, 'the planned card header lays its title and actions out on one row');
+  assert.match(css, /\.card-head \{[^}]*justify-content:\s*space-between/, 'title and actions push to opposite ends');
+  assert.match(css, /\.planned-card \.card-head \{[^}]*flex-wrap:\s*wrap/, 'planned header can wrap when its container is narrow');
+  assert.match(css, /\.planned-card \{[^}]*container:\s*planned-card \/ inline-size/, 'planned card exposes its available width to the responsive header');
+  assert.match(css, /@container planned-card \(max-width: 560px\)/, 'narrow planned cards stack their actions independently of the viewport');
+  assert.match(css, /\.workout-creation-platform-list button\.active, \.workout-creation-platform-list button\[aria-pressed='true'\] \{[^}]*background:\s*var\(--accent\)/, 'selected creation platforms keep their selected state styling');
+  assert.match(css, /\.workout-creation-platform-list button:focus-visible \{[^}]*outline:\s*2px solid var\(--ink\);[^}]*outline-offset:\s*3px/, 'creation platform focus has a distinct visible ring');
+  assert.match(css, /\.import-help-provider-list button\.active, \.import-help-provider-list button\[aria-pressed='true'\] \{[^}]*background:\s*var\(--accent\)/, 'selected import providers keep their selected state styling');
+  assert.match(css, /\.import-help-provider-list button:focus-visible \{[^}]*outline:\s*2px solid var\(--ink\);[^}]*outline-offset:\s*3px/, 'import provider focus has a distinct visible ring');
   assert.match(css, /\.btn-icon\.btn-danger \{/, 'the delete action reuses the danger icon style');
   assert.match(
     css,
@@ -1753,13 +1758,13 @@ test('training-result.css keeps the earthy premium aesthetic for the session vie
   );
   assert.match(
     css,
-    /\.card-head \.custom-tooltip \{[^}]*background:\s*var\(--ink\)/,
+    /\.session-actions \.custom-tooltip \{[^}]*background:\s*var\(--ink\)/,
     'the delete tooltip uses the dark ink surface'
   );
-  assert.match(css, /\.card-head \.custom-tooltip \{[^}]*z-index:\s*50/, 'the delete tooltip layers above surrounding content');
+  assert.match(css, /\.session-actions \.custom-tooltip \{[^}]*z-index:\s*50/, 'the delete tooltip layers above surrounding content');
   assert.match(
     css,
-    /\.card-head \.btn-icon:hover \.custom-tooltip \{[^}]*opacity:\s*1/,
+    /\.session-actions \.btn-icon:hover \.custom-tooltip[^\{]*\{[^}]*opacity:\s*1/,
     'the tooltip fades in on hover with the shared transition'
   );
 

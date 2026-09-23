@@ -8,7 +8,7 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.10.1`); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.11.0`); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
@@ -57,9 +57,22 @@ migration patterns.
   lap ascent totals, then positive deltas between consecutive valid records of
   one selected altitude field. Never add absolute deltas or combine session,
   lap, and record totals.
-- Result-page guidance is visible only when canonical `result_data_source` is
-  `none`; FIT/ZIP, manual, and supported future sources hide it. Do not infer
-  result existence from displayed fields.
+- The result page keeps its import guide beside the FIT/ZIP upload controls;
+  it is available regardless of whether the session has `none`, `manual`, or
+  `fit_upload` provenance. Do not infer result existence from displayed fields.
+- The Training Result page also has a separate, informational “How to create a
+  workout” guide. Its declarative catalog lives in
+  `src/public/shared/workout-creation-guidance.js` and is rendered by
+  `training-result.html`/`training-result.js`; it is not the result-import
+  guide. It covers Garmin Connect, Apple Watch/iPhone, COROS, Polar Flow,
+  Suunto, Samsung Health/Galaxy Watch, Xiaomi/Mi Fitness, and Huawei Health
+  using official documentation consulted on 2026-09-22. Support marked as
+  conditional or model-dependent must remain qualified by model, firmware, app
+  version, operating system, or region. The guide makes no manufacturer
+  requests, does not change session data, and must link externally with
+  `noopener noreferrer`. All catalog copy is localized in both locales and
+  must rerender on `app:languagechange`; its dialog preserves focus, Escape,
+  keyboard containment, reduced-motion behavior, and focus restoration.
 - Feedback shoe selection offers active shoes. A same-user retired shoe already
   associated with a training remains displayed as disabled historical context;
   unrelated feedback saves preserve it. Replacing it with an active shoe

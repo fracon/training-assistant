@@ -197,6 +197,7 @@
   },
   "session": {
     "title": "Sessão de Treino",
+    "actionsLabel": "Ações da sessão",
     "loading": "Carregando treino…",
     "plannedHeading": "Treino planejado",
     "fieldTipo": "Tipo",
@@ -281,6 +282,95 @@
       "renameWarning": "Renomear um arquivo GPX, TCX, XML, CSV ou JSON para .FIT não converte seu conteúdo nem o torna compatível.",
       "privacy": "O Kinesis nunca solicita credenciais do fabricante nem acessa sua conta do relógio."
     },
+    "workoutCreation": {
+      "openShort": "Como criar meu treino?",
+      "openAriaLabel": "Como criar meu treino?",
+      "close": "Fechar guia de criação de treino",
+      "description": "Siga as instruções da sua plataforma para criar ou configurar o treino em um dispositivo compatível. Os nomes dos menus e os recursos disponíveis variam conforme modelo, sistema operacional, firmware, versão do aplicativo e região.",
+      "platformsLabel": "Plataformas de treino",
+      "learnMore": "Saiba mais na documentação oficial",
+      "newTab": "abre em uma nova aba",
+      "compatibility": {
+        "full": "Criação de treino estruturado confirmada",
+        "conditional": "Disponível em modelos compatíveis",
+        "model-dependent": "Depende do modelo e da região"
+      },
+      "platforms": {
+        "garmin": {
+          "title": "Criar um treino no Garmin Connect",
+          "step1": "Abra o Garmin Connect e acesse a seção de treinos.",
+          "step2": "Escolha criar um treino e selecione o esporte, como corrida.",
+          "step3": "Adicione etapas como aquecimento, corrida, recuperação e desaquecimento.",
+          "step4": "Configure cada etapa por tempo, distância, ritmo, frequência cardíaca ou outro alvo disponível; adicione repetições quando necessário.",
+          "step5": "Salve o treino e escolha enviá-lo para um dispositivo Garmin compatível.",
+          "step6": "Sincronize o relógio e abra o treino salvo no dispositivo antes de começar.",
+          "note": "A Garmin documenta esse fluxo para dispositivos compatíveis; alvos e menus disponíveis variam conforme o modelo."
+        },
+        "apple": {
+          "title": "Criar um treino personalizado no Apple Watch",
+          "step1": "No Apple Watch, abra Exercício e escolha o tipo de treino.",
+          "step2": "Abra Metas, escolha Personalizado e toque em Adicionar.",
+          "step3": "Adicione períodos de aquecimento, trabalho, recuperação e desaquecimento.",
+          "step4": "Configure tempo, distância, metas abertas, ritmo ou alertas de frequência cardíaca quando o treino permitir.",
+          "step5": "Salve o treino personalizado no relógio.",
+          "step6": "Inicie-o na lista de treinos personalizados do app Exercício quando estiver pronto.",
+          "note": "O fluxo documentado pela Apple é feito no relógio; os tipos de alvo dependem do treino e do watchOS."
+        },
+        "coros": {
+          "title": "Criar um treino no COROS",
+          "step1": "No aplicativo COROS, abra Perfil e escolha Biblioteca de treinos.",
+          "step2": "Toque em Criar, escolha a atividade e adicione nome e descrição.",
+          "step3": "Adicione exercícios de aquecimento, treino, descanso e desaquecimento.",
+          "step4": "Configure duração ou distância e o alvo de intensidade disponível, como ritmo, velocidade, potência, cadência ou frequência cardíaca.",
+          "step5": "Salve o treino na biblioteca e sincronize-o com o relógio compatível.",
+          "step6": "Abra o treino sincronizado no relógio e inicie-o pelo fluxo da atividade.",
+          "note": "Algumas atividades e opções de alvo estão limitadas a determinados relógios COROS."
+        },
+        "polar": {
+          "title": "Criar um alvo no Polar Flow",
+          "step1": "Abra o Polar Flow e escolha Diário ou a área de alvos de treino.",
+          "step2": "Crie um alvo faseado e escolha o esporte.",
+          "step3": "Adicione fases como aquecimento, trabalho, recuperação e desaquecimento.",
+          "step4": "Configure cada fase por duração, distância, ritmo, frequência cardíaca ou outro alvo compatível.",
+          "step5": "Salve o alvo e sincronize o Polar Flow com um relógio compatível.",
+          "step6": "Localize o alvo nos alvos planejados ou salvos do relógio e inicie-o.",
+          "note": "Os tipos de alvo e o comportamento de sincronização dependem do produto Polar compatível."
+        },
+        "suunto": {
+          "title": "Criar um treino estruturado no Suunto",
+          "step1": "No aplicativo Suunto, toque no botão de mais ou na tela de sincronização do relógio.",
+          "step2": "Escolha Treinos estruturados e crie um novo treino.",
+          "step3": "Defina esporte, nome, descrição e uma data opcional.",
+          "step4": "Adicione etapas de aquecimento, intervalo, recuperação e desaquecimento com duração e alvos; acrescente repetições se necessário.",
+          "step5": "Revise, salve e deixe o relógio pareado sincronizar o treino.",
+          "step6": "No relógio, localize-o em Guias SuuntoPlus ou no treino agendado e inicie-o.",
+          "note": "A Suunto informa que treinos estruturados exigem um relógio compatível com SuuntoPlus Guides e que um guia não pode ser combinado com outro guia SuuntoPlus durante o mesmo exercício."
+        },
+        "samsung": {
+          "title": "Usar uma rotina de treino no Samsung Health",
+          "step1": "No Samsung Health, abra a aba Início e o cartão de exercícios.",
+          "step2": "Toque em Mais, depois no botão de mais e escolha Criar rotina de treino quando disponível.",
+          "step3": "Escolha os exercícios ou atividades da rotina e salve-a.",
+          "step4": "Abra o recurso Exercício no Galaxy Watch compatível para localizar a rotina ou o exercício escolhido.",
+          "step5": "Inicie o treino no relógio e siga as orientações disponíveis.",
+          "note": "As instruções oficiais da Samsung confirmam rotinas para modelos Galaxy Watch compatíveis, mas não estabelecem os mesmos alvos estruturados de intervalos para todos os modelos ou regiões."
+        },
+        "xiaomi": {
+          "title": "Xiaomi / Mi Fitness",
+          "fallback": "Não foi possível confirmar um fluxo oficial atual único para criar e sincronizar treinos estruturados personalizados em todos os dispositivos Xiaomi. Consulte as instruções do seu modelo, versão do aplicativo, firmware e região; use os modos de atividade ou intervalo disponíveis no relógio.",
+          "note": "As informações oficiais do Mi Fitness descrevem opções de treino, mas a criação e sincronização de treinos estruturados personalizados varia conforme o dispositivo."
+        },
+        "huawei": {
+          "title": "Huawei Health",
+          "step1": "No Huawei Health, abra Exercício e verifique se Plano ou um plano de treino compatível está disponível.",
+          "step2": "Escolha um plano de corrida compatível e conclua suas configurações no aplicativo.",
+          "step3": "Mantenha o dispositivo conectado para que o plano seja sincronizado.",
+          "step4": "No relógio, abra Exercício > Cursos e planos > Planos de treino quando esses menus existirem no seu modelo.",
+          "step5": "Selecione o curso ou plano e inicie-o no relógio.",
+          "note": "A Huawei documenta planos inteligentes de corrida e recursos de intervalo apenas para produtos compatíveis. A criação personalizada passo a passo não foi confirmada em todos os relógios, pulseiras, versões do aplicativo e regiões."
+        }
+      }
+    },
     "fitDataHeading": "Resultado do treino",
     "fitDuration": "Duração",
     "fitDistance": "Distância",
@@ -310,6 +400,7 @@
     "saving": "Salvando…",
     "generatingPrompt": "Gerando prompt…",
     "deleteTooltip": "Excluir treino",
+    "deleteAriaLabel": "Excluir treino",
     "deleteConfirmTitle": "Excluir treino",
     "deleteConfirmMessage": "Excluir este treino? Esta ação não pode ser desfeita.",
     "deleteSuccess": "Treino excluído com sucesso!",
@@ -710,9 +801,6 @@
       "shoesAlt": "Tênis de corrida prontos para o treino",
       "cycleAlt": "Um ciclo de treino planejado",
       "planAlt": "Um plano semanal de treino",
-      "resultTitle": "Pronto para registrar o resultado deste treino?",
-      "resultText": "Use FIT ou ZIP para dados detalhados, ou informe os totais manualmente.",
-      "resultGuide": "Abrir guia de importação",
       "saveError": "Não foi possível salvar sua preferência de onboarding. Tente novamente."
     },
     "days": {

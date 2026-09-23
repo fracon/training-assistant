@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized prompts for an AI coach.
 
-Current application version: **0.10.1** (active development).
+Current application version: **0.11.0** (active development).
 
 ### Shoe mileage integrity
 
@@ -116,6 +116,19 @@ connect to manufacturer APIs, or send telemetry. See
 for the audited matrix and sources. GPX, TCX, XML, CSV, and JSON imports remain
 future work and are not made compatible by renaming their extensions.
 
+The same page also offers **How do I create my workout? / Como criar meu
+treino?** in the internal header of the planned-workout card. This is an informational, localized guide for
+creating structured workouts in Garmin Connect, Apple Watch/iPhone, COROS,
+Polar Flow, Suunto, Samsung Health/Galaxy Watch, Xiaomi/Mi Fitness, and Huawei
+Health. It is separate from importing a completed result and does not connect to
+manufacturer accounts or synchronize anything from Kinesis. The catalog links to
+official documentation and marks support that depends on a model, firmware,
+application version, operating system, or region; Xiaomi/Mi Fitness is not
+presented as having one confirmed custom-workout flow for every device, and
+Huawei's documented plans are likewise model-dependent. See
+[`docs/workout-creation-compatibility.md`](docs/workout-creation-compatibility.md)
+for the sources and scope.
+
 Every realized result has one persisted source: `none`, `fit_upload`, or `manual` (`garmin_connect` is reserved for a future integration). A manual result intentionally has no synthetic FIT summary or laps. Replacing FIT data with manual aggregates, or manual aggregates with a FIT upload, requires explicit confirmation and executes atomically; the outgoing source's incompatible data is cleared. The result screen marks the source clearly, and its analysis prompt identifies manual data, notes the absence of laps, and states that Kinesis calculated pace from distance and duration. Since dashboard, calendar, and AI Coach already aggregate the canonical training metrics, manual results participate in weekly totals without a second source of truth.
 
 FIT activity pace uses a valid session distance paired with valid
@@ -130,10 +143,10 @@ valid records from one selected altitude field. Descents are never added by
 absolute value; invalid samples break record sequences, and session, lap, and
 record totals are never combined.
 
-The contextual result-page guidance is visible only when the training's
-canonical `result_data_source` is `none`. A successfully saved FIT/ZIP, manual,
-or supported future source hides it; visible form values are not used to infer
-whether a result exists.
+The result page keeps **How to import? / Como importar?** beside the FIT/ZIP
+upload controls. It is an independent import guide and remains available in
+sessions with no result, manual results, or FIT/ZIP results; result provenance
+is never inferred from visible form fields.
 
 The FIT result is persisted as soon as the upload to `/api/trainings/:id/fit`
 completes. The final result-page actions then persist the manual result when

@@ -4,10 +4,7 @@ import { formatDate as formatLocalizedDate, formatWeekday } from './shared/date.
 import { fetchTraining, saveTrainingFeedback, saveManualTrainingResults, fetchShoes, deleteTraining, fetchWeather } from './shared/api.js';
 import { KM_TO_MILES, convertDistanceInputValue, convertDistanceToKm, formatDistance, formatPaceFromMetric, formatTemperature } from './shared/units.js';
 import { createImportGuidance } from './shared/workout-import-guidance.js';
-
-export function shouldShowOnboardingResultHint(training) {
-  return training?.result_data_source === 'none';
-}
+import { createWorkoutCreationGuidance } from './shared/workout-creation-guidance.js';
 
 export function selectableFeedbackShoes(shoes, selectedId = null) {
   const owned = Array.isArray(shoes) ? shoes : [];
@@ -661,8 +658,8 @@ async function initTrainingResult() {
   const manualDistanceUnit = document.getElementById('manualDistanceUnit');
   const importHelpBtn = document.getElementById('importHelpBtn');
   const importHelpDialog = document.getElementById('importHelpDialog');
-  const onboardingResultHint = document.getElementById('onboardingResultHint');
-  const onboardingResultGuide = document.getElementById('onboardingResultGuide');
+  const workoutCreationBtn = document.getElementById('workoutCreationBtn');
+  const workoutCreationDialog = document.getElementById('workoutCreationDialog');
   const manualInputs = {
     distance: document.getElementById('manualDistance'), hours: document.getElementById('manualHours'),
     minutes: document.getElementById('manualMinutes'), seconds: document.getElementById('manualSeconds'),
@@ -674,13 +671,10 @@ async function initTrainingResult() {
   let copiedTimer = null;
   let fitData = null;
   let currentTrainingId = null;
+  let training = null;
   let promptText = '';
   let manualDistanceInputUnit = 'km';
   const t = (key) => translate(i18n ? i18n.messages : {}, key);
-
-  function syncOnboardingResultHint() {
-    if (onboardingResultHint) onboardingResultHint.hidden = !shouldShowOnboardingResultHint(training);
-  }
 
   const applyTooltips = () => {
     rpeSelector.querySelectorAll('[data-i18n]').forEach((el) => {
@@ -898,16 +892,35 @@ async function initTrainingResult() {
       manualInputs.distance.focus();
     },
   });
-  onboardingResultGuide?.addEventListener('click', () => importHelpBtn?.click());
-  document.title = t('training.title');
-  applyTooltips();
+  const workoutCreationGuidance = createWorkoutCreationGuidance({
+    trigger: workoutCreationBtn,
+    dialog: workoutCreationDialog,
+    translate: t,
+  });
+
+  const renderLocalizedUi = () => {
+    document.title = t('training.title');
+    if (training) dateEl.textContent = formatDateLabel(training.dia, i18n.language);
+    if (!saveBtn.disabled) saveBtn.textContent = t('session.save');
+    if (!generateBtn.disabled) generateLabel.textContent = t('session.generatePrompt');
+    if (!copyPromptBtn.disabled) copyLabel.textContent = t('session.copyPrompt');
+    renderFitDropzoneState();
+    renderWeatherAutofill();
+    renderFitData();
+    renderFeedbackShoes();
+    applyTooltips();
+    importGuidance.render();
+    workoutCreationGuidance.render();
+  };
+
+  document.addEventListener('app:languagechange', renderLocalizedUi);
+  renderLocalizedUi();
   // The shell may have injected sidebar/topbar markup around the session
   // card; re-initializing Lucide ensures the card's trash icon is rendered
   // as an SVG and never left as an empty <i> tag.
   refreshIcons();
 
   setStatus(t('session.loading'));
-  let training;
   try {
     training = await fetchTraining(id);
   } catch {
@@ -992,6 +1005,7 @@ async function initTrainingResult() {
   syncPainVisibility();
   await autoFillWeatherField();
   setStatus('');
+  renderLocalizedUi();
 
   const collectFormState = () => {
     const hrValue = hrSourceSelect.value;
@@ -1037,7 +1051,6 @@ async function initTrainingResult() {
     fitData = { ...training, laps: [] };
     resultSourceSelect.value = 'manual';
     renderFitData();
-    syncOnboardingResultHint();
   };
   const persistManualResults = () => persistManualResultsIfNeeded({
     selectedSource: resultSourceSelect.value,
@@ -1057,7 +1070,6 @@ async function initTrainingResult() {
     fitData = { ...canonical, laps };
     resultSourceSelect.value = canonical.result_data_source === 'manual' ? 'manual' : 'fit';
     renderFitData();
-    syncOnboardingResultHint();
   };
   const feedbackPayload = (state) => {
     const {
@@ -1214,27 +1226,10 @@ async function initTrainingResult() {
       };
       training = { ...training, ...fitData };
       renderFitData();
-      syncOnboardingResultHint();
     } catch (error) {
       setStatus(error.message || t('session.errors.fitUpload'), 'error');
     }
   });
-
-  document.addEventListener('app:languagechange', () => {
-    document.title = t('training.title');
-    if (training) dateEl.textContent = formatDateLabel(training.dia, i18n.language);
-    if (!saveBtn.disabled) saveBtn.textContent = t('session.save');
-    if (!generateBtn.disabled) generateLabel.textContent = t('session.generatePrompt');
-    if (!copyPromptBtn.disabled) copyLabel.textContent = t('session.copyPrompt');
-    renderFitDropzoneState();
-    renderWeatherAutofill();
-    renderFitData();
-    renderFeedbackShoes();
-    applyTooltips();
-    importGuidance.render();
-  });
-
-  syncOnboardingResultHint();
 
   document.addEventListener('kinesis:preferences-changed', () => {
     renderFitData();

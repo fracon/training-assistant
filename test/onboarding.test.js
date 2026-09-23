@@ -23,7 +23,7 @@ function findChrome() {
     .find((candidate) => existsSync(candidate));
 }
 
-async function runChromeAtViewport(chrome, url, { width, height, mobile, cookie = null, probeExpression = null, focusSelector = null, verifyTabNextSelector = null, verifyTabFollowingSelector = null, screenshotSuffix = '', keyboardActivateMenuItem = false, clickMenuItemAndFollowNavigation = false, verifyUserMenuTabOrder = false }) {
+async function runChromeAtViewport(chrome, url, { width, height, mobile, cookie = null, probeExpression = null, focusSelector = null, verifyTabNextSelector = null, verifyTabFollowingSelector = null, screenshotSuffix = '', keyboardActivateMenuItem = false, clickMenuItemAndFollowNavigation = false, verifyUserMenuTabOrder = false, keyboardFocusValidation = false, keyboardFocusLanguage = null }) {
   const portServer = createServer();
   portServer.listen(0, '127.0.0.1');
   await once(portServer, 'listening');
@@ -94,6 +94,66 @@ async function runChromeAtViewport(chrome, url, { width, height, mobile, cookie 
     });
     await command('Page.navigate', { url });
     await Promise.race([loaded, delay(15000).then(() => { throw new Error('Chrome page load timed out.'); })]);
+    if (keyboardFocusValidation) {
+      if (keyboardFocusLanguage) {
+        await command('Runtime.evaluate', {
+          expression: `new Promise((resolve,reject)=>{const end=Date.now()+12000;const attempt=()=>{const button=document.querySelector('.lang-switch [data-lang="${keyboardFocusLanguage}"]');if(button){button.click();const wait=()=>document.documentElement.lang==="${keyboardFocusLanguage}"?resolve(true):(Date.now()>end?reject(new Error('Keyboard focus validation language switch timed out')):setTimeout(wait,40));wait();return}if(Date.now()>end){reject(new Error('Keyboard focus validation language button did not mount'));return}setTimeout(attempt,40)};attempt()})`,
+          awaitPromise: true,
+          returnByValue: true,
+        });
+      }
+      const keyboardFocusState = {};
+      const validatePlatformList = async ({ name, trigger, dialog, item, count, activateIndex = 1 }) => {
+        await command('Runtime.evaluate', {
+          expression: `new Promise((resolve,reject)=>{const end=Date.now()+12000;const attempt=()=>{const trigger=document.querySelector(${JSON.stringify(trigger)});const dialog=document.querySelector(${JSON.stringify(dialog)});const close=dialog?.querySelector(${JSON.stringify(`[data-${name === 'creation' ? 'workout-create-close' : 'import-help-close'}`)});if(trigger&&dialog&&close){trigger.focus();trigger.click();if(!dialog.hidden){close.focus();if(document.activeElement===close){resolve(true);return}}}if(Date.now()>end){reject(new Error(${JSON.stringify(`${name} guide did not open with focusable close control`)}));return}setTimeout(attempt,40)};attempt()})`,
+          awaitPromise: true,
+          returnByValue: true,
+        });
+        const isolation = await command('Runtime.evaluate', {
+          expression: `(()=>{const dialog=document.querySelector(${JSON.stringify(dialog)});const background=document.getElementById('appView')?.closest('body > *');const outside=document.getElementById('deleteTrainingBtn');document.activeElement?.blur();outside?.focus();outside?.dispatchEvent(new FocusEvent('focusin',{bubbles:true}));const outsideFocusContained=dialog.contains(document.activeElement);document.dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',bubbles:true,cancelable:true}));const tabInside=dialog.contains(document.activeElement);document.dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',shiftKey:true,bubbles:true,cancelable:true}));const shiftTabInside=dialog.contains(document.activeElement);document.activeElement?.blur();return {backgroundInert:Boolean(background?.hasAttribute('inert')),outsideFocusContained,tabInside,shiftTabInside,focusOutsideAfterBlur:!dialog.contains(document.activeElement)}})()`,
+          returnByValue: true,
+        });
+        await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+        await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+        const escapedFromOutside = await command('Runtime.evaluate', {
+          expression: `(()=>{const dialog=document.querySelector(${JSON.stringify(dialog)});const trigger=document.querySelector(${JSON.stringify(trigger)});const background=document.getElementById('appView')?.closest('body > *');return {closed:dialog.hidden,restored:document.activeElement===trigger,backgroundReleased:Boolean(!background?.hasAttribute('inert'))}})()`,
+          returnByValue: true,
+        });
+        await command('Runtime.evaluate', {
+          expression: `(()=>{const trigger=document.querySelector(${JSON.stringify(trigger)});trigger.focus();trigger.click();return !document.querySelector(${JSON.stringify(dialog)})?.hidden})()`,
+          returnByValue: true,
+        });
+        const focused = [];
+        for (let index = 0; index < count; index += 1) {
+          await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, text: '\t', unmodifiedText: '\t' });
+          await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
+          const current = await command('Runtime.evaluate', {
+            expression: `(()=>{const element=document.activeElement;const style=getComputedStyle(element);return {id:element?.dataset?.${name === 'creation' ? 'workoutCreatePlatform' : 'providerId'}??element?.id,pressed:element?.getAttribute('aria-pressed'),outlineStyle:style.outlineStyle,outlineWidth:style.outlineWidth,outlineOffset:style.outlineOffset,outlineColor:style.outlineColor,rect:{left:element?.getBoundingClientRect().left,right:element?.getBoundingClientRect().right,top:element?.getBoundingClientRect().top,bottom:element?.getBoundingClientRect().bottom}}})()`,
+            returnByValue: true,
+          });
+          focused.push(current.result?.value);
+          if (index === activateIndex) {
+            await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Space', code: 'Space', windowsVirtualKeyCode: 32, text: ' ' });
+            await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Space', code: 'Space', windowsVirtualKeyCode: 32 });
+            await command('Runtime.evaluate', {
+              expression: `new Promise((resolve,reject)=>{const end=Date.now()+2000;const wait=()=>document.querySelector(${JSON.stringify(item)}[aria-pressed="true"]:focus-visible)?resolve(true):(Date.now()>end?reject(new Error(${JSON.stringify(`${name} keyboard activation did not preserve focus`)})):setTimeout(wait,20));wait()})`,
+              awaitPromise: true,
+              returnByValue: true,
+            });
+          }
+        }
+        await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+        await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+        const closed = await command('Runtime.evaluate', {
+          expression: `(()=>{const dialog=document.querySelector(${JSON.stringify(dialog)});const trigger=document.querySelector(${JSON.stringify(trigger)});const background=document.getElementById('appView')?.closest('body > *');trigger.focus();trigger.click();const reopened=!dialog.hidden;const inertWhileReopened=Boolean(background?.hasAttribute('inert'));dialog.querySelector('[data-${name === 'creation' ? 'workout-create-close' : 'import-help-close'}]')?.click();trigger.focus();trigger.click();const backdropOpened=!dialog.hidden;dialog.click();const backdropClosed=dialog.hidden;return {hidden:dialog.hidden,restored:document.activeElement===trigger,reopened,inertWhileReopened,backdropOpened,backdropClosed,backgroundReleased:Boolean(!background?.hasAttribute('inert')),selected:document.querySelectorAll(${JSON.stringify(`${dialog} ${item}[aria-pressed="true"]`)}).length,overflow:document.documentElement.scrollWidth<=innerWidth}})()`,
+          returnByValue: true,
+        });
+        keyboardFocusState[name] = { focused, isolation: isolation.result?.value, escapedFromOutside: escapedFromOutside.result?.value, closed: closed.result?.value };
+      };
+      await validatePlatformList({ name: 'creation', trigger: '#workoutCreationBtn', dialog: '#workoutCreationDialog', item: '[data-workout-create-platform]', count: 8 });
+      await validatePlatformList({ name: 'import', trigger: '#importHelpBtn', dialog: '#importHelpDialog', item: '[data-provider-id]', count: 7 });
+      await command('Runtime.evaluate', { expression: `window.__keyboardFocusValidation=${JSON.stringify(keyboardFocusState)}`, returnByValue: true });
+    }
     if (keyboardActivateMenuItem) {
       await command('Runtime.evaluate', {
         expression: `new Promise((resolve,reject)=>{const end=Date.now()+12000;let opened=false;const attempt=()=>{const badge=document.querySelector('#userBadge');const item=document.querySelector('#userSetupGuide');const dropdown=document.querySelector('#userDropdown');if(document.body.classList.contains('shell-mounted')&&badge&&item&&!badge.hidden){if(!opened){window.__setupGuideEventCount=0;document.addEventListener('kinesis:open-setup-guide',()=>window.__setupGuideEventCount++);badge.click();opened=true}if(dropdown&&!dropdown.classList.contains('hidden')){item.focus();resolve(true);return}}if(Date.now()>end){reject(new Error('Authenticated shell menu did not mount')) ;return}setTimeout(attempt,50)};attempt()})`,
@@ -365,16 +425,6 @@ test('welcome carousel copy is translated and action labels match their destinat
   assert.equal(pt.home.onboarding.nextStep, 'Próxima etapa');
   assert.equal(en.home.onboarding.setupComplete, 'Setup complete');
   assert.equal(pt.home.onboarding.setupComplete, 'Configuração concluída');
-});
-
-test('result guidance follows only the canonical result provenance for every owned training', async () => {
-  const { shouldShowOnboardingResultHint } = await import(pathToFileURL(path.join(__dirname, '../src/public/training-result.js')));
-  assert.equal(shouldShowOnboardingResultHint({ result_data_source: 'none' }), true);
-  assert.equal(shouldShowOnboardingResultHint({ result_data_source: 'manual' }), false);
-  assert.equal(shouldShowOnboardingResultHint({ result_data_source: 'fit_upload' }), false);
-  assert.equal(shouldShowOnboardingResultHint({ result_data_source: 'garmin_connect' }), false);
-  const css = readFileSync(path.join(__dirname, '../src/public/home.css'), 'utf8');
-  assert.doesNotMatch(css, /var\(--surface\)|var\(--wash\)/);
 });
 
 test('browser CSS makes the hidden onboarding guide and welcome modal actually invisible', () => {
@@ -1101,19 +1151,29 @@ test('authenticated training-result guidance and feedback shoes render by canoni
     const probe = `new Promise(async(resolve,reject)=>{
       const deadline=Date.now()+12000;
       const check=async()=>{
-        const hint=document.getElementById('onboardingResultHint');
         const select=document.getElementById('feedbackShoe');
         const api=await fetch('/api/trainings/'+new URL(location.href).searchParams.get('id')).then(r=>r.json()).catch(()=>null);
-        if(hint&&select&&api?.training&&document.body.classList.contains('shell-mounted')){
+        if(select&&api?.training&&document.body.classList.contains('shell-mounted')){
           await new Promise(r=>setTimeout(r,250));
-          const title=hint.querySelector('h2');
-          const rect=hint.getBoundingClientRect();
-          const initial={source:api.training.result_data_source,hidden:hint.hidden,display:getComputedStyle(hint).display,title:title.textContent.trim(),rect:{width:rect.width,height:rect.height},active:[...select.options].some(o=>o.value==='result-active'),retired:[...select.options].find(o=>o.value==='result-retired')?.textContent,retiredDisabled:[...select.options].find(o=>o.value==='result-retired')?.disabled,foreign:[...select.options].some(o=>o.value==='result-foreign-retired'),scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth};
-          if(api.training.result_data_source==='none'){
-            document.querySelector('.lang-switch [data-lang="en-US"]')?.click();
-            await new Promise(r=>setTimeout(r,100));
-            initial.englishTitle=title.textContent.trim();
-          }
+          const importButton=document.getElementById('importHelpBtn');
+          const sourceSelect=document.getElementById('resultSourceSelect');
+          const manualValues=['manualDistance','manualHours','manualMinutes','manualSeconds','manualAvgHr','manualMaxHr','manualElevation','manualCalories'].map(id=>document.getElementById(id)?.value);
+          const importInitial={visible:!importButton.hidden,rect:{width:importButton.getBoundingClientRect().width,height:importButton.getBoundingClientRect().height},insideHidden:Boolean(importButton.closest('[hidden]')),tabIndex:importButton.tabIndex,source:sourceSelect.value,manualVisible:!document.getElementById('manualResultsField').hidden,fitVisible:!document.getElementById('fitField').hidden};
+          importButton.focus(); importButton.click();
+          await new Promise((resolve,reject)=>{const end=Date.now()+2000;const wait=()=>{const dialog=document.getElementById('importHelpDialog');if(dialog&&!dialog.hidden){resolve();return}if(Date.now()>end){reject(new Error('Import guide did not open'));return}setTimeout(wait,20)};wait()});
+          const dialog=document.getElementById('importHelpDialog');
+          const importOpen={focus:document.activeElement?.getAttribute('data-import-help-close'),platforms:dialog.querySelectorAll('[data-provider-id]').length};
+          document.querySelector('.lang-switch [data-lang="en-US"]')?.click();
+          await new Promise(r=>setTimeout(r,100));
+          const englishGuide=dialog.querySelector('[data-import-help-title]')?.textContent;
+          document.querySelector('.lang-switch [data-lang="pt-BR"]')?.click();
+          await new Promise(r=>setTimeout(r,100));
+          dialog.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+          await new Promise((resolve,reject)=>{const end=Date.now()+2000;const wait=()=>{if(dialog.hidden){resolve();return}if(Date.now()>end){reject(new Error('Import guide did not close'));return}setTimeout(wait,20)};wait()});
+          const importClosed={restored:document.activeElement===importButton,source:sourceSelect.value,unchangedManual:JSON.stringify(manualValues)===JSON.stringify(['manualDistance','manualHours','manualMinutes','manualSeconds','manualAvgHr','manualMaxHr','manualElevation','manualCalories'].map(id=>document.getElementById(id)?.value))};
+          sourceSelect.value='fit'; sourceSelect.dispatchEvent(new Event('change')); const fitVisibleAfterSwitch=!document.getElementById('fitField').hidden;
+          sourceSelect.value='manual'; sourceSelect.dispatchEvent(new Event('change')); const manualVisibleAfterSwitch=!document.getElementById('manualResultsField').hidden;
+          const initial={source:api.training.result_data_source,hintPresent:Boolean(document.getElementById('onboardingResultHint')),active:[...select.options].some(o=>o.value==='result-active'),retired:[...select.options].find(o=>o.value==='result-retired')?.textContent,retiredDisabled:[...select.options].find(o=>o.value==='result-retired')?.disabled,foreign:[...select.options].some(o=>o.value==='result-foreign-retired'),scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth,importInitial,importOpen,englishGuide,importClosed,fitVisibleAfterSwitch,manualVisibleAfterSwitch};
           resolve(initial);return;
         }
         if(Date.now()>deadline){reject(new Error('Authenticated training result page did not finish loading'));return}
@@ -1128,67 +1188,30 @@ test('authenticated training-result guidance and feedback shoes render by canoni
           ...viewport, cookie, probeExpression: probe, screenshotSuffix: `-result-${source}`,
         });
         assert.equal(result.source, source);
-        assert.equal(result.hidden, source !== 'none', `${source} visibility follows result_data_source`);
-        assert.equal(result.display === 'none', source !== 'none', `${source} hidden attribute removes rendered layout`);
+        assert.equal(result.hintPresent, false, `${source} has no redundant result hint`);
         assert.equal(result.active, true);
         assert.equal(result.retired, 'Kinesis Retired (Aposentado)');
-        assert.equal(result.retiredDisabled, true);
-        assert.equal(result.foreign, false, 'the endpoint and page are scoped to the signed-in user');
-        assert.ok(result.scrollWidth <= result.viewportWidth, `${source} page fits ${viewport.width}px`);
-        if (source === 'none') {
-          assert.equal(result.title, 'Pronto para registrar o resultado deste treino?');
-          assert.equal(result.englishTitle, 'Ready to add this workout result?');
-          assert.ok(result.rect.width > 0 && result.rect.height > 0);
-        }
+      assert.equal(result.retiredDisabled, true);
+      assert.equal(result.foreign, false, 'the endpoint and page are scoped to the signed-in user');
+      assert.ok(result.scrollWidth <= result.viewportWidth, `${source} page fits ${viewport.width}px`);
+      assert.equal(result.importInitial.visible, true, `${source} import guide trigger is visible`);
+      assert.ok(result.importInitial.rect.width > 0 && result.importInitial.rect.height > 0, `${source} import guide trigger has a target size`);
+      assert.equal(result.importInitial.insideHidden, false, `${source} import guide trigger is not inside hidden content`);
+      assert.ok(result.importInitial.tabIndex >= 0, `${source} import guide trigger is keyboard reachable`);
+      assert.equal(result.importInitial.source, source === 'manual' ? 'manual' : 'fit');
+      assert.equal(result.importOpen.focus, '');
+      assert.equal(result.importOpen.platforms, 7);
+      assert.match(result.englishGuide, /Import your workout/i);
+      assert.equal(result.importClosed.restored, true);
+      assert.equal(result.importClosed.source, source === 'manual' ? 'manual' : 'fit');
+      assert.equal(result.importClosed.unchangedManual, true);
+      assert.equal(result.importInitial.fitVisible, source !== 'manual');
+      assert.equal(result.importInitial.manualVisible, source === 'manual');
+      assert.equal(result.fitVisibleAfterSwitch, true);
+      assert.equal(result.manualVisibleAfterSwitch, true);
       }
     }
 
-    const liveTrainingId = db.prepare("INSERT INTO trainings (user_id,dia,tipo,treino,result_data_source) VALUES (?, '2026-09-20','Run','Live upload','none')").run(userId).lastInsertRowid;
-    const fitBase64 = buildFitFile().toString('base64');
-    const liveUploadProbe = `new Promise(async(resolve,reject)=>{
-      try{
-        const wait=async(predicate)=>{const end=Date.now()+12000;while(Date.now()<end){if(await predicate())return;await new Promise(r=>setTimeout(r,50))}throw new Error('Live FIT result state timed out')};
-        await wait(()=>document.body.classList.contains('shell-mounted')&&document.getElementById('onboardingResultHint')?.hidden===false);
-        const input=document.getElementById('fitFile');
-        const bytes=Uint8Array.from(atob('${fitBase64}'),c=>c.charCodeAt(0));
-        const transfer=new DataTransfer();transfer.items.add(new File([bytes],'synthetic.fit',{type:'application/octet-stream'}));input.files=transfer.files;
-        input.dispatchEvent(new Event('change',{bubbles:true}));
-        await wait(async()=>{const data=await fetch('/api/trainings/${liveTrainingId}').then(r=>r.json()).catch(()=>null);return data?.training?.result_data_source==='fit_upload'&&document.getElementById('onboardingResultHint').hidden});
-        resolve({source:(await fetch('/api/trainings/${liveTrainingId}').then(r=>r.json())).training.result_data_source,hidden:document.getElementById('onboardingResultHint').hidden,display:getComputedStyle(document.getElementById('onboardingResultHint')).display});
-      }catch(error){reject(error)}
-    })`;
-    const liveUpload = await runChromeAtViewport(chrome, `${appUrl}/training-result.html?id=${liveTrainingId}`, {
-      width: 1280, height: 800, mobile: false, cookie, probeExpression: liveUploadProbe, screenshotSuffix: '-result-live-fit',
-    });
-    assert.equal(liveUpload.source, 'fit_upload');
-    assert.equal(liveUpload.hidden, true);
-    assert.equal(liveUpload.display, 'none');
-
-    const liveManualId = db.prepare("INSERT INTO trainings (user_id,dia,tipo,treino,result_data_source) VALUES (?, '2026-09-20','Run','Live manual result','none')").run(userId).lastInsertRowid;
-    const manualProbe = `new Promise(async(resolve,reject)=>{
-      try{
-        const wait=async(predicate)=>{const end=Date.now()+12000;while(Date.now()<end){if(await predicate())return;await new Promise(r=>setTimeout(r,50))}throw new Error('Live manual result state timed out')};
-        await wait(()=>document.body.classList.contains('shell-mounted')&&document.getElementById('onboardingResultHint')?.hidden===false);
-        document.getElementById('resultSourceSelect').value='manual';
-        document.getElementById('resultSourceSelect').dispatchEvent(new Event('change',{bubbles:true}));
-        document.getElementById('manualDistance').value='5';
-        document.getElementById('manualHours').value='0';
-        document.getElementById('manualMinutes').value='30';
-        document.getElementById('manualSeconds').value='0';
-        document.getElementById('rpe-3').click();
-        document.getElementById('generateBtn').click();
-        await new Promise(r=>setTimeout(r,1800));
-        const state=await fetch('/api/trainings/${liveManualId}').then(r=>r.json());
-        resolve({source:state.training.result_data_source,hidden:document.getElementById('onboardingResultHint').hidden,display:getComputedStyle(document.getElementById('onboardingResultHint')).display,promptVisible:!document.getElementById('promptSection').hidden});
-      }catch(error){reject(error)}
-    })`;
-    const liveManual = await runChromeAtViewport(chrome, `${appUrl}/training-result.html?id=${liveManualId}`, {
-      width: 390, height: 844, mobile: true, cookie, probeExpression: manualProbe, screenshotSuffix: '-result-live-manual',
-    });
-    assert.equal(liveManual.source, 'manual');
-    assert.equal(liveManual.hidden, true);
-    assert.equal(liveManual.display, 'none');
-    assert.equal(liveManual.promptVisible, true, JSON.stringify(liveManual));
   } finally {
     await app.close();
     db.close();
@@ -1362,4 +1385,223 @@ test('browser dialog a11y follows the active slide and traps Shift+Tab from its 
     await once(server, 'close');
   }
   assert.match(output, /data-a11y-result="pass"/);
+});
+
+test('authenticated workout creation guide is independent, localized, and non-mutating', async () => {
+  const chrome = findChrome();
+  assert.ok(chrome, 'Chrome is required for workout creation guide validation.');
+  const db = createDatabase({ filename: ':memory:' });
+  const app = await buildServer({ db, sessionCookieSecure: false, unsplashFetch: async () => { throw new Error('No external hero request in browser tests.'); } });
+  try {
+    const email = 'creation-guide-browser@example.com';
+    await app.inject({ method: 'POST', url: '/api/auth/register', payload: { email, password: 'creation-guide-secret', first_name: 'Guide', last_name: 'Runner', preferred_lang: 'en-US' } });
+    const userId = db.prepare('SELECT id FROM users WHERE email = ?').get(email).id;
+    const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email, password: 'creation-guide-secret' } });
+    const cookie = [].concat(login.headers['set-cookie'] ?? [])[0].split(';')[0].split('=')[1];
+    const trainingId = db.prepare("INSERT INTO trainings (user_id,dia,tipo,treino,result_data_source) VALUES (?, '2026-09-20','Run','Creation guide','none')").run(userId).lastInsertRowid;
+    const appUrl = await app.listen({ port: 0, host: '127.0.0.1' });
+    const probe = `new Promise(async(resolve,reject)=>{try{
+      const wait=async(predicate)=>{const end=Date.now()+12000;while(Date.now()<end){if(await predicate())return;await new Promise(r=>setTimeout(r,50))}throw new Error('creation guide did not become ready')};
+      await wait(()=>document.body.classList.contains('shell-mounted')&&document.getElementById('workoutCreationBtn'));
+      if(new URL(location.href).searchParams.get('collapsed')==='1'){
+        document.getElementById('sidebarToggle').click();
+        await wait(()=>document.querySelector('.app-shell')?.classList.contains('collapsed'));
+      }
+      const before=await fetch('/api/trainings/${trainingId}').then(r=>r.json());
+      const trigger=document.getElementById('workoutCreationBtn'); trigger.focus(); trigger.click();
+      await wait(()=>document.getElementById('workoutCreationDialog')?.hidden===false);
+      const dialog=document.getElementById('workoutCreationDialog');
+      const header=document.querySelector('.session-header');
+      const plannedCard=document.querySelector('.planned-card');
+      const cardRect=plannedCard.getBoundingClientRect();
+      const titleRect=plannedCard.querySelector('h2').getBoundingClientRect();
+      const actionsRect=document.querySelector('.planned-card .session-actions').getBoundingClientRect();
+      const helpRect=trigger.getBoundingClientRect();
+      const deleteRect=document.getElementById('deleteTrainingBtn').getBoundingClientRect();
+      const initial={hidden:dialog.hidden,focus:document.activeElement?.getAttribute('data-workout-create-close'),platforms:dialog.querySelectorAll('[data-workout-create-platform]').length,garmin:document.querySelector('[data-workout-create-title]').textContent,importHidden:document.getElementById('importHelpDialog').hidden,overflow:document.documentElement.scrollWidth<=innerWidth,sidebarCollapsed:document.querySelector('.app-shell')?.classList.contains('collapsed'),headerContainsActions:header.contains(trigger)||header.contains(document.getElementById('deleteTrainingBtn')),cardContainsActions:plannedCard.contains(trigger)&&plannedCard.contains(document.getElementById('deleteTrainingBtn')),cardRect:{left:cardRect.left,right:cardRect.right,top:cardRect.top,bottom:cardRect.bottom},titleRect:{left:titleRect.left,right:titleRect.right,top:titleRect.top,bottom:titleRect.bottom},actionsRect:{left:actionsRect.left,right:actionsRect.right,top:actionsRect.top,bottom:actionsRect.bottom},headerRect:{left:header.getBoundingClientRect().left,right:header.getBoundingClientRect().right},helpRect:{left:helpRect.left,right:helpRect.right,top:helpRect.top,bottom:helpRect.bottom},deleteRect:{left:deleteRect.left,right:deleteRect.right,top:deleteRect.top,bottom:deleteRect.bottom},ordered:helpRect.right<=deleteRect.left,stacked:actionsRect.top>=titleRect.bottom};
+      dialog.querySelector('[data-workout-create-platform="apple"]').click();
+      const apple={status:dialog.querySelector('[data-workout-create-status]').textContent,note:dialog.querySelector('[data-workout-create-note]').textContent,steps:dialog.querySelector('[data-workout-create-steps]').textContent,selected:dialog.querySelector('[data-workout-create-platform="apple"]').getAttribute('aria-pressed')};
+      dialog.querySelector('[data-workout-create-platform="xiaomi"]').click();
+      const xiaomi={status:dialog.querySelector('[data-workout-create-status]').textContent, fallback:dialog.querySelector('[data-workout-create-steps]').textContent,selected:dialog.querySelector('[data-workout-create-platform="xiaomi"]').getAttribute('aria-pressed')};
+      dialog.querySelector('[data-workout-create-platform="garmin"]').click();
+      const garmin={steps:dialog.querySelector('[data-workout-create-steps]').textContent,selected:dialog.querySelector('[data-workout-create-platform="garmin"]').getAttribute('aria-pressed')};
+      dialog.querySelector('[data-workout-create-platform="xiaomi"]').click();
+      document.querySelector('.lang-switch [data-lang="pt-BR"]')?.click();
+      await new Promise(r=>setTimeout(r,120));
+      const portuguese={title:dialog.querySelector('[data-workout-create-title]').textContent, fallback:dialog.querySelector('[data-workout-create-steps]').textContent,selected:dialog.querySelector('[data-workout-create-platform="xiaomi"]').getAttribute('aria-pressed'),overflow:document.documentElement.scrollWidth<=innerWidth};
+      document.querySelector('[data-workout-create-close]').click();
+      const after=await fetch('/api/trainings/${trainingId}').then(r=>r.json());
+      resolve({initial,apple,xiaomi,garmin,portuguese,restored:document.activeElement===trigger,unchanged:JSON.stringify(before.training)===JSON.stringify(after.training)});
+    }catch(error){reject(error)}})`;
+    const viewports = [390, 560, 600, 640, 641, 650, 700, 768, 800, 1280].map((width) => ({ width, height: width === 390 ? 844 : 800, mobile: width < 600 }));
+    for (const viewport of viewports) {
+      const result = await runChromeAtViewport(chrome, `${appUrl}/training-result.html?id=${trainingId}`, { ...viewport, cookie, probeExpression: probe, screenshotSuffix: `-creation-guide-${viewport.width}` });
+      assert.equal(result.initial.hidden, false);
+      assert.equal(result.initial.focus, '');
+      assert.equal(result.initial.platforms, 8);
+      assert.match(result.initial.garmin, /Garmin/);
+      assert.equal(result.initial.importHidden, true);
+      assert.equal(result.initial.overflow, true);
+      assert.equal(result.initial.sidebarCollapsed, false);
+      assert.equal(result.initial.headerContainsActions, false);
+      assert.equal(result.initial.cardContainsActions, true);
+      assert.ok(result.initial.cardRect.left <= result.initial.titleRect.left && result.initial.titleRect.right <= result.initial.cardRect.right);
+      assert.ok(result.initial.cardRect.left <= result.initial.actionsRect.left && result.initial.actionsRect.right <= result.initial.cardRect.right);
+      assert.ok(result.initial.titleRect.bottom <= result.initial.actionsRect.top || result.initial.actionsRect.bottom <= result.initial.titleRect.top || result.initial.titleRect.right <= result.initial.actionsRect.left || result.initial.actionsRect.right <= result.initial.titleRect.left, 'title and actions do not overlap');
+      assert.ok(result.initial.helpRect.right <= result.initial.deleteRect.left, 'help action precedes delete action without overlap');
+      assert.ok(result.initial.helpRect.right > result.initial.helpRect.left);
+      assert.ok(result.initial.deleteRect.right > result.initial.deleteRect.left);
+      assert.ok(result.initial.helpRect.bottom > result.initial.helpRect.top);
+      assert.equal(result.apple.selected, 'true');
+      assert.match(result.apple.note, /watch|relógio/i);
+      assert.match(result.apple.steps, /Apple|relógio|watch/i);
+      assert.match(result.xiaomi.status, /Model|modelo/i);
+      assert.equal(result.xiaomi.selected, 'true');
+      assert.equal(result.garmin.selected, 'true');
+      assert.match(result.garmin.steps, /Garmin|device|dispositivo/i);
+      assert.match(result.portuguese.fallback, /Não foi possível/);
+      assert.equal(result.portuguese.selected, 'true');
+      assert.equal(result.portuguese.overflow, true);
+      assert.equal(result.restored, true);
+      assert.equal(result.unchanged, true);
+    }
+    const collapsed = await runChromeAtViewport(chrome, `${appUrl}/training-result.html?id=${trainingId}&collapsed=1`, { width: 641, height: 800, mobile: false, cookie, probeExpression: probe, screenshotSuffix: '-creation-guide-collapsed' });
+    assert.equal(collapsed.initial.sidebarCollapsed, true);
+    assert.equal(collapsed.initial.overflow, true);
+    assert.equal(collapsed.initial.cardContainsActions, true);
+    assert.ok(collapsed.initial.cardRect.left <= collapsed.initial.actionsRect.left && collapsed.initial.actionsRect.right <= collapsed.initial.cardRect.right);
+  } finally {
+    await app.close();
+    db.close();
+  }
+});
+
+test('workout creation guide localizes while training data is still loading', async () => {
+  const chrome = findChrome();
+  assert.ok(chrome, 'Chrome is required for delayed initialization validation.');
+  const db = createDatabase({ filename: ':memory:' });
+  const app = await buildServer({ db, sessionCookieSecure: false, unsplashFetch: async () => { throw new Error('No external hero request in browser tests.'); } });
+  let delayedTrainingId = null;
+  let delayedTrainingRequest = true;
+  app.addHook('onRequest', async (request) => {
+    if (delayedTrainingRequest && delayedTrainingId !== null && request.method === 'GET' && request.url === `/api/trainings/${delayedTrainingId}`) {
+      delayedTrainingRequest = false;
+      await delay(2500);
+    }
+  });
+  try {
+    const email = 'creation-guide-delayed@example.com';
+    await app.inject({ method: 'POST', url: '/api/auth/register', payload: { email, password: 'creation-guide-delayed-secret', first_name: 'Delayed', last_name: 'Runner', preferred_lang: 'en-US' } });
+    const userId = db.prepare('SELECT id FROM users WHERE email = ?').get(email).id;
+    const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email, password: 'creation-guide-delayed-secret' } });
+    const cookie = [].concat(login.headers['set-cookie'] ?? [])[0].split(';')[0].split('=')[1];
+    const trainingId = db.prepare("INSERT INTO trainings (user_id,dia,tipo,treino,result_data_source) VALUES (?, '2026-09-20','Run','Delayed creation guide','none')").run(userId).lastInsertRowid;
+    delayedTrainingId = trainingId;
+    const appUrl = await app.listen({ port: 0, host: '127.0.0.1' });
+    const probe = `new Promise(async(resolve,reject)=>{try{
+      const wait=async(predicate,label)=>{const end=Date.now()+12000;while(Date.now()<end){if(await predicate())return;await new Promise(r=>setTimeout(r,40))}throw new Error(label||'delayed creation guide did not become ready')};
+      await wait(()=>document.body.classList.contains('shell-mounted')&&document.getElementById('workoutCreationBtn'),'shell and trigger');
+      const errors=[]; window.addEventListener('error',event=>errors.push(event.message)); window.addEventListener('unhandledrejection',event=>errors.push(String(event.reason)));
+      const trigger=document.getElementById('workoutCreationBtn'); trigger.focus(); trigger.click();
+      await wait(()=>document.getElementById('workoutCreationDialog')?.hidden===false,'guide open');
+      const dialog=document.getElementById('workoutCreationDialog');
+      dialog.querySelector('[data-workout-create-platform="xiaomi"]').click();
+      const selectedBefore=dialog.querySelector('[data-workout-create-platform="xiaomi"]').getAttribute('aria-pressed');
+      document.querySelector('.lang-switch [data-lang="pt-BR"]').click();
+      await wait(()=>document.documentElement.lang==='pt-BR','Portuguese switch');
+      const during={title:dialog.querySelector('[data-workout-create-title]').textContent,description:dialog.querySelector('[data-workout-create-description]').textContent,status:dialog.querySelector('[data-workout-create-status]').textContent,steps:dialog.querySelector('[data-workout-create-steps]').textContent,note:dialog.querySelector('[data-workout-create-note]').textContent,link:dialog.querySelector('[data-workout-create-source]').textContent,platformsLabel:dialog.querySelector('[data-workout-create-platforms]').getAttribute('aria-label'),selected:dialog.querySelector('[data-workout-create-platform="xiaomi"]').getAttribute('aria-pressed'),open:!dialog.hidden};
+      await new Promise(r=>setTimeout(r,2800));
+      await wait(()=>document.getElementById('status')?.textContent==='','training load');
+      const afterLoad={title:dialog.querySelector('[data-workout-create-title]').textContent,selected:dialog.querySelector('[data-workout-create-platform="xiaomi"]').getAttribute('aria-pressed'),open:!dialog.hidden};
+      document.querySelector('.lang-switch [data-lang="en-US"]').click();
+      await wait(()=>document.documentElement.lang==='en-US','English switch back');
+      const final={title:dialog.querySelector('[data-workout-create-title]').textContent,description:dialog.querySelector('[data-workout-create-description]').textContent,selected:dialog.querySelector('[data-workout-create-platform="xiaomi"]').getAttribute('aria-pressed'),open:!dialog.hidden};
+      dialog.querySelector('[data-workout-create-close]').click();
+      resolve({during,afterLoad,final,selectedBefore,restored:document.activeElement===trigger,errors});
+    }catch(error){reject(error)}})`;
+    const result = await runChromeAtViewport(chrome, `${appUrl}/training-result.html?id=${trainingId}`, {
+      width: 1280, height: 800, mobile: false, cookie, probeExpression: probe, screenshotSuffix: '-creation-guide-delayed',
+    });
+    assert.equal(result.selectedBefore, 'true');
+    assert.match(result.during.title, /Xiaomi|Mi Fitness/);
+    assert.match(result.during.description, /^Siga as instruções da sua plataforma/);
+    assert.match(result.during.status, /Depende do modelo/);
+    assert.match(result.during.steps, /Não foi possível confirmar/);
+    assert.match(result.during.note, /informações oficiais/);
+    assert.match(result.during.link, /Saiba mais/);
+    assert.equal(result.during.platformsLabel, 'Plataformas de treino');
+    assert.equal(result.during.selected, 'true');
+    assert.equal(result.during.open, true);
+    assert.deepEqual(result.afterLoad, { title: 'Xiaomi / Mi Fitness', selected: 'true', open: true });
+    assert.match(result.final.title, /Xiaomi|Mi Fitness/);
+    assert.match(result.final.description, /^Follow the instructions for your platform/);
+    assert.equal(result.final.selected, 'true');
+    assert.equal(result.final.open, true);
+    assert.deepEqual(result.errors, []);
+    assert.equal(result.restored, true);
+  } finally {
+    try { await app.close(); } catch {}
+    db.close();
+  }
+});
+
+test('creation and import platform guides keep a visible keyboard focus ring', async () => {
+  const chrome = findChrome();
+  assert.ok(chrome, 'Chrome is required for platform focus validation.');
+  const db = createDatabase({ filename: ':memory:' });
+  const app = await buildServer({ db, sessionCookieSecure: false, unsplashFetch: async () => { throw new Error('No external hero request in browser tests.'); } });
+  try {
+    const email = 'platform-focus-browser@example.com';
+    await app.inject({ method: 'POST', url: '/api/auth/register', payload: { email, password: 'platform-focus-secret', first_name: 'Focus', last_name: 'Runner', preferred_lang: 'en-US' } });
+    const userId = db.prepare('SELECT id FROM users WHERE email = ?').get(email).id;
+    const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email, password: 'platform-focus-secret' } });
+    const cookie = [].concat(login.headers['set-cookie'] ?? [])[0].split(';')[0].split('=')[1];
+    const trainingId = db.prepare("INSERT INTO trainings (user_id,dia,tipo,treino,result_data_source) VALUES (?, '2026-09-20','Run','Platform focus','none')").run(userId).lastInsertRowid;
+    const appUrl = await app.listen({ port: 0, host: '127.0.0.1' });
+    for (const viewport of [
+      { width: 1280, height: 800, mobile: false, language: null },
+      { width: 390, height: 844, mobile: true, language: 'pt-BR' },
+    ]) {
+      const result = await runChromeAtViewport(chrome, `${appUrl}/training-result.html?id=${trainingId}`, {
+        ...viewport,
+        cookie,
+        keyboardFocusValidation: true,
+        keyboardFocusLanguage: viewport.language,
+        probeExpression: 'window.__keyboardFocusValidation',
+        screenshotSuffix: `-platform-focus-${viewport.width}`,
+      });
+      for (const guide of ['creation', 'import']) {
+        assert.equal(result[guide].focused.length, guide === 'creation' ? 8 : 7);
+        assert.equal(result[guide].focused[0].pressed, 'true', `${guide} starts with the selected platform focused: ${JSON.stringify(result[guide].focused[0])}`);
+        assert.ok(result[guide].focused.some((entry) => entry.pressed === 'false'), `${guide} visits an unselected platform`);
+        for (const entry of result[guide].focused) {
+          assert.notEqual(entry.outlineStyle, 'none', `${guide} focus is visibly outlined for ${entry.id}`);
+          assert.ok(Number.parseFloat(entry.outlineWidth) >= 2, `${guide} focus outline is at least 2px for ${entry.id}`);
+          assert.ok(Number.parseFloat(entry.outlineOffset) >= 2, `${guide} focus outline has an offset for ${entry.id}`);
+          assert.notEqual(entry.outlineColor, 'rgba(0, 0, 0, 0)', `${guide} focus outline has a visible color for ${entry.id}`);
+          assert.ok(entry.rect.right >= entry.rect.left && entry.rect.bottom >= entry.rect.top);
+        }
+        assert.equal(result[guide].isolation.backgroundInert, true, JSON.stringify(result[guide].isolation));
+        assert.equal(result[guide].isolation.outsideFocusContained, true, `${guide} contains programmatic background focus`);
+        assert.equal(result[guide].isolation.tabInside, true, `${guide} contains Tab after focus loss`);
+        assert.equal(result[guide].isolation.shiftTabInside, true, `${guide} contains Shift+Tab after focus loss`);
+        assert.equal(result[guide].isolation.focusOutsideAfterBlur, true);
+        assert.equal(result[guide].escapedFromOutside.closed, true, `${guide} closes with Escape after focus leaves dialog`);
+        assert.equal(result[guide].escapedFromOutside.restored, true, `${guide} restores focus after outside Escape`);
+        assert.equal(result[guide].escapedFromOutside.backgroundReleased, true, `${guide} releases inert after outside Escape`);
+        assert.equal(result[guide].closed.hidden, true);
+        assert.equal(result[guide].closed.restored, true);
+        assert.equal(result[guide].closed.reopened, true);
+        assert.equal(result[guide].closed.inertWhileReopened, true);
+        assert.equal(result[guide].closed.backdropOpened, true);
+        assert.equal(result[guide].closed.backdropClosed, true);
+        assert.equal(result[guide].closed.backgroundReleased, true);
+        assert.equal(result[guide].closed.selected, 1);
+        assert.equal(result[guide].closed.overflow, true);
+      }
+    }
+  } finally {
+    try { await app.close(); } catch {}
+    db.close();
+  }
 });

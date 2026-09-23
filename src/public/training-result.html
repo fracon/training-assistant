@@ -18,18 +18,19 @@
 
       <p id="status" class="status" role="status"></p>
 
-      <aside id="onboardingResultHint" class="onboarding-result-hint" hidden aria-labelledby="onboardingResultTitle">
-        <div class="onboarding-result-copy"><h2 id="onboardingResultTitle" data-i18n="home.onboarding.resultTitle">Ready to add this workout result?</h2><p data-i18n="home.onboarding.resultText">Use FIT or ZIP for detailed data, or enter the totals manually.</p></div>
-        <button id="onboardingResultGuide" class="onboarding-result-guide" type="button"><span data-i18n="home.onboarding.resultGuide">Open import guide</span><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M3 8h9M8 4l4 4-4 4"/></svg></button>
-      </aside>
-
       <section class="card planned-card" aria-labelledby="plannedTitle">
         <div class="card-head">
           <h2 id="plannedTitle" data-i18n="session.plannedHeading">Planned workout</h2>
-          <button id="deleteTrainingBtn" class="btn-icon btn-danger" type="button" aria-label="Delete training">
-            <i data-lucide="trash-2" aria-hidden="true"></i>
-            <div class="custom-tooltip" data-i18n="session.deleteTooltip">Delete training</div>
-          </button>
+          <div class="session-actions" data-i18n-aria-label="session.actionsLabel" aria-label="Session actions">
+            <button id="workoutCreationBtn" class="workout-creation-trigger" type="button" data-i18n-aria-label="session.workoutCreation.openAriaLabel">
+              <i data-lucide="book-open" aria-hidden="true"></i>
+              <span data-i18n="session.workoutCreation.openShort">How do I create my workout?</span>
+            </button>
+            <button id="deleteTrainingBtn" class="btn-icon btn-danger" type="button" data-i18n-aria-label="session.deleteAriaLabel">
+              <i data-lucide="trash-2" aria-hidden="true"></i>
+              <div class="custom-tooltip" data-i18n="session.deleteTooltip">Delete workout</div>
+            </button>
+          </div>
         </div>
         <dl class="planned-grid">
           <div class="planned-item">
@@ -83,20 +84,19 @@
           </div>
 
           <div class="field field-wide">
-            <label class="field-label" for="resultSourceSelect" data-i18n="session.resultSourceLabel">How would you like to register the result?</label>
+            <div class="result-source-header">
+              <label class="field-label" for="resultSourceSelect" data-i18n="session.resultSourceLabel">How would you like to register the result?</label>
+              <button id="importHelpBtn" class="import-help-trigger" type="button" data-i18n-aria-label="session.importHelp.openAriaLabel">
+                <i data-lucide="book-open" aria-hidden="true"></i>
+                <span data-i18n="session.importHelp.openShort">How to import?</span>
+              </button>
+            </div>
             <select id="resultSourceSelect" class="input-control">
               <option value="fit" data-i18n="session.resultSourceFit">Import FIT or ZIP file</option>
               <option value="manual" data-i18n="session.resultSourceManual">Enter data manually</option>
             </select>
           </div>
           <div class="field fit-field" id="fitField">
-            <div class="fit-upload-header">
-              <span class="fit-upload-label" data-i18n="session.resultSourceFit">Import FIT or ZIP file</span>
-              <button id="importHelpBtn" class="import-help-trigger" type="button" data-i18n-aria-label="session.importHelp.openAriaLabel">
-                <i data-lucide="book-open" aria-hidden="true"></i>
-                <span data-i18n="session.importHelp.openShort">How to import?</span>
-              </button>
-            </div>
             <label for="fitFile" class="file-dropzone" id="fitDropzone">
               <input type="file" id="fitFile" accept=".fit,.zip" style="display: none;">
               <div class="dropzone-text-primary">
@@ -315,6 +315,30 @@
         <p data-import-help-manual-description></p>
         <button type="button" class="btn-secondary" data-import-help-manual>Enter results manually</button>
       </section>
+    </div>
+  </div>
+
+  <div id="workoutCreationDialog" class="workout-creation-dialog" role="dialog" aria-modal="true" aria-labelledby="workoutCreationTitle" aria-describedby="workoutCreationDescription" hidden>
+    <div class="workout-creation-card">
+      <header class="import-help-header">
+        <h2 id="workoutCreationTitle" data-workout-create-title>How do I create my workout?</h2>
+        <button class="btn-icon" type="button" data-workout-create-close data-i18n-aria-label="session.workoutCreation.close"><i data-lucide="x" aria-hidden="true"></i></button>
+      </header>
+      <p id="workoutCreationDescription" data-workout-create-description></p>
+      <div class="workout-creation-platform-list" data-workout-create-platforms role="group" data-i18n-aria-label="session.workoutCreation.platformsLabel" aria-label="Workout platforms">
+        <button type="button" data-workout-create-platform="garmin" aria-pressed="true">Garmin Connect</button>
+        <button type="button" data-workout-create-platform="apple" aria-pressed="false">Apple Watch / iPhone</button>
+        <button type="button" data-workout-create-platform="coros" aria-pressed="false">COROS</button>
+        <button type="button" data-workout-create-platform="polar" aria-pressed="false">Polar Flow</button>
+        <button type="button" data-workout-create-platform="suunto" aria-pressed="false">Suunto</button>
+        <button type="button" data-workout-create-platform="samsung" aria-pressed="false">Samsung Health / Galaxy Watch</button>
+        <button type="button" data-workout-create-platform="xiaomi" aria-pressed="false">Xiaomi / Mi Fitness</button>
+        <button type="button" data-workout-create-platform="huawei" aria-pressed="false">Huawei Health</button>
+      </div>
+      <div class="workout-creation-status" data-workout-create-status></div>
+      <ol class="workout-creation-steps" data-workout-create-steps></ol>
+      <p class="workout-creation-note" data-workout-create-note></p>
+      <a class="workout-creation-source" data-workout-create-source href="https://support.garmin.com/en-CA/?faq=wZ52AaLbLG2GC1Lxu2l4k7&identifier=777730&tab=topics" target="_blank" rel="noopener noreferrer">Learn more</a>
     </div>
   </div>
 

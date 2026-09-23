@@ -1,5 +1,7 @@
 // Static, auditable catalog of manufacturer export guidance. No provider API,
 // login, remote content, or user data is involved in this client-only guide.
+import { createDialogFocusTrap } from './dialog-focus.js';
+
 export const WORKOUT_IMPORT_PROVIDERS = Object.freeze([
   {
     id: 'garmin', name: 'Garmin', compatibility: 'direct',
@@ -79,6 +81,7 @@ export function createImportGuidance({ trigger, dialog, translate, onManual }) {
   const manualButton = dialog.querySelector('[data-import-help-manual]');
   let selectedId = WORKOUT_IMPORT_PROVIDERS[0].id;
   let lastFocus = null;
+  const focusTrap = createDialogFocusTrap(dialog, () => close());
 
   const t = (key) => translate(key);
   const render = () => {
@@ -112,27 +115,15 @@ export function createImportGuidance({ trigger, dialog, translate, onManual }) {
   const close = () => {
     dialog.hidden = true;
     document.body.classList.remove('import-help-open');
-    dialog.removeEventListener('keydown', onKeydown);
+    focusTrap.deactivate();
     lastFocus?.focus();
-  };
-  const onKeydown = (event) => {
-    if (event.key === 'Escape') { event.preventDefault(); close(); return; }
-    if (event.key !== 'Tab') return;
-    const focusable = [...dialog.querySelectorAll('button, a[href]')].filter((element) => {
-      if (element.disabled || element.hidden || element.getAttribute('tabindex') === '-1') return false;
-      return !element.closest('[hidden]');
-    });
-    if (focusable.length === 0) return;
-    const first = focusable[0]; const last = focusable[focusable.length - 1];
-    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   };
   const open = () => {
     lastFocus = document.activeElement;
     render();
     dialog.hidden = false;
     document.body.classList.add('import-help-open');
-    dialog.addEventListener('keydown', onKeydown);
+    focusTrap.activate();
     closeButton.focus();
   };
   providerList.querySelectorAll('[data-provider-id]').forEach((button) => button.addEventListener('click', () => {
