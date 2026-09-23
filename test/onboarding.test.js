@@ -109,6 +109,10 @@ async function runChromeAtViewport(chrome, url, { width, height, mobile, cookie 
           awaitPromise: true,
           returnByValue: true,
         });
+        const isolation = await command('Runtime.evaluate', {
+          expression: `(()=>{const dialog=document.querySelector(${JSON.stringify(dialog)});const background=document.getElementById('appView')?.closest('body > *');const outside=document.getElementById('deleteTrainingBtn');document.activeElement?.blur();outside?.focus();outside?.dispatchEvent(new FocusEvent('focusin',{bubbles:true}));const outsideFocusContained=dialog.contains(document.activeElement);document.dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',bubbles:true,cancelable:true}));const tabInside=dialog.contains(document.activeElement);document.dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',shiftKey:true,bubbles:true,cancelable:true}));const shiftTabInside=dialog.contains(document.activeElement);dialog.querySelector('[data-${name === 'creation' ? 'workout-create-close' : 'import-help-close'}]')?.focus();return {backgroundInert:Boolean(background?.hasAttribute('inert')),outsideFocusContained,tabInside,shiftTabInside}})()`,
+          returnByValue: true,
+        });
         const focused = [];
         for (let index = 0; index < count; index += 1) {
           await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, text: '\t', unmodifiedText: '\t' });
@@ -131,10 +135,10 @@ async function runChromeAtViewport(chrome, url, { width, height, mobile, cookie 
         await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
         await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
         const closed = await command('Runtime.evaluate', {
-          expression: `({hidden:document.querySelector(${JSON.stringify(dialog)})?.hidden,restored:document.activeElement===document.querySelector(${JSON.stringify(trigger)}),selected:document.querySelectorAll(${JSON.stringify(`${dialog} ${item}[aria-pressed="true"]`)}).length,overflow:document.documentElement.scrollWidth<=innerWidth})`,
+          expression: `(()=>{const dialog=document.querySelector(${JSON.stringify(dialog)});const trigger=document.querySelector(${JSON.stringify(trigger)});const background=document.getElementById('appView')?.closest('body > *');trigger.focus();trigger.click();const reopened=!dialog.hidden;const inertWhileReopened=Boolean(background?.hasAttribute('inert'));dialog.querySelector('[data-${name === 'creation' ? 'workout-create-close' : 'import-help-close'}]')?.click();trigger.focus();trigger.click();const backdropOpened=!dialog.hidden;dialog.click();const backdropClosed=dialog.hidden;return {hidden:dialog.hidden,restored:document.activeElement===trigger,reopened,inertWhileReopened,backdropOpened,backdropClosed,backgroundReleased:Boolean(!background?.hasAttribute('inert')),selected:document.querySelectorAll(${JSON.stringify(`${dialog} ${item}[aria-pressed="true"]`)}).length,overflow:document.documentElement.scrollWidth<=innerWidth}})()`,
           returnByValue: true,
         });
-        keyboardFocusState[name] = { focused, closed: closed.result?.value };
+        keyboardFocusState[name] = { focused, isolation: isolation.result?.value, closed: closed.result?.value };
       };
       await validatePlatformList({ name: 'creation', trigger: '#workoutCreationBtn', dialog: '#workoutCreationDialog', item: '[data-workout-create-platform]', count: 8 });
       await validatePlatformList({ name: 'import', trigger: '#importHelpBtn', dialog: '#importHelpDialog', item: '[data-provider-id]', count: 7 });
@@ -1567,8 +1571,17 @@ test('creation and import platform guides keep a visible keyboard focus ring', a
           assert.notEqual(entry.outlineColor, 'rgba(0, 0, 0, 0)', `${guide} focus outline has a visible color for ${entry.id}`);
           assert.ok(entry.rect.right >= entry.rect.left && entry.rect.bottom >= entry.rect.top);
         }
+        assert.equal(result[guide].isolation.backgroundInert, true, JSON.stringify(result[guide].isolation));
+        assert.equal(result[guide].isolation.outsideFocusContained, true, `${guide} contains programmatic background focus`);
+        assert.equal(result[guide].isolation.tabInside, true, `${guide} contains Tab after focus loss`);
+        assert.equal(result[guide].isolation.shiftTabInside, true, `${guide} contains Shift+Tab after focus loss`);
         assert.equal(result[guide].closed.hidden, true);
         assert.equal(result[guide].closed.restored, true);
+        assert.equal(result[guide].closed.reopened, true);
+        assert.equal(result[guide].closed.inertWhileReopened, true);
+        assert.equal(result[guide].closed.backdropOpened, true);
+        assert.equal(result[guide].closed.backdropClosed, true);
+        assert.equal(result[guide].closed.backgroundReleased, true);
         assert.equal(result[guide].closed.selected, 1);
         assert.equal(result[guide].closed.overflow, true);
       }

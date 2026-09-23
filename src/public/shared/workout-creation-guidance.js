@@ -1,5 +1,7 @@
 // Static, auditable guidance for creating structured workouts. This catalog
 // contains no vendor API calls, credentials, telemetry, or user data.
+import { createDialogFocusTrap } from './dialog-focus.js';
+
 export const WORKOUT_CREATION_PLATFORMS = Object.freeze([
   {
     id: 'garmin', name: 'Garmin Connect', compatibility: 'full',
@@ -68,6 +70,7 @@ export function createWorkoutCreationGuidance({ trigger, dialog, translate }) {
   const sourceLink = dialog.querySelector('[data-workout-create-source]');
   let selectedId = WORKOUT_CREATION_PLATFORMS[0].id;
   let lastFocus = null;
+  const focusTrap = createDialogFocusTrap(dialog);
 
   const t = (key) => translate(key);
   const render = () => {
@@ -99,6 +102,7 @@ export function createWorkoutCreationGuidance({ trigger, dialog, translate }) {
     dialog.hidden = true;
     document.body.classList.remove('workout-creation-open');
     dialog.removeEventListener('keydown', onKeydown);
+    focusTrap.deactivate();
     lastFocus?.focus();
   };
   const onKeydown = (event) => {
@@ -118,6 +122,7 @@ export function createWorkoutCreationGuidance({ trigger, dialog, translate }) {
     render();
     dialog.hidden = false;
     document.body.classList.add('workout-creation-open');
+    focusTrap.activate();
     dialog.addEventListener('keydown', onKeydown);
     closeButton.focus();
   };

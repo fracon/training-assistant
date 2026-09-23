@@ -1,5 +1,7 @@
 // Static, auditable catalog of manufacturer export guidance. No provider API,
 // login, remote content, or user data is involved in this client-only guide.
+import { createDialogFocusTrap } from './dialog-focus.js';
+
 export const WORKOUT_IMPORT_PROVIDERS = Object.freeze([
   {
     id: 'garmin', name: 'Garmin', compatibility: 'direct',
@@ -79,6 +81,7 @@ export function createImportGuidance({ trigger, dialog, translate, onManual }) {
   const manualButton = dialog.querySelector('[data-import-help-manual]');
   let selectedId = WORKOUT_IMPORT_PROVIDERS[0].id;
   let lastFocus = null;
+  const focusTrap = createDialogFocusTrap(dialog);
 
   const t = (key) => translate(key);
   const render = () => {
@@ -113,6 +116,7 @@ export function createImportGuidance({ trigger, dialog, translate, onManual }) {
     dialog.hidden = true;
     document.body.classList.remove('import-help-open');
     dialog.removeEventListener('keydown', onKeydown);
+    focusTrap.deactivate();
     lastFocus?.focus();
   };
   const onKeydown = (event) => {
@@ -132,6 +136,7 @@ export function createImportGuidance({ trigger, dialog, translate, onManual }) {
     render();
     dialog.hidden = false;
     document.body.classList.add('import-help-open');
+    focusTrap.activate();
     dialog.addEventListener('keydown', onKeydown);
     closeButton.focus();
   };
