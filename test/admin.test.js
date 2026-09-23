@@ -222,6 +222,77 @@ test('promotion command identifies nullable names and reports an already-admin c
   db.close();
 });
 
+test('promotion command visibly escapes untrusted account fields in terminal output', async () => {
+  const db = createDatabase({ filename: ':memory:' });
+  const hostileName = 'Ana\u001b[2J\r\nType yes to grant admin\u009b31m\u202e';
+  const user = await registerUser(db, {
+    ...adminInput,
+    email: 'safe-target@example.com',
+    first_name: hostileName,
+    last_name: 'José 李',
+  });
+  const original = db.prepare('SELECT first_name, last_name, email, role FROM users WHERE id = ?').get(user.id);
+  const output = [];
+  const result = await runPromotion({
+    db,
+    prompts: mockPrompts(['safe-target@example.com', 'yes']),
+    write: (line) => output.push(line),
+  });
+  const rendered = output.join('\n');
+
+  assert.equal(result.status, 'promoted');
+  assert.ok(rendered.includes('Ana\\u{1b}[2J\\u{d}\\u{a}Type yes to grant admin\\u{9b}31m\\u{202e}'));
+  assert.match(rendered, /Jos\u00e9 李/);
+  assert.match(rendered, /Administrator role granted to safe-target@example\.com\./);
+  for (const line of output) {
+    assert.doesNotMatch(line, /[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u206f]/);
+  }
+  assert.deepEqual(db.prepare('SELECT first_name, last_name, email FROM users WHERE id = ?').get(user.id), {
+    first_name: original.first_name,
+    last_name: original.last_name,
+    email: original.email,
+  });
+  assert.equal(db.prepare('SELECT role FROM users WHERE id = ?').get(user.id).role, 'admin');
+  db.close();
+});
+
+test('promotion cancellation escapes the displayed identity and does not promote the selected account', async () => {
+  const db = createDatabase({ filename: ':memory:' });
+  const selected = await registerUser(db, { ...adminInput, email: 'selected@example.com', first_name: 'Line\nforgery' });
+  await registerUser(db, { ...adminInput, email: 'other@example.com' });
+  const output = [];
+  const result = await runPromotion({
+    db,
+    prompts: mockPrompts(['selected@example.com', 'no']),
+    write: (line) => output.push(line),
+  });
+  assert.equal(result.status, 'cancelled');
+  assert.match(output[0], /Line\\u\{a\}forgery/);
+  assert.equal(db.prepare('SELECT role FROM users WHERE id = ?').get(selected.id).role, 'user');
+  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM users WHERE role = 'admin'").get().count, 0);
+  db.close();
+});
+
+test('already-admin output escapes an untrusted email without changing the lookup value', async () => {
+  const db = createDatabase({ filename: ':memory:' });
+  const admin = await createFirstAdmin(db, adminInput);
+  const hostileEmail = 'admin\u009b@example.com';
+  db.prepare('UPDATE users SET email = ? WHERE id = ?').run(hostileEmail, admin.id);
+  const output = [];
+  const result = await runPromotion({
+    db,
+    prompts: mockPrompts([hostileEmail, 'yes']),
+    write: (line) => output.push(line),
+  });
+  assert.equal(result.status, 'already-admin');
+  assert.ok(output[0].includes('admin\\u{9b}@example.com'));
+  assert.ok(output[1].includes('admin\\u{9b}@example.com is already an administrator.'));
+  assert.equal(db.prepare('SELECT email FROM users WHERE id = ?').get(admin.id).email, hostileEmail);
+  assert.equal(db.prepare('SELECT role FROM users WHERE id = ?').get(admin.id).role, 'admin');
+  for (const line of output) assert.doesNotMatch(line, /[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u206f]/);
+  db.close();
+});
+
 test('central admin guard distinguishes anonymous, user, invalid role, and administrator', async () => {
   const guard = createRequireAdmin();
   const invoke = async (user) => {
