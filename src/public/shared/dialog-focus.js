@@ -17,7 +17,7 @@ function bodyRootsOutside(dialog) {
 
 // Keeps a modal isolated even when a click or script moves focus away from it.
 // The body roots are inerted only for the lifetime of this controller activation.
-export function createDialogFocusTrap(dialog) {
+export function createDialogFocusTrap(dialog, onEscape) {
   let active = false;
   let previousInert = [];
 
@@ -29,7 +29,13 @@ export function createDialogFocusTrap(dialog) {
   };
 
   const onKeydown = (event) => {
-    if (!active || event.key !== 'Tab') return;
+    if (!active) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      onEscape?.();
+      return;
+    }
+    if (event.key !== 'Tab') return;
     const focusable = focusableElements(dialog);
     if (!focusable.length) return;
     if (!dialog.contains(document.activeElement)) {

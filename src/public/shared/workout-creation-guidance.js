@@ -70,7 +70,7 @@ export function createWorkoutCreationGuidance({ trigger, dialog, translate }) {
   const sourceLink = dialog.querySelector('[data-workout-create-source]');
   let selectedId = WORKOUT_CREATION_PLATFORMS[0].id;
   let lastFocus = null;
-  const focusTrap = createDialogFocusTrap(dialog);
+  const focusTrap = createDialogFocusTrap(dialog, () => close());
 
   const t = (key) => translate(key);
   const render = () => {
@@ -101,21 +101,8 @@ export function createWorkoutCreationGuidance({ trigger, dialog, translate }) {
   const close = () => {
     dialog.hidden = true;
     document.body.classList.remove('workout-creation-open');
-    dialog.removeEventListener('keydown', onKeydown);
     focusTrap.deactivate();
     lastFocus?.focus();
-  };
-  const onKeydown = (event) => {
-    if (event.key === 'Escape') { event.preventDefault(); close(); return; }
-    if (event.key !== 'Tab') return;
-    const focusable = [...dialog.querySelectorAll('button, a[href]')].filter((element) => {
-      if (element.disabled || element.hidden || element.getAttribute('tabindex') === '-1') return false;
-      return !element.closest('[hidden]');
-    });
-    if (focusable.length === 0) return;
-    const first = focusable[0]; const last = focusable[focusable.length - 1];
-    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
   };
   const open = () => {
     lastFocus = document.activeElement;
@@ -123,7 +110,6 @@ export function createWorkoutCreationGuidance({ trigger, dialog, translate }) {
     dialog.hidden = false;
     document.body.classList.add('workout-creation-open');
     focusTrap.activate();
-    dialog.addEventListener('keydown', onKeydown);
     closeButton.focus();
   };
   platformList.querySelectorAll('[data-workout-create-platform]').forEach((button) => button.addEventListener('click', () => {
