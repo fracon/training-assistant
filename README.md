@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized prompts for an AI coach.
 
-Current application version: **0.11.0** (active development).
+Current application version: **0.12.0** (active development).
 
 ### Shoe mileage integrity
 
@@ -53,6 +53,7 @@ AI coaches are only as good as the data you give them. Exporting workouts by han
 
 ### Accounts & Access
 - **User accounts & security** — email/password registration and sign-in backed by Node's native `crypto` (`scrypt`) password hashing.
+- **Account roles** — every account has a database-constrained `user` or `admin` role. Public registration always creates `user`; admin status only comes from the privileged local bootstrap or promotion commands. Admin role does not bypass per-user ownership checks.
 - **Secure sessions** — 256-bit random session tokens stored in SQLite, delivered as `HttpOnly` / `Secure` / `SameSite=Lax` cookies with server-side expiry.
 - **Server-side route gating** — unauthenticated visitors are redirected to the login page by Fastify itself; the training tool is never rendered without a valid session.
 - **User dropdown menu** — the authenticated user badge opens **Setup guide**, **Change Password**, and **Preferences**. Logout remains a separate topbar action.
@@ -303,6 +304,8 @@ Then open <http://127.0.0.1:3000> — you'll land on the login page. Create an a
 |---|---|
 | `npm start` | Start the server |
 | `npm run dev` | Start with auto-reload on file changes |
+| `npm run admin:bootstrap` | Interactively create the first administrator in this application's database |
+| `npm run admin:promote` | Explicitly promote an existing account after confirmation |
 | `npm test` | Run the test suite |
 | `npm run test:coverage` | Run tests with c8 — enforces **100%** statements, branches, functions, and lines in instrumented backend files |
 
@@ -328,6 +331,30 @@ the `.env` file beside `docker-compose.yml`; Compose passes it into the server
 container. Kinesis works without the key by using the bundled local fallback
 image. The key is server-only and must never be placed in frontend files or
 committed to Git.
+
+### Administrator setup
+
+Roles are `user` and `admin`; new accounts and migrated accounts use `user`.
+The idempotent role migration preserves existing IDs, password hashes, sessions,
+preferences, onboarding state, and related data. It never chooses an admin.
+The database rejects any other role. Admin status does not change the ownership
+scope of training, cycle, or shoe operations.
+
+For a fresh database, run `npm run admin:bootstrap` from the application
+directory before normal use. It asks for the account details, hides password
+input, validates and hashes through the application auth code, and creates an
+`admin` account with normal new-account onboarding. If any admin already
+exists, it makes no changes. If the address is already registered, it directs
+the operator to promote that account. For an existing account, run
+`npm run admin:promote`; inspect the displayed identity and type `yes` to
+confirm. Promotion updates only `role`; it does not create missing users or
+change passwords, preferences, onboarding, or sessions.
+
+Both commands require an interactive TTY, use the same `DATABASE_FILE` setting
+as the server, and never accept a password argument. Cancellation and EOF leave
+no partial account. They run only when explicitly invoked and are not part of
+application or container startup. Treat access to the server/container as
+privileged because these commands can grant admin access.
 
 ## Usage
 
@@ -681,6 +708,19 @@ services:
 **Port mapping constraint:** the host port is **8081**, mapped to the container's internal port **3000** (`8081:3000`). Port 8080 is deliberately avoided because it collides with default services on the ZimaOS host.
 
 The `./data:/app/data` volume persists the SQLite database (users, sessions) on the ZimaOS host across container upgrades.
+
+Run privileged account setup manually against that same persisted database:
+
+```bash
+docker exec -it <container-name> npm run admin:bootstrap
+docker exec -it <container-name> npm run admin:promote
+```
+
+Use the actual running container name and an interactive terminal (`-it`). The
+bootstrap command creates the first admin only; the promotion command requires
+an existing account and explicit confirmation. Neither command runs when the
+container starts. The production image includes both scripts and runs them as
+the same non-root `node` user as the server.
 
 Manual deployment commands (run where `docker-compose.yml` lives):
 

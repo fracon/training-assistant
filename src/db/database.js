@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS users (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
   email          TEXT    NOT NULL UNIQUE,
   password_hash  TEXT    NOT NULL,
+  role           TEXT    NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'admin')),
   first_name     TEXT,
   last_name      TEXT,
   preferred_lang TEXT    NOT NULL DEFAULT 'en-US',
@@ -114,6 +115,9 @@ function resolveDatabaseFile(cwd) {
 
 function migrateDatabase(db) {
   const columns = db.pragma('table_info(users)');
+  if (!columns.some((column) => column.name === 'role')) {
+    db.exec("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'admin'))");
+  }
   if (!columns.some((column) => column.name === 'preferred_lang')) {
     db.exec(
       "ALTER TABLE users ADD COLUMN preferred_lang TEXT NOT NULL DEFAULT 'en-US'"
@@ -197,6 +201,13 @@ function migrateDatabase(db) {
     name TEXT PRIMARY KEY,
     applied_at TEXT NOT NULL DEFAULT (datetime('now'))
   )`);
+  const roleMarker = '2026-09-user-roles-v1';
+  const migrateRoles = db.transaction(() => {
+    if (db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(roleMarker)) return;
+    // Existing rows receive the column's user default; never infer or assign admins.
+    db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(roleMarker);
+  });
+  migrateRoles();
   if (hasShoesTable && !db.pragma('table_info(shoes)').some((column) => column.name === 'base_mileage')) {
     db.exec('ALTER TABLE shoes ADD COLUMN base_mileage REAL NOT NULL DEFAULT 0.0');
   }

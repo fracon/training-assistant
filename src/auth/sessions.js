@@ -29,7 +29,7 @@ function findActiveSession(db, token) {
     .prepare(
       `SELECT s.id AS token, s.user_id, s.expires_at,
               u.id AS user_id, u.email, u.first_name, u.last_name, u.preferred_lang,
-              u.first_day_of_week, u.distance_unit, u.temperature_unit
+              u.first_day_of_week, u.distance_unit, u.temperature_unit, u.role
        FROM sessions s
        JOIN users u ON u.id = s.user_id
        WHERE s.id = ?`
@@ -51,6 +51,7 @@ function findActiveSession(db, token) {
       first_day_of_week: row.first_day_of_week,
       distance_unit: row.distance_unit,
       temperature_unit: row.temperature_unit,
+      role: row.role,
     },
   };
 }

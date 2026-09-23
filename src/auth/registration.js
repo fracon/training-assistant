@@ -63,8 +63,8 @@ async function registerUser(db, payload) {
   const passwordHash = await hashPassword(registration.password);
   const result = db
     .prepare(
-      `INSERT INTO users (email, password_hash, first_name, last_name, preferred_lang, first_day_of_week, distance_unit, temperature_unit, onboarding_status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'new')`
+      `INSERT INTO users (email, password_hash, first_name, last_name, preferred_lang, first_day_of_week, distance_unit, temperature_unit, onboarding_status, role)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'new', 'user')`
     )
     .run(
       registration.email,
@@ -86,6 +86,7 @@ async function registerUser(db, payload) {
     first_day_of_week: registration.first_day_of_week,
     distance_unit: registration.distance_unit,
     temperature_unit: registration.temperature_unit,
+    role: 'user',
   };
 }
 

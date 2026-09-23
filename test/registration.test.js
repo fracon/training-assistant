@@ -130,6 +130,7 @@ test('registerUser persists a hashed user and returns data without the hash', as
     first_day_of_week: 'Monday',
     distance_unit: 'km',
     temperature_unit: 'C',
+    role: 'user',
   });
   assert.equal('password_hash' in user, false);
 

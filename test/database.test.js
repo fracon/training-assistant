@@ -48,7 +48,44 @@ test('initializeDatabase applies pragmas and creates the schema', () => {
   assert.ok(trainingColumns.includes('result_data_source'));
   assert.ok(trainingColumns.includes('fit_calories'));
   assert.ok(trainingColumns.includes('feedback_shoe_id'));
+  assert.equal(db.prepare("SELECT role FROM users LIMIT 1").get(), undefined);
+  db.prepare("INSERT INTO users (email, password_hash) VALUES ('role-check@example.com', 'x')").run();
+  assert.equal(db.prepare('SELECT role FROM users WHERE email = ?').get('role-check@example.com').role, 'user');
+  assert.throws(() => db.prepare("UPDATE users SET role = 'owner' WHERE email = ?").run('role-check@example.com'));
 
+  db.close();
+});
+
+test('role migration assigns existing accounts user, preserves records, is repeatable, and retains admins', () => {
+  const db = new Database(':memory:');
+  db.exec(`
+    CREATE TABLE users (
+      id INTEGER PRIMARY KEY, email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL,
+      first_name TEXT, last_name TEXT, preferred_lang TEXT NOT NULL DEFAULT 'en-US',
+      first_day_of_week TEXT NOT NULL DEFAULT 'Monday', distance_unit TEXT NOT NULL DEFAULT 'km',
+      temperature_unit TEXT NOT NULL DEFAULT 'C', onboarding_status TEXT NOT NULL DEFAULT 'active',
+      onboarding_guide_hidden INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE sessions (
+      id TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      expires_at TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    INSERT INTO users (id, email, password_hash, first_name, preferred_lang, distance_unit, onboarding_status, onboarding_guide_hidden)
+      VALUES (41, 'old@example.com', 'existing-hash', 'Old', 'pt-BR', 'mi', 'active', 1);
+    INSERT INTO sessions (id, user_id, expires_at) VALUES ('old-session', 41, '2999-01-01T00:00:00.000Z');
+  `);
+  initializeDatabase(db);
+  const existing = db.prepare('SELECT id, email, password_hash, first_name, preferred_lang, distance_unit, onboarding_status, onboarding_guide_hidden, role FROM users WHERE id = 41').get();
+  assert.deepEqual(existing, {
+    id: 41, email: 'old@example.com', password_hash: 'existing-hash', first_name: 'Old',
+    preferred_lang: 'pt-BR', distance_unit: 'mi', onboarding_status: 'active', onboarding_guide_hidden: 1, role: 'user',
+  });
+  assert.equal(db.prepare('SELECT user_id FROM sessions WHERE id = ?').get('old-session').user_id, 41);
+  db.prepare("UPDATE users SET role = 'admin' WHERE id = 41").run();
+  migrateDatabase(db);
+  migrateDatabase(db);
+  assert.equal(db.prepare('SELECT role FROM users WHERE id = 41').get().role, 'admin');
+  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE name = '2026-09-user-roles-v1'").get().count, 1);
   db.close();
 });
 
