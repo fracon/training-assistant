@@ -12,7 +12,7 @@
     "admin:bootstrap": "node scripts/admin-bootstrap.js",
     "admin:promote": "node scripts/admin-promote.js",
     "test": "node --test",
-    "test:coverage": "c8 --include=src/** --exclude=src/public/** --exclude=src/start.js --statements=100 --branches=100 --functions=100 --lines=100 --reporter=text --reporter=html npm run test"
+    "test:coverage": "c8 --include=src/** --include=scripts/admin-prompts.js --include=scripts/admin-runtime.js --include=scripts/admin-commands.js --exclude=src/public/** --exclude=src/start.js --statements=100 --branches=100 --functions=100 --lines=100 --reporter=text --reporter=html npm run test"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",

@@ -207,6 +207,21 @@ test('promotion command confirms the identified account, handles cancel and not-
   db.close();
 });
 
+test('promotion command identifies nullable names and reports an already-admin confirmation without mutation', async () => {
+  const db = createDatabase({ filename: ':memory:' });
+  const admin = await createFirstAdmin(db, adminInput);
+  db.prepare('UPDATE users SET first_name = NULL, last_name = NULL WHERE id = ?').run(admin.id);
+  const output = [];
+  const result = await runPromotion({
+    db, prompts: mockPrompts([admin.email, 'yes']), write: (line) => output.push(line),
+  });
+  assert.equal(result.status, 'already-admin');
+  assert.equal(result.changed, false);
+  assert.match(output[0], /<first\.admin@example\.com> \[admin\]/);
+  assert.match(output[1], /already an administrator/);
+  db.close();
+});
+
 test('central admin guard distinguishes anonymous, user, invalid role, and administrator', async () => {
   const guard = createRequireAdmin();
   const invoke = async (user) => {

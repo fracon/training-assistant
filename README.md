@@ -309,7 +309,7 @@ Then open <http://127.0.0.1:3000> — you'll land on the login page. Create an a
 | `npm test` | Run the test suite |
 | `npm run test:coverage` | Run tests with c8 — enforces **100%** statements, branches, functions, and lines in instrumented backend files |
 
-> **The 100% Rule:** `npm run test:coverage` enforces 100% Statements, Branches, Functions, and Lines for the files instrumented by c8 (`src/**`, excluding `src/public/**` and `src/start.js`). Frontend behavior remains test-mandatory when it changes, but `src/public/**` is not included in that instrumentation percentage.
+> **The 100% Rule:** `npm run test:coverage` enforces 100% Statements, Branches, Functions, and Lines for the files instrumented by c8 (`src/**`, excluding `src/public/**` and `src/start.js`, plus `scripts/admin-prompts.js`, `scripts/admin-runtime.js`, and `scripts/admin-commands.js`). Frontend behavior remains test-mandatory when it changes, but `src/public/**` is not included in that instrumentation percentage.
 
 Configuration via environment variables:
 

@@ -220,10 +220,12 @@ focus and keyboard behavior, and ensure `[hidden]` elements are not visible or
 focusable when changing onboarding UI.
 
 `npm run test:coverage` enforces exactly 100% Statements, Branches, Functions,
-and Lines for c8-instrumented files under `src/**`, excluding `src/public/**`
-and `src/start.js`. This percentage is not instrumentation coverage of the
-frontend. Frontend behavior tests remain mandatory when corresponding frontend
-behavior changes. Run `git diff --check` before committing.
+and Lines for c8-instrumented files under `src/**` (excluding
+`src/public/**` and `src/start.js`) plus `scripts/admin-prompts.js`,
+`scripts/admin-runtime.js`, and `scripts/admin-commands.js`. This percentage is
+not instrumentation coverage of the frontend. Frontend behavior tests remain
+mandatory when corresponding frontend behavior changes. Run `git diff --check`
+before committing.
 
 ## Golden rules
 
