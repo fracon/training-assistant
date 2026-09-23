@@ -159,7 +159,7 @@ test('the footer carries only the app version, fetched from the backend', async 
 
 test('loadAppVersion resolves the packaged version and degrades to null on any failure', async () => {
   const ok = (body) => async () => ({ ok: true, json: async () => body });
-  assert.equal(require('../package.json').version, '0.11.0');
+  assert.equal(require('../package.json').version, '0.12.0');
   const calls = [];
   assert.equal(await loadAppVersion(async (...args) => {
     calls.push(args);

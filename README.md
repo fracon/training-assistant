@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized prompts for an AI coach.
 
-Current application version: **0.11.0** (active development).
+Current application version: **0.12.0** (active development).
 
 ### Shoe mileage integrity
 
@@ -177,6 +177,36 @@ The footer fetches `/api/version` without caching, so it reflects the running ba
 The **AI Coach** page builds the weekly training request from the latest local application state when the user submits the form. It fetches the active cycle and injects its cycle name, goal, target race date, current week/total weeks, and days remaining immediately after the prompt introduction. It also fetches the previous week's calendar entries and summarizes completed workouts as a count, total distance in kilometres, and total time in minutes. Missing values use the prompt's `-` fallback, while valid stored values are preserved and formatted for the selected language.
 
 The generated briefing is fully localized: the Portuguese (`pt-BR`) and English (`en-US`) templates contain the same cycle and performance context fields, with localized labels and week wording. Context is resolved inside the generation action so it always reflects the currently active cycle, latest training data, and current i18n language.
+
+Weekly availability is stored per authenticated user and weekday through
+`/api/ai-coach/availability`. Each record contains `can_train`, stable
+`available_periods` IDs (`before_08`, `08_12`, `12_14`, `14_18`, `after_18`),
+`available_minutes` as an integer number of minutes, and the exact user-entered
+`location`. A 12-hour (720-minute) daily maximum prevents unreasonable input.
+Unavailable days are stored with an empty period list, null duration, and empty
+location. Available days require at least one period, positive duration, and a
+location. Multiple periods are alternatives for one session. The duration is
+the total maximum session time, including warm-up and cool-down; it is not a
+target and is independent of the time window.
+
+The idempotent `2026-09-structured-ai-coach-availability-v1` migration creates
+the user/day table without rewriting existing training locations. The previous
+AI Coach text fields were transient and had no database persistence, so there
+is no authoritative legacy availability to translate. Missing structured days
+are returned as unconfigured and require explicit review; text such as “Normal
+routine” is never treated as availability or sent in the prompt. The
+“Apply Monday's setup to weekdays” action explicitly copies Monday to Tuesday
+through Friday; Saturday and Sunday are untouched, and later edits are
+independent.
+
+The prompt states each unavailable day and, for available days, its selected
+periods, maximum session minutes, and location. It explicitly tells the coach
+that periods are alternatives for one session and minutes are a ceiling, not a
+goal or a conversion from the size of a period window. The prompt also directs
+the coach to consider local time and use weather only when valid forecast data
+exists. Kinesis does not add a weather API call to availability or invent an
+exact time inside a selected window; the existing optional Open-Meteo flow
+continues to receive only a planned training location/date.
 
 ### Home Dashboard
 

@@ -1,6 +1,6 @@
 import { initShell, getShellI18n, getUserPreferences, refreshIcons } from './shared/shell.js';
-import { translate, normalizeClientLanguage } from './shared/i18n.js';
-import { fetchShoes } from './shared/api.js';
+import { translate } from './shared/i18n.js';
+import { fetchShoes, fetchAiCoachAvailability, saveAiCoachAvailability } from './shared/api.js';
 import { fetchActiveCycle, fetchCalendarTrainings } from './shared/api.js';
 import { formatDate as formatLocalizedDate, parseLocalizedDate } from './shared/date.js';
 import { formatDistance, distancePromptUnit, temperaturePromptUnit } from './shared/units.js';
@@ -48,15 +48,9 @@ A semana a ser planejada começa em:
 
 DISPONIBILIDADE
 
-- Segunda-feira: {{DISP_SEG}} (Local: {{LOCAL_SEG}})
-- Terça-feira: {{DISP_TER}} (Local: {{LOCAL_TER}})
-- Quarta-feira: {{DISP_QUA}} (Local: {{LOCAL_QUA}})
-- Quinta-feira: {{DISP_QUI}} (Local: {{LOCAL_QUI}})
-- Sexta-feira: {{DISP_SEX}} (Local: {{LOCAL_SEX}})
-- Sábado: {{DISP_SAB}} (Local: {{LOCAL_SAB}})
-- Domingo: {{DISP_DOM}} (Local: {{LOCAL_DOM}})
+{{AVAILABILITY_BLOCK}}
 
-Se eu não informar nenhuma restrição especial, considere minha rotina normal de corrida.
+Planeje treinos somente em dias marcados como disponíveis. Se algum dia estiver sem configuração estruturada, não presuma disponibilidade e peça confirmação. Períodos múltiplos são alternativas para uma sessão naquele dia, não autorização para treinos múltiplos; escolha o período mais adequado. O tempo informado é o limite máximo total da sessão, incluindo aquecimento e volta à calma; não é meta. Nunca interprete a janela do período como duração do treino. Considere o horário local da localidade. Use previsão somente quando houver dados válidos, nunca invente condições meteorológicas e informe quando não houver previsão válida.
 
 CONTEXTO ADICIONAL DESTA SEMANA
 
@@ -72,8 +66,8 @@ INSTRUÇÕES PARA MONTAR A SEMANA
 6. Nos treinos de qualidade, especifique claramente: aquecimento; quantidade e duração dos blocos; recuperação; intensidade/FC/RPE; desaquecimento.
 7. Nos longos, especifique claramente cada parte do treino. Caso exista bloco controlado/progressivo, deixe explícito que ele deve ser realizado por esforço e indique o RPE esperado.
 8. Considere que meu percurso habitual possui bastante subida. Não determine que eu persiga pace nas subidas. FC pode subir significativamente nesses trechos; considere principalmente esforço e respiração.
-9. Considere temperatura e condições meteorológicas. Para cada treino, pesquise a previsão usando a localidade informada para aquele dia no bloco de disponibilidade e o horário/período aproximado da sessão: treinos durante a semana: aproximadamente 12h; longo de domingo: entre 8h e 9h. Use a localidade habitual somente como fallback quando o dia não tiver uma localidade própria; se nenhuma localidade válida existir, não invente uma.
-10. A previsão deve corresponder ao horário do treino, e não simplesmente à mínima/máxima diária.
+9. Considere temperatura e condições meteorológicas. Use previsão somente quando houver dados válidos para a localidade informada e horário dentro do período disponível. Não invente horário exato dentro da faixa nem condições meteorológicas. Sem previsão válida, informe a ausência e não presuma o clima.
+10. A previsão precisa ter dados válidos de horário compatíveis com o período escolhido. Se não for possível confirmá-los, trate a previsão como indisponível; não use apenas mínima/máxima diária nem invente horário exato.
 11. Se houver previsão de calor forte, adapte o treino quando necessário e deixe isso explícito nas observações. Não prescreva intensidade inadequada apenas para manter o planejamento original.
 12. Escolha o tênis mais apropriado para cada sessão considerando os tênis que tenho disponíveis, o tipo de treino e nosso histórico recente com cada um.
 13. Considere qualquer dor ou desconforto recente, mas não continue tratando uma lesão antiga como ativa se os treinos posteriores demonstrarem recuperação completa.
@@ -141,15 +135,9 @@ The week to be planned starts on:
 
 AVAILABILITY
 
-- Monday: {{DISP_SEG}} (Location: {{LOCAL_SEG}})
-- Tuesday: {{DISP_TER}} (Location: {{LOCAL_TER}})
-- Wednesday: {{DISP_QUA}} (Location: {{LOCAL_QUA}})
-- Thursday: {{DISP_QUI}} (Location: {{LOCAL_QUI}})
-- Friday: {{DISP_SEX}} (Location: {{LOCAL_SEX}})
-- Saturday: {{DISP_SAB}} (Location: {{LOCAL_SAB}})
-- Sunday: {{DISP_DOM}} (Location: {{LOCAL_DOM}})
+{{AVAILABILITY_BLOCK}}
 
-If I do not provide any special restrictions, assume my normal running routine.
+Plan sessions only on days marked available. If any day is unconfigured, do not assume availability and ask the user to confirm it. Multiple periods are alternatives for one session that day, not permission for multiple sessions; choose the most appropriate period. The available time is the maximum total session duration, including warm-up and cool-down; it is a ceiling, not a target. Never interpret the period window as workout duration. Consider the local time at the stated location. Use forecasts only when valid data exists, never invent weather, and state when no valid forecast is available.
 
 ADDITIONAL CONTEXT FOR THIS WEEK
 
@@ -165,8 +153,8 @@ INSTRUCTIONS FOR PLANNING THE WEEK
 6. For quality workouts, clearly specify: warm-up; number and duration of blocks; recovery; intensity/HR/RPE; cool-down.
 7. For long runs, clearly specify each part of the workout. If there is a controlled/progressive block, make it explicit that it should be done by effort and indicate the expected RPE.
 8. Consider that my usual route has plenty of hills. Do not dictate that I chase pace on uphills. HR may rise significantly in these sections; consider effort and breathing primarily.
-9. Consider temperature and weather conditions. For each workout, check the forecast using the location provided for that day in the availability block and the session's approximate time/period: weekday runs around 12 PM; Sunday long run between 8 AM and 9 AM. Use the usual location only as a fallback when that day has no specific location; if no valid location exists, do not invent one.
-10. The forecast must match the workout time, not just the daily min/max.
+9. Consider temperature and weather conditions. Use a forecast only when valid data exists for the stated location and a time within the available period. Do not invent an exact time within the window or weather conditions. Without a valid forecast, state that it is unavailable and do not assume weather.
+10. The forecast must have valid time-specific data within the selected period. If that cannot be confirmed, treat the forecast as unavailable; do not rely only on daily min/max or invent an exact time.
 11. If strong heat is forecasted, adapt the workout when necessary and make this explicit in the notes. Do not prescribe inappropriate intensity just to maintain the original plan.
 12. Choose the most appropriate shoe for each session considering the shoes I have available, the type of workout, and our recent history with each.
 13. Consider any recent pain or discomfort, but do not continue treating an old injury as active if subsequent workouts demonstrate full recovery.
@@ -196,6 +184,8 @@ In your response, provide:
 If recent data indicates that the originally expected plan should be altered, prioritize the correct adaptation rather than simply repeating the previous week's structure.`;
 
 const DAY_KEYS = ['segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado', 'domingo'];
+const DAY_DB_KEYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+const PERIOD_KEYS = ['before_08', '08_12', '12_14', '14_18', 'after_18'];
 
 const DAY_LOCALE_KEYS = {
   segunda: 'monday',
@@ -213,13 +203,6 @@ export function orderedDayKeys(weekStart = 'Monday') {
     : [...DAY_KEYS];
 }
 
-export const DEFAULT_ROUTINE_BY_LANG = {
-  'en-US': 'Normal routine',
-  'pt-BR': 'Rotina normal',
-};
-
-// The prompt template keeps its historical Portuguese fallback for unknown
-// languages; availability defaults follow the app-wide en-US fallback.
 export const TEMPLATE_BY_LANG = {
   'pt-BR': PROMPT_TEMPLATE,
   'en-US': PROMPT_TEMPLATE_EN,
@@ -230,30 +213,6 @@ export function resolveTemplateLang(lang) {
     ? lang
     : 'pt-BR';
 }
-
-export function defaultRoutineFor(lang) {
-  return DEFAULT_ROUTINE_BY_LANG[normalizeClientLanguage(lang)];
-}
-
-export const PLACEHOLDERS = {
-  segunda: '{{DISP_SEG}}',
-  terca: '{{DISP_TER}}',
-  quarta: '{{DISP_QUA}}',
-  quinta: '{{DISP_QUI}}',
-  sexta: '{{DISP_SEX}}',
-  sabado: '{{DISP_SAB}}',
-  domingo: '{{DISP_DOM}}',
-};
-
-export const LOCATION_PLACEHOLDERS = {
-  segunda: '{{LOCAL_SEG}}',
-  terca: '{{LOCAL_TER}}',
-  quarta: '{{LOCAL_QUA}}',
-  quinta: '{{LOCAL_QUI}}',
-  sexta: '{{LOCAL_SEX}}',
-  sabado: '{{LOCAL_SAB}}',
-  domingo: '{{LOCAL_DOM}}',
-};
 
 export function pad2(value) {
   return String(value).padStart(2, '0');
@@ -405,27 +364,10 @@ export function dateInputValue(date) {
   return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
 }
 
-export function availabilityDefaults(lang = 'pt-BR') {
-  const routine = defaultRoutineFor(lang);
-  return {
-    segunda: routine,
-    terca: routine,
-    quarta: routine,
-    quinta: routine,
-    sexta: routine,
-    sabado: routine,
-    domingo: routine,
-  };
-}
-
-// Swaps only the values still holding the previous language's default
-// routine, so anything the user typed stays untouched.
-export function applyRoutineDefault(values, previousDefault, nextDefault) {
-  const updated = {};
-  for (const [day, value] of Object.entries(values)) {
-    updated[day] = value === previousDefault ? nextDefault : value;
-  }
-  return updated;
+export function availabilityDefaults() {
+  return Object.fromEntries(DAY_KEYS.map((day) => [day, {
+    can_train: null, available_periods: [], available_minutes: null, location: '',
+  }]));
 }
 
 function replaceAll(text, token, value) {
@@ -463,7 +405,7 @@ export function formatShoesBlock(shoes = [], messages = {}, preferences = {}) {
   return `${title}\n\n${lines.join('\n')}`;
 }
 
-export function buildPrompt({ targetDate, disponibilidade = {}, localizacao = {}, baseLocation = '', contexto = '', lang = 'pt-BR', shoes = [], messages = {}, cycle = {}, previousWeek = {}, preferences = {} }) {
+export function buildPrompt({ targetDate, disponibilidade = {}, contexto = '', lang = 'pt-BR', shoes = [], messages = {}, cycle = {}, previousWeek = {}, preferences = {} }) {
   const templateLang = resolveTemplateLang(lang);
   const template = TEMPLATE_BY_LANG[templateLang];
   let prompt = replaceAll(
@@ -474,14 +416,20 @@ export function buildPrompt({ targetDate, disponibilidade = {}, localizacao = {}
   for (const [token, value] of Object.entries(formatCycleContext(cycle, previousWeek, templateLang, preferences))) {
     prompt = replaceAll(prompt, token, value);
   }
-  const availability = { ...availabilityDefaults(templateLang), ...disponibilidade };
-  const fallbackLocation = String(baseLocation ?? '').trim();
-  for (const day of DAY_KEYS) {
-    prompt = replaceAll(prompt, PLACEHOLDERS[day], String(availability[day] ?? '').trim());
-    const dailyLocation = String(localizacao[day] ?? '').trim();
-    const effectiveLocation = dailyLocation || fallbackLocation || '-';
-    prompt = replaceAll(prompt, LOCATION_PLACEHOLDERS[day], effectiveLocation);
-  }
+  const availability = Array.isArray(disponibilidade)
+    ? Object.fromEntries(disponibilidade.map((record) => [DAY_KEYS[DAY_DB_KEYS.indexOf(record.day)], record]))
+    : disponibilidade;
+  const labels = messages.aiCoach ?? {};
+  const lines = DAY_KEYS.map((day, index) => {
+    const record = availability[day] ?? {};
+    const dayName = labels.days?.[DAY_LOCALE_KEYS[day]] || DAY_DB_KEYS[index];
+    if (record.can_train === false) return `- ${dayName}: ${labels.canTrainLabel || 'Can train'}: ${labels.no || 'no'}`;
+    if (record.can_train !== true) return `- ${dayName}: ${labels.availabilityUnconfigured || 'Availability not configured; ask for confirmation'}`;
+    const periods = (record.available_periods ?? []).map((period) => labels.periods?.[period] || period).join('; ');
+    const location = String(record.location ?? '').trim();
+    return `- ${dayName}: ${labels.canTrainLabel || 'Can train'}: ${labels.yes || 'yes'}; ${labels.periodsLabel || 'Periods available'}: ${periods}; ${labels.durationPromptLabel || 'Maximum session time'}: ${record.available_minutes} ${labels.minutes || 'minutes'}; ${labels.locationLabel || 'Location'}: ${location}`;
+  });
+  prompt = replaceAll(prompt, '{{AVAILABILITY_BLOCK}}', lines.join('\n'));
   const notes = String(contexto).trim();
   prompt = replaceAll(prompt, '{{CONTEXTO_OPCIONAL}}', notes === '' ? '-' : notes);
   prompt = replaceAll(prompt, '{{SHOES_BLOCK}}', formatShoesBlock(shoes, messages, preferences));
@@ -527,78 +475,39 @@ export function readTargetDateIso(input, picker, language = 'pt-BR') {
   return pickerValue || readDatePickerValue(input) || normalizeTargetDate(input?.value, language);
 }
 
-export const DAY_INPUT_IDS = {
-  segunda: 'dispSeg',
-  terca: 'dispTer',
-  quarta: 'dispQua',
-  quinta: 'dispQui',
-  sexta: 'dispSex',
-  sabado: 'dispSab',
-  domingo: 'dispDom',
-};
-
-export const LOCATION_INPUT_IDS = {
-  segunda: 'locSeg',
-  terca: 'locTer',
-  quarta: 'locQua',
-  quinta: 'locQui',
-  sexta: 'locSex',
-  sabado: 'locSab',
-  domingo: 'locDom',
-};
-
-export function validatePromptFields({ targetDate = '', language = 'pt-BR', baseLocation = '', disponibilidade = {}, localizacao = {} } = {}) {
+export function validatePromptFields({ targetDate = '', language = 'pt-BR', disponibilidade = {} } = {}) {
   const missing = [];
   if (!normalizeTargetDate(targetDate, language)) missing.push('targetDate');
-  if (!DAY_KEYS.every((day) => String(disponibilidade[day] ?? '').trim())) missing.push('availability');
-  const hasBaseLocation = String(baseLocation ?? '').trim() !== '';
-  const hasDailyLocations = DAY_KEYS.every((day) => String(localizacao[day] ?? '').trim() !== '');
-  if (!hasBaseLocation && !hasDailyLocations) missing.push('location');
+  const availability = Array.isArray(disponibilidade)
+    ? Object.fromEntries(disponibilidade.map((record) => [DAY_KEYS[DAY_DB_KEYS.indexOf(record.day)], record]))
+    : disponibilidade;
+  const hasAllDays = DAY_KEYS.every((day) => availability[day]?.can_train === false || (
+    availability[day]?.can_train === true && Array.isArray(availability[day]?.available_periods) &&
+    availability[day].available_periods.some((period) => PERIOD_KEYS.includes(period)) &&
+    Number.isInteger(availability[day]?.available_minutes) && availability[day].available_minutes > 0 &&
+    String(availability[day]?.location ?? '').trim() !== ''
+  ));
+  if (!hasAllDays) missing.push('availability');
   return { valid: missing.length === 0, missing };
 }
 
-export function buildDayRowHtml(day, { dayLabel, routine, locationPlaceholder }) {
-  return `<div class="day-row">
-  <label for="${DAY_INPUT_IDS[day]}" class="day-label"><span data-i18n="aiCoach.days.${DAY_LOCALE_KEYS[day]}">${dayLabel}</span><span class="required-mark" aria-hidden="true">*</span></label>
-  <input type="text" id="${DAY_INPUT_IDS[day]}" value="${routine}" autocomplete="off" required>
-  <input type="text" id="${LOCATION_INPUT_IDS[day]}" data-i18n-placeholder="aiCoach.location" placeholder="${locationPlaceholder}" autocomplete="off">
-</div>`;
-}
-
-export function readDayInputState(getValue) {
-  const state = {};
-  for (const day of DAY_KEYS) {
-    state[day] = {
-      availability: getValue(DAY_INPUT_IDS[day]),
-      location: getValue(LOCATION_INPUT_IDS[day]),
-    };
-  }
-  return state;
-}
-
-export function applyDayInputState(state, setValue) {
-  for (const day of DAY_KEYS) {
-    const record = state[day] ?? {};
-    if (record.availability !== undefined) {
-      setValue(DAY_INPUT_IDS[day], record.availability);
-    }
-    if (record.location !== undefined) {
-      setValue(LOCATION_INPUT_IDS[day], record.location);
-    }
-  }
-}
-
-export function renderDayGrid({ weekStart = 'Monday', routine = '', dayLabel = (day) => day, locationPlaceholder = 'Location', grid, getValue, setValue }) {
-  const previous = readDayInputState(getValue);
-  grid.innerHTML = orderedDayKeys(weekStart)
-    .map((day) => buildDayRowHtml(day, {
-      dayLabel: dayLabel(day),
-      routine,
-      locationPlaceholder,
-    }))
-    .join('');
-  applyDayInputState(previous, setValue);
-  return grid.innerHTML;
+export function buildDayRowHtml(day, { dayLabel, messages = {}, state = {} }) {
+  const dbDay = DAY_DB_KEYS[DAY_KEYS.indexOf(day)];
+  const periods = PERIOD_KEYS.map((period) => `<label class="period-chip"><input type="checkbox" data-period="${period}" ${state.available_periods?.includes(period) ? 'checked' : ''}><span>${messages.periods?.[period] || period}</span></label>`).join('');
+  const options = `<option value="" ${state.available_minutes == null ? 'selected' : ''}>${messages.durationPlaceholder || ''}</option>${(messages.durationOptions || []).map((option) => `<option value="${option.value}" ${state.available_minutes === option.value ? 'selected' : ''}>${option.label}</option>`).join('')}`;
+  return `<fieldset class="day-row" data-day="${dbDay}">
+  <legend class="day-label">${dayLabel}</legend>
+  <div class="availability-choice" role="radiogroup" aria-label="${messages.canTrain || ''}">
+    <label class="choice-chip"><input type="radio" name="canTrain-${dbDay}" value="yes" ${state.can_train === true ? 'checked' : ''}><span>${messages.yesShort || ''}</span></label>
+    <label class="choice-chip"><input type="radio" name="canTrain-${dbDay}" value="no" ${state.can_train === false ? 'checked' : ''}><span>${messages.noShort || ''}</span></label>
+  </div>
+  <div class="day-details" ${state.can_train === true ? '' : 'hidden'}>
+    <fieldset class="period-group"><legend>${messages.periodsLabel || ''}</legend><div class="period-list">${periods}</div></fieldset>
+    <label class="day-field">${messages.durationLabel || ''}<select data-duration>${options}</select><span class="field-hint">${messages.durationHint || ''}</span></label>
+    <label class="day-field">${messages.locationLabel || ''}<input type="text" data-location maxlength="200" value="${String(state.location || '').replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;')}" autocomplete="off"></label>
+  <p class="day-error" id="availability-error-${dbDay}" data-day-error hidden></p>
+  </div>
+</fieldset>`;
 }
 
 const COPY_FEEDBACK_MS = 2000;
@@ -616,6 +525,11 @@ function setupAiCoachPage() {
   const optionalContextInput = document.getElementById('optionalContext');
   const baseLocationInput = document.getElementById('baseLocation');
   const availabilityGrid = document.getElementById('availabilityGrid');
+  const applyWeekdaysButton = document.getElementById('applyWeekdays');
+  const saveAvailabilityButton = document.getElementById('saveAvailability');
+  const availabilityStatus = document.getElementById('availabilityStatus');
+  const availabilityError = document.getElementById('availabilityError');
+  const availabilityReview = document.getElementById('availabilityReview');
   const resultSection = document.getElementById('resultSection');
   const promptOutput = document.getElementById('promptOutput');
   const copyBtn = document.getElementById('copyBtn');
@@ -632,50 +546,141 @@ function setupAiCoachPage() {
     onChange: () => updateValidation(),
   });
 
-  let lastRoutineDefault = t('aiCoach.defaultRoutine') || defaultRoutineFor(i18n.language);
-  function renderDayRows() {
-    renderDayGrid({
-      weekStart: getUserPreferences().first_day_of_week,
-      routine: lastRoutineDefault,
-      dayLabel: (day) => t(`aiCoach.days.${DAY_LOCALE_KEYS[day]}`) || day,
-      locationPlaceholder: t('aiCoach.location') || 'Location',
-      grid: availabilityGrid,
-      getValue: (id) => document.getElementById(id)?.value,
-      setValue: (id, value) => {
-        const input = document.getElementById(id);
-        if (input) input.value = value;
-      },
+  function readFormFields() {
+    return Object.fromEntries(DAY_KEYS.map((day, index) => {
+      const dbDay = DAY_DB_KEYS[index];
+      const row = availabilityGrid.querySelector(`[data-day="${dbDay}"]`);
+      const selected = row?.querySelector(`input[name="canTrain-${dbDay}"]:checked`)?.value;
+      return [day, {
+        can_train: selected === 'yes' ? true : selected === 'no' ? false : null,
+        available_periods: selected === 'yes'
+          ? [...(row?.querySelectorAll('[data-period]:checked') || [])].map((input) => input.dataset.period)
+          : [],
+        available_minutes: selected === 'yes' && row?.querySelector('[data-duration]')?.value
+          ? Number(row.querySelector('[data-duration]').value) : null,
+        location: selected === 'yes' ? row?.querySelector('[data-location]')?.value || '' : '',
+      }];
+    }));
+  }
+
+  function renderDayRows(states = readFormFields()) {
+    const messages = i18n.messages.aiCoach;
+    availabilityGrid.innerHTML = orderedDayKeys(getUserPreferences().first_day_of_week).map((day) =>
+      buildDayRowHtml(day, { dayLabel: t(`aiCoach.days.${DAY_LOCALE_KEYS[day]}`), messages, state: states[day] || {} })
+    ).join('');
+    availabilityGrid.querySelectorAll('.day-row').forEach((row) => {
+      const selected = row.querySelector('input[type="radio"]:checked')?.value;
+      const details = row.querySelector('.day-details');
+      details.hidden = selected !== 'yes';
+      details.querySelectorAll('input, select').forEach((input) => { input.disabled = selected !== 'yes'; });
     });
   }
-  renderDayRows();
 
-  function readFormFields() {
-    const disponibilidade = {};
-    for (const [day, inputId] of Object.entries(DAY_INPUT_IDS)) {
-      const input = document.getElementById(inputId);
-      if (input) disponibilidade[day] = input.value;
+  function applyAvailabilityState(week) {
+    const states = availabilityDefaults();
+    for (const record of week.days || []) {
+      const day = DAY_KEYS[DAY_DB_KEYS.indexOf(record.day)];
+      if (day) states[day] = record;
     }
-    const localizacao = {};
-    for (const [day, inputId] of Object.entries(LOCATION_INPUT_IDS)) {
-      const input = document.getElementById(inputId);
-      if (input) localizacao[day] = input.value;
-    }
-    return { disponibilidade, localizacao };
+    renderDayRows(states);
+    availabilityReview.hidden = !week.needsReview;
+    availabilityReview.textContent = t('aiCoach.availabilityReview');
   }
 
+  let availabilityTouched = false;
+  let availabilityStatusKey = '';
+  function setAvailabilityStatus(key) {
+    availabilityStatusKey = key;
+    availabilityStatus.textContent = key ? t(`aiCoach.${key}`) : '';
+  }
+
+  async function loadAvailability() {
+    try {
+      const saved = await fetchAiCoachAvailability();
+      if (!availabilityTouched) applyAvailabilityState(saved);
+      setAvailabilityStatus('');
+    } catch {
+      setAvailabilityStatus('availabilityLoadError');
+    }
+    updateValidation();
+  }
+
+  async function persistAvailability() {
+    const fields = readFormFields();
+    const validation = validatePromptFields({ targetDate: readTargetDateIso(targetDateInput, targetDatePicker, i18n.language), language: i18n.language, disponibilidade: fields });
+    if (validation.missing.includes('availability')) {
+      availabilityError.textContent = t('aiCoach.availabilityValidation');
+      return false;
+    }
+    const days = DAY_KEYS.map((day, index) => ({ day: DAY_DB_KEYS[index], ...fields[day] }));
+    try {
+      const saved = await saveAiCoachAvailability(days);
+      applyAvailabilityState(saved);
+      availabilityError.textContent = '';
+      setAvailabilityStatus('availabilitySaved');
+      return true;
+    } catch {
+      setAvailabilityStatus('availabilitySaveError');
+      return false;
+    }
+  }
+
+  renderDayRows();
+  void loadAvailability();
+
   function updateValidation() {
-    const { disponibilidade, localizacao } = readFormFields();
+    const disponibilidade = readFormFields();
     const validation = validatePromptFields({
       targetDate: readTargetDateIso(targetDateInput, targetDatePicker, i18n.language),
       language: i18n.language,
-      baseLocation: baseLocationInput.value,
       disponibilidade,
-      localizacao,
     });
     generateBtn.disabled = !validation.valid;
     generateBtn.setAttribute('aria-disabled', String(!validation.valid));
     targetDateInput.setAttribute('aria-invalid', String(validation.missing.includes('targetDate')));
-    baseLocationInput.setAttribute('aria-invalid', String(validation.missing.includes('location')));
+    availabilityGrid.setAttribute('aria-invalid', String(validation.missing.includes('availability')));
+    availabilityGrid.setAttribute('aria-describedby', availabilityError.id);
+    availabilityError.textContent = validation.missing.includes('availability') ? t('aiCoach.availabilityValidation') : '';
+    availabilityGrid.querySelectorAll('.availability-choice').forEach((group) => {
+      const row = group.closest('.day-row');
+      const dayIndex = DAY_DB_KEYS.indexOf(row.dataset.day);
+      const day = DAY_KEYS[dayIndex];
+      const unset = disponibilidade[day].can_train === null;
+      group.setAttribute('aria-invalid', String(unset));
+      group.setAttribute('aria-describedby', availabilityError.id);
+    });
+    for (const [day, dayIndex] of DAY_KEYS.map((day, index) => [day, index])) {
+      const record = disponibilidade[day];
+      const row = availabilityGrid.querySelector(`[data-day="${DAY_DB_KEYS[dayIndex]}"]`);
+      if (!row) continue;
+      if (record.can_train !== true) {
+        const error = row.querySelector('[data-day-error]');
+        error.hidden = true;
+        error.textContent = '';
+        continue;
+      }
+      const periods = row.querySelector('.period-group');
+      const duration = row.querySelector('[data-duration]');
+      const location = row.querySelector('[data-location]');
+      const errors = [];
+      if (record.available_periods.length === 0) errors.push(t('aiCoach.availabilityNeedsPeriods'));
+      if (!Number.isInteger(record.available_minutes) || record.available_minutes <= 0) errors.push(t('aiCoach.availabilityNeedsDuration'));
+      if (!record.location.trim()) errors.push(t('aiCoach.availabilityNeedsLocation'));
+      const error = row.querySelector('[data-day-error]');
+      error.textContent = errors.join(' ');
+      error.hidden = errors.length === 0;
+      const errorId = error.id;
+      periods.setAttribute('aria-invalid', String(errors.some((value) => value === t('aiCoach.availabilityNeedsPeriods'))));
+      periods.setAttribute('aria-describedby', errorId);
+      periods.querySelectorAll('input').forEach((input) => {
+        input.setAttribute('aria-invalid', String(errors.some((value) => value === t('aiCoach.availabilityNeedsPeriods'))));
+        input.setAttribute('aria-describedby', errorId);
+      });
+      duration.setAttribute('aria-invalid', String(errors.some((value) => value === t('aiCoach.availabilityNeedsDuration'))));
+      duration.setAttribute('aria-describedby', errorId);
+      location.setAttribute('aria-invalid', String(errors.some((value) => value === t('aiCoach.availabilityNeedsLocation'))));
+      location.setAttribute('aria-describedby', errorId);
+    }
     return validation;
   }
 
@@ -686,37 +691,67 @@ function setupAiCoachPage() {
     if (next === 'Monday' || next === 'Sunday') renderDayRows();
   });
 
-  // The base location cascades to every day's location input. Each day can
-  // still be overridden manually afterwards — a later base-location edit
-  // simply rewrites all days again.
-  baseLocationInput.addEventListener('input', () => {
-    for (const inputId of Object.values(LOCATION_INPUT_IDS)) {
-      const input = document.getElementById(inputId);
-      if (input) input.value = baseLocationInput.value;
+  // A base location is an explicit user supplied convenience, copied into
+  // available day inputs. Each day remains independent afterwards.
+  baseLocationInput.addEventListener('change', () => {
+    availabilityTouched = true;
+    availabilityGrid.querySelectorAll('[data-location]').forEach((input) => {
+      if (!input.disabled && !input.value.trim()) input.value = baseLocationInput.value;
+    });
+    updateValidation();
+  });
+  availabilityGrid.addEventListener('change', (event) => {
+    availabilityTouched = true;
+    const row = event.target.closest('.day-row');
+    if (row && event.target.matches('input[type="radio"]')) {
+      const details = row.querySelector('.day-details');
+      const available = event.target.value === 'yes';
+      details.hidden = !available;
+      details.querySelectorAll('input, select').forEach((input) => { input.disabled = !available; });
+      if (available) {
+        const location = row.querySelector('[data-location]');
+        if (location && !location.value.trim()) location.value = baseLocationInput.value;
+      } else {
+        details.querySelectorAll('[data-period]').forEach((input) => { input.checked = false; });
+        row.querySelector('[data-duration]').value = '';
+        row.querySelector('[data-location]').value = '';
+      }
     }
     updateValidation();
   });
-  availabilityGrid.addEventListener('input', updateValidation);
+  availabilityGrid.addEventListener('input', () => {
+    availabilityTouched = true;
+    updateValidation();
+  });
+  applyWeekdaysButton.addEventListener('click', () => {
+    const states = readFormFields();
+    const monday = states.segunda;
+    if (monday.can_train === null) {
+      setAvailabilityStatus('availabilityNoMonday');
+      return;
+    }
+    for (const day of ['terca', 'quarta', 'quinta', 'sexta']) states[day] = structuredClone(monday);
+    availabilityTouched = true;
+    renderDayRows(states);
+    updateValidation();
+  });
+  saveAvailabilityButton.addEventListener('click', () => { void persistAvailability(); });
 
   document.addEventListener('app:languagechange', () => {
-    const nextDefault = t('aiCoach.defaultRoutine') || defaultRoutineFor(i18n.language);
-    const currentValues = {};
-    for (const [day, inputId] of Object.entries(DAY_INPUT_IDS)) {
-      const input = document.getElementById(inputId);
-      if (input) currentValues[day] = input.value;
-    }
-    const updated = applyRoutineDefault(currentValues, lastRoutineDefault, nextDefault);
-    for (const [day, value] of Object.entries(updated)) {
-      const input = document.getElementById(DAY_INPUT_IDS[day]);
-      if (input) input.value = value;
-    }
-    lastRoutineDefault = nextDefault;
+    renderDayRows();
+    applyWeekdaysButton.textContent = t('aiCoach.applyWeekdays');
+    saveAvailabilityButton.textContent = t('aiCoach.saveAvailability');
+    availabilityReview.textContent = t('aiCoach.availabilityReview');
+    if (availabilityStatusKey) availabilityStatus.textContent = t(`aiCoach.${availabilityStatusKey}`);
     const targetIso = readTargetDateIso(targetDateInput, targetDatePicker, i18n.language);
     targetDateInput.dataset.iso = targetIso;
     targetDateInput.value = targetIso;
     targetDatePicker.refresh();
     updateValidation();
   });
+
+  applyWeekdaysButton.textContent = t('aiCoach.applyWeekdays');
+  saveAvailabilityButton.textContent = t('aiCoach.saveAvailability');
 
   let copiedTimer = null;
 
@@ -737,13 +772,17 @@ function setupAiCoachPage() {
 
   async function handleGenerate(event) {
     event.preventDefault();
-    const { disponibilidade, localizacao } = readFormFields();
+    const disponibilidade = readFormFields();
     const validation = updateValidation();
     if (!validation.valid) return;
     const targetIso = readTargetDateIso(targetDateInput, targetDatePicker, i18n.language);
     const targetDate = parseInputDate(targetIso);
 
     generateBtn.disabled = true;
+    if (!await persistAvailability()) {
+      generateBtn.disabled = false;
+      return;
+    }
     let shoes = [];
     let cycle = {};
     let trainings = [];
@@ -765,8 +804,6 @@ function setupAiCoachPage() {
     promptOutput.textContent = buildPrompt({
       targetDate,
       disponibilidade,
-      localizacao,
-      baseLocation: baseLocationInput.value,
       contexto: optionalContextInput.value,
       lang: i18n.language,
       shoes,

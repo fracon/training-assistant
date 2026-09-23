@@ -25,7 +25,7 @@
         </div>
 
         <div class="field">
-          <label for="baseLocation"><span data-i18n="aiCoach.baseLocation">Base location</span><span class="required-mark" aria-hidden="true">*</span></label>
+          <label for="baseLocation" data-i18n="aiCoach.baseLocation">Base location</label>
           <input type="text" id="baseLocation" data-i18n-placeholder="aiCoach.locationPlaceholder" placeholder="Ex: City, Country" autocomplete="off">
           <p class="field-hint" data-i18n="aiCoach.baseLocationHint">Prefills every day's location. Override individual days in Availability.</p>
         </div>
@@ -33,7 +33,11 @@
         <fieldset class="availability-fieldset">
           <legend><span data-i18n="aiCoach.availability">Availability</span><span class="required-mark" aria-hidden="true">*</span></legend>
           <p class="field-hint" data-i18n="aiCoach.availabilityHint">Tell the coach when/where you can run each day.</p>
+          <p id="availabilityReview" class="availability-review" role="status" hidden></p>
+          <button type="button" id="applyWeekdays" class="btn-secondary"></button>
           <div class="availability-grid" id="availabilityGrid"></div>
+          <div class="availability-actions"><button type="button" id="saveAvailability" class="btn-secondary"></button><p id="availabilityStatus" role="status" aria-live="polite"></p></div>
+          <p id="availabilityError" class="availability-error" role="alert" aria-live="polite"></p>
         </fieldset>
 
         <div class="field">
