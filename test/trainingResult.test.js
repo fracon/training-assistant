@@ -843,9 +843,11 @@ test('training-result.html ships the expanded feedback grid and generator button
 
   assert.match(html, /<div class="feedback-grid">/);
   assert.match(html, /<select id="resultSourceSelect" class="input-control">/);
+  assert.match(html, /<div class="result-source-header">[\s\S]*id="importHelpBtn"[\s\S]*<\/div>\s*<select id="resultSourceSelect"/);
   assert.match(html, /data-i18n="session\.resultSourceFit">Import FIT or ZIP file/);
   assert.match(html, /data-i18n="session\.resultSourceManual">Enter data manually/);
   assert.match(html, /<div class="field fit-field" id="fitField">/);
+  assert.doesNotMatch(html.match(/<div class="field fit-field" id="fitField">[\s\S]*?<\/div>\s*<div class="field field-wide manual-results-field/s)?.[0] ?? '', /importHelpBtn/);
   assert.match(
     html,
     /<label for="fitFile" class="file-dropzone" id="fitDropzone">/,

@@ -50,18 +50,21 @@ test('COROS guidance matches the official app export flow in both locales', asyn
 
 test('training result exposes the translated multibrand guide without native title or remote scripts', () => {
   const html = readFileSync(join(__dirname, '..', 'src', 'public', 'training-result.html'), 'utf8');
-  const headerIndex = html.indexOf('class="fit-upload-header"');
+  const headerIndex = html.indexOf('class="result-source-header"');
   const helpIndex = html.indexOf('id="importHelpBtn"');
   const dropzoneIndex = html.indexOf('id="fitDropzone"');
   assert.ok(headerIndex >= 0 && headerIndex < helpIndex && helpIndex < dropzoneIndex);
-  assert.match(html, /class="fit-upload-header"[\s\S]*data-i18n="session\.resultSourceFit"/);
+  assert.match(html, /class="result-source-header"[\s\S]*data-i18n="session\.resultSourceLabel"/);
   assert.match(html, /id="importHelpBtn"[^>]*class="import-help-trigger"[^>]*type="button"/);
   assert.match(html, /id="importHelpBtn"[^>]*data-i18n-aria-label="session\.importHelp\.openAriaLabel"/);
   assert.match(html, /id="importHelpBtn"[\s\S]*data-i18n="session\.importHelp\.openShort"/);
   assert.match(html, /data-lucide="book-open" aria-hidden="true"/);
   assert.doesNotMatch(html, /id="importHelpBtn"[\s\S]*data-lucide="circle-help"/);
   assert.doesNotMatch(html, /id="importHelpBtn"[^>]*btn-secondary/);
-  assert.doesNotMatch(html.slice(0, dropzoneIndex), /<label[^>]*id="importHelpBtn"/);
+  assert.equal((html.match(/id="importHelpBtn"/g) ?? []).length, 1);
+  const fitField = html.match(/<div class="field fit-field" id="fitField">[\s\S]*?<\/div>\s*<div class="field field-wide manual-results-field/s)?.[0] ?? '';
+  assert.doesNotMatch(fitField, /importHelpBtn/);
+  assert.doesNotMatch(html, /id="onboardingResultHint"|Pronto para registrar o resultado deste treino\?|Ready to add this workout result\?/);
   assert.equal(lookup(en, 'session.importHelp.openShort'), 'How to import?');
   assert.equal(lookup(pt, 'session.importHelp.openShort'), 'Como importar?');
   assert.equal(lookup(en, 'session.importHelp.openAriaLabel'), 'How to import a workout file');
@@ -86,9 +89,9 @@ test('training result exposes the translated multibrand guide without native tit
 
 test('import guidance trigger keeps the compact responsive ghost layout', () => {
   const css = readFileSync(join(__dirname, '..', 'src', 'public', 'training-result.css'), 'utf8');
-  assert.match(css, /\.fit-upload-header\s*\{[^}]*display:\s*flex[^}]*justify-content:\s*space-between/);
+  assert.match(css, /\.result-source-header\s*\{[^}]*display:\s*flex[^}]*justify-content:\s*space-between/);
   assert.match(css, /\.import-help-trigger\s*\{[^}]*border:\s*0[^}]*background:\s*transparent[^}]*cursor:\s*pointer/);
   assert.match(css, /\.import-help-trigger:focus-visible\s*\{[^}]*outline:/);
-  assert.match(css, /@media \(max-width: 560px\)[\s\S]*\.fit-upload-header\s*\{\s*flex-wrap:\s*wrap;/);
+  assert.match(css, /@media \(max-width: 560px\)[\s\S]*\.result-source-header\s*\{\s*align-items:\s*flex-start;\s*flex-wrap:\s*wrap;/);
   assert.doesNotMatch(css, /\.import-help-trigger\s*\{[^}]*align-self:\s*center[^}]*margin-top:/);
 });

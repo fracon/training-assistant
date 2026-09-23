@@ -84,20 +84,19 @@
           </div>
 
           <div class="field field-wide">
-            <label class="field-label" for="resultSourceSelect" data-i18n="session.resultSourceLabel">How would you like to register the result?</label>
+            <div class="result-source-header">
+              <label class="field-label" for="resultSourceSelect" data-i18n="session.resultSourceLabel">How would you like to register the result?</label>
+              <button id="importHelpBtn" class="import-help-trigger" type="button" data-i18n-aria-label="session.importHelp.openAriaLabel">
+                <i data-lucide="book-open" aria-hidden="true"></i>
+                <span data-i18n="session.importHelp.openShort">How to import?</span>
+              </button>
+            </div>
             <select id="resultSourceSelect" class="input-control">
               <option value="fit" data-i18n="session.resultSourceFit">Import FIT or ZIP file</option>
               <option value="manual" data-i18n="session.resultSourceManual">Enter data manually</option>
             </select>
           </div>
           <div class="field fit-field" id="fitField">
-            <div class="fit-upload-header">
-              <span class="fit-upload-label" data-i18n="session.resultSourceFit">Import FIT or ZIP file</span>
-              <button id="importHelpBtn" class="import-help-trigger" type="button" data-i18n-aria-label="session.importHelp.openAriaLabel">
-                <i data-lucide="book-open" aria-hidden="true"></i>
-                <span data-i18n="session.importHelp.openShort">How to import?</span>
-              </button>
-            </div>
             <label for="fitFile" class="file-dropzone" id="fitDropzone">
               <input type="file" id="fitFile" accept=".fit,.zip" style="display: none;">
               <div class="dropzone-text-primary">

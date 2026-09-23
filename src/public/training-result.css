@@ -296,8 +296,8 @@ body {
   margin-top: 0;
 }
 
-.fit-upload-header { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin-bottom: 0.5rem; }
-.fit-upload-label { color: var(--ink); font-size: 0.85rem; font-weight: 600; }
+.result-source-header { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin-bottom: 0.5rem; }
+.result-source-header .field-label { margin-bottom: 0; }
 .import-help-trigger { display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; min-height: 2rem; padding: 0.25rem 0.375rem; border: 0; border-radius: 0.375rem; background: transparent; color: var(--accent-deep); font: inherit; font-size: 0.875rem; font-weight: 600; cursor: pointer; transition: color 0.15s ease, text-decoration-color 0.15s ease; }
 .import-help-trigger svg { width: 15px; height: 15px; }
 .import-help-trigger:hover { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
@@ -340,7 +340,7 @@ body {
   .planned-card .card-head { align-items: flex-start; flex-wrap: wrap; }
   .planned-card .session-actions { justify-content: flex-start; width: 100%; }
   .planned-card .session-actions .workout-creation-trigger { min-width: 0; white-space: normal; text-align: left; }
-  .fit-upload-header { flex-wrap: wrap; }
+  .result-source-header { align-items: flex-start; flex-wrap: wrap; }
   .import-help-dialog { padding: 8px; align-items: end; }
   .import-help-card { max-height: calc(100vh - 16px); padding: 18px; border-radius: 18px 18px 0 0; }
   .import-help-provider-list { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; }

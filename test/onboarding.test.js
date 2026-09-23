@@ -1141,7 +1141,25 @@ test('authenticated training-result guidance and feedback shoes render by canoni
         const api=await fetch('/api/trainings/'+new URL(location.href).searchParams.get('id')).then(r=>r.json()).catch(()=>null);
         if(select&&api?.training&&document.body.classList.contains('shell-mounted')){
           await new Promise(r=>setTimeout(r,250));
-          const initial={source:api.training.result_data_source,hintPresent:Boolean(document.getElementById('onboardingResultHint')),active:[...select.options].some(o=>o.value==='result-active'),retired:[...select.options].find(o=>o.value==='result-retired')?.textContent,retiredDisabled:[...select.options].find(o=>o.value==='result-retired')?.disabled,foreign:[...select.options].some(o=>o.value==='result-foreign-retired'),scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth};
+          const importButton=document.getElementById('importHelpBtn');
+          const sourceSelect=document.getElementById('resultSourceSelect');
+          const manualValues=['manualDistance','manualHours','manualMinutes','manualSeconds','manualAvgHr','manualMaxHr','manualElevation','manualCalories'].map(id=>document.getElementById(id)?.value);
+          const importInitial={visible:!importButton.hidden,rect:{width:importButton.getBoundingClientRect().width,height:importButton.getBoundingClientRect().height},insideHidden:Boolean(importButton.closest('[hidden]')),tabIndex:importButton.tabIndex,source:sourceSelect.value,manualVisible:!document.getElementById('manualResultsField').hidden,fitVisible:!document.getElementById('fitField').hidden};
+          importButton.focus(); importButton.click();
+          await new Promise((resolve,reject)=>{const end=Date.now()+2000;const wait=()=>{const dialog=document.getElementById('importHelpDialog');if(dialog&&!dialog.hidden){resolve();return}if(Date.now()>end){reject(new Error('Import guide did not open'));return}setTimeout(wait,20)};wait()});
+          const dialog=document.getElementById('importHelpDialog');
+          const importOpen={focus:document.activeElement?.getAttribute('data-import-help-close'),platforms:dialog.querySelectorAll('[data-provider-id]').length};
+          document.querySelector('.lang-switch [data-lang="en-US"]')?.click();
+          await new Promise(r=>setTimeout(r,100));
+          const englishGuide=dialog.querySelector('[data-import-help-title]')?.textContent;
+          document.querySelector('.lang-switch [data-lang="pt-BR"]')?.click();
+          await new Promise(r=>setTimeout(r,100));
+          dialog.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+          await new Promise((resolve,reject)=>{const end=Date.now()+2000;const wait=()=>{if(dialog.hidden){resolve();return}if(Date.now()>end){reject(new Error('Import guide did not close'));return}setTimeout(wait,20)};wait()});
+          const importClosed={restored:document.activeElement===importButton,source:sourceSelect.value,unchangedManual:JSON.stringify(manualValues)===JSON.stringify(['manualDistance','manualHours','manualMinutes','manualSeconds','manualAvgHr','manualMaxHr','manualElevation','manualCalories'].map(id=>document.getElementById(id)?.value))};
+          sourceSelect.value='fit'; sourceSelect.dispatchEvent(new Event('change')); const fitVisibleAfterSwitch=!document.getElementById('fitField').hidden;
+          sourceSelect.value='manual'; sourceSelect.dispatchEvent(new Event('change')); const manualVisibleAfterSwitch=!document.getElementById('manualResultsField').hidden;
+          const initial={source:api.training.result_data_source,hintPresent:Boolean(document.getElementById('onboardingResultHint')),active:[...select.options].some(o=>o.value==='result-active'),retired:[...select.options].find(o=>o.value==='result-retired')?.textContent,retiredDisabled:[...select.options].find(o=>o.value==='result-retired')?.disabled,foreign:[...select.options].some(o=>o.value==='result-foreign-retired'),scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth,importInitial,importOpen,englishGuide,importClosed,fitVisibleAfterSwitch,manualVisibleAfterSwitch};
           resolve(initial);return;
         }
         if(Date.now()>deadline){reject(new Error('Authenticated training result page did not finish loading'));return}
@@ -1159,9 +1177,24 @@ test('authenticated training-result guidance and feedback shoes render by canoni
         assert.equal(result.hintPresent, false, `${source} has no redundant result hint`);
         assert.equal(result.active, true);
         assert.equal(result.retired, 'Kinesis Retired (Aposentado)');
-        assert.equal(result.retiredDisabled, true);
-        assert.equal(result.foreign, false, 'the endpoint and page are scoped to the signed-in user');
-        assert.ok(result.scrollWidth <= result.viewportWidth, `${source} page fits ${viewport.width}px`);
+      assert.equal(result.retiredDisabled, true);
+      assert.equal(result.foreign, false, 'the endpoint and page are scoped to the signed-in user');
+      assert.ok(result.scrollWidth <= result.viewportWidth, `${source} page fits ${viewport.width}px`);
+      assert.equal(result.importInitial.visible, true, `${source} import guide trigger is visible`);
+      assert.ok(result.importInitial.rect.width > 0 && result.importInitial.rect.height > 0, `${source} import guide trigger has a target size`);
+      assert.equal(result.importInitial.insideHidden, false, `${source} import guide trigger is not inside hidden content`);
+      assert.ok(result.importInitial.tabIndex >= 0, `${source} import guide trigger is keyboard reachable`);
+      assert.equal(result.importInitial.source, source === 'manual' ? 'manual' : 'fit');
+      assert.equal(result.importOpen.focus, '');
+      assert.equal(result.importOpen.platforms, 7);
+      assert.match(result.englishGuide, /Import your workout/i);
+      assert.equal(result.importClosed.restored, true);
+      assert.equal(result.importClosed.source, source === 'manual' ? 'manual' : 'fit');
+      assert.equal(result.importClosed.unchangedManual, true);
+      assert.equal(result.importInitial.fitVisible, source !== 'manual');
+      assert.equal(result.importInitial.manualVisible, source === 'manual');
+      assert.equal(result.fitVisibleAfterSwitch, true);
+      assert.equal(result.manualVisibleAfterSwitch, true);
       }
     }
 
