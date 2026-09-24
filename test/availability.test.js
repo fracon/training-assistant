@@ -88,6 +88,30 @@ test('availability persistence is user scoped, canonical and idempotent', () => 
   db.close();
 });
 
+test('availability migration on the role-migrated main database retains admins and account data', () => {
+  const db = createDatabase({ filename: ':memory:' });
+  db.prepare(`INSERT INTO users (email, password_hash, role, preferred_lang, distance_unit)
+    VALUES ('main-admin@example.test', 'kept-hash', 'admin', 'pt-BR', 'mi')`).run();
+  db.prepare("INSERT INTO sessions (id, user_id, expires_at) VALUES ('kept-session', 1, '2999-01-01T00:00:00.000Z')").run();
+  db.prepare("INSERT INTO trainings (user_id, dia, tipo, treino, location) VALUES (1, '2026-09-21', 'Run', 'Easy run', 'Porto')").run();
+
+  // Model the PR #40 database: roles and its marker exist, while the new table
+  // and migration marker from this feature have not yet been installed.
+  db.exec('DROP TABLE ai_coach_availability');
+  db.prepare("DELETE FROM schema_migrations WHERE name = '2026-09-structured-ai-coach-availability-v1'").run();
+  migrateDatabase(db);
+  migrateDatabase(db);
+
+  assert.equal(db.prepare('SELECT role FROM users WHERE id = 1').get().role, 'admin');
+  assert.equal(db.prepare('SELECT preferred_lang FROM users WHERE id = 1').get().preferred_lang, 'pt-BR');
+  assert.equal(db.prepare('SELECT id FROM sessions WHERE id = ?').get('kept-session').id, 'kept-session');
+  assert.equal(db.prepare('SELECT treino, location FROM trainings WHERE user_id = 1').get().location, 'Porto');
+  assert.deepEqual(getAvailabilityWeek(db, 1).days.map((day) => day.can_train), Array(7).fill(null));
+  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE name = '2026-09-user-roles-v1'").get().count, 1);
+  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE name = '2026-09-structured-ai-coach-availability-v1'").get().count, 1);
+  db.close();
+});
+
 test('every valid integer duration round-trips through persistence without loss', () => {
   const db = createDatabase({ filename: ':memory:' });
   db.prepare("INSERT INTO users (email, password_hash) VALUES ('minutes@example.test', 'hash')").run();

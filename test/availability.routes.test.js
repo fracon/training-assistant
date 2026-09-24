@@ -50,6 +50,7 @@ test('GET returns unconfigured values without inventing availability', async () 
 
 test('PUT validates and saves structured days while isolating users', async () => {
   const { app, cookies, db } = await setup();
+  db.prepare("UPDATE users SET role = 'admin' WHERE email = 'availability-two@example.test'").run();
   const days = payload();
   const response = await app.inject({ method: 'PUT', url: '/api/ai-coach/availability', headers: { cookie: cookies[0] }, payload: { days } });
   assert.equal(response.statusCode, 200);
@@ -62,7 +63,11 @@ test('PUT validates and saves structured days while isolating users', async () =
   });
   const other = await app.inject({ method: 'GET', url: '/api/ai-coach/availability', headers: { cookie: cookies[1] } });
   assert.equal(other.json().availability.needsReview, true);
-  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM ai_coach_availability').get().count, 7);
+  const adminWrite = await app.inject({ method: 'PUT', url: '/api/ai-coach/availability', headers: { cookie: cookies[1] }, payload: { days } });
+  assert.equal(adminWrite.statusCode, 200);
+  const ownerStillHasOwnData = await app.inject({ method: 'GET', url: '/api/ai-coach/availability', headers: { cookie: cookies[0] } });
+  assert.equal(ownerStillHasOwnData.json().availability.days[0].location, 'Fânzeres, Gondomar');
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM ai_coach_availability').get().count, 14);
   await app.close();
 });
 

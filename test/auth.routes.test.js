@@ -49,6 +49,7 @@ test('login issues an http-only session cookie backed by a database row', async 
       first_day_of_week: 'Monday',
       distance_unit: 'km',
       temperature_unit: 'C',
+      role: 'user',
     },
   });
   assert.ok(!login.body.includes('password_hash'));
@@ -165,6 +166,7 @@ test('/api/me serves the authenticated profile from the session cookie', async (
       first_day_of_week: 'Monday',
       distance_unit: 'km',
       temperature_unit: 'C',
+      role: 'user',
     },
   });
 
