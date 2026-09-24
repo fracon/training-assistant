@@ -187,9 +187,29 @@ const DAY_KEYS = ['segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado', 'do
 const DAY_DB_KEYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 const PERIOD_KEYS = ['before_08', '08_12', '12_14', '14_18', 'after_18'];
 const MAX_AVAILABLE_MINUTES = 720;
+const MAX_LOCATION_LENGTH = 200;
 
 function isValidAvailableMinutes(value) {
   return Number.isInteger(value) && value >= 1 && value <= MAX_AVAILABLE_MINUTES;
+}
+
+function getLocationValidationError(location) {
+  if (typeof location !== 'string' || !location.trim()) return 'availabilityNeedsLocation';
+  if (location.trim().length > MAX_LOCATION_LENGTH) return 'availabilityLocationTooLong';
+  return null;
+}
+
+export function validateAvailabilityDay(record) {
+  if (record?.can_train === false) return [];
+  if (record?.can_train !== true) return ['availability'];
+  const errors = [];
+  if (!Array.isArray(record.available_periods) || !record.available_periods.some((period) => PERIOD_KEYS.includes(period))) {
+    errors.push('availabilityNeedsPeriods');
+  }
+  if (!isValidAvailableMinutes(record.available_minutes)) errors.push('availabilityNeedsDuration');
+  const locationError = getLocationValidationError(record.location);
+  if (locationError) errors.push(locationError);
+  return errors;
 }
 
 const DAY_LOCALE_KEYS = {
@@ -486,12 +506,7 @@ export function validatePromptFields({ targetDate = '', language = 'pt-BR', disp
   const availability = Array.isArray(disponibilidade)
     ? Object.fromEntries(disponibilidade.map((record) => [DAY_KEYS[DAY_DB_KEYS.indexOf(record.day)], record]))
     : disponibilidade;
-  const hasAllDays = DAY_KEYS.every((day) => availability[day]?.can_train === false || (
-    availability[day]?.can_train === true && Array.isArray(availability[day]?.available_periods) &&
-    availability[day].available_periods.some((period) => PERIOD_KEYS.includes(period)) &&
-    isValidAvailableMinutes(availability[day]?.available_minutes) &&
-    String(availability[day]?.location ?? '').trim() !== ''
-  ));
+  const hasAllDays = DAY_KEYS.every((day) => validateAvailabilityDay(availability[day]).length === 0);
   if (!hasAllDays) missing.push('availability');
   return { valid: missing.length === 0, missing };
 }
@@ -509,7 +524,7 @@ export function buildDayRowHtml(day, { dayLabel, messages = {}, state = {} }) {
   <div class="day-details" ${state.can_train === true ? '' : 'hidden'}>
     <fieldset class="period-group"><legend>${messages.periodsLabel || ''}</legend><div class="period-list">${periods}</div></fieldset>
     <label class="day-field">${messages.durationLabel || ''}<input type="number" data-duration min="1" max="${MAX_AVAILABLE_MINUTES}" step="1" inputmode="numeric" value="${duration}" placeholder="${messages.durationPlaceholder || ''}"><span class="field-hint">${messages.durationHint || ''}</span></label>
-    <label class="day-field">${messages.locationLabel || ''}<input type="text" data-location maxlength="200" value="${String(state.location || '').replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;')}" autocomplete="off"></label>
+    <label class="day-field">${messages.locationLabel || ''}<input type="text" data-location value="${String(state.location || '').replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;')}" autocomplete="off"></label>
   <p class="day-error" id="availability-error-${dbDay}" data-day-error hidden></p>
   </div>
 </fieldset>`;
@@ -700,23 +715,21 @@ function setupAiCoachPage() {
       const periods = row.querySelector('.period-group');
       const duration = row.querySelector('[data-duration]');
       const location = row.querySelector('[data-location]');
-      const errors = [];
-      if (record.available_periods.length === 0) errors.push(t('aiCoach.availabilityNeedsPeriods'));
-      if (!isValidAvailableMinutes(record.available_minutes)) errors.push(t('aiCoach.availabilityNeedsDuration'));
-      if (!record.location.trim()) errors.push(t('aiCoach.availabilityNeedsLocation'));
+      const dayErrorKeys = validateAvailabilityDay(record).filter((key) => key !== 'availability');
+      const errors = dayErrorKeys.map((key) => t(`aiCoach.${key}`));
       const error = row.querySelector('[data-day-error]');
       error.textContent = errors.join(' ');
       error.hidden = errors.length === 0;
       const errorId = error.id;
-      periods.setAttribute('aria-invalid', String(errors.some((value) => value === t('aiCoach.availabilityNeedsPeriods'))));
+      periods.setAttribute('aria-invalid', String(dayErrorKeys.includes('availabilityNeedsPeriods')));
       periods.setAttribute('aria-describedby', errorId);
       periods.querySelectorAll('input').forEach((input) => {
-        input.setAttribute('aria-invalid', String(errors.some((value) => value === t('aiCoach.availabilityNeedsPeriods'))));
+        input.setAttribute('aria-invalid', String(dayErrorKeys.includes('availabilityNeedsPeriods')));
         input.setAttribute('aria-describedby', errorId);
       });
-      duration.setAttribute('aria-invalid', String(errors.some((value) => value === t('aiCoach.availabilityNeedsDuration'))));
+      duration.setAttribute('aria-invalid', String(dayErrorKeys.includes('availabilityNeedsDuration')));
       duration.setAttribute('aria-describedby', errorId);
-      location.setAttribute('aria-invalid', String(errors.some((value) => value === t('aiCoach.availabilityNeedsLocation'))));
+      location.setAttribute('aria-invalid', String(dayErrorKeys.includes('availabilityNeedsLocation') || dayErrorKeys.includes('availabilityLocationTooLong')));
       location.setAttribute('aria-describedby', errorId);
     }
     return validation;

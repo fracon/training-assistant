@@ -40,6 +40,7 @@
     "availabilityNeedsPeriods": "Choose at least one available period.",
     "availabilityNeedsDuration": "Available time must be a whole number between 1 and 720 minutes.",
     "availabilityNeedsLocation": "Enter a location for this available day.",
+    "availabilityLocationTooLong": "Location must be at most 200 characters.",
     "availabilityNoMonday": "Set Monday's availability before applying it to weekdays.",
     "days": {
       "monday": "Monday",

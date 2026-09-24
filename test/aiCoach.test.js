@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const {
-  PROMPT_TEMPLATE, PROMPT_TEMPLATE_EN, TEMPLATE_BY_LANG, buildPrompt, validatePromptFields,
+  PROMPT_TEMPLATE, PROMPT_TEMPLATE_EN, TEMPLATE_BY_LANG, buildPrompt, validatePromptFields, validateAvailabilityDay,
   availabilityDefaults, buildDayRowHtml, nextMonday, previousWeekSummary,
   cycleContext, buildPromptContext, formatShoesBlock, copyPromptText, pad2,
   formatDiaSlashes, dateInputValue, parseInputDate, readTargetDateIso,
@@ -58,6 +58,22 @@ test('duration validation accepts every tested integer through 720 and rejects v
 test('availability duration control exposes the same inclusive upper limit as validation', () => {
   const html = buildDayRowHtml('segunda', { dayLabel: 'Segunda', state: week.segunda });
   assert.match(html, /data-duration min="1" max="720" step="1"/);
+});
+
+test('day location validation matches the trimmed 200-character backend contract', () => {
+  const valid = (location) => validateAvailabilityDay({ ...week.segunda, location });
+  assert.deepEqual(valid('x'), []);
+  assert.deepEqual(valid('x'.repeat(200)), []);
+  assert.deepEqual(valid('x'.repeat(201)), ['availabilityLocationTooLong']);
+  assert.deepEqual(valid(`  ${'x'.repeat(200)}  `), []);
+  assert.deepEqual(valid(`  ${'x'.repeat(201)}  `), ['availabilityLocationTooLong']);
+  assert.deepEqual(valid('   '), ['availabilityNeedsLocation']);
+  assert.deepEqual(validateAvailabilityDay({ ...week.terca, location: 'x'.repeat(201) }), [],
+    'unavailable days do not require a location');
+  assert.equal(validatePromptFields({ targetDate: '2026-09-28', disponibilidade: { ...week, segunda: { ...week.segunda, location: 'x'.repeat(200) } } }).valid, true);
+  assert.equal(validatePromptFields({ targetDate: '2026-09-28', disponibilidade: { ...week, segunda: { ...week.segunda, location: 'x'.repeat(201) } } }).valid, false);
+  assert.equal(messages.aiCoach.availabilityLocationTooLong, 'A localização deve ter no máximo 200 caracteres.');
+  assert.equal(enMessages.aiCoach.availabilityLocationTooLong, 'Location must be at most 200 characters.');
 });
 
 test('prompt prints unavailable days and structured windows, maximum minutes, and location', () => {

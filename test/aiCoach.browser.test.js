@@ -157,13 +157,55 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     assert.equal(initialAvailabilityLoaded, true);
     const newUserState = await evaluate(`(()=>({review:!document.getElementById('availabilityReview').hidden,unselected:[...document.querySelectorAll('#availabilityGrid .day-row')].every(row=>!row.querySelector('input[type="radio"]:checked')),locations:[...document.querySelectorAll('[data-location]')].every(input=>input.value==='')}))()`);
     assert.deepEqual(newUserState, { review: true, unselected: true, locations: true });
-    await command('Fetch.disable');
 
+    const overlongPrefill = await evaluate(`(()=>{
+      const base=document.getElementById('baseLocation');
+      base.value='L'.repeat(201);base.dispatchEvent(new Event('change',{bubbles:true}));
+      const monday=document.querySelector('[data-day="monday"]');
+      monday.querySelector('input[value="yes"]').click();
+      monday.querySelector('[data-period="12_14"]').click();
+      const duration=monday.querySelector('[data-duration]');duration.value='60';duration.dispatchEvent(new Event('input',{bubbles:true}));
+      const location=monday.querySelector('[data-location]');
+      const nativeFetch=window.fetch.bind(window);window.__locationPutCount=0;
+      window.fetch=(input,init)=>{if((init?.method||'GET').toUpperCase()==='PUT'&&String(input).includes('/api/ai-coach/availability'))window.__locationPutCount+=1;return nativeFetch(input,init)};
+      document.getElementById('saveAvailability').click();
+      document.getElementById('promptForm').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
+      return {valueLength:location.value.length,error:monday.querySelector('[data-day-error]').textContent,invalid:location.getAttribute('aria-invalid'),generateDisabled:document.getElementById('generateBtn').disabled,putCount:window.__locationPutCount,prompt:document.getElementById('promptOutput').textContent};
+    })()`);
+    assert.deepEqual(overlongPrefill, {
+      valueLength: 201,
+      error: 'A localização deve ter no máximo 200 caracteres.',
+      invalid: 'true',
+      generateDisabled: true,
+      putCount: 0,
+      prompt: '',
+    });
+
+    const exactLimitLocation = await evaluate(`(()=>{
+      const monday=document.querySelector('[data-day="monday"]');
+      monday.querySelector('input[value="no"]').click();
+      const exactTrimmedLimit='  '+'B'.repeat(200)+'  ';
+      const base=document.getElementById('baseLocation');base.value=exactTrimmedLimit;base.dispatchEvent(new Event('change',{bubbles:true}));
+      monday.querySelector('input[value="yes"]').click();
+      monday.querySelector('[data-period="12_14"]').click();
+      const duration=monday.querySelector('[data-duration]');duration.value='60';duration.dispatchEvent(new Event('input',{bubbles:true}));
+      const location=monday.querySelector('[data-location]');
+      for(const day of ['tuesday','wednesday','thursday','friday','saturday','sunday'])document.querySelector('[data-day="'+day+'"] input[value="no"]').click();
+      return {valueLength:location.value.length,trimmedLength:location.value.trim().length,errorHidden:monday.querySelector('[data-day-error]').hidden,invalid:location.getAttribute('aria-invalid'),generateDisabled:document.getElementById('generateBtn').disabled};
+    })()`);
+    assert.deepEqual(exactLimitLocation, { valueLength: 204, trimmedLength: 200, errorHidden: true, invalid: 'false', generateDisabled: false });
+    await command('Fetch.disable');
+    await evaluate(`document.getElementById('saveAvailability').click()`);
+    const exactLimitSaveStatus = await evaluate(`new Promise(resolve=>{const end=Date.now()+8000;const check=()=>{const status=document.getElementById('availabilityStatus').textContent.trim();if(status||Date.now()>end){resolve(status);return}requestAnimationFrame(check)};check()})`);
+    assert.equal(exactLimitSaveStatus, 'Disponibilidade salva.');
+    const exactLocationSaved = await app.inject({ method: 'GET', url: '/api/ai-coach/availability', headers: { cookie: `ta_session=${cookie}` } });
+    assert.equal(exactLocationSaved.json().availability.days[0].location, `  ${'B'.repeat(200)}  `);
     const desktop = await evaluate(`(()=>({width:innerWidth,scrollWidth:document.documentElement.scrollWidth,language:document.documentElement.lang,reviewVisible:!document.getElementById('availabilityReview').hidden,days:document.querySelectorAll('#availabilityGrid .day-row').length}))()`);
-    assert.deepEqual(desktop, { width: 1280, scrollWidth: 1280, language: 'pt-BR', reviewVisible: true, days: 7 });
+    assert.deepEqual(desktop, { width: 1280, scrollWidth: 1280, language: 'pt-BR', reviewVisible: false, days: 7 });
 
     await evaluate(`(()=>{
       const days=['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
+      for(const day of days)document.querySelector('[data-day="'+day+'"] input[value="no"]').click();
       for(const day of days){
         document.querySelector('[data-day="'+day+'"] input[value="yes"]').click();
         const row=document.querySelector('[data-day="'+day+'"]');
@@ -314,6 +356,9 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     const englishState = await evaluate(`(()=>({language:document.documentElement.lang,label:document.querySelector('[data-day="monday"] .period-group legend').textContent,periods:document.querySelectorAll('[data-day="monday"] [data-period]:checked').length,location:document.querySelector('[data-day="tuesday"] [data-location]').value}))()`);
     assert.deepEqual(englishState, { language: 'en-US', label: 'Available periods', periods: 1, location: 'Maspalomas, Gran Canaria' });
 
+    const englishLocationLimit = await evaluate(`(()=>{const location=document.querySelector('[data-day="monday"] [data-location]');const saved=location.value;location.value='E'.repeat(201);location.dispatchEvent(new Event('input',{bubbles:true}));const row=location.closest('.day-row');const state={error:row.querySelector('[data-day-error]').textContent,invalid:location.getAttribute('aria-invalid'),generateDisabled:document.getElementById('generateBtn').disabled};location.value=saved;location.dispatchEvent(new Event('input',{bubbles:true}));return state})()`);
+    assert.deepEqual(englishLocationLimit, { error: 'Location must be at most 200 characters.', invalid: 'true', generateDisabled: true });
+
     const englishLimit = await evaluate(`(()=>{const duration=document.querySelector('[data-day="monday"] [data-duration]');duration.value='721';duration.dispatchEvent(new Event('input',{bubbles:true}));const error=duration.closest('.day-row').querySelector('[data-day-error]').textContent;const disabled=document.getElementById('generateBtn').disabled;duration.value='75';duration.dispatchEvent(new Event('input',{bubbles:true}));return {error,disabled}})()`);
     assert.deepEqual(englishLimit, { error: 'Available time must be a whole number between 1 and 720 minutes.', disabled: true });
 
@@ -377,6 +422,6 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     if (chromeProcess.exitCode === null) await Promise.race([once(chromeProcess, 'exit'), delay(2000)]);
     await app.close();
     rmSync(profile, { recursive: true, force: true });
-    t.diagnostic('Verified authenticated AI Coach at 1280×800 and 390×844 in PT/EN, with save, weekday copy, multi-period selection, keyboard focus, and prompt output.');
+    t.diagnostic('Verified authenticated AI Coach at 1280×800 and 390×844 in PT/EN, including programmatic location prefill limits, field errors, blocked Save/Generate, and exact 200-character save.');
   }
 });
