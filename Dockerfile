@@ -18,6 +18,7 @@ WORKDIR /app
 COPY package*.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY src ./src
+COPY scripts/admin-bootstrap.js scripts/admin-promote.js scripts/admin-commands.js scripts/admin-runtime.js scripts/admin-prompts.js ./scripts/
 
 USER node
 

@@ -4,7 +4,12 @@ coverage
 .github
 *.md
 test
-scripts
+scripts/*
+!scripts/admin-bootstrap.js
+!scripts/admin-promote.js
+!scripts/admin-commands.js
+!scripts/admin-runtime.js
+!scripts/admin-prompts.js
 .env*
 Dockerfile
 docker-compose.yml

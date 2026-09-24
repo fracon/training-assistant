@@ -8,7 +8,7 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.11.0`); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.12.0`); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
@@ -27,6 +27,46 @@ domain modules are under `src/auth/`, `src/db/`, and the domain modules in
 by `src/db/database.js`. Ownership checks must scope reads and writes to the
 authenticated user. New schema changes must follow the existing idempotent
 migration patterns.
+
+User account operations live in `src/auth/`; the admin role check lives in
+`src/auth/requireAdmin.js`, and privileged account operations are isolated in
+`src/admin/operations.js`. Interactive commands live in `scripts/` and use the
+same dotenv configuration and `DATABASE_FILE`/`<cwd>/data/database.sqlite`
+path as `src/start.js`. The runtime Docker image must include the command
+entrypoints and continue to run as its non-root `node` user.
+
+## Account roles and administrative bootstrap
+
+- Each account has a database-constrained `role` with exactly two values:
+  `user` (default) and `admin`. Public registration always inserts `user` and
+  ignores unrecognized fields such as a submitted role. Account preference and
+  password endpoints update explicit fields only.
+- The idempotent migration adds `role` to existing users with the `user`
+  default. It preserves account IDs, password hashes, sessions, preferences,
+  onboarding fields, and related records; it never promotes based on account
+  order, email, or startup behavior. Re-running it preserves existing admins.
+- Authentication joins each protected request to the current user row, so the
+  role used by `createRequireAdmin()` reflects the database's current value.
+  The guard returns 401 without an authenticated user and 403 unless the role
+  is exactly `admin`; absent, invalid, or unknown roles are denied. Admin status
+  never bypasses user-scoped ownership checks.
+- `npm run admin:bootstrap` interactively creates the first administrator;
+  `npm run admin:promote` explicitly promotes an existing account after the
+  operator verifies its identity and confirms. Both require a TTY, reuse the
+  application's registration validation, password hashing, and database
+  initialization, and accept no password arguments. Bootstrap rechecks for an
+  admin and the email inside an atomic write transaction after input and
+  hashing; it cannot replace an existing user's password or promote an
+  occupied email. Promotion changes only `role`, creates no account, and is
+  idempotent.
+- Cancellation, EOF, mismatched passwords, and errors do not leave a partial
+  account; secret input is not echoed. Neither command runs on server/container
+  startup. In Docker/ZimaOS, run `docker exec -it <container-name> npm run
+  admin:bootstrap` or `admin:promote` so it uses the mounted `/app/data`
+  database. Access to the server/container is privileged.
+- This feature adds no admin panel, public bootstrap/promotion endpoint,
+  cross-user data access, role editor, demotion, suspension, or configurable
+  permission system.
 
 ## Current product behavior and invariants
 
@@ -180,10 +220,12 @@ focus and keyboard behavior, and ensure `[hidden]` elements are not visible or
 focusable when changing onboarding UI.
 
 `npm run test:coverage` enforces exactly 100% Statements, Branches, Functions,
-and Lines for c8-instrumented files under `src/**`, excluding `src/public/**`
-and `src/start.js`. This percentage is not instrumentation coverage of the
-frontend. Frontend behavior tests remain mandatory when corresponding frontend
-behavior changes. Run `git diff --check` before committing.
+and Lines for c8-instrumented files under `src/**` (excluding
+`src/public/**` and `src/start.js`) plus `scripts/admin-prompts.js`,
+`scripts/admin-runtime.js`, and `scripts/admin-commands.js`. This percentage is
+not instrumentation coverage of the frontend. Frontend behavior tests remain
+mandatory when corresponding frontend behavior changes. Run `git diff --check`
+before committing.
 
 ## Golden rules
 

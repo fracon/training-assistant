@@ -104,6 +104,7 @@ test('findActiveSession hydrates the user for valid tokens', () => {
       first_day_of_week: 'Monday',
       distance_unit: 'km',
       temperature_unit: 'C',
+      role: 'user',
     },
   });
 
