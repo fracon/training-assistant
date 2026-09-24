@@ -58,13 +58,13 @@ test('available days require known periods, positive bounded whole minutes, and 
   }
 });
 
-test('normalization deduplicates periods and trims locations', () => {
+test('normalization deduplicates periods and validates but preserves exact locations', () => {
   const result = normalizeAvailabilityWeek(validWeek({ monday: {
     available_periods: ['12_14', 'after_18', '12_14'], location: '  Porto  ',
   } }));
   assert.equal(result.valid, true);
   assert.deepEqual(result.days[0].available_periods, ['12_14', 'after_18']);
-  assert.equal(result.days[0].location, 'Porto');
+  assert.equal(result.days[0].location, '  Porto  ');
 });
 
 test('availability persistence is user scoped, canonical and idempotent', () => {
@@ -85,6 +85,18 @@ test('availability persistence is user scoped, canonical and idempotent', () => 
   saveAvailabilityWeek(db, 1, changed);
   assert.equal(getAvailabilityWeek(db, 1).days[0].available_minutes, 45);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM ai_coach_availability').get().count, 7);
+  db.close();
+});
+
+test('every valid integer duration round-trips through persistence without loss', () => {
+  const db = createDatabase({ filename: ':memory:' });
+  db.prepare("INSERT INTO users (email, password_hash) VALUES ('minutes@example.test', 'hash')").run();
+  for (const minutes of [1, 75, 137, 720]) {
+    const days = normalizeAvailabilityWeek(validWeek({ monday: { available_minutes: minutes } })).days;
+    const saved = saveAvailabilityWeek(db, 1, days);
+    assert.equal(saved.days[0].available_minutes, minutes);
+    assert.equal(getAvailabilityWeek(db, 1).days[0].available_minutes, minutes);
+  }
   db.close();
 });
 

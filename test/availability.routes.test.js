@@ -80,3 +80,20 @@ test('PUT rejects malformed payloads and values outside the domain contract', as
   assert.equal((await post({ days: missingLocation })).statusCode, 400);
   await app.close();
 });
+
+test('PUT and GET preserve arbitrary valid minutes and the exact submitted location', async () => {
+  const { app, cookies } = await setup();
+  const days = payload();
+  days[0].available_minutes = 75;
+  days[0].location = '  Fânzeres, Gondomar  ';
+  days[1].available_minutes = 137;
+  const put = await app.inject({ method: 'PUT', url: '/api/ai-coach/availability', headers: { cookie: cookies[0] }, payload: { days } });
+  assert.equal(put.statusCode, 200);
+  assert.equal(put.json().availability.days[0].available_minutes, 75);
+  assert.equal(put.json().availability.days[0].location, '  Fânzeres, Gondomar  ');
+  const get = await app.inject({ method: 'GET', url: '/api/ai-coach/availability', headers: { cookie: cookies[0] } });
+  assert.equal(get.json().availability.days[0].available_minutes, 75);
+  assert.equal(get.json().availability.days[0].location, '  Fânzeres, Gondomar  ');
+  assert.equal(get.json().availability.days[1].available_minutes, 137);
+  await app.close();
+});

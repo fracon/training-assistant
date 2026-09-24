@@ -163,8 +163,38 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+5000;const check=()=>{if(document.getElementById('availabilityStatus').textContent.trim())resolve(true);else if(Date.now()>end)reject(new Error('Save status did not appear'));else setTimeout(check,30)};check()})`);
     const persisted = await app.inject({ method: 'GET', url: '/api/ai-coach/availability', headers: { cookie: `ta_session=${cookie}` } });
     assert.equal(persisted.statusCode, 200);
+    assert.equal(persisted.json().availability.days[0].available_minutes, 60);
     assert.equal(persisted.json().availability.days[1].location, 'Maspalomas, Gran Canaria');
     assert.equal(persisted.json().availability.days[5].can_train, false);
+    const nonPresetDays = persisted.json().availability.days.map((day) => ({ ...day }));
+    nonPresetDays[0].available_minutes = 75;
+    nonPresetDays[1].available_minutes = 137;
+    const apiSave = await app.inject({ method: 'PUT', url: '/api/ai-coach/availability', headers: { cookie: `ta_session=${cookie}` }, payload: { days: nonPresetDays } });
+    assert.equal(apiSave.statusCode, 200);
+    const apiGet = await app.inject({ method: 'GET', url: '/api/ai-coach/availability', headers: { cookie: `ta_session=${cookie}` } });
+    assert.equal(apiGet.json().availability.days[0].available_minutes, 75);
+    assert.equal(apiGet.json().availability.days[1].available_minutes, 137);
+
+    const reloaded = new Promise((resolve) => {
+      const listener = (event) => {
+        if (JSON.parse(event.data).method === 'Page.loadEventFired') {
+          socket.removeEventListener('message', listener);
+          resolve();
+        }
+      };
+      socket.addEventListener('message', listener);
+    });
+    await command('Page.reload');
+    await Promise.race([reloaded, delay(15000).then(() => { throw new Error('AI Coach reload timed out.'); })]);
+    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+12000;const check=()=>{const monday=document.querySelector('[data-day="monday"] [data-duration]');const tuesday=document.querySelector('[data-day="tuesday"] [data-duration]');if(monday?.value==='75'&&tuesday?.value==='137')resolve(true);else if(Date.now()>end)reject(new Error('Saved non-preset durations did not render after reload'));else setTimeout(check,30)};check()})`);
+    const renderedDurations = await evaluate(`(()=>({monday:document.querySelector('[data-day="monday"] [data-duration]').value,tuesday:document.querySelector('[data-day="tuesday"] [data-duration]').value,valid:!document.getElementById('generateBtn').disabled}))()`);
+    assert.deepEqual(renderedDurations, { monday: '75', tuesday: '137', valid: true });
+    await evaluate(`document.getElementById('saveAvailability').click()`);
+    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+5000;const check=()=>{if(document.getElementById('availabilityStatus').textContent.trim())resolve(true);else if(Date.now()>end)reject(new Error('Round-trip save status did not appear'));else setTimeout(check,30)};check()})`);
+    const roundTrip = await app.inject({ method: 'GET', url: '/api/ai-coach/availability', headers: { cookie: `ta_session=${cookie}` } });
+    assert.equal(roundTrip.json().availability.days[0].available_minutes, 75);
+    assert.equal(roundTrip.json().availability.days[1].available_minutes, 137);
+    assert.equal(roundTrip.json().availability.days[1].location, 'Maspalomas, Gran Canaria');
 
     await evaluate(`new Promise((resolve,reject)=>{document.querySelector('.lang-switch [data-lang="en-US"]').click();const end=Date.now()+8000;const check=()=>{if(document.documentElement.lang==='en-US')resolve(true);else if(Date.now()>end)reject(new Error('English language switch timed out'));else setTimeout(check,30)};check()})`);
     const englishState = await evaluate(`(()=>({language:document.documentElement.lang,label:document.querySelector('[data-day="monday"] .period-group legend').textContent,periods:document.querySelectorAll('[data-day="monday"] [data-period]:checked').length,location:document.querySelector('[data-day="tuesday"] [data-location]').value}))()`);
@@ -178,6 +208,7 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     assert.doesNotMatch(prompt, /Normal routine|Rotina normal/);
 
     await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await evaluate(`new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>setTimeout(resolve,100))))`);
     const mobile = await evaluate(`(()=>({width:innerWidth,scrollWidth:document.documentElement.scrollWidth,days:document.querySelectorAll('#availabilityGrid .day-row').length,touchTarget:[...document.querySelectorAll('.period-chip span')].filter(el=>el.getClientRects().length>0).every(el=>el.getBoundingClientRect().height>=42)}))()`);
     assert.deepEqual(mobile, { width: 390, scrollWidth: 390, days: 7, touchTarget: true });
     const screenshot = await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });

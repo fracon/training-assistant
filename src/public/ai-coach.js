@@ -426,7 +426,7 @@ export function buildPrompt({ targetDate, disponibilidade = {}, contexto = '', l
     if (record.can_train === false) return `- ${dayName}: ${labels.canTrainLabel || 'Can train'}: ${labels.no || 'no'}`;
     if (record.can_train !== true) return `- ${dayName}: ${labels.availabilityUnconfigured || 'Availability not configured; ask for confirmation'}`;
     const periods = (record.available_periods ?? []).map((period) => labels.periods?.[period] || period).join('; ');
-    const location = String(record.location ?? '').trim();
+    const location = String(record.location ?? '');
     return `- ${dayName}: ${labels.canTrainLabel || 'Can train'}: ${labels.yes || 'yes'}; ${labels.periodsLabel || 'Periods available'}: ${periods}; ${labels.durationPromptLabel || 'Maximum session time'}: ${record.available_minutes} ${labels.minutes || 'minutes'}; ${labels.locationLabel || 'Location'}: ${location}`;
   });
   prompt = replaceAll(prompt, '{{AVAILABILITY_BLOCK}}', lines.join('\n'));
@@ -494,7 +494,7 @@ export function validatePromptFields({ targetDate = '', language = 'pt-BR', disp
 export function buildDayRowHtml(day, { dayLabel, messages = {}, state = {} }) {
   const dbDay = DAY_DB_KEYS[DAY_KEYS.indexOf(day)];
   const periods = PERIOD_KEYS.map((period) => `<label class="period-chip"><input type="checkbox" data-period="${period}" ${state.available_periods?.includes(period) ? 'checked' : ''}><span>${messages.periods?.[period] || period}</span></label>`).join('');
-  const options = `<option value="" ${state.available_minutes == null ? 'selected' : ''}>${messages.durationPlaceholder || ''}</option>${(messages.durationOptions || []).map((option) => `<option value="${option.value}" ${state.available_minutes === option.value ? 'selected' : ''}>${option.label}</option>`).join('')}`;
+  const duration = state.available_minutes ?? '';
   return `<fieldset class="day-row" data-day="${dbDay}">
   <legend class="day-label">${dayLabel}</legend>
   <div class="availability-choice" role="radiogroup" aria-label="${messages.canTrain || ''}">
@@ -503,7 +503,7 @@ export function buildDayRowHtml(day, { dayLabel, messages = {}, state = {} }) {
   </div>
   <div class="day-details" ${state.can_train === true ? '' : 'hidden'}>
     <fieldset class="period-group"><legend>${messages.periodsLabel || ''}</legend><div class="period-list">${periods}</div></fieldset>
-    <label class="day-field">${messages.durationLabel || ''}<select data-duration>${options}</select><span class="field-hint">${messages.durationHint || ''}</span></label>
+    <label class="day-field">${messages.durationLabel || ''}<input type="number" data-duration min="1" max="720" step="1" inputmode="numeric" value="${duration}" placeholder="${messages.durationPlaceholder || ''}"><span class="field-hint">${messages.durationHint || ''}</span></label>
     <label class="day-field">${messages.locationLabel || ''}<input type="text" data-location maxlength="200" value="${String(state.location || '').replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;')}" autocomplete="off"></label>
   <p class="day-error" id="availability-error-${dbDay}" data-day-error hidden></p>
   </div>

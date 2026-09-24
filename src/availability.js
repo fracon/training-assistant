@@ -37,7 +37,7 @@ function normalizeAvailabilityWeek(payload) {
       can_train: true,
       available_periods: periods,
       available_minutes: minutes,
-      location: record.location.trim(),
+      location: record.location,
     });
   }
   return { valid: true, days: DAY_KEYS.map((day) => byDay.get(day)) };
