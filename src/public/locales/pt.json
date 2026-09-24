@@ -31,6 +31,7 @@
     "applyWeekdays": "Aplicar configuração de segunda aos dias úteis",
     "saveAvailability": "Salvar disponibilidade",
     "availabilitySaved": "Disponibilidade salva.",
+    "availabilityEditedDuringSave": "A disponibilidade mudou durante o salvamento. Salve novamente antes de gerar o prompt.",
     "availabilitySaveError": "Não foi possível salvar a disponibilidade. Tente novamente.",
     "availabilityLoadError": "Não foi possível carregar a disponibilidade salva. Seus dados atuais foram mantidos.",
     "availabilityReview": "Defina explicitamente os sete dias. Textos de versões anteriores não são importados como períodos nem como limite de tempo da sessão.",

@@ -64,8 +64,16 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     });
     let id = 0;
     const pending = new Map();
+    const cdpEvents = [];
+    const cdpEventWaiters = [];
     socket.addEventListener('message', (event) => {
       const message = JSON.parse(event.data);
+      if (message.method) {
+        const waiterIndex = cdpEventWaiters.findIndex((waiter) => waiter.method === message.method && waiter.predicate(message));
+        if (waiterIndex >= 0) cdpEventWaiters.splice(waiterIndex, 1)[0].resolve(message);
+        else cdpEvents.push(message);
+        return;
+      }
       const handler = pending.get(message.id);
       if (!handler) return;
       pending.delete(message.id);
@@ -77,10 +85,44 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       pending.set(commandId, { resolve, reject });
       socket.send(JSON.stringify({ id: commandId, method, params }));
     });
+    const waitForCdpEvent = (method, predicate = () => true) => {
+      const queuedIndex = cdpEvents.findIndex((event) => event.method === method && predicate(event));
+      if (queuedIndex >= 0) return Promise.resolve(cdpEvents.splice(queuedIndex, 1)[0]);
+      return new Promise((resolve, reject) => {
+        const waiter = { method, predicate, resolve: null, reject };
+        const timeout = setTimeout(() => {
+          const index = cdpEventWaiters.indexOf(waiter);
+          if (index >= 0) {
+            cdpEventWaiters.splice(index, 1);
+            reject(new Error(`Timed out waiting for ${method}.`));
+          }
+        }, 15000);
+        timeout.unref?.();
+        waiter.resolve = (event) => { clearTimeout(timeout); resolve(event); };
+        cdpEventWaiters.push(waiter);
+      });
+    };
+    const waitForAvailabilityResponse = (method) => waitForCdpEvent('Fetch.requestPaused', (event) =>
+      event.params.request.method === method && event.params.request.url.includes('/api/ai-coach/availability'));
+    const releaseAvailabilityResponse = (event) => command('Fetch.continueRequest', { requestId: event.params.requestId });
     const evaluate = async (expression) => {
       const result = await command('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
       if (result.exceptionDetails) throw new Error(result.exceptionDetails.text);
       return result.result.value;
+    };
+    const waitForText = (selector, expected) => evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{const element=document.querySelector(${JSON.stringify(selector)});if(element?.textContent.trim()===${JSON.stringify(expected)}){resolve(true);return}if(Date.now()>end){reject(new Error('Timed out waiting for expected text'));return}requestAnimationFrame(check)};check()})`);
+    const saveWithDelayedResponse = async (editExpression) => {
+      const responsePending = waitForAvailabilityResponse('PUT');
+      await evaluate(`document.getElementById('saveAvailability').click()`);
+      const response = await responsePending;
+      const edit = await evaluate(editExpression);
+      await releaseAvailabilityResponse(response);
+      await waitForText('#availabilityStatus', 'Availability changed while saving. Save again before generating the prompt.');
+      return edit;
+    };
+    const saveCurrentForm = async () => {
+      await evaluate(`document.getElementById('saveAvailability').click()`);
+      await waitForText('#availabilityStatus', 'Availability saved.');
     };
     const pressKey = async (key, code, keyCode, modifiers = 0) => {
       await command('Input.dispatchKeyEvent', { type: 'keyDown', key, code, windowsVirtualKeyCode: keyCode, modifiers });
@@ -93,6 +135,8 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     const cookieResult = await command('Network.setCookie', { name: 'ta_session', value: cookie, url: origin });
     assert.equal(cookieResult.success, true);
     await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+    await command('Fetch.enable', { patterns: [{ urlPattern: '*api/ai-coach/availability*', requestStage: 'Response' }] });
+    const initialGet = waitForAvailabilityResponse('GET');
     const loaded = new Promise((resolve) => {
       const listener = (event) => {
         if (JSON.parse(event.data).method === 'Page.loadEventFired') {
@@ -104,8 +148,16 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     });
     await command('Page.navigate', { url: `${baseUrl}/ai-coach.html` });
     await Promise.race([loaded, delay(15000).then(() => { throw new Error('AI Coach page load timed out.'); })]);
-    const ready = await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+12000;const check=()=>{if(document.querySelectorAll('#availabilityGrid .day-row').length===7&&!document.getElementById('availabilityReview').hidden){resolve(true);return}if(Date.now()>end){reject(new Error('Availability grid did not load'));return}setTimeout(check,30)};check()})`);
+    const ready = await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+12000;const check=()=>{if(document.querySelectorAll('#availabilityGrid .day-row').length===7){resolve(true);return}if(Date.now()>end){reject(new Error('Availability grid did not render'));return}requestAnimationFrame(check)};check()})`);
     assert.equal(ready, true);
+    const pendingInitialGet = await initialGet;
+    await evaluate(`(()=>{const input=document.getElementById('baseLocation');input.value='Lisboa';input.dispatchEvent(new Event('change',{bubbles:true}));return true})()`);
+    await releaseAvailabilityResponse(pendingInitialGet);
+    const initialAvailabilityLoaded = await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{if(!document.getElementById('availabilityReview').hidden){resolve(true);return}if(Date.now()>end){reject(new Error('New-user availability review notice did not load'));return}requestAnimationFrame(check)};check()})`);
+    assert.equal(initialAvailabilityLoaded, true);
+    const newUserState = await evaluate(`(()=>({review:!document.getElementById('availabilityReview').hidden,unselected:[...document.querySelectorAll('#availabilityGrid .day-row')].every(row=>!row.querySelector('input[type="radio"]:checked')),locations:[...document.querySelectorAll('[data-location]')].every(input=>input.value==='')}))()`);
+    assert.deepEqual(newUserState, { review: true, unselected: true, locations: true });
+    await command('Fetch.disable');
 
     const desktop = await evaluate(`(()=>({width:innerWidth,scrollWidth:document.documentElement.scrollWidth,language:document.documentElement.lang,reviewVisible:!document.getElementById('availabilityReview').hidden,days:document.querySelectorAll('#availabilityGrid .day-row').length}))()`);
     assert.deepEqual(desktop, { width: 1280, scrollWidth: 1280, language: 'pt-BR', reviewVisible: true, days: 7 });
@@ -218,9 +270,49 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     assert.equal(roundTrip.json().availability.days[1].available_minutes, 137);
     assert.equal(roundTrip.json().availability.days[1].location, 'Maspalomas, Gran Canaria');
 
+    await command('Fetch.enable', { patterns: [{ urlPattern: '*api/ai-coach/availability*', requestStage: 'Response' }] });
+    const savedGet = waitForAvailabilityResponse('GET');
+    const savedReload = new Promise((resolve) => {
+      const listener = (event) => {
+        if (JSON.parse(event.data).method === 'Page.loadEventFired') {
+          socket.removeEventListener('message', listener);
+          resolve();
+        }
+      };
+      socket.addEventListener('message', listener);
+    });
+    await command('Page.reload');
+    await Promise.race([savedReload, delay(15000).then(() => { throw new Error('AI Coach reload timed out.'); })]);
+    const savedGetResponse = await savedGet;
+    await evaluate(`(()=>{const input=document.getElementById('baseLocation');input.value='Coimbra';input.dispatchEvent(new Event('change',{bubbles:true}))})()`);
+    await releaseAvailabilityResponse(savedGetResponse);
+    const savedGetState = await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{const monday=document.querySelector('[data-day="monday"] [data-duration]');const tuesday=document.querySelector('[data-day="tuesday"] [data-duration]');if(monday?.value==='75'&&tuesday?.value==='137'){resolve({monday:monday.value,tuesday:tuesday.value,review:!document.getElementById('availabilityReview').hidden});return}if(Date.now()>end){reject(new Error('Saved week did not load after base-location edit'));return}requestAnimationFrame(check)};check()})`);
+    assert.deepEqual(savedGetState, { monday: '75', tuesday: '137', review: false });
+
+    const editedGet = waitForAvailabilityResponse('GET');
+    const editedReload = new Promise((resolve) => {
+      const listener = (event) => {
+        if (JSON.parse(event.data).method === 'Page.loadEventFired') {
+          socket.removeEventListener('message', listener);
+          resolve();
+        }
+      };
+      socket.addEventListener('message', listener);
+    });
+    await command('Page.reload');
+    await Promise.race([editedReload, delay(15000).then(() => { throw new Error('AI Coach reload timed out.'); })]);
+    const editedGetResponse = await editedGet;
+    await evaluate(`(()=>{const row=document.querySelector('[data-day="monday"]');row.querySelector('input[value="yes"]').click();row.querySelector('[data-period="12_14"]').click();const input=row.querySelector('[data-duration]');input.value='96';input.dispatchEvent(new Event('input',{bubbles:true}));const location=row.querySelector('[data-location]');location.value='Aveiro';location.dispatchEvent(new Event('input',{bubbles:true}))})()`);
+    await releaseAvailabilityResponse(editedGetResponse);
+    const mergedGetState = await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{const monday=document.querySelector('[data-day="monday"] [data-duration]');const tuesday=document.querySelector('[data-day="tuesday"] [data-duration]');if(monday?.value==='96'&&tuesday?.value==='137'){resolve({monday:monday.value,tuesday:tuesday.value,review:!document.getElementById('availabilityReview').hidden});return}if(Date.now()>end){reject(new Error('Concurrent day edit was not merged with saved availability'));return}requestAnimationFrame(check)};check()})`);
+    assert.deepEqual(mergedGetState, { monday: '96', tuesday: '137', review: false });
+    await command('Fetch.disable');
+    await evaluate(`document.getElementById('saveAvailability').click()`);
+    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+5000;const check=()=>{if(document.getElementById('availabilityStatus').textContent.includes('salva'))resolve(true);else if(Date.now()>end)reject(new Error('Merged GET edit did not save'));else requestAnimationFrame(check)};check()})`);
+
     await evaluate(`new Promise((resolve,reject)=>{document.querySelector('.lang-switch [data-lang="en-US"]').click();const end=Date.now()+8000;const check=()=>{if(document.documentElement.lang==='en-US')resolve(true);else if(Date.now()>end)reject(new Error('English language switch timed out'));else setTimeout(check,30)};check()})`);
     const englishState = await evaluate(`(()=>({language:document.documentElement.lang,label:document.querySelector('[data-day="monday"] .period-group legend').textContent,periods:document.querySelectorAll('[data-day="monday"] [data-period]:checked').length,location:document.querySelector('[data-day="tuesday"] [data-location]').value}))()`);
-    assert.deepEqual(englishState, { language: 'en-US', label: 'Available periods', periods: 3, location: 'Maspalomas, Gran Canaria' });
+    assert.deepEqual(englishState, { language: 'en-US', label: 'Available periods', periods: 1, location: 'Maspalomas, Gran Canaria' });
 
     const englishLimit = await evaluate(`(()=>{const duration=document.querySelector('[data-day="monday"] [data-duration]');duration.value='721';duration.dispatchEvent(new Event('input',{bubbles:true}));const error=duration.closest('.day-row').querySelector('[data-day-error]').textContent;const disabled=document.getElementById('generateBtn').disabled;duration.value='75';duration.dispatchEvent(new Event('input',{bubbles:true}));return {error,disabled}})()`);
     assert.deepEqual(englishLimit, { error: 'Available time must be a whole number between 1 and 720 minutes.', disabled: true });
@@ -231,6 +323,47 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     assert.match(prompt, /Multiple periods are alternatives for one session that day/);
     assert.match(prompt, /a ceiling, not a target/);
     assert.doesNotMatch(prompt, /Normal routine|Rotina normal/);
+
+    await command('Fetch.enable', { patterns: [{ urlPattern: '*api/ai-coach/availability*', requestStage: 'Response' }] });
+    const durationAfterSave = await saveWithDelayedResponse(`(()=>{const input=document.querySelector('[data-day="monday"] [data-duration]');input.value='97';input.dispatchEvent(new Event('input',{bubbles:true}));return input.value})()`);
+    assert.equal(durationAfterSave, '97');
+    assert.equal(await evaluate(`document.querySelector('[data-day="monday"] [data-duration]').value`), '97');
+    await command('Fetch.disable');
+    await saveCurrentForm();
+
+    await command('Fetch.enable', { patterns: [{ urlPattern: '*api/ai-coach/availability*', requestStage: 'Response' }] });
+    const periodAfterSave = await saveWithDelayedResponse(`(()=>{const input=document.querySelector('[data-day="monday"] [data-period="before_08"]');input.click();return input.checked})()`);
+    assert.equal(periodAfterSave, true);
+    assert.equal(await evaluate(`document.querySelector('[data-day="monday"] [data-period="before_08"]').checked`), true);
+    await command('Fetch.disable');
+    await saveCurrentForm();
+
+    await command('Fetch.enable', { patterns: [{ urlPattern: '*api/ai-coach/availability*', requestStage: 'Response' }] });
+    const locationAfterSave = await saveWithDelayedResponse(`(()=>{const input=document.querySelector('[data-day="monday"] [data-location]');input.value='Braga';input.dispatchEvent(new Event('input',{bubbles:true}));return input.value})()`);
+    assert.equal(locationAfterSave, 'Braga');
+    assert.equal(await evaluate(`document.querySelector('[data-day="monday"] [data-location]').value`), 'Braga');
+    await command('Fetch.disable');
+    await saveCurrentForm();
+
+    await command('Fetch.enable', { patterns: [{ urlPattern: '*api/ai-coach/availability*', requestStage: 'Response' }] });
+    const availabilityAfterSave = await saveWithDelayedResponse(`(()=>{const input=document.querySelector('[data-day="sunday"] input[value="no"]');input.click();return {no:input.checked,detailsHidden:document.querySelector('[data-day="sunday"] .day-details').hidden}})()`);
+    assert.deepEqual(availabilityAfterSave, { no: true, detailsHidden: true });
+    assert.equal(await evaluate(`document.querySelector('[data-day="sunday"] input[value="no"]').checked`), true);
+    await command('Fetch.disable');
+    await saveCurrentForm();
+
+    const promptBeforeGenerateRace = await evaluate(`document.getElementById('promptOutput').textContent`);
+    await command('Fetch.enable', { patterns: [{ urlPattern: '*api/ai-coach/availability*', requestStage: 'Response' }] });
+    const generateResponsePending = waitForAvailabilityResponse('PUT');
+    await evaluate(`document.getElementById('generateBtn').click()`);
+    const generateResponse = await generateResponsePending;
+    await evaluate(`(()=>{const input=document.querySelector('[data-day="monday"] [data-location]');input.value='Porto após gerar';input.dispatchEvent(new Event('input',{bubbles:true}))})()`);
+    await releaseAvailabilityResponse(generateResponse);
+    await waitForText('#availabilityStatus', 'Availability changed while saving. Save again before generating the prompt.');
+    assert.equal(await evaluate(`document.querySelector('[data-day="monday"] [data-location]').value`), 'Porto após gerar');
+    assert.equal(await evaluate(`document.getElementById('promptOutput').textContent`), promptBeforeGenerateRace,
+      'Generate does not produce a prompt from the stale submitted snapshot');
+    await command('Fetch.disable');
 
     await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
     await evaluate(`new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>setTimeout(resolve,100))))`);

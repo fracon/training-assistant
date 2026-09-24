@@ -581,28 +581,55 @@ function setupAiCoachPage() {
     });
   }
 
-  function applyAvailabilityState(week) {
+  let availabilityRevision = 0;
+  let lastAvailabilitySnapshot = '';
+
+  function currentAvailabilitySnapshot() {
+    return JSON.stringify(readFormFields());
+  }
+
+  function daysEditedSince(snapshot) {
+    const before = JSON.parse(snapshot);
+    const current = readFormFields();
+    return DAY_KEYS.filter((day) => JSON.stringify(before[day]) !== JSON.stringify(current[day]));
+  }
+
+  function applyAvailabilityState(week, { preserveDays = [] } = {}) {
     const states = availabilityDefaults();
     for (const record of week.days || []) {
       const day = DAY_KEYS[DAY_DB_KEYS.indexOf(record.day)];
       if (day) states[day] = record;
     }
+    const current = readFormFields();
+    for (const day of preserveDays) states[day] = current[day];
     renderDayRows(states);
+    lastAvailabilitySnapshot = currentAvailabilitySnapshot();
     availabilityReview.hidden = !week.needsReview;
     availabilityReview.textContent = t('aiCoach.availabilityReview');
   }
 
-  let availabilityTouched = false;
   let availabilityStatusKey = '';
   function setAvailabilityStatus(key) {
     availabilityStatusKey = key;
     availabilityStatus.textContent = key ? t(`aiCoach.${key}`) : '';
   }
 
+  function noteAvailabilityEdit() {
+    const snapshot = currentAvailabilitySnapshot();
+    if (snapshot === lastAvailabilitySnapshot) return false;
+    lastAvailabilitySnapshot = snapshot;
+    availabilityRevision += 1;
+    setAvailabilityStatus('');
+    return true;
+  }
+
   async function loadAvailability() {
+    const requestedRevision = availabilityRevision;
+    const requestedSnapshot = lastAvailabilitySnapshot;
     try {
       const saved = await fetchAiCoachAvailability();
-      if (!availabilityTouched) applyAvailabilityState(saved);
+      const preserveDays = availabilityRevision === requestedRevision ? [] : daysEditedSince(requestedSnapshot);
+      applyAvailabilityState(saved, { preserveDays });
       setAvailabilityStatus('');
     } catch {
       setAvailabilityStatus('availabilityLoadError');
@@ -611,6 +638,8 @@ function setupAiCoachPage() {
   }
 
   async function persistAvailability() {
+    const submittedRevision = availabilityRevision;
+    const submittedSnapshot = currentAvailabilitySnapshot();
     const fields = readFormFields();
     const validation = validatePromptFields({ targetDate: readTargetDateIso(targetDateInput, targetDatePicker, i18n.language), language: i18n.language, disponibilidade: fields });
     if (validation.missing.includes('availability')) {
@@ -620,10 +649,13 @@ function setupAiCoachPage() {
     const days = DAY_KEYS.map((day, index) => ({ day: DAY_DB_KEYS[index], ...fields[day] }));
     try {
       const saved = await saveAiCoachAvailability(days);
-      applyAvailabilityState(saved);
+      const preserveDays = availabilityRevision === submittedRevision ? [] : daysEditedSince(submittedSnapshot);
+      const unchanged = preserveDays.length === 0;
+      applyAvailabilityState(saved, { preserveDays });
       availabilityError.textContent = '';
-      setAvailabilityStatus('availabilitySaved');
-      return true;
+      setAvailabilityStatus(unchanged ? 'availabilitySaved' : 'availabilityEditedDuringSave');
+      if (!unchanged) updateValidation();
+      return unchanged;
     } catch {
       setAvailabilityStatus('availabilitySaveError');
       return false;
@@ -631,6 +663,7 @@ function setupAiCoachPage() {
   }
 
   renderDayRows();
+  lastAvailabilitySnapshot = currentAvailabilitySnapshot();
   void loadAvailability();
 
   function updateValidation() {
@@ -699,14 +732,13 @@ function setupAiCoachPage() {
   // A base location is an explicit user supplied convenience, copied into
   // available day inputs. Each day remains independent afterwards.
   baseLocationInput.addEventListener('change', () => {
-    availabilityTouched = true;
     availabilityGrid.querySelectorAll('[data-location]').forEach((input) => {
       if (!input.disabled && !input.value.trim()) input.value = baseLocationInput.value;
     });
+    noteAvailabilityEdit();
     updateValidation();
   });
   availabilityGrid.addEventListener('change', (event) => {
-    availabilityTouched = true;
     const row = event.target.closest('.day-row');
     if (row && event.target.matches('input[type="radio"]')) {
       const details = row.querySelector('.day-details');
@@ -722,10 +754,11 @@ function setupAiCoachPage() {
         row.querySelector('[data-location]').value = '';
       }
     }
+    noteAvailabilityEdit();
     updateValidation();
   });
   availabilityGrid.addEventListener('input', () => {
-    availabilityTouched = true;
+    noteAvailabilityEdit();
     updateValidation();
   });
   applyWeekdaysButton.addEventListener('click', () => {
@@ -736,8 +769,8 @@ function setupAiCoachPage() {
       return;
     }
     for (const day of ['terca', 'quarta', 'quinta', 'sexta']) states[day] = structuredClone(monday);
-    availabilityTouched = true;
     renderDayRows(states);
+    noteAvailabilityEdit();
     updateValidation();
   });
   saveAvailabilityButton.addEventListener('click', () => { void persistAvailability(); });
@@ -782,10 +815,11 @@ function setupAiCoachPage() {
     if (!validation.valid) return;
     const targetIso = readTargetDateIso(targetDateInput, targetDatePicker, i18n.language);
     const targetDate = parseInputDate(targetIso);
+    const submittedSnapshot = currentAvailabilitySnapshot();
 
     generateBtn.disabled = true;
     if (!await persistAvailability()) {
-      generateBtn.disabled = false;
+      updateValidation();
       return;
     }
     let shoes = [];
@@ -800,6 +834,11 @@ function setupAiCoachPage() {
       );
     } catch {
       // Any unavailable context keeps prompt generation usable with dashes.
+    }
+    if (currentAvailabilitySnapshot() !== submittedSnapshot) {
+      setAvailabilityStatus('availabilityEditedDuringSave');
+      updateValidation();
+      return;
     }
     updateValidation();
 
