@@ -40,6 +40,78 @@ test('real hidden-password reader consumes arrow-key escapes instead of appendin
   assert.equal(outputChunks.join('').includes('ExamplePass123'), false);
 });
 
+test('a standalone Escape between password characters does not consume the next key', async () => {
+  const { input, reading } = startSecret();
+  input.write('before');
+  input.write('\u001b');
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  input.write('q\r');
+  assert.equal(await reading, 'beforeq');
+});
+
+test('standalone Escape before, within, and after text is ignored after the short disambiguation window', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  for (const scenario of [
+    { before: '', after: 'First' },
+    { before: 'Mid', after: 'dle' },
+    { before: 'Last', after: '' },
+  ]) {
+    const { input, reading } = startSecret();
+    if (scenario.before) input.write(scenario.before);
+    input.write('\u001b');
+    t.mock.timers.tick(31);
+    if (scenario.after) input.write(scenario.after);
+    input.write('\r');
+    assert.equal(await reading, `${scenario.before}${scenario.after}`);
+  }
+});
+
+test('split arrow-key sequences arriving before the timeout remain fully consumed', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { input, reading } = startSecret();
+  input.write('Before');
+  input.write('\u001b');
+  input.write('[');
+  input.write('D');
+  t.mock.timers.tick(31);
+  input.write('After\r');
+  assert.equal(await reading, 'BeforeAfter');
+});
+
+test('Enter, Ctrl+C, and EOF settle while Escape is pending and clear prompt state', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  for (const ending of ['\r', '\u0003', 'end']) {
+    const state = startSecret();
+    const listenerCount = state.input.listenerCount('data');
+    state.input.write('\u001b');
+    if (ending === 'end') state.input.emit('end');
+    else state.input.write(ending);
+    if (ending === '\r') assert.equal(await state.reading, '');
+    else await assert.rejects(state.reading, PromptCancelledError);
+    t.mock.timers.tick(31);
+    assert.equal(state.input.listenerCount('data'), listenerCount - 1);
+    assert.equal(state.input.isRaw, false);
+    state.input.emit('data', Buffer.from('late'));
+  }
+});
+
+test('cancel and reopen leaves no prior timer or data listener affecting the next secret', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { input, output } = terminalPair();
+  const prompts = createPrompts(input, output);
+  const baseline = input.listenerCount('data');
+  const cancelled = prompts.secret('First: ');
+  input.write('\u001b');
+  input.write('\u0003');
+  await assert.rejects(cancelled, PromptCancelledError);
+  assert.equal(input.listenerCount('data'), baseline);
+  t.mock.timers.tick(31);
+  const reopened = prompts.secret('Second: ');
+  input.write('IntendedPass123\r');
+  assert.equal(await reopened, 'IntendedPass123');
+  assert.equal(input.listenerCount('data'), baseline);
+});
+
 test('all common navigation and delete escape sequences are consumed, including across chunks', async () => {
   const { input, reading } = startSecret();
   input.write('Keep[123]Text');
@@ -130,6 +202,7 @@ test('raw mode is restored exactly and listeners are removed after success, canc
 
 test('secret completion is idempotent if a terminal event arrives while listeners are being removed', async () => {
   const state = startSecret();
+  const lateDataListener = state.input.listeners('data').at(-1);
   const removeListener = state.input.removeListener.bind(state.input);
   let injected = false;
   state.input.removeListener = (event, listener) => {
@@ -142,6 +215,7 @@ test('secret completion is idempotent if a terminal event arrives while listener
   };
   state.input.write('stable\r');
   assert.equal(await state.reading, 'stable');
+  lateDataListener(Buffer.from('late data\r'));
   assert.equal(state.input.isRaw, false);
 });
 

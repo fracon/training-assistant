@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { PassThrough } = require('node:stream');
 const Fastify = require('fastify');
 const fastifyCookie = require('@fastify/cookie');
 const { buildServer } = require('../src/server');
@@ -23,6 +24,7 @@ const {
   promoteAccount,
 } = require('../src/admin/operations');
 const { runBootstrap, runPromotion } = require('../scripts/admin-commands');
+const { createPrompts } = require('../scripts/admin-prompts');
 
 const adminInput = {
   email: 'First.Admin@example.com', password: 'secure-admin-password',
@@ -172,6 +174,53 @@ test('bootstrap command handles already-complete, email collision, mismatch, and
   assert.equal(result.status, 'created');
   assert.equal(output.join('\n').includes('cli-secret-pass'), false);
   [db, fresh, mismatchDb, cleanDb].forEach((handle) => handle.close());
+});
+
+test('bootstrap with the real hidden reader creates a login using the intended password after standalone Escape', async () => {
+  const db = createDatabase({ filename: ':memory:' });
+  const input = new PassThrough();
+  const output = new PassThrough();
+  input.isTTY = true;
+  input.isRaw = false;
+  input.setRawMode = (value) => { input.isRaw = value; };
+  output.isTTY = true;
+  let rendered = '';
+  const waiters = [];
+  output.on('data', (chunk) => {
+    rendered += chunk.toString();
+    for (let index = waiters.length - 1; index >= 0; index -= 1) {
+      if (rendered.includes(waiters[index].prompt)) {
+        waiters[index].resolve();
+        waiters.splice(index, 1);
+      }
+    }
+  });
+  const waitFor = (prompt) => rendered.includes(prompt)
+    ? Promise.resolve()
+    : new Promise((resolve) => waiters.push({ prompt, resolve }));
+  const secret = 'IntendedPass123';
+  const operation = runBootstrap({ db, prompts: createPrompts(input, output), write() {} });
+  for (const [prompt, value] of [
+    ['First name: ', 'Test'],
+    ['Last name: ', 'Operator'],
+    ['Email: ', 'escape-bootstrap@example.com'],
+  ]) {
+    await waitFor(prompt);
+    input.write(`${value}\r`);
+  }
+  await waitFor('Password (input hidden): ');
+  input.write('IntendedPass');
+  input.write('\u001b');
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  input.write('123\r');
+  await waitFor('Confirm password (input hidden): ');
+  input.write(`${secret}\r`);
+  const created = await operation;
+  assert.equal(created.status, 'created');
+  assert.equal((await loginUser(db, { email: 'escape-bootstrap@example.com', password: secret })).user.role, 'admin');
+  assert.doesNotMatch(rendered, new RegExp(secret));
+  assert.equal(input.isRaw, false);
+  db.close();
 });
 
 test('bootstrap requires an interactive terminal before doing work', async () => {

@@ -3,6 +3,8 @@
 const readline = require('node:readline');
 const { StringDecoder } = require('node:string_decoder');
 
+const STANDALONE_ESCAPE_TIMEOUT_MS = 30;
+
 class PromptCancelledError extends Error {
   constructor() {
     super('Interactive operation cancelled.');
@@ -46,7 +48,13 @@ function createPrompts(input = process.stdin, output = process.stdout) {
         let pending = '';
         let inBracketedPaste = false;
         let settled = false;
+        let escapeTimer;
+        const clearEscapeTimer = () => {
+          if (escapeTimer) clearTimeout(escapeTimer);
+          escapeTimer = undefined;
+        };
         const restore = () => {
+          clearEscapeTimer();
           input.removeListener('data', onData);
           input.removeListener('end', onEnd);
           input.removeListener('error', onError);
@@ -147,8 +155,18 @@ function createPrompts(input = process.stdin, output = process.stdout) {
             // Unsupported terminal escape keys are consumed as complete sequences, never password text.
             pending = pending.slice(2);
           }
+          // ESC is ambiguous until another byte arrives. Expire a lone ESC quickly so a
+          // later ordinary character cannot be mistaken for an Alt/control sequence.
+          if (!settled && pending === '\u001b' && !escapeTimer) {
+            escapeTimer = setTimeout(() => {
+              escapeTimer = undefined;
+              pending = '';
+            }, STANDALONE_ESCAPE_TIMEOUT_MS);
+          }
         };
         const onData = (chunk) => {
+          if (settled) return;
+          clearEscapeTimer();
           consumeInput(decoder.write(chunk));
         };
         input.setRawMode(true);
