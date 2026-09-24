@@ -47,7 +47,7 @@ test('duration validation accepts every tested integer through 720 and rejects v
     const result = validatePromptFields({ ...base, disponibilidade: { ...week, segunda: { ...week.segunda, available_minutes: minutes } } });
     assert.equal(result.valid, true, `${minutes} minutes should be valid`);
   }
-  for (const minutes of [0, -1, 721, 1.5, NaN, null]) {
+  for (const minutes of [0, -1, 721, 1.5, NaN, null, '']) {
     const result = validatePromptFields({ ...base, disponibilidade: { ...week, segunda: { ...week.segunda, available_minutes: minutes } } });
     assert.deepEqual(result.missing, ['availability'], `${String(minutes)} minutes should be invalid`);
   }
