@@ -189,6 +189,28 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+12000;const check=()=>{const monday=document.querySelector('[data-day="monday"] [data-duration]');const tuesday=document.querySelector('[data-day="tuesday"] [data-duration]');if(monday?.value==='75'&&tuesday?.value==='137')resolve(true);else if(Date.now()>end)reject(new Error('Saved non-preset durations did not render after reload'));else setTimeout(check,30)};check()})`);
     const renderedDurations = await evaluate(`(()=>({monday:document.querySelector('[data-day="monday"] [data-duration]').value,tuesday:document.querySelector('[data-day="tuesday"] [data-duration]').value,valid:!document.getElementById('generateBtn').disabled}))()`);
     assert.deepEqual(renderedDurations, { monday: '75', tuesday: '137', valid: true });
+    const portugueseLimit = await evaluate(`(()=>{
+      const duration=document.querySelector('[data-day="monday"] [data-duration]');
+      const generate=document.getElementById('generateBtn');
+      const row=duration.closest('.day-row');
+      duration.value='720';duration.dispatchEvent(new Event('input',{bubbles:true}));
+      const maxValid=!generate.disabled&&duration.getAttribute('aria-invalid')==='false';
+      duration.value='721';duration.dispatchEvent(new Event('input',{bubbles:true}));
+      const fieldError=row.querySelector('[data-day-error]');
+      const invalid={formValid:!generate.disabled,error:fieldError.textContent,durationInvalid:duration.getAttribute('aria-invalid')};
+      window.__availabilityPutCount=0;
+      const nativeFetch=window.fetch.bind(window);
+      window.fetch=(input,init)=>{if((init?.method||'GET').toUpperCase()==='PUT'&&String(input).includes('/api/ai-coach/availability'))window.__availabilityPutCount+=1;return nativeFetch(input,init)};
+      document.getElementById('saveAvailability').click();
+      document.getElementById('promptForm').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
+      duration.value='75';duration.dispatchEvent(new Event('input',{bubbles:true}));
+      return {maxValid,invalid,putCount:window.__availabilityPutCount};
+    })()`);
+    assert.deepEqual(portugueseLimit, {
+      maxValid: true,
+      invalid: { formValid: false, error: 'O tempo disponível deve ser um número inteiro entre 1 e 720 minutos.', durationInvalid: 'true' },
+      putCount: 0,
+    });
     await evaluate(`document.getElementById('saveAvailability').click()`);
     await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+5000;const check=()=>{if(document.getElementById('availabilityStatus').textContent.trim())resolve(true);else if(Date.now()>end)reject(new Error('Round-trip save status did not appear'));else setTimeout(check,30)};check()})`);
     const roundTrip = await app.inject({ method: 'GET', url: '/api/ai-coach/availability', headers: { cookie: `ta_session=${cookie}` } });
@@ -199,6 +221,9 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     await evaluate(`new Promise((resolve,reject)=>{document.querySelector('.lang-switch [data-lang="en-US"]').click();const end=Date.now()+8000;const check=()=>{if(document.documentElement.lang==='en-US')resolve(true);else if(Date.now()>end)reject(new Error('English language switch timed out'));else setTimeout(check,30)};check()})`);
     const englishState = await evaluate(`(()=>({language:document.documentElement.lang,label:document.querySelector('[data-day="monday"] .period-group legend').textContent,periods:document.querySelectorAll('[data-day="monday"] [data-period]:checked').length,location:document.querySelector('[data-day="tuesday"] [data-location]').value}))()`);
     assert.deepEqual(englishState, { language: 'en-US', label: 'Available periods', periods: 3, location: 'Maspalomas, Gran Canaria' });
+
+    const englishLimit = await evaluate(`(()=>{const duration=document.querySelector('[data-day="monday"] [data-duration]');duration.value='721';duration.dispatchEvent(new Event('input',{bubbles:true}));const error=duration.closest('.day-row').querySelector('[data-day-error]').textContent;const disabled=document.getElementById('generateBtn').disabled;duration.value='75';duration.dispatchEvent(new Event('input',{bubbles:true}));return {error,disabled}})()`);
+    assert.deepEqual(englishLimit, { error: 'Available time must be a whole number between 1 and 720 minutes.', disabled: true });
 
     await evaluate(`document.getElementById('generateBtn').click()`);
     await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+12000;const check=()=>{const prompt=document.getElementById('promptOutput').textContent;if(prompt.includes('Maximum session time: 60 minutes')&&prompt.includes('Maspalomas, Gran Canaria'))resolve(true);else if(Date.now()>end)reject(new Error('Structured English prompt did not appear'));else setTimeout(check,40)};check()})`);

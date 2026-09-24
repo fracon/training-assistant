@@ -186,6 +186,11 @@ If recent data indicates that the originally expected plan should be altered, pr
 const DAY_KEYS = ['segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado', 'domingo'];
 const DAY_DB_KEYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 const PERIOD_KEYS = ['before_08', '08_12', '12_14', '14_18', 'after_18'];
+const MAX_AVAILABLE_MINUTES = 720;
+
+function isValidAvailableMinutes(value) {
+  return Number.isInteger(value) && value >= 1 && value <= MAX_AVAILABLE_MINUTES;
+}
 
 const DAY_LOCALE_KEYS = {
   segunda: 'monday',
@@ -484,7 +489,7 @@ export function validatePromptFields({ targetDate = '', language = 'pt-BR', disp
   const hasAllDays = DAY_KEYS.every((day) => availability[day]?.can_train === false || (
     availability[day]?.can_train === true && Array.isArray(availability[day]?.available_periods) &&
     availability[day].available_periods.some((period) => PERIOD_KEYS.includes(period)) &&
-    Number.isInteger(availability[day]?.available_minutes) && availability[day].available_minutes > 0 &&
+    isValidAvailableMinutes(availability[day]?.available_minutes) &&
     String(availability[day]?.location ?? '').trim() !== ''
   ));
   if (!hasAllDays) missing.push('availability');
@@ -503,7 +508,7 @@ export function buildDayRowHtml(day, { dayLabel, messages = {}, state = {} }) {
   </div>
   <div class="day-details" ${state.can_train === true ? '' : 'hidden'}>
     <fieldset class="period-group"><legend>${messages.periodsLabel || ''}</legend><div class="period-list">${periods}</div></fieldset>
-    <label class="day-field">${messages.durationLabel || ''}<input type="number" data-duration min="1" max="720" step="1" inputmode="numeric" value="${duration}" placeholder="${messages.durationPlaceholder || ''}"><span class="field-hint">${messages.durationHint || ''}</span></label>
+    <label class="day-field">${messages.durationLabel || ''}<input type="number" data-duration min="1" max="${MAX_AVAILABLE_MINUTES}" step="1" inputmode="numeric" value="${duration}" placeholder="${messages.durationPlaceholder || ''}"><span class="field-hint">${messages.durationHint || ''}</span></label>
     <label class="day-field">${messages.locationLabel || ''}<input type="text" data-location maxlength="200" value="${String(state.location || '').replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;')}" autocomplete="off"></label>
   <p class="day-error" id="availability-error-${dbDay}" data-day-error hidden></p>
   </div>
@@ -664,7 +669,7 @@ function setupAiCoachPage() {
       const location = row.querySelector('[data-location]');
       const errors = [];
       if (record.available_periods.length === 0) errors.push(t('aiCoach.availabilityNeedsPeriods'));
-      if (!Number.isInteger(record.available_minutes) || record.available_minutes <= 0) errors.push(t('aiCoach.availabilityNeedsDuration'));
+      if (!isValidAvailableMinutes(record.available_minutes)) errors.push(t('aiCoach.availabilityNeedsDuration'));
       if (!record.location.trim()) errors.push(t('aiCoach.availabilityNeedsLocation'));
       const error = row.querySelector('[data-day-error]');
       error.textContent = errors.join(' ');

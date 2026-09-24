@@ -37,7 +37,7 @@
     "availabilityUnconfigured": "Disponibilidade não configurada; confirme com o usuário",
     "availabilityValidation": "Defina cada dia como Sim ou Não. Nos dias disponíveis, escolha período, duração e local.",
     "availabilityNeedsPeriods": "Escolha ao menos um período disponível.",
-    "availabilityNeedsDuration": "Escolha o tempo máximo da sessão.",
+    "availabilityNeedsDuration": "O tempo disponível deve ser um número inteiro entre 1 e 720 minutos.",
     "availabilityNeedsLocation": "Informe a localidade deste dia disponível.",
     "availabilityNoMonday": "Configure a disponibilidade de segunda antes de aplicar aos dias úteis.",
     "days": {

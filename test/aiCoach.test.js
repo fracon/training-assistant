@@ -41,6 +41,25 @@ test('structured availability validation requires explicit yes/no and complete a
   assert.deepEqual(validatePromptFields({ ...base, targetDate: '31/02/2026' }).missing, ['targetDate']);
 });
 
+test('duration validation accepts every tested integer through 720 and rejects values outside the contract', () => {
+  const base = { targetDate: '2026-09-28', disponibilidade: week };
+  for (const minutes of [1, 75, 137, 720]) {
+    const result = validatePromptFields({ ...base, disponibilidade: { ...week, segunda: { ...week.segunda, available_minutes: minutes } } });
+    assert.equal(result.valid, true, `${minutes} minutes should be valid`);
+  }
+  for (const minutes of [0, -1, 721, 1.5, NaN, null]) {
+    const result = validatePromptFields({ ...base, disponibilidade: { ...week, segunda: { ...week.segunda, available_minutes: minutes } } });
+    assert.deepEqual(result.missing, ['availability'], `${String(minutes)} minutes should be invalid`);
+  }
+  assert.equal(validatePromptFields({ ...base, disponibilidade: { ...week, terca: { ...week.terca, available_minutes: null } } }).valid, true,
+    'unavailable days do not require a duration');
+});
+
+test('availability duration control exposes the same inclusive upper limit as validation', () => {
+  const html = buildDayRowHtml('segunda', { dayLabel: 'Segunda', state: week.segunda });
+  assert.match(html, /data-duration min="1" max="720" step="1"/);
+});
+
 test('prompt prints unavailable days and structured windows, maximum minutes, and location', () => {
   const prompt = buildPrompt({ targetDate: new Date(2026, 8, 28), disponibilidade: week, lang: 'pt-BR', messages });
   assert.match(prompt, /Segunda: Pode treinar: sim; Períodos disponíveis: 12h–14h; Após as 18h; Tempo máximo disponível para a sessão: 60 minutos; Local: Fânzeres, Gondomar/);
