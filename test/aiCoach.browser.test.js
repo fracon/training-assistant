@@ -268,6 +268,31 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     assert.equal(computedFormStyles.copy.borderStyle, 'none', 'copy action is not input-like');
     assert.equal(computedFormStyles.copy.backgroundColor, 'rgba(0, 0, 0, 0)', 'copy action is transparent');
 
+    const portugueseDurationField = await evaluate(`(()=>{
+      const input=document.querySelector('[data-day="monday"] [data-duration]');
+      const saved=input.value;
+      input.value='';
+      const style=getComputedStyle(input);
+      const rect=input.getBoundingClientRect();
+      const canvas=document.createElement('canvas');
+      const context=canvas.getContext('2d');
+      context.font=style.font;
+      const textWidth=context.measureText(input.placeholder).width;
+      const available=rect.width-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight)-32;
+      const values=['1','60','720'].map(value=>{input.value=value;return input.value});
+      input.value='';
+      const state={placeholder:input.placeholder,hint:input.nextElementSibling.textContent,value:input.value,values,width:rect.width,textWidth,available,scrollWidth:document.documentElement.scrollWidth,clientWidth:document.documentElement.clientWidth};
+      input.value=saved;
+      return state;
+    })()`);
+    assert.deepEqual(
+      { placeholder: portugueseDurationField.placeholder, hint: portugueseDurationField.hint, value: portugueseDurationField.value, values: portugueseDurationField.values },
+      { placeholder: 'Ex.: 60', hint: 'De 1 a 720 minutos, incluindo aquecimento e volta à calma.', value: '', values: ['1', '60', '720'] },
+    );
+    assert.ok(portugueseDurationField.width <= 144, 'duration input remains compact');
+    assert.ok(portugueseDurationField.textWidth < portugueseDurationField.available, 'Portuguese placeholder fits the compact input');
+    assert.equal(portugueseDurationField.scrollWidth, portugueseDurationField.clientWidth, 'Portuguese layout has no horizontal overflow');
+
     for (const { width, height, mobile } of [
       { width: 1440, height: 900, mobile: false },
       { width: 1024, height: 768, mobile: false },
@@ -460,8 +485,8 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
 
     await evaluate(`(()=>{const location=document.querySelector('[data-day="tuesday"] [data-location]');location.focus();location.setSelectionRange(2,7,'forward');document.querySelector('.lang-switch [data-lang="en-US"]').click()})()`);
     await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{if(document.documentElement.lang==='en-US')resolve(true);else if(Date.now()>end)reject(new Error('English language switch timed out'));else setTimeout(check,30)};check()})`);
-    const englishState = await evaluate(`(()=>({language:document.documentElement.lang,label:document.querySelector('[data-day="monday"] .period-group legend').textContent,periods:document.querySelectorAll('[data-day="monday"] [data-period]:checked').length,location:document.querySelector('[data-day="tuesday"] [data-location]').value}))()`);
-    assert.deepEqual(englishState, { language: 'en-US', label: 'Available periods', periods: 1, location: 'Maspalomas, Gran Canaria' });
+    const englishState = await evaluate(`(()=>{const duration=document.querySelector('[data-day="monday"] [data-duration]');return {language:document.documentElement.lang,label:document.querySelector('[data-day="monday"] .period-group legend').textContent,periods:document.querySelectorAll('[data-day="monday"] [data-period]:checked').length,location:document.querySelector('[data-day="tuesday"] [data-location]').value,durationPlaceholder:duration.placeholder,durationHint:duration.nextElementSibling.textContent}})()`);
+    assert.deepEqual(englishState, { language: 'en-US', label: 'Available periods', periods: 1, location: 'Maspalomas, Gran Canaria', durationPlaceholder: 'e.g. 60', durationHint: 'From 1 to 720 minutes, including warm-up and cool-down.' });
     const languageFocus = await evaluate(`(()=>{const location=document.querySelector('[data-day="tuesday"] [data-location]');return {focused:document.activeElement===location,start:location.selectionStart,end:location.selectionEnd,direction:location.selectionDirection}})()`);
     assert.equal(languageFocus.focused || languageFocus.start === 0, true);
 

@@ -146,7 +146,8 @@ test('weekly agenda uses native labeled controls and an unselected session durat
   assert.match(row, /data-period="before_08"/);
   assert.match(row, /data-duration/);
   assert.match(row, /<input id="availability-monday-duration" type="number" data-duration/);
-  assert.match(row, /value="" placeholder="Minutos \(1–720\)"/);
+  assert.match(row, /value="" placeholder="Ex\.: 60"/);
+  assert.match(row, /De 1 a 720 minutos, incluindo aquecimento e volta à calma\./);
   assert.match(row, /data-location/);
   const html = readFileSync(join(__dirname, '../src/public/ai-coach.html'), 'utf8');
   assert.match(row, /id="applyWeekdays"/);
@@ -432,8 +433,10 @@ test('AI Coach locale dictionaries retain translated page, form, prompt and shoe
   assert.notEqual(messages.aiCoach.title, enMessages.aiCoach.title);
   assert.equal(messages.aiCoach.periods['08_12'], '08h–12h');
   assert.equal(enMessages.aiCoach.periods['08_12'], '08:00–12:00');
-  assert.equal(messages.aiCoach.durationPlaceholder, 'Minutos (1–720)');
-  assert.equal(enMessages.aiCoach.durationPlaceholder, 'Minutes (1–720)');
+  assert.equal(messages.aiCoach.durationPlaceholder, 'Ex.: 60');
+  assert.equal(enMessages.aiCoach.durationPlaceholder, 'e.g. 60');
+  assert.equal(messages.aiCoach.durationHint, 'De 1 a 720 minutos, incluindo aquecimento e volta à calma.');
+  assert.equal(enMessages.aiCoach.durationHint, 'From 1 to 720 minutes, including warm-up and cool-down.');
 });
 
 test('AI Coach runtime keeps language change, structured data and async prompt wiring', () => {
