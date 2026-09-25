@@ -149,6 +149,18 @@ test('weekly agenda uses native labeled controls and an unselected session durat
   assert.match(html, /id="availabilityReview"/);
 });
 
+test('unavailable day summaries stay compact and details start closed', () => {
+  const row = buildDayRowHtml('segunda', {
+    dayLabel: 'Segunda-feira',
+    messages: messages.aiCoach,
+    state: { can_train: false, available_periods: [], available_minutes: null, location: '' },
+  });
+  assert.doesNotMatch(row, /day-summary-copy"><span data-day-summary>Indisponível/);
+  assert.match(row, /aria-expanded="false"/);
+  assert.match(row, /class="day-details"[^>]*hidden/);
+  assert.match(row, /aria-label="Mostrar detalhes Segunda-feira"/);
+});
+
 test('pad2, date formatting and local date parsing keep the date contracts', () => {
   assert.equal(pad2(3), '03');
   assert.equal(pad2(12), '12');

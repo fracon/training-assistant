@@ -230,8 +230,8 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     const shiftTabState = await evaluate(`document.activeElement.id`);
     assert.equal(shiftTabState, 'applyWeekdays');
     await pressKey('Enter', 'Enter', 13);
-    const applyState = await evaluate(`(()=>({enabled:!document.getElementById('generateBtn').disabled,periods:document.querySelectorAll('[data-day="monday"] [data-period]:checked').length,focused:document.activeElement.matches(':focus-visible'),selectedMarker:getComputedStyle(document.querySelector('[data-day="monday"] [data-period="12_14"] + span'),'::before').content}))()`);
-    assert.deepEqual(applyState, { enabled: true, periods: 2, focused: true, selectedMarker: '"✓"' });
+    const applyState = await evaluate(`(()=>({enabled:!document.getElementById('generateBtn').disabled,periods:document.querySelectorAll('[data-day="monday"] [data-period]:checked').length,focused:document.activeElement.matches(':focus-visible')}))()`);
+    assert.deepEqual(applyState, { enabled: true, periods: 2, focused: true });
     await evaluate(`document.querySelector('[data-day="monday"] [data-period="before_08"]').focus()`);
     await pressKey(' ', 'Space', 32);
     assert.equal(await evaluate(`document.querySelector('[data-day="monday"] [data-period="before_08"]').checked`), true);

@@ -512,7 +512,7 @@ export function validatePromptFields({ targetDate = '', language = 'pt-BR', disp
 }
 
 function daySummary(state, messages) {
-  if (state.can_train === false) return { text: messages.dayUnavailable || '', incomplete: false };
+  if (state.can_train === false) return { text: '', incomplete: false };
   if (state.can_train !== true) return { text: messages.dayNotConfigured || '', incomplete: false };
   const periods = (state.available_periods || []).map((period) => messages.periods?.[period] || period);
   const duration = Number.isInteger(state.available_minutes) ? `${state.available_minutes} ${messages.minutesUnit || messages.minutes || ''}` : '';
@@ -530,12 +530,13 @@ export function buildDayRowHtml(day, { dayLabel, messages = {}, state = {} }) {
   const expanded = available && state.expanded === true;
   const detailsId = `availability-details-${dbDay}`;
   const configured = state.can_train !== null && state.can_train !== undefined;
+  const expandLabel = `${expanded ? (messages.dayCollapse || '') : (messages.dayExpand || '')} ${dayLabel}`.trim();
   const copyAction = day === 'segunda' ? `<button type="button" id="applyWeekdays" class="btn-secondary day-copy-action">${messages.applyWeekdays || ''}</button>` : '';
   return `<fieldset class="day-row" data-day="${dbDay}">
   <div class="day-summary">
     <label class="day-toggle"><input type="checkbox" data-can-train aria-label="${messages.canTrain || ''}" ${available ? 'checked' : ''} aria-controls="${detailsId}" ${configured ? 'data-configured="true"' : ''}><span class="day-label">${dayLabel}</span><span class="day-toggle-status">${available ? (messages.dayAvailable || '') : (messages.dayUnavailable || '')}</span></label>
     <div class="day-summary-copy"><span data-day-summary>${summary.text}</span>${summary.incomplete ? `<span class="day-incomplete" data-day-incomplete>${messages.dayIncomplete || ''}</span>` : ''}</div>
-    <button type="button" class="day-expand" data-expand aria-controls="${detailsId}" aria-expanded="${expanded ? 'true' : 'false'}" ${available ? '' : 'disabled'}>${expanded ? (messages.dayCollapse || '') : (messages.dayExpand || '')}</button>
+    <button type="button" class="day-expand" data-expand aria-label="${expandLabel}" aria-controls="${detailsId}" aria-expanded="${expanded ? 'true' : 'false'}" ${available ? '' : 'disabled'}><span aria-hidden="true">${expanded ? '⌃' : '⌄'}</span></button>
   </div>
   <div class="day-details" id="${detailsId}" ${expanded ? '' : 'hidden'}>
     <fieldset class="period-group"><legend>${messages.periodsLabel || ''}</legend><div class="period-list">${periods}</div></fieldset>
@@ -891,7 +892,11 @@ function setupAiCoachPage() {
       const details = row.querySelector('.day-details');
       const available = event.target.checked;
       const expand = row.querySelector('[data-expand]');
-      if (available && expand) expand.setAttribute('aria-expanded', 'true');
+      if (expand) {
+        expand.setAttribute('aria-expanded', String(available));
+        expand.setAttribute('aria-label', `${t(available ? 'aiCoach.dayCollapse' : 'aiCoach.dayExpand')} ${row.querySelector('.day-label')?.textContent || ''}`.trim());
+        expand.querySelector('[aria-hidden]')?.replaceChildren(document.createTextNode(available ? '⌃' : '⌄'));
+      }
       if (!available && document.activeElement && details.contains(document.activeElement)) row.querySelector('[data-can-train]')?.focus();
       details.hidden = !available || expand?.getAttribute('aria-expanded') !== 'true';
       details.querySelectorAll('input, select').forEach((input) => { input.disabled = !available; });
@@ -922,7 +927,8 @@ function setupAiCoachPage() {
       if (expanded && details.contains(document.activeElement)) row.querySelector('[data-expand]')?.focus({ preventScroll: true });
       expand.setAttribute('aria-expanded', String(!expanded));
       details.hidden = expanded;
-      expand.textContent = expanded ? t('aiCoach.dayExpand') : t('aiCoach.dayCollapse');
+      expand.setAttribute('aria-label', `${t(expanded ? 'aiCoach.dayExpand' : 'aiCoach.dayCollapse')} ${row.querySelector('.day-label')?.textContent || ''}`.trim());
+      expand.querySelector('[aria-hidden]')?.replaceChildren(document.createTextNode(expanded ? '⌄' : '⌃'));
       return;
     }
     if (!event.target.closest('#applyWeekdays')) return;
