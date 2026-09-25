@@ -220,8 +220,65 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     assert.ok(agendaGeometry.durationWidth < agendaGeometry.card.right - agendaGeometry.card.left, 'duration stays compact');
     assert.ok(agendaGeometry.locationWidth < agendaGeometry.card.right - agendaGeometry.card.left, 'location stays content-proportional');
 
-    for (const width of [641, 650, 700, 768, 800]) {
-      await command('Emulation.setDeviceMetricsOverride', { width, height: 800, deviceScaleFactor: 1, mobile: false });
+    const computedFormStyles = await evaluate(`(()=>{
+      const monday=document.querySelector('[data-day="monday"]');
+      const duration=monday.querySelector('[data-duration]');
+      const location=monday.querySelector('[data-location]');
+      const base=document.getElementById('baseLocation');
+      const durationLabel=duration.previousElementSibling;
+      const locationLabel=monday.querySelector('[data-location]')?.previousElementSibling;
+      const baseLabel=base.previousElementSibling;
+      const durationHint=monday.querySelector('[data-duration] + p');
+      const baseHint=base.parentElement.querySelector('.field-hint');
+      const copy=document.getElementById('applyWeekdays');
+      const style=(element)=>{const s=getComputedStyle(element);return {fontFamily:s.fontFamily,fontSize:s.fontSize,fontWeight:s.fontWeight,lineHeight:s.lineHeight,color:s.color,backgroundColor:s.backgroundColor,border:s.border,borderStyle:s.borderStyle,borderRadius:s.borderRadius,padding:s.padding,margin:s.margin,width:s.width,height:s.height}};
+      return {duration:style(duration),location:style(location),base:style(base),durationLabel:style(durationLabel),locationLabel:style(locationLabel),baseLabel:style(baseLabel),durationHint:style(durationHint),baseHint:style(baseHint),copy:style(copy)};
+    })()`) ;
+    const availabilityStructure = await evaluate(`(()=>{
+      const rows=[...document.querySelectorAll('.day-row')];
+      const ids=[...document.querySelectorAll('#availabilityGrid [id]')].map(el=>el.id);
+      return {rows:rows.length,uniqueIds:new Set(ids).size===ids.length,fields:rows.every(row=>{
+        const duration=row.querySelector('[data-duration]');
+        const location=row.querySelector('[data-location]');
+        return duration?.id && location?.id && row.querySelector('label[for="'+duration.id+'"]') && row.querySelector('label[for="'+location.id+'"]') && row.querySelector('p.field-hint[id="'+duration.dataset.hintId+'"]');
+      })};
+    })()`);
+    assert.deepEqual(availabilityStructure, { rows: 7, uniqueIds: true, fields: true }, 'daily fields keep unique labels and hints');
+    assert.deepEqual(
+      ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'color'].map((key) => computedFormStyles.duration[key]),
+      ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'color'].map((key) => computedFormStyles.location[key]),
+      'duration and location inputs share control typography',
+    );
+    assert.deepEqual(
+      ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'color'].map((key) => computedFormStyles.location[key]),
+      ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'color'].map((key) => computedFormStyles.base[key]),
+      'availability inputs match base location typography',
+    );
+    assert.deepEqual(
+      ['fontFamily', 'fontSize', 'fontWeight', 'color'].map((key) => computedFormStyles.durationLabel[key]),
+      ['fontFamily', 'fontSize', 'fontWeight', 'color'].map((key) => computedFormStyles.locationLabel[key]),
+      'availability labels share label hierarchy',
+    );
+    assert.deepEqual(
+      ['fontFamily', 'fontSize', 'fontWeight', 'color'].map((key) => computedFormStyles.locationLabel[key]),
+      ['fontFamily', 'fontSize', 'fontWeight', 'color'].map((key) => computedFormStyles.baseLabel[key]),
+      'availability labels match base location label hierarchy',
+    );
+    assert.equal(computedFormStyles.durationHint.fontWeight, computedFormStyles.baseHint.fontWeight, 'hints stay regular');
+    assert.equal(computedFormStyles.copy.borderStyle, 'none', 'copy action is not input-like');
+    assert.equal(computedFormStyles.copy.backgroundColor, 'rgba(0, 0, 0, 0)', 'copy action is transparent');
+
+    for (const { width, height, mobile } of [
+      { width: 1440, height: 900, mobile: false },
+      { width: 1024, height: 768, mobile: false },
+      { width: 768, height: 1024, mobile: false },
+      { width: 641, height: 800, mobile: false },
+      { width: 650, height: 800, mobile: false },
+      { width: 700, height: 800, mobile: false },
+      { width: 800, height: 800, mobile: false },
+      { width: 320, height: 700, mobile: true },
+    ]) {
+      await command('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile });
       await evaluate(`new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`);
       const intermediate = await evaluate(`(()=>{
         const row=document.querySelector('[data-day="monday"]');
@@ -229,11 +286,13 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
         const header=row.querySelector('.day-summary').getBoundingClientRect();
         const summary=row.querySelector('.day-summary-copy').getBoundingClientRect();
         const expand=row.querySelector('[data-expand]').getBoundingClientRect();
-        return {width:innerWidth,scrollWidth:document.documentElement.scrollWidth,inside:header.left>=card.left&&header.right<=card.right&&expand.left>=card.left&&expand.right<=card.right,summaryInside:summary.right<=card.right};
+        const details=row.querySelector('.day-details').getBoundingClientRect();
+        return {width:innerWidth,scrollWidth:document.documentElement.scrollWidth,inside:header.left>=card.left&&header.right<=card.right&&expand.left>=card.left&&expand.right<=card.right,summaryInside:summary.right<=card.right,detailsInside:details.left>=card.left&&details.right<=card.right};
       })()`);
       assert.equal(intermediate.scrollWidth, width, `no horizontal overflow at ${width}px`);
       assert.equal(intermediate.inside, true, `day header remains inside card at ${width}px`);
       assert.equal(intermediate.summaryInside, true, `day summary remains inside card at ${width}px`);
+      assert.equal(intermediate.detailsInside, true, `day details remain inside card at ${width}px`);
     }
     await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
     await evaluate(`new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`);
@@ -482,7 +541,7 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
 
     await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
     await evaluate(`new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>setTimeout(resolve,100))))`);
-    const mobile = await evaluate(`(()=>({width:innerWidth,scrollWidth:document.documentElement.scrollWidth,days:document.querySelectorAll('#availabilityGrid .day-row').length,touchTarget:[...document.querySelectorAll('.period-option span')].filter(el=>el.getClientRects().length>0).every(el=>el.getBoundingClientRect().height>=42)}))()`);
+    const mobile = await evaluate(`(()=>({width:innerWidth,scrollWidth:document.documentElement.scrollWidth,days:document.querySelectorAll('#availabilityGrid .day-row').length,touchTarget:[...document.querySelectorAll('.period-option')].filter(el=>el.getClientRects().length>0).every(el=>el.getBoundingClientRect().height>=42)}))()`);
     assert.deepEqual(mobile, { width: 390, scrollWidth: 390, days: 7, touchTarget: true });
     await evaluate(`(()=>{const input=document.querySelector('[data-day="tuesday"] [data-location]');input.value='Mobile';input.dispatchEvent(new Event('input',{bubbles:true}))})()`);
     await command('Fetch.enable', { patterns: [{ urlPattern: '*api/ai-coach/availability*', requestStage: 'Response' }] });

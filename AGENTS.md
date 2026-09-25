@@ -261,6 +261,15 @@ establishing a new visual convention without need. A new interface is complete
 only when it is functional, accessible, responsive, visually inspected in the
 browser, and consistent with the established Kinesis screens.
 
+Visually equivalent controls must reuse the same structures and styles. Keep
+label typography on labels, not on containers that also contain inputs, and do
+not rely on indiscriminate inheritance when it creates inconsistent control
+weights. Auxiliary text needs its own structure and style, distinct from its
+label. Avoid page-specific CSS that unnecessarily duplicates shared controls
+or fixes structural problems through cascaded overrides. When equivalent
+components appear different, inspect computed styles and real dimensions,
+including overflow; functional tests alone do not replace visual inspection.
+
 1. **Local-first privacy:** never send FIT files or workout data to an external
    cloud API for processing. Preserve only the defined integrations: Open-Meteo
    receives planned location/date, Unsplash receives a generic image request,

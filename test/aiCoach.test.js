@@ -57,7 +57,11 @@ test('duration validation accepts every tested integer through 720 and rejects v
 
 test('availability duration control exposes the same inclusive upper limit as validation', () => {
   const html = buildDayRowHtml('segunda', { dayLabel: 'Segunda', state: week.segunda });
-  assert.match(html, /data-duration min="1" max="720" step="1"/);
+  assert.match(html, /data-duration data-hint-id="availability-monday-duration-hint" min="1" max="720" step="1"/);
+  assert.match(html, /label class="field-label" for="availability-monday-duration"/);
+  assert.match(html, /p class="field-hint" id="availability-monday-duration-hint"/);
+  assert.match(html, /label class="field-label" for="availability-monday-location"/);
+  assert.doesNotMatch(html, /<label class="day-field"/);
 });
 
 test('day location validation matches the trimmed 200-character backend contract', () => {
@@ -141,11 +145,13 @@ test('weekly agenda uses native labeled controls and an unselected session durat
   assert.match(row, /day-summary/);
   assert.match(row, /data-period="before_08"/);
   assert.match(row, /data-duration/);
-  assert.match(row, /<input type="number" data-duration min="1" max="720" step="1"/);
+  assert.match(row, /<input id="availability-monday-duration" type="number" data-duration/);
   assert.match(row, /value="" placeholder="Minutos \(1–720\)"/);
   assert.match(row, /data-location/);
   const html = readFileSync(join(__dirname, '../src/public/ai-coach.html'), 'utf8');
   assert.match(row, /id="applyWeekdays"/);
+  assert.match(row, /data-lucide="copy" aria-hidden="true"/);
+  assert.doesNotMatch(row, /id="applyWeekdays" class="btn-secondary"/);
   assert.match(html, /id="availabilityReview"/);
 });
 
@@ -474,9 +480,13 @@ test('AI Coach responsive layout and controls retain visible focus and shared bu
   assert.doesNotMatch(css, /\.period-list\s*\{[\s\S]*?grid-template-columns/);
   assert.match(css, /input\[data-duration\][\s\S]*?max-width:\s*9rem/);
   assert.match(css, /input\[data-location\][\s\S]*?max-width:\s*28rem/);
-  assert.match(css, /\.day-field input,[\s\S]*?\.day-field select/);
+  assert.doesNotMatch(css, /\.day-field/);
+  assert.match(css, /\.availability-day-field input\s*\{[\s\S]*?font-weight:\s*500/);
+  assert.match(css, /\.day-copy-action\s*\{[\s\S]*?border:\s*0/);
+  assert.doesNotMatch(css, /\.ai-coach-page\s*\{[\s\S]*?overflow-x:\s*hidden/);
   assert.match(theme, /\.btn-primary/);
   assert.match(html, /id="generateBtn"[^>]*class="btn-primary"/);
+  assert.match(html, /id="saveAvailability"[^>]*class="availability-save-action"/);
   assert.match(html, /id="availabilityGrid"/);
 });
 

@@ -529,9 +529,12 @@ export function buildDayRowHtml(day, { dayLabel, messages = {}, state = {} }) {
   const available = state.can_train === true;
   const expanded = available && state.expanded === true;
   const detailsId = `availability-details-${dbDay}`;
+  const durationId = `availability-${dbDay}-duration`;
+  const durationHintId = `availability-${dbDay}-duration-hint`;
+  const locationId = `availability-${dbDay}-location`;
   const configured = state.can_train !== null && state.can_train !== undefined;
   const expandLabel = `${expanded ? (messages.dayCollapse || '') : (messages.dayExpand || '')} ${dayLabel}`.trim();
-  const copyAction = day === 'segunda' ? `<button type="button" id="applyWeekdays" class="btn-secondary day-copy-action">${messages.applyWeekdays || ''}</button>` : '';
+  const copyAction = day === 'segunda' ? `<button type="button" id="applyWeekdays" class="day-copy-action"><i data-lucide="copy" aria-hidden="true"></i><span>${messages.applyWeekdays || ''}</span></button>` : '';
   return `<fieldset class="day-row" data-day="${dbDay}">
   <div class="day-summary">
     <label class="day-toggle"><input type="checkbox" data-can-train aria-label="${dayLabel}" ${available ? 'checked' : ''} aria-controls="${detailsId}" ${configured ? 'data-configured="true"' : ''}><span class="day-label">${dayLabel}</span></label>
@@ -540,8 +543,8 @@ export function buildDayRowHtml(day, { dayLabel, messages = {}, state = {} }) {
   </div>
   <div class="day-details" id="${detailsId}" ${expanded ? '' : 'hidden'}>
     <fieldset class="period-group"><legend>${messages.periodsLabel || ''}</legend><div class="period-list">${periods}</div></fieldset>
-    <label class="day-field">${messages.durationLabel || ''}<input type="number" data-duration min="1" max="${MAX_AVAILABLE_MINUTES}" step="1" inputmode="numeric" value="${duration}" placeholder="${messages.durationPlaceholder || ''}"><span class="field-hint">${messages.durationHint || ''}</span></label>
-    <label class="day-field">${messages.locationLabel || ''}<input type="text" data-location value="${String(state.location || '').replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;')}" autocomplete="off"></label>
+    <div class="field availability-day-field"><label class="field-label" for="${durationId}">${messages.durationLabel || ''}</label><input id="${durationId}" type="number" data-duration data-hint-id="${durationHintId}" min="1" max="${MAX_AVAILABLE_MINUTES}" step="1" inputmode="numeric" value="${duration}" placeholder="${messages.durationPlaceholder || ''}" aria-describedby="${durationHintId}"><p class="field-hint" id="${durationHintId}">${messages.durationHint || ''}</p></div>
+    <div class="field availability-day-field"><label class="field-label" for="${locationId}">${messages.locationLabel || ''}</label><input id="${locationId}" type="text" data-location value="${String(state.location || '').replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;')}" autocomplete="off"></div>
   <p class="day-error" id="availability-error-${dbDay}" data-day-error hidden></p>
   ${copyAction}
   </div>
@@ -702,6 +705,7 @@ function setupAiCoachPage() {
       const expand = row.querySelector('[data-expand]');
       if (expand) expand.disabled = !selected;
     });
+    if (globalThis.lucide && typeof globalThis.lucide.createIcons === 'function') globalThis.lucide.createIcons();
     restoreDailyFocus(focused);
     if (focused) requestAnimationFrame(() => {
       if (document.activeElement === document.body || !availabilityGrid.contains(document.activeElement)) restoreDailyFocus(focused);
@@ -850,15 +854,20 @@ function setupAiCoachPage() {
       error.hidden = errors.length === 0;
       const errorId = error.id;
       periods.setAttribute('aria-invalid', String(dayErrorKeys.includes('availabilityNeedsPeriods')));
-      periods.setAttribute('aria-describedby', errorId);
+      if (dayErrorKeys.length) periods.setAttribute('aria-describedby', errorId);
+      else periods.removeAttribute('aria-describedby');
       periods.querySelectorAll('input').forEach((input) => {
         input.setAttribute('aria-invalid', String(dayErrorKeys.includes('availabilityNeedsPeriods')));
-        input.setAttribute('aria-describedby', errorId);
+        if (dayErrorKeys.length) input.setAttribute('aria-describedby', errorId);
+        else input.removeAttribute('aria-describedby');
       });
       duration.setAttribute('aria-invalid', String(dayErrorKeys.includes('availabilityNeedsDuration')));
-      duration.setAttribute('aria-describedby', errorId);
+      const durationDescribedBy = [duration.dataset.hintId, dayErrorKeys.length ? errorId : ''].filter(Boolean).join(' ');
+      if (durationDescribedBy) duration.setAttribute('aria-describedby', durationDescribedBy);
+      else duration.removeAttribute('aria-describedby');
       location.setAttribute('aria-invalid', String(dayErrorKeys.includes('availabilityNeedsLocation') || dayErrorKeys.includes('availabilityLocationTooLong')));
-      location.setAttribute('aria-describedby', errorId);
+      if (dayErrorKeys.length) location.setAttribute('aria-describedby', errorId);
+      else location.removeAttribute('aria-describedby');
     }
     return validation;
   }

@@ -5,7 +5,6 @@
   max-width: 720px;
   margin: 0 auto;
   padding: 1.5rem 1rem 3rem;
-  overflow-x: hidden;
 }
 
 .ai-coach-header {
@@ -46,12 +45,6 @@
   gap: 0.4rem;
 }
 
-.field label,
-.availability-fieldset legend {
-  font-weight: 600;
-  font-size: 0.95rem;
-}
-
 .required-mark {
   margin-left: 0.2rem;
   color: var(--danger);
@@ -59,8 +52,7 @@
 
 .field input[type='date'],
 .date-input-display,
-.field textarea,
-.day-row input[type='text'] {
+.field textarea {
   width: 100%;
   padding: 0.55rem 0.7rem;
   border: 1px solid var(--line-strong);
@@ -204,13 +196,11 @@
 }
 
 .day-details,
-.day-field,
-.period-group {
-  width: 100%;
-  min-width: 0;
-}
+.period-group,
+.availability-day-field { min-width: 0; }
 
 .day-details {
+  width: auto;
   margin: 0.85rem 0 0 1.65rem;
   padding-top: 0.1rem;
   display: flex;
@@ -224,8 +214,7 @@
   padding: 0;
 }
 
-.period-group legend,
-.day-field {
+.period-group legend {
   color: var(--muted);
   font-size: 0.82rem;
   font-weight: 600;
@@ -259,7 +248,6 @@
 }
 
 .period-option span {
-  min-height: 42px;
   display: inline-flex;
   align-items: center;
   color: var(--ink);
@@ -273,54 +261,29 @@
   outline-offset: 2px;
 }
 
-.day-copy-action {
-  align-self: flex-start;
-  border-radius: 8px;
-}
-
-/* Keep the existing form rhythm for the compact agenda details. */
-.day-field input,
-.day-field select {
-  border-radius: 10px;
-}
-
-/* Retained for the shared prompt copy control. */
-.copy-btn {
-  border-radius: 8px;
-}
-
-.day-field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.day-field input[data-duration] {
+.availability-day-field input[data-duration] {
   max-width: 9rem;
 }
 
-.day-field input[data-location] {
+.availability-day-field input[data-location] {
   max-width: 28rem;
 }
 
-.day-field input,
-.day-field select {
+.availability-day-field input {
   width: 100%;
   min-height: 42px;
   padding: 0.5rem 0.65rem;
   border: 1px solid var(--line-strong);
-  border-radius: 9px;
+  border-radius: 10px;
   background-color: var(--bg);
   color: var(--ink);
-  font: inherit;
+  font-family: inherit;
+  font-size: 0.92rem;
+  font-weight: 500;
+  line-height: normal;
 }
 
-.day-field select {
-  padding-right: 2.25rem;
-}
-
-.day-field input:focus-visible,
-.day-field select:focus-visible {
+.availability-day-field input:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
@@ -351,24 +314,62 @@
   gap: 0.75rem;
 }
 
-.btn-secondary {
-  min-height: 42px;
+.day-copy-action {
   align-self: flex-start;
-  border: 1px solid var(--line-strong);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.5rem;
+  padding: 0.5rem 0.65rem;
+  border: 0;
   border-radius: 8px;
-  padding: 0.5rem 0.85rem;
-  background: var(--bg);
-  color: var(--ink);
+  background: transparent;
+  color: var(--accent-deep);
   font: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
   cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
 }
 
-.btn-secondary:hover {
-  border-color: var(--accent);
+.day-copy-action:hover {
+  background: var(--line);
 }
 
-.btn-secondary:focus-visible {
-  outline: 3px solid var(--accent);
+.day-copy-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.day-copy-action svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+.availability-save-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.5rem;
+  border: 1px solid var(--accent-deep);
+  border-radius: 999px;
+  padding: 0.55rem 1.1rem;
+  background: transparent;
+  color: var(--accent-deep);
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.availability-save-action:hover {
+  background: rgba(111, 144, 112, 0.08);
+}
+
+.availability-save-action:focus-visible {
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -473,7 +474,7 @@
   }
 
   .day-copy-action,
-  .availability-actions .btn-secondary {
+  .availability-actions .availability-save-action {
     width: 100%;
   }
 }
