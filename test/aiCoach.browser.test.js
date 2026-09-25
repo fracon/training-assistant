@@ -151,6 +151,8 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     await Promise.race([loaded, delay(15000).then(() => { throw new Error('AI Coach page load timed out.'); })]);
     const ready = await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+12000;const check=()=>{if(document.querySelectorAll('#availabilityGrid .day-row').length===7){resolve(true);return}if(Date.now()>end){reject(new Error('Availability grid did not render'));return}requestAnimationFrame(check)};check()})`);
     assert.equal(ready, true);
+    const requestWorkoutsIcon = await evaluate(`(()=>{const item=document.querySelector('[data-nav-id="ai-coach"]');const icon=item?.querySelector('svg');const style=icon?getComputedStyle(icon):null;return {active:item?.classList.contains('active'),icon:icon?.getAttribute('data-lucide'),display:style?.display,color:style?.color}})()`);
+    assert.deepEqual(requestWorkoutsIcon, { active: true, icon: 'sport-shoe', display: 'block', color: 'rgb(76, 110, 81)' });
     await evaluate(`window.__setDay=(day,available)=>{const input=document.querySelector('[data-day="'+day+'"] [data-can-train]');if(input.checked!==available){input.click()}else if(input.closest('.day-row').dataset.configured!=='true'){input.dispatchEvent(new Event('change',{bubbles:true}))}}`);
     const pendingInitialGet = await initialGet;
     await evaluate(`(()=>{const input=document.getElementById('baseLocation');input.value='Lisboa';input.dispatchEvent(new Event('change',{bubbles:true}));return true})()`);

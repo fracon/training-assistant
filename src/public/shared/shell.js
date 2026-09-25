@@ -45,7 +45,7 @@ const NAV_ITEMS = [
   },
   {
     id: 'ai-coach',
-    icon: 'bot',
+    icon: 'sport-shoe',
     labelKey: 'shell.nav.requestWorkouts',
     href: '/ai-coach.html',
     disabled: false,

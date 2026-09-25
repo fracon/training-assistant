@@ -31,7 +31,7 @@ function stubStorage(initial = {}) {
 
 const NAV_ITEMS = [
   { id: 'dashboard', labelKey: 'shell.nav.home', href: '/home.html', disabled: false, icon: 'layout-dashboard' },
-  { id: 'ai-coach', labelKey: 'shell.nav.requestWorkouts', href: '/ai-coach.html', disabled: false, icon: 'bot' },
+  { id: 'ai-coach', labelKey: 'shell.nav.requestWorkouts', href: '/ai-coach.html', disabled: false, icon: 'sport-shoe' },
   { id: 'calendar', labelKey: 'shell.nav.workouts', href: '/calendar.html', disabled: false, icon: 'calendar-days' },
   { id: 'shoes', labelKey: 'shell.nav.shoes', href: '/shoes.html', disabled: false, icon: 'footprints' },
 ];
@@ -82,6 +82,7 @@ test('sidebar navigation follows Home, Request Workouts, Workouts, Shoes', () =>
   );
   assert.equal(NAV_ITEMS[0].href, '/home.html', 'the Home item opens the dashboard');
   assert.equal(NAV_ITEMS[1].href, '/ai-coach.html');
+  assert.equal(NAV_ITEMS[1].icon, 'sport-shoe');
   assert.equal(NAV_ITEMS[2].href, '/calendar.html');
   assert.equal(NAV_ITEMS[3].href, '/shoes.html');
   assert.ok(
@@ -365,6 +366,12 @@ test('shell.js NAV_ITEMS array includes cycles with repeat icon', () => {
   assert.match(js, /icon:\s*'repeat'/, 'cycles uses the repeat icon');
   assert.match(js, /labelKey:\s*'shell\.nav\.cycles'/, 'cycles label resolves through i18n');
   assert.match(js, /href:\s*'\/cycles\.html'/, 'cycles links to the cycles page');
+});
+
+test('Request Workouts uses the official Lucide sport-shoe icon', () => {
+  const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
+  assert.match(js, /id:\s*'ai-coach',[\s\S]*?icon:\s*'sport-shoe'/);
+  assert.doesNotMatch(js, /id:\s*'ai-coach',[\s\S]*?icon:\s*'bot'/);
 });
 
 test('CYCLE_DEPENDENT_ITEMS targets ai-coach and calendar', () => {
