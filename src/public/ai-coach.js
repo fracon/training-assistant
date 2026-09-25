@@ -539,7 +539,7 @@ export function buildDayRowHtml(day, { dayLabel, messages = {}, state = {} }) {
   <div class="day-summary${expanded ? ' is-expanded' : ''}">
     <div class="day-toggle"><input type="checkbox" data-can-train aria-label="${dayLabel}" ${available ? 'checked' : ''} aria-controls="${detailsId}" ${configured ? 'data-configured="true"' : ''}><span class="day-label">${dayLabel}</span></div>
     <div class="day-summary-copy"><span data-day-summary>${summary.text}</span>${summary.incomplete ? `<span class="day-incomplete" data-day-incomplete>${messages.dayIncomplete || ''}</span>` : ''}</div>
-    <button type="button" class="day-expand" data-expand aria-label="${expandLabel}" aria-controls="${detailsId}" aria-expanded="${expanded ? 'true' : 'false'}"><span aria-hidden="true">⌄</span></button>
+    <button type="button" class="day-expand" data-expand aria-label="${expandLabel}" aria-controls="${detailsId}" aria-expanded="${expanded ? 'true' : 'false'}"><span class="day-chevron" aria-hidden="true">⌄</span></button>
   </div>
   <div class="day-details" id="${detailsId}" ${expanded ? '' : 'hidden'}>
     <fieldset class="period-group"><legend>${messages.periodsLabel || ''}</legend><div class="period-list">${periods}</div></fieldset>
@@ -568,6 +568,7 @@ function setupAiCoachPage() {
   const availabilityGrid = document.getElementById('availabilityGrid');
   const saveAvailabilityButton = document.getElementById('saveAvailability');
   const availabilityStatus = document.getElementById('availabilityStatus');
+  const saveAvailabilityLabel = document.getElementById('saveAvailabilityLabel');
   const availabilityError = document.getElementById('availabilityError');
   const availabilityReview = document.getElementById('availabilityReview');
   const resultSection = document.getElementById('resultSection');
@@ -751,6 +752,8 @@ function setupAiCoachPage() {
   function setAvailabilityStatus(key) {
     availabilityStatusKey = key;
     availabilityStatus.textContent = key ? t(`aiCoach.${key}`) : '';
+    availabilityStatus.classList.toggle('is-success', key === 'availabilitySaved');
+    availabilityStatus.classList.toggle('is-error', Boolean(key) && key !== 'availabilitySaved');
   }
 
   function noteAvailabilityEdit() {
@@ -965,9 +968,9 @@ function setupAiCoachPage() {
     const focusSnapshot = lastDailyFocus;
     renderDayRows(readFormFields(), { focusSnapshot });
     if (focusSnapshot) requestAnimationFrame(() => restoreDailyFocus(focusSnapshot));
-    saveAvailabilityButton.textContent = t('aiCoach.saveAvailability');
+    saveAvailabilityLabel.textContent = t('aiCoach.saveAvailability');
     availabilityReview.textContent = t('aiCoach.availabilityReview');
-    if (availabilityStatusKey) availabilityStatus.textContent = t(`aiCoach.${availabilityStatusKey}`);
+    if (availabilityStatusKey) setAvailabilityStatus(availabilityStatusKey);
     const targetIso = readTargetDateIso(targetDateInput, targetDatePicker, i18n.language);
     targetDateInput.dataset.iso = targetIso;
     targetDateInput.value = targetIso;
@@ -975,7 +978,7 @@ function setupAiCoachPage() {
     updateValidation();
   });
 
-  saveAvailabilityButton.textContent = t('aiCoach.saveAvailability');
+  saveAvailabilityLabel.textContent = t('aiCoach.saveAvailability');
 
   let copiedTimer = null;
 

@@ -123,7 +123,7 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     };
     const saveCurrentForm = async () => {
       await evaluate(`document.getElementById('saveAvailability').click()`);
-      await waitForText('#availabilityStatus', 'Availability saved.');
+      await waitForText('#availabilityStatus', 'Weekly schedule saved.');
     };
     const pressKey = async (key, code, keyCode, modifiers = 0) => {
       await command('Input.dispatchKeyEvent', { type: 'keyDown', key, code, windowsVirtualKeyCode: keyCode, modifiers });
@@ -167,10 +167,15 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       saturday.querySelector('.day-label').click();
       const afterLabelClick=saturday.querySelector('[data-can-train]').checked;
       const expand=saturday.querySelector('[data-expand]');
+      const closedButton=expand.getBoundingClientRect();
+      const closedIcon=expand.querySelector('.day-chevron').getBoundingClientRect();
       expand.click();
+      const openButton=expand.getBoundingClientRect();
+      const openIcon=expand.querySelector('.day-chevron').getBoundingClientRect();
+      const openStyle=getComputedStyle(expand.querySelector('.day-chevron'));
       const expanded={hidden:saturday.querySelector('.day-details').hidden,disabled:[...saturday.querySelectorAll('.day-details input')].every(input=>input.disabled)};
       expand.click();
-      return {days:rows.length,expanders:rows.every(row=>row.querySelector('[data-expand]')&&!row.querySelector('[data-expand]').disabled),before,afterLabelClick,expanded,reclosed:saturday.querySelector('.day-details').hidden};
+      return {days:rows.length,expanders:rows.every(row=>row.querySelector('[data-expand]')&&!row.querySelector('[data-expand]').disabled),before,afterLabelClick,expanded,reclosed:saturday.querySelector('.day-details').hidden,chevron:{sameButtonSize:closedButton.width===openButton.width&&closedButton.height===openButton.height,sameCenter:Math.abs((closedIcon.left+closedIcon.width/2)-(openIcon.left+openIcon.width/2))<0.5&&Math.abs((closedIcon.top+closedIcon.height/2)-(openIcon.top+openIcon.height/2))<0.5,transformOrigin:openStyle.transformOrigin}};
     })()`);
     assert.deepEqual(initialDayControls, {
       days: 7,
@@ -179,6 +184,7 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       afterLabelClick: false,
       expanded: { hidden: false, disabled: true },
       reclosed: true,
+      chevron: { sameButtonSize: true, sameCenter: true, transformOrigin: '8px 8px' },
     });
 
     const overlongPrefill = await evaluate(`(()=>{
@@ -246,7 +252,9 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     await command('Fetch.disable');
     await evaluate(`document.getElementById('saveAvailability').click()`);
     const exactLimitSaveStatus = await evaluate(`new Promise(resolve=>{const end=Date.now()+8000;const check=()=>{const status=document.getElementById('availabilityStatus').textContent.trim();if(status||Date.now()>end){resolve(status);return}requestAnimationFrame(check)};check()})`);
-    assert.equal(exactLimitSaveStatus, 'Disponibilidade salva.');
+    assert.equal(exactLimitSaveStatus, 'Agenda semanal salva.');
+    const saveVisualState = await evaluate(`(()=>{const button=document.getElementById('saveAvailability');const status=document.getElementById('availabilityStatus');const style=getComputedStyle(button);return {label:document.getElementById('saveAvailabilityLabel').textContent,icon:button.querySelector('[data-lucide="save"]')?.getAttribute('aria-hidden')||button.querySelector('svg')?.getAttribute('aria-hidden'),success:status.classList.contains('is-success'),error:status.classList.contains('is-error'),border:style.borderStyle,borderRadius:style.borderRadius,scrollWidth:document.documentElement.scrollWidth,clientWidth:document.documentElement.clientWidth}})()`);
+    assert.deepEqual(saveVisualState, {label: 'Salvar agenda semanal', icon: 'true', success: true, error: false, border: 'none', borderRadius: '8px', scrollWidth: 1280, clientWidth: 1280});
     const exactLocationSaved = await app.inject({ method: 'GET', url: '/api/ai-coach/availability', headers: { cookie: `ta_session=${cookie}` } });
     assert.equal(exactLocationSaved.json().availability.days[0].location, `  ${'B'.repeat(200)}  `);
     const desktop = await evaluate(`(()=>({width:innerWidth,scrollWidth:document.documentElement.scrollWidth,language:document.documentElement.lang,reviewVisible:!document.getElementById('availabilityReview').hidden,days:document.querySelectorAll('#availabilityGrid .day-row').length}))()`);
@@ -532,8 +540,8 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
 
     await evaluate(`(()=>{const location=document.querySelector('[data-day="tuesday"] [data-location]');location.focus();location.setSelectionRange(2,7,'forward');document.querySelector('.lang-switch [data-lang="en-US"]').click()})()`);
     await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{if(document.documentElement.lang==='en-US')resolve(true);else if(Date.now()>end)reject(new Error('English language switch timed out'));else setTimeout(check,30)};check()})`);
-    const englishState = await evaluate(`(()=>{const duration=document.querySelector('[data-day="monday"] [data-duration]');return {language:document.documentElement.lang,label:document.querySelector('[data-day="monday"] .period-group legend').textContent,periods:document.querySelectorAll('[data-day="monday"] [data-period]:checked').length,location:document.querySelector('[data-day="tuesday"] [data-location]').value,durationPlaceholder:duration.placeholder,durationHint:duration.nextElementSibling.textContent}})()`);
-    assert.deepEqual(englishState, { language: 'en-US', label: 'Available periods', periods: 1, location: 'Maspalomas, Gran Canaria', durationPlaceholder: 'e.g. 60', durationHint: 'From 1 to 720 minutes, including warm-up and cool-down.' });
+    const englishState = await evaluate(`(()=>{const duration=document.querySelector('[data-day="monday"] [data-duration]');return {language:document.documentElement.lang,label:document.querySelector('[data-day="monday"] .period-group legend').textContent,periods:document.querySelectorAll('[data-day="monday"] [data-period]:checked').length,location:document.querySelector('[data-day="tuesday"] [data-location]').value,durationPlaceholder:duration.placeholder,durationHint:duration.nextElementSibling.textContent,saveLabel:document.getElementById('saveAvailabilityLabel').textContent}})()`);
+    assert.deepEqual(englishState, { language: 'en-US', label: 'Available periods', periods: 1, location: 'Maspalomas, Gran Canaria', durationPlaceholder: 'e.g. 60', durationHint: 'From 1 to 720 minutes, including warm-up and cool-down.', saveLabel: 'Save weekly schedule' });
     const languageFocus = await evaluate(`(()=>{const location=document.querySelector('[data-day="tuesday"] [data-location]');return {focused:document.activeElement===location,start:location.selectionStart,end:location.selectionEnd,direction:location.selectionDirection}})()`);
     assert.equal(languageFocus.focused || languageFocus.start === 0, true);
 

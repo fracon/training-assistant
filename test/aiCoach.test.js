@@ -453,6 +453,10 @@ test('AI Coach locale dictionaries retain translated page, form, prompt and shoe
   assert.equal(enMessages.aiCoach.durationPlaceholder, 'e.g. 60');
   assert.equal(messages.aiCoach.durationHint, 'De 1 a 720 minutos, incluindo aquecimento e volta à calma.');
   assert.equal(enMessages.aiCoach.durationHint, 'From 1 to 720 minutes, including warm-up and cool-down.');
+  assert.equal(messages.aiCoach.saveAvailability, 'Salvar agenda semanal');
+  assert.equal(enMessages.aiCoach.saveAvailability, 'Save weekly schedule');
+  assert.equal(messages.aiCoach.availabilitySaved, 'Agenda semanal salva.');
+  assert.equal(enMessages.aiCoach.availabilitySaved, 'Weekly schedule saved.');
 });
 
 test('AI Coach runtime keeps language change, structured data and async prompt wiring', () => {
@@ -502,7 +506,11 @@ test('AI Coach responsive layout and controls retain visible focus and shared bu
   assert.doesNotMatch(css, /\.day-field/);
   assert.match(css, /\.availability-day-field input\s*\{[\s\S]*?font-weight:\s*500/);
   assert.match(css, /\.day-summary\.is-expanded\s+\[data-day-summary\][\s\S]*?display:\s*none/);
-  assert.match(css, /\.day-expand\[aria-expanded='true'\]\s*> span[\s\S]*?transform:\s*rotate\(180deg\)/);
+  assert.match(css, /\.day-expand\[aria-expanded='true'\]\s+\.day-chevron[\s\S]*?transform:\s*rotate\(180deg\)/);
+  assert.match(css, /\.day-chevron\s*\{[\s\S]*?transform-origin:\s*center/);
+  assert.match(css, /\.availability-status\.is-success[\s\S]*?color:\s*var\(--ok\)/);
+  assert.match(css, /\.availability-status\.is-error[\s\S]*?color:\s*var\(--danger\)/);
+  assert.match(css, /\.availability-save-action\s*\{[\s\S]*?border:\s*0/);
   assert.match(css, /prefers-reduced-motion:\s*reduce/);
   assert.match(css, /\.day-error\s*\{[\s\S]*?border-top:\s*1px solid var\(--line\)/);
   assert.match(css, /\.day-copy-action\s*\{[\s\S]*?border:\s*0/);
@@ -510,6 +518,7 @@ test('AI Coach responsive layout and controls retain visible focus and shared bu
   assert.match(theme, /\.btn-primary/);
   assert.match(html, /id="generateBtn"[^>]*class="btn-primary"/);
   assert.match(html, /id="saveAvailability"[^>]*class="availability-save-action"/);
+  assert.match(html, /id="saveAvailability"[^>]*><i data-lucide="save" aria-hidden="true"><\/i><span id="saveAvailabilityLabel"><\/span>/);
   assert.match(html, /id="availabilityGrid"/);
 });
 

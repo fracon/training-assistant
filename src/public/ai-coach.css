@@ -136,6 +136,7 @@
   min-width: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
   align-items: center;
   gap: 0.2rem 0.75rem;
 }
@@ -186,27 +187,35 @@
 
 .day-expand {
   grid-column: 2;
-  grid-row: 1 / span 2;
+  grid-row: 1;
   width: 1.8rem;
-  min-height: 1.8rem;
+  height: 1.8rem;
   border: 1px solid transparent;
   border-radius: 6px;
-  padding: 0.15rem;
+  padding: 0;
   background: transparent;
   color: var(--ink);
   font: inherit;
-  font-size: 1rem;
-  line-height: 1;
+  line-height: 0;
   cursor: pointer;
   align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.day-expand > span {
-  display: inline-block;
+.day-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  line-height: 1;
+  transform-origin: center;
   transition: transform 0.18s ease;
 }
 
-.day-expand[aria-expanded='true'] > span {
+.day-expand[aria-expanded='true'] .day-chevron {
   transform: rotate(180deg);
 }
 
@@ -309,12 +318,25 @@
 }
 
 .availability-review,
-#availabilityStatus,
 .availability-error,
 .day-error {
   margin: 0;
   color: var(--danger);
   font-size: 0.82rem;
+}
+
+.availability-status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.availability-status.is-success {
+  color: var(--ok);
+}
+
+.availability-status.is-error {
+  color: var(--danger);
 }
 
 .day-error {
@@ -342,7 +364,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .day-expand > span {
+  .day-chevron {
     transition: none;
   }
 }
@@ -391,10 +413,11 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 2.5rem;
-  border: 1px solid var(--accent-deep);
-  border-radius: 999px;
-  padding: 0.55rem 1.1rem;
+  gap: 0.4rem;
+  min-height: 2.25rem;
+  border: 0;
+  border-radius: 8px;
+  padding: 0.4rem 0.55rem;
   background: transparent;
   color: var(--accent-deep);
   font: inherit;
@@ -405,12 +428,18 @@
 }
 
 .availability-save-action:hover {
-  background: rgba(111, 144, 112, 0.08);
+  background: var(--line);
 }
 
 .availability-save-action:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+.availability-save-action svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
 }
 
 /* Mirrors the training-result primary treatment exactly: solid sage pill,
