@@ -189,6 +189,10 @@
   overflow-wrap: anywhere;
 }
 
+.day-location-summary[hidden] {
+  display: none;
+}
+
 .day-location-summary svg {
   width: 0.85rem;
   height: 0.85rem;

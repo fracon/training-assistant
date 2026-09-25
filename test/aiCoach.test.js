@@ -516,6 +516,7 @@ test('AI Coach responsive layout and controls retain visible focus and shared bu
   assert.match(css, /\.day-summary\.is-expanded\s+\[data-day-summary\][\s\S]*?display:\s*none/);
   assert.match(css, /\.day-expand\[aria-expanded='true'\]\s+\.day-expand-icon[\s\S]*?transform:\s*rotate\(180deg\)/);
   assert.match(css, /\.day-expand-icon\s*\{[\s\S]*?display:\s*block[\s\S]*?transform-origin:\s*center center/);
+  assert.match(css, /\.day-location-summary\[hidden\]\s*\{[\s\S]*?display:\s*none/);
   assert.match(css, /\.availability-status\.is-success[\s\S]*?color:\s*var\(--ok\)/);
   assert.match(css, /\.availability-status\.is-error[\s\S]*?color:\s*var\(--danger\)/);
   assert.match(css, /\.availability-save-action\s*\{[\s\S]*?border:\s*0/);

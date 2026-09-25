@@ -227,6 +227,9 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       const location=row.querySelector('[data-location]');
       duration.value='';duration.dispatchEvent(new Event('input',{bubbles:true}));
       location.value='';location.dispatchEvent(new Event('input',{bubbles:true}));
+      const emptyLocationSummary=row.querySelector('[data-day-location-summary]');
+      const emptyLocationStyle=getComputedStyle(emptyLocationSummary);
+      const emptyLocation={hidden:emptyLocationSummary.hidden,display:emptyLocationStyle.display,rects:emptyLocationSummary.getClientRects().length};
       const errors=[...row.querySelectorAll('[data-day-error] > li')].map(item=>item.textContent);
       const errorVisible=!row.querySelector('[data-day-error]').hidden;
       duration.value='60';duration.dispatchEvent(new Event('input',{bubbles:true}));
@@ -236,13 +239,14 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       const locationVisible=locationSummary.getClientRects().length>0 && locationSummary.textContent==='Lisboa';
       expand.click();
       const locationHiddenWhenExpanded=locationSummary.getClientRects().length===0;
-      return {collapsed,expanded,errors,errorVisible,locationVisible,locationHiddenWhenExpanded};
+      return {collapsed,expanded,errors,errorVisible,emptyLocation,locationVisible,locationHiddenWhenExpanded};
     })()`);
     assert.deepEqual(daySummaryAndErrors, {
       collapsed: { summaryVisible: true, incompleteVisible: true, separateLines: true },
       expanded: { summaryVisible: false, incompleteVisible: true },
       errors: ['O tempo disponível deve ser um número inteiro entre 1 e 720 minutos.', 'Informe a localidade deste dia disponível.'],
       errorVisible: true,
+      emptyLocation: { hidden: true, display: 'none', rects: 0 },
       locationVisible: true,
       locationHiddenWhenExpanded: true,
     });
