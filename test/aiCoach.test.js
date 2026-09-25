@@ -509,7 +509,11 @@ test('HTML retains date picker, context, prompt, copy and accessibility contract
 
 test('layout and language events rerender current structured values instead of resetting them', () => {
   const js = readFileSync(join(publicDir, 'ai-coach.js'), 'utf8');
-  assert.match(js, /function renderDayRows\(states = readFormFields\(\)\)/);
+  assert.match(js, /function renderDayRows\(states = readFormFields\(\), \{ preserveDays = \[\] \} = \{\}\)/);
+  assert.match(js, /if \(preserveDays\.includes\(day\)\) continue/);
+  assert.match(js, /function captureDailyFocus\(\)/);
+  assert.match(js, /function restoreDailyFocus\(snapshot\)/);
+  assert.match(js, /target\.focus\(\{ preventScroll: true \}\)/);
   assert.match(js, /document\.addEventListener\('kinesis:preferences-changed'/);
   assert.match(js, /document\.addEventListener\('app:languagechange'/);
   assert.match(js, /renderDayRows\(\);[\s\S]*?targetDatePicker\.refresh\(\)/);

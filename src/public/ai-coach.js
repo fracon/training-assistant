@@ -583,17 +583,89 @@ function setupAiCoachPage() {
     }));
   }
 
-  function renderDayRows(states = readFormFields()) {
+  function captureDailyFocus() {
+    const active = document.activeElement;
+    const row = active?.closest?.('.day-row');
+    if (!row || !availabilityGrid.contains(active)) return null;
+
+    let control = null;
+    let selection = null;
+    if (active.matches('[data-location]')) control = { type: 'location' };
+    else if (active.matches('[data-duration]')) control = { type: 'duration' };
+    else if (active.matches('[data-period]')) control = { type: 'period', period: active.dataset.period };
+    else if (active.matches('input[type="radio"]')) control = { type: 'radio', name: active.name, value: active.value };
+    if (!control) return null;
+
+    if (active instanceof HTMLInputElement && active.type === 'text' &&
+        typeof active.selectionStart === 'number' && typeof active.selectionEnd === 'number') {
+      selection = {
+        start: active.selectionStart,
+        end: active.selectionEnd,
+        direction: active.selectionDirection,
+      };
+    }
+    return { day: row.dataset.day, control, selection, scrollX: window.scrollX, scrollY: window.scrollY };
+  }
+
+  function restoreDailyFocus(snapshot) {
+    if (!snapshot) return;
+    const row = availabilityGrid.querySelector(`[data-day="${snapshot.day}"]`);
+    if (!row) return;
+    const { control } = snapshot;
+    const target = control.type === 'location' ? row.querySelector('[data-location]')
+      : control.type === 'duration' ? row.querySelector('[data-duration]')
+        : control.type === 'period' ? [...row.querySelectorAll('[data-period]')].find((input) => input.dataset.period === control.period)
+          : [...row.querySelectorAll('input[type="radio"]')].find((input) => input.name === control.name && input.value === control.value);
+    if (!target || target.disabled || target.closest('[hidden]') || target.getClientRects().length === 0) return;
+
+    if (document.activeElement !== target) {
+      try {
+        target.focus({ preventScroll: true });
+      } catch {
+        target.focus();
+        window.scrollTo(snapshot.scrollX, snapshot.scrollY);
+      }
+    }
+    if (snapshot.selection && target instanceof HTMLInputElement && target.type === 'text' &&
+        typeof target.setSelectionRange === 'function') {
+      try {
+        target.setSelectionRange(snapshot.selection.start, snapshot.selection.end, snapshot.selection.direction);
+      } catch {
+        // The control may not support text selection in this browser.
+      }
+    }
+  }
+
+  function renderDayRows(states = readFormFields(), { preserveDays = [] } = {}) {
     const messages = i18n.messages.aiCoach;
-    availabilityGrid.innerHTML = orderedDayKeys(getUserPreferences().first_day_of_week).map((day) =>
-      buildDayRowHtml(day, { dayLabel: t(`aiCoach.days.${DAY_LOCALE_KEYS[day]}`), messages, state: states[day] || {} })
-    ).join('');
+    const days = orderedDayKeys(getUserPreferences().first_day_of_week);
+    const focused = captureDailyFocus();
+    const currentRows = [...availabilityGrid.querySelectorAll('.day-row')];
+    const currentOrder = currentRows.map((row) => DAY_KEYS[DAY_DB_KEYS.indexOf(row.dataset.day)]);
+    const canPreserveRows = currentRows.length === days.length && currentOrder.every((day, index) => day === days[index]);
+    if (canPreserveRows) {
+      for (let index = 0; index < days.length; index += 1) {
+        const day = days[index];
+        if (preserveDays.includes(day)) continue;
+        const row = currentRows[index];
+        const template = document.createElement('template');
+        template.innerHTML = buildDayRowHtml(day, {
+          dayLabel: t(`aiCoach.days.${DAY_LOCALE_KEYS[day]}`), messages, state: states[day] || {},
+        });
+        row.replaceWith(template.content.firstElementChild);
+      }
+    } else {
+      availabilityGrid.innerHTML = days.map((day) =>
+        buildDayRowHtml(day, { dayLabel: t(`aiCoach.days.${DAY_LOCALE_KEYS[day]}`), messages, state: states[day] || {} })
+      ).join('');
+    }
     availabilityGrid.querySelectorAll('.day-row').forEach((row) => {
       const selected = row.querySelector('input[type="radio"]:checked')?.value;
       const details = row.querySelector('.day-details');
       details.hidden = selected !== 'yes';
       details.querySelectorAll('input, select').forEach((input) => { input.disabled = selected !== 'yes'; });
     });
+    restoreDailyFocus(focused);
   }
 
   let availabilityRevision = 0;
@@ -617,7 +689,7 @@ function setupAiCoachPage() {
     }
     const current = readFormFields();
     for (const day of preserveDays) states[day] = current[day];
-    renderDayRows(states);
+    renderDayRows(states, { preserveDays });
     lastAvailabilitySnapshot = currentAvailabilitySnapshot();
     availabilityReview.hidden = !week.needsReview;
     availabilityReview.textContent = t('aiCoach.availabilityReview');
