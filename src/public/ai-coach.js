@@ -778,7 +778,8 @@ function setupAiCoachPage() {
       const preserveDays = availabilityRevision === submittedRevision ? [] : daysEditedSince(submittedSnapshot);
       const unchanged = preserveDays.length === 0;
       const active = document.activeElement;
-      const focused = captureDailyFocus() || (preserveDays.length &&
+      const captured = captureDailyFocus();
+      const focused = captured || (preserveDays.length &&
         (active === document.body || active === saveAvailabilityButton) ? lastDailyFocus : null);
       applyAvailabilityState(saved, { preserveDays });
       if (focused) requestAnimationFrame(() => restoreDailyFocus(focused));

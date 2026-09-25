@@ -455,9 +455,9 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     await command('Fetch.enable', { patterns: [{ urlPattern: '*api/ai-coach/availability*', requestStage: 'Response' }] });
     const mobileLocationAfterSave = await saveWithDelayedResponse(`(()=>{const input=document.querySelector('[data-day="tuesday"] [data-location]');input.value='Mobility';input.dispatchEvent(new Event('input',{bubbles:true}));input.focus();input.setSelectionRange(3,5,'backward');window.__focusedMobileLocation=input;return input.value})()`);
     assert.equal(mobileLocationAfterSave, 'Mobility');
+    await evaluate(`new Promise(requestAnimationFrame)`);
     assert.deepEqual(await evaluate(`(()=>{const input=document.querySelector('[data-day="tuesday"] [data-location]');return {focused:document.activeElement===input,sameNode:window.__focusedMobileLocation===input,start:input.selectionStart,end:input.selectionEnd,direction:input.selectionDirection}})()`),
       { focused: false, sameNode: true, start: 3, end: 5, direction: 'backward' });
-    await evaluate(`(()=>{const input=document.querySelector('[data-day="tuesday"] [data-location]');input.focus();input.setSelectionRange(3,5,'backward')})()`);
     await command('Input.insertText', { text: 'X' });
     assert.equal(await evaluate(`document.querySelector('[data-day="tuesday"] [data-location]').value`), 'Mobility');
     await command('Fetch.disable');
