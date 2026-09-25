@@ -160,6 +160,27 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     const newUserState = await evaluate(`(()=>({review:!document.getElementById('availabilityReview').hidden,unselected:[...document.querySelectorAll('#availabilityGrid .day-row')].every(row=>!row.querySelector('input[data-can-train]:checked')),locations:[...document.querySelectorAll('[data-location]')].every(input=>input.value==='')}))()`);
     assert.deepEqual(newUserState, { review: true, unselected: true, locations: true });
 
+    const initialDayControls = await evaluate(`(()=>{
+      const rows=[...document.querySelectorAll('#availabilityGrid .day-row')];
+      const saturday=document.querySelector('[data-day="saturday"]');
+      const before=saturday.querySelector('[data-can-train]').checked;
+      saturday.querySelector('.day-label').click();
+      const afterLabelClick=saturday.querySelector('[data-can-train]').checked;
+      const expand=saturday.querySelector('[data-expand]');
+      expand.click();
+      const expanded={hidden:saturday.querySelector('.day-details').hidden,disabled:[...saturday.querySelectorAll('.day-details input')].every(input=>input.disabled)};
+      expand.click();
+      return {days:rows.length,expanders:rows.every(row=>row.querySelector('[data-expand]')&&!row.querySelector('[data-expand]').disabled),before,afterLabelClick,expanded,reclosed:saturday.querySelector('.day-details').hidden};
+    })()`);
+    assert.deepEqual(initialDayControls, {
+      days: 7,
+      expanders: true,
+      before: false,
+      afterLabelClick: false,
+      expanded: { hidden: false, disabled: true },
+      reclosed: true,
+    });
+
     const overlongPrefill = await evaluate(`(()=>{
       const base=document.getElementById('baseLocation');
       base.value='L'.repeat(201);base.dispatchEvent(new Event('change',{bubbles:true}));
@@ -181,6 +202,32 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       generateDisabled: true,
       putCount: 0,
       prompt: '',
+    });
+
+    const daySummaryAndErrors = await evaluate(`(()=>{
+      const row=document.querySelector('[data-day="monday"]');
+      const expand=row.querySelector('[data-expand]');
+      if(expand.getAttribute('aria-expanded')==='true') expand.click();
+      const summary=row.querySelector('[data-day-summary]');
+      const incomplete=row.querySelector('[data-day-incomplete]');
+      const collapsed={summaryVisible:summary.getClientRects().length>0,incompleteVisible:incomplete?.getClientRects().length>0,separateLines:incomplete && incomplete.getBoundingClientRect().top>summary.getBoundingClientRect().bottom};
+      expand.click();
+      const expanded={summaryVisible:summary.getClientRects().length>0,incompleteVisible:incomplete?.getClientRects().length>0};
+      const duration=row.querySelector('[data-duration]');
+      const location=row.querySelector('[data-location]');
+      duration.value='';duration.dispatchEvent(new Event('input',{bubbles:true}));
+      location.value='';location.dispatchEvent(new Event('input',{bubbles:true}));
+      const errors=[...row.querySelectorAll('[data-day-error] > li')].map(item=>item.textContent);
+      const errorVisible=!row.querySelector('[data-day-error]').hidden;
+      duration.value='60';duration.dispatchEvent(new Event('input',{bubbles:true}));
+      location.value='Lisboa';location.dispatchEvent(new Event('input',{bubbles:true}));
+      return {collapsed,expanded,errors,errorVisible};
+    })()`);
+    assert.deepEqual(daySummaryAndErrors, {
+      collapsed: { summaryVisible: true, incompleteVisible: true, separateLines: true },
+      expanded: { summaryVisible: false, incompleteVisible: true },
+      errors: ['O tempo disponível deve ser um número inteiro entre 1 e 720 minutos.', 'Informe a localidade deste dia disponível.'],
+      errorVisible: true,
     });
 
     const exactLimitLocation = await evaluate(`(()=>{

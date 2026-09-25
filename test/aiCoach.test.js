@@ -149,6 +149,7 @@ test('weekly agenda uses native labeled controls and an unselected session durat
   assert.match(row, /value="" placeholder="Ex\.: 60"/);
   assert.match(row, /De 1 a 720 minutos, incluindo aquecimento e volta à calma\./);
   assert.match(row, /data-location/);
+  assert.match(row, /<ul class="day-error"[^>]*data-day-error/);
   const html = readFileSync(join(__dirname, '../src/public/ai-coach.html'), 'utf8');
   assert.match(row, /id="applyWeekdays"/);
   assert.match(row, /data-lucide="copy" aria-hidden="true"/);
@@ -167,6 +168,21 @@ test('unavailable day summaries stay compact and details start closed', () => {
   assert.match(row, /aria-expanded="false"/);
   assert.match(row, /class="day-details"[^>]*hidden/);
   assert.match(row, /aria-label="Mostrar detalhes Segunda-feira"/);
+  assert.doesNotMatch(row, /data-expand[^>]*disabled/);
+});
+
+test('weekly agenda keeps the availability checkbox independent from the accordion control', () => {
+  for (const day of ['segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado', 'domingo']) {
+    const row = buildDayRowHtml(day, {
+      dayLabel: day,
+      messages: messages.aiCoach,
+      state: { can_train: false, available_periods: [], available_minutes: null, location: '' },
+    });
+    assert.match(row, /data-can-train/);
+    assert.match(row, /data-expand/);
+    assert.doesNotMatch(row, /data-expand[^>]*disabled/);
+    assert.doesNotMatch(row, /<label class="day-toggle">/);
+  }
 });
 
 test('pad2, date formatting and local date parsing keep the date contracts', () => {
@@ -485,6 +501,10 @@ test('AI Coach responsive layout and controls retain visible focus and shared bu
   assert.match(css, /input\[data-location\][\s\S]*?max-width:\s*28rem/);
   assert.doesNotMatch(css, /\.day-field/);
   assert.match(css, /\.availability-day-field input\s*\{[\s\S]*?font-weight:\s*500/);
+  assert.match(css, /\.day-summary\.is-expanded\s+\[data-day-summary\][\s\S]*?display:\s*none/);
+  assert.match(css, /\.day-expand\[aria-expanded='true'\]\s*> span[\s\S]*?transform:\s*rotate\(180deg\)/);
+  assert.match(css, /prefers-reduced-motion:\s*reduce/);
+  assert.match(css, /\.day-error\s*\{[\s\S]*?border-top:\s*1px solid var\(--line\)/);
   assert.match(css, /\.day-copy-action\s*\{[\s\S]*?border:\s*0/);
   assert.doesNotMatch(css, /\.ai-coach-page\s*\{[\s\S]*?overflow-x:\s*hidden/);
   assert.match(theme, /\.btn-primary/);
