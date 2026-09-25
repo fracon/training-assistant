@@ -38,7 +38,7 @@ test('initializeDatabase applies pragmas and creates the schema', () => {
     )
     .all()
     .map((row) => row.name);
-  assert.deepEqual(objects, ['schema_migrations', 'sessions', 'shoes', 'training_cycles', 'training_shoe_mileage', 'trainings', 'users']);
+  assert.deepEqual(objects, ['ai_coach_availability', 'schema_migrations', 'sessions', 'shoes', 'training_cycles', 'training_shoe_mileage', 'trainings', 'users']);
   assert.equal(
     db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'workouts'").get(),
     undefined,
@@ -70,9 +70,15 @@ test('role migration assigns existing accounts user, preserves records, is repea
       id TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       expires_at TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+    CREATE TABLE trainings (
+      id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id),
+      training_cycle_id TEXT, dia TEXT NOT NULL, tipo TEXT NOT NULL, treino TEXT, location TEXT
+    );
     INSERT INTO users (id, email, password_hash, first_name, preferred_lang, distance_unit, onboarding_status, onboarding_guide_hidden)
       VALUES (41, 'old@example.com', 'existing-hash', 'Old', 'pt-BR', 'mi', 'active', 1);
     INSERT INTO sessions (id, user_id, expires_at) VALUES ('old-session', 41, '2999-01-01T00:00:00.000Z');
+    INSERT INTO trainings (id, user_id, dia, tipo, treino, location)
+      VALUES (501, 41, '2026-09-21', 'Run', 'Easy run', 'Porto');
   `);
   initializeDatabase(db);
   const existing = db.prepare('SELECT id, email, password_hash, first_name, preferred_lang, distance_unit, onboarding_status, onboarding_guide_hidden, role FROM users WHERE id = 41').get();
@@ -81,6 +87,11 @@ test('role migration assigns existing accounts user, preserves records, is repea
     preferred_lang: 'pt-BR', distance_unit: 'mi', onboarding_status: 'active', onboarding_guide_hidden: 1, role: 'user',
   });
   assert.equal(db.prepare('SELECT user_id FROM sessions WHERE id = ?').get('old-session').user_id, 41);
+  assert.deepEqual(db.prepare('SELECT id, treino, location FROM trainings WHERE id = 501').get(), {
+    id: 501, treino: 'Easy run', location: 'Porto',
+  });
+  assert.ok(db.prepare("SELECT 1 FROM schema_migrations WHERE name = '2026-09-structured-ai-coach-availability-v1'").get());
+  assert.ok(db.prepare('SELECT 1 FROM ai_coach_availability LIMIT 1').get() === undefined);
   db.prepare("UPDATE users SET role = 'admin' WHERE id = 41").run();
   migrateDatabase(db);
   migrateDatabase(db);
@@ -454,7 +465,7 @@ test('migrateDatabase removes the obsolete workouts table from existing database
     .map((row) => row.name);
   assert.deepEqual(
     tables,
-    ['schema_migrations', 'sessions', 'shoes', 'training_cycles', 'training_shoe_mileage', 'trainings', 'users'],
+    ['ai_coach_availability', 'schema_migrations', 'sessions', 'shoes', 'training_cycles', 'training_shoe_mileage', 'trainings', 'users'],
     'only the obsolete workouts table is removed'
   );
   assert.deepEqual(

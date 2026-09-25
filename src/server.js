@@ -42,6 +42,7 @@ const XLSX = require('xlsx');
 const { parseRows } = require('./trainingImport');
 const { resolveTrainingWeather } = require('./weather');
 const { buildMacrocyclePrompt } = require('./prompts');
+const { normalizeAvailabilityWeek, getAvailabilityWeek, saveAvailabilityWeek } = require('./availability');
 const { fetchHeroImage } = require('./unsplash');
 const {
   ShoeError,
@@ -277,6 +278,16 @@ async function buildServer(options = {}) {
 
     app.get('/api/me', { preHandler: requireAuth }, async (request) => {
       return { user: request.user };
+    });
+
+    app.get('/api/ai-coach/availability', { preHandler: requireAuth }, async (request) => {
+      return { availability: getAvailabilityWeek(db, request.user.id) };
+    });
+
+    app.put('/api/ai-coach/availability', { preHandler: requireAuth }, async (request, reply) => {
+      const normalized = normalizeAvailabilityWeek(request.body);
+      if (!normalized.valid) return reply.code(400).send({ error: normalized.error });
+      return { availability: saveAvailabilityWeek(db, request.user.id, normalized.days) };
     });
 
     app.get('/api/onboarding', { preHandler: requireAuth }, async (request) => {

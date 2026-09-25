@@ -8,7 +8,7 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.12.0`); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.13.0`); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
@@ -227,7 +227,48 @@ not instrumentation coverage of the frontend. Frontend behavior tests remain
 mandatory when corresponding frontend behavior changes. Run `git diff --check`
 before committing.
 
+## AI Coach weekly availability
+
+- `/api/ai-coach/availability` is authenticated and user-scoped. Store one record per weekday with `can_train`, canonical period IDs (`before_08`, `08_12`, `12_14`, `14_18`, `after_18`), `available_minutes` as whole minutes, and the exact `location` string.
+- Available periods are alternatives for one session. `available_minutes` is the maximum full session duration, including warm-up and cool-down, not a target and not the length of the period window. The maximum is 720 minutes per day.
+- Unavailable days canonicalize to no periods, null duration, and empty location. Available days require at least one known period, positive duration, and a location; validate in the backend as well as the UI.
+- The idempotent `2026-09-structured-ai-coach-availability-v1` migration does not derive periods or duration from old free text. The earlier AI Coach availability form was transient and did not persist these values; missing structured records must remain unconfigured and be reviewed.
+- Applying a weekday setup is an explicit one-time copy from Monday to Tuesday–Friday. It never changes weekends or links records.
+- AI Coach prompts must state unavailable days and preserve the distinction between periods and session duration. They must not contain “Rotina normal”/“Normal routine” defaults. Do not invent forecast conditions or exact times inside a period; availability adds no weather API call.
+
 ## Golden rules
+
+## GOLDEN RULE — DESIGN SYSTEM FIRST / VISUAL CONSISTENCY
+
+Before starting any frontend task, consult this rule and inspect an equivalent
+screen or component already used by Kinesis. Every new component, page, form,
+modal, or visual flow must follow the existing visual and interaction patterns.
+Identify and reuse the established design tokens for typography, colors,
+spacing, borders, radii, focus, hover, disabled, and error states; reuse
+existing components and styles whenever possible; inspect the result in a real
+browser on desktop and mobile; and compare it with at least one consolidated
+screen, including keyboard and accessibility states.
+
+Do not create a second design system, arbitrary colors, arbitrary radii, new
+button styles without a demonstrated need, visually different equivalents of
+existing controls, or a visual library without authorization. Do not replace
+consolidated patterns with agent preference, and do not consider a frontend
+change complete solely because functional tests pass.
+
+If no suitable pattern exists, identify the gap, choose the smallest compatible
+solution, prefer a reusable component, document the decision, and avoid
+establishing a new visual convention without need. A new interface is complete
+only when it is functional, accessible, responsive, visually inspected in the
+browser, and consistent with the established Kinesis screens.
+
+Visually equivalent controls must reuse the same structures and styles. Keep
+label typography on labels, not on containers that also contain inputs, and do
+not rely on indiscriminate inheritance when it creates inconsistent control
+weights. Auxiliary text needs its own structure and style, distinct from its
+label. Avoid page-specific CSS that unnecessarily duplicates shared controls
+or fixes structural problems through cascaded overrides. When equivalent
+components appear different, inspect computed styles and real dimensions,
+including overflow; functional tests alone do not replace visual inspection.
 
 1. **Local-first privacy:** never send FIT files or workout data to an external
    cloud API for processing. Preserve only the defined integrations: Open-Meteo

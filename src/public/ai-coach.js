@@ -1,6 +1,6 @@
 import { initShell, getShellI18n, getUserPreferences, refreshIcons } from './shared/shell.js';
-import { translate, normalizeClientLanguage } from './shared/i18n.js';
-import { fetchShoes } from './shared/api.js';
+import { translate } from './shared/i18n.js';
+import { fetchShoes, fetchAiCoachAvailability, saveAiCoachAvailability } from './shared/api.js';
 import { fetchActiveCycle, fetchCalendarTrainings } from './shared/api.js';
 import { formatDate as formatLocalizedDate, parseLocalizedDate } from './shared/date.js';
 import { formatDistance, distancePromptUnit, temperaturePromptUnit } from './shared/units.js';
@@ -48,15 +48,9 @@ A semana a ser planejada começa em:
 
 DISPONIBILIDADE
 
-- Segunda-feira: {{DISP_SEG}} (Local: {{LOCAL_SEG}})
-- Terça-feira: {{DISP_TER}} (Local: {{LOCAL_TER}})
-- Quarta-feira: {{DISP_QUA}} (Local: {{LOCAL_QUA}})
-- Quinta-feira: {{DISP_QUI}} (Local: {{LOCAL_QUI}})
-- Sexta-feira: {{DISP_SEX}} (Local: {{LOCAL_SEX}})
-- Sábado: {{DISP_SAB}} (Local: {{LOCAL_SAB}})
-- Domingo: {{DISP_DOM}} (Local: {{LOCAL_DOM}})
+{{AVAILABILITY_BLOCK}}
 
-Se eu não informar nenhuma restrição especial, considere minha rotina normal de corrida.
+Planeje treinos somente em dias marcados como disponíveis. Se algum dia estiver sem configuração estruturada, não presuma disponibilidade e peça confirmação. Períodos múltiplos são alternativas para uma sessão naquele dia, não autorização para treinos múltiplos; escolha o período mais adequado. O tempo informado é o limite máximo total da sessão, incluindo aquecimento e volta à calma; não é meta. Nunca interprete a janela do período como duração do treino. Considere o horário local da localidade. Use previsão somente quando houver dados válidos, nunca invente condições meteorológicas e informe quando não houver previsão válida.
 
 CONTEXTO ADICIONAL DESTA SEMANA
 
@@ -72,8 +66,8 @@ INSTRUÇÕES PARA MONTAR A SEMANA
 6. Nos treinos de qualidade, especifique claramente: aquecimento; quantidade e duração dos blocos; recuperação; intensidade/FC/RPE; desaquecimento.
 7. Nos longos, especifique claramente cada parte do treino. Caso exista bloco controlado/progressivo, deixe explícito que ele deve ser realizado por esforço e indique o RPE esperado.
 8. Considere que meu percurso habitual possui bastante subida. Não determine que eu persiga pace nas subidas. FC pode subir significativamente nesses trechos; considere principalmente esforço e respiração.
-9. Considere temperatura e condições meteorológicas. Para cada treino, pesquise a previsão usando a localidade informada para aquele dia no bloco de disponibilidade e o horário/período aproximado da sessão: treinos durante a semana: aproximadamente 12h; longo de domingo: entre 8h e 9h. Use a localidade habitual somente como fallback quando o dia não tiver uma localidade própria; se nenhuma localidade válida existir, não invente uma.
-10. A previsão deve corresponder ao horário do treino, e não simplesmente à mínima/máxima diária.
+9. Considere temperatura e condições meteorológicas. Use previsão somente quando houver dados válidos para a localidade informada e horário dentro do período disponível. Não invente horário exato dentro da faixa nem condições meteorológicas. Sem previsão válida, informe a ausência e não presuma o clima.
+10. A previsão precisa ter dados válidos de horário compatíveis com o período escolhido. Se não for possível confirmá-los, trate a previsão como indisponível; não use apenas mínima/máxima diária nem invente horário exato.
 11. Se houver previsão de calor forte, adapte o treino quando necessário e deixe isso explícito nas observações. Não prescreva intensidade inadequada apenas para manter o planejamento original.
 12. Escolha o tênis mais apropriado para cada sessão considerando os tênis que tenho disponíveis, o tipo de treino e nosso histórico recente com cada um.
 13. Considere qualquer dor ou desconforto recente, mas não continue tratando uma lesão antiga como ativa se os treinos posteriores demonstrarem recuperação completa.
@@ -141,15 +135,9 @@ The week to be planned starts on:
 
 AVAILABILITY
 
-- Monday: {{DISP_SEG}} (Location: {{LOCAL_SEG}})
-- Tuesday: {{DISP_TER}} (Location: {{LOCAL_TER}})
-- Wednesday: {{DISP_QUA}} (Location: {{LOCAL_QUA}})
-- Thursday: {{DISP_QUI}} (Location: {{LOCAL_QUI}})
-- Friday: {{DISP_SEX}} (Location: {{LOCAL_SEX}})
-- Saturday: {{DISP_SAB}} (Location: {{LOCAL_SAB}})
-- Sunday: {{DISP_DOM}} (Location: {{LOCAL_DOM}})
+{{AVAILABILITY_BLOCK}}
 
-If I do not provide any special restrictions, assume my normal running routine.
+Plan sessions only on days marked available. If any day is unconfigured, do not assume availability and ask the user to confirm it. Multiple periods are alternatives for one session that day, not permission for multiple sessions; choose the most appropriate period. The available time is the maximum total session duration, including warm-up and cool-down; it is a ceiling, not a target. Never interpret the period window as workout duration. Consider the local time at the stated location. Use forecasts only when valid data exists, never invent weather, and state when no valid forecast is available.
 
 ADDITIONAL CONTEXT FOR THIS WEEK
 
@@ -165,8 +153,8 @@ INSTRUCTIONS FOR PLANNING THE WEEK
 6. For quality workouts, clearly specify: warm-up; number and duration of blocks; recovery; intensity/HR/RPE; cool-down.
 7. For long runs, clearly specify each part of the workout. If there is a controlled/progressive block, make it explicit that it should be done by effort and indicate the expected RPE.
 8. Consider that my usual route has plenty of hills. Do not dictate that I chase pace on uphills. HR may rise significantly in these sections; consider effort and breathing primarily.
-9. Consider temperature and weather conditions. For each workout, check the forecast using the location provided for that day in the availability block and the session's approximate time/period: weekday runs around 12 PM; Sunday long run between 8 AM and 9 AM. Use the usual location only as a fallback when that day has no specific location; if no valid location exists, do not invent one.
-10. The forecast must match the workout time, not just the daily min/max.
+9. Consider temperature and weather conditions. Use a forecast only when valid data exists for the stated location and a time within the available period. Do not invent an exact time within the window or weather conditions. Without a valid forecast, state that it is unavailable and do not assume weather.
+10. The forecast must have valid time-specific data within the selected period. If that cannot be confirmed, treat the forecast as unavailable; do not rely only on daily min/max or invent an exact time.
 11. If strong heat is forecasted, adapt the workout when necessary and make this explicit in the notes. Do not prescribe inappropriate intensity just to maintain the original plan.
 12. Choose the most appropriate shoe for each session considering the shoes I have available, the type of workout, and our recent history with each.
 13. Consider any recent pain or discomfort, but do not continue treating an old injury as active if subsequent workouts demonstrate full recovery.
@@ -196,6 +184,33 @@ In your response, provide:
 If recent data indicates that the originally expected plan should be altered, prioritize the correct adaptation rather than simply repeating the previous week's structure.`;
 
 const DAY_KEYS = ['segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado', 'domingo'];
+const DAY_DB_KEYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+const PERIOD_KEYS = ['before_08', '08_12', '12_14', '14_18', 'after_18'];
+const MAX_AVAILABLE_MINUTES = 720;
+const MAX_LOCATION_LENGTH = 200;
+
+function isValidAvailableMinutes(value) {
+  return Number.isInteger(value) && value >= 1 && value <= MAX_AVAILABLE_MINUTES;
+}
+
+function getLocationValidationError(location) {
+  if (typeof location !== 'string' || !location.trim()) return 'availabilityNeedsLocation';
+  if (location.trim().length > MAX_LOCATION_LENGTH) return 'availabilityLocationTooLong';
+  return null;
+}
+
+export function validateAvailabilityDay(record) {
+  if (record?.can_train === false) return [];
+  if (record?.can_train !== true) return ['availability'];
+  const errors = [];
+  if (!Array.isArray(record.available_periods) || !record.available_periods.some((period) => PERIOD_KEYS.includes(period))) {
+    errors.push('availabilityNeedsPeriods');
+  }
+  if (!isValidAvailableMinutes(record.available_minutes)) errors.push('availabilityNeedsDuration');
+  const locationError = getLocationValidationError(record.location);
+  if (locationError) errors.push(locationError);
+  return errors;
+}
 
 const DAY_LOCALE_KEYS = {
   segunda: 'monday',
@@ -213,13 +228,6 @@ export function orderedDayKeys(weekStart = 'Monday') {
     : [...DAY_KEYS];
 }
 
-export const DEFAULT_ROUTINE_BY_LANG = {
-  'en-US': 'Normal routine',
-  'pt-BR': 'Rotina normal',
-};
-
-// The prompt template keeps its historical Portuguese fallback for unknown
-// languages; availability defaults follow the app-wide en-US fallback.
 export const TEMPLATE_BY_LANG = {
   'pt-BR': PROMPT_TEMPLATE,
   'en-US': PROMPT_TEMPLATE_EN,
@@ -230,30 +238,6 @@ export function resolveTemplateLang(lang) {
     ? lang
     : 'pt-BR';
 }
-
-export function defaultRoutineFor(lang) {
-  return DEFAULT_ROUTINE_BY_LANG[normalizeClientLanguage(lang)];
-}
-
-export const PLACEHOLDERS = {
-  segunda: '{{DISP_SEG}}',
-  terca: '{{DISP_TER}}',
-  quarta: '{{DISP_QUA}}',
-  quinta: '{{DISP_QUI}}',
-  sexta: '{{DISP_SEX}}',
-  sabado: '{{DISP_SAB}}',
-  domingo: '{{DISP_DOM}}',
-};
-
-export const LOCATION_PLACEHOLDERS = {
-  segunda: '{{LOCAL_SEG}}',
-  terca: '{{LOCAL_TER}}',
-  quarta: '{{LOCAL_QUA}}',
-  quinta: '{{LOCAL_QUI}}',
-  sexta: '{{LOCAL_SEX}}',
-  sabado: '{{LOCAL_SAB}}',
-  domingo: '{{LOCAL_DOM}}',
-};
 
 export function pad2(value) {
   return String(value).padStart(2, '0');
@@ -405,27 +389,10 @@ export function dateInputValue(date) {
   return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
 }
 
-export function availabilityDefaults(lang = 'pt-BR') {
-  const routine = defaultRoutineFor(lang);
-  return {
-    segunda: routine,
-    terca: routine,
-    quarta: routine,
-    quinta: routine,
-    sexta: routine,
-    sabado: routine,
-    domingo: routine,
-  };
-}
-
-// Swaps only the values still holding the previous language's default
-// routine, so anything the user typed stays untouched.
-export function applyRoutineDefault(values, previousDefault, nextDefault) {
-  const updated = {};
-  for (const [day, value] of Object.entries(values)) {
-    updated[day] = value === previousDefault ? nextDefault : value;
-  }
-  return updated;
+export function availabilityDefaults() {
+  return Object.fromEntries(DAY_KEYS.map((day) => [day, {
+    can_train: null, available_periods: [], available_minutes: null, location: '',
+  }]));
 }
 
 function replaceAll(text, token, value) {
@@ -463,7 +430,7 @@ export function formatShoesBlock(shoes = [], messages = {}, preferences = {}) {
   return `${title}\n\n${lines.join('\n')}`;
 }
 
-export function buildPrompt({ targetDate, disponibilidade = {}, localizacao = {}, baseLocation = '', contexto = '', lang = 'pt-BR', shoes = [], messages = {}, cycle = {}, previousWeek = {}, preferences = {} }) {
+export function buildPrompt({ targetDate, disponibilidade = {}, contexto = '', lang = 'pt-BR', shoes = [], messages = {}, cycle = {}, previousWeek = {}, preferences = {} }) {
   const templateLang = resolveTemplateLang(lang);
   const template = TEMPLATE_BY_LANG[templateLang];
   let prompt = replaceAll(
@@ -474,14 +441,20 @@ export function buildPrompt({ targetDate, disponibilidade = {}, localizacao = {}
   for (const [token, value] of Object.entries(formatCycleContext(cycle, previousWeek, templateLang, preferences))) {
     prompt = replaceAll(prompt, token, value);
   }
-  const availability = { ...availabilityDefaults(templateLang), ...disponibilidade };
-  const fallbackLocation = String(baseLocation ?? '').trim();
-  for (const day of DAY_KEYS) {
-    prompt = replaceAll(prompt, PLACEHOLDERS[day], String(availability[day] ?? '').trim());
-    const dailyLocation = String(localizacao[day] ?? '').trim();
-    const effectiveLocation = dailyLocation || fallbackLocation || '-';
-    prompt = replaceAll(prompt, LOCATION_PLACEHOLDERS[day], effectiveLocation);
-  }
+  const availability = Array.isArray(disponibilidade)
+    ? Object.fromEntries(disponibilidade.map((record) => [DAY_KEYS[DAY_DB_KEYS.indexOf(record.day)], record]))
+    : disponibilidade;
+  const labels = messages.aiCoach ?? {};
+  const lines = DAY_KEYS.map((day, index) => {
+    const record = availability[day] ?? {};
+    const dayName = labels.days?.[DAY_LOCALE_KEYS[day]] || DAY_DB_KEYS[index];
+    if (record.can_train === false) return `- ${dayName}: ${labels.canTrainLabel || 'Can train'}: ${labels.no || 'no'}`;
+    if (record.can_train !== true) return `- ${dayName}: ${labels.availabilityUnconfigured || 'Availability not configured; ask for confirmation'}`;
+    const periods = (record.available_periods ?? []).map((period) => labels.periods?.[period] || period).join('; ');
+    const location = String(record.location ?? '');
+    return `- ${dayName}: ${labels.canTrainLabel || 'Can train'}: ${labels.yes || 'yes'}; ${labels.periodsLabel || 'Periods available'}: ${periods}; ${labels.durationPromptLabel || 'Maximum session time'}: ${record.available_minutes} ${labels.minutes || 'minutes'}; ${labels.locationLabel || 'Location'}: ${location}`;
+  });
+  prompt = replaceAll(prompt, '{{AVAILABILITY_BLOCK}}', lines.join('\n'));
   const notes = String(contexto).trim();
   prompt = replaceAll(prompt, '{{CONTEXTO_OPCIONAL}}', notes === '' ? '-' : notes);
   prompt = replaceAll(prompt, '{{SHOES_BLOCK}}', formatShoesBlock(shoes, messages, preferences));
@@ -527,78 +500,65 @@ export function readTargetDateIso(input, picker, language = 'pt-BR') {
   return pickerValue || readDatePickerValue(input) || normalizeTargetDate(input?.value, language);
 }
 
-export const DAY_INPUT_IDS = {
-  segunda: 'dispSeg',
-  terca: 'dispTer',
-  quarta: 'dispQua',
-  quinta: 'dispQui',
-  sexta: 'dispSex',
-  sabado: 'dispSab',
-  domingo: 'dispDom',
-};
-
-export const LOCATION_INPUT_IDS = {
-  segunda: 'locSeg',
-  terca: 'locTer',
-  quarta: 'locQua',
-  quinta: 'locQui',
-  sexta: 'locSex',
-  sabado: 'locSab',
-  domingo: 'locDom',
-};
-
-export function validatePromptFields({ targetDate = '', language = 'pt-BR', baseLocation = '', disponibilidade = {}, localizacao = {} } = {}) {
+export function validatePromptFields({ targetDate = '', language = 'pt-BR', disponibilidade = {} } = {}) {
   const missing = [];
   if (!normalizeTargetDate(targetDate, language)) missing.push('targetDate');
-  if (!DAY_KEYS.every((day) => String(disponibilidade[day] ?? '').trim())) missing.push('availability');
-  const hasBaseLocation = String(baseLocation ?? '').trim() !== '';
-  const hasDailyLocations = DAY_KEYS.every((day) => String(localizacao[day] ?? '').trim() !== '');
-  if (!hasBaseLocation && !hasDailyLocations) missing.push('location');
+  const availability = Array.isArray(disponibilidade)
+    ? Object.fromEntries(disponibilidade.map((record) => [DAY_KEYS[DAY_DB_KEYS.indexOf(record.day)], record]))
+    : disponibilidade;
+  const hasAllDays = DAY_KEYS.every((day) => validateAvailabilityDay(availability[day]).length === 0);
+  if (!hasAllDays) missing.push('availability');
   return { valid: missing.length === 0, missing };
 }
 
-export function buildDayRowHtml(day, { dayLabel, routine, locationPlaceholder }) {
-  return `<div class="day-row">
-  <label for="${DAY_INPUT_IDS[day]}" class="day-label"><span data-i18n="aiCoach.days.${DAY_LOCALE_KEYS[day]}">${dayLabel}</span><span class="required-mark" aria-hidden="true">*</span></label>
-  <input type="text" id="${DAY_INPUT_IDS[day]}" value="${routine}" autocomplete="off" required>
-  <input type="text" id="${LOCATION_INPUT_IDS[day]}" data-i18n-placeholder="aiCoach.location" placeholder="${locationPlaceholder}" autocomplete="off">
-</div>`;
+function daySummary(state, messages) {
+  if (state.can_train === false) return { text: messages.dayUnavailable || '', incomplete: false };
+  if (state.can_train !== true) return { text: messages.dayNotConfigured || '', incomplete: false };
+  const periods = (state.available_periods || []).map((period) => messages.periods?.[period] || period);
+  const duration = Number.isInteger(state.available_minutes) ? `${state.available_minutes} ${messages.minutesUnit || messages.minutes || ''}` : '';
+  const text = [periods.join('; '), duration].filter(Boolean).join(' · ') || messages.dayAvailable || '';
+  const incomplete = validateAvailabilityDay(state).length > 0;
+  return { text, incomplete };
 }
 
-export function readDayInputState(getValue) {
-  const state = {};
-  for (const day of DAY_KEYS) {
-    state[day] = {
-      availability: getValue(DAY_INPUT_IDS[day]),
-      location: getValue(LOCATION_INPUT_IDS[day]),
-    };
-  }
-  return state;
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('"', '&quot;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;');
 }
 
-export function applyDayInputState(state, setValue) {
-  for (const day of DAY_KEYS) {
-    const record = state[day] ?? {};
-    if (record.availability !== undefined) {
-      setValue(DAY_INPUT_IDS[day], record.availability);
-    }
-    if (record.location !== undefined) {
-      setValue(LOCATION_INPUT_IDS[day], record.location);
-    }
-  }
-}
-
-export function renderDayGrid({ weekStart = 'Monday', routine = '', dayLabel = (day) => day, locationPlaceholder = 'Location', grid, getValue, setValue }) {
-  const previous = readDayInputState(getValue);
-  grid.innerHTML = orderedDayKeys(weekStart)
-    .map((day) => buildDayRowHtml(day, {
-      dayLabel: dayLabel(day),
-      routine,
-      locationPlaceholder,
-    }))
-    .join('');
-  applyDayInputState(previous, setValue);
-  return grid.innerHTML;
+export function buildDayRowHtml(day, { dayLabel, messages = {}, state = {} }) {
+  const dbDay = DAY_DB_KEYS[DAY_KEYS.indexOf(day)];
+  const periods = PERIOD_KEYS.map((period) => `<label class="period-option"><input type="checkbox" data-period="${period}" ${state.available_periods?.includes(period) ? 'checked' : ''}><span>${messages.periods?.[period] || period}</span></label>`).join('');
+  const duration = state.available_minutes ?? '';
+  const summary = daySummary(state, messages);
+  const available = state.can_train === true;
+  const expanded = state.expanded === true;
+  const detailsId = `availability-details-${dbDay}`;
+  const durationId = `availability-${dbDay}-duration`;
+  const durationHintId = `availability-${dbDay}-duration-hint`;
+  const locationId = `availability-${dbDay}-location`;
+  const configured = state.can_train !== null && state.can_train !== undefined;
+  const expandLabel = `${expanded ? (messages.dayCollapse || '') : (messages.dayExpand || '')} ${dayLabel}`.trim();
+  const copyAction = day === 'segunda' ? `<button type="button" id="applyWeekdays" class="day-copy-action"><i data-lucide="copy" aria-hidden="true"></i><span>${messages.applyWeekdays || ''}</span></button>` : '';
+  const location = String(state.location || '');
+  const locationSummary = `<span class="day-location-summary" data-day-location-summary${location ? '' : ' hidden'}>${location ? '<i data-lucide="map-pin" aria-hidden="true"></i>' : ''}${location ? `<span>${escapeHtml(location)}</span>` : ''}</span>`;
+  return `<fieldset class="day-row" data-day="${dbDay}">
+  <div class="day-summary${expanded ? ' is-expanded' : ''}">
+    <div class="day-toggle"><input type="checkbox" data-can-train aria-label="${dayLabel}" ${available ? 'checked' : ''} aria-controls="${detailsId}" ${configured ? 'data-configured="true"' : ''}><span class="day-label">${dayLabel}</span></div>
+    <div class="day-summary-copy"><span data-day-summary>${summary.text}</span>${locationSummary}${summary.incomplete ? `<span class="day-incomplete" data-day-incomplete>${messages.dayIncomplete || ''}</span>` : ''}</div>
+    <button type="button" class="day-expand" data-expand aria-label="${expandLabel}" aria-controls="${detailsId}" aria-expanded="${expanded ? 'true' : 'false'}"><i data-lucide="chevron-down" class="day-expand-icon" aria-hidden="true"></i></button>
+  </div>
+  <div class="day-details" id="${detailsId}" ${expanded ? '' : 'hidden'}>
+    <fieldset class="period-group"><legend>${messages.periodsLabel || ''}</legend><div class="period-list">${periods}</div></fieldset>
+    <div class="field availability-day-field"><label class="field-label" for="${durationId}">${messages.durationLabel || ''}</label><input id="${durationId}" type="number" data-duration data-hint-id="${durationHintId}" min="1" max="${MAX_AVAILABLE_MINUTES}" step="1" inputmode="numeric" value="${duration}" placeholder="${messages.durationPlaceholder || ''}" aria-describedby="${durationHintId}"><p class="field-hint" id="${durationHintId}">${messages.durationHint || ''}</p></div>
+    <div class="field availability-day-field"><label class="field-label" for="${locationId}">${messages.locationLabel || ''}</label><input id="${locationId}" type="text" data-location value="${String(state.location || '').replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;')}" autocomplete="off"></div>
+  <ul class="day-error" id="availability-error-${dbDay}" data-day-error hidden></ul>
+  ${copyAction}
+  </div>
+</fieldset>`;
 }
 
 const COPY_FEEDBACK_MS = 2000;
@@ -616,6 +576,11 @@ function setupAiCoachPage() {
   const optionalContextInput = document.getElementById('optionalContext');
   const baseLocationInput = document.getElementById('baseLocation');
   const availabilityGrid = document.getElementById('availabilityGrid');
+  const saveAvailabilityButton = document.getElementById('saveAvailability');
+  const availabilityStatus = document.getElementById('availabilityStatus');
+  const saveAvailabilityLabel = document.getElementById('saveAvailabilityLabel');
+  const availabilityError = document.getElementById('availabilityError');
+  const availabilityReview = document.getElementById('availabilityReview');
   const resultSection = document.getElementById('resultSection');
   const promptOutput = document.getElementById('promptOutput');
   const copyBtn = document.getElementById('copyBtn');
@@ -632,91 +597,417 @@ function setupAiCoachPage() {
     onChange: () => updateValidation(),
   });
 
-  let lastRoutineDefault = t('aiCoach.defaultRoutine') || defaultRoutineFor(i18n.language);
-  function renderDayRows() {
-    renderDayGrid({
-      weekStart: getUserPreferences().first_day_of_week,
-      routine: lastRoutineDefault,
-      dayLabel: (day) => t(`aiCoach.days.${DAY_LOCALE_KEYS[day]}`) || day,
-      locationPlaceholder: t('aiCoach.location') || 'Location',
-      grid: availabilityGrid,
-      getValue: (id) => document.getElementById(id)?.value,
-      setValue: (id, value) => {
-        const input = document.getElementById(id);
-        if (input) input.value = value;
-      },
+  function readFormFields() {
+    return Object.fromEntries(DAY_KEYS.map((day, index) => {
+      const dbDay = DAY_DB_KEYS[index];
+      const row = availabilityGrid.querySelector(`[data-day="${dbDay}"]`);
+      const toggle = row?.querySelector('[data-can-train]');
+      const selected = toggle?.checked;
+      const configured = row?.dataset.configured === 'true' || toggle?.dataset.configured === 'true';
+      return [day, {
+        can_train: selected ? true : configured ? false : null,
+        available_periods: selected
+          ? [...(row?.querySelectorAll('[data-period]:checked') || [])].map((input) => input.dataset.period)
+          : [],
+        available_minutes: selected && row?.querySelector('[data-duration]')?.value
+          ? Number(row.querySelector('[data-duration]').value) : null,
+        location: selected ? row?.querySelector('[data-location]')?.value || '' : '',
+      }];
+    }));
+  }
+
+  function captureDailyFocus() {
+    const active = document.activeElement;
+    const row = active?.closest?.('.day-row');
+    if (!row || !availabilityGrid.contains(active)) return null;
+
+    let control = null;
+    let selection = null;
+    if (active.matches('[data-location]')) control = { type: 'location' };
+    else if (active.matches('[data-duration]')) control = { type: 'duration' };
+    else if (active.matches('[data-period]')) control = { type: 'period', period: active.dataset.period };
+    else if (active.matches('[data-can-train]')) control = { type: 'can-train' };
+    if (!control) return null;
+
+    if (active instanceof HTMLInputElement && active.type === 'text' &&
+        typeof active.selectionStart === 'number' && typeof active.selectionEnd === 'number') {
+      selection = {
+        start: active.selectionStart,
+        end: active.selectionEnd,
+        direction: active.selectionDirection,
+      };
+    }
+    return { day: row.dataset.day, control, selection, scrollX: window.scrollX, scrollY: window.scrollY };
+  }
+
+  function restoreDailyFocus(snapshot) {
+    if (!snapshot) return;
+    const row = availabilityGrid.querySelector(`[data-day="${snapshot.day}"]`);
+    if (!row) return;
+    const { control } = snapshot;
+    const target = control.type === 'location' ? row.querySelector('[data-location]')
+      : control.type === 'duration' ? row.querySelector('[data-duration]')
+        : control.type === 'period' ? [...row.querySelectorAll('[data-period]')].find((input) => input.dataset.period === control.period)
+          : row.querySelector('[data-can-train]');
+    if (!target) return;
+    const details = target.closest('.day-details');
+    if (details?.hidden && row.querySelector('[data-can-train]')?.checked) {
+      details.hidden = false;
+      row.querySelector('[data-expand]')?.setAttribute('aria-expanded', 'true');
+    }
+    if (target.disabled || target.closest('[hidden]') || target.getClientRects().length === 0) return;
+
+    if (document.activeElement !== target) {
+      try {
+        target.focus({ preventScroll: true });
+      } catch {
+        target.focus();
+        window.scrollTo(snapshot.scrollX, snapshot.scrollY);
+      }
+    }
+    if (snapshot.selection && target instanceof HTMLInputElement && target.type === 'text' &&
+        typeof target.setSelectionRange === 'function') {
+      try {
+        target.setSelectionRange(snapshot.selection.start, snapshot.selection.end, snapshot.selection.direction);
+      } catch {
+        // The control may not support text selection in this browser.
+      }
+    }
+  }
+
+  let lastDailyFocus = null;
+
+  function setDayExpanded(row, expanded) {
+    const details = row?.querySelector('.day-details');
+    const expand = row?.querySelector('[data-expand]');
+    if (!details || !expand) return;
+    expand.setAttribute('aria-expanded', String(expanded));
+    row.querySelector('.day-summary')?.classList.toggle('is-expanded', expanded);
+    details.hidden = !expanded;
+  }
+
+  function updateDayLocationSummary(row, location) {
+    const summary = row?.querySelector('[data-day-location-summary]');
+    if (!summary) return;
+    summary.replaceChildren();
+    if (!location) {
+      summary.hidden = true;
+      return;
+    }
+    const icon = document.createElement('i');
+    icon.dataset.lucide = 'map-pin';
+    icon.setAttribute('aria-hidden', 'true');
+    const text = document.createElement('span');
+    text.textContent = location;
+    summary.append(icon, text);
+    summary.hidden = false;
+    if (globalThis.lucide && typeof globalThis.lucide.createIcons === 'function') globalThis.lucide.createIcons();
+  }
+
+  function renderDayRows(states = readFormFields(), { preserveDays = [], focusSnapshot } = {}) {
+    const messages = i18n.messages.aiCoach;
+    const days = orderedDayKeys(getUserPreferences().first_day_of_week);
+    const focused = focusSnapshot === undefined ? captureDailyFocus() : focusSnapshot;
+    const expandedDays = new Set([...availabilityGrid.querySelectorAll('.day-row')]
+      .filter((row) => row.querySelector('[data-expand]')?.getAttribute('aria-expanded') === 'true')
+      .map((row) => DAY_KEYS[DAY_DB_KEYS.indexOf(row.dataset.day)]));
+    if (focused?.day) expandedDays.add(DAY_KEYS[DAY_DB_KEYS.indexOf(focused.day)]);
+    const currentRows = [...availabilityGrid.querySelectorAll('.day-row')];
+    const currentOrder = currentRows.map((row) => DAY_KEYS[DAY_DB_KEYS.indexOf(row.dataset.day)]);
+    const canPreserveRows = currentRows.length === days.length && currentOrder.every((day, index) => day === days[index]);
+    if (canPreserveRows) {
+      for (let index = 0; index < days.length; index += 1) {
+        const day = days[index];
+        if (preserveDays.includes(day)) continue;
+        const row = currentRows[index];
+        const template = document.createElement('template');
+        template.innerHTML = buildDayRowHtml(day, {
+          dayLabel: t(`aiCoach.days.${DAY_LOCALE_KEYS[day]}`), messages,
+          state: { ...(states[day] || {}), expanded: expandedDays.has(day) },
+        });
+        row.replaceWith(template.content.firstElementChild);
+      }
+    } else {
+      availabilityGrid.innerHTML = days.map((day) =>
+        buildDayRowHtml(day, { dayLabel: t(`aiCoach.days.${DAY_LOCALE_KEYS[day]}`), messages, state: { ...(states[day] || {}), expanded: expandedDays.has(day) } })
+      ).join('');
+    }
+    availabilityGrid.querySelectorAll('.day-row').forEach((row) => {
+      const selected = row.querySelector('[data-can-train]')?.checked;
+      const details = row.querySelector('.day-details');
+      const focusedInside = row.contains(document.activeElement) && details.contains(document.activeElement);
+      if (focusedInside) row.querySelector('[data-expand]')?.setAttribute('aria-expanded', 'true');
+      const expanded = focusedInside || row.querySelector('[data-expand]')?.getAttribute('aria-expanded') === 'true';
+      setDayExpanded(row, expanded);
+      details.querySelectorAll('input, select').forEach((input) => { input.disabled = !selected; });
+      row.dataset.configured = row.querySelector('[data-can-train]')?.dataset.configured === 'true' || selected ? 'true' : (row.dataset.configured || 'false');
+    });
+    if (globalThis.lucide && typeof globalThis.lucide.createIcons === 'function') globalThis.lucide.createIcons();
+    restoreDailyFocus(focused);
+    if (focused) requestAnimationFrame(() => {
+      if (document.activeElement === document.body || !availabilityGrid.contains(document.activeElement)) restoreDailyFocus(focused);
     });
   }
-  renderDayRows();
 
-  function readFormFields() {
-    const disponibilidade = {};
-    for (const [day, inputId] of Object.entries(DAY_INPUT_IDS)) {
-      const input = document.getElementById(inputId);
-      if (input) disponibilidade[day] = input.value;
-    }
-    const localizacao = {};
-    for (const [day, inputId] of Object.entries(LOCATION_INPUT_IDS)) {
-      const input = document.getElementById(inputId);
-      if (input) localizacao[day] = input.value;
-    }
-    return { disponibilidade, localizacao };
+  let availabilityRevision = 0;
+  let lastAvailabilitySnapshot = '';
+
+  function currentAvailabilitySnapshot() {
+    return JSON.stringify(readFormFields());
   }
 
+  function daysEditedSince(snapshot) {
+    const before = JSON.parse(snapshot);
+    const current = readFormFields();
+    return DAY_KEYS.filter((day) => JSON.stringify(before[day]) !== JSON.stringify(current[day]));
+  }
+
+  function applyAvailabilityState(week, { preserveDays = [] } = {}) {
+    const states = availabilityDefaults();
+    for (const record of week.days || []) {
+      const day = DAY_KEYS[DAY_DB_KEYS.indexOf(record.day)];
+      if (day) states[day] = record;
+    }
+    const current = readFormFields();
+    for (const day of preserveDays) states[day] = current[day];
+    renderDayRows(states, { preserveDays });
+    lastAvailabilitySnapshot = currentAvailabilitySnapshot();
+    availabilityReview.hidden = !week.needsReview;
+    availabilityReview.textContent = t('aiCoach.availabilityReview');
+  }
+
+  let availabilityStatusKey = '';
+  function setAvailabilityStatus(key) {
+    availabilityStatusKey = key;
+    availabilityStatus.textContent = key ? t(`aiCoach.${key}`) : '';
+    availabilityStatus.classList.toggle('is-success', key === 'availabilitySaved');
+    availabilityStatus.classList.toggle('is-error', Boolean(key) && key !== 'availabilitySaved');
+  }
+
+  function noteAvailabilityEdit() {
+    const snapshot = currentAvailabilitySnapshot();
+    if (snapshot === lastAvailabilitySnapshot) return false;
+    lastAvailabilitySnapshot = snapshot;
+    availabilityRevision += 1;
+    setAvailabilityStatus('');
+    return true;
+  }
+
+  async function loadAvailability() {
+    const requestedRevision = availabilityRevision;
+    const requestedSnapshot = lastAvailabilitySnapshot;
+    try {
+      const saved = await fetchAiCoachAvailability();
+      const preserveDays = availabilityRevision === requestedRevision ? [] : daysEditedSince(requestedSnapshot);
+      applyAvailabilityState(saved, { preserveDays });
+      setAvailabilityStatus('');
+    } catch {
+      setAvailabilityStatus('availabilityLoadError');
+    }
+    updateValidation();
+  }
+
+  async function persistAvailability() {
+    const submittedRevision = availabilityRevision;
+    const submittedSnapshot = currentAvailabilitySnapshot();
+    const fields = readFormFields();
+    const validation = validatePromptFields({ targetDate: readTargetDateIso(targetDateInput, targetDatePicker, i18n.language), language: i18n.language, disponibilidade: fields });
+    if (validation.missing.includes('availability')) {
+      availabilityError.textContent = t('aiCoach.availabilityValidation');
+      return false;
+    }
+    const days = DAY_KEYS.map((day, index) => ({ day: DAY_DB_KEYS[index], ...fields[day] }));
+    try {
+      const saved = await saveAiCoachAvailability(days);
+      const preserveDays = availabilityRevision === submittedRevision ? [] : daysEditedSince(submittedSnapshot);
+      const unchanged = preserveDays.length === 0;
+      const active = document.activeElement;
+      const captured = captureDailyFocus();
+      const focused = captured || (preserveDays.length &&
+        (active === document.body || active === saveAvailabilityButton) ? lastDailyFocus : null);
+      applyAvailabilityState(saved, { preserveDays });
+      if (focused) requestAnimationFrame(() => restoreDailyFocus(focused));
+      availabilityError.textContent = '';
+      setAvailabilityStatus(unchanged ? 'availabilitySaved' : 'availabilityEditedDuringSave');
+      if (!unchanged) updateValidation();
+      return unchanged;
+    } catch {
+      setAvailabilityStatus('availabilitySaveError');
+      return false;
+    }
+  }
+
+  renderDayRows();
+  lastAvailabilitySnapshot = currentAvailabilitySnapshot();
+  void loadAvailability();
+
   function updateValidation() {
-    const { disponibilidade, localizacao } = readFormFields();
+    const disponibilidade = readFormFields();
     const validation = validatePromptFields({
       targetDate: readTargetDateIso(targetDateInput, targetDatePicker, i18n.language),
       language: i18n.language,
-      baseLocation: baseLocationInput.value,
       disponibilidade,
-      localizacao,
     });
     generateBtn.disabled = !validation.valid;
     generateBtn.setAttribute('aria-disabled', String(!validation.valid));
     targetDateInput.setAttribute('aria-invalid', String(validation.missing.includes('targetDate')));
-    baseLocationInput.setAttribute('aria-invalid', String(validation.missing.includes('location')));
+    availabilityGrid.setAttribute('aria-invalid', String(validation.missing.includes('availability')));
+    availabilityGrid.setAttribute('aria-describedby', availabilityError.id);
+    availabilityError.textContent = validation.missing.includes('availability') ? t('aiCoach.availabilityValidation') : '';
+    availabilityGrid.querySelectorAll('.day-row').forEach((row) => {
+      const dayIndex = DAY_DB_KEYS.indexOf(row.dataset.day);
+      const day = DAY_KEYS[dayIndex];
+      const unset = disponibilidade[day].can_train === null;
+      const toggle = row.querySelector('[data-can-train]');
+      toggle?.setAttribute('aria-invalid', String(unset));
+      toggle?.setAttribute('aria-describedby', availabilityError.id);
+    });
+    for (const [day, dayIndex] of DAY_KEYS.map((day, index) => [day, index])) {
+      const record = disponibilidade[day];
+      const row = availabilityGrid.querySelector(`[data-day="${DAY_DB_KEYS[dayIndex]}"]`);
+      if (!row) continue;
+      const summary = daySummary(record, i18n.messages.aiCoach);
+      const summaryText = row.querySelector('[data-day-summary]');
+      if (summaryText) summaryText.textContent = summary.text;
+      updateDayLocationSummary(row, record.can_train === true ? String(record.location || '') : '');
+      const incomplete = row.querySelector('[data-day-incomplete]');
+      if (summary.incomplete && !incomplete) {
+        const marker = document.createElement('span');
+        marker.className = 'day-incomplete';
+        marker.dataset.dayIncomplete = '';
+        marker.textContent = t('aiCoach.dayIncomplete');
+        row.querySelector('.day-summary-copy')?.append(marker);
+      } else if (!summary.incomplete && incomplete) incomplete.remove();
+      if (record.can_train !== true) {
+        const error = row.querySelector('[data-day-error]');
+        error.hidden = true;
+        error.replaceChildren();
+        continue;
+      }
+      const periods = row.querySelector('.period-group');
+      const duration = row.querySelector('[data-duration]');
+      const location = row.querySelector('[data-location]');
+      const dayErrorKeys = validateAvailabilityDay(record).filter((key) => key !== 'availability');
+      const errors = dayErrorKeys.map((key) => t(`aiCoach.${key}`));
+      const error = row.querySelector('[data-day-error]');
+      error.replaceChildren(...errors.map((message) => {
+        const item = document.createElement('li');
+        item.textContent = message;
+        return item;
+      }));
+      error.hidden = errors.length === 0;
+      const errorId = error.id;
+      periods.setAttribute('aria-invalid', String(dayErrorKeys.includes('availabilityNeedsPeriods')));
+      if (dayErrorKeys.length) periods.setAttribute('aria-describedby', errorId);
+      else periods.removeAttribute('aria-describedby');
+      periods.querySelectorAll('input').forEach((input) => {
+        input.setAttribute('aria-invalid', String(dayErrorKeys.includes('availabilityNeedsPeriods')));
+        if (dayErrorKeys.length) input.setAttribute('aria-describedby', errorId);
+        else input.removeAttribute('aria-describedby');
+      });
+      duration.setAttribute('aria-invalid', String(dayErrorKeys.includes('availabilityNeedsDuration')));
+      const durationDescribedBy = [duration.dataset.hintId, dayErrorKeys.length ? errorId : ''].filter(Boolean).join(' ');
+      if (durationDescribedBy) duration.setAttribute('aria-describedby', durationDescribedBy);
+      else duration.removeAttribute('aria-describedby');
+      location.setAttribute('aria-invalid', String(dayErrorKeys.includes('availabilityNeedsLocation') || dayErrorKeys.includes('availabilityLocationTooLong')));
+      if (dayErrorKeys.length) location.setAttribute('aria-describedby', errorId);
+      else location.removeAttribute('aria-describedby');
+    }
     return validation;
   }
 
   updateValidation();
+
+  availabilityGrid.addEventListener('focusin', () => {
+    const focused = captureDailyFocus();
+    if (focused) lastDailyFocus = focused;
+  });
 
   document.addEventListener('kinesis:preferences-changed', (event) => {
     const next = event.detail?.first_day_of_week;
     if (next === 'Monday' || next === 'Sunday') renderDayRows();
   });
 
-  // The base location cascades to every day's location input. Each day can
-  // still be overridden manually afterwards — a later base-location edit
-  // simply rewrites all days again.
-  baseLocationInput.addEventListener('input', () => {
-    for (const inputId of Object.values(LOCATION_INPUT_IDS)) {
-      const input = document.getElementById(inputId);
-      if (input) input.value = baseLocationInput.value;
-    }
+  // A base location is an explicit user supplied convenience, copied into
+  // available day inputs. Each day remains independent afterwards.
+  baseLocationInput.addEventListener('change', () => {
+    availabilityGrid.querySelectorAll('[data-location]').forEach((input) => {
+      if (!input.disabled && !input.value.trim()) input.value = baseLocationInput.value;
+    });
     updateValidation();
   });
-  availabilityGrid.addEventListener('input', updateValidation);
+  availabilityGrid.addEventListener('change', (event) => {
+    const row = event.target.closest('.day-row');
+    if (row && event.target.matches('[data-can-train]')) {
+      row.dataset.configured = 'true';
+      const details = row.querySelector('.day-details');
+      const available = event.target.checked;
+      const expand = row.querySelector('[data-expand]');
+      if (expand) {
+        expand.setAttribute('aria-expanded', String(available));
+        expand.setAttribute('aria-label', `${t(available ? 'aiCoach.dayCollapse' : 'aiCoach.dayExpand')} ${row.querySelector('.day-label')?.textContent || ''}`.trim());
+      }
+      if (!available && document.activeElement && details.contains(document.activeElement)) row.querySelector('[data-can-train]')?.focus();
+      setDayExpanded(row, available);
+      details.querySelectorAll('input, select').forEach((input) => { input.disabled = !available; });
+      if (available) {
+        const location = row.querySelector('[data-location]');
+        if (location && !location.value.trim()) location.value = baseLocationInput.value;
+      } else {
+        details.querySelectorAll('[data-period]').forEach((input) => { input.checked = false; });
+        row.querySelector('[data-duration]').value = '';
+        row.querySelector('[data-location]').value = '';
+      }
+    }
+    if (row && event.target.matches('[data-period], [data-duration], [data-location]')) row.dataset.configured = 'true';
+    noteAvailabilityEdit();
+    updateValidation();
+  });
+  availabilityGrid.addEventListener('input', () => {
+    noteAvailabilityEdit();
+    updateValidation();
+  });
+  availabilityGrid.addEventListener('click', (event) => {
+    const expand = event.target.closest('[data-expand]');
+    if (expand) {
+      const row = expand.closest('.day-row');
+      if (!row) return;
+      const details = row.querySelector('.day-details');
+      const expanded = expand.getAttribute('aria-expanded') === 'true';
+      if (expanded && details.contains(document.activeElement)) row.querySelector('[data-expand]')?.focus({ preventScroll: true });
+      setDayExpanded(row, !expanded);
+      expand.setAttribute('aria-label', `${t(expanded ? 'aiCoach.dayExpand' : 'aiCoach.dayCollapse')} ${row.querySelector('.day-label')?.textContent || ''}`.trim());
+      return;
+    }
+    if (!event.target.closest('#applyWeekdays')) return;
+    const states = readFormFields();
+    const monday = states.segunda;
+    if (monday.can_train === null) {
+      setAvailabilityStatus('availabilityNoMonday');
+      return;
+    }
+    for (const day of ['terca', 'quarta', 'quinta', 'sexta']) states[day] = structuredClone(monday);
+    renderDayRows(states);
+    noteAvailabilityEdit();
+    updateValidation();
+  });
+  saveAvailabilityButton.addEventListener('click', () => { void persistAvailability(); });
 
   document.addEventListener('app:languagechange', () => {
-    const nextDefault = t('aiCoach.defaultRoutine') || defaultRoutineFor(i18n.language);
-    const currentValues = {};
-    for (const [day, inputId] of Object.entries(DAY_INPUT_IDS)) {
-      const input = document.getElementById(inputId);
-      if (input) currentValues[day] = input.value;
-    }
-    const updated = applyRoutineDefault(currentValues, lastRoutineDefault, nextDefault);
-    for (const [day, value] of Object.entries(updated)) {
-      const input = document.getElementById(DAY_INPUT_IDS[day]);
-      if (input) input.value = value;
-    }
-    lastRoutineDefault = nextDefault;
+    const focusSnapshot = lastDailyFocus;
+    renderDayRows(readFormFields(), { focusSnapshot });
+    if (focusSnapshot) requestAnimationFrame(() => restoreDailyFocus(focusSnapshot));
+    saveAvailabilityLabel.textContent = t('aiCoach.saveAvailability');
+    availabilityReview.textContent = t('aiCoach.availabilityReview');
+    if (availabilityStatusKey) setAvailabilityStatus(availabilityStatusKey);
     const targetIso = readTargetDateIso(targetDateInput, targetDatePicker, i18n.language);
     targetDateInput.dataset.iso = targetIso;
     targetDateInput.value = targetIso;
     targetDatePicker.refresh();
     updateValidation();
   });
+
+  saveAvailabilityLabel.textContent = t('aiCoach.saveAvailability');
 
   let copiedTimer = null;
 
@@ -737,13 +1028,18 @@ function setupAiCoachPage() {
 
   async function handleGenerate(event) {
     event.preventDefault();
-    const { disponibilidade, localizacao } = readFormFields();
+    const disponibilidade = readFormFields();
     const validation = updateValidation();
     if (!validation.valid) return;
     const targetIso = readTargetDateIso(targetDateInput, targetDatePicker, i18n.language);
     const targetDate = parseInputDate(targetIso);
+    const submittedSnapshot = currentAvailabilitySnapshot();
 
     generateBtn.disabled = true;
+    if (!await persistAvailability()) {
+      updateValidation();
+      return;
+    }
     let shoes = [];
     let cycle = {};
     let trainings = [];
@@ -757,6 +1053,11 @@ function setupAiCoachPage() {
     } catch {
       // Any unavailable context keeps prompt generation usable with dashes.
     }
+    if (currentAvailabilitySnapshot() !== submittedSnapshot) {
+      setAvailabilityStatus('availabilityEditedDuringSave');
+      updateValidation();
+      return;
+    }
     updateValidation();
 
     const preferences = getUserPreferences();
@@ -765,8 +1066,6 @@ function setupAiCoachPage() {
     promptOutput.textContent = buildPrompt({
       targetDate,
       disponibilidade,
-      localizacao,
-      baseLocation: baseLocationInput.value,
       contexto: optionalContextInput.value,
       lang: i18n.language,
       shoes,

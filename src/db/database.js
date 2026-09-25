@@ -91,6 +91,19 @@ CREATE TABLE IF NOT EXISTS training_shoe_mileage (
   updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS ai_coach_availability (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  day_key TEXT NOT NULL CHECK (day_key IN ('monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday')),
+  can_train INTEGER NOT NULL CHECK (can_train IN (0, 1)),
+  available_periods TEXT NOT NULL DEFAULT '[]',
+  available_minutes INTEGER,
+  location TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (user_id, day_key),
+  CHECK ((can_train = 0 AND available_periods = '[]' AND available_minutes IS NULL AND location = '') OR
+    (can_train = 1 AND typeof(available_minutes) = 'integer' AND available_minutes BETWEEN 1 AND 720 AND TRIM(location) <> ''))
+);
+
 CREATE TABLE IF NOT EXISTS training_cycles (
   id             TEXT    PRIMARY KEY,
   user_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -208,6 +221,19 @@ function migrateDatabase(db) {
     db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(roleMarker);
   });
   migrateRoles();
+  db.exec(`CREATE TABLE IF NOT EXISTS ai_coach_availability (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    day_key TEXT NOT NULL CHECK (day_key IN ('monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday')),
+    can_train INTEGER NOT NULL CHECK (can_train IN (0, 1)),
+    available_periods TEXT NOT NULL DEFAULT '[]',
+    available_minutes INTEGER,
+    location TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (user_id, day_key),
+    CHECK ((can_train = 0 AND available_periods = '[]' AND available_minutes IS NULL AND location = '') OR
+      (can_train = 1 AND typeof(available_minutes) = 'integer' AND available_minutes BETWEEN 1 AND 720 AND TRIM(location) <> ''))
+  )`);
+  db.prepare("INSERT OR IGNORE INTO schema_migrations (name) VALUES (?)").run('2026-09-structured-ai-coach-availability-v1');
   if (hasShoesTable && !db.pragma('table_info(shoes)').some((column) => column.name === 'base_mileage')) {
     db.exec('ALTER TABLE shoes ADD COLUMN base_mileage REAL NOT NULL DEFAULT 0.0');
   }

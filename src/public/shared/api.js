@@ -72,6 +72,18 @@ export function updateOnboardingPresentation(presentation) {
   return requestJson('/api/onboarding/presentation', presentation, 'PATCH');
 }
 
+export async function fetchAiCoachAvailability() {
+  const response = await fetch('/api/ai-coach/availability', { headers: { accept: 'application/json' } });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || 'Could not load availability.');
+  return payload.availability;
+}
+
+export async function saveAiCoachAvailability(days) {
+  const payload = await requestJson('/api/ai-coach/availability', { days }, 'PUT');
+  return payload.availability;
+}
+
 export function changePassword(payload) {
   return requestJson('/api/auth/password', payload, 'PUT');
 }
