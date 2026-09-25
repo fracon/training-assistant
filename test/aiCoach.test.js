@@ -149,6 +149,12 @@ test('weekly agenda uses native labeled controls and an unselected session durat
   assert.match(row, /value="" placeholder="Ex\.: 60"/);
   assert.match(row, /De 1 a 720 minutos, incluindo aquecimento e volta à calma\./);
   assert.match(row, /data-location/);
+  assert.match(row, /data-lucide="chevron-down" class="day-expand-icon" aria-hidden="true"/);
+  const configuredRow = buildDayRowHtml('segunda', { dayLabel: 'Segunda-feira', messages: messages.aiCoach, state: week.segunda });
+  assert.match(configuredRow, /data-day-location-summary[^>]*><i data-lucide="map-pin" aria-hidden="true"><\/i><span>Fânzeres, Gondomar<\/span>/);
+  const unsafeRow = buildDayRowHtml('segunda', { dayLabel: 'Segunda-feira', messages: messages.aiCoach, state: { ...week.segunda, location: 'A <b> & "local"' } });
+  assert.match(unsafeRow, /<span>A &lt;b&gt; &amp; &quot;local&quot;<\/span>/);
+  assert.doesNotMatch(unsafeRow, /<span>A <b>/);
   assert.match(row, /<ul class="day-error"[^>]*data-day-error/);
   const html = readFileSync(join(__dirname, '../src/public/ai-coach.html'), 'utf8');
   assert.match(row, /id="applyWeekdays"/);
@@ -167,6 +173,8 @@ test('unavailable day summaries stay compact and details start closed', () => {
   assert.doesNotMatch(row, /day-toggle-status/);
   assert.match(row, /aria-expanded="false"/);
   assert.match(row, /class="day-details"[^>]*hidden/);
+  assert.match(row, /data-day-location-summary hidden/);
+  assert.doesNotMatch(row, /data-lucide="map-pin"/);
   assert.match(row, /aria-label="Mostrar detalhes Segunda-feira"/);
   assert.doesNotMatch(row, /data-expand[^>]*disabled/);
 });
@@ -506,8 +514,8 @@ test('AI Coach responsive layout and controls retain visible focus and shared bu
   assert.doesNotMatch(css, /\.day-field/);
   assert.match(css, /\.availability-day-field input\s*\{[\s\S]*?font-weight:\s*500/);
   assert.match(css, /\.day-summary\.is-expanded\s+\[data-day-summary\][\s\S]*?display:\s*none/);
-  assert.match(css, /\.day-expand\[aria-expanded='true'\]\s+\.day-chevron[\s\S]*?transform:\s*rotate\(180deg\)/);
-  assert.match(css, /\.day-chevron\s*\{[\s\S]*?transform-origin:\s*center/);
+  assert.match(css, /\.day-expand\[aria-expanded='true'\]\s+\.day-expand-icon[\s\S]*?transform:\s*rotate\(180deg\)/);
+  assert.match(css, /\.day-expand-icon\s*\{[\s\S]*?display:\s*block[\s\S]*?transform-origin:\s*center center/);
   assert.match(css, /\.availability-status\.is-success[\s\S]*?color:\s*var\(--ok\)/);
   assert.match(css, /\.availability-status\.is-error[\s\S]*?color:\s*var\(--danger\)/);
   assert.match(css, /\.availability-save-action\s*\{[\s\S]*?border:\s*0/);

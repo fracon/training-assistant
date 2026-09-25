@@ -167,15 +167,17 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       saturday.querySelector('.day-label').click();
       const afterLabelClick=saturday.querySelector('[data-can-train]').checked;
       const expand=saturday.querySelector('[data-expand]');
+      const closedHeader=saturday.querySelector('.day-summary').getBoundingClientRect();
       const closedButton=expand.getBoundingClientRect();
-      const closedIcon=expand.querySelector('.day-chevron').getBoundingClientRect();
+      const closedIcon=expand.querySelector('.day-expand-icon').getBoundingClientRect();
       expand.click();
+      const openHeader=saturday.querySelector('.day-summary').getBoundingClientRect();
       const openButton=expand.getBoundingClientRect();
-      const openIcon=expand.querySelector('.day-chevron').getBoundingClientRect();
-      const openStyle=getComputedStyle(expand.querySelector('.day-chevron'));
+      const openIcon=expand.querySelector('.day-expand-icon').getBoundingClientRect();
+      const openStyle=getComputedStyle(expand.querySelector('.day-expand-icon'));
       const expanded={hidden:saturday.querySelector('.day-details').hidden,disabled:[...saturday.querySelectorAll('.day-details input')].every(input=>input.disabled)};
       expand.click();
-      return {days:rows.length,expanders:rows.every(row=>row.querySelector('[data-expand]')&&!row.querySelector('[data-expand]').disabled),before,afterLabelClick,expanded,reclosed:saturday.querySelector('.day-details').hidden,chevron:{sameButtonSize:closedButton.width===openButton.width&&closedButton.height===openButton.height,sameCenter:Math.abs((closedIcon.left+closedIcon.width/2)-(openIcon.left+openIcon.width/2))<0.5&&Math.abs((closedIcon.top+closedIcon.height/2)-(openIcon.top+openIcon.height/2))<0.5,transformOrigin:openStyle.transformOrigin}};
+      return {days:rows.length,expanders:rows.every(row=>row.querySelector('[data-expand]')&&!row.querySelector('[data-expand]').disabled),before,afterLabelClick,expanded,reclosed:saturday.querySelector('.day-details').hidden,chevron:{sameButtonSize:closedButton.width===openButton.width&&closedButton.height===openButton.height,closedIconCentered:Math.abs((closedIcon.left+closedIcon.width/2)-(closedButton.left+closedButton.width/2))<0.5&&Math.abs((closedIcon.top+closedIcon.height/2)-(closedButton.top+closedButton.height/2))<0.5,openIconCentered:Math.abs((openIcon.left+openIcon.width/2)-(openButton.left+openButton.width/2))<0.5&&Math.abs((openIcon.top+openIcon.height/2)-(openButton.top+openButton.height/2))<0.5,closedButtonCentered:Math.abs((closedButton.top+closedButton.height/2)-(closedHeader.top+closedHeader.height/2))<0.5,openButtonCentered:Math.abs((openButton.top+openButton.height/2)-(openHeader.top+openHeader.height/2))<0.5,transformOrigin:openStyle.transformOrigin}};
     })()`);
     assert.deepEqual(initialDayControls, {
       days: 7,
@@ -184,7 +186,7 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       afterLabelClick: false,
       expanded: { hidden: false, disabled: true },
       reclosed: true,
-      chevron: { sameButtonSize: true, sameCenter: true, transformOrigin: '8px 8px' },
+      chevron: { sameButtonSize: true, closedIconCentered: true, openIconCentered: true, closedButtonCentered: true, openButtonCentered: true, transformOrigin: '8px 8px' },
     });
 
     const overlongPrefill = await evaluate(`(()=>{
@@ -227,13 +229,20 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       const errorVisible=!row.querySelector('[data-day-error]').hidden;
       duration.value='60';duration.dispatchEvent(new Event('input',{bubbles:true}));
       location.value='Lisboa';location.dispatchEvent(new Event('input',{bubbles:true}));
-      return {collapsed,expanded,errors,errorVisible};
+      const locationSummary=row.querySelector('[data-day-location-summary]');
+      expand.click();
+      const locationVisible=locationSummary.getClientRects().length>0 && locationSummary.textContent==='Lisboa';
+      expand.click();
+      const locationHiddenWhenExpanded=locationSummary.getClientRects().length===0;
+      return {collapsed,expanded,errors,errorVisible,locationVisible,locationHiddenWhenExpanded};
     })()`);
     assert.deepEqual(daySummaryAndErrors, {
       collapsed: { summaryVisible: true, incompleteVisible: true, separateLines: true },
       expanded: { summaryVisible: false, incompleteVisible: true },
       errors: ['O tempo disponível deve ser um número inteiro entre 1 e 720 minutos.', 'Informe a localidade deste dia disponível.'],
       errorVisible: true,
+      locationVisible: true,
+      locationHiddenWhenExpanded: true,
     });
 
     const exactLimitLocation = await evaluate(`(()=>{

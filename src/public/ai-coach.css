@@ -175,8 +175,24 @@
   overflow-wrap: anywhere;
 }
 
-.day-summary.is-expanded [data-day-summary] {
+.day-summary.is-expanded [data-day-summary],
+.day-summary.is-expanded .day-location-summary {
   display: none;
+}
+
+.day-location-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.day-location-summary svg {
+  width: 0.85rem;
+  height: 0.85rem;
+  flex: 0 0 auto;
 }
 
 .day-incomplete {
@@ -187,7 +203,7 @@
 
 .day-expand {
   grid-column: 2;
-  grid-row: 1;
+  grid-row: 1 / -1;
   width: 1.8rem;
   height: 1.8rem;
   border: 1px solid transparent;
@@ -204,18 +220,16 @@
   justify-content: center;
 }
 
-.day-chevron {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+.day-expand-icon {
+  display: block;
+  flex: 0 0 1rem;
   width: 1rem;
   height: 1rem;
-  line-height: 1;
-  transform-origin: center;
+  transform-origin: center center;
   transition: transform 0.18s ease;
 }
 
-.day-expand[aria-expanded='true'] .day-chevron {
+.day-expand[aria-expanded='true'] .day-expand-icon {
   transform: rotate(180deg);
 }
 
@@ -364,7 +378,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .day-chevron {
+  .day-expand-icon {
     transition: none;
   }
 }

@@ -521,6 +521,14 @@ function daySummary(state, messages) {
   return { text, incomplete };
 }
 
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('"', '&quot;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;');
+}
+
 export function buildDayRowHtml(day, { dayLabel, messages = {}, state = {} }) {
   const dbDay = DAY_DB_KEYS[DAY_KEYS.indexOf(day)];
   const periods = PERIOD_KEYS.map((period) => `<label class="period-option"><input type="checkbox" data-period="${period}" ${state.available_periods?.includes(period) ? 'checked' : ''}><span>${messages.periods?.[period] || period}</span></label>`).join('');
@@ -535,11 +543,13 @@ export function buildDayRowHtml(day, { dayLabel, messages = {}, state = {} }) {
   const configured = state.can_train !== null && state.can_train !== undefined;
   const expandLabel = `${expanded ? (messages.dayCollapse || '') : (messages.dayExpand || '')} ${dayLabel}`.trim();
   const copyAction = day === 'segunda' ? `<button type="button" id="applyWeekdays" class="day-copy-action"><i data-lucide="copy" aria-hidden="true"></i><span>${messages.applyWeekdays || ''}</span></button>` : '';
+  const location = String(state.location || '');
+  const locationSummary = `<span class="day-location-summary" data-day-location-summary${location ? '' : ' hidden'}>${location ? '<i data-lucide="map-pin" aria-hidden="true"></i>' : ''}${location ? `<span>${escapeHtml(location)}</span>` : ''}</span>`;
   return `<fieldset class="day-row" data-day="${dbDay}">
   <div class="day-summary${expanded ? ' is-expanded' : ''}">
     <div class="day-toggle"><input type="checkbox" data-can-train aria-label="${dayLabel}" ${available ? 'checked' : ''} aria-controls="${detailsId}" ${configured ? 'data-configured="true"' : ''}><span class="day-label">${dayLabel}</span></div>
-    <div class="day-summary-copy"><span data-day-summary>${summary.text}</span>${summary.incomplete ? `<span class="day-incomplete" data-day-incomplete>${messages.dayIncomplete || ''}</span>` : ''}</div>
-    <button type="button" class="day-expand" data-expand aria-label="${expandLabel}" aria-controls="${detailsId}" aria-expanded="${expanded ? 'true' : 'false'}"><span class="day-chevron" aria-hidden="true">⌄</span></button>
+    <div class="day-summary-copy"><span data-day-summary>${summary.text}</span>${locationSummary}${summary.incomplete ? `<span class="day-incomplete" data-day-incomplete>${messages.dayIncomplete || ''}</span>` : ''}</div>
+    <button type="button" class="day-expand" data-expand aria-label="${expandLabel}" aria-controls="${detailsId}" aria-expanded="${expanded ? 'true' : 'false'}"><i data-lucide="chevron-down" class="day-expand-icon" aria-hidden="true"></i></button>
   </div>
   <div class="day-details" id="${detailsId}" ${expanded ? '' : 'hidden'}>
     <fieldset class="period-group"><legend>${messages.periodsLabel || ''}</legend><div class="period-list">${periods}</div></fieldset>
@@ -674,6 +684,24 @@ function setupAiCoachPage() {
     expand.setAttribute('aria-expanded', String(expanded));
     row.querySelector('.day-summary')?.classList.toggle('is-expanded', expanded);
     details.hidden = !expanded;
+  }
+
+  function updateDayLocationSummary(row, location) {
+    const summary = row?.querySelector('[data-day-location-summary]');
+    if (!summary) return;
+    summary.replaceChildren();
+    if (!location) {
+      summary.hidden = true;
+      return;
+    }
+    const icon = document.createElement('i');
+    icon.dataset.lucide = 'map-pin';
+    icon.setAttribute('aria-hidden', 'true');
+    const text = document.createElement('span');
+    text.textContent = location;
+    summary.append(icon, text);
+    summary.hidden = false;
+    if (globalThis.lucide && typeof globalThis.lucide.createIcons === 'function') globalThis.lucide.createIcons();
   }
 
   function renderDayRows(states = readFormFields(), { preserveDays = [], focusSnapshot } = {}) {
@@ -841,6 +869,7 @@ function setupAiCoachPage() {
       const summary = daySummary(record, i18n.messages.aiCoach);
       const summaryText = row.querySelector('[data-day-summary]');
       if (summaryText) summaryText.textContent = summary.text;
+      updateDayLocationSummary(row, record.can_train === true ? String(record.location || '') : '');
       const incomplete = row.querySelector('[data-day-incomplete]');
       if (summary.incomplete && !incomplete) {
         const marker = document.createElement('span');
