@@ -512,7 +512,7 @@ export function validatePromptFields({ targetDate = '', language = 'pt-BR', disp
 }
 
 function daySummary(state, messages) {
-  if (state.can_train === false) return { text: '', incomplete: false };
+  if (state.can_train === false) return { text: messages.dayUnavailable || '', incomplete: false };
   if (state.can_train !== true) return { text: messages.dayNotConfigured || '', incomplete: false };
   const periods = (state.available_periods || []).map((period) => messages.periods?.[period] || period);
   const duration = Number.isInteger(state.available_minutes) ? `${state.available_minutes} ${messages.minutesUnit || messages.minutes || ''}` : '';
@@ -534,7 +534,7 @@ export function buildDayRowHtml(day, { dayLabel, messages = {}, state = {} }) {
   const copyAction = day === 'segunda' ? `<button type="button" id="applyWeekdays" class="btn-secondary day-copy-action">${messages.applyWeekdays || ''}</button>` : '';
   return `<fieldset class="day-row" data-day="${dbDay}">
   <div class="day-summary">
-    <label class="day-toggle"><input type="checkbox" data-can-train aria-label="${messages.canTrain || ''}" ${available ? 'checked' : ''} aria-controls="${detailsId}" ${configured ? 'data-configured="true"' : ''}><span class="day-label">${dayLabel}</span><span class="day-toggle-status">${available ? (messages.dayAvailable || '') : (messages.dayUnavailable || '')}</span></label>
+    <label class="day-toggle"><input type="checkbox" data-can-train aria-label="${dayLabel}" ${available ? 'checked' : ''} aria-controls="${detailsId}" ${configured ? 'data-configured="true"' : ''}><span class="day-label">${dayLabel}</span></label>
     <div class="day-summary-copy"><span data-day-summary>${summary.text}</span>${summary.incomplete ? `<span class="day-incomplete" data-day-incomplete>${messages.dayIncomplete || ''}</span>` : ''}</div>
     <button type="button" class="day-expand" data-expand aria-label="${expandLabel}" aria-controls="${detailsId}" aria-expanded="${expanded ? 'true' : 'false'}" ${available ? '' : 'disabled'}><span aria-hidden="true">${expanded ? '⌃' : '⌄'}</span></button>
   </div>
@@ -834,8 +834,6 @@ function setupAiCoachPage() {
         marker.textContent = t('aiCoach.dayIncomplete');
         row.querySelector('.day-summary-copy')?.append(marker);
       } else if (!summary.incomplete && incomplete) incomplete.remove();
-      const status = row.querySelector('.day-toggle-status');
-      if (status) status.textContent = record.can_train === true ? t('aiCoach.dayAvailable') : t('aiCoach.dayUnavailable');
       if (record.can_train !== true) {
         const error = row.querySelector('[data-day-error]');
         error.hidden = true;

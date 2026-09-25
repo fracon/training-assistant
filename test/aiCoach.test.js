@@ -155,7 +155,8 @@ test('unavailable day summaries stay compact and details start closed', () => {
     messages: messages.aiCoach,
     state: { can_train: false, available_periods: [], available_minutes: null, location: '' },
   });
-  assert.doesNotMatch(row, /day-summary-copy"><span data-day-summary>Indisponível/);
+  assert.match(row, /day-summary-copy"><span data-day-summary>Indisponível/);
+  assert.doesNotMatch(row, /day-toggle-status/);
   assert.match(row, /aria-expanded="false"/);
   assert.match(row, /class="day-details"[^>]*hidden/);
   assert.match(row, /aria-label="Mostrar detalhes Segunda-feira"/);
@@ -220,7 +221,7 @@ test('day row translates its controls and renders every stable period key', () =
   assert.match(row, /checked/);
   assert.match(row, /value="60"/);
   assert.match(row, /Fânzeres, Gondomar/);
-  assert.match(row, /aria-label="Can you train\?"/);
+  assert.match(row, /aria-label="Monday"/);
 });
 
 test('week starts on the Monday after the current date', () => {
@@ -469,6 +470,10 @@ test('AI Coach responsive layout and controls retain visible focus and shared bu
   assert.match(css, /\.day-row/);
   assert.match(css, /:focus-visible/);
   assert.match(css, /min-width:\s*0/);
+  assert.match(css, /\.period-list\s*\{[\s\S]*?display:\s*flex;[\s\S]*?flex-direction:\s*column/);
+  assert.doesNotMatch(css, /\.period-list\s*\{[\s\S]*?grid-template-columns/);
+  assert.match(css, /input\[data-duration\][\s\S]*?max-width:\s*9rem/);
+  assert.match(css, /input\[data-location\][\s\S]*?max-width:\s*28rem/);
   assert.match(css, /\.day-field input,[\s\S]*?\.day-field select/);
   assert.match(theme, /\.btn-primary/);
   assert.match(html, /id="generateBtn"[^>]*class="btn-primary"/);

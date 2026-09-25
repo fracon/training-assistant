@@ -205,6 +205,39 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     const desktop = await evaluate(`(()=>({width:innerWidth,scrollWidth:document.documentElement.scrollWidth,language:document.documentElement.lang,reviewVisible:!document.getElementById('availabilityReview').hidden,days:document.querySelectorAll('#availabilityGrid .day-row').length}))()`);
     assert.deepEqual(desktop, { width: 1280, scrollWidth: 1280, language: 'pt-BR', reviewVisible: false, days: 7 });
 
+    const agendaGeometry = await evaluate(`(()=>{
+      const row=document.querySelector('[data-day="monday"]');
+      if(row.querySelector('.day-details').hidden) row.querySelector('[data-expand]').click();
+      const card=row.getBoundingClientRect();
+      const periodList=row.querySelector('.period-list');
+      const periodItems=[...row.querySelectorAll('.period-option')].map(item=>item.getBoundingClientRect());
+      const duration=row.querySelector('[data-duration]').getBoundingClientRect();
+      const location=row.querySelector('[data-location]').getBoundingClientRect();
+      return {card:{left:card.left,right:card.right},periodItems,periodListWidth:periodList.getBoundingClientRect().width,durationWidth:duration.width,locationWidth:location.width};
+    })()`);
+    assert.equal(agendaGeometry.periodItems.length, 5);
+    assert.ok(agendaGeometry.periodItems.every((item) => item.left === agendaGeometry.periodItems[0].left), 'periods stay in one compact column');
+    assert.ok(agendaGeometry.durationWidth < agendaGeometry.card.right - agendaGeometry.card.left, 'duration stays compact');
+    assert.ok(agendaGeometry.locationWidth < agendaGeometry.card.right - agendaGeometry.card.left, 'location stays content-proportional');
+
+    for (const width of [641, 650, 700, 768, 800]) {
+      await command('Emulation.setDeviceMetricsOverride', { width, height: 800, deviceScaleFactor: 1, mobile: false });
+      await evaluate(`new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`);
+      const intermediate = await evaluate(`(()=>{
+        const row=document.querySelector('[data-day="monday"]');
+        const card=row.getBoundingClientRect();
+        const header=row.querySelector('.day-summary').getBoundingClientRect();
+        const summary=row.querySelector('.day-summary-copy').getBoundingClientRect();
+        const expand=row.querySelector('[data-expand]').getBoundingClientRect();
+        return {width:innerWidth,scrollWidth:document.documentElement.scrollWidth,inside:header.left>=card.left&&header.right<=card.right&&expand.left>=card.left&&expand.right<=card.right,summaryInside:summary.right<=card.right};
+      })()`);
+      assert.equal(intermediate.scrollWidth, width, `no horizontal overflow at ${width}px`);
+      assert.equal(intermediate.inside, true, `day header remains inside card at ${width}px`);
+      assert.equal(intermediate.summaryInside, true, `day summary remains inside card at ${width}px`);
+    }
+    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+    await evaluate(`new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`);
+
     await evaluate(`(()=>{
       const days=['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
       for(const day of days)window.__setDay(day, false);
