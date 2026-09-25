@@ -133,18 +133,19 @@ test('legacy free text and missing days remain unconfigured instead of becoming 
   assert.doesNotMatch(prompt, /Segunda: Pode treinar: não/);
 });
 
-test('day card uses native labeled controls and an unselected session duration', () => {
+test('weekly agenda uses native labeled controls and an unselected session duration', () => {
   const row = buildDayRowHtml('segunda', { dayLabel: 'Segunda-feira', messages: messages.aiCoach, state: {} });
   assert.match(row, /<fieldset class="day-row"/);
-  assert.match(row, /type="radio" name="canTrain-monday" value="yes"/);
-  assert.match(row, /type="radio" name="canTrain-monday" value="no"/);
+  assert.match(row, /type="checkbox" data-can-train/);
+  assert.match(row, /data-expand/);
+  assert.match(row, /day-summary/);
   assert.match(row, /data-period="before_08"/);
   assert.match(row, /data-duration/);
   assert.match(row, /<input type="number" data-duration min="1" max="720" step="1"/);
   assert.match(row, /value="" placeholder="Minutos \(1–720\)"/);
   assert.match(row, /data-location/);
   const html = readFileSync(join(__dirname, '../src/public/ai-coach.html'), 'utf8');
-  assert.match(html, /id="applyWeekdays"/);
+  assert.match(row, /id="applyWeekdays"/);
   assert.match(html, /id="availabilityReview"/);
 });
 
@@ -202,7 +203,7 @@ test('ordered day keys respect Monday and Sunday week-start preferences', () => 
 
 test('day row translates its controls and renders every stable period key', () => {
   const row = buildDayRowHtml('segunda', { dayLabel: 'Monday', messages: enMessages.aiCoach, state: week.segunda });
-  assert.match(row, /<legend class="day-label">Monday<\/legend>/);
+  assert.match(row, /class="day-label">Monday<\/span>/);
   for (const period of ['before_08', '08_12', '12_14', '14_18', 'after_18']) assert.ok(row.includes(`data-period="${period}"`));
   assert.match(row, /checked/);
   assert.match(row, /value="60"/);
@@ -236,8 +237,8 @@ test('ordered rendered day labels place the preferred first weekday first', () =
     const day = orderedDayKeys(weekStart)[0];
     return buildDayRowHtml(day, { dayLabel: enMessages.aiCoach.days[localeDays[day]], messages: enMessages.aiCoach, state: {} });
   };
-  assert.match(firstCard('Monday'), /<legend class="day-label">Monday<\/legend>/);
-  assert.match(firstCard('Sunday'), /<legend class="day-label">Sunday<\/legend>/);
+  assert.match(firstCard('Monday'), /class="day-label">Monday<\/span>/);
+  assert.match(firstCard('Sunday'), /class="day-label">Sunday<\/span>/);
 });
 
 test('weekly summaries count completed sessions and ignore incomplete entries', () => {
@@ -509,7 +510,7 @@ test('HTML retains date picker, context, prompt, copy and accessibility contract
 
 test('layout and language events rerender current structured values instead of resetting them', () => {
   const js = readFileSync(join(publicDir, 'ai-coach.js'), 'utf8');
-  assert.match(js, /function renderDayRows\(states = readFormFields\(\), \{ preserveDays = \[\] \} = \{\}\)/);
+  assert.match(js, /function renderDayRows\(states = readFormFields\(\), \{ preserveDays = \[\], focusSnapshot \} = \{\}\)/);
   assert.match(js, /if \(preserveDays\.includes\(day\)\) continue/);
   assert.match(js, /function captureDailyFocus\(\)/);
   assert.match(js, /function restoreDailyFocus\(snapshot\)/);

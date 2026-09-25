@@ -41,6 +41,13 @@
     "availabilityNeedsDuration": "O tempo disponível deve ser um número inteiro entre 1 e 720 minutos.",
     "availabilityNeedsLocation": "Informe a localidade deste dia disponível.",
     "availabilityLocationTooLong": "A localização deve ter no máximo 200 caracteres.",
+    "dayAvailable": "Disponível",
+    "dayUnavailable": "Indisponível",
+    "dayNotConfigured": "Não configurado",
+    "dayIncomplete": "Configuração incompleta",
+    "dayExpand": "Mostrar detalhes",
+    "dayCollapse": "Ocultar detalhes",
+    "minutesUnit": "min",
     "availabilityNoMonday": "Configure a disponibilidade de segunda antes de aplicar aos dias úteis.",
     "days": {
       "monday": "Segunda",

@@ -238,6 +238,29 @@ before committing.
 
 ## Golden rules
 
+## GOLDEN RULE — DESIGN SYSTEM FIRST / VISUAL CONSISTENCY
+
+Before starting any frontend task, consult this rule and inspect an equivalent
+screen or component already used by Kinesis. Every new component, page, form,
+modal, or visual flow must follow the existing visual and interaction patterns.
+Identify and reuse the established design tokens for typography, colors,
+spacing, borders, radii, focus, hover, disabled, and error states; reuse
+existing components and styles whenever possible; inspect the result in a real
+browser on desktop and mobile; and compare it with at least one consolidated
+screen, including keyboard and accessibility states.
+
+Do not create a second design system, arbitrary colors, arbitrary radii, new
+button styles without a demonstrated need, visually different equivalents of
+existing controls, or a visual library without authorization. Do not replace
+consolidated patterns with agent preference, and do not consider a frontend
+change complete solely because functional tests pass.
+
+If no suitable pattern exists, identify the gap, choose the smallest compatible
+solution, prefer a reusable component, document the decision, and avoid
+establishing a new visual convention without need. A new interface is complete
+only when it is functional, accessible, responsive, visually inspected in the
+browser, and consistent with the established Kinesis screens.
+
 1. **Local-first privacy:** never send FIT files or workout data to an external
    cloud API for processing. Preserve only the defined integrations: Open-Meteo
    receives planned location/date, Unsplash receives a generic image request,

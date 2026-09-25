@@ -511,21 +511,38 @@ export function validatePromptFields({ targetDate = '', language = 'pt-BR', disp
   return { valid: missing.length === 0, missing };
 }
 
+function daySummary(state, messages) {
+  if (state.can_train === false) return { text: messages.dayUnavailable || '', incomplete: false };
+  if (state.can_train !== true) return { text: messages.dayNotConfigured || '', incomplete: false };
+  const periods = (state.available_periods || []).map((period) => messages.periods?.[period] || period);
+  const duration = Number.isInteger(state.available_minutes) ? `${state.available_minutes} ${messages.minutesUnit || messages.minutes || ''}` : '';
+  const text = [periods.join('; '), duration].filter(Boolean).join(' · ') || messages.dayAvailable || '';
+  const incomplete = validateAvailabilityDay(state).length > 0;
+  return { text, incomplete };
+}
+
 export function buildDayRowHtml(day, { dayLabel, messages = {}, state = {} }) {
   const dbDay = DAY_DB_KEYS[DAY_KEYS.indexOf(day)];
-  const periods = PERIOD_KEYS.map((period) => `<label class="period-chip"><input type="checkbox" data-period="${period}" ${state.available_periods?.includes(period) ? 'checked' : ''}><span>${messages.periods?.[period] || period}</span></label>`).join('');
+  const periods = PERIOD_KEYS.map((period) => `<label class="period-option"><input type="checkbox" data-period="${period}" ${state.available_periods?.includes(period) ? 'checked' : ''}><span>${messages.periods?.[period] || period}</span></label>`).join('');
   const duration = state.available_minutes ?? '';
+  const summary = daySummary(state, messages);
+  const available = state.can_train === true;
+  const expanded = available && state.expanded === true;
+  const detailsId = `availability-details-${dbDay}`;
+  const configured = state.can_train !== null && state.can_train !== undefined;
+  const copyAction = day === 'segunda' ? `<button type="button" id="applyWeekdays" class="btn-secondary day-copy-action">${messages.applyWeekdays || ''}</button>` : '';
   return `<fieldset class="day-row" data-day="${dbDay}">
-  <legend class="day-label">${dayLabel}</legend>
-  <div class="availability-choice" role="radiogroup" aria-label="${messages.canTrain || ''}">
-    <label class="choice-chip"><input type="radio" name="canTrain-${dbDay}" value="yes" ${state.can_train === true ? 'checked' : ''}><span>${messages.yesShort || ''}</span></label>
-    <label class="choice-chip"><input type="radio" name="canTrain-${dbDay}" value="no" ${state.can_train === false ? 'checked' : ''}><span>${messages.noShort || ''}</span></label>
+  <div class="day-summary">
+    <label class="day-toggle"><input type="checkbox" data-can-train aria-label="${messages.canTrain || ''}" ${available ? 'checked' : ''} aria-controls="${detailsId}" ${configured ? 'data-configured="true"' : ''}><span class="day-label">${dayLabel}</span><span class="day-toggle-status">${available ? (messages.dayAvailable || '') : (messages.dayUnavailable || '')}</span></label>
+    <div class="day-summary-copy"><span data-day-summary>${summary.text}</span>${summary.incomplete ? `<span class="day-incomplete" data-day-incomplete>${messages.dayIncomplete || ''}</span>` : ''}</div>
+    <button type="button" class="day-expand" data-expand aria-controls="${detailsId}" aria-expanded="${expanded ? 'true' : 'false'}" ${available ? '' : 'disabled'}>${expanded ? (messages.dayCollapse || '') : (messages.dayExpand || '')}</button>
   </div>
-  <div class="day-details" ${state.can_train === true ? '' : 'hidden'}>
+  <div class="day-details" id="${detailsId}" ${expanded ? '' : 'hidden'}>
     <fieldset class="period-group"><legend>${messages.periodsLabel || ''}</legend><div class="period-list">${periods}</div></fieldset>
     <label class="day-field">${messages.durationLabel || ''}<input type="number" data-duration min="1" max="${MAX_AVAILABLE_MINUTES}" step="1" inputmode="numeric" value="${duration}" placeholder="${messages.durationPlaceholder || ''}"><span class="field-hint">${messages.durationHint || ''}</span></label>
     <label class="day-field">${messages.locationLabel || ''}<input type="text" data-location value="${String(state.location || '').replaceAll('&', '&amp;').replaceAll('"', '&quot;').replaceAll('<', '&lt;')}" autocomplete="off"></label>
   <p class="day-error" id="availability-error-${dbDay}" data-day-error hidden></p>
+  ${copyAction}
   </div>
 </fieldset>`;
 }
@@ -545,7 +562,6 @@ function setupAiCoachPage() {
   const optionalContextInput = document.getElementById('optionalContext');
   const baseLocationInput = document.getElementById('baseLocation');
   const availabilityGrid = document.getElementById('availabilityGrid');
-  const applyWeekdaysButton = document.getElementById('applyWeekdays');
   const saveAvailabilityButton = document.getElementById('saveAvailability');
   const availabilityStatus = document.getElementById('availabilityStatus');
   const availabilityError = document.getElementById('availabilityError');
@@ -570,15 +586,17 @@ function setupAiCoachPage() {
     return Object.fromEntries(DAY_KEYS.map((day, index) => {
       const dbDay = DAY_DB_KEYS[index];
       const row = availabilityGrid.querySelector(`[data-day="${dbDay}"]`);
-      const selected = row?.querySelector(`input[name="canTrain-${dbDay}"]:checked`)?.value;
+      const toggle = row?.querySelector('[data-can-train]');
+      const selected = toggle?.checked;
+      const configured = row?.dataset.configured === 'true' || toggle?.dataset.configured === 'true';
       return [day, {
-        can_train: selected === 'yes' ? true : selected === 'no' ? false : null,
-        available_periods: selected === 'yes'
+        can_train: selected ? true : configured ? false : null,
+        available_periods: selected
           ? [...(row?.querySelectorAll('[data-period]:checked') || [])].map((input) => input.dataset.period)
           : [],
-        available_minutes: selected === 'yes' && row?.querySelector('[data-duration]')?.value
+        available_minutes: selected && row?.querySelector('[data-duration]')?.value
           ? Number(row.querySelector('[data-duration]').value) : null,
-        location: selected === 'yes' ? row?.querySelector('[data-location]')?.value || '' : '',
+        location: selected ? row?.querySelector('[data-location]')?.value || '' : '',
       }];
     }));
   }
@@ -593,7 +611,7 @@ function setupAiCoachPage() {
     if (active.matches('[data-location]')) control = { type: 'location' };
     else if (active.matches('[data-duration]')) control = { type: 'duration' };
     else if (active.matches('[data-period]')) control = { type: 'period', period: active.dataset.period };
-    else if (active.matches('input[type="radio"]')) control = { type: 'radio', name: active.name, value: active.value };
+    else if (active.matches('[data-can-train]')) control = { type: 'can-train' };
     if (!control) return null;
 
     if (active instanceof HTMLInputElement && active.type === 'text' &&
@@ -615,8 +633,14 @@ function setupAiCoachPage() {
     const target = control.type === 'location' ? row.querySelector('[data-location]')
       : control.type === 'duration' ? row.querySelector('[data-duration]')
         : control.type === 'period' ? [...row.querySelectorAll('[data-period]')].find((input) => input.dataset.period === control.period)
-          : [...row.querySelectorAll('input[type="radio"]')].find((input) => input.name === control.name && input.value === control.value);
-    if (!target || target.disabled || target.closest('[hidden]') || target.getClientRects().length === 0) return;
+          : row.querySelector('[data-can-train]');
+    if (!target) return;
+    const details = target.closest('.day-details');
+    if (details?.hidden && row.querySelector('[data-can-train]')?.checked) {
+      details.hidden = false;
+      row.querySelector('[data-expand]')?.setAttribute('aria-expanded', 'true');
+    }
+    if (target.disabled || target.closest('[hidden]') || target.getClientRects().length === 0) return;
 
     if (document.activeElement !== target) {
       try {
@@ -636,10 +660,16 @@ function setupAiCoachPage() {
     }
   }
 
-  function renderDayRows(states = readFormFields(), { preserveDays = [] } = {}) {
+  let lastDailyFocus = null;
+
+  function renderDayRows(states = readFormFields(), { preserveDays = [], focusSnapshot } = {}) {
     const messages = i18n.messages.aiCoach;
     const days = orderedDayKeys(getUserPreferences().first_day_of_week);
-    const focused = captureDailyFocus();
+    const focused = focusSnapshot === undefined ? captureDailyFocus() : focusSnapshot;
+    const expandedDays = new Set([...availabilityGrid.querySelectorAll('.day-row')]
+      .filter((row) => row.querySelector('[data-expand]')?.getAttribute('aria-expanded') === 'true')
+      .map((row) => DAY_KEYS[DAY_DB_KEYS.indexOf(row.dataset.day)]));
+    if (focused?.day) expandedDays.add(DAY_KEYS[DAY_DB_KEYS.indexOf(focused.day)]);
     const currentRows = [...availabilityGrid.querySelectorAll('.day-row')];
     const currentOrder = currentRows.map((row) => DAY_KEYS[DAY_DB_KEYS.indexOf(row.dataset.day)]);
     const canPreserveRows = currentRows.length === days.length && currentOrder.every((day, index) => day === days[index]);
@@ -650,22 +680,31 @@ function setupAiCoachPage() {
         const row = currentRows[index];
         const template = document.createElement('template');
         template.innerHTML = buildDayRowHtml(day, {
-          dayLabel: t(`aiCoach.days.${DAY_LOCALE_KEYS[day]}`), messages, state: states[day] || {},
+          dayLabel: t(`aiCoach.days.${DAY_LOCALE_KEYS[day]}`), messages,
+          state: { ...(states[day] || {}), expanded: expandedDays.has(day) },
         });
         row.replaceWith(template.content.firstElementChild);
       }
     } else {
       availabilityGrid.innerHTML = days.map((day) =>
-        buildDayRowHtml(day, { dayLabel: t(`aiCoach.days.${DAY_LOCALE_KEYS[day]}`), messages, state: states[day] || {} })
+        buildDayRowHtml(day, { dayLabel: t(`aiCoach.days.${DAY_LOCALE_KEYS[day]}`), messages, state: { ...(states[day] || {}), expanded: expandedDays.has(day) } })
       ).join('');
     }
     availabilityGrid.querySelectorAll('.day-row').forEach((row) => {
-      const selected = row.querySelector('input[type="radio"]:checked')?.value;
+      const selected = row.querySelector('[data-can-train]')?.checked;
       const details = row.querySelector('.day-details');
-      details.hidden = selected !== 'yes';
-      details.querySelectorAll('input, select').forEach((input) => { input.disabled = selected !== 'yes'; });
+      const focusedInside = row.contains(document.activeElement) && details.contains(document.activeElement);
+      if (focusedInside) row.querySelector('[data-expand]')?.setAttribute('aria-expanded', 'true');
+      details.hidden = !selected || (!focusedInside && row.querySelector('[data-expand]')?.getAttribute('aria-expanded') !== 'true');
+      details.querySelectorAll('input, select').forEach((input) => { input.disabled = !selected; });
+      row.dataset.configured = row.querySelector('[data-can-train]')?.dataset.configured === 'true' || selected ? 'true' : (row.dataset.configured || 'false');
+      const expand = row.querySelector('[data-expand]');
+      if (expand) expand.disabled = !selected;
     });
     restoreDailyFocus(focused);
+    if (focused) requestAnimationFrame(() => {
+      if (document.activeElement === document.body || !availabilityGrid.contains(document.activeElement)) restoreDailyFocus(focused);
+    });
   }
 
   let availabilityRevision = 0;
@@ -738,7 +777,11 @@ function setupAiCoachPage() {
       const saved = await saveAiCoachAvailability(days);
       const preserveDays = availabilityRevision === submittedRevision ? [] : daysEditedSince(submittedSnapshot);
       const unchanged = preserveDays.length === 0;
+      const active = document.activeElement;
+      const focused = captureDailyFocus() || (preserveDays.length &&
+        (active === document.body || active === saveAvailabilityButton) ? lastDailyFocus : null);
       applyAvailabilityState(saved, { preserveDays });
+      if (focused) requestAnimationFrame(() => restoreDailyFocus(focused));
       availabilityError.textContent = '';
       setAvailabilityStatus(unchanged ? 'availabilitySaved' : 'availabilityEditedDuringSave');
       if (!unchanged) updateValidation();
@@ -766,18 +809,31 @@ function setupAiCoachPage() {
     availabilityGrid.setAttribute('aria-invalid', String(validation.missing.includes('availability')));
     availabilityGrid.setAttribute('aria-describedby', availabilityError.id);
     availabilityError.textContent = validation.missing.includes('availability') ? t('aiCoach.availabilityValidation') : '';
-    availabilityGrid.querySelectorAll('.availability-choice').forEach((group) => {
-      const row = group.closest('.day-row');
+    availabilityGrid.querySelectorAll('.day-row').forEach((row) => {
       const dayIndex = DAY_DB_KEYS.indexOf(row.dataset.day);
       const day = DAY_KEYS[dayIndex];
       const unset = disponibilidade[day].can_train === null;
-      group.setAttribute('aria-invalid', String(unset));
-      group.setAttribute('aria-describedby', availabilityError.id);
+      const toggle = row.querySelector('[data-can-train]');
+      toggle?.setAttribute('aria-invalid', String(unset));
+      toggle?.setAttribute('aria-describedby', availabilityError.id);
     });
     for (const [day, dayIndex] of DAY_KEYS.map((day, index) => [day, index])) {
       const record = disponibilidade[day];
       const row = availabilityGrid.querySelector(`[data-day="${DAY_DB_KEYS[dayIndex]}"]`);
       if (!row) continue;
+      const summary = daySummary(record, i18n.messages.aiCoach);
+      const summaryText = row.querySelector('[data-day-summary]');
+      if (summaryText) summaryText.textContent = summary.text;
+      const incomplete = row.querySelector('[data-day-incomplete]');
+      if (summary.incomplete && !incomplete) {
+        const marker = document.createElement('span');
+        marker.className = 'day-incomplete';
+        marker.dataset.dayIncomplete = '';
+        marker.textContent = t('aiCoach.dayIncomplete');
+        row.querySelector('.day-summary-copy')?.append(marker);
+      } else if (!summary.incomplete && incomplete) incomplete.remove();
+      const status = row.querySelector('.day-toggle-status');
+      if (status) status.textContent = record.can_train === true ? t('aiCoach.dayAvailable') : t('aiCoach.dayUnavailable');
       if (record.can_train !== true) {
         const error = row.querySelector('[data-day-error]');
         error.hidden = true;
@@ -809,6 +865,11 @@ function setupAiCoachPage() {
 
   updateValidation();
 
+  availabilityGrid.addEventListener('focusin', () => {
+    const focused = captureDailyFocus();
+    if (focused) lastDailyFocus = focused;
+  });
+
   document.addEventListener('kinesis:preferences-changed', (event) => {
     const next = event.detail?.first_day_of_week;
     if (next === 'Monday' || next === 'Sunday') renderDayRows();
@@ -820,15 +881,18 @@ function setupAiCoachPage() {
     availabilityGrid.querySelectorAll('[data-location]').forEach((input) => {
       if (!input.disabled && !input.value.trim()) input.value = baseLocationInput.value;
     });
-    noteAvailabilityEdit();
     updateValidation();
   });
   availabilityGrid.addEventListener('change', (event) => {
     const row = event.target.closest('.day-row');
-    if (row && event.target.matches('input[type="radio"]')) {
+    if (row && event.target.matches('[data-can-train]')) {
+      row.dataset.configured = 'true';
       const details = row.querySelector('.day-details');
-      const available = event.target.value === 'yes';
-      details.hidden = !available;
+      const available = event.target.checked;
+      const expand = row.querySelector('[data-expand]');
+      if (available && expand) expand.setAttribute('aria-expanded', 'true');
+      if (!available && document.activeElement && details.contains(document.activeElement)) row.querySelector('[data-can-train]')?.focus();
+      details.hidden = !available || expand?.getAttribute('aria-expanded') !== 'true';
       details.querySelectorAll('input, select').forEach((input) => { input.disabled = !available; });
       if (available) {
         const location = row.querySelector('[data-location]');
@@ -839,6 +903,7 @@ function setupAiCoachPage() {
         row.querySelector('[data-location]').value = '';
       }
     }
+    if (row && event.target.matches('[data-period], [data-duration], [data-location]')) row.dataset.configured = 'true';
     noteAvailabilityEdit();
     updateValidation();
   });
@@ -846,7 +911,20 @@ function setupAiCoachPage() {
     noteAvailabilityEdit();
     updateValidation();
   });
-  applyWeekdaysButton.addEventListener('click', () => {
+  availabilityGrid.addEventListener('click', (event) => {
+    const expand = event.target.closest('[data-expand]');
+    if (expand) {
+      const row = expand.closest('.day-row');
+      if (!row || expand.disabled) return;
+      const details = row.querySelector('.day-details');
+      const expanded = expand.getAttribute('aria-expanded') === 'true';
+      if (expanded && details.contains(document.activeElement)) row.querySelector('[data-expand]')?.focus({ preventScroll: true });
+      expand.setAttribute('aria-expanded', String(!expanded));
+      details.hidden = expanded;
+      expand.textContent = expanded ? t('aiCoach.dayExpand') : t('aiCoach.dayCollapse');
+      return;
+    }
+    if (!event.target.closest('#applyWeekdays')) return;
     const states = readFormFields();
     const monday = states.segunda;
     if (monday.can_train === null) {
@@ -861,8 +939,9 @@ function setupAiCoachPage() {
   saveAvailabilityButton.addEventListener('click', () => { void persistAvailability(); });
 
   document.addEventListener('app:languagechange', () => {
-    renderDayRows();
-    applyWeekdaysButton.textContent = t('aiCoach.applyWeekdays');
+    const focusSnapshot = lastDailyFocus;
+    renderDayRows(readFormFields(), { focusSnapshot });
+    if (focusSnapshot) requestAnimationFrame(() => restoreDailyFocus(focusSnapshot));
     saveAvailabilityButton.textContent = t('aiCoach.saveAvailability');
     availabilityReview.textContent = t('aiCoach.availabilityReview');
     if (availabilityStatusKey) availabilityStatus.textContent = t(`aiCoach.${availabilityStatusKey}`);
@@ -873,7 +952,6 @@ function setupAiCoachPage() {
     updateValidation();
   });
 
-  applyWeekdaysButton.textContent = t('aiCoach.applyWeekdays');
   saveAvailabilityButton.textContent = t('aiCoach.saveAvailability');
 
   let copiedTimer = null;

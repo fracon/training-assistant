@@ -115,28 +115,92 @@
 
 .availability-grid {
   min-width: 0;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 0.6rem 0.9rem;
+  display: flex;
+  flex-direction: column;
   margin-top: 0.25rem;
+  border-top: 1px solid var(--line);
 }
 
 .day-row {
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: start;
-  gap: 0.55rem;
-  padding: 0.7rem;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--card);
+  margin: 0;
+  padding: 0.8rem 0;
+  border: 0;
+  border-bottom: 1px solid var(--line);
 }
 
-.day-row .day-label {
-  color: var(--muted);
+.day-summary {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.day-toggle {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  cursor: pointer;
+}
+
+.day-toggle input {
+  flex: 0 0 auto;
+  width: 1.15rem;
+  height: 1.15rem;
+  margin: 0;
+  accent-color: var(--accent-deep);
+}
+
+.day-label {
+  color: var(--ink);
   font-size: 0.95rem;
   font-weight: 700;
+}
+
+.day-toggle-status {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.day-summary-copy {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+}
+
+.day-incomplete {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.day-expand {
+  min-height: 38px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  padding: 0.4rem 0.65rem;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.day-expand:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--bg);
+}
+
+.day-expand:disabled {
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .day-details,
@@ -147,6 +211,9 @@
 }
 
 .day-details {
+  margin: 0.8rem 0 0 1.75rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--line);
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
@@ -165,61 +232,88 @@
   font-weight: 600;
 }
 
-.period-list,
-.availability-choice {
-  display: flex;
-  flex-wrap: wrap;
+.period-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
   gap: 0.4rem;
 }
 
-.period-chip,
-.choice-chip {
+.period-option {
   position: relative;
+  min-width: 0;
   cursor: pointer;
 }
 
-.period-chip input,
-.choice-chip input {
+.period-option input {
   position: absolute;
   opacity: 0;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
   cursor: pointer;
 }
 
-.period-chip span,
-.choice-chip span {
+.period-option span {
   min-height: 42px;
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 0.45rem;
   border: 1px solid var(--line-strong);
-  border-radius: 999px;
-  padding: 0.45rem 0.7rem;
+  border-radius: 8px;
+  padding: 0.45rem 0.6rem;
   background: var(--bg);
   color: var(--ink);
   font-size: 0.82rem;
 }
 
-.period-chip input:checked + span,
-.choice-chip input:checked + span {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--on-accent, #fff);
+.period-option span::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 1rem;
+  height: 1rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  background: var(--card);
 }
 
-.period-chip input:checked + span::before,
-.choice-chip input:checked + span::before {
+.period-option input:checked + span {
+  border-color: var(--accent-deep);
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg));
+}
+
+.period-option input:checked + span::before {
   content: '✓';
-  margin-right: 0.35rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-color: var(--accent-deep);
+  background: var(--accent-deep);
+  color: var(--on-accent, #fff);
+  font-size: 0.75rem;
   font-weight: 800;
 }
 
-.period-chip input:focus-visible + span,
-.choice-chip input:focus-visible + span {
+.period-option input:focus-visible + span,
+.day-expand:focus-visible,
+.day-toggle input:focus-visible {
   outline: 3px solid var(--accent);
   outline-offset: 2px;
+}
+
+.day-copy-action {
+  align-self: flex-start;
+  border-radius: 8px;
+}
+
+/* Keep the existing form rhythm for the compact agenda details. */
+.day-field input,
+.day-field select {
+  border-radius: 10px;
+}
+
+/* Retained for the shared prompt copy control. */
+.copy-btn {
+  border-radius: 8px;
 }
 
 .day-field {
@@ -280,7 +374,7 @@
   min-height: 42px;
   align-self: flex-start;
   border: 1px solid var(--line-strong);
-  border-radius: 999px;
+  border-radius: 8px;
   padding: 0.5rem 0.85rem;
   background: var(--bg);
   color: var(--ink);
@@ -346,7 +440,7 @@
   gap: 0.45rem;
   padding: 0.45rem 0.9rem;
   border: 1px solid var(--line-strong);
-  border-radius: 999px;
+  border-radius: 8px;
   background: var(--bg);
   color: var(--ink);
   font-size: 0.85rem;
@@ -386,4 +480,34 @@
   font-size: 0.88rem;
   line-height: 1.5;
   user-select: all;
+}
+
+@media (max-width: 640px) {
+  .day-summary {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.55rem;
+  }
+
+  .day-summary-copy {
+    grid-column: 1 / -1;
+    padding-left: 1.7rem;
+  }
+
+  .day-expand {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .day-details {
+    margin-left: 0;
+  }
+
+  .period-list {
+    grid-template-columns: 1fr;
+  }
+
+  .day-copy-action,
+  .availability-actions .btn-secondary {
+    width: 100%;
+  }
 }
