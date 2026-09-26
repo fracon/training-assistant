@@ -8,12 +8,12 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.13.1`); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.14.0`); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
-home dashboard, contextual training result, calendar, AI Coach, cycles, and
-shoes. Shared frontend responsibilities live under
+home dashboard, contextual training result, calendar, AI Coach, cycles, shoes,
+and the admin-only administration page. Shared frontend responsibilities live under
 `src/public/shared/`: `shell.js` injects navigation and account controls;
 `onboarding.js` contains onboarding state/presentation helpers;
 `i18n.js` and `locales/en.json` / `locales/pt.json` provide English and Brazilian
@@ -64,9 +64,47 @@ entrypoints and continue to run as its non-root `node` user.
   startup. In Docker/ZimaOS, run `docker exec -it <container-name> npm run
   admin:bootstrap` or `admin:promote` so it uses the mounted `/app/data`
   database. Access to the server/container is privileged.
-- This feature adds no admin panel, public bootstrap/promotion endpoint,
-  cross-user data access, role editor, demotion, suspension, or configurable
-  permission system.
+- This feature adds no public bootstrap/promotion endpoint, cross-user data
+  access, suspension, or configurable permission system.
+
+## Account administration
+
+`src/admin/users.js` owns the account CRUD used by the admin-only
+administration page. `src/server.js` gates `/admin-users.html` and mounts
+`/api/admin/users` behind `requireAuth` then `requireAdmin`; the shell renders
+the `ADMIN_NAV_GROUP` only for an admin session. The group is a separate sidebar
+section, never a loose header entry, and it must be absent from the DOM — not
+merely hidden — for every other account.
+
+- The list and read responses return identification and role only. They never
+  expose or accept another account's training, cycle, shoe, or session data.
+- The page's controls are a convenience, not the boundary: self-deletion,
+  self-demotion, and removing the last administrator are refused by the domain
+  layer inside the write transaction that would otherwise persist the change.
+- A role change deletes the target's existing sessions, so a revoked permission
+  never survives in an old session. The role is re-read from the database on
+  every request.
+- Creation and email changes reuse `src/auth/registration.js` normalization,
+  validation, and password hashing. `role` must be explicitly `user` or
+  `admin`; nothing is inferred, and unknown request fields are refused so no
+  column can be written indirectly.
+- Deleting an account relies on the existing foreign-key cascades for its
+  sessions, trainings, cycles, shoes, mileage ledger, and AI Coach
+  availability.
+- Every create, update, role change, and delete writes one
+  `admin_audit_log` row (idempotent migration
+  `2026-09-admin-account-audit-v1`) with copied actor/target identities, the
+  action, and a timestamp. The table holds no password, hash, token, or
+  training value, and identities are copied rather than joined so a deletion
+  record outlives the deleted account.
+- The audit table intentionally uses `id INTEGER PRIMARY KEY`, which lets
+  SQLite assign IDs without `AUTOINCREMENT`; no requirement exists to prevent
+  ID reuse after deletion. The `users.id` definition is not changed.
+- The page reuses the shared shell, theme, modal, confirm dialog, form controls,
+  custom tooltips, shared date formatter, and PT/EN dictionaries. The account
+  dialog uses `createDialogFocusTrap` from `src/public/shared/dialog-focus.js`
+  and restores focus to its trigger on close. It must keep localized errors,
+  focus containment, Escape, and reduced-motion behavior intact.
 
 ## Current product behavior and invariants
 

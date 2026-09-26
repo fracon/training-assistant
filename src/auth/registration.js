@@ -17,12 +17,24 @@ class RegistrationError extends Error {
   }
 }
 
+// One canonical normalization/validation for account email addresses, reused
+// by public registration and by privileged account administration.
+function normalizeEmail(value) {
+  return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
+function validateEmail(email) {
+  if (!EMAIL_PATTERN.test(email)) {
+    throw new RegistrationError(400, 'Invalid email address.');
+  }
+}
+
 function normalizeRegistration(payload) {
   const body = payload ?? {};
   const field = (value) => (typeof value === 'string' ? value.trim() : '');
 
   return {
-    email: field(body.email).toLowerCase(),
+    email: normalizeEmail(body.email),
     password: typeof body.password === 'string' ? body.password : '',
     first_name: field(body.first_name),
     last_name: field(body.last_name),
@@ -38,9 +50,7 @@ function validateRegistration(registration) {
   if (missing.length > 0) {
     throw new RegistrationError(400, `Missing required fields: ${missing.join(', ')}.`);
   }
-  if (!EMAIL_PATTERN.test(registration.email)) {
-    throw new RegistrationError(400, 'Invalid email address.');
-  }
+  validateEmail(registration.email);
   if (registration.password.length < MIN_PASSWORD_LENGTH) {
     throw new RegistrationError(
       400,
@@ -90,4 +100,12 @@ async function registerUser(db, payload) {
   };
 }
 
-module.exports = { registerUser, validateRegistration, normalizeRegistration, RegistrationError };
+module.exports = {
+  registerUser,
+  validateRegistration,
+  normalizeRegistration,
+  normalizeEmail,
+  validateEmail,
+  MIN_PASSWORD_LENGTH,
+  RegistrationError,
+};

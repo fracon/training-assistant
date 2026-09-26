@@ -289,6 +289,33 @@ body.shell-mounted {
   font-size: inherit;
 }
 
+/* Administration group. Rendered only for admin sessions; the whole wrapper is
+   absent for everyone else, so nothing here can leak into layout or Tab order. */
+.nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.7rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--line);
+}
+
+.nav-group-title {
+  margin: 0;
+  padding: 0 0.62rem;
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+.app-shell.collapsed .nav-group {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+}
+
 .soon-chip {
   flex-shrink: 0;
   font-size: 0.58rem;
@@ -351,8 +378,9 @@ body.shell-mounted {
     padding: 0.5rem 0.7rem;
   }
   .sidebar-brand { border-bottom: none; padding: 0 0.4rem; margin-bottom: 0; }
-  .sidebar-nav { flex-direction: row; }
-  .nav-label, .soon-chip, .toggle-label { display: none; }
+  .sidebar-nav { flex-direction: row; align-items: center; }
+  .nav-group { flex-direction: row; margin-top: 0; padding-top: 0; border-top: none; }
+  .nav-label, .soon-chip, .toggle-label, .nav-group-title { display: none; }
   .nav-item { padding: 0.5rem; }
   .sidebar-footer { margin-top: 0; margin-left: auto; }
 }

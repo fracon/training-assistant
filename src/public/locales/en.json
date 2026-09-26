@@ -121,7 +121,9 @@
       "cycles": "Training Cycles",
       "requestWorkouts": "Request Workouts",
       "workouts": "Workouts",
-      "shoes": "Shoe Rotation"
+      "shoes": "Shoe Rotation",
+      "administration": "Administration",
+      "users": "Users"
     },
     "soon": "Soon",
     "noCycle": "No active cycle",
@@ -487,6 +489,65 @@
   "common": {
     "yes": "Yes",
     "no": "No"
+  },
+  "admin": {
+    "pageTitle": "Users - Kinesis",
+    "pageLabel": "Administration",
+    "title": "Users",
+    "subtitle": "Create, edit and remove accounts of this installation.",
+    "addUser": "Add User",
+    "deleteNotice": "Deleting an account is permanent and also removes its sessions and training data.",
+    "loading": "Loading accounts…",
+    "loadError": "Accounts could not be loaded.",
+    "refreshError": "The change was saved, but the account list could not be updated.",
+    "retry": "Try again",
+    "empty": "No accounts registered yet.",
+    "you": "You",
+    "createdAt": "Created on {date}",
+    "firstName": "First Name",
+    "lastName": "Last Name",
+    "email": "Email",
+    "password": "Initial password",
+    "passwordHint": "Ask the new user to change it after the first sign-in.",
+    "role": "Role",
+    "ownRoleHint": "You cannot change your own role from here.",
+    "close": "Close",
+    "formTitleAdd": "Add New User",
+    "formTitleEdit": "Edit User",
+    "save": "Save",
+    "saving": "Saving…",
+    "cancel": "Cancel",
+    "edit": "Edit user",
+    "editTooltip": "Edit user",
+    "delete": "Delete user",
+    "deleteTooltip": "Delete user",
+    "deleteTitle": "Delete account",
+    "deleteConfirm": "Delete {email}? This is permanent: the account, its sessions and all of its training data, cycles, shoes and preferences are removed and cannot be restored.",
+    "roles": {
+      "user": "User",
+      "admin": "Administrator"
+    },
+    "success": {
+      "create": "Account created.",
+      "edit": "Account updated.",
+      "delete": "Account deleted."
+    },
+    "errors": {
+      "firstNameRequired": "Enter the first name.",
+      "lastNameRequired": "Enter the last name.",
+      "emailRequired": "Enter the email address.",
+      "emailInvalid": "Enter a valid email address.",
+      "passwordRequired": "Enter an initial password.",
+      "passwordMin": "The password must be at least 8 characters long.",
+      "roleInvalid": "Choose a supported role.",
+      "emailInUse": "This email is already registered.",
+      "accountNotFound": "This account no longer exists.",
+      "lastAdministrator": "The last administrator cannot be removed or demoted.",
+      "selfAction": "You cannot delete or demote your own account from here.",
+      "authorityRevoked": "Your administrator access was revoked, so nothing was saved. Reload the page and sign in again.",
+      "invalidRegistration": "Check the account details and try again.",
+      "request": "The request could not be completed. Try again."
+    }
   },
   "shoes": {
     "title": "Shoes",

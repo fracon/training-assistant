@@ -328,6 +328,30 @@ function migrateDatabase(db) {
       "ALTER TABLE trainings ADD COLUMN training_cycle_id TEXT REFERENCES training_cycles(id) ON DELETE SET NULL"
     );
   }
+
+  // Administrative account audit trail. Identities are denormalized on purpose:
+  // a deletion record must outlive the deleted account, so neither the actor nor
+  // the target column may cascade with the users table. Only account
+  // identification, action and date are stored — never a password, hash, session
+  // token or any training data.
+  const auditMarker = '2026-09-admin-account-audit-v1';
+  const initializeAdminAudit = db.transaction(() => {
+    if (db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(auditMarker)) return;
+    db.exec(`CREATE TABLE IF NOT EXISTS admin_audit_log (
+      id INTEGER PRIMARY KEY,
+      actor_user_id INTEGER,
+      actor_email TEXT NOT NULL DEFAULT '',
+      target_user_id INTEGER,
+      target_email TEXT NOT NULL DEFAULT '',
+      action TEXT NOT NULL CHECK (action IN (
+        'account_created', 'account_updated', 'account_role_changed', 'account_deleted'
+      )),
+      details TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )`);
+    db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(auditMarker);
+  });
+  initializeAdminAudit();
 }
 
 function initializeDatabase(db) {

@@ -121,7 +121,9 @@
       "cycles": "Ciclos de Treino",
       "requestWorkouts": "Solicitar Treinos",
       "workouts": "Treinos",
-      "shoes": "Rotação de Tênis"
+      "shoes": "Rotação de Tênis",
+      "administration": "Administração",
+      "users": "Usuários"
     },
     "soon": "Em breve",
     "noCycle": "Nenhum ciclo ativo",
@@ -487,6 +489,65 @@
   "common": {
     "yes": "Sim",
     "no": "Não"
+  },
+  "admin": {
+    "pageTitle": "Usuários - Kinesis",
+    "pageLabel": "Administração",
+    "title": "Usuários",
+    "subtitle": "Cadastre, edite e exclua contas desta instalação.",
+    "addUser": "Adicionar Usuário",
+    "deleteNotice": "A exclusão de uma conta é definitiva e também remove suas sessões e dados de treino.",
+    "loading": "Carregando contas…",
+    "loadError": "Não foi possível carregar as contas.",
+    "refreshError": "A alteração foi salva, mas não foi possível atualizar a lista de contas.",
+    "retry": "Tentar novamente",
+    "empty": "Nenhuma conta cadastrada ainda.",
+    "you": "Você",
+    "createdAt": "Criada em {date}",
+    "firstName": "Nome",
+    "lastName": "Sobrenome",
+    "email": "E-mail",
+    "password": "Senha inicial",
+    "passwordHint": "Oriente o novo usuário a alterá-la após o primeiro acesso.",
+    "role": "Papel",
+    "ownRoleHint": "Você não pode alterar o próprio papel por aqui.",
+    "close": "Fechar",
+    "formTitleAdd": "Adicionar Novo Usuário",
+    "formTitleEdit": "Editar Usuário",
+    "save": "Salvar",
+    "saving": "Salvando…",
+    "cancel": "Cancelar",
+    "edit": "Editar usuário",
+    "editTooltip": "Editar usuário",
+    "delete": "Excluir usuário",
+    "deleteTooltip": "Excluir usuário",
+    "deleteTitle": "Excluir conta",
+    "deleteConfirm": "Excluir {email}? A exclusão é definitiva: a conta, suas sessões e todos os seus dados de treino, ciclos, tênis e preferências são removidos e não podem ser restaurados.",
+    "roles": {
+      "user": "Usuário",
+      "admin": "Administrador"
+    },
+    "success": {
+      "create": "Conta criada.",
+      "edit": "Conta atualizada.",
+      "delete": "Conta excluída."
+    },
+    "errors": {
+      "firstNameRequired": "Informe o nome.",
+      "lastNameRequired": "Informe o sobrenome.",
+      "emailRequired": "Informe o e-mail.",
+      "emailInvalid": "Informe um e-mail válido.",
+      "passwordRequired": "Informe a senha inicial.",
+      "passwordMin": "A senha deve ter pelo menos 8 caracteres.",
+      "roleInvalid": "Escolha um papel compatível.",
+      "emailInUse": "Este e-mail já está cadastrado.",
+      "accountNotFound": "Esta conta não existe mais.",
+      "lastAdministrator": "O último administrador não pode ser removido nem rebaixado.",
+      "selfAction": "Você não pode excluir nem rebaixar a própria conta por aqui.",
+      "authorityRevoked": "Seu acesso de administrador foi revogado, então nada foi salvo. Recarregue a página e entre novamente.",
+      "invalidRegistration": "Confira os dados da conta e tente novamente.",
+      "request": "Não foi possível concluir a solicitação. Tente novamente."
+    }
   },
   "shoes": {
     "title": "Tênis",

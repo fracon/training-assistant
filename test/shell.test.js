@@ -14,6 +14,8 @@ const {
   VERSION_FALLBACK_LABEL,
   loadAppVersion,
   formatAppVersion,
+  ADMIN_NAV_GROUP,
+  isAdministrator,
   buildUserMenu,
   wireUserMenu,
   reapplyPasswordErrors,
@@ -107,7 +109,7 @@ test('training-result is contextual only and absent from the sidebar', () => {
   const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
   assert.ok(!js.includes("'training-result'"), 'no training-result nav entry remains');
   assert.ok(!js.includes('/training-result.html'), 'the shell never links the session page');
-  assert.ok(js.includes("buildLayout(active ?? null)"), 'unknown active ids simply highlight nothing');
+  assert.ok(js.includes("buildLayout(active ?? null, user)"), 'unknown active ids simply highlight nothing');
 });
 
 test('every sidebar label key resolves in both locale files', () => {
@@ -160,12 +162,15 @@ test('the footer carries only the app version, fetched from the backend', async 
 
 test('loadAppVersion resolves the packaged version and degrades to null on any failure', async () => {
   const ok = (body) => async () => ({ ok: true, json: async () => body });
-  assert.equal(require('../package.json').version, '0.13.1');
+  // Read the expected version from the package so a SemVer bump cannot fail
+  // this test or leave a stale literal behind.
+  const packaged = require('../package.json').version;
+  assert.match(packaged, /^\d+\.\d+\.\d+$/, 'package.json carries a SemVer version');
   const calls = [];
   assert.equal(await loadAppVersion(async (...args) => {
     calls.push(args);
-    return { ok: true, json: async () => ({ version: '0.13.1' }) };
-  }), '0.13.1');
+    return { ok: true, json: async () => ({ version: packaged }) };
+  }), packaged);
   assert.deepEqual(calls, [[VERSION_ENDPOINT, { cache: 'no-store' }]]);
   assert.equal(await loadAppVersion(async () => ({ ok: false, json: async () => ({ version: '0.9.0' }) })), null);
   assert.equal(await loadAppVersion(ok({})), null, 'a malformed payload is treated as missing');
@@ -300,6 +305,12 @@ test('showConfirm is exported and builds a Promise-based confirmation dialog', (
   assert.match(confirm, /confirmCancelBtn/);
   assert.match(confirm, /setAttribute\('role', 'alertdialog'\)/);
   assert.match(confirm, /setAttribute\('aria-labelledby', 'confirmTitle'\)/);
+  assert.match(confirm, /import \{ createDialogFocusTrap \} from '\.\/dialog-focus\.js'/);
+  assert.match(confirm, /createDialogFocusTrap\(backdrop, \(\) => \{[\s\S]*if \(!confirming\) cleanup\(false\);[\s\S]*\}\)/);
+  assert.match(confirm, /focusTrap\.activate\(\);/);
+  assert.match(confirm, /cancelBtn\.focus\(\);/);
+  assert.match(confirm, /focusTrap\.deactivate\(\);/);
+  assert.match(confirm, /previousFocus\?\.focus\?\.\(\);/);
   assert.match(confirm, /titleEl\.textContent = title/);
   assert.match(confirm, /msg\.textContent = message/);
   assert.match(confirm, /cleanup\(true\)/);
@@ -1052,4 +1063,34 @@ test('reapplyPasswordErrors is a no-op while the error box stays hidden', () => 
   } finally {
     globalThis.document = originalDocument;
   }
+});
+
+/* ── Administration group ── */
+
+test('the administration group points at the account panel and is localized in both languages', () => {
+  assert.equal(ADMIN_NAV_GROUP.id, 'administration');
+  assert.deepEqual(ADMIN_NAV_GROUP.items.map((item) => item.id), ['admin-users']);
+  assert.equal(ADMIN_NAV_GROUP.items[0].href, '/admin-users.html');
+  assert.equal(ADMIN_NAV_GROUP.items[0].icon, 'users');
+  assert.equal(ADMIN_NAV_GROUP.items[0].disabled, false);
+  assert.equal(en.shell.nav.administration, 'Administration');
+  assert.equal(pt.shell.nav.administration, 'Administração');
+  assert.equal(en.shell.nav.users, 'Users');
+  assert.equal(pt.shell.nav.users, 'Usuários');
+  // The group is a separate sidebar section, so it never joins the main list.
+  assert.equal(NAV_ITEMS.some((item) => item.id === 'admin-users'), false);
+  assert.equal(NAV_ITEMS.some((item) => item.id === 'administration'), false);
+});
+
+test('only an account whose database role is exactly admin sees the administration group', () => {
+  assert.equal(isAdministrator({ role: 'admin' }), true);
+  assert.equal(isAdministrator({ role: 'user' }), false);
+  // An absent, unknown or differently cased role is never treated as admin.
+  assert.equal(isAdministrator({}), false);
+  assert.equal(isAdministrator({ role: 'Admin' }), false);
+  assert.equal(isAdministrator({ role: 'ADMIN' }), false);
+  assert.equal(isAdministrator({ role: null }), false);
+  assert.equal(isAdministrator({ role: 'superuser' }), false);
+  assert.equal(isAdministrator(undefined), false);
+  assert.equal(isAdministrator(null), false);
 });
