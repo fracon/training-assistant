@@ -376,13 +376,16 @@ body.shell-mounted {
     border-right: none;
     border-bottom: 1px solid var(--line);
     padding: 0.5rem 0.7rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-padding-inline: 0.7rem;
   }
-  .sidebar-brand { border-bottom: none; padding: 0 0.4rem; margin-bottom: 0; }
-  .sidebar-nav { flex-direction: row; align-items: center; }
-  .nav-group { flex-direction: row; margin-top: 0; padding-top: 0; border-top: none; }
+  .sidebar-brand { flex: 0 0 auto; border-bottom: none; padding: 0 0.4rem; margin-bottom: 0; }
+  .sidebar-nav { flex: 0 0 auto; flex-direction: row; align-items: center; }
+  .nav-group { flex: 0 0 auto; flex-direction: row; margin-top: 0; padding-top: 0; border-top: none; }
   .nav-label, .soon-chip, .toggle-label, .nav-group-title { display: none; }
   .nav-item { padding: 0.5rem; }
-  .sidebar-footer { margin-top: 0; margin-left: auto; }
+  .sidebar-footer { flex: 0 0 auto; margin-top: 0; margin-left: auto; }
 }
 
 /* ---------- Change Password modal (shell-owned) ---------- */

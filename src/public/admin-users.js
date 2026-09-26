@@ -81,6 +81,7 @@ const ERROR_KEYS = {
   unknownField: 'admin.errors.invalidRegistration',
   noChanges: 'admin.errors.invalidRegistration',
   roleConflict: 'admin.errors.roleConflict',
+  roleRefresh: 'admin.errors.roleRefresh',
 };
 
 export function errorMessageKey(error) {
@@ -322,6 +323,27 @@ function setSavePending(pending, messages) {
   submitLabel.textContent = t(messages, pending ? 'admin.saving' : 'admin.save');
 }
 
+// A role conflict is recoverable, but retrying the stale role would be unsafe.
+// Re-read the account first, rebase only the expected role after that response,
+// and make the administrator choose the role again before sending a role PUT.
+async function reconcileRoleConflict(context, form) {
+  try {
+    const current = await fetchAdminUser(form.dataset.userId);
+    if (!current || (current.role !== ROLE_ADMIN && current.role !== ROLE_USER)) {
+      throw new Error('Invalid current account role');
+    }
+    form.dataset.initialRole = current.role;
+    document.getElementById('userRole').value = current.role;
+    showFormError(context.messages, ['admin.errors.roleConflict']);
+  } catch {
+    // Keep the old expected_role when reconciliation fails: a retry must not
+    // silently overwrite the role that caused the conflict.
+    showFormError(context.messages, ['admin.errors.roleRefresh']);
+  } finally {
+    setSavePending(false, context.messages);
+  }
+}
+
 function setDeletePending(pending) {
   deletePending = pending;
   document.getElementById('userList').setAttribute('aria-busy', String(pending));
@@ -420,8 +442,12 @@ async function handleSubmit(context) {
       showListError(context, 'admin.refreshError');
     }
   } catch (error) {
-    setSavePending(false, context.messages);
-    showFormError(context.messages, [errorMessageKey(error)]);
+    if (isEdit && error?.codes?.includes('roleConflict')) {
+      await reconcileRoleConflict(context, form);
+    } else {
+      setSavePending(false, context.messages);
+      showFormError(context.messages, [errorMessageKey(error)]);
+    }
   } finally {
     if (savePending) setSavePending(false, context.messages);
     submitBtn.disabled = false;

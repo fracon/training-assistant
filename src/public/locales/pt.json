@@ -544,6 +544,7 @@
       "accountNotFound": "Esta conta não existe mais.",
       "lastAdministrator": "O último administrador não pode ser removido nem rebaixado.",
       "roleConflict": "O papel da conta mudou enquanto ela era editada. Revise o papel e tente novamente.",
+      "roleRefresh": "Não foi possível carregar o papel atual. Revise a conta novamente antes de tentar salvar.",
       "selfAction": "Você não pode excluir nem rebaixar a própria conta por aqui.",
       "authorityRevoked": "Seu acesso de administrador foi revogado, então nada foi salvo. Recarregue a página e entre novamente.",
       "invalidRegistration": "Confira os dados da conta e tente novamente.",

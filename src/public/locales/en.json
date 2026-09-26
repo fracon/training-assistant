@@ -544,6 +544,7 @@
       "accountNotFound": "This account no longer exists.",
       "lastAdministrator": "The last administrator cannot be removed or demoted.",
       "roleConflict": "The account role changed while it was being edited. Review the role and try again.",
+      "roleRefresh": "The current role could not be loaded. Review the account again before trying to save.",
       "selfAction": "You cannot delete or demote your own account from here.",
       "authorityRevoked": "Your administrator access was revoked, so nothing was saved. Reload the page and sign in again.",
       "invalidRegistration": "Check the account details and try again.",

@@ -567,6 +567,61 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
     assert.equal(staleEditLookup.closed, true);
     assert.equal(staleEditLookup.staleError, false);
 
+    /* ── A role conflict rebases before an identity-only retry ── */
+
+    const roleConflictRecovery = await evaluate(`(async()=>{
+      const row=[...document.querySelectorAll('.user-row')]
+        .find((node)=>node.querySelector('.user-name').textContent==='Rita Runner');
+      const id=row.dataset.userId;
+      row.querySelector('[data-action="edit"]').click();
+      await new Promise((resolve)=>setTimeout(resolve,450));
+      document.getElementById('userFirstName').value='Rita Unsaved';
+      document.getElementById('userRole').value='admin';
+      // A second administrator changes the role after the form was opened.
+      await fetch('/api/admin/users/'+id,{method:'PUT',headers:{'content-type':'application/json'},
+        body:JSON.stringify({role:'admin',expected_role:'user'})});
+      document.getElementById('userForm').requestSubmit();
+      await new Promise((resolve)=>setTimeout(resolve,650));
+      const conflict={
+        error:document.getElementById('userFormError').textContent.trim(),
+        firstName:document.getElementById('userFirstName').value,
+        email:document.getElementById('userEmail').value,
+        role:document.getElementById('userRole').value,
+        expectedRole:document.getElementById('userForm').dataset.initialRole,
+        open:!document.getElementById('userModal').classList.contains('hidden'),
+      };
+      document.querySelector('.lang-switch [data-lang="pt-BR"]').click();
+      await new Promise((resolve)=>setTimeout(resolve,500));
+      const portuguese=document.getElementById('userFormError').textContent.trim();
+      document.getElementById('userFirstName').value='Rita Reconciled';
+      window.__captureNextPut=true;
+      document.getElementById('userForm').requestSubmit();
+      await new Promise((resolve)=>setTimeout(resolve,850));
+      // Restore the seeded regular account for the remaining access-control
+      // assertions; this is outside the form flow being verified above.
+      await fetch('/api/admin/users/'+id,{method:'PUT',headers:{'content-type':'application/json'},
+        body:JSON.stringify({role:'user',expected_role:'admin'})});
+      document.querySelector('.lang-switch [data-lang="en-US"]').click();
+      await new Promise((resolve)=>setTimeout(resolve,350));
+      return {conflict,portuguese,put:window.__capturedPut,
+        closed:document.getElementById('userModal').classList.contains('hidden')};
+    })()`);
+    assert.deepEqual(roleConflictRecovery.conflict, {
+      error: 'The account role changed while it was being edited. Review the role and try again.',
+      firstName: 'Rita Unsaved',
+      email: 'runner@example.test',
+      role: 'admin',
+      expectedRole: 'admin',
+      open: true,
+    });
+    assert.equal(roleConflictRecovery.portuguese,
+      'O papel da conta mudou enquanto ela era editada. Revise o papel e tente novamente.');
+    assert.deepEqual(roleConflictRecovery.put, {
+      id: roleConflictRecovery.put.id,
+      body: { first_name: 'Rita Reconciled' },
+    });
+    assert.equal(roleConflictRecovery.closed, true);
+
     const unchangedEdit = await evaluate(`(async()=>{
       const row=[...document.querySelectorAll('.user-row')]
         .find((node)=>node.querySelector('.user-name').textContent==='Diego Rocha');
@@ -1027,7 +1082,9 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
     for (const [width, height, mobile, groupTitleDisplay] of [
       [1024, 800, false, 'block'],
       [768, 900, true, 'block'],
-      [375, 812, true, 'none'],
+      [320, 812, true, 'none'],
+      [360, 812, true, 'none'],
+      [390, 812, true, 'none'],
     ]) {
       await setViewport(width, height, mobile);
       await delay(250);
@@ -1036,12 +1093,17 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
         listOverflow:document.querySelector('.user-list').scrollWidth>document.querySelector('.user-list').clientWidth,
         groupTitleDisplay:getComputedStyle(document.querySelector('.nav-group-title')).display,
         itemVisible:document.querySelector('[data-nav-id="admin-users"]').getBoundingClientRect().width>0,
+        sidebarOverflow:getComputedStyle(document.querySelector('.sidebar')).overflowX,
+        controlsReachable:[...document.querySelectorAll('.sidebar-brand, .sidebar-nav, .sidebar-footer')]
+          .every((node)=>node.scrollWidth<=node.clientWidth || node.parentElement.scrollWidth>node.parentElement.clientWidth),
       })`);
       assert.deepEqual(narrow, {
         documentOverflow: false,
         listOverflow: false,
         groupTitleDisplay,
         itemVisible: true,
+        sidebarOverflow: width <= 640 ? 'auto' : 'hidden',
+        controlsReachable: true,
       }, `the layout stays intact at ${width}px`);
     }
 
