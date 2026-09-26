@@ -69,7 +69,8 @@ const NAV_ITEMS = [
 // Administration is its own sidebar group, not a loose header/account-menu
 // entry. It is rendered only for an admin session: for everyone else the whole
 // group is absent from the DOM, so it never enters layout or the tab order.
-// This is presentation only — the backend gates /admin.html and /api/admin/*.
+// This is presentation only — the backend gates /admin-users.html and
+// /api/admin/*.
 export const ADMIN_NAV_GROUP = {
   id: 'administration',
   titleKey: 'shell.nav.administration',
@@ -78,7 +79,7 @@ export const ADMIN_NAV_GROUP = {
       id: 'admin-users',
       icon: 'users',
       labelKey: 'shell.nav.users',
-      href: '/admin.html',
+      href: '/admin-users.html',
       disabled: false,
     },
   ],

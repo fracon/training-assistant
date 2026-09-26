@@ -1,6 +1,8 @@
 // Shared confirmation dialog used by destructive and state-changing actions.
 // Keeping the DOM and lifecycle here prevents each page from inventing its own
 // modal while still allowing localized, action-specific copy and styling.
+import { createDialogFocusTrap } from './dialog-focus.js';
+
 export function showConfirm({
   title,
   message,
@@ -14,6 +16,7 @@ export function showConfirm({
   cancelLabel = cancelText,
 } = {}) {
   return new Promise((resolve) => {
+    const previousFocus = document.activeElement;
     const backdrop = document.createElement('div');
     backdrop.className = 'confirm-backdrop';
 
@@ -68,12 +71,19 @@ export function showConfirm({
     backdrop.appendChild(card);
     document.body.appendChild(backdrop);
 
+    let settled = false;
+    const focusTrap = createDialogFocusTrap(backdrop, () => cleanup(false));
+
     if (globalThis.lucide && typeof globalThis.lucide.createIcons === 'function') {
       globalThis.lucide.createIcons({ nodes: [backdrop] });
     }
 
     function cleanup(result) {
+      if (settled) return;
+      settled = true;
+      focusTrap.deactivate();
       backdrop.remove();
+      previousFocus?.focus?.();
       resolve(result);
     }
 
@@ -89,5 +99,8 @@ export function showConfirm({
     backdrop.addEventListener('click', (event) => {
       if (event.target === backdrop) cleanup(false);
     }, { once: true });
+
+    focusTrap.activate();
+    cancelBtn.focus();
   });
 }

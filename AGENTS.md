@@ -70,7 +70,7 @@ entrypoints and continue to run as its non-root `node` user.
 ## Account administration
 
 `src/admin/users.js` owns the account CRUD used by the admin-only
-administration page. `src/server.js` gates `/admin.html` and mounts
+administration page. `src/server.js` gates `/admin-users.html` and mounts
 `/api/admin/users` behind `requireAuth` then `requireAdmin`; the shell renders
 the `ADMIN_NAV_GROUP` only for an admin session. The group is a separate sidebar
 section, never a loose header entry, and it must be absent from the DOM — not
@@ -97,6 +97,9 @@ merely hidden — for every other account.
   action, and a timestamp. The table holds no password, hash, token, or
   training value, and identities are copied rather than joined so a deletion
   record outlives the deleted account.
+- The audit table intentionally uses `id INTEGER PRIMARY KEY`, which lets
+  SQLite assign IDs without `AUTOINCREMENT`; no requirement exists to prevent
+  ID reuse after deletion. The `users.id` definition is not changed.
 - The page reuses the shared shell, theme, modal, confirm dialog, form controls,
   custom tooltips, shared date formatter, and PT/EN dictionaries. The account
   dialog uses `createDialogFocusTrap` from `src/public/shared/dialog-focus.js`

@@ -305,6 +305,12 @@ test('showConfirm is exported and builds a Promise-based confirmation dialog', (
   assert.match(confirm, /confirmCancelBtn/);
   assert.match(confirm, /setAttribute\('role', 'alertdialog'\)/);
   assert.match(confirm, /setAttribute\('aria-labelledby', 'confirmTitle'\)/);
+  assert.match(confirm, /import \{ createDialogFocusTrap \} from '\.\/dialog-focus\.js'/);
+  assert.match(confirm, /createDialogFocusTrap\(backdrop, \(\) => cleanup\(false\)\)/);
+  assert.match(confirm, /focusTrap\.activate\(\);/);
+  assert.match(confirm, /cancelBtn\.focus\(\);/);
+  assert.match(confirm, /focusTrap\.deactivate\(\);/);
+  assert.match(confirm, /previousFocus\?\.focus\?\.\(\);/);
   assert.match(confirm, /titleEl\.textContent = title/);
   assert.match(confirm, /msg\.textContent = message/);
   assert.match(confirm, /cleanup\(true\)/);
@@ -1064,7 +1070,7 @@ test('reapplyPasswordErrors is a no-op while the error box stays hidden', () => 
 test('the administration group points at the account panel and is localized in both languages', () => {
   assert.equal(ADMIN_NAV_GROUP.id, 'administration');
   assert.deepEqual(ADMIN_NAV_GROUP.items.map((item) => item.id), ['admin-users']);
-  assert.equal(ADMIN_NAV_GROUP.items[0].href, '/admin.html');
+  assert.equal(ADMIN_NAV_GROUP.items[0].href, '/admin-users.html');
   assert.equal(ADMIN_NAV_GROUP.items[0].icon, 'users');
   assert.equal(ADMIN_NAV_GROUP.items[0].disabled, false);
   assert.equal(en.shell.nav.administration, 'Administration');

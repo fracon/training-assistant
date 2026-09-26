@@ -50,6 +50,7 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
   const regular = await makeAccount(db, {
     email: 'runner@example.test', firstName: 'Rita', lastName: 'Runner',
   });
+  db.prepare("UPDATE users SET onboarding_status = 'active' WHERE id = ?").run(regular.id);
   const baseUrl = await app.listen({ port: 0, host: '127.0.0.1' });
   const origin = new URL(baseUrl).origin;
   const debugPort = await freePort();
@@ -156,7 +157,7 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
 
     /* ── The page loads for an administrator ── */
 
-    await navigate('/admin.html');
+    await navigate('/admin-users.html');
     await waitForRows(2);
     const layout = await evaluate(`(()=>{
       const list=document.querySelector('.user-list');
@@ -302,6 +303,60 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
     assert.equal(invalid.stillOpen, true);
     assert.deepEqual(invalid.items, ['Enter a valid email address.', 'The password must be at least 8 characters long.']);
 
+    /* ── A visible validation error survives a language switch ── */
+
+    // The error is held as translation keys, so switching language restates it
+    // in the new language instead of clearing the explanation. Everything the
+    // user typed, the create mode, the focused control and the open dialog are
+    // preserved.
+    const localizedValidation = await evaluate(`(async()=>{
+      document.getElementById('userEmail').focus();
+      document.querySelector('.lang-switch [data-lang="pt-BR"]').click();
+      await new Promise((resolve)=>setTimeout(resolve,700));
+      const box=document.getElementById('userFormError');
+      return {
+        items:[...box.querySelectorAll('li')].map((node)=>node.textContent),
+        shown:!box.classList.contains('hidden'),
+        stillOpen:!document.getElementById('userModal').classList.contains('hidden'),
+        firstName:document.getElementById('userFirstName').value,
+        email:document.getElementById('userEmail').value,
+        password:document.getElementById('userPassword').value,
+        title:document.getElementById('userModalTitle').textContent,
+        mode:document.getElementById('userForm').dataset.mode,
+        focused:document.activeElement.id,
+        passwordShown:!document.getElementById('userPasswordField').classList.contains('hidden'),
+      };
+    })()`);
+    assert.deepEqual(localizedValidation, {
+      items: ['Informe um e-mail válido.', 'A senha deve ter pelo menos 8 caracteres.'],
+      shown: true,
+      stillOpen: true,
+      firstName: 'Bad',
+      email: 'not-an-email',
+      password: 'short',
+      title: 'Adicionar Novo Usuário',
+      mode: 'add',
+      focused: 'userEmail',
+      passwordShown: true,
+    }, 'a PT switch restates the pending validation error and preserves the dialog');
+
+    // …and back to English, in the other direction.
+    const backToEnglish = await evaluate(`(async()=>{
+      document.querySelector('.lang-switch [data-lang="en-US"]').click();
+      await new Promise((resolve)=>setTimeout(resolve,700));
+      const box=document.getElementById('userFormError');
+      return {
+        items:[...box.querySelectorAll('li')].map((node)=>node.textContent),
+        title:document.getElementById('userModalTitle').textContent,
+        focused:document.activeElement.id,
+      };
+    })()`);
+    assert.deepEqual(backToEnglish, {
+      items: ['Enter a valid email address.', 'The password must be at least 8 characters long.'],
+      title: 'Add New User',
+      focused: 'userEmail',
+    }, 'the error is restated in English as well, without losing focus');
+
     /* ── A valid create adds the account and closes the modal ── */
 
     const created = await evaluate(`(async()=>{
@@ -339,6 +394,37 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
     })()`);
     assert.equal(duplicate.stillOpen, true);
     assert.equal(duplicate.message, 'This email is already registered.');
+
+    // A server error keeps its stable code mapped to a translation, so the
+    // message follows the language too and the raw server prose is never shown.
+    const localizedApiError = await evaluate(`(async()=>{
+      document.getElementById('userEmail').focus();
+      document.querySelector('.lang-switch [data-lang="pt-BR"]').click();
+      await new Promise((resolve)=>setTimeout(resolve,700));
+      const box=document.getElementById('userFormError');
+      const state={
+        message:box.textContent.trim(),
+        shown:!box.classList.contains('hidden'),
+        stillOpen:!document.getElementById('userModal').classList.contains('hidden'),
+        email:document.getElementById('userEmail').value,
+        title:document.getElementById('userModalTitle').textContent,
+        focused:document.activeElement.id,
+      };
+      document.querySelector('.lang-switch [data-lang="en-US"]').click();
+      await new Promise((resolve)=>setTimeout(resolve,700));
+      state.backInEnglish=box.textContent.trim();
+      return state;
+    })()`);
+    assert.deepEqual(localizedApiError, {
+      message: 'Este e-mail já está cadastrado.',
+      shown: true,
+      stillOpen: true,
+      email: 'diego@example.test',
+      title: 'Adicionar Novo Usuário',
+      focused: 'userEmail',
+      backInEnglish: 'This email is already registered.',
+    }, 'a server error is restated in the new language in both directions');
+
     await evaluate(`document.getElementById('userFormCancel').click()`);
 
     /* ── The self role control is locked and the account is never deletable ── */
@@ -441,15 +527,47 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
     assert.deepEqual(regularNav, { group: false, item: false, groupTitle: false },
       'the administration group is absent from the DOM for a regular account');
 
-    await navigate('/admin.html');
+    await navigate('/admin-users.html');
     const gate = await evaluate(`({ path:location.pathname, hasPanel:!!document.querySelector('.admin-page') })`);
     assert.equal(gate.path, '/home.html', 'the page gate redirects a regular account home');
     assert.equal(gate.hasPanel, false);
+
+    /* ── The shared confirmation also traps focus outside administration ── */
+
+    const sharedConfirm = await evaluate(`(async()=>{
+      const trigger=document.createElement('button');
+      trigger.id='external-confirm-trigger';
+      trigger.textContent='Open confirmation';
+      document.getElementById('appView').appendChild(trigger);
+      trigger.focus();
+      const {showConfirm}=await import('/shared/confirm-modal.js?browser-test=1');
+      const first=showConfirm({title:'Shared confirmation',message:'Confirm outside admin',confirmText:'Confirm',cancelText:'Cancel'});
+      await new Promise((resolve)=>setTimeout(resolve,50));
+      const opened={active:document.activeElement.id, backdrop:document.querySelectorAll('.confirm-backdrop').length};
+      document.dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',shiftKey:true,bubbles:true,cancelable:true}));
+      const wrapped=document.activeElement.id;
+      document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
+      const cancelled=await first;
+      const afterEscape={cancelled,backdrop:document.querySelectorAll('.confirm-backdrop').length,focus:document.activeElement.id};
+      const second=showConfirm({title:'Shared confirmation',message:'Confirm outside admin',confirmText:'Confirm',cancelText:'Cancel'});
+      await new Promise((resolve)=>setTimeout(resolve,50));
+      document.getElementById('confirmOkBtn').click();
+      const confirmed=await second;
+      return {opened,wrapped,afterEscape,confirmed,finalFocus:document.activeElement.id};
+    })()`);
+    assert.deepEqual(sharedConfirm, {
+      opened: { active: 'confirmCancelBtn', backdrop: 1 },
+      wrapped: 'confirmOkBtn',
+      afterEscape: { cancelled: false, backdrop: 0, focus: 'external-confirm-trigger' },
+      confirmed: true,
+      finalFocus: 'external-confirm-trigger',
+    }, 'the shared confirmation traps, closes, restores focus, and reopens outside the admin page');
+
     assert.equal(admin.role, 'admin');
   } finally {
     socket?.close();
-    chromeProcess.kill();
-    rmSync(profile, { recursive: true, force: true });
+    chromeProcess.kill('SIGKILL');
+    rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     await app.close();
   }
 });

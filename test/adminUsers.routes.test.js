@@ -87,18 +87,18 @@ test('every account route refuses a signed-in non-administrator', async () => {
 
 test('the administration page is served to an administrator', async () => {
   const { app, adminCookie } = await setup();
-  const response = await app.inject({ method: 'GET', url: '/admin.html', headers: { cookie: adminCookie } });
+  const response = await app.inject({ method: 'GET', url: '/admin-users.html', headers: { cookie: adminCookie } });
   assert.equal(response.statusCode, 200);
   assert.match(response.body, /data-i18n="admin\.title"/);
 });
 
 test('the administration page sends anonymous visitors to login and others home', async () => {
   const { app, userCookie } = await setup();
-  const anonymous = await app.inject({ method: 'GET', url: '/admin.html' });
+  const anonymous = await app.inject({ method: 'GET', url: '/admin-users.html' });
   assert.equal(anonymous.statusCode, 302);
   assert.match(anonymous.headers.location, /\/login\.html$/);
 
-  const regular = await app.inject({ method: 'GET', url: '/admin.html', headers: { cookie: userCookie } });
+  const regular = await app.inject({ method: 'GET', url: '/admin-users.html', headers: { cookie: userCookie } });
   assert.equal(regular.statusCode, 302);
   assert.match(regular.headers.location, /\/home\.html$/);
 });

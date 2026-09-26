@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized prompts for an AI coach.
 
-Current application version: **0.14.0** (active development).
+Current application version: **0.15.0** (active development).
 
 ### Shoe mileage integrity
 
@@ -54,7 +54,7 @@ AI coaches are only as good as the data you give them. Exporting workouts by han
 ### Accounts & Access
 - **User accounts & security** — email/password registration and sign-in backed by Node's native `crypto` (`scrypt`) password hashing.
 - **Account roles** — every account has a database-constrained `user` or `admin` role. Public registration always creates `user`; admin status only comes from the privileged local bootstrap or promotion commands. Admin role does not bypass per-user ownership checks.
-- **Account administration** — an admin-only sidebar group opens `/admin.html` to list, create, edit, and delete accounts. The group is absent from the DOM for everyone else, and the server independently gates both the page and `/api/admin/users*`. Self-deletion, self-demotion, and removing the last administrator are refused, role changes revoke the target's sessions, and every change is written to an `admin_audit_log` trail that stores no credentials.
+- **Account administration** — an admin-only sidebar group opens `/admin-users.html` to list, create, edit, and delete accounts. The group is absent from the DOM for everyone else, and the server independently gates both the page and `/api/admin/users*`. Self-deletion, self-demotion, and removing the last administrator are refused, role changes revoke the target's sessions, and every change is written to an `admin_audit_log` trail that stores no credentials.
 - **Secure sessions** — 256-bit random session tokens stored in SQLite, delivered as `HttpOnly` / `Secure` / `SameSite=Lax` cookies with server-side expiry.
 - **Server-side route gating** — unauthenticated visitors are redirected to the login page by Fastify itself; the training tool is never rendered without a valid session.
 - **User dropdown menu** — the authenticated user badge opens **Setup guide**, **Change Password**, and **Preferences**. Logout remains a separate topbar action.
@@ -399,11 +399,11 @@ privileged because these commands can grant admin access.
 ### Account administration
 
 An administrator who signs in gets an **Administration** group at the bottom of
-the sidebar, linking to the **Users** page (`/admin.html`). That page lists
+the sidebar, linking to the **Users** page (`/admin-users.html`). That page lists
 every account with its name, email, role, and creation date, and supports
 creating, editing, and deleting accounts. For everyone else the group is absent
 from the DOM entirely, so it is never in the layout or the tab order; the server
-independently redirects `/admin.html` to `/home.html` and answers
+independently redirects `/admin-users.html` to `/home.html` and answers
 `/api/admin/users*` with `403`, and `401` without a session. The role is read
 from the database on every request, so a promotion or demotion takes effect
 without a new sign-in.
@@ -433,6 +433,11 @@ Every create, update, role change, and delete writes one row to
 action, and a timestamp. Identities are copied rather than joined, so the record
 of a deletion outlives the deleted account. The trail holds no password, hash,
 session token, or training value.
+
+The audit table uses `id INTEGER PRIMARY KEY`: SQLite assigns IDs
+automatically, and there is no requirement to prevent ID reuse after deletion,
+so `AUTOINCREMENT` is intentionally not used. The existing `users.id` schema
+is unchanged.
 
 ## Usage
 
@@ -693,7 +698,7 @@ Every primary flow is a standalone page (no single-page hacks, no overlapping la
 | AI Coach | `src/public/ai-coach.html` · `src/public/ai-coach.css` · `src/public/ai-coach.js` | Local prompt builder for weekly coaching plans |
 | Cycles | `src/public/cycles.html` · `src/public/cycles.css` · `src/public/cycles.js` | Training-cycle management |
 | Shoes | `src/public/shoes.html` · `src/public/shoes.css` · `src/public/shoes.js` | Shoe rotation and mileage management |
-| Administration | `src/public/admin.html` · `src/public/admin.css` · `src/public/admin.js` | Admin-only account list with create, edit, and delete |
+| Administration → Users | `src/public/admin-users.html` · `src/public/admin-users.css` · `src/public/admin-users.js` | Admin-only account list with create, edit, and delete |
 
 Shared code lives in `src/public/shared/`: `shell.js` injects the authenticated shell and user menu; `onboarding.js` owns welcome/checklist state and the transient guide signal; `i18n.js` and `locales/` provide PT/EN; `theme.css` owns tokens and shared controls; `api.js`, validators, date, units, preferences, and supporting modules are reused by pages. `src/trainingImport.js` normalizes SheetJS workbook data on the backend.
 

@@ -182,7 +182,15 @@ function renderList(accounts, context) {
   refreshIcons();
 }
 
+// The visible error is held as translation keys rather than rendered text, so a
+// PT ↔ EN switch can restate the same explanation in the new language instead
+// of dropping the message the user still has to act on. Local validation
+// contributes keys, and an API failure contributes the key mapped from the
+// server's stable code, so the raw server prose is never shown.
+let formErrorKeys = [];
+
 function showFormError(messages, errorKeys) {
+  formErrorKeys = errorKeys;
   const box = document.getElementById('userFormError');
   box.textContent = '';
   if (errorKeys.length === 1) {
@@ -200,9 +208,18 @@ function showFormError(messages, errorKeys) {
 }
 
 function hideFormError() {
+  formErrorKeys = [];
   const box = document.getElementById('userFormError');
   box.textContent = '';
   box.classList.add('hidden');
+}
+
+// Restates a still-visible error in the current language. Everything the user
+// typed, the create/edit mode, the focused control and the dialog state are
+// left untouched.
+function refreshFormError(messages) {
+  if (formErrorKeys.length === 0) return;
+  showFormError(messages, formErrorKeys);
 }
 
 function openModal(mode, account, context) {
@@ -402,10 +419,13 @@ export async function initAdminPage() {
     renderList(context.accounts, context);
     const modal = document.getElementById('userModal');
     if (!modal.classList.contains('hidden')) {
+      // The title's `data-i18n` still points at the create or edit key chosen
+      // when the dialog opened, so the mode survives the switch.
       const titleEl = document.getElementById('userModalTitle');
       titleEl.textContent = t(context.messages, titleEl.getAttribute('data-i18n'));
       document.getElementById('userFormSubmitLabel').textContent = t(context.messages, 'admin.save');
-      hideFormError();
+      // Restate a pending error in the new language instead of clearing it.
+      refreshFormError(context.messages);
     }
   });
 

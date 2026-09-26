@@ -217,7 +217,7 @@ async function buildServer(options = {}) {
   // The page itself is gated: the conditional sidebar group is presentation
   // only, so the real authorization boundary is the database role resolved
   // here and in every /api/admin route below.
-  app.get('/admin.html', async (request, reply) => {
+  app.get('/admin-users.html', async (request, reply) => {
     const session = sessionOf(request);
     if (!session) {
       return reply.redirect('/login.html');
@@ -225,7 +225,7 @@ async function buildServer(options = {}) {
     if (session.user.role !== 'admin') {
       return reply.redirect('/home.html');
     }
-    return reply.sendFile('admin.html');
+    return reply.sendFile('admin-users.html');
   });
 
   app.get('/login.html', async (request, reply) => {
