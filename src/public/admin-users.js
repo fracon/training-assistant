@@ -97,6 +97,7 @@ function el(tag, className) {
 let lastFocus = null;
 let lastFocusTarget = null;
 let savePending = false;
+let deletePending = false;
 let editRequestId = 0;
 const focusTrap = createDialogFocusTrap(document.getElementById('userModal'), () => closeModal());
 
@@ -176,7 +177,7 @@ function setState({ loading = false, error = false, empty = false }) {
   document.getElementById('usersLoading').classList.toggle('hidden', !loading);
   document.getElementById('usersError').classList.toggle('hidden', !error);
   document.getElementById('usersEmpty').classList.toggle('hidden', !empty);
-  document.getElementById('addUserBtn').disabled = loading || savePending;
+  document.getElementById('addUserBtn').disabled = loading || savePending || deletePending;
 }
 
 function findUserActionButton(target) {
@@ -195,7 +196,15 @@ function renderList(accounts, context) {
   for (const account of accounts) {
     list.appendChild(renderUserRow(account, context));
   }
+  setListActionsDisabled(deletePending || savePending);
   refreshIcons();
+}
+
+function setListActionsDisabled(disabled) {
+  document.querySelectorAll('#userList [data-action]').forEach((button) => {
+    button.disabled = disabled;
+  });
+  document.getElementById('userList').setAttribute('aria-busy', String(disabled));
 }
 
 // The visible error is held as translation keys rather than rendered text, so a
@@ -269,6 +278,9 @@ function openModal(mode, account, context) {
   form.dataset.mode = mode;
   form.dataset.userId = account ? String(account.id) : '';
   form.dataset.initialRole = isEdit ? account.role : '';
+  form.dataset.initialFirstName = isEdit ? String(account.first_name ?? '').trim() : '';
+  form.dataset.initialLastName = isEdit ? String(account.last_name ?? '').trim() : '';
+  form.dataset.initialEmail = isEdit ? String(account.email ?? '').trim().toLowerCase() : '';
   hideFormError();
   lastFocus = document.activeElement;
   lastFocusTarget = lastFocus?.dataset?.action && lastFocus?.dataset?.id
@@ -308,6 +320,13 @@ function setSavePending(pending, messages) {
   closeBtn.disabled = pending;
   document.getElementById('addUserBtn').disabled = pending;
   submitLabel.textContent = t(messages, pending ? 'admin.saving' : 'admin.save');
+}
+
+function setDeletePending(pending) {
+  deletePending = pending;
+  document.getElementById('userList').setAttribute('aria-busy', String(pending));
+  setListActionsDisabled(pending || savePending);
+  document.getElementById('addUserBtn').disabled = pending || savePending;
 }
 
 function readForm() {
@@ -357,15 +376,27 @@ async function handleSubmit(context) {
 
   try {
     if (isEdit) {
-      const payload = {
+      const normalized = {
         first_name: fields.firstName.trim(),
         last_name: fields.lastName.trim(),
         email: fields.email.trim().toLowerCase(),
+      };
+      const payload = {
+        ...(normalized.first_name !== form.dataset.initialFirstName
+          ? { first_name: normalized.first_name } : {}),
+        ...(normalized.last_name !== form.dataset.initialLastName
+          ? { last_name: normalized.last_name } : {}),
+        ...(normalized.email !== form.dataset.initialEmail
+          ? { email: normalized.email } : {}),
       };
       // The role is only sent when the control is editable for this account.
       if (!document.getElementById('userRole').disabled && fields.role !== form.dataset.initialRole) {
         payload.role = fields.role;
         payload.expected_role = form.dataset.initialRole;
+      }
+      if (Object.keys(payload).length === 0) {
+        showFormError(context.messages, ['admin.errors.noChanges']);
+        return;
       }
       const updatedUser = await updateAdminUser(form.dataset.userId, payload);
       if (String(form.dataset.userId) === String(context.currentUserId)) {
@@ -399,7 +430,7 @@ async function handleSubmit(context) {
 }
 
 async function handleAction(action, id, context) {
-  if (savePending) return;
+  if (savePending || deletePending) return;
   const { messages } = context;
   if (action === 'delete') editRequestId += 1;
   if (action === 'edit') {
@@ -430,6 +461,7 @@ async function handleAction(action, id, context) {
   });
   if (!confirmed) return;
 
+  setDeletePending(true);
   try {
     await deleteAdminUser(id);
     showToast(context.messages, 'admin.success.delete');
@@ -440,6 +472,13 @@ async function handleAction(action, id, context) {
     }
   } catch (error) {
     showToast(context.messages, errorMessageKey(error), 'error');
+  } finally {
+    setDeletePending(false);
+    const active = document.activeElement;
+    if (!active?.isConnected || active.disabled) {
+      (document.querySelector('#userList [data-action]')
+        ?? document.getElementById('addUserBtn'))?.focus();
+    }
   }
 }
 
@@ -463,7 +502,7 @@ export async function initAdminPage() {
   };
 
   document.getElementById('addUserBtn').addEventListener('click', () => {
-    if (savePending) return;
+    if (savePending || deletePending) return;
     editRequestId += 1;
     openModal('add', null, context);
   });

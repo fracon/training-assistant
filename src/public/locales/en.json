@@ -547,6 +547,7 @@
       "selfAction": "You cannot delete or demote your own account from here.",
       "authorityRevoked": "Your administrator access was revoked, so nothing was saved. Reload the page and sign in again.",
       "invalidRegistration": "Check the account details and try again.",
+      "noChanges": "Make at least one change before saving.",
       "request": "The request could not be completed. Try again."
     }
   },

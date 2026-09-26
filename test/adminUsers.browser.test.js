@@ -560,14 +560,64 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
       id: staleEditLookup.idB,
       body: {
         first_name: 'Rita Promoted',
-        last_name: 'Runner',
-        email: 'runner@example.test',
         role: 'admin',
         expected_role: 'user',
       },
     });
     assert.equal(staleEditLookup.closed, true);
     assert.equal(staleEditLookup.staleError, false);
+
+    const unchangedEdit = await evaluate(`(async()=>{
+      const row=[...document.querySelectorAll('.user-row')]
+        .find((node)=>node.querySelector('.user-name').textContent==='Diego Rocha');
+      row.querySelector('[data-action="edit"]').click();
+      await new Promise((resolve)=>setTimeout(resolve,450));
+      document.getElementById('userForm').requestSubmit();
+      await new Promise((resolve)=>setTimeout(resolve,350));
+      const state={
+        open:!document.getElementById('userModal').classList.contains('hidden'),
+        error:document.getElementById('userFormError').textContent.trim(),
+      };
+      document.getElementById('userFormCancel').click();
+      return state;
+    })()`);
+    assert.deepEqual(unchangedEdit, {
+      open:true,
+      error:'Make at least one change before saving.',
+    });
+
+    /* ── Deletion serializes list actions until DELETE settles ── */
+
+    const delayedDelete = await evaluate(`(async()=>{
+      const row=[...document.querySelectorAll('.user-row')]
+        .find((node)=>node.querySelector('.user-name').textContent==='Diego Rocha');
+      row.querySelector('[data-action="delete"]').click();
+      await new Promise((resolve)=>setTimeout(resolve,300));
+      window.__holdNextMutation='DELETE';
+      document.getElementById('confirmOkBtn').click();
+      await new Promise((resolve)=>setTimeout(resolve,180));
+      const editRow=[...document.querySelectorAll('.user-row')]
+        .find((node)=>node.querySelector('.user-name').textContent==='Rita Runner');
+      editRow.querySelector('[data-action="edit"]').click();
+      row.querySelector('[data-action="delete"]').click();
+      const pending={
+        addDisabled:document.getElementById('addUserBtn').disabled,
+        actionsDisabled:[...document.querySelectorAll('#userList [data-action]')].every((button)=>button.disabled),
+        modal:!document.getElementById('userModal').classList.contains('hidden'),
+      };
+      window.__rejectAdminMutation();
+      await new Promise((resolve)=>setTimeout(resolve,650));
+      return {pending,
+        error:document.querySelector('#toast .toast-text').textContent,
+        rowStillPresent:[...document.querySelectorAll('.user-row')].some((item)=>item.dataset.userId===row.dataset.userId),
+        actionsEnabled:[...document.querySelectorAll('#userList [data-action]')].every((button)=>!button.disabled)};
+    })()`);
+    assert.deepEqual(delayedDelete, {
+      pending:{addDisabled:true,actionsDisabled:true,modal:false},
+      error:'The request could not be completed. Try again.',
+      rowStillPresent:true,
+      actionsEnabled:true,
+    });
 
     /* ── Deletion invalidates an edit lookup before opening confirmation ── */
 
@@ -822,6 +872,7 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
         .find((node)=>node.querySelector('.user-name').textContent==='Diego Rocha');
       row.querySelector('[data-action="edit"]').click();
       await new Promise((resolve)=>setTimeout(resolve,400));
+      document.getElementById('userFirstName').value='Diego Pending Edit';
       window.__holdNextMutation='PUT';
       document.getElementById('userForm').requestSubmit();
       await new Promise((resolve)=>setTimeout(resolve,150));
