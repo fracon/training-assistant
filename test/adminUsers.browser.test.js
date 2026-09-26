@@ -408,6 +408,10 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
             created_at:null,
           }}),{status:200,headers:{'content-type':'application/json'}}));
         }
+        if(window.__returnEmptyAdminList&&method==='GET'&&String(input).endsWith('/api/admin/users')){
+          return Promise.resolve(new Response(JSON.stringify({users:[]}),
+            {status:200,headers:{'content-type':'application/json'}}));
+        }
         if(window.__failNextAdminList&&method==='GET'&&String(input).includes('/api/admin/users')){
           window.__failNextAdminList=false;
           return Promise.reject(new Error('simulated list refresh failure'));
@@ -482,7 +486,27 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
       errorVisible: true,
       staleRows: 0,
     });
-    await evaluate(`document.getElementById('retryUsersBtn').click()`);
+    await setLanguage('pt-BR');
+    await new Promise((resolve)=>setTimeout(resolve,350));
+    const refreshErrorPt=await evaluate(`({
+      error:!document.getElementById('usersError').classList.contains('hidden'),
+      empty:!document.getElementById('usersEmpty').classList.contains('hidden'),
+      retry:!document.getElementById('retryUsersBtn').classList.contains('hidden'),
+      message:document.querySelector('#usersError p').textContent,
+    })`);
+    assert.deepEqual(refreshErrorPt, {
+      error:true,
+      empty:false,
+      retry:true,
+      message:'A alteração foi salva, mas não foi possível atualizar a lista de contas.',
+    });
+    await setLanguage('en-US');
+    await new Promise((resolve)=>setTimeout(resolve,350));
+    await evaluate(`window.__returnEmptyAdminList=true;document.getElementById('retryUsersBtn').click()`);
+    await waitForText('#usersEmpty p', 'No accounts registered yet.');
+    const emptyAfterRetry=await evaluate(`({error:!document.getElementById('usersError').classList.contains('hidden'),empty:!document.getElementById('usersEmpty').classList.contains('hidden')})`);
+    assert.deepEqual(emptyAfterRetry,{error:false,empty:true});
+    await evaluate(`window.__returnEmptyAdminList=false;document.getElementById('retryUsersBtn').click()`);
     await waitForRows(4);
     assert.equal(await evaluate(`document.getElementById('usersError').classList.contains('hidden')`), true);
 
@@ -544,6 +568,69 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
     });
     assert.equal(staleEditLookup.closed, true);
     assert.equal(staleEditLookup.staleError, false);
+
+    /* ── Deletion invalidates an edit lookup before opening confirmation ── */
+
+    const editThenCancelDelete = await evaluate(`(async()=>{
+      const rowA=[...document.querySelectorAll('.user-row')]
+        .find((node)=>node.querySelector('.user-name').textContent==='Diego Rocha');
+      const rowB=[...document.querySelectorAll('.user-row')]
+        .find((node)=>node.querySelector('.user-name').textContent==='Rita Runner');
+      const idA=rowA.dataset.userId;
+      window.__editFetchHold=true;
+      window.__pendingEditGets={};
+      rowA.querySelector('[data-action="edit"]').click();
+      rowB.querySelector('[data-action="delete"]').click();
+      await new Promise((resolve)=>setTimeout(resolve,350));
+      const confirmationOpen=!!document.querySelector('.confirm-card');
+      window.__pendingEditGets[idA].resolve();
+      await new Promise((resolve)=>setTimeout(resolve,450));
+      const noOverlay={
+        userModal:!document.getElementById('userModal').classList.contains('hidden'),
+        confirmation:!!document.querySelector('.confirm-card'),
+        toast:document.querySelector('#toast .toast-text').textContent.includes('stale'),
+        focusInConfirmation:!!document.querySelector('.confirm-card')?.contains(document.activeElement),
+      };
+      document.getElementById('confirmCancelBtn').click();
+      await new Promise((resolve)=>setTimeout(resolve,300));
+      return {confirmationOpen,noOverlay,closed:!document.querySelector('.confirm-card')};
+    })()`);
+    assert.deepEqual(editThenCancelDelete, {
+      confirmationOpen:true,
+      noOverlay:{userModal:false,confirmation:true,toast:false,focusInConfirmation:true},
+      closed:true,
+    });
+
+    const editThenConfirmDelete = await evaluate(`(async()=>{
+      const rowA=[...document.querySelectorAll('.user-row')]
+        .find((node)=>node.querySelector('.user-name').textContent==='Diego Rocha');
+      const rowB=[...document.querySelectorAll('.user-row')]
+        .find((node)=>node.querySelector('.user-name').textContent==='Rita Runner');
+      const idA=rowA.dataset.userId;
+      window.__editFetchHold=true;
+      window.__pendingEditGets={};
+      rowA.querySelector('[data-action="edit"]').click();
+      window.__failNextMutation='DELETE';
+      rowB.querySelector('[data-action="delete"]').click();
+      await new Promise((resolve)=>setTimeout(resolve,350));
+      window.__pendingEditGets[idA].reject();
+      await new Promise((resolve)=>setTimeout(resolve,350));
+      document.getElementById('confirmOkBtn').click();
+      await new Promise((resolve)=>setTimeout(resolve,650));
+      window.__editFetchHold=false;
+      return {
+        userModal:!document.getElementById('userModal').classList.contains('hidden'),
+        confirmation:!!document.querySelector('.confirm-card'),
+        rowStillPresent:[...document.querySelectorAll('.user-row')].some((row)=>row.dataset.userId===rowB.dataset.userId),
+        errorToast:document.querySelector('#toast .toast-text').textContent,
+      };
+    })()`);
+    assert.deepEqual(editThenConfirmDelete, {
+      userModal:false,
+      confirmation:false,
+      rowStillPresent:true,
+      errorToast:'The request could not be completed. Try again.',
+    });
 
     /* ── A rejected create keeps its dialog, fields and current-language error ── */
 

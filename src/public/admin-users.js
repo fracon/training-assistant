@@ -188,7 +188,10 @@ function findUserActionButton(target) {
 function renderList(accounts, context) {
   const list = document.getElementById('userList');
   list.textContent = '';
-  setState({ error: context.listErrorVisible, empty: accounts.length === 0 });
+  setState({
+    error: context.listErrorVisible,
+    empty: !context.listErrorVisible && accounts.length === 0,
+  });
   for (const account of accounts) {
     list.appendChild(renderUserRow(account, context));
   }
@@ -398,6 +401,7 @@ async function handleSubmit(context) {
 async function handleAction(action, id, context) {
   if (savePending) return;
   const { messages } = context;
+  if (action === 'delete') editRequestId += 1;
   if (action === 'edit') {
     const requestId = ++editRequestId;
     // Re-read the account from the server so the form never trusts a stale row.
