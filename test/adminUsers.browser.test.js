@@ -382,6 +382,7 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
 
     const refreshFailureCreate = await evaluate(`(async()=>{
       window.__failNextAdminList=true;
+      window.__holdNextMutation='POST';
       const nativeFetch=window.fetch.bind(window);
       window.fetch=(input,init)=>{
         const method=(init?.method||'GET').toUpperCase();
@@ -393,6 +394,13 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
           window.__failNextMutation=null;
           return Promise.reject(new Error('simulated mutation failure'));
         }
+        if(window.__holdNextMutation===method&&String(input).includes('/api/admin/users')){
+          window.__holdNextMutation=null;
+          return new Promise((resolve,reject)=>{
+            window.__releaseAdminMutation=()=>nativeFetch(input,init).then(resolve,reject);
+            window.__rejectAdminMutation=()=>reject(new Error('simulated mutation failure'));
+          });
+        }
         return nativeFetch(input,init);
       };
       document.getElementById('addUserBtn').click();
@@ -400,8 +408,30 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
       set('userFirstName','Refresh');set('userLastName','Create');
       set('userEmail','refresh-create@example.test');set('userPassword','${PASSWORD}');
       document.getElementById('userForm').requestSubmit();
+      await new Promise((resolve)=>setTimeout(resolve,150));
+      const pending={
+        open:!document.getElementById('userModal').classList.contains('hidden'),
+        saving:document.getElementById('userFormSubmitLabel').textContent,
+        saveDisabled:document.getElementById('userFormSubmit').disabled,
+        cancelDisabled:document.getElementById('userFormCancel').disabled,
+        closeDisabled:document.getElementById('userModalClose').disabled,
+        addDisabled:document.getElementById('addUserBtn').disabled,
+        firstName:document.getElementById('userFirstName').value,
+      };
+      document.querySelector('.lang-switch [data-lang="pt-BR"]').click();
+      await new Promise((resolve)=>setTimeout(resolve,350));
+      const savingPt=document.getElementById('userFormSubmitLabel').textContent;
+      document.querySelector('.lang-switch [data-lang="en-US"]').click();
+      await new Promise((resolve)=>setTimeout(resolve,350));
+      document.getElementById('userFormCancel').click();
+      document.getElementById('userModalClose').click();
+      document.getElementById('userModal').dispatchEvent(new MouseEvent('click',{bubbles:true}));
+      document.getElementById('addUserBtn').click();
+      const stillPending=!document.getElementById('userModal').classList.contains('hidden');
+      await window.__releaseAdminMutation();
       await new Promise((resolve)=>setTimeout(resolve,900));
       return {
+        pending,savingPt,stillPending,
         closed:document.getElementById('userModal').classList.contains('hidden'),
         success:document.querySelector('#toast .toast-text').textContent,
         refreshError:document.querySelector('#usersError p').textContent,
@@ -409,7 +439,21 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
         staleRows:document.querySelectorAll('.user-row').length,
       };
     })()`,);
+    assert.deepEqual(refreshFailureCreate.pending, {
+      open: true,
+      saving: 'Saving…',
+      saveDisabled: true,
+      cancelDisabled: true,
+      closeDisabled: true,
+      addDisabled: true,
+      firstName: 'Refresh',
+    });
+    assert.equal(refreshFailureCreate.savingPt, 'Salvando…');
+    assert.equal(refreshFailureCreate.stillPending, true);
     assert.deepEqual(refreshFailureCreate, {
+      pending: refreshFailureCreate.pending,
+      savingPt: 'Salvando…',
+      stillPending: true,
       closed: true,
       success: 'Account created.',
       refreshError: 'The change was saved, but the account list could not be updated.',
@@ -419,6 +463,40 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
     await evaluate(`document.getElementById('retryUsersBtn').click()`);
     await waitForRows(4);
     assert.equal(await evaluate(`document.getElementById('usersError').classList.contains('hidden')`), true);
+
+    /* ── A rejected create keeps its dialog, fields and current-language error ── */
+
+    const failedCreate = await evaluate(`(async()=>{
+      window.__holdNextMutation='POST';
+      document.getElementById('addUserBtn').click();
+      const set=(id,value)=>{document.getElementById(id).value=value};
+      set('userFirstName','Pending');set('userLastName','Create Failure');
+      set('userEmail','pending-create-failure@example.test');set('userPassword','${PASSWORD}');
+      document.getElementById('userEmail').focus();
+      document.getElementById('userForm').requestSubmit();
+      await new Promise((resolve)=>setTimeout(resolve,150));
+      document.querySelector('.lang-switch [data-lang="pt-BR"]').click();
+      await new Promise((resolve)=>setTimeout(resolve,350));
+      document.querySelector('.lang-switch [data-lang="en-US"]').click();
+      await new Promise((resolve)=>setTimeout(resolve,350));
+      window.__rejectAdminMutation();
+      await new Promise((resolve)=>setTimeout(resolve,500));
+      return {open:!document.getElementById('userModal').classList.contains('hidden'),
+        error:document.getElementById('userFormError').textContent.trim(),
+        label:document.getElementById('userFormSubmitLabel').textContent,
+        email:document.getElementById('userEmail').value,
+        focused:document.activeElement.id,
+        saveDisabled:document.getElementById('userFormSubmit').disabled};
+    })()`);
+    assert.deepEqual(failedCreate, {
+      open: true,
+      error: 'The request could not be completed. Try again.',
+      label: 'Save',
+      email: 'pending-create-failure@example.test',
+      focused: 'userEmail',
+      saveDisabled: false,
+    });
+    await evaluate(`document.getElementById('userFormCancel').click()`);
 
     /* ── A duplicate email is reported by the server ── */
 
@@ -521,21 +599,33 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
       await new Promise((resolve)=>setTimeout(resolve,400));
       document.getElementById('userFirstName').value='Refresh Updated';
       window.__failNextAdminList=true;
+      window.__holdNextMutation='PUT';
       document.getElementById('userForm').requestSubmit();
+      await new Promise((resolve)=>setTimeout(resolve,150));
+      document.querySelector('.lang-switch [data-lang="pt-BR"]').click();
+      await new Promise((resolve)=>setTimeout(resolve,350));
+      const savingPt=document.getElementById('userFormSubmitLabel').textContent;
+      document.getElementById('userFormCancel').click();
+      document.getElementById('userModalClose').click();
+      document.getElementById('userModal').dispatchEvent(new MouseEvent('click',{bubbles:true}));
+      await window.__releaseAdminMutation();
       await new Promise((resolve)=>setTimeout(resolve,900));
       return {closed:document.getElementById('userModal').classList.contains('hidden'),
         success:document.querySelector('#toast .toast-text').textContent,
         error:document.querySelector('#usersError p').textContent,
-        rows:document.querySelectorAll('.user-row').length};
+        rows:document.querySelectorAll('.user-row').length,savingPt};
     })()`);
     assert.deepEqual(refreshFailureEdit, {
       closed: true,
-      success: 'Account updated.',
-      error: 'The change was saved, but the account list could not be updated.',
+      success: 'Conta atualizada.',
+      error: 'A alteração foi salva, mas não foi possível atualizar a lista de contas.',
+      savingPt: 'Salvando…',
       rows: 0,
     });
     await evaluate(`document.getElementById('retryUsersBtn').click()`);
     await waitForRows(4);
+    await setLanguage('en-US');
+    await delay(350);
 
     const refreshFailureDelete = await evaluate(`(async()=>{
       const row=[...document.querySelectorAll('.user-row')]
@@ -564,19 +654,27 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
         .find((node)=>node.querySelector('.user-name').textContent==='Diego Rocha');
       row.querySelector('[data-action="edit"]').click();
       await new Promise((resolve)=>setTimeout(resolve,400));
-      window.__failNextMutation='PUT';
+      window.__holdNextMutation='PUT';
       document.getElementById('userForm').requestSubmit();
-      await new Promise((resolve)=>setTimeout(resolve,700));
+      await new Promise((resolve)=>setTimeout(resolve,150));
+      document.querySelector('.lang-switch [data-lang="pt-BR"]').click();
+      await new Promise((resolve)=>setTimeout(resolve,350));
+      window.__rejectAdminMutation();
+      await new Promise((resolve)=>setTimeout(resolve,500));
       return {open:!document.getElementById('userModal').classList.contains('hidden'),
         error:document.getElementById('userFormError').textContent.trim(),
-        success:document.querySelector('#toast .toast-text').textContent};
+        label:document.getElementById('userFormSubmitLabel').textContent,
+        focused:document.activeElement.id};
     })()`);
     assert.deepEqual(mutationFailureEdit, {
       open: true,
-      error: 'The request could not be completed. Try again.',
-      success: 'Account deleted.',
+      error: 'Não foi possível concluir a solicitação. Tente novamente.',
+      label: 'Salvar',
+      focused: 'userFirstName',
     });
     await evaluate(`document.getElementById('userFormCancel').click()`);
+    await setLanguage('en-US');
+    await delay(350);
 
     const mutationFailureDelete = await evaluate(`(async()=>{
       const row=[...document.querySelectorAll('.user-row')]
@@ -708,6 +806,10 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
       document.getElementById('appView').appendChild(trigger);
       trigger.focus();
       const {showConfirm}=await import('/shared/confirm-modal.js?browser-test=1');
+      const beforeConfirm=showConfirm({title:'Backdrop confirmation',message:'Cancel before confirming',confirmText:'Confirm',cancelText:'Cancel'});
+      await new Promise((resolve)=>setTimeout(resolve,50));
+      document.querySelector('.confirm-backdrop').dispatchEvent(new MouseEvent('click',{bubbles:true}));
+      const backdropCancelled=await beforeConfirm;
       const first=showConfirm({title:'Shared confirmation',message:'Confirm outside admin',confirmText:'Confirm',cancelText:'Cancel'});
       await new Promise((resolve)=>setTimeout(resolve,50));
       const opened={active:document.activeElement.id, backdrop:document.querySelectorAll('.confirm-backdrop').length};
@@ -744,10 +846,11 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
       document.getElementById('confirmOkBtn').click();
       document.getElementById('confirmOkBtn').click();
       const rejectionResult=await rejected;
-      return {opened,wrapped,afterEscape,confirmed,finalFocus:document.activeElement.id,pendingState,
+      return {backdropCancelled,opened,wrapped,afterEscape,confirmed,finalFocus:document.activeElement.id,pendingState,
         cycleResult,cycleChanged,rejectionResult,rejectionCalls,clean:document.querySelectorAll('.confirm-backdrop').length===0};
     })()`);
     assert.deepEqual(sharedConfirm, {
+      backdropCancelled: false,
       opened: { active: 'confirmCancelBtn', backdrop: 1 },
       wrapped: 'confirmOkBtn',
       afterEscape: { cancelled: false, backdrop: 0, focus: 'external-confirm-trigger' },

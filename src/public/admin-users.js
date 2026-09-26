@@ -92,6 +92,7 @@ function el(tag, className) {
 
 let lastFocus = null;
 let lastFocusTarget = null;
+let savePending = false;
 const focusTrap = createDialogFocusTrap(document.getElementById('userModal'), () => closeModal());
 
 function buildTooltipButton({ action, id, icon, labelKey, messages, danger }) {
@@ -170,7 +171,7 @@ function setState({ loading = false, error = false, empty = false }) {
   document.getElementById('usersLoading').classList.toggle('hidden', !loading);
   document.getElementById('usersError').classList.toggle('hidden', !error);
   document.getElementById('usersEmpty').classList.toggle('hidden', !empty);
-  document.getElementById('addUserBtn').disabled = loading;
+  document.getElementById('addUserBtn').disabled = loading || savePending;
 }
 
 function findUserActionButton(target) {
@@ -230,6 +231,7 @@ function refreshFormError(messages) {
 }
 
 function openModal(mode, account, context) {
+  if (savePending) return;
   const { messages, currentUserId } = context;
   const isEdit = mode === 'edit';
   const title = document.getElementById('userModalTitle');
@@ -270,6 +272,7 @@ function openModal(mode, account, context) {
 
 function closeModal() {
   const modal = document.getElementById('userModal');
+  if (savePending) return false;
   if (modal.classList.contains('hidden')) return;
   modal.classList.add('hidden');
   focusTrap.deactivate();
@@ -278,6 +281,24 @@ function closeModal() {
   (trigger ?? fallback)?.focus();
   lastFocus = null;
   lastFocusTarget = null;
+  return true;
+}
+
+function setSavePending(pending, messages) {
+  savePending = pending;
+  const modal = document.getElementById('userModal');
+  const form = document.getElementById('userForm');
+  const submitBtn = document.getElementById('userFormSubmit');
+  const submitLabel = document.getElementById('userFormSubmitLabel');
+  const cancelBtn = document.getElementById('userFormCancel');
+  const closeBtn = document.getElementById('userModalClose');
+  modal.setAttribute('aria-busy', String(pending));
+  form.setAttribute('aria-busy', String(pending));
+  submitBtn.disabled = pending;
+  cancelBtn.disabled = pending;
+  closeBtn.disabled = pending;
+  document.getElementById('addUserBtn').disabled = pending;
+  submitLabel.textContent = t(messages, pending ? 'admin.saving' : 'admin.save');
 }
 
 function readForm() {
@@ -310,6 +331,7 @@ function showListError(context, messageKey = 'admin.loadError') {
 }
 
 async function handleSubmit(context) {
+  if (savePending) return;
   const { messages } = context;
   const form = document.getElementById('userForm');
   const isEdit = form.dataset.mode === 'edit';
@@ -322,8 +344,7 @@ async function handleSubmit(context) {
 
   const submitBtn = document.getElementById('userFormSubmit');
   const submitLabel = document.getElementById('userFormSubmitLabel');
-  submitBtn.disabled = true;
-  submitLabel.textContent = t(messages, 'admin.saving');
+  setSavePending(true, messages);
 
   try {
     if (isEdit) {
@@ -344,22 +365,26 @@ async function handleSubmit(context) {
         role: fields.role,
       });
     }
+    setSavePending(false, context.messages);
     closeModal();
-    showToast(messages, isEdit ? 'admin.success.edit' : 'admin.success.create');
+    showToast(context.messages, isEdit ? 'admin.success.edit' : 'admin.success.create');
     try {
       await reload(context);
     } catch {
       showListError(context, 'admin.refreshError');
     }
   } catch (error) {
-    showFormError(messages, [errorMessageKey(error)]);
+    setSavePending(false, context.messages);
+    showFormError(context.messages, [errorMessageKey(error)]);
   } finally {
+    if (savePending) setSavePending(false, context.messages);
     submitBtn.disabled = false;
-    submitLabel.textContent = t(messages, 'admin.save');
+    submitLabel.textContent = t(context.messages, 'admin.save');
   }
 }
 
 async function handleAction(action, id, context) {
+  if (savePending) return;
   const { messages } = context;
   if (action === 'edit') {
     // Re-read the account from the server so the form never trusts a stale row.
@@ -367,7 +392,7 @@ async function handleAction(action, id, context) {
       const account = await fetchAdminUser(id);
       openModal('edit', account, context);
     } catch (error) {
-      showToast(messages, errorMessageKey(error), 'error');
+      showToast(context.messages, errorMessageKey(error), 'error');
     }
     return;
   }
@@ -388,14 +413,14 @@ async function handleAction(action, id, context) {
 
   try {
     await deleteAdminUser(id);
-    showToast(messages, 'admin.success.delete');
+    showToast(context.messages, 'admin.success.delete');
     try {
       await reload(context);
     } catch {
       showListError(context, 'admin.refreshError');
     }
   } catch (error) {
-    showToast(messages, errorMessageKey(error), 'error');
+    showToast(context.messages, errorMessageKey(error), 'error');
   }
 }
 
@@ -419,6 +444,7 @@ export async function initAdminPage() {
   };
 
   document.getElementById('addUserBtn').addEventListener('click', () => {
+    if (savePending) return;
     openModal('add', null, context);
   });
   document.getElementById('userModalClose').addEventListener('click', closeModal);
@@ -431,6 +457,7 @@ export async function initAdminPage() {
     handleSubmit(context);
   });
   document.getElementById('userList').addEventListener('click', (event) => {
+    if (savePending) return;
     const button = event.target.closest('[data-action]');
     if (!button) return;
     handleAction(button.dataset.action, button.dataset.id, context);
@@ -462,7 +489,10 @@ export async function initAdminPage() {
       // when the dialog opened, so the mode survives the switch.
       const titleEl = document.getElementById('userModalTitle');
       titleEl.textContent = t(context.messages, titleEl.getAttribute('data-i18n'));
-      document.getElementById('userFormSubmitLabel').textContent = t(context.messages, 'admin.save');
+      document.getElementById('userFormSubmitLabel').textContent = t(
+        context.messages,
+        savePending ? 'admin.saving' : 'admin.save',
+      );
       // Restate a pending error in the new language instead of clearing it.
       refreshFormError(context.messages);
     }

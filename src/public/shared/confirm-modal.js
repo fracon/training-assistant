@@ -104,7 +104,7 @@ export function showConfirm({
     }, { once: true });
     cancelBtn.addEventListener('click', () => cleanup(false), { once: true });
     backdrop.addEventListener('click', (event) => {
-      if (event.target === backdrop) cleanup(false);
+      if (!confirming && event.target === backdrop) cleanup(false);
     }, { once: true });
 
     focusTrap.activate();
