@@ -394,3 +394,86 @@ test('account changes are audited with the actor and never with secrets', async 
   assert.equal(/password_hash|scrypt|session|token/i.test(JSON.stringify(rows)), false);
   assert.ok(users[0].email);
 });
+
+/*
+ * `POST /api/admin/users` derives its password hash with an `await`, so a second
+ * administrator can revoke the acting account's authority while that hash is
+ * pending. Two independent refusals close the window, and which one answers
+ * depends only on how the interleaving happened to fall:
+ *
+ *   401 — the revocation also deletes the acting account's sessions, so if the
+ *         guard has not run yet it never finds one.
+ *   403 — the guard already authorized the request, and the domain layer
+ *         re-reads the actor inside the insert transaction and refuses.
+ *
+ * Either way no account may be created. The 403 path and the
+ * `adminAuthorityRevoked` code are covered deterministically at the domain
+ * level in test/adminUsers.test.js, which can hold the hash pending without
+ * relying on scheduling.
+ */
+async function assertRefusedAfterRevocation(app, db, creator, revoke) {
+  const otherCookie = `${SESSION_COOKIE_NAME}=${createSession(db, revoke.actor.id).token}`;
+  const revoked = app.inject(revoke.request(otherCookie));
+  const pending = app.inject({
+    method: 'POST',
+    url: '/api/admin/users',
+    headers: { cookie: creator.cookie },
+    payload: {
+      first_name: 'Back', last_name: 'Door', email: 'backdoor@example.com',
+      password: PASSWORD, role: 'admin',
+    },
+  });
+  assert.equal((await revoked).statusCode, 200);
+
+  const response = await pending;
+  assert.ok(
+    [401, 403].includes(response.statusCode),
+    `expected the revoked create to be refused, got ${response.statusCode}`,
+  );
+  if (response.statusCode === 403) {
+    assert.deepEqual(response.json().errors, ['adminAuthorityRevoked']);
+  }
+  assert.equal(
+    db.prepare('SELECT COUNT(*) AS count FROM users WHERE email = ?').get('backdoor@example.com').count,
+    0,
+    'a revoked actor creates no account, not even another administrator',
+  );
+  assert.equal(
+    db.prepare("SELECT COUNT(*) AS count FROM admin_audit_log WHERE action = 'account_created'").get().count,
+    0,
+  );
+  assert.ok(creator.id);
+}
+
+test('a create request whose authority is demoted mid-hash creates no account', async () => {
+  const { app, db, adminCookie, admins } = await setup({ admins: 2 });
+  const [creator, other] = admins;
+  await assertRefusedAfterRevocation(app, db, { id: creator.id, cookie: adminCookie }, {
+    actor: other,
+    request: (cookie) => ({
+      method: 'PUT', url: `/api/admin/users/${creator.id}`, headers: { cookie }, payload: { role: 'user' },
+    }),
+  });
+  // The revocation itself is still audited, and only one admin remains.
+  assert.equal(
+    db.prepare("SELECT COUNT(*) AS count FROM admin_audit_log WHERE action = 'account_role_changed'").get().count,
+    1,
+  );
+  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM users WHERE role = 'admin'").get().count, 1);
+});
+
+test('a create request whose acting account is deleted mid-hash creates no account', async () => {
+  const { app, db, adminCookie, admins } = await setup({ admins: 2 });
+  const [creator, other] = admins;
+  await assertRefusedAfterRevocation(app, db, { id: creator.id, cookie: adminCookie }, {
+    actor: other,
+    request: (cookie) => ({
+      method: 'DELETE', url: `/api/admin/users/${creator.id}`, headers: { cookie },
+    }),
+  });
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM users WHERE id = ?').get(creator.id).count, 0);
+  assert.equal(
+    db.prepare("SELECT COUNT(*) AS count FROM admin_audit_log WHERE action = 'account_deleted'").get().count,
+    1,
+  );
+});

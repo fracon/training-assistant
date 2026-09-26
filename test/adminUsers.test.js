@@ -62,6 +62,10 @@ function auditRows(db) {
   return db.prepare('SELECT * FROM admin_audit_log ORDER BY id').all();
 }
 
+function auditRowsFor(db, action) {
+  return db.prepare('SELECT * FROM admin_audit_log WHERE action = ? ORDER BY id').all(action);
+}
+
 /**
  * Wraps a database so the statement matching `pattern` reports a chosen
  * `changes` count. This reaches the defensive "row vanished" branches that a
@@ -328,15 +332,88 @@ test('createAccount rechecks the email inside the write transaction', async () =
   assert.ok(users[0].email);
 });
 
-test('createAccount records an audit entry without an actor identity', async () => {
+// A falsy or unidentified actor cannot be a current administrator, so the
+// create path refuses it instead of writing an unattributable audit row.
+test('createAccount requires an identified administrator actor', async () => {
   const { db } = await setup();
-  await createAccount(db, {}, {
-    first_name: 'No', last_name: 'Actor', email: 'noactor@example.com',
-    password: 'no-actor-secret', role: 'user',
+  for (const actor of [{}, null, undefined, { id: null, email: 'ghost@example.com' }]) {
+    await assertAdminError(
+      () => createAccount(db, actor, {
+        first_name: 'No', last_name: 'Actor', email: 'noactor@example.com',
+        password: 'no-actor-secret', role: 'user',
+      }),
+      403, 'adminAuthorityRevoked',
+    );
+  }
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM users WHERE email = ?').get('noactor@example.com').count, 0);
+  assert.deepEqual(auditRowsFor(db, 'account_created'), [], 'an unattributable write is never audited');
+});
+
+/*
+ * The scrypt `await` in `createAccount` yields the event loop, so a concurrent
+ * administrator can revoke the actor's role while the hash is still pending.
+ * `createAccount` is called without being awaited so the revocation below runs
+ * on the main thread while scrypt runs on the thread pool — the same ordering a
+ * real concurrent request would produce.
+ */
+test('createAccount refuses the insert when the actor is demoted while the hash is pending', async () => {
+  const { db, admins, users } = await setup({ admins: 2 });
+  const [creator, other] = admins;
+
+  const pending = createAccount(db, actorOf(creator), {
+    first_name: 'Late', last_name: 'Arrival', email: 'late@example.com',
+    password: 'late-arrival-secret', role: 'admin',
   });
-  const [entry] = auditRows(db);
-  assert.equal(entry.actor_user_id, null);
-  assert.equal(entry.actor_email, '');
+  // The guard's role is now stale: the actor is demoted mid-hash.
+  updateAccount(db, actorOf(other), creator.id, { role: 'user' });
+  assert.equal(db.prepare('SELECT role FROM users WHERE id = ?').get(creator.id).role, 'user');
+
+  // Even a request to mint another administrator is refused.
+  await assertAdminError(() => pending, 403, 'adminAuthorityRevoked');
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM users WHERE email = ?').get('late@example.com').count, 0);
+  assert.equal(countAdministrators(db), 1);
+  // The demotion is audited; the refused creation is not.
+  assert.deepEqual(auditRowsFor(db, 'account_created'), [], 'the refusal writes no partial audit row');
+  assert.equal(auditRowsFor(db, 'account_role_changed').length, 1);
+  assert.ok(users[0].email);
+});
+
+test('createAccount refuses the insert when the actor is deleted while the hash is pending', async () => {
+  const { db, admins } = await setup({ admins: 2 });
+  const [creator, other] = admins;
+
+  const pending = createAccount(db, actorOf(creator), {
+    first_name: 'Ghost', last_name: 'Writer', email: 'ghost-writer@example.com',
+    password: 'ghost-writer-secret', role: 'user',
+  });
+  deleteAccount(db, actorOf(other), creator.id);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM users WHERE id = ?').get(creator.id).count, 0);
+
+  await assertAdminError(() => pending, 403, 'adminAuthorityRevoked');
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM users WHERE email = ?').get('ghost-writer@example.com').count, 0);
+  // The deletion is audited; the refused creation is not.
+  assert.deepEqual(auditRowsFor(db, 'account_created'), [], 'the refusal writes no partial audit row');
+  assert.equal(auditRowsFor(db, 'account_deleted').length, 1);
+});
+
+test('createAccount records the actor identity as it stands at write time', async () => {
+  const { db, admins } = await setup({ admins: 2 });
+  const [creator, other] = admins;
+
+  // The actor's email changes while the hash is pending, so the audit row must
+  // carry the identity that actually performed the write.
+  const pending = createAccount(db, actorOf(creator), {
+    first_name: 'Fresh', last_name: 'Writer', email: 'fresh-writer@example.com',
+    password: 'fresh-writer-secret', role: 'user',
+  });
+  updateAccount(db, actorOf(other), creator.id, { email: 'renamed.admin@example.com' });
+
+  const created = await pending;
+  assert.equal(created.email, 'fresh-writer@example.com');
+  const [entry] = auditRowsFor(db, 'account_created');
+  assert.equal(entry.action, 'account_created');
+  assert.equal(entry.actor_user_id, creator.id);
+  assert.equal(entry.actor_email, 'renamed.admin@example.com');
 });
 
 /* ── Updating ── */

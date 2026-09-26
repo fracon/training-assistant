@@ -543,6 +543,7 @@
       "accountNotFound": "Esta conta não existe mais.",
       "lastAdministrator": "O último administrador não pode ser removido nem rebaixado.",
       "selfAction": "Você não pode excluir nem rebaixar a própria conta por aqui.",
+      "authorityRevoked": "Seu acesso de administrador foi revogado, então nada foi salvo. Recarregue a página e entre novamente.",
       "invalidRegistration": "Confira os dados da conta e tente novamente.",
       "request": "Não foi possível concluir a solicitação. Tente novamente."
     }

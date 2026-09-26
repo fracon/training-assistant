@@ -69,6 +69,7 @@ const ERROR_KEYS = {
   emailInUse: 'admin.errors.emailInUse',
   accountNotFound: 'admin.errors.accountNotFound',
   lastAdministrator: 'admin.errors.lastAdministrator',
+  adminAuthorityRevoked: 'admin.errors.authorityRevoked',
   selfDeleteForbidden: 'admin.errors.selfAction',
   selfRoleChangeForbidden: 'admin.errors.selfAction',
   invalidRole: 'admin.errors.roleInvalid',

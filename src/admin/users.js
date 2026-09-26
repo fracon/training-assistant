@@ -90,19 +90,45 @@ function countAdministrators(db) {
 
 // The audit trail stores identification, action and date only. Identities are
 // copied rather than joined so a deletion record outlives the deleted account.
+// `actor` is always the authenticated account the route guard resolved; see
+// `requireCurrentAdmin` for the one operation where it must be re-read.
 function recordAudit(db, { actor, target, action, details }) {
   db.prepare(
     `INSERT INTO admin_audit_log
       (actor_user_id, actor_email, target_user_id, target_email, action, details)
      VALUES (?, ?, ?, ?, ?, ?)`
   ).run(
-    actor?.id ?? null,
-    actor?.email ?? '',
+    actor.id,
+    actor.email,
     target.id,
     target.email,
     action,
     JSON.stringify(details)
   );
+}
+
+// `createAccount` derives its password hash with an `await`, which yields the
+// event loop while scrypt runs on the thread pool. Another administrator can
+// demote or delete the actor in that window, after the route guard already
+// authorized the request, so the guard's role is stale by the time the insert
+// is due. Re-reading the actor here — inside the same immediate transaction
+// that performs the insert — is what makes the refusal authoritative: a
+// revoked actor cannot create an account, not even another administrator, and
+// no user or audit row survives the refusal.
+//
+// The other operations are synchronous from the guard to the write, so no
+// request can interleave and they need no equivalent re-check. They still pass
+// the guard's identity, which is therefore current.
+function requireCurrentAdmin(db, actor) {
+  const current = actor?.id ? db.prepare(`SELECT ${ACCOUNT_COLUMNS} FROM users WHERE id = ?`).get(actor.id) : null;
+  if (!current || current.role !== ADMIN_ROLE) {
+    throw new AdminUserError(
+      403,
+      'adminAuthorityRevoked',
+      'Your administrator access was revoked before the account could be created.'
+    );
+  }
+  return current;
 }
 
 function listAccounts(db) {
@@ -140,9 +166,12 @@ async function createAccount(db, actor, payload) {
   }
 
   // Password derivation stays outside the write transaction so a slow scrypt
-  // never holds the database write lock; the email is rechecked atomically.
+  // never holds the database write lock; the actor's authority and the email
+  // are both rechecked atomically, and the audit row records the actor as it is
+  // at write time.
   const passwordHash = await hashPassword(registration.password);
   const create = db.transaction(() => {
+    const currentActor = requireCurrentAdmin(db, actor);
     if (findAccountByEmail(db, registration.email)) {
       throw new AdminUserError(409, 'emailInUse', 'This email is already registered.');
     }
@@ -168,7 +197,7 @@ async function createAccount(db, actor, payload) {
       db.prepare(`SELECT ${ACCOUNT_COLUMNS} FROM users WHERE id = ?`).get(Number(result.lastInsertRowid))
     );
     recordAudit(db, {
-      actor,
+      actor: currentActor,
       target: account,
       action: ACTION_CREATED,
       details: { role },
