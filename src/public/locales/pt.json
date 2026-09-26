@@ -34,6 +34,8 @@
     "availabilityEditedDuringSave": "A disponibilidade mudou durante o salvamento. Salve novamente antes de gerar o prompt.",
     "availabilitySaveError": "Não foi possível salvar a agenda semanal. Tente novamente.",
     "availabilityLoadError": "Não foi possível carregar a agenda semanal salva. Seus dados atuais foram mantidos.",
+    "availabilityLoading": "Carregando a agenda semanal...",
+    "availabilityRetry": "Tentar carregar novamente",
     "availabilityReview": "Defina explicitamente os sete dias. Textos de versões anteriores não são importados como períodos nem como limite de tempo da sessão.",
     "availabilityUnconfigured": "Disponibilidade não configurada; confirme com o usuário",
     "availabilityValidation": "Defina cada dia como Sim ou Não. Nos dias disponíveis, escolha período, duração e local.",

@@ -34,6 +34,8 @@
     "availabilityEditedDuringSave": "Availability changed while saving. Save again before generating the prompt.",
     "availabilitySaveError": "Could not save the weekly schedule. Please try again.",
     "availabilityLoadError": "Could not load the saved weekly schedule. Your current entries are kept.",
+    "availabilityLoading": "Loading the weekly schedule...",
+    "availabilityRetry": "Try loading again",
     "availabilityReview": "Set all seven days explicitly. Older free-text settings are not imported as periods or session time limits.",
     "availabilityUnconfigured": "Availability not configured; confirm with the user",
     "availabilityValidation": "Set each day to Yes or No. For available days, choose a period, duration, and location.",

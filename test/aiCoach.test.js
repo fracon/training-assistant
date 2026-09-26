@@ -25,9 +25,9 @@ const week = {
   domingo: { can_train: false, available_periods: [], available_minutes: null, location: '' },
 };
 
-test('availability has no assumed daily status or duration', () => {
+test('availability starts with unchecked days treated as unavailable in the form', () => {
   assert.deepEqual(availabilityDefaults(), Object.fromEntries(Object.keys(week).map((day) => [day, {
-    can_train: null, available_periods: [], available_minutes: null, location: '',
+    can_train: false, available_periods: [], available_minutes: null, location: '',
   }])));
 });
 
@@ -53,6 +53,11 @@ test('duration validation accepts every tested integer through 720 and rejects v
   }
   assert.equal(validatePromptFields({ ...base, disponibilidade: { ...week, terca: { ...week.terca, available_minutes: null } } }).valid, true,
     'unavailable days do not require a duration');
+  const firstUse = Object.fromEntries(Object.keys(week).map((day) => [day, {
+    can_train: false, available_periods: [], available_minutes: null, location: '',
+  }]));
+  assert.equal(validatePromptFields({ ...base, disponibilidade: firstUse }).valid, true,
+    'unchecked days are valid unavailable days on the initial form');
 });
 
 test('availability duration control exposes the same inclusive upper limit as validation', () => {
@@ -465,6 +470,10 @@ test('AI Coach locale dictionaries retain translated page, form, prompt and shoe
   assert.equal(enMessages.aiCoach.saveAvailability, 'Save weekly schedule');
   assert.equal(messages.aiCoach.availabilitySaved, 'Agenda semanal salva.');
   assert.equal(enMessages.aiCoach.availabilitySaved, 'Weekly schedule saved.');
+  assert.equal(typeof messages.aiCoach.availabilityLoading, 'string');
+  assert.equal(typeof enMessages.aiCoach.availabilityLoading, 'string');
+  assert.equal(typeof messages.aiCoach.availabilityRetry, 'string');
+  assert.equal(typeof enMessages.aiCoach.availabilityRetry, 'string');
 });
 
 test('AI Coach runtime keeps language change, structured data and async prompt wiring', () => {
@@ -476,7 +485,7 @@ test('AI Coach runtime keeps language change, structured data and async prompt w
   assert.match(js, /fetchAiCoachAvailability\(\)/);
   assert.match(js, /saveAiCoachAvailability\(days\)/);
   assert.match(js, /async function handleGenerate/);
-  assert.match(js, /generateBtn\.disabled = !validation\.valid/);
+  assert.match(js, /generateBtn\.disabled = !availabilityReady \|\| !validation\.valid/);
   assert.match(js, /messages: i18n\.messages/);
   assert.doesNotMatch(js, /applyRoutineDefault|DEFAULT_ROUTINE_BY_LANG|Rotina normal/);
 });

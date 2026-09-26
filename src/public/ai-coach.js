@@ -391,7 +391,10 @@ export function dateInputValue(date) {
 
 export function availabilityDefaults() {
   return Object.fromEntries(DAY_KEYS.map((day) => [day, {
-    can_train: null, available_periods: [], available_minutes: null, location: '',
+    // The form starts with unchecked days treated as unavailable. The API
+    // still uses null for missing persisted rows and needsReview for the
+    // unsaved first configuration.
+    can_train: false, available_periods: [], available_minutes: null, location: '',
   }]));
 }
 
@@ -580,6 +583,7 @@ function setupAiCoachPage() {
   const availabilityStatus = document.getElementById('availabilityStatus');
   const saveAvailabilityLabel = document.getElementById('saveAvailabilityLabel');
   const availabilityError = document.getElementById('availabilityError');
+  const availabilityRetry = document.getElementById('availabilityRetry');
   const availabilityReview = document.getElementById('availabilityReview');
   const resultSection = document.getElementById('resultSection');
   const promptOutput = document.getElementById('promptOutput');
@@ -603,9 +607,10 @@ function setupAiCoachPage() {
       const row = availabilityGrid.querySelector(`[data-day="${dbDay}"]`);
       const toggle = row?.querySelector('[data-can-train]');
       const selected = toggle?.checked;
-      const configured = row?.dataset.configured === 'true' || toggle?.dataset.configured === 'true';
       return [day, {
-        can_train: selected ? true : configured ? false : null,
+        // An unchecked control is an explicit unavailable choice in the UI.
+        // Missing API rows are normalized to this presentation separately.
+        can_train: Boolean(selected),
         available_periods: selected
           ? [...(row?.querySelectorAll('[data-period]:checked') || [])].map((input) => input.dataset.period)
           : [],
@@ -751,6 +756,9 @@ function setupAiCoachPage() {
 
   let availabilityRevision = 0;
   let lastAvailabilitySnapshot = '';
+  let lastLoadedAvailabilitySnapshot = '';
+  let availabilityLoadState = 'pending';
+  let availabilityLoadAttempt = 0;
 
   function currentAvailabilitySnapshot() {
     return JSON.stringify(readFormFields());
@@ -766,14 +774,31 @@ function setupAiCoachPage() {
     const states = availabilityDefaults();
     for (const record of week.days || []) {
       const day = DAY_KEYS[DAY_DB_KEYS.indexOf(record.day)];
-      if (day) states[day] = record;
+      // Keep null in the API so needsReview remains meaningful, but show a
+      // missing row as the same unchecked/unavailable initial state.
+      if (day && record?.can_train !== null && record?.can_train !== undefined) states[day] = record;
     }
     const current = readFormFields();
     for (const day of preserveDays) states[day] = current[day];
     renderDayRows(states, { preserveDays });
     lastAvailabilitySnapshot = currentAvailabilitySnapshot();
+    lastLoadedAvailabilitySnapshot = lastAvailabilitySnapshot;
     availabilityReview.hidden = !week.needsReview;
     availabilityReview.textContent = t('aiCoach.availabilityReview');
+  }
+
+  function setAvailabilityLoadState(state) {
+    availabilityLoadState = state;
+    const pending = state === 'pending';
+    const failed = state === 'error';
+    saveAvailabilityButton.disabled = state !== 'ready';
+    saveAvailabilityButton.setAttribute('aria-disabled', String(state !== 'ready'));
+    availabilityRetry.hidden = !failed;
+    availabilityRetry.textContent = failed ? t('aiCoach.availabilityRetry') : '';
+    if (pending) setAvailabilityStatus('availabilityLoading');
+    else if (failed) setAvailabilityStatus('');
+    else if (availabilityStatusKey === 'availabilityLoading') setAvailabilityStatus('');
+    updateValidation();
   }
 
   let availabilityStatusKey = '';
@@ -794,20 +819,29 @@ function setupAiCoachPage() {
   }
 
   async function loadAvailability() {
-    const requestedRevision = availabilityRevision;
-    const requestedSnapshot = lastAvailabilitySnapshot;
+    const attempt = ++availabilityLoadAttempt;
+    const requestedSnapshot = lastLoadedAvailabilitySnapshot;
+    setAvailabilityLoadState('pending');
     try {
       const saved = await fetchAiCoachAvailability();
-      const preserveDays = availabilityRevision === requestedRevision ? [] : daysEditedSince(requestedSnapshot);
+      if (attempt !== availabilityLoadAttempt) return false;
+      // Compare against the last successfully loaded snapshot directly. This
+      // also preserves edits made after a failed load and before a retry.
+      const preserveDays = daysEditedSince(requestedSnapshot);
       applyAvailabilityState(saved, { preserveDays });
+      setAvailabilityLoadState('ready');
       setAvailabilityStatus('');
+      return true;
     } catch {
-      setAvailabilityStatus('availabilityLoadError');
+      if (attempt !== availabilityLoadAttempt) return false;
+      setAvailabilityLoadState('error');
+      availabilityError.textContent = t('aiCoach.availabilityLoadError');
+      return false;
     }
-    updateValidation();
   }
 
   async function persistAvailability() {
+    if (availabilityLoadState !== 'ready') return false;
     const submittedRevision = availabilityRevision;
     const submittedSnapshot = currentAvailabilitySnapshot();
     const fields = readFormFields();
@@ -839,6 +873,7 @@ function setupAiCoachPage() {
 
   renderDayRows();
   lastAvailabilitySnapshot = currentAvailabilitySnapshot();
+  lastLoadedAvailabilitySnapshot = lastAvailabilitySnapshot;
   void loadAvailability();
 
   function updateValidation() {
@@ -848,12 +883,15 @@ function setupAiCoachPage() {
       language: i18n.language,
       disponibilidade,
     });
-    generateBtn.disabled = !validation.valid;
-    generateBtn.setAttribute('aria-disabled', String(!validation.valid));
+    const availabilityReady = availabilityLoadState === 'ready';
+    generateBtn.disabled = !availabilityReady || !validation.valid;
+    generateBtn.setAttribute('aria-disabled', String(!availabilityReady || !validation.valid));
     targetDateInput.setAttribute('aria-invalid', String(validation.missing.includes('targetDate')));
     availabilityGrid.setAttribute('aria-invalid', String(validation.missing.includes('availability')));
     availabilityGrid.setAttribute('aria-describedby', availabilityError.id);
-    availabilityError.textContent = validation.missing.includes('availability') ? t('aiCoach.availabilityValidation') : '';
+    availabilityError.textContent = availabilityLoadState === 'error'
+      ? t('aiCoach.availabilityLoadError')
+      : validation.missing.includes('availability') && availabilityReady ? t('aiCoach.availabilityValidation') : '';
     availabilityGrid.querySelectorAll('.day-row').forEach((row) => {
       const dayIndex = DAY_DB_KEYS.indexOf(row.dataset.day);
       const day = DAY_KEYS[dayIndex];
@@ -992,6 +1030,7 @@ function setupAiCoachPage() {
     updateValidation();
   });
   saveAvailabilityButton.addEventListener('click', () => { void persistAvailability(); });
+  availabilityRetry.addEventListener('click', () => { void loadAvailability(); });
 
   document.addEventListener('app:languagechange', () => {
     const focusSnapshot = lastDailyFocus;
@@ -999,6 +1038,7 @@ function setupAiCoachPage() {
     if (focusSnapshot) requestAnimationFrame(() => restoreDailyFocus(focusSnapshot));
     saveAvailabilityLabel.textContent = t('aiCoach.saveAvailability');
     availabilityReview.textContent = t('aiCoach.availabilityReview');
+    availabilityRetry.textContent = availabilityLoadState === 'error' ? t('aiCoach.availabilityRetry') : '';
     if (availabilityStatusKey) setAvailabilityStatus(availabilityStatusKey);
     const targetIso = readTargetDateIso(targetDateInput, targetDatePicker, i18n.language);
     targetDateInput.dataset.iso = targetIso;
@@ -1028,6 +1068,7 @@ function setupAiCoachPage() {
 
   async function handleGenerate(event) {
     event.preventDefault();
+    if (availabilityLoadState !== 'ready') return;
     const disponibilidade = readFormFields();
     const validation = updateValidation();
     if (!validation.valid) return;
