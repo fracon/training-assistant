@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="/assets/brand/favicon.png?v=5" type="image/png">
+  <title data-i18n="admin.pageTitle">Users - Kinesis</title>
+  <link rel="stylesheet" href="shared/shell.css">
+  <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+  <main id="appView">
+    <section class="admin-page" data-i18n-aria-label="admin.pageLabel" aria-label="Administration">
+      <header class="admin-header">
+        <div class="admin-header-text">
+          <h1 data-i18n="admin.title">Users</h1>
+          <p class="admin-subtitle" data-i18n="admin.subtitle">Create, edit and remove accounts of this installation.</p>
+        </div>
+        <button type="button" id="addUserBtn" class="btn-primary">
+          <i data-lucide="user-plus"></i>
+          <span data-i18n="admin.addUser">Add User</span>
+        </button>
+      </header>
+
+      <p class="admin-notice">
+        <i data-lucide="shield-alert" aria-hidden="true"></i>
+        <span data-i18n="admin.deleteNotice">Deleting an account is permanent and also removes its sessions and training data.</span>
+      </p>
+
+      <div id="usersLoading" class="admin-loading" role="status" aria-live="polite">
+        <span class="admin-spinner" aria-hidden="true"></span>
+        <span data-i18n="admin.loading">Loading accounts…</span>
+      </div>
+
+      <div id="usersError" class="admin-load-error hidden" role="alert">
+        <p data-i18n="admin.loadError">Accounts could not be loaded.</p>
+        <button type="button" id="retryUsersBtn" class="btn-secondary" data-i18n="admin.retry">Try again</button>
+      </div>
+
+      <div id="usersEmpty" class="admin-empty hidden">
+        <i data-lucide="users"></i>
+        <p data-i18n="admin.empty">No accounts registered yet.</p>
+      </div>
+
+      <ul id="userList" class="user-list"></ul>
+    </section>
+  </main>
+
+  <div id="userModal" class="modal-backdrop hidden">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="userModalTitle">
+      <header class="modal-header">
+        <h2 id="userModalTitle" data-i18n="admin.formTitleAdd">Add New User</h2>
+        <button type="button" id="userModalClose" class="modal-close" data-i18n-aria-label="admin.close" aria-label="Close">
+          <i data-lucide="x"></i>
+        </button>
+      </header>
+      <form id="userForm" novalidate>
+        <div class="grid grid-2x2">
+          <div class="field">
+            <label class="field-label" for="userFirstName" data-i18n="admin.firstName">First Name</label>
+            <input type="text" id="userFirstName" name="first_name" autocomplete="off">
+          </div>
+          <div class="field">
+            <label class="field-label" for="userLastName" data-i18n="admin.lastName">Last Name</label>
+            <input type="text" id="userLastName" name="last_name" autocomplete="off">
+          </div>
+        </div>
+        <div class="field">
+          <label class="field-label" for="userEmail" data-i18n="admin.email">Email</label>
+          <input type="email" id="userEmail" name="email" autocomplete="off">
+        </div>
+        <div class="field" id="userPasswordField">
+          <label class="field-label" for="userPassword" data-i18n="admin.password">Initial password</label>
+          <input type="password" id="userPassword" name="password" autocomplete="new-password">
+          <p class="field-hint" data-i18n="admin.passwordHint">Ask the new user to change it after the first sign-in.</p>
+        </div>
+        <div class="field">
+          <label class="field-label" for="userRole" data-i18n="admin.role">Role</label>
+          <select id="userRole" name="role">
+            <option value="user" data-i18n="admin.roles.user">User</option>
+            <option value="admin" data-i18n="admin.roles.admin">Administrator</option>
+          </select>
+          <p class="field-hint hidden" id="userRoleHint" data-i18n="admin.ownRoleHint">You cannot change your own role from here.</p>
+        </div>
+        <div id="userFormError" class="form-error hidden" role="alert"></div>
+        <div class="form-actions">
+          <button type="button" id="userFormCancel" class="btn-secondary" data-i18n="admin.cancel">Cancel</button>
+          <button type="submit" id="userFormSubmit" class="btn-primary">
+            <span id="userFormSubmitLabel" data-i18n="admin.save">Save</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite">
+    <span class="toast-icon"><i data-lucide="check-circle"></i></span>
+    <span class="toast-text"></span>
+  </div>
+
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="shared/shell.js" type="module"></script>
+  <script src="admin.js" type="module"></script>
+</body>
+</html>

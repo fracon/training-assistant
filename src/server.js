@@ -23,6 +23,15 @@ const {
   findActiveSession,
 } = require('./auth/sessions');
 const { createRequireAuth } = require('./auth/requireAuth');
+const { createRequireAdmin } = require('./auth/requireAdmin');
+const {
+  AdminUserError,
+  createAccount,
+  deleteAccount,
+  getAccount,
+  listAccounts,
+  updateAccount,
+} = require('./admin/users');
 const {
   DEFAULT_LANGUAGE,
   isSupportedLanguage,
@@ -203,6 +212,20 @@ async function buildServer(options = {}) {
       return reply.redirect('/login.html');
     }
     return reply.sendFile('cycles.html');
+  });
+
+  // The page itself is gated: the conditional sidebar group is presentation
+  // only, so the real authorization boundary is the database role resolved
+  // here and in every /api/admin route below.
+  app.get('/admin.html', async (request, reply) => {
+    const session = sessionOf(request);
+    if (!session) {
+      return reply.redirect('/login.html');
+    }
+    if (session.user.role !== 'admin') {
+      return reply.redirect('/home.html');
+    }
+    return reply.sendFile('admin.html');
   });
 
   app.get('/login.html', async (request, reply) => {
@@ -1000,6 +1023,60 @@ async function buildServer(options = {}) {
         return reply.code(404).send({ error: 'Shoe not found.' });
       }
       return { status: 'ok' };
+    });
+
+    // ── Administration: account CRUD ────────────────────────────
+    // requireAdmin re-reads the role from the users row on every request, so a
+    // demoted account loses access immediately. Admin status never widens the
+    // ownership scope of the user-scoped routes above.
+    const requireAdmin = createRequireAdmin();
+    const adminPreHandler = [requireAuth, requireAdmin];
+
+    // One envelope for every account failure: a stable machine code for the
+    // interface plus a human message, and anything unexpected keeps bubbling up
+    // to the global error handler.
+    const accountFailure = (reply, error) => {
+      if (error instanceof AdminUserError) {
+        return reply.code(error.status).send({ error: error.message, errors: [error.code] });
+      }
+      throw error;
+    };
+
+    app.get('/api/admin/users', { preHandler: adminPreHandler }, async () => {
+      return { users: listAccounts(db) };
+    });
+
+    app.get('/api/admin/users/:id', { preHandler: adminPreHandler }, async (request, reply) => {
+      try {
+        return { user: getAccount(db, request.params.id) };
+      } catch (error) {
+        return accountFailure(reply, error);
+      }
+    });
+
+    app.post('/api/admin/users', { preHandler: adminPreHandler }, async (request, reply) => {
+      try {
+        return reply.code(201).send({ user: await createAccount(db, request.user, request.body) });
+      } catch (error) {
+        return accountFailure(reply, error);
+      }
+    });
+
+    app.put('/api/admin/users/:id', { preHandler: adminPreHandler }, async (request, reply) => {
+      try {
+        return { user: updateAccount(db, request.user, request.params.id, request.body) };
+      } catch (error) {
+        return accountFailure(reply, error);
+      }
+    });
+
+    app.delete('/api/admin/users/:id', { preHandler: adminPreHandler }, async (request, reply) => {
+      try {
+        deleteAccount(db, request.user, request.params.id);
+        return { status: 'ok' };
+      } catch (error) {
+        return accountFailure(reply, error);
+      }
     });
   }
 

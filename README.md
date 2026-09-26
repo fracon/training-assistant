@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized prompts for an AI coach.
 
-Current application version: **0.13.1** (active development).
+Current application version: **0.14.0** (active development).
 
 ### Shoe mileage integrity
 
@@ -54,6 +54,7 @@ AI coaches are only as good as the data you give them. Exporting workouts by han
 ### Accounts & Access
 - **User accounts & security** — email/password registration and sign-in backed by Node's native `crypto` (`scrypt`) password hashing.
 - **Account roles** — every account has a database-constrained `user` or `admin` role. Public registration always creates `user`; admin status only comes from the privileged local bootstrap or promotion commands. Admin role does not bypass per-user ownership checks.
+- **Account administration** — an admin-only sidebar group opens `/admin.html` to list, create, edit, and delete accounts. The group is absent from the DOM for everyone else, and the server independently gates both the page and `/api/admin/users*`. Self-deletion, self-demotion, and removing the last administrator are refused, role changes revoke the target's sessions, and every change is written to an `admin_audit_log` trail that stores no credentials.
 - **Secure sessions** — 256-bit random session tokens stored in SQLite, delivered as `HttpOnly` / `Secure` / `SameSite=Lax` cookies with server-side expiry.
 - **Server-side route gating** — unauthenticated visitors are redirected to the login page by Fastify itself; the training tool is never rendered without a valid session.
 - **User dropdown menu** — the authenticated user badge opens **Setup guide**, **Change Password**, and **Preferences**. Logout remains a separate topbar action.
@@ -395,6 +396,44 @@ no partial account. They run only when explicitly invoked and are not part of
 application or container startup. Treat access to the server/container as
 privileged because these commands can grant admin access.
 
+### Account administration
+
+An administrator who signs in gets an **Administration** group at the bottom of
+the sidebar, linking to the **Users** page (`/admin.html`). That page lists
+every account with its name, email, role, and creation date, and supports
+creating, editing, and deleting accounts. For everyone else the group is absent
+from the DOM entirely, so it is never in the layout or the tab order; the server
+independently redirects `/admin.html` to `/home.html` and answers
+`/api/admin/users*` with `403`, and `401` without a session. The role is read
+from the database on every request, so a promotion or demotion takes effect
+without a new sign-in.
+
+Administrators never see or edit another account's training, cycle, or shoe
+data. The API returns identification and role only.
+
+Safety rules enforced by `src/admin/users.js` inside the same write transaction
+that would persist the change:
+
+- The signed-in account cannot be deleted or have its own role changed, and the
+  interface does not offer those actions for it.
+- The last remaining administrator cannot be deleted or demoted.
+- A role change deletes that account's existing sessions, so a stale
+  permission never survives in an old session.
+- Account creation and email changes reuse the application's registration
+  validation, email normalization, and password hashing. The role must be
+  explicitly `user` or `admin`; nothing is inferred, and a submitted role
+  outside that pair is rejected.
+- Unknown request fields are refused, so no column can be written indirectly.
+- Deleting an account removes its sessions, trainings, cycles, shoes, mileage
+  ledger, and AI Coach availability through the existing cascades.
+
+Every create, update, role change, and delete writes one row to
+`admin_audit_log` (added by the idempotent
+`2026-09-admin-account-audit-v1` migration) with the actor, the target, the
+action, and a timestamp. Identities are copied rather than joined, so the record
+of a deletion outlives the deleted account. The trail holds no password, hash,
+session token, or training value.
+
 ## Usage
 
 1. Open **Sign In**. Create an account through **Register** (first name, last name, email, and password of at least 8 characters) or sign in to an existing account.
@@ -495,6 +534,11 @@ are scoped to the signed-in user's records.
 | `POST /api/shoes` | Session | Create shoe |
 | `PUT /api/shoes/:id` | Session | Update owned shoe |
 | `DELETE /api/shoes/:id` | Session | Delete owned shoe |
+| `GET /api/admin/users` | Admin | List account identification and roles |
+| `GET /api/admin/users/:id` | Admin | Read one account for editing |
+| `POST /api/admin/users` | Admin | Create an account |
+| `PUT /api/admin/users/:id` | Admin | Update account fields and role |
+| `DELETE /api/admin/users/:id` | Admin | Delete an account and its data |
 
 Endpoint-specific validation and error statuses are described below where
 documented; inspect the route handlers in `src/server.js` and their route
@@ -649,6 +693,7 @@ Every primary flow is a standalone page (no single-page hacks, no overlapping la
 | AI Coach | `src/public/ai-coach.html` · `src/public/ai-coach.css` · `src/public/ai-coach.js` | Local prompt builder for weekly coaching plans |
 | Cycles | `src/public/cycles.html` · `src/public/cycles.css` · `src/public/cycles.js` | Training-cycle management |
 | Shoes | `src/public/shoes.html` · `src/public/shoes.css` · `src/public/shoes.js` | Shoe rotation and mileage management |
+| Administration | `src/public/admin.html` · `src/public/admin.css` · `src/public/admin.js` | Admin-only account list with create, edit, and delete |
 
 Shared code lives in `src/public/shared/`: `shell.js` injects the authenticated shell and user menu; `onboarding.js` owns welcome/checklist state and the transient guide signal; `i18n.js` and `locales/` provide PT/EN; `theme.css` owns tokens and shared controls; `api.js`, validators, date, units, preferences, and supporting modules are reused by pages. `src/trainingImport.js` normalizes SheetJS workbook data on the backend.
 
@@ -804,7 +849,7 @@ node scripts/tryRealFit.js path/to/activity.fit
 - [Fastify](https://fastify.dev/) with `@fastify/multipart`, `@fastify/static`, and `@fastify/cookie`
 - [better-sqlite3](https://github.com/WiseLibs/better-sqlite3) for storage — strictly prepared statements, WAL mode, enforced foreign keys
 - [fit-file-parser](https://www.npmjs.com/package/fit-file-parser) for binary `.FIT` decoding
-- Multi-page vanilla HTML/CSS/JS frontend (login, register, dashboard, training result, calendar, AI Coach, cycles, shoes) with shared ES modules, PT/EN translations, and DM Sans — zero build step
+- Multi-page vanilla HTML/CSS/JS frontend (login, register, dashboard, training result, calendar, AI Coach, cycles, shoes, administration) with shared ES modules, PT/EN translations, and DM Sans — zero build step
 - Authentication built on Node's native `node:crypto` (`scrypt` hashing, timing-safe comparison, `randomBytes` session tokens)
 - [`node --test`](https://nodejs.org/api/test.html) + [c8](https://github.com/bcoe/c8) for testing with a hard 100% coverage gate
 - Docker (`node:24-alpine`) deployed on ZimaOS via Docker Compose

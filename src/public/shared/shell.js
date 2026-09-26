@@ -66,6 +66,28 @@ const NAV_ITEMS = [
   },
 ];
 
+// Administration is its own sidebar group, not a loose header/account-menu
+// entry. It is rendered only for an admin session: for everyone else the whole
+// group is absent from the DOM, so it never enters layout or the tab order.
+// This is presentation only — the backend gates /admin.html and /api/admin/*.
+export const ADMIN_NAV_GROUP = {
+  id: 'administration',
+  titleKey: 'shell.nav.administration',
+  items: [
+    {
+      id: 'admin-users',
+      icon: 'users',
+      labelKey: 'shell.nav.users',
+      href: '/admin.html',
+      disabled: false,
+    },
+  ],
+};
+
+export function isAdministrator(user) {
+  return user?.role === 'admin';
+}
+
 export function readSidebarCollapsed(storage = globalThis.localStorage) {
   try {
     return storage.getItem(SIDEBAR_STORAGE_KEY) === '1';
@@ -128,7 +150,45 @@ export function getShellI18n() {
   return shellI18n;
 }
 
-function buildSidebar(activeId) {
+function buildNavItem(item, activeId) {
+  const entry = el('a', `nav-item${item.disabled ? ' disabled' : ''}${item.id === activeId ? ' active' : ''}`);
+  entry.dataset.navId = item.id;
+  if (item.disabled) {
+    entry.setAttribute('aria-disabled', 'true');
+  } else {
+    entry.href = item.href;
+    if (item.id === activeId) entry.setAttribute('aria-current', 'page');
+  }
+  entry.appendChild(icon(item.icon));
+  const label = el('span', 'nav-label sidebar-label');
+  label.setAttribute('data-i18n', item.labelKey);
+  entry.appendChild(label);
+  if (CYCLE_DEPENDENT_ITEMS.includes(item.id)) {
+    const chip = el('span', 'soon-chip cycle-guard-badge hidden');
+    chip.setAttribute('data-i18n', 'shell.noCycle');
+    entry.appendChild(chip);
+  }
+  if (item.disabled) {
+    const chip = el('span', 'soon-chip');
+    chip.setAttribute('data-i18n', 'shell.soon');
+    entry.appendChild(chip);
+  }
+  return entry;
+}
+
+function buildNavGroup(group, activeId) {
+  const wrapper = el('div', 'nav-group');
+  wrapper.dataset.navGroup = group.id;
+  const title = el('p', 'nav-group-title sidebar-label');
+  title.setAttribute('data-i18n', group.titleKey);
+  wrapper.appendChild(title);
+  for (const item of group.items) {
+    wrapper.appendChild(buildNavItem(item, activeId));
+  }
+  return wrapper;
+}
+
+function buildSidebar(activeId, user) {
   const aside = el('aside', 'sidebar');
 
   const brand = el('div', 'sidebar-brand');
@@ -146,29 +206,10 @@ function buildSidebar(activeId) {
   nav.setAttribute('aria-label', 'Main navigation');
   nav.setAttribute('data-i18n-aria-label', 'shell.navLabel');
   for (const item of NAV_ITEMS) {
-    const entry = el('a', `nav-item${item.disabled ? ' disabled' : ''}${item.id === activeId ? ' active' : ''}`);
-    entry.dataset.navId = item.id;
-    if (item.disabled) {
-      entry.setAttribute('aria-disabled', 'true');
-    } else {
-      entry.href = item.href;
-      if (item.id === activeId) entry.setAttribute('aria-current', 'page');
-    }
-    entry.appendChild(icon(item.icon));
-    const label = el('span', 'nav-label sidebar-label');
-    label.setAttribute('data-i18n', item.labelKey);
-    entry.appendChild(label);
-    if (CYCLE_DEPENDENT_ITEMS.includes(item.id)) {
-      const chip = el('span', 'soon-chip cycle-guard-badge hidden');
-      chip.setAttribute('data-i18n', 'shell.noCycle');
-      entry.appendChild(chip);
-    }
-    if (item.disabled) {
-      const chip = el('span', 'soon-chip');
-      chip.setAttribute('data-i18n', 'shell.soon');
-      entry.appendChild(chip);
-    }
-    nav.appendChild(entry);
+    nav.appendChild(buildNavItem(item, activeId));
+  }
+  if (isAdministrator(user)) {
+    nav.appendChild(buildNavGroup(ADMIN_NAV_GROUP, activeId));
   }
   aside.appendChild(nav);
 
@@ -309,9 +350,9 @@ function buildBottomBar() {
   return bar;
 }
 
-function buildLayout(activeId) {
+function buildLayout(activeId, user) {
   const shellRoot = el('div', 'app-shell');
-  shellRoot.appendChild(buildSidebar(activeId));
+  shellRoot.appendChild(buildSidebar(activeId, user));
 
   const column = el('div', 'main-column');
   column.appendChild(buildTopbar());
@@ -876,7 +917,7 @@ export async function initShell({ active } = {}) {
     return null;
   }
 
-  const shellRoot = buildLayout(active ?? null);
+  const shellRoot = buildLayout(active ?? null, user);
   syncToggleState(shellRoot, readSidebarCollapsed());
 
   await shellI18n.init(user.preferred_lang);
