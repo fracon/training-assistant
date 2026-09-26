@@ -107,7 +107,7 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     const releaseAvailabilityResponse = (event) => command('Fetch.continueRequest', { requestId: event.params.requestId });
     const evaluate = async (expression) => {
       const result = await command('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
-      if (result.exceptionDetails) throw new Error(result.exceptionDetails.text);
+      if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text);
       return result.result.value;
     };
     const waitForText = (selector, expected) => evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{const element=document.querySelector(${JSON.stringify(selector)});if(element?.textContent.trim()===${JSON.stringify(expected)}){resolve(true);return}if(Date.now()>end){reject(new Error('Timed out waiting for expected text'));return}requestAnimationFrame(check)};check()})`);
@@ -191,6 +191,33 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       chevron: { sameButtonSize: true, closedIconCentered: true, openIconCentered: true, closedButtonCentered: true, openButtonCentered: true, transformOrigin: '8px 8px' },
     });
 
+    const firstUseState = await evaluate(`(()=>{
+      for(const day of ['monday','wednesday','friday']){
+        window.__setDay(day, true);
+        const row=document.querySelector('[data-day="'+day+'"]');
+        row.querySelector('[data-period="before_08"]').click();
+        const duration=row.querySelector('[data-duration]');duration.value='60';duration.dispatchEvent(new Event('input',{bubbles:true}));
+        const location=row.querySelector('[data-location]');location.value='Lisboa';location.dispatchEvent(new Event('input',{bubbles:true}));
+      }
+      const selected=['monday','wednesday','friday'].every(day=>document.querySelector('[data-day="'+day+'"] [data-can-train]').checked);
+      const untouched=['tuesday','thursday','saturday','sunday'].every(day=>!document.querySelector('[data-day="'+day+'"] [data-can-train]').checked);
+      return { selected, untouched, generateEnabled:!document.getElementById('generateBtn').disabled };
+    })()`);
+    assert.deepEqual(firstUseState, { selected: true, untouched: true, generateEnabled: true },
+      'a new user can select only the days they intend to train');
+    const firstSaveResponsePending = waitForAvailabilityResponse('PUT');
+    await evaluate(`document.getElementById('saveAvailability').click()`);
+    const firstSaveResponse = await firstSaveResponsePending;
+    const firstSavePayload = JSON.parse(firstSaveResponse.params.request.postData);
+    assert.deepEqual(firstSavePayload.days.map((day) => ({ day: day.day, can_train: day.can_train })), [
+      { day: 'monday', can_train: true }, { day: 'tuesday', can_train: false },
+      { day: 'wednesday', can_train: true }, { day: 'thursday', can_train: false },
+      { day: 'friday', can_train: true }, { day: 'saturday', can_train: false },
+      { day: 'sunday', can_train: false },
+    ], 'the first save sends explicit false values for untouched days');
+    await releaseAvailabilityResponse(firstSaveResponse);
+    await waitForText('#availabilityStatus', 'Agenda semanal salva.');
+
     const overlongPrefill = await evaluate(`(()=>{
       const base=document.getElementById('baseLocation');
       base.value='L'.repeat(201);base.dispatchEvent(new Event('change',{bubbles:true}));
@@ -198,7 +225,7 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       window.__setDay('monday', true);
       monday.querySelector('[data-period="12_14"]').click();
       const duration=monday.querySelector('[data-duration]');duration.value='60';duration.dispatchEvent(new Event('input',{bubbles:true}));
-      const location=monday.querySelector('[data-location]');
+      const location=monday.querySelector('[data-location]');location.value='L'.repeat(201);location.dispatchEvent(new Event('input',{bubbles:true}));
       const nativeFetch=window.fetch.bind(window);window.__locationPutCount=0;
       window.fetch=(input,init)=>{if((init?.method||'GET').toUpperCase()==='PUT'&&String(input).includes('/api/ai-coach/availability'))window.__locationPutCount+=1;return nativeFetch(input,init)};
       document.getElementById('saveAvailability').click();

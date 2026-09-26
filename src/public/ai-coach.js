@@ -391,7 +391,10 @@ export function dateInputValue(date) {
 
 export function availabilityDefaults() {
   return Object.fromEntries(DAY_KEYS.map((day) => [day, {
-    can_train: null, available_periods: [], available_minutes: null, location: '',
+    // The form starts with unchecked days treated as unavailable. The API
+    // still uses null for missing persisted rows and needsReview for the
+    // unsaved first configuration.
+    can_train: false, available_periods: [], available_minutes: null, location: '',
   }]));
 }
 
@@ -603,9 +606,10 @@ function setupAiCoachPage() {
       const row = availabilityGrid.querySelector(`[data-day="${dbDay}"]`);
       const toggle = row?.querySelector('[data-can-train]');
       const selected = toggle?.checked;
-      const configured = row?.dataset.configured === 'true' || toggle?.dataset.configured === 'true';
       return [day, {
-        can_train: selected ? true : configured ? false : null,
+        // An unchecked control is an explicit unavailable choice in the UI.
+        // Missing API rows are normalized to this presentation separately.
+        can_train: Boolean(selected),
         available_periods: selected
           ? [...(row?.querySelectorAll('[data-period]:checked') || [])].map((input) => input.dataset.period)
           : [],
@@ -766,7 +770,9 @@ function setupAiCoachPage() {
     const states = availabilityDefaults();
     for (const record of week.days || []) {
       const day = DAY_KEYS[DAY_DB_KEYS.indexOf(record.day)];
-      if (day) states[day] = record;
+      // Keep null in the API so needsReview remains meaningful, but show a
+      // missing row as the same unchecked/unavailable initial state.
+      if (day && record?.can_train !== null && record?.can_train !== undefined) states[day] = record;
     }
     const current = readFormFields();
     for (const day of preserveDays) states[day] = current[day];

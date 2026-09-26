@@ -25,9 +25,9 @@ const week = {
   domingo: { can_train: false, available_periods: [], available_minutes: null, location: '' },
 };
 
-test('availability has no assumed daily status or duration', () => {
+test('availability starts with unchecked days treated as unavailable in the form', () => {
   assert.deepEqual(availabilityDefaults(), Object.fromEntries(Object.keys(week).map((day) => [day, {
-    can_train: null, available_periods: [], available_minutes: null, location: '',
+    can_train: false, available_periods: [], available_minutes: null, location: '',
   }])));
 });
 
@@ -53,6 +53,11 @@ test('duration validation accepts every tested integer through 720 and rejects v
   }
   assert.equal(validatePromptFields({ ...base, disponibilidade: { ...week, terca: { ...week.terca, available_minutes: null } } }).valid, true,
     'unavailable days do not require a duration');
+  const firstUse = Object.fromEntries(Object.keys(week).map((day) => [day, {
+    can_train: false, available_periods: [], available_minutes: null, location: '',
+  }]));
+  assert.equal(validatePromptFields({ ...base, disponibilidade: firstUse }).valid, true,
+    'unchecked days are valid unavailable days on the initial form');
 });
 
 test('availability duration control exposes the same inclusive upper limit as validation', () => {

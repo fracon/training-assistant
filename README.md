@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized prompts for an AI coach.
 
-Current application version: **0.13.0** (active development).
+Current application version: **0.13.1** (active development).
 
 ### Shoe mileage integrity
 
@@ -194,7 +194,10 @@ The idempotent `2026-09-structured-ai-coach-availability-v1` migration creates
 the user/day table without rewriting existing training locations. The previous
 AI Coach text fields were transient and had no database persistence, so there
 is no authoritative legacy availability to translate. Missing structured days
-are returned as unconfigured and require explicit review; text such as “Normal
+are returned as unconfigured and require explicit review; on first use the
+frontend presents those missing days as unchecked/unavailable defaults while
+preserving the review requirement until the week is explicitly saved. Explicit
+unavailable days remain unavailable after persistence; text such as “Normal
 routine” is never treated as availability or sent in the prompt. The
 “Apply Monday's setup to weekdays” action explicitly copies Monday to Tuesday
 through Friday; Saturday and Sunday are untouched, and later edits are
