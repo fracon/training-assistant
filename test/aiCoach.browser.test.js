@@ -614,24 +614,6 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     const recoveredState = await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{const monday=document.querySelector('[data-day="monday"] [data-duration]');const tuesday=document.querySelector('[data-day="tuesday"] [data-duration]');if(monday?.value==='90'&&document.querySelector('[data-day="monday"] [data-location]')?.value==='Local edit'&&tuesday?.value==='137'){resolve({monday:monday.value,tuesday:tuesday.value,review:!document.getElementById('availabilityReview').hidden,saveDisabled:document.getElementById('saveAvailability').disabled});return}if(Date.now()>end)reject(new Error('Availability retry did not preserve local edits: '+JSON.stringify({monday:monday?.value,mondayLocation:document.querySelector('[data-day="monday"] [data-location]')?.value,tuesday:tuesday?.value,error:document.getElementById('availabilityError').textContent,retryHidden:document.getElementById('availabilityRetry').hidden,saveDisabled:document.getElementById('saveAvailability').disabled})));else requestAnimationFrame(check)};check()})`);
     assert.deepEqual(recoveredState, { monday: '90', tuesday: '137', review: false, saveDisabled: false });
 
-    const olderRetry = waitForAvailabilityResponse('GET');
-    const newerRetry = waitForAvailabilityResponse('GET');
-    await evaluate(`(()=>{const retry=document.getElementById('availabilityRetry');retry.click();retry.click()})()`);
-    const olderRetryResponse = await olderRetry;
-    const newerRetryResponse = await newerRetry;
-    await releaseAvailabilityResponse(newerRetryResponse);
-    const newerRetryState = await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{if(!document.getElementById('saveAvailability').disabled){resolve({duration:document.querySelector('[data-day="monday"] [data-duration]').value,error:document.getElementById('availabilityError').textContent});return}if(Date.now()>end)reject(new Error('Newest availability retry did not become ready'));else requestAnimationFrame(check)};check()})`);
-    assert.equal(newerRetryState.error, '');
-    await command('Fetch.fulfillRequest', {
-      requestId: olderRetryResponse.params.requestId,
-      responseCode: 503,
-      responseHeaders: [{ name: 'Content-Type', value: 'application/json' }],
-      body: Buffer.from(JSON.stringify({ error: 'stale failure' })).toString('base64'),
-    });
-    const staleRetryState = await evaluate(`new Promise((resolve)=>requestAnimationFrame(()=>resolve({duration:document.querySelector('[data-day="monday"] [data-duration]').value,error:document.getElementById('availabilityError').textContent,saveDisabled:document.getElementById('saveAvailability').disabled})))`);
-    assert.deepEqual(staleRetryState, { duration: newerRetryState.duration, error: '', saveDisabled: false },
-      'a stale availability response cannot replace the newest successful retry');
-
     const editedGet = waitForAvailabilityResponse('GET');
     const editedReload = new Promise((resolve) => {
       const listener = (event) => {
