@@ -378,6 +378,48 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
     assert.equal(created.admins, 2, 'the new account carries the requested role');
     await waitForRows(3);
 
+    /* ── A committed create is not reported as failed when its refresh fails ── */
+
+    const refreshFailureCreate = await evaluate(`(async()=>{
+      window.__failNextAdminList=true;
+      const nativeFetch=window.fetch.bind(window);
+      window.fetch=(input,init)=>{
+        const method=(init?.method||'GET').toUpperCase();
+        if(window.__failNextAdminList&&method==='GET'&&String(input).includes('/api/admin/users')){
+          window.__failNextAdminList=false;
+          return Promise.reject(new Error('simulated list refresh failure'));
+        }
+        if(window.__failNextMutation===method&&String(input).includes('/api/admin/users')){
+          window.__failNextMutation=null;
+          return Promise.reject(new Error('simulated mutation failure'));
+        }
+        return nativeFetch(input,init);
+      };
+      document.getElementById('addUserBtn').click();
+      const set=(id,value)=>{document.getElementById(id).value=value};
+      set('userFirstName','Refresh');set('userLastName','Create');
+      set('userEmail','refresh-create@example.test');set('userPassword','${PASSWORD}');
+      document.getElementById('userForm').requestSubmit();
+      await new Promise((resolve)=>setTimeout(resolve,900));
+      return {
+        closed:document.getElementById('userModal').classList.contains('hidden'),
+        success:document.querySelector('#toast .toast-text').textContent,
+        refreshError:document.querySelector('#usersError p').textContent,
+        errorVisible:!document.getElementById('usersError').classList.contains('hidden'),
+        staleRows:document.querySelectorAll('.user-row').length,
+      };
+    })()`,);
+    assert.deepEqual(refreshFailureCreate, {
+      closed: true,
+      success: 'Account created.',
+      refreshError: 'The change was saved, but the account list could not be updated.',
+      errorVisible: true,
+      staleRows: 0,
+    });
+    await evaluate(`document.getElementById('retryUsersBtn').click()`);
+    await waitForRows(4);
+    assert.equal(await evaluate(`document.getElementById('usersError').classList.contains('hidden')`), true);
+
     /* ── A duplicate email is reported by the server ── */
 
     const duplicate = await evaluate(`(async()=>{
@@ -426,6 +468,131 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
     }, 'a server error is restated in the new language in both directions');
 
     await evaluate(`document.getElementById('userFormCancel').click()`);
+
+    /* ── The edit trigger survives list rerenders and both language changes ── */
+
+    const editFocus = await evaluate(`(async()=>{
+      const row=[...document.querySelectorAll('.user-row')]
+        .find((node)=>node.querySelector('.user-name').textContent==='Refresh Create');
+      const trigger=row.querySelector('[data-action="edit"]');
+      trigger.focus();
+      trigger.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));
+      trigger.click();
+      await new Promise((resolve)=>setTimeout(resolve,500));
+      const before=document.getElementById('userFirstName').value;
+      document.querySelector('.lang-switch [data-lang="pt-BR"]').click();
+      await new Promise((resolve)=>setTimeout(resolve,600));
+      document.querySelector('.lang-switch [data-lang="en-US"]').click();
+      await new Promise((resolve)=>setTimeout(resolve,600));
+      document.getElementById('userModalClose').click();
+      const afterButton=document.activeElement;
+      const closedByButton={
+        id:afterButton.dataset.id,
+        action:afterButton.dataset.action,
+        connected:afterButton.isConnected,
+        visible:afterButton.getBoundingClientRect().width>0,
+        value:before,
+      };
+      const nextRow=[...document.querySelectorAll('.user-row')]
+        .find((node)=>node.querySelector('.user-name').textContent==='Refresh Create');
+      nextRow.querySelector('[data-action="edit"]').focus();
+      nextRow.querySelector('[data-action="edit"]').click();
+      await new Promise((resolve)=>setTimeout(resolve,500));
+      document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
+      const escapeFocus=document.activeElement;
+      return {closedByButton,closedByEscape:{id:escapeFocus.dataset.id,connected:escapeFocus.isConnected,
+        visible:escapeFocus.getBoundingClientRect().width>0}};
+    })()`);
+    assert.equal(editFocus.closedByButton.action, 'edit');
+    assert.ok(editFocus.closedByButton.id);
+    assert.equal(editFocus.closedByButton.connected, true);
+    assert.equal(editFocus.closedByButton.visible, true);
+    assert.equal(editFocus.closedByButton.value, 'Refresh');
+    assert.ok(editFocus.closedByEscape.id);
+    assert.equal(editFocus.closedByEscape.connected, true);
+    assert.equal(editFocus.closedByEscape.visible, true);
+
+    /* ── Edit and delete keep their success when the following refresh fails ── */
+
+    const refreshFailureEdit = await evaluate(`(async()=>{
+      const row=[...document.querySelectorAll('.user-row')]
+        .find((node)=>node.querySelector('.user-name').textContent==='Refresh Create');
+      row.querySelector('[data-action="edit"]').click();
+      await new Promise((resolve)=>setTimeout(resolve,400));
+      document.getElementById('userFirstName').value='Refresh Updated';
+      window.__failNextAdminList=true;
+      document.getElementById('userForm').requestSubmit();
+      await new Promise((resolve)=>setTimeout(resolve,900));
+      return {closed:document.getElementById('userModal').classList.contains('hidden'),
+        success:document.querySelector('#toast .toast-text').textContent,
+        error:document.querySelector('#usersError p').textContent,
+        rows:document.querySelectorAll('.user-row').length};
+    })()`);
+    assert.deepEqual(refreshFailureEdit, {
+      closed: true,
+      success: 'Account updated.',
+      error: 'The change was saved, but the account list could not be updated.',
+      rows: 0,
+    });
+    await evaluate(`document.getElementById('retryUsersBtn').click()`);
+    await waitForRows(4);
+
+    const refreshFailureDelete = await evaluate(`(async()=>{
+      const row=[...document.querySelectorAll('.user-row')]
+        .find((node)=>node.querySelector('.user-name').textContent==='Refresh Updated Create');
+      row.querySelector('[data-action="delete"]').click();
+      await new Promise((resolve)=>setTimeout(resolve,300));
+      window.__failNextAdminList=true;
+      document.getElementById('confirmOkBtn').click();
+      await new Promise((resolve)=>setTimeout(resolve,900));
+      return {success:document.querySelector('#toast .toast-text').textContent,
+        error:document.querySelector('#usersError p').textContent,
+        rows:document.querySelectorAll('.user-row').length};
+    })()`);
+    assert.deepEqual(refreshFailureDelete, {
+      success: 'Account deleted.',
+      error: 'The change was saved, but the account list could not be updated.',
+      rows: 0,
+    });
+    await evaluate(`document.getElementById('retryUsersBtn').click()`);
+    await waitForRows(3);
+
+    /* ── Mutation failures remain errors in their original UI surfaces ── */
+
+    const mutationFailureEdit = await evaluate(`(async()=>{
+      const row=[...document.querySelectorAll('.user-row')]
+        .find((node)=>node.querySelector('.user-name').textContent==='Diego Rocha');
+      row.querySelector('[data-action="edit"]').click();
+      await new Promise((resolve)=>setTimeout(resolve,400));
+      window.__failNextMutation='PUT';
+      document.getElementById('userForm').requestSubmit();
+      await new Promise((resolve)=>setTimeout(resolve,700));
+      return {open:!document.getElementById('userModal').classList.contains('hidden'),
+        error:document.getElementById('userFormError').textContent.trim(),
+        success:document.querySelector('#toast .toast-text').textContent};
+    })()`);
+    assert.deepEqual(mutationFailureEdit, {
+      open: true,
+      error: 'The request could not be completed. Try again.',
+      success: 'Account deleted.',
+    });
+    await evaluate(`document.getElementById('userFormCancel').click()`);
+
+    const mutationFailureDelete = await evaluate(`(async()=>{
+      const row=[...document.querySelectorAll('.user-row')]
+        .find((node)=>node.querySelector('.user-name').textContent==='Diego Rocha');
+      row.querySelector('[data-action="delete"]').click();
+      await new Promise((resolve)=>setTimeout(resolve,300));
+      window.__failNextMutation='DELETE';
+      document.getElementById('confirmOkBtn').click();
+      await new Promise((resolve)=>setTimeout(resolve,700));
+      return {rows:document.querySelectorAll('.user-row').length,
+        error:document.querySelector('#toast .toast-text').textContent};
+    })()`);
+    assert.deepEqual(mutationFailureDelete, {
+      rows: 3,
+      error: 'The request could not be completed. Try again.',
+    });
 
     /* ── The self role control is locked and the account is never deletable ── */
 
@@ -553,7 +720,32 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
       await new Promise((resolve)=>setTimeout(resolve,50));
       document.getElementById('confirmOkBtn').click();
       const confirmed=await second;
-      return {opened,wrapped,afterEscape,confirmed,finalFocus:document.activeElement.id};
+      let resolveCycle;
+      let cycleChanged=0;
+      const onCycleChanged=()=>{cycleChanged+=1};
+      window.addEventListener('kinesis:cycle-changed',onCycleChanged);
+      const pending=showConfirm({title:'Cycle confirmation',message:'Complete cycle',confirmText:'Confirm',cancelText:'Cancel',
+        onConfirm:()=>new Promise((resolve)=>{resolveCycle=()=>{window.dispatchEvent(new CustomEvent('kinesis:cycle-changed'));resolve()}})});
+      await new Promise((resolve)=>setTimeout(resolve,50));
+      document.getElementById('confirmOkBtn').click();
+      const pendingState={cancelDisabled:document.getElementById('confirmCancelBtn').disabled,
+        confirmDisabled:document.getElementById('confirmOkBtn').disabled,
+        backgroundInert:document.querySelector('.app-shell').hasAttribute('inert')};
+      document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
+      document.getElementById('confirmCancelBtn').click();
+      document.querySelector('.confirm-backdrop').dispatchEvent(new MouseEvent('click',{bubbles:true}));
+      resolveCycle();
+      const cycleResult=await pending;
+      window.removeEventListener('kinesis:cycle-changed',onCycleChanged);
+      let rejectionCalls=0;
+      const rejected=showConfirm({title:'Rejected confirmation',message:'Fail',confirmText:'Confirm',cancelText:'Cancel',
+        onConfirm:async()=>{rejectionCalls+=1;throw new Error('simulated failure')}});
+      await new Promise((resolve)=>setTimeout(resolve,50));
+      document.getElementById('confirmOkBtn').click();
+      document.getElementById('confirmOkBtn').click();
+      const rejectionResult=await rejected;
+      return {opened,wrapped,afterEscape,confirmed,finalFocus:document.activeElement.id,pendingState,
+        cycleResult,cycleChanged,rejectionResult,rejectionCalls,clean:document.querySelectorAll('.confirm-backdrop').length===0};
     })()`);
     assert.deepEqual(sharedConfirm, {
       opened: { active: 'confirmCancelBtn', backdrop: 1 },
@@ -561,6 +753,12 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
       afterEscape: { cancelled: false, backdrop: 0, focus: 'external-confirm-trigger' },
       confirmed: true,
       finalFocus: 'external-confirm-trigger',
+      pendingState: { cancelDisabled: true, confirmDisabled: true, backgroundInert: true },
+      cycleResult: true,
+      cycleChanged: 1,
+      rejectionResult: false,
+      rejectionCalls: 1,
+      clean: true,
     }, 'the shared confirmation traps, closes, restores focus, and reopens outside the admin page');
 
     assert.equal(admin.role, 'admin');

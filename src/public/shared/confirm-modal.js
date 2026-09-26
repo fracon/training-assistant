@@ -72,7 +72,10 @@ export function showConfirm({
     document.body.appendChild(backdrop);
 
     let settled = false;
-    const focusTrap = createDialogFocusTrap(backdrop, () => cleanup(false));
+    let confirming = false;
+    const focusTrap = createDialogFocusTrap(backdrop, () => {
+      if (!confirming) cleanup(false);
+    });
 
     if (globalThis.lucide && typeof globalThis.lucide.createIcons === 'function') {
       globalThis.lucide.createIcons({ nodes: [backdrop] });
@@ -88,6 +91,10 @@ export function showConfirm({
     }
 
     confirmBtn.addEventListener('click', async () => {
+      if (confirming || settled) return;
+      confirming = true;
+      confirmBtn.disabled = true;
+      cancelBtn.disabled = true;
       try {
         if (typeof onConfirm === 'function') await onConfirm();
         cleanup(true);

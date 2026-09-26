@@ -91,6 +91,7 @@ function el(tag, className) {
 }
 
 let lastFocus = null;
+let lastFocusTarget = null;
 const focusTrap = createDialogFocusTrap(document.getElementById('userModal'), () => closeModal());
 
 function buildTooltipButton({ action, id, icon, labelKey, messages, danger }) {
@@ -172,10 +173,16 @@ function setState({ loading = false, error = false, empty = false }) {
   document.getElementById('addUserBtn').disabled = loading;
 }
 
+function findUserActionButton(target) {
+  if (!target?.id || !target.action) return null;
+  return [...document.querySelectorAll(`[data-action="${target.action}"]`)]
+    .find((button) => button.dataset.id === String(target.id)) ?? null;
+}
+
 function renderList(accounts, context) {
   const list = document.getElementById('userList');
   list.textContent = '';
-  setState({ empty: accounts.length === 0 });
+  setState({ error: context.listErrorVisible, empty: accounts.length === 0 });
   for (const account of accounts) {
     list.appendChild(renderUserRow(account, context));
   }
@@ -253,6 +260,9 @@ function openModal(mode, account, context) {
   form.dataset.userId = account ? String(account.id) : '';
   hideFormError();
   lastFocus = document.activeElement;
+  lastFocusTarget = lastFocus?.dataset?.action && lastFocus?.dataset?.id
+    ? { action: lastFocus.dataset.action, id: lastFocus.dataset.id }
+    : null;
   document.getElementById('userModal').classList.remove('hidden');
   focusTrap.activate();
   document.getElementById('userFirstName').focus();
@@ -263,8 +273,11 @@ function closeModal() {
   if (modal.classList.contains('hidden')) return;
   modal.classList.add('hidden');
   focusTrap.deactivate();
-  lastFocus?.focus();
+  const trigger = lastFocus?.isConnected ? lastFocus : findUserActionButton(lastFocusTarget);
+  const fallback = document.getElementById('addUserBtn');
+  (trigger ?? fallback)?.focus();
   lastFocus = null;
+  lastFocusTarget = null;
 }
 
 function readForm() {
@@ -280,7 +293,20 @@ function readForm() {
 async function reload(context) {
   const accounts = await fetchAdminUsers();
   context.accounts = accounts;
+  context.listErrorVisible = false;
   renderList(accounts, context);
+}
+
+function showListError(context, messageKey = 'admin.loadError') {
+  context.listErrorKey = messageKey;
+  context.listErrorVisible = true;
+  context.accounts = [];
+  document.getElementById('userList').textContent = '';
+  const error = document.getElementById('usersError');
+  const message = error.querySelector('p');
+  message.setAttribute('data-i18n', messageKey);
+  message.textContent = t(context.messages, messageKey);
+  setState({ error: true });
 }
 
 async function handleSubmit(context) {
@@ -319,8 +345,12 @@ async function handleSubmit(context) {
       });
     }
     closeModal();
-    await reload(context);
     showToast(messages, isEdit ? 'admin.success.edit' : 'admin.success.create');
+    try {
+      await reload(context);
+    } catch {
+      showListError(context, 'admin.refreshError');
+    }
   } catch (error) {
     showFormError(messages, [errorMessageKey(error)]);
   } finally {
@@ -358,8 +388,12 @@ async function handleAction(action, id, context) {
 
   try {
     await deleteAdminUser(id);
-    await reload(context);
     showToast(messages, 'admin.success.delete');
+    try {
+      await reload(context);
+    } catch {
+      showListError(context, 'admin.refreshError');
+    }
   } catch (error) {
     showToast(messages, errorMessageKey(error), 'error');
   }
@@ -375,6 +409,8 @@ export async function initAdminPage() {
     language: i18n.language,
     currentUserId: user.id,
     accounts: [],
+    listErrorKey: 'admin.loadError',
+    listErrorVisible: false,
   };
 
   const sync = () => {
@@ -400,23 +436,26 @@ export async function initAdminPage() {
     handleAction(button.dataset.action, button.dataset.id, context);
   });
   document.getElementById('retryUsersBtn').addEventListener('click', () => {
-    setState({ loading: true });
-    load(context);
+    load(context, context.listErrorKey);
   });
 
-  async function load(target) {
+  async function load(target, errorKey = 'admin.loadError') {
     setState({ loading: true });
     try {
       await reload(target);
     } catch {
-      document.getElementById('userList').textContent = '';
-      setState({ error: true });
+      showListError(target, errorKey);
     }
   }
 
   document.addEventListener('app:languagechange', () => {
     sync();
     renderList(context.accounts, context);
+    if (!document.getElementById('usersError').classList.contains('hidden')) {
+      const message = document.querySelector('#usersError p');
+      message.setAttribute('data-i18n', context.listErrorKey);
+      message.textContent = t(context.messages, context.listErrorKey);
+    }
     const modal = document.getElementById('userModal');
     if (!modal.classList.contains('hidden')) {
       // The title's `data-i18n` still points at the create or edit key chosen

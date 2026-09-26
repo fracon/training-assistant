@@ -499,6 +499,7 @@
     "deleteNotice": "A exclusão de uma conta é definitiva e também remove suas sessões e dados de treino.",
     "loading": "Carregando contas…",
     "loadError": "Não foi possível carregar as contas.",
+    "refreshError": "A alteração foi salva, mas não foi possível atualizar a lista de contas.",
     "retry": "Tentar novamente",
     "empty": "Nenhuma conta cadastrada ainda.",
     "you": "Você",

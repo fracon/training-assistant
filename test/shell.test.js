@@ -306,7 +306,7 @@ test('showConfirm is exported and builds a Promise-based confirmation dialog', (
   assert.match(confirm, /setAttribute\('role', 'alertdialog'\)/);
   assert.match(confirm, /setAttribute\('aria-labelledby', 'confirmTitle'\)/);
   assert.match(confirm, /import \{ createDialogFocusTrap \} from '\.\/dialog-focus\.js'/);
-  assert.match(confirm, /createDialogFocusTrap\(backdrop, \(\) => cleanup\(false\)\)/);
+  assert.match(confirm, /createDialogFocusTrap\(backdrop, \(\) => \{[\s\S]*if \(!confirming\) cleanup\(false\);[\s\S]*\}\)/);
   assert.match(confirm, /focusTrap\.activate\(\);/);
   assert.match(confirm, /cancelBtn\.focus\(\);/);
   assert.match(confirm, /focusTrap\.deactivate\(\);/);

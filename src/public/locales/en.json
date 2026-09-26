@@ -499,6 +499,7 @@
     "deleteNotice": "Deleting an account is permanent and also removes its sessions and training data.",
     "loading": "Loading accounts…",
     "loadError": "Accounts could not be loaded.",
+    "refreshError": "The change was saved, but the account list could not be updated.",
     "retry": "Try again",
     "empty": "No accounts registered yet.",
     "you": "You",
