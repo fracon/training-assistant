@@ -893,7 +893,9 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
       return {closed:document.getElementById('userModal').classList.contains('hidden'),
         success:document.querySelector('#toast .toast-text').textContent,
         error:document.querySelector('#usersError p').textContent,
-        rows:document.querySelectorAll('.user-row').length,savingPt};
+        rows:document.querySelectorAll('.user-row').length,savingPt,
+        focused:document.activeElement.id,
+        focusConnected:document.activeElement.isConnected};
     })()`);
     assert.deepEqual(refreshFailureEdit, {
       closed: true,
@@ -901,6 +903,8 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
       error: 'A alteração foi salva, mas não foi possível atualizar a lista de contas.',
       savingPt: 'Salvando…',
       rows: 0,
+      focused: 'addUserBtn',
+      focusConnected: true,
     });
     await evaluate(`document.getElementById('retryUsersBtn').click()`);
     await waitForRows(4);
@@ -1080,6 +1084,11 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
       await evaluate(`document.querySelector('#toast .toast-text').textContent`),
       'Account deleted.'
     );
+    assert.deepEqual(await evaluate(`({id:document.activeElement.id,
+      connected:document.activeElement.isConnected,
+      visible:document.activeElement.getBoundingClientRect().width>0})`),
+      {id:'addUserBtn',connected:true,visible:true},
+      'deleting a row restores focus to a stable control');
 
     /* ── Narrow viewports keep the group usable without overflow ── */
 
@@ -1173,7 +1182,25 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
       const blockedEditOpen=!document.getElementById('userModal').classList.contains('hidden');
       window.__releaseAdminList();
       await new Promise((resolve)=>setTimeout(resolve,700));
-      return {aId,bId,aRefreshPending,blockedSecondOpen,bMutationPending,bStillOpen,editRefreshPending,blockedEditOpen};
+      const editFocus={
+        id:document.activeElement.dataset.id,
+        action:document.activeElement.dataset.action,
+        connected:document.activeElement.isConnected,
+        visible:document.activeElement.getBoundingClientRect().width>0,
+      };
+      const rowB=[...document.querySelectorAll('.user-row')]
+        .find((node)=>node.querySelector('.user-email').textContent==='refresh-b@example.test');
+      window.__holdNextAdminList=true;
+      rowB.querySelector('[data-action="edit"]').click();
+      await new Promise((resolve)=>setTimeout(resolve,450));
+      document.getElementById('userFirstName').value='Refresh B Updated';
+      document.getElementById('userForm').requestSubmit();
+      await new Promise((resolve)=>setTimeout(resolve,700));
+      document.getElementById('sidebarToggle').focus();
+      window.__releaseAdminList();
+      await new Promise((resolve)=>setTimeout(resolve,700));
+      const intentionalFocus={id:document.activeElement.id,connected:document.activeElement.isConnected};
+      return {aId,bId,aRefreshPending,blockedSecondOpen,bMutationPending,bStillOpen,editRefreshPending,blockedEditOpen,editFocus,intentionalFocus};
     })()`);
     assert.deepEqual(serializedSaves, {
       aId: serializedSaves.aId,
@@ -1184,6 +1211,8 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
       bStillOpen:true,
       editRefreshPending:{modal:false,addDisabled:true},
       blockedEditOpen:false,
+      editFocus:{id:serializedSaves.aId,action:'edit',connected:true,visible:true},
+      intentionalFocus:{id:'sidebarToggle',connected:true},
     }, 'a completed mutation cannot clear another dialog operation');
 
     // Remove only the two temporary accounts so the access-control assertions

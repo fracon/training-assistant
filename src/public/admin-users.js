@@ -100,6 +100,7 @@ let lastFocusTarget = null;
 let savePending = false;
 let operationPending = false;
 let deletePending = false;
+let pendingRefreshFocus = null;
 let editRequestId = 0;
 const focusTrap = createDialogFocusTrap(document.getElementById('userModal'), () => closeModal());
 
@@ -179,13 +180,37 @@ function setState({ loading = false, error = false, empty = false }) {
   document.getElementById('usersLoading').classList.toggle('hidden', !loading);
   document.getElementById('usersError').classList.toggle('hidden', !error);
   document.getElementById('usersEmpty').classList.toggle('hidden', !empty);
-  document.getElementById('addUserBtn').disabled = loading || savePending || deletePending;
+  document.getElementById('addUserBtn').disabled = loading || savePending || operationPending || deletePending;
 }
 
 function findUserActionButton(target) {
   if (!target?.id || !target.action) return null;
   return [...document.querySelectorAll(`[data-action="${target.action}"]`)]
     .find((button) => button.dataset.id === String(target.id)) ?? null;
+}
+
+function beginRefreshFocus(target) {
+  pendingRefreshFocus = {
+    target,
+    initialActive: document.activeElement,
+    userMoved: false,
+  };
+}
+
+function noteRefreshFocusMove(event) {
+  if (!pendingRefreshFocus || !event.target?.isConnected) return;
+  if (event.target !== pendingRefreshFocus.initialActive && event.target !== document.body) {
+    pendingRefreshFocus.userMoved = true;
+  }
+}
+
+function restoreRefreshFocus() {
+  const pending = pendingRefreshFocus;
+  pendingRefreshFocus = null;
+  if (!pending || pending.userMoved) return;
+  const trigger = findUserActionButton(pending.target);
+  const fallback = document.getElementById('addUserBtn');
+  (trigger?.isConnected && !trigger.disabled ? trigger : fallback)?.focus();
 }
 
 function renderList(accounts, context) {
@@ -438,6 +463,9 @@ async function handleSubmit(context) {
     }
     // The mutation succeeded, so close the dialog and show success now. Keep
     // the page operation serialized until its list refresh also settles.
+    beginRefreshFocus(isEdit
+      ? { action: 'edit', id: form.dataset.userId }
+      : null);
     setSavePending(false, context.messages);
     closeModal();
     showToast(context.messages, isEdit ? 'admin.success.edit' : 'admin.success.create');
@@ -456,6 +484,7 @@ async function handleSubmit(context) {
   } finally {
     operationPending = false;
     setSavePending(false, context.messages);
+    restoreRefreshFocus();
     submitBtn.disabled = false;
     submitLabel.textContent = t(context.messages, 'admin.save');
   }
@@ -493,6 +522,7 @@ async function handleAction(action, id, context) {
   });
   if (!confirmed) return;
 
+  beginRefreshFocus({ action: 'delete', id });
   setDeletePending(true);
   try {
     await deleteAdminUser(id);
@@ -506,6 +536,7 @@ async function handleAction(action, id, context) {
     showToast(context.messages, errorMessageKey(error), 'error');
   } finally {
     setDeletePending(false);
+    restoreRefreshFocus();
     const active = document.activeElement;
     if (!active?.isConnected || active.disabled) {
       (document.querySelector('#userList [data-action]')
@@ -538,6 +569,7 @@ export async function initAdminPage() {
     editRequestId += 1;
     openModal('add', null, context);
   });
+  document.addEventListener('focusin', noteRefreshFocusMove);
   document.getElementById('userModalClose').addEventListener('click', closeModal);
   document.getElementById('userFormCancel').addEventListener('click', closeModal);
   document.getElementById('userModal').addEventListener('click', (event) => {
