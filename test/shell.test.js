@@ -255,8 +255,8 @@ test('the topbar restores a working logout action once authenticated', () => {
   );
   assert.match(
     js,
-    /document\.getElementById\('userBadgeName'\)\.textContent = name;/,
-    'the badge name element absorbs the signed-in identity'
+    /export function updateUserBadgeIdentity\(user\)[\s\S]*?name\.textContent = getUserDisplayName\(user\);/,
+    'the shared shell updater safely applies the signed-in identity'
   );
   assert.match(
     js,

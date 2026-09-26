@@ -371,10 +371,18 @@ function buildLayout(activeId, user) {
   return shellRoot;
 }
 
+export function getUserDisplayName(user) {
+  return [user?.first_name, user?.last_name].filter(Boolean).join(' ') || user?.email || '';
+}
+
+export function updateUserBadgeIdentity(user) {
+  const name = document.getElementById('userBadgeName');
+  if (name) name.textContent = getUserDisplayName(user);
+}
+
 function setUserBadge(user) {
   const badge = document.getElementById('userBadge');
-  const name = [user.first_name, user.last_name].filter(Boolean).join(' ') || user.email;
-  document.getElementById('userBadgeName').textContent = name;
+  updateUserBadgeIdentity(user);
   badge.classList.remove('hidden');
   // A confirmed session means the sign-out action is safe to show.
   document.getElementById('logoutBtn').classList.remove('hidden');

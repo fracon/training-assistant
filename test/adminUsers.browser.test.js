@@ -707,7 +707,42 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
         hasDelete:!!row.querySelector('[data-action="delete"]'),
         passwordHidden:document.getElementById('userPasswordField').classList.contains('hidden'),
       };
+      document.getElementById('userFirstName').value='Aline';
+      document.getElementById('userLastName').value='Administradora';
+      document.getElementById('userEmail').value='admin-updated@example.test';
+      document.getElementById('userForm').requestSubmit();
+      await new Promise((resolve)=>setTimeout(resolve,900));
+      state.badgeAfterSave=document.getElementById('userBadgeName').textContent;
+      state.modalClosed=document.getElementById('userModal').classList.contains('hidden');
+      document.querySelector('.lang-switch [data-lang="pt-BR"]').click();
+      await new Promise((resolve)=>setTimeout(resolve,500));
+      state.badgeInPortuguese=document.getElementById('userBadgeName').textContent;
+      document.querySelector('.lang-switch [data-lang="en-US"]').click();
+      await new Promise((resolve)=>setTimeout(resolve,500));
+      state.badgeInEnglish=document.getElementById('userBadgeName').textContent;
+      const ownRow=[...document.querySelectorAll('.user-row')]
+        .find((node)=>node.querySelector('.user-self-chip'));
+      ownRow.querySelector('[data-action="edit"]').click();
+      await new Promise((resolve)=>setTimeout(resolve,500));
+      document.getElementById('userFirstName').value='Should Not Save';
+      document.getElementById('userEmail').value='runner@example.test';
+      document.getElementById('userForm').requestSubmit();
+      await new Promise((resolve)=>setTimeout(resolve,700));
+      state.failedPutBadge=document.getElementById('userBadgeName').textContent;
+      state.failedPutOpen=!document.getElementById('userModal').classList.contains('hidden');
+      state.failedPutError=document.getElementById('userFormError').textContent.trim();
       document.getElementById('userFormCancel').click();
+      const refreshedRow=[...document.querySelectorAll('.user-row')]
+        .find((node)=>node.querySelector('.user-self-chip'));
+      refreshedRow.querySelector('[data-action="edit"]').click();
+      await new Promise((resolve)=>setTimeout(resolve,500));
+      document.getElementById('userFirstName').value='Aline Refresh';
+      window.__failNextAdminList=true;
+      document.getElementById('userForm').requestSubmit();
+      await new Promise((resolve)=>setTimeout(resolve,900));
+      state.badgeAfterRefreshFailure=document.getElementById('userBadgeName').textContent;
+      state.refreshError=document.querySelector('#usersError p').textContent;
+      state.refreshRows=document.querySelectorAll('.user-row').length;
       return state;
     })()`);
     assert.deepEqual(selfEdit, {
@@ -715,7 +750,19 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
       hintShown: true,
       hasDelete: false,
       passwordHidden: true,
+      badgeAfterSave: 'Aline Administradora',
+      modalClosed: true,
+      badgeInPortuguese: 'Aline Administradora',
+      badgeInEnglish: 'Aline Administradora',
+      failedPutBadge: 'Aline Administradora',
+      failedPutOpen: true,
+      failedPutError: 'This email is already registered.',
+      badgeAfterRefreshFailure: 'Aline Refresh Administradora',
+      refreshError: 'The change was saved, but the account list could not be updated.',
+      refreshRows: 0,
     }, 'the signed-in account cannot be demoted or deleted from the panel');
+    await evaluate(`document.getElementById('retryUsersBtn').click()`);
+    await waitForRows(3);
 
     /* ── Deleting asks for confirmation and then removes the account ── */
 

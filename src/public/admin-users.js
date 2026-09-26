@@ -1,4 +1,11 @@
-import { initShell, getShellI18n, refreshIcons, showConfirm } from './shared/shell.js';
+import {
+  getUserDisplayName,
+  getShellI18n,
+  initShell,
+  refreshIcons,
+  showConfirm,
+  updateUserBadgeIdentity,
+} from './shared/shell.js';
 import { translate } from './shared/i18n.js';
 import { formatDate } from './shared/date.js';
 import { createDialogFocusTrap } from './shared/dialog-focus.js';
@@ -34,11 +41,7 @@ function showToast(messages, messageKey, type = 'success', params) {
 }
 
 export function accountName(account) {
-  const name = [account?.first_name, account?.last_name]
-    .filter((part) => typeof part === 'string' && part.trim() !== '')
-    .join(' ')
-    .trim();
-  return name || account?.email || '';
+  return getUserDisplayName(account);
 }
 
 export function validateAccountForm({ firstName, lastName, email, password, role }, { requirePassword }) {
@@ -355,7 +358,10 @@ async function handleSubmit(context) {
       };
       // The role is only sent when the control is editable for this account.
       if (!document.getElementById('userRole').disabled) payload.role = fields.role;
-      await updateAdminUser(form.dataset.userId, payload);
+      const updatedUser = await updateAdminUser(form.dataset.userId, payload);
+      if (String(form.dataset.userId) === String(context.currentUserId)) {
+        updateUserBadgeIdentity(updatedUser);
+      }
     } else {
       await createAdminUser({
         first_name: fields.firstName.trim(),
