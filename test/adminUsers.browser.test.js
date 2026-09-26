@@ -412,6 +412,13 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
           return Promise.resolve(new Response(JSON.stringify({users:[]}),
             {status:200,headers:{'content-type':'application/json'}}));
         }
+        if(window.__holdNextAdminList&&method==='GET'&&String(input).endsWith('/api/admin/users')){
+          window.__holdNextAdminList=false;
+          return new Promise((resolve,reject)=>{
+            window.__releaseAdminList=()=>nativeFetch(input,init).then(resolve,reject);
+            window.__rejectAdminList=()=>reject(new Error('simulated list refresh failure'));
+          });
+        }
         if(window.__failNextAdminList&&method==='GET'&&String(input).includes('/api/admin/users')){
           window.__failNextAdminList=false;
           return Promise.reject(new Error('simulated list refresh failure'));
@@ -1106,6 +1113,86 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
         controlsReachable: true,
       }, `the layout stays intact at ${width}px`);
     }
+
+    /* ── A save stays isolated from a later save until its refresh settles ── */
+
+    const serializedSaves = await evaluate(`(async()=>{
+      const set=(id,value)=>{document.getElementById(id).value=value};
+      window.__holdNextAdminList=true;
+      document.getElementById('addUserBtn').click();
+      set('userFirstName','Refresh A');set('userLastName','Create A');
+      set('userEmail','refresh-a@example.test');set('userPassword','${PASSWORD}');
+      document.getElementById('userForm').requestSubmit();
+      await new Promise((resolve)=>setTimeout(resolve,700));
+      const aRefreshPending={
+        modal:!document.getElementById('userModal').classList.contains('hidden'),
+        addDisabled:document.getElementById('addUserBtn').disabled,
+        actionsDisabled:[...document.querySelectorAll('#userList [data-action]')].every((button)=>button.disabled),
+      };
+      document.getElementById('addUserBtn').click();
+      const blockedSecondOpen=!document.getElementById('userModal').classList.contains('hidden');
+      window.__releaseAdminList();
+      await new Promise((resolve)=>setTimeout(resolve,700));
+      const aId=[...document.querySelectorAll('.user-row')]
+        .find((node)=>node.querySelector('.user-email').textContent==='refresh-a@example.test').dataset.userId;
+
+      window.__holdNextMutation='POST';
+      document.getElementById('addUserBtn').click();
+      set('userFirstName','Refresh B');set('userLastName','Create B');
+      set('userEmail','refresh-b@example.test');set('userPassword','${PASSWORD}');
+      document.getElementById('userForm').requestSubmit();
+      await new Promise((resolve)=>setTimeout(resolve,180));
+      const bMutationPending={
+        modal:!document.getElementById('userModal').classList.contains('hidden'),
+        saveDisabled:document.getElementById('userFormSubmit').disabled,
+        cancelDisabled:document.getElementById('userFormCancel').disabled,
+        addDisabled:document.getElementById('addUserBtn').disabled,
+      };
+      document.getElementById('userFormCancel').click();
+      const bStillOpen=!document.getElementById('userModal').classList.contains('hidden');
+      await window.__releaseAdminMutation();
+      await new Promise((resolve)=>setTimeout(resolve,700));
+      const bId=[...document.querySelectorAll('.user-row')]
+        .find((node)=>node.querySelector('.user-email').textContent==='refresh-b@example.test').dataset.userId;
+
+      const rowA=[...document.querySelectorAll('.user-row')]
+        .find((node)=>node.querySelector('.user-name').textContent==='Refresh A Create A');
+      window.__holdNextAdminList=true;
+      rowA.querySelector('[data-action="edit"]').click();
+      await new Promise((resolve)=>setTimeout(resolve,450));
+      document.getElementById('userFirstName').value='Refresh A Updated';
+      document.getElementById('userForm').requestSubmit();
+      await new Promise((resolve)=>setTimeout(resolve,700));
+      const editRefreshPending={
+        modal:!document.getElementById('userModal').classList.contains('hidden'),
+        addDisabled:document.getElementById('addUserBtn').disabled,
+      };
+      const otherRow=[...document.querySelectorAll('.user-row')]
+        .find((node)=>node.querySelector('.user-name').textContent==='Rita Runner');
+      otherRow.querySelector('[data-action="edit"]').click();
+      const blockedEditOpen=!document.getElementById('userModal').classList.contains('hidden');
+      window.__releaseAdminList();
+      await new Promise((resolve)=>setTimeout(resolve,700));
+      return {aId,bId,aRefreshPending,blockedSecondOpen,bMutationPending,bStillOpen,editRefreshPending,blockedEditOpen};
+    })()`);
+    assert.deepEqual(serializedSaves, {
+      aId: serializedSaves.aId,
+      bId: serializedSaves.bId,
+      aRefreshPending:{modal:false,addDisabled:true,actionsDisabled:true},
+      blockedSecondOpen:false,
+      bMutationPending:{modal:true,saveDisabled:true,cancelDisabled:true,addDisabled:true},
+      bStillOpen:true,
+      editRefreshPending:{modal:false,addDisabled:true},
+      blockedEditOpen:false,
+    }, 'a completed mutation cannot clear another dialog operation');
+
+    // Remove only the two temporary accounts so the access-control assertions
+    // below retain their original two-account fixture. Reload once after the
+    // direct cleanup so the page state cannot retain a deleted row.
+    await evaluate(`Promise.all(${JSON.stringify([serializedSaves.aId, serializedSaves.bId])}
+      .map((id)=>fetch('/api/admin/users/'+id,{method:'DELETE'})))`);
+    await navigate('/admin-users.html');
+    await waitForRows(2);
 
     /* ── A regular account has no administration entry at all ── */
 

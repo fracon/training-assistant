@@ -98,6 +98,7 @@ function el(tag, className) {
 let lastFocus = null;
 let lastFocusTarget = null;
 let savePending = false;
+let operationPending = false;
 let deletePending = false;
 let editRequestId = 0;
 const focusTrap = createDialogFocusTrap(document.getElementById('userModal'), () => closeModal());
@@ -197,7 +198,7 @@ function renderList(accounts, context) {
   for (const account of accounts) {
     list.appendChild(renderUserRow(account, context));
   }
-  setListActionsDisabled(deletePending || savePending);
+  setListActionsDisabled(deletePending || savePending || operationPending);
   refreshIcons();
 }
 
@@ -319,7 +320,8 @@ function setSavePending(pending, messages) {
   submitBtn.disabled = pending;
   cancelBtn.disabled = pending;
   closeBtn.disabled = pending;
-  document.getElementById('addUserBtn').disabled = pending;
+  document.getElementById('addUserBtn').disabled = pending || operationPending || deletePending;
+  setListActionsDisabled(pending || operationPending || deletePending);
   submitLabel.textContent = t(messages, pending ? 'admin.saving' : 'admin.save');
 }
 
@@ -347,8 +349,8 @@ async function reconcileRoleConflict(context, form) {
 function setDeletePending(pending) {
   deletePending = pending;
   document.getElementById('userList').setAttribute('aria-busy', String(pending));
-  setListActionsDisabled(pending || savePending);
-  document.getElementById('addUserBtn').disabled = pending || savePending;
+  setListActionsDisabled(pending || savePending || operationPending);
+  document.getElementById('addUserBtn').disabled = pending || savePending || operationPending;
 }
 
 function readForm() {
@@ -381,7 +383,7 @@ function showListError(context, messageKey = 'admin.loadError') {
 }
 
 async function handleSubmit(context) {
-  if (savePending) return;
+  if (savePending || operationPending) return;
   const { messages } = context;
   const form = document.getElementById('userForm');
   const isEdit = form.dataset.mode === 'edit';
@@ -394,6 +396,7 @@ async function handleSubmit(context) {
 
   const submitBtn = document.getElementById('userFormSubmit');
   const submitLabel = document.getElementById('userFormSubmitLabel');
+  operationPending = true;
   setSavePending(true, messages);
 
   try {
@@ -433,6 +436,8 @@ async function handleSubmit(context) {
         role: fields.role,
       });
     }
+    // The mutation succeeded, so close the dialog and show success now. Keep
+    // the page operation serialized until its list refresh also settles.
     setSavePending(false, context.messages);
     closeModal();
     showToast(context.messages, isEdit ? 'admin.success.edit' : 'admin.success.create');
@@ -449,7 +454,8 @@ async function handleSubmit(context) {
       showFormError(context.messages, [errorMessageKey(error)]);
     }
   } finally {
-    if (savePending) setSavePending(false, context.messages);
+    operationPending = false;
+    setSavePending(false, context.messages);
     submitBtn.disabled = false;
     submitLabel.textContent = t(context.messages, 'admin.save');
   }
@@ -528,7 +534,7 @@ export async function initAdminPage() {
   };
 
   document.getElementById('addUserBtn').addEventListener('click', () => {
-    if (savePending || deletePending) return;
+    if (savePending || operationPending || deletePending) return;
     editRequestId += 1;
     openModal('add', null, context);
   });
@@ -542,7 +548,7 @@ export async function initAdminPage() {
     handleSubmit(context);
   });
   document.getElementById('userList').addEventListener('click', (event) => {
-    if (savePending) return;
+    if (savePending || operationPending) return;
     const button = event.target.closest('[data-action]');
     if (!button) return;
     handleAction(button.dataset.action, button.dataset.id, context);
