@@ -470,6 +470,10 @@ test('AI Coach locale dictionaries retain translated page, form, prompt and shoe
   assert.equal(enMessages.aiCoach.saveAvailability, 'Save weekly schedule');
   assert.equal(messages.aiCoach.availabilitySaved, 'Agenda semanal salva.');
   assert.equal(enMessages.aiCoach.availabilitySaved, 'Weekly schedule saved.');
+  assert.equal(typeof messages.aiCoach.availabilityLoading, 'string');
+  assert.equal(typeof enMessages.aiCoach.availabilityLoading, 'string');
+  assert.equal(typeof messages.aiCoach.availabilityRetry, 'string');
+  assert.equal(typeof enMessages.aiCoach.availabilityRetry, 'string');
 });
 
 test('AI Coach runtime keeps language change, structured data and async prompt wiring', () => {
@@ -481,7 +485,7 @@ test('AI Coach runtime keeps language change, structured data and async prompt w
   assert.match(js, /fetchAiCoachAvailability\(\)/);
   assert.match(js, /saveAiCoachAvailability\(days\)/);
   assert.match(js, /async function handleGenerate/);
-  assert.match(js, /generateBtn\.disabled = !validation\.valid/);
+  assert.match(js, /generateBtn\.disabled = !availabilityReady \|\| !validation\.valid/);
   assert.match(js, /messages: i18n\.messages/);
   assert.doesNotMatch(js, /applyRoutineDefault|DEFAULT_ROUTINE_BY_LANG|Rotina normal/);
 });

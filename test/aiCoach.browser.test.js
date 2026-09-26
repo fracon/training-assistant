@@ -155,6 +155,17 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     assert.deepEqual(requestWorkoutsIcon, { active: true, icon: 'sport-shoe', display: 'block', color: 'rgb(76, 110, 81)' });
     await evaluate(`window.__setDay=(day,available)=>{const input=document.querySelector('[data-day="'+day+'"] [data-can-train]');if(input.checked!==available){input.click()}else if(input.closest('.day-row').dataset.configured!=='true'){input.dispatchEvent(new Event('change',{bubbles:true}))}}`);
     const pendingInitialGet = await initialGet;
+    const pendingProtection = await evaluate(`(()=>{
+      window.__prematurePutCount=0;
+      const nativeFetch=window.fetch.bind(window);
+      window.fetch=(input,init)=>{if((init?.method||'GET').toUpperCase()==='PUT'&&String(input).includes('/api/ai-coach/availability'))window.__prematurePutCount+=1;return nativeFetch(input,init)};
+      const save=document.getElementById('saveAvailability');
+      save.click();
+      document.getElementById('promptForm').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
+      return { saveDisabled:save.disabled, generateDisabled:document.getElementById('generateBtn').disabled, prompt:document.getElementById('promptOutput').textContent, putCount:window.__prematurePutCount };
+    })()`);
+    assert.deepEqual(pendingProtection, { saveDisabled: true, generateDisabled: true, prompt: '', putCount: 0 },
+      'pending availability cannot be saved or generated');
     await evaluate(`(()=>{const input=document.getElementById('baseLocation');input.value='Lisboa';input.dispatchEvent(new Event('change',{bubbles:true}));return true})()`);
     await releaseAvailabilityResponse(pendingInitialGet);
     const initialAvailabilityLoaded = await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{if(!document.getElementById('availabilityReview').hidden){resolve(true);return}if(Date.now()>end){reject(new Error('New-user availability review notice did not load'));return}requestAnimationFrame(check)};check()})`);
@@ -543,12 +554,65 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     await command('Page.reload');
     await Promise.race([savedReload, delay(15000).then(() => { throw new Error('AI Coach reload timed out.'); })]);
     const savedGetResponse = await savedGet;
+    const existingPendingProtection = await evaluate(`(()=>{
+      window.__existingPendingPutCount=0;
+      const nativeFetch=window.fetch.bind(window);
+      window.fetch=(input,init)=>{if((init?.method||'GET').toUpperCase()==='PUT'&&String(input).includes('/api/ai-coach/availability'))window.__existingPendingPutCount+=1;return nativeFetch(input,init)};
+      const save=document.getElementById('saveAvailability');
+      save.click();
+      document.getElementById('promptForm').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
+      return { saveDisabled:save.disabled, generateDisabled:document.getElementById('generateBtn').disabled, putCount:window.__existingPendingPutCount };
+    })()`);
+    assert.deepEqual(existingPendingProtection, { saveDisabled: true, generateDisabled: true, putCount: 0 },
+      'an existing schedule cannot be overwritten while its GET is pending');
     await evaluate(`(()=>{const daily=document.querySelector('[data-day="tuesday"] input[data-can-train]');daily.focus();window.__focusedDailyChoice=daily;const input=document.getElementById('baseLocation');input.value='Coimbra';input.dispatchEvent(new Event('change',{bubbles:true}));window.__beforeGetFocus=document.activeElement===daily})()`);
     await releaseAvailabilityResponse(savedGetResponse);
     const savedGetState = await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{const monday=document.querySelector('[data-day="monday"] [data-duration]');const tuesday=document.querySelector('[data-day="tuesday"] [data-duration]');if(monday?.value==='75'&&tuesday?.value==='137'){resolve({monday:monday.value,tuesday:tuesday.value,review:!document.getElementById('availabilityReview').hidden});return}if(Date.now()>end){reject(new Error('Saved week did not load after base-location edit'));return}requestAnimationFrame(check)};check()})`);
     const savedGetFocus = await evaluate(`(()=>{const input=document.querySelector('[data-day="tuesday"] input[data-can-train]');return {before:window.__beforeGetFocus,focused:document.activeElement===input,sameNode:window.__focusedDailyChoice===input}})()`);
     assert.deepEqual(savedGetState, { monday: '75', tuesday: '137', review: false });
     assert.deepEqual(savedGetFocus, { before: true, focused: true, sameNode: false });
+
+    await command('Fetch.disable');
+    await command('Fetch.enable', { patterns: [{ urlPattern: '*api/ai-coach/availability*', requestStage: 'Response' }] });
+    const failedGet = waitForAvailabilityResponse('GET');
+    const failedReload = new Promise((resolve) => {
+      const listener = (event) => {
+        if (JSON.parse(event.data).method === 'Page.loadEventFired') {
+          socket.removeEventListener('message', listener);
+          resolve();
+        }
+      };
+      socket.addEventListener('message', listener);
+    });
+    await command('Page.reload');
+    await Promise.race([failedReload, delay(15000).then(() => { throw new Error('AI Coach failure reload timed out.'); })]);
+    const failedGetResponse = await failedGet;
+    await command('Fetch.fulfillRequest', {
+      requestId: failedGetResponse.params.requestId,
+      responseCode: 503,
+      responseHeaders: [{ name: 'Content-Type', value: 'application/json' }],
+      body: Buffer.from(JSON.stringify({ error: 'temporary failure' })).toString('base64'),
+    });
+    const failureState = await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{const error=document.getElementById('availabilityError');if(error.textContent.includes('Não foi possível carregar')){const save=document.getElementById('saveAvailability');window.__failedPutCount=0;const nativeFetch=window.fetch.bind(window);window.fetch=(input,init)=>{if((init?.method||'GET').toUpperCase()==='PUT'&&String(input).includes('/api/ai-coach/availability'))window.__failedPutCount+=1;return nativeFetch(input,init)};save.click();document.getElementById('promptForm').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));resolve({saveDisabled:save.disabled,generateDisabled:document.getElementById('generateBtn').disabled,retryVisible:!document.getElementById('availabilityRetry').hidden,putCount:window.__failedPutCount,prompt:document.getElementById('promptOutput').textContent});return}if(Date.now()>end)reject(new Error('Availability load error was not rendered'));else requestAnimationFrame(check)};check()})`);
+    assert.deepEqual(failureState, { saveDisabled: true, generateDisabled: true, retryVisible: true, putCount: 0, prompt: '' },
+      'a failed availability load keeps both operations blocked');
+
+    const retryGet = waitForAvailabilityResponse('GET');
+    const retryEdit = await evaluate(`(()=>{
+      const row=document.querySelector('[data-day="monday"]');
+      row.querySelector('[data-can-train]').click();
+      row.querySelector('[data-period="12_14"]').click();
+      const duration=row.querySelector('[data-duration]');duration.value='90';duration.dispatchEvent(new Event('input',{bubbles:true}));
+      const location=row.querySelector('[data-location]');location.value='Local edit';location.dispatchEvent(new Event('input',{bubbles:true}));
+      document.getElementById('availabilityRetry').click();
+      return { location:location.value, duration:duration.value, saveDisabled:document.getElementById('saveAvailability').disabled, generateDisabled:document.getElementById('generateBtn').disabled };
+    })()`);
+    assert.deepEqual(retryEdit, { location: 'Local edit', duration: '90', saveDisabled: true, generateDisabled: true });
+    const retryResponse = await retryGet;
+    assert.deepEqual(await evaluate(`(()=>({saveDisabled:document.getElementById('saveAvailability').disabled,generateDisabled:document.getElementById('generateBtn').disabled}))()`), { saveDisabled: true, generateDisabled: true });
+    await releaseAvailabilityResponse(retryResponse);
+    const recoveredState = await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{const monday=document.querySelector('[data-day="monday"] [data-duration]');const tuesday=document.querySelector('[data-day="tuesday"] [data-duration]');if(monday?.value==='90'&&document.querySelector('[data-day="monday"] [data-location]')?.value==='Local edit'&&tuesday?.value==='137'){resolve({monday:monday.value,tuesday:tuesday.value,review:!document.getElementById('availabilityReview').hidden,saveDisabled:document.getElementById('saveAvailability').disabled});return}if(Date.now()>end)reject(new Error('Availability retry did not preserve local edits: '+JSON.stringify({monday:monday?.value,mondayLocation:document.querySelector('[data-day="monday"] [data-location]')?.value,tuesday:tuesday?.value,error:document.getElementById('availabilityError').textContent,retryHidden:document.getElementById('availabilityRetry').hidden,saveDisabled:document.getElementById('saveAvailability').disabled})));else requestAnimationFrame(check)};check()})`);
+    assert.deepEqual(recoveredState, { monday: '90', tuesday: '137', review: false, saveDisabled: false });
 
     const editedGet = waitForAvailabilityResponse('GET');
     const editedReload = new Promise((resolve) => {

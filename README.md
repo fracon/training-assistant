@@ -203,6 +203,12 @@ routine” is never treated as availability or sent in the prompt. The
 through Friday; Saturday and Sunday are untouched, and later edits are
 independent.
 
+Initial unchecked availability values are presentation-only and cannot be
+saved or used to generate a prompt until the availability GET succeeds. A
+failed load keeps both operations blocked, preserves edits made locally, and
+offers a localized retry; older asynchronous responses cannot replace a newer
+load result.
+
 The prompt states each unavailable day and, for available days, its selected
 periods, maximum session minutes, and location. It explicitly tells the coach
 that periods are alternatives for one session and minutes are a ceiling, not a
