@@ -386,6 +386,28 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
       const nativeFetch=window.fetch.bind(window);
       window.fetch=(input,init)=>{
         const method=(init?.method||'GET').toUpperCase();
+        if(window.__editFetchHold&&method==='GET'&&String(input).includes('/api/admin/users/')
+          && !String(input).endsWith('/api/admin/users')){
+          const id=String(input).split('/').pop();
+          return new Promise((resolve,reject)=>{
+            window.__pendingEditGets[id]={
+              resolve:()=>nativeFetch(input,init).then(resolve,reject),
+              reject:()=>reject(new Error('stale edit request failed')),
+            };
+          });
+        }
+        if(window.__captureNextPut&&method==='PUT'&&String(input).includes('/api/admin/users/')){
+          window.__captureNextPut=false;
+          window.__capturedPut={id:String(input).split('/').pop(),body:JSON.parse(init.body)};
+          return Promise.resolve(new Response(JSON.stringify({user:{
+            id:Number(window.__capturedPut.id),
+            email:window.__capturedPut.body.email,
+            first_name:window.__capturedPut.body.first_name,
+            last_name:window.__capturedPut.body.last_name,
+            role:window.__capturedPut.body.role,
+            created_at:null,
+          }}),{status:200,headers:{'content-type':'application/json'}}));
+        }
         if(window.__failNextAdminList&&method==='GET'&&String(input).includes('/api/admin/users')){
           window.__failNextAdminList=false;
           return Promise.reject(new Error('simulated list refresh failure'));
@@ -463,6 +485,65 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
     await evaluate(`document.getElementById('retryUsersBtn').click()`);
     await waitForRows(4);
     assert.equal(await evaluate(`document.getElementById('usersError').classList.contains('hidden')`), true);
+
+    /* ── Only the newest edit lookup may populate the dialog ── */
+
+    const staleEditLookup = await evaluate(`(async()=>{
+      const rowA=[...document.querySelectorAll('.user-row')]
+        .find((node)=>node.querySelector('.user-name').textContent==='Diego Rocha');
+      const rowB=[...document.querySelectorAll('.user-row')]
+        .find((node)=>node.querySelector('.user-name').textContent==='Rita Runner');
+      const idA=rowA.dataset.userId;
+      const idB=rowB.dataset.userId;
+      window.__editFetchHold=true;
+      window.__pendingEditGets={};
+      rowA.querySelector('[data-action="edit"]').click();
+      rowB.querySelector('[data-action="edit"]').click();
+      await new Promise((resolve)=>setTimeout(resolve,100));
+      document.querySelector('.lang-switch [data-lang="pt-BR"]').click();
+      await new Promise((resolve)=>setTimeout(resolve,300));
+      window.__pendingEditGets[idB].resolve();
+      await new Promise((resolve)=>setTimeout(resolve,500));
+      const portuguese={
+        id:document.getElementById('userForm').dataset.userId,
+        email:document.getElementById('userEmail').value,
+        title:document.getElementById('userModalTitle').textContent,
+        role:document.getElementById('userRole').value,
+      };
+      window.__pendingEditGets[idA].reject();
+      await new Promise((resolve)=>setTimeout(resolve,400));
+      window.__editFetchHold=false;
+      document.querySelector('.lang-switch [data-lang="en-US"]').click();
+      await new Promise((resolve)=>setTimeout(resolve,300));
+      document.getElementById('userRole').value='admin';
+      document.getElementById('userFirstName').value='Rita Promoted';
+      window.__captureNextPut=true;
+      document.getElementById('userForm').requestSubmit();
+      await new Promise((resolve)=>setTimeout(resolve,900));
+      return {idA,idB,portuguese,put:window.__capturedPut,
+        closed:document.getElementById('userModal').classList.contains('hidden'),
+        staleError:document.querySelector('#toast').classList.contains('visible')
+          && document.querySelector('#toast .toast-text').textContent.includes('stale')};
+    })()`);
+    assert.equal(staleEditLookup.idA !== staleEditLookup.idB, true);
+    assert.deepEqual(staleEditLookup.portuguese, {
+      id: staleEditLookup.idB,
+      email: 'runner@example.test',
+      title: 'Editar Usuário',
+      role: 'user',
+    });
+    assert.deepEqual(staleEditLookup.put, {
+      id: staleEditLookup.idB,
+      body: {
+        first_name: 'Rita Promoted',
+        last_name: 'Runner',
+        email: 'runner@example.test',
+        role: 'admin',
+        expected_role: 'user',
+      },
+    });
+    assert.equal(staleEditLookup.closed, true);
+    assert.equal(staleEditLookup.staleError, false);
 
     /* ── A rejected create keeps its dialog, fields and current-language error ── */
 

@@ -80,6 +80,7 @@ const ERROR_KEYS = {
   invalidRegistration: 'admin.errors.invalidRegistration',
   unknownField: 'admin.errors.invalidRegistration',
   noChanges: 'admin.errors.invalidRegistration',
+  roleConflict: 'admin.errors.roleConflict',
 };
 
 export function errorMessageKey(error) {
@@ -96,6 +97,7 @@ function el(tag, className) {
 let lastFocus = null;
 let lastFocusTarget = null;
 let savePending = false;
+let editRequestId = 0;
 const focusTrap = createDialogFocusTrap(document.getElementById('userModal'), () => closeModal());
 
 function buildTooltipButton({ action, id, icon, labelKey, messages, danger }) {
@@ -263,6 +265,7 @@ function openModal(mode, account, context) {
   const form = document.getElementById('userForm');
   form.dataset.mode = mode;
   form.dataset.userId = account ? String(account.id) : '';
+  form.dataset.initialRole = isEdit ? account.role : '';
   hideFormError();
   lastFocus = document.activeElement;
   lastFocusTarget = lastFocus?.dataset?.action && lastFocus?.dataset?.id
@@ -357,7 +360,10 @@ async function handleSubmit(context) {
         email: fields.email.trim().toLowerCase(),
       };
       // The role is only sent when the control is editable for this account.
-      if (!document.getElementById('userRole').disabled) payload.role = fields.role;
+      if (!document.getElementById('userRole').disabled && fields.role !== form.dataset.initialRole) {
+        payload.role = fields.role;
+        payload.expected_role = form.dataset.initialRole;
+      }
       const updatedUser = await updateAdminUser(form.dataset.userId, payload);
       if (String(form.dataset.userId) === String(context.currentUserId)) {
         updateUserBadgeIdentity(updatedUser);
@@ -393,11 +399,14 @@ async function handleAction(action, id, context) {
   if (savePending) return;
   const { messages } = context;
   if (action === 'edit') {
+    const requestId = ++editRequestId;
     // Re-read the account from the server so the form never trusts a stale row.
     try {
       const account = await fetchAdminUser(id);
+      if (requestId !== editRequestId) return;
       openModal('edit', account, context);
     } catch (error) {
+      if (requestId !== editRequestId) return;
       showToast(context.messages, errorMessageKey(error), 'error');
     }
     return;
@@ -451,6 +460,7 @@ export async function initAdminPage() {
 
   document.getElementById('addUserBtn').addEventListener('click', () => {
     if (savePending) return;
+    editRequestId += 1;
     openModal('add', null, context);
   });
   document.getElementById('userModalClose').addEventListener('click', closeModal);

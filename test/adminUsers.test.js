@@ -541,6 +541,38 @@ test('updateAccount revokes the target sessions when the role changes', async ()
   assert.deepEqual(JSON.parse(last.details).role, { from: 'user', to: 'admin' });
 });
 
+test('name edits do not overwrite a concurrent promotion, while intentional role changes detect conflicts', async () => {
+  const { db, admins, users } = await setup({ admins: 2 });
+  const target = users[0];
+  const session = createSession(db, target.id);
+
+  // Admin A had opened the old user form; Admin B promotes the account first.
+  updateAccount(db, actorOf(admins[1]), target.id, { role: 'admin' });
+  const afterNameEdit = updateAccount(db, actorOf(admins[0]), target.id, {
+    first_name: 'Promoted',
+  });
+  assert.equal(afterNameEdit.role, 'admin');
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM sessions WHERE user_id = ?').get(target.id).count, 0,
+    'the promotion revokes the session once, but the later name edit does not revoke anything');
+  const freshSession = createSession(db, target.id);
+
+  await assertAdminError(
+    () => updateAccount(db, actorOf(admins[0]), target.id, {
+      role: 'user', expected_role: 'user',
+    }),
+    409,
+    'roleConflict',
+  );
+  assert.equal(db.prepare('SELECT role FROM users WHERE id = ?').get(target.id).role, 'admin');
+  assert.ok(freshSession);
+
+  const intentionallyDemoted = updateAccount(db, actorOf(admins[0]), target.id, {
+    role: 'user', expected_role: 'admin',
+  });
+  assert.equal(intentionallyDemoted.role, 'user');
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM sessions WHERE user_id = ?').get(target.id).count, 0);
+});
+
 test('updateAccount reports a row that disappears before the write', async () => {
   const { db, admins, users } = await setup();
   const stubbed = stubbingChanges(db, /^UPDATE users SET/, 0);

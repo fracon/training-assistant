@@ -13,6 +13,7 @@ const ACCOUNT_ROLES = ['user', 'admin'];
 const ADMIN_ROLE = 'admin';
 const CREATE_FIELDS = ['first_name', 'last_name', 'email', 'password', 'role'];
 const UPDATE_FIELDS = ['first_name', 'last_name', 'email', 'role'];
+const EXPECTED_ROLE_FIELD = 'expected_role';
 
 const ACTION_CREATED = 'account_created';
 const ACTION_UPDATED = 'account_updated';
@@ -210,7 +211,7 @@ async function createAccount(db, actor, payload) {
 function updateAccount(db, actor, id, payload) {
   const accountId = normalizeAccountId(id);
   const body = payload ?? {};
-  rejectUnknownFields(body, UPDATE_FIELDS);
+  rejectUnknownFields(body, [...UPDATE_FIELDS, EXPECTED_ROLE_FIELD]);
 
   const updates = {};
   for (const key of UPDATE_FIELDS) {
@@ -232,6 +233,9 @@ function updateAccount(db, actor, id, payload) {
   if (updates.first_name !== undefined) updates.first_name = normalizeName(updates.first_name);
   if (updates.last_name !== undefined) updates.last_name = normalizeName(updates.last_name);
   if (updates.role !== undefined) updates.role = normalizeRole(updates.role);
+  const expectedRole = body[EXPECTED_ROLE_FIELD] === undefined
+    ? undefined
+    : normalizeRole(body[EXPECTED_ROLE_FIELD]);
 
   const apply = db.transaction(() => {
     const current = db
@@ -239,6 +243,13 @@ function updateAccount(db, actor, id, payload) {
       .get(accountId);
     if (!current) {
       throw new AdminUserError(404, 'accountNotFound', 'Account not found.');
+    }
+    if (updates.role !== undefined && expectedRole !== undefined && expectedRole !== current.role) {
+      throw new AdminUserError(
+        409,
+        'roleConflict',
+        'The account role changed while it was being edited.'
+      );
     }
     if (updates.email !== undefined && updates.email !== current.email) {
       const owner = findAccountByEmail(db, updates.email);
