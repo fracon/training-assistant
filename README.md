@@ -542,8 +542,8 @@ are scoped to the signed-in user's records.
 | `DELETE /api/shoes/:id` | Session | Delete owned shoe |
 | `GET /api/admin/users` | Admin | List account identification and roles |
 | `GET /api/admin/users/:id` | Admin | Read one account for editing |
-| `POST /api/admin/users` | Admin | Create an account |
-| `PUT /api/admin/users/:id` | Admin | Update account fields and role |
+| `POST /api/admin/users` | Admin | Create a regular user account |
+| `PUT /api/admin/users/:id` | Admin | Update permitted identity fields (name, surname, email) |
 | `DELETE /api/admin/users/:id` | Admin | Delete an account and its data |
 
 Endpoint-specific validation and error statuses are described below where

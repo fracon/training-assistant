@@ -153,7 +153,13 @@ function isAdminPageAlias(rawUrl) {
     return false;
   }
   return rawPath !== '/admin-users.html'
-    && decodedPath.replace(/\/{2,}/g, '/') === '/admin-users.html';
+    && path.posix.normalize(decodedPath) === '/admin-users.html';
+}
+
+function adminAliasDecision(db, sessionToken) {
+  const session = db ? findActiveSession(db, sessionToken) : null;
+  if (!session) return 'login';
+  return session.user.role === 'admin' ? 'admin' : 'home';
 }
 
 async function buildServer(options = {}) {
@@ -173,11 +179,9 @@ async function buildServer(options = {}) {
   app.addHook('onRequest', async (request, reply) => {
     /* c8 ignore next 8 -- exercised through Fastify's static wildcard dispatch. */
     if (isAdminPageAlias(request.raw.url ?? request.url)) {
-      const session = options.db
-        ? findActiveSession(options.db, request.cookies?.[SESSION_COOKIE_NAME])
-        : null;
-      if (!session) return reply.redirect('/login.html');
-      if (session.user.role !== 'admin') return reply.redirect('/home.html');
+      const decision = adminAliasDecision(options.db, request.cookies?.[SESSION_COOKIE_NAME]);
+      if (decision === 'login') return reply.redirect('/login.html');
+      if (decision === 'home') return reply.redirect('/home.html');
       return reply.sendFile('admin-users.html');
     }
   });
@@ -1178,4 +1182,4 @@ async function buildServer(options = {}) {
   return app;
 }
 
-module.exports = { buildServer, isAdminPageAlias, parseRpe, MAX_FILE_BYTES };
+module.exports = { adminAliasDecision, buildServer, isAdminPageAlias, parseRpe, MAX_FILE_BYTES };

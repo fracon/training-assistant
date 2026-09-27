@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { buildServer, isAdminPageAlias } = require('../src/server');
+const { adminAliasDecision, buildServer, isAdminPageAlias } = require('../src/server');
 const { createDatabase } = require('../src/db/database');
 const { registerUser } = require('../src/auth/registration');
 const { SESSION_COOKIE_NAME, createSession } = require('../src/auth/sessions');
@@ -58,13 +58,17 @@ const ADMIN_REQUESTS = [
   ['DELETE', '/api/admin/users/1'],
 ];
 
-test('admin page alias detection handles encoded, repeated, canonical, and malformed paths', () => {
+test('admin page alias detection handles encoded, dot, repeated, canonical, and malformed paths', () => {
   assert.equal(isAdminPageAlias('//admin-users.html'), true);
   assert.equal(isAdminPageAlias('/%2fadmin-users.html'), true);
+  assert.equal(isAdminPageAlias('/x%2f..%2fadmin-users.html'), true);
+  assert.equal(isAdminPageAlias('/x/../admin-users.html'), true);
+  assert.equal(isAdminPageAlias('/./admin-users.html?lang=en'), true);
   assert.equal(isAdminPageAlias('///admin-users.html?lang=en'), true);
   assert.equal(isAdminPageAlias('/admin-users.html'), false);
   assert.equal(isAdminPageAlias('/%zzadmin-users.html'), false);
   assert.equal(isAdminPageAlias(undefined), false);
+  assert.equal(adminAliasDecision(null, null), 'login');
 });
 
 /* ── Authorization ── */
@@ -114,7 +118,10 @@ test('the administration page sends anonymous visitors to login and others home'
 
 test('admin document path aliases always pass through the canonical authorization gate', async () => {
   const { app, adminCookie, userCookie } = await setup();
-  for (const url of ['//admin-users.html', '/%2fadmin-users.html', '///admin-users.html']) {
+  for (const url of [
+    '//admin-users.html', '/%2fadmin-users.html', '///admin-users.html',
+    '/x%2f..%2fadmin-users.html', '/x/../admin-users.html', '/./admin-users.html?tab=users',
+  ]) {
     const anonymous = await app.inject({ method: 'GET', url });
     assert.equal(anonymous.statusCode, 302, `anonymous ${url}`);
     assert.match(anonymous.headers.location, /\/login\.html$/);

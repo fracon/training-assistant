@@ -421,11 +421,14 @@ async function handleSubmit(context) {
     }
     // The mutation succeeded, so close the dialog and show success now. Keep
     // the page operation serialized until its list refresh also settles.
+    setSavePending(false, context.messages);
+    closeModal();
+    // closeModal() restores focus to the old trigger. Start tracking only
+    // after that expected programmatic transition, so it is not mistaken for
+    // an intentional user move while the replacement list is loading.
     beginRefreshFocus(isEdit
       ? { action: 'edit', id: form.dataset.userId }
       : null);
-    setSavePending(false, context.messages);
-    closeModal();
     showToast(context.messages, isEdit ? 'admin.success.edit' : 'admin.success.create');
     try {
       await reload(context);

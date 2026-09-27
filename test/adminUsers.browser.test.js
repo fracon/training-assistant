@@ -1101,6 +1101,7 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
       const rowA=[...document.querySelectorAll('.user-row')]
         .find((node)=>node.querySelector('.user-name').textContent==='Refresh A Create A');
       window.__holdNextAdminList=true;
+      rowA.querySelector('[data-action="edit"]').focus();
       rowA.querySelector('[data-action="edit"]').click();
       await new Promise((resolve)=>setTimeout(resolve,450));
       document.getElementById('userFirstName').value='Refresh A Updated';
@@ -1109,6 +1110,9 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
       const editRefreshPending={
         modal:!document.getElementById('userModal').classList.contains('hidden'),
         addDisabled:document.getElementById('addUserBtn').disabled,
+      };
+      const focusAfterCloseBeforeRefresh={
+        connected:document.activeElement.isConnected,
       };
       const otherRow=[...document.querySelectorAll('.user-row')]
         .find((node)=>node.querySelector('.user-name').textContent==='Rita Runner');
@@ -1134,7 +1138,8 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
       window.__releaseAdminList();
       await new Promise((resolve)=>setTimeout(resolve,700));
       const intentionalFocus={id:document.activeElement.id,connected:document.activeElement.isConnected};
-      return {aId,bId,aRefreshPending,blockedSecondOpen,bMutationPending,bStillOpen,editRefreshPending,blockedEditOpen,editFocus,intentionalFocus};
+      return {aId,bId,aRefreshPending,blockedSecondOpen,bMutationPending,bStillOpen,
+        editRefreshPending,focusAfterCloseBeforeRefresh,blockedEditOpen,editFocus,intentionalFocus};
     })()`);
     assert.deepEqual(serializedSaves, {
       aId: serializedSaves.aId,
@@ -1144,6 +1149,7 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
       bMutationPending:{modal:true,saveDisabled:true,cancelDisabled:true,addDisabled:true},
       bStillOpen:true,
       editRefreshPending:{modal:false,addDisabled:true},
+      focusAfterCloseBeforeRefresh:{connected:true},
       blockedEditOpen:false,
       editFocus:{id:serializedSaves.aId,action:'edit',connected:true,visible:true},
       intentionalFocus:{id:'sidebarToggle',connected:true},
