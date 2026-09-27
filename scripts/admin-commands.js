@@ -41,6 +41,13 @@ async function runPromotion({ db, prompts, write }) {
     write('No account exists with that email. No changes made.');
     return { status: 'not-found' };
   }
+  // An inactive account cannot sign in, so promoting it would grant an
+  // administrator role that stays unusable. The refusal happens before the
+  // confirmation instead of silently changing only half of the outcome.
+  if (!user.is_active) {
+    write('That account is inactive. Reactivate it in the administration page before promoting it. No changes made.');
+    return { status: 'account-inactive' };
+  }
   write(`Account to promote: ${safeTerminalField(user.first_name)} ${safeTerminalField(user.last_name)} <${safeTerminalField(user.email)}> [${safeTerminalField(user.role)}]`.trim());
   const confirmation = (await prompts.question('Type yes to grant the admin role: ')).trim().toLowerCase();
   if (confirmation !== 'yes') {

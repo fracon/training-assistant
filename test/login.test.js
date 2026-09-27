@@ -10,6 +10,8 @@ const {
   normalizeCredentials,
   LoginError,
   INVALID_CREDENTIALS_MESSAGE,
+  INACTIVE_ACCOUNT_MESSAGE,
+  INACTIVE_ACCOUNT_CODE,
 } = require('../src/auth/login');
 
 async function seedUser(db, email, password) {
@@ -138,4 +140,44 @@ test('loginUser requires both email and password', async (t) => {
     assert.equal(error.status, 400);
     return true;
   });
+});
+
+test('loginUser refuses a suspended account only after the password is verified', async (t) => {
+  const db = createDatabase({ filename: ':memory:' });
+  t.after(() => db.close());
+  const userId = await seedUser(db, 'rafael@example.com', 'super-secret-1');
+  db.prepare('UPDATE users SET is_active = 0 WHERE id = ?').run(userId);
+
+  // A wrong password on a suspended account keeps the generic answer, so the
+  // state cannot be discovered without the real credentials.
+  await assert.rejects(
+    loginUser(db, { email: 'rafael@example.com', password: 'wrong-password' }),
+    (error) => {
+      assert.ok(error instanceof LoginError);
+      assert.equal(error.status, 401);
+      assert.equal(error.message, INVALID_CREDENTIALS_MESSAGE);
+      assert.equal(error.code, undefined);
+      return true;
+    }
+  );
+
+  await assert.rejects(
+    loginUser(db, { email: 'rafael@example.com', password: 'super-secret-1' }),
+    (error) => {
+      assert.ok(error instanceof LoginError);
+      assert.equal(error.status, 403);
+      assert.equal(error.message, INACTIVE_ACCOUNT_MESSAGE);
+      assert.equal(error.code, INACTIVE_ACCOUNT_CODE);
+      return true;
+    }
+  );
+
+  // No session is created for a refused login, and the account keeps its row.
+  assert.equal(db.prepare('SELECT COUNT(*) AS total FROM sessions').get().total, 0);
+  assert.equal(db.prepare('SELECT is_active FROM users WHERE id = ?').get(userId).is_active, 0);
+
+  // Reactivation restores the login, and the refusal is not cached anywhere.
+  db.prepare('UPDATE users SET is_active = 1 WHERE id = ?').run(userId);
+  const { session } = await loginUser(db, { email: 'rafael@example.com', password: 'super-secret-1' });
+  assert.match(session.token, /^[0-9a-f]{64}$/);
 });

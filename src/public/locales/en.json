@@ -227,6 +227,7 @@
     "mismatch": "Passwords do not match.",
     "missingBoth": "Email and password are required.",
     "invalidCredentials": "Invalid email or password.",
+    "accountInactive": "This account is inactive. Ask an administrator to activate it.",
     "emailTaken": "This email is already registered.",
     "network": "Network unavailable. Please try again.",
     "generic": "Something went wrong. Please try again."
@@ -495,9 +496,9 @@
     "pageTitle": "Users - Kinesis",
     "pageLabel": "Administration",
     "title": "Users",
-    "subtitle": "Create, edit and remove accounts of this installation.",
+    "subtitle": "Create, edit, activate, deactivate and remove accounts of this installation.",
     "addUser": "Add User",
-    "deleteNotice": "Deleting an account is permanent and also removes its sessions and training data.",
+    "deleteNotice": "Deleting an account is permanent and also removes its sessions and training data. Deactivating is reversible: it ends the sessions and blocks sign-in while keeping every record.",
     "loading": "Loading accounts…",
     "loadError": "Accounts could not be loaded.",
     "refreshError": "The change was saved, but the account list could not be updated.",
@@ -510,6 +511,8 @@
     "email": "Email",
     "password": "Initial password",
     "passwordHint": "Ask the new user to change it after the first sign-in.",
+    "passwordConfirm": "Confirm password",
+    "passwordConfirmPlaceholder": "Repeat the password",
     "close": "Close",
     "formTitleAdd": "Add New User",
     "formTitleEdit": "Edit User",
@@ -522,6 +525,20 @@
     "deleteTooltip": "Delete user",
     "deleteTitle": "Delete account",
     "deleteConfirm": "Delete {email}? This is permanent: the account, its sessions and all of its training data, cycles, shoes and preferences are removed and cannot be restored.",
+    "activate": "Activate",
+    "activateLabel": "Activate account",
+    "activateTooltip": "Activate account",
+    "activateTitle": "Activate account",
+    "activateConfirm": "{email} will be able to sign in again. Its previous sessions stay signed out and must be started again.",
+    "deactivate": "Deactivate",
+    "deactivateLabel": "Deactivate account",
+    "deactivateTooltip": "Deactivate account",
+    "deactivateTitle": "Deactivate account",
+    "deactivateConfirm": "{email} will be signed out of every device right away and will not be able to sign in. Trainings, cycles, shoes and history are all kept, and the account can be activated again later.",
+    "status": {
+      "active": "Active",
+      "inactive": "Inactive"
+    },
     "roles": {
       "user": "User",
       "admin": "Administrator"
@@ -529,7 +546,9 @@
     "success": {
       "create": "Account created.",
       "edit": "Account updated.",
-      "delete": "Account deleted."
+      "delete": "Account deleted.",
+      "activate": "Account activated.",
+      "deactivate": "Account deactivated."
     },
     "errors": {
       "firstNameRequired": "Enter the first name.",
@@ -538,13 +557,18 @@
       "emailInvalid": "Enter a valid email address.",
       "passwordRequired": "Enter an initial password.",
       "passwordMin": "The password must be at least 8 characters long.",
+      "passwordConfirmationRequired": "Confirm the initial password.",
+      "passwordMismatch": "The passwords do not match.",
       "emailInUse": "This email is already registered.",
       "accountNotFound": "This account no longer exists.",
       "lastAdministrator": "The last administrator cannot be removed.",
-      "selfAction": "You cannot delete your own account from here.",
+      "selfAction": "You cannot change your own account from here.",
       "authorityRevoked": "Your administrator access was revoked, so nothing was saved. Reload the page and sign in again.",
       "invalidRegistration": "Check the account details and try again.",
       "noChanges": "Make at least one change before saving.",
+      "activityConflict": "This account changed while you were working. The list was refreshed; check its state and try again.",
+      "privilegedTarget": "Only regular accounts can be activated or deactivated.",
+      "activityState": "The active state cannot be set from this form.",
       "request": "The request could not be completed. Try again."
     }
   },

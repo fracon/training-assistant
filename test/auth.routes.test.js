@@ -129,6 +129,63 @@ test('login never reveals whether the email exists', async () => {
   db.close();
 });
 
+test('a suspended account is refused with a stable code and no session', async () => {
+  const db = createDatabase({ filename: ':memory:' });
+  const app = await buildServer({ db });
+  const { cookiePair } = await registerAndLogin(app);
+  const row = db.prepare('SELECT id FROM users WHERE email = ?').get('rafael@example.com');
+
+  // The existing session keeps working until the account is suspended, so the
+  // change is not a side effect of signing in again.
+  assert.equal((await app.inject({ method: 'GET', url: '/api/me', headers: { cookie: cookiePair } })).statusCode, 200);
+  db.prepare('UPDATE users SET is_active = 0 WHERE id = ?').run(row.id);
+  const refused = await app.inject({ method: 'GET', url: '/api/me', headers: { cookie: cookiePair } });
+  assert.equal(refused.statusCode, 401);
+
+  const wrongPassword = await app.inject({
+    method: 'POST',
+    url: '/api/auth/login',
+    payload: { email: 'rafael@example.com', password: 'totally-wrong' },
+  });
+  assert.equal(wrongPassword.statusCode, 401);
+  assert.deepEqual(wrongPassword.json(), { error: 'Invalid email or password.' });
+
+  const correctPassword = await app.inject({
+    method: 'POST',
+    url: '/api/auth/login',
+    payload: { email: 'rafael@example.com', password: 'super-secret-1' },
+  });
+  assert.equal(correctPassword.statusCode, 403);
+  assert.deepEqual(correctPassword.json(), {
+    error: 'Your account is inactive. Please contact the administrator.',
+    errors: ['accountInactive'],
+  });
+  assert.equal(setCookies(correctPassword).length, 0, 'a refused login issues no cookie');
+  assert.equal(
+    db.prepare('SELECT COUNT(*) AS total FROM sessions').get().total,
+    1,
+    'only the original session row remains'
+  );
+
+  await app.close();
+  db.close();
+});
+
+test('the sign-in page explains a refused login by its stable code', async () => {
+  // The refused state travels as a machine code, so the page has to hand the
+  // request error itself to the translator instead of only its message.
+  const script = readFileSync(join(publicDir, 'login.js'), 'utf8');
+  assert.match(script, /translateApiError\(error, i18n\.t\)/);
+  assert.doesNotMatch(script, /translateApiError\(error\.message/);
+  const module = readFileSync(join(publicDir, 'shared', 'i18n.js'), 'utf8');
+  assert.match(module, /accountInactive: 'errors\.accountInactive'/);
+  for (const file of ['en.json', 'pt.json']) {
+    const messages = JSON.parse(readFileSync(join(publicDir, 'locales', file), 'utf8'));
+    assert.ok(messages.errors.accountInactive, `${file} states the account is inactive`);
+    assert.doesNotMatch(messages.errors.accountInactive, /\{/, `${file} needs no parameter`);
+  }
+});
+
 test('unexpected login failures surface as HTTP 500', async () => {
   const db = createDatabase({ filename: ':memory:' });
   const app = await buildServer({ db });

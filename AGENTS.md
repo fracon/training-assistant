@@ -8,7 +8,7 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.15.0`); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.16.0`); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
@@ -77,8 +77,9 @@ the `ADMIN_NAV_GROUP` only for an admin session. The group is a separate sidebar
 section, never a loose header entry, and it must be absent from the DOM — not
 merely hidden — for every other account.
 
-- The list and read responses return identification and role only. They never
-  expose or accept another account's training, cycle, shoe, or session data.
+- The list and read responses return identification, role, and the activity
+  state only. They never expose or accept another account's training, cycle,
+  shoe, or session data.
 - The page's controls are a convenience, not the boundary: self-deletion and
   removing the last administrator are refused by the domain layer inside the
   write transaction that would otherwise persist the change. The web CRUD
@@ -89,15 +90,18 @@ merely hidden — for every other account.
   promoted account's existing sessions.
 - Creation and email changes reuse `src/auth/registration.js` normalization,
   validation, and password hashing. Web creation assigns `role = user` in the
-  backend; `role`, `expected_role`, and unknown request fields are explicitly
-  refused so no privilege or column can be written indirectly.
+  backend; `role`, `expected_role`, `is_active`, `active`, and unknown request
+  fields are explicitly refused so no privilege, access, or column can be
+  written indirectly.
 - Deleting an account relies on the existing foreign-key cascades for its
   sessions, trainings, cycles, shoes, mileage ledger, and AI Coach
   availability.
-- Every web create, identity update, and delete writes one
+- Every web create, identity update, delete, and activity transition writes one
   `admin_audit_log` row (idempotent migration
-  `2026-09-admin-account-audit-v1`) with copied actor/target identities, the
-  action, and a timestamp. The table holds no password, hash, token, or
+  `2026-09-admin-account-audit-v1`, extended with the
+  `account_activity_changed` action by `2026-09-account-activity-v1`) with
+  copied actor/target identities, the action, and a timestamp. A transition
+  records only `{"from":…,"to":…}` account states. The table holds no password, hash, token, or
   training value, and identities are copied rather than joined so a deletion
   record outlives the deleted account.
 - The audit table intentionally uses `id INTEGER PRIMARY KEY`, which lets
@@ -108,6 +112,67 @@ merely hidden — for every other account.
   dialog uses `createDialogFocusTrap` from `src/public/shared/dialog-focus.js`
   and restores focus to its trigger on close. It must keep localized errors,
   focus containment, Escape, and reduced-motion behavior intact.
+- Creating an account confirms the initial password in the dialog, like public
+  registration: a required, matching confirmation is validated in the shared
+  grouped error box, keeps every value already typed, focuses the confirmation
+  field, and links it with `aria-invalid` and `aria-describedby`. The
+  confirmation is a frontend concern only — the request body carries `password`,
+  and `password_confirmation` remains an unknown field that the API refuses, so
+  it is never transmitted, stored, or audited.
+
+## Account activity management
+
+`users.is_active` is a database-constrained integer (`DEFAULT 1`,
+`CHECK (is_active IN (0, 1))`) added by the idempotent
+`2026-09-account-activity-v1` migration, which rebuilds `admin_audit_log` to
+extend its `CHECK` and copies existing rows. Deactivation is reversible
+suspension of access only: every training, cycle, shoe, mileage, preference, and
+onboarding record of the account is preserved.
+
+- `POST /api/admin/users/:id/activity` is mounted in `src/server.js` behind the
+  same `requireAuth` then `requireAdmin` chain as the other admin routes. The
+  body accepts exactly the two booleans `active` and `expected_active`;
+  `invalidActivity`, `privilegedField`, and unknown fields are refused, as is
+  any attempt to set the state through create or update.
+- `expected_active` is the state the interface acted on, and the domain layer
+  re-reads the target inside the same immediate transaction that writes the
+  state, revokes sessions, and audits. A stale action is refused with `409
+  activityConflict`; a request that already matches the current state is a
+  no-op that touches no session and writes no transition.
+- Only regular accounts change state, and never the signed-in one:
+  `privilegedTarget` (`403`) and `selfActivityForbidden` (`400`) are refused.
+  Activating an account must never be a way to obtain administrator access.
+- Both directions delete every session of the target in the same transaction, so
+  a suspended account never keeps a token that reactivation would silently
+  honour, and `src/auth/sessions.js` independently refuses inactive accounts
+  on every authenticated request.
+- Sign-in refuses a suspended account only after the password verifies: `403`
+  with the stable code `accountInactive`, no session, and no cookie. Wrong
+  credentials keep the generic `401` answer, so the state is not discoverable
+  without the real password. `src/public/login.js` hands the request error to
+  `translateApiError`, which prefers `codes` over prose so one localized
+  sentence serves both languages.
+- That state check is **not** the one read before the verification.
+  `verifyPassword` awaits scrypt, so anything can be committed in that window,
+  and a suspension also revokes the account's sessions. `loginUser` therefore
+  re-reads the account and inserts the session inside one
+  `db.transaction(...).immediate()`; the state and the session are a single
+  atomic step, the returned profile is the re-read row, and an account removed
+  during the wait answers exactly like an unknown address. Never reintroduce a
+  check against the pre-verification row, and never move the insert outside that
+  transaction.
+- The page follows the same contract: a transition in flight tracks the control
+  it belongs to, and a successful rerender only **retargets** that control
+  (`retargetRefreshFocus`). It must not re-track from scratch, because that would
+  discard a focus change the person made while the refresh was pending and pull
+  focus back to the list.
+- The privileged local `admin:promote` command refuses an inactive account
+  before the confirmation step; `admin:bootstrap` is unaffected.
+- The page shows the state as a badge beside the role, offers the transition
+  only for a regular non-self account through a localized confirmation dialog,
+  and refreshes the list on a conflict instead of assuming the applied state.
+  Status styling must stay visually distinct from the role badge and reuse the
+  existing tokens and custom tooltips.
 
 ## Feedback
 
@@ -273,6 +338,17 @@ tests whenever those behaviors change. Test both PT and EN, ownership, new and
 existing accounts, incomplete/hidden/completed states, transient navigation,
 focus and keyboard behavior, and ensure `[hidden]` elements are not visible or
 focusable when changing onboarding UI.
+
+Account administration and activity behavior is covered by
+`test/adminUsers.test.js` (domain), `test/adminUsers.routes.test.js` (HTTP),
+`test/admin.test.js` (privileged commands), `test/adminUsers.browser.test.js`
+(dialog markup, PT/EN rendering, confirmation and activity dialogs, focus
+restoration, focus parked and deliberately moved during a held refresh),
+`test/auth.routes.test.js` and `test/login.test.js` (suspended sign-in and
+session refusal), `test/login.activity-race.test.js` (a suspension committed
+while the password is verified, through a held verification),
+`test/language.test.js` (`translateApiError` prefers a stable code), and
+`test/database.test.js` (the activity migration).
 
 `npm run test:coverage` enforces exactly 100% Statements, Branches, Functions,
 and Lines for c8-instrumented files under `src/**` (excluding

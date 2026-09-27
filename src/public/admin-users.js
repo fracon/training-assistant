@@ -15,11 +15,18 @@ import {
   deleteAdminUser,
   fetchAdminUser,
   fetchAdminUsers,
+  setAdminUserActivity,
   updateAdminUser,
 } from './shared/api.js';
 
 const ROLE_ADMIN = 'admin';
 const ROLE_USER = 'user';
+const ACTION_ACTIVATE = 'activate';
+const ACTION_DEACTIVATE = 'deactivate';
+const PASSWORD_CONFIRMATION_ERRORS = [
+  'admin.errors.passwordConfirmationRequired',
+  'admin.errors.passwordMismatch',
+];
 
 function t(messages, key, params) {
   return translate(messages, key, params);
@@ -44,7 +51,10 @@ export function accountName(account) {
   return getUserDisplayName(account);
 }
 
-export function validateAccountForm({ firstName, lastName, email, password }, { requirePassword }) {
+export function validateAccountForm(
+  { firstName, lastName, email, password, passwordConfirm },
+  { requirePassword },
+) {
   const errors = [];
   if (!firstName.trim()) errors.push('admin.errors.firstNameRequired');
   if (!lastName.trim()) errors.push('admin.errors.lastNameRequired');
@@ -59,6 +69,14 @@ export function validateAccountForm({ firstName, lastName, email, password }, { 
     } else if (password.length < MIN_PASSWORD_LENGTH) {
       errors.push('admin.errors.passwordMin');
     }
+    // The initial password is typed twice, so a typo cannot be stored as the
+    // account's password. The confirmation never leaves the browser: the API
+    // contract takes `password` only.
+    if (!passwordConfirm) {
+      errors.push('admin.errors.passwordConfirmationRequired');
+    } else if (password && passwordConfirm !== password) {
+      errors.push('admin.errors.passwordMismatch');
+    }
   }
   return errors;
 }
@@ -71,15 +89,23 @@ const ERROR_KEYS = {
   lastAdministrator: 'admin.errors.lastAdministrator',
   adminAuthorityRevoked: 'admin.errors.authorityRevoked',
   selfDeleteForbidden: 'admin.errors.selfAction',
+  selfActivityForbidden: 'admin.errors.selfAction',
+  privilegedTarget: 'admin.errors.privilegedTarget',
+  activityConflict: 'admin.errors.activityConflict',
   invalidId: 'admin.errors.accountNotFound',
   invalidRegistration: 'admin.errors.invalidRegistration',
   unknownField: 'admin.errors.invalidRegistration',
+  activityFieldForbidden: 'admin.errors.activityState',
   noChanges: 'admin.errors.invalidRegistration',
 };
 
 export function errorMessageKey(error) {
   const code = Array.isArray(error?.codes) ? error.codes[0] : null;
   return ERROR_KEYS[code] ?? 'admin.errors.request';
+}
+
+export function errorCode(error) {
+  return Array.isArray(error?.codes) ? error.codes[0] ?? null : null;
 }
 
 function el(tag, className) {
@@ -92,12 +118,12 @@ let lastFocus = null;
 let lastFocusTarget = null;
 let savePending = false;
 let operationPending = false;
-let deletePending = false;
+let rowActionPending = false;
 let pendingRefreshFocus = null;
 let editRequestId = 0;
 const focusTrap = createDialogFocusTrap(document.getElementById('userModal'), () => closeModal());
 
-function buildTooltipButton({ action, id, icon, labelKey, messages, danger }) {
+function buildTooltipButton({ action, id, icon, labelKey, tooltipKey, messages, danger }) {
   const button = el('button', `btn-icon${danger ? ' btn-danger' : ''}`);
   button.type = 'button';
   button.dataset.action = action;
@@ -109,7 +135,7 @@ function buildTooltipButton({ action, id, icon, labelKey, messages, danger }) {
   button.appendChild(iconEl);
   // The Kinesis custom tooltip replaces the native title attribute.
   const tooltip = el('div', 'custom-tooltip');
-  tooltip.textContent = t(messages, `${labelKey}Tooltip`);
+  tooltip.textContent = t(messages, tooltipKey ?? `${labelKey}Tooltip`);
   button.appendChild(tooltip);
   return button;
 }
@@ -134,6 +160,12 @@ function renderUserRow(account, { messages, currentUserId, language }) {
   const role = el('span', `user-role${isAdmin ? ' role-admin' : ''}`);
   role.textContent = t(messages, `admin.roles.${isAdmin ? ROLE_ADMIN : ROLE_USER}`);
   badges.appendChild(role);
+  // The activity state is its own badge: an inactive account is shown as such
+  // instead of being inferred from the action offered on the row.
+  const isActive = account.is_active !== false;
+  const status = el('span', `user-status${isActive ? '' : ' status-inactive'}`);
+  status.textContent = t(messages, `admin.status.${isActive ? 'active' : 'inactive'}`);
+  badges.appendChild(status);
   if (account.id === currentUserId) {
     const self = el('span', 'user-self-chip');
     self.textContent = t(messages, 'admin.you');
@@ -157,6 +189,22 @@ function renderUserRow(account, { messages, currentUserId, language }) {
   actions.appendChild(buildTooltipButton({
     action: 'edit', id: account.id, icon: 'pencil', labelKey: 'admin.edit', messages,
   }));
+  // Only regular accounts can change state, and never the signed-in one: the
+  // backend refuses both, so activating an account here can never hand back
+  // administrator access.
+  if (!isAdmin && account.id !== currentUserId) {
+    actions.appendChild(buildTooltipButton({
+      action: isActive ? ACTION_DEACTIVATE : ACTION_ACTIVATE,
+      id: account.id,
+      icon: isActive ? 'user-x' : 'user-check',
+      // The row control names the account it acts on; the dialog keeps the
+      // shorter verb for its confirm button.
+      labelKey: isActive ? 'admin.deactivateLabel' : 'admin.activateLabel',
+      tooltipKey: isActive ? 'admin.deactivateTooltip' : 'admin.activateTooltip',
+      messages,
+      danger: isActive,
+    }));
+  }
   // The panel never offers to delete the signed-in account; the backend refuses
   // it as well so the protection does not depend on the interface.
   if (account.id !== currentUserId) {
@@ -173,7 +221,7 @@ function setState({ loading = false, error = false, empty = false }) {
   document.getElementById('usersLoading').classList.toggle('hidden', !loading);
   document.getElementById('usersError').classList.toggle('hidden', !error);
   document.getElementById('usersEmpty').classList.toggle('hidden', !empty);
-  document.getElementById('addUserBtn').disabled = loading || savePending || operationPending || deletePending;
+  document.getElementById('addUserBtn').disabled = loading || savePending || operationPending || rowActionPending;
 }
 
 function findUserActionButton(target) {
@@ -190,8 +238,22 @@ function beginRefreshFocus(target) {
   };
 }
 
+// A successful transition replaces the control the row offers, so the tracked
+// target becomes the opposite action. Only the target moves: a focus change the
+// person made deliberately while the request was pending is their decision, and
+// re-tracking the whole record here would discard it and pull focus back to the
+// list.
+function retargetRefreshFocus(target) {
+  if (!pendingRefreshFocus) return;
+  pendingRefreshFocus.target = target;
+}
+
 function noteRefreshFocusMove(event) {
   if (!pendingRefreshFocus || !event.target?.isConnected) return;
+  // The confirmation dialog moves focus while it is open and hands it back on
+  // close. That is its own lifecycle, not the user leaving the control being
+  // tracked, so it must not cancel the restoration that follows the rerender.
+  if (event.target.closest?.('.confirm-backdrop')) return;
   if (event.target !== pendingRefreshFocus.initialActive && event.target !== document.body) {
     pendingRefreshFocus.userMoved = true;
   }
@@ -216,7 +278,7 @@ function renderList(accounts, context) {
   for (const account of accounts) {
     list.appendChild(renderUserRow(account, context));
   }
-  setListActionsDisabled(deletePending || savePending || operationPending);
+  setListActionsDisabled(rowActionPending || savePending || operationPending);
   refreshIcons();
 }
 
@@ -279,10 +341,11 @@ function openModal(mode, account, context) {
   document.getElementById('userFirstName').value = account?.first_name ?? '';
   document.getElementById('userLastName').value = account?.last_name ?? '';
   document.getElementById('userEmail').value = account?.email ?? '';
-  // The initial password is requested at creation only and is never stored or
-  // shown again afterwards.
-  document.getElementById('userPasswordField').classList.toggle('hidden', isEdit);
+  // The initial password and its confirmation are requested at creation only
+  // and are never stored or shown again afterwards.
+  document.getElementById('userPasswordFields').classList.toggle('hidden', isEdit);
   document.getElementById('userPassword').value = '';
+  resetPasswordConfirmation();
 
   const submitLabel = document.getElementById('userFormSubmitLabel');
   submitLabel.setAttribute('data-i18n', 'admin.save');
@@ -331,16 +394,37 @@ function setSavePending(pending, messages) {
   submitBtn.disabled = pending;
   cancelBtn.disabled = pending;
   closeBtn.disabled = pending;
-  document.getElementById('addUserBtn').disabled = pending || operationPending || deletePending;
-  setListActionsDisabled(pending || operationPending || deletePending);
+  document.getElementById('addUserBtn').disabled = pending || operationPending || rowActionPending;
+  setListActionsDisabled(pending || operationPending || rowActionPending);
   submitLabel.textContent = t(messages, pending ? 'admin.saving' : 'admin.save');
 }
 
-function setDeletePending(pending) {
-  deletePending = pending;
+function setRowActionPending(pending) {
+  rowActionPending = pending;
   document.getElementById('userList').setAttribute('aria-busy', String(pending));
   setListActionsDisabled(pending || savePending || operationPending);
   document.getElementById('addUserBtn').disabled = pending || savePending || operationPending;
+}
+
+// The confirmation field is associated with the grouped error box — the only
+// error surface on this dialog — so the mismatch is announced, described and
+// visibly marked without adding a second, page-specific hint. Typing in the
+// field clears the association but keeps everything the user already typed.
+function resetPasswordConfirmation() {
+  const field = document.getElementById('userPasswordConfirm');
+  field.value = '';
+  field.classList.remove('input-error');
+  field.removeAttribute('aria-invalid');
+  field.removeAttribute('aria-describedby');
+}
+
+function markPasswordConfirmation(errors) {
+  const field = document.getElementById('userPasswordConfirm');
+  if (!errors.some((key) => PASSWORD_CONFIRMATION_ERRORS.includes(key))) return;
+  field.classList.add('input-error');
+  field.setAttribute('aria-invalid', 'true');
+  field.setAttribute('aria-describedby', 'userFormError');
+  field.focus();
 }
 
 function readForm() {
@@ -349,6 +433,7 @@ function readForm() {
     lastName: document.getElementById('userLastName').value,
     email: document.getElementById('userEmail').value,
     password: document.getElementById('userPassword').value,
+    passwordConfirm: document.getElementById('userPasswordConfirm').value,
   };
 }
 
@@ -379,7 +464,10 @@ async function handleSubmit(context) {
   const fields = readForm();
   const errors = validateAccountForm(fields, { requirePassword: !isEdit });
   if (errors.length > 0) {
+    // The typed values stay in the dialog so the administrator can correct the
+    // confirmation instead of retyping the whole account.
     showFormError(messages, errors);
+    markPasswordConfirmation(errors);
     return;
   }
 
@@ -448,9 +536,13 @@ async function handleSubmit(context) {
 }
 
 async function handleAction(action, id, context) {
-  if (savePending || deletePending) return;
+  if (savePending || rowActionPending) return;
   const { messages } = context;
-  if (action === 'delete') editRequestId += 1;
+  // Deleting and changing the activity state both supersede a pending edit
+  // lookup, so a dialog can never open for a row that is being changed.
+  if (action === 'delete' || action === ACTION_ACTIVATE || action === ACTION_DEACTIVATE) {
+    editRequestId += 1;
+  }
   if (action === 'edit') {
     const requestId = ++editRequestId;
     // Re-read the account from the server so the form never trusts a stale row.
@@ -462,6 +554,11 @@ async function handleAction(action, id, context) {
       if (requestId !== editRequestId) return;
       showToast(context.messages, errorMessageKey(error), 'error');
     }
+    return;
+  }
+
+  if (action === ACTION_ACTIVATE || action === ACTION_DEACTIVATE) {
+    await handleActivity(action, id, context);
     return;
   }
 
@@ -480,7 +577,7 @@ async function handleAction(action, id, context) {
   if (!confirmed) return;
 
   beginRefreshFocus({ action: 'delete', id });
-  setDeletePending(true);
+  setRowActionPending(true);
   try {
     await deleteAdminUser(id);
     showToast(context.messages, 'admin.success.delete');
@@ -492,7 +589,63 @@ async function handleAction(action, id, context) {
   } catch (error) {
     showToast(context.messages, errorMessageKey(error), 'error');
   } finally {
-    setDeletePending(false);
+    setRowActionPending(false);
+    restoreRefreshFocus();
+    const active = document.activeElement;
+    if (!active?.isConnected || active.disabled) {
+      (document.querySelector('#userList [data-action]')
+        ?? document.getElementById('addUserBtn'))?.focus();
+    }
+  }
+}
+
+async function handleActivity(action, id, context) {
+  const { messages } = context;
+  const account = context.accounts.find((entry) => String(entry.id) === String(id));
+  if (!account) return;
+  const expectedActive = account.is_active !== false;
+  const nextActive = action === ACTION_ACTIVATE;
+  // The dialog names the account and states the exact effect: deactivating ends
+  // its access and its sessions right away while keeping every record, and
+  // reactivating restores the login without restoring revoked sessions.
+  const confirmed = await showConfirm({
+    title: t(messages, nextActive ? 'admin.activateTitle' : 'admin.deactivateTitle'),
+    message: t(messages, nextActive ? 'admin.activateConfirm' : 'admin.deactivateConfirm', {
+      email: account.email,
+    }),
+    icon: nextActive ? 'user-check' : 'user-x',
+    confirmLabel: t(messages, nextActive ? 'admin.activate' : 'admin.deactivate'),
+    cancelLabel: t(messages, 'admin.cancel'),
+    confirmButtonClass: nextActive ? 'btn-primary' : 'btn-danger',
+  });
+  if (!confirmed) return;
+
+  // A refused transition leaves the clicked control in place; a successful one
+  // offers the opposite action, so only the tracked target changes afterwards.
+  beginRefreshFocus({ action, id });
+  setRowActionPending(true);
+  try {
+    await setAdminUserActivity(id, { active: nextActive, expectedActive });
+    showToast(context.messages, nextActive ? 'admin.success.activate' : 'admin.success.deactivate');
+    try {
+      await reload(context);
+    } catch {
+      showListError(context, 'admin.refreshError');
+    }
+    retargetRefreshFocus({ action: nextActive ? ACTION_DEACTIVATE : ACTION_ACTIVATE, id });
+  } catch (error) {
+    showToast(context.messages, errorMessageKey(error), 'error');
+    // A refused transition means this list no longer shows the real state, so
+    // the list is refreshed instead of leaving a stale row to be clicked again.
+    if (errorCode(error) === 'activityConflict') {
+      try {
+        await reload(context);
+      } catch {
+        showListError(context, 'admin.refreshError');
+      }
+    }
+  } finally {
+    setRowActionPending(false);
     restoreRefreshFocus();
     const active = document.activeElement;
     if (!active?.isConnected || active.disabled) {
@@ -522,7 +675,7 @@ export async function initAdminPage() {
   };
 
   document.getElementById('addUserBtn').addEventListener('click', () => {
-    if (savePending || operationPending || deletePending) return;
+    if (savePending || operationPending || rowActionPending) return;
     editRequestId += 1;
     openModal('add', null, context);
   });
@@ -535,6 +688,13 @@ export async function initAdminPage() {
   document.getElementById('userForm').addEventListener('submit', (event) => {
     event.preventDefault();
     handleSubmit(context);
+  });
+  // Correcting the confirmation clears the field's association with the error
+  // box; the box itself stays until the next submit, exactly like the other
+  // grouped validation errors.
+  document.getElementById('userPasswordConfirm').addEventListener('input', (event) => {
+    event.target.classList.remove('input-error');
+    event.target.removeAttribute('aria-invalid');
   });
   document.getElementById('userList').addEventListener('click', (event) => {
     if (savePending || operationPending) return;

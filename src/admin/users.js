@@ -11,13 +11,20 @@ const { findAccountByEmail } = require('./operations');
 
 const ACCOUNT_ROLES = ['user', 'admin'];
 const ADMIN_ROLE = 'admin';
+const USER_ROLE = 'user';
 const CREATE_FIELDS = ['first_name', 'last_name', 'email', 'password'];
 const UPDATE_FIELDS = ['first_name', 'last_name', 'email'];
 const PRIVILEGE_FIELDS = ['role', 'expected_role'];
+// The activity state is never a form value: creation always produces an active
+// account and the transition has its own endpoint, so a body carrying any of
+// these names is refused instead of quietly ignored.
+const ACTIVITY_STATE_FIELDS = ['is_active', 'active', 'status'];
+const ACTIVITY_FIELDS = ['active', 'expected_active'];
 
 const ACTION_CREATED = 'account_created';
 const ACTION_UPDATED = 'account_updated';
 const ACTION_DELETED = 'account_deleted';
+const ACTION_ACTIVITY_CHANGED = 'account_activity_changed';
 
 // Every failure carries a stable machine code alongside the HTTP status so the
 // routes stay thin and the interface can localize without parsing prose.
@@ -67,6 +74,17 @@ function rejectPrivilegeFields(body) {
   }
 }
 
+function rejectActivityStateFields(body) {
+  const field = ACTIVITY_STATE_FIELDS.find((key) => Object.prototype.hasOwnProperty.call(body, key));
+  if (field) {
+    throw new AdminUserError(
+      400,
+      'activityFieldForbidden',
+      `The ${field} field cannot be set here. Accounts are always created active and the activity state changes through its own action.`
+    );
+  }
+}
+
 // Registration's own validation failures become admin errors with a stable code,
 // so every admin route answers with one error envelope. Only the registration
 // validators are wrapped, and they always fail with a `status`.
@@ -74,7 +92,7 @@ function mapRegistrationError(error) {
   return new AdminUserError(error.status, 'invalidRegistration', error.message);
 }
 
-const ACCOUNT_COLUMNS = 'id, email, first_name, last_name, role, created_at';
+const ACCOUNT_COLUMNS = 'id, email, first_name, last_name, role, is_active, created_at';
 
 function publicAccount(row) {
   return {
@@ -83,6 +101,9 @@ function publicAccount(row) {
     first_name: row.first_name,
     last_name: row.last_name,
     role: row.role,
+    // A row without the column predates the activity state; treat it as active
+    // so no account is presented as suspended because of a missing field.
+    is_active: row.is_active === undefined ? true : Boolean(row.is_active),
     created_at: row.created_at ?? null,
   };
 }
@@ -153,6 +174,7 @@ function getAccount(db, id) {
 async function createAccount(db, actor, payload) {
   const body = payload ?? {};
   rejectPrivilegeFields(body);
+  rejectActivityStateFields(body);
   rejectUnknownFields(body, CREATE_FIELDS);
 
   // Registration owns email normalization, the email pattern, the password
@@ -215,6 +237,7 @@ function updateAccount(db, actor, id, payload) {
   const accountId = normalizeAccountId(id);
   const body = payload ?? {};
   rejectPrivilegeFields(body);
+  rejectActivityStateFields(body);
   rejectUnknownFields(body, UPDATE_FIELDS);
 
   const updates = {};
@@ -276,6 +299,93 @@ function updateAccount(db, actor, id, payload) {
   return apply.immediate();
 }
 
+function activityName(isActive) {
+  return isActive ? 'active' : 'inactive';
+}
+
+// Deactivating is reversible and destructive only to the account's access, so
+// it is limited to regular accounts and never to the signed-in one. The
+// transition re-reads the target inside the same immediate transaction that
+// writes the state, the session revocation and the audit row, and it never
+// trusts the role or state the browser displayed: `expected_active` is the
+// state the interface acted on, so a click based on a stale list is refused
+// with a conflict instead of toggling whatever the current state happens to be.
+function setAccountActivity(db, actor, id, payload) {
+  const accountId = normalizeAccountId(id);
+  const body = payload ?? {};
+  rejectPrivilegeFields(body);
+  rejectUnknownFields(body, ACTIVITY_FIELDS);
+  if (typeof body.active !== 'boolean' || typeof body.expected_active !== 'boolean') {
+    throw new AdminUserError(
+      400,
+      'invalidActivity',
+      'Both active and expected_active must be booleans.'
+    );
+  }
+  const nextActive = body.active;
+  const expectedActive = body.expected_active;
+  const apply = db.transaction(() => {
+    const current = db
+      .prepare(`SELECT ${ACCOUNT_COLUMNS} FROM users WHERE id = ?`)
+      .get(accountId);
+    if (!current) {
+      throw new AdminUserError(404, 'accountNotFound', 'Account not found.');
+    }
+    if (accountId === actor?.id) {
+      throw new AdminUserError(
+        400,
+        'selfActivityForbidden',
+        'You cannot change your own account activity from the administration panel.'
+      );
+    }
+    if (current.role !== USER_ROLE) {
+      throw new AdminUserError(
+        403,
+        'privilegedTarget',
+        'Only regular accounts can be activated or deactivated.'
+      );
+    }
+    const currentActive = Boolean(current.is_active);
+    if (currentActive !== expectedActive) {
+      throw new AdminUserError(
+        409,
+        'activityConflict',
+        'This account changed state since the list was loaded. Reload and try again.'
+      );
+    }
+    // A repeated request that already matches the requested state is a no-op:
+    // no session is touched and no transition is audited.
+    if (currentActive === nextActive) {
+      return publicAccount(current);
+    }
+
+    const result = db
+      .prepare('UPDATE users SET is_active = ? WHERE id = ?')
+      .run(nextActive ? 1 : 0, accountId);
+    if (result.changes !== 1) {
+      throw new AdminUserError(404, 'accountNotFound', 'Account not found.');
+    }
+    // Access ends immediately and everywhere: the sessions are revoked in the
+    // same transaction as the state, and the central session lookup refuses
+    // inactive accounts independently. Both directions revoke, so a suspended
+    // account never keeps a token that reactivation would silently honour: it
+    // has to sign in again, which is the only way to obtain a fresh session.
+    db.prepare('DELETE FROM sessions WHERE user_id = ?').run(accountId);
+
+    const account = publicAccount(
+      db.prepare(`SELECT ${ACCOUNT_COLUMNS} FROM users WHERE id = ?`).get(accountId)
+    );
+    recordAudit(db, {
+      actor,
+      target: account,
+      action: ACTION_ACTIVITY_CHANGED,
+      details: { from: activityName(currentActive), to: activityName(nextActive) },
+    });
+    return account;
+  });
+  return apply.immediate();
+}
+
 function deleteAccount(db, actor, id) {
   const accountId = normalizeAccountId(id);
   const remove = db.transaction(() => {
@@ -328,5 +438,6 @@ module.exports = {
   getAccount,
   listAccounts,
   publicAccount,
+  setAccountActivity,
   updateAccount,
 };
