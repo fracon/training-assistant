@@ -548,7 +548,7 @@
       "request": "The request could not be completed. Try again."
     }
   },
-  "feedback": {
+  "globalFeedback": {
     "open": "Send feedback",
     "title": "Send feedback",
     "close": "Close feedback dialog",

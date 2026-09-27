@@ -298,7 +298,7 @@ function buildTopbar() {
   const feedback = el('button', 'topbar-icon-btn');
   feedback.type = 'button';
   feedback.id = 'feedbackTrigger';
-  feedback.setAttribute('data-i18n-aria-label', 'feedback.open');
+  feedback.setAttribute('data-i18n-aria-label', 'globalFeedback.open');
   feedback.setAttribute('aria-label', 'Send feedback');
   feedback.appendChild(icon('message-square-plus'));
   actions.appendChild(feedback);
@@ -964,7 +964,7 @@ export async function initShell({ active } = {}) {
   wireFeedback({
     getMessages: () => shellI18n.messages,
     refreshIcons,
-    showSuccess: () => showShellToast(shellI18n.messages, 'feedback.success'),
+    showSuccess: () => showShellToast(shellI18n.messages, 'globalFeedback.success'),
   });
 
   // Check for an active training cycle and disable dependent items.

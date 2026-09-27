@@ -38,12 +38,12 @@ function buildModal(messages) {
   header.className = 'modal-header';
   const title = document.createElement('h2');
   title.id = 'feedbackTitle';
-  title.dataset.i18n = 'feedback.title';
+  title.dataset.i18n = 'globalFeedback.title';
   const close = document.createElement('button');
   close.type = 'button';
   close.className = 'modal-close';
   close.id = 'feedbackClose';
-  close.dataset.i18nAriaLabel = 'feedback.close';
+  close.dataset.i18nAriaLabel = 'globalFeedback.close';
   close.appendChild(icon('x'));
   header.append(title, close);
   card.appendChild(header);
@@ -51,7 +51,7 @@ function buildModal(messages) {
   const intro = document.createElement('p');
   intro.id = 'feedbackDescription';
   intro.className = 'feedback-intro';
-  intro.dataset.i18n = 'feedback.intro';
+  intro.dataset.i18n = 'globalFeedback.intro';
   card.appendChild(intro);
 
   const form = document.createElement('form');
@@ -62,11 +62,11 @@ function buildModal(messages) {
   const typeLabel = document.createElement('label');
   typeLabel.className = 'field-label';
   typeLabel.htmlFor = 'feedbackType';
-  typeLabel.dataset.i18n = 'feedback.type';
+  typeLabel.dataset.i18n = 'globalFeedback.type';
   const type = document.createElement('select');
   type.id = 'feedbackType';
   type.name = 'type';
-  for (const [value, key] of [['bug', 'feedback.types.bug'], ['suggestion', 'feedback.types.suggestion'], ['other', 'feedback.types.other']]) {
+  for (const [value, key] of [['bug', 'globalFeedback.types.bug'], ['suggestion', 'globalFeedback.types.suggestion'], ['other', 'globalFeedback.types.other']]) {
     const option = document.createElement('option');
     option.value = value;
     option.dataset.i18n = key;
@@ -80,14 +80,14 @@ function buildModal(messages) {
   const descriptionLabel = document.createElement('label');
   descriptionLabel.className = 'field-label';
   descriptionLabel.htmlFor = 'feedbackText';
-  descriptionLabel.dataset.i18n = 'feedback.description';
+  descriptionLabel.dataset.i18n = 'globalFeedback.description';
   const textarea = document.createElement('textarea');
   textarea.id = 'feedbackText';
   textarea.name = 'description';
   textarea.rows = 6;
   textarea.maxLength = MAX_DESCRIPTION_LENGTH;
   textarea.required = true;
-  textarea.dataset.i18nPlaceholder = 'feedback.descriptionPlaceholder';
+  textarea.dataset.i18nPlaceholder = 'globalFeedback.descriptionPlaceholder';
   const count = document.createElement('span');
   count.className = 'feedback-count';
   count.id = 'feedbackCount';
@@ -97,7 +97,7 @@ function buildModal(messages) {
   const source = document.createElement('p');
   source.className = 'feedback-source';
   const sourceLabel = document.createElement('span');
-  sourceLabel.dataset.i18n = 'feedback.source';
+  sourceLabel.dataset.i18n = 'globalFeedback.source';
   const sourceValue = document.createElement('code');
   sourceValue.id = 'feedbackSourceValue';
   source.append(sourceLabel, ' ', sourceValue);
@@ -116,14 +116,14 @@ function buildModal(messages) {
   cancel.type = 'button';
   cancel.className = 'btn-secondary';
   cancel.id = 'feedbackCancel';
-  cancel.dataset.i18n = 'feedback.cancel';
+  cancel.dataset.i18n = 'globalFeedback.cancel';
   const submit = document.createElement('button');
   submit.type = 'submit';
   submit.className = 'btn-primary';
   submit.id = 'feedbackSubmit';
   submit.appendChild(icon('send'));
   const submitLabel = document.createElement('span');
-  submitLabel.dataset.i18n = 'feedback.submit';
+  submitLabel.dataset.i18n = 'globalFeedback.submit';
   submit.appendChild(submitLabel);
   actions.append(cancel, submit);
   form.appendChild(actions);
@@ -142,6 +142,7 @@ export function wireFeedback({ getMessages, refreshIcons = () => {}, showSuccess
   let previousFocus;
   let sourcePath = '';
   let pending = false;
+  let errorKey;
 
   const messages = () => getMessages();
   const close = () => {
@@ -169,7 +170,8 @@ export function wireFeedback({ getMessages, refreshIcons = () => {}, showSuccess
         const activeMessages = messages();
         const description = text.value.trim();
         if (!description) {
-          modal.querySelector('#feedbackError').textContent = translate(activeMessages, 'feedback.required');
+          errorKey = 'globalFeedback.required';
+          modal.querySelector('#feedbackError').textContent = translate(activeMessages, errorKey);
           modal.querySelector('#feedbackError').classList.remove('hidden');
           modal.querySelector('#feedbackError').focus();
           return;
@@ -186,7 +188,8 @@ export function wireFeedback({ getMessages, refreshIcons = () => {}, showSuccess
           close();
           showSuccess?.();
         } catch (error) {
-          modal.querySelector('#feedbackError').textContent = translate(messages(), 'feedback.sendError');
+          errorKey = 'globalFeedback.sendError';
+          modal.querySelector('#feedbackError').textContent = translate(messages(), errorKey);
           modal.querySelector('#feedbackError').classList.remove('hidden');
           modal.querySelector('#feedbackError').focus();
         } finally {
@@ -199,6 +202,7 @@ export function wireFeedback({ getMessages, refreshIcons = () => {}, showSuccess
     }
     sourcePath = window.location.pathname;
     modal.querySelector('#feedbackSourceValue').textContent = sourcePath;
+    errorKey = null;
     modal.querySelector('#feedbackError').classList.add('hidden');
     modal.classList.remove('hidden');
     previousFocus = document.activeElement;
@@ -212,7 +216,7 @@ export function wireFeedback({ getMessages, refreshIcons = () => {}, showSuccess
     if (!modal) return;
     applyTranslations(modal, messages());
     if (!modal.querySelector('#feedbackError').classList.contains('hidden')) {
-      modal.querySelector('#feedbackError').textContent = translate(messages(), 'feedback.required');
+      modal.querySelector('#feedbackError').textContent = translate(messages(), errorKey || 'globalFeedback.sendError');
     }
     refreshIcons();
   });

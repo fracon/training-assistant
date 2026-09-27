@@ -548,7 +548,7 @@
       "request": "Não foi possível concluir a solicitação. Tente novamente."
     }
   },
-  "feedback": {
+  "globalFeedback": {
     "open": "Enviar feedback",
     "title": "Enviar feedback",
     "close": "Fechar diálogo de feedback",
