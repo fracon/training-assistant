@@ -267,6 +267,53 @@ not instrumentation coverage of the frontend. Frontend behavior tests remain
 mandatory when corresponding frontend behavior changes. Run `git diff --check`
 before committing.
 
+## Code Review Rules
+
+Use these rules when reviewing behavior changes; keep the detailed product
+contracts and the GOLDEN RULES in this document as the source of truth.
+
+- **Authorization and ownership:** A privilege or cross-account data leak can
+  occur when the UI is trusted, a stale role is used, or an object is fetched
+  without the authenticated user's scope. Apply to every protected route and
+  account operation. Verify authorization in the backend against the current
+  database user row, require exactly `admin` for admin-only actions, scope every
+  read/write to its owner, and keep web CRUD unable to promote or edit roles;
+  use the privileged bootstrap/promotion commands described in *Account roles
+  and administrative bootstrap*.
+- **Persistence and concurrency:** Partial writes, stale actors, unrevoked
+  sessions, or an older asynchronous response can leave security or user data
+  inconsistent, or update the wrong dialog/list. Apply when a change persists
+  data, revokes access, replaces state, or has overlapping requests. Trace all
+  durable effects and failure paths, revalidate security-sensitive state inside
+  the transaction that commits it, make related changes atomic, revoke sessions
+  when the contract requires it, and ignore stale responses or block actions
+  until required state has loaded, as specified by the relevant API contract.
+- **Accessible, consistent interface:** A visually or technically working flow
+  can still strand keyboard users, expose hidden controls, lose context, or
+  diverge from Kinesis's interaction language. Apply when a change affects
+  screens, forms, menus, modals, dialogs, or async rerendering. Check observable
+  focus restoration, keyboard containment, accessible names/states, reduced
+  motion, responsive behavior, and hidden/inert content; reuse the established
+  components and tokens and inspect the result against the GOLDEN RULE —
+  DESIGN SYSTEM FIRST / VISUAL CONSISTENCY.
+
+### Review flow
+
+Before requesting review on GitHub, the implementing agent should critique the
+complete diff against `main` in one pass: contracts, authorization, error paths,
+concurrency, accessibility, compatibility, documentation, and pertinent tests.
+Correct the findings together. Once implementation is ready, request a Codex
+review on GitHub and consolidate its findings into a coordinated correction;
+do not automatically request another review after every corrective commit.
+Request an additional review consciously when a correction substantially
+changes authorization, persistence, architecture, or the security surface.
+
+Classify each review comment by evidence and impact. Fix real problems; when a
+finding does not apply, answer with the concrete justification and evidence.
+Resolved threads are not a substitute for validation. Distinguish local test
+results from checks published on GitHub, and do not promise that one Codex pass
+will find every issue.
+
 ## AI Coach weekly availability
 
 - `/api/ai-coach/availability` is authenticated and user-scoped. Store one record per weekday with `can_train`, canonical period IDs (`before_08`, `08_12`, `12_14`, `14_18`, `after_18`), `available_minutes` as whole minutes, and the exact `location` string.
