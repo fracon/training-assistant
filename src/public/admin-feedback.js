@@ -9,6 +9,8 @@ let detailTrap;
 let selected;
 let detailState;
 
+const LOAD_RESULT = Object.freeze({ success: 'success', failed: 'failed', replaced: 'replaced' });
+
 function t(key, params) { return translate(context.i18n.messages, key, params); }
 function errorKey(error) { return error?.codes?.[0] === 'feedbackNotFound' ? 'feedbackAdmin.notFound' : 'feedbackAdmin.requestError'; }
 function statusLabel(status) { return t(`feedbackAdmin.statuses.${status === 'in_progress' ? 'inProgress' : status}`); }
@@ -41,7 +43,7 @@ function setState(state = {}) {
 }
 
 async function load(reset = true) {
-  if (!reset && context.loading) return false;
+  if (!reset && context.loading) return LOAD_RESULT.replaced;
   const generation = reset ? context.generation + 1 : context.generation;
   if (reset) {
     context.generation = generation;
@@ -58,7 +60,7 @@ async function load(reset = true) {
   more.disabled = true;
   try {
     const payload = await fetchAdminFeedback({ status: document.getElementById('feedbackStatusFilter').value, type: document.getElementById('feedbackTypeFilter').value, page, limit: 25 });
-    if (generation !== context.generation || requestId !== context.requestId) return false;
+    if (generation !== context.generation || requestId !== context.requestId) return LOAD_RESULT.replaced;
     const incoming = reset ? payload.feedback : [...context.rows, ...payload.feedback];
     context.rows = [...new Map(incoming.map((item) => [item.id, item])).values()];
     context.page = page;
@@ -66,18 +68,23 @@ async function load(reset = true) {
     renderRows(context.rows);
     setState({ loading: false, error: false, empty: context.rows.length === 0 });
     more.classList.toggle('hidden', context.rows.length >= context.total);
-    return true;
+    return LOAD_RESULT.success;
   } catch (error) {
-    if (generation !== context.generation || requestId !== context.requestId) return false;
+    if (generation !== context.generation || requestId !== context.requestId) return LOAD_RESULT.replaced;
     setState({ loading: false, error: true, empty: false });
     more.classList.add('hidden');
-    return false;
+    return LOAD_RESULT.failed;
   } finally {
     if (generation === context.generation && requestId === context.requestId) {
       context.loading = false;
       more.disabled = false;
     }
   }
+}
+
+function restoreFocusAfterRefresh(trigger, focusAtRefresh) {
+  const active = document.activeElement;
+  if (active === focusAtRefresh || active === document.body || !isVisible(active)) restoreDetailFocus(trigger);
 }
 
 function isVisible(element) {
@@ -163,10 +170,11 @@ async function saveDetail() {
     await updateAdminFeedback(target.id, { status, internal_note: internalNote });
     if (detailState !== target) return;
     closeDetail({ expectedState: target });
+    const focusAtRefresh = document.activeElement;
     const refreshed = await load(true);
-    restoreDetailFocus(target.trigger);
+    if (refreshed === LOAD_RESULT.success) restoreFocusAfterRefresh(target.trigger, focusAtRefresh);
     showToast('feedbackAdmin.saved');
-    if (!refreshed) setState({ error: true, empty: false });
+    if (refreshed === LOAD_RESULT.failed) setState({ error: true, empty: false });
   } catch (error) {
     if (detailState === target) {
       target.pending = false;
@@ -187,13 +195,14 @@ async function deleteDetail() {
     await deleteAdminFeedback(target.id);
     if (detailState !== target) return;
     closeDetail({ expectedState: target });
+    const focusAtRefresh = document.activeElement;
     context.rows = context.rows.filter((item) => item.id !== target.id);
     renderRows(context.rows);
     setState({ empty: context.rows.length === 0 });
     const refreshed = await load(true);
-    restoreDetailFocus(target.trigger);
+    if (refreshed === LOAD_RESULT.success) restoreFocusAfterRefresh(target.trigger, focusAtRefresh);
     showToast('feedbackAdmin.deleted');
-    if (!refreshed) setState({ error: true, empty: false });
+    if (refreshed === LOAD_RESULT.failed) setState({ error: true, empty: false });
   } catch (error) {
     if (detailState === target) {
       target.pending = false;
