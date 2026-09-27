@@ -124,6 +124,7 @@
       "shoes": "Rotação de Tênis",
       "administration": "Administração",
       "users": "Usuários"
+      ,"feedback": "Feedbacks"
     },
     "soon": "Em breve",
     "noCycle": "Nenhum ciclo ativo",
@@ -546,6 +547,29 @@
       "noChanges": "Faça pelo menos uma alteração antes de salvar.",
       "request": "Não foi possível concluir a solicitação. Tente novamente."
     }
+  },
+  "feedback": {
+    "open": "Enviar feedback",
+    "title": "Enviar feedback",
+    "close": "Fechar diálogo de feedback",
+    "intro": "Conte sobre um erro, uma ideia ou qualquer outra coisa que possa melhorar o Kinesis.",
+    "type": "Tipo",
+    "types": { "bug": "Erro", "suggestion": "Sugestão", "other": "Outro" },
+    "description": "Descrição",
+    "descriptionPlaceholder": "O que aconteceu ou o que você gostaria de ver?",
+    "source": "Tela",
+    "required": "Descreva seu feedback antes de enviar.",
+    "sendError": "Não foi possível enviar seu feedback. O texto continua aqui; tente novamente.",
+    "cancel": "Cancelar",
+    "submit": "Enviar feedback",
+    "success": "Obrigado — seu feedback foi enviado.",
+    "maxHint": "Até 5.000 caracteres."
+  },
+  "feedbackAdmin": {
+    "pageTitle": "Feedbacks - Kinesis", "title": "Feedbacks", "subtitle": "Consulte os feedbacks enviados pelos usuários do Kinesis.",
+    "status": "Status", "type": "Tipo", "allStatuses": "Todos os status", "allTypes": "Todos os tipos", "loading": "Carregando feedbacks…", "loadError": "Não foi possível carregar os feedbacks.", "retry": "Tentar novamente", "empty": "Nenhum feedback corresponde aos filtros.", "loadMore": "Carregar mais", "view": "Ver", "detail": "Detalhes do feedback", "close": "Fechar", "internalNote": "Nota interna", "save": "Salvar triagem", "delete": "Excluir", "cancel": "Cancelar", "deleteTitle": "Excluir feedback", "deleteConfirm": "Excluir este feedback permanentemente?", "saved": "Triagem do feedback salva.", "deleted": "Feedback excluído.", "notFound": "Este feedback não existe mais.", "requestError": "Não foi possível concluir a solicitação. Tente novamente.",
+    "types": { "bug": "Erro", "suggestion": "Sugestão", "other": "Outro" },
+    "statuses": { "new": "Novo", "inProgress": "Em andamento", "resolved": "Resolvido" }
   },
   "shoes": {
     "title": "Tênis",

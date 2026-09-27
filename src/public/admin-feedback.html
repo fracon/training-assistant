@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="/assets/brand/favicon.png?v=5" type="image/png">
+  <title data-i18n="feedbackAdmin.pageTitle">Feedbacks - Kinesis</title>
+  <link rel="stylesheet" href="shared/shell.css">
+  <link rel="stylesheet" href="shared/components.css">
+  <link rel="stylesheet" href="admin-feedback.css">
+</head>
+<body>
+  <main id="appView">
+    <section class="feedback-admin-page" aria-labelledby="feedbackAdminTitle">
+      <header class="feedback-admin-header">
+        <div><h1 id="feedbackAdminTitle" data-i18n="feedbackAdmin.title">Feedbacks</h1><p data-i18n="feedbackAdmin.subtitle">Review feedback sent by Kinesis users.</p></div>
+      </header>
+      <div class="feedback-filters" aria-label="Feedback filters">
+        <label class="field-label" for="feedbackStatusFilter" data-i18n="feedbackAdmin.status">Status</label>
+        <select id="feedbackStatusFilter"><option value="" data-i18n="feedbackAdmin.allStatuses">All statuses</option><option value="new" data-i18n="feedbackAdmin.statuses.new">New</option><option value="in_progress" data-i18n="feedbackAdmin.statuses.inProgress">In progress</option><option value="resolved" data-i18n="feedbackAdmin.statuses.resolved">Resolved</option></select>
+        <label class="field-label" for="feedbackTypeFilter" data-i18n="feedbackAdmin.type">Type</label>
+        <select id="feedbackTypeFilter"><option value="" data-i18n="feedbackAdmin.allTypes">All types</option><option value="bug" data-i18n="feedbackAdmin.types.bug">Bug</option><option value="suggestion" data-i18n="feedbackAdmin.types.suggestion">Suggestion</option><option value="other" data-i18n="feedbackAdmin.types.other">Other</option></select>
+      </div>
+      <div id="feedbackAdminLoading" class="feedback-admin-state" role="status" aria-live="polite" data-i18n="feedbackAdmin.loading">Loading feedback…</div>
+      <div id="feedbackAdminError" class="feedback-admin-state hidden" role="alert"><span data-i18n="feedbackAdmin.loadError">Feedback could not be loaded.</span> <button id="feedbackAdminRetry" class="btn-secondary" type="button" data-i18n="feedbackAdmin.retry">Try again</button></div>
+      <div id="feedbackAdminEmpty" class="feedback-admin-state hidden" data-i18n="feedbackAdmin.empty">No feedback matches these filters.</div>
+      <ul id="feedbackList" class="feedback-list"></ul>
+      <button id="feedbackLoadMore" class="btn-secondary feedback-load-more hidden" type="button" data-i18n="feedbackAdmin.loadMore">Load more</button>
+    </section>
+  </main>
+  <div id="feedbackDetailModal" class="modal-backdrop hidden">
+    <div class="modal-card feedback-detail-card" role="dialog" aria-modal="true" aria-labelledby="feedbackDetailTitle">
+      <header class="modal-header"><h2 id="feedbackDetailTitle" data-i18n="feedbackAdmin.detail">Feedback detail</h2><button id="feedbackDetailClose" class="modal-close" type="button" data-i18n-aria-label="feedbackAdmin.close" aria-label="Close"><i data-lucide="x"></i></button></header>
+      <div id="feedbackDetailBody"></div>
+      <div class="form-actions"><button id="feedbackDetailDelete" class="btn-secondary btn-danger" type="button" data-i18n="feedbackAdmin.delete">Delete</button><button id="feedbackDetailSave" class="btn-primary" type="button" data-i18n="feedbackAdmin.save">Save triage</button></div>
+    </div>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite"><span class="toast-icon"><i data-lucide="check-circle"></i></span><span class="toast-text"></span></div>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="shared/shell.js" type="module"></script>
+  <script src="admin-feedback.js" type="module"></script>
+</body>
+</html>

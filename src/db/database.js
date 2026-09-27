@@ -120,6 +120,19 @@ CREATE TABLE IF NOT EXISTS training_cycles (
   created_at     TEXT    NOT NULL DEFAULT (datetime('now')),
   updated_at     TEXT    NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS feedback (
+  id              INTEGER PRIMARY KEY,
+  author_user_id  INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  author_email    TEXT NOT NULL,
+  type            TEXT NOT NULL CHECK (type IN ('bug', 'suggestion', 'other')),
+  description     TEXT NOT NULL,
+  pathname        TEXT NOT NULL,
+  status          TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'in_progress', 'resolved')),
+  internal_note   TEXT NOT NULL DEFAULT '',
+  created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at      TEXT
+);
 `;
 
 function resolveDatabaseFile(cwd) {
@@ -352,6 +365,25 @@ function migrateDatabase(db) {
     db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(auditMarker);
   });
   initializeAdminAudit();
+
+  const feedbackMarker = '2026-09-feedback-v1';
+  const initializeFeedback = db.transaction(() => {
+    if (db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(feedbackMarker)) return;
+    db.exec(`CREATE TABLE IF NOT EXISTS feedback (
+      id INTEGER PRIMARY KEY,
+      author_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      author_email TEXT NOT NULL,
+      type TEXT NOT NULL CHECK (type IN ('bug', 'suggestion', 'other')),
+      description TEXT NOT NULL,
+      pathname TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'in_progress', 'resolved')),
+      internal_note TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT
+    )`);
+    db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(feedbackMarker);
+  });
+  initializeFeedback();
 }
 
 function initializeDatabase(db) {

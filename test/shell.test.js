@@ -1069,7 +1069,7 @@ test('reapplyPasswordErrors is a no-op while the error box stays hidden', () => 
 
 test('the administration group points at the account panel and is localized in both languages', () => {
   assert.equal(ADMIN_NAV_GROUP.id, 'administration');
-  assert.deepEqual(ADMIN_NAV_GROUP.items.map((item) => item.id), ['admin-users']);
+  assert.deepEqual(ADMIN_NAV_GROUP.items.map((item) => item.id), ['admin-users', 'admin-feedback']);
   assert.equal(ADMIN_NAV_GROUP.items[0].href, '/admin-users.html');
   assert.equal(ADMIN_NAV_GROUP.items[0].icon, 'users');
   assert.equal(ADMIN_NAV_GROUP.items[0].disabled, false);

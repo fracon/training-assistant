@@ -1,3 +1,5 @@
+@import url('../feedback.css');
+
 /* ---------- App Shell layout ---------- */
 
 body.shell-loading > main { visibility: hidden; }
@@ -34,6 +36,32 @@ body.shell-mounted {
   align-items: center;
   min-height: 2.75rem;
 }
+
+.topbar-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.topbar-icon-btn:hover {
+  color: var(--accent-deep);
+  background: rgba(111, 144, 112, 0.1);
+}
+
+.topbar-icon-btn:focus-visible {
+  outline: 2px solid var(--accent-deep);
+  outline-offset: 2px;
+}
+
+.topbar-icon-btn svg { width: 18px; height: 18px; }
 
 .main-content {
   flex: 1;

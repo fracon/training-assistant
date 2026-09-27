@@ -1,0 +1,8 @@
+@import url('./shared/theme.css');
+
+.feedback-modal-card { max-width: 520px; }
+.feedback-intro { margin: -0.5rem 0 1rem; color: var(--muted); font-size: 0.86rem; line-height: 1.45; }
+.feedback-source { margin: -0.25rem 0 1rem; color: var(--muted); font-size: 0.78rem; }
+.feedback-source code { color: var(--ink); font-family: inherit; font-weight: 700; }
+.feedback-count { display: block; margin-top: 0.3rem; text-align: right; color: var(--muted); font-size: 0.72rem; }
+.feedback-modal-card textarea { min-height: 8rem; resize: vertical; }
