@@ -1387,6 +1387,14 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
         sidebarOverflow:getComputedStyle(document.querySelector('.sidebar')).overflowX,
         controlsReachable:[...document.querySelectorAll('.sidebar-brand, .sidebar-nav, .sidebar-footer')]
           .every((node)=>node.scrollWidth<=node.clientWidth || node.parentElement.scrollWidth>node.parentElement.clientWidth),
+        // The activity badge and its row action are the widest part of a row,
+        // so both must stay inside the row instead of being clipped away.
+        rowOverflow:[...document.querySelectorAll('.user-row')]
+          .some((row)=>row.scrollWidth>row.clientWidth),
+        badgesVisible:[...document.querySelectorAll('.user-status')]
+          .every((node)=>node.getBoundingClientRect().width>0),
+        actionsVisible:[...document.querySelectorAll('.user-row [data-action]')]
+          .every((node)=>node.getBoundingClientRect().width>0),
       })`);
       assert.deepEqual(narrow, {
         documentOverflow: false,
@@ -1395,6 +1403,9 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
         itemVisible: true,
         sidebarOverflow: width <= 640 ? 'auto' : 'hidden',
         controlsReachable: true,
+        rowOverflow: false,
+        badgesVisible: true,
+        actionsVisible: true,
       }, `the layout stays intact at ${width}px`);
     }
 
