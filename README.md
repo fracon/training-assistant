@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized prompts for an AI coach.
 
-Current application version: **0.14.0** (active development).
+Current application version: **0.15.0** (active development).
 
 ### Shoe mileage integrity
 
@@ -54,7 +54,9 @@ AI coaches are only as good as the data you give them. Exporting workouts by han
 ### Accounts & Access
 - **User accounts & security** — email/password registration and sign-in backed by Node's native `crypto` (`scrypt`) password hashing.
 - **Account roles** — every account has a database-constrained `user` or `admin` role. Public registration always creates `user`; admin status only comes from the privileged local bootstrap or promotion commands. Admin role does not bypass per-user ownership checks.
-- **Account administration** — an admin-only sidebar group opens `/admin-users.html` to list, create, edit identity data, and delete accounts. The group is absent from the DOM for everyone else, and the server independently gates both the page and `/api/admin/users*`. Web CRUD always creates regular users and rejects privilege fields; role grants are available only through the privileged local commands. Self-deletion and removing the last administrator are refused, and web mutations are written to an `admin_audit_log` trail that stores no credentials.
+- **Account administration** — an admin-only sidebar group opens `/admin-users.html` to list, create, edit identity data, activate or deactivate regular accounts, and delete accounts. The group is absent from the DOM for everyone else, and the server independently gates both the page and `/api/admin/users*`. Web CRUD always creates regular users and rejects privilege and activity-state fields; role grants are available only through the privileged local commands. Self-deletion and removing the last administrator are refused, and web mutations are written to an `admin_audit_log` trail that stores no credentials.
+- **Initial password confirmation** — creating an account asks for the initial password twice. A mismatch is explained in place, keeps everything already typed, and never reaches the network: the API accepts `password` only and rejects `password_confirmation` as an unknown field.
+- **Reversible account suspension** — deactivating a regular account ends its sessions immediately and blocks sign-in while keeping every training, cycle, shoe, and preference record. The state is a database-constrained `users.is_active` column, activation restores the login without restoring revoked sessions, and a correct password on a suspended account is refused with a localized message.
 - **Secure sessions** — 256-bit random session tokens stored in SQLite, delivered as `HttpOnly` / `Secure` / `SameSite=Lax` cookies with server-side expiry.
 - **Server-side route gating** — unauthenticated visitors are redirected to the login page by Fastify itself; the training tool is never rendered without a valid session.
 - **User dropdown menu** — the authenticated user badge opens **Setup guide**, **Change Password**, and **Preferences**. Logout remains a separate topbar action.
@@ -389,7 +391,9 @@ the operator to promote that account. For an existing account, run
 `npm run admin:promote`; inspect the displayed identity and type `yes` to
 confirm. Promotion updates only `role`, revokes that account's existing
 sessions, and does not create missing users or change passwords, preferences,
-or onboarding.
+or onboarding. A suspended account is never promoted: the command reports it
+and stops before the confirmation, so administrator access is not granted to
+someone who could not sign in anyway.
 
 Both commands require an interactive TTY, use the same `DATABASE_FILE` setting
 as the server, and never accept a password argument. Cancellation and EOF leave
@@ -401,8 +405,9 @@ privileged because these commands can grant admin access.
 
 An administrator who signs in gets an **Administration** group at the bottom of
 the sidebar, linking to the **Users** page (`/admin-users.html`). That page lists
-every account with its name, email, role, and creation date, and supports
-creating regular users, editing identity fields, and deleting accounts. For everyone else the group is absent
+every account with its name, email, role, activity state, and creation date, and
+supports creating regular users, editing identity fields, activating or
+deactivating regular accounts, and deleting accounts. For everyone else the group is absent
 from the DOM entirely, so it is never in the layout or the tab order; the server
 independently redirects `/admin-users.html` to `/home.html` and answers
 `/api/admin/users*` with `403`, and `401` without a session. The role is read
@@ -410,16 +415,19 @@ from the database on every request. Role grants are not available in this web
 CRUD; use `npm run admin:promote` for an explicit local promotion.
 
 Administrators never see or edit another account's training, cycle, or shoe
-data. The API returns identification and role only.
+data. The API returns identification, role, and the activity state only.
 
 Safety rules enforced by `src/admin/users.js` inside the same write transaction
 that would persist the change:
 
-- The signed-in account cannot be deleted, and the last remaining administrator
-  cannot be deleted.
+- The signed-in account cannot be deleted or deactivated, and the last remaining
+  administrator cannot be deleted.
+- Only regular accounts can be activated or deactivated, so a transition can
+  never be used to hand back administrator access.
 - Account creation and identity edits reuse the application's registration
   validation, email normalization, and password hashing. Web creation always
-  assigns `user`; `role`, `expected_role`, and unknown fields are rejected.
+  assigns `user`; `role`, `expected_role`, `is_active`, `active`, `status`, and
+  unknown fields are rejected.
 - Unknown request fields are refused, so no column can be written indirectly.
 - Deleting an account removes its sessions, trainings, cycles, shoes, mileage
   ledger, and AI Coach availability through the existing cascades.
@@ -428,17 +436,65 @@ Only `admin:bootstrap` and `admin:promote` can grant administrator status.
 Promotion is a local privileged operation and revokes existing sessions for the
 promoted account.
 
-Every web create, identity update, and delete writes one row to
-`admin_audit_log` (added by the idempotent
-`2026-09-admin-account-audit-v1` migration) with the actor, the target, the
-action, and a timestamp. Identities are copied rather than joined, so the record
-of a deletion outlives the deleted account. The trail holds no password, hash,
-session token, or training value.
+Every web create, identity update, delete, and activity transition writes one row
+to `admin_audit_log` (added by the idempotent
+`2026-09-admin-account-audit-v1` migration, extended with the
+`account_activity_changed` action by `2026-09-account-activity-v1`) with the
+actor, the target, the action, and a timestamp. Identities are copied rather than
+joined, so the record of a deletion outlives the deleted account. A transition
+records only the states it moved between, as `{"from":"active","to":"inactive"}`.
+The trail holds no password, hash, session token, or training value.
+
+The same `2026-09-account-activity-v1` migration adds `users.is_active`, a
+constrained column defaulting to the active state. Every existing account is
+therefore active after the upgrade without a single row being rewritten, and
+re-running the migration changes nothing. Because SQLite cannot alter a `CHECK`
+constraint, that migration rebuilds `admin_audit_log` with the new action and
+copies the earlier rows, so the trail survives the upgrade.
 
 The audit table uses `id INTEGER PRIMARY KEY`: SQLite assigns IDs
 automatically, and there is no requirement to prevent ID reuse after deletion,
 so `AUTOINCREMENT` is intentionally not used. The existing `users.id` schema
 is unchanged.
+
+### Confirming the initial password
+
+Creating an account asks for the initial password twice, right below the
+password field. The confirmation is a frontend concern, like public registration:
+the dialog validates it, refuses a mismatch or an empty confirmation in the same
+grouped error box used by the other fields, marks the confirmation field
+(`aria-invalid` plus `aria-describedby` pointing at that box) and moves focus to
+it, and keeps every value already typed. The request body carries `password`
+only — `password_confirmation` is not a backend field and is rejected as an
+unknown one, so the confirmation is never transmitted, stored, or audited.
+
+### Activating and deactivating an account
+
+Each row shows its activity state next to the role badge. For a regular account
+that is not the signed-in one, a row action and a confirmation dialog offer the
+transition; both directions revoke the account's sessions inside the same
+transaction that writes the state, so access ends immediately and a reactivated
+account has to sign in again. Every record of a suspended account is kept —
+sessions end, trainings, cycles, shoes, mileage, and preferences do not change.
+
+The transition sends the state the interface acted on as `expected_active`
+alongside the requested `active`. The backend re-reads the account inside the
+write transaction, so a click based on a stale list is refused with `409
+activityConflict` and the page refreshes the list instead of flipping whatever
+the current state happens to be. A request that already matches the current
+state is a no-op: no session is touched and no transition is audited.
+
+Signing in with correct credentials on a suspended account answers `403` with the
+stable code `accountInactive`, which the sign-in page localizes. Wrong
+credentials and unknown addresses keep the same generic answer, so the state
+cannot be discovered without the real password, and no session is created.
+
+The password is always verified first, and the account is then re-read inside the
+same immediate transaction that inserts the session row. Verifying a password
+takes long enough for an administrator to suspend the account in the meantime,
+so the state that decides the answer is the one read after the wait: a
+suspension committed during the verification wins, and the login is refused
+without a session instead of handing a suspended account a token.
 
 ## Usage
 
@@ -449,6 +505,13 @@ is unchanged.
 5. **Save and back to calendar** saves any pending manual result and complete feedback, then returns to the calendar. **Save and Generate Analysis Prompt** saves those data first, then generates the prompt from the canonical training state returned by the backend.
 6. Copy the generated prompt to your chosen AI assistant. Kinesis does not send the prompt to an LLM.
 7. Use **Logout** in the top bar to end the server-side session.
+
+An administrator uses **Users** in the sidebar's **Administration** group to
+create accounts — the initial password is confirmed twice before it is sent —
+edit identity fields, deactivate or reactivate a regular account, and delete
+accounts. Deactivating ends that account's sessions and refuses new sign-ins
+while keeping every training, cycle, shoe, and preference; reactivating it lets
+it sign in again, with fresh sessions.
 
 The result-analysis prompt is localized in Portuguese or English. A Portuguese excerpt:
 
@@ -491,7 +554,8 @@ INSTRUÇÕES PARA A ANÁLISE
 ## Security Model
 
 - **Password hashing** — `scrypt` via Node's native `node:crypto`, salted per user, stored as `scrypt$<salt>$<key>`; verification uses `crypto.timingSafeEqual`.
-- **User enumeration resistance** — failed logins always return the same generic message ("Invalid email or password."), and unknown emails go through an equivalent scrypt computation so response timing doesn't reveal whether an account exists.
+- **User enumeration resistance** — failed logins always return the same generic message ("Invalid email or password."), and unknown emails go through an equivalent scrypt computation so response timing doesn't reveal whether an account exists. A suspended account is refused only after the password verifies, so that state is never discoverable without the real password.
+- **Revocable access** — a session is honoured only while its account is active, and a deactivation deletes every session row of that account in the same transaction as the state, so suspension takes effect immediately for the API, the pages, and any cookie already on a device.
 - **Session tokens** — 32 bytes from `crypto.randomBytes` (256 bits of entropy), persisted server-side in SQLite with an expiry timestamp; expired sessions are purged on each login and rejected on lookup.
 - **Cookies** — `HttpOnly` (inaccessible to JavaScript), `Secure`, `SameSite=Lax`, scoped to `/`, cleared with matching attributes on logout.
 - **SQL injection prevention** — all database access goes through better-sqlite3 **prepared statements**; zero string interpolation anywhere near SQL.
@@ -540,15 +604,36 @@ are scoped to the signed-in user's records.
 | `POST /api/shoes` | Session | Create shoe |
 | `PUT /api/shoes/:id` | Session | Update owned shoe |
 | `DELETE /api/shoes/:id` | Session | Delete owned shoe |
-| `GET /api/admin/users` | Admin | List account identification and roles |
+| `GET /api/admin/users` | Admin | List account identification, roles and activity states |
 | `GET /api/admin/users/:id` | Admin | Read one account for editing |
-| `POST /api/admin/users` | Admin | Create a regular user account |
+| `POST /api/admin/users` | Admin | Create a regular user account (password only, never a confirmation field) |
 | `PUT /api/admin/users/:id` | Admin | Update permitted identity fields (name, surname, email) |
+| `POST /api/admin/users/:id/activity` | Admin | Activate or deactivate a regular account |
 | `DELETE /api/admin/users/:id` | Admin | Delete an account and its data |
 
 Endpoint-specific validation and error statuses are described below where
 documented; inspect the route handlers in `src/server.js` and their route
 modules for the complete response contract.
+
+#### `POST /api/admin/users/:id/activity`
+
+Changes whether a regular account may sign in. The body carries the requested
+state and the state the interface acted on, and nothing else.
+
+```bash
+curl -b jar.txt -X POST http://127.0.0.1:3000/api/admin/users/7/activity \
+     -H "content-type: application/json" \
+     -d '{"active":false,"expected_active":true}'
+```
+
+| Status | Meaning |
+|---|---|
+| `200` | Transition applied (or already in that state) — returns the account |
+| `400` | `invalidId`, `invalidActivity` (both states must be booleans), `selfActivityForbidden` (the signed-in account), `privilegedField`, or `unknownField` |
+| `401` / `403` | No session / not an administrator |
+| `403` | `privilegedTarget` — only regular accounts can change state |
+| `404` | `accountNotFound` |
+| `409` | `activityConflict` — the account changed state since the list was loaded |
 
 ### Onboarding API
 
@@ -625,7 +710,8 @@ curl -c jar.txt -X POST http://127.0.0.1:3000/api/auth/login \
 |---|---|
 | `200` | Success — sets `ta_session` cookie, returns the user profile |
 | `400` | Missing email or password |
-| `401` | Invalid credentials (generic message — always identical for unknown emails and wrong passwords) |
+| `401` | Invalid credentials (generic message — always identical for unknown emails, wrong passwords, and a suspended account with a wrong password) |
+| `403` | Correct credentials on a suspended account — `{"error":"…","errors":["accountInactive"]}`, no cookie and no session |
 
 #### `POST /api/auth/logout`
 
@@ -699,7 +785,7 @@ Every primary flow is a standalone page (no single-page hacks, no overlapping la
 | AI Coach | `src/public/ai-coach.html` · `src/public/ai-coach.css` · `src/public/ai-coach.js` | Local prompt builder for weekly coaching plans |
 | Cycles | `src/public/cycles.html` · `src/public/cycles.css` · `src/public/cycles.js` | Training-cycle management |
 | Shoes | `src/public/shoes.html` · `src/public/shoes.css` · `src/public/shoes.js` | Shoe rotation and mileage management |
-| Administration → Users | `src/public/admin-users.html` · `src/public/admin-users.css` · `src/public/admin-users.js` | Admin-only account list with create, edit, and delete |
+| Administration → Users | `src/public/admin-users.html` · `src/public/admin-users.css` · `src/public/admin-users.js` | Admin-only account list with create, edit, activate/deactivate, and delete |
 
 Shared code lives in `src/public/shared/`: `shell.js` injects the authenticated shell and user menu; `onboarding.js` owns welcome/checklist state and the transient guide signal; `i18n.js` and `locales/` provide PT/EN; `theme.css` owns tokens and shared controls; `api.js`, validators, date, units, preferences, and supporting modules are reused by pages. `src/trainingImport.js` normalizes SheetJS workbook data on the backend.
 

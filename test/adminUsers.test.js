@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 
 const { createDatabase } = require('../src/db/database');
 const { registerUser } = require('../src/auth/registration');
-const { createSession } = require('../src/auth/sessions');
+const { createSession, findActiveSession } = require('../src/auth/sessions');
 const {
   ACCOUNT_ROLES,
   AdminUserError,
@@ -15,6 +15,7 @@ const {
   getAccount,
   listAccounts,
   publicAccount,
+  setAccountActivity,
   updateAccount,
 } = require('../src/admin/users');
 
@@ -157,10 +158,19 @@ test('publicAccount exposes identification only and tolerates a missing timestam
     onboarding_status: 'new',
   });
   assert.deepEqual(Object.keys(account).sort(), [
-    'created_at', 'email', 'first_name', 'id', 'last_name', 'role',
+    'created_at', 'email', 'first_name', 'id', 'is_active', 'last_name', 'role',
   ]);
   assert.equal(account.created_at, null);
+  // A row read without the activity column predates the migration; it is never
+  // presented as suspended and no private column is exposed.
+  assert.equal(account.is_active, true);
   assert.equal('password_hash' in account, false);
+});
+
+test('publicAccount reports the stored activity state as a boolean', () => {
+  for (const [is_active, expected] of [[1, true], [0, false]]) {
+    assert.equal(publicAccount({ id: 3, role: 'user', is_active }).is_active, expected);
+  }
 });
 
 /* ── Listing and reading ── */
@@ -174,8 +184,9 @@ test('listAccounts returns every account ordered by creation without private dat
   ]);
   for (const account of list) {
     assert.deepEqual(Object.keys(account).sort(), [
-      'created_at', 'email', 'first_name', 'id', 'last_name', 'role',
+      'created_at', 'email', 'first_name', 'id', 'is_active', 'last_name', 'role',
     ]);
+    assert.equal(account.is_active, true);
   }
 });
 
@@ -573,4 +584,226 @@ test('deleteAccount reports a row that disappears before the delete', async () =
   const stubbed = stubbingChanges(db, /^DELETE FROM users/, 0);
   await assertAdminError(() => deleteAccount(stubbed, actorOf(admins[0]), users[0].id), 404, 'accountNotFound',
   );
+});
+
+/* ── Activity ── */
+
+test('deactivating ends the sessions, keeps every record and audits the transition', async () => {
+  const { db, admins, users } = await setup();
+  const target = users[0];
+  createSession(db, target.id);
+  createSession(db, target.id);
+  createSession(db, admins[0].id);
+  db.prepare(
+    `INSERT INTO training_cycles (id, user_id, objective, target_date, start_date, status)
+     VALUES ('cycle-1', ?, 'Maratona', '2026-12-06', '2026-09-01', 'active')`
+  ).run(target.id);
+  db.prepare(
+    `INSERT INTO shoes (id, user_id, brand, model, mileage, target_mileage, status)
+     VALUES ('shoe-1', ?, 'Nike', 'Pegasus 41', 100, 800, 'active')`
+  ).run(target.id);
+
+  const revokedToken = db.prepare('SELECT id FROM sessions WHERE user_id = ?').get(target.id).id;
+
+  const result = setAccountActivity(db, actorOf(admins[0]), target.id, {
+    active: false, expected_active: true,
+  });
+  assert.equal(result.is_active, false);
+  assert.equal(result.email, target.email);
+  assert.equal(db.prepare('SELECT is_active FROM users WHERE id = ?').get(target.id).is_active, 0);
+  // Access ends immediately; the data is untouched and other accounts are not.
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM sessions WHERE user_id = ?').get(target.id).count, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM sessions WHERE user_id = ?').get(admins[0].id).count, 1);
+  // The central session lookup refuses the account on its own, so a token that
+  // somehow survived the revocation still cannot reach a protected request.
+  assert.equal(findActiveSession(db, revokedToken), null);
+  assert.notEqual(findActiveSession(db, db.prepare('SELECT id FROM sessions WHERE user_id = ?').get(admins[0].id).id), null);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM training_cycles WHERE user_id = ?').get(target.id).count, 1);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM shoes WHERE user_id = ?').get(target.id).count, 1);
+
+  const [entry] = auditRowsFor(db, 'account_activity_changed');
+  assert.equal(entry.actor_user_id, admins[0].id);
+  assert.equal(entry.actor_email, admins[0].email);
+  assert.equal(entry.target_user_id, target.id);
+  assert.equal(entry.target_email, target.email);
+  assert.deepEqual(JSON.parse(entry.details), { from: 'active', to: 'inactive' });
+  assert.equal(/password|hash|token|secret/i.test(JSON.stringify(entry)), false);
+
+  // Reactivating restores the login but never the sessions revoked above: the
+  // token that existed before the transition stays unusable for good.
+  const restored = setAccountActivity(db, actorOf(admins[0]), target.id, {
+    active: true, expected_active: false,
+  });
+  assert.equal(restored.is_active, true);
+  assert.equal(findActiveSession(db, revokedToken), null);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM sessions WHERE user_id = ?').get(target.id).count, 0);
+  const rows = auditRowsFor(db, 'account_activity_changed');
+  assert.deepEqual(rows.map((row) => JSON.parse(row.details)), [
+    { from: 'active', to: 'inactive' },
+    { from: 'inactive', to: 'active' },
+  ]);
+});
+
+test('a repeated request for the current state changes nothing', async () => {
+  const { db, admins, users } = await setup();
+  createSession(db, users[0].id);
+  const again = setAccountActivity(db, actorOf(admins[0]), users[0].id, {
+    active: true, expected_active: true,
+  });
+  assert.equal(again.is_active, true);
+  // No transition happened, so nothing was revoked and nothing was audited.
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM sessions WHERE user_id = ?').get(users[0].id).count, 1);
+  assert.equal(auditRowsFor(db, 'account_activity_changed').length, 0);
+});
+
+test('a click based on a stale state is refused as a conflict', async () => {
+  const { db, admins, users } = await setup();
+  setAccountActivity(db, actorOf(admins[0]), users[0].id, {
+    active: false, expected_active: true,
+  });
+  await assertAdminError(
+    () => setAccountActivity(db, actorOf(admins[0]), users[0].id, {
+      active: false, expected_active: true,
+    }),
+    409, 'activityConflict'
+  );
+  await assertAdminError(
+    () => setAccountActivity(db, actorOf(admins[0]), users[0].id, {
+      active: true, expected_active: true,
+    }),
+    409, 'activityConflict'
+  );
+  // The refused clicks changed neither the state nor the trail.
+  assert.equal(db.prepare('SELECT is_active FROM users WHERE id = ?').get(users[0].id).is_active, 0);
+  assert.equal(auditRowsFor(db, 'account_activity_changed').length, 1);
+});
+
+test('only regular accounts outside the signed-in one can change state', async () => {
+  const { db, admins, users } = await setup({ admins: 2, users: 1 });
+  await assertAdminError(
+    () => setAccountActivity(db, actorOf(admins[0]), admins[0].id, { active: false, expected_active: true }),
+    400, 'selfActivityForbidden'
+  );
+  await assertAdminError(
+    () => setAccountActivity(db, actorOf(admins[0]), admins[1].id, { active: false, expected_active: true }),
+    403, 'privilegedTarget'
+  );
+  // The same guard holds for a non-administrator caller, so the domain refuses
+  // the transition no matter who asks.
+  await assertAdminError(
+    () => setAccountActivity(db, actorOf(users[0]), users[0].id, { active: false, expected_active: true }),
+    400, 'selfActivityForbidden'
+  );
+  for (const id of [admins[0].id, admins[1].id]) {
+    assert.equal(db.prepare('SELECT is_active FROM users WHERE id = ?').get(id).is_active, 1);
+  }
+  assert.equal(auditRowsFor(db, 'account_activity_changed').length, 0);
+});
+
+test('the activity endpoint refuses privilege, state and unknown fields', async () => {
+  const { db, admins, users } = await setup();
+  const actor = actorOf(admins[0]);
+  // `active` and `expected_active` are the only accepted keys here, so no
+  // stored column can be written indirectly under another name.
+  for (const field of ['is_active', 'status', 'active_state', 'enabled']) {
+    await assertAdminError(
+      () => setAccountActivity(db, actor, users[0].id, {
+        active: false, expected_active: true, [field]: false,
+      }),
+      400, 'unknownField'
+    );
+  }
+  for (const field of ['role', 'expected_role']) {
+    await assertAdminError(
+      () => setAccountActivity(db, actor, users[0].id, {
+        active: false, expected_active: true, [field]: 'admin',
+      }),
+      400, 'privilegedField'
+    );
+  }
+  for (const field of ['email', 'first_name', 'password', 'password_confirmation']) {
+    await assertAdminError(
+      () => setAccountActivity(db, actor, users[0].id, {
+        active: false, expected_active: true, [field]: 'anything',
+      }),
+      400, 'unknownField'
+    );
+  }
+  assert.equal(db.prepare('SELECT is_active FROM users WHERE id = ?').get(users[0].id).is_active, 1);
+  assert.equal(auditRows(db).length, 0);
+});
+
+test('the activity endpoint requires both states to be booleans', async () => {
+  const { db, admins, users } = await setup();
+  const actor = actorOf(admins[0]);
+  // An unknown key is refused before the body is read, so no partial state can
+  // be applied alongside an unsupported field.
+  for (const body of [
+    { active: false, expected_active: true, extra: 1 },
+    { active: false, expected_active: true, details: 'anything' },
+  ]) {
+    await assertAdminError(() => setAccountActivity(db, actor, users[0].id, body), 400, 'unknownField');
+  }
+  for (const body of [
+    {},
+    undefined,
+    { active: false },
+    { expected_active: true },
+    { active: 'false', expected_active: true },
+    { active: false, expected_active: 1 },
+    { active: 0, expected_active: 1 },
+    { active: null, expected_active: null },
+  ]) {
+    await assertAdminError(() => setAccountActivity(db, actor, users[0].id, body), 400, 'invalidActivity');
+  }
+  assert.equal(db.prepare('SELECT is_active FROM users WHERE id = ?').get(users[0].id).is_active, 1);
+  assert.equal(auditRows(db).length, 0);
+});
+
+test('the activity endpoint validates the identifier like every other account read', async () => {
+  const { db, admins } = await setup();
+  const actor = actorOf(admins[0]);
+  for (const invalid of [0, -1, 1.5, '0', 'abc', '', null, undefined, {}]) {
+    await assertAdminError(
+      () => setAccountActivity(db, actor, invalid, { active: false, expected_active: true }),
+      400, 'invalidId'
+    );
+  }
+  await assertAdminError(
+    () => setAccountActivity(db, actor, 9999, { active: false, expected_active: true }),
+    404, 'accountNotFound'
+  );
+});
+
+test('setAccountActivity reports a row that disappears before the write', async () => {
+  const { db, admins, users } = await setup();
+  const stubbed = stubbingChanges(db, /^UPDATE users SET is_active/, 0);
+  await assertAdminError(
+    () => setAccountActivity(stubbed, actorOf(admins[0]), users[0].id, {
+      active: false, expected_active: true,
+    }),
+    404, 'accountNotFound'
+  );
+  assert.equal(db.prepare('SELECT is_active FROM users WHERE id = ?').get(users[0].id).is_active, 1);
+});
+
+test('the account dialogs never accept an activity state as a form field', async () => {
+  const { db, admins } = await setup();
+  const actor = actorOf(admins[0]);
+  for (const field of ['is_active', 'active', 'status']) {
+    await assertAdminError(
+      () => createAccount(db, actor, {
+        first_name: 'New', last_name: 'Person',
+        email: `new-${field}@example.com`, password: 'new-person-secret', [field]: false,
+      }),
+      400, 'activityFieldForbidden'
+    );
+    await assertAdminError(
+      () => updateAccount(db, actor, admins[0].id, { first_name: 'Changed', [field]: false }),
+      400, 'activityFieldForbidden'
+    );
+  }
+  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM users WHERE email LIKE 'new-%'").get().count, 0);
+  assert.equal(db.prepare('SELECT first_name FROM users WHERE id = ?').get(admins[0].id).first_name, 'Admin0');
+  assert.equal(auditRows(db).length, 0);
 });

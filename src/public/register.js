@@ -102,7 +102,7 @@ form.addEventListener('submit', async (event) => {
       window.location.replace('/login.html?registered=1');
     }
   } catch (error) {
-    showErrors([translateApiError(error.message, i18n.t)], {});
+    showErrors([translateApiError(error, i18n.t)], {});
     setBusy(false);
   }
 });

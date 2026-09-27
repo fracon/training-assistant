@@ -136,6 +136,62 @@ test('account lookup and explicit promotion are normalized, idempotent, and upda
   db.close();
 });
 
+test('promotion refuses a suspended account and leaves every column untouched', async () => {
+  const db = createDatabase({ filename: ':memory:' });
+  const original = await registerUser(db, { ...adminInput, email: 'suspended-promote@example.com' });
+  const session = createSession(db, original.id);
+  db.prepare('UPDATE users SET is_active = 0 WHERE id = ?').run(original.id);
+  const before = db.prepare('SELECT * FROM users WHERE id = ?').get(original.id);
+
+  // Granting the role would produce an administrator who can never sign in, so
+  // the refusal is explicit instead of half a change.
+  assert.throws(() => promoteAccount(db, 'suspended-promote@example.com'), { code: 'ACCOUNT_INACTIVE' });
+  assert.deepEqual(db.prepare('SELECT * FROM users WHERE id = ?').get(original.id), before);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM sessions WHERE id = ?').get(session.token).count, 1);
+
+  // Once the account is active again the same promotion works as before.
+  db.prepare('UPDATE users SET is_active = 1 WHERE id = ?').run(original.id);
+  assert.equal(promoteAccount(db, 'suspended-promote@example.com').changed, true);
+  db.close();
+});
+
+test('the promotion command stops before the confirmation for a suspended account', async () => {
+  const db = createDatabase({ filename: ':memory:' });
+  const account = await registerUser(db, { ...adminInput, email: 'suspended-cli@example.com' });
+  db.prepare('UPDATE users SET is_active = 0 WHERE id = ?').run(account.id);
+  const output = [];
+  let asked = 0;
+  const result = await runPromotion({
+    db,
+    prompts: {
+      assertInteractive() {},
+      // The only question asked is the account email; a confirmation would be a
+      // second one.
+      question: async () => { asked += 1; return 'suspended-cli@example.com'; },
+      async secret() { return ''; },
+    },
+    write: (line) => output.push(line),
+  });
+  assert.equal(result.status, 'account-inactive');
+  assert.equal(asked, 1, 'no confirmation is requested for a refused promotion');
+  assert.match(output[0], /inactive/i);
+  assert.match(output[0], /administration page/i);
+  assert.equal(db.prepare('SELECT role FROM users WHERE id = ?').get(account.id).role, 'user');
+  db.close();
+});
+
+test('the account lookup reports the activity state without exposing other columns', async () => {
+  const db = createDatabase({ filename: ':memory:' });
+  const account = await registerUser(db, { ...adminInput, email: 'lookup-state@example.com' });
+  assert.equal(findAccountByEmail(db, 'lookup-state@example.com').is_active, true);
+  db.prepare('UPDATE users SET is_active = 0 WHERE id = ?').run(account.id);
+  const found = findAccountByEmail(db, 'lookup-state@example.com');
+  assert.equal(found.is_active, false);
+  assert.deepEqual(Object.keys(found).sort(), ['email', 'first_name', 'id', 'is_active', 'last_name', 'role']);
+  assert.equal('password_hash' in found, false);
+  db.close();
+});
+
 test('promotion reports a concurrent or invalid role change without silently succeeding', async () => {
   const db = createDatabase({ filename: ':memory:' });
   await registerUser(db, { ...adminInput, email: 'ignored@example.com' });

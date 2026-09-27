@@ -92,7 +92,20 @@ const SERVER_ERROR_KEYS = [
   ['Something went wrong. Please try again.', 'errors.generic'],
 ];
 
-export function translateApiError(message, t) {
+// Failures that must be explained without showing the server's prose are matched
+// by their stable code first. It travels on the request error as `codes`, the
+// same envelope the administration panel already consumes, so one localized
+// sentence covers every language.
+const SERVER_ERROR_CODE_KEYS = {
+  accountInactive: 'errors.accountInactive',
+};
+
+// Accepts either a request error carrying stable codes or a bare server message,
+// which keeps the older prose mapping for the responses that carry no code.
+export function translateApiError(error, t) {
+  const message = typeof error === 'string' ? error : error?.message;
+  const code = typeof error === 'string' ? null : error?.codes?.[0];
+  if (code && SERVER_ERROR_CODE_KEYS[code]) return t(SERVER_ERROR_CODE_KEYS[code]);
   for (const [raw, key] of SERVER_ERROR_KEYS) {
     if (message === raw) return t(key);
   }

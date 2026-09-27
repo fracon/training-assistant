@@ -182,6 +182,27 @@
   color: var(--ok);
 }
 
+/* The activity state reuses the shared uppercase pill geometry, but it stays an
+   outline instead of a fill so it never reads as a second role badge. Only the
+   exceptional state is filled, which is what an administrator must notice. */
+.user-status {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  color: var(--muted);
+  background: transparent;
+}
+
+.user-status.status-inactive {
+  border-color: transparent;
+  background: rgba(165, 73, 47, 0.12);
+  color: var(--danger);
+}
+
 .user-self-chip {
   font-size: 0.7rem;
   font-weight: 600;

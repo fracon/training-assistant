@@ -30,6 +30,7 @@ const {
   deleteAccount,
   getAccount,
   listAccounts,
+  setAccountActivity,
   updateAccount,
 } = require('./admin/users');
 const {
@@ -310,7 +311,12 @@ async function buildServer(options = {}) {
         return reply.send({ user });
       } catch (error) {
         if (error instanceof LoginError) {
-          return reply.code(error.status).send({ error: error.message });
+          // A stable code lets the interface localize without parsing prose; the
+          // generic credential failure keeps no code on purpose.
+          const payload = error.code
+            ? { error: error.message, errors: [error.code] }
+            : { error: error.message };
+          return reply.code(error.status).send(payload);
         }
         throw error;
       }
@@ -1096,6 +1102,18 @@ async function buildServer(options = {}) {
     app.put('/api/admin/users/:id', { preHandler: adminPreHandler }, async (request, reply) => {
       try {
         return { user: updateAccount(db, request.user, request.params.id, request.body) };
+      } catch (error) {
+        return accountFailure(reply, error);
+      }
+    });
+
+    // Reversible access suspension for regular accounts. The state is never a
+    // field of the create or update bodies, and the target's role and current
+    // state are re-read inside the write transaction, so activating an account
+    // through this endpoint can never restore administrator privileges.
+    app.post('/api/admin/users/:id/activity', { preHandler: adminPreHandler }, async (request, reply) => {
+      try {
+        return { user: setAccountActivity(db, request.user, request.params.id, request.body) };
       } catch (error) {
         return accountFailure(reply, error);
       }

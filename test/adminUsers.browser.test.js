@@ -250,7 +250,7 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
         modal:box.querySelector('.modal-card').getAttribute('aria-modal'),
         labelled:box.querySelector('.modal-card').getAttribute('aria-labelledby'),
         focused:document.activeElement.id,
-        passwordShown:!document.getElementById('userPasswordField').classList.contains('hidden'),
+        passwordShown:!document.getElementById('userPasswordFields').classList.contains('hidden'),
         roleSelector:!!document.getElementById('userRole'),
         backgroundInert:document.querySelector('.app-shell').hasAttribute('inert'),
       };
@@ -285,6 +285,28 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
     /* ── Client validation is localized and blocks the request ── */
 
     await evaluate(`document.getElementById('addUserBtn').click()`);
+    const confirmationField = await evaluate(`(async()=>{
+      const field=document.getElementById('userPasswordConfirm');
+      const label=document.querySelector('label[for="userPasswordConfirm"]');
+      return {
+        type:field.getAttribute('type'),
+        autocomplete:field.getAttribute('autocomplete'),
+        label:label.textContent,
+        listed:!!document.querySelector('label[for="userPasswordConfirm"]'),
+        passwordKeystroke:field.getAttribute('autocomplete'),
+        ordered:document.querySelector('label[for="userPassword"]').compareDocumentPosition(field)
+          & Node.DOCUMENT_POSITION_FOLLOWING ? true : false,
+      };
+    })()`);
+    assert.deepEqual(confirmationField, {
+      type: 'password',
+      autocomplete: 'new-password',
+      label: 'Confirm password',
+      listed: true,
+      passwordKeystroke: 'new-password',
+      ordered: true,
+    }, 'the confirmation sits right after the initial password and is a masked field');
+
     const invalid = await evaluate(`(async()=>{
       const set=(id,value)=>{document.getElementById(id).value=value};
       set('userFirstName','Bad');set('userLastName','Email');
@@ -292,15 +314,87 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
       document.getElementById('userForm').requestSubmit();
       await new Promise((resolve)=>setTimeout(resolve,600));
       const box=document.getElementById('userFormError');
+      const confirm=document.getElementById('userPasswordConfirm');
       return {
         items:[...box.querySelectorAll('li')].map((node)=>node.textContent),
         shown:!box.classList.contains('hidden'),
         stillOpen:!document.getElementById('userModal').classList.contains('hidden'),
+        focused:document.activeElement.id,
+        invalid:confirm.getAttribute('aria-invalid'),
+        described:confirm.getAttribute('aria-describedby'),
+        marked:confirm.classList.contains('input-error'),
+        boxRole:box.getAttribute('role'),
       };
     })()`);
     assert.equal(invalid.shown, true);
     assert.equal(invalid.stillOpen, true);
-    assert.deepEqual(invalid.items, ['Enter a valid email address.', 'The password must be at least 8 characters long.']);
+    assert.deepEqual(invalid.items, [
+      'Enter a valid email address.',
+      'The password must be at least 8 characters long.',
+      'Confirm the initial password.',
+    ]);
+    // The refusal is explained in place: the group error is announced, the
+    // confirmation is described by it, marked invalid and takes focus, and the
+    // typed values are kept for the retry.
+    assert.equal(invalid.boxRole, 'alert');
+    assert.equal(invalid.focused, 'userPasswordConfirm');
+    assert.equal(invalid.invalid, 'true');
+    assert.equal(invalid.described, 'userFormError');
+    assert.equal(invalid.marked, true);
+
+    /* ── A mismatched confirmation is refused and keeps every typed value ── */
+
+    const mismatch = await evaluate(`(async()=>{
+      const set=(id,value)=>{document.getElementById(id).value=value};
+      set('userEmail','mismatch@example.test');
+      set('userPassword','${PASSWORD}');set('userPasswordConfirm','${PASSWORD}-typo');
+      document.getElementById('userForm').requestSubmit();
+      await new Promise((resolve)=>setTimeout(resolve,600));
+      const box=document.getElementById('userFormError');
+      const confirm=document.getElementById('userPasswordConfirm');
+      return {
+        // A single failure is stated as one message, matching the other fields.
+        text:box.textContent,
+        items:[...box.querySelectorAll('li')].map((node)=>node.textContent),
+        shown:!box.classList.contains('hidden'),
+        stillOpen:!document.getElementById('userModal').classList.contains('hidden'),
+        rows:document.querySelectorAll('.user-row').length,
+        firstName:document.getElementById('userFirstName').value,
+        email:document.getElementById('userEmail').value,
+        password:document.getElementById('userPassword').value,
+        confirm:confirm.value,
+        focused:document.activeElement.id,
+        invalid:confirm.getAttribute('aria-invalid'),
+      };
+    })()`);
+    assert.deepEqual(mismatch, {
+      text: 'The passwords do not match.',
+      items: [],
+      shown: true,
+      stillOpen: true,
+      rows: 2,
+      firstName: 'Bad',
+      email: 'mismatch@example.test',
+      password: PASSWORD,
+      confirm: `${PASSWORD}-typo`,
+      focused: 'userPasswordConfirm',
+      invalid: 'true',
+    }, 'a mismatch is refused before any request and nothing typed is discarded');
+
+    // Correcting the confirmation clears the field's association with the error
+    // box; the box itself stays until the next submit.
+    const corrected = await evaluate(`(()=>{
+      const confirm=document.getElementById('userPasswordConfirm');
+      confirm.value='${PASSWORD}';
+      confirm.dispatchEvent(new Event('input',{bubbles:true}));
+      return {
+        invalid:confirm.getAttribute('aria-invalid'),
+        marked:confirm.classList.contains('input-error'),
+        stillOpen:!document.getElementById('userModal').classList.contains('hidden'),
+      };
+    })()`);
+    assert.deepEqual(corrected, { invalid: null, marked: false, stillOpen: true },
+      'typing again clears the field error without closing the dialog');
 
     /* ── A visible validation error survives a language switch ── */
 
@@ -309,10 +403,16 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
     // user typed, the create mode, the focused control and the open dialog are
     // preserved.
     const localizedValidation = await evaluate(`(async()=>{
+      const set=(id,value)=>{document.getElementById(id).value=value};
+      set('userEmail','not-an-email');set('userPassword','short');
+      set('userPasswordConfirm','');
+      document.getElementById('userForm').requestSubmit();
+      await new Promise((resolve)=>setTimeout(resolve,600));
       document.getElementById('userEmail').focus();
       document.querySelector('.lang-switch [data-lang="pt-BR"]').click();
       await new Promise((resolve)=>setTimeout(resolve,700));
       const box=document.getElementById('userFormError');
+      const confirm=document.getElementById('userPasswordConfirm');
       return {
         items:[...box.querySelectorAll('li')].map((node)=>node.textContent),
         shown:!box.classList.contains('hidden'),
@@ -320,19 +420,27 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
         firstName:document.getElementById('userFirstName').value,
         email:document.getElementById('userEmail').value,
         password:document.getElementById('userPassword').value,
+        confirmLabel:document.querySelector('label[for="userPasswordConfirm"]').textContent,
+        confirmInvalid:confirm.getAttribute('aria-invalid'),
         title:document.getElementById('userModalTitle').textContent,
         mode:document.getElementById('userForm').dataset.mode,
         focused:document.activeElement.id,
-        passwordShown:!document.getElementById('userPasswordField').classList.contains('hidden'),
+        passwordShown:!document.getElementById('userPasswordFields').classList.contains('hidden'),
       };
     })()`);
     assert.deepEqual(localizedValidation, {
-      items: ['Informe um e-mail válido.', 'A senha deve ter pelo menos 8 caracteres.'],
+      items: [
+        'Informe um e-mail válido.',
+        'A senha deve ter pelo menos 8 caracteres.',
+        'Confirme a senha inicial.',
+      ],
       shown: true,
       stillOpen: true,
       firstName: 'Bad',
       email: 'not-an-email',
       password: 'short',
+      confirmLabel: 'Confirmar senha',
+      confirmInvalid: 'true',
       title: 'Adicionar Novo Usuário',
       mode: 'add',
       focused: 'userEmail',
@@ -347,12 +455,18 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
       return {
         items:[...box.querySelectorAll('li')].map((node)=>node.textContent),
         title:document.getElementById('userModalTitle').textContent,
+        confirmLabel:document.querySelector('label[for="userPasswordConfirm"]').textContent,
         focused:document.activeElement.id,
       };
     })()`);
     assert.deepEqual(backToEnglish, {
-      items: ['Enter a valid email address.', 'The password must be at least 8 characters long.'],
+      items: [
+        'Enter a valid email address.',
+        'The password must be at least 8 characters long.',
+        'Confirm the initial password.',
+      ],
       title: 'Add New User',
+      confirmLabel: 'Confirm password',
       focused: 'userEmail',
     }, 'the error is restated in English as well, without losing focus');
 
@@ -361,7 +475,7 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
     const created = await evaluate(`(async()=>{
       const set=(id,value)=>{document.getElementById(id).value=value};
       set('userFirstName','Diego');set('userLastName','Rocha');
-      set('userEmail','diego@example.test');set('userPassword','${PASSWORD}');
+      set('userEmail','diego@example.test');set('userPassword','${PASSWORD}');set('userPasswordConfirm','${PASSWORD}');
       document.getElementById('userForm').requestSubmit();
       await new Promise((resolve)=>setTimeout(resolve,900));
       return {
@@ -437,7 +551,7 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
       document.getElementById('addUserBtn').click();
       const set=(id,value)=>{document.getElementById(id).value=value};
       set('userFirstName','Refresh');set('userLastName','Create');
-      set('userEmail','refresh-create@example.test');set('userPassword','${PASSWORD}');
+      set('userEmail','refresh-create@example.test');set('userPassword','${PASSWORD}');set('userPasswordConfirm','${PASSWORD}');
       document.getElementById('userForm').requestSubmit();
       await new Promise((resolve)=>setTimeout(resolve,150));
       const pending={
@@ -689,7 +803,7 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
       document.getElementById('addUserBtn').click();
       const set=(id,value)=>{document.getElementById(id).value=value};
       set('userFirstName','Pending');set('userLastName','Create Failure');
-      set('userEmail','pending-create-failure@example.test');set('userPassword','${PASSWORD}');
+      set('userEmail','pending-create-failure@example.test');set('userPassword','${PASSWORD}');set('userPasswordConfirm','${PASSWORD}');
       document.getElementById('userEmail').focus();
       document.getElementById('userForm').requestSubmit();
       await new Promise((resolve)=>setTimeout(resolve,150));
@@ -722,7 +836,7 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
       document.getElementById('addUserBtn').click();
       const set=(id,value)=>{document.getElementById(id).value=value};
       set('userFirstName','Dup');set('userLastName','Licate');
-      set('userEmail','diego@example.test');set('userPassword','${PASSWORD}');
+      set('userEmail','diego@example.test');set('userPassword','${PASSWORD}');set('userPasswordConfirm','${PASSWORD}');
       document.getElementById('userForm').requestSubmit();
       await new Promise((resolve)=>setTimeout(resolve,900));
       return {
@@ -925,7 +1039,7 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
       const state={
         roleSelector:!!document.getElementById('userRole'),
         hasDelete:!!row.querySelector('[data-action="delete"]'),
-        passwordHidden:document.getElementById('userPasswordField').classList.contains('hidden'),
+        passwordHidden:document.getElementById('userPasswordFields').classList.contains('hidden'),
       };
       document.getElementById('userFirstName').value='Aline';
       document.getElementById('userLastName').value='Administradora';
@@ -982,6 +1096,309 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
     }, 'the signed-in account cannot be demoted or deleted from the panel');
     await evaluate(`document.getElementById('retryUsersBtn').click()`);
     await waitForRows(3);
+
+    /* ── The activity state is shown per account and never for an administrator ── */
+
+    const activityOffered = await evaluate(`(()=>{
+      const rowFor=(name)=>[...document.querySelectorAll('.user-row')]
+        .find((node)=>node.querySelector('.user-name').textContent===name);
+      const runner=rowFor('Rita Runner');
+      const self=rowFor('Aline Refresh Administradora');
+      return {
+        runnerStatus:runner.querySelector('.user-status').textContent,
+        runnerStatusClass:runner.querySelector('.user-status').className,
+        selfStatus:self.querySelector('.user-status').textContent,
+        runnerActions:[...runner.querySelectorAll('[data-action]')].map((node)=>node.dataset.action),
+        selfActions:[...self.querySelectorAll('[data-action]')].map((node)=>node.dataset.action),
+        roleBadges:document.querySelectorAll('.user-status').length,
+        // Every control is labeled in the active language, with the custom
+        // tooltip resolved instead of leaking a dictionary key.
+        labels:[...runner.querySelectorAll('[data-action]')]
+          .map((node)=>[node.dataset.action,node.getAttribute('aria-label')]),
+        tooltips:[...runner.querySelectorAll('[data-action]')]
+          .map((node)=>node.querySelector('.custom-tooltip').textContent),
+      };
+    })()`);
+    assert.deepEqual(activityOffered, {
+      runnerStatus: 'Active',
+      runnerStatusClass: 'user-status',
+      selfStatus: 'Active',
+      runnerActions: ['edit', 'deactivate', 'delete'],
+      selfActions: ['edit'],
+      roleBadges: 3,
+      labels: [
+        ['edit', 'Edit user'],
+        ['deactivate', 'Deactivate account'],
+        ['delete', 'Delete user'],
+      ],
+      tooltips: ['Edit user', 'Deactivate account', 'Delete user'],
+    }, 'a regular account shows its state and can be deactivated, an administrator cannot be');
+    const badgeGeometry = await evaluate(`(()=>{
+      const runner=[...document.querySelectorAll('.user-row')]
+        .find((node)=>node.querySelector('.user-name').textContent==='Rita Runner');
+      const read=(node)=>{
+        const style=getComputedStyle(node);
+        return {
+          background:style.backgroundColor,
+          border:style.borderTopWidth,
+          font:style.fontSize,
+          radius:style.borderTopLeftRadius,
+        };
+      };
+      return {status:read(runner.querySelector('.user-status')),role:read(runner.querySelector('.user-role'))};
+    })()`);
+    assert.deepEqual(badgeGeometry, {
+      status: { background: 'rgba(0, 0, 0, 0)', border: '1px', font: '11.52px', radius: '999px' },
+      role: { background: 'rgba(139, 129, 114, 0.12)', border: '0px', font: '11.52px', radius: '999px' },
+    }, 'the state badge reuses the shared pill geometry but stays visually distinct from the role badge');
+
+    /* ── Deactivating confirms, states that data is kept, and can be cancelled ── */
+
+    const deactivateCancelled = await evaluate(`(async()=>{
+      const row=[...document.querySelectorAll('.user-row')]
+        .find((node)=>node.querySelector('.user-name').textContent==='Rita Runner');
+      const trigger=row.querySelector('[data-action="deactivate"]');
+      // A pointer user focuses the control before activating it, which is what
+      // the dialog restores its focus to.
+      trigger.focus();
+      trigger.click();
+      await new Promise((resolve)=>setTimeout(resolve,400));
+      const dialog=document.querySelector('.confirm-card');
+      const state={
+        role:dialog.getAttribute('role'),
+        title:document.querySelector('.confirm-title').textContent,
+        message:document.querySelector('.confirm-message').textContent,
+        confirm:document.getElementById('confirmOkBtn').textContent,
+        danger:getComputedStyle(document.getElementById('confirmOkBtn')).backgroundColor,
+        focused:document.activeElement.id,
+      };
+      document.getElementById('confirmCancelBtn').click();
+      await new Promise((resolve)=>setTimeout(resolve,400));
+      return {...state,
+        open:document.querySelectorAll('.confirm-backdrop').length,
+        status:document.querySelector('.user-status').textContent,
+        focusAfter:document.activeElement.getAttribute('data-action'),
+      };
+    })()`);
+    assert.equal(deactivateCancelled.role, 'alertdialog');
+    assert.equal(deactivateCancelled.title, 'Deactivate account');
+    assert.match(deactivateCancelled.message, /runner@example\.test/);
+    assert.match(deactivateCancelled.message, /kept/, 'the dialog states the data is preserved');
+    assert.match(deactivateCancelled.message, /signed out/, 'the dialog states the sessions end');
+    assert.equal(deactivateCancelled.confirm, 'Deactivate');
+    assert.notEqual(deactivateCancelled.danger, 'rgba(0, 0, 0, 0)', 'the destructive action is styled');
+    assert.equal(deactivateCancelled.focused, 'confirmCancelBtn');
+    assert.equal(deactivateCancelled.open, 0, 'cancelling closes the confirmation');
+    assert.equal(deactivateCancelled.status, 'Active', 'cancelling keeps the account active');
+    assert.equal(deactivateCancelled.focusAfter, 'deactivate', 'focus returns to the trigger');
+
+    /* ── Deactivating flips the badge, the action and the focus ── */
+
+    const deactivated = await evaluate(`(async()=>{
+      const row=[...document.querySelectorAll('.user-row')]
+        .find((node)=>node.querySelector('.user-name').textContent==='Rita Runner');
+      row.querySelector('[data-action="deactivate"]').click();
+      await new Promise((resolve)=>setTimeout(resolve,400));
+      document.getElementById('confirmOkBtn').click();
+      await new Promise((resolve)=>setTimeout(resolve,1500));
+      const updated=[...document.querySelectorAll('.user-row')]
+        .find((node)=>node.querySelector('.user-name').textContent==='Rita Runner');
+      return {
+        toast:document.querySelector('#toast .toast-text').textContent,
+        toastVisible:document.getElementById('toast').classList.contains('visible'),
+        status:updated.querySelector('.user-status').textContent,
+        statusClass:updated.querySelector('.user-status').className,
+        actions:[...updated.querySelectorAll('[data-action]')].map((node)=>node.dataset.action),
+        activateLabel:updated.querySelector('[data-action="activate"]').getAttribute('aria-label'),
+        focus:document.activeElement.getAttribute('data-action'),
+        rows:document.querySelectorAll('.user-row').length,
+      };
+    })()`);
+    assert.deepEqual(deactivated, {
+      toast: 'Account deactivated.',
+      toastVisible: true,
+      status: 'Inactive',
+      statusClass: 'user-status status-inactive',
+      actions: ['edit', 'activate', 'delete'],
+      activateLabel: 'Activate account',
+      focus: 'activate',
+      rows: 3,
+    }, 'the deactivated account keeps its row and its data, and offers activation');
+
+    await evaluate(`document.querySelector('.lang-switch [data-lang="pt-BR"]').click()`);
+    await delay(400);
+    assert.deepEqual(
+      await evaluate(`(()=>{
+        const row=[...document.querySelectorAll('.user-row')]
+          .find((node)=>node.querySelector('.user-name').textContent==='Rita Runner');
+        return {
+          status:row.querySelector('.user-status').textContent,
+          label:row.querySelector('[data-action="activate"]').getAttribute('aria-label'),
+        };
+      })()`),
+      { status: 'Inativo', label: 'Ativar conta' },
+      'the state and its action are translated'
+    );
+    await evaluate(`document.querySelector('.lang-switch [data-lang="en-US"]').click()`);
+    await delay(400);
+
+    /* ── A stale state is refused and the list is refreshed ── */
+
+    const conflict = await evaluate(`(async()=>{
+      const nativeFetch=window.fetch.bind(window);
+      window.fetch=(input,init)=>{
+        const method=(init?.method||'GET').toUpperCase();
+        if(method==='POST'&&String(input).includes('/activity')){
+          return Promise.resolve(new Response(
+            JSON.stringify({error:'conflict',errors:['activityConflict']}),
+            {status:409,headers:{'content-type':'application/json'}}));
+        }
+        return nativeFetch(input,init);
+      };
+      const row=[...document.querySelectorAll('.user-row')]
+        .find((node)=>node.querySelector('.user-name').textContent==='Rita Runner');
+      row.querySelector('[data-action="activate"]').click();
+      await new Promise((resolve)=>setTimeout(resolve,400));
+      document.getElementById('confirmOkBtn').click();
+      await new Promise((resolve)=>setTimeout(resolve,1500));
+      const updated=[...document.querySelectorAll('.user-row')]
+        .find((node)=>node.querySelector('.user-name').textContent==='Rita Runner');
+      const state={
+        toast:document.querySelector('#toast .toast-text').textContent,
+        toastError:document.getElementById('toast').classList.contains('toast-error'),
+        status:updated.querySelector('.user-status').textContent,
+        actions:[...updated.querySelectorAll('[data-action]')].map((node)=>node.dataset.action),
+        focus:document.activeElement.getAttribute('data-action'),
+        inList:!!document.activeElement.closest('#userList'),
+        visible:document.activeElement.getBoundingClientRect().width>0,
+      };
+      window.fetch=nativeFetch;
+      return state;
+    })()`);
+    assert.deepEqual(conflict, {
+      toast: 'This account changed while you were working. The list was refreshed; check its state and try again.',
+      toastError: true,
+      status: 'Inactive',
+      actions: ['edit', 'activate', 'delete'],
+      focus: 'activate',
+      inList: true,
+      visible: true,
+    }, 'a refused transition is explained, the list shows the real state and the control is focusable again');
+
+    /* ── Activating restores the login and flips the row back ── */
+
+    const activated = await evaluate(`(async()=>{
+      const row=[...document.querySelectorAll('.user-row')]
+        .find((node)=>node.querySelector('.user-name').textContent==='Rita Runner');
+      row.querySelector('[data-action="activate"]').click();
+      await new Promise((resolve)=>setTimeout(resolve,400));
+      const dialog={
+        title:document.querySelector('.confirm-title').textContent,
+        message:document.querySelector('.confirm-message').textContent,
+        confirm:document.getElementById('confirmOkBtn').textContent,
+      };
+      document.getElementById('confirmOkBtn').click();
+      await new Promise((resolve)=>setTimeout(resolve,1500));
+      const updated=[...document.querySelectorAll('.user-row')]
+        .find((node)=>node.querySelector('.user-name').textContent==='Rita Runner');
+      return {...dialog,
+        toast:document.querySelector('#toast .toast-text').textContent,
+        status:updated.querySelector('.user-status').textContent,
+        actions:[...updated.querySelectorAll('[data-action]')].map((node)=>node.dataset.action),
+        focus:document.activeElement.getAttribute('data-action'),
+      };
+    })()`);
+    assert.equal(activated.title, 'Activate account');
+    assert.match(activated.message, /previous sessions stay signed out/,
+      'activation does not promise to restore the revoked sessions');
+    assert.equal(activated.confirm, 'Activate');
+    assert.deepEqual({
+      toast: activated.toast,
+      status: activated.status,
+      actions: activated.actions,
+      focus: activated.focus,
+    }, {
+      toast: 'Account activated.',
+      status: 'Active',
+      actions: ['edit', 'deactivate', 'delete'],
+      focus: 'deactivate',
+    }, 'the activated account is offered the deactivation again');
+
+    /* ── A held refresh never pulls focus away from where it was left ── */
+
+    // The transition succeeds, the refresh is held, and focus is moved
+    // deliberately to a control outside the list. Completing the refresh must
+    // not take it back: the rerender replaces the row, and the restoration
+    // records that the person chose another control while it was pending.
+    const movedFocus = await evaluate(`(async()=>{
+      window.__holdNextAdminList=true;
+      const row=[...document.querySelectorAll('.user-row')]
+        .find((node)=>node.querySelector('.user-name').textContent==='Rita Runner');
+      row.querySelector('[data-action="deactivate"]').click();
+      await new Promise((resolve)=>setTimeout(resolve,400));
+      document.getElementById('confirmOkBtn').click();
+      await new Promise((resolve)=>setTimeout(resolve,700));
+      document.getElementById('sidebarToggle').focus();
+      const movedTo=document.activeElement.id;
+      window.__releaseAdminList();
+      await new Promise((resolve)=>setTimeout(resolve,700));
+      const updated=[...document.querySelectorAll('.user-row')]
+        .find((node)=>node.querySelector('.user-name').textContent==='Rita Runner');
+      return {
+        movedTo,
+        rowId:row.dataset.userId,
+        after:document.activeElement.id,
+        inList:!!document.activeElement.closest('#userList'),
+        connected:document.activeElement.isConnected,
+        status:updated.querySelector('.user-status').textContent,
+        actions:[...updated.querySelectorAll('[data-action]')].map((node)=>node.dataset.action),
+      };
+    })()`);
+    assert.deepEqual(movedFocus, {
+      movedTo: 'sidebarToggle',
+      rowId: String(regular.id),
+      after: 'sidebarToggle',
+      inList: false,
+      connected: true,
+      status: 'Inactive',
+      actions: ['edit', 'activate', 'delete'],
+    }, 'a focus change made while the refresh is pending survives the rerender');
+
+    // The same held refresh without a deliberate move restores focus on the
+    // updated row: the action is retargeted to the opposite transition, because
+    // that is the control the click now belongs to.
+    const parkedFocus = await evaluate(`(async()=>{
+      window.__holdNextAdminList=true;
+      const row=[...document.querySelectorAll('.user-row')]
+        .find((node)=>node.querySelector('.user-name').textContent==='Rita Runner');
+      row.querySelector('[data-action="activate"]').click();
+      await new Promise((resolve)=>setTimeout(resolve,400));
+      document.getElementById('confirmOkBtn').click();
+      await new Promise((resolve)=>setTimeout(resolve,700));
+      window.__releaseAdminList();
+      await new Promise((resolve)=>setTimeout(resolve,700));
+      const updated=[...document.querySelectorAll('.user-row')]
+        .find((node)=>node.querySelector('.user-name').textContent==='Rita Runner');
+      return {
+        id:document.activeElement.dataset.id,
+        action:document.activeElement.getAttribute('data-action'),
+        inList:!!document.activeElement.closest('#userList'),
+        connected:document.activeElement.isConnected,
+        visible:document.activeElement.getBoundingClientRect().width>0,
+        onRitaRow:document.activeElement.closest('.user-row')
+          .querySelector('.user-name').textContent,
+        status:updated.querySelector('.user-status').textContent,
+      };
+    })()`);
+    assert.deepEqual(parkedFocus, {
+      id: movedFocus.rowId,
+      action: 'deactivate',
+      inList: true,
+      connected: true,
+      visible: true,
+      onRitaRow: 'Rita Runner',
+      status: 'Active',
+    }, 'an untouched focus is restored on the action the updated row now offers');
 
     /* ── Deleting asks for confirmation and then removes the account ── */
 
@@ -1046,6 +1463,14 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
         sidebarOverflow:getComputedStyle(document.querySelector('.sidebar')).overflowX,
         controlsReachable:[...document.querySelectorAll('.sidebar-brand, .sidebar-nav, .sidebar-footer')]
           .every((node)=>node.scrollWidth<=node.clientWidth || node.parentElement.scrollWidth>node.parentElement.clientWidth),
+        // The activity badge and its row action are the widest part of a row,
+        // so both must stay inside the row instead of being clipped away.
+        rowOverflow:[...document.querySelectorAll('.user-row')]
+          .some((row)=>row.scrollWidth>row.clientWidth),
+        badgesVisible:[...document.querySelectorAll('.user-status')]
+          .every((node)=>node.getBoundingClientRect().width>0),
+        actionsVisible:[...document.querySelectorAll('.user-row [data-action]')]
+          .every((node)=>node.getBoundingClientRect().width>0),
       })`);
       assert.deepEqual(narrow, {
         documentOverflow: false,
@@ -1054,6 +1479,9 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
         itemVisible: true,
         sidebarOverflow: width <= 640 ? 'auto' : 'hidden',
         controlsReachable: true,
+        rowOverflow: false,
+        badgesVisible: true,
+        actionsVisible: true,
       }, `the layout stays intact at ${width}px`);
     }
 
@@ -1064,7 +1492,7 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
       window.__holdNextAdminList=true;
       document.getElementById('addUserBtn').click();
       set('userFirstName','Refresh A');set('userLastName','Create A');
-      set('userEmail','refresh-a@example.test');set('userPassword','${PASSWORD}');
+      set('userEmail','refresh-a@example.test');set('userPassword','${PASSWORD}');set('userPasswordConfirm','${PASSWORD}');
       document.getElementById('userForm').requestSubmit();
       await new Promise((resolve)=>setTimeout(resolve,700));
       const aRefreshPending={
@@ -1082,7 +1510,7 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
       window.__holdNextMutation='POST';
       document.getElementById('addUserBtn').click();
       set('userFirstName','Refresh B');set('userLastName','Create B');
-      set('userEmail','refresh-b@example.test');set('userPassword','${PASSWORD}');
+      set('userEmail','refresh-b@example.test');set('userPassword','${PASSWORD}');set('userPasswordConfirm','${PASSWORD}');
       document.getElementById('userForm').requestSubmit();
       await new Promise((resolve)=>setTimeout(resolve,180));
       const bMutationPending={

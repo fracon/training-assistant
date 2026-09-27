@@ -55,6 +55,7 @@ const ADMIN_REQUESTS = [
   ['GET', '/api/admin/users/1'],
   ['POST', '/api/admin/users'],
   ['PUT', '/api/admin/users/1'],
+  ['POST', '/api/admin/users/1/activity'],
   ['DELETE', '/api/admin/users/1'],
 ];
 
@@ -154,9 +155,175 @@ test('a role granted after sign-in is honoured without a new session', async () 
   assert.equal(promoted.statusCode, 200);
 });
 
+/* ── Activity ── */
+
+test('deactivating an account answers with its state and ends its access', async () => {
+  const { app, db, adminCookie, users } = await setup();
+  const target = users[0];
+  const targetCookie = `${SESSION_COOKIE_NAME}=${createSession(db, target.id).token}`;
+  assert.equal((await app.inject({ method: 'GET', url: '/api/me', headers: { cookie: targetCookie } })).statusCode, 200);
+
+  const response = await app.inject({
+    method: 'POST',
+    url: `/api/admin/users/${target.id}/activity`,
+    headers: { cookie: adminCookie },
+    payload: { active: false, expected_active: true },
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.json().user.is_active, false);
+  assert.equal(response.json().user.email, target.email);
+
+  // The existing session is gone, and a session created for the same account
+  // afterwards is refused by the central lookup.
+  const after = await app.inject({ method: 'GET', url: '/api/me', headers: { cookie: targetCookie } });
+  assert.equal(after.statusCode, 401);
+  const replacement = `${SESSION_COOKIE_NAME}=${createSession(db, target.id).token}`;
+  assert.equal((await app.inject({ method: 'GET', url: '/api/me', headers: { cookie: replacement } })).statusCode, 401);
+
+  // The list and the read expose the new state, and the credentials no longer
+  // sign in.
+  const list = await app.inject({ method: 'GET', url: '/api/admin/users', headers: { cookie: adminCookie } });
+  assert.equal(
+    list.json().users.find((account) => account.id === target.id).is_active,
+    false
+  );
+  const single = await app.inject({
+    method: 'GET', url: `/api/admin/users/${target.id}`, headers: { cookie: adminCookie },
+  });
+  assert.equal(single.json().user.is_active, false);
+  const login = await app.inject({
+    method: 'POST', url: '/api/auth/login', payload: { email: target.email, password: PASSWORD },
+  });
+  assert.equal(login.statusCode, 403);
+  assert.deepEqual(login.json().errors, ['accountInactive']);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM sessions WHERE user_id = ?').get(target.id).count, 1);
+
+  // Reactivating restores the login without restoring the revoked session.
+  const activated = await app.inject({
+    method: 'POST',
+    url: `/api/admin/users/${target.id}/activity`,
+    headers: { cookie: adminCookie },
+    payload: { active: true, expected_active: false },
+  });
+  assert.equal(activated.statusCode, 200);
+  assert.equal(activated.json().user.is_active, true);
+  const signIn = await app.inject({
+    method: 'POST', url: '/api/auth/login', payload: { email: target.email, password: PASSWORD },
+  });
+  assert.equal(signIn.statusCode, 200);
+  const oldToken = (await app.inject({
+    method: 'GET', url: '/api/me', headers: { cookie: replacement },
+  })).statusCode;
+  assert.equal(oldToken, 401, 'the session refused while inactive is never honoured again');
+});
+
+test('the activity route refuses every unsupported body with a stable code', async () => {
+  const { app, adminCookie, users } = await setup();
+  for (const [payload, status, code] of [
+    [{ active: false, expected_active: true, is_active: false }, 400, 'unknownField'],
+    [{ active: false, expected_active: true, role: 'admin' }, 400, 'privilegedField'],
+    [{ active: false, expected_active: true, password_confirmation: 'x' }, 400, 'unknownField'],
+    [{ active: 'false', expected_active: true }, 400, 'invalidActivity'],
+    [{ active: false }, 400, 'invalidActivity'],
+    [{}, 400, 'invalidActivity'],
+  ]) {
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/admin/users/${users[0].id}/activity`,
+      headers: { cookie: adminCookie },
+      payload,
+    });
+    assert.equal(response.statusCode, status, JSON.stringify(payload));
+    assert.deepEqual(response.json().errors, [code], JSON.stringify(payload));
+  }
+  const unchanged = await app.inject({
+    method: 'GET', url: `/api/admin/users/${users[0].id}`, headers: { cookie: adminCookie },
+  });
+  assert.equal(unchanged.json().user.is_active, true);
+});
+
+test('the activity route refuses privileged, self and stale requests', async () => {
+  const { app, db, adminCookie, admins, users } = await setup({ admins: 2, users: 2 });
+  const post = async (id, payload) => app.inject({
+    method: 'POST',
+    url: `/api/admin/users/${id}/activity`,
+    headers: { cookie: adminCookie },
+    payload,
+  });
+
+  assert.deepEqual(
+    (await post(admins[0].id, { active: false, expected_active: true })).json().errors,
+    ['selfActivityForbidden']
+  );
+  const privileged = await post(admins[1].id, { active: false, expected_active: true });
+  assert.equal(privileged.statusCode, 403);
+  assert.deepEqual(privileged.json().errors, ['privilegedTarget']);
+
+  assert.equal((await post(users[0].id, { active: false, expected_active: true })).statusCode, 200);
+  const stale = await post(users[0].id, { active: false, expected_active: true });
+  assert.equal(stale.statusCode, 409);
+  assert.deepEqual(stale.json().errors, ['activityConflict']);
+
+  const missing = await post(9999, { active: false, expected_active: true });
+  assert.equal(missing.statusCode, 404);
+  assert.deepEqual(missing.json().errors, ['accountNotFound']);
+  const invalid = await post('abc', { active: false, expected_active: true });
+  assert.equal(invalid.statusCode, 400);
+  assert.deepEqual(invalid.json().errors, ['invalidId']);
+
+  // A regular account cannot suspend anyone, and the guard runs before the
+  // body is read.
+  const asUser = await app.inject({
+    method: 'POST',
+    url: `/api/admin/users/${users[1].id}/activity`,
+    headers: { cookie: `${SESSION_COOKIE_NAME}=${createSession(db, users[1].id).token}` },
+    payload: { active: false, expected_active: true },
+  });
+  assert.equal(asUser.statusCode, 403);
+  assert.equal(db.prepare('SELECT is_active FROM users WHERE id = ?').get(users[1].id).is_active, 1);
+
+  // A suspended account never reaches the administration guard at all: its
+  // session is refused by authentication first.
+  const suspendedCookie = `${SESSION_COOKIE_NAME}=${createSession(db, users[0].id).token}`;
+  db.prepare('UPDATE users SET is_active = 0 WHERE id = ?').run(users[0].id);
+  const asSuspended = await app.inject({
+    method: 'POST',
+    url: `/api/admin/users/${users[1].id}/activity`,
+    headers: { cookie: suspendedCookie },
+    payload: { active: false, expected_active: true },
+  });
+  assert.equal(asSuspended.statusCode, 401);
+  assert.equal(db.prepare('SELECT is_active FROM users WHERE id = ?').get(users[1].id).is_active, 1);
+});
+
+test('an activity transition is audited once with the states it moved between', async () => {
+  const { app, db, adminCookie, admins, users } = await setup();
+  await app.inject({
+    method: 'POST',
+    url: `/api/admin/users/${users[0].id}/activity`,
+    headers: { cookie: adminCookie },
+    payload: { active: false, expected_active: true },
+  });
+  await app.inject({
+    method: 'POST',
+    url: `/api/admin/users/${users[0].id}/activity`,
+    headers: { cookie: adminCookie },
+    payload: { active: true, expected_active: false },
+  });
+  const rows = db.prepare(
+    "SELECT * FROM admin_audit_log WHERE action = 'account_activity_changed' ORDER BY id"
+  ).all();
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].actor_user_id, admins[0].id);
+  assert.equal(rows[0].target_user_id, users[0].id);
+  assert.deepEqual(JSON.parse(rows[0].details), { from: 'active', to: 'inactive' });
+  assert.deepEqual(JSON.parse(rows[1].details), { from: 'inactive', to: 'active' });
+  assert.equal(/password|hash|token|secret/i.test(JSON.stringify(rows)), false);
+});
+
 /* ── Reading ── */
 
-test('the account list exposes identification and role only', async () => {
+test('the account list exposes identification, role and activity state only', async () => {
   const { app, adminCookie } = await setup();
   const response = await app.inject({
     method: 'GET', url: '/api/admin/users', headers: { cookie: adminCookie },
@@ -165,9 +332,12 @@ test('the account list exposes identification and role only', async () => {
   const { users } = response.json();
   assert.equal(users.length, 3);
   for (const account of users) {
+    // The activity state is the only addition: it decides whether the account
+    // can sign in and is needed to render the row, and it is not private data.
     assert.deepEqual(Object.keys(account).sort(), [
-      'created_at', 'email', 'first_name', 'id', 'last_name', 'role',
+      'created_at', 'email', 'first_name', 'id', 'is_active', 'last_name', 'role',
     ]);
+    assert.equal(account.is_active, true);
   }
   assert.equal(/password|hash|session|token/i.test(response.body), false);
 });
