@@ -238,6 +238,16 @@ function beginRefreshFocus(target) {
   };
 }
 
+// A successful transition replaces the control the row offers, so the tracked
+// target becomes the opposite action. Only the target moves: a focus change the
+// person made deliberately while the request was pending is their decision, and
+// re-tracking the whole record here would discard it and pull focus back to the
+// list.
+function retargetRefreshFocus(target) {
+  if (!pendingRefreshFocus) return;
+  pendingRefreshFocus.target = target;
+}
+
 function noteRefreshFocusMove(event) {
   if (!pendingRefreshFocus || !event.target?.isConnected) return;
   // The confirmation dialog moves focus while it is open and hands it back on
@@ -611,7 +621,7 @@ async function handleActivity(action, id, context) {
   if (!confirmed) return;
 
   // A refused transition leaves the clicked control in place; a successful one
-  // offers the opposite action, so focus is re-tracked onto it below.
+  // offers the opposite action, so only the tracked target changes afterwards.
   beginRefreshFocus({ action, id });
   setRowActionPending(true);
   try {
@@ -622,7 +632,7 @@ async function handleActivity(action, id, context) {
     } catch {
       showListError(context, 'admin.refreshError');
     }
-    beginRefreshFocus({ action: nextActive ? ACTION_DEACTIVATE : ACTION_ACTIVATE, id });
+    retargetRefreshFocus({ action: nextActive ? ACTION_DEACTIVATE : ACTION_ACTIVATE, id });
   } catch (error) {
     showToast(context.messages, errorMessageKey(error), 'error');
     // A refused transition means this list no longer shows the real state, so

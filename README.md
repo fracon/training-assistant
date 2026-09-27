@@ -489,6 +489,13 @@ stable code `accountInactive`, which the sign-in page localizes. Wrong
 credentials and unknown addresses keep the same generic answer, so the state
 cannot be discovered without the real password, and no session is created.
 
+The password is always verified first, and the account is then re-read inside the
+same immediate transaction that inserts the session row. Verifying a password
+takes long enough for an administrator to suspend the account in the meantime,
+so the state that decides the answer is the one read after the wait: a
+suspension committed during the verification wins, and the login is refused
+without a session instead of handing a suspended account a token.
+
 ## Usage
 
 1. Open **Sign In**. Create an account through **Register** (first name, last name, email, and password of at least 8 characters) or sign in to an existing account.

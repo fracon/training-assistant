@@ -151,6 +151,20 @@ onboarding record of the account is preserved.
   without the real password. `src/public/login.js` hands the request error to
   `translateApiError`, which prefers `codes` over prose so one localized
   sentence serves both languages.
+- That state check is **not** the one read before the verification.
+  `verifyPassword` awaits scrypt, so anything can be committed in that window,
+  and a suspension also revokes the account's sessions. `loginUser` therefore
+  re-reads the account and inserts the session inside one
+  `db.transaction(...).immediate()`; the state and the session are a single
+  atomic step, the returned profile is the re-read row, and an account removed
+  during the wait answers exactly like an unknown address. Never reintroduce a
+  check against the pre-verification row, and never move the insert outside that
+  transaction.
+- The page follows the same contract: a transition in flight tracks the control
+  it belongs to, and a successful rerender only **retargets** that control
+  (`retargetRefreshFocus`). It must not re-track from scratch, because that would
+  discard a focus change the person made while the refresh was pending and pull
+  focus back to the list.
 - The privileged local `admin:promote` command refuses an inactive account
   before the confirmation step; `admin:bootstrap` is unaffected.
 - The page shows the state as a badge beside the role, offers the transition
@@ -314,9 +328,12 @@ Account administration and activity behavior is covered by
 `test/adminUsers.test.js` (domain), `test/adminUsers.routes.test.js` (HTTP),
 `test/admin.test.js` (privileged commands), `test/adminUsers.browser.test.js`
 (dialog markup, PT/EN rendering, confirmation and activity dialogs, focus
-restoration), `test/auth.routes.test.js` and `test/login.test.js` (suspended
-sign-in and session refusal), `test/language.test.js` (`translateApiError`
-prefers a stable code), and `test/database.test.js` (the activity migration).
+restoration, focus parked and deliberately moved during a held refresh),
+`test/auth.routes.test.js` and `test/login.test.js` (suspended sign-in and
+session refusal), `test/login.activity-race.test.js` (a suspension committed
+while the password is verified, through a held verification),
+`test/language.test.js` (`translateApiError` prefers a stable code), and
+`test/database.test.js` (the activity migration).
 
 `npm run test:coverage` enforces exactly 100% Statements, Branches, Functions,
 and Lines for c8-instrumented files under `src/**` (excluding

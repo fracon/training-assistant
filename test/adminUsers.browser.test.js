@@ -1324,6 +1324,82 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
       focus: 'deactivate',
     }, 'the activated account is offered the deactivation again');
 
+    /* ── A held refresh never pulls focus away from where it was left ── */
+
+    // The transition succeeds, the refresh is held, and focus is moved
+    // deliberately to a control outside the list. Completing the refresh must
+    // not take it back: the rerender replaces the row, and the restoration
+    // records that the person chose another control while it was pending.
+    const movedFocus = await evaluate(`(async()=>{
+      window.__holdNextAdminList=true;
+      const row=[...document.querySelectorAll('.user-row')]
+        .find((node)=>node.querySelector('.user-name').textContent==='Rita Runner');
+      row.querySelector('[data-action="deactivate"]').click();
+      await new Promise((resolve)=>setTimeout(resolve,400));
+      document.getElementById('confirmOkBtn').click();
+      await new Promise((resolve)=>setTimeout(resolve,700));
+      document.getElementById('sidebarToggle').focus();
+      const movedTo=document.activeElement.id;
+      window.__releaseAdminList();
+      await new Promise((resolve)=>setTimeout(resolve,700));
+      const updated=[...document.querySelectorAll('.user-row')]
+        .find((node)=>node.querySelector('.user-name').textContent==='Rita Runner');
+      return {
+        movedTo,
+        rowId:row.dataset.userId,
+        after:document.activeElement.id,
+        inList:!!document.activeElement.closest('#userList'),
+        connected:document.activeElement.isConnected,
+        status:updated.querySelector('.user-status').textContent,
+        actions:[...updated.querySelectorAll('[data-action]')].map((node)=>node.dataset.action),
+      };
+    })()`);
+    assert.deepEqual(movedFocus, {
+      movedTo: 'sidebarToggle',
+      rowId: String(regular.id),
+      after: 'sidebarToggle',
+      inList: false,
+      connected: true,
+      status: 'Inactive',
+      actions: ['edit', 'activate', 'delete'],
+    }, 'a focus change made while the refresh is pending survives the rerender');
+
+    // The same held refresh without a deliberate move restores focus on the
+    // updated row: the action is retargeted to the opposite transition, because
+    // that is the control the click now belongs to.
+    const parkedFocus = await evaluate(`(async()=>{
+      window.__holdNextAdminList=true;
+      const row=[...document.querySelectorAll('.user-row')]
+        .find((node)=>node.querySelector('.user-name').textContent==='Rita Runner');
+      row.querySelector('[data-action="activate"]').click();
+      await new Promise((resolve)=>setTimeout(resolve,400));
+      document.getElementById('confirmOkBtn').click();
+      await new Promise((resolve)=>setTimeout(resolve,700));
+      window.__releaseAdminList();
+      await new Promise((resolve)=>setTimeout(resolve,700));
+      const updated=[...document.querySelectorAll('.user-row')]
+        .find((node)=>node.querySelector('.user-name').textContent==='Rita Runner');
+      return {
+        id:document.activeElement.dataset.id,
+        action:document.activeElement.getAttribute('data-action'),
+        inList:!!document.activeElement.closest('#userList'),
+        connected:document.activeElement.isConnected,
+        visible:document.activeElement.getBoundingClientRect().width>0,
+        onRitaRow:document.activeElement.closest('.user-row')
+          .querySelector('.user-name').textContent,
+        status:updated.querySelector('.user-status').textContent,
+      };
+    })()`);
+    assert.deepEqual(parkedFocus, {
+      id: movedFocus.rowId,
+      action: 'deactivate',
+      inList: true,
+      connected: true,
+      visible: true,
+      onRitaRow: 'Rita Runner',
+      status: 'Active',
+    }, 'an untouched focus is restored on the action the updated row now offers');
+
     /* ── Deleting asks for confirmation and then removes the account ── */
 
     const cancelled = await evaluate(`(async()=>{
