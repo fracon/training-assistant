@@ -1,8 +1,211 @@
 @import url('./shared/theme.css');
 
-.feedback-modal-card { max-width: 520px; }
+/* The feedback dialog is mounted by the shell on every authenticated page.
+   Keep its modal primitives here instead of relying on a page's components.css. */
+.modal-backdrop.feedback-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  min-height: 100vh;
+  padding: 1rem;
+  overflow-y: auto;
+  background: rgba(60, 53, 42, 0.45);
+  backdrop-filter: blur(4px);
+}
+
+.modal-backdrop.feedback-modal-backdrop.hidden {
+  display: none;
+}
+
+.modal-card.feedback-modal-card {
+  position: relative;
+  width: 100%;
+  max-width: 520px;
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 1.5rem;
+  box-shadow: 0 20px 50px rgba(60, 53, 42, 0.18);
+  animation: feedback-modal-rise 0.25s ease both;
+}
+
+@keyframes feedback-modal-rise {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.feedback-modal-card .modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.2rem;
+}
+
+.feedback-modal-card .modal-header h2 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.feedback-modal-card .modal-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.feedback-modal-card .modal-close svg {
+  width: 18px;
+  height: 18px;
+}
+
+.feedback-modal-card .modal-close:hover:not(:disabled) {
+  background: rgba(139, 129, 114, 0.1);
+  color: var(--ink);
+}
+
+.feedback-modal-card .field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-bottom: 0.85rem;
+}
+
+.feedback-modal-card .field-label {
+  font-size: 0.82rem;
+  color: var(--muted);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.feedback-modal-card select,
+.feedback-modal-card textarea {
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--bg);
+  color: inherit;
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 500;
+  padding: 0.55rem 0.65rem;
+}
+
+.feedback-modal-card select {
+  appearance: none;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%238b8172' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.6rem center;
+  padding-right: 1.9rem;
+}
+
+.feedback-modal-card textarea {
+  min-height: 8rem;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.feedback-modal-card select:focus-visible,
+.feedback-modal-card textarea:focus-visible {
+  outline: 2px solid var(--accent-deep);
+  outline-offset: 1px;
+}
+
+.feedback-modal-card .form-error {
+  margin: 0 0 0.85rem;
+  padding: 0.55rem 0.75rem;
+  color: var(--danger);
+  background: #f9ece6;
+  border: 1px solid #eac9bc;
+  border-radius: 10px;
+  font-size: 0.83rem;
+}
+
+.feedback-modal-card .form-error.hidden {
+  display: none;
+}
+
+.feedback-modal-card .form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-top: 1rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--line);
+}
+
+.feedback-modal-card .btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  padding: 9px 18px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+.feedback-modal-card .btn-secondary:hover:not(:disabled) {
+  color: var(--ink);
+  border-color: var(--ink);
+}
+
+.feedback-modal-card .btn-primary:focus-visible,
+.feedback-modal-card .btn-secondary:focus-visible,
+.feedback-modal-card .modal-close:focus-visible {
+  outline: 2px solid var(--accent-deep);
+  outline-offset: 2px;
+}
+
+@media (max-width: 600px) {
+  .modal-backdrop.feedback-modal-backdrop {
+    padding: 0.75rem;
+  }
+
+  .modal-card.feedback-modal-card {
+    max-height: calc(100vh - 1.5rem);
+    padding: 1.25rem;
+    border-radius: 16px;
+  }
+
+  .feedback-modal-card .form-actions {
+    align-items: stretch;
+    flex-direction: column-reverse;
+  }
+
+  .feedback-modal-card .form-actions .btn-primary,
+  .feedback-modal-card .form-actions .btn-secondary {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-card.feedback-modal-card {
+    animation: none;
+  }
+}
+
 .feedback-intro { margin: -0.5rem 0 1rem; color: var(--muted); font-size: 0.86rem; line-height: 1.45; }
 .feedback-source { margin: -0.25rem 0 1rem; color: var(--muted); font-size: 0.78rem; }
 .feedback-source code { color: var(--ink); font-family: inherit; font-weight: 700; }
 .feedback-count { display: block; margin-top: 0.3rem; text-align: right; color: var(--muted); font-size: 0.72rem; }
-.feedback-modal-card textarea { min-height: 8rem; resize: vertical; }

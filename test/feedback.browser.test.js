@@ -49,6 +49,7 @@ test('feedback browser flows keep async state, PT/EN forms, focus, filters, and 
   const app = await buildServer({ db, sessionCookieSecure: false });
   const admin = await registerUser(db, { email: 'feedback-browser-admin@example.test', password: 'browser-secret-1', first_name: 'Ada', last_name: 'Admin' });
   db.prepare('UPDATE users SET role = ? WHERE id = ?').run('admin', admin.id);
+  db.prepare('UPDATE users SET onboarding_status = ? WHERE id = ?').run('active', admin.id);
   db.prepare(`INSERT INTO feedback (author_user_id, author_email, type, description, pathname, status, internal_note) VALUES (?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?)`)
     .run(admin.id, admin.email, 'bug', 'New feedback A', '/home.html', 'new', '', admin.id, admin.email, 'suggestion', 'New feedback B', '/calendar.html', 'new', '', admin.id, admin.email, 'other', 'Resolved feedback', '/shoes.html', 'resolved', 'old note');
   const baseUrl = await app.listen({ port: 0, host: '127.0.0.1' });
@@ -159,8 +160,41 @@ test('feedback browser flows keep async state, PT/EN forms, focus, filters, and 
     await evaluate('document.getElementById("feedbackTypeFilter").value="bug";document.getElementById("feedbackTypeFilter").dispatchEvent(new Event("change"))');
     await waitFor('document.getElementById("feedbackAdminError").classList.contains("hidden") && document.querySelectorAll(".feedback-row").length === 1');
 
+    const inspectGlobalFeedbackModal = async (label) => {
+      await evaluate('document.getElementById("feedbackTrigger").focus();document.getElementById("feedbackTrigger").click()');
+      await waitFor('!document.getElementById("feedbackModal").classList.contains("hidden")');
+      const styles = await evaluate(`(()=>{const backdrop=document.getElementById('feedbackModal');const card=backdrop.querySelector('.feedback-modal-card');const text=backdrop.querySelector('#feedbackText');const select=backdrop.querySelector('#feedbackType');const rect=card.getBoundingClientRect();const backdropRect=backdrop.getBoundingClientRect();const style=getComputedStyle(backdrop);const cardStyle=getComputedStyle(card);const textStyle=getComputedStyle(text);const selectStyle=getComputedStyle(select);return {position:style.position,display:style.display,zIndex:style.zIndex,backdropWidth:backdropRect.width,backdropHeight:backdropRect.height,cardTop:rect.top,cardRight:rect.right,cardBottom:rect.bottom,cardLeft:rect.left,cardWidth:rect.width,cardOverflow:cardStyle.overflowY,textBoxSizing:textStyle.boxSizing,textWidth:text.getBoundingClientRect().width,textBorder:textStyle.borderTopWidth,textRadius:textStyle.borderTopLeftRadius,textBackground:textStyle.backgroundColor,textFont:textStyle.fontFamily,textPadding:textStyle.padding,textOutline:textStyle.outlineStyle,selectBorder:selectStyle.borderTopWidth,selectRadius:selectStyle.borderTopLeftRadius}})()`, { label });
+      assert.equal(styles.position, 'fixed', `${label}: feedback backdrop is fixed`);
+      assert.equal(styles.display, 'flex', `${label}: feedback backdrop centers its card`);
+      assert.ok(Number(styles.zIndex) >= 100, `${label}: feedback backdrop is above the shell`);
+      assert.ok(styles.backdropWidth >= 390 && styles.backdropHeight >= 700, `${label}: backdrop covers the viewport`);
+      assert.ok(styles.cardTop >= 0 && styles.cardLeft >= 0 && styles.cardRight <= styles.backdropWidth && styles.cardBottom <= styles.backdropHeight, `${label}: card stays inside the viewport`);
+      assert.equal(styles.cardOverflow, 'auto', `${label}: card scrolls on short screens`);
+      assert.equal(styles.textBoxSizing, 'border-box', `${label}: description uses shared box sizing`);
+      assert.ok(Number.parseFloat(styles.textWidth) > 0, `${label}: description has a bounded width`);
+      assert.notEqual(styles.textBorder, '0px', `${label}: description has a visible border`);
+      assert.notEqual(styles.textRadius, '0px', `${label}: description has the shared radius`);
+      assert.notEqual(styles.textBackground, 'rgb(255, 255, 255)', `${label}: description has the application surface`);
+      assert.match(styles.textFont, /DM Sans|system-ui/, `${label}: description uses the application font`);
+      assert.notEqual(styles.textPadding, '0px', `${label}: description has field padding`);
+      await evaluate('document.getElementById("feedbackClose").click()');
+      await waitFor('document.getElementById("feedbackModal").classList.contains("hidden")');
+      assert.equal(await evaluate('document.activeElement.id'), 'feedbackTrigger', `${label}: closing restores trigger focus`);
+    };
+
+    await setViewport(1280, 800, false); await navigate('/admin-feedback.html');
+    await waitFor('document.getElementById("feedbackTrigger")?.dataset.feedbackWired === "true"');
+    await inspectGlobalFeedbackModal('admin desktop');
+    await navigate('/home.html');
+    await waitFor('document.getElementById("feedbackTrigger")?.dataset.feedbackWired === "true" && document.querySelector(".lang-switch [data-lang=\\"en-US\\"]").classList.contains("active")');
+    await inspectGlobalFeedbackModal('home desktop');
+    await navigate('/shoes.html');
+    await waitFor('document.getElementById("feedbackTrigger")?.dataset.feedbackWired === "true"');
+    await inspectGlobalFeedbackModal('shoes desktop');
+
     await setViewport(390, 844, true); await navigate('/home.html');
-    await waitFor('document.getElementById("feedbackTrigger") && document.querySelector(".lang-switch [data-lang=\\"en-US\\"]").classList.contains("active")');
+    await waitFor('document.getElementById("feedbackTrigger")?.dataset.feedbackWired === "true" && document.querySelector(".lang-switch [data-lang=\\"en-US\\"]").classList.contains("active")');
+    await inspectGlobalFeedbackModal('home mobile');
     await evaluate('document.getElementById("feedbackTrigger").click();document.getElementById("feedbackText").value="";document.getElementById("feedbackForm").requestSubmit()');
     await delay(100);
     assert.equal(await evaluate('document.getElementById("feedbackError").textContent'), 'Describe your feedback before sending.');
@@ -171,7 +205,7 @@ test('feedback browser flows keep async state, PT/EN forms, focus, filters, and 
     assert.equal(await evaluate('document.getElementById("feedbackError").textContent'), 'Não foi possível enviar seu feedback. O texto continua aqui; tente novamente.');
     await evaluate(`document.querySelector('.lang-switch [data-lang="en-US"]').click()`); await delay(500);
     assert.equal(await evaluate('document.getElementById("feedbackError").textContent'), 'Your feedback could not be sent. Your text is still here; please try again.');
-    t.diagnostic('Verified feedback triage and global submission at 1024×768 and 390×844 in PT/EN, including stale filter responses, pending mutation containment, unsaved draft/caret preservation, mobile overflow, and focus restoration.');
+    t.diagnostic('Verified feedback triage and global submission at 1024×768 and 390×844 in PT/EN, including stale filter responses, pending mutation containment, unsaved draft/caret preservation, mobile overflow, focus restoration, and computed fixed-backdrop/card/field bounds on admin, home, and shoes pages.');
   } finally {
     socket?.close(); chromeProcess.kill('SIGTERM'); rmSync(profile, { recursive: true, force: true }); await app.close();
   }
