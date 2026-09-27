@@ -54,7 +54,7 @@ AI coaches are only as good as the data you give them. Exporting workouts by han
 ### Accounts & Access
 - **User accounts & security** — email/password registration and sign-in backed by Node's native `crypto` (`scrypt`) password hashing.
 - **Account roles** — every account has a database-constrained `user` or `admin` role. Public registration always creates `user`; admin status only comes from the privileged local bootstrap or promotion commands. Admin role does not bypass per-user ownership checks.
-- **Account administration** — an admin-only sidebar group opens `/admin-users.html` to list, create, edit, and delete accounts. The group is absent from the DOM for everyone else, and the server independently gates both the page and `/api/admin/users*`. Self-deletion, self-demotion, and removing the last administrator are refused, role changes revoke the target's sessions, and every change is written to an `admin_audit_log` trail that stores no credentials.
+- **Account administration** — an admin-only sidebar group opens `/admin-users.html` to list, create, edit identity data, and delete accounts. The group is absent from the DOM for everyone else, and the server independently gates both the page and `/api/admin/users*`. Web CRUD always creates regular users and rejects privilege fields; role grants are available only through the privileged local commands. Self-deletion and removing the last administrator are refused, and web mutations are written to an `admin_audit_log` trail that stores no credentials.
 - **Secure sessions** — 256-bit random session tokens stored in SQLite, delivered as `HttpOnly` / `Secure` / `SameSite=Lax` cookies with server-side expiry.
 - **Server-side route gating** — unauthenticated visitors are redirected to the login page by Fastify itself; the training tool is never rendered without a valid session.
 - **User dropdown menu** — the authenticated user badge opens **Setup guide**, **Change Password**, and **Preferences**. Logout remains a separate topbar action.
@@ -387,8 +387,9 @@ input, validates and hashes through the application auth code, and creates an
 exists, it makes no changes. If the address is already registered, it directs
 the operator to promote that account. For an existing account, run
 `npm run admin:promote`; inspect the displayed identity and type `yes` to
-confirm. Promotion updates only `role`; it does not create missing users or
-change passwords, preferences, onboarding, or sessions.
+confirm. Promotion updates only `role`, revokes that account's existing
+sessions, and does not create missing users or change passwords, preferences,
+or onboarding.
 
 Both commands require an interactive TTY, use the same `DATABASE_FILE` setting
 as the server, and never accept a password argument. Cancellation and EOF leave
@@ -401,12 +402,12 @@ privileged because these commands can grant admin access.
 An administrator who signs in gets an **Administration** group at the bottom of
 the sidebar, linking to the **Users** page (`/admin-users.html`). That page lists
 every account with its name, email, role, and creation date, and supports
-creating, editing, and deleting accounts. For everyone else the group is absent
+creating regular users, editing identity fields, and deleting accounts. For everyone else the group is absent
 from the DOM entirely, so it is never in the layout or the tab order; the server
 independently redirects `/admin-users.html` to `/home.html` and answers
 `/api/admin/users*` with `403`, and `401` without a session. The role is read
-from the database on every request, so a promotion or demotion takes effect
-without a new sign-in.
+from the database on every request. Role grants are not available in this web
+CRUD; use `npm run admin:promote` for an explicit local promotion.
 
 Administrators never see or edit another account's training, cycle, or shoe
 data. The API returns identification and role only.
@@ -414,20 +415,20 @@ data. The API returns identification and role only.
 Safety rules enforced by `src/admin/users.js` inside the same write transaction
 that would persist the change:
 
-- The signed-in account cannot be deleted or have its own role changed, and the
-  interface does not offer those actions for it.
-- The last remaining administrator cannot be deleted or demoted.
-- A role change deletes that account's existing sessions, so a stale
-  permission never survives in an old session.
-- Account creation and email changes reuse the application's registration
-  validation, email normalization, and password hashing. The role must be
-  explicitly `user` or `admin`; nothing is inferred, and a submitted role
-  outside that pair is rejected.
+- The signed-in account cannot be deleted, and the last remaining administrator
+  cannot be deleted.
+- Account creation and identity edits reuse the application's registration
+  validation, email normalization, and password hashing. Web creation always
+  assigns `user`; `role`, `expected_role`, and unknown fields are rejected.
 - Unknown request fields are refused, so no column can be written indirectly.
 - Deleting an account removes its sessions, trainings, cycles, shoes, mileage
   ledger, and AI Coach availability through the existing cascades.
 
-Every create, update, role change, and delete writes one row to
+Only `admin:bootstrap` and `admin:promote` can grant administrator status.
+Promotion is a local privileged operation and revokes existing sessions for the
+promoted account.
+
+Every web create, identity update, and delete writes one row to
 `admin_audit_log` (added by the idempotent
 `2026-09-admin-account-audit-v1` migration) with the actor, the target, the
 action, and a timestamp. Identities are copied rather than joined, so the record

@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { buildServer } = require('../src/server');
+const { buildServer, isAdminPageAlias } = require('../src/server');
 const { createDatabase } = require('../src/db/database');
 const { registerUser } = require('../src/auth/registration');
 const { SESSION_COOKIE_NAME, createSession } = require('../src/auth/sessions');
@@ -58,6 +58,15 @@ const ADMIN_REQUESTS = [
   ['DELETE', '/api/admin/users/1'],
 ];
 
+test('admin page alias detection handles encoded, repeated, canonical, and malformed paths', () => {
+  assert.equal(isAdminPageAlias('//admin-users.html'), true);
+  assert.equal(isAdminPageAlias('/%2fadmin-users.html'), true);
+  assert.equal(isAdminPageAlias('///admin-users.html?lang=en'), true);
+  assert.equal(isAdminPageAlias('/admin-users.html'), false);
+  assert.equal(isAdminPageAlias('/%zzadmin-users.html'), false);
+  assert.equal(isAdminPageAlias(undefined), false);
+});
+
 /* ── Authorization ── */
 
 test('every account route refuses an anonymous request', async () => {
@@ -66,7 +75,7 @@ test('every account route refuses an anonymous request', async () => {
     const response = await app.inject({
       method,
       url,
-      payload: { first_name: 'X', last_name: 'Y', email: 'x@y.com', password: PASSWORD, role: 'admin' },
+      payload: { first_name: 'X', last_name: 'Y', email: 'x@y.com', password: PASSWORD },
     });
     assert.equal(response.statusCode, 401, `${method} ${url}`);
   }
@@ -79,7 +88,7 @@ test('every account route refuses a signed-in non-administrator', async () => {
       method,
       url,
       headers: { cookie: userCookie },
-      payload: { first_name: 'X', last_name: 'Y', email: 'x@y.com', password: PASSWORD, role: 'admin' },
+      payload: { first_name: 'X', last_name: 'Y', email: 'x@y.com', password: PASSWORD },
     });
     assert.equal(response.statusCode, 403, `${method} ${url}`);
   }
@@ -101,6 +110,31 @@ test('the administration page sends anonymous visitors to login and others home'
   const regular = await app.inject({ method: 'GET', url: '/admin-users.html', headers: { cookie: userCookie } });
   assert.equal(regular.statusCode, 302);
   assert.match(regular.headers.location, /\/home\.html$/);
+});
+
+test('admin document path aliases always pass through the canonical authorization gate', async () => {
+  const { app, adminCookie, userCookie } = await setup();
+  for (const url of ['//admin-users.html', '/%2fadmin-users.html', '///admin-users.html']) {
+    const anonymous = await app.inject({ method: 'GET', url });
+    assert.equal(anonymous.statusCode, 302, `anonymous ${url}`);
+    assert.match(anonymous.headers.location, /\/login\.html$/);
+
+    const regular = await app.inject({ method: 'GET', url, headers: { cookie: userCookie } });
+    assert.equal(regular.statusCode, 302, `regular ${url}`);
+    assert.match(regular.headers.location, /\/home\.html$/);
+
+    const admin = await app.inject({ method: 'GET', url, headers: { cookie: adminCookie } });
+    assert.equal(admin.statusCode, 200, `admin ${url}`);
+    assert.match(admin.body, /data-i18n="admin\.title"/);
+  }
+  for (const url of ['//assets/brand/favicon.png', '/%2fassets/brand/favicon.png']) {
+    const asset = await app.inject({ method: 'GET', url });
+    assert.equal(asset.statusCode, 200, `public asset ${url}`);
+    assert.match(asset.headers['content-type'], /^image\//);
+  }
+  const malformed = await app.inject({ method: 'GET', url: '/%zzadmin-users.html' });
+  assert.notEqual(malformed.statusCode, 200);
+  assert.doesNotMatch(malformed.body, /data-i18n="admin\.title"/);
 });
 
 test('a role granted after sign-in is honoured without a new session', async () => {
@@ -159,13 +193,12 @@ test('an administrator creates an account and the new user can sign in', async (
       last_name: 'Account',
       email: 'Created@Example.com',
       password: PASSWORD,
-      role: 'admin',
     },
   });
   assert.equal(response.statusCode, 201);
   const created = response.json().user;
   assert.equal(created.email, 'created@example.com');
-  assert.equal(created.role, 'admin');
+  assert.equal(created.role, 'user');
 
   const login = await app.inject({
     method: 'POST',
@@ -184,21 +217,21 @@ test('creating rejects a duplicate email with a conflict code', async () => {
     headers: { cookie: adminCookie },
     payload: {
       first_name: 'Dup', last_name: 'Licate', email: users[0].email,
-      password: PASSWORD, role: 'user',
+      password: PASSWORD,
     },
   });
   assert.equal(response.statusCode, 409);
   assert.deepEqual(response.json().errors, ['emailInUse']);
 });
 
-test('creating answers registration failures with the same envelope as role failures', async () => {
+test('creating answers registration and privilege failures with the same envelope', async () => {
   const { app, adminCookie } = await setup();
   const cases = [
     [{ email: 'not-an-email' }, 'invalidRegistration'],
     [{ password: 'short' }, 'invalidRegistration'],
     [{ first_name: '   ' }, 'invalidRegistration'],
-    [{ role: 'superuser' }, 'invalidRole'],
-    [{ role: undefined }, 'invalidRole'],
+    [{ role: 'admin' }, 'privilegedField'],
+    [{ expected_role: 'user' }, 'privilegedField'],
     [{ onboarding_status: 'active' }, 'unknownField'],
   ];
   for (const [override, code] of cases) {
@@ -211,7 +244,6 @@ test('creating answers registration failures with the same envelope as role fail
         last_name: 'Probe',
         email: `probe-${code}-${Object.keys(override).join('') || 'x'}@example.com`,
         password: PASSWORD,
-        role: 'user',
         ...override,
       },
     });
@@ -228,14 +260,14 @@ test('an administrator updates an account', async () => {
     method: 'PUT',
     url: `/api/admin/users/${users[0].id}`,
     headers: { cookie: adminCookie },
-    payload: { first_name: 'Renamed', last_name: 'Person', role: 'admin' },
+    payload: { first_name: 'Renamed', last_name: 'Person' },
   });
   assert.equal(response.statusCode, 200);
   assert.equal(response.json().user.first_name, 'Renamed');
-  assert.equal(response.json().user.role, 'admin');
+  assert.equal(response.json().user.role, 'user');
 });
 
-test('a role change invalidates the target sessions immediately', async () => {
+test('privilege fields are rejected without changing the account or sessions', async () => {
   const { app, db, adminCookie, users } = await setup();
   const targetCookie = `${SESSION_COOKIE_NAME}=${createSession(db, users[0].id).token}`;
   assert.equal((await app.inject({ method: 'GET', url: '/api/onboarding', headers: { cookie: targetCookie } })).statusCode, 200);
@@ -246,16 +278,17 @@ test('a role change invalidates the target sessions immediately', async () => {
     headers: { cookie: adminCookie },
     payload: { role: 'admin' },
   });
-  assert.equal(response.statusCode, 200);
+  assert.equal(response.statusCode, 400);
 
   const after = await app.inject({ method: 'GET', url: '/api/onboarding', headers: { cookie: targetCookie } });
-  assert.equal(after.statusCode, 401);
+  assert.equal(after.statusCode, 200);
+  assert.equal(db.prepare('SELECT role FROM users WHERE id = ?').get(users[0].id).role, 'user');
 });
 
 test('updating refuses the self demotion, the empty payload and unknown targets', async () => {
   const { app, adminCookie, admins, users } = await setup();
   const cases = [
-    [`/api/admin/users/${admins[0].id}`, { role: 'user' }, 400, 'selfRoleChangeForbidden'],
+    [`/api/admin/users/${admins[0].id}`, { role: 'user' }, 400, 'privilegedField'],
     [`/api/admin/users/${users[0].id}`, {}, 400, 'noChanges'],
     [`/api/admin/users/${users[0].id}`, { password: 'another-secret' }, 400, 'unknownField'],
     ['/api/admin/users/not-a-number', { first_name: 'X' }, 400, 'invalidId'],
@@ -359,7 +392,7 @@ test('account changes are audited with the actor and never with secrets', async 
     headers: { cookie: adminCookie },
     payload: {
       first_name: 'Audit', last_name: 'Target', email: 'audit@example.com',
-      password: PASSWORD, role: 'user',
+      password: PASSWORD,
     },
   });
   const created = db.prepare('SELECT id FROM users WHERE email = ?').get('audit@example.com');
@@ -370,18 +403,12 @@ test('account changes are audited with the actor and never with secrets', async 
     payload: { last_name: 'Renamed' },
   });
   await app.inject({
-    method: 'PUT',
-    url: `/api/admin/users/${created.id}`,
-    headers: { cookie: adminCookie },
-    payload: { role: 'admin' },
-  });
-  await app.inject({
     method: 'DELETE', url: `/api/admin/users/${created.id}`, headers: { cookie: adminCookie },
   });
 
   const rows = db.prepare('SELECT * FROM admin_audit_log ORDER BY id').all();
   assert.deepEqual(rows.map((row) => row.action), [
-    'account_created', 'account_updated', 'account_role_changed', 'account_deleted',
+    'account_created', 'account_updated', 'account_deleted',
   ]);
   for (const row of rows) {
     assert.equal(row.actor_user_id, admins[0].id);
@@ -390,7 +417,7 @@ test('account changes are audited with the actor and never with secrets', async 
   }
   // The deleted account is gone, yet its history remains.
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM users WHERE id = ?').get(created.id).count, 0);
-  assert.equal(rows.length, 4);
+  assert.equal(rows.length, 3);
   assert.equal(/password_hash|scrypt|session|token/i.test(JSON.stringify(rows)), false);
   assert.ok(users[0].email);
 });
@@ -420,10 +447,10 @@ async function assertRefusedAfterRevocation(app, db, creator, revoke) {
     headers: { cookie: creator.cookie },
     payload: {
       first_name: 'Back', last_name: 'Door', email: 'backdoor@example.com',
-      password: PASSWORD, role: 'admin',
+      password: PASSWORD,
     },
   });
-  assert.equal((await revoked).statusCode, 200);
+  assert.ok([200, 204].includes((await revoked).statusCode));
 
   const response = await pending;
   assert.ok(
@@ -451,13 +478,13 @@ test('a create request whose authority is demoted mid-hash creates no account', 
   await assertRefusedAfterRevocation(app, db, { id: creator.id, cookie: adminCookie }, {
     actor: other,
     request: (cookie) => ({
-      method: 'PUT', url: `/api/admin/users/${creator.id}`, headers: { cookie }, payload: { role: 'user' },
+      method: 'DELETE', url: `/api/admin/users/${creator.id}`, headers: { cookie },
     }),
   });
-  // The revocation itself is still audited, and only one admin remains.
+  // The revocation itself removes the account; no role-change audit is made.
   assert.equal(
     db.prepare("SELECT COUNT(*) AS count FROM admin_audit_log WHERE action = 'account_role_changed'").get().count,
-    1,
+    0,
   );
   assert.equal(db.prepare("SELECT COUNT(*) AS count FROM users WHERE role = 'admin'").get().count, 1);
 });

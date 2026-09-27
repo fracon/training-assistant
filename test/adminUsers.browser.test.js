@@ -244,7 +244,6 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
       document.getElementById('addUserBtn').focus();
       document.getElementById('addUserBtn').click();
       const box=document.getElementById('userModal');
-      const roleSelect=document.getElementById('userRole');
       return {
         open:!box.classList.contains('hidden'),
         roleDialog:box.querySelector('.modal-card').getAttribute('role'),
@@ -252,7 +251,7 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
         labelled:box.querySelector('.modal-card').getAttribute('aria-labelledby'),
         focused:document.activeElement.id,
         passwordShown:!document.getElementById('userPasswordField').classList.contains('hidden'),
-        role:roleSelect.value,
+        roleSelector:!!document.getElementById('userRole'),
         backgroundInert:document.querySelector('.app-shell').hasAttribute('inert'),
       };
     })()`);
@@ -263,7 +262,7 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
       labelled: 'userModalTitle',
       focused: 'userFirstName',
       passwordShown: true,
-      role: 'user',
+      roleSelector: false,
       backgroundInert: true,
     });
 
@@ -363,7 +362,6 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
       const set=(id,value)=>{document.getElementById(id).value=value};
       set('userFirstName','Diego');set('userLastName','Rocha');
       set('userEmail','diego@example.test');set('userPassword','${PASSWORD}');
-      document.getElementById('userRole').value='admin';
       document.getElementById('userForm').requestSubmit();
       await new Promise((resolve)=>setTimeout(resolve,900));
       return {
@@ -375,7 +373,7 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
     })()`);
     assert.equal(created.closed, true, 'the dialog closes after a successful save');
     assert.equal(created.visible, true, 'the toast confirms the change');
-    assert.equal(created.admins, 2, 'the new account carries the requested role');
+    assert.equal(created.admins, 1, 'web creation cannot grant administrator access');
     await waitForRows(3);
 
     /* ── A committed create is not reported as failed when its refresh fails ── */
@@ -404,7 +402,7 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
             email:window.__capturedPut.body.email,
             first_name:window.__capturedPut.body.first_name,
             last_name:window.__capturedPut.body.last_name,
-            role:window.__capturedPut.body.role,
+            role:'user',
             created_at:null,
           }}),{status:200,headers:{'content-type':'application/json'}}));
         }
@@ -539,14 +537,12 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
         id:document.getElementById('userForm').dataset.userId,
         email:document.getElementById('userEmail').value,
         title:document.getElementById('userModalTitle').textContent,
-        role:document.getElementById('userRole').value,
       };
       window.__pendingEditGets[idA].reject();
       await new Promise((resolve)=>setTimeout(resolve,400));
       window.__editFetchHold=false;
       document.querySelector('.lang-switch [data-lang="en-US"]').click();
       await new Promise((resolve)=>setTimeout(resolve,300));
-      document.getElementById('userRole').value='admin';
       document.getElementById('userFirstName').value='Rita Promoted';
       window.__captureNextPut=true;
       document.getElementById('userForm').requestSubmit();
@@ -561,73 +557,15 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
       id: staleEditLookup.idB,
       email: 'runner@example.test',
       title: 'Editar Usuário',
-      role: 'user',
     });
     assert.deepEqual(staleEditLookup.put, {
       id: staleEditLookup.idB,
       body: {
         first_name: 'Rita Promoted',
-        role: 'admin',
-        expected_role: 'user',
       },
     });
     assert.equal(staleEditLookup.closed, true);
     assert.equal(staleEditLookup.staleError, false);
-
-    /* ── A role conflict rebases before an identity-only retry ── */
-
-    const roleConflictRecovery = await evaluate(`(async()=>{
-      const row=[...document.querySelectorAll('.user-row')]
-        .find((node)=>node.querySelector('.user-name').textContent==='Rita Runner');
-      const id=row.dataset.userId;
-      row.querySelector('[data-action="edit"]').click();
-      await new Promise((resolve)=>setTimeout(resolve,450));
-      document.getElementById('userFirstName').value='Rita Unsaved';
-      document.getElementById('userRole').value='admin';
-      // A second administrator changes the role after the form was opened.
-      await fetch('/api/admin/users/'+id,{method:'PUT',headers:{'content-type':'application/json'},
-        body:JSON.stringify({role:'admin',expected_role:'user'})});
-      document.getElementById('userForm').requestSubmit();
-      await new Promise((resolve)=>setTimeout(resolve,650));
-      const conflict={
-        error:document.getElementById('userFormError').textContent.trim(),
-        firstName:document.getElementById('userFirstName').value,
-        email:document.getElementById('userEmail').value,
-        role:document.getElementById('userRole').value,
-        expectedRole:document.getElementById('userForm').dataset.initialRole,
-        open:!document.getElementById('userModal').classList.contains('hidden'),
-      };
-      document.querySelector('.lang-switch [data-lang="pt-BR"]').click();
-      await new Promise((resolve)=>setTimeout(resolve,500));
-      const portuguese=document.getElementById('userFormError').textContent.trim();
-      document.getElementById('userFirstName').value='Rita Reconciled';
-      window.__captureNextPut=true;
-      document.getElementById('userForm').requestSubmit();
-      await new Promise((resolve)=>setTimeout(resolve,850));
-      // Restore the seeded regular account for the remaining access-control
-      // assertions; this is outside the form flow being verified above.
-      await fetch('/api/admin/users/'+id,{method:'PUT',headers:{'content-type':'application/json'},
-        body:JSON.stringify({role:'user',expected_role:'admin'})});
-      document.querySelector('.lang-switch [data-lang="en-US"]').click();
-      await new Promise((resolve)=>setTimeout(resolve,350));
-      return {conflict,portuguese,put:window.__capturedPut,
-        closed:document.getElementById('userModal').classList.contains('hidden')};
-    })()`);
-    assert.deepEqual(roleConflictRecovery.conflict, {
-      error: 'The account role changed while it was being edited. Review the role and try again.',
-      firstName: 'Rita Unsaved',
-      email: 'runner@example.test',
-      role: 'admin',
-      expectedRole: 'admin',
-      open: true,
-    });
-    assert.equal(roleConflictRecovery.portuguese,
-      'O papel da conta mudou enquanto ela era editada. Revise o papel e tente novamente.');
-    assert.deepEqual(roleConflictRecovery.put, {
-      id: roleConflictRecovery.put.id,
-      body: { first_name: 'Rita Reconciled' },
-    });
-    assert.equal(roleConflictRecovery.closed, true);
 
     const unchangedEdit = await evaluate(`(async()=>{
       const row=[...document.querySelectorAll('.user-row')]
@@ -977,18 +915,15 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
       error: 'The request could not be completed. Try again.',
     });
 
-    /* ── The self role control is locked and the account is never deletable ── */
+    /* ── The role is informational only and the account is never deletable ── */
 
     const selfEdit = await evaluate(`(async()=>{
       const row=[...document.querySelectorAll('.user-row')]
         .find((node)=>node.querySelector('.user-self-chip'));
       row.querySelector('[data-action="edit"]').click();
       await new Promise((resolve)=>setTimeout(resolve,700));
-      const select=document.getElementById('userRole');
-      const hint=document.getElementById('userRoleHint');
       const state={
-        disabled:select.disabled,
-        hintShown:!hint.classList.contains('hidden'),
+        roleSelector:!!document.getElementById('userRole'),
         hasDelete:!!row.querySelector('[data-action="delete"]'),
         passwordHidden:document.getElementById('userPasswordField').classList.contains('hidden'),
       };
@@ -1031,8 +966,7 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
       return state;
     })()`);
     assert.deepEqual(selfEdit, {
-      disabled: true,
-      hintShown: true,
+      roleSelector: false,
       hasDelete: false,
       passwordHidden: true,
       badgeAfterSave: 'Aline Administradora',

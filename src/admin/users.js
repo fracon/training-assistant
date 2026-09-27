@@ -11,13 +11,12 @@ const { findAccountByEmail } = require('./operations');
 
 const ACCOUNT_ROLES = ['user', 'admin'];
 const ADMIN_ROLE = 'admin';
-const CREATE_FIELDS = ['first_name', 'last_name', 'email', 'password', 'role'];
-const UPDATE_FIELDS = ['first_name', 'last_name', 'email', 'role'];
-const EXPECTED_ROLE_FIELD = 'expected_role';
+const CREATE_FIELDS = ['first_name', 'last_name', 'email', 'password'];
+const UPDATE_FIELDS = ['first_name', 'last_name', 'email'];
+const PRIVILEGE_FIELDS = ['role', 'expected_role'];
 
 const ACTION_CREATED = 'account_created';
 const ACTION_UPDATED = 'account_updated';
-const ACTION_ROLE_CHANGED = 'account_role_changed';
 const ACTION_DELETED = 'account_deleted';
 
 // Every failure carries a stable machine code alongside the HTTP status so the
@@ -44,14 +43,6 @@ function normalizeAccountId(value) {
   return id;
 }
 
-function normalizeRole(value) {
-  const role = typeof value === 'string' ? value.trim().toLowerCase() : '';
-  if (!ACCOUNT_ROLES.includes(role)) {
-    throw new AdminUserError(400, 'invalidRole', 'Unsupported account role.');
-  }
-  return role;
-}
-
 function normalizeName(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -62,6 +53,17 @@ function rejectUnknownFields(body, allowed) {
     if (!allowed.includes(key)) {
       throw new AdminUserError(400, 'unknownField', `Unsupported field: ${key}.`);
     }
+  }
+}
+
+function rejectPrivilegeFields(body) {
+  const field = PRIVILEGE_FIELDS.find((key) => Object.prototype.hasOwnProperty.call(body, key));
+  if (field) {
+    throw new AdminUserError(
+      400,
+      'privilegedField',
+      `The ${field} field can only be changed by a local administrative command.`
+    );
   }
 }
 
@@ -150,17 +152,18 @@ function getAccount(db, id) {
 
 async function createAccount(db, actor, payload) {
   const body = payload ?? {};
+  rejectPrivilegeFields(body);
   rejectUnknownFields(body, CREATE_FIELDS);
 
   // Registration owns email normalization, the email pattern, the password
-  // length rule and the hashing parameters; only the role is admin-specific.
+  // length rule and the hashing parameters. Web CRUD always creates a user;
+  // privilege grants are intentionally restricted to local commands.
   const registration = normalizeRegistration(body);
   try {
     validateRegistration(registration);
   } catch (error) {
     throw mapRegistrationError(error);
   }
-  const role = normalizeRole(body.role);
 
   if (findAccountByEmail(db, registration.email)) {
     throw new AdminUserError(409, 'emailInUse', 'This email is already registered.');
@@ -192,7 +195,7 @@ async function createAccount(db, actor, payload) {
         registration.first_day_of_week,
         registration.distance_unit,
         registration.temperature_unit,
-        role
+        'user'
       );
     const account = publicAccount(
       db.prepare(`SELECT ${ACCOUNT_COLUMNS} FROM users WHERE id = ?`).get(Number(result.lastInsertRowid))
@@ -201,7 +204,7 @@ async function createAccount(db, actor, payload) {
       actor: currentActor,
       target: account,
       action: ACTION_CREATED,
-      details: { role },
+      details: { role: 'user' },
     });
     return account;
   });
@@ -211,7 +214,8 @@ async function createAccount(db, actor, payload) {
 function updateAccount(db, actor, id, payload) {
   const accountId = normalizeAccountId(id);
   const body = payload ?? {};
-  rejectUnknownFields(body, [...UPDATE_FIELDS, EXPECTED_ROLE_FIELD]);
+  rejectPrivilegeFields(body);
+  rejectUnknownFields(body, UPDATE_FIELDS);
 
   const updates = {};
   for (const key of UPDATE_FIELDS) {
@@ -232,11 +236,6 @@ function updateAccount(db, actor, id, payload) {
   }
   if (updates.first_name !== undefined) updates.first_name = normalizeName(updates.first_name);
   if (updates.last_name !== undefined) updates.last_name = normalizeName(updates.last_name);
-  if (updates.role !== undefined) updates.role = normalizeRole(updates.role);
-  const expectedRole = body[EXPECTED_ROLE_FIELD] === undefined
-    ? undefined
-    : normalizeRole(body[EXPECTED_ROLE_FIELD]);
-
   const apply = db.transaction(() => {
     const current = db
       .prepare(`SELECT ${ACCOUNT_COLUMNS} FROM users WHERE id = ?`)
@@ -244,39 +243,10 @@ function updateAccount(db, actor, id, payload) {
     if (!current) {
       throw new AdminUserError(404, 'accountNotFound', 'Account not found.');
     }
-    if (updates.role !== undefined && expectedRole !== undefined && expectedRole !== current.role) {
-      throw new AdminUserError(
-        409,
-        'roleConflict',
-        'The account role changed while it was being edited.'
-      );
-    }
     if (updates.email !== undefined && updates.email !== current.email) {
       const owner = findAccountByEmail(db, updates.email);
       if (owner && owner.id !== accountId) {
         throw new AdminUserError(409, 'emailInUse', 'This email is already registered.');
-      }
-    }
-
-    const roleChanged = updates.role !== undefined && updates.role !== current.role;
-    if (roleChanged && current.role === ADMIN_ROLE) {
-      // Losing your own administration from the panel would silently end the
-      // current session's access, and removing the last administrator would
-      // leave the installation unmanageable. Both are refused in the same write
-      // transaction that would otherwise persist the change.
-      if (accountId === actor.id) {
-        throw new AdminUserError(
-          400,
-          'selfRoleChangeForbidden',
-          'You cannot change your own role from the administration panel.'
-        );
-      }
-      if (countAdministrators(db) <= 1) {
-        throw new AdminUserError(
-          409,
-          'lastAdministrator',
-          'The last administrator cannot be demoted.'
-        );
       }
     }
 
@@ -290,21 +260,15 @@ function updateAccount(db, actor, id, payload) {
       throw new AdminUserError(404, 'accountNotFound', 'Account not found.');
     }
 
-    // A role change must not leave a stale permission in an existing session.
-    if (roleChanged) {
-      db.prepare('DELETE FROM sessions WHERE user_id = ?').run(accountId);
-    }
-
     const account = publicAccount(
       db.prepare(`SELECT ${ACCOUNT_COLUMNS} FROM users WHERE id = ?`).get(accountId)
     );
     recordAudit(db, {
       actor,
       target: account,
-      action: roleChanged ? ACTION_ROLE_CHANGED : ACTION_UPDATED,
+      action: ACTION_UPDATED,
       details: {
         fields: Object.keys(updates),
-        ...(roleChanged ? { role: { from: current.role, to: account.role } } : {}),
       },
     });
     return account;

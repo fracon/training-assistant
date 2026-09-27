@@ -70,6 +70,9 @@ function promoteAccount(db, email) {
     if (account.role === 'admin') return { changed: false, user: publicAccount(account) };
     const result = db.prepare("UPDATE users SET role = 'admin' WHERE id = ? AND role = 'user'").run(account.id);
     if (result.changes !== 1) throw new AdminOperationError('INVALID_ROLE', 'The account has an unsupported role.');
+    // A promotion is a privileged local operation. Revoke existing sessions
+    // so the account must authenticate again under its newly granted role.
+    db.prepare('DELETE FROM sessions WHERE user_id = ?').run(account.id);
     return {
       changed: true,
       user: publicAccount({ ...account, role: 'admin' }),

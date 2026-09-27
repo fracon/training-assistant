@@ -208,22 +208,21 @@ test('countAdministrators counts only the admin role', async () => {
 
 /* ── Creating ── */
 
-test('createAccount registers an account with the requested role and records the actor', async () => {
+test('createAccount always registers a regular account and records the actor', async () => {
   const { db, admins } = await setup();
   const created = await createAccount(db, actorOf(admins[0]), {
     first_name: 'New',
     last_name: 'Person',
     email: '  New.Person@Example.com ',
     password: 'new-person-secret',
-    role: 'admin',
   });
 
   assert.equal(created.email, 'new.person@example.com');
-  assert.equal(created.role, 'admin');
+  assert.equal(created.role, 'user');
   assert.equal(created.first_name, 'New');
 
   const stored = db.prepare('SELECT * FROM users WHERE id = ?').get(created.id);
-  assert.equal(stored.role, 'admin');
+  assert.equal(stored.role, 'user');
   assert.notEqual(stored.password_hash, 'new-person-secret');
   assert.match(stored.password_hash, /^scrypt\$/);
   // A new account starts onboarding and never inherits another account's state.
@@ -235,21 +234,17 @@ test('createAccount registers an account with the requested role and records the
   assert.equal(entry.actor_email, admins[0].email);
   assert.equal(entry.target_user_id, created.id);
   assert.equal(entry.target_email, 'new.person@example.com');
-  assert.deepEqual(JSON.parse(entry.details), { role: 'admin' });
+  assert.deepEqual(JSON.parse(entry.details), { role: 'user' });
 });
 
-test('createAccount requires an explicit role and applies the account defaults', async () => {
+test('createAccount defaults to user and applies the account defaults', async () => {
   const { db, admins } = await setup();
   const actor = actorOf(admins[0]);
   const base = {
     first_name: 'Plain', last_name: 'Person', email: 'plain@example.com',
     password: 'plain-person-secret',
   };
-  // The role is never inferred: an omitted or unknown value is refused instead
-  // of silently granting or assuming a privilege level.
-  await assertAdminError(() => createAccount(db, actor, { ...base }), 400, 'invalidRole');
-
-  const created = await createAccount(db, actor, { ...base, role: 'user' });
+  const created = await createAccount(db, actor, { ...base });
   assert.equal(created.role, 'user');
   const stored = db.prepare('SELECT * FROM users WHERE id = ?').get(created.id);
   assert.equal(stored.distance_unit, 'km');
@@ -258,23 +253,19 @@ test('createAccount requires an explicit role and applies the account defaults',
   assert.equal(stored.onboarding_guide_hidden, 0);
 });
 
-test('createAccount rejects unsupported fields, roles and registration failures', async () => {
+test('createAccount rejects unsupported privilege fields and registration failures', async () => {
   const { db, admins } = await setup();
   const actor = actorOf(admins[0]);
   const base = {
     first_name: 'New', last_name: 'Person', email: 'new@example.com',
-    password: 'new-person-secret', role: 'user',
+    password: 'new-person-secret',
   };
 
   await assertAdminError(() => createAccount(db, actor, { ...base, onboarding_status: 'active' }),
     400, 'unknownField',
   );
-  await assertAdminError(() => createAccount(db, actor, { ...base, role: 'root' }), 400, 'invalidRole');
-  await assertAdminError(() => createAccount(db, actor, { ...base, role: 1 }), 400, 'invalidRole');
-
-  // A padded or differently cased role is normalized rather than rejected.
-  const normalized = await createAccount(db, actor, { ...base, email: 'ok@example.com', role: ' ADMIN ' });
-  assert.equal(normalized.role, 'admin');
+  await assertAdminError(() => createAccount(db, actor, { ...base, role: 'admin' }), 400, 'privilegedField');
+  await assertAdminError(() => createAccount(db, actor, { ...base, expected_role: 'user' }), 400, 'privilegedField');
 
   await assertAdminError(() => createAccount(db, actor, { ...base, email: 'not-an-email' }),
     400, 'invalidRegistration',
@@ -293,22 +284,21 @@ test('createAccount rejects unsupported fields, roles and registration failures'
   await assertAdminError(() => createAccount(db, actor, {}), 400, 'invalidRegistration');
 });
 
-test('createAccount never stores a submitted role outside the constrained pair', async () => {
+test('createAccount rejects an attempted administrator grant without mutation', async () => {
   const { db, admins } = await setup();
-  const created = await createAccount(db, actorOf(admins[0]), {
+  await assertAdminError(() => createAccount(db, actorOf(admins[0]), {
     first_name: 'Escalate', last_name: 'Attempt', email: 'esc@example.com',
     password: 'escalate-secret', role: 'ADMIN',
-  });
-  assert.equal(created.role, 'admin');
-  const stored = db.prepare('SELECT role FROM users WHERE id = ?').get(created.id);
-  assert.equal(stored.role, 'admin');
+  }), 400, 'privilegedField');
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM users WHERE email = ?').get('esc@example.com').count, 0);
+  assert.equal(auditRowsFor(db, 'account_created').length, 0);
 });
 
 test('createAccount reports an email that is already registered', async () => {
   const { db, admins, users } = await setup();
   await assertAdminError(() => createAccount(db, actorOf(admins[0]), {
       first_name: 'Dup', last_name: 'Licate', email: users[0].email,
-      password: 'duplicate-secret', role: 'user',
+      password: 'duplicate-secret',
     }),
     409, 'emailInUse',
   );
@@ -320,7 +310,7 @@ test('createAccount rechecks the email inside the write transaction', async () =
   const racing = stubbingEmailConflictAfter(db, 1);
   await assertAdminError(() => createAccount(racing, actorOf(admins[0]), {
       first_name: 'Race', last_name: 'Condition', email: 'race@example.com',
-      password: 'race-secret-1', role: 'user',
+      password: 'race-secret-1',
     }),
     409, 'emailInUse',
   );
@@ -340,7 +330,7 @@ test('createAccount requires an identified administrator actor', async () => {
     await assertAdminError(
       () => createAccount(db, actor, {
         first_name: 'No', last_name: 'Actor', email: 'noactor@example.com',
-        password: 'no-actor-secret', role: 'user',
+        password: 'no-actor-secret',
       }),
       403, 'adminAuthorityRevoked',
     );
@@ -362,19 +352,20 @@ test('createAccount refuses the insert when the actor is demoted while the hash 
 
   const pending = createAccount(db, actorOf(creator), {
     first_name: 'Late', last_name: 'Arrival', email: 'late@example.com',
-    password: 'late-arrival-secret', role: 'admin',
+    password: 'late-arrival-secret',
   });
   // The guard's role is now stale: the actor is demoted mid-hash.
-  updateAccount(db, actorOf(other), creator.id, { role: 'user' });
+  db.prepare("UPDATE users SET role = 'user' WHERE id = ?").run(creator.id);
   assert.equal(db.prepare('SELECT role FROM users WHERE id = ?').get(creator.id).role, 'user');
 
-  // Even a request to mint another administrator is refused.
+  // The request is refused because the actor was revoked, before any account
+  // or audit row can be created.
   await assertAdminError(() => pending, 403, 'adminAuthorityRevoked');
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM users WHERE email = ?').get('late@example.com').count, 0);
   assert.equal(countAdministrators(db), 1);
-  // The demotion is audited; the refused creation is not.
+  // The revocation and refused creation write no audit row through web CRUD.
   assert.deepEqual(auditRowsFor(db, 'account_created'), [], 'the refusal writes no partial audit row');
-  assert.equal(auditRowsFor(db, 'account_role_changed').length, 1);
+  assert.equal(auditRowsFor(db, 'account_role_changed').length, 0);
   assert.ok(users[0].email);
 });
 
@@ -384,7 +375,7 @@ test('createAccount refuses the insert when the actor is deleted while the hash 
 
   const pending = createAccount(db, actorOf(creator), {
     first_name: 'Ghost', last_name: 'Writer', email: 'ghost-writer@example.com',
-    password: 'ghost-writer-secret', role: 'user',
+    password: 'ghost-writer-secret',
   });
   deleteAccount(db, actorOf(other), creator.id);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM users WHERE id = ?').get(creator.id).count, 0);
@@ -404,7 +395,7 @@ test('createAccount records the actor identity as it stands at write time', asyn
   // carry the identity that actually performed the write.
   const pending = createAccount(db, actorOf(creator), {
     first_name: 'Fresh', last_name: 'Writer', email: 'fresh-writer@example.com',
-    password: 'fresh-writer-secret', role: 'user',
+    password: 'fresh-writer-secret',
   });
   updateAccount(db, actorOf(other), creator.id, { email: 'renamed.admin@example.com' });
 
@@ -470,7 +461,7 @@ test('updateAccount rejects unsupported payloads and unknown accounts', async ()
     400, 'unknownField',
   );
   await assertAdminError(() => updateAccount(db, actor, users[0].id, { role: 'owner' }),
-    400, 'invalidRole',
+    400, 'privilegedField',
   );
   await assertAdminError(() => updateAccount(db, actor, 'abc', { first_name: 'X' }),
     400, 'invalidId',
@@ -484,93 +475,35 @@ test('updateAccount rejects unsupported payloads and unknown accounts', async ()
   assert.equal(blanked.last_name, '');
 });
 
-test('updateAccount refuses to change the signed-in administrator role', async () => {
-  const { db, admins } = await setup();
-  await assertAdminError(() => updateAccount(db, actorOf(admins[0]), admins[0].id, { role: 'user' }),
-    400, 'selfRoleChangeForbidden',
-  );
-  assert.equal(countAdministrators(db), 1);
-  // Sending the same role is not a change and stays allowed.
-  const unchanged = updateAccount(db, actorOf(admins[0]), admins[0].id, { role: 'admin' });
-  assert.equal(unchanged.role, 'admin');
-});
-
-test('updateAccount refuses to demote the last administrator', async () => {
-  const { db, admins, users } = await setup({ admins: 2 });
-  // Demoting the other administrator is allowed while a second one remains.
-  const demoted = updateAccount(db, actorOf(admins[0]), admins[1].id, { role: 'user' });
-  assert.equal(demoted.role, 'user');
-  assert.equal(countAdministrators(db), 1);
-
-  // Re-submitting an unchanged role is not a demotion at all.
-  const unchanged = updateAccount(db, actorOf(admins[0]), admins[0].id, { role: 'admin' });
-  assert.equal(unchanged.role, 'admin');
-
-  // Defence in depth: even when a caller other than the sole administrator
-  // reaches the domain function, removing the last admin role is refused.
-  await assertAdminError(
-    () => updateAccount(db, actorOf(users[0]), admins[0].id, { role: 'user' }),
-    409, 'lastAdministrator',
-  );
-  assert.equal(countAdministrators(db), 1);
-  assert.equal(db.prepare('SELECT role FROM users WHERE id = ?').get(admins[0].id).role, 'admin');
-});
-
-test('updateAccount revokes the target sessions when the role changes', async () => {
+test('updateAccount rejects privilege fields without mutation or session revocation', async () => {
   const { db, admins, users } = await setup();
   const session = createSession(db, users[0].id);
   assert.ok(session);
-
-  const untouched = updateAccount(db, actorOf(admins[0]), users[0].id, { first_name: 'Keeps' });
-  assert.equal(untouched.first_name, 'Keeps');
-  assert.equal(
-    db.prepare('SELECT COUNT(*) AS count FROM sessions WHERE user_id = ?').get(users[0].id).count,
-    1,
-  );
-
-  const promoted = updateAccount(db, actorOf(admins[0]), users[0].id, { role: 'admin' });
-  assert.equal(promoted.role, 'admin');
-  assert.equal(
-    db.prepare('SELECT COUNT(*) AS count FROM sessions WHERE user_id = ?').get(users[0].id).count,
-    0,
-  );
-
-  const [first, last] = auditRows(db);
-  assert.equal(first.action, 'account_updated');
-  assert.equal(last.action, 'account_role_changed');
-  assert.deepEqual(JSON.parse(last.details).role, { from: 'user', to: 'admin' });
+  for (const payload of [{ role: 'admin' }, { expected_role: 'user' }]) {
+    await assertAdminError(() => updateAccount(db, actorOf(admins[0]), users[0].id, payload),
+      400, 'privilegedField');
+  }
+  assert.equal(db.prepare('SELECT role FROM users WHERE id = ?').get(users[0].id).role, 'user');
+  assert.equal(db.prepare('SELECT first_name FROM users WHERE id = ?').get(users[0].id).first_name, 'User0');
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM sessions WHERE user_id = ?').get(users[0].id).count, 1);
+  assert.equal(auditRowsFor(db, 'account_updated').length, 0);
 });
 
-test('name edits do not overwrite a concurrent promotion, while intentional role changes detect conflicts', async () => {
+test('identity edits preserve a concurrent role grant and never revoke sessions', async () => {
   const { db, admins, users } = await setup({ admins: 2 });
   const target = users[0];
   const session = createSession(db, target.id);
 
-  // Admin A had opened the old user form; Admin B promotes the account first.
-  updateAccount(db, actorOf(admins[1]), target.id, { role: 'admin' });
+  // Local promotion changes the role and revokes the old session first.
+  db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(target.id);
   const afterNameEdit = updateAccount(db, actorOf(admins[0]), target.id, {
     first_name: 'Promoted',
   });
   assert.equal(afterNameEdit.role, 'admin');
-  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM sessions WHERE user_id = ?').get(target.id).count, 0,
-    'the promotion revokes the session once, but the later name edit does not revoke anything');
-  const freshSession = createSession(db, target.id);
-
-  await assertAdminError(
-    () => updateAccount(db, actorOf(admins[0]), target.id, {
-      role: 'user', expected_role: 'user',
-    }),
-    409,
-    'roleConflict',
-  );
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM sessions WHERE user_id = ?').get(target.id).count, 1,
+    'identity editing does not touch sessions');
   assert.equal(db.prepare('SELECT role FROM users WHERE id = ?').get(target.id).role, 'admin');
-  assert.ok(freshSession);
-
-  const intentionallyDemoted = updateAccount(db, actorOf(admins[0]), target.id, {
-    role: 'user', expected_role: 'admin',
-  });
-  assert.equal(intentionallyDemoted.role, 'user');
-  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM sessions WHERE user_id = ?').get(target.id).count, 0);
+  assert.equal(auditRowsFor(db, 'account_role_changed').length, 0);
 });
 
 test('updateAccount reports a row that disappears before the write', async () => {

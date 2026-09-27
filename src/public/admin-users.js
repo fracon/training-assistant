@@ -44,7 +44,7 @@ export function accountName(account) {
   return getUserDisplayName(account);
 }
 
-export function validateAccountForm({ firstName, lastName, email, password, role }, { requirePassword }) {
+export function validateAccountForm({ firstName, lastName, email, password }, { requirePassword }) {
   const errors = [];
   if (!firstName.trim()) errors.push('admin.errors.firstNameRequired');
   if (!lastName.trim()) errors.push('admin.errors.lastNameRequired');
@@ -60,9 +60,6 @@ export function validateAccountForm({ firstName, lastName, email, password, role
       errors.push('admin.errors.passwordMin');
     }
   }
-  if (role !== ROLE_ADMIN && role !== ROLE_USER) {
-    errors.push('admin.errors.roleInvalid');
-  }
   return errors;
 }
 
@@ -74,14 +71,10 @@ const ERROR_KEYS = {
   lastAdministrator: 'admin.errors.lastAdministrator',
   adminAuthorityRevoked: 'admin.errors.authorityRevoked',
   selfDeleteForbidden: 'admin.errors.selfAction',
-  selfRoleChangeForbidden: 'admin.errors.selfAction',
-  invalidRole: 'admin.errors.roleInvalid',
   invalidId: 'admin.errors.accountNotFound',
   invalidRegistration: 'admin.errors.invalidRegistration',
   unknownField: 'admin.errors.invalidRegistration',
   noChanges: 'admin.errors.invalidRegistration',
-  roleConflict: 'admin.errors.roleConflict',
-  roleRefresh: 'admin.errors.roleRefresh',
 };
 
 export function errorMessageKey(error) {
@@ -276,7 +269,7 @@ function refreshFormError(messages) {
 
 function openModal(mode, account, context) {
   if (savePending) return;
-  const { messages, currentUserId } = context;
+  const { messages } = context;
   const isEdit = mode === 'edit';
   const title = document.getElementById('userModalTitle');
   const titleKey = isEdit ? 'admin.formTitleEdit' : 'admin.formTitleAdd';
@@ -291,12 +284,6 @@ function openModal(mode, account, context) {
   document.getElementById('userPasswordField').classList.toggle('hidden', isEdit);
   document.getElementById('userPassword').value = '';
 
-  const isSelf = Boolean(account) && account.id === currentUserId;
-  const roleSelect = document.getElementById('userRole');
-  roleSelect.value = account?.role ?? ROLE_USER;
-  roleSelect.disabled = isSelf;
-  document.getElementById('userRoleHint').classList.toggle('hidden', !isSelf);
-
   const submitLabel = document.getElementById('userFormSubmitLabel');
   submitLabel.setAttribute('data-i18n', 'admin.save');
   submitLabel.textContent = t(messages, 'admin.save');
@@ -304,7 +291,6 @@ function openModal(mode, account, context) {
   const form = document.getElementById('userForm');
   form.dataset.mode = mode;
   form.dataset.userId = account ? String(account.id) : '';
-  form.dataset.initialRole = isEdit ? account.role : '';
   form.dataset.initialFirstName = isEdit ? String(account.first_name ?? '').trim() : '';
   form.dataset.initialLastName = isEdit ? String(account.last_name ?? '').trim() : '';
   form.dataset.initialEmail = isEdit ? String(account.email ?? '').trim().toLowerCase() : '';
@@ -350,27 +336,6 @@ function setSavePending(pending, messages) {
   submitLabel.textContent = t(messages, pending ? 'admin.saving' : 'admin.save');
 }
 
-// A role conflict is recoverable, but retrying the stale role would be unsafe.
-// Re-read the account first, rebase only the expected role after that response,
-// and make the administrator choose the role again before sending a role PUT.
-async function reconcileRoleConflict(context, form) {
-  try {
-    const current = await fetchAdminUser(form.dataset.userId);
-    if (!current || (current.role !== ROLE_ADMIN && current.role !== ROLE_USER)) {
-      throw new Error('Invalid current account role');
-    }
-    form.dataset.initialRole = current.role;
-    document.getElementById('userRole').value = current.role;
-    showFormError(context.messages, ['admin.errors.roleConflict']);
-  } catch {
-    // Keep the old expected_role when reconciliation fails: a retry must not
-    // silently overwrite the role that caused the conflict.
-    showFormError(context.messages, ['admin.errors.roleRefresh']);
-  } finally {
-    setSavePending(false, context.messages);
-  }
-}
-
 function setDeletePending(pending) {
   deletePending = pending;
   document.getElementById('userList').setAttribute('aria-busy', String(pending));
@@ -384,7 +349,6 @@ function readForm() {
     lastName: document.getElementById('userLastName').value,
     email: document.getElementById('userEmail').value,
     password: document.getElementById('userPassword').value,
-    role: document.getElementById('userRole').value,
   };
 }
 
@@ -439,11 +403,6 @@ async function handleSubmit(context) {
         ...(normalized.email !== form.dataset.initialEmail
           ? { email: normalized.email } : {}),
       };
-      // The role is only sent when the control is editable for this account.
-      if (!document.getElementById('userRole').disabled && fields.role !== form.dataset.initialRole) {
-        payload.role = fields.role;
-        payload.expected_role = form.dataset.initialRole;
-      }
       if (Object.keys(payload).length === 0) {
         showFormError(context.messages, ['admin.errors.noChanges']);
         return;
@@ -458,7 +417,6 @@ async function handleSubmit(context) {
         last_name: fields.lastName.trim(),
         email: fields.email.trim().toLowerCase(),
         password: fields.password,
-        role: fields.role,
       });
     }
     // The mutation succeeded, so close the dialog and show success now. Keep
@@ -475,12 +433,8 @@ async function handleSubmit(context) {
       showListError(context, 'admin.refreshError');
     }
   } catch (error) {
-    if (isEdit && error?.codes?.includes('roleConflict')) {
-      await reconcileRoleConflict(context, form);
-    } else {
-      setSavePending(false, context.messages);
-      showFormError(context.messages, [errorMessageKey(error)]);
-    }
+    setSavePending(false, context.messages);
+    showFormError(context.messages, [errorMessageKey(error)]);
   } finally {
     operationPending = false;
     setSavePending(false, context.messages);

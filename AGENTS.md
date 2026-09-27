@@ -57,8 +57,8 @@ entrypoints and continue to run as its non-root `node` user.
   initialization, and accept no password arguments. Bootstrap rechecks for an
   admin and the email inside an atomic write transaction after input and
   hashing; it cannot replace an existing user's password or promote an
-  occupied email. Promotion changes only `role`, creates no account, and is
-  idempotent.
+  occupied email. Promotion changes only `role`, revokes the promoted account's
+  existing sessions, creates no account, and is idempotent.
 - Cancellation, EOF, mismatched passwords, and errors do not leave a partial
   account; secret input is not echoed. Neither command runs on server/container
   startup. In Docker/ZimaOS, run `docker exec -it <container-name> npm run
@@ -78,20 +78,22 @@ merely hidden — for every other account.
 
 - The list and read responses return identification and role only. They never
   expose or accept another account's training, cycle, shoe, or session data.
-- The page's controls are a convenience, not the boundary: self-deletion,
-  self-demotion, and removing the last administrator are refused by the domain
-  layer inside the write transaction that would otherwise persist the change.
-- A role change deletes the target's existing sessions, so a revoked permission
-  never survives in an old session. The role is re-read from the database on
-  every request.
+- The page's controls are a convenience, not the boundary: self-deletion and
+  removing the last administrator are refused by the domain layer inside the
+  write transaction that would otherwise persist the change. The web CRUD
+  creates regular users and edits identity fields only; it cannot grant or
+  alter roles. The role is re-read from the database on every request.
+- Administrator grants are available only through the privileged local
+  `admin:bootstrap` and `admin:promote` commands. A promotion revokes the
+  promoted account's existing sessions.
 - Creation and email changes reuse `src/auth/registration.js` normalization,
-  validation, and password hashing. `role` must be explicitly `user` or
-  `admin`; nothing is inferred, and unknown request fields are refused so no
-  column can be written indirectly.
+  validation, and password hashing. Web creation assigns `role = user` in the
+  backend; `role`, `expected_role`, and unknown request fields are explicitly
+  refused so no privilege or column can be written indirectly.
 - Deleting an account relies on the existing foreign-key cascades for its
   sessions, trainings, cycles, shoes, mileage ledger, and AI Coach
   availability.
-- Every create, update, role change, and delete writes one
+- Every web create, identity update, and delete writes one
   `admin_audit_log` row (idempotent migration
   `2026-09-admin-account-audit-v1`) with copied actor/target identities, the
   action, and a timestamp. The table holds no password, hash, token, or

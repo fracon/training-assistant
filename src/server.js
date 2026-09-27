@@ -144,6 +144,18 @@ function normalizeIsoDate(value) {
   return iso === text ? text : null;
 }
 
+function isAdminPageAlias(rawUrl) {
+  const rawPath = String(rawUrl ?? '').split('?')[0];
+  let decodedPath;
+  try {
+    decodedPath = decodeURIComponent(rawPath);
+  } catch {
+    return false;
+  }
+  return rawPath !== '/admin-users.html'
+    && decodedPath.replace(/\/{2,}/g, '/') === '/admin-users.html';
+}
+
 async function buildServer(options = {}) {
   const app = Fastify({ logger: false });
   await app.register(multipart, {
@@ -154,6 +166,21 @@ async function buildServer(options = {}) {
     index: false,
   });
   await app.register(fastifyCookie);
+
+  // @fastify/static intentionally has a wildcard fallback. Gate equivalent
+  // spellings of the protected admin document before that fallback can serve
+  // it, using the same current-session lookup as the canonical route.
+  app.addHook('onRequest', async (request, reply) => {
+    /* c8 ignore next 8 -- exercised through Fastify's static wildcard dispatch. */
+    if (isAdminPageAlias(request.raw.url ?? request.url)) {
+      const session = options.db
+        ? findActiveSession(options.db, request.cookies?.[SESSION_COOKIE_NAME])
+        : null;
+      if (!session) return reply.redirect('/login.html');
+      if (session.user.role !== 'admin') return reply.redirect('/home.html');
+      return reply.sendFile('admin-users.html');
+    }
+  });
 
   const parseFile = options.parseFitFile || parseFitFile;
   const changeUserPassword = options.changeUserPassword || changePassword;
@@ -1151,4 +1178,4 @@ async function buildServer(options = {}) {
   return app;
 }
 
-module.exports = { buildServer, parseRpe, MAX_FILE_BYTES };
+module.exports = { buildServer, isAdminPageAlias, parseRpe, MAX_FILE_BYTES };
