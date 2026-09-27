@@ -38,7 +38,7 @@ test('initializeDatabase applies pragmas and creates the schema', () => {
     )
     .all()
     .map((row) => row.name);
-  assert.deepEqual(objects, ['ai_coach_availability', 'schema_migrations', 'sessions', 'shoes', 'training_cycles', 'training_shoe_mileage', 'trainings', 'users']);
+  assert.deepEqual(objects, ['admin_audit_log', 'ai_coach_availability', 'schema_migrations', 'sessions', 'shoes', 'training_cycles', 'training_shoe_mileage', 'trainings', 'users']);
   assert.equal(
     db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'workouts'").get(),
     undefined,
@@ -465,7 +465,7 @@ test('migrateDatabase removes the obsolete workouts table from existing database
     .map((row) => row.name);
   assert.deepEqual(
     tables,
-    ['ai_coach_availability', 'schema_migrations', 'sessions', 'shoes', 'training_cycles', 'training_shoe_mileage', 'trainings', 'users'],
+    ['admin_audit_log', 'ai_coach_availability', 'schema_migrations', 'sessions', 'shoes', 'training_cycles', 'training_shoe_mileage', 'trainings', 'users'],
     'only the obsolete workouts table is removed'
   );
   assert.deepEqual(

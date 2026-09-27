@@ -253,3 +253,37 @@ export function updateCycle(id, body) {
 export function deleteCycle(id) {
   return requestJson(`/api/cycles/${id}`, null, 'DELETE');
 }
+
+// Administrative account endpoints. The backend is the authorization boundary;
+// a 401 or 403 here rejects rather than degrading to an empty list.
+export async function fetchAdminUsers() {
+  const response = await fetch('/api/admin/users', { headers: { accept: 'application/json' } });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || 'Could not load accounts.');
+  return Array.isArray(payload.users) ? payload.users : [];
+}
+
+export async function fetchAdminUser(id) {
+  const response = await fetch(`/api/admin/users/${id}`, { headers: { accept: 'application/json' } });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const error = new Error(payload.error || 'Could not load the account.');
+    if (Array.isArray(payload.errors) && payload.errors.length > 0) error.codes = payload.errors;
+    throw error;
+  }
+  return payload.user ?? null;
+}
+
+export async function createAdminUser(body) {
+  const payload = await requestJson('/api/admin/users', body);
+  return payload.user;
+}
+
+export async function updateAdminUser(id, body) {
+  const payload = await requestJson(`/api/admin/users/${id}`, body, 'PUT');
+  return payload.user;
+}
+
+export function deleteAdminUser(id) {
+  return requestJson(`/api/admin/users/${id}`, null, 'DELETE');
+}

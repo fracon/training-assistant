@@ -129,7 +129,7 @@ test('account lookup and explicit promotion are normalized, idempotent, and upda
     assert.equal(after[column], before[column], `${column} is preserved`);
   }
   assert.equal(promoteAccount(db, 'promote@example.com').changed, false);
-  assert.equal(db.prepare('SELECT user_id FROM sessions WHERE id = ?').get(session.token).user_id, original.id);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM sessions WHERE id = ?').get(session.token).count, 0);
   assert.throws(() => promoteAccount(db, ''), { code: 'INVALID_EMAIL' });
   assert.throws(() => promoteAccount(db, null), { code: 'INVALID_EMAIL' });
   assert.throws(() => promoteAccount(db, 'missing@example.com'), { code: 'ACCOUNT_NOT_FOUND' });
