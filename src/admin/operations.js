@@ -18,6 +18,7 @@ function publicAccount(row) {
     first_name: row.first_name,
     last_name: row.last_name,
     role: row.role,
+    is_active: row.is_active === undefined ? true : Boolean(row.is_active),
   };
 }
 
@@ -28,7 +29,9 @@ function hasAdministrator(db) {
 function findAccountByEmail(db, email) {
   const normalized = typeof email === 'string' ? email.trim().toLowerCase() : '';
   if (!normalized) return null;
-  const row = db.prepare('SELECT id, email, first_name, last_name, role FROM users WHERE email = ?').get(normalized);
+  const row = db
+    .prepare('SELECT id, email, first_name, last_name, role, is_active FROM users WHERE email = ?')
+    .get(normalized);
   return row ? publicAccount(row) : null;
 }
 
@@ -56,7 +59,7 @@ async function createFirstAdmin(db, payload) {
       account.email, passwordHash, account.first_name, account.last_name,
       account.preferred_lang, account.first_day_of_week, account.distance_unit, account.temperature_unit
     );
-    return publicAccount(db.prepare('SELECT id, email, first_name, last_name, role FROM users WHERE id = ?').get(Number(result.lastInsertRowid)));
+    return publicAccount(db.prepare('SELECT id, email, first_name, last_name, role, is_active FROM users WHERE id = ?').get(Number(result.lastInsertRowid)));
   });
   return create.immediate();
 }
@@ -65,9 +68,19 @@ function promoteAccount(db, email) {
   const normalized = typeof email === 'string' ? email.trim().toLowerCase() : '';
   if (!normalized) throw new AdminOperationError('INVALID_EMAIL', 'Enter a valid account email.');
   const promote = db.transaction(() => {
-    const account = db.prepare('SELECT id, email, first_name, last_name, role FROM users WHERE email = ?').get(normalized);
+    const account = db.prepare('SELECT id, email, first_name, last_name, role, is_active FROM users WHERE email = ?').get(normalized);
     if (!account) throw new AdminOperationError('ACCOUNT_NOT_FOUND', 'No account exists with that email.');
     if (account.role === 'admin') return { changed: false, user: publicAccount(account) };
+    // Granting a role to an inactive account would hand out administrator access
+    // that cannot be used: the account stays locked out of sign-in. The refusal
+    // is explicit so the operator reactivates the account first instead of
+    // believing the promotion took effect.
+    if (!account.is_active) {
+      throw new AdminOperationError(
+        'ACCOUNT_INACTIVE',
+        'This account is inactive and would remain unable to sign in. Reactivate it in the administration page, then promote it.'
+      );
+    }
     const result = db.prepare("UPDATE users SET role = 'admin' WHERE id = ? AND role = 'user'").run(account.id);
     if (result.changes !== 1) throw new AdminOperationError('INVALID_ROLE', 'The account has an unsupported role.');
     // A promotion is a privileged local operation. Revoke existing sessions

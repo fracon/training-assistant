@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS users (
   temperature_unit TEXT NOT NULL DEFAULT 'C',
   onboarding_status TEXT NOT NULL DEFAULT 'active',
   onboarding_guide_hidden INTEGER NOT NULL DEFAULT 0,
+  is_active       INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
   created_at     TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -344,7 +345,8 @@ function migrateDatabase(db) {
       target_user_id INTEGER,
       target_email TEXT NOT NULL DEFAULT '',
       action TEXT NOT NULL CHECK (action IN (
-        'account_created', 'account_updated', 'account_role_changed', 'account_deleted'
+        'account_created', 'account_updated', 'account_role_changed', 'account_deleted',
+        'account_activity_changed'
       )),
       details TEXT NOT NULL DEFAULT '{}',
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -352,6 +354,54 @@ function migrateDatabase(db) {
     db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(auditMarker);
   });
   initializeAdminAudit();
+
+  // Account activity. `users.is_active` is a constrained column whose default is
+  // the active state, so adding it to an existing table leaves every account
+  // active without rewriting a single row, and every creation path — public
+  // registration, the web CRUD and `admin:bootstrap` — yields an active account
+  // because none of them writes the column. A repeated migration rewrites
+  // nothing. The state is unrelated to `onboarding_status`, cycle status or
+  // shoe status: it only decides whether an account may sign in.
+  //
+  // SQLite cannot alter a CHECK constraint, so the audit trail is rebuilt with
+  // the new activity action. The rebuild runs inside the same transaction as
+  // the column, inside the marker guard, and copies the existing rows so the
+  // earlier trail survives.
+  const activityMarker = '2026-09-account-activity-v1';
+  const initializeAccountActivity = db.transaction(() => {
+    if (db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(activityMarker)) return;
+    if (!db.pragma('table_info(users)').some((column) => column.name === 'is_active')) {
+      db.exec('ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1))');
+    }
+    const auditSql = db
+      .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'admin_audit_log'")
+      .get().sql;
+    if (!auditSql.includes('account_activity_changed')) {
+      db.exec(`
+        CREATE TABLE admin_audit_log_activity (
+          id INTEGER PRIMARY KEY,
+          actor_user_id INTEGER,
+          actor_email TEXT NOT NULL DEFAULT '',
+          target_user_id INTEGER,
+          target_email TEXT NOT NULL DEFAULT '',
+          action TEXT NOT NULL CHECK (action IN (
+            'account_created', 'account_updated', 'account_role_changed', 'account_deleted',
+            'account_activity_changed'
+          )),
+          details TEXT NOT NULL DEFAULT '{}',
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO admin_audit_log_activity
+          (id, actor_user_id, actor_email, target_user_id, target_email, action, details, created_at)
+        SELECT id, actor_user_id, actor_email, target_user_id, target_email, action, details, created_at
+          FROM admin_audit_log;
+        DROP TABLE admin_audit_log;
+        ALTER TABLE admin_audit_log_activity RENAME TO admin_audit_log;
+      `);
+    }
+    db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(activityMarker);
+  });
+  initializeAccountActivity();
 }
 
 function initializeDatabase(db) {

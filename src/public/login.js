@@ -44,7 +44,7 @@ form.addEventListener('submit', async (event) => {
     syncStoredLanguageFromUser(payload?.user);
     window.location.replace('/');
   } catch (error) {
-    setMessage(translateApiError(error.message, i18n.t));
+    setMessage(translateApiError(error, i18n.t));
     setBusy(false);
   }
 });

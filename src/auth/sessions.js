@@ -25,13 +25,18 @@ function findActiveSession(db, token) {
   if (!token) {
     return null;
   }
+  // An inactive account is denied here, in the single place every protected
+  // request resolves its session. Deactivating an account also revokes its
+  // session rows, so this is the second, independent barrier: a session created
+  // before the account was suspended — or restored into a cookie afterwards —
+  // still cannot reach a page or an API.
   const row = db
     .prepare(
       `SELECT s.id AS token, s.user_id, s.expires_at,
               u.id AS user_id, u.email, u.first_name, u.last_name, u.preferred_lang,
               u.first_day_of_week, u.distance_unit, u.temperature_unit, u.role
        FROM sessions s
-       JOIN users u ON u.id = s.user_id
+       JOIN users u ON u.id = s.user_id AND u.is_active = 1
        WHERE s.id = ?`
     )
     .get(token);

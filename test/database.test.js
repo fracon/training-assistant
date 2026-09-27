@@ -671,3 +671,127 @@ test('migrateDatabase tops up partially migrated trainings tables', () => {
 
   db.close();
 });
+
+test('the activity migration adds is_active, keeps every account active and preserves the audit trail', () => {
+  // A database from before the activity state: no `is_active` column and an
+  // audit table whose CHECK does not know the new action yet.
+  const db = new Database(':memory:');
+  db.exec(`
+    CREATE TABLE users (
+      id INTEGER PRIMARY KEY,
+      email TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'user',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE sessions (
+      id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL
+    );
+    CREATE TABLE training_cycles (
+      id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL
+    );
+    CREATE TABLE trainings (
+      id INTEGER PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      training_cycle_id TEXT,
+      dia TEXT NOT NULL,
+      tipo TEXT NOT NULL
+    );
+    CREATE TABLE shoes (
+      id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      brand TEXT NOT NULL,
+      model TEXT NOT NULL
+    );
+    CREATE TABLE admin_audit_log (
+      id INTEGER PRIMARY KEY,
+      actor_user_id INTEGER,
+      actor_email TEXT NOT NULL DEFAULT '',
+      target_user_id INTEGER,
+      target_email TEXT NOT NULL DEFAULT '',
+      action TEXT NOT NULL CHECK (action IN (
+        'account_created', 'account_updated', 'account_role_changed', 'account_deleted'
+      )),
+      details TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+  db.prepare("INSERT INTO users (id, email, password_hash, role) VALUES (1, 'keep@example.com', 'hash-1', 'admin')").run();
+  db.prepare("INSERT INTO users (id, email, password_hash, role) VALUES (2, 'keep2@example.com', 'hash-2', 'user')").run();
+  db.prepare("INSERT INTO sessions (id, user_id) VALUES ('keep-session', 1)").run();
+  db.prepare(
+    `INSERT INTO admin_audit_log (id, actor_user_id, actor_email, target_user_id, target_email, action, details)
+     VALUES (7, 1, 'keep@example.com', 2, 'keep2@example.com', 'account_created', '{"role":"user"}')`
+  ).run();
+
+  migrateDatabase(db);
+  migrateDatabase(db);
+
+  // The column exists, defaults to the active state and preserved every account
+  // exactly as it was, including ids, hashes, roles and sessions.
+  assert.deepEqual(
+    db.prepare('SELECT id, email, password_hash, role, is_active FROM users ORDER BY id').all(),
+    [
+      { id: 1, email: 'keep@example.com', password_hash: 'hash-1', role: 'admin', is_active: 1 },
+      { id: 2, email: 'keep2@example.com', password_hash: 'hash-2', role: 'user', is_active: 1 },
+    ]
+  );
+  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM sessions WHERE id = 'keep-session'").get().count, 1);
+  assert.equal(
+    db.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE name = '2026-09-account-activity-v1'").get().count,
+    1,
+    'the marker is written once, so a repeated migration rewrites nothing'
+  );
+
+  // The rebuilt audit table keeps the earlier rows and accepts the new action.
+  assert.deepEqual(db.prepare('SELECT * FROM admin_audit_log ORDER BY id').all(), [
+    {
+      id: 7, actor_user_id: 1, actor_email: 'keep@example.com', target_user_id: 2,
+      target_email: 'keep2@example.com', action: 'account_created', details: '{"role":"user"}',
+      created_at: db.prepare('SELECT created_at FROM admin_audit_log WHERE id = 7').get().created_at,
+    },
+  ]);
+  db.prepare(
+    `INSERT INTO admin_audit_log (actor_user_id, actor_email, target_user_id, target_email, action, details)
+     VALUES (1, 'keep@example.com', 2, 'keep2@example.com', 'account_activity_changed', '{"from":"active","to":"inactive"}')`
+  ).run();
+  assert.throws(
+    () => db.prepare(
+      `INSERT INTO admin_audit_log (actor_email, target_email, action) VALUES ('', '', 'account_suspended')`
+    ).run(),
+    /CHECK constraint failed/
+  );
+
+  // The state is constrained to the two real values, and only the administration
+  // domain writes the column.
+  assert.throws(
+    () => db.prepare('UPDATE users SET is_active = 2 WHERE id = 1').run(),
+    /CHECK constraint failed/
+  );
+  db.prepare('UPDATE users SET is_active = 0 WHERE id = 2').run();
+  assert.equal(db.prepare('SELECT is_active FROM users WHERE id = 2').get().is_active, 0);
+  db.close();
+});
+
+test('a fresh database already carries the activity state and the audit action', () => {
+  const db = createDatabase({ filename: ':memory:' });
+  const user = db.prepare('INSERT INTO users (email, password_hash) VALUES (?, ?)').run(
+    'fresh@example.com', 'hash'
+  );
+  assert.equal(db.prepare('SELECT is_active FROM users WHERE id = ?').get(user.lastInsertRowid).is_active, 1);
+  assert.ok(
+    db.prepare("SELECT 1 FROM schema_migrations WHERE name = '2026-09-account-activity-v1'").get(),
+    'the migration is recorded for a new database as well'
+  );
+  db.prepare(
+    `INSERT INTO admin_audit_log (actor_user_id, actor_email, target_user_id, target_email, action)
+     VALUES (?, ?, ?, ?, 'account_activity_changed')`
+  ).run(user.lastInsertRowid, 'fresh@example.com', user.lastInsertRowid, 'fresh@example.com');
+  assert.equal(
+    db.prepare("SELECT COUNT(*) AS count FROM admin_audit_log WHERE action = 'account_activity_changed'").get().count,
+    1
+  );
+  db.close();
+});

@@ -284,6 +284,17 @@ export async function updateAdminUser(id, body) {
   return payload.user;
 }
 
+// The desired state travels explicitly with the state the interface acted on,
+// so a click based on a stale list is refused by the backend instead of
+// flipping whatever the current state happens to be.
+export async function setAdminUserActivity(id, { active, expectedActive }) {
+  const payload = await requestJson(`/api/admin/users/${id}/activity`, {
+    active,
+    expected_active: expectedActive,
+  });
+  return payload.user;
+}
+
 export function deleteAdminUser(id) {
   return requestJson(`/api/admin/users/${id}`, null, 'DELETE');
 }

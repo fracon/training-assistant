@@ -4,12 +4,18 @@ const { verifyPassword, hashPassword } = require('./passwords');
 const { createSession, purgeExpiredSessions } = require('./sessions');
 
 const INVALID_CREDENTIALS_MESSAGE = 'Invalid email or password.';
+// Only reachable with the correct password: an unknown email and a wrong
+// password keep the generic message, so this never reveals that an account
+// exists before its password was verified.
+const INACTIVE_ACCOUNT_MESSAGE = 'Your account is inactive. Please contact the administrator.';
+const INACTIVE_ACCOUNT_CODE = 'accountInactive';
 
 class LoginError extends Error {
-  constructor(status, message) {
+  constructor(status, message, code) {
     super(message);
     this.name = 'LoginError';
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -40,7 +46,7 @@ async function loginUser(db, payload, sessionOptions) {
 
   const row = db
     .prepare(
-      'SELECT id, email, password_hash, first_name, last_name, preferred_lang, first_day_of_week, distance_unit, temperature_unit, role FROM users WHERE email = ?'
+      'SELECT id, email, password_hash, first_name, last_name, preferred_lang, first_day_of_week, distance_unit, temperature_unit, role, is_active FROM users WHERE email = ?'
     )
     .get(email);
 
@@ -52,6 +58,13 @@ async function loginUser(db, payload, sessionOptions) {
   const isValid = await verifyPassword(password, row.password_hash);
   if (!isValid) {
     throw new LoginError(401, INVALID_CREDENTIALS_MESSAGE);
+  }
+
+  // Verified credentials on a suspended account create no session. The check
+  // follows the password verification so the answer cannot be used to discover
+  // which addresses belong to inactive accounts.
+  if (!row.is_active) {
+    throw new LoginError(403, INACTIVE_ACCOUNT_MESSAGE, INACTIVE_ACCOUNT_CODE);
   }
 
   const session = createSession(db, row.id, sessionOptions);
@@ -71,4 +84,11 @@ async function loginUser(db, payload, sessionOptions) {
   };
 }
 
-module.exports = { loginUser, normalizeCredentials, LoginError, INVALID_CREDENTIALS_MESSAGE };
+module.exports = {
+  loginUser,
+  normalizeCredentials,
+  LoginError,
+  INVALID_CREDENTIALS_MESSAGE,
+  INACTIVE_ACCOUNT_MESSAGE,
+  INACTIVE_ACCOUNT_CODE,
+};

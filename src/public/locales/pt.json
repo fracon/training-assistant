@@ -226,6 +226,7 @@
     "mismatch": "As senhas não coincidem.",
     "missingBoth": "E-mail e senha são obrigatórios.",
     "invalidCredentials": "E-mail ou senha inválidos.",
+    "accountInactive": "Esta conta está inativa. Peça a um administrador para ativá-la.",
     "emailTaken": "Este e-mail já está cadastrado.",
     "network": "Rede indisponível. Tente novamente.",
     "generic": "Algo deu errado. Tente novamente."
@@ -494,9 +495,9 @@
     "pageTitle": "Usuários - Kinesis",
     "pageLabel": "Administração",
     "title": "Usuários",
-    "subtitle": "Cadastre, edite e exclua contas desta instalação.",
+    "subtitle": "Cadastre, edite, ative, desative e exclua contas desta instalação.",
     "addUser": "Adicionar Usuário",
-    "deleteNotice": "A exclusão de uma conta é definitiva e também remove suas sessões e dados de treino.",
+    "deleteNotice": "A exclusão de uma conta é definitiva e também remove suas sessões e dados de treino. A desativação é reversível: encerra as sessões e bloqueia o acesso, mantendo todos os registros.",
     "loading": "Carregando contas…",
     "loadError": "Não foi possível carregar as contas.",
     "refreshError": "A alteração foi salva, mas não foi possível atualizar a lista de contas.",
@@ -509,6 +510,8 @@
     "email": "E-mail",
     "password": "Senha inicial",
     "passwordHint": "Oriente o novo usuário a alterá-la após o primeiro acesso.",
+    "passwordConfirm": "Confirmar senha",
+    "passwordConfirmPlaceholder": "Repita a senha",
     "close": "Fechar",
     "formTitleAdd": "Adicionar Novo Usuário",
     "formTitleEdit": "Editar Usuário",
@@ -521,6 +524,20 @@
     "deleteTooltip": "Excluir usuário",
     "deleteTitle": "Excluir conta",
     "deleteConfirm": "Excluir {email}? A exclusão é definitiva: a conta, suas sessões e todos os seus dados de treino, ciclos, tênis e preferências são removidos e não podem ser restaurados.",
+    "activate": "Ativar",
+    "activateLabel": "Ativar conta",
+    "activateTooltip": "Ativar conta",
+    "activateTitle": "Ativar conta",
+    "activateConfirm": "{email} poderá entrar novamente. As sessões anteriores continuam encerradas e precisarão ser iniciadas de novo.",
+    "deactivate": "Desativar",
+    "deactivateLabel": "Desativar conta",
+    "deactivateTooltip": "Desativar conta",
+    "deactivateTitle": "Desativar conta",
+    "deactivateConfirm": "{email} será desconectado de todos os dispositivos agora e não poderá entrar. Treinos, ciclos, tênis e histórico são mantidos, e a conta pode ser ativada depois.",
+    "status": {
+      "active": "Ativo",
+      "inactive": "Inativo"
+    },
     "roles": {
       "user": "Usuário",
       "admin": "Administrador"
@@ -528,7 +545,9 @@
     "success": {
       "create": "Conta criada.",
       "edit": "Conta atualizada.",
-      "delete": "Conta excluída."
+      "delete": "Conta excluída.",
+      "activate": "Conta ativada.",
+      "deactivate": "Conta desativada."
     },
     "errors": {
       "firstNameRequired": "Informe o nome.",
@@ -537,13 +556,18 @@
       "emailInvalid": "Informe um e-mail válido.",
       "passwordRequired": "Informe a senha inicial.",
       "passwordMin": "A senha deve ter pelo menos 8 caracteres.",
+      "passwordConfirmationRequired": "Confirme a senha inicial.",
+      "passwordMismatch": "As senhas não coincidem.",
       "emailInUse": "Este e-mail já está cadastrado.",
       "accountNotFound": "Esta conta não existe mais.",
       "lastAdministrator": "O último administrador não pode ser removido.",
-      "selfAction": "Você não pode excluir a própria conta por aqui.",
+      "selfAction": "Você não pode alterar a própria conta por aqui.",
       "authorityRevoked": "Seu acesso de administrador foi revogado, então nada foi salvo. Recarregue a página e entre novamente.",
       "invalidRegistration": "Confira os dados da conta e tente novamente.",
       "noChanges": "Faça pelo menos uma alteração antes de salvar.",
+      "activityConflict": "Esta conta mudou enquanto você trabalhava. A lista foi atualizada; verifique o estado e tente novamente.",
+      "privilegedTarget": "Somente contas comuns podem ser ativadas ou desativadas.",
+      "activityState": "O estado ativo não pode ser definido por este formulário.",
       "request": "Não foi possível concluir a solicitação. Tente novamente."
     }
   },
