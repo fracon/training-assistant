@@ -50,8 +50,9 @@ test('feedback browser flows keep async state, PT/EN forms, focus, filters, and 
   const admin = await registerUser(db, { email: 'feedback-browser-admin@example.test', password: 'browser-secret-1', first_name: 'Ada', last_name: 'Admin' });
   db.prepare('UPDATE users SET role = ? WHERE id = ?').run('admin', admin.id);
   db.prepare('UPDATE users SET onboarding_status = ? WHERE id = ?').run('active', admin.id);
+  const longDescription = 'Resolved feedback with several lines of context about the training review, the mobile viewport and the administrative follow-up.\nThe original report keeps its line breaks and remains readable while the triage controls stay separate.'.repeat(3);
   db.prepare(`INSERT INTO feedback (author_user_id, author_email, type, description, pathname, status, internal_note) VALUES (?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?)`)
-    .run(admin.id, admin.email, 'bug', 'New feedback A', '/home.html', 'new', '', admin.id, admin.email, 'suggestion', 'New feedback B', '/calendar.html', 'new', '', admin.id, admin.email, 'other', 'Resolved feedback', '/shoes.html', 'resolved', 'old note');
+    .run(admin.id, admin.email, 'bug', 'New feedback A', '/home.html', 'new', '', admin.id, admin.email, 'suggestion', 'New feedback B', '/calendar.html', 'new', '', admin.id, 'feedback-reviewer-with-a-deliberately-long-address@example.test', 'other', longDescription, '/admin-feedback.html/a-very-long-origin-path-that-must-wrap-safely', 'resolved', 'old note');
   const baseUrl = await app.listen({ port: 0, host: '127.0.0.1' });
   const origin = new URL(baseUrl).origin;
   const debugPort = await freePort();
@@ -96,12 +97,28 @@ test('feedback browser flows keep async state, PT/EN forms, focus, filters, and 
     await waitFor('document.querySelectorAll(".feedback-row").length === 3');
     assert.equal(await evaluate('document.documentElement.scrollWidth > document.documentElement.clientWidth'), false);
 
+    await evaluate(`[...document.querySelectorAll('.feedback-row')].find((row)=>row.querySelector('.feedback-row-summary').textContent===${JSON.stringify(longDescription)})?.querySelector('button[data-id]').click()`);
+    await waitFor('!document.getElementById("feedbackDetailModal").classList.contains("hidden")');
+    const detailStylesBefore = await evaluate(`(()=>{const modal=document.getElementById('feedbackDetailModal');const card=modal.querySelector('.feedback-detail-card');const description=modal.querySelector('.feedback-detail-description');const copy=modal.querySelector('.feedback-detail-copy');const status=modal.querySelector('#detailStatus');const note=modal.querySelector('#detailNote');const actions=modal.querySelector('.feedback-detail-actions');const cardRect=card.getBoundingClientRect();const modalRect=modal.getBoundingClientRect();const noteStyle=getComputedStyle(note);const copyStyle=getComputedStyle(copy);return {position:getComputedStyle(modal).position,display:getComputedStyle(modal).display,cardRight:cardRect.right,cardBottom:cardRect.bottom,modalWidth:modalRect.width,modalHeight:modalRect.height,cardOverflow:getComputedStyle(card).overflowY,copyWhiteSpace:copyStyle.whiteSpace,copyOverflowWrap:copyStyle.overflowWrap,descriptionScrollWidth:description.scrollWidth,descriptionClientWidth:description.clientWidth,noteBackground:noteStyle.backgroundColor,noteBorder:noteStyle.borderTopWidth,noteRadius:noteStyle.borderTopLeftRadius,notePadding:noteStyle.padding,statusWidth:status.getBoundingClientRect().width,noteWidth:note.getBoundingClientRect().width,actionsTop:actions.getBoundingClientRect().top,noteBottom:note.getBoundingClientRect().bottom,fieldCount:modal.querySelectorAll('#feedbackDetailBody .field').length}})()`);
+    assert.equal(detailStylesBefore.position, 'fixed', 'detail backdrop stays over the page');
+    assert.equal(detailStylesBefore.display, 'flex', 'detail backdrop centers the card');
+    assert.ok(detailStylesBefore.cardRight <= detailStylesBefore.modalWidth && detailStylesBefore.cardBottom <= detailStylesBefore.modalHeight, 'detail card stays inside the viewport');
+    assert.equal(detailStylesBefore.cardOverflow, 'auto', 'detail card scrolls internally when needed');
+    assert.equal(detailStylesBefore.copyWhiteSpace, 'pre-wrap', 'detail reproduction preserves description line breaks');
+    assert.equal(detailStylesBefore.statusWidth, detailStylesBefore.noteWidth, 'detail controls start aligned');
+    assert.notEqual(detailStylesBefore.noteBackground, 'rgb(255, 255, 255)', 'detail note uses an application surface');
+    assert.notEqual(detailStylesBefore.noteRadius, '0px', 'detail note uses the shared field radius');
+    assert.ok(detailStylesBefore.descriptionScrollWidth <= detailStylesBefore.descriptionClientWidth, 'long detail text does not create horizontal overflow');
+    assert.ok(detailStylesBefore.actionsTop > detailStylesBefore.noteBottom, 'detail actions are separated from the note field');
+    await evaluate('document.getElementById("feedbackDetailClose").click()');
+    await waitFor('document.getElementById("feedbackDetailModal").classList.contains("hidden")');
+
     await evaluate(`window.__feedbackNativeFetch=window.fetch.bind(window);window.__feedbackPending={};window.fetch=(input,init)=>{const url=String(input);const method=(init?.method||'GET').toUpperCase();if(method==='GET'&&url.includes('/api/admin/feedback')){const status=new URL(url,location.href).searchParams.get('status')||'all';return new Promise((resolve,reject)=>{window.__feedbackPending[status]=()=>window.__feedbackNativeFetch(input,init).then(resolve,reject)})}return window.__feedbackNativeFetch(input,init)}`);
     await evaluate('document.getElementById("feedbackStatusFilter").value="new";document.getElementById("feedbackStatusFilter").dispatchEvent(new Event("change"))');
     await evaluate('document.getElementById("feedbackStatusFilter").value="resolved";document.getElementById("feedbackStatusFilter").dispatchEvent(new Event("change"))');
     await evaluate('window.__feedbackPending.resolved()'); await waitFor('document.getElementById("feedbackAdminLoading").classList.contains("hidden")');
     await evaluate('window.__feedbackPending.new()'); await delay(100);
-    assert.deepEqual(await evaluate('[...document.querySelectorAll(".feedback-row-summary")].map((node)=>node.textContent)'), ['Resolved feedback'], 'the stale filter response is discarded');
+    assert.deepEqual(await evaluate('[...document.querySelectorAll(".feedback-row-summary")].map((node)=>node.textContent)'), [longDescription], 'the stale filter response is discarded');
     await evaluate('window.fetch=window.__feedbackNativeFetch');
 
     await evaluate('document.querySelector(".feedback-row button[data-id]").click()');
@@ -109,7 +126,7 @@ test('feedback browser flows keep async state, PT/EN forms, focus, filters, and 
     const unsaved = await evaluate(`(()=>{const status=document.getElementById('detailStatus');const note=document.getElementById('detailNote');status.value='in_progress';note.value='rascunho PT';note.focus();document.querySelector('.lang-switch [data-lang="pt-BR"]').click();return true})()`);
     assert.equal(unsaved, true);
     await delay(500);
-    assert.deepEqual(await evaluate(`({open:!document.getElementById('feedbackDetailModal').classList.contains('hidden'),status:document.getElementById('detailStatus').value,note:document.getElementById('detailNote').value,focus:document.activeElement.id,title:document.getElementById('feedbackDetailTitle').textContent})`), { open: true, status: 'in_progress', note: 'rascunho PT', focus: 'detailNote', title: 'Detalhes do feedback' });
+    assert.deepEqual(await evaluate(`({open:!document.getElementById('feedbackDetailModal').classList.contains('hidden'),status:document.getElementById('detailStatus').value,note:document.getElementById('detailNote').value,focus:document.activeElement.id,title:document.getElementById('feedbackDetailTitle').textContent,descriptionLabel:document.querySelector('.feedback-detail-section-title').textContent})`), { open: true, status: 'in_progress', note: 'rascunho PT', focus: 'detailNote', title: 'Detalhes do feedback', descriptionLabel: 'Descrição enviada' });
 
     await evaluate(`window.__feedbackPatchPending=()=>{};window.__feedbackGetPending=[];const native=window.__feedbackNativeFetch;window.fetch=(input,init)=>{const method=(init?.method||'GET').toUpperCase();if(method==='PATCH'&&String(input).includes('/api/admin/feedback/'))return new Promise((resolve,reject)=>{window.__feedbackPatchPending=()=>native(input,init).then(resolve,reject)});if(method==='GET'&&String(input).includes('/api/admin/feedback'))return new Promise((resolve,reject)=>{window.__feedbackGetPending.push(()=>native(input,init).then(resolve,reject))});return native(input,init)}`);
     await evaluate('document.getElementById("feedbackDetailSave").click();'); await delay(100);
@@ -205,7 +222,7 @@ test('feedback browser flows keep async state, PT/EN forms, focus, filters, and 
     assert.equal(await evaluate('document.getElementById("feedbackError").textContent'), 'Não foi possível enviar seu feedback. O texto continua aqui; tente novamente.');
     await evaluate(`document.querySelector('.lang-switch [data-lang="en-US"]').click()`); await delay(500);
     assert.equal(await evaluate('document.getElementById("feedbackError").textContent'), 'Your feedback could not be sent. Your text is still here; please try again.');
-    t.diagnostic('Verified feedback triage and global submission at 1024×768 and 390×844 in PT/EN, including stale filter responses, pending mutation containment, unsaved draft/caret preservation, mobile overflow, focus restoration, and computed fixed-backdrop/card/field bounds on admin, home, and shoes pages.');
+    t.diagnostic('Verified feedback triage and global submission at 1024×768 and 390×844 in PT/EN, including stale filter responses, pending mutation containment, unsaved draft/caret preservation, mobile overflow, focus restoration, computed global modal bounds on admin/home/shoes, and detail card hierarchy, long-text wrapping, aligned controls, and separated actions.');
   } finally {
     socket?.close(); chromeProcess.kill('SIGTERM'); rmSync(profile, { recursive: true, force: true }); await app.close();
   }

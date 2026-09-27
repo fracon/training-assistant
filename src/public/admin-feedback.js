@@ -121,11 +121,15 @@ function renderDetail(item, { preserve = false } = {}) {
   const savedNote = preserve ? document.getElementById('detailNote')?.value : null;
   selected = item;
   const body = document.getElementById('feedbackDetailBody'); body.textContent = '';
-  const meta = document.createElement('p'); meta.className = 'feedback-detail-meta'; meta.textContent = `${typeLabel(item.type)} · ${item.author_email} · ${item.pathname} · ${formatDate(String(item.created_at).slice(0, 10), context.i18n.language)}`;
-  const copy = document.createElement('p'); copy.className = 'feedback-detail-copy'; copy.textContent = item.description;
+  const metaBlock = document.createElement('div'); metaBlock.className = 'feedback-detail-meta-block';
+  const meta = document.createElement('p'); meta.className = 'feedback-detail-meta'; meta.textContent = `${typeLabel(item.type)} · ${item.author_email} · ${item.pathname} · ${formatDate(String(item.created_at).slice(0, 10), context.i18n.language)}`; metaBlock.appendChild(meta);
+  const descriptionBlock = document.createElement('section'); descriptionBlock.className = 'feedback-detail-description'; descriptionBlock.setAttribute('aria-labelledby', 'feedbackDetailDescriptionLabel');
+  const descriptionLabel = document.createElement('h3'); descriptionLabel.id = 'feedbackDetailDescriptionLabel'; descriptionLabel.className = 'feedback-detail-section-title'; descriptionLabel.textContent = t('feedbackAdmin.description');
+  const copy = document.createElement('p'); copy.id = 'feedbackDetailDescription'; copy.className = 'feedback-detail-copy'; copy.textContent = item.description;
+  descriptionBlock.append(descriptionLabel, copy);
   const statusField = document.createElement('div'); statusField.className = 'field'; const label = document.createElement('label'); label.className = 'field-label'; label.htmlFor = 'detailStatus'; label.textContent = t('feedbackAdmin.status'); const select = document.createElement('select'); select.id = 'detailStatus'; for (const value of ['new', 'in_progress', 'resolved']) { const option = document.createElement('option'); option.value = value; option.textContent = statusLabel(value); select.appendChild(option); } statusField.append(label, select);
-  const noteField = document.createElement('div'); noteField.className = 'field'; const noteLabel = document.createElement('label'); noteLabel.className = 'field-label'; noteLabel.htmlFor = 'detailNote'; noteLabel.textContent = t('feedbackAdmin.internalNote'); const note = document.createElement('textarea'); note.id = 'detailNote'; note.maxLength = 5000; note.value = savedNote ?? item.internal_note ?? ''; noteField.append(noteLabel, note);
-  body.append(meta, copy, statusField, noteField);
+  const noteField = document.createElement('div'); noteField.className = 'field'; const noteLabel = document.createElement('label'); noteLabel.className = 'field-label'; noteLabel.htmlFor = 'detailNote'; noteLabel.textContent = t('feedbackAdmin.internalNote'); const note = document.createElement('textarea'); note.id = 'detailNote'; note.className = 'prompt-textarea'; note.maxLength = 5000; note.value = savedNote ?? item.internal_note ?? ''; noteField.append(noteLabel, note);
+  body.append(metaBlock, descriptionBlock, statusField, noteField);
   select.value = savedStatus ?? item.status;
   const pending = detailState?.pending;
   select.disabled = pending; note.disabled = pending;
@@ -154,8 +158,10 @@ function translatePendingDetail(item) {
   if (meta) meta.textContent = `${typeLabel(item.type)} · ${item.author_email} · ${item.pathname} · ${formatDate(String(item.created_at).slice(0, 10), context.i18n.language)}`;
   const statusLabelElement = document.querySelector('#feedbackDetailBody label[for="detailStatus"]');
   const noteLabelElement = document.querySelector('#feedbackDetailBody label[for="detailNote"]');
+  const descriptionLabelElement = document.querySelector('#feedbackDetailBody .feedback-detail-section-title');
   if (statusLabelElement) statusLabelElement.textContent = t('feedbackAdmin.status');
   if (noteLabelElement) noteLabelElement.textContent = t('feedbackAdmin.internalNote');
+  if (descriptionLabelElement) descriptionLabelElement.textContent = t('feedbackAdmin.description');
   document.querySelectorAll('#detailStatus option').forEach((option) => { option.textContent = statusLabel(option.value); });
 }
 

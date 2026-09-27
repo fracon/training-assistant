@@ -591,7 +591,7 @@
   },
   "feedbackAdmin": {
     "pageTitle": "Feedbacks - Kinesis", "title": "Feedbacks", "subtitle": "Review feedback sent by Kinesis users.",
-    "status": "Status", "type": "Type", "allStatuses": "All statuses", "allTypes": "All types", "loading": "Loading feedback…", "loadError": "Feedback could not be loaded.", "retry": "Try again", "empty": "No feedback matches these filters.", "loadMore": "Load more", "view": "View", "detail": "Feedback detail", "close": "Close", "internalNote": "Internal note", "save": "Save triage", "delete": "Delete", "cancel": "Cancel", "deleteTitle": "Delete feedback", "deleteConfirm": "Delete this feedback permanently?", "saved": "Feedback triage saved.", "deleted": "Feedback deleted.", "notFound": "This feedback no longer exists.", "requestError": "The request could not be completed. Try again.",
+    "status": "Status", "type": "Type", "description": "Submitted description", "allStatuses": "All statuses", "allTypes": "All types", "loading": "Loading feedback…", "loadError": "Feedback could not be loaded.", "retry": "Try again", "empty": "No feedback matches these filters.", "loadMore": "Load more", "view": "View", "detail": "Feedback detail", "close": "Close", "internalNote": "Internal note", "save": "Save triage", "delete": "Delete", "cancel": "Cancel", "deleteTitle": "Delete feedback", "deleteConfirm": "Delete this feedback permanently?", "saved": "Feedback triage saved.", "deleted": "Feedback deleted.", "notFound": "This feedback no longer exists.", "requestError": "The request could not be completed. Try again.",
     "types": { "bug": "Bug", "suggestion": "Suggestion", "other": "Other" },
     "statuses": { "new": "New", "inProgress": "In progress", "resolved": "Resolved" }
   },

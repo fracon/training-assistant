@@ -29,10 +29,10 @@
     </section>
   </main>
   <div id="feedbackDetailModal" class="modal-backdrop hidden">
-    <div class="modal-card feedback-detail-card" role="dialog" aria-modal="true" aria-labelledby="feedbackDetailTitle">
+    <div class="modal-card feedback-detail-card" role="dialog" aria-modal="true" aria-labelledby="feedbackDetailTitle" aria-describedby="feedbackDetailDescription">
       <header class="modal-header"><h2 id="feedbackDetailTitle" data-i18n="feedbackAdmin.detail">Feedback detail</h2><button id="feedbackDetailClose" class="modal-close" type="button" data-i18n-aria-label="feedbackAdmin.close" aria-label="Close"><i data-lucide="x"></i></button></header>
-      <div id="feedbackDetailBody"></div>
-      <div class="form-actions"><button id="feedbackDetailDelete" class="btn-secondary btn-danger" type="button" data-i18n="feedbackAdmin.delete">Delete</button><button id="feedbackDetailSave" class="btn-primary" type="button" data-i18n="feedbackAdmin.save">Save triage</button></div>
+      <div id="feedbackDetailBody" class="feedback-detail-body"></div>
+      <footer class="form-actions feedback-detail-actions"><button id="feedbackDetailDelete" class="btn-secondary btn-danger" type="button" data-i18n="feedbackAdmin.delete">Delete</button><button id="feedbackDetailSave" class="btn-primary" type="button" data-i18n="feedbackAdmin.save">Save triage</button></footer>
     </div>
   </div>
   <div id="toast" class="toast" role="status" aria-live="polite"><span class="toast-icon"><i data-lucide="check-circle"></i></span><span class="toast-text"></span></div>
