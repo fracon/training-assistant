@@ -22,6 +22,7 @@ function renderRows(rows) {
   list.textContent = '';
   for (const item of rows) {
     const row = document.createElement('li'); row.className = 'feedback-row';
+    row.dataset.id = String(item.id);
     const top = document.createElement('div'); top.className = 'feedback-row-top';
     const status = document.createElement('span'); status.className = 'feedback-status'; status.textContent = statusLabel(item.status);
     const type = document.createElement('strong'); type.textContent = typeLabel(item.type);
@@ -96,6 +97,16 @@ function isVisible(element) {
 function restoreDetailFocus(trigger) {
   if (!isVisible(trigger)) trigger = document.querySelector('#feedbackList button[data-id]') || document.getElementById('feedbackStatusFilter') || document.getElementById('feedbackTypeFilter');
   trigger?.focus?.();
+}
+
+function findRowAction(id, selector) {
+  return [...document.querySelectorAll('#feedbackList .feedback-row')]
+    .find((row) => row.dataset.id === String(id))?.querySelector(selector);
+}
+
+function restoreListFocus(target, focusAtRefresh) {
+  const replacement = findRowAction(target.id, '.feedback-delete-action');
+  restoreFocusAfterRefresh(replacement || target.trigger, focusAtRefresh);
 }
 
 function closeDetail({ expectedState } = {}) {
@@ -199,11 +210,11 @@ async function deleteFromList(item, trigger) {
   const target = { id: item.id, item, trigger };
   const confirmed = await showConfirm({ title: t('feedbackAdmin.deleteTitle'), message: t('feedbackAdmin.deleteConfirm'), confirmLabel: t('feedbackAdmin.delete'), cancelLabel: t('feedbackAdmin.cancel') });
   if (!confirmed || context.deletingIds.has(target.id)) return;
+  const focusAtRefresh = document.activeElement;
   context.deletingIds.add(target.id);
   renderRows(context.rows);
   try {
     await deleteAdminFeedback(target.id);
-    const focusAtRefresh = document.activeElement;
     context.rows = context.rows.filter((item) => item.id !== target.id);
     renderRows(context.rows);
     setState({ empty: context.rows.length === 0 });
@@ -216,6 +227,7 @@ async function deleteFromList(item, trigger) {
   } finally {
     context.deletingIds.delete(target.id);
     if (context.rows.some((row) => row.id === target.id)) renderRows(context.rows);
+    restoreListFocus(target, focusAtRefresh);
   }
 }
 
