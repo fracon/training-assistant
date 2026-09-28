@@ -12,6 +12,7 @@ import {
   writeUserPreferences,
 } from './preferences.js';
 import { showConfirm } from './confirm-modal.js';
+import { wireFeedback } from './feedback.js';
 
 export { showConfirm } from './confirm-modal.js';
 
@@ -80,6 +81,13 @@ export const ADMIN_NAV_GROUP = {
       icon: 'users',
       labelKey: 'shell.nav.users',
       href: '/admin-users.html',
+      disabled: false,
+    },
+    {
+      id: 'admin-feedback',
+      icon: 'message-square-more',
+      labelKey: 'shell.nav.feedback',
+      href: '/admin-feedback.html',
       disabled: false,
     },
   ],
@@ -286,6 +294,14 @@ function buildTopbar() {
   const header = el('header', 'topbar');
 
   const actions = el('div', 'topbar-actions');
+
+  const feedback = el('button', 'topbar-icon-btn');
+  feedback.type = 'button';
+  feedback.id = 'feedbackTrigger';
+  feedback.setAttribute('data-i18n-aria-label', 'globalFeedback.open');
+  feedback.setAttribute('aria-label', 'Send feedback');
+  feedback.appendChild(icon('message-square-plus'));
+  actions.appendChild(feedback);
 
   const langSwitch = el('div', 'lang-switch');
   for (const [lang, text, aria] of [
@@ -945,6 +961,11 @@ export async function initShell({ active } = {}) {
   // The user menu wires up before any page-specific guard runs, so a guard
   // failure can never leave the account trigger unbound.
   wireUserMenu();
+  wireFeedback({
+    getMessages: () => shellI18n.messages,
+    refreshIcons,
+    showSuccess: () => showShellToast(shellI18n.messages, 'globalFeedback.success'),
+  });
 
   // Check for an active training cycle and disable dependent items.
   let hasActiveCycle = false;

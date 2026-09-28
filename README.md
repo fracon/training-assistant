@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized prompts for an AI coach.
 
-Current application version: **0.15.0** (active development).
+Current application version: **0.16.0** (active development).
 
 ### Shoe mileage integrity
 
@@ -496,6 +496,18 @@ so the state that decides the answer is the one read after the wait: a
 suspension committed during the verification wins, and the login is refused
 without a session instead of handing a suspended account a token.
 
+### Feedback
+
+Authenticated pages expose a localized **Send feedback / Enviar feedback**
+button in the shared topbar. It stores only the selected type, the submitted
+description, the allowlisted source pathname, the authenticated account ID,
+and an email snapshot. No screenshot, FIT file, form contents, device data,
+or external telemetry is collected. Administrators review feedback under
+**Administration → Feedbacks**, where they can filter, triage with an internal
+note, and permanently delete records. Feedback author snapshots survive account
+deletion while the nullable account reference is cleared; regular users cannot
+read the collection.
+
 ## Usage
 
 1. Open **Sign In**. Create an account through **Register** (first name, last name, email, and password of at least 8 characters) or sign in to an existing account.
@@ -604,7 +616,12 @@ are scoped to the signed-in user's records.
 | `POST /api/shoes` | Session | Create shoe |
 | `PUT /api/shoes/:id` | Session | Update owned shoe |
 | `DELETE /api/shoes/:id` | Session | Delete owned shoe |
+| `POST /api/feedback` | Session | Submit feedback with the server-authenticated author and allowlisted pathname |
 | `GET /api/admin/users` | Admin | List account identification, roles and activity states |
+| `GET /api/admin/feedback` | Admin | List filtered, paginated feedback |
+| `GET /api/admin/feedback/:id` | Admin | Read one feedback record |
+| `PATCH /api/admin/feedback/:id` | Admin | Update triage status or internal note |
+| `DELETE /api/admin/feedback/:id` | Admin | Permanently delete one feedback record |
 | `GET /api/admin/users/:id` | Admin | Read one account for editing |
 | `POST /api/admin/users` | Admin | Create a regular user account (password only, never a confirmation field) |
 | `PUT /api/admin/users/:id` | Admin | Update permitted identity fields (name, surname, email) |

@@ -88,6 +88,31 @@ export function changePassword(payload) {
   return requestJson('/api/auth/password', payload, 'PUT');
 }
 
+export function sendFeedback(payload) {
+  return requestJson('/api/feedback', payload);
+}
+
+export async function fetchAdminFeedback(query = {}) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== '') params.set(key, value);
+  }
+  const response = await fetch(`/api/admin/feedback${params.toString() ? `?${params}` : ''}`, {
+    headers: { accept: 'application/json' },
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw Object.assign(new Error(payload.error || 'Could not load feedback.'), { codes: payload.errors });
+  return payload;
+}
+
+export function updateAdminFeedback(id, payload) {
+  return requestJson(`/api/admin/feedback/${id}`, payload, 'PATCH');
+}
+
+export function deleteAdminFeedback(id) {
+  return requestJson(`/api/admin/feedback/${id}`, null, 'DELETE');
+}
+
 export function updateTrainingDate(id, date) {
   return requestJson(`/api/trainings/${id}/reschedule`, { date }, 'PATCH');
 }

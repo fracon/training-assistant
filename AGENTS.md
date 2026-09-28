@@ -8,7 +8,7 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.15.0`); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.16.0`); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
@@ -30,7 +30,8 @@ migration patterns.
 
 User account operations live in `src/auth/`; the admin role check lives in
 `src/auth/requireAdmin.js`, and privileged account operations are isolated in
-`src/admin/operations.js`. Interactive commands live in `scripts/` and use the
+`src/admin/operations.js`. Feedback persistence and validation live in
+`src/feedback.js`, with review at `/admin-feedback.html`. Interactive commands live in `scripts/` and use the
 same dotenv configuration and `DATABASE_FILE`/`<cwd>/data/database.sqlite`
 path as `src/start.js`. The runtime Docker image must include the command
 entrypoints and continue to run as its non-root `node` user.
@@ -172,6 +173,20 @@ onboarding record of the account is preserved.
   and refreshes the list on a conflict instead of assuming the applied state.
   Status styling must stay visually distinct from the role badge and reuse the
   existing tokens and custom tooltips.
+
+## Feedback
+
+- Every authenticated shell mounts one localized topbar feedback control; login
+  and registration do not. The dialog records only the selected type,
+  description, allowlisted pathname, authenticated user ID, and an email
+  snapshot. It does not collect screenshots, FIT files, form contents, device
+  identifiers, or external telemetry.
+- Feedback rows use the idempotent `2026-09-feedback-v1` migration. The author
+  foreign key is nullable with `ON DELETE SET NULL`, so account deletion clears
+  the relationship while retaining the email snapshot and original submission.
+  Only admins can list, inspect, triage, or delete feedback.
+- The admin page reuses the Administration sidebar group, shared modal/focus
+  and confirmation patterns, escaped DOM text, and the PT/EN locale contract.
 
 ## Current product behavior and invariants
 

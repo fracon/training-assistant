@@ -55,6 +55,14 @@ const { buildMacrocyclePrompt } = require('./prompts');
 const { normalizeAvailabilityWeek, getAvailabilityWeek, saveAvailabilityWeek } = require('./availability');
 const { fetchHeroImage } = require('./unsplash');
 const {
+  FeedbackError,
+  createFeedback,
+  deleteFeedback,
+  getFeedback,
+  listFeedback,
+  updateFeedback,
+} = require('./feedback');
+const {
   ShoeError,
   createShoe,
   getShoesByUserId,
@@ -145,16 +153,22 @@ function normalizeIsoDate(value) {
   return iso === text ? text : null;
 }
 
-function isAdminPageAlias(rawUrl) {
+function adminPageAliasTarget(rawUrl) {
   const rawPath = String(rawUrl ?? '').split('?')[0];
   let decodedPath;
   try {
     decodedPath = decodeURIComponent(rawPath);
   } catch {
-    return false;
+    return null;
   }
-  return rawPath !== '/admin-users.html'
-    && path.posix.normalize(decodedPath) === '/admin-users.html';
+  for (const page of ['/admin-users.html', '/admin-feedback.html']) {
+    if (rawPath !== page && path.posix.normalize(decodedPath) === page) return page;
+  }
+  return null;
+}
+
+function isAdminPageAlias(rawUrl) {
+  return Boolean(adminPageAliasTarget(rawUrl));
 }
 
 function adminAliasDecision(db, sessionToken) {
@@ -179,11 +193,12 @@ async function buildServer(options = {}) {
   // it, using the same current-session lookup as the canonical route.
   app.addHook('onRequest', async (request, reply) => {
     /* c8 ignore next 8 -- exercised through Fastify's static wildcard dispatch. */
-    if (isAdminPageAlias(request.raw.url ?? request.url)) {
+    const adminAlias = adminPageAliasTarget(request.raw.url ?? request.url);
+    if (adminAlias) {
       const decision = adminAliasDecision(options.db, request.cookies?.[SESSION_COOKIE_NAME]);
       if (decision === 'login') return reply.redirect('/login.html');
       if (decision === 'home') return reply.redirect('/home.html');
-      return reply.sendFile('admin-users.html');
+      return reply.sendFile(adminAlias.slice(1));
     }
   });
 
@@ -258,6 +273,13 @@ async function buildServer(options = {}) {
       return reply.redirect('/home.html');
     }
     return reply.sendFile('admin-users.html');
+  });
+
+  app.get('/admin-feedback.html', async (request, reply) => {
+    const session = sessionOf(request);
+    if (!session) return reply.redirect('/login.html');
+    if (session.user.role !== 'admin') return reply.redirect('/home.html');
+    return reply.sendFile('admin-feedback.html');
   });
 
   app.get('/login.html', async (request, reply) => {
@@ -1068,6 +1090,70 @@ async function buildServer(options = {}) {
     // ownership scope of the user-scoped routes above.
     const requireAdmin = createRequireAdmin();
     const adminPreHandler = [requireAuth, requireAdmin];
+
+    const feedbackFailure = (reply, error) => {
+      if (error instanceof FeedbackError) {
+        return reply.code(error.status).send({ error: error.message, errors: [error.code] });
+      }
+      throw error;
+    };
+
+    app.post('/api/feedback', { preHandler: requireAuth }, async (request, reply) => {
+      try {
+        return reply.code(201).send({ feedback: createFeedback(db, request.user, request.body) });
+      } catch (error) {
+        return feedbackFailure(reply, error);
+      }
+    });
+
+    app.get('/api/admin/feedback', { preHandler: adminPreHandler }, async (request, reply) => {
+      try {
+        const query = request.query;
+        const allowed = ['status', 'type', 'page', 'limit'];
+        for (const key of Object.keys(query)) {
+          if (!allowed.includes(key)) throw new FeedbackError(400, 'unknownField', `Unsupported field: ${key}.`);
+        }
+        const parsePositive = (value, code) => {
+          if (value === undefined) return undefined;
+          if (!/^\d+$/.test(String(value)) || Number(value) < 1 || !Number.isSafeInteger(Number(value))) {
+            throw new FeedbackError(400, code, 'Pagination value is invalid.');
+          }
+          return Number(value);
+        };
+        return listFeedback(db, {
+          status: query.status,
+          type: query.type,
+          page: parsePositive(query.page, 'invalidPage'),
+          limit: parsePositive(query.limit, 'invalidLimit'),
+        });
+      } catch (error) {
+        return feedbackFailure(reply, error);
+      }
+    });
+
+    app.get('/api/admin/feedback/:id', { preHandler: adminPreHandler }, async (request, reply) => {
+      try {
+        return { feedback: getFeedback(db, request.params.id) };
+      } catch (error) {
+        return feedbackFailure(reply, error);
+      }
+    });
+
+    app.patch('/api/admin/feedback/:id', { preHandler: adminPreHandler }, async (request, reply) => {
+      try {
+        return { feedback: updateFeedback(db, request.params.id, request.body) };
+      } catch (error) {
+        return feedbackFailure(reply, error);
+      }
+    });
+
+    app.delete('/api/admin/feedback/:id', { preHandler: adminPreHandler }, async (request, reply) => {
+      try {
+        return deleteFeedback(db, request.params.id);
+      } catch (error) {
+        return feedbackFailure(reply, error);
+      }
+    });
 
     // One envelope for every account failure: a stable machine code for the
     // interface plus a human message, and anything unexpected keeps bubbling up

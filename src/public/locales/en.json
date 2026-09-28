@@ -124,6 +124,7 @@
       "shoes": "Shoe Rotation",
       "administration": "Administration",
       "users": "Users"
+      ,"feedback": "Feedbacks"
     },
     "soon": "Soon",
     "noCycle": "No active cycle",
@@ -570,6 +571,29 @@
       "activityState": "The active state cannot be set from this form.",
       "request": "The request could not be completed. Try again."
     }
+  },
+  "globalFeedback": {
+    "open": "Send feedback",
+    "title": "Send feedback",
+    "close": "Close feedback dialog",
+    "intro": "Tell us about a bug, an idea, or anything else that would improve Kinesis.",
+    "type": "Type",
+    "types": { "bug": "Bug", "suggestion": "Suggestion", "other": "Other" },
+    "description": "Description",
+    "descriptionPlaceholder": "What happened or what would you like to see?",
+    "source": "Screen",
+    "required": "Describe your feedback before sending.",
+    "sendError": "Your feedback could not be sent. Your text is still here; please try again.",
+    "cancel": "Cancel",
+    "submit": "Send",
+    "success": "Thanks — your feedback was sent.",
+    "maxHint": "Up to 5,000 characters."
+  },
+  "feedbackAdmin": {
+    "pageTitle": "Feedbacks - Kinesis", "title": "Feedbacks", "subtitle": "Review feedback sent by Kinesis users.",
+    "status": "Status", "type": "Type", "description": "Submitted description", "allStatuses": "All statuses", "allTypes": "All types", "loading": "Loading feedback…", "loadError": "Feedback could not be loaded.", "retry": "Try again", "empty": "No feedback matches these filters.", "loadMore": "Load more", "view": "View", "viewAccessible": "View feedback", "detail": "Feedback detail", "close": "Close", "internalNote": "Internal note", "save": "Save", "delete": "Delete", "deleteAccessible": "Delete feedback", "cancel": "Cancel", "deleteTitle": "Delete feedback", "deleteConfirm": "Delete this feedback permanently?", "saved": "Feedback triage saved.", "deleted": "Feedback deleted.", "notFound": "This feedback no longer exists.", "requestError": "The request could not be completed. Try again.",
+    "types": { "bug": "Bug", "suggestion": "Suggestion", "other": "Other" },
+    "statuses": { "new": "New", "inProgress": "In progress", "resolved": "Resolved" }
   },
   "shoes": {
     "title": "Shoes",
