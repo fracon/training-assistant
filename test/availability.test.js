@@ -12,7 +12,7 @@ function validWeek(overrides = {}) {
   return { days: DAY_KEYS.map((day, index) => ({
     day,
     can_train: index === 0,
-    available_periods: index === 0 ? ['12_14', 'after_18'] : [],
+    available_periods: index === 0 ? ['12_14'] : [],
     available_minutes: index === 0 ? 60 : null,
     location: index === 0 ? 'Fânzeres, Gondomar' : '',
     ...overrides[day],
@@ -58,12 +58,12 @@ test('available days require known periods, positive bounded whole minutes, and 
   }
 });
 
-test('normalization deduplicates periods and validates but preserves exact locations', () => {
+test('normalization validates a single period and preserves exact locations', () => {
   const result = normalizeAvailabilityWeek(validWeek({ monday: {
-    available_periods: ['12_14', 'after_18', '12_14'], location: '  Porto  ',
+    available_periods: ['12_14'], location: '  Porto  ',
   } }));
   assert.equal(result.valid, true);
-  assert.deepEqual(result.days[0].available_periods, ['12_14', 'after_18']);
+  assert.deepEqual(result.days[0].available_periods, ['12_14']);
   assert.equal(result.days[0].location, '  Porto  ');
 });
 
@@ -78,13 +78,41 @@ test('availability persistence is user scoped, canonical and idempotent', () => 
   const saved = saveAvailabilityWeek(db, 1, canonical);
   assert.equal(saved.needsReview, false);
   assert.equal(saved.days[0].available_minutes, 60);
-  assert.deepEqual(saved.days[0].available_periods, ['12_14', 'after_18']);
+  assert.deepEqual(saved.days[0].available_periods, ['12_14']);
   assert.equal(saved.days[0].location, 'Fânzeres, Gondomar');
   assert.equal(getAvailabilityWeek(db, 2).needsReview, true);
   const changed = normalizeAvailabilityWeek(validWeek({ monday: { available_minutes: 45 } })).days;
   saveAvailabilityWeek(db, 1, changed);
   assert.equal(getAvailabilityWeek(db, 1).days[0].available_minutes, 45);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM ai_coach_availability').get().count, 7);
+  db.close();
+});
+
+test('legacy multiple periods remain readable but require explicit review and cannot be normalized', () => {
+  const db = createDatabase({ filename: ':memory:' });
+  db.prepare("INSERT INTO users (email, password_hash) VALUES ('legacy-periods@example.test', 'hash')").run();
+  db.prepare(`INSERT INTO ai_coach_availability
+    (user_id, day_key, can_train, available_periods, available_minutes, location)
+    VALUES (1, 'monday', 1, ?, 60, 'Porto')`).run(JSON.stringify(['08_12']));
+  db.prepare(`INSERT INTO ai_coach_availability
+    (user_id, day_key, can_train, available_periods, available_minutes, location)
+    VALUES (1, 'tuesday', 1, ?, 60, 'Porto')`).run('{broken');
+  db.prepare(`INSERT INTO ai_coach_availability
+    (user_id, day_key, can_train, available_periods, available_minutes, location)
+    VALUES (1, 'wednesday', 1, ?, 60, 'Porto')`).run(JSON.stringify(['12_14', '14_18']));
+  for (const day of ['thursday', 'friday', 'saturday', 'sunday']) {
+    db.prepare(`INSERT INTO ai_coach_availability
+      (user_id, day_key, can_train, available_periods, available_minutes, location)
+      VALUES (1, ?, 0, '[]', NULL, '')`).run(day);
+  }
+  const loaded = getAvailabilityWeek(db, 1);
+  assert.deepEqual(loaded.days[0].available_periods, ['08_12']);
+  assert.deepEqual(loaded.days[1].available_periods, []);
+  assert.deepEqual(loaded.days[2].available_periods, ['12_14', '14_18']);
+  assert.equal(loaded.needsReview, true);
+  assert.deepEqual(normalizeAvailabilityWeek(validWeek({ monday: {
+    available_periods: ['08_12', '14_18'],
+  } })), { valid: false, error: 'availability_invalid_periods' });
   db.close();
 });
 

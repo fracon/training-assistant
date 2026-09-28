@@ -50,7 +50,7 @@ DISPONIBILIDADE
 
 {{AVAILABILITY_BLOCK}}
 
-Planeje treinos somente em dias marcados como disponíveis. Se algum dia estiver sem configuração estruturada, não presuma disponibilidade e peça confirmação. Períodos múltiplos são alternativas para uma sessão naquele dia, não autorização para treinos múltiplos; escolha o período mais adequado. O tempo informado é o limite máximo total da sessão, incluindo aquecimento e volta à calma; não é meta. Nunca interprete a janela do período como duração do treino. Considere o horário local da localidade. Use previsão somente quando houver dados válidos, nunca invente condições meteorológicas e informe quando não houver previsão válida.
+Planeje treinos somente em dias marcados como disponíveis. Se algum dia estiver sem configuração estruturada, não presuma disponibilidade e peça confirmação. Cada dia disponível tem um único período preferencial; use-o como janela de horário local para a previsão horária. O tempo informado é o limite máximo total da sessão, incluindo aquecimento e volta à calma; não é meta. Nunca interprete a janela do período como duração do treino. Considere o horário local da localidade. Use previsão somente quando houver dados válidos, nunca invente condições meteorológicas e informe quando não houver previsão válida. Para ajustar o calor, use a maior temperatura prevista entre as horas válidas dentro do período escolhido. Essa é a máxima da janela, não a temperatura exata de um horário de treino ainda não definido; não a substitua pela máxima diária.
 
 CONTEXTO ADICIONAL DESTA SEMANA
 
@@ -67,7 +67,7 @@ INSTRUÇÕES PARA MONTAR A SEMANA
 7. Nos longos, especifique claramente cada parte do treino. Caso exista bloco controlado/progressivo, deixe explícito que ele deve ser realizado por esforço e indique o RPE esperado.
 8. Considere que meu percurso habitual possui bastante subida. Não determine que eu persiga pace nas subidas. FC pode subir significativamente nesses trechos; considere principalmente esforço e respiração.
 9. Considere temperatura e condições meteorológicas. Use previsão somente quando houver dados válidos para a localidade informada e horário dentro do período disponível. Não invente horário exato dentro da faixa nem condições meteorológicas. Sem previsão válida, informe a ausência e não presuma o clima.
-10. A previsão precisa ter dados válidos de horário compatíveis com o período escolhido. Se não for possível confirmá-los, trate a previsão como indisponível; não use apenas mínima/máxima diária nem invente horário exato.
+10. A previsão precisa ter dados válidos de horário compatíveis com o período escolhido. Se não for possível confirmá-los, trate a previsão como indisponível; não use apenas mínima/máxima diária nem invente horário exato. Para “antes das 08h” e “após as 18h”, limite a comparação ao dia local do treino, sem atravessar para outra data.
 11. Se houver previsão de calor forte, adapte o treino quando necessário e deixe isso explícito nas observações. Não prescreva intensidade inadequada apenas para manter o planejamento original.
 12. Escolha o tênis mais apropriado para cada sessão considerando os tênis que tenho disponíveis, o tipo de treino e nosso histórico recente com cada um.
 13. Considere qualquer dor ou desconforto recente, mas não continue tratando uma lesão antiga como ativa se os treinos posteriores demonstrarem recuperação completa.
@@ -137,7 +137,7 @@ AVAILABILITY
 
 {{AVAILABILITY_BLOCK}}
 
-Plan sessions only on days marked available. If any day is unconfigured, do not assume availability and ask the user to confirm it. Multiple periods are alternatives for one session that day, not permission for multiple sessions; choose the most appropriate period. The available time is the maximum total session duration, including warm-up and cool-down; it is a ceiling, not a target. Never interpret the period window as workout duration. Consider the local time at the stated location. Use forecasts only when valid data exists, never invent weather, and state when no valid forecast is available.
+Plan sessions only on days marked available. If any day is unconfigured, do not assume availability and ask the user to confirm it. Each available day has one preferred training period; use it as the local-time window for the hourly forecast. The available time is the maximum total session duration, including warm-up and cool-down; it is a ceiling, not a target. Never interpret the period window as workout duration. Consider the local time at the stated location. Use forecasts only when valid data exists, never invent weather, and state when no valid forecast is available. For heat adjustment, use the highest valid predicted temperature among forecast hours inside the selected period. This is a window maximum, not the exact temperature at an as-yet-unspecified training time; do not replace it with a daily maximum.
 
 ADDITIONAL CONTEXT FOR THIS WEEK
 
@@ -154,7 +154,7 @@ INSTRUCTIONS FOR PLANNING THE WEEK
 7. For long runs, clearly specify each part of the workout. If there is a controlled/progressive block, make it explicit that it should be done by effort and indicate the expected RPE.
 8. Consider that my usual route has plenty of hills. Do not dictate that I chase pace on uphills. HR may rise significantly in these sections; consider effort and breathing primarily.
 9. Consider temperature and weather conditions. Use a forecast only when valid data exists for the stated location and a time within the available period. Do not invent an exact time within the window or weather conditions. Without a valid forecast, state that it is unavailable and do not assume weather.
-10. The forecast must have valid time-specific data within the selected period. If that cannot be confirmed, treat the forecast as unavailable; do not rely only on daily min/max or invent an exact time.
+10. The forecast must have valid time-specific data within the selected period. If that cannot be confirmed, treat the forecast as unavailable; do not rely only on daily min/max or invent an exact time. For “before 08” and “after 18”, constrain the comparison to the local training date and do not cross into another date.
 11. If strong heat is forecasted, adapt the workout when necessary and make this explicit in the notes. Do not prescribe inappropriate intensity just to maintain the original plan.
 12. Choose the most appropriate shoe for each session considering the shoes I have available, the type of workout, and our recent history with each.
 13. Consider any recent pain or discomfort, but do not continue treating an old injury as active if subsequent workouts demonstrate full recovery.
@@ -203,8 +203,9 @@ export function validateAvailabilityDay(record) {
   if (record?.can_train === false) return [];
   if (record?.can_train !== true) return ['availability'];
   const errors = [];
-  if (!Array.isArray(record.available_periods) || !record.available_periods.some((period) => PERIOD_KEYS.includes(period))) {
-    errors.push('availabilityNeedsPeriods');
+  if (!Array.isArray(record.available_periods) || record.available_periods.length !== 1 ||
+      !record.available_periods.every((period) => PERIOD_KEYS.includes(period))) {
+    errors.push('availabilityNeedsSinglePeriod');
   }
   if (!isValidAvailableMinutes(record.available_minutes)) errors.push('availabilityNeedsDuration');
   const locationError = getLocationValidationError(record.location);
@@ -453,7 +454,11 @@ export function buildPrompt({ targetDate, disponibilidade = {}, contexto = '', l
     const dayName = labels.days?.[DAY_LOCALE_KEYS[day]] || DAY_DB_KEYS[index];
     if (record.can_train === false) return `- ${dayName}: ${labels.canTrainLabel || 'Can train'}: ${labels.no || 'no'}`;
     if (record.can_train !== true) return `- ${dayName}: ${labels.availabilityUnconfigured || 'Availability not configured; ask for confirmation'}`;
-    const periods = (record.available_periods ?? []).map((period) => labels.periods?.[period] || period).join('; ');
+    if (!Array.isArray(record.available_periods) || record.available_periods.length !== 1) {
+      return `- ${dayName}: ${labels.availabilityNeedsSinglePeriod || 'Choose exactly one preferred period before planning'}`;
+    }
+    const period = (record.available_periods ?? [])[0];
+    const periods = labels.periods?.[period] || period || '';
     const location = String(record.location ?? '');
     return `- ${dayName}: ${labels.canTrainLabel || 'Can train'}: ${labels.yes || 'yes'}; ${labels.periodsLabel || 'Periods available'}: ${periods}; ${labels.durationPromptLabel || 'Maximum session time'}: ${record.available_minutes} ${labels.minutes || 'minutes'}; ${labels.locationLabel || 'Location'}: ${location}`;
   });
@@ -517,7 +522,9 @@ export function validatePromptFields({ targetDate = '', language = 'pt-BR', disp
 function daySummary(state, messages) {
   if (state.can_train === false) return { text: messages.dayUnavailable || '', incomplete: false };
   if (state.can_train !== true) return { text: messages.dayNotConfigured || '', incomplete: false };
-  const periods = (state.available_periods || []).map((period) => messages.periods?.[period] || period);
+  const periods = (state.available_periods || []).length === 1
+    ? [messages.periods?.[state.available_periods[0]] || state.available_periods[0]]
+    : [];
   const duration = Number.isInteger(state.available_minutes) ? `${state.available_minutes} ${messages.minutesUnit || messages.minutes || ''}` : '';
   const text = [periods.join('; '), duration].filter(Boolean).join(' · ') || messages.dayAvailable || '';
   const incomplete = validateAvailabilityDay(state).length > 0;
@@ -534,7 +541,8 @@ function escapeHtml(value) {
 
 export function buildDayRowHtml(day, { dayLabel, messages = {}, state = {} }) {
   const dbDay = DAY_DB_KEYS[DAY_KEYS.indexOf(day)];
-  const periods = PERIOD_KEYS.map((period) => `<label class="period-option"><input type="checkbox" data-period="${period}" ${state.available_periods?.includes(period) ? 'checked' : ''}><span>${messages.periods?.[period] || period}</span></label>`).join('');
+  const selectedPeriod = state.available_periods?.length === 1 ? state.available_periods[0] : '';
+  const periods = PERIOD_KEYS.map((period) => `<label class="period-option"><input type="radio" name="availability-${dbDay}-period" data-period="${period}" ${selectedPeriod === period ? 'checked' : ''}><span>${messages.periods?.[period] || period}</span></label>`).join('');
   const duration = state.available_minutes ?? '';
   const summary = daySummary(state, messages);
   const available = state.can_train === true;
@@ -935,11 +943,12 @@ function setupAiCoachPage() {
       }));
       error.hidden = errors.length === 0;
       const errorId = error.id;
-      periods.setAttribute('aria-invalid', String(dayErrorKeys.includes('availabilityNeedsPeriods')));
+      const periodError = dayErrorKeys.includes('availabilityNeedsPeriods') || dayErrorKeys.includes('availabilityNeedsSinglePeriod');
+      periods.setAttribute('aria-invalid', String(periodError));
       if (dayErrorKeys.length) periods.setAttribute('aria-describedby', errorId);
       else periods.removeAttribute('aria-describedby');
       periods.querySelectorAll('input').forEach((input) => {
-        input.setAttribute('aria-invalid', String(dayErrorKeys.includes('availabilityNeedsPeriods')));
+        input.setAttribute('aria-invalid', String(periodError));
         if (dayErrorKeys.length) input.setAttribute('aria-describedby', errorId);
         else input.removeAttribute('aria-describedby');
       });

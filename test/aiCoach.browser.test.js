@@ -456,12 +456,14 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     assert.equal(shiftTabState, 'applyWeekdays');
     await pressKey('Enter', 'Enter', 13);
     const applyState = await evaluate(`(()=>({enabled:!document.getElementById('generateBtn').disabled,periods:document.querySelectorAll('[data-day="monday"] [data-period]:checked').length,focused:document.activeElement.matches(':focus-visible')}))()`);
-    assert.deepEqual(applyState, { enabled: true, periods: 2, focused: true });
+    assert.deepEqual(applyState, { enabled: true, periods: 1, focused: true });
     await evaluate(`document.querySelector('[data-day="monday"] [data-period="before_08"]').focus()`);
     await pressKey(' ', 'Space', 32);
     assert.equal(await evaluate(`document.querySelector('[data-day="monday"] [data-period="before_08"]').checked`), true);
     await pressKey(' ', 'Space', 32);
-    assert.equal(await evaluate(`document.querySelector('[data-day="monday"] [data-period="before_08"]').checked`), false);
+    assert.equal(await evaluate(`document.querySelector('[data-day="monday"] [data-period="before_08"]').checked`), true);
+    await evaluate(`document.querySelector('[data-day="monday"] [data-period="08_12"]').click()`);
+    assert.deepEqual(await evaluate(`(()=>({selected:document.querySelector('[data-day="monday"] [data-period="08_12"]').checked,count:document.querySelectorAll('[data-day="monday"] [data-period]:checked').length}))()`), { selected: true, count: 1 });
 
     const weekdayCopy = await evaluate(`(()=>{
       const monday=document.querySelector('[data-day="monday"]');
@@ -479,9 +481,9 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       return {weekdayRows,weekendUnchanged,saturdayHidden:hidden.hidden,saturdayFieldsDisabled:disabled,tuesdayLocation:tuesday.value,mondayLocation};
     })()`);
     const copyState = await evaluate(`(()=>({weekdayRows:['tuesday','wednesday','thursday','friday'].map(day=>document.querySelector('[data-day="'+day+'"]').querySelectorAll('[data-period]:checked').length),saturdayHidden:document.querySelector('[data-day="saturday"] .day-details').hidden,saturdayDisabled:[...document.querySelectorAll('[data-day="saturday"] .day-details input,[data-day="saturday"] .day-details select')].every(control=>control.disabled),tuesdayLocation:document.querySelector('[data-day="tuesday"] [data-location]').value,mondayLocation:document.querySelector('[data-day="monday"] [data-location]').value}))()`);
-    assert.deepEqual(weekdayCopy.weekdayRows, [3, 3, 3, 3]);
+    assert.deepEqual(weekdayCopy.weekdayRows, [1, 1, 1, 1]);
     assert.equal(weekdayCopy.weekendUnchanged, true, 'applying weekdays leaves Saturday and Sunday untouched');
-    assert.deepEqual(copyState, { weekdayRows: [3, 3, 3, 3], saturdayHidden: true, saturdayDisabled: true, tuesdayLocation: 'Maspalomas, Gran Canaria', mondayLocation: 'Porto' });
+    assert.deepEqual(copyState, { weekdayRows: [1, 1, 1, 1], saturdayHidden: true, saturdayDisabled: true, tuesdayLocation: 'Maspalomas, Gran Canaria', mondayLocation: 'Porto' });
     await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+5000;const check=()=>{if(document.getElementById('availabilityStatus').textContent.trim())resolve(true);else if(Date.now()>end)reject(new Error('Save status did not appear'));else setTimeout(check,30)};check()})`);
     const persisted = await app.inject({ method: 'GET', url: '/api/ai-coach/availability', headers: { cookie: `ta_session=${cookie}` } });
     assert.equal(persisted.statusCode, 200);
@@ -647,7 +649,7 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     await evaluate(`(()=>{const location=document.querySelector('[data-day="tuesday"] [data-location]');location.focus();location.setSelectionRange(2,7,'forward');document.querySelector('.lang-switch [data-lang="en-US"]').click()})()`);
     await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{if(document.documentElement.lang==='en-US')resolve(true);else if(Date.now()>end)reject(new Error('English language switch timed out'));else setTimeout(check,30)};check()})`);
     const englishState = await evaluate(`(()=>{const duration=document.querySelector('[data-day="monday"] [data-duration]');return {language:document.documentElement.lang,label:document.querySelector('[data-day="monday"] .period-group legend').textContent,periods:document.querySelectorAll('[data-day="monday"] [data-period]:checked').length,location:document.querySelector('[data-day="tuesday"] [data-location]').value,durationPlaceholder:duration.placeholder,durationHint:duration.nextElementSibling.textContent,saveLabel:document.getElementById('saveAvailabilityLabel').textContent}})()`);
-    assert.deepEqual(englishState, { language: 'en-US', label: 'Available periods', periods: 1, location: 'Maspalomas, Gran Canaria', durationPlaceholder: 'e.g. 60', durationHint: 'From 1 to 720 minutes, including warm-up and cool-down.', saveLabel: 'Save weekly schedule' });
+    assert.deepEqual(englishState, { language: 'en-US', label: 'Preferred period', periods: 1, location: 'Maspalomas, Gran Canaria', durationPlaceholder: 'e.g. 60', durationHint: 'From 1 to 720 minutes, including warm-up and cool-down.', saveLabel: 'Save weekly schedule' });
     const languageFocus = await evaluate(`(()=>{const location=document.querySelector('[data-day="tuesday"] [data-location]');return {focused:document.activeElement===location,start:location.selectionStart,end:location.selectionEnd,direction:location.selectionDirection}})()`);
     assert.equal(languageFocus.focused || languageFocus.start === 0, true);
 
@@ -660,7 +662,7 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     await evaluate(`document.getElementById('generateBtn').click()`);
     await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+12000;const check=()=>{const prompt=document.getElementById('promptOutput').textContent;if(prompt.includes('Maximum session time: 60 minutes')&&prompt.includes('Maspalomas, Gran Canaria'))resolve(true);else if(Date.now()>end)reject(new Error('Structured English prompt did not appear'));else setTimeout(check,40)};check()})`);
     const prompt = await evaluate(`document.getElementById('promptOutput').textContent`);
-    assert.match(prompt, /Multiple periods are alternatives for one session that day/);
+    assert.match(prompt, /highest valid predicted temperature among forecast hours inside the selected period/);
     assert.match(prompt, /a ceiling, not a target/);
     assert.doesNotMatch(prompt, /Normal routine|Rotina normal/);
 
