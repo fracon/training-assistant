@@ -15,9 +15,9 @@ function pickNumber(source, key) {
   return Number.isFinite(source?.[key]) ? source[key] : null;
 }
 
-function pickNumberAny(source, keys) {
+function pickNonNegativeNumberAny(source, keys) {
   for (const key of keys) {
-    const value = pickNumber(source, key);
+    const value = nonNegativeNumber(source, key);
     if (value !== null) return value;
   }
   return null;
@@ -115,8 +115,10 @@ function buildLapView(lap, index, cumulativeBefore) {
     maxHeartRate: pickNumber(lap, 'max_heart_rate'),
     ascentMeters: nonNegativeNumber(lap, 'total_ascent'),
     descentMeters: nonNegativeNumber(lap, 'total_descent'),
-    avgCadenceSpm: pickNumberAny(lap, ['avg_running_cadence', 'avg_cadence']),
-    maxCadenceSpm: pickNumberAny(lap, ['max_running_cadence', 'max_cadence']),
+    // FIT running cadence is reported as strides/min. Keep the source value
+    // unchanged: Kinesis must not double it into a two-foot step count.
+    avgCadenceSpm: pickNonNegativeNumberAny(lap, ['avg_running_cadence', 'avg_cadence']),
+    maxCadenceSpm: pickNonNegativeNumberAny(lap, ['max_running_cadence', 'max_cadence']),
     strideMeters: pickNumber(lap, 'avg_stride_length'),
     calories: pickNumber(lap, 'total_calories'),
   };

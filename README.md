@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized prompts for an AI coach.
 
-Current application version: **0.16.0** (active development).
+Current application version: **0.17.0** (active development).
 
 ### Shoe mileage integrity
 
@@ -91,7 +91,7 @@ backend.
   - Average & best pace (min/km)
   - Average & max heart rate (bpm)
   - Ascent / descent (m)
-  - Average & max cadence (steps/min)
+  - Average & max cadence (FIT running strides/min, displayed without doubling)
   - Stride length (m) & calories (kcal)
 - **Structured coach prompt** — planned vs. realized workout, conditions, equipment, perceived effort (RPE 1–5), breathing/muscle/energy feedback, and free-form notes are merged into a localized Portuguese or English coaching template.
 - **Workout totals computed automatically** — total duration, distance, average pace, weighted average HR, max HR, and ascent.

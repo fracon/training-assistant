@@ -195,6 +195,23 @@ test('summarize tolerates missing fields and falls back gracefully', () => {
   assert.equal(cadenceOnly.avgHeartRate, null);
 });
 
+test('summarize keeps valid running cadence raw and rejects invalid cadence values', () => {
+  const summary = summarize({
+    sessions: [{
+      laps: [
+        makeLap({ avg_running_cadence: 88, avg_cadence: 170 }),
+        makeLap({ avg_running_cadence: -1, avg_cadence: 176 }),
+        makeLap({ avg_running_cadence: Number.NaN, avg_cadence: -4 }),
+      ],
+    }],
+  });
+  assert.equal(summary.laps[0].avgCadenceSpm, 88);
+  assert.equal(summary.laps[0].maxCadenceSpm, 92);
+  assert.equal(summary.laps[1].avgCadenceSpm, 176, 'generic cadence is the fallback');
+  assert.equal(summary.laps[2].avgCadenceSpm, null);
+  assert.equal(summary.laps[2].maxCadenceSpm, 92, 'valid maximum remains available even when the average is absent');
+});
+
 test('summarize computes totals across mixed lap quality', () => {
   const summary = summarize({
     sessions: [

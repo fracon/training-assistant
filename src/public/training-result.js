@@ -465,7 +465,7 @@ export function collectPromptValues({ training, form, fitData, preferences = {} 
     ANEXAR_SCREENSHOT_GARMIN_OU_INSERIR_DADOS_DE_LAPS_AQUI: source !== 'fit_upload'
       ? '-'
       : fitData?.laps?.length
-        ? buildLapsMarkdown(fitData.laps, preferences)
+        ? buildLapsMarkdown(fitData.laps, { ...preferences, language: form.language })
         : form.fitAttached
           ? 'Ver anexo'
           : '-',
@@ -519,17 +519,23 @@ export function fitUploadErrorMessage(code, translate) {
 export function buildLapsMarkdown(laps, preferences = {}) {
   const distanceUnit = preferences.distance_unit === 'mi' ? 'mi' : 'km';
   if (!Array.isArray(laps) || laps.length === 0) return '';
-  const header = '| # | Type | Distance | Duration | Pace | HR avg. | Ascent |';
-  const separator = '|---|------|----------|----------|------|---------|--------|';
+  const english = preferences.language !== 'pt-BR';
+  const header = english
+    ? '| # | Type | Distance | Duration | Pace | HR avg. | Avg cadence (spm) | Ascent |'
+    : '| # | Tipo | Distância | Duração | Pace | FC média | Cadência média (spm) | Desnível |';
+  const separator = '|---|------|----------|----------|------|---------|--------------------|--------|';
   const rows = laps.map((lap) => {
     const distance = lap.distanceLabel ?? '-';
     const duration = lap.durationLabel ?? '-';
     const pace = lap.avgPaceLabel ?? '-';
     const hr = lap.avgHeartRate ?? '-';
+    const cadence = Number.isFinite(lap.avgCadenceSpm) && lap.avgCadenceSpm >= 0
+      ? `${lap.avgCadenceSpm} spm`
+      : '-';
     const ascent = lap.ascentMeters != null ? `${lap.ascentMeters} m` : '-';
     const paceLabel = pace === '-' ? `- min/${distanceUnit}` : formatPaceFromMetric(pace, distanceUnit);
     const distanceValue = distance === '-' ? '-' : formatDistance(distance, distanceUnit).replace(/\s(km|mi)$/, '');
-    return `| ${lap.lap} | ${lap.stepType} | ${distanceValue} ${distanceUnit} | ${duration} | ${paceLabel} | ${hr} | ${ascent} |`;
+    return `| ${lap.lap} | ${lap.stepType} | ${distanceValue} ${distanceUnit} | ${duration} | ${paceLabel} | ${hr} | ${cadence} | ${ascent} |`;
   });
   return [header, separator, ...rows].join('\n');
 }
@@ -738,6 +744,9 @@ async function initTrainingResult() {
       const duration = lap.durationLabel ?? '-';
       const pace = formatPaceFromMetric(lap.avgPaceLabel ?? '-', distanceUnit);
       const hr = lap.avgHeartRate ?? '-';
+      const cadence = Number.isFinite(lap.avgCadenceSpm) && lap.avgCadenceSpm >= 0
+        ? `${lap.avgCadenceSpm} spm`
+        : '-';
       const ascent = lap.ascentMeters != null ? `${lap.ascentMeters} m` : '-';
       tr.innerHTML = [
         `<td>${escapeHtmlText(String(lap.lap))}</td>`,
@@ -746,6 +755,7 @@ async function initTrainingResult() {
         `<td>${escapeHtmlText(duration)}</td>`,
         `<td>${escapeHtmlText(pace)}</td>`,
         `<td>${escapeHtmlText(String(hr))}</td>`,
+        `<td>${escapeHtmlText(cadence)}</td>`,
         `<td>${escapeHtmlText(ascent)}</td>`,
       ].join('');
       fragment.appendChild(tr);

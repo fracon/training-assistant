@@ -954,7 +954,7 @@ test('POST /api/trainings/:id/fit persists FIT metrics and returns them', async 
   const summary = makeFitSummary({
     totals: { durationSeconds: 5400, distanceKm: 12.5, avgPaceSecondsPerKm: 432, avgHeartRate: 160, maxHeartRate: 182, ascentMeters: 200, calories: 987.4 },
     activity: { sport: 'running', startTime: '2026-08-24T07:00:00Z', endTime: '2026-08-24T08:30:00Z' },
-    laps: [{ lap: 1, duration: 5400, stepType: 'Run', durationLabel: '1:30:00', cumulativeSeconds: 5400, cumulativeLabel: '1:30:00', distanceKm: 12.5, distanceLabel: '12.50', avgPaceSecondsPerKm: 432, avgPaceLabel: '7:12', bestPaceSecondsPerKm: null, bestPaceLabel: '--:--', avgHeartRate: 160, maxHeartRate: 182, ascentMeters: 200, descentMeters: null, avgCadenceSpm: null, maxCadenceSpm: null, strideMeters: null, calories: null }],
+    laps: [{ lap: 1, duration: 5400, stepType: 'Run', durationLabel: '1:30:00', cumulativeSeconds: 5400, cumulativeLabel: '1:30:00', distanceKm: 12.5, distanceLabel: '12.50', avgPaceSecondsPerKm: 432, avgPaceLabel: '7:12', bestPaceSecondsPerKm: null, bestPaceLabel: '--:--', avgHeartRate: 160, maxHeartRate: 182, ascentMeters: 200, descentMeters: null, avgCadenceSpm: 88, maxCadenceSpm: 92, strideMeters: null, calories: null }],
   });
   const { db, app, cookie, userId } = await setup({ parseFitFile: stubParse(summary) });
   const id = seedTraining(db, { user_id: userId });
@@ -977,6 +977,7 @@ test('POST /api/trainings/:id/fit persists FIT metrics and returns them', async 
   assert.equal(payload.fit_elevation_gain, 200);
   assert.equal(payload.fit_calories, 987);
   assert.ok(Array.isArray(payload.laps));
+  assert.equal(payload.laps[0].avgCadenceSpm, 88);
 
   const row = db
     .prepare('SELECT fit_duration, fit_distance, fit_avg_pace, fit_avg_hr, fit_max_hr, fit_elevation_gain, fit_calories, fit_summary_json FROM trainings WHERE id = ?')
@@ -993,10 +994,11 @@ test('POST /api/trainings/:id/fit persists FIT metrics and returns them', async 
   assert.ok(parsed.totals);
   assert.equal(parsed.totals.calories, 987);
   assert.ok(parsed.laps);
+  assert.equal(parsed.laps[0].avgCadenceSpm, 88);
 });
 
 test('POST /api/trainings/:id/fit extracts one nested FIT from a ZIP through the same parser pipeline', async () => {
-  const summary = makeFitSummary({ totals: { durationSeconds: 120, distanceKm: 1, calories: 42 } });
+  const summary = makeFitSummary({ totals: { durationSeconds: 120, distanceKm: 1, calories: 42 }, laps: [{ ...makeFitSummary().laps[0], avgCadenceSpm: 91 }] });
   const { db, app, cookie, userId } = await setup({
     parseFitFile: async (buffer) => {
       assert.equal(buffer.toString(), 'FITDATA');
@@ -1008,6 +1010,7 @@ test('POST /api/trainings/:id/fit extracts one nested FIT from a ZIP through the
   const response = await postFitParts(app, cookie, [{ name: 'file', fileName: 'export.zip', value: zip }]);
   assert.equal(response.statusCode, 200);
   assert.equal(response.json().fit_calories, 42);
+  assert.equal(response.json().laps[0].avgCadenceSpm, 91);
   assert.equal(db.prepare('SELECT result_data_source, fit_calories FROM trainings WHERE id = ?').get(id).result_data_source, 'fit_upload');
 });
 
