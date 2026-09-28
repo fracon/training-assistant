@@ -121,7 +121,6 @@ function buildModal(messages) {
   submit.type = 'submit';
   submit.className = 'btn-primary';
   submit.id = 'feedbackSubmit';
-  submit.appendChild(icon('send'));
   const submitLabel = document.createElement('span');
   submitLabel.dataset.i18n = 'globalFeedback.submit';
   submit.appendChild(submitLabel);

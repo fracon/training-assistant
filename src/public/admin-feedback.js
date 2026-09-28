@@ -29,8 +29,10 @@ function renderRows(rows) {
     const summary = document.createElement('p'); summary.className = 'feedback-row-summary'; summary.textContent = item.description; row.appendChild(summary);
     const bottom = document.createElement('div'); bottom.className = 'feedback-row-bottom';
     const meta = document.createElement('span'); meta.className = 'feedback-meta'; meta.textContent = `${item.author_email} · ${item.pathname} · ${formatDate(String(item.created_at).slice(0, 10), context.i18n.language)}`;
-    const view = document.createElement('button'); view.type = 'button'; view.className = 'btn-secondary'; view.dataset.id = item.id; view.dataset.i18n = 'feedbackAdmin.view'; view.textContent = t('feedbackAdmin.view'); view.addEventListener('click', () => openDetail(item, view));
-    bottom.append(meta, view); row.appendChild(bottom); list.appendChild(row);
+    const actions = document.createElement('div'); actions.className = 'feedback-row-actions';
+    const view = document.createElement('button'); view.type = 'button'; view.className = 'btn-icon'; view.dataset.id = item.id; view.setAttribute('aria-label', t('feedbackAdmin.viewAccessible')); view.innerHTML = '<i data-lucide="eye"></i>'; const viewTooltip = document.createElement('div'); viewTooltip.className = 'custom-tooltip'; viewTooltip.setAttribute('aria-hidden', 'true'); viewTooltip.textContent = t('feedbackAdmin.viewAccessible'); view.appendChild(viewTooltip); view.disabled = context.deletingIds.has(item.id); view.addEventListener('click', () => openDetail(item, view));
+    const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'btn-icon feedback-delete-action'; remove.dataset.id = item.id; remove.setAttribute('aria-label', t('feedbackAdmin.deleteAccessible')); remove.innerHTML = '<i data-lucide="trash-2"></i>'; const removeTooltip = document.createElement('div'); removeTooltip.className = 'custom-tooltip'; removeTooltip.setAttribute('aria-hidden', 'true'); removeTooltip.textContent = t('feedbackAdmin.deleteAccessible'); remove.appendChild(removeTooltip); remove.disabled = context.deletingIds.has(item.id); remove.addEventListener('click', () => deleteFromList(item, remove));
+    actions.append(view, remove); bottom.append(meta, actions); row.appendChild(bottom); list.appendChild(row);
   }
   refreshIcons();
 }
@@ -134,7 +136,7 @@ function renderDetail(item, { preserve = false } = {}) {
   const pending = detailState?.pending;
   select.disabled = pending; note.disabled = pending;
   document.getElementById('feedbackDetailSave').disabled = pending;
-  document.getElementById('feedbackDetailDelete').disabled = pending;
+  document.getElementById('feedbackDetailCancel').disabled = pending;
   document.getElementById('feedbackDetailClose').disabled = pending;
   modal.classList.remove('hidden');
   detailTrap = detailTrap || createDialogFocusTrap(modal, closeDetail);
@@ -162,6 +164,8 @@ function translatePendingDetail(item) {
   if (statusLabelElement) statusLabelElement.textContent = t('feedbackAdmin.status');
   if (noteLabelElement) noteLabelElement.textContent = t('feedbackAdmin.internalNote');
   if (descriptionLabelElement) descriptionLabelElement.textContent = t('feedbackAdmin.description');
+  const cancelButton = document.getElementById('feedbackDetailCancel');
+  if (cancelButton) cancelButton.textContent = t('feedbackAdmin.cancel');
   document.querySelectorAll('#detailStatus option').forEach((option) => { option.textContent = statusLabel(option.value); });
 }
 
@@ -190,17 +194,15 @@ async function saveDetail() {
   }
 }
 
-async function deleteDetail() {
-  const target = detailState;
-  if (!target || target.pending || !selected) return;
+async function deleteFromList(item, trigger) {
+  if (context.deletingIds.has(item.id)) return;
+  const target = { id: item.id, item, trigger };
   const confirmed = await showConfirm({ title: t('feedbackAdmin.deleteTitle'), message: t('feedbackAdmin.deleteConfirm'), confirmLabel: t('feedbackAdmin.delete'), cancelLabel: t('feedbackAdmin.cancel') });
-  if (!confirmed || detailState !== target) return;
-  target.pending = true;
-  renderDetail(target.item, { preserve: true });
+  if (!confirmed || context.deletingIds.has(target.id)) return;
+  context.deletingIds.add(target.id);
+  renderRows(context.rows);
   try {
     await deleteAdminFeedback(target.id);
-    if (detailState !== target) return;
-    closeDetail({ expectedState: target });
     const focusAtRefresh = document.activeElement;
     context.rows = context.rows.filter((item) => item.id !== target.id);
     renderRows(context.rows);
@@ -210,25 +212,24 @@ async function deleteDetail() {
     showToast('feedbackAdmin.deleted');
     if (refreshed === LOAD_RESULT.failed) setState({ error: true, empty: false });
   } catch (error) {
-    if (detailState === target) {
-      target.pending = false;
-      renderDetail(target.item, { preserve: true });
-      showToast(errorKey(error), true);
-    }
+    showToast(errorKey(error), true);
+  } finally {
+    context.deletingIds.delete(target.id);
+    if (context.rows.some((row) => row.id === target.id)) renderRows(context.rows);
   }
 }
 
 export async function initAdminFeedback() {
   const user = await initShell({ active: 'admin-feedback' }); if (!user) return null;
-  context = { i18n: getShellI18n(), rows: [], page: 1, total: 0, generation: 0, requestId: 0, loading: false, state: { loading: false, error: false, empty: false } };
+  context = { i18n: getShellI18n(), rows: [], page: 1, total: 0, generation: 0, requestId: 0, loading: false, deletingIds: new Set(), state: { loading: false, error: false, empty: false } };
   document.getElementById('feedbackStatusFilter').addEventListener('change', () => load(true));
   document.getElementById('feedbackTypeFilter').addEventListener('change', () => load(true));
   document.getElementById('feedbackAdminRetry').addEventListener('click', () => load(true));
   document.getElementById('feedbackLoadMore').addEventListener('click', () => load(false));
   document.getElementById('feedbackDetailClose').addEventListener('click', closeDetail);
+  document.getElementById('feedbackDetailCancel').addEventListener('click', closeDetail);
   document.getElementById('feedbackDetailModal').addEventListener('click', (event) => { if (event.target.id === 'feedbackDetailModal') closeDetail(); });
   document.getElementById('feedbackDetailSave').addEventListener('click', saveDetail);
-  document.getElementById('feedbackDetailDelete').addEventListener('click', deleteDetail);
   document.addEventListener('app:languagechange', () => {
     context.i18n = getShellI18n();
     renderRows(context.rows);
