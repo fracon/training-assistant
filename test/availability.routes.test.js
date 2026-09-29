@@ -81,6 +81,8 @@ test('PUT rejects malformed payloads and values outside the domain contract', as
   assert.equal((await post({ days: tooLong })).statusCode, 400);
   const unknownPeriod = payload(); unknownPeriod[0].available_periods = ['lunch'];
   assert.equal((await post({ days: unknownPeriod })).statusCode, 400);
+  const multiplePeriods = payload(); multiplePeriods[0].available_periods = ['08_12', '14_18'];
+  assert.equal((await post({ days: multiplePeriods })).statusCode, 400);
   const missingLocation = payload(); missingLocation[0].location = '';
   assert.equal((await post({ days: missingLocation })).statusCode, 400);
   await app.close();

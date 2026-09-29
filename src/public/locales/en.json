@@ -21,6 +21,8 @@
     "no": "no",
     "canTrainLabel": "Can train",
     "periodsLabel": "Preferred period",
+    "legacyPeriodsLabel": "Previously saved periods",
+    "legacyPeriodsHint": "These options were saved previously. Choose one preferred period to replace them.",
     "periods": { "before_08": "Before 08:00", "08_12": "08:00–12:00", "12_14": "12:00–14:00", "14_18": "14:00–18:00", "after_18": "After 18:00" },
     "durationLabel": "Maximum session duration",
     "durationPromptLabel": "Maximum session time",

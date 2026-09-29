@@ -727,6 +727,42 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       'Generate does not produce a prompt from the stale submitted snapshot');
     await command('Fetch.disable');
 
+    db.prepare(`UPDATE ai_coach_availability SET available_periods = ?, available_minutes = ?, location = ? WHERE user_id = 1 AND day_key = 'monday'`)
+      .run(JSON.stringify(['08_12', '14_18']), 75, 'Legacy Porto');
+    await command('Fetch.enable', { patterns: [{ urlPattern: '*api/ai-coach/availability*', requestStage: 'Response' }] });
+    const legacyGetPending = waitForAvailabilityResponse('GET');
+    await command('Page.reload');
+    const legacyGet = await legacyGetPending;
+    await releaseAvailabilityResponse(legacyGet);
+    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{const summary=document.querySelector('[data-day="monday"] [data-legacy-period-summary]');if(summary&&document.documentElement.lang==='en-US'){resolve(true);return}if(Date.now()>end){reject(new Error('Legacy availability summary did not render'));return}requestAnimationFrame(check)};check()})`);
+    const legacyEnglish = await evaluate(`(()=>{const row=document.querySelector('[data-day="monday"]');return {summary:row.querySelector('[data-legacy-period-summary]').textContent,checked:row.querySelectorAll('[data-period]:checked').length,duration:row.querySelector('[data-duration]').value,location:row.querySelector('[data-location]').value,saveDisabled:document.getElementById('saveAvailability').disabled,generateDisabled:document.getElementById('generateBtn').disabled}})()`);
+    assert.deepEqual(legacyEnglish, { summary: 'Previously saved periods08:00–12:00; 14:00–18:00These options were saved previously. Choose one preferred period to replace them.', checked: 0, duration: '75', location: 'Legacy Porto', saveDisabled: true, generateDisabled: true });
+    await evaluate(`document.querySelector('.lang-switch [data-lang="pt-BR"]').click()`);
+    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{if(document.documentElement.lang==='pt-BR')resolve(true);else if(Date.now()>end)reject(new Error('Portuguese legacy summary switch timed out'));else setTimeout(check,30)};check()})`);
+    assert.deepEqual(await evaluate(`(()=>{const row=document.querySelector('[data-day="monday"]');return {summary:row.querySelector('[data-legacy-period-summary]').textContent,checked:row.querySelectorAll('[data-period]:checked').length}})()`), { summary: 'Períodos anteriores salvos08h–12h; 14h–18hEstas opções foram salvas anteriormente. Escolha um único período preferencial para substituí-las.', checked: 0 });
+    await evaluate(`document.querySelector('.lang-switch [data-lang="en-US"]').click()`);
+    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{if(document.documentElement.lang==='en-US')resolve(true);else if(Date.now()>end)reject(new Error('English legacy summary switch timed out'));else setTimeout(check,30)};check()})`);
+    await evaluate(`document.querySelector('[data-day="monday"] [data-expand]').click()`);
+    await evaluate(`document.querySelector('[data-day="monday"] [data-expand]').click()`);
+    const legacyAfterRerender = await evaluate(`(()=>{const row=document.querySelector('[data-day="monday"]');return {summary:row.querySelector('[data-legacy-period-summary]').textContent,checked:row.querySelectorAll('[data-period]:checked').length,hidden:row.querySelector('.day-details').hidden}})()`);
+    assert.equal(legacyAfterRerender.checked, 0);
+    assert.match(legacyAfterRerender.summary, /Previously saved periods/);
+    assert.equal(legacyAfterRerender.hidden, true);
+    const legacyPutPending = waitForAvailabilityResponse('PUT');
+    const selectedLegacyPeriod = await evaluate(`(()=>{const row=document.querySelector('[data-day="monday"]');row.querySelector('[data-period="12_14"]').click();return {checked:row.querySelectorAll('[data-period]:checked').length,summary:row.querySelector('[data-legacy-period-summary]'),generateDisabled:document.getElementById('generateBtn').disabled}})()`);
+    assert.deepEqual(selectedLegacyPeriod, { checked: 1, summary: null, generateDisabled: false });
+    await evaluate(`document.getElementById('saveAvailability').click()`);
+    const legacyPut = await legacyPutPending;
+    const legacyBody = JSON.parse(legacyPut.params.request.postData);
+    const mondayPayload = legacyBody.days.find((day) => day.day === 'monday');
+    assert.deepEqual(mondayPayload, { day: 'monday', can_train: true, available_periods: ['12_14'], available_minutes: 75, location: 'Legacy Porto' });
+    await releaseAvailabilityResponse(legacyPut);
+    await waitForText('#availabilityStatus', 'Weekly schedule saved.');
+    const persistedLegacy = await app.inject({ method: 'GET', url: '/api/ai-coach/availability', headers: { cookie: `ta_session=${cookie}` } });
+    const persistedMonday = persistedLegacy.json().availability.days.find((day) => day.day === 'monday');
+    assert.deepEqual({ periods: persistedMonday.available_periods, minutes: persistedMonday.available_minutes, location: persistedMonday.location, needsReview: persistedLegacy.json().availability.needsReview }, { periods: ['12_14'], minutes: 75, location: 'Legacy Porto', needsReview: false });
+    await command('Fetch.disable');
+
     await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
     await evaluate(`new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>setTimeout(resolve,100))))`);
     const mobile = await evaluate(`(()=>({width:innerWidth,scrollWidth:document.documentElement.scrollWidth,days:document.querySelectorAll('#availabilityGrid .day-row').length,touchTarget:[...document.querySelectorAll('.period-option')].filter(el=>el.getClientRects().length>0).every(el=>el.getBoundingClientRect().height>=42)}))()`);
@@ -750,6 +786,6 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     if (chromeProcess.exitCode === null) await Promise.race([once(chromeProcess, 'exit'), delay(2000)]);
     await app.close();
     rmSync(profile, { recursive: true, force: true });
-    t.diagnostic('Verified authenticated AI Coach at 1280×800 and 390×844 in PT/EN, including focus/caret preservation across delayed GET/PUT responses and language rerender, plus availability validation.');
+    t.diagnostic('Verified authenticated AI Coach at 1280×800 and 390×844 in PT/EN, including legacy-period review/persistence, focus/caret preservation across delayed GET/PUT responses and language rerender, plus availability validation.');
   }
 });

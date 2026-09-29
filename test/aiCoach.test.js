@@ -165,6 +165,17 @@ test('weekly agenda uses native labeled controls and an unselected session durat
   assert.match(row, /data-lucide="chevron-down" class="day-expand-icon" aria-hidden="true"/);
   const configuredRow = buildDayRowHtml('segunda', { dayLabel: 'Segunda-feira', messages: messages.aiCoach, state: week.segunda });
   assert.match(configuredRow, /data-day-location-summary[^>]*><i data-lucide="map-pin" aria-hidden="true"><\/i><span>Fânzeres, Gondomar<\/span>/);
+  const legacyRow = buildDayRowHtml('segunda', {
+    dayLabel: 'Segunda-feira',
+    messages: messages.aiCoach,
+    state: { can_train: true, available_periods: ['08_12', '14_18'], available_minutes: 75, location: 'Porto' },
+  });
+  assert.match(legacyRow, /class="legacy-period-summary"[^>]*role="note"/);
+  assert.match(legacyRow, /Períodos anteriores salvos/);
+  assert.match(legacyRow, /08h–12h; 14h–18h/);
+  assert.match(legacyRow, /Escolha um único período preferencial para substituí-las/);
+  assert.doesNotMatch(legacyRow, /data-period="08_12"[^>]*checked/);
+  assert.doesNotMatch(legacyRow, /data-period="14_18"[^>]*checked/);
   const unsafeRow = buildDayRowHtml('segunda', { dayLabel: 'Segunda-feira', messages: messages.aiCoach, state: { ...week.segunda, location: 'A <b> & "local"' } });
   assert.match(unsafeRow, /<span>A &lt;b&gt; &amp; &quot;local&quot;<\/span>/);
   assert.doesNotMatch(unsafeRow, /<span>A <b>/);

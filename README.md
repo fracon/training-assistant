@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized prompts for an AI coach.
 
-Current application version: **0.17.0** (active development).
+Current application version: **1.0.0**.
 
 ### Shoe mileage integrity
 
@@ -191,7 +191,10 @@ Unavailable days are stored with an empty period list, null duration, and empty
 location. Available days require at least one period, positive duration, and a
 location. Each available day stores exactly one preferred period. Legacy rows
 with multiple periods remain readable, are flagged for explicit review, and
-cannot be saved or used to generate a prompt until one is selected. The duration is
+cannot be saved or used to generate a prompt until one is selected. This is a
+breaking API contract: clients of `PUT /api/ai-coach/availability` must send
+exactly one period for every available day; requests containing multiple
+periods are rejected. The contract change is released as version 1.0.0. The duration is
 the total maximum session time, including warm-up and cool-down; it is not a
 target and is independent of the time window.
 
