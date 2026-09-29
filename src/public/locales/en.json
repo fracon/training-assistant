@@ -427,6 +427,7 @@
     "fitLapHr": "HR avg.",
     "fitLapCadence": "Cadence (strides/min)",
     "fitLapAscent": "Ascent",
+    "fitLapTypes": { "run": "Run", "warmup": "Warmup", "cooldown": "Cooldown", "rest": "Rest" },
     "fieldWeather": "Temperature & weather",
     "weatherPlaceholder": "e.g.: 22°C, cloudy, light wind",
     "fieldTerrain": "Terrain/route",

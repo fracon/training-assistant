@@ -427,6 +427,7 @@
     "fitLapHr": "FC med.",
     "fitLapCadence": "Cadência (passadas/min)",
     "fitLapAscent": "Desnível",
+    "fitLapTypes": { "run": "Corrida", "warmup": "Aquecimento", "cooldown": "Desaquecimento", "rest": "Descanso" },
     "fieldWeather": "Temperatura e clima",
     "weatherPlaceholder": "ex.: 22°C, nublado, vento leve",
     "fieldTerrain": "Terreno/percurso",

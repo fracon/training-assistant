@@ -420,7 +420,7 @@ export function buildCanonicalPromptForm(training = {}, {
 // Maps the loaded session row plus the current form state onto the shared
 // placeholder contract. FIT metrics come from persisted data when available,
 // falling back to dashes.
-export function collectPromptValues({ training, form, fitData, preferences = {} }) {
+export function collectPromptValues({ training, form, fitData, preferences = {}, messages = {} }) {
   const distanceUnit = preferences.distance_unit === 'mi' ? 'mi' : 'km';
   const source = resolveResultSource(training, fitData);
   const manual = source === 'manual';
@@ -465,7 +465,7 @@ export function collectPromptValues({ training, form, fitData, preferences = {} 
     ANEXAR_SCREENSHOT_GARMIN_OU_INSERIR_DADOS_DE_LAPS_AQUI: source !== 'fit_upload'
       ? '-'
       : fitData?.laps?.length
-        ? buildLapsMarkdown(fitData.laps, { ...preferences, language: form.language })
+        ? buildLapsMarkdown(fitData.laps, { ...preferences, language: form.language, messages })
         : form.fitAttached
           ? 'Ver anexo'
           : '-',
@@ -518,6 +518,21 @@ export function formatCadence(value, language = 'en-US') {
   return `${value} ${language === 'pt-BR' ? 'passadas/min' : 'strides/min'}`;
 }
 
+const LAP_TYPE_KEYS = {
+  Run: 'session.fitLapTypes.run',
+  Warmup: 'session.fitLapTypes.warmup',
+  Cooldown: 'session.fitLapTypes.cooldown',
+  Rest: 'session.fitLapTypes.rest',
+};
+
+export function formatLapType(value, language = 'en-US', messages = {}) {
+  const canonical = String(value ?? '');
+  const key = LAP_TYPE_KEYS[canonical];
+  if (!key) return canonical || '-';
+  const translated = translate(messages, key);
+  return translated === key ? canonical : translated;
+}
+
 // Builds a Markdown table from parsed FIT lap data so it can be injected
 // directly into the AI coach prompt. Returns an empty string when there are
 // no laps to display.
@@ -535,10 +550,11 @@ export function buildLapsMarkdown(laps, preferences = {}) {
     const pace = lap.avgPaceLabel ?? '-';
     const hr = lap.avgHeartRate ?? '-';
     const cadence = formatCadence(lap.avgCadenceSpm, preferences.language);
+    const stepType = formatLapType(lap.stepType, preferences.language, preferences.messages);
     const ascent = lap.ascentMeters != null ? `${lap.ascentMeters} m` : '-';
     const paceLabel = pace === '-' ? `- min/${distanceUnit}` : formatPaceFromMetric(pace, distanceUnit);
     const distanceValue = distance === '-' ? '-' : formatDistance(distance, distanceUnit).replace(/\s(km|mi)$/, '');
-    return `| ${lap.lap} | ${lap.stepType} | ${distanceValue} ${distanceUnit} | ${duration} | ${paceLabel} | ${hr} | ${cadence} | ${ascent} |`;
+    return `| ${lap.lap} | ${stepType} | ${distanceValue} ${distanceUnit} | ${duration} | ${paceLabel} | ${hr} | ${cadence} | ${ascent} |`;
   });
   return [header, separator, ...rows].join('\n');
 }
@@ -1161,6 +1177,7 @@ async function initTrainingResult() {
           }),
           fitData,
           preferences: getUserPreferences(),
+          messages: i18n.messages,
         })
       );
       promptOutput.value = promptText;
