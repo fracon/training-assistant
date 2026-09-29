@@ -425,7 +425,7 @@
     "fitLapDuration": "Duration",
     "fitLapPace": "Pace",
     "fitLapHr": "HR avg.",
-    "fitLapCadence": "Cadence (spm)",
+    "fitLapCadence": "Cadence (strides/min)",
     "fitLapAscent": "Ascent",
     "fieldWeather": "Temperature & weather",
     "weatherPlaceholder": "e.g.: 22°C, cloudy, light wind",

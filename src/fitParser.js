@@ -15,12 +15,25 @@ function pickNumber(source, key) {
   return Number.isFinite(source?.[key]) ? source[key] : null;
 }
 
-function pickNonNegativeNumberAny(source, keys) {
-  for (const key of keys) {
-    const value = nonNegativeNumber(source, key);
-    if (value !== null) return value;
+function isRunningSport(value) {
+  return String(value ?? '').trim().toLowerCase() === 'running';
+}
+
+function cadenceValue(lap, sport, field) {
+  const runningField = nonNegativeNumber(lap, `${field}_running_cadence`);
+  if (runningField !== null) {
+    return { value: runningField, source: `${field}_running_cadence` };
   }
-  return null;
+
+  // fit-file-parser 1.21.0 does not resolve FIT subfields. Its field 17/18
+  // output is named avg_cadence/max_cadence even when the running subfield is
+  // selected in the FIT file, so the running sport context is required before
+  // treating that raw value as strides/min. Generic cadence is rpm elsewhere.
+  const genericField = nonNegativeNumber(lap, field === 'avg' ? 'avg_cadence' : 'max_cadence');
+  const lapSport = lap.sport ?? sport;
+  return genericField !== null && isRunningSport(lapSport)
+    ? { value: genericField, source: field === 'avg' ? 'avg_cadence_running' : 'max_cadence_running' }
+    : { value: null, source: null };
 }
 
 function nonNegativeNumber(source, key) {
@@ -80,7 +93,7 @@ function resolveStepType(lap) {
   return 'Run';
 }
 
-function buildLapView(lap, index, cumulativeBefore) {
+function buildLapView(lap, index, cumulativeBefore, sport = null) {
   const timerDuration = nonNegativeNumber(lap, 'total_timer_time');
   const elapsedDuration = nonNegativeNumber(lap, 'total_elapsed_time');
   const duration = timerDuration > 0
@@ -98,6 +111,8 @@ function buildLapView(lap, index, cumulativeBefore) {
   const bestPace =
     maxSpeedKmh !== null && maxSpeedKmh > 0 ? 3600 / maxSpeedKmh : null;
   const cumulativeAfter = cumulativeBefore + (duration ?? 0);
+  const avgCadence = cadenceValue(lap, sport, 'avg');
+  const maxCadence = cadenceValue(lap, sport, 'max');
   return {
     stepType: resolveStepType(lap),
     lap: index + 1,
@@ -117,8 +132,10 @@ function buildLapView(lap, index, cumulativeBefore) {
     descentMeters: nonNegativeNumber(lap, 'total_descent'),
     // FIT running cadence is reported as strides/min. Keep the source value
     // unchanged: Kinesis must not double it into a two-foot step count.
-    avgCadenceSpm: pickNonNegativeNumberAny(lap, ['avg_running_cadence', 'avg_cadence']),
-    maxCadenceSpm: pickNonNegativeNumberAny(lap, ['max_running_cadence', 'max_cadence']),
+    avgCadenceSpm: avgCadence.value,
+    avgCadenceSource: avgCadence.source,
+    maxCadenceSpm: maxCadence.value,
+    maxCadenceSource: maxCadence.source,
     strideMeters: pickNumber(lap, 'avg_stride_length'),
     calories: pickNumber(lap, 'total_calories'),
   };
@@ -304,15 +321,16 @@ function summarize(data) {
   const laps = sessionLaps.length ? sessionLaps : topLevelLaps;
   const records = Array.isArray(source.records) ? source.records : [];
   const events = Array.isArray(source.events) ? source.events : [];
+  const sport = session.sport ?? source.activity?.sport ?? null;
   let cumulative = 0;
   const lapViews = laps.map((lap, index) => {
-    const view = buildLapView(lap ?? {}, index, cumulative);
+    const view = buildLapView(lap ?? {}, index, cumulative, sport);
     cumulative = view.cumulativeSeconds;
     return view;
   });
   return {
     activity: {
-      sport: session.sport ?? source.activity?.sport ?? null,
+      sport,
       startTime: toIso(session.start_time),
       endTime: toIso(session.timestamp),
     },

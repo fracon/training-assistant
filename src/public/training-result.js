@@ -513,6 +513,11 @@ export function fitUploadErrorMessage(code, translate) {
   return key ? translate(key) : translate('session.errors.fitUpload');
 }
 
+export function formatCadence(value, language = 'en-US') {
+  if (!Number.isFinite(value) || value < 0) return '-';
+  return `${value} ${language === 'pt-BR' ? 'passadas/min' : 'strides/min'}`;
+}
+
 // Builds a Markdown table from parsed FIT lap data so it can be injected
 // directly into the AI coach prompt. Returns an empty string when there are
 // no laps to display.
@@ -521,17 +526,15 @@ export function buildLapsMarkdown(laps, preferences = {}) {
   if (!Array.isArray(laps) || laps.length === 0) return '';
   const english = preferences.language !== 'pt-BR';
   const header = english
-    ? '| # | Type | Distance | Duration | Pace | HR avg. | Avg cadence (spm) | Ascent |'
-    : '| # | Tipo | Distância | Duração | Pace | FC média | Cadência média (spm) | Desnível |';
+    ? '| # | Type | Distance | Duration | Pace | HR avg. | Avg cadence (strides/min) | Ascent |'
+    : '| # | Tipo | Distância | Duração | Pace | FC média | Cadência média (passadas/min) | Desnível |';
   const separator = '|---|------|----------|----------|------|---------|--------------------|--------|';
   const rows = laps.map((lap) => {
     const distance = lap.distanceLabel ?? '-';
     const duration = lap.durationLabel ?? '-';
     const pace = lap.avgPaceLabel ?? '-';
     const hr = lap.avgHeartRate ?? '-';
-    const cadence = Number.isFinite(lap.avgCadenceSpm) && lap.avgCadenceSpm >= 0
-      ? `${lap.avgCadenceSpm} spm`
-      : '-';
+    const cadence = formatCadence(lap.avgCadenceSpm, preferences.language);
     const ascent = lap.ascentMeters != null ? `${lap.ascentMeters} m` : '-';
     const paceLabel = pace === '-' ? `- min/${distanceUnit}` : formatPaceFromMetric(pace, distanceUnit);
     const distanceValue = distance === '-' ? '-' : formatDistance(distance, distanceUnit).replace(/\s(km|mi)$/, '');
@@ -744,9 +747,7 @@ async function initTrainingResult() {
       const duration = lap.durationLabel ?? '-';
       const pace = formatPaceFromMetric(lap.avgPaceLabel ?? '-', distanceUnit);
       const hr = lap.avgHeartRate ?? '-';
-      const cadence = Number.isFinite(lap.avgCadenceSpm) && lap.avgCadenceSpm >= 0
-        ? `${lap.avgCadenceSpm} spm`
-        : '-';
+      const cadence = formatCadence(lap.avgCadenceSpm, i18n.language);
       const ascent = lap.ascentMeters != null ? `${lap.ascentMeters} m` : '-';
       tr.innerHTML = [
         `<td>${escapeHtmlText(String(lap.lap))}</td>`,

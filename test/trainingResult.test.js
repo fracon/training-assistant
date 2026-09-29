@@ -32,6 +32,7 @@ const {
   fitDropzonePrimaryHtml,
   fitUploadErrorMessage,
   buildLapsMarkdown,
+  formatCadence,
   handleTrainingDelete,
   weatherLabelKey,
   shouldAutoFillWeather,
@@ -778,8 +779,8 @@ test('buildLapsMarkdown renders a Markdown table from parsed lap views', () => {
     { lap: 2, stepType: 'Run', distanceLabel: '5.00', durationLabel: '25:00', avgPaceLabel: '5:00', avgHeartRate: 162, avgCadenceSpm: null, ascentMeters: 85 },
   ];
   const md = buildLapsMarkdown(laps);
-  assert.ok(md.includes('| # | Type | Distance | Duration | Pace | HR avg. | Avg cadence (spm) | Ascent |'));
-  assert.ok(md.includes('| 1 | Warmup | 1.00 km | 6:30 | 6:30 min/km | 130 | 88 spm | 12 m |'));
+  assert.ok(md.includes('| # | Type | Distance | Duration | Pace | HR avg. | Avg cadence (strides/min) | Ascent |'));
+  assert.ok(md.includes('| 1 | Warmup | 1.00 km | 6:30 | 6:30 min/km | 130 | 88 strides/min | 12 m |'));
   assert.ok(md.includes('| 2 | Run | 5.00 km | 25:00 | 5:00 min/km | 162 | - | 85 m |'));
 });
 
@@ -791,8 +792,15 @@ test('buildLapsMarkdown uses dashes for null fields', () => {
 
 test('buildLapsMarkdown localizes the lap header while preserving cadence units', () => {
   const md = buildLapsMarkdown([{ lap: 1, stepType: 'Corrida', distanceLabel: '1.00', durationLabel: '6:30', avgPaceLabel: '6:30', avgCadenceSpm: 88 }], { language: 'pt-BR' });
-  assert.ok(md.includes('| # | Tipo | Distância | Duração | Pace | FC média | Cadência média (spm) | Desnível |'));
-  assert.ok(md.includes('| 1 | Corrida | 1.00 km | 6:30 | 6:30 min/km | - | 88 spm | - |'));
+  assert.ok(md.includes('| # | Tipo | Distância | Duração | Pace | FC média | Cadência média (passadas/min) | Desnível |'));
+  assert.ok(md.includes('| 1 | Corrida | 1.00 km | 6:30 | 6:30 min/km | - | 88 passadas/min | - |'));
+});
+
+test('formatCadence uses explicit PT/EN units and dashes invalid values', () => {
+  assert.equal(formatCadence(88, 'pt-BR'), '88 passadas/min');
+  assert.equal(formatCadence(88, 'en-US'), '88 strides/min');
+  assert.equal(formatCadence(-1, 'en-US'), '-');
+  assert.equal(formatCadence(Number.NaN, 'pt-BR'), '-');
 });
 
 test('collectPromptValues injects Markdown lap table when fitData has laps', () => {
@@ -809,8 +817,8 @@ test('collectPromptValues injects Markdown lap table when fitData has laps', () 
   };
   const values = collectPromptValues({ training: { ...baseTraining, result_data_source: 'fit_upload' }, form: baseForm({ language: 'en-US' }), fitData: { ...fitData, result_data_source: 'fit_upload' } });
   const md = values.ANEXAR_SCREENSHOT_GARMIN_OU_INSERIR_DADOS_DE_LAPS_AQUI;
-  assert.ok(md.includes('| # | Type | Distance | Duration | Pace | HR avg. | Avg cadence (spm) | Ascent |'));
-  assert.ok(md.includes('| 1 | Run | 10.00 km | 1:00:00 | 6:00 min/km | 155 | 88 spm | 120 m |'));
+  assert.ok(md.includes('| # | Type | Distance | Duration | Pace | HR avg. | Avg cadence (strides/min) | Ascent |'));
+  assert.ok(md.includes('| 1 | Run | 10.00 km | 1:00:00 | 6:00 min/km | 155 | 88 strides/min | 120 m |'));
 });
 
 test('collectPromptValues falls back to Ver anexo when FIT attached but no laps', () => {
@@ -890,7 +898,7 @@ test('training-result.html ships the expanded feedback grid and generator button
   assert.match(html, /id="fitMaxHr"/);
   assert.match(html, /id="fitElevation"/);
   assert.match(html, /<th data-i18n="session\.fitLapHr">HR avg\.<\/th>/);
-  assert.match(html, /<th data-i18n="session\.fitLapCadence">Cadence \(spm\)<\/th>/);
+  assert.match(html, /<th data-i18n="session\.fitLapCadence">Cadence \(strides\/min\)<\/th>/);
   assert.match(html, /<th data-i18n="session\.fitLapAscent">Ascent<\/th>/);
 
   for (const id of [
