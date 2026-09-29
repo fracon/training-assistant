@@ -33,6 +33,8 @@ const {
   fitDropzonePrimaryHtml,
   fitUploadErrorMessage,
   buildLapsMarkdown,
+  formatCadence,
+  formatLapType,
   handleTrainingDelete,
   weatherLabelKey,
   shouldAutoFillWeather,
@@ -43,6 +45,7 @@ const {
   PROMPT_TEMPLATE_PT,
   PROMPT_TEMPLATE_EN,
 } = require('../src/public/training-result.js');
+const { summarize } = require('../src/fitParser.js');
 const en = require('../src/public/locales/en.json');
 const pt = require('../src/public/locales/pt.json');
 
@@ -775,19 +778,58 @@ test('buildLapsMarkdown returns empty string for missing or empty laps', () => {
 
 test('buildLapsMarkdown renders a Markdown table from parsed lap views', () => {
   const laps = [
-    { lap: 1, stepType: 'Warmup', distanceLabel: '1.00', durationLabel: '6:30', avgPaceLabel: '6:30', avgHeartRate: 130, ascentMeters: 12 },
-    { lap: 2, stepType: 'Run', distanceLabel: '5.00', durationLabel: '25:00', avgPaceLabel: '5:00', avgHeartRate: 162, ascentMeters: 85 },
+    { lap: 1, stepType: 'Warmup', distanceLabel: '1.00', durationLabel: '6:30', avgPaceLabel: '6:30', avgHeartRate: 130, avgCadenceSpm: 88, ascentMeters: 12 },
+    { lap: 2, stepType: 'Run', distanceLabel: '5.00', durationLabel: '25:00', avgPaceLabel: '5:00', avgHeartRate: 162, avgCadenceSpm: null, ascentMeters: 85 },
   ];
   const md = buildLapsMarkdown(laps);
-  assert.ok(md.includes('| # | Type | Distance | Duration | Pace | HR avg. | Ascent |'));
-  assert.ok(md.includes('| 1 | Warmup | 1.00 km | 6:30 | 6:30 min/km | 130 | 12 m |'));
-  assert.ok(md.includes('| 2 | Run | 5.00 km | 25:00 | 5:00 min/km | 162 | 85 m |'));
+  assert.ok(md.includes('| # | Type | Distance | Duration | Pace | HR avg. | Avg cadence (strides/min) | Ascent |'));
+  assert.ok(md.includes('| 1 | Warmup | 1.00 km | 6:30 | 6:30 min/km | 130 | 88 strides/min | 12 m |'));
+  assert.ok(md.includes('| 2 | Run | 5.00 km | 25:00 | 5:00 min/km | 162 | - | 85 m |'));
 });
 
 test('buildLapsMarkdown uses dashes for null fields', () => {
-  const laps = [{ lap: 1, stepType: 'Run', distanceLabel: null, durationLabel: null, avgPaceLabel: null, avgHeartRate: null, ascentMeters: null }];
+  const laps = [{ lap: 1, stepType: 'Run', distanceLabel: null, durationLabel: null, avgPaceLabel: null, avgHeartRate: null, avgCadenceSpm: null, ascentMeters: null }];
   const md = buildLapsMarkdown(laps);
-  assert.ok(md.includes('| 1 | Run | - km | - | - min/km | - | - |'));
+  assert.ok(md.includes('| 1 | Run | - km | - | - min/km | - | - | - |'));
+});
+
+test('buildLapsMarkdown localizes the lap header while preserving cadence units', () => {
+  const md = buildLapsMarkdown([{ lap: 1, stepType: 'Run', distanceLabel: '1.00', durationLabel: '6:30', avgPaceLabel: '6:30', avgCadenceSpm: 88 }], { language: 'pt-BR', messages: pt });
+  assert.ok(md.includes('| # | Tipo | Distância | Duração | Pace | FC média | Cadência média (passadas/min) | Desnível |'));
+  assert.ok(md.includes('| 1 | Corrida | 1.00 km | 6:30 | 6:30 min/km | - | 88 passadas/min | - |'));
+});
+
+test('buildLapsMarkdown translates parser lap types in PT and preserves EN types', () => {
+  const summary = summarize({
+    sessions: [{ sport: 'running', laps: [
+      { intensity: 'active', total_elapsed_time: 60, total_distance: 200, avg_running_cadence: 88 },
+      { intensity: 'warmup', total_elapsed_time: 60, total_distance: 200, avg_running_cadence: 89 },
+      { intensity: 'cooldown', total_elapsed_time: 60, total_distance: 200, avg_running_cadence: 90 },
+      { intensity: 'rest', total_elapsed_time: 60, total_distance: 0 },
+    ] }],
+  });
+  const ptMarkdown = buildLapsMarkdown(summary.laps, { language: 'pt-BR', messages: pt });
+  const enMarkdown = buildLapsMarkdown(summary.laps, { language: 'en-US', messages: en });
+  assert.match(ptMarkdown, /\| 1 \| Corrida \|.*88 passadas\/min/);
+  assert.match(ptMarkdown, /\| 2 \| Aquecimento \|.*89 passadas\/min/);
+  assert.match(ptMarkdown, /\| 3 \| Desaquecimento \|.*90 passadas\/min/);
+  assert.match(ptMarkdown, /\| 4 \| Descanso \|.*\| - \|/);
+  assert.match(enMarkdown, /\| 1 \| Run \|.*88 strides\/min/);
+  assert.match(enMarkdown, /\| 2 \| Warmup \|.*89 strides\/min/);
+  assert.match(enMarkdown, /\| 3 \| Cooldown \|.*90 strides\/min/);
+  assert.match(enMarkdown, /\| 4 \| Rest \|.*\| - \|/);
+});
+
+test('formatLapType keeps unknown parser values safe', () => {
+  assert.equal(formatLapType('Unexpected', 'pt-BR', pt), 'Unexpected');
+  assert.equal(formatLapType(null, 'pt-BR', pt), '-');
+});
+
+test('formatCadence uses explicit PT/EN units and dashes invalid values', () => {
+  assert.equal(formatCadence(88, 'pt-BR'), '88 passadas/min');
+  assert.equal(formatCadence(88, 'en-US'), '88 strides/min');
+  assert.equal(formatCadence(-1, 'en-US'), '-');
+  assert.equal(formatCadence(Number.NaN, 'pt-BR'), '-');
 });
 
 test('collectPromptValues injects Markdown lap table when fitData has laps', () => {
@@ -799,13 +841,30 @@ test('collectPromptValues injects Markdown lap table when fitData has laps', () 
     fit_max_hr: 175,
     fit_elevation_gain: 120,
     laps: [
-      { lap: 1, stepType: 'Run', distanceLabel: '10.00', durationLabel: '1:00:00', avgPaceLabel: '6:00', avgHeartRate: 155, ascentMeters: 120 },
+      { lap: 1, stepType: 'Run', distanceLabel: '10.00', durationLabel: '1:00:00', avgPaceLabel: '6:00', avgHeartRate: 155, avgCadenceSpm: 88, ascentMeters: 120 },
     ],
   };
-  const values = collectPromptValues({ training: { ...baseTraining, result_data_source: 'fit_upload' }, form: baseForm(), fitData: { ...fitData, result_data_source: 'fit_upload' } });
+  const values = collectPromptValues({ training: { ...baseTraining, result_data_source: 'fit_upload' }, form: baseForm({ language: 'en-US' }), fitData: { ...fitData, result_data_source: 'fit_upload' }, messages: en });
   const md = values.ANEXAR_SCREENSHOT_GARMIN_OU_INSERIR_DADOS_DE_LAPS_AQUI;
-  assert.ok(md.includes('| # | Type | Distance | Duration | Pace | HR avg. | Ascent |'));
-  assert.ok(md.includes('| 1 | Run | 10.00 km | 1:00:00 | 6:00 min/km | 155 | 120 m |'));
+  assert.ok(md.includes('| # | Type | Distance | Duration | Pace | HR avg. | Avg cadence (strides/min) | Ascent |'));
+  assert.ok(md.includes('| 1 | Run | 10.00 km | 1:00:00 | 6:00 min/km | 155 | 88 strides/min | 120 m |'));
+});
+
+test('collectPromptValues translates real parser lap types in the Portuguese prompt', () => {
+  const summary = summarize({ sessions: [{ sport: 'running', laps: [{ intensity: 'warmup', total_elapsed_time: 60, total_distance: 200 }] }] });
+  const input = {
+    training: { ...baseTraining, result_data_source: 'fit_upload' },
+    fitData: { result_data_source: 'fit_upload', laps: summary.laps },
+  };
+  const ptValues = collectPromptValues({ ...input, form: baseForm({ language: 'pt-BR' }), messages: pt });
+  const enValues = collectPromptValues({ ...input, form: baseForm({ language: 'en-US' }), messages: en });
+  const ptPrompt = ptValues.ANEXAR_SCREENSHOT_GARMIN_OU_INSERIR_DADOS_DE_LAPS_AQUI;
+  const enPrompt = enValues.ANEXAR_SCREENSHOT_GARMIN_OU_INSERIR_DADOS_DE_LAPS_AQUI;
+  assert.match(ptPrompt, /\| # \| Tipo \| Distância \| Duração \| Pace \| FC média \| Cadência média \(passadas\/min\) \| Desnível \|/);
+  assert.match(ptPrompt, /\| 1 \| Aquecimento \|/);
+  assert.doesNotMatch(ptPrompt, /\| 1 \| Warmup \|/);
+  assert.match(enPrompt, /\| # \| Type \| Distance \| Duration \| Pace \| HR avg\. \| Avg cadence \(strides\/min\) \| Ascent \|/);
+  assert.match(enPrompt, /\| 1 \| Warmup \|/);
 });
 
 test('collectPromptValues falls back to Ver anexo when FIT attached but no laps', () => {
@@ -885,6 +944,7 @@ test('training-result.html ships the expanded feedback grid and generator button
   assert.match(html, /id="fitMaxHr"/);
   assert.match(html, /id="fitElevation"/);
   assert.match(html, /<th data-i18n="session\.fitLapHr">HR avg\.<\/th>/);
+  assert.match(html, /<th data-i18n="session\.fitLapCadence">Cadence \(strides\/min\)<\/th>/);
   assert.match(html, /<th data-i18n="session\.fitLapAscent">Ascent<\/th>/);
 
   for (const id of [
@@ -1537,6 +1597,7 @@ test('session locale namespace stays in parity across en-US and pt-BR', () => {
     'fitLapDuration',
     'fitLapPace',
     'fitLapHr',
+    'fitLapCadence',
     'fitLapAscent',
     'fieldShoeUsed',
     'shoeUsedPlaceholder',

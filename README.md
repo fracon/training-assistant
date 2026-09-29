@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized prompts for an AI coach.
 
-Current application version: **0.17.0** (active development).
+Current application version: **0.18.0** (active development).
 
 ### Shoe mileage integrity
 
@@ -91,7 +91,7 @@ backend.
   - Average & best pace (min/km)
   - Average & max heart rate (bpm)
   - Ascent / descent (m)
-  - Average & max cadence (steps/min)
+  - Average & max cadence (FIT running `strides/min`, shown as `passadas/min` in PT and `strides/min` in EN, without doubling)
   - Stride length (m) & calories (kcal)
 - **Structured coach prompt** — planned vs. realized workout, conditions, equipment, perceived effort (RPE 1–5), breathing/muscle/energy feedback, and free-form notes are merged into a localized Portuguese or English coaching template.
 - **Workout totals computed automatically** — total duration, distance, average pace, weighted average HR, max HR, and ascent.
@@ -146,6 +146,17 @@ complete lap ascent totals, then the sum of positive deltas between consecutive
 valid records from one selected altitude field. Descents are never added by
 absolute value; invalid samples break record sequences, and session, lap, and
 record totals are never combined.
+
+Lap cadence uses one explicit presentation unit: `passadas/min` in Portuguese
+and `strides/min` in English. The official FIT profile defines field 17's
+running subfield (`avg_running_cadence`) as `strides/min` and its generic
+`avg_cadence` subfield as `rpm`; they are alternative subfields, not two values
+to combine. The `fit-file-parser` version used by Kinesis does not resolve
+those subfields and exposes the raw field as `avg_cadence`, so Kinesis accepts
+that fallback as running cadence only when the decoded lap/session sport is
+`running`. Generic cadence without that context is unavailable (`-`). Stored
+lap values are not converted on reload, preventing a second conversion of
+existing FIT summaries.
 
 The result page keeps **How to import? / Como importar?** beside the FIT/ZIP
 upload controls. It is an independent import guide and remains available in
