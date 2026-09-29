@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized prompts for an AI coach.
 
-Current application version: **0.16.1** (active development).
+Current application version: **0.17.0** (active development).
 
 ### Shoe mileage integrity
 
@@ -198,11 +198,23 @@ alongside it. The deliberate way to remove an effort is to reopen the session
 in the same request — `{"completed": false, "feedback_rpe": ""}` — because the
 session is no longer concluded when the effort goes.
 
-A manual or FIT result saved without an RPE reuses the row's current
+A manual or FIT result saved **without naming an RPE** reuses the row's current
 `feedback_rpe`, so recording a result never discards an effort the user already
-reported, and the result page sends the selected RPE with manual and FIT
-writes. Partial feedback edits — weather, terrain, shoes, breathing, notes —
-never name the pair, so they stay unrestricted on any result, concluded or not.
+reported, and the result page sends the selected RPE with manual and FIT writes.
+Omission is the only case that reuses it. When a manual or FIT request *does* name
+`feedback_rpe`, that request is authoritative: `null`, `""`, a blank string, or a
+value outside 1–5 concludes without a realized effort and is refused with the same
+`400` stable message as an omitted one, writing nothing and keeping the stored
+effort. A client that means to keep the current effort omits the field, and one
+that means to remove it reopens the session, exactly as with `PATCH`. The
+unstable normalizer's own field errors for manual and FIT writes are replaced by
+that single conclusion message, so one documented contract covers all three
+completion writes. `PATCH` keeps its strict field validation — it is not a
+completion write, so a non-integer value there is still rejected as a bad request
+before the conclusion rule is considered.
+
+Partial feedback edits — weather, terrain, shoes, breathing, notes — never name
+the pair, so they stay unrestricted on any result, concluded or not.
 
 Results completed before this rule keep working: a stored `feedback_rpe` of
 `null` stays readable, its form values stay editable, and the page asks only
@@ -743,9 +755,12 @@ used. ZIP Garmin exports and the mobile/desktop export guidance are available
 in the Training Result import guide.
 
 The body also accepts an integer `feedback_rpe` from 1 to 5. This write always
-completes the training, so the effective RPE is the supplied value or, when it
-is omitted, the row's current `feedback_rpe`; if neither resolves to 1–5 the
-write is refused with `400` and changes nothing. See
+completes the training, so the effective RPE is the supplied value or, when the
+field is **omitted**, the row's current `feedback_rpe`. Naming the field is
+authoritative: `null`, `""`, or a value outside 1–5 is refused with the same
+`400` stable message as an omitted value, writes nothing, and keeps the stored
+effort. The same rule applies to `POST /api/trainings/:id/fit`, whose
+`feedback_rpe` is a multipart field. See
 *Realized RPE is required to finish a result*.
 
 All protected API endpoints require a valid session cookie (`ta_session`). Use a cookie jar when scripting:

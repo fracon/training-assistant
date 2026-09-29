@@ -8,7 +8,7 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.16.0`); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.17.0`); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
@@ -235,17 +235,24 @@ onboarding record of the account is preserved.
   must leave notes, `completed`, and the RPE exactly as they were.
 - The effective pair is read from the row inside the transaction that would
   write it, and each half comes from the request when the request names that
-  column, so nothing stale or partial can conclude or strand a workout. A
-  manual or FIT result that omits the RPE reuses the row's current value, so
-  recording a result never discards a reported effort. `{"completed": false,
-  "feedback_rpe": ""}` is the deliberate way out: the session is open when the
-  effort goes, and the same request is allowed.
+  column, so nothing stale or partial can conclude or strand a workout. Omission
+  is the only case that reuses the stored effort: a manual or FIT result whose
+  `feedback_rpe` is absent reuses the row's current value, so recording a result
+  never discards a reported effort. Naming the field is authoritative, so `null`,
+  `""`, a blank multipart part, or a value outside 1–5 concludes without an
+  effort and is refused with the same stable message, writing nothing and keeping
+  the stored value. Manual and FIT reuse that one conclusion error instead of the
+  normalizer's field-format errors, so the contract is uniform across all three
+  completion writes; validation of other fields still runs first and keeps its own
+  errors. `PATCH` is not a completion write and keeps its strict integer
+  validation, which rejects a non-integer before this rule.
+  `{"completed": false, "feedback_rpe": ""}` is the deliberate way out: the
+  session is open when the effort goes, and the same request is allowed.
 - Only a request that names `feedback_rpe` or `completed` reaches this rule, so
   partial feedback edits — notes, weather, terrain, shoes, breathing — stay
   unrestricted on any training, concluded or not, including results completed
   before the rule, which stay readable and editable without an invented effort.
-  A non-integer `feedback_rpe` is still rejected by the field's own validation
-  before this rule. No schema migration or backfill is involved.
+  No schema migration or backfill is involved.
 - The result page blocks **Save and back to calendar**, **Save and Generate
   Analysis Prompt**, and the FIT/ZIP upload before any request, confirmation
   dialog, disabled-state change, or navigation: it marks the 1–5 radio group
@@ -385,10 +392,12 @@ while the password is verified, through a held verification),
 
 The realized-RPE conclusion contract is covered by
 `test/trainingSession.routes.test.js` (the three completion writes, the exact
-refusal message, the stored-value fallback, cleared values, and unchanged rows
+refusal message, the stored-value fallback for an omitted RPE, explicit
+`null`/empty/out-of-range values, direct FIT and ZIP uploads, and unchanged rows
 after a refusal), `test/manualResults.test.js` (manual `feedback_rpe`
-normalization), `test/trainingResult.test.js` (guard placement, error lifecycle,
-markup, styles, and both locale keys), and
+normalization and reported-versus-omitted presence),
+`test/trainingResult.test.js` (guard placement, error lifecycle, markup, styles
+including the reduced-motion transition reset, and both locale keys), and
 `test/trainingResult.browser.test.js` (a real Chrome run blocking the manual
 save, the prompt generation, and the FIT upload before any request, in PT and
 EN, with keyboard selection, focus placement, preserved input, and a legacy

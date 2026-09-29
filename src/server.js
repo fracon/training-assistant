@@ -138,6 +138,15 @@ function parseRpe(raw) {
   return { ok: true, value };
 }
 
+// A multipart field is always a string, so the same presence rule the JSON
+// paths use applies: anything that is not a reported 1-5 effort carries none.
+function reportedRpe(raw) {
+  const trimmed = String(raw).trim();
+  if (trimmed === '') return null;
+  const value = Number(trimmed);
+  return Number.isInteger(value) && value >= 1 && value <= 5 ? value : null;
+}
+
 // A realized result is only concluded together with the effort the athlete
 // reported, and the two never come apart: `effective` is the RPE the row will
 // hold once the write lands — the one this request carries when it carries the
@@ -869,20 +878,22 @@ async function buildServer(options = {}) {
       }
       const saveManual = db.transaction((values) => {
         const before = findTraining.get(id, request.user.id);
-        // A manual write concludes the workout, so the reported RPE travels
-        // with it; a request that omits it keeps the stored one, and a row that
-        // never had one is refused instead of concluded silently.
-        const refused = conclusionRpeError(values.feedback_rpe ?? before.feedback_rpe);
+        // A manual write always concludes the workout, so the effort the request
+        // supplies is the one the conclusion carries; only a genuinely omitted
+        // field falls back to the stored one, and a supplied empty or unusable
+        // value is a request to conclude without an effort.
+        const effectiveRpe = values.feedback_rpe_supplied ? values.feedback_rpe : before.feedback_rpe;
+        const refused = conclusionRpeError(effectiveRpe);
         if (refused) return refused;
         db.prepare(
           `UPDATE trainings SET fit_duration = ?, fit_distance = ?, fit_avg_pace = ?,
             fit_avg_hr = ?, fit_max_hr = ?, fit_elevation_gain = ?, fit_calories = ?,
             fit_summary_json = NULL, result_data_source = 'manual', completed = 1,
-            feedback_rpe = COALESCE(?, feedback_rpe)
+            feedback_rpe = ?
            WHERE id = ? AND user_id = ?`
         ).run(
           values.fit_duration, values.distance_km, values.fit_avg_pace, values.avg_hr,
-          values.max_hr, values.elevation_gain_m, values.calories, values.feedback_rpe,
+          values.max_hr, values.elevation_gain_m, values.calories, effectiveRpe,
           id, request.user.id
         );
         reconcileShoeMileage(db, request.user.id, before, findTraining.get(id, request.user.id));
@@ -911,6 +922,7 @@ async function buildServer(options = {}) {
       let fileName = '';
       let confirmReplaceManual = false;
       let requestedRpe;
+      let rpeSupplied = false;
       try {
         for await (const part of request.parts()) {
           if (part.type === 'file' && part.fieldname === 'file') {
@@ -919,6 +931,7 @@ async function buildServer(options = {}) {
           } else if (part.type === 'field' && part.fieldname === 'confirm_replace_manual') {
             confirmReplaceManual = part.value === 'true';
           } else if (part.type === 'field' && part.fieldname === 'feedback_rpe') {
+            rpeSupplied = true;
             requestedRpe = part.value;
           }
         }
@@ -929,13 +942,6 @@ async function buildServer(options = {}) {
 
       if (!fileBuffer) {
         return reply.code(400).send({ error: 'Missing .FIT file field.' });
-      }
-
-      // The upload itself concludes the workout, so the reported effort is
-      // validated with the same rule as every other conclusion path.
-      const parsedRpe = parseRpe(requestedRpe);
-      if (!parsedRpe.ok) {
-        return reply.code(400).send({ error: parsedRpe.error });
       }
 
       const current = findTraining.get(id, request.user.id);
@@ -970,9 +976,12 @@ async function buildServer(options = {}) {
 
         const saveFit = db.transaction(() => {
           const before = findTraining.get(id, request.user.id);
-          // The upload concludes the workout, so the reported effort is judged
-          // here, against the value the row will hold after the write.
-          const refused = conclusionRpeError(parsedRpe.value ?? before.feedback_rpe);
+          // The upload concludes the workout, so the effort the request supplies
+          // is the one the conclusion carries; only a genuinely omitted field
+          // falls back to the stored one, and a supplied empty or unusable value
+          // is a request to conclude without an effort.
+          const effectiveRpe = rpeSupplied ? reportedRpe(requestedRpe) : before.feedback_rpe;
+          const refused = conclusionRpeError(effectiveRpe);
           if (refused) return refused;
           db.prepare(
             `UPDATE trainings SET
@@ -986,7 +995,7 @@ async function buildServer(options = {}) {
             fit_summary_json = ?,
             result_data_source = 'fit_upload',
             completed = 1,
-            feedback_rpe = COALESCE(?, feedback_rpe)
+            feedback_rpe = ?
           WHERE id = ? AND user_id = ?`
           ).run(
             fitDuration,
@@ -997,7 +1006,7 @@ async function buildServer(options = {}) {
             fitElevation,
             fitCalories,
             fitSummaryJson,
-            parsedRpe.value,
+            effectiveRpe,
             id,
             request.user.id
           );

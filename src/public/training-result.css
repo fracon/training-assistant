@@ -491,14 +491,6 @@ input[type="radio"]:focus-visible + .rpe-emoji {
   outline-offset: 2px;
 }
 
-/* The focus ring is the only motion this group needs to make. */
-@media (prefers-reduced-motion: reduce) {
-  .rpe-emoji,
-  .rpe-emoji .emoji-icon {
-    transition: none;
-  }
-}
-
 input[type="radio"]:checked + .rpe-emoji .emoji-icon {
   filter: grayscale(0%);
   opacity: 1;
@@ -529,6 +521,17 @@ input[type="radio"]:checked + .rpe-emoji .emoji-icon {
 .rpe-emoji:hover .custom-tooltip {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
+}
+
+/* The hover lift, the emoji states, and the tooltip fade are the only motion
+   this group adds. The tooltip and the focus ring stay exactly as they are —
+   only the animation is dropped. */
+@media (prefers-reduced-motion: reduce) {
+  .rpe-emoji,
+  .rpe-emoji .emoji-icon,
+  .rpe-emoji .custom-tooltip {
+    transition: none;
+  }
 }
 
 textarea.input-control {

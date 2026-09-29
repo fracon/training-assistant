@@ -1372,10 +1372,24 @@ test('the RPE group is required, described, and never hides an invalid control',
     !/\.field-error[^}]*display:/.test(css),
     'the field error never overrides the browser [hidden] behavior'
   );
+  // Every transition in the RPE selector, including the tooltip fade, has to
+  // stop for reduced motion while the tooltip and the focus ring stay intact.
+  const reducedMotion = /@media \(prefers-reduced-motion: reduce\) \{\s*\.rpe-emoji,\s*\.rpe-emoji \.emoji-icon,\s*\.rpe-emoji \.custom-tooltip \{\s*transition: none;\s*\}/.exec(css);
+  assert.ok(reducedMotion, 'the effort group drops every transition, tooltip included, for reduced motion');
+  assert.ok(
+    reducedMotion.index > css.indexOf('.rpe-emoji:hover .custom-tooltip'),
+    'the reduced-motion override follows the tooltip rules it has to win against'
+  );
   assert.match(
     css,
-    /@media \(prefers-reduced-motion: reduce\) \{\s*\.rpe-emoji,\s*\.rpe-emoji \.emoji-icon \{\s*transition: none;/,
-    'the effort group does not animate its focus ring for reduced motion'
+    /\.rpe-emoji \.custom-tooltip \{[\s\S]*?transition: opacity 0\.15s ease, transform 0\.15s ease;/,
+    'the tooltip keeps its own transition for everyone else'
+  );
+  assert.match(css, /\.rpe-emoji:hover \.custom-tooltip \{\s*opacity: 1;/, 'the tooltip is still revealed on hover');
+  assert.match(
+    css,
+    /input\[type="radio"\]:focus-visible \+ \.rpe-emoji \{\s*outline: 2px solid var\(--accent-deep\);/,
+    'the focus ring is drawn on the emoji outside the reduced-motion query'
   );
 });
 
