@@ -32,10 +32,25 @@ function optionalNumber(value, field) {
   return { ok: true, value };
 }
 
+// The realized effort reported with the result. A manual write always concludes
+// the workout, so this field answers one question only: which effort the
+// conclusion carries. Presence is therefore kept apart from the value — an
+// omitted field means "keep the stored effort", while any supplied value that
+// is not a reported 1-5 effort means "conclude without one" — and the route
+// refuses the second case with the stable conclusion error instead of a format
+// error that would not describe what the write is missing.
+function suppliedRpe(value, present) {
+  if (!present) return { value: null, present: false };
+  return {
+    value: Number.isInteger(value) && value >= 1 && value <= 5 ? value : null,
+    present: true,
+  };
+}
+
 function normalizeManualResults(body = {}) {
   const allowed = new Set([
     'distance_km', 'duration_seconds', 'avg_hr', 'max_hr', 'elevation_gain_m',
-    'calories', 'confirm_replace_fit',
+    'calories', 'confirm_replace_fit', 'feedback_rpe',
   ]);
   const unexpected = Object.keys(body).find((key) => !allowed.has(key));
   if (unexpected) return { ok: false, error: `Unexpected field: ${unexpected}.` };
@@ -52,6 +67,10 @@ function normalizeManualResults(body = {}) {
   const max = optionalInteger(body.max_hr, 'max_hr', { positive: true });
   const elevation = optionalNumber(body.elevation_gain_m, 'elevation_gain_m');
   const calories = optionalInteger(body.calories, 'calories');
+  const rpe = suppliedRpe(
+    body.feedback_rpe,
+    Object.prototype.hasOwnProperty.call(body, 'feedback_rpe')
+  );
   for (const result of [avg, max, elevation, calories]) if (!result.ok) return result;
   if (avg.value !== null && max.value !== null && max.value < avg.value) {
     return { ok: false, error: 'max_hr cannot be lower than avg_hr.' };
@@ -65,6 +84,8 @@ function normalizeManualResults(body = {}) {
       max_hr: max.value,
       elevation_gain_m: elevation.value,
       calories: calories.value,
+      feedback_rpe: rpe.value,
+      feedback_rpe_supplied: rpe.present,
       confirm_replace_fit: body.confirm_replace_fit === true,
       fit_duration: formatDuration(body.duration_seconds),
       fit_avg_pace: calculateMetricPace(body.duration_seconds, body.distance_km),

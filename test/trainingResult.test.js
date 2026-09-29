@@ -12,6 +12,7 @@ const {
   formatDateLabel,
   plannedValue,
   normalizeFeedbackRpe,
+  isAnsweredFeedbackRpe,
   isFitFieldVisible,
   manualResultsPayload,
   syncManualDistanceUnit,
@@ -1289,9 +1290,9 @@ test('training-result.js wires toggling, saving, generation and i18n refreshes',
   assert.ok(!readFileSync(join(publicDir, 'training-result.css'), 'utf8').includes('.manual-results-field .btn-primary'), 'the retired intermediate-button CSS is removed');
   assert.match(js, /persistManualResultsIfNeeded\(\{/);
   assert.match(js, /persistCurrentTrainingState\(\{/);
-  assert.equal((js.match(/persistCurrentState\(\);/g) || []).length, 2, 'both terminal actions share one persistence flow');
-  assert.ok(js.indexOf('persistManual: persistManualResults') < js.indexOf('saveFeedback: \(payload\) => saveTrainingFeedback'), 'manual result precedes feedback');
-  assert.ok(js.lastIndexOf('const result = await persistCurrentState();') < js.lastIndexOf('buildAnalysisPrompt('), 'prompt generation follows complete persistence');
+  assert.equal((js.match(/persistCurrentState\(rpe\);/g) || []).length, 2, 'both terminal actions share one persistence flow');
+  assert.ok(js.indexOf('persistManual: () => persistManualResults(rpe)') < js.indexOf('saveFeedback: \(payload\) => saveTrainingFeedback'), 'manual result precedes feedback');
+  assert.ok(js.lastIndexOf('const result = await persistCurrentState(rpe);') < js.lastIndexOf('buildAnalysisPrompt('), 'prompt generation follows complete persistence');
   assert.match(js, /generateBtn\.disabled = true;\s*\n\s*saveBtn\.disabled = true;/);
   assert.match(js, /saveBtn\.disabled = false;\s*\n\s*generateLabel\.textContent/);
   assert.match(js, /manualDistanceUnit\.textContent = nextUnit;/);
@@ -1332,6 +1333,111 @@ test('training-result.js wires toggling, saving, generation and i18n refreshes',
     /refreshIcons\(\);\s*\n\s*setStatus\(t\('session\.loading'\)\);/,
     'icon re-init happens before the session content is fetched'
   );
+});
+
+test('a realized RPE is required before every result write, prompt and upload', () => {
+  for (const value of [1, 2, 3, 4, 5]) assert.equal(isAnsweredFeedbackRpe(value), true, `RPE ${value} is a reported effort`);
+  for (const value of [null, undefined, NaN, 0, 6, 2.5, '3', '']) {
+    assert.equal(isAnsweredFeedbackRpe(value), false, `${String(value)} is not a reported effort`);
+  }
+
+  assert.equal(en.session.errors.rpeRequired, 'Select the realized RPE (1 to 5) to record and analyze this workout.');
+  assert.equal(pt.session.errors.rpeRequired, 'Selecione o RPE realizado (1 a 5) para registrar e analisar o treino.');
+  assert.notEqual(en.session.errors.rpeRequired, en.session.errors.rpe, 'the missing choice is not the same message as an invalid value');
+
+  const values = { hours: '0', minutes: '30', seconds: '00', distance: '5', avg_hr: '', max_hr: '', elevation_gain_m: '', calories: '' };
+  assert.equal(manualResultsPayload(values, 'km', 3).feedback_rpe, 3, 'the reported effort travels with the manual metrics');
+  assert.equal('feedback_rpe' in manualResultsPayload(values, 'km'), false, 'an unanswered effort is simply absent for the backend to judge');
+  assert.equal('feedback_rpe' in manualResultsPayload(values, 'km', 7), false, 'an out-of-range value is no effort to send');
+});
+
+test('the RPE group is required, described, and never hides an invalid control', () => {
+  const markup = readFileSync(join(publicDir, 'training-result.html'), 'utf8');
+  const group = markup.match(/<div class="rpe-selector"[\s\S]*?<\/div>\s*<p class="field-error"/)?.[0] ?? '';
+  assert.match(markup, /<span class="field-label" id="feedbackRpeLabel">[\s\S]*<span class="required-mark" aria-hidden="true">\*<\/span>/);
+  assert.match(group, /role="radiogroup"/);
+  assert.match(group, /aria-labelledby="feedbackRpeLabel"/);
+  assert.match(group, /aria-required="true"/);
+  assert.ok(!group.includes('aria-describedby'), 'a hidden error is not referenced before it exists');
+  assert.match(markup, /<p class="field-error" id="feedbackRpeError" role="alert" hidden><\/p>/);
+  for (const value of [1, 2, 3, 4, 5]) {
+    assert.match(markup, new RegExp(`id="rpe-${value}" value="${value}"[^>]*data-i18n-aria-label="session\\.rpeLabel${value}"`));
+    assert.match(markup, new RegExp(`id="rpe-${value}"[^>]*aria-label="${value} - `), 'every option is named for assistive technology');
+  }
+
+  const css = readFileSync(join(publicDir, 'training-result.css'), 'utf8');
+  assert.match(css, /input\[type="radio"\]:focus-visible \+ \.rpe-emoji \{[\s\S]*outline: 2px solid var\(--accent-deep\);/);
+  assert.match(css, /\.field-error \{[\s\S]*color: var\(--danger\);/, 'the field error reuses the shared danger token');
+  assert.ok(
+    !/\.field-error[^}]*display:/.test(css),
+    'the field error never overrides the browser [hidden] behavior'
+  );
+  // Every transition in the RPE selector, including the tooltip fade, has to
+  // stop for reduced motion while the tooltip and the focus ring stay intact.
+  const reducedMotion = /@media \(prefers-reduced-motion: reduce\) \{\s*\.rpe-emoji,\s*\.rpe-emoji \.emoji-icon,\s*\.rpe-emoji \.custom-tooltip \{\s*transition: none;\s*\}/.exec(css);
+  assert.ok(reducedMotion, 'the effort group drops every transition, tooltip included, for reduced motion');
+  assert.ok(
+    reducedMotion.index > css.indexOf('.rpe-emoji:hover .custom-tooltip'),
+    'the reduced-motion override follows the tooltip rules it has to win against'
+  );
+  assert.match(
+    css,
+    /\.rpe-emoji \.custom-tooltip \{[\s\S]*?transition: opacity 0\.15s ease, transform 0\.15s ease;/,
+    'the tooltip keeps its own transition for everyone else'
+  );
+  assert.match(css, /\.rpe-emoji:hover \.custom-tooltip \{\s*opacity: 1;/, 'the tooltip is still revealed on hover');
+  assert.match(
+    css,
+    /input\[type="radio"\]:focus-visible \+ \.rpe-emoji \{\s*outline: 2px solid var\(--accent-deep\);/,
+    'the focus ring is drawn on the emoji outside the reduced-motion query'
+  );
+});
+
+test('training-result.js refuses the terminal actions without an answered RPE', () => {
+  const js = readFileSync(join(publicDir, 'training-result.js'), 'utf8');
+  const guard = js.match(/const requireFeedbackRpe = \(\) => \{[\s\S]*?\n  \};/)?.[0] ?? '';
+  assert.match(guard, /if \(isAnsweredFeedbackRpe\(rpe\)\) return rpe;/);
+  assert.match(guard, /rpeError\.textContent = t\(rpeErrorKey\);/);
+  assert.match(guard, /rpeError\.hidden = false;/);
+  assert.match(guard, /rpeSelector\.setAttribute\('aria-invalid', 'true'\);/);
+  assert.match(guard, /rpeSelector\.setAttribute\('aria-describedby', 'feedbackRpeError'\);/);
+  assert.match(guard, /rpeSelector\.querySelector\('input\[type="radio"\]'\)\?\.focus\(\);/);
+  assert.ok(
+    !/location\.href|fetch\(|saveManualTrainingResults\(|saveTrainingFeedback\(/.test(guard),
+    'the guard itself performs no request and no navigation'
+  );
+
+  const clearing = js.match(/const clearFeedbackRpeError = \(\) => \{[\s\S]*?\n  \};/)?.[0] ?? '';
+  assert.match(clearing, /rpeError\.hidden = true;/);
+  assert.match(clearing, /rpeSelector\.removeAttribute\('aria-invalid'\);/);
+  assert.match(clearing, /rpeSelector\.removeAttribute\('aria-describedby'\);/);
+  assert.match(js, /rpeSelector\.addEventListener\('change', clearFeedbackRpeError\);/);
+
+  for (const [action, listener] of [['save', 'saveBtn'], ['generate', 'generateBtn']]) {
+    const handler = js.match(new RegExp(`${listener}\\.addEventListener\\('click',[\\s\\S]*?\\n  \\}\\);`))?.[0] ?? '';
+    assert.ok(handler, `${action} handler found`);
+    assert.ok(
+      handler.indexOf('requireFeedbackRpe()') < handler.indexOf('persistCurrentState('),
+      `${action} asks for the effort before it writes`
+    );
+    assert.match(handler, /const rpe = requireFeedbackRpe\(\);\s*\n\s*if \(rpe === null\) return;/, `${action} stops before disabling the buttons`);
+  }
+
+  const upload = js.match(/fitFileInput\.addEventListener\('change', async \(\) => \{[\s\S]*?\n  \}\);/)?.[0] ?? '';
+  assert.match(upload, /if \(rpe === null\) \{\s*\n\s*fitFileInput\.value = '';\s*\n\s*renderFitDropzoneState\(\);\s*\n\s*return;\s*\n\s*\}/, 'a refused upload keeps no pending file');
+  assert.ok(
+    upload.indexOf('requireFeedbackRpe()') < upload.indexOf('showConfirm('),
+    'the effort is required before the replacement dialog'
+  );
+  assert.match(js, /formData\.append\('feedback_rpe', String\(rpe\)\);/);
+  assert.ok(
+    js.indexOf("formData.append('feedback_rpe'") < js.indexOf('fetch(`/api/trainings/${currentTrainingId}/fit`'),
+    'the reported effort is part of the upload body'
+  );
+  assert.match(js, /training = \{ \.\.\.training, \.\.\.fitData, feedback_rpe: rpe \};/, 'the upload remembers the effort for a later save');
+
+  const localized = js.match(/const renderLocalizedUi = \(\) => \{[\s\S]*?\n  \};/)?.[0] ?? '';
+  assert.match(localized, /if \(rpeErrorKey\) \{\s*\n\s*rpeError\.textContent = t\(rpeErrorKey\);\s*\n\s*setStatus\(t\(rpeErrorKey\), 'error'\);/);
 });
 
 test('shared api client exposes the session endpoints', () => {
@@ -1458,6 +1564,7 @@ test('session locale namespace stays in parity across en-US and pt-BR', () => {
     'errors.load',
     'errors.notFound',
     'errors.rpe',
+    'errors.rpeRequired',
     'errors.save',
     'errors.fitUpload',
     'errors.manualValidation',
