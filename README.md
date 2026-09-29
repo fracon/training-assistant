@@ -175,27 +175,34 @@ no confirmation dialog, and starts no navigation. The group is a native radio
 group, so the arrow keys and Space operate it and the keyboard focus ring is
 drawn on the emoji the selection moves to.
 
-The same rule is a backend invariant, so no other client can finish a result
-without realized effort. Every write that sets `completed = 1` —
-`PATCH /api/trainings/:id` with `completed: true`,
+The same rule is a backend invariant, so no other client can leave a result
+concluded without realized effort. A concluded training and its RPE are a pair
+that never comes apart, so every write that can change that pair —
+`PATCH /api/trainings/:id`,
 `PUT /api/trainings/:id/manual-results`, and `POST /api/trainings/:id/fit` —
-resolves an effective RPE inside its own transaction and refuses the write with
-`400` and a stable message when that value is absent, cleared, or outside 1–5:
+resolves the **state the request would leave behind** inside its own transaction
+and refuses the write with `400` and a stable message whenever that state is
+concluded without an RPE of 1–5:
 
 ```
 { "error": "A realized RPE between 1 and 5 is required to complete this training." }
 ```
 
-A refusal writes nothing: the result, its provenance, and the training's
-`completed` state are left exactly as they were. The effective value is the
-value supplied by the request, or the row's own current `feedback_rpe` when a
-manual or FIT result is saved without one, so recording a result never
-discards an effort the user already reported. The result page sends the
-selected RPE with manual and FIT writes, and the PATCH completion path treats
-an explicitly supplied or cleared value as authoritative, so clearing the RPE
-cannot complete a training. Partial feedback edits — weather, terrain,
-shoes, breathing, notes — never require the RPE and remain available on any
-result.
+A refusal writes nothing: the result, its provenance, the notes, and the
+`completed` state are left exactly as they were. The state the request leaves
+behind is read from the row inside the transaction that would write it, and
+each half of the pair comes from the request when the request names that
+column. A `PATCH` that names only `feedback_rpe` therefore cannot clear the
+effort of a training that stays concluded, with or without `completed: true`
+alongside it. The deliberate way to remove an effort is to reopen the session
+in the same request — `{"completed": false, "feedback_rpe": ""}` — because the
+session is no longer concluded when the effort goes.
+
+A manual or FIT result saved without an RPE reuses the row's current
+`feedback_rpe`, so recording a result never discards an effort the user already
+reported, and the result page sends the selected RPE with manual and FIT
+writes. Partial feedback edits — weather, terrain, shoes, breathing, notes —
+never name the pair, so they stay unrestricted on any result, concluded or not.
 
 Results completed before this rule keep working: a stored `feedback_rpe` of
 `null` stays readable, its form values stay editable, and the page asks only
@@ -641,7 +648,7 @@ are scoped to the signed-in user's records.
 | `GET /api/calendar/trainings` | Session | Read calendar trainings |
 | `POST /api/calendar/import` | Session | Import spreadsheet rows |
 | `GET /api/trainings/:id` | Session | Read one owned training |
-| `PATCH /api/trainings/:id` | Session | Update training fields and feedback; `completed: true` requires a realized RPE |
+| `PATCH /api/trainings/:id` | Session | Update training fields and feedback; a concluded training requires a realized RPE |
 | `PATCH /api/trainings/:id/reschedule` | Session | Reschedule an owned training |
 | `PUT /api/trainings/:id/manual-results` | Session | Save manual result; requires a realized RPE |
 | `POST /api/trainings/:id/fit` | Session | Upload and persist FIT or single-FIT ZIP result; requires a realized RPE |

@@ -139,13 +139,13 @@ function parseRpe(raw) {
 }
 
 // A realized result is only concluded together with the effort the athlete
-// reported. `effective` is the RPE the row will hold once the write lands: the
-// one this request carries when it carries the field at all, otherwise the one
-// read inside the transaction that performs the write. A stale, partial, or
-// clearing request therefore can never persist a concluded workout without it.
-// Returns the refusal message, or null when the workout may be concluded.
-// Partial feedback edits of a workout that is not being concluded stay
-// unrestricted and never reach this rule.
+// reported, and the two never come apart: `effective` is the RPE the row will
+// hold once the write lands — the one this request carries when it carries the
+// field at all, otherwise the one read inside the transaction that performs
+// the write. A stale, partial, or clearing request therefore can never leave a
+// concluded workout without it. Returns the refusal message, or null when the
+// workout may hold the resulting pair. Writes that do not touch the
+// conclusion pair never reach this rule.
 function conclusionRpeError(effective) {
   return Number.isInteger(effective) && effective >= 1 && effective <= 5
     ? null
@@ -777,6 +777,8 @@ async function buildServer(options = {}) {
       if (fields.length === 0) {
         return reply.code(400).send({ error: 'No feedback fields provided.' });
       }
+      const own = (object, field) => Object.prototype.hasOwnProperty.call(object, field);
+      const carriesRpeOrCompletion = own(updates, 'feedback_rpe') || own(updates, 'completed');
 
       if (!findTraining.get(id, request.user.id)) {
         return reply.code(404).send({ error: 'Training not found.' });
@@ -785,17 +787,25 @@ async function buildServer(options = {}) {
       const assignments = fields.map((field) => `${field} = ?`).join(', ');
       const saveFeedback = db.transaction(() => {
         const before = findTraining.get(id, request.user.id);
-        // Concluding the workout is the only case that demands the effort;
-        // the stored value is re-read here so the decision uses the same
-        // snapshot the update is applied to. A request that carries the field
-        // at all is judged by that value, so clearing it cannot complete.
-        if (updates.completed === 1) {
-          const refused = conclusionRpeError(
-            Object.prototype.hasOwnProperty.call(updates, 'feedback_rpe')
-              ? updates.feedback_rpe
-              : before.feedback_rpe
-          );
-          if (refused) return refused;
+        // A concluded workout cannot exist without the effort it was concluded
+        // with, so the request is judged by the state it would leave behind,
+        // not by the field it happens to carry. The row is re-read here so the
+        // decision uses the same snapshot the update is applied to, and both
+        // effective values come from this request when it names them. A request
+        // that names neither cannot change the pair, so a partial edit of a
+        // concluded session — including one that predates this rule and has no
+        // effort yet — stays unrestricted.
+        if (carriesRpeOrCompletion) {
+          const effectiveCompleted = own(updates, 'completed')
+            ? updates.completed
+            : before.completed;
+          const effectiveRpe = own(updates, 'feedback_rpe')
+            ? updates.feedback_rpe
+            : before.feedback_rpe;
+          if (effectiveCompleted === 1) {
+            const refused = conclusionRpeError(effectiveRpe);
+            if (refused) return refused;
+          }
         }
         db.prepare(
           `UPDATE trainings SET ${assignments} WHERE id = ? AND user_id = ?`

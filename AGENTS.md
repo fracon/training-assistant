@@ -221,20 +221,31 @@ onboarding record of the account is preserved.
   it is available regardless of whether the session has `none`, `manual`, or
   `fit_upload` provenance. Do not infer result existence from displayed fields.
 - Realized effort (`feedback_rpe`, 1–5) is the only mandatory result
-  feedback, and it is a backend invariant as well as a page rule. Every write
-  that sets `completed = 1` — `PATCH /api/trainings/:id` with
-  `completed: true`, `PUT /api/trainings/:id/manual-results`, and
-  `POST /api/trainings/:id/fit` — resolves the effective RPE inside its own
+  feedback, and it is a backend invariant as well as a page rule: a concluded
+  training and its realized effort are a pair that never comes apart. Every
+  write that can change that pair — `PATCH /api/trainings/:id`,
+  `PUT /api/trainings/:id/manual-results`, and `POST /api/trainings/:id/fit` —
+  resolves the **effective state the request would leave behind** inside its own
   transaction and returns `400` with
   `A realized RPE between 1 and 5 is required to complete this training.`
-  when it is absent, cleared, or out of range, writing nothing. The effective
-  value is the request's own value, or the row's current `feedback_rpe` when a
-  manual or FIT result omits one, so recording a result never discards a
-  reported effort; the PATCH completion path treats an explicitly supplied or
-  cleared value as authoritative, so clearing the RPE cannot complete a
-  training. Partial feedback edits never require the RPE, results completed
-  earlier stay readable and editable, and no schema migration, backfill, or
-  invented effort is involved.
+  when that state is `completed = 1` without an effort of 1–5, writing nothing
+  and touching no column. Judge the result, never the intent: a PATCH naming
+  only `feedback_rpe` cannot clear the effort of a training that stays
+  concluded, whether or not it also carries `completed: true`, and a refusal
+  must leave notes, `completed`, and the RPE exactly as they were.
+- The effective pair is read from the row inside the transaction that would
+  write it, and each half comes from the request when the request names that
+  column, so nothing stale or partial can conclude or strand a workout. A
+  manual or FIT result that omits the RPE reuses the row's current value, so
+  recording a result never discards a reported effort. `{"completed": false,
+  "feedback_rpe": ""}` is the deliberate way out: the session is open when the
+  effort goes, and the same request is allowed.
+- Only a request that names `feedback_rpe` or `completed` reaches this rule, so
+  partial feedback edits — notes, weather, terrain, shoes, breathing — stay
+  unrestricted on any training, concluded or not, including results completed
+  before the rule, which stay readable and editable without an invented effort.
+  A non-integer `feedback_rpe` is still rejected by the field's own validation
+  before this rule. No schema migration or backfill is involved.
 - The result page blocks **Save and back to calendar**, **Save and Generate
   Analysis Prompt**, and the FIT/ZIP upload before any request, confirmation
   dialog, disabled-state change, or navigation: it marks the 1–5 radio group

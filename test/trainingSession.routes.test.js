@@ -476,7 +476,7 @@ test('PATCH /api/trainings/:id answers 404 when the session does not exist', asy
   assert.deepEqual(response.json(), { error: 'Training not found.' });
 });
 
-test('completing a session requires a realized RPE, and only the conclusion path does', async () => {
+test('completing a session requires a realized RPE, and the rest of the feedback does not', async () => {
   const { db, app, cookie, userId } = await setup();
   const id = seedTraining(db, { user_id: userId });
   const conclude = (payload) =>
@@ -531,6 +531,101 @@ test('completing a session requires a realized RPE, and only the conclusion path
   const legacyEdit = await app.inject({ method: 'PATCH', url: `/api/trainings/${legacyId}`, headers: { cookie }, payload: { feedback_weather: 'ensolarado' } });
   assert.equal(legacyEdit.statusCode, 200, 'editing a legacy session is not a conclusion');
   assert.equal(legacyEdit.json().training.feedback_weather, 'ensolarado');
+  await app.close();
+  db.close();
+});
+
+test('a concluded session cannot be stripped of its realized RPE by a feedback edit', async () => {
+  const { db, app, cookie, userId } = await setup();
+  const id = seedTraining(db, { user_id: userId });
+  const patch = (payload) =>
+    app.inject({ method: 'PATCH', url: `/api/trainings/${id}`, headers: { cookie }, payload });
+  const row = () =>
+    db
+      .prepare('SELECT feedback_rpe, feedback_notas, feedback_weather, completed FROM trainings WHERE id = ?')
+      .get(id);
+  const effortError = 'A realized RPE between 1 and 5 is required to complete this training.';
+
+  const concluded = await patch({ completed: true, feedback_rpe: 4, feedback_notas: 'percebi o ritmo' });
+  assert.equal(concluded.statusCode, 200);
+  assert.equal(concluded.json().training.completed, 1);
+
+  // A completed workout must not keep that state while losing the effort it was
+  // concluded with, so clearing the field on its own is refused.
+  for (const payload of [
+    { feedback_rpe: '' },
+    { feedback_rpe: '', feedback_notas: 'anotação trocada' },
+    { feedback_rpe: '', completed: true },
+  ]) {
+    const refused = await patch(payload);
+    assert.equal(refused.statusCode, 400, JSON.stringify(payload));
+    assert.deepEqual(refused.json(), { error: effortError });
+    assert.deepEqual(
+      row(),
+      { feedback_rpe: 4, feedback_notas: 'percebi o ritmo', feedback_weather: null, completed: 1 },
+      `a refused clear changed nothing: ${JSON.stringify(payload)}`,
+    );
+  }
+
+  // A non-integer is still rejected by the field's own validation, and it is
+  // refused for the same reason: the concluded row keeps its effort.
+  const nonNumeric = await patch({ feedback_rpe: null });
+  assert.equal(nonNumeric.statusCode, 400);
+  assert.deepEqual(nonNumeric.json(), { error: 'rpe must be an integer between 1 and 5.' });
+  assert.equal(row().feedback_rpe, 4);
+
+  // Reopening and clearing in one request is the deliberate way out, because
+  // the session is no longer concluded when the effort goes.
+  const reopened = await patch({ completed: false, feedback_rpe: '' });
+  assert.equal(reopened.statusCode, 200);
+  assert.deepEqual(reopened.json().training.completed !== 1, true, 'the session is open again');
+  assert.equal(reopened.json().training.feedback_rpe, null);
+
+  // An open session is unrestricted again, and concluding it still needs an RPE
+  // from the request or from the row.
+  const reclosed = await patch({ completed: true });
+  assert.equal(reclosed.statusCode, 400);
+  assert.deepEqual(reclosed.json(), { error: effortError });
+  assert.equal(row().completed, 0, 'the refused conclusion wrote nothing');
+  assert.equal(row().feedback_rpe, null);
+  const effort = await patch({ completed: true, feedback_rpe: 2 });
+  assert.equal(effort.statusCode, 200);
+  const fromRow = await patch({ completed: true, feedback_notas: 'mesmo esforço' });
+  assert.equal(fromRow.statusCode, 200, 'the stored effort completes an unchanged conclusion');
+  assert.equal(fromRow.json().training.feedback_rpe, 2);
+
+  // Editing the rest of the feedback of a concluded session stays unrestricted.
+  for (const payload of [
+    { feedback_notas: 'ajuste de nota' },
+    { feedback_weather: 'ventoso' },
+    { feedback_rpe: 5 },
+    { feedback_rpe: 3, feedback_breathing: 'tranquila' },
+  ]) {
+    const allowed = await patch(payload);
+    assert.equal(allowed.statusCode, 200, `partial ${JSON.stringify(payload)} stays unrestricted`);
+    assert.equal(allowed.json().training.completed, 1);
+  }
+  assert.equal(row().feedback_rpe, 3);
+
+  // A concluded session from before the rule has no effort to keep, so an edit
+  // that never mentions the field is not a conclusion and is not refused.
+  const legacyId = seedTraining(db, {
+    user_id: userId,
+    dia: '2026-08-20',
+    completed: 1,
+    fit_distance: 8,
+    result_data_source: 'fit_upload',
+  });
+  const legacyPatch = (payload) =>
+    app.inject({ method: 'PATCH', url: `/api/trainings/${legacyId}`, headers: { cookie }, payload });
+  const legacyEdit = await legacyPatch({ feedback_weather: 'ensolarado', feedback_notas: 'nota antiga' });
+  assert.equal(legacyEdit.statusCode, 200, 'a legacy conclusion is edited, not re-concluded');
+  assert.equal(legacyEdit.json().training.feedback_rpe, null);
+  assert.equal(legacyEdit.json().training.completed, 1);
+  assert.equal(legacyEdit.json().training.feedback_weather, 'ensolarado');
+  const legacyReopen = await legacyPatch({ completed: false });
+  assert.equal(legacyReopen.statusCode, 200, 'a legacy conclusion can still be reopened');
+
   await app.close();
   db.close();
 });
