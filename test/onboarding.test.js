@@ -278,7 +278,7 @@ async function runChromeAtViewport(chrome, url, { width, height, mobile, cookie 
     try { socket?.close(); } catch {}
     processHandle.kill();
     await Promise.race([once(processHandle, 'close'), delay(2000)]);
-    rmSync(profileDirectory, { recursive: true, force: true });
+    rmSync(profileDirectory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 }
 

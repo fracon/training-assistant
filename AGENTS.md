@@ -220,6 +220,28 @@ onboarding record of the account is preserved.
 - The result page keeps its import guide beside the FIT/ZIP upload controls;
   it is available regardless of whether the session has `none`, `manual`, or
   `fit_upload` provenance. Do not infer result existence from displayed fields.
+- Realized effort (`feedback_rpe`, 1–5) is the only mandatory result
+  feedback, and it is a backend invariant as well as a page rule. Every write
+  that sets `completed = 1` — `PATCH /api/trainings/:id` with
+  `completed: true`, `PUT /api/trainings/:id/manual-results`, and
+  `POST /api/trainings/:id/fit` — resolves the effective RPE inside its own
+  transaction and returns `400` with
+  `A realized RPE between 1 and 5 is required to complete this training.`
+  when it is absent, cleared, or out of range, writing nothing. The effective
+  value is the request's own value, or the row's current `feedback_rpe` when a
+  manual or FIT result omits one, so recording a result never discards a
+  reported effort; the PATCH completion path treats an explicitly supplied or
+  cleared value as authoritative, so clearing the RPE cannot complete a
+  training. Partial feedback edits never require the RPE, results completed
+  earlier stay readable and editable, and no schema migration, backfill, or
+  invented effort is involved.
+- The result page blocks **Save and back to calendar**, **Save and Generate
+  Analysis Prompt**, and the FIT/ZIP upload before any request, confirmation
+  dialog, disabled-state change, or navigation: it marks the 1–5 radio group
+  invalid, announces a localized error, focuses the first option, and preserves
+  every other entered value. Arrow keys and Space must operate the group, the
+  focus ring is drawn on the emoji label, and the RPE transitions respect
+  `prefers-reduced-motion`.
 - The Training Result page also has a separate, informational “How to create a
   workout” guide. Its declarative catalog lives in
   `src/public/shared/workout-creation-guidance.js` and is rendered by
@@ -349,6 +371,17 @@ session refusal), `test/login.activity-race.test.js` (a suspension committed
 while the password is verified, through a held verification),
 `test/language.test.js` (`translateApiError` prefers a stable code), and
 `test/database.test.js` (the activity migration).
+
+The realized-RPE conclusion contract is covered by
+`test/trainingSession.routes.test.js` (the three completion writes, the exact
+refusal message, the stored-value fallback, cleared values, and unchanged rows
+after a refusal), `test/manualResults.test.js` (manual `feedback_rpe`
+normalization), `test/trainingResult.test.js` (guard placement, error lifecycle,
+markup, styles, and both locale keys), and
+`test/trainingResult.browser.test.js` (a real Chrome run blocking the manual
+save, the prompt generation, and the FIT upload before any request, in PT and
+EN, with keyboard selection, focus placement, preserved input, and a legacy
+completed result that stays editable).
 
 `npm run test:coverage` enforces exactly 100% Statements, Branches, Functions,
 and Lines for c8-instrumented files under `src/**` (excluding
