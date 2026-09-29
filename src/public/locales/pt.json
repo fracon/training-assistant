@@ -451,6 +451,7 @@
       "load": "Não conseguimos carregar este treino.",
       "notFound": "Treino não encontrado.",
       "rpe": "O RPE realizado deve ser um número inteiro entre 1 e 5.",
+      "rpeRequired": "Selecione o RPE realizado (1 a 5) para registrar e analisar o treino.",
       "save": "Não conseguimos salvar seu feedback. Tente novamente.",
     "fitUpload": "Não foi possível enviar o arquivo FIT. Tente novamente.",
     "manualValidation": "Informe uma distância e duração válidas antes de salvar.",

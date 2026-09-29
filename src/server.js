@@ -138,6 +138,29 @@ function parseRpe(raw) {
   return { ok: true, value };
 }
 
+// A multipart field is always a string, so the same presence rule the JSON
+// paths use applies: anything that is not a reported 1-5 effort carries none.
+function reportedRpe(raw) {
+  const trimmed = String(raw).trim();
+  if (trimmed === '') return null;
+  const value = Number(trimmed);
+  return Number.isInteger(value) && value >= 1 && value <= 5 ? value : null;
+}
+
+// A realized result is only concluded together with the effort the athlete
+// reported, and the two never come apart: `effective` is the RPE the row will
+// hold once the write lands — the one this request carries when it carries the
+// field at all, otherwise the one read inside the transaction that performs
+// the write. A stale, partial, or clearing request therefore can never leave a
+// concluded workout without it. Returns the refusal message, or null when the
+// workout may hold the resulting pair. Writes that do not touch the
+// conclusion pair never reach this rule.
+function conclusionRpeError(effective) {
+  return Number.isInteger(effective) && effective >= 1 && effective <= 5
+    ? null
+    : 'A realized RPE between 1 and 5 is required to complete this training.';
+}
+
 // Rescheduling dates travel as zero-padded ISO strings, the same format
 // the Excel importer writes into `dia`. Returns the validated YYYY-MM-DD
 // or null when the value is not a trustworthy calendar date.
@@ -763,6 +786,8 @@ async function buildServer(options = {}) {
       if (fields.length === 0) {
         return reply.code(400).send({ error: 'No feedback fields provided.' });
       }
+      const own = (object, field) => Object.prototype.hasOwnProperty.call(object, field);
+      const carriesRpeOrCompletion = own(updates, 'feedback_rpe') || own(updates, 'completed');
 
       if (!findTraining.get(id, request.user.id)) {
         return reply.code(404).send({ error: 'Training not found.' });
@@ -771,13 +796,35 @@ async function buildServer(options = {}) {
       const assignments = fields.map((field) => `${field} = ?`).join(', ');
       const saveFeedback = db.transaction(() => {
         const before = findTraining.get(id, request.user.id);
+        // A concluded workout cannot exist without the effort it was concluded
+        // with, so the request is judged by the state it would leave behind,
+        // not by the field it happens to carry. The row is re-read here so the
+        // decision uses the same snapshot the update is applied to, and both
+        // effective values come from this request when it names them. A request
+        // that names neither cannot change the pair, so a partial edit of a
+        // concluded session — including one that predates this rule and has no
+        // effort yet — stays unrestricted.
+        if (carriesRpeOrCompletion) {
+          const effectiveCompleted = own(updates, 'completed')
+            ? updates.completed
+            : before.completed;
+          const effectiveRpe = own(updates, 'feedback_rpe')
+            ? updates.feedback_rpe
+            : before.feedback_rpe;
+          if (effectiveCompleted === 1) {
+            const refused = conclusionRpeError(effectiveRpe);
+            if (refused) return refused;
+          }
+        }
         db.prepare(
           `UPDATE trainings SET ${assignments} WHERE id = ? AND user_id = ?`
         ).run(...fields.map((field) => updates[field]), id, request.user.id);
         const after = findTraining.get(id, request.user.id);
         reconcileShoeMileage(db, request.user.id, before, after);
+        return null;
       });
-      saveFeedback();
+      const refused = saveFeedback();
+      if (refused) return reply.code(400).send({ error: refused });
 
       return { training: findTraining.get(id, request.user.id) };
     });
@@ -831,18 +878,29 @@ async function buildServer(options = {}) {
       }
       const saveManual = db.transaction((values) => {
         const before = findTraining.get(id, request.user.id);
+        // A manual write always concludes the workout, so the effort the request
+        // supplies is the one the conclusion carries; only a genuinely omitted
+        // field falls back to the stored one, and a supplied empty or unusable
+        // value is a request to conclude without an effort.
+        const effectiveRpe = values.feedback_rpe_supplied ? values.feedback_rpe : before.feedback_rpe;
+        const refused = conclusionRpeError(effectiveRpe);
+        if (refused) return refused;
         db.prepare(
           `UPDATE trainings SET fit_duration = ?, fit_distance = ?, fit_avg_pace = ?,
             fit_avg_hr = ?, fit_max_hr = ?, fit_elevation_gain = ?, fit_calories = ?,
-            fit_summary_json = NULL, result_data_source = 'manual', completed = 1
+            fit_summary_json = NULL, result_data_source = 'manual', completed = 1,
+            feedback_rpe = ?
            WHERE id = ? AND user_id = ?`
         ).run(
           values.fit_duration, values.distance_km, values.fit_avg_pace, values.avg_hr,
-          values.max_hr, values.elevation_gain_m, values.calories, id, request.user.id
+          values.max_hr, values.elevation_gain_m, values.calories, effectiveRpe,
+          id, request.user.id
         );
         reconcileShoeMileage(db, request.user.id, before, findTraining.get(id, request.user.id));
+        return null;
       });
-      saveManual(normalized.value);
+      const refused = saveManual(normalized.value);
+      if (refused) return reply.code(400).send({ error: refused });
       return { training: findTraining.get(id, request.user.id) };
     });
 
@@ -863,6 +921,8 @@ async function buildServer(options = {}) {
       let fileBuffer = null;
       let fileName = '';
       let confirmReplaceManual = false;
+      let requestedRpe;
+      let rpeSupplied = false;
       try {
         for await (const part of request.parts()) {
           if (part.type === 'file' && part.fieldname === 'file') {
@@ -870,6 +930,9 @@ async function buildServer(options = {}) {
             fileBuffer = await part.toBuffer();
           } else if (part.type === 'field' && part.fieldname === 'confirm_replace_manual') {
             confirmReplaceManual = part.value === 'true';
+          } else if (part.type === 'field' && part.fieldname === 'feedback_rpe') {
+            rpeSupplied = true;
+            requestedRpe = part.value;
           }
         }
       } catch (error) {
@@ -913,6 +976,13 @@ async function buildServer(options = {}) {
 
         const saveFit = db.transaction(() => {
           const before = findTraining.get(id, request.user.id);
+          // The upload concludes the workout, so the effort the request supplies
+          // is the one the conclusion carries; only a genuinely omitted field
+          // falls back to the stored one, and a supplied empty or unusable value
+          // is a request to conclude without an effort.
+          const effectiveRpe = rpeSupplied ? reportedRpe(requestedRpe) : before.feedback_rpe;
+          const refused = conclusionRpeError(effectiveRpe);
+          if (refused) return refused;
           db.prepare(
             `UPDATE trainings SET
             fit_duration = ?,
@@ -924,7 +994,8 @@ async function buildServer(options = {}) {
             fit_calories = ?,
             fit_summary_json = ?,
             result_data_source = 'fit_upload',
-            completed = 1
+            completed = 1,
+            feedback_rpe = ?
           WHERE id = ? AND user_id = ?`
           ).run(
             fitDuration,
@@ -935,12 +1006,15 @@ async function buildServer(options = {}) {
             fitElevation,
             fitCalories,
             fitSummaryJson,
+            effectiveRpe,
             id,
             request.user.id
           );
           reconcileShoeMileage(db, request.user.id, before, findTraining.get(id, request.user.id));
+          return null;
         });
-        saveFit();
+        const refused = saveFit();
+        if (refused) return reply.code(400).send({ error: refused });
 
         return {
           fit_duration: fitDuration,

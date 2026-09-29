@@ -451,6 +451,7 @@
       "load": "We could not load this training.",
       "notFound": "Training not found.",
       "rpe": "Realized RPE must be an integer between 1 and 5.",
+      "rpeRequired": "Select the realized RPE (1 to 5) to record and analyze this workout.",
       "save": "We could not save your feedback. Please try again.",
     "fitUpload": "Could not upload the FIT file. Please try again.",
     "manualValidation": "Enter a valid distance and duration before saving.",

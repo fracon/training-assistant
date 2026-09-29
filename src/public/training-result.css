@@ -231,6 +231,21 @@ body {
   color: var(--ink);
 }
 
+/* Same required-field marker the AI Coach availability group uses. */
+.required-mark {
+  margin-left: 0.2rem;
+  color: var(--danger);
+}
+
+/* The only error surface for a field group: it belongs to the control, not to
+   the page status, and every value typed elsewhere in the form is kept. */
+.field-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
 .feedback-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -469,6 +484,13 @@ input[type="radio"]:checked + .rpe-emoji {
   box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
 }
 
+/* The radio inputs are visually hidden, so the keyboard focus ring is drawn on
+   the emoji the arrow keys and Space activate. */
+input[type="radio"]:focus-visible + .rpe-emoji {
+  outline: 2px solid var(--accent-deep);
+  outline-offset: 2px;
+}
+
 input[type="radio"]:checked + .rpe-emoji .emoji-icon {
   filter: grayscale(0%);
   opacity: 1;
@@ -499,6 +521,17 @@ input[type="radio"]:checked + .rpe-emoji .emoji-icon {
 .rpe-emoji:hover .custom-tooltip {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
+}
+
+/* The hover lift, the emoji states, and the tooltip fade are the only motion
+   this group adds. The tooltip and the focus ring stay exactly as they are —
+   only the animation is dropped. */
+@media (prefers-reduced-motion: reduce) {
+  .rpe-emoji,
+  .rpe-emoji .emoji-icon,
+  .rpe-emoji .custom-tooltip {
+    transition: none;
+  }
 }
 
 textarea.input-control {
