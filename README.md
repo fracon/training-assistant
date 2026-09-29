@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized prompts for an AI coach.
 
-Current application version: **0.18.0** (active development).
+Current application version: **0.19.0** (active beta development).
 
 ### Shoe mileage integrity
 
@@ -261,7 +261,14 @@ Weekly availability is stored per authenticated user and weekday through
 `location`. A 12-hour (720-minute) daily maximum prevents unreasonable input.
 Unavailable days are stored with an empty period list, null duration, and empty
 location. Available days require at least one period, positive duration, and a
-location. Multiple periods are alternatives for one session. The duration is
+location. Each available day stores exactly one preferred period. Legacy rows
+with multiple periods remain readable, are flagged for explicit review, and
+cannot be saved or used to generate a prompt until one is selected. This is a
+breaking API contract: clients of `PUT /api/ai-coach/availability` must send
+exactly one period for every available day; requests containing multiple
+periods are rejected. This breaking contract change is released as version
+0.19.0; clients using the previous multi-period request shape must adapt before
+saving availability. The duration is
 the total maximum session time, including warm-up and cool-down; it is not a
 target and is independent of the time window.
 
@@ -285,9 +292,12 @@ offers a localized retry; older asynchronous responses cannot replace a newer
 load result.
 
 The prompt states each unavailable day and, for available days, its selected
-periods, maximum session minutes, and location. It explicitly tells the coach
-that periods are alternatives for one session and minutes are a ceiling, not a
-goal or a conversion from the size of a period window. The prompt also directs
+preferred period, maximum session minutes, and location. It explicitly tells
+the coach to use the highest valid hourly forecast temperature inside that
+period for heat adjustment, without presenting it as an exact training-hour
+temperature. Missing hourly data makes the forecast unavailable; daily maxima
+must not substitute for it. Minutes are a ceiling, not a goal or a conversion
+from the size of a period window. The prompt also directs
 the coach to consider local time and use weather only when valid forecast data
 exists. Kinesis does not add a weather API call to availability or invent an
 exact time inside a selected window; the existing optional Open-Meteo flow

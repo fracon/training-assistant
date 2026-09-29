@@ -25,7 +25,7 @@ function payload() {
   const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
   return days.map((day, index) => ({
     day, can_train: index < 2,
-    available_periods: index === 0 ? ['12_14', 'after_18', '12_14'] : index === 1 ? ['before_08'] : [],
+    available_periods: index === 0 ? ['12_14'] : index === 1 ? ['before_08'] : [],
     available_minutes: index === 0 ? 60 : index === 1 ? 45 : null,
     location: index === 0 ? 'Fânzeres, Gondomar' : index === 1 ? 'Porto' : '',
   }));
@@ -55,7 +55,7 @@ test('PUT validates and saves structured days while isolating users', async () =
   const response = await app.inject({ method: 'PUT', url: '/api/ai-coach/availability', headers: { cookie: cookies[0] }, payload: { days } });
   assert.equal(response.statusCode, 200);
   assert.equal(response.json().availability.needsReview, false);
-  assert.deepEqual(response.json().availability.days[0].available_periods, ['12_14', 'after_18']);
+  assert.deepEqual(response.json().availability.days[0].available_periods, ['12_14']);
   assert.equal(response.json().availability.days[0].available_minutes, 60);
   assert.equal(response.json().availability.days[0].location, 'Fânzeres, Gondomar');
   assert.deepEqual(response.json().availability.days[2], {
@@ -81,6 +81,8 @@ test('PUT rejects malformed payloads and values outside the domain contract', as
   assert.equal((await post({ days: tooLong })).statusCode, 400);
   const unknownPeriod = payload(); unknownPeriod[0].available_periods = ['lunch'];
   assert.equal((await post({ days: unknownPeriod })).statusCode, 400);
+  const multiplePeriods = payload(); multiplePeriods[0].available_periods = ['08_12', '14_18'];
+  assert.equal((await post({ days: multiplePeriods })).statusCode, 400);
   const missingLocation = payload(); missingLocation[0].location = '';
   assert.equal((await post({ days: missingLocation })).statusCode, 400);
   await app.close();

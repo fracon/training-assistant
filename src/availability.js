@@ -20,11 +20,11 @@ function normalizeAvailabilityWeek(payload) {
       byDay.set(record.day, { day: record.day, can_train: false, available_periods: [], available_minutes: null, location: '' });
       continue;
     }
-    if (!Array.isArray(record.available_periods) || record.available_periods.length === 0 ||
+    if (!Array.isArray(record.available_periods) || record.available_periods.length !== 1 ||
         record.available_periods.some((period) => !PERIOD_KEYS.includes(period))) {
       return { valid: false, error: 'availability_invalid_periods' };
     }
-    const periods = [...new Set(record.available_periods)];
+    const periods = [record.available_periods[0]];
     const minutes = record.available_minutes;
     if (!Number.isInteger(minutes) || minutes < 1 || minutes > MAX_AVAILABLE_MINUTES) {
       return { valid: false, error: 'availability_invalid_duration' };
@@ -48,18 +48,29 @@ function getAvailabilityWeek(db, userId) {
     'SELECT day_key, can_train, available_periods, available_minutes, location FROM ai_coach_availability WHERE user_id = ?'
   ).all(userId);
   const byDay = new Map(rows.map((row) => [row.day_key, row]));
+  const needsReview = rows.length !== DAY_KEYS.length || rows.some((row) => {
+    if (!row.can_train) return false;
+    try {
+      const periods = JSON.parse(row.available_periods);
+      return !Array.isArray(periods) || periods.length !== 1;
+    } catch {
+      return true;
+    }
+  });
   return {
     days: DAY_KEYS.map((day) => {
       const row = byDay.get(day);
       return row ? {
         day,
         can_train: Boolean(row.can_train),
-        available_periods: JSON.parse(row.available_periods),
+        available_periods: (() => {
+          try { return JSON.parse(row.available_periods); } catch { return []; }
+        })(),
         available_minutes: row.available_minutes,
         location: row.location,
       } : { day, can_train: null, available_periods: [], available_minutes: null, location: '' };
     }),
-    needsReview: rows.length !== DAY_KEYS.length,
+    needsReview,
   };
 }
 

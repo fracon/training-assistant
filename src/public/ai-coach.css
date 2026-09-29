@@ -267,6 +267,28 @@
   font-weight: 600;
 }
 
+.legacy-period-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin-top: 0.35rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.legacy-period-summary strong {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.legacy-period-summary p {
+  margin: 0;
+}
+
 .period-list {
   display: flex;
   flex-direction: column;

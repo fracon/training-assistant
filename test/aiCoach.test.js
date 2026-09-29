@@ -16,7 +16,7 @@ const publicDir = join(__dirname, '../src/public');
 const messages = JSON.parse(readFileSync(join(__dirname, '../src/public/locales/pt.json')));
 const enMessages = JSON.parse(readFileSync(join(__dirname, '../src/public/locales/en.json')));
 const week = {
-  segunda: { can_train: true, available_periods: ['12_14', 'after_18'], available_minutes: 60, location: 'Fânzeres, Gondomar' },
+  segunda: { can_train: true, available_periods: ['12_14'], available_minutes: 60, location: 'Fânzeres, Gondomar' },
   terca: { can_train: false, available_periods: [], available_minutes: null, location: '' },
   quarta: { can_train: true, available_periods: ['before_08'], available_minutes: 45, location: 'Porto' },
   quinta: { can_train: false, available_periods: [], available_minutes: null, location: '' },
@@ -87,10 +87,10 @@ test('day location validation matches the trimmed 200-character backend contract
 
 test('prompt prints unavailable days and structured windows, maximum minutes, and location', () => {
   const prompt = buildPrompt({ targetDate: new Date(2026, 8, 28), disponibilidade: week, lang: 'pt-BR', messages });
-  assert.match(prompt, /Segunda: Pode treinar: sim; Períodos disponíveis: 12h–14h; Após as 18h; Tempo máximo disponível para a sessão: 60 minutos; Local: Fânzeres, Gondomar/);
+  assert.match(prompt, /Segunda: Pode treinar: sim; Período preferencial: 12h–14h; Tempo máximo disponível para a sessão: 60 minutos; Local: Fânzeres, Gondomar/);
   assert.match(prompt, /Terça: Pode treinar: não/);
-  assert.match(prompt, /Quarta: Pode treinar: sim; Períodos disponíveis: Antes das 08h; Tempo máximo disponível para a sessão: 45 minutos; Local: Porto/);
-  assert.match(prompt, /Períodos múltiplos são alternativas para uma sessão naquele dia, não autorização para treinos múltiplos/);
+  assert.match(prompt, /Quarta: Pode treinar: sim; Período preferencial: Antes das 08h; Tempo máximo disponível para a sessão: 45 minutos; Local: Porto/);
+  assert.match(prompt, /maior temperatura prevista entre as horas válidas dentro do período escolhido/);
   assert.match(prompt, /não é meta/);
   assert.match(prompt, /Nunca interprete a janela do período como duração do treino/);
   assert.match(prompt, /Não invente horário exato dentro da faixa nem condições meteorológicas/);
@@ -102,8 +102,8 @@ test('English prompt has localized availability labels and no legacy routine', (
   const en = JSON.parse(readFileSync(join(__dirname, '../src/public/locales/en.json')));
   const englishWeek = Object.fromEntries(Object.entries(week).map(([day, record]) => [day, record]));
   const prompt = buildPrompt({ targetDate: new Date(2026, 8, 28), disponibilidade: englishWeek, lang: 'en-US', messages: en });
-  assert.match(prompt, /Monday: Can train: yes; Available periods: 12:00–14:00; After 18:00; Maximum session time: 60 minutes; Location: Fânzeres, Gondomar/);
-  assert.match(prompt, /Multiple periods are alternatives for one session that day, not permission for multiple sessions/);
+  assert.match(prompt, /Monday: Can train: yes; Preferred period: 12:00–14:00; Maximum session time: 60 minutes; Location: Fânzeres, Gondomar/);
+  assert.match(prompt, /highest valid predicted temperature among forecast hours inside the selected period/);
   assert.match(prompt, /a ceiling, not a target/);
   assert.match(prompt, /never invent weather/);
   assert.doesNotMatch(prompt, /Normal routine|Rotina normal/);
@@ -126,7 +126,15 @@ test('one selected period remains one choice and exact location text is kept in 
   single.segunda.available_minutes = 75;
   single.segunda.location = '  Fânzeres, Gondomar  ';
   const prompt = buildPrompt({ targetDate: new Date(2026, 8, 28), disponibilidade: single, messages });
-  assert.match(prompt, /Períodos disponíveis: 08h–12h; Tempo máximo disponível para a sessão: 75 minutos; Local: {3}Fânzeres, Gondomar {2}/);
+  assert.match(prompt, /Período preferencial: 08h–12h; Tempo máximo disponível para a sessão: 75 minutos; Local: {3}Fânzeres, Gondomar {2}/);
+});
+
+test('legacy multiple periods cannot be silently selected in validation or prompt output', () => {
+  const legacy = { ...week, segunda: { ...week.segunda, available_periods: ['08_12', '14_18'] } };
+  assert.deepEqual(validatePromptFields({ targetDate: '2026-09-28', disponibilidade: legacy }).missing, ['availability']);
+  const prompt = buildPrompt({ targetDate: new Date(2026, 8, 28), disponibilidade: legacy, messages });
+  assert.match(prompt, /Segunda: Escolha exatamente um período preferencial/);
+  assert.doesNotMatch(prompt, /Segunda: Pode treinar: sim/);
 });
 
 test('legacy free text and missing days remain unconfigured instead of becoming available or unavailable', () => {
@@ -157,6 +165,17 @@ test('weekly agenda uses native labeled controls and an unselected session durat
   assert.match(row, /data-lucide="chevron-down" class="day-expand-icon" aria-hidden="true"/);
   const configuredRow = buildDayRowHtml('segunda', { dayLabel: 'Segunda-feira', messages: messages.aiCoach, state: week.segunda });
   assert.match(configuredRow, /data-day-location-summary[^>]*><i data-lucide="map-pin" aria-hidden="true"><\/i><span>Fânzeres, Gondomar<\/span>/);
+  const legacyRow = buildDayRowHtml('segunda', {
+    dayLabel: 'Segunda-feira',
+    messages: messages.aiCoach,
+    state: { can_train: true, available_periods: ['08_12', '14_18'], available_minutes: 75, location: 'Porto' },
+  });
+  assert.match(legacyRow, /class="legacy-period-summary"[^>]*role="note"/);
+  assert.match(legacyRow, /Períodos anteriores salvos/);
+  assert.match(legacyRow, /08h–12h; 14h–18h/);
+  assert.match(legacyRow, /Escolha um único período preferencial para substituí-las/);
+  assert.doesNotMatch(legacyRow, /data-period="08_12"[^>]*checked/);
+  assert.doesNotMatch(legacyRow, /data-period="14_18"[^>]*checked/);
   const unsafeRow = buildDayRowHtml('segunda', { dayLabel: 'Segunda-feira', messages: messages.aiCoach, state: { ...week.segunda, location: 'A <b> & "local"' } });
   assert.match(unsafeRow, /<span>A &lt;b&gt; &amp; &quot;local&quot;<\/span>/);
   assert.doesNotMatch(unsafeRow, /<span>A <b>/);
