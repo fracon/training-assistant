@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized prompts for an AI coach.
 
-Current application version: **0.17.0** (active beta development).
+Current application version: **0.19.0** (active beta development).
 
 ### Shoe mileage integrity
 
@@ -91,7 +91,7 @@ backend.
   - Average & best pace (min/km)
   - Average & max heart rate (bpm)
   - Ascent / descent (m)
-  - Average & max cadence (steps/min)
+  - Average & max cadence (FIT running `strides/min`, shown as `passadas/min` in PT and `strides/min` in EN, without doubling)
   - Stride length (m) & calories (kcal)
 - **Structured coach prompt** — planned vs. realized workout, conditions, equipment, perceived effort (RPE 1–5), breathing/muscle/energy feedback, and free-form notes are merged into a localized Portuguese or English coaching template.
 - **Workout totals computed automatically** — total duration, distance, average pace, weighted average HR, max HR, and ascent.
@@ -147,6 +147,17 @@ valid records from one selected altitude field. Descents are never added by
 absolute value; invalid samples break record sequences, and session, lap, and
 record totals are never combined.
 
+Lap cadence uses one explicit presentation unit: `passadas/min` in Portuguese
+and `strides/min` in English. The official FIT profile defines field 17's
+running subfield (`avg_running_cadence`) as `strides/min` and its generic
+`avg_cadence` subfield as `rpm`; they are alternative subfields, not two values
+to combine. The `fit-file-parser` version used by Kinesis does not resolve
+those subfields and exposes the raw field as `avg_cadence`, so Kinesis accepts
+that fallback as running cadence only when the decoded lap/session sport is
+`running`. Generic cadence without that context is unavailable (`-`). Stored
+lap values are not converted on reload, preventing a second conversion of
+existing FIT summaries.
+
 The result page keeps **How to import? / Como importar?** beside the FIT/ZIP
 upload controls. It is an independent import guide and remains available in
 sessions with no result, manual results, or FIT/ZIP results; result provenance
@@ -160,6 +171,67 @@ Prompt** generates the prompt only after that feedback save, using the
 canonical training state returned by the backend, including backend-calculated
 pace and current provenance. The screen avoids reposting an unchanged manual
 result by comparing canonical metric values.
+
+### Realized RPE is required to finish a result
+
+Perceived effort (`feedback_rpe`, RPE 1–5) is the one mandatory answer of the
+result feedback: without it there is no realized effort to compare with the
+planned session, to record in the mileage ledger view, or to analyze in the
+coaching prompt. The result page therefore requires one selection from the
+1–5 emoji group before **Save and back to calendar**, **Save and Generate
+Analysis Prompt**, or **Import FIT or ZIP file** proceeds. Each action stops
+first, marks the group invalid, announces a localized error, moves focus to
+the first option, keeps every other entered value, and sends no request, opens
+no confirmation dialog, and starts no navigation. The group is a native radio
+group, so the arrow keys and Space operate it and the keyboard focus ring is
+drawn on the emoji the selection moves to.
+
+The same rule is a backend invariant, so no other client can leave a result
+concluded without realized effort. A concluded training and its RPE are a pair
+that never comes apart, so every write that can change that pair —
+`PATCH /api/trainings/:id`,
+`PUT /api/trainings/:id/manual-results`, and `POST /api/trainings/:id/fit` —
+resolves the **state the request would leave behind** inside its own transaction
+and refuses the write with `400` and a stable message whenever that state is
+concluded without an RPE of 1–5:
+
+```
+{ "error": "A realized RPE between 1 and 5 is required to complete this training." }
+```
+
+A refusal writes nothing: the result, its provenance, the notes, and the
+`completed` state are left exactly as they were. The state the request leaves
+behind is read from the row inside the transaction that would write it, and
+each half of the pair comes from the request when the request names that
+column. A `PATCH` that names only `feedback_rpe` therefore cannot clear the
+effort of a training that stays concluded, with or without `completed: true`
+alongside it. The deliberate way to remove an effort is to reopen the session
+in the same request — `{"completed": false, "feedback_rpe": ""}` — because the
+session is no longer concluded when the effort goes.
+
+A manual or FIT result saved **without naming an RPE** reuses the row's current
+`feedback_rpe`, so recording a result never discards an effort the user already
+reported, and the result page sends the selected RPE with manual and FIT writes.
+Omission is the only case that reuses it. When a manual or FIT request *does* name
+`feedback_rpe`, that request is authoritative: `null`, `""`, a blank string, or a
+value outside 1–5 concludes without a realized effort and is refused with the same
+`400` stable message as an omitted one, writing nothing and keeping the stored
+effort. A client that means to keep the current effort omits the field, and one
+that means to remove it reopens the session, exactly as with `PATCH`. The
+unstable normalizer's own field errors for manual and FIT writes are replaced by
+that single conclusion message, so one documented contract covers all three
+completion writes. `PATCH` keeps its strict field validation — it is not a
+completion write, so a non-integer value there is still rejected as a bad request
+before the conclusion rule is considered.
+
+Partial feedback edits — weather, terrain, shoes, breathing, notes — never name
+the pair, so they stay unrestricted on any result, concluded or not.
+
+Results completed before this rule keep working: a stored `feedback_rpe` of
+`null` stays readable, its form values stay editable, and the page asks only
+for the missing selection when one of the three final actions is used. No
+schema migration, backfill, or prompt change is involved, and an effort is
+never invented for an older result.
 
 Calories are available for both result sources. For FIT uploads, Kinesis reads the
 authoritative activity/session total (`sessions[0].total_calories`) exposed by
@@ -195,7 +267,7 @@ cannot be saved or used to generate a prompt until one is selected. This is a
 breaking API contract: clients of `PUT /api/ai-coach/availability` must send
 exactly one period for every available day; requests containing multiple
 periods are rejected. This breaking contract change is released as version
-0.17.0; clients using the previous multi-period request shape must adapt before
+0.19.0; clients using the previous multi-period request shape must adapt before
 saving availability. The duration is
 the total maximum session time, including warm-up and cool-down; it is not a
 target and is independent of the time window.
@@ -522,7 +594,7 @@ read the collection.
 
 1. Open **Sign In**. Create an account through **Register** (first name, last name, email, and password of at least 8 characters) or sign in to an existing account.
 2. A new account is offered the optional PT/EN welcome carousel. Use its actions to register shoes, create a cycle, then prepare workouts with AI Coach or import an Excel plan. You may skip it and use the application freely; the dashboard checklist tracks data actually saved.
-3. Open the **Calendar**, choose a planned training, and enter conditions, shoes, perceived effort (RPE 1–5), and feedback on its result page.
+3. Open the **Calendar**, choose a planned training, and enter conditions, shoes, perceived effort (RPE 1–5), and feedback on its result page. A realized RPE from 1 to 5 is required to save, generate the analysis prompt, or upload a result; the other feedback is optional.
 4. Choose **Import FIT or ZIP file** for activity data, or **Enter data manually** for aggregate distance and duration (with optional heart rate, elevation, and calories). A FIT/ZIP upload is persisted when its upload request succeeds.
 5. **Save and back to calendar** saves any pending manual result and complete feedback, then returns to the calendar. **Save and Generate Analysis Prompt** saves those data first, then generates the prompt from the canonical training state returned by the backend.
 6. Copy the generated prompt to your chosen AI assistant. Kinesis does not send the prompt to an LLM.
@@ -609,10 +681,10 @@ are scoped to the signed-in user's records.
 | `GET /api/calendar/trainings` | Session | Read calendar trainings |
 | `POST /api/calendar/import` | Session | Import spreadsheet rows |
 | `GET /api/trainings/:id` | Session | Read one owned training |
-| `PATCH /api/trainings/:id` | Session | Update training fields and feedback |
+| `PATCH /api/trainings/:id` | Session | Update training fields and feedback; a concluded training requires a realized RPE |
 | `PATCH /api/trainings/:id/reschedule` | Session | Reschedule an owned training |
-| `PUT /api/trainings/:id/manual-results` | Session | Save manual result |
-| `POST /api/trainings/:id/fit` | Session | Upload and persist FIT or single-FIT ZIP result |
+| `PUT /api/trainings/:id/manual-results` | Session | Save manual result; requires a realized RPE |
+| `POST /api/trainings/:id/fit` | Session | Upload and persist FIT or single-FIT ZIP result; requires a realized RPE |
 | `DELETE /api/trainings/:id` | Session | Delete an owned training |
 | `POST /api/fit/parse` | Session | Parse a FIT upload and return analysis data |
 | `GET /api/weather` | Session | Resolve planned location and date through Open-Meteo |
@@ -702,6 +774,15 @@ an existing FIT result requires `confirm_replace_fit: true`; this removes the
 stored FIT summary/laps in the same SQLite transaction. No external service is
 used. ZIP Garmin exports and the mobile/desktop export guidance are available
 in the Training Result import guide.
+
+The body also accepts an integer `feedback_rpe` from 1 to 5. This write always
+completes the training, so the effective RPE is the supplied value or, when the
+field is **omitted**, the row's current `feedback_rpe`. Naming the field is
+authoritative: `null`, `""`, or a value outside 1–5 is refused with the same
+`400` stable message as an omitted value, writes nothing, and keeps the stored
+effort. The same rule applies to `POST /api/trainings/:id/fit`, whose
+`feedback_rpe` is a multipart field. See
+*Realized RPE is required to finish a result*.
 
 All protected API endpoints require a valid session cookie (`ta_session`). Use a cookie jar when scripting:
 

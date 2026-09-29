@@ -8,7 +8,7 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.17.0`); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.19.0`); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
@@ -217,9 +217,57 @@ onboarding record of the account is preserved.
   lap ascent totals, then positive deltas between consecutive valid records of
   one selected altitude field. Never add absolute deltas or combine session,
   lap, and record totals.
+- FIT running lap cadence is presented as `passadas/min` in PT and
+  `strides/min` in EN. FIT field 17 uses alternative subfields: running
+  cadence is `strides/min`, while generic cadence is `rpm`. The installed
+  `fit-file-parser` does not resolve those subfields and exposes field 17 as
+  `avg_cadence`, so that fallback is treated as running cadence only when the
+  decoded lap/session sport is `running`; generic cadence without that context
+  remains absent. Existing persisted lap values are displayed as stored and
+  are never converted again.
 - The result page keeps its import guide beside the FIT/ZIP upload controls;
   it is available regardless of whether the session has `none`, `manual`, or
   `fit_upload` provenance. Do not infer result existence from displayed fields.
+- Realized effort (`feedback_rpe`, 1–5) is the only mandatory result
+  feedback, and it is a backend invariant as well as a page rule: a concluded
+  training and its realized effort are a pair that never comes apart. Every
+  write that can change that pair — `PATCH /api/trainings/:id`,
+  `PUT /api/trainings/:id/manual-results`, and `POST /api/trainings/:id/fit` —
+  resolves the **effective state the request would leave behind** inside its own
+  transaction and returns `400` with
+  `A realized RPE between 1 and 5 is required to complete this training.`
+  when that state is `completed = 1` without an effort of 1–5, writing nothing
+  and touching no column. Judge the result, never the intent: a PATCH naming
+  only `feedback_rpe` cannot clear the effort of a training that stays
+  concluded, whether or not it also carries `completed: true`, and a refusal
+  must leave notes, `completed`, and the RPE exactly as they were.
+- The effective pair is read from the row inside the transaction that would
+  write it, and each half comes from the request when the request names that
+  column, so nothing stale or partial can conclude or strand a workout. Omission
+  is the only case that reuses the stored effort: a manual or FIT result whose
+  `feedback_rpe` is absent reuses the row's current value, so recording a result
+  never discards a reported effort. Naming the field is authoritative, so `null`,
+  `""`, a blank multipart part, or a value outside 1–5 concludes without an
+  effort and is refused with the same stable message, writing nothing and keeping
+  the stored value. Manual and FIT reuse that one conclusion error instead of the
+  normalizer's field-format errors, so the contract is uniform across all three
+  completion writes; validation of other fields still runs first and keeps its own
+  errors. `PATCH` is not a completion write and keeps its strict integer
+  validation, which rejects a non-integer before this rule.
+  `{"completed": false, "feedback_rpe": ""}` is the deliberate way out: the
+  session is open when the effort goes, and the same request is allowed.
+- Only a request that names `feedback_rpe` or `completed` reaches this rule, so
+  partial feedback edits — notes, weather, terrain, shoes, breathing — stay
+  unrestricted on any training, concluded or not, including results completed
+  before the rule, which stay readable and editable without an invented effort.
+  No schema migration or backfill is involved.
+- The result page blocks **Save and back to calendar**, **Save and Generate
+  Analysis Prompt**, and the FIT/ZIP upload before any request, confirmation
+  dialog, disabled-state change, or navigation: it marks the 1–5 radio group
+  invalid, announces a localized error, focuses the first option, and preserves
+  every other entered value. Arrow keys and Space must operate the group, the
+  focus ring is drawn on the emoji label, and the RPE transitions respect
+  `prefers-reduced-motion`.
 - The Training Result page also has a separate, informational “How to create a
   workout” guide. Its declarative catalog lives in
   `src/public/shared/workout-creation-guidance.js` and is rendered by
@@ -350,6 +398,19 @@ while the password is verified, through a held verification),
 `test/language.test.js` (`translateApiError` prefers a stable code), and
 `test/database.test.js` (the activity migration).
 
+The realized-RPE conclusion contract is covered by
+`test/trainingSession.routes.test.js` (the three completion writes, the exact
+refusal message, the stored-value fallback for an omitted RPE, explicit
+`null`/empty/out-of-range values, direct FIT and ZIP uploads, and unchanged rows
+after a refusal), `test/manualResults.test.js` (manual `feedback_rpe`
+normalization and reported-versus-omitted presence),
+`test/trainingResult.test.js` (guard placement, error lifecycle, markup, styles
+including the reduced-motion transition reset, and both locale keys), and
+`test/trainingResult.browser.test.js` (a real Chrome run blocking the manual
+save, the prompt generation, and the FIT upload before any request, in PT and
+EN, with keyboard selection, focus placement, preserved input, and a legacy
+completed result that stays editable).
+
 `npm run test:coverage` enforces exactly 100% Statements, Branches, Functions,
 and Lines for c8-instrumented files under `src/**` (excluding
 `src/public/**` and `src/start.js`) plus `scripts/admin-prompts.js`,
@@ -408,7 +469,7 @@ will find every issue.
 ## AI Coach weekly availability
 
 - `/api/ai-coach/availability` is authenticated and user-scoped. Store one record per weekday with `can_train`, canonical period IDs (`before_08`, `08_12`, `12_14`, `14_18`, `after_18`), `available_minutes` as whole minutes, and the exact `location` string.
-- Each available day stores one preferred period. Legacy rows with multiple periods remain readable, are flagged for explicit review, and cannot be saved or used for prompt generation until one is selected. Clients of `PUT /api/ai-coach/availability` must send exactly one period for each available day; multiple periods are rejected as an incompatible contract change released in version `0.17.0`, with migration required for clients using the previous request shape. `available_minutes` is the maximum full session duration, including warm-up and cool-down, not a target and not the length of the period window. The maximum is 720 minutes per day.
+- Each available day stores one preferred period. Legacy rows with multiple periods remain readable, are flagged for explicit review, and cannot be saved or used for prompt generation until one is selected. Clients of `PUT /api/ai-coach/availability` must send exactly one period for each available day; multiple periods are rejected as an incompatible contract change released in version `0.19.0`, with migration required for clients using the previous request shape. `available_minutes` is the maximum full session duration, including warm-up and cool-down, not a target and not the length of the period window. The maximum is 720 minutes per day.
 - Unavailable days canonicalize to no periods, null duration, and empty location. Available days require at least one known period, positive duration, and a location; validate in the backend as well as the UI.
 - The idempotent `2026-09-structured-ai-coach-availability-v1` migration does not derive periods or duration from old free text. The earlier AI Coach availability form was transient and did not persist these values; missing structured records must remain unconfigured and be reviewed. On first use the frontend presents missing rows as unchecked/unavailable defaults, without clearing `needsReview`; explicit unavailable rows remain unavailable after persistence.
 - Initial availability defaults are presentation-only: they are never eligible for persistence or prompt generation until the authenticated GET has completed successfully. A failed load keeps save/generate blocked, preserves local edits, and may be retried; late responses from older load attempts must not replace a newer result.

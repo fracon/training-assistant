@@ -190,9 +190,30 @@ test('summarize tolerates missing fields and falls back gracefully', () => {
   assert.equal(blank.durationLabel, '--:--');
   assert.equal(blank.cumulativeLabel, '00:00');
   assert.equal(blank.distanceLabel, '-');
-  assert.equal(cadenceOnly.avgCadenceSpm, 80);
-  assert.equal(cadenceOnly.maxCadenceSpm, 90);
+  assert.equal(cadenceOnly.avgCadenceSpm, null);
+  assert.equal(cadenceOnly.avgCadenceSource, null);
+  assert.equal(cadenceOnly.maxCadenceSpm, null);
   assert.equal(cadenceOnly.avgHeartRate, null);
+});
+
+test('summarize keeps valid running cadence raw and rejects invalid cadence values', () => {
+  const summary = summarize({
+    sessions: [{
+      sport: 'running',
+      laps: [
+        makeLap({ avg_running_cadence: 88, avg_cadence: 170 }),
+        makeLap({ avg_running_cadence: -1, avg_cadence: 176 }),
+        makeLap({ avg_running_cadence: Number.NaN, avg_cadence: -4 }),
+      ],
+    }],
+  });
+  assert.equal(summary.laps[0].avgCadenceSpm, 88);
+  assert.equal(summary.laps[0].maxCadenceSpm, 92);
+  assert.equal(summary.laps[1].avgCadenceSpm, 176, 'generic cadence is the fallback');
+  assert.equal(summary.laps[2].avgCadenceSpm, null);
+  assert.equal(summary.laps[2].maxCadenceSpm, 92, 'valid maximum remains available even when the average is absent');
+  const cycling = summarize({ sessions: [{ sport: 'cycling', laps: [makeLap({ avg_running_cadence: undefined, avg_cadence: 176 })] }] });
+  assert.equal(cycling.laps[0].avgCadenceSpm, null, 'generic cycling rpm is not presented as running cadence');
 });
 
 test('summarize computes totals across mixed lap quality', () => {
@@ -661,6 +682,7 @@ test('parseFitFile decodes a synthetic binary Garmin-style FIT file', async () =
   assert.equal(runLap.avgHeartRate, 150);
   assert.equal(runLap.maxHeartRate, 162);
   assert.equal(runLap.avgCadenceSpm, 88);
+  assert.equal(runLap.avgCadenceSource, 'avg_cadence_running', 'the decoder exposes FIT field 17 as avg_cadence and the running session supplies the subfield context');
   assert.equal(runLap.maxCadenceSpm, 92);
   assert.equal(runLap.ascentMeters, 12);
   assert.equal(runLap.calories, 60);

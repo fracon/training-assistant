@@ -67,11 +67,11 @@ function multipart(parts) {
   };
 }
 
-async function postFitParts(app, cookie, parts) {
+async function postFitParts(app, cookie, parts, id = 1) {
   const body = multipart(parts);
   return app.inject({
     method: 'POST',
-    url: '/api/trainings/1/fit',
+    url: `/api/trainings/${id}/fit`,
     headers: { cookie, ...body.headers },
     payload: body.payload,
   });
@@ -230,7 +230,7 @@ test('shoe mileage follows feedback, manual distance edits, completion, swaps an
   assert.equal(response.json().training.feedback_shoe_id, 'shoe-a');
 
   response = await app.inject({ method: 'PUT', url: `/api/trainings/${id}/manual-results`,
-    headers: { cookie }, payload: { distance_km: 10, duration_seconds: 3600 } });
+    headers: { cookie }, payload: { distance_km: 10, duration_seconds: 3600, feedback_rpe: 4 } });
   assert.equal(response.statusCode, 200);
   assert.equal(db.prepare("SELECT mileage FROM shoes WHERE id='shoe-a'").get().mileage, 13);
 
@@ -292,7 +292,7 @@ test('retired feedback shoes stay visible only as a selected history and replace
   assert.equal(db.prepare("SELECT mileage FROM shoes WHERE id='retired-own'").get().mileage, 42);
   assert.deepEqual(db.prepare('SELECT shoe_id, distance FROM training_shoe_mileage WHERE training_id=?').get(id), { shoe_id: 'active-now', distance: 10 });
 
-  await app.inject({ method: 'PUT', url: `/api/trainings/${id}/manual-results`, headers: { cookie }, payload: { distance_km: 12, duration_seconds: 3600 } });
+  await app.inject({ method: 'PUT', url: `/api/trainings/${id}/manual-results`, headers: { cookie }, payload: { distance_km: 12, duration_seconds: 3600, feedback_rpe: 3 } });
   assert.equal(db.prepare("SELECT mileage FROM shoes WHERE id='active-now'").get().mileage, 15);
   await app.close();
   db.close();
@@ -344,9 +344,10 @@ test('PATCH /api/trainings/:id requires authentication', async () => {
 test('PUT /api/trainings/:id/manual-results persists canonical metrics and calculated pace', async () => {
   const { db, app, cookie, userId } = await setup();
   const id = seedTraining(db, { user_id: userId });
-  const response = await app.inject({ method: 'PUT', url: `/api/trainings/${id}/manual-results`, headers: { cookie }, payload: { distance_km: 10.25, duration_seconds: 3725, avg_hr: 151, max_hr: 166, elevation_gain_m: 104, calories: 742 } });
+  const response = await app.inject({ method: 'PUT', url: `/api/trainings/${id}/manual-results`, headers: { cookie }, payload: { distance_km: 10.25, duration_seconds: 3725, avg_hr: 151, max_hr: 166, elevation_gain_m: 104, calories: 742, feedback_rpe: 4 } });
   assert.equal(response.statusCode, 200);
   const row = response.json().training;
+  assert.equal(row.feedback_rpe, 4);
   assert.equal(row.result_data_source, 'manual');
   assert.equal(row.fit_duration, '1:02:05');
   assert.equal(row.fit_avg_pace, '6:03');
@@ -366,7 +367,7 @@ test('manual results require authentication, ownership, valid values, and an exp
   assert.equal(conflict.statusCode, 409);
   const invalid = await app.inject({ method: 'PUT', url: `/api/trainings/${id}/manual-results`, headers: { cookie }, payload: { distance_km: 5, duration_seconds: 1800, max_hr: 120, avg_hr: 130, user_id: userId } });
   assert.equal(invalid.statusCode, 400);
-  const replaced = await app.inject({ method: 'PUT', url: `/api/trainings/${id}/manual-results`, headers: { cookie }, payload: { distance_km: 5, duration_seconds: 1800, confirm_replace_fit: true } });
+  const replaced = await app.inject({ method: 'PUT', url: `/api/trainings/${id}/manual-results`, headers: { cookie }, payload: { distance_km: 5, duration_seconds: 1800, confirm_replace_fit: true, feedback_rpe: 3 } });
   assert.equal(replaced.statusCode, 200);
   assert.equal(replaced.json().training.fit_summary_json, null);
   assert.equal(replaced.json().training.result_data_source, 'manual');
@@ -473,6 +474,292 @@ test('PATCH /api/trainings/:id answers 404 when the session does not exist', asy
   });
   assert.equal(response.statusCode, 404);
   assert.deepEqual(response.json(), { error: 'Training not found.' });
+});
+
+test('completing a session requires a realized RPE, and the rest of the feedback does not', async () => {
+  const { db, app, cookie, userId } = await setup();
+  const id = seedTraining(db, { user_id: userId });
+  const conclude = (payload) =>
+    app.inject({ method: 'PATCH', url: `/api/trainings/${id}`, headers: { cookie }, payload });
+  const effortError = 'A realized RPE between 1 and 5 is required to complete this training.';
+
+  for (const payload of [{ completed: true }, { completed: true, feedback_rpe: '' }, { completed: true, feedback_notas: 'was easy' }]) {
+    const refused = await conclude(payload);
+    assert.equal(refused.statusCode, 400, JSON.stringify(payload));
+    assert.deepEqual(refused.json(), { error: effortError });
+  }
+  const untouched = db.prepare('SELECT feedback_rpe, feedback_notas, completed FROM trainings WHERE id = ?').get(id);
+  assert.deepEqual(untouched, { feedback_rpe: null, feedback_notas: null, completed: 0 }, 'a refused conclusion writes nothing');
+
+  for (const payload of [{ feedback_rpe: 3 }, { completed: false }, { feedback_notas: 'planned only' }]) {
+    const allowed = await conclude(payload);
+    assert.equal(allowed.statusCode, 200, `partial ${JSON.stringify(payload)} stays unrestricted`);
+  }
+  const nonNumeric = await conclude({ feedback_rpe: null });
+  assert.equal(nonNumeric.statusCode, 400, 'a non-numeric effort never reaches the conclusion rule');
+  assert.deepEqual(nonNumeric.json(), { error: 'rpe must be an integer between 1 and 5.' });
+
+  const concluded = await conclude({ completed: true, feedback_rpe: 4 });
+  assert.equal(concluded.statusCode, 200);
+  assert.equal(concluded.json().training.completed, 1);
+  assert.equal(concluded.json().training.feedback_rpe, 4);
+
+  const alreadyConcluded = await conclude({ completed: true, feedback_notas: 'still the same effort' });
+  assert.equal(alreadyConcluded.statusCode, 200, 'the stored effort completes an unchanged conclusion');
+  assert.equal(alreadyConcluded.json().training.feedback_rpe, 4);
+
+  await conclude({ completed: false });
+  const cleared = await conclude({ completed: true, feedback_rpe: null });
+  assert.equal(cleared.statusCode, 400, 'clearing the effort cannot complete the session');
+  assert.equal(db.prepare('SELECT feedback_rpe, completed FROM trainings WHERE id = ?').get(id).feedback_rpe, 4, 'the refused clear wrote nothing');
+  assert.equal(db.prepare('SELECT completed FROM trainings WHERE id = ?').get(id).completed, 0);
+  const blanked = await conclude({ completed: true, feedback_rpe: '' });
+  assert.equal(blanked.statusCode, 400, 'a blank effort cannot complete the session');
+  assert.equal(db.prepare('SELECT feedback_rpe, completed FROM trainings WHERE id = ?').get(id).feedback_rpe, 4);
+
+  const legacyId = seedTraining(db, {
+    user_id: userId,
+    dia: '2026-08-20',
+    completed: 1,
+    fit_distance: 8,
+    result_data_source: 'fit_upload',
+  });
+  const legacyReadable = await app.inject({ method: 'GET', url: `/api/trainings/${legacyId}`, headers: { cookie } });
+  assert.equal(legacyReadable.statusCode, 200, 'a legacy concluded session stays readable');
+  assert.equal(legacyReadable.json().training.completed, 1);
+  assert.equal(legacyReadable.json().training.feedback_rpe, null);
+  const legacyEdit = await app.inject({ method: 'PATCH', url: `/api/trainings/${legacyId}`, headers: { cookie }, payload: { feedback_weather: 'ensolarado' } });
+  assert.equal(legacyEdit.statusCode, 200, 'editing a legacy session is not a conclusion');
+  assert.equal(legacyEdit.json().training.feedback_weather, 'ensolarado');
+  await app.close();
+  db.close();
+});
+
+test('a concluded session cannot be stripped of its realized RPE by a feedback edit', async () => {
+  const { db, app, cookie, userId } = await setup();
+  const id = seedTraining(db, { user_id: userId });
+  const patch = (payload) =>
+    app.inject({ method: 'PATCH', url: `/api/trainings/${id}`, headers: { cookie }, payload });
+  const row = () =>
+    db
+      .prepare('SELECT feedback_rpe, feedback_notas, feedback_weather, completed FROM trainings WHERE id = ?')
+      .get(id);
+  const effortError = 'A realized RPE between 1 and 5 is required to complete this training.';
+
+  const concluded = await patch({ completed: true, feedback_rpe: 4, feedback_notas: 'percebi o ritmo' });
+  assert.equal(concluded.statusCode, 200);
+  assert.equal(concluded.json().training.completed, 1);
+
+  // A completed workout must not keep that state while losing the effort it was
+  // concluded with, so clearing the field on its own is refused.
+  for (const payload of [
+    { feedback_rpe: '' },
+    { feedback_rpe: '', feedback_notas: 'anotação trocada' },
+    { feedback_rpe: '', completed: true },
+  ]) {
+    const refused = await patch(payload);
+    assert.equal(refused.statusCode, 400, JSON.stringify(payload));
+    assert.deepEqual(refused.json(), { error: effortError });
+    assert.deepEqual(
+      row(),
+      { feedback_rpe: 4, feedback_notas: 'percebi o ritmo', feedback_weather: null, completed: 1 },
+      `a refused clear changed nothing: ${JSON.stringify(payload)}`,
+    );
+  }
+
+  // A non-integer is still rejected by the field's own validation, and it is
+  // refused for the same reason: the concluded row keeps its effort.
+  const nonNumeric = await patch({ feedback_rpe: null });
+  assert.equal(nonNumeric.statusCode, 400);
+  assert.deepEqual(nonNumeric.json(), { error: 'rpe must be an integer between 1 and 5.' });
+  assert.equal(row().feedback_rpe, 4);
+
+  // Reopening and clearing in one request is the deliberate way out, because
+  // the session is no longer concluded when the effort goes.
+  const reopened = await patch({ completed: false, feedback_rpe: '' });
+  assert.equal(reopened.statusCode, 200);
+  assert.deepEqual(reopened.json().training.completed !== 1, true, 'the session is open again');
+  assert.equal(reopened.json().training.feedback_rpe, null);
+
+  // An open session is unrestricted again, and concluding it still needs an RPE
+  // from the request or from the row.
+  const reclosed = await patch({ completed: true });
+  assert.equal(reclosed.statusCode, 400);
+  assert.deepEqual(reclosed.json(), { error: effortError });
+  assert.equal(row().completed, 0, 'the refused conclusion wrote nothing');
+  assert.equal(row().feedback_rpe, null);
+  const effort = await patch({ completed: true, feedback_rpe: 2 });
+  assert.equal(effort.statusCode, 200);
+  const fromRow = await patch({ completed: true, feedback_notas: 'mesmo esforço' });
+  assert.equal(fromRow.statusCode, 200, 'the stored effort completes an unchanged conclusion');
+  assert.equal(fromRow.json().training.feedback_rpe, 2);
+
+  // Editing the rest of the feedback of a concluded session stays unrestricted.
+  for (const payload of [
+    { feedback_notas: 'ajuste de nota' },
+    { feedback_weather: 'ventoso' },
+    { feedback_rpe: 5 },
+    { feedback_rpe: 3, feedback_breathing: 'tranquila' },
+  ]) {
+    const allowed = await patch(payload);
+    assert.equal(allowed.statusCode, 200, `partial ${JSON.stringify(payload)} stays unrestricted`);
+    assert.equal(allowed.json().training.completed, 1);
+  }
+  assert.equal(row().feedback_rpe, 3);
+
+  // A concluded session from before the rule has no effort to keep, so an edit
+  // that never mentions the field is not a conclusion and is not refused.
+  const legacyId = seedTraining(db, {
+    user_id: userId,
+    dia: '2026-08-20',
+    completed: 1,
+    fit_distance: 8,
+    result_data_source: 'fit_upload',
+  });
+  const legacyPatch = (payload) =>
+    app.inject({ method: 'PATCH', url: `/api/trainings/${legacyId}`, headers: { cookie }, payload });
+  const legacyEdit = await legacyPatch({ feedback_weather: 'ensolarado', feedback_notas: 'nota antiga' });
+  assert.equal(legacyEdit.statusCode, 200, 'a legacy conclusion is edited, not re-concluded');
+  assert.equal(legacyEdit.json().training.feedback_rpe, null);
+  assert.equal(legacyEdit.json().training.completed, 1);
+  assert.equal(legacyEdit.json().training.feedback_weather, 'ensolarado');
+  const legacyReopen = await legacyPatch({ completed: false });
+  assert.equal(legacyReopen.statusCode, 200, 'a legacy conclusion can still be reopened');
+
+  await app.close();
+  db.close();
+});
+
+test('manual results and FIT uploads refuse to conclude a session without a realized RPE', async () => {
+  const { db, app, cookie, userId } = await setup({ parseFitFile: stubParse() });
+  const id = seedTraining(db, { user_id: userId });
+  const effortError = 'A realized RPE between 1 and 5 is required to complete this training.';
+  const row = () => db.prepare('SELECT feedback_rpe, result_data_source, completed FROM trainings WHERE id = ?').get(id);
+
+  const manual = await app.inject({ method: 'PUT', url: `/api/trainings/${id}/manual-results`, headers: { cookie }, payload: { distance_km: 5, duration_seconds: 1800 } });
+  assert.equal(manual.statusCode, 400);
+  assert.deepEqual(manual.json(), { error: effortError });
+  const upload = await postFitParts(app, cookie, [{ name: 'file', fileName: 'run.fit', value: 'x' }]);
+  assert.equal(upload.statusCode, 400);
+  assert.deepEqual(upload.json(), { error: effortError });
+  assert.deepEqual(row(), { feedback_rpe: null, result_data_source: 'none', completed: 0 }, 'a refused result writes nothing');
+
+  const invalidUpload = await postFitParts(app, cookie, [{ name: 'file', fileName: 'run.fit', value: 'x' }, { name: 'feedback_rpe', value: '7' }]);
+  assert.equal(invalidUpload.statusCode, 400);
+  assert.deepEqual(invalidUpload.json(), { error: effortError }, 'an out-of-range effort is the same missing effort here');
+  assert.deepEqual(row(), { feedback_rpe: null, result_data_source: 'none', completed: 0 });
+
+  const manualWithEffort = await app.inject({ method: 'PUT', url: `/api/trainings/${id}/manual-results`, headers: { cookie }, payload: { distance_km: 5, duration_seconds: 1800, feedback_rpe: 2 } });
+  assert.equal(manualWithEffort.statusCode, 200);
+  assert.equal(manualWithEffort.json().training.feedback_rpe, 2);
+
+  const uploadKeepingStored = await postFitParts(app, cookie, [
+    { name: 'confirm_replace_manual', value: 'true' },
+    { name: 'file', fileName: 'run.fit', value: 'x' },
+  ]);
+  assert.equal(uploadKeepingStored.statusCode, 200, 'the stored effort concludes the replacement upload');
+  assert.equal(row().feedback_rpe, 2);
+  assert.equal(row().result_data_source, 'fit_upload');
+
+  const uploadWithEffort = await postFitParts(app, cookie, [{ name: 'file', fileName: 'run.fit', value: 'x' }, { name: 'feedback_rpe', value: '5' }]);
+  assert.equal(uploadWithEffort.statusCode, 200);
+  assert.equal(row().feedback_rpe, 5, 'the reported effort replaces the stored one');
+  await app.close();
+  db.close();
+});
+
+test('a manual or FIT conclusion uses the stored RPE only when the field is omitted', async () => {
+  const { db, app, cookie, userId } = await setup({ parseFitFile: stubParse() });
+  const id = seedTraining(db, { user_id: userId, feedback_rpe: 4 });
+  const effortError = 'A realized RPE between 1 and 5 is required to complete this training.';
+  const zip = Buffer.from('UEsDBBQAAAAAAAOlKV1ZbFHlBwAAAAcAAAATAAAAbmVzdGVkL2FjdGl2aXR5LmZpdEZJVERBVEFQSwECFAMUAAAAAAADpSldWWxR5QcAAAAHAAAAEwAAAAAAAAAAAAAAgAEAAAAAbmVzdGVkL2FjdGl2aXR5LmZpdFBLBQYAAAAAAQABAEEAAAA4AAAAAAA=', 'base64');
+  const row = () => db
+    .prepare('SELECT feedback_rpe, result_data_source, fit_distance, completed FROM trainings WHERE id = ?')
+    .get(id);
+  const manual = (payload) => app.inject({ method: 'PUT', url: `/api/trainings/${id}/manual-results`, headers: { cookie }, payload: { distance_km: 5, duration_seconds: 1800, ...payload } });
+  const fit = (parts, fileName = 'run.fit') => postFitParts(app, cookie, [
+    { name: 'confirm_replace_manual', value: 'true' },
+    { name: 'file', fileName, value: fileName === 'export.zip' ? zip : 'x' },
+    ...parts,
+  ]);
+
+  // An omitted field is the only case that reuses the stored effort.
+  const fitOmitted = await fit([]);
+  assert.equal(fitOmitted.statusCode, 200, 'an omitted field keeps the stored effort on upload');
+  assert.equal(row().feedback_rpe, 4);
+  assert.equal(row().result_data_source, 'fit_upload');
+  const manualOmitted = await manual({ distance_km: 5, duration_seconds: 1800, confirm_replace_fit: true });
+  assert.equal(manualOmitted.statusCode, 200, 'an omitted field keeps the stored effort');
+  assert.equal(row().feedback_rpe, 4);
+  assert.equal(row().result_data_source, 'manual');
+  const backToFit = await fit([]);
+  assert.equal(backToFit.statusCode, 200, 'an omitted field keeps the stored effort again');
+  assert.equal(row().result_data_source, 'fit_upload');
+
+  // A supplied field is the effort the conclusion carries, so an attempt to
+  // clear it, or a value that is not a 1-5 effort, is refused with the stable
+  // conclusion message and changes nothing.
+  for (const payload of [{ feedback_rpe: null }, { feedback_rpe: '' }, { feedback_rpe: 0 }, { feedback_rpe: 6 }, { feedback_rpe: 2.5 }, { feedback_rpe: '3' }]) {
+    const refused = await manual({ distance_km: 7, duration_seconds: 2400, confirm_replace_fit: true, ...payload });
+    assert.equal(refused.statusCode, 400, `manual ${JSON.stringify(payload)}`);
+    assert.deepEqual(refused.json(), { error: effortError }, `manual ${JSON.stringify(payload)} uses the stable conclusion error`);
+    assert.deepEqual(
+      row(),
+      { feedback_rpe: 4, result_data_source: 'fit_upload', fit_distance: 10, completed: 1 },
+      `a refused manual result wrote nothing: ${JSON.stringify(payload)}`
+    );
+  }
+  for (const value of ['', '  ', '0', '6', '2.5', 'three']) {
+    const refused = await fit([{ name: 'feedback_rpe', value }]);
+    assert.equal(refused.statusCode, 400, `FIT feedback_rpe=${JSON.stringify(value)}`);
+    assert.deepEqual(refused.json(), { error: effortError }, `FIT feedback_rpe=${JSON.stringify(value)} uses the stable conclusion error`);
+    assert.deepEqual(
+      row(),
+      { feedback_rpe: 4, result_data_source: 'fit_upload', fit_distance: 10, completed: 1 },
+      `a refused upload wrote nothing: ${JSON.stringify(value)}`
+    );
+  }
+  const refusedZip = await fit([{ name: 'feedback_rpe', value: '' }], 'export.zip');
+  assert.equal(refusedZip.statusCode, 400, 'a ZIP upload obeys the same rule');
+  assert.deepEqual(refusedZip.json(), { error: effortError });
+  assert.equal(row().result_data_source, 'fit_upload');
+
+  // A valid supplied effort concludes and replaces the stored one.
+  const manualReported = await manual({ distance_km: 5, duration_seconds: 1800, confirm_replace_fit: true, feedback_rpe: 2 });
+  assert.equal(manualReported.statusCode, 200);
+  assert.equal(row().feedback_rpe, 2);
+  const fitReported = await fit([{ name: 'feedback_rpe', value: '5' }]);
+  assert.equal(fitReported.statusCode, 200);
+  assert.equal(row().feedback_rpe, 5);
+
+  // Other fields keep their own errors: a bad metric is never reported as a
+  // missing effort.
+  const conflict = await manual({ distance_km: 5, duration_seconds: 1800, avg_hr: 140, max_hr: 120, feedback_rpe: 6 });
+  assert.equal(conflict.statusCode, 400);
+  assert.deepEqual(conflict.json(), { error: 'max_hr cannot be lower than avg_hr.' });
+  const unknown = await app.inject({ method: 'PUT', url: `/api/trainings/${id}/manual-results`, headers: { cookie }, payload: { distance_km: 5, duration_seconds: 1800, user_id: 99 } });
+  assert.equal(unknown.statusCode, 400);
+  assert.deepEqual(unknown.json(), { error: 'Unexpected field: user_id.' });
+  const unreadable = await postFitParts(app, cookie, [{ name: 'file', fileName: 'broken.zip', value: 'not-a-zip' }, { name: 'feedback_rpe', value: '' }]);
+  assert.equal(unreadable.statusCode, 400);
+  assert.equal(unreadable.json().code, 'invalid_zip', 'the archive is validated before the effort');
+
+  // A row that never had an effort has nothing to fall back to.
+  const bareId = seedTraining(db, { user_id: userId, dia: '2026-08-25' });
+  const bareManual = await app.inject({ method: 'PUT', url: `/api/trainings/${bareId}/manual-results`, headers: { cookie }, payload: { distance_km: 5, duration_seconds: 1800 } });
+  assert.equal(bareManual.statusCode, 400);
+  assert.deepEqual(bareManual.json(), { error: effortError });
+  assert.equal(db.prepare('SELECT feedback_rpe, completed FROM trainings WHERE id = ?').get(bareId).completed, 0);
+  const bareFit = await postFitParts(app, cookie, [{ name: 'file', fileName: 'run.fit', value: 'x' }], bareId);
+  assert.equal(bareFit.statusCode, 400);
+  assert.deepEqual(bareFit.json(), { error: effortError });
+  assert.equal(db.prepare('SELECT feedback_rpe, completed FROM trainings WHERE id = ?').get(bareId).completed, 0);
+  const bareReported = await app.inject({ method: 'PUT', url: `/api/trainings/${bareId}/manual-results`, headers: { cookie }, payload: { distance_km: 5, duration_seconds: 1800, feedback_rpe: 1 } });
+  assert.equal(bareReported.statusCode, 200, 'a reported effort concludes a row without one');
+  assert.equal(bareReported.json().training.feedback_rpe, 1);
+
+  await app.close();
+  db.close();
 });
 
 test('PATCH /api/trainings/:id rejects non-string feedback text fields', async () => {
@@ -954,12 +1241,12 @@ test('POST /api/trainings/:id/fit persists FIT metrics and returns them', async 
   const summary = makeFitSummary({
     totals: { durationSeconds: 5400, distanceKm: 12.5, avgPaceSecondsPerKm: 432, avgHeartRate: 160, maxHeartRate: 182, ascentMeters: 200, calories: 987.4 },
     activity: { sport: 'running', startTime: '2026-08-24T07:00:00Z', endTime: '2026-08-24T08:30:00Z' },
-    laps: [{ lap: 1, duration: 5400, stepType: 'Run', durationLabel: '1:30:00', cumulativeSeconds: 5400, cumulativeLabel: '1:30:00', distanceKm: 12.5, distanceLabel: '12.50', avgPaceSecondsPerKm: 432, avgPaceLabel: '7:12', bestPaceSecondsPerKm: null, bestPaceLabel: '--:--', avgHeartRate: 160, maxHeartRate: 182, ascentMeters: 200, descentMeters: null, avgCadenceSpm: null, maxCadenceSpm: null, strideMeters: null, calories: null }],
+    laps: [{ lap: 1, duration: 5400, stepType: 'Run', durationLabel: '1:30:00', cumulativeSeconds: 5400, cumulativeLabel: '1:30:00', distanceKm: 12.5, distanceLabel: '12.50', avgPaceSecondsPerKm: 432, avgPaceLabel: '7:12', bestPaceSecondsPerKm: null, bestPaceLabel: '--:--', avgHeartRate: 160, maxHeartRate: 182, ascentMeters: 200, descentMeters: null, avgCadenceSpm: 88, maxCadenceSpm: 92, strideMeters: null, calories: null }],
   });
   const { db, app, cookie, userId } = await setup({ parseFitFile: stubParse(summary) });
   const id = seedTraining(db, { user_id: userId });
 
-  const body = multipart([{ name: 'file', fileName: 'morning_run.fit', value: 'binary-data' }]);
+  const body = multipart([{ name: 'file', fileName: 'morning_run.fit', value: 'binary-data' }, { name: 'feedback_rpe', value: '4' }]);
   const response = await app.inject({
     method: 'POST',
     url: `/api/trainings/${id}/fit`,
@@ -977,6 +1264,7 @@ test('POST /api/trainings/:id/fit persists FIT metrics and returns them', async 
   assert.equal(payload.fit_elevation_gain, 200);
   assert.equal(payload.fit_calories, 987);
   assert.ok(Array.isArray(payload.laps));
+  assert.equal(payload.laps[0].avgCadenceSpm, 88);
 
   const row = db
     .prepare('SELECT fit_duration, fit_distance, fit_avg_pace, fit_avg_hr, fit_max_hr, fit_elevation_gain, fit_calories, fit_summary_json FROM trainings WHERE id = ?')
@@ -993,10 +1281,11 @@ test('POST /api/trainings/:id/fit persists FIT metrics and returns them', async 
   assert.ok(parsed.totals);
   assert.equal(parsed.totals.calories, 987);
   assert.ok(parsed.laps);
+  assert.equal(parsed.laps[0].avgCadenceSpm, 88);
 });
 
 test('POST /api/trainings/:id/fit extracts one nested FIT from a ZIP through the same parser pipeline', async () => {
-  const summary = makeFitSummary({ totals: { durationSeconds: 120, distanceKm: 1, calories: 42 } });
+  const summary = makeFitSummary({ totals: { durationSeconds: 120, distanceKm: 1, calories: 42 }, laps: [{ ...makeFitSummary().laps[0], avgCadenceSpm: 91 }] });
   const { db, app, cookie, userId } = await setup({
     parseFitFile: async (buffer) => {
       assert.equal(buffer.toString(), 'FITDATA');
@@ -1005,9 +1294,10 @@ test('POST /api/trainings/:id/fit extracts one nested FIT from a ZIP through the
   });
   const id = seedTraining(db, { user_id: userId });
   const zip = Buffer.from('UEsDBBQAAAAAAAOlKV1ZbFHlBwAAAAcAAAATAAAAbmVzdGVkL2FjdGl2aXR5LmZpdEZJVERBVEFQSwECFAMUAAAAAAADpSldWWxR5QcAAAAHAAAAEwAAAAAAAAAAAAAAgAEAAAAAbmVzdGVkL2FjdGl2aXR5LmZpdFBLBQYAAAAAAQABAEEAAAA4AAAAAAA=', 'base64');
-  const response = await postFitParts(app, cookie, [{ name: 'file', fileName: 'export.zip', value: zip }]);
+  const response = await postFitParts(app, cookie, [{ name: 'file', fileName: 'export.zip', value: zip }, { name: 'feedback_rpe', value: '5' }]);
   assert.equal(response.statusCode, 200);
   assert.equal(response.json().fit_calories, 42);
+  assert.equal(response.json().laps[0].avgCadenceSpm, 91);
   assert.equal(db.prepare('SELECT result_data_source, fit_calories FROM trainings WHERE id = ?').get(id).result_data_source, 'fit_upload');
 });
 
@@ -1029,7 +1319,7 @@ test('POST /api/trainings/:id/fit persists elapsed fallback totals from direct F
     ['run.fit', Buffer.from('FITDATA')],
     ['run.zip', zip],
   ]) {
-    const response = await postFitParts(app, cookie, [{ name: 'file', fileName: filename, value: contents }]);
+    const response = await postFitParts(app, cookie, [{ name: 'file', fileName: filename, value: contents }, { name: 'feedback_rpe', value: '3' }]);
     assert.equal(response.statusCode, 200);
     assert.equal(response.json().fit_duration, '01:00');
     assert.equal(response.json().fit_distance, 1);
@@ -1057,7 +1347,7 @@ test('POST /api/trainings/:id/fit canonicalizes every calorie value at persisten
     const summary = makeFitSummary({ totals: { calories: input } });
     const { db, app, cookie, userId } = await setup({ parseFitFile: stubParse(summary) });
     const id = seedTraining(db, { user_id: userId });
-    const response = await postFitParts(app, cookie, [{ name: 'file', fileName: 'run.fit', value: 'x' }]);
+    const response = await postFitParts(app, cookie, [{ name: 'file', fileName: 'run.fit', value: 'x' }, { name: 'feedback_rpe', value: '2' }]);
     assert.equal(response.statusCode, 200);
     assert.equal(response.json().fit_calories, expected);
     const row = db.prepare('SELECT fit_calories, fit_summary_json FROM trainings WHERE id = ?').get(id);
@@ -1072,7 +1362,7 @@ test('POST /api/trainings/:id/fit requires confirmation before replacing manual 
   db.prepare("UPDATE trainings SET result_data_source = 'manual', fit_distance = 5, fit_duration = '30:00', fit_calories = 400 WHERE id = ?").run(id);
   const withoutConfirmation = await postFitParts(app, cookie, [{ name: 'file', fileName: 'run.fit', value: 'x' }]);
   assert.equal(withoutConfirmation.statusCode, 409);
-  const confirmed = await postFitParts(app, cookie, [{ name: 'confirm_replace_manual', value: 'true' }, { name: 'file', fileName: 'run.fit', value: 'x' }]);
+  const confirmed = await postFitParts(app, cookie, [{ name: 'confirm_replace_manual', value: 'true' }, { name: 'file', fileName: 'run.fit', value: 'x' }, { name: 'feedback_rpe', value: '4' }]);
   assert.equal(confirmed.statusCode, 200);
   const row = db.prepare('SELECT result_data_source, fit_summary_json, fit_calories FROM trainings WHERE id = ?').get(id);
   assert.equal(row.result_data_source, 'fit_upload');
@@ -1089,7 +1379,7 @@ test('POST /api/trainings/:id/fit formats minutes-only duration when under one h
   const { db, app, cookie, userId } = await setup({ parseFitFile: stubParse(summary) });
   const id = seedTraining(db, { user_id: userId });
 
-  const body = multipart([{ name: 'file', fileName: 'run.fit', value: 'x' }]);
+  const body = multipart([{ name: 'file', fileName: 'run.fit', value: 'x' }, { name: 'feedback_rpe', value: '4' }]);
   const response = await app.inject({
     method: 'POST',
     url: `/api/trainings/${id}/fit`,
@@ -1116,7 +1406,7 @@ test('POST /api/trainings/:id/fit extracts metrics from totals produced by summa
   const { db, app, cookie, userId } = await setup({ parseFitFile: stubParse(summary) });
   const id = seedTraining(db, { user_id: userId });
 
-  const body = multipart([{ name: 'file', fileName: 'run.fit', value: 'x' }]);
+  const body = multipart([{ name: 'file', fileName: 'run.fit', value: 'x' }, { name: 'feedback_rpe', value: '4' }]);
   const response = await app.inject({
     method: 'POST',
     url: `/api/trainings/${id}/fit`,
@@ -1141,7 +1431,7 @@ test('POST /api/trainings/:id/fit returns nulls when optional totals fields are 
   const { db, app, cookie, userId } = await setup({ parseFitFile: stubParse(summary) });
   const id = seedTraining(db, { user_id: userId });
 
-  const body = multipart([{ name: 'file', fileName: 'run.fit', value: 'x' }]);
+  const body = multipart([{ name: 'file', fileName: 'run.fit', value: 'x' }, { name: 'feedback_rpe', value: '4' }]);
   const response = await app.inject({
     method: 'POST',
     url: `/api/trainings/${id}/fit`,
@@ -1180,7 +1470,7 @@ test('POST /api/trainings/:id/fit defaults duration and distance to zero when al
   const { db, app, cookie, userId } = await setup({ parseFitFile: stubParse(summary) });
   const id = seedTraining(db, { user_id: userId });
 
-  const body = multipart([{ name: 'file', fileName: 'run.fit', value: 'x' }]);
+  const body = multipart([{ name: 'file', fileName: 'run.fit', value: 'x' }, { name: 'feedback_rpe', value: '4' }]);
   const response = await app.inject({
     method: 'POST',
     url: `/api/trainings/${id}/fit`,

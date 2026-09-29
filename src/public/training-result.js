@@ -37,6 +37,13 @@ export function normalizeFeedbackRpe(raw) {
   return Number.isInteger(value) && value >= 1 && value <= 5 ? value : NaN;
 }
 
+// Concluding a realized result (or asking for its analysis) requires one
+// reported RPE. An unanswered group and an out-of-range value are equally
+// unusable, so both are refused before any write or prompt is produced.
+export function isAnsweredFeedbackRpe(value) {
+  return Number.isInteger(value) && value >= 1 && value <= 5;
+}
+
 export const WEATHER_CODE_LABEL_KEYS = {
   0: 'weather.0',
   1: 'weather.1',
@@ -92,7 +99,7 @@ export function isFitFieldVisible(smartwatchValue) {
   return smartwatchValue === 'sim';
 }
 
-export function manualResultsPayload(values, distanceUnit = 'km') {
+export function manualResultsPayload(values, distanceUnit = 'km', feedbackRpe = null) {
   const hours = Number(values.hours || 0);
   const minutes = Number(values.minutes || 0);
   const seconds = Number(values.seconds || 0);
@@ -103,11 +110,15 @@ export function manualResultsPayload(values, distanceUnit = 'km') {
   const duration_seconds = hours * 3600 + minutes * 60 + seconds;
   if (duration_seconds <= 0) return null;
   const optionalNumber = (value) => String(value ?? '').trim() === '' ? null : Number(value);
-  return {
+  const payload = {
     distance_km: convertDistanceToKm(distance, distanceUnit), duration_seconds,
     avg_hr: optionalNumber(values.avg_hr), max_hr: optionalNumber(values.max_hr),
     elevation_gain_m: optionalNumber(values.elevation_gain_m), calories: optionalNumber(values.calories),
   };
+  // The manual write concludes the workout, so the reported effort travels with
+  // the metrics; the backend refuses the write when neither is present.
+  if (isAnsweredFeedbackRpe(feedbackRpe)) payload.feedback_rpe = feedbackRpe;
+  return payload;
 }
 
 export function syncManualDistanceUnit({ value, previousUnit = 'km', nextUnit = 'km' }) {
@@ -155,13 +166,14 @@ export async function persistManualResultsIfNeeded({
   selectedSource,
   values,
   distanceUnit,
+  feedbackRpe,
   training,
   save,
   confirmReplaceFit,
   applyResponse,
 }) {
   if (selectedSource !== 'manual') return { status: 'not-needed' };
-  const payload = manualResultsPayload(values, distanceUnit);
+  const payload = manualResultsPayload(values, distanceUnit, feedbackRpe);
   if (!payload) return { status: 'invalid' };
   if (manualResultsMatchTraining(payload, training)) return { status: 'not-needed' };
   if (training.result_data_source === 'fit_upload') {
@@ -420,7 +432,7 @@ export function buildCanonicalPromptForm(training = {}, {
 // Maps the loaded session row plus the current form state onto the shared
 // placeholder contract. FIT metrics come from persisted data when available,
 // falling back to dashes.
-export function collectPromptValues({ training, form, fitData, preferences = {} }) {
+export function collectPromptValues({ training, form, fitData, preferences = {}, messages = {} }) {
   const distanceUnit = preferences.distance_unit === 'mi' ? 'mi' : 'km';
   const source = resolveResultSource(training, fitData);
   const manual = source === 'manual';
@@ -465,7 +477,7 @@ export function collectPromptValues({ training, form, fitData, preferences = {} 
     ANEXAR_SCREENSHOT_GARMIN_OU_INSERIR_DADOS_DE_LAPS_AQUI: source !== 'fit_upload'
       ? '-'
       : fitData?.laps?.length
-        ? buildLapsMarkdown(fitData.laps, preferences)
+        ? buildLapsMarkdown(fitData.laps, { ...preferences, language: form.language, messages })
         : form.fitAttached
           ? 'Ver anexo'
           : '-',
@@ -513,23 +525,48 @@ export function fitUploadErrorMessage(code, translate) {
   return key ? translate(key) : translate('session.errors.fitUpload');
 }
 
+export function formatCadence(value, language = 'en-US') {
+  if (!Number.isFinite(value) || value < 0) return '-';
+  return `${value} ${language === 'pt-BR' ? 'passadas/min' : 'strides/min'}`;
+}
+
+const LAP_TYPE_KEYS = {
+  Run: 'session.fitLapTypes.run',
+  Warmup: 'session.fitLapTypes.warmup',
+  Cooldown: 'session.fitLapTypes.cooldown',
+  Rest: 'session.fitLapTypes.rest',
+};
+
+export function formatLapType(value, language = 'en-US', messages = {}) {
+  const canonical = String(value ?? '');
+  const key = LAP_TYPE_KEYS[canonical];
+  if (!key) return canonical || '-';
+  const translated = translate(messages, key);
+  return translated === key ? canonical : translated;
+}
+
 // Builds a Markdown table from parsed FIT lap data so it can be injected
 // directly into the AI coach prompt. Returns an empty string when there are
 // no laps to display.
 export function buildLapsMarkdown(laps, preferences = {}) {
   const distanceUnit = preferences.distance_unit === 'mi' ? 'mi' : 'km';
   if (!Array.isArray(laps) || laps.length === 0) return '';
-  const header = '| # | Type | Distance | Duration | Pace | HR avg. | Ascent |';
-  const separator = '|---|------|----------|----------|------|---------|--------|';
+  const english = preferences.language !== 'pt-BR';
+  const header = english
+    ? '| # | Type | Distance | Duration | Pace | HR avg. | Avg cadence (strides/min) | Ascent |'
+    : '| # | Tipo | Distância | Duração | Pace | FC média | Cadência média (passadas/min) | Desnível |';
+  const separator = '|---|------|----------|----------|------|---------|--------------------|--------|';
   const rows = laps.map((lap) => {
     const distance = lap.distanceLabel ?? '-';
     const duration = lap.durationLabel ?? '-';
     const pace = lap.avgPaceLabel ?? '-';
     const hr = lap.avgHeartRate ?? '-';
+    const cadence = formatCadence(lap.avgCadenceSpm, preferences.language);
+    const stepType = formatLapType(lap.stepType, preferences.language, preferences.messages);
     const ascent = lap.ascentMeters != null ? `${lap.ascentMeters} m` : '-';
     const paceLabel = pace === '-' ? `- min/${distanceUnit}` : formatPaceFromMetric(pace, distanceUnit);
     const distanceValue = distance === '-' ? '-' : formatDistance(distance, distanceUnit).replace(/\s(km|mi)$/, '');
-    return `| ${lap.lap} | ${lap.stepType} | ${distanceValue} ${distanceUnit} | ${duration} | ${paceLabel} | ${hr} | ${ascent} |`;
+    return `| ${lap.lap} | ${stepType} | ${distanceValue} ${distanceUnit} | ${duration} | ${paceLabel} | ${hr} | ${cadence} | ${ascent} |`;
   });
   return [header, separator, ...rows].join('\n');
 }
@@ -626,6 +663,7 @@ async function initTrainingResult() {
   const dateEl = document.getElementById('sessionDate');
   const saveBtn = document.getElementById('saveBtn');
   const rpeSelector = document.getElementById('feedbackRpe');
+  const rpeError = document.getElementById('feedbackRpeError');
   const notesInput = document.getElementById('feedbackNotas');
   const resultSourceSelect = document.getElementById('resultSourceSelect');
   const fitField = document.getElementById('fitField');
@@ -674,6 +712,7 @@ async function initTrainingResult() {
   let training = null;
   let promptText = '';
   let manualDistanceInputUnit = 'km';
+  let rpeErrorKey = null;
   const t = (key) => translate(i18n ? i18n.messages : {}, key);
 
   const applyTooltips = () => {
@@ -686,6 +725,40 @@ async function initTrainingResult() {
     statusEl.textContent = message;
     statusEl.dataset.tone = tone;
   };
+
+  const currentFeedbackRpe = () =>
+    normalizeFeedbackRpe(rpeSelector.querySelector('input[type="radio"]:checked')?.value ?? '');
+
+  // The realized RPE is the one field every result mutation, prompt generation
+  // and navigation depends on. Missing or unusable values stop the action
+  // before any request, report the problem inside the group, mark it invalid
+  // and park focus on the first option so the keyboard user can answer there.
+  // Nothing typed elsewhere in the form is touched.
+  const requireFeedbackRpe = () => {
+    const rpe = currentFeedbackRpe();
+    if (isAnsweredFeedbackRpe(rpe)) return rpe;
+    rpeErrorKey = 'session.errors.rpeRequired';
+    rpeError.textContent = t(rpeErrorKey);
+    rpeError.hidden = false;
+    rpeSelector.setAttribute('aria-invalid', 'true');
+    rpeSelector.setAttribute('aria-describedby', 'feedbackRpeError');
+    setStatus(t(rpeErrorKey), 'error');
+    rpeSelector.querySelector('input[type="radio"]')?.focus();
+    return null;
+  };
+
+  const clearFeedbackRpeError = () => {
+    if (!rpeErrorKey) return;
+    rpeErrorKey = null;
+    rpeError.textContent = '';
+    rpeError.hidden = true;
+    rpeSelector.removeAttribute('aria-invalid');
+    rpeSelector.removeAttribute('aria-describedby');
+    // Only the message this group raised is taken back; a failure reported by
+    // the save flow keeps the status the user still needs.
+    if (statusEl.dataset.tone === 'error' && statusEl.textContent) setStatus('');
+  };
+  rpeSelector.addEventListener('change', clearFeedbackRpeError);
 
   const syncResultSourceVisibility = () => {
     const manual = resultSourceSelect.value === 'manual';
@@ -738,6 +811,7 @@ async function initTrainingResult() {
       const duration = lap.durationLabel ?? '-';
       const pace = formatPaceFromMetric(lap.avgPaceLabel ?? '-', distanceUnit);
       const hr = lap.avgHeartRate ?? '-';
+      const cadence = formatCadence(lap.avgCadenceSpm, i18n.language);
       const ascent = lap.ascentMeters != null ? `${lap.ascentMeters} m` : '-';
       tr.innerHTML = [
         `<td>${escapeHtmlText(String(lap.lap))}</td>`,
@@ -746,6 +820,7 @@ async function initTrainingResult() {
         `<td>${escapeHtmlText(duration)}</td>`,
         `<td>${escapeHtmlText(pace)}</td>`,
         `<td>${escapeHtmlText(String(hr))}</td>`,
+        `<td>${escapeHtmlText(cadence)}</td>`,
         `<td>${escapeHtmlText(ascent)}</td>`,
       ].join('');
       fragment.appendChild(tr);
@@ -911,6 +986,12 @@ async function initTrainingResult() {
     applyTooltips();
     importGuidance.render();
     workoutCreationGuidance.render();
+    // A reported problem stays reported after the language switch, in the
+    // language the user is now reading.
+    if (rpeErrorKey) {
+      rpeError.textContent = t(rpeErrorKey);
+      setStatus(t(rpeErrorKey), 'error');
+    }
   };
 
   document.addEventListener('app:languagechange', renderLocalizedUi);
@@ -1052,10 +1133,11 @@ async function initTrainingResult() {
     resultSourceSelect.value = 'manual';
     renderFitData();
   };
-  const persistManualResults = () => persistManualResultsIfNeeded({
+  const persistManualResults = (feedbackRpe) => persistManualResultsIfNeeded({
     selectedSource: resultSourceSelect.value,
     values: manualInputValues(),
     distanceUnit: getUserPreferences().distance_unit,
+    feedbackRpe,
     training,
     save: (payload) => saveManualTrainingResults(id, payload),
     confirmReplaceFit: () => showConfirm({
@@ -1089,14 +1171,14 @@ async function initTrainingResult() {
     }
     return payload;
   };
-  const persistCurrentState = () => persistCurrentTrainingState({
+  const persistCurrentState = (rpe) => persistCurrentTrainingState({
     collectState: () => {
       const state = collectFormState();
-      return Number.isNaN(state.feedback_rpe)
-        ? { status: 'invalid', error: 'rpe' }
-        : { payload: feedbackPayload(state) };
+      return isAnsweredFeedbackRpe(state.feedback_rpe)
+        ? { payload: feedbackPayload(state) }
+        : { status: 'invalid', error: 'rpe' };
     },
-    persistManual: persistManualResults,
+    persistManual: () => persistManualResults(rpe),
     saveFeedback: (payload) => saveTrainingFeedback(id, payload),
     applyTraining: applyCanonicalTraining,
   });
@@ -1110,11 +1192,15 @@ async function initTrainingResult() {
   };
 
   saveBtn.addEventListener('click', async () => {
+    // No answered RPE means no manual write, no feedback write and no
+    // navigation: the form keeps every value and only the group reports why.
+    const rpe = requireFeedbackRpe();
+    if (rpe === null) return;
     saveBtn.disabled = true;
     generateBtn.disabled = true;
     saveBtn.textContent = t('session.saving');
     try {
-      const result = await persistCurrentState();
+      const result = await persistCurrentState(rpe);
       if (result.status === 'invalid' || result.status === 'cancelled' || result.status === 'error') {
         reportPersistenceFailure(result);
         return;
@@ -1130,11 +1216,15 @@ async function initTrainingResult() {
   });
 
   generateBtn.addEventListener('click', async () => {
+    // The prompt describes a realized effort, so it is only produced after the
+    // same required RPE the save action enforces.
+    const rpe = requireFeedbackRpe();
+    if (rpe === null) return;
     generateBtn.disabled = true;
     saveBtn.disabled = true;
     generateLabel.textContent = t('session.generatingPrompt');
     try {
-      const result = await persistCurrentState();
+      const result = await persistCurrentState(rpe);
       if (result.status === 'invalid' || result.status === 'cancelled' || result.status === 'error') {
         reportPersistenceFailure(result);
         return;
@@ -1150,6 +1240,7 @@ async function initTrainingResult() {
           }),
           fitData,
           preferences: getUserPreferences(),
+          messages: i18n.messages,
         })
       );
       promptOutput.value = promptText;
@@ -1189,6 +1280,15 @@ async function initTrainingResult() {
       renderFitDropzoneState();
       return;
     }
+    // The upload itself concludes the workout, so it waits for the reported
+    // effort: no confirmation dialog, no request and no pending file state
+    // while the required choice is missing.
+    const rpe = requireFeedbackRpe();
+    if (rpe === null) {
+      fitFileInput.value = '';
+      renderFitDropzoneState();
+      return;
+    }
     if (training.result_data_source === 'manual') {
       const confirmed = await showConfirm({
         title: t('session.replaceManualTitle'), message: t('session.replaceManualMessage'), icon: 'triangle-alert',
@@ -1202,6 +1302,7 @@ async function initTrainingResult() {
     }
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('feedback_rpe', String(rpe));
     if (training.result_data_source === 'manual') formData.append('confirm_replace_manual', 'true');
     try {
       const response = await fetch(`/api/trainings/${currentTrainingId}/fit`, {
@@ -1224,7 +1325,7 @@ async function initTrainingResult() {
         result_data_source: result.result_data_source,
         laps: result.laps || [],
       };
-      training = { ...training, ...fitData };
+      training = { ...training, ...fitData, feedback_rpe: rpe };
       renderFitData();
     } catch (error) {
       setStatus(error.message || t('session.errors.fitUpload'), 'error');

@@ -12,6 +12,7 @@ const {
   formatDateLabel,
   plannedValue,
   normalizeFeedbackRpe,
+  isAnsweredFeedbackRpe,
   isFitFieldVisible,
   manualResultsPayload,
   syncManualDistanceUnit,
@@ -32,6 +33,8 @@ const {
   fitDropzonePrimaryHtml,
   fitUploadErrorMessage,
   buildLapsMarkdown,
+  formatCadence,
+  formatLapType,
   handleTrainingDelete,
   weatherLabelKey,
   shouldAutoFillWeather,
@@ -42,6 +45,7 @@ const {
   PROMPT_TEMPLATE_PT,
   PROMPT_TEMPLATE_EN,
 } = require('../src/public/training-result.js');
+const { summarize } = require('../src/fitParser.js');
 const en = require('../src/public/locales/en.json');
 const pt = require('../src/public/locales/pt.json');
 
@@ -774,19 +778,58 @@ test('buildLapsMarkdown returns empty string for missing or empty laps', () => {
 
 test('buildLapsMarkdown renders a Markdown table from parsed lap views', () => {
   const laps = [
-    { lap: 1, stepType: 'Warmup', distanceLabel: '1.00', durationLabel: '6:30', avgPaceLabel: '6:30', avgHeartRate: 130, ascentMeters: 12 },
-    { lap: 2, stepType: 'Run', distanceLabel: '5.00', durationLabel: '25:00', avgPaceLabel: '5:00', avgHeartRate: 162, ascentMeters: 85 },
+    { lap: 1, stepType: 'Warmup', distanceLabel: '1.00', durationLabel: '6:30', avgPaceLabel: '6:30', avgHeartRate: 130, avgCadenceSpm: 88, ascentMeters: 12 },
+    { lap: 2, stepType: 'Run', distanceLabel: '5.00', durationLabel: '25:00', avgPaceLabel: '5:00', avgHeartRate: 162, avgCadenceSpm: null, ascentMeters: 85 },
   ];
   const md = buildLapsMarkdown(laps);
-  assert.ok(md.includes('| # | Type | Distance | Duration | Pace | HR avg. | Ascent |'));
-  assert.ok(md.includes('| 1 | Warmup | 1.00 km | 6:30 | 6:30 min/km | 130 | 12 m |'));
-  assert.ok(md.includes('| 2 | Run | 5.00 km | 25:00 | 5:00 min/km | 162 | 85 m |'));
+  assert.ok(md.includes('| # | Type | Distance | Duration | Pace | HR avg. | Avg cadence (strides/min) | Ascent |'));
+  assert.ok(md.includes('| 1 | Warmup | 1.00 km | 6:30 | 6:30 min/km | 130 | 88 strides/min | 12 m |'));
+  assert.ok(md.includes('| 2 | Run | 5.00 km | 25:00 | 5:00 min/km | 162 | - | 85 m |'));
 });
 
 test('buildLapsMarkdown uses dashes for null fields', () => {
-  const laps = [{ lap: 1, stepType: 'Run', distanceLabel: null, durationLabel: null, avgPaceLabel: null, avgHeartRate: null, ascentMeters: null }];
+  const laps = [{ lap: 1, stepType: 'Run', distanceLabel: null, durationLabel: null, avgPaceLabel: null, avgHeartRate: null, avgCadenceSpm: null, ascentMeters: null }];
   const md = buildLapsMarkdown(laps);
-  assert.ok(md.includes('| 1 | Run | - km | - | - min/km | - | - |'));
+  assert.ok(md.includes('| 1 | Run | - km | - | - min/km | - | - | - |'));
+});
+
+test('buildLapsMarkdown localizes the lap header while preserving cadence units', () => {
+  const md = buildLapsMarkdown([{ lap: 1, stepType: 'Run', distanceLabel: '1.00', durationLabel: '6:30', avgPaceLabel: '6:30', avgCadenceSpm: 88 }], { language: 'pt-BR', messages: pt });
+  assert.ok(md.includes('| # | Tipo | Distância | Duração | Pace | FC média | Cadência média (passadas/min) | Desnível |'));
+  assert.ok(md.includes('| 1 | Corrida | 1.00 km | 6:30 | 6:30 min/km | - | 88 passadas/min | - |'));
+});
+
+test('buildLapsMarkdown translates parser lap types in PT and preserves EN types', () => {
+  const summary = summarize({
+    sessions: [{ sport: 'running', laps: [
+      { intensity: 'active', total_elapsed_time: 60, total_distance: 200, avg_running_cadence: 88 },
+      { intensity: 'warmup', total_elapsed_time: 60, total_distance: 200, avg_running_cadence: 89 },
+      { intensity: 'cooldown', total_elapsed_time: 60, total_distance: 200, avg_running_cadence: 90 },
+      { intensity: 'rest', total_elapsed_time: 60, total_distance: 0 },
+    ] }],
+  });
+  const ptMarkdown = buildLapsMarkdown(summary.laps, { language: 'pt-BR', messages: pt });
+  const enMarkdown = buildLapsMarkdown(summary.laps, { language: 'en-US', messages: en });
+  assert.match(ptMarkdown, /\| 1 \| Corrida \|.*88 passadas\/min/);
+  assert.match(ptMarkdown, /\| 2 \| Aquecimento \|.*89 passadas\/min/);
+  assert.match(ptMarkdown, /\| 3 \| Desaquecimento \|.*90 passadas\/min/);
+  assert.match(ptMarkdown, /\| 4 \| Descanso \|.*\| - \|/);
+  assert.match(enMarkdown, /\| 1 \| Run \|.*88 strides\/min/);
+  assert.match(enMarkdown, /\| 2 \| Warmup \|.*89 strides\/min/);
+  assert.match(enMarkdown, /\| 3 \| Cooldown \|.*90 strides\/min/);
+  assert.match(enMarkdown, /\| 4 \| Rest \|.*\| - \|/);
+});
+
+test('formatLapType keeps unknown parser values safe', () => {
+  assert.equal(formatLapType('Unexpected', 'pt-BR', pt), 'Unexpected');
+  assert.equal(formatLapType(null, 'pt-BR', pt), '-');
+});
+
+test('formatCadence uses explicit PT/EN units and dashes invalid values', () => {
+  assert.equal(formatCadence(88, 'pt-BR'), '88 passadas/min');
+  assert.equal(formatCadence(88, 'en-US'), '88 strides/min');
+  assert.equal(formatCadence(-1, 'en-US'), '-');
+  assert.equal(formatCadence(Number.NaN, 'pt-BR'), '-');
 });
 
 test('collectPromptValues injects Markdown lap table when fitData has laps', () => {
@@ -798,13 +841,30 @@ test('collectPromptValues injects Markdown lap table when fitData has laps', () 
     fit_max_hr: 175,
     fit_elevation_gain: 120,
     laps: [
-      { lap: 1, stepType: 'Run', distanceLabel: '10.00', durationLabel: '1:00:00', avgPaceLabel: '6:00', avgHeartRate: 155, ascentMeters: 120 },
+      { lap: 1, stepType: 'Run', distanceLabel: '10.00', durationLabel: '1:00:00', avgPaceLabel: '6:00', avgHeartRate: 155, avgCadenceSpm: 88, ascentMeters: 120 },
     ],
   };
-  const values = collectPromptValues({ training: { ...baseTraining, result_data_source: 'fit_upload' }, form: baseForm(), fitData: { ...fitData, result_data_source: 'fit_upload' } });
+  const values = collectPromptValues({ training: { ...baseTraining, result_data_source: 'fit_upload' }, form: baseForm({ language: 'en-US' }), fitData: { ...fitData, result_data_source: 'fit_upload' }, messages: en });
   const md = values.ANEXAR_SCREENSHOT_GARMIN_OU_INSERIR_DADOS_DE_LAPS_AQUI;
-  assert.ok(md.includes('| # | Type | Distance | Duration | Pace | HR avg. | Ascent |'));
-  assert.ok(md.includes('| 1 | Run | 10.00 km | 1:00:00 | 6:00 min/km | 155 | 120 m |'));
+  assert.ok(md.includes('| # | Type | Distance | Duration | Pace | HR avg. | Avg cadence (strides/min) | Ascent |'));
+  assert.ok(md.includes('| 1 | Run | 10.00 km | 1:00:00 | 6:00 min/km | 155 | 88 strides/min | 120 m |'));
+});
+
+test('collectPromptValues translates real parser lap types in the Portuguese prompt', () => {
+  const summary = summarize({ sessions: [{ sport: 'running', laps: [{ intensity: 'warmup', total_elapsed_time: 60, total_distance: 200 }] }] });
+  const input = {
+    training: { ...baseTraining, result_data_source: 'fit_upload' },
+    fitData: { result_data_source: 'fit_upload', laps: summary.laps },
+  };
+  const ptValues = collectPromptValues({ ...input, form: baseForm({ language: 'pt-BR' }), messages: pt });
+  const enValues = collectPromptValues({ ...input, form: baseForm({ language: 'en-US' }), messages: en });
+  const ptPrompt = ptValues.ANEXAR_SCREENSHOT_GARMIN_OU_INSERIR_DADOS_DE_LAPS_AQUI;
+  const enPrompt = enValues.ANEXAR_SCREENSHOT_GARMIN_OU_INSERIR_DADOS_DE_LAPS_AQUI;
+  assert.match(ptPrompt, /\| # \| Tipo \| Distância \| Duração \| Pace \| FC média \| Cadência média \(passadas\/min\) \| Desnível \|/);
+  assert.match(ptPrompt, /\| 1 \| Aquecimento \|/);
+  assert.doesNotMatch(ptPrompt, /\| 1 \| Warmup \|/);
+  assert.match(enPrompt, /\| # \| Type \| Distance \| Duration \| Pace \| HR avg\. \| Avg cadence \(strides\/min\) \| Ascent \|/);
+  assert.match(enPrompt, /\| 1 \| Warmup \|/);
 });
 
 test('collectPromptValues falls back to Ver anexo when FIT attached but no laps', () => {
@@ -884,6 +944,7 @@ test('training-result.html ships the expanded feedback grid and generator button
   assert.match(html, /id="fitMaxHr"/);
   assert.match(html, /id="fitElevation"/);
   assert.match(html, /<th data-i18n="session\.fitLapHr">HR avg\.<\/th>/);
+  assert.match(html, /<th data-i18n="session\.fitLapCadence">Cadence \(strides\/min\)<\/th>/);
   assert.match(html, /<th data-i18n="session\.fitLapAscent">Ascent<\/th>/);
 
   for (const id of [
@@ -1289,9 +1350,9 @@ test('training-result.js wires toggling, saving, generation and i18n refreshes',
   assert.ok(!readFileSync(join(publicDir, 'training-result.css'), 'utf8').includes('.manual-results-field .btn-primary'), 'the retired intermediate-button CSS is removed');
   assert.match(js, /persistManualResultsIfNeeded\(\{/);
   assert.match(js, /persistCurrentTrainingState\(\{/);
-  assert.equal((js.match(/persistCurrentState\(\);/g) || []).length, 2, 'both terminal actions share one persistence flow');
-  assert.ok(js.indexOf('persistManual: persistManualResults') < js.indexOf('saveFeedback: \(payload\) => saveTrainingFeedback'), 'manual result precedes feedback');
-  assert.ok(js.lastIndexOf('const result = await persistCurrentState();') < js.lastIndexOf('buildAnalysisPrompt('), 'prompt generation follows complete persistence');
+  assert.equal((js.match(/persistCurrentState\(rpe\);/g) || []).length, 2, 'both terminal actions share one persistence flow');
+  assert.ok(js.indexOf('persistManual: () => persistManualResults(rpe)') < js.indexOf('saveFeedback: \(payload\) => saveTrainingFeedback'), 'manual result precedes feedback');
+  assert.ok(js.lastIndexOf('const result = await persistCurrentState(rpe);') < js.lastIndexOf('buildAnalysisPrompt('), 'prompt generation follows complete persistence');
   assert.match(js, /generateBtn\.disabled = true;\s*\n\s*saveBtn\.disabled = true;/);
   assert.match(js, /saveBtn\.disabled = false;\s*\n\s*generateLabel\.textContent/);
   assert.match(js, /manualDistanceUnit\.textContent = nextUnit;/);
@@ -1332,6 +1393,111 @@ test('training-result.js wires toggling, saving, generation and i18n refreshes',
     /refreshIcons\(\);\s*\n\s*setStatus\(t\('session\.loading'\)\);/,
     'icon re-init happens before the session content is fetched'
   );
+});
+
+test('a realized RPE is required before every result write, prompt and upload', () => {
+  for (const value of [1, 2, 3, 4, 5]) assert.equal(isAnsweredFeedbackRpe(value), true, `RPE ${value} is a reported effort`);
+  for (const value of [null, undefined, NaN, 0, 6, 2.5, '3', '']) {
+    assert.equal(isAnsweredFeedbackRpe(value), false, `${String(value)} is not a reported effort`);
+  }
+
+  assert.equal(en.session.errors.rpeRequired, 'Select the realized RPE (1 to 5) to record and analyze this workout.');
+  assert.equal(pt.session.errors.rpeRequired, 'Selecione o RPE realizado (1 a 5) para registrar e analisar o treino.');
+  assert.notEqual(en.session.errors.rpeRequired, en.session.errors.rpe, 'the missing choice is not the same message as an invalid value');
+
+  const values = { hours: '0', minutes: '30', seconds: '00', distance: '5', avg_hr: '', max_hr: '', elevation_gain_m: '', calories: '' };
+  assert.equal(manualResultsPayload(values, 'km', 3).feedback_rpe, 3, 'the reported effort travels with the manual metrics');
+  assert.equal('feedback_rpe' in manualResultsPayload(values, 'km'), false, 'an unanswered effort is simply absent for the backend to judge');
+  assert.equal('feedback_rpe' in manualResultsPayload(values, 'km', 7), false, 'an out-of-range value is no effort to send');
+});
+
+test('the RPE group is required, described, and never hides an invalid control', () => {
+  const markup = readFileSync(join(publicDir, 'training-result.html'), 'utf8');
+  const group = markup.match(/<div class="rpe-selector"[\s\S]*?<\/div>\s*<p class="field-error"/)?.[0] ?? '';
+  assert.match(markup, /<span class="field-label" id="feedbackRpeLabel">[\s\S]*<span class="required-mark" aria-hidden="true">\*<\/span>/);
+  assert.match(group, /role="radiogroup"/);
+  assert.match(group, /aria-labelledby="feedbackRpeLabel"/);
+  assert.match(group, /aria-required="true"/);
+  assert.ok(!group.includes('aria-describedby'), 'a hidden error is not referenced before it exists');
+  assert.match(markup, /<p class="field-error" id="feedbackRpeError" role="alert" hidden><\/p>/);
+  for (const value of [1, 2, 3, 4, 5]) {
+    assert.match(markup, new RegExp(`id="rpe-${value}" value="${value}"[^>]*data-i18n-aria-label="session\\.rpeLabel${value}"`));
+    assert.match(markup, new RegExp(`id="rpe-${value}"[^>]*aria-label="${value} - `), 'every option is named for assistive technology');
+  }
+
+  const css = readFileSync(join(publicDir, 'training-result.css'), 'utf8');
+  assert.match(css, /input\[type="radio"\]:focus-visible \+ \.rpe-emoji \{[\s\S]*outline: 2px solid var\(--accent-deep\);/);
+  assert.match(css, /\.field-error \{[\s\S]*color: var\(--danger\);/, 'the field error reuses the shared danger token');
+  assert.ok(
+    !/\.field-error[^}]*display:/.test(css),
+    'the field error never overrides the browser [hidden] behavior'
+  );
+  // Every transition in the RPE selector, including the tooltip fade, has to
+  // stop for reduced motion while the tooltip and the focus ring stay intact.
+  const reducedMotion = /@media \(prefers-reduced-motion: reduce\) \{\s*\.rpe-emoji,\s*\.rpe-emoji \.emoji-icon,\s*\.rpe-emoji \.custom-tooltip \{\s*transition: none;\s*\}/.exec(css);
+  assert.ok(reducedMotion, 'the effort group drops every transition, tooltip included, for reduced motion');
+  assert.ok(
+    reducedMotion.index > css.indexOf('.rpe-emoji:hover .custom-tooltip'),
+    'the reduced-motion override follows the tooltip rules it has to win against'
+  );
+  assert.match(
+    css,
+    /\.rpe-emoji \.custom-tooltip \{[\s\S]*?transition: opacity 0\.15s ease, transform 0\.15s ease;/,
+    'the tooltip keeps its own transition for everyone else'
+  );
+  assert.match(css, /\.rpe-emoji:hover \.custom-tooltip \{\s*opacity: 1;/, 'the tooltip is still revealed on hover');
+  assert.match(
+    css,
+    /input\[type="radio"\]:focus-visible \+ \.rpe-emoji \{\s*outline: 2px solid var\(--accent-deep\);/,
+    'the focus ring is drawn on the emoji outside the reduced-motion query'
+  );
+});
+
+test('training-result.js refuses the terminal actions without an answered RPE', () => {
+  const js = readFileSync(join(publicDir, 'training-result.js'), 'utf8');
+  const guard = js.match(/const requireFeedbackRpe = \(\) => \{[\s\S]*?\n  \};/)?.[0] ?? '';
+  assert.match(guard, /if \(isAnsweredFeedbackRpe\(rpe\)\) return rpe;/);
+  assert.match(guard, /rpeError\.textContent = t\(rpeErrorKey\);/);
+  assert.match(guard, /rpeError\.hidden = false;/);
+  assert.match(guard, /rpeSelector\.setAttribute\('aria-invalid', 'true'\);/);
+  assert.match(guard, /rpeSelector\.setAttribute\('aria-describedby', 'feedbackRpeError'\);/);
+  assert.match(guard, /rpeSelector\.querySelector\('input\[type="radio"\]'\)\?\.focus\(\);/);
+  assert.ok(
+    !/location\.href|fetch\(|saveManualTrainingResults\(|saveTrainingFeedback\(/.test(guard),
+    'the guard itself performs no request and no navigation'
+  );
+
+  const clearing = js.match(/const clearFeedbackRpeError = \(\) => \{[\s\S]*?\n  \};/)?.[0] ?? '';
+  assert.match(clearing, /rpeError\.hidden = true;/);
+  assert.match(clearing, /rpeSelector\.removeAttribute\('aria-invalid'\);/);
+  assert.match(clearing, /rpeSelector\.removeAttribute\('aria-describedby'\);/);
+  assert.match(js, /rpeSelector\.addEventListener\('change', clearFeedbackRpeError\);/);
+
+  for (const [action, listener] of [['save', 'saveBtn'], ['generate', 'generateBtn']]) {
+    const handler = js.match(new RegExp(`${listener}\\.addEventListener\\('click',[\\s\\S]*?\\n  \\}\\);`))?.[0] ?? '';
+    assert.ok(handler, `${action} handler found`);
+    assert.ok(
+      handler.indexOf('requireFeedbackRpe()') < handler.indexOf('persistCurrentState('),
+      `${action} asks for the effort before it writes`
+    );
+    assert.match(handler, /const rpe = requireFeedbackRpe\(\);\s*\n\s*if \(rpe === null\) return;/, `${action} stops before disabling the buttons`);
+  }
+
+  const upload = js.match(/fitFileInput\.addEventListener\('change', async \(\) => \{[\s\S]*?\n  \}\);/)?.[0] ?? '';
+  assert.match(upload, /if \(rpe === null\) \{\s*\n\s*fitFileInput\.value = '';\s*\n\s*renderFitDropzoneState\(\);\s*\n\s*return;\s*\n\s*\}/, 'a refused upload keeps no pending file');
+  assert.ok(
+    upload.indexOf('requireFeedbackRpe()') < upload.indexOf('showConfirm('),
+    'the effort is required before the replacement dialog'
+  );
+  assert.match(js, /formData\.append\('feedback_rpe', String\(rpe\)\);/);
+  assert.ok(
+    js.indexOf("formData.append('feedback_rpe'") < js.indexOf('fetch(`/api/trainings/${currentTrainingId}/fit`'),
+    'the reported effort is part of the upload body'
+  );
+  assert.match(js, /training = \{ \.\.\.training, \.\.\.fitData, feedback_rpe: rpe \};/, 'the upload remembers the effort for a later save');
+
+  const localized = js.match(/const renderLocalizedUi = \(\) => \{[\s\S]*?\n  \};/)?.[0] ?? '';
+  assert.match(localized, /if \(rpeErrorKey\) \{\s*\n\s*rpeError\.textContent = t\(rpeErrorKey\);\s*\n\s*setStatus\(t\(rpeErrorKey\), 'error'\);/);
 });
 
 test('shared api client exposes the session endpoints', () => {
@@ -1431,6 +1597,7 @@ test('session locale namespace stays in parity across en-US and pt-BR', () => {
     'fitLapDuration',
     'fitLapPace',
     'fitLapHr',
+    'fitLapCadence',
     'fitLapAscent',
     'fieldShoeUsed',
     'shoeUsedPlaceholder',
@@ -1458,6 +1625,7 @@ test('session locale namespace stays in parity across en-US and pt-BR', () => {
     'errors.load',
     'errors.notFound',
     'errors.rpe',
+    'errors.rpeRequired',
     'errors.save',
     'errors.fitUpload',
     'errors.manualValidation',
