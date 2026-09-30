@@ -527,7 +527,7 @@ export function fitUploadErrorMessage(code, translate) {
 
 export function formatCadence(value, language = 'en-US') {
   if (!Number.isFinite(value) || value < 0) return '-';
-  return `${value} ${language === 'pt-BR' ? 'passadas/min' : 'strides/min'}`;
+  return String(value);
 }
 
 const LAP_TYPE_KEYS = {
@@ -553,8 +553,8 @@ export function buildLapsMarkdown(laps, preferences = {}) {
   if (!Array.isArray(laps) || laps.length === 0) return '';
   const english = preferences.language !== 'pt-BR';
   const header = english
-    ? '| # | Type | Distance | Duration | Pace | HR avg. | Avg cadence (strides/min) | Ascent |'
-    : '| # | Tipo | Distância | Duração | Pace | FC média | Cadência média (passadas/min) | Desnível |';
+    ? '| # | Type | Distance | Duration | Pace | HR avg. | Cadence (spm) | Ascent (m) |'
+    : '| # | Tipo | Distância | Duração | Pace | FC média | Cadência (ppm) | Subida (m) |';
   const separator = '|---|------|----------|----------|------|---------|--------------------|--------|';
   const rows = laps.map((lap) => {
     const distance = lap.distanceLabel ?? '-';

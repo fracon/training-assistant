@@ -47,7 +47,10 @@ function fitSummary() {
       startTime: '2026-08-24T07:00:00Z',
       endTime: '2026-08-24T08:00:00Z',
     },
-    laps: [],
+    laps: [
+      { lap: 1, stepType: 'Run', distanceLabel: '10.00', durationLabel: '1:00:00', avgPaceLabel: '6:00', avgHeartRate: 155, avgCadenceSpm: 88, ascentMeters: 120 },
+      { lap: 2, stepType: 'Rest', distanceLabel: '-', durationLabel: '--:--', avgPaceLabel: '--:--', avgHeartRate: null, avgCadenceSpm: null, ascentMeters: null },
+    ],
   };
 }
 
@@ -485,6 +488,33 @@ test('the session page requires a realized RPE before saving, generating or uplo
       result_data_source: 'fit_upload',
       fit_distance: 10,
     });
+
+    /* ── Cadence and ascent stay compact and usable on mobile ── */
+
+    await command('Emulation.setDeviceMetricsOverride', {
+      width: 390, height: 844, deviceScaleFactor: 1, mobile: true,
+    });
+    await openSession(fitId);
+    const mobileTable = await evaluate(`(()=>{
+      const section=document.getElementById('fitLapsSection');
+      const table=document.querySelector('#fitLapsSection table');
+      const rows=[...document.querySelectorAll('#fitLapsBody tr')];
+      return {
+        viewport:innerWidth,
+        scrollWidth:document.documentElement.scrollWidth,
+        sectionWidth:section.getBoundingClientRect().width,
+        tableWidth:table.getBoundingClientRect().width,
+        header:document.querySelector('#fitLapsSection th:nth-child(7)').textContent.trim(),
+        cadence:rows.map(row=>row.children[6].textContent.trim()),
+        ascent:rows.map(row=>row.children[7].textContent.trim()),
+      };
+    })()`);
+    assert.equal(mobileTable.viewport, 390);
+    assert.equal(mobileTable.scrollWidth, 390, 'the narrow result page has no horizontal viewport overflow');
+    assert.ok(mobileTable.tableWidth <= mobileTable.sectionWidth, 'the lap table remains inside its scroll container');
+    assert.equal(mobileTable.header, 'Cadence (spm)');
+    assert.deepEqual(mobileTable.cadence, ['88', '-']);
+    assert.deepEqual(mobileTable.ascent, ['120 m', '-']);
 
     /* ── A legacy concluded session reads and is completed once ── */
 

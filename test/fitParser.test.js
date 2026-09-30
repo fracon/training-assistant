@@ -216,6 +216,26 @@ test('summarize keeps valid running cadence raw and rejects invalid cadence valu
   assert.equal(cycling.laps[0].avgCadenceSpm, null, 'generic cycling rpm is not presented as running cadence');
 });
 
+test('running cadence does not double or combine generic and fractional FIT components', () => {
+  const summary = summarize({
+    sessions: [{
+      sport: 'running',
+      laps: [{
+        total_elapsed_time: 60,
+        total_distance: 200,
+        avg_cadence: 81,
+        avg_fractional_cadence: 64,
+        max_cadence: 171,
+        max_fractional_cadence: 64,
+      }],
+    }],
+  });
+  assert.equal(summary.laps[0].avgCadenceSpm, 81);
+  assert.equal(summary.laps[0].maxCadenceSpm, 171);
+  assert.equal(summary.laps[0].avgCadenceSource, 'avg_cadence_running');
+  assert.equal(summary.laps[0].maxCadenceSource, 'max_cadence_running');
+});
+
 test('summarize computes totals across mixed lap quality', () => {
   const summary = summarize({
     sessions: [

@@ -95,12 +95,16 @@ const FULL_FEEDBACK = {
   feedbackLivre: 'Vento contra | hidratei bem',
 };
 
-const EXPECTED_LAPS_TABLE = [
-  '| Step | Lap | Time | Cumulative | Distance (km) | Avg Pace | Best Pace | Avg HR | Max HR | Ascent | Descent | Avg Cadence | Max Cadence | Stride (m) | Calories |',
+const EXPECTED_LAPS_TABLE_EN = [
+  '| Step | Lap | Time | Cumulative | Distance (km) | Avg Pace | Best Pace | Avg HR | Max HR | Ascent (m) | Descent (m) | Cadence (spm) | Max Cadence (spm) | Stride (m) | Calories |',
   '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|',
   '| Run | 1 | 10:04 | 10:04 | 2.00 | 5:02 | 4:30 | 150 | 162 | 12 | 4 | 88 | 92 | 1.1 | 60 |',
   '| Rest | 2 | 20:00 | 30:04 | 0.00 | --:-- | --:-- | - | - | - | - | 88 | 92 | 1.1 | 60 |',
 ].join('\n');
+const EXPECTED_LAPS_TABLE_PT = EXPECTED_LAPS_TABLE_EN.replace(
+  '| Step | Lap | Time | Cumulative | Distance (km) | Avg Pace | Best Pace | Avg HR | Max HR | Ascent (m) | Descent (m) | Cadence (spm) | Max Cadence (spm) | Stride (m) | Calories |',
+  '| Etapa | Volta | Tempo | Acumulado | Distância (km) | Pace médio | Melhor pace | FC média | FC máxima | Subida (m) | Descida (m) | Cadência (ppm) | Cadência máxima (ppm) | Passada (m) | Calorias |'
+);
 
 const TOKENS = [
   '{{DATA}}',
@@ -159,7 +163,7 @@ function expectedTokenValues(lang) {
     '{{ENERGIA_FINAL}}': 'No limite',
     '{{DOR_DESCONFORTO}}': 'Pontada leve no Aquiles direito',
     '{{FEEDBACK}}': 'Vento contra \\| hidratei bem',
-    '{{ANEXAR_SCREENSHOT_GARMIN_OU_INSERIR_DADOS_DE_LAPS_AQUI}}': EXPECTED_LAPS_TABLE,
+    '{{ANEXAR_SCREENSHOT_GARMIN_OU_INSERIR_DADOS_DE_LAPS_AQUI}}': lang === 'pt-BR' ? EXPECTED_LAPS_TABLE_PT : EXPECTED_LAPS_TABLE_EN,
   };
   return { '{{DATA}}': date, '{{DIA_SEMANA}}': weekday, ...shared };
 }
@@ -325,7 +329,7 @@ test('generateMarkdown falls back to uninformed markers when data is missing', (
     assert.ok(!markdown.includes('| Step | Lap |'));
 
     if (lang === 'pt-BR') {
-      assert.ok(markdown.includes(`Desnível positivo: ${notInformed}`));
+      assert.ok(markdown.includes(`Ganho de altitude: ${notInformed}`));
     } else {
       assert.ok(markdown.includes(`Elevation gain: ${notInformed}`));
     }
