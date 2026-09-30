@@ -8,7 +8,7 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.19.0`); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.19.1`); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
@@ -217,14 +217,16 @@ onboarding record of the account is preserved.
   lap ascent totals, then positive deltas between consecutive valid records of
   one selected altitude field. Never add absolute deltas or combine session,
   lap, and record totals.
-- FIT running lap cadence is presented as `passadas/min` in PT and
-  `strides/min` in EN. FIT field 17 uses alternative subfields: running
-  cadence is `strides/min`, while generic cadence is `rpm`. The installed
-  `fit-file-parser` does not resolve those subfields and exposes field 17 as
-  `avg_cadence`, so that fallback is treated as running cadence only when the
-  decoded lap/session sport is `running`; generic cadence without that context
-  remains absent. Existing persisted lap values are displayed as stored and
-  are never converted again.
+- FIT running lap cadence is presented as `ppm` in PT and `spm` in EN, both
+  meaning steps per minute considering the two feet. FIT field 17 uses
+  alternative subfields: running cadence is `strides/min`, while generic
+  cadence is `rpm`. The installed `fit-file-parser` 1.21.0 does not resolve
+  those subfields and exposes field 17 as `avg_cadence` plus its fractional
+  companion, so that fallback is treated as running cadence only when the
+  decoded lap/session sport is `running`; Kinesis adds the fraction and
+  converts once to two-foot steps/minute at the FIT boundary. Generic cadence
+  without that context remains absent. Existing persisted lap values are
+  displayed as stored and are never converted again.
 - The result page keeps its import guide beside the FIT/ZIP upload controls;
   it is available regardless of whether the session has `none`, `manual`, or
   `fit_upload` provenance. Do not infer result existence from displayed fields.

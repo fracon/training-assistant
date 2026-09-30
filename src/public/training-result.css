@@ -707,12 +707,21 @@ select.input-control {
 
 .fit-laps-wrapper {
   overflow-x: auto;
+  max-width: 100%;
 }
 
 .fit-laps-table {
   width: 100%;
+  min-width: 720px;
   border-collapse: collapse;
   font-size: 0.82rem;
+  table-layout: fixed;
+}
+
+.fit-laps-table th,
+.fit-laps-table td {
+  white-space: nowrap;
+  vertical-align: middle;
 }
 
 .fit-laps-table th {
@@ -744,6 +753,23 @@ select.input-control {
 .fit-laps-table th:nth-child(n+3) {
   text-align: right;
 }
+
+.fit-laps-table th:nth-child(1),
+.fit-laps-table td:nth-child(1) { width: 4%; }
+.fit-laps-table th:nth-child(2),
+.fit-laps-table td:nth-child(2) { width: 13%; }
+.fit-laps-table th:nth-child(3),
+.fit-laps-table td:nth-child(3) { width: 12%; }
+.fit-laps-table th:nth-child(4),
+.fit-laps-table td:nth-child(4) { width: 11%; }
+.fit-laps-table th:nth-child(5),
+.fit-laps-table td:nth-child(5) { width: 13%; }
+.fit-laps-table th:nth-child(6),
+.fit-laps-table td:nth-child(6) { width: 11%; }
+.fit-laps-table th:nth-child(7),
+.fit-laps-table td:nth-child(7) { width: 18%; }
+.fit-laps-table th:nth-child(8),
+.fit-laps-table td:nth-child(8) { width: 10%; }
 
 .prompt-section {
   margin-top: 20px;

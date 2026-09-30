@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized prompts for an AI coach.
 
-Current application version: **0.19.0** (active beta development).
+Current application version: **0.19.1** (active beta development).
 
 ### Shoe mileage integrity
 
@@ -90,8 +90,8 @@ backend.
   - Distance (km)
   - Average & best pace (min/km)
   - Average & max heart rate (bpm)
-  - Ascent / descent (m)
-  - Average & max cadence (FIT running `strides/min`, shown as `passadas/min` in PT and `strides/min` in EN, without doubling)
+  - Ascent / descent (m), with positive ascent shown as `Subida (m)` / `Ascent (m)`
+  - Average & max cadence normalized to two-foot steps/min (`ppm` in PT and `spm` in EN); FIT fractional cadence is included before the one-time conversion
   - Stride length (m) & calories (kcal)
 - **Structured coach prompt** — planned vs. realized workout, conditions, equipment, perceived effort (RPE 1–5), breathing/muscle/energy feedback, and free-form notes are merged into a localized Portuguese or English coaching template.
 - **Workout totals computed automatically** — total duration, distance, average pace, weighted average HR, max HR, and ascent.
@@ -147,16 +147,17 @@ valid records from one selected altitude field. Descents are never added by
 absolute value; invalid samples break record sequences, and session, lap, and
 record totals are never combined.
 
-Lap cadence uses one explicit presentation unit: `passadas/min` in Portuguese
-and `strides/min` in English. The official FIT profile defines field 17's
-running subfield (`avg_running_cadence`) as `strides/min` and its generic
-`avg_cadence` subfield as `rpm`; they are alternative subfields, not two values
-to combine. The `fit-file-parser` version used by Kinesis does not resolve
-those subfields and exposes the raw field as `avg_cadence`, so Kinesis accepts
-that fallback as running cadence only when the decoded lap/session sport is
-`running`. Generic cadence without that context is unavailable (`-`). Stored
-lap values are not converted on reload, preventing a second conversion of
-existing FIT summaries.
+Lap cadence uses one explicit presentation unit: `ppm` (passos por minuto,
+considerando os dois pés) in Portuguese and `spm` (steps per minute,
+considering both feet) in English. The official FIT profile defines running
+cadence as `strides/min` and generic cadence as `rpm`; these are alternative
+subfields, not values to combine. The installed `fit-file-parser` 1.21.0 does
+not resolve those subfields and exposes FIT field 17 as `avg_cadence`, while
+exposing its fractional companion separately. For a running FIT, Kinesis uses
+the running sport context, adds the fractional component, and converts that
+source value once to two-foot steps/minute at the parser boundary. Generic
+cadence without running context is unavailable (`-`). Persisted lap values are
+displayed as stored and are never converted again on reload.
 
 The result page keeps **How to import? / Como importar?** beside the FIT/ZIP
 upload controls. It is an independent import guide and remains available in
@@ -629,13 +630,13 @@ Pace médio: 6:01 min/km
 Calorias: 742 kcal
 FC média: 151 bpm
 FC máxima: 162 bpm
-Desnível positivo: 22 m
+Ganho de altitude: 22 m
 
 …
 
 DADOS DETALHADOS
 
-| Step | Lap | Time | Cumulative | Distance (km) | Avg Pace | Best Pace | Avg HR | Max HR | … |
+| Step | Lap | Time | Cumulative | Distance (km) | Avg Pace | Best Pace | Avg HR | Max HR | Ascent (m) | Descent (m) | Cadence (spm) | … |
 |---|---|---|---|---|---|---|---|---|---|
 | Run | 1 | 10:04 | 10:04 | 2.00 | 5:02 | 4:30 | 150 | 162 | … |
 

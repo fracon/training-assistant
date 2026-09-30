@@ -246,7 +246,7 @@ Pace médio: {{PACE_MEDIO}}{{OBSERVACAO_PACE}}
 Calorias: {{CALORIAS}}
 FC média: {{FC_MEDIA}}
 FC máxima: {{FC_MAXIMA}}
-Desnível positivo: {{DESNIVEL_POSITIVO}}
+Ganho de altitude: {{DESNIVEL_POSITIVO}}
 Tênis utilizado: {{TENIS_UTILIZADO}}
 
 Fonte da frequência cardíaca:
@@ -527,7 +527,7 @@ export function fitUploadErrorMessage(code, translate) {
 
 export function formatCadence(value, language = 'en-US') {
   if (!Number.isFinite(value) || value < 0) return '-';
-  return `${value} ${language === 'pt-BR' ? 'passadas/min' : 'strides/min'}`;
+  return String(value);
 }
 
 const LAP_TYPE_KEYS = {
@@ -553,8 +553,8 @@ export function buildLapsMarkdown(laps, preferences = {}) {
   if (!Array.isArray(laps) || laps.length === 0) return '';
   const english = preferences.language !== 'pt-BR';
   const header = english
-    ? '| # | Type | Distance | Duration | Pace | HR avg. | Avg cadence (strides/min) | Ascent |'
-    : '| # | Tipo | Distância | Duração | Pace | FC média | Cadência média (passadas/min) | Desnível |';
+    ? '| # | Type | Distance | Duration | Pace | HR avg. | Cadence (spm) | Ascent (m) |'
+    : '| # | Tipo | Distância | Duração | Pace | FC média | Cadência (ppm) | Subida (m) |';
   const separator = '|---|------|----------|----------|------|---------|--------------------|--------|';
   const rows = laps.map((lap) => {
     const distance = lap.distanceLabel ?? '-';
@@ -563,7 +563,7 @@ export function buildLapsMarkdown(laps, preferences = {}) {
     const hr = lap.avgHeartRate ?? '-';
     const cadence = formatCadence(lap.avgCadenceSpm, preferences.language);
     const stepType = formatLapType(lap.stepType, preferences.language, preferences.messages);
-    const ascent = lap.ascentMeters != null ? `${lap.ascentMeters} m` : '-';
+    const ascent = lap.ascentMeters != null ? String(lap.ascentMeters) : '-';
     const paceLabel = pace === '-' ? `- min/${distanceUnit}` : formatPaceFromMetric(pace, distanceUnit);
     const distanceValue = distance === '-' ? '-' : formatDistance(distance, distanceUnit).replace(/\s(km|mi)$/, '');
     return `| ${lap.lap} | ${stepType} | ${distanceValue} ${distanceUnit} | ${duration} | ${paceLabel} | ${hr} | ${cadence} | ${ascent} |`;
@@ -812,7 +812,7 @@ async function initTrainingResult() {
       const pace = formatPaceFromMetric(lap.avgPaceLabel ?? '-', distanceUnit);
       const hr = lap.avgHeartRate ?? '-';
       const cadence = formatCadence(lap.avgCadenceSpm, i18n.language);
-      const ascent = lap.ascentMeters != null ? `${lap.ascentMeters} m` : '-';
+      const ascent = lap.ascentMeters != null ? String(lap.ascentMeters) : '-';
       tr.innerHTML = [
         `<td>${escapeHtmlText(String(lap.lap))}</td>`,
         `<td>${escapeHtmlText(lap.stepType)}</td>`,

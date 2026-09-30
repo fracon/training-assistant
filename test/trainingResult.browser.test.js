@@ -47,7 +47,28 @@ function fitSummary() {
       startTime: '2026-08-24T07:00:00Z',
       endTime: '2026-08-24T08:00:00Z',
     },
-    laps: [],
+    laps: [
+      {
+        lap: 1,
+        stepType: 'Run',
+        distanceLabel: '1.00',
+        durationLabel: '5:00',
+        avgPaceLabel: '5:00',
+        avgHeartRate: 155,
+        avgCadenceSpm: 164,
+        ascentMeters: 12,
+      },
+      {
+        lap: 2,
+        stepType: 'Rest',
+        distanceLabel: '0.10',
+        durationLabel: '1:00',
+        avgPaceLabel: '--:--',
+        avgHeartRate: null,
+        avgCadenceSpm: null,
+        ascentMeters: null,
+      },
+    ],
   };
 }
 
@@ -485,6 +506,37 @@ test('the session page requires a realized RPE before saving, generating or uplo
       result_data_source: 'fit_upload',
       fit_distance: 10,
     });
+    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+    const desktopTable = await evaluate(`(()=>({
+      header:document.querySelector('#fitLapsTable th:nth-child(7)').textContent.trim(),
+      firstCadence:document.querySelector('#fitLapsBody tr:first-child td:nth-child(7)').textContent.trim(),
+      missingCadence:document.querySelector('#fitLapsBody tr:nth-child(2) td:nth-child(7)').textContent.trim(),
+      firstAscent:document.querySelector('#fitLapsBody tr:first-child td:nth-child(8)').textContent.trim(),
+      missingAscent:document.querySelector('#fitLapsBody tr:nth-child(2) td:nth-child(8)').textContent.trim(),
+      overflow:document.querySelector('.fit-laps-wrapper').scrollWidth>document.querySelector('.fit-laps-wrapper').clientWidth,
+    }))()`);
+    assert.deepEqual(desktopTable, {
+      header: 'Cadence (spm)', firstCadence: '164', missingCadence: '-',
+      firstAscent: '12', missingAscent: '-', overflow: true,
+    });
+    await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    const mobileTable = await evaluate(`(()=>({
+      overflow:document.querySelector('.fit-laps-wrapper').scrollWidth>document.querySelector('.fit-laps-wrapper').clientWidth,
+      tableWidth:document.querySelector('.fit-laps-table').getBoundingClientRect().width,
+    }))()`);
+    assert.equal(mobileTable.overflow, true, 'mobile keeps all numeric columns in a horizontal scroller');
+    assert.ok(mobileTable.tableWidth >= 720);
+    await setLanguage('pt-BR');
+    const portugueseTable = await evaluate(`({
+      cadence:document.querySelector('#fitLapsTable th:nth-child(7)').textContent.trim(),
+      ascent:document.querySelector('#fitLapsTable th:nth-child(8)').textContent.trim(),
+      total:document.getElementById('fitElevation').previousElementSibling.textContent.trim(),
+    })`);
+    assert.deepEqual(portugueseTable, {
+      cadence: 'Cadência (ppm)', ascent: 'Subida (m)', total: 'Ganho de altitude',
+    });
+    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+    await setLanguage('en-US');
 
     /* ── A legacy concluded session reads and is completed once ── */
 

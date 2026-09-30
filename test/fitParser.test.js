@@ -119,8 +119,8 @@ test('summarize builds cumulative lap views from session data', () => {
   assert.equal(first.maxHeartRate, 162);
   assert.equal(first.ascentMeters, 10);
   assert.equal(first.descentMeters, 4);
-  assert.equal(first.avgCadenceSpm, 88);
-  assert.equal(first.maxCadenceSpm, 92);
+  assert.equal(first.avgCadenceSpm, 176);
+  assert.equal(first.maxCadenceSpm, 184);
   assert.equal(first.strideMeters, 1.1);
   assert.equal(first.calories, 60);
 
@@ -196,7 +196,7 @@ test('summarize tolerates missing fields and falls back gracefully', () => {
   assert.equal(cadenceOnly.avgHeartRate, null);
 });
 
-test('summarize keeps valid running cadence raw and rejects invalid cadence values', () => {
+test('summarize converts running cadence to two-foot steps and rejects invalid values', () => {
   const summary = summarize({
     sessions: [{
       sport: 'running',
@@ -207,13 +207,31 @@ test('summarize keeps valid running cadence raw and rejects invalid cadence valu
       ],
     }],
   });
-  assert.equal(summary.laps[0].avgCadenceSpm, 88);
-  assert.equal(summary.laps[0].maxCadenceSpm, 92);
-  assert.equal(summary.laps[1].avgCadenceSpm, 176, 'generic cadence is the fallback');
+  assert.equal(summary.laps[0].avgCadenceSpm, 176);
+  assert.equal(summary.laps[0].maxCadenceSpm, 184);
+  assert.equal(summary.laps[1].avgCadenceSpm, 352, 'generic cadence is the fallback');
   assert.equal(summary.laps[2].avgCadenceSpm, null);
-  assert.equal(summary.laps[2].maxCadenceSpm, 92, 'valid maximum remains available even when the average is absent');
+  assert.equal(summary.laps[2].maxCadenceSpm, 184, 'valid maximum remains available even when the average is absent');
   const cycling = summarize({ sessions: [{ sport: 'cycling', laps: [makeLap({ avg_running_cadence: undefined, avg_cadence: 176 })] }] });
   assert.equal(cycling.laps[0].avgCadenceSpm, null, 'generic cycling rpm is not presented as running cadence');
+});
+
+test('summarize includes FIT fractional cadence before the one-time conversion', () => {
+  const summary = summarize({
+    sessions: [{
+      sport: 'running',
+      avg_cadence: 82,
+      avg_fractional_cadence: 0.140625,
+      laps: [{
+        total_elapsed_time: 60,
+        total_distance: 200,
+        avg_cadence: 82,
+        avg_fractional_cadence: 0.140625,
+      }],
+    }],
+  });
+  assert.equal(summary.laps[0].avgCadenceSpm, 164);
+  assert.equal((82 + 0.140625) * 2, 164.28125);
 });
 
 test('summarize computes totals across mixed lap quality', () => {
@@ -530,6 +548,11 @@ test('records provide a controlled distance and active-time fallback', () => {
 
 test('ascent uses only valid positive rises and prefers session then complete laps', () => {
   const altitudes = [100, 120, 110, 90, 105, 105].map((altitude) => ({ altitude }));
+  assert.equal(
+    resolveAscent({ total_ascent: 129, total_descent: 132 }, [{ total_ascent: 999 }], altitudes),
+    129,
+    'session ascent wins and descent is never added'
+  );
   assert.equal(resolveAscent({ total_ascent: 40 }, [{ total_ascent: 99 }], altitudes), 40);
   assert.equal(resolveAscent({ total_ascent: 0 }, [], altitudes), 0);
   assert.equal(resolveAscent({ total_ascent: -1 }, [{ total_ascent: 12 }, { total_ascent: 8 }], altitudes), 20);
@@ -681,9 +704,9 @@ test('parseFitFile decodes a synthetic binary Garmin-style FIT file', async () =
   assert.equal(runLap.bestPaceLabel, '2:30');
   assert.equal(runLap.avgHeartRate, 150);
   assert.equal(runLap.maxHeartRate, 162);
-  assert.equal(runLap.avgCadenceSpm, 88);
+  assert.equal(runLap.avgCadenceSpm, 176);
   assert.equal(runLap.avgCadenceSource, 'avg_cadence_running', 'the decoder exposes FIT field 17 as avg_cadence and the running session supplies the subfield context');
-  assert.equal(runLap.maxCadenceSpm, 92);
+  assert.equal(runLap.maxCadenceSpm, 184);
   assert.equal(runLap.ascentMeters, 12);
   assert.equal(runLap.calories, 60);
 
