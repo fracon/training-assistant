@@ -508,33 +508,71 @@ test('the session page requires a realized RPE before saving, generating or uplo
     });
     await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
     const desktopTable = await evaluate(`(()=>({
-      header:document.querySelector('#fitLapsTable th:nth-child(7)').textContent.trim(),
+      header:document.querySelector('#fitLapsTable th:nth-child(7)').textContent.replace(/\\s+/g,' ').trim(),
       firstCadence:document.querySelector('#fitLapsBody tr:first-child td:nth-child(7)').textContent.trim(),
       missingCadence:document.querySelector('#fitLapsBody tr:nth-child(2) td:nth-child(7)').textContent.trim(),
       firstAscent:document.querySelector('#fitLapsBody tr:first-child td:nth-child(8)').textContent.trim(),
       missingAscent:document.querySelector('#fitLapsBody tr:nth-child(2) td:nth-child(8)').textContent.trim(),
-      overflow:document.querySelector('.fit-laps-wrapper').scrollWidth>document.querySelector('.fit-laps-wrapper').clientWidth,
+      tableVisible:getComputedStyle(document.querySelector('.fit-laps-wrapper')).display !== 'none',
+      cardsVisible:getComputedStyle(document.querySelector('#fitLapsCards')).display !== 'none',
+      cardText:document.querySelector('#fitLapsCards').textContent,
+      pageOverflow:document.documentElement.scrollWidth>window.innerWidth,
     }))()`);
-    assert.deepEqual(desktopTable, {
+    const { cardText: desktopCardText, ...desktopLayout } = desktopTable;
+    assert.deepEqual(desktopLayout, {
       header: 'Cadence (spm)', firstCadence: '164', missingCadence: '-',
-      firstAscent: '12', missingAscent: '-', overflow: true,
+      firstAscent: '12', missingAscent: '-', tableVisible: false, cardsVisible: true,
+      pageOverflow: false,
     });
-    await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
-    const mobileTable = await evaluate(`(()=>({
-      overflow:document.querySelector('.fit-laps-wrapper').scrollWidth>document.querySelector('.fit-laps-wrapper').clientWidth,
-      tableWidth:document.querySelector('.fit-laps-table').getBoundingClientRect().width,
-    }))()`);
-    assert.equal(mobileTable.overflow, true, 'mobile keeps all numeric columns in a horizontal scroller');
-    assert.ok(mobileTable.tableWidth >= 720);
+    assert.match(desktopCardText, /164/);
+    assert.match(desktopCardText, /-/);
+    for (const sidebarState of ['collapsed', 'open']) {
+      await evaluate("document.getElementById('sidebarToggle').click(); true");
+      await delay(80);
+      const sidebarLayout = await evaluate(`({
+        collapsed:document.querySelector('.app-shell').classList.contains('collapsed'),
+        pageOverflow:document.documentElement.scrollWidth>window.innerWidth,
+        sectionOverflow:document.querySelector('.fit-laps-section').scrollWidth>document.querySelector('.fit-laps-section').clientWidth,
+      })`);
+      assert.equal(sidebarLayout.collapsed, sidebarState === 'collapsed');
+      assert.equal(sidebarLayout.pageOverflow, false, `page remains contained with sidebar ${sidebarState}`);
+      assert.equal(sidebarLayout.sectionOverflow, false, `section remains contained with sidebar ${sidebarState}`);
+    }
+    for (const width of [390, 560, 600, 640, 768]) {
+      await command('Emulation.setDeviceMetricsOverride', { width, height: 844, deviceScaleFactor: 1, mobile: true });
+      const compact = await evaluate(`(()=>({
+        tableVisible:getComputedStyle(document.querySelector('.fit-laps-wrapper')).display !== 'none',
+        cardsVisible:getComputedStyle(document.querySelector('#fitLapsCards')).display !== 'none',
+        cardText:document.querySelector('#fitLapsCards').textContent,
+        paceValue:document.querySelector('.fit-lap-card-pace .fit-lap-pace-value').textContent,
+        paceUnit:document.querySelector('.fit-lap-card-pace .fit-lap-pace-unit').textContent,
+        sectionOverflow:document.querySelector('.fit-laps-section').scrollWidth>document.querySelector('.fit-laps-section').clientWidth,
+        pageOverflow:document.documentElement.scrollWidth>window.innerWidth,
+      }))()`);
+      assert.equal(compact.tableVisible, false, `table switches to cards at ${width}px`);
+      assert.equal(compact.cardsVisible, true, `cards are visible at ${width}px`);
+      assert.match(compact.cardText, /164/);
+      assert.match(compact.cardText, /-/);
+      assert.equal(compact.paceValue, '5:00');
+      assert.equal(compact.paceUnit, 'min/km');
+      assert.equal(compact.sectionOverflow, false, `section has no horizontal overflow at ${width}px: ${JSON.stringify(compact)}`);
+      assert.equal(compact.pageOverflow, false, `page has no horizontal overflow at ${width}px: ${JSON.stringify(compact)}`);
+    }
     await setLanguage('pt-BR');
+    await evaluate("document.getElementById('userPreferences').click(); true");
+    await waitFor("document.getElementById('preferencesModal') && !document.getElementById('preferencesModal').classList.contains('hidden')", 'preferences modal');
+    await evaluate("document.querySelector('#preferencesForm [name=distance_unit][value=mi]').click(); document.getElementById('preferencesSubmit').click(); true");
+    await waitFor("document.querySelector('.fit-lap-card-pace .fit-lap-pace-unit')?.textContent==='min/mi'", 'mile pace unit');
     const portugueseTable = await evaluate(`({
-      cadence:document.querySelector('#fitLapsTable th:nth-child(7)').textContent.trim(),
-      ascent:document.querySelector('#fitLapsTable th:nth-child(8)').textContent.trim(),
+      cadence:document.querySelector('#fitLapsCards').textContent,
+      ascent:document.querySelector('#fitLapsCards').textContent,
+      pace:document.querySelector('.fit-lap-card-pace').textContent,
       total:document.getElementById('fitElevation').previousElementSibling.textContent.trim(),
     })`);
-    assert.deepEqual(portugueseTable, {
-      cadence: 'Cadência (ppm)', ascent: 'Subida (m)', total: 'Ganho de altitude',
-    });
+    assert.match(portugueseTable.cadence, /Cadência \(ppm\)/);
+    assert.match(portugueseTable.ascent, /Subida \(m\)/);
+    assert.match(portugueseTable.pace, /min\/mi/);
+    assert.equal(portugueseTable.total, 'Ganho de altitude');
     await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
     await setLanguage('en-US');
 
@@ -553,7 +591,7 @@ test('the session page requires a realized RPE before saving, generating or uplo
     }))()`);
     assert.equal(legacy.checked, null, 'a legacy session has no effort to offer');
     assert.equal(legacy.dataHidden, false, 'its recorded result is still readable');
-    assert.equal(legacy.distance, '10.00 km', 'the recorded distance is displayed in the shared unit format');
+    assert.equal(legacy.distance, '6.21 mi', 'the recorded distance is displayed in the shared unit format');
     assert.equal(legacy.duration, '01:00:00');
 
     await clickUntil('#saveBtn', "document.getElementById('feedbackRpeError').hidden===false", 'the legacy refusal');

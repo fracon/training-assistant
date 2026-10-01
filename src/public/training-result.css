@@ -699,6 +699,7 @@ select.input-control {
 
 .fit-laps-section {
   margin-top: 14px;
+  container: fit-laps / inline-size;
 }
 
 .fit-laps-section[hidden] {
@@ -706,13 +707,12 @@ select.input-control {
 }
 
 .fit-laps-wrapper {
-  overflow-x: auto;
+  overflow: visible;
   max-width: 100%;
 }
 
 .fit-laps-table {
   width: 100%;
-  min-width: 720px;
   border-collapse: collapse;
   font-size: 0.82rem;
   table-layout: fixed;
@@ -720,8 +720,8 @@ select.input-control {
 
 .fit-laps-table th,
 .fit-laps-table td {
-  white-space: nowrap;
   vertical-align: middle;
+  overflow-wrap: anywhere;
 }
 
 .fit-laps-table th {
@@ -730,13 +730,26 @@ select.input-control {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--muted);
-  padding: 6px 10px;
-  text-align: left;
+  padding: 6px 5px;
+  text-align: right;
   border-bottom: 1px solid var(--line-strong);
 }
 
+.fit-laps-table th:nth-child(1),
+.fit-laps-table th:nth-child(2) {
+  text-align: left;
+}
+
+.fit-lap-header-unit,
+.fit-lap-pace-unit {
+  display: block;
+  font-size: 0.9em;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
 .fit-laps-table td {
-  padding: 7px 10px;
+  padding: 7px 5px;
   color: var(--ink);
   border-bottom: 1px solid var(--line);
 }
@@ -750,14 +763,10 @@ select.input-control {
   font-variant-numeric: tabular-nums;
 }
 
-.fit-laps-table th:nth-child(n+3) {
-  text-align: right;
-}
-
 .fit-laps-table th:nth-child(1),
-.fit-laps-table td:nth-child(1) { width: 4%; }
+.fit-laps-table td:nth-child(1) { width: 5%; }
 .fit-laps-table th:nth-child(2),
-.fit-laps-table td:nth-child(2) { width: 13%; }
+.fit-laps-table td:nth-child(2) { width: 14%; }
 .fit-laps-table th:nth-child(3),
 .fit-laps-table td:nth-child(3) { width: 12%; }
 .fit-laps-table th:nth-child(4),
@@ -767,9 +776,85 @@ select.input-control {
 .fit-laps-table th:nth-child(6),
 .fit-laps-table td:nth-child(6) { width: 11%; }
 .fit-laps-table th:nth-child(7),
-.fit-laps-table td:nth-child(7) { width: 18%; }
+.fit-laps-table td:nth-child(7) { width: 14%; }
 .fit-laps-table th:nth-child(8),
 .fit-laps-table td:nth-child(8) { width: 10%; }
+
+.fit-lap-pace-value,
+.fit-lap-pace-unit {
+  display: block;
+}
+
+.fit-laps-cards {
+  display: none;
+}
+
+.fit-lap-card {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  overflow-wrap: anywhere;
+}
+
+.fit-lap-card + .fit-lap-card {
+  margin-top: 8px;
+}
+
+.fit-lap-card h4 {
+  overflow-wrap: anywhere;
+  margin: 0 0 10px;
+  color: var(--ink);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.fit-lap-card dl {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+  margin: 0;
+}
+
+.fit-lap-card-field {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.fit-lap-card-field dt {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.fit-lap-card-field dd {
+  overflow-wrap: anywhere;
+  margin: 2px 0 0;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.fit-lap-card-pace dd {
+  display: flex;
+  flex-direction: column;
+}
+
+@container fit-laps (max-width: 760px) {
+  .fit-laps-wrapper {
+    display: none;
+  }
+
+  .fit-laps-cards {
+    display: block;
+  }
+}
 
 .prompt-section {
   margin-top: 20px;

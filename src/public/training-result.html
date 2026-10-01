@@ -158,14 +158,24 @@
                       <th scope="col" data-i18n="session.fitLapDistance">Distance</th>
                       <th scope="col" data-i18n="session.fitLapDuration">Duration</th>
                       <th scope="col" data-i18n="session.fitLapPace">Pace</th>
-                      <th scope="col" data-i18n="session.fitLapHr">HR avg.</th>
-                      <th scope="col" data-i18n="session.fitLapCadence">Cadence (spm)</th>
-                      <th scope="col" data-i18n="session.fitLapAscent">Ascent (m)</th>
+                      <th scope="col" data-i18n-aria-label="session.fitLapHrAccessible" aria-label="Average heart rate">
+                        <span data-i18n="session.fitLapHr">HR</span>
+                        <span class="fit-lap-header-unit" data-i18n="session.fitLapHrUnit">avg.</span>
+                      </th>
+                      <th scope="col" data-i18n-aria-label="session.fitLapCadenceAccessible" aria-label="Cadence (spm)">
+                        <span data-i18n="session.fitLapCadence">Cadence</span>
+                        <span class="fit-lap-header-unit" data-i18n="session.fitLapCadenceUnit">(spm)</span>
+                      </th>
+                      <th scope="col" data-i18n-aria-label="session.fitLapAscentAccessible" aria-label="Ascent (m)">
+                        <span data-i18n="session.fitLapAscent">Ascent</span>
+                        <span class="fit-lap-header-unit" data-i18n="session.fitLapAscentUnit">(m)</span>
+                      </th>
                     </tr>
                   </thead>
                   <tbody id="fitLapsBody"></tbody>
                 </table>
               </div>
+              <div class="fit-laps-cards" id="fitLapsCards"></div>
             </div>
           </div>
 

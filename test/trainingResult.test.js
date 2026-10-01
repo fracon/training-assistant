@@ -34,6 +34,7 @@ const {
   fitUploadErrorMessage,
   buildLapsMarkdown,
   formatCadence,
+  splitPaceLabel,
   formatLapType,
   handleTrainingDelete,
   weatherLabelKey,
@@ -832,6 +833,12 @@ test('formatCadence renders only the number and dashes invalid values', () => {
   assert.equal(formatCadence(Number.NaN, 'pt-BR'), '-');
 });
 
+test('splitPaceLabel keeps the pace above its localized unit', () => {
+  assert.deepEqual(splitPaceLabel('7:01 min/km'), { value: '7:01', unit: 'min/km' });
+  assert.deepEqual(splitPaceLabel('7:01 min/mi'), { value: '7:01', unit: 'min/mi' });
+  assert.deepEqual(splitPaceLabel('-'), { value: '-', unit: '' });
+});
+
 test('collectPromptValues injects Markdown lap table when fitData has laps', () => {
   const fitData = {
     fit_duration: '1:00:00',
@@ -943,9 +950,13 @@ test('training-result.html ships the expanded feedback grid and generator button
   assert.match(html, /id="fitAvgHr"/);
   assert.match(html, /id="fitMaxHr"/);
   assert.match(html, /id="fitElevation"/);
-  assert.match(html, /<th scope="col" data-i18n="session\.fitLapHr">HR avg\.<\/th>/);
-  assert.match(html, /<th scope="col" data-i18n="session\.fitLapCadence">Cadence \(spm\)<\/th>/);
-  assert.match(html, /<th scope="col" data-i18n="session\.fitLapAscent">Ascent \(m\)<\/th>/);
+  assert.match(html, /data-i18n="session\.fitLapHr">HR<\/span>/);
+  assert.match(html, /data-i18n="session\.fitLapHrUnit">avg\.<\/span>/);
+  assert.match(html, /data-i18n="session\.fitLapCadence">Cadence<\/span>/);
+  assert.match(html, /data-i18n="session\.fitLapCadenceUnit">\(spm\)<\/span>/);
+  assert.match(html, /data-i18n="session\.fitLapAscent">Ascent<\/span>/);
+  assert.match(html, /data-i18n="session\.fitLapAscentUnit">\(m\)<\/span>/);
+  assert.match(html, /id="fitLapsCards"/);
 
   for (const id of [
     'feedbackShoe',
@@ -1817,9 +1828,12 @@ test('training-result.css keeps the earthy premium aesthetic for the session vie
   assert.match(css, /\.file-dropzone \{[^}]*background-color:\s*var\(--card\)/, 'subtle card surface behind the invitation');
   assert.match(css, /\.file-dropzone \{[^}]*cursor:\s*pointer/);
   assert.match(css, /\.file-dropzone \{[^}]*display:\s*flex/);
-  assert.match(css, /\.fit-laps-table \{[^}]*min-width:\s*720px/);
-  assert.match(css, /\.fit-laps-table th,\s*\.fit-laps-table td \{[^}]*white-space:\s*nowrap/);
-  assert.match(css, /\.fit-laps-wrapper \{[^}]*overflow-x:\s*auto/);
+  assert.doesNotMatch(css, /\.fit-laps-wrapper[^}]*overflow-x:\s*auto/);
+  assert.doesNotMatch(css, /\.fit-laps-table \{[^}]*min-width:\s*720px/);
+  assert.match(css, /\.fit-laps-section \{[^}]*container:\s*fit-laps \/ inline-size/);
+  assert.match(css, /@container fit-laps \(max-width:\s*760px\)/);
+  assert.match(css, /\.fit-laps-cards \{[^}]*display:\s*none/);
+  assert.match(css, /\.fit-lap-card-field dt \{[^}]*text-transform:\s*uppercase/);
   assert.match(css, /\.file-dropzone \{[^}]*flex-direction:\s*column/);
   assert.match(css, /\.file-dropzone:hover \{[^}]*border-color:\s*var\(--accent-deep\)/, 'hovering highlights the zone with the deep sage accent');
   assert.match(css, /\.file-dropzone\.drag-active \{[^}]*border-color:\s*var\(--accent-deep\)/, 'dragging over keeps the primary border highlight');

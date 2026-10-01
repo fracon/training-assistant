@@ -530,6 +530,12 @@ export function formatCadence(value, language = 'en-US') {
   return String(value);
 }
 
+export function splitPaceLabel(value) {
+  const text = String(value ?? '').trim();
+  const match = /^(.*)\s+(min\/(?:km|mi))$/.exec(text);
+  return match ? { value: match[1], unit: match[2] } : { value: text || '-', unit: '' };
+}
+
 const LAP_TYPE_KEYS = {
   Run: 'session.fitLapTypes.run',
   Warmup: 'session.fitLapTypes.warmup',
@@ -691,6 +697,7 @@ async function initTrainingResult() {
   const fitDataSection = document.getElementById('fitDataSection');
   const fitLapsSection = document.getElementById('fitLapsSection');
   const fitLapsBody = document.getElementById('fitLapsBody');
+  const fitLapsCards = document.getElementById('fitLapsCards');
   const manualResultsField = document.getElementById('manualResultsField');
   const resultSourceBadge = document.getElementById('resultSourceBadge');
   const manualDistanceUnit = document.getElementById('manualDistanceUnit');
@@ -800,6 +807,7 @@ async function initTrainingResult() {
     if (!Array.isArray(laps) || laps.length === 0) {
       fitLapsSection.hidden = true;
       fitLapsBody.innerHTML = '';
+      fitLapsCards.innerHTML = '';
       return;
     }
     fitLapsSection.hidden = false;
@@ -810,15 +818,24 @@ async function initTrainingResult() {
       const distance = lap.distanceLabel ?? '-';
       const duration = lap.durationLabel ?? '-';
       const pace = formatPaceFromMetric(lap.avgPaceLabel ?? '-', distanceUnit);
+      const paceParts = splitPaceLabel(pace);
       const hr = lap.avgHeartRate ?? '-';
       const cadence = formatCadence(lap.avgCadenceSpm, i18n.language);
       const ascent = lap.ascentMeters != null ? String(lap.ascentMeters) : '-';
+      const distanceValue = distance === '-'
+        ? '-'
+        : formatDistance(distance, distanceUnit).replace(/\s(km|mi)$/, '');
+      const displayDistance = distance === '-' ? '-' : `${distanceValue} ${distanceUnit}`;
+      const type = formatLapType(lap.stepType, i18n.language, i18n.messages);
+      const paceMarkup = paceParts.unit
+        ? `<span class="fit-lap-pace-value">${escapeHtmlText(paceParts.value)}</span><span class="fit-lap-pace-unit">${escapeHtmlText(paceParts.unit)}</span>`
+        : `<span class="fit-lap-pace-value">${escapeHtmlText(paceParts.value)}</span>`;
       tr.innerHTML = [
         `<td>${escapeHtmlText(String(lap.lap))}</td>`,
-        `<td>${escapeHtmlText(lap.stepType)}</td>`,
-        `<td>${escapeHtmlText(distance === '-' ? '-' : formatDistance(distance, distanceUnit).replace(/\s(km|mi)$/, ''))} ${distance === '-' ? '' : distanceUnit}</td>`,
+        `<td>${escapeHtmlText(type)}</td>`,
+        `<td>${escapeHtmlText(displayDistance)}</td>`,
         `<td>${escapeHtmlText(duration)}</td>`,
-        `<td>${escapeHtmlText(pace)}</td>`,
+        `<td class="fit-lap-pace">${paceMarkup}</td>`,
         `<td>${escapeHtmlText(String(hr))}</td>`,
         `<td>${escapeHtmlText(cadence)}</td>`,
         `<td>${escapeHtmlText(ascent)}</td>`,
@@ -827,6 +844,24 @@ async function initTrainingResult() {
     }
     fitLapsBody.innerHTML = '';
     fitLapsBody.appendChild(fragment);
+    fitLapsCards.innerHTML = laps.map((lap) => {
+      const distance = lap.distanceLabel ?? '-';
+      const duration = lap.durationLabel ?? '-';
+      const pace = splitPaceLabel(formatPaceFromMetric(lap.avgPaceLabel ?? '-', distanceUnit));
+      const hr = lap.avgHeartRate ?? '-';
+      const cadence = formatCadence(lap.avgCadenceSpm, i18n.language);
+      const ascent = lap.ascentMeters != null ? String(lap.ascentMeters) : '-';
+      const distanceValue = distance === '-'
+        ? '-'
+        : formatDistance(distance, distanceUnit).replace(/\s(km|mi)$/, '');
+      const displayDistance = distance === '-' ? '-' : `${distanceValue} ${distanceUnit}`;
+      const type = formatLapType(lap.stepType, i18n.language, i18n.messages);
+      const paceMarkup = pace.unit
+        ? `<span class="fit-lap-pace-value">${escapeHtmlText(pace.value)}</span><span class="fit-lap-pace-unit">${escapeHtmlText(pace.unit)}</span>`
+        : `<span class="fit-lap-pace-value">${escapeHtmlText(pace.value)}</span>`;
+      const field = (label, value, className = '') => `<div class="fit-lap-card-field${className ? ` ${className}` : ''}"><dt>${escapeHtmlText(label)}</dt><dd>${value}</dd></div>`;
+      return `<article class="fit-lap-card"><h4>${escapeHtmlText(`${t('session.fitLap')} ${lap.lap} — ${type}`)}</h4><dl>${field(t('session.fitLapDistance'), escapeHtmlText(displayDistance))}${field(t('session.fitLapDuration'), escapeHtmlText(duration))}${field(t('session.fitLapPace'), paceMarkup, 'fit-lap-card-pace')}${field(t('session.fitLapHrAccessible'), escapeHtmlText(String(hr)))}${field(t('session.fitLapCadenceAccessible'), escapeHtmlText(cadence))}${field(t('session.fitLapAscentAccessible'), escapeHtmlText(ascent))}</dl></article>`;
+    }).join('');
   };
 
   const renderFitData = () => {
@@ -837,6 +872,7 @@ async function initTrainingResult() {
       resultSourceBadge.textContent = '';
       fitLapsSection.hidden = true;
       fitLapsBody.innerHTML = '';
+      fitLapsCards.innerHTML = '';
       return;
     }
     fitDataSection.hidden = false;
