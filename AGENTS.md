@@ -8,7 +8,7 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.19.2`); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.19.3`); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
@@ -227,10 +227,18 @@ onboarding record of the account is preserved.
   converts once to two-foot steps/minute at the FIT boundary. Generic cadence
   without that context remains absent. New FIT summaries carry the
   `two-foot-spm-v1` marker and persisted values are displayed as stored without
-  another conversion. The idempotent `2026-10-fit-cadence-two-foot-v1`
-  migration converts only identifiable older running summaries whose cadence
-  fields lack source metadata; ambiguous stored units remain unchanged rather
-  than being guessed.
+  another conversion. The original `2026-10-fit-cadence-two-foot-v1` migration
+  handles identifiable old running summaries without source metadata. The
+  corrective `2026-10-fit-cadence-source-v2` migration also converts historical
+  raw fields whose previous parser provenance is
+  `avg_cadence_running`/`max_cadence_running` or
+  `avg_running_cadence`/`max_running_cadence`. Average and maximum are checked
+  independently and converted values carry `avgCadenceUnit` or
+  `maxCadenceUnit`; set the summary-wide marker only when all numeric cadence
+  fields are normalized. Preserve unknown origins and already normalized
+  values. Old summaries did not persist fractional cadence, so migrations
+  cannot reconstruct it; new FIT imports include available fractions before
+  conversion.
 - The result page keeps its import guide beside the FIT/ZIP upload controls;
   it is available regardless of whether the session has `none`, `manual`, or
   `fit_upload` provenance. Do not infer result existence from displayed fields.

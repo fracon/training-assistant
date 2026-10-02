@@ -809,6 +809,27 @@ async function initTrainingResult() {
       return;
     }
     fitLapsSection.hidden = false;
+    fitLapsTable.lang = i18n.language;
+    const english = i18n.language === 'en-US';
+    const softBreaks = {
+      fitLapDistance: english ? 'Dis\u00adtance' : 'Dis\u00adtância',
+      fitLapDuration: english ? 'Dur\u00adation' : 'Dur\u00adação',
+      fitLapHrUnit: english ? 'av\u00adg.' : 'mé\u00addia',
+      fitLapCadence: english ? 'Cad\u00adence' : 'Cadên\u00adcia',
+      fitLapAscent: english ? 'As\u00adcent' : 'Subi\u00adda',
+    };
+    for (const [key, label] of Object.entries(softBreaks)) {
+      const header = fitLapsTable.querySelector(`.fit-lap-header-label[data-i18n="session.${key}"]`);
+      if (!header) continue;
+      const fullLabel = t(`session.${key}`);
+      header.textContent = label;
+      if (key !== 'fitLapHrUnit') {
+        const accessibleKey = key === 'fitLapCadence'
+          ? 'session.fitLapCadenceAccessible'
+          : key === 'fitLapAscent' ? 'session.fitLapAscentAccessible' : null;
+        header.closest('th')?.setAttribute('aria-label', accessibleKey ? t(accessibleKey) : fullLabel);
+      }
+    }
     const fragment = document.createDocumentFragment();
     const distanceUnit = getUserPreferences().distance_unit;
     for (const lap of laps) {
@@ -825,12 +846,19 @@ async function initTrainingResult() {
         : formatDistance(distance, distanceUnit).replace(/\s(km|mi)$/, '');
       const displayDistance = distance === '-' ? '-' : `${distanceValue} ${distanceUnit}`;
       const type = formatLapType(lap.stepType, i18n.language, i18n.messages);
+      const warmup = t('session.fitLapTypes.warmup');
+      const cooldown = t('session.fitLapTypes.cooldown');
+      const displayType = type === warmup
+        ? (english ? 'Warm\u00adup' : 'Aque\u00adci\u00admen\u00adto')
+        : type === cooldown
+          ? (english ? 'Cool\u00addown' : 'Desa\u00adque\u00adci\u00admen\u00adto')
+          : type;
       const paceMarkup = paceParts.unit
         ? `<span class="fit-lap-pace-value">${escapeHtmlText(paceParts.value)}</span><span class="fit-lap-pace-unit">${escapeHtmlText(paceParts.unit)}</span>`
         : `<span class="fit-lap-pace-value">${escapeHtmlText(paceParts.value)}</span>`;
       tr.innerHTML = [
         `<td>${escapeHtmlText(String(lap.lap))}</td>`,
-        `<td>${escapeHtmlText(type)}</td>`,
+        `<td>${escapeHtmlText(displayType)}</td>`,
         `<td>${escapeHtmlText(displayDistance)}</td>`,
         `<td>${escapeHtmlText(duration)}</td>`,
         `<td class="fit-lap-pace">${paceMarkup}</td>`,

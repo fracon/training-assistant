@@ -1834,7 +1834,8 @@ test('training-result.css keeps the earthy premium aesthetic for the session vie
   assert.match(css, /\.fit-laps-section \{[^}]*margin-top:\s*14px/);
   assert.doesNotMatch(css, /\.fit-laps-section \{[^}]*margin-inline:\s*-/);
   assert.match(css, /\.fit-lap-pace-value,\s*\n\.fit-lap-pace-unit[\s\S]*white-space:\s*nowrap/);
-  assert.match(css, /@media \(max-width:\s*480px\)[\s\S]*\.fit-laps-table th[\s\S]*font-size:\s*0\.56rem/);
+  assert.match(css, /\.fit-laps-table th \{[^}]*font-size:\s*0\.7rem/);
+  assert.doesNotMatch(css, /\.fit-laps-table th \{[^}]*font-size:\s*0\.(?:5|56)rem/);
   assert.doesNotMatch(css, /fit-laps-cards|fit-lap-card/);
   assert.match(css, /\.file-dropzone \{[^}]*flex-direction:\s*column/);
   assert.match(css, /\.file-dropzone:hover \{[^}]*border-color:\s*var\(--accent-deep\)/, 'hovering highlights the zone with the deep sage accent');

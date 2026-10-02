@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized prompts for an AI coach.
 
-Current application version: **0.19.2** (active beta development).
+Current application version: **0.19.3** (active beta development).
 
 ### Shoe mileage integrity
 
@@ -158,11 +158,21 @@ the running sport context, adds the fractional component, and converts that
 source value once to two-foot steps/minute at the parser boundary. Generic
 cadence without running context is unavailable (`-`). Every newly persisted
 FIT summary carries the `two-foot-spm-v1` normalization marker, and the result
-table and Markdown prompt consume that same normalized value. The idempotent
-`2026-10-fit-cadence-two-foot-v1` migration converts only older FIT summaries
-whose running cadence fields have no source metadata; summaries with an
-ambiguous historical unit are left unchanged rather than guessed or converted
-twice.
+table and Markdown prompt consume the same persisted value. The original
+`2026-10-fit-cadence-two-foot-v1` migration handles historical running summaries
+whose cadence fields have no source metadata. A corrective, idempotent
+`2026-10-fit-cadence-source-v2` migration also repairs summaries that already
+have that first marker: the previous parser stored raw running cadence beside
+`avg_cadence_running`, `max_cadence_running`, `avg_running_cadence`, or
+`max_running_cadence`. Average and maximum fields are checked independently;
+each recognized raw value is doubled once and tagged with its own
+`avgCadenceUnit` or `maxCadenceUnit`. The summary-wide normalization marker is
+added only when all numeric cadence fields are known to be normalized. Mixed
+summaries retain field-level markers for converted values and leave unknown
+origins unchanged. Existing `two-foot-spm-v1` summaries are never converted
+again, and cadence magnitude is never used to guess a unit. Older imports did
+not persist FIT fractional cadence, so that lost fraction cannot be restored;
+new imports still include the FIT fraction before conversion.
 
 The result page keeps the lap presentation as one semantic table at every
 supported viewport. Its cadence and heart-rate headers use deliberate two-line

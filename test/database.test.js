@@ -14,6 +14,9 @@ const {
   migrateDatabase,
   createDatabase,
 } = require('../src/db/database');
+const { buildServer } = require('../src/server');
+const { registerUser } = require('../src/auth/registration');
+const { buildLapsMarkdown, formatCadence } = require('../src/public/training-result.js');
 
 test('resolveDatabaseFile joins cwd with the data directory and file name', () => {
   const result = resolveDatabaseFile('/srv/app');
@@ -143,53 +146,188 @@ test('migrateDatabase classifies existing FIT rows and leaves result-less rows a
   db.close();
 });
 
-test('migrateDatabase converts only identifiable raw running cadence and stays idempotent', () => {
+test('corrective FIT cadence migration repairs proven historical fields independently and is idempotent', () => {
   const db = createDatabase({ filename: ':memory:' });
   db.prepare("INSERT INTO users (email, password_hash) VALUES ('cadence@example.test', 'hash')").run();
-  const raw = JSON.stringify({
-    activity: { sport: 'running' },
-    laps: [
-      { avgCadenceSpm: 81, maxCadenceSpm: 88 },
-      { avgCadenceSpm: null, maxCadenceSpm: 89 },
-      { avgCadenceSpm: 80 },
-    ],
-  });
   const sourceTagged = JSON.stringify({
     activity: { sport: 'running' },
-    laps: [{ avgCadenceSpm: 82, avgCadenceSource: 'avg_cadence_running' }],
+    laps: [
+      { avgCadenceSpm: 82, avgCadenceSource: 'avg_cadence_running', maxCadenceSpm: 88, maxCadenceSource: 'max_cadence_running' },
+      { avgCadenceSpm: 82, avgCadenceSource: 'avg_running_cadence', maxCadenceSpm: 90, maxCadenceSource: 'max_running_cadence' },
+      { avgCadenceSpm: 82, avgCadenceSource: 'avg_cadence_running', maxCadenceSpm: 90, maxCadenceSource: 'vendor_unknown' },
+      { avgCadenceSpm: null, avgCadenceSource: 'avg_cadence_running', maxCadenceSpm: null },
+      { avgCadenceSpm: 82, avgCadenceSource: 'vendor_unknown', maxCadenceSpm: 90, maxCadenceSource: 'max_cadence_running' },
+      { avgCadenceSpm: 81, maxCadenceSpm: null },
+      { avgCadenceSpm: 80, avgCadenceSource: 'avg_cadence_running', avgCadenceUnit: 'vendor-unit', maxCadenceSpm: 90, maxCadenceSource: 'max_cadence_running' },
+      null,
+      [],
+    ],
   });
-  const nonRunning = JSON.stringify({ activity: { sport: 'cycling' }, laps: [{ avgCadenceSpm: 80 }] });
+  const alreadyNormalized = JSON.stringify({
+    cadenceNormalization: 'two-foot-spm-v1',
+    activity: { sport: 'running' },
+    laps: [{ avgCadenceSpm: 164, avgCadenceSource: 'avg_cadence_running' }],
+  });
+  const fieldNormalized = JSON.stringify({
+    activity: { sport: 'running' },
+    laps: [{
+      avgCadenceSpm: 164, avgCadenceUnit: 'two-foot-spm-v1',
+      maxCadenceSpm: 90, maxCadenceSource: 'max_running_cadence',
+    }],
+  });
+  const fieldNormalizedOnly = JSON.stringify({
+    activity: { sport: 'running' },
+    laps: [{ avgCadenceSpm: 164, avgCadenceUnit: 'two-foot-spm-v1' }],
+  });
+  const nonRunning = JSON.stringify({ activity: { sport: 'cycling' }, laps: [{ avgCadenceSpm: 82, avgCadenceSource: 'avg_cadence_running' }] });
   const malformed = '{not-json';
   db.prepare(`INSERT INTO trainings (user_id, dia, tipo, result_data_source, fit_summary_json) VALUES
     (1, '2026-09-01', 'Run', 'fit_upload', ?),
-    (1, '2026-09-02', 'Run', 'fit_upload', ?),
-    (1, '2026-09-03', 'Ride', 'fit_upload', ?),
+    (1, '2026-09-02', 'Ride', 'fit_upload', ?),
+    (1, '2026-09-03', 'Run', 'fit_upload', ?),
     (1, '2026-09-04', 'Run', 'fit_upload', ?),
     (1, '2026-09-05', 'Run', 'fit_upload', ?),
     (1, '2026-09-06', 'Run', 'fit_upload', ?)`)
-    .run(raw, sourceTagged, nonRunning, malformed, JSON.stringify({ activity: { sport: 'running' }, laps: [] }), JSON.stringify({ cadenceNormalization: 'two-foot-spm-v1', activity: { sport: 'running' }, laps: [{ avgCadenceSpm: 164 }] }));
+    .run(sourceTagged, nonRunning, malformed, alreadyNormalized, fieldNormalized, fieldNormalizedOnly);
 
-  db.prepare("DELETE FROM schema_migrations WHERE name = '2026-10-fit-cadence-two-foot-v1'").run();
+  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE name = '2026-10-fit-cadence-two-foot-v1'").get().count, 1,
+    'models a database that already applied the original migration');
+  db.prepare("DELETE FROM schema_migrations WHERE name = '2026-10-fit-cadence-source-v2'").run();
   migrateDatabase(db);
   const rows = db.prepare('SELECT fit_summary_json FROM trainings ORDER BY id').all().map((row) => {
     try { return JSON.parse(row.fit_summary_json); } catch { return row.fit_summary_json; }
   });
-  assert.deepEqual(rows[0].laps, [
-    { avgCadenceSpm: 162, maxCadenceSpm: 176 },
-    { avgCadenceSpm: null, maxCadenceSpm: 178 },
-    { avgCadenceSpm: 160 },
-  ]);
-  assert.equal(rows[0].cadenceNormalization, 'two-foot-spm-v1');
-  assert.deepEqual(rows[1].laps[0], { avgCadenceSpm: 82, avgCadenceSource: 'avg_cadence_running' });
-  assert.deepEqual(rows[2].laps[0], { avgCadenceSpm: 80 });
-  assert.equal(rows[3], malformed);
-  assert.deepEqual(rows[4].laps, []);
-  assert.equal(rows[5].laps[0].avgCadenceSpm, 164);
+  assert.deepEqual(rows[0].laps[0], {
+    avgCadenceSpm: 164, avgCadenceSource: 'avg_cadence_running', avgCadenceUnit: 'two-foot-spm-v1',
+    maxCadenceSpm: 176, maxCadenceSource: 'max_cadence_running', maxCadenceUnit: 'two-foot-spm-v1',
+  });
+  assert.deepEqual(rows[0].laps[1], {
+    avgCadenceSpm: 164, avgCadenceSource: 'avg_running_cadence', avgCadenceUnit: 'two-foot-spm-v1',
+    maxCadenceSpm: 180, maxCadenceSource: 'max_running_cadence', maxCadenceUnit: 'two-foot-spm-v1',
+  });
+  assert.equal(Object.hasOwn(rows[0], 'cadenceNormalization'), false,
+    'mixed known and unknown values do not receive a misleading summary-wide marker');
+  assert.deepEqual(rows[0].laps[2], {
+    avgCadenceSpm: 164, avgCadenceSource: 'avg_cadence_running', avgCadenceUnit: 'two-foot-spm-v1',
+    maxCadenceSpm: 90, maxCadenceSource: 'vendor_unknown',
+  }, 'the known average is corrected while the unknown maximum stays unchanged');
+  assert.equal(rows[0].laps[2].avgCadenceUnit, 'two-foot-spm-v1');
+  assert.equal(rows[0].laps[3].avgCadenceSpm, null);
+  assert.equal(rows[0].laps[3].maxCadenceSpm, null);
+  assert.deepEqual(rows[0].laps[4], {
+    avgCadenceSpm: 82, avgCadenceSource: 'vendor_unknown', maxCadenceSpm: 180,
+    maxCadenceSource: 'max_cadence_running', maxCadenceUnit: 'two-foot-spm-v1',
+  }, 'the known maximum converts independently while the unknown average remains raw');
+  assert.deepEqual(rows[0].laps[5], { avgCadenceSpm: 162, maxCadenceSpm: null, avgCadenceUnit: 'two-foot-spm-v1' },
+    'the historical no-metadata format is recognized as raw running cadence');
+  assert.deepEqual(rows[0].laps[6], {
+    avgCadenceSpm: 80, avgCadenceSource: 'avg_cadence_running', avgCadenceUnit: 'vendor-unit',
+    maxCadenceSpm: 180, maxCadenceSource: 'max_cadence_running', maxCadenceUnit: 'two-foot-spm-v1',
+  }, 'an explicit unknown unit is preserved while the other cadence field is normalized');
+  assert.equal(rows[0].laps[7], null);
+  assert.deepEqual(rows[0].laps[8], []);
+  assert.equal(rows[1].laps[0].avgCadenceSpm, 82, 'a known source does not override non-running sport context');
+  assert.equal(rows[2], malformed);
+  assert.equal(rows[3].laps[0].avgCadenceSpm, 164, 'the exact normalized marker prevents a second conversion');
+  assert.deepEqual(rows[4].laps[0], {
+    avgCadenceSpm: 164, avgCadenceUnit: 'two-foot-spm-v1',
+    maxCadenceSpm: 180, maxCadenceSource: 'max_running_cadence', maxCadenceUnit: 'two-foot-spm-v1',
+  }, 'field-level normalized values are not doubled when another metric is still raw');
+  assert.equal(rows[5].cadenceNormalization, undefined);
+  assert.equal(rows[5].laps[0].avgCadenceSpm, 164,
+    'an already normalized field without other changes is left untouched');
 
   const first = db.prepare('SELECT fit_summary_json FROM trainings WHERE id = 1').get().fit_summary_json;
   migrateDatabase(db);
   assert.equal(db.prepare('SELECT fit_summary_json FROM trainings WHERE id = 1').get().fit_summary_json, first);
-  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE name = '2026-10-fit-cadence-two-foot-v1'").get().count, 1);
+  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE name = '2026-10-fit-cadence-source-v2'").get().count, 1);
+  db.close();
+});
+
+test('original FIT cadence migration converts the historical running summary without source metadata', () => {
+  const db = createDatabase({ filename: ':memory:' });
+  db.prepare("INSERT INTO users (email, password_hash) VALUES ('cadence-legacy@example.test', 'hash')").run();
+  const summary = {
+    activity: { sport: 'running' },
+    laps: [
+      { avgCadenceSpm: 81, maxCadenceSpm: 92 },
+      { avgCadenceSpm: null, maxCadenceSpm: null },
+      { avgCadenceSpm: null, maxCadenceSpm: 0 },
+    ],
+  };
+  db.prepare(`INSERT INTO trainings (user_id, dia, tipo, result_data_source, fit_summary_json)
+    VALUES (1, '2026-09-01', 'Run', 'fit_upload', ?),
+      (1, '2026-09-02', 'Run', 'fit_upload', '{invalid-json'),
+      (1, '2026-09-03', 'Run', 'fit_upload', ?),
+      (1, '2026-09-04', 'Run', 'fit_upload', ?),
+      (1, '2026-09-05', 'Run', 'fit_upload', ?),
+      (1, '2026-09-06', 'Run', 'fit_upload', ?)`)
+    .run(
+      JSON.stringify(summary),
+      JSON.stringify({ activity: { sport: 'running' }, laps: [{ avgCadenceSpm: 82, avgCadenceSource: 'avg_cadence_running' }] }),
+      JSON.stringify({ cadenceNormalization: 'two-foot-spm-v1', activity: { sport: 'running' }, laps: [{ avgCadenceSpm: 164 }] }),
+      JSON.stringify({ activity: { sport: 'cycling' }, laps: [{ avgCadenceSpm: 82 }] }),
+      JSON.stringify({ activity: { sport: 'running' }, laps: {} }),
+    );
+  db.prepare(`DELETE FROM schema_migrations
+    WHERE name IN ('2026-10-fit-cadence-two-foot-v1', '2026-10-fit-cadence-source-v2')`).run();
+
+  migrateDatabase(db);
+  const persisted = JSON.parse(db.prepare('SELECT fit_summary_json FROM trainings WHERE id = 1').get().fit_summary_json);
+  assert.equal(persisted.laps[0].avgCadenceSpm, 162);
+  assert.equal(persisted.laps[0].maxCadenceSpm, 184);
+  assert.equal(persisted.laps[1].avgCadenceSpm, null);
+  assert.equal(persisted.laps[1].maxCadenceSpm, null);
+  assert.equal(persisted.laps[2].maxCadenceSpm, 0);
+  assert.equal(persisted.cadenceNormalization, 'two-foot-spm-v1');
+  assert.equal(db.prepare('SELECT fit_summary_json FROM trainings WHERE id = 2').get().fit_summary_json, '{invalid-json');
+  assert.equal(JSON.parse(db.prepare('SELECT fit_summary_json FROM trainings WHERE id = 3').get().fit_summary_json).laps[0].avgCadenceSpm, 164,
+    'source metadata is skipped by the original migration and handled by the corrective one');
+  assert.equal(JSON.parse(db.prepare('SELECT fit_summary_json FROM trainings WHERE id = 4').get().fit_summary_json).laps[0].avgCadenceSpm, 164,
+    'the summary-level marker prevents an old value from being converted again');
+  assert.equal(JSON.parse(db.prepare('SELECT fit_summary_json FROM trainings WHERE id = 5').get().fit_summary_json).laps[0].avgCadenceSpm, 82,
+    'non-running cadence is preserved');
+  assert.deepEqual(JSON.parse(db.prepare('SELECT fit_summary_json FROM trainings WHERE id = 6').get().fit_summary_json).laps, {});
+  migrateDatabase(db);
+  const repeated = JSON.parse(db.prepare('SELECT fit_summary_json FROM trainings WHERE id = 1').get().fit_summary_json);
+  assert.deepEqual(repeated, persisted);
+  db.close();
+});
+
+test('legacy parser summary is persisted, corrected by migration, and served to the result page', async () => {
+  const db = createDatabase({ filename: ':memory:' });
+  const user = await registerUser(db, {
+    email: 'legacy-cadence@example.test', password: 'cadence-secret-1', first_name: 'Legacy', last_name: 'Runner',
+  });
+  const legacyParserSummary = {
+    activity: { sport: 'running' },
+    totals: { durationSeconds: 60, distanceKm: 0.2, ascentMeters: 0 },
+    laps: [{
+      lap: 1, stepType: 'Run', durationLabel: '1:00', distanceLabel: '0.20', avgPaceLabel: '5:00',
+      avgCadenceSpm: 82, avgCadenceSource: 'avg_cadence_running',
+      maxCadenceSpm: 91, maxCadenceSource: 'max_cadence_running',
+    }],
+  };
+  const trainingId = Number(db.prepare(`INSERT INTO trainings
+    (user_id, dia, tipo, fit_duration, fit_distance, fit_elevation_gain, fit_summary_json, result_data_source)
+    VALUES (?, '2026-09-28', 'Corrida', '1:00', 0.2, 0, ?, 'fit_upload')`)
+    .run(user.id, JSON.stringify(legacyParserSummary)).lastInsertRowid);
+  db.prepare("DELETE FROM schema_migrations WHERE name = '2026-10-fit-cadence-source-v2'").run();
+  migrateDatabase(db);
+
+  const app = await buildServer({ db, sessionCookieSecure: false });
+  const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: 'legacy-cadence@example.test', password: 'cadence-secret-1' } });
+  assert.equal(login.statusCode, 200);
+  const cookie = [].concat(login.headers['set-cookie'] ?? [])[0].split(';')[0];
+  const response = await app.inject({ method: 'GET', url: `/api/trainings/${trainingId}`, headers: { cookie } });
+  assert.equal(response.statusCode, 200);
+  const summary = JSON.parse(response.json().training.fit_summary_json);
+  assert.equal(summary.laps[0].avgCadenceSpm, 164);
+  assert.equal(summary.laps[0].maxCadenceSpm, 182);
+  assert.equal(summary.cadenceNormalization, 'two-foot-spm-v1');
+  assert.equal(formatCadence(summary.laps[0].avgCadenceSpm), '164');
+  assert.match(buildLapsMarkdown(summary.laps), /\| 1 \| Run \| 0\.20 km \| 1:00 \| 5:00 min\/km \| - \| 164 \| - \|/);
+  await app.close();
   db.close();
 });
 
