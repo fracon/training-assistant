@@ -566,6 +566,12 @@ test('the session page requires a realized RPE before saving, generating or uplo
       assert.equal(compact.sectionOverflow, false, `section has no horizontal overflow at ${width}px: ${JSON.stringify(compact)}`);
       assert.equal(compact.pageOverflow, false, `page has no horizontal overflow at ${width}px: ${JSON.stringify(compact)}`);
     }
+    await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await delay(350);
+    await evaluate("document.getElementById('fitLapsSection').scrollIntoView({block:'center'}); true");
+    await delay(80);
+    const englishMobileScreenshot = await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+    writeFileSync('/tmp/kinesis-laps-en-390.png', Buffer.from(englishMobileScreenshot.data, 'base64'));
     await setLanguage('pt-BR');
     await evaluate("document.getElementById('userPreferences').click(); true");
     await waitFor("document.getElementById('preferencesModal') && !document.getElementById('preferencesModal').classList.contains('hidden')", 'preferences modal');
@@ -581,6 +587,12 @@ test('the session page requires a realized RPE before saving, generating or uplo
     assert.equal(portugueseTable.ascent, 'Subida (m)');
     assert.match(portugueseTable.pace, /min\/mi/);
     assert.equal(portugueseTable.total, 'Ganho de altitude');
+    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+    await delay(350);
+    await evaluate("document.getElementById('fitLapsSection').scrollIntoView({block:'center'}); true");
+    await delay(80);
+    const portugueseDesktopScreenshot = await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+    writeFileSync('/tmp/kinesis-laps-pt-1280.png', Buffer.from(portugueseDesktopScreenshot.data, 'base64'));
     await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
     await delay(350);
     await evaluate("document.getElementById('fitLapsSection').scrollIntoView({block:'center'}); true");
