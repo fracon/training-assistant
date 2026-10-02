@@ -513,19 +513,23 @@ test('the session page requires a realized RPE before saving, generating or uplo
       missingCadence:document.querySelector('#fitLapsBody tr:nth-child(2) td:nth-child(7)').textContent.trim(),
       firstAscent:document.querySelector('#fitLapsBody tr:first-child td:nth-child(8)').textContent.trim(),
       missingAscent:document.querySelector('#fitLapsBody tr:nth-child(2) td:nth-child(8)').textContent.trim(),
-      tableVisible:getComputedStyle(document.querySelector('.fit-laps-wrapper')).display !== 'none',
-      cardsVisible:getComputedStyle(document.querySelector('#fitLapsCards')).display !== 'none',
-      cardText:document.querySelector('#fitLapsCards').textContent,
+      tableVisible:getComputedStyle(document.querySelector('#fitLapsTable')).display !== 'none',
+      tableRows:document.querySelectorAll('#fitLapsBody tr').length,
+      paceLines:document.querySelectorAll('#fitLapsBody tr:first-child .fit-lap-pace > span').length,
+      paceValue:document.querySelector('#fitLapsBody tr:first-child .fit-lap-pace-value').textContent,
+      paceUnit:document.querySelector('#fitLapsBody tr:first-child .fit-lap-pace-unit').textContent,
       pageOverflow:document.documentElement.scrollWidth>window.innerWidth,
     }))()`);
-    const { cardText: desktopCardText, ...desktopLayout } = desktopTable;
-    assert.deepEqual(desktopLayout, {
+    assert.deepEqual(desktopTable, {
       header: 'Cadence (spm)', firstCadence: '164', missingCadence: '-',
-      firstAscent: '12', missingAscent: '-', tableVisible: false, cardsVisible: true,
+      firstAscent: '12', missingAscent: '-', tableVisible: true, tableRows: 2,
+      paceLines: 2, paceValue: '5:00', paceUnit: 'min/km',
       pageOverflow: false,
     });
-    assert.match(desktopCardText, /164/);
-    assert.match(desktopCardText, /-/);
+    await evaluate("document.getElementById('fitLapsSection').scrollIntoView({block:'center'}); true");
+    await delay(80);
+    const desktopScreenshot = await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+    writeFileSync('/tmp/kinesis-laps-en-1280.png', Buffer.from(desktopScreenshot.data, 'base64'));
     for (const sidebarState of ['collapsed', 'open']) {
       await evaluate("document.getElementById('sidebarToggle').click(); true");
       await delay(80);
@@ -533,26 +537,30 @@ test('the session page requires a realized RPE before saving, generating or uplo
         collapsed:document.querySelector('.app-shell').classList.contains('collapsed'),
         pageOverflow:document.documentElement.scrollWidth>window.innerWidth,
         sectionOverflow:document.querySelector('.fit-laps-section').scrollWidth>document.querySelector('.fit-laps-section').clientWidth,
+        tableVisible:getComputedStyle(document.querySelector('#fitLapsTable')).display !== 'none',
       })`);
       assert.equal(sidebarLayout.collapsed, sidebarState === 'collapsed');
       assert.equal(sidebarLayout.pageOverflow, false, `page remains contained with sidebar ${sidebarState}`);
       assert.equal(sidebarLayout.sectionOverflow, false, `section remains contained with sidebar ${sidebarState}`);
+      assert.equal(sidebarLayout.tableVisible, true, `table remains visible with sidebar ${sidebarState}`);
     }
-    for (const width of [390, 560, 600, 640, 768]) {
+    await evaluate("document.querySelector('.app-shell').classList.contains('collapsed') ? true : document.getElementById('sidebarToggle').click(); true");
+    for (const width of [360, 390, 560, 600, 640, 768]) {
       await command('Emulation.setDeviceMetricsOverride', { width, height: 844, deviceScaleFactor: 1, mobile: true });
+      await delay(350);
       const compact = await evaluate(`(()=>({
-        tableVisible:getComputedStyle(document.querySelector('.fit-laps-wrapper')).display !== 'none',
-        cardsVisible:getComputedStyle(document.querySelector('#fitLapsCards')).display !== 'none',
-        cardText:document.querySelector('#fitLapsCards').textContent,
-        paceValue:document.querySelector('.fit-lap-card-pace .fit-lap-pace-value').textContent,
-        paceUnit:document.querySelector('.fit-lap-card-pace .fit-lap-pace-unit').textContent,
+        tableVisible:getComputedStyle(document.querySelector('#fitLapsTable')).display !== 'none',
+        tableRows:document.querySelectorAll('#fitLapsBody tr').length,
+        firstRowText:document.querySelector('#fitLapsBody tr:first-child').textContent,
+        paceValue:document.querySelector('#fitLapsBody tr:first-child .fit-lap-pace-value').textContent,
+        paceUnit:document.querySelector('#fitLapsBody tr:first-child .fit-lap-pace-unit').textContent,
         sectionOverflow:document.querySelector('.fit-laps-section').scrollWidth>document.querySelector('.fit-laps-section').clientWidth,
         pageOverflow:document.documentElement.scrollWidth>window.innerWidth,
       }))()`);
-      assert.equal(compact.tableVisible, false, `table switches to cards at ${width}px`);
-      assert.equal(compact.cardsVisible, true, `cards are visible at ${width}px`);
-      assert.match(compact.cardText, /164/);
-      assert.match(compact.cardText, /-/);
+      assert.equal(compact.tableVisible, true, `table remains visible at ${width}px`);
+      assert.equal(compact.tableRows, 2, `all laps remain visible at ${width}px`);
+      assert.match(compact.firstRowText, /164/);
+      assert.match(await evaluate("document.querySelector('#fitLapsBody').textContent"), /-/);
       assert.equal(compact.paceValue, '5:00');
       assert.equal(compact.paceUnit, 'min/km');
       assert.equal(compact.sectionOverflow, false, `section has no horizontal overflow at ${width}px: ${JSON.stringify(compact)}`);
@@ -562,17 +570,23 @@ test('the session page requires a realized RPE before saving, generating or uplo
     await evaluate("document.getElementById('userPreferences').click(); true");
     await waitFor("document.getElementById('preferencesModal') && !document.getElementById('preferencesModal').classList.contains('hidden')", 'preferences modal');
     await evaluate("document.querySelector('#preferencesForm [name=distance_unit][value=mi]').click(); document.getElementById('preferencesSubmit').click(); true");
-    await waitFor("document.querySelector('.fit-lap-card-pace .fit-lap-pace-unit')?.textContent==='min/mi'", 'mile pace unit');
+    await waitFor("document.querySelector('#fitLapsBody .fit-lap-pace-unit')?.textContent==='min/mi'", 'mile pace unit');
     const portugueseTable = await evaluate(`({
-      cadence:document.querySelector('#fitLapsCards').textContent,
-      ascent:document.querySelector('#fitLapsCards').textContent,
-      pace:document.querySelector('.fit-lap-card-pace').textContent,
+      cadence:document.querySelector('#fitLapsTable th:nth-child(7)').textContent.replace(/\\s+/g,' ').trim(),
+      ascent:document.querySelector('#fitLapsTable th:nth-child(8)').textContent.replace(/\\s+/g,' ').trim(),
+      pace:document.querySelector('#fitLapsBody tr:first-child .fit-lap-pace').textContent,
       total:document.getElementById('fitElevation').previousElementSibling.textContent.trim(),
     })`);
-    assert.match(portugueseTable.cadence, /Cadência \(ppm\)/);
-    assert.match(portugueseTable.ascent, /Subida \(m\)/);
+    assert.equal(portugueseTable.cadence, 'Cadência (ppm)');
+    assert.equal(portugueseTable.ascent, 'Subida (m)');
     assert.match(portugueseTable.pace, /min\/mi/);
     assert.equal(portugueseTable.total, 'Ganho de altitude');
+    await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await delay(350);
+    await evaluate("document.getElementById('fitLapsSection').scrollIntoView({block:'center'}); true");
+    await delay(80);
+    const mobileScreenshot = await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+    writeFileSync('/tmp/kinesis-laps-pt-390.png', Buffer.from(mobileScreenshot.data, 'base64'));
     await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
     await setLanguage('en-US');
 

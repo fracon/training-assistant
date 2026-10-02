@@ -699,7 +699,7 @@ select.input-control {
 
 .fit-laps-section {
   margin-top: 14px;
-  container: fit-laps / inline-size;
+  margin-inline: -20px;
 }
 
 .fit-laps-section[hidden] {
@@ -707,21 +707,21 @@ select.input-control {
 }
 
 .fit-laps-wrapper {
-  overflow: visible;
   max-width: 100%;
 }
 
 .fit-laps-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.82rem;
+  font-size: 0.72rem;
   table-layout: fixed;
 }
 
 .fit-laps-table th,
 .fit-laps-table td {
+  min-width: 0;
   vertical-align: middle;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
 }
 
 .fit-laps-table th {
@@ -730,7 +730,8 @@ select.input-control {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--muted);
-  padding: 6px 5px;
+  padding: 6px 1px;
+  line-height: 1.15;
   text-align: right;
   border-bottom: 1px solid var(--line-strong);
 }
@@ -746,10 +747,11 @@ select.input-control {
   font-size: 0.9em;
   font-weight: 600;
   letter-spacing: 0.04em;
+  white-space: nowrap;
 }
 
 .fit-laps-table td {
-  padding: 7px 5px;
+  padding: 7px 1px;
   color: var(--ink);
   border-bottom: 1px solid var(--line);
 }
@@ -761,6 +763,14 @@ select.input-control {
 .fit-laps-table td:nth-child(n+3) {
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+.fit-laps-table td:nth-child(1),
+.fit-laps-table td:nth-child(4),
+.fit-laps-table td:nth-child(6),
+.fit-laps-table td:nth-child(7),
+.fit-laps-table td:nth-child(8) {
+  white-space: nowrap;
 }
 
 .fit-laps-table th:nth-child(1),
@@ -783,76 +793,12 @@ select.input-control {
 .fit-lap-pace-value,
 .fit-lap-pace-unit {
   display: block;
+  white-space: nowrap;
 }
 
-.fit-laps-cards {
-  display: none;
-}
-
-.fit-lap-card {
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
-  max-width: 100%;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--card);
-  overflow-wrap: anywhere;
-}
-
-.fit-lap-card + .fit-lap-card {
-  margin-top: 8px;
-}
-
-.fit-lap-card h4 {
-  overflow-wrap: anywhere;
-  margin: 0 0 10px;
-  color: var(--ink);
-  font-size: 0.85rem;
-  font-weight: 700;
-}
-
-.fit-lap-card dl {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px 12px;
-  margin: 0;
-}
-
-.fit-lap-card-field {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.fit-lap-card-field dt {
-  color: var(--muted);
-  font-size: 0.68rem;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
-.fit-lap-card-field dd {
-  overflow-wrap: anywhere;
-  margin: 2px 0 0;
-  color: var(--ink);
-  font-variant-numeric: tabular-nums;
-}
-
-.fit-lap-card-pace dd {
-  display: flex;
-  flex-direction: column;
-}
-
-@container fit-laps (max-width: 760px) {
-  .fit-laps-wrapper {
-    display: none;
-  }
-
-  .fit-laps-cards {
-    display: block;
+@media (max-width: 480px) {
+  .fit-laps-table th {
+    font-size: 0.58rem;
   }
 }
 

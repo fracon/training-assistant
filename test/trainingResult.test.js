@@ -956,7 +956,8 @@ test('training-result.html ships the expanded feedback grid and generator button
   assert.match(html, /data-i18n="session\.fitLapCadenceUnit">\(spm\)<\/span>/);
   assert.match(html, /data-i18n="session\.fitLapAscent">Ascent<\/span>/);
   assert.match(html, /data-i18n="session\.fitLapAscentUnit">\(m\)<\/span>/);
-  assert.match(html, /id="fitLapsCards"/);
+  assert.match(html, /<table class="fit-laps-table" id="fitLapsTable">/);
+  assert.doesNotMatch(html, /fitLapsCards|fit-lap-card/);
 
   for (const id of [
     'feedbackShoe',
@@ -1828,12 +1829,12 @@ test('training-result.css keeps the earthy premium aesthetic for the session vie
   assert.match(css, /\.file-dropzone \{[^}]*background-color:\s*var\(--card\)/, 'subtle card surface behind the invitation');
   assert.match(css, /\.file-dropzone \{[^}]*cursor:\s*pointer/);
   assert.match(css, /\.file-dropzone \{[^}]*display:\s*flex/);
-  assert.doesNotMatch(css, /\.fit-laps-wrapper[^}]*overflow-x:\s*auto/);
+  assert.doesNotMatch(css, /\.fit-laps-wrapper[^}]*overflow-x:\s*(?:auto|hidden|clip)/);
   assert.doesNotMatch(css, /\.fit-laps-table \{[^}]*min-width:\s*720px/);
-  assert.match(css, /\.fit-laps-section \{[^}]*container:\s*fit-laps \/ inline-size/);
-  assert.match(css, /@container fit-laps \(max-width:\s*760px\)/);
-  assert.match(css, /\.fit-laps-cards \{[^}]*display:\s*none/);
-  assert.match(css, /\.fit-lap-card-field dt \{[^}]*text-transform:\s*uppercase/);
+  assert.match(css, /\.fit-laps-section \{[^}]*margin-inline:\s*-20px/);
+  assert.match(css, /\.fit-lap-pace-value,\s*\n\.fit-lap-pace-unit[\s\S]*white-space:\s*nowrap/);
+  assert.match(css, /@media \(max-width:\s*480px\)[\s\S]*\.fit-laps-table th[\s\S]*font-size:\s*0\.58rem/);
+  assert.doesNotMatch(css, /fit-laps-cards|fit-lap-card/);
   assert.match(css, /\.file-dropzone \{[^}]*flex-direction:\s*column/);
   assert.match(css, /\.file-dropzone:hover \{[^}]*border-color:\s*var\(--accent-deep\)/, 'hovering highlights the zone with the deep sage accent');
   assert.match(css, /\.file-dropzone\.drag-active \{[^}]*border-color:\s*var\(--accent-deep\)/, 'dragging over keeps the primary border highlight');

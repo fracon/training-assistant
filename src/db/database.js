@@ -324,6 +324,48 @@ function migrateDatabase(db) {
     updateFitPace.run(`${minutes + Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`, row.id);
   }
 
+  // FIT summaries written before the two-foot cadence contract contain the
+  // running stride cadence (one foot) in avgCadenceSpm/maxCadenceSpm and have
+  // no normalization marker. Convert only that identifiable legacy shape:
+  // FIT provenance, running activity, cadence values, and no source metadata.
+  // Summaries with source metadata are left untouched because their unit is
+  // ambiguous without the original FIT; this avoids a silent double conversion.
+  const cadenceMarker = '2026-10-fit-cadence-two-foot-v1';
+  const normalizeLegacyCadence = db.transaction(() => {
+    if (db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(cadenceMarker)) return;
+    const rows = db.prepare(
+      "SELECT id, fit_summary_json FROM trainings WHERE result_data_source = 'fit_upload' AND fit_summary_json IS NOT NULL"
+    ).all();
+    const update = db.prepare('UPDATE trainings SET fit_summary_json = ? WHERE id = ?');
+    for (const row of rows) {
+      let summary;
+      try {
+        summary = JSON.parse(row.fit_summary_json);
+      } catch {
+        continue;
+      }
+      if (summary?.cadenceNormalization || summary?.activity?.sport !== 'running' || !Array.isArray(summary.laps)) continue;
+      const cadenceLaps = summary.laps.filter((lap) =>
+        Number.isFinite(lap?.avgCadenceSpm) || Number.isFinite(lap?.maxCadenceSpm)
+      );
+      if (cadenceLaps.length === 0 || cadenceLaps.some((lap) =>
+        lap.avgCadenceSource !== undefined || lap.maxCadenceSource !== undefined
+      )) continue;
+      const normalized = {
+        ...summary,
+        cadenceNormalization: 'two-foot-spm-v1',
+        laps: summary.laps.map((lap) => ({
+          ...lap,
+          avgCadenceSpm: Number.isFinite(lap.avgCadenceSpm) ? Math.round(lap.avgCadenceSpm * 2) : lap.avgCadenceSpm,
+          maxCadenceSpm: Number.isFinite(lap.maxCadenceSpm) ? Math.round(lap.maxCadenceSpm * 2) : lap.maxCadenceSpm,
+        })),
+      };
+      update.run(JSON.stringify(normalized), row.id);
+    }
+    db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(cadenceMarker);
+  });
+  normalizeLegacyCadence();
+
   const workoutsTable = db
     .prepare(
       `SELECT name

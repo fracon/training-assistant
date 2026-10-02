@@ -143,6 +143,56 @@ test('migrateDatabase classifies existing FIT rows and leaves result-less rows a
   db.close();
 });
 
+test('migrateDatabase converts only identifiable raw running cadence and stays idempotent', () => {
+  const db = createDatabase({ filename: ':memory:' });
+  db.prepare("INSERT INTO users (email, password_hash) VALUES ('cadence@example.test', 'hash')").run();
+  const raw = JSON.stringify({
+    activity: { sport: 'running' },
+    laps: [
+      { avgCadenceSpm: 81, maxCadenceSpm: 88 },
+      { avgCadenceSpm: null, maxCadenceSpm: 89 },
+      { avgCadenceSpm: 80 },
+    ],
+  });
+  const sourceTagged = JSON.stringify({
+    activity: { sport: 'running' },
+    laps: [{ avgCadenceSpm: 82, avgCadenceSource: 'avg_cadence_running' }],
+  });
+  const nonRunning = JSON.stringify({ activity: { sport: 'cycling' }, laps: [{ avgCadenceSpm: 80 }] });
+  const malformed = '{not-json';
+  db.prepare(`INSERT INTO trainings (user_id, dia, tipo, result_data_source, fit_summary_json) VALUES
+    (1, '2026-09-01', 'Run', 'fit_upload', ?),
+    (1, '2026-09-02', 'Run', 'fit_upload', ?),
+    (1, '2026-09-03', 'Ride', 'fit_upload', ?),
+    (1, '2026-09-04', 'Run', 'fit_upload', ?),
+    (1, '2026-09-05', 'Run', 'fit_upload', ?),
+    (1, '2026-09-06', 'Run', 'fit_upload', ?)`)
+    .run(raw, sourceTagged, nonRunning, malformed, JSON.stringify({ activity: { sport: 'running' }, laps: [] }), JSON.stringify({ cadenceNormalization: 'two-foot-spm-v1', activity: { sport: 'running' }, laps: [{ avgCadenceSpm: 164 }] }));
+
+  db.prepare("DELETE FROM schema_migrations WHERE name = '2026-10-fit-cadence-two-foot-v1'").run();
+  migrateDatabase(db);
+  const rows = db.prepare('SELECT fit_summary_json FROM trainings ORDER BY id').all().map((row) => {
+    try { return JSON.parse(row.fit_summary_json); } catch { return row.fit_summary_json; }
+  });
+  assert.deepEqual(rows[0].laps, [
+    { avgCadenceSpm: 162, maxCadenceSpm: 176 },
+    { avgCadenceSpm: null, maxCadenceSpm: 178 },
+    { avgCadenceSpm: 160 },
+  ]);
+  assert.equal(rows[0].cadenceNormalization, 'two-foot-spm-v1');
+  assert.deepEqual(rows[1].laps[0], { avgCadenceSpm: 82, avgCadenceSource: 'avg_cadence_running' });
+  assert.deepEqual(rows[2].laps[0], { avgCadenceSpm: 80 });
+  assert.equal(rows[3], malformed);
+  assert.deepEqual(rows[4].laps, []);
+  assert.equal(rows[5].laps[0].avgCadenceSpm, 164);
+
+  const first = db.prepare('SELECT fit_summary_json FROM trainings WHERE id = 1').get().fit_summary_json;
+  migrateDatabase(db);
+  assert.equal(db.prepare('SELECT fit_summary_json FROM trainings WHERE id = 1').get().fit_summary_json, first);
+  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE name = '2026-10-fit-cadence-two-foot-v1'").get().count, 1);
+  db.close();
+});
+
 test('SCHEMA is idempotent when executed twice', () => {
   const db = new Database(':memory:');
   db.exec(SCHEMA);

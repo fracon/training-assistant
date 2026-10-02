@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized prompts for an AI coach.
 
-Current application version: **0.19.1** (active beta development).
+Current application version: **0.19.2** (active beta development).
 
 ### Shoe mileage integrity
 
@@ -156,8 +156,19 @@ not resolve those subfields and exposes FIT field 17 as `avg_cadence`, while
 exposing its fractional companion separately. For a running FIT, Kinesis uses
 the running sport context, adds the fractional component, and converts that
 source value once to two-foot steps/minute at the parser boundary. Generic
-cadence without running context is unavailable (`-`). Persisted lap values are
-displayed as stored and are never converted again on reload.
+cadence without running context is unavailable (`-`). Every newly persisted
+FIT summary carries the `two-foot-spm-v1` normalization marker, and the result
+table and Markdown prompt consume that same normalized value. The idempotent
+`2026-10-fit-cadence-two-foot-v1` migration converts only older FIT summaries
+whose running cadence fields have no source metadata; summaries with an
+ambiguous historical unit are left unchanged rather than guessed or converted
+twice.
+
+The result page keeps the lap presentation as one semantic table at every
+supported viewport. Its cadence and heart-rate headers use deliberate two-line
+labels, pace separates its value from `min/km` or `min/mi`, and the table uses
+the available card width without a horizontal scroller or a card-based
+replacement.
 
 The result page keeps **How to import? / Como importar?** beside the FIT/ZIP
 upload controls. It is an independent import guide and remains available in

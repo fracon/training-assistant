@@ -8,7 +8,7 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.19.1`); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.19.2`); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
@@ -225,8 +225,12 @@ onboarding record of the account is preserved.
   companion, so that fallback is treated as running cadence only when the
   decoded lap/session sport is `running`; Kinesis adds the fraction and
   converts once to two-foot steps/minute at the FIT boundary. Generic cadence
-  without that context remains absent. Existing persisted lap values are
-  displayed as stored and are never converted again.
+  without that context remains absent. New FIT summaries carry the
+  `two-foot-spm-v1` marker and persisted values are displayed as stored without
+  another conversion. The idempotent `2026-10-fit-cadence-two-foot-v1`
+  migration converts only identifiable older running summaries whose cadence
+  fields lack source metadata; ambiguous stored units remain unchanged rather
+  than being guessed.
 - The result page keeps its import guide beside the FIT/ZIP upload controls;
   it is available regardless of whether the session has `none`, `manual`, or
   `fit_upload` provenance. Do not infer result existence from displayed fields.

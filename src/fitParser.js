@@ -10,6 +10,7 @@ const DEFAULT_PARSER_OPTIONS = {
 };
 
 const PARSE_TIMEOUT_MS = 10000;
+const CADENCE_NORMALIZATION = 'two-foot-spm-v1';
 
 function pickNumber(source, key) {
   return Number.isFinite(source?.[key]) ? source[key] : null;
@@ -352,6 +353,7 @@ function summarize(data) {
       endTime: toIso(session.timestamp),
     },
     laps: lapViews,
+    cadenceNormalization: CADENCE_NORMALIZATION,
     // The session total is authoritative. Lap calories remain available in
     // each lap, but are not summed because exporters may report cumulative
     // values and doing so could double-count the activity.

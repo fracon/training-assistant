@@ -105,6 +105,7 @@ test('summarize builds cumulative lap views from session data', () => {
     startTime: '2026-02-03T07:30:00.000Z',
     endTime: '2026-02-03T08:10:00.000Z',
   });
+  assert.equal(summary.cadenceNormalization, 'two-foot-spm-v1');
   assert.equal(summary.laps.length, 3);
 
   const [first, rest, third] = summary.laps;
@@ -693,6 +694,7 @@ test('parseFitFile decodes a synthetic binary Garmin-style FIT file', async () =
     startTime: '2026-02-03T07:30:00.000Z',
     endTime: '2026-02-03T08:10:00.000Z',
   });
+  assert.equal(summary.cadenceNormalization, 'two-foot-spm-v1');
   assert.equal(summary.laps.length, 2);
 
   const [runLap, restLap] = summary.laps;
