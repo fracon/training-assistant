@@ -252,6 +252,11 @@ body {
   gap: 14px 18px;
 }
 
+.feedback-grid:has(.fit-data-section) {
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .field-wide {
   grid-column: 1 / -1;
 }
@@ -662,6 +667,12 @@ select.input-control {
   display: none;
 }
 
+.fit-data-section {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+
 .fit-data-title {
   margin: 0 0 10px;
   font-size: 0.72rem;
@@ -699,7 +710,7 @@ select.input-control {
 
 .fit-laps-section {
   margin-top: 14px;
-  margin-inline: -20px;
+  min-width: 0;
 }
 
 .fit-laps-section[hidden] {
@@ -707,11 +718,13 @@ select.input-control {
 }
 
 .fit-laps-wrapper {
+  min-width: 0;
   max-width: 100%;
 }
 
 .fit-laps-table {
   width: 100%;
+  min-width: 0;
   border-collapse: collapse;
   font-size: 0.72rem;
   table-layout: fixed;
@@ -774,21 +787,21 @@ select.input-control {
 }
 
 .fit-laps-table th:nth-child(1),
-.fit-laps-table td:nth-child(1) { width: 5%; }
+.fit-laps-table td:nth-child(1) { width: 6%; }
 .fit-laps-table th:nth-child(2),
-.fit-laps-table td:nth-child(2) { width: 14%; }
+.fit-laps-table td:nth-child(2) { width: 13%; }
 .fit-laps-table th:nth-child(3),
-.fit-laps-table td:nth-child(3) { width: 12%; }
+.fit-laps-table td:nth-child(3) { width: 14%; }
 .fit-laps-table th:nth-child(4),
-.fit-laps-table td:nth-child(4) { width: 11%; }
+.fit-laps-table td:nth-child(4) { width: 15%; }
 .fit-laps-table th:nth-child(5),
-.fit-laps-table td:nth-child(5) { width: 13%; }
+.fit-laps-table td:nth-child(5) { width: 17%; }
 .fit-laps-table th:nth-child(6),
-.fit-laps-table td:nth-child(6) { width: 11%; }
+.fit-laps-table td:nth-child(6) { width: 9%; }
 .fit-laps-table th:nth-child(7),
 .fit-laps-table td:nth-child(7) { width: 14%; }
 .fit-laps-table th:nth-child(8),
-.fit-laps-table td:nth-child(8) { width: 10%; }
+.fit-laps-table td:nth-child(8) { width: 12%; }
 
 .fit-lap-pace-value,
 .fit-lap-pace-unit {
@@ -798,7 +811,24 @@ select.input-control {
 
 @media (max-width: 480px) {
   .fit-laps-table th {
-    font-size: 0.58rem;
+    font-size: 0.56rem;
+    letter-spacing: 0;
+  }
+
+  .fit-laps-table th,
+  .fit-laps-table td {
+    padding-inline: 0;
+  }
+}
+
+@media (max-width: 374px) {
+  .fit-laps-table th {
+    font-size: 0.5rem;
+    letter-spacing: -0.02em;
+  }
+
+  .fit-laps-section {
+    width: calc(100% + 2px);
   }
 }
 
@@ -853,5 +883,9 @@ select.input-control {
 
   .feedback-grid {
     grid-template-columns: 1fr;
+  }
+
+  .feedback-grid:has(.fit-data-section) {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

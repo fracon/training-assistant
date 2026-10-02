@@ -519,13 +519,22 @@ test('the session page requires a realized RPE before saving, generating or uplo
       paceValue:document.querySelector('#fitLapsBody tr:first-child .fit-lap-pace-value').textContent,
       paceUnit:document.querySelector('#fitLapsBody tr:first-child .fit-lap-pace-unit').textContent,
       pageOverflow:document.documentElement.scrollWidth>window.innerWidth,
+      cardRect:(()=>{const r=document.getElementById('fitDataSection').closest('.card').getBoundingClientRect(); return {left:r.left,right:r.right}})(),
+      titleRect:(()=>{const r=document.querySelector('#fitLapsSection .fit-data-title').getBoundingClientRect(); return {left:r.left,right:r.right,bottom:r.bottom}})(),
+      tableRect:(()=>{const r=document.getElementById('fitLapsTable').getBoundingClientRect(); return {left:r.left,right:r.right,top:r.top,bottom:r.bottom}})(),
     }))()`);
-    assert.deepEqual(desktopTable, {
+    const { cardRect, titleRect, tableRect, ...desktopValues } = desktopTable;
+    assert.deepEqual(desktopValues, {
       header: 'Cadence (spm)', firstCadence: '164', missingCadence: '-',
       firstAscent: '12', missingAscent: '-', tableVisible: true, tableRows: 2,
       paceLines: 2, paceValue: '5:00', paceUnit: 'min/km',
       pageOverflow: false,
     });
+    assert.ok(titleRect.left > cardRect.left, 'lap title stays inside the card padding');
+    assert.ok(titleRect.right < cardRect.right, 'lap title stays inside the card padding');
+    assert.ok(tableRect.left > cardRect.left, 'lap table stays inside the card padding');
+    assert.ok(tableRect.right < cardRect.right, 'lap table stays inside the card padding');
+    assert.ok(tableRect.top > titleRect.bottom, 'lap table is separated from its title');
     await evaluate("document.getElementById('fitLapsSection').scrollIntoView({block:'center'}); true");
     await delay(80);
     const desktopScreenshot = await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
@@ -556,6 +565,8 @@ test('the session page requires a realized RPE before saving, generating or uplo
         paceUnit:document.querySelector('#fitLapsBody tr:first-child .fit-lap-pace-unit').textContent,
         sectionOverflow:document.querySelector('.fit-laps-section').scrollWidth>document.querySelector('.fit-laps-section').clientWidth,
         pageOverflow:document.documentElement.scrollWidth>window.innerWidth,
+        cardRect:(()=>{const r=document.getElementById('fitDataSection').closest('.card').getBoundingClientRect(); return {left:r.left,right:r.right}})(),
+        tableRect:(()=>{const r=document.getElementById('fitLapsTable').getBoundingClientRect(); return {left:r.left,right:r.right}})(),
       }))()`);
       assert.equal(compact.tableVisible, true, `table remains visible at ${width}px`);
       assert.equal(compact.tableRows, 2, `all laps remain visible at ${width}px`);
@@ -565,6 +576,8 @@ test('the session page requires a realized RPE before saving, generating or uplo
       assert.equal(compact.paceUnit, 'min/km');
       assert.equal(compact.sectionOverflow, false, `section has no horizontal overflow at ${width}px: ${JSON.stringify(compact)}`);
       assert.equal(compact.pageOverflow, false, `page has no horizontal overflow at ${width}px: ${JSON.stringify(compact)}`);
+      assert.ok(compact.tableRect.left > compact.cardRect.left, `table keeps card padding at ${width}px`);
+      assert.ok(compact.tableRect.right < compact.cardRect.right, `table keeps card padding at ${width}px`);
     }
     await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
     await delay(350);
