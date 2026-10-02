@@ -15,9 +15,6 @@ function formatMetric(value) {
   return value === null || value === undefined ? '-' : String(value);
 }
 
-const TABLE_HEADER =
-  '| Step | Lap | Time | Cumulative | Distance (km) | Avg Pace | Best Pace | Avg HR | Max HR | Ascent | Descent | Avg Cadence | Max Cadence | Stride (m) | Calories |';
-
 const TABLE_DIVIDER = '|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|';
 
 function toRow(lap) {
@@ -43,7 +40,7 @@ function toRow(lap) {
 
 function buildLapsTable(laps, t) {
   if (!laps.length) return t.lapsFallback;
-  return [TABLE_HEADER, TABLE_DIVIDER, ...laps.map(toRow)].join('\n');
+  return [t.lapTableHeader, TABLE_DIVIDER, ...laps.map(toRow)].join('\n');
 }
 
 function orUninformed(value, fallback) {

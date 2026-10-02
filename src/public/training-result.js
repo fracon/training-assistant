@@ -246,7 +246,7 @@ Pace médio: {{PACE_MEDIO}}{{OBSERVACAO_PACE}}
 Calorias: {{CALORIAS}}
 FC média: {{FC_MEDIA}}
 FC máxima: {{FC_MAXIMA}}
-Desnível positivo: {{DESNIVEL_POSITIVO}}
+Ganho de altitude: {{DESNIVEL_POSITIVO}}
 Tênis utilizado: {{TENIS_UTILIZADO}}
 
 Fonte da frequência cardíaca:
@@ -527,7 +527,13 @@ export function fitUploadErrorMessage(code, translate) {
 
 export function formatCadence(value, language = 'en-US') {
   if (!Number.isFinite(value) || value < 0) return '-';
-  return `${value} ${language === 'pt-BR' ? 'passadas/min' : 'strides/min'}`;
+  return String(value);
+}
+
+export function splitPaceLabel(value) {
+  const text = String(value ?? '').trim();
+  const match = /^(.*)\s+(min\/(?:km|mi))$/.exec(text);
+  return match ? { value: match[1], unit: match[2] } : { value: text || '-', unit: '' };
 }
 
 const LAP_TYPE_KEYS = {
@@ -553,8 +559,8 @@ export function buildLapsMarkdown(laps, preferences = {}) {
   if (!Array.isArray(laps) || laps.length === 0) return '';
   const english = preferences.language !== 'pt-BR';
   const header = english
-    ? '| # | Type | Distance | Duration | Pace | HR avg. | Avg cadence (strides/min) | Ascent |'
-    : '| # | Tipo | Distância | Duração | Pace | FC média | Cadência média (passadas/min) | Desnível |';
+    ? '| # | Type | Distance | Duration | Pace | HR avg. | Cadence (spm) | Ascent (m) |'
+    : '| # | Tipo | Distância | Duração | Pace | FC média | Cadência (ppm) | Subida (m) |';
   const separator = '|---|------|----------|----------|------|---------|--------------------|--------|';
   const rows = laps.map((lap) => {
     const distance = lap.distanceLabel ?? '-';
@@ -563,7 +569,7 @@ export function buildLapsMarkdown(laps, preferences = {}) {
     const hr = lap.avgHeartRate ?? '-';
     const cadence = formatCadence(lap.avgCadenceSpm, preferences.language);
     const stepType = formatLapType(lap.stepType, preferences.language, preferences.messages);
-    const ascent = lap.ascentMeters != null ? `${lap.ascentMeters} m` : '-';
+    const ascent = lap.ascentMeters != null ? String(lap.ascentMeters) : '-';
     const paceLabel = pace === '-' ? `- min/${distanceUnit}` : formatPaceFromMetric(pace, distanceUnit);
     const distanceValue = distance === '-' ? '-' : formatDistance(distance, distanceUnit).replace(/\s(km|mi)$/, '');
     return `| ${lap.lap} | ${stepType} | ${distanceValue} ${distanceUnit} | ${duration} | ${paceLabel} | ${hr} | ${cadence} | ${ascent} |`;
@@ -803,6 +809,27 @@ async function initTrainingResult() {
       return;
     }
     fitLapsSection.hidden = false;
+    fitLapsTable.lang = i18n.language;
+    const english = i18n.language === 'en-US';
+    const softBreaks = {
+      fitLapDistance: english ? 'Dis\u00adtance' : 'Dis\u00adtância',
+      fitLapDuration: english ? 'Dur\u00adation' : 'Dur\u00adação',
+      fitLapHrUnit: english ? 'av\u00adg.' : 'mé\u00addia',
+      fitLapCadence: english ? 'Cad\u00adence' : 'Cadên\u00adcia',
+      fitLapAscent: english ? 'As\u00adcent' : 'Subi\u00adda',
+    };
+    for (const [key, label] of Object.entries(softBreaks)) {
+      const header = fitLapsTable.querySelector(`.fit-lap-header-label[data-i18n="session.${key}"]`);
+      if (!header) continue;
+      const fullLabel = t(`session.${key}`);
+      header.textContent = label;
+      if (key !== 'fitLapHrUnit') {
+        const accessibleKey = key === 'fitLapCadence'
+          ? 'session.fitLapCadenceAccessible'
+          : key === 'fitLapAscent' ? 'session.fitLapAscentAccessible' : null;
+        header.closest('th')?.setAttribute('aria-label', accessibleKey ? t(accessibleKey) : fullLabel);
+      }
+    }
     const fragment = document.createDocumentFragment();
     const distanceUnit = getUserPreferences().distance_unit;
     for (const lap of laps) {
@@ -810,15 +837,31 @@ async function initTrainingResult() {
       const distance = lap.distanceLabel ?? '-';
       const duration = lap.durationLabel ?? '-';
       const pace = formatPaceFromMetric(lap.avgPaceLabel ?? '-', distanceUnit);
+      const paceParts = splitPaceLabel(pace);
       const hr = lap.avgHeartRate ?? '-';
       const cadence = formatCadence(lap.avgCadenceSpm, i18n.language);
-      const ascent = lap.ascentMeters != null ? `${lap.ascentMeters} m` : '-';
+      const ascent = lap.ascentMeters != null ? String(lap.ascentMeters) : '-';
+      const distanceValue = distance === '-'
+        ? '-'
+        : formatDistance(distance, distanceUnit).replace(/\s(km|mi)$/, '');
+      const displayDistance = distance === '-' ? '-' : `${distanceValue} ${distanceUnit}`;
+      const type = formatLapType(lap.stepType, i18n.language, i18n.messages);
+      const warmup = t('session.fitLapTypes.warmup');
+      const cooldown = t('session.fitLapTypes.cooldown');
+      const displayType = type === warmup
+        ? (english ? 'Warm\u00adup' : 'Aque\u00adci\u00admen\u00adto')
+        : type === cooldown
+          ? (english ? 'Cool\u00addown' : 'Desa\u00adque\u00adci\u00admen\u00adto')
+          : type;
+      const paceMarkup = paceParts.unit
+        ? `<span class="fit-lap-pace-value">${escapeHtmlText(paceParts.value)}</span><span class="fit-lap-pace-unit">${escapeHtmlText(paceParts.unit)}</span>`
+        : `<span class="fit-lap-pace-value">${escapeHtmlText(paceParts.value)}</span>`;
       tr.innerHTML = [
         `<td>${escapeHtmlText(String(lap.lap))}</td>`,
-        `<td>${escapeHtmlText(lap.stepType)}</td>`,
-        `<td>${escapeHtmlText(distance === '-' ? '-' : formatDistance(distance, distanceUnit).replace(/\s(km|mi)$/, ''))} ${distance === '-' ? '' : distanceUnit}</td>`,
+        `<td>${escapeHtmlText(displayType)}</td>`,
+        `<td>${escapeHtmlText(displayDistance)}</td>`,
         `<td>${escapeHtmlText(duration)}</td>`,
-        `<td>${escapeHtmlText(pace)}</td>`,
+        `<td class="fit-lap-pace">${paceMarkup}</td>`,
         `<td>${escapeHtmlText(String(hr))}</td>`,
         `<td>${escapeHtmlText(cadence)}</td>`,
         `<td>${escapeHtmlText(ascent)}</td>`,

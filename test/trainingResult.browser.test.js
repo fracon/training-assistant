@@ -33,6 +33,17 @@ async function freePort() {
 }
 
 function fitSummary() {
+  const lapTypes = ['Warmup', 'Cooldown', 'Run', 'Rest', 'Run', 'Run', 'Rest', 'Run', 'Run', 'Cooldown', 'Warmup', 'Run'];
+  const laps = lapTypes.map((stepType, index) => ({
+    lap: index + 1,
+    stepType,
+    distanceLabel: index === 3 ? '0.09' : '1.00',
+    durationLabel: index === 0 ? '1:02:03' : index === 9 ? '0:45' : '5:00',
+    avgPaceLabel: index === 1 || index === 3 ? '--:--' : '5:00',
+    avgHeartRate: index === 1 || index === 3 ? null : 198 + index,
+    avgCadenceSpm: index === 1 || index === 3 ? null : 220 + index,
+    ascentMeters: index === 1 || index === 3 ? null : 120 + index,
+  }));
   return {
     totals: {
       durationSeconds: 3600,
@@ -47,7 +58,7 @@ function fitSummary() {
       startTime: '2026-08-24T07:00:00Z',
       endTime: '2026-08-24T08:00:00Z',
     },
-    laps: [],
+    laps,
   };
 }
 
@@ -485,6 +496,173 @@ test('the session page requires a realized RPE before saving, generating or uplo
       result_data_source: 'fit_upload',
       fit_distance: 10,
     });
+    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+    const desktopTable = await evaluate(`(()=>({
+      header:document.querySelector('#fitLapsTable th:nth-child(7)').textContent.replace(/\\u00ad/g,'').replace(/\\s+/g,' ').trim(),
+      firstCadence:document.querySelector('#fitLapsBody tr:first-child td:nth-child(7)').textContent.trim(),
+      missingCadence:document.querySelector('#fitLapsBody tr:nth-child(2) td:nth-child(7)').textContent.trim(),
+      firstAscent:document.querySelector('#fitLapsBody tr:first-child td:nth-child(8)').textContent.trim(),
+      missingAscent:document.querySelector('#fitLapsBody tr:nth-child(2) td:nth-child(8)').textContent.trim(),
+      tableVisible:getComputedStyle(document.querySelector('#fitLapsTable')).display !== 'none',
+      tableRows:document.querySelectorAll('#fitLapsBody tr').length,
+      paceLines:document.querySelectorAll('#fitLapsBody tr:first-child .fit-lap-pace > span').length,
+      paceValue:document.querySelector('#fitLapsBody tr:first-child .fit-lap-pace-value').textContent,
+      paceUnit:document.querySelector('#fitLapsBody tr:first-child .fit-lap-pace-unit').textContent,
+      pageOverflow:document.documentElement.scrollWidth>window.innerWidth,
+      cardRect:(()=>{const r=document.getElementById('fitDataSection').closest('.card').getBoundingClientRect(); return {left:r.left,right:r.right}})(),
+      titleRect:(()=>{const r=document.querySelector('#fitLapsSection .fit-data-title').getBoundingClientRect(); return {left:r.left,right:r.right,bottom:r.bottom}})(),
+      tableRect:(()=>{const r=document.getElementById('fitLapsTable').getBoundingClientRect(); return {left:r.left,right:r.right,top:r.top,bottom:r.bottom}})(),
+    }))()`);
+    const { cardRect, titleRect, tableRect, ...desktopValues } = desktopTable;
+    assert.deepEqual(desktopValues, {
+      header: 'Cadence (spm)', firstCadence: '220', missingCadence: '-',
+      firstAscent: '120', missingAscent: '-', tableVisible: true, tableRows: 12,
+      paceLines: 2, paceValue: '5:00', paceUnit: 'min/km',
+      pageOverflow: false,
+    });
+    assert.ok(titleRect.left > cardRect.left, 'lap title stays inside the card padding');
+    assert.ok(titleRect.right < cardRect.right, 'lap title stays inside the card padding');
+    assert.ok(tableRect.left > cardRect.left, 'lap table stays inside the card padding');
+    assert.ok(tableRect.right < cardRect.right, 'lap table stays inside the card padding');
+    assert.ok(tableRect.top > titleRect.bottom, 'lap table is separated from its title');
+    await evaluate("document.getElementById('fitLapsSection').scrollIntoView({block:'center'}); true");
+    await delay(80);
+    const desktopScreenshot = await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+    writeFileSync('/tmp/kinesis-laps-en-1280.png', Buffer.from(desktopScreenshot.data, 'base64'));
+    for (const sidebarState of ['collapsed', 'open']) {
+      await evaluate("document.getElementById('sidebarToggle').click(); true");
+      await delay(80);
+      const sidebarLayout = await evaluate(`({
+        collapsed:document.querySelector('.app-shell').classList.contains('collapsed'),
+        pageOverflow:document.documentElement.scrollWidth>window.innerWidth,
+        sectionOverflow:document.querySelector('.fit-laps-section').scrollWidth>document.querySelector('.fit-laps-section').clientWidth,
+        tableVisible:getComputedStyle(document.querySelector('#fitLapsTable')).display !== 'none',
+      })`);
+      assert.equal(sidebarLayout.collapsed, sidebarState === 'collapsed');
+      assert.equal(sidebarLayout.pageOverflow, false, `page remains contained with sidebar ${sidebarState}`);
+      assert.equal(sidebarLayout.sectionOverflow, false, `section remains contained with sidebar ${sidebarState}`);
+      assert.equal(sidebarLayout.tableVisible, true, `table remains visible with sidebar ${sidebarState}`);
+    }
+    await evaluate("document.querySelector('.app-shell').classList.contains('collapsed') ? true : document.getElementById('sidebarToggle').click(); true");
+    for (const width of [360, 390, 560, 600, 640, 768]) {
+      await command('Emulation.setDeviceMetricsOverride', { width, height: 844, deviceScaleFactor: 1, mobile: true });
+      await delay(350);
+      const compact = await evaluate(`(()=>({
+        tableVisible:getComputedStyle(document.querySelector('#fitLapsTable')).display !== 'none',
+        tableRows:document.querySelectorAll('#fitLapsBody tr').length,
+        firstRowText:document.querySelector('#fitLapsBody tr:first-child').textContent,
+        paceValue:document.querySelector('#fitLapsBody tr:first-child .fit-lap-pace-value').textContent,
+        paceUnit:document.querySelector('#fitLapsBody tr:first-child .fit-lap-pace-unit').textContent,
+        headerFontSize:parseFloat(getComputedStyle(document.querySelector('#fitLapsTable th')).fontSize),
+        lastLapNumber:document.querySelector('#fitLapsBody tr:last-child td:first-child').textContent,
+        sectionOverflow:document.querySelector('.fit-laps-section').scrollWidth>document.querySelector('.fit-laps-section').clientWidth,
+        pageOverflow:document.documentElement.scrollWidth>window.innerWidth,
+        cardRect:(()=>{const r=document.getElementById('fitDataSection').closest('.card').getBoundingClientRect(); return {left:r.left,right:r.right}})(),
+        tableRect:(()=>{const r=document.getElementById('fitLapsTable').getBoundingClientRect(); return {left:r.left,right:r.right}})(),
+        overflowing:[...document.querySelectorAll('#fitLapsTable th,#fitLapsTable td')].map(e=>({tag:e.tagName,text:e.textContent.trim(),width:e.clientWidth,scroll:e.scrollWidth,rect:[e.getBoundingClientRect().left,e.getBoundingClientRect().right]})).filter(e=>e.scroll>e.width),
+      }))()`);
+      assert.equal(compact.tableVisible, true, `table remains visible at ${width}px`);
+      assert.equal(compact.tableRows, 12, `all laps remain visible at ${width}px`);
+      assert.match(compact.firstRowText, /220/);
+      assert.match(await evaluate("document.querySelector('#fitLapsBody').textContent"), /-/);
+      assert.equal(compact.paceValue, '5:00');
+      assert.equal(compact.paceUnit, 'min/km');
+      assert.ok(compact.headerFontSize >= 11, `headers retain the project reading scale at ${width}px`);
+      assert.equal(compact.lastLapNumber, '12');
+      assert.equal(compact.sectionOverflow, false, `section has no horizontal overflow at ${width}px: ${JSON.stringify(compact)}`);
+      assert.equal(compact.pageOverflow, false, `page has no horizontal overflow at ${width}px: ${JSON.stringify(compact)}`);
+      assert.ok(compact.tableRect.left > compact.cardRect.left, `table keeps card padding at ${width}px`);
+      assert.ok(compact.tableRect.right < compact.cardRect.right, `table keeps card padding at ${width}px`);
+      if ([360, 640].includes(width)) {
+        await evaluate("document.getElementById('fitLapsSection').scrollIntoView({block:'center'}); true");
+        await delay(80);
+        const capture = await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+        writeFileSync(`/tmp/kinesis-review-en-${width}.png`, Buffer.from(capture.data, 'base64'));
+      }
+    }
+    await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await delay(350);
+    await evaluate("document.getElementById('fitLapsSection').scrollIntoView({block:'center'}); true");
+    await delay(80);
+    const englishMobileScreenshot = await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+    writeFileSync('/tmp/kinesis-laps-en-390.png', Buffer.from(englishMobileScreenshot.data, 'base64'));
+    await setLanguage('pt-BR');
+    await evaluate("document.getElementById('userPreferences').click(); true");
+    await waitFor("document.getElementById('preferencesModal') && !document.getElementById('preferencesModal').classList.contains('hidden')", 'preferences modal');
+    await evaluate("document.querySelector('#preferencesForm [name=distance_unit][value=mi]').click(); document.getElementById('preferencesSubmit').click(); true");
+    await waitFor("document.querySelector('#fitLapsBody .fit-lap-pace-unit')?.textContent==='min/mi'", 'mile pace unit');
+    const portugueseTable = await evaluate(`({
+      cadence:document.querySelector('#fitLapsTable th:nth-child(7)').textContent.replace(/\\u00ad/g,'').replace(/\\s+/g,' ').trim(),
+      ascent:document.querySelector('#fitLapsTable th:nth-child(8)').textContent.replace(/\\u00ad/g,'').replace(/\\s+/g,' ').trim(),
+      pace:document.querySelector('#fitLapsBody tr:first-child .fit-lap-pace').textContent,
+      total:document.getElementById('fitElevation').previousElementSibling.textContent.trim(),
+    })`);
+    assert.equal(portugueseTable.cadence, 'Cadência (ppm)');
+    assert.equal(portugueseTable.ascent, 'Subida (m)');
+    assert.match(portugueseTable.pace, /min\/mi/);
+    assert.equal(portugueseTable.total, 'Ganho de altitude');
+    for (const width of [360, 390, 560, 640, 768]) {
+      await command('Emulation.setDeviceMetricsOverride', { width, height: 844, deviceScaleFactor: 1, mobile: true });
+      await delay(350);
+      const portugueseLayout = await evaluate(`(()=>({
+        header:document.querySelector('#fitLapsTable th:nth-child(7)').getAttribute('aria-label'),
+        cadence:document.querySelector('#fitLapsBody tr:first-child td:nth-child(7)').textContent,
+        paceUnit:document.querySelector('#fitLapsBody tr:first-child .fit-lap-pace-unit').textContent,
+        fontSize:parseFloat(getComputedStyle(document.querySelector('#fitLapsTable th')).fontSize),
+        sectionOverflow:document.getElementById('fitLapsSection').scrollWidth>document.getElementById('fitLapsSection').clientWidth,
+        pageOverflow:document.documentElement.scrollWidth>window.innerWidth,
+        rows:document.querySelectorAll('#fitLapsBody tr').length,
+        card:(()=>{const r=document.getElementById('fitDataSection').closest('.card').getBoundingClientRect(); return {left:r.left,right:r.right}})(),
+        table:(()=>{const r=document.getElementById('fitLapsTable').getBoundingClientRect(); return {left:r.left,right:r.right}})(),
+      }))()`);
+      assert.equal(portugueseLayout.header, 'Cadência (ppm)');
+      assert.equal(portugueseLayout.cadence, '220');
+      assert.equal(portugueseLayout.paceUnit, 'min/mi');
+      assert.equal(portugueseLayout.rows, 12);
+      assert.ok(portugueseLayout.fontSize >= 11);
+      assert.equal(portugueseLayout.sectionOverflow, false, `PT table fits at ${width}px`);
+      assert.equal(portugueseLayout.pageOverflow, false, `PT page fits at ${width}px`);
+      assert.ok(portugueseLayout.table.left > portugueseLayout.card.left);
+      assert.ok(portugueseLayout.table.right < portugueseLayout.card.right);
+      if ([360, 640].includes(width)) {
+        await evaluate("document.getElementById('fitLapsSection').scrollIntoView({block:'center'}); true");
+        await delay(80);
+        const capture = await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+        writeFileSync(`/tmp/kinesis-review-pt-${width}.png`, Buffer.from(capture.data, 'base64'));
+      }
+    }
+    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+    await delay(350);
+    for (const state of ['open', 'collapsed']) {
+      await evaluate("document.getElementById('sidebarToggle').click(); true");
+      await delay(350);
+      const desktopPortuguese = await evaluate(`(()=>({
+        collapsed:document.querySelector('.app-shell').classList.contains('collapsed'),
+        pageOverflow:document.documentElement.scrollWidth>window.innerWidth,
+        sectionOverflow:document.getElementById('fitLapsSection').scrollWidth>document.getElementById('fitLapsSection').clientWidth,
+        cadence:document.querySelector('#fitLapsTable th:nth-child(7)').getAttribute('aria-label'),
+        card:(()=>{const r=document.getElementById('fitDataSection').closest('.card').getBoundingClientRect(); return {left:r.left,right:r.right}})(),
+        table:(()=>{const r=document.getElementById('fitLapsTable').getBoundingClientRect(); return {left:r.left,right:r.right}})(),
+      }))()`);
+      assert.equal(desktopPortuguese.collapsed, state === 'collapsed');
+      assert.equal(desktopPortuguese.pageOverflow, false);
+      assert.equal(desktopPortuguese.sectionOverflow, false);
+      assert.equal(desktopPortuguese.cadence, 'Cadência (ppm)');
+      assert.ok(desktopPortuguese.table.left > desktopPortuguese.card.left);
+      assert.ok(desktopPortuguese.table.right < desktopPortuguese.card.right);
+    }
+    await evaluate("document.getElementById('fitLapsSection').scrollIntoView({block:'center'}); true");
+    await delay(80);
+    const portugueseDesktopScreenshot = await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+    writeFileSync('/tmp/kinesis-laps-pt-1280.png', Buffer.from(portugueseDesktopScreenshot.data, 'base64'));
+    await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await delay(350);
+    await evaluate("document.getElementById('fitLapsSection').scrollIntoView({block:'center'}); true");
+    await delay(80);
+    const mobileScreenshot = await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+    writeFileSync('/tmp/kinesis-laps-pt-390.png', Buffer.from(mobileScreenshot.data, 'base64'));
+    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+    await setLanguage('en-US');
 
     /* ── A legacy concluded session reads and is completed once ── */
 
@@ -501,7 +679,7 @@ test('the session page requires a realized RPE before saving, generating or uplo
     }))()`);
     assert.equal(legacy.checked, null, 'a legacy session has no effort to offer');
     assert.equal(legacy.dataHidden, false, 'its recorded result is still readable');
-    assert.equal(legacy.distance, '10.00 km', 'the recorded distance is displayed in the shared unit format');
+    assert.equal(legacy.distance, '6.21 mi', 'the recorded distance is displayed in the shared unit format');
     assert.equal(legacy.duration, '01:00:00');
 
     await clickUntil('#saveBtn', "document.getElementById('feedbackRpeError').hidden===false", 'the legacy refusal');

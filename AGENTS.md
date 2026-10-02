@@ -8,7 +8,7 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.19.0`); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.19.3`); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
@@ -217,14 +217,28 @@ onboarding record of the account is preserved.
   lap ascent totals, then positive deltas between consecutive valid records of
   one selected altitude field. Never add absolute deltas or combine session,
   lap, and record totals.
-- FIT running lap cadence is presented as `passadas/min` in PT and
-  `strides/min` in EN. FIT field 17 uses alternative subfields: running
-  cadence is `strides/min`, while generic cadence is `rpm`. The installed
-  `fit-file-parser` does not resolve those subfields and exposes field 17 as
-  `avg_cadence`, so that fallback is treated as running cadence only when the
-  decoded lap/session sport is `running`; generic cadence without that context
-  remains absent. Existing persisted lap values are displayed as stored and
-  are never converted again.
+- FIT running lap cadence is presented as `ppm` in PT and `spm` in EN, both
+  meaning steps per minute considering the two feet. FIT field 17 uses
+  alternative subfields: running cadence is `strides/min`, while generic
+  cadence is `rpm`. The installed `fit-file-parser` 1.21.0 does not resolve
+  those subfields and exposes field 17 as `avg_cadence` plus its fractional
+  companion, so that fallback is treated as running cadence only when the
+  decoded lap/session sport is `running`; Kinesis adds the fraction and
+  converts once to two-foot steps/minute at the FIT boundary. Generic cadence
+  without that context remains absent. New FIT summaries carry the
+  `two-foot-spm-v1` marker and persisted values are displayed as stored without
+  another conversion. The original `2026-10-fit-cadence-two-foot-v1` migration
+  handles identifiable old running summaries without source metadata. The
+  corrective `2026-10-fit-cadence-source-v2` migration also converts historical
+  raw fields whose previous parser provenance is
+  `avg_cadence_running`/`max_cadence_running` or
+  `avg_running_cadence`/`max_running_cadence`. Average and maximum are checked
+  independently and converted values carry `avgCadenceUnit` or
+  `maxCadenceUnit`; set the summary-wide marker only when all numeric cadence
+  fields are normalized. Preserve unknown origins and already normalized
+  values. Old summaries did not persist fractional cadence, so migrations
+  cannot reconstruct it; new FIT imports include available fractions before
+  conversion.
 - The result page keeps its import guide beside the FIT/ZIP upload controls;
   it is available regardless of whether the session has `none`, `manual`, or
   `fit_upload` provenance. Do not infer result existence from displayed fields.

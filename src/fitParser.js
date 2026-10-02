@@ -10,6 +10,7 @@ const DEFAULT_PARSER_OPTIONS = {
 };
 
 const PARSE_TIMEOUT_MS = 10000;
+const CADENCE_NORMALIZATION = 'two-foot-spm-v1';
 
 function pickNumber(source, key) {
   return Number.isFinite(source?.[key]) ? source[key] : null;
@@ -19,10 +20,22 @@ function isRunningSport(value) {
   return String(value ?? '').trim().toLowerCase() === 'running';
 }
 
+function twoFootCadence(value, fractionalValue) {
+  // FIT running cadence is the stride cadence of one foot.  Field 17 also
+  // carries a fractional subfield; include it before converting once to the
+  // product's two-foot steps/minute presentation unit.
+  const fractional = fractionalValue ?? 0;
+  return Math.round((value + fractional) * 2);
+}
+
 function cadenceValue(lap, sport, field) {
   const runningField = nonNegativeNumber(lap, `${field}_running_cadence`);
   if (runningField !== null) {
-    return { value: runningField, source: `${field}_running_cadence` };
+    const fractional = nonNegativeNumber(lap, `${field}_fractional_cadence`);
+    return {
+      value: twoFootCadence(runningField, fractional),
+      source: `${field}_running_cadence`,
+    };
   }
 
   // fit-file-parser 1.21.0 does not resolve FIT subfields. Its field 17/18
@@ -32,7 +45,13 @@ function cadenceValue(lap, sport, field) {
   const genericField = nonNegativeNumber(lap, field === 'avg' ? 'avg_cadence' : 'max_cadence');
   const lapSport = lap.sport ?? sport;
   return genericField !== null && isRunningSport(lapSport)
-    ? { value: genericField, source: field === 'avg' ? 'avg_cadence_running' : 'max_cadence_running' }
+    ? {
+      value: twoFootCadence(
+        genericField,
+        nonNegativeNumber(lap, field === 'avg' ? 'avg_fractional_cadence' : 'max_fractional_cadence')
+      ),
+      source: field === 'avg' ? 'avg_cadence_running' : 'max_cadence_running',
+    }
     : { value: null, source: null };
 }
 
@@ -130,8 +149,7 @@ function buildLapView(lap, index, cumulativeBefore, sport = null) {
     maxHeartRate: pickNumber(lap, 'max_heart_rate'),
     ascentMeters: nonNegativeNumber(lap, 'total_ascent'),
     descentMeters: nonNegativeNumber(lap, 'total_descent'),
-    // FIT running cadence is reported as strides/min. Keep the source value
-    // unchanged: Kinesis must not double it into a two-foot step count.
+    // This is normalized once at the FIT boundary to two-foot steps/minute.
     avgCadenceSpm: avgCadence.value,
     avgCadenceSource: avgCadence.source,
     maxCadenceSpm: maxCadence.value,
@@ -335,6 +353,7 @@ function summarize(data) {
       endTime: toIso(session.timestamp),
     },
     laps: lapViews,
+    cadenceNormalization: CADENCE_NORMALIZATION,
     // The session total is authoritative. Lap calories remain available in
     // each lap, but are not summed because exporters may report cumulative
     // values and doing so could double-count the activity.

@@ -324,6 +324,112 @@ function migrateDatabase(db) {
     updateFitPace.run(`${minutes + Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`, row.id);
   }
 
+  // The original migration covers FIT summaries in the no-source legacy shape.
+  // The source-aware corrective migration below handles the source-tagged
+  // records that the first implementation left untouched.
+  const cadenceMarker = '2026-10-fit-cadence-two-foot-v1';
+  const normalizeLegacyCadence = db.transaction(() => {
+    if (db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(cadenceMarker)) return;
+    const rows = db.prepare(
+      "SELECT id, fit_summary_json FROM trainings WHERE result_data_source = 'fit_upload' AND fit_summary_json IS NOT NULL"
+    ).all();
+    const update = db.prepare('UPDATE trainings SET fit_summary_json = ? WHERE id = ?');
+    for (const row of rows) {
+      let summary;
+      try {
+        summary = JSON.parse(row.fit_summary_json);
+      } catch {
+        continue;
+      }
+      if (summary?.cadenceNormalization || summary?.activity?.sport !== 'running' || !Array.isArray(summary.laps)) continue;
+      const cadenceLaps = summary.laps.filter((lap) =>
+        Number.isFinite(lap?.avgCadenceSpm) || Number.isFinite(lap?.maxCadenceSpm)
+      );
+      if (cadenceLaps.length === 0 || cadenceLaps.some((lap) =>
+        lap.avgCadenceSource !== undefined || lap.maxCadenceSource !== undefined
+      )) continue;
+      const normalized = {
+        ...summary,
+        cadenceNormalization: 'two-foot-spm-v1',
+        laps: summary.laps.map((lap) => ({
+          ...lap,
+          avgCadenceSpm: Number.isFinite(lap.avgCadenceSpm) ? Math.round(lap.avgCadenceSpm * 2) : lap.avgCadenceSpm,
+          maxCadenceSpm: Number.isFinite(lap.maxCadenceSpm) ? Math.round(lap.maxCadenceSpm * 2) : lap.maxCadenceSpm,
+        })),
+      };
+      update.run(JSON.stringify(normalized), row.id);
+    }
+    db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(cadenceMarker);
+  });
+  normalizeLegacyCadence();
+
+  // The first cadence migration intentionally skipped summaries carrying
+  // source fields, but the pre-normalization parser wrote those fields beside
+  // raw one-foot running cadence. Reconcile those histories independently by
+  // metric, even when the first migration marker is already present. Unknown
+  // sources remain untouched; per-field units make mixed summaries safe to
+  // retry without assigning the summary-wide marker prematurely.
+  const cadenceSourceMarker = '2026-10-fit-cadence-source-v2';
+  const normalizeSourceTaggedCadence = db.transaction(() => {
+    if (db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(cadenceSourceMarker)) return;
+    const rows = db.prepare(
+      "SELECT id, fit_summary_json FROM trainings WHERE result_data_source = 'fit_upload' AND fit_summary_json IS NOT NULL"
+    ).all();
+    const update = db.prepare('UPDATE trainings SET fit_summary_json = ? WHERE id = ?');
+    const knownSources = {
+      avgCadenceSpm: new Set(['avg_cadence_running', 'avg_running_cadence']),
+      maxCadenceSpm: new Set(['max_cadence_running', 'max_running_cadence']),
+    };
+    for (const row of rows) {
+      let summary;
+      try {
+        summary = JSON.parse(row.fit_summary_json);
+      } catch {
+        continue;
+      }
+      if (summary?.cadenceNormalization || summary?.activity?.sport !== 'running' || !Array.isArray(summary.laps)) continue;
+
+      let changed = false;
+      let hasNumericCadence = false;
+      let hasUnnormalizedCadence = false;
+      const laps = summary.laps.map((lap) => {
+        if (!lap || typeof lap !== 'object' || Array.isArray(lap)) return lap;
+        const normalizedLap = { ...lap };
+        for (const [valueField, sources] of Object.entries(knownSources)) {
+          const value = lap[valueField];
+          if (!Number.isFinite(value)) continue;
+          hasNumericCadence = true;
+          const unitField = valueField === 'avgCadenceSpm' ? 'avgCadenceUnit' : 'maxCadenceUnit';
+          if (Object.hasOwn(lap, unitField)) {
+            if (lap[unitField] === 'two-foot-spm-v1') continue;
+            hasUnnormalizedCadence = true;
+            continue;
+          }
+          const sourceField = valueField === 'avgCadenceSpm' ? 'avgCadenceSource' : 'maxCadenceSource';
+          const hasSource = Object.hasOwn(lap, sourceField);
+          if (hasSource && !sources.has(lap[sourceField])) {
+            hasUnnormalizedCadence = true;
+            continue;
+          }
+          normalizedLap[valueField] = Math.round(value * 2);
+          normalizedLap[unitField] = 'two-foot-spm-v1';
+          changed = true;
+        }
+        return normalizedLap;
+      });
+
+      // Every retained numeric field was checked independently above. Do not
+      // put a summary-wide marker on a mixed record; field markers carry the
+      // conversion provenance for values we safely repaired.
+      if (!changed) continue;
+      const normalized = { ...summary, laps };
+      if (hasNumericCadence && !hasUnnormalizedCadence) normalized.cadenceNormalization = 'two-foot-spm-v1';
+      update.run(JSON.stringify(normalized), row.id);
+    }
+    db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(cadenceSourceMarker);
+  });
+  normalizeSourceTaggedCadence();
+
   const workoutsTable = db
     .prepare(
       `SELECT name
