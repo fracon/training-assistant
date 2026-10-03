@@ -662,7 +662,15 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     await evaluate(`document.getElementById('generateBtn').click()`);
     await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+12000;const check=()=>{const prompt=document.getElementById('promptOutput').textContent;if(prompt.includes('Maximum session time: 60 minutes')&&prompt.includes('Maspalomas, Gran Canaria'))resolve(true);else if(Date.now()>end)reject(new Error('Structured English prompt did not appear'));else setTimeout(check,40)};check()})`);
     const prompt = await evaluate(`document.getElementById('promptOutput').textContent`);
-    assert.match(prompt, /highest valid predicted temperature among forecast hours inside the selected period/);
+    assert.match(prompt, /highest verified temperature in that window/);
+    assert.match(prompt, /Do not ask the user to confirm sources, locations, dates, times, or time zones, or to authorize research/);
+    assert.match(prompt, /18:00 ≤ hour < 24:00/);
+    assert.match(prompt, /source time zone, including local-time indications in its header or metadata/);
+    assert.match(prompt, /If coverage is partial, state that limitation/);
+    assert.match(prompt, /consult at least one second hourly-forecast source when tools and access are available/);
+    assert.match(prompt, /Cite the source, preferably with a direct link/);
+    assert.match(prompt, /Do not invent data or interrupt spreadsheet preparation to ask the user for confirmation/);
+    assert.match(prompt, /\| Date \| Day \| Period \| Type \| Workout \| Details \| Target HR \| RPE \| Shoe \| Location \| Weather Forecast \| Notes \|/);
     assert.match(prompt, /a ceiling, not a target/);
     assert.doesNotMatch(prompt, /Normal routine|Rotina normal/);
 
