@@ -90,10 +90,34 @@ test('prompt prints unavailable days and structured windows, maximum minutes, an
   assert.match(prompt, /Segunda: Pode treinar: sim; Período preferencial: 12h–14h; Tempo máximo disponível para a sessão: 60 minutos; Local: Fânzeres, Gondomar/);
   assert.match(prompt, /Terça: Pode treinar: não/);
   assert.match(prompt, /Quarta: Pode treinar: sim; Período preferencial: Antes das 08h; Tempo máximo disponível para a sessão: 45 minutos; Local: Porto/);
-  assert.match(prompt, /maior temperatura prevista entre as horas válidas dentro do período escolhido/);
+  assert.match(prompt, /VERIFICAÇÃO OBRIGATÓRIA DA PREVISÃO DO TEMPO/);
+  assert.match(prompt, /Faça esta pesquisa autonomamente, usando as ferramentas de pesquisa e navegação disponíveis/);
+  assert.match(prompt, /Não peça ao usuário para confirmar fontes, localidade, datas, horários ou fuso, nem autorização para pesquisar/);
+  assert.match(prompt, /Abra e consulte o conteúdo da página ou os dados da fonte de previsão; não use somente resumos de resultados de busca/);
+  assert.match(prompt, /consulte pelo menos uma segunda fonte de previsão horária, se houver ferramenta e acesso disponíveis/);
+  assert.match(prompt, /localidade informada para aquele dia, à data local do treino e às horas necessárias/);
+  assert.match(prompt, /Confira o fuso horário da fonte, inclusive indicações locais no cabeçalho ou nos metadados/);
+  assert.match(prompt, /Para localidades em Portugal continental, incluindo Fânzeres, Gondomar, use Europe\/Lisbon/);
+  for (const interval of [
+    '00:00 ≤ hora < 08:00', '08:00 ≤ hora < 12:00', '12:00 ≤ hora < 14:00',
+    '14:00 ≤ hora < 18:00', '18:00 ≤ hora < 24:00',
+  ]) assert.ok(prompt.includes(interval), `generated PT prompt includes ${interval}`);
+  assert.match(prompt, /faixa de temperaturas das horas verificadas, usando °C/);
+  assert.match(prompt, /use a maior temperatura verificada nessa janela/);
+  assert.match(prompt, /Nunca substitua essa máxima pela máxima diária nem por temperaturas fora do período/);
+  assert.match(prompt, /Se a cobertura for parcial, declare a limitação/);
+  assert.match(prompt, /localidade, data, cobertura horária ou fuso/);
+  assert.match(prompt, /data além do horizonte de previsão/);
+  assert.match(prompt, /não interrompa a elaboração da planilha para pedir confirmação ao usuário/i);
+  assert.match(prompt, /Cite a fonte consultada, preferencialmente com link direto, e a data e hora da consulta com o fuso correspondente/);
+  assert.match(prompt, /Preencha essa coluna no Excel antes de entregá-lo/);
+  assert.match(prompt, /Use as datas efetivas da semana começando em 28\/09\/2026/);
+  assert.match(prompt, /ex\.: 23–24 °C, parcialmente nublado; janela 12h–14h, máxima da janela 24 °C/);
+  assert.match(prompt, /\| Data \| Dia \| Período \| Tipo \| Treino \| Detalhes \| FC alvo \| RPE \| Tênis \| Localização \| Previsão do tempo \| Observações \|/);
   assert.match(prompt, /não é meta/);
   assert.match(prompt, /Nunca interprete a janela do período como duração do treino/);
-  assert.match(prompt, /Não invente horário exato dentro da faixa nem condições meteorológicas/);
+  assert.match(prompt, /Não invente um horário exato de início/);
+  assert.match(prompt, /coluna existente “Previsão do tempo”, sem alterar as 12 colunas nem o formato de importação do Kinesis/);
   assert.doesNotMatch(prompt, /Rotina normal/);
   assert.doesNotMatch(prompt, /08h–12h[^\n]*4 horas/);
 });
@@ -101,12 +125,41 @@ test('prompt prints unavailable days and structured windows, maximum minutes, an
 test('English prompt has localized availability labels and no legacy routine', () => {
   const en = JSON.parse(readFileSync(join(__dirname, '../src/public/locales/en.json')));
   const englishWeek = Object.fromEntries(Object.entries(week).map(([day, record]) => [day, record]));
-  const prompt = buildPrompt({ targetDate: new Date(2026, 8, 28), disponibilidade: englishWeek, lang: 'en-US', messages: en });
+  const prompt = buildPrompt({
+    targetDate: new Date(2026, 8, 28), disponibilidade: englishWeek, lang: 'en-US', messages: en,
+    preferences: { distance_unit: 'mi', temperature_unit: 'F' },
+  });
   assert.match(prompt, /Monday: Can train: yes; Preferred period: 12:00–14:00; Maximum session time: 60 minutes; Location: Fânzeres, Gondomar/);
-  assert.match(prompt, /highest valid predicted temperature among forecast hours inside the selected period/);
+  assert.match(prompt, /MANDATORY WEATHER FORECAST VERIFICATION/);
+  assert.match(prompt, /Perform this research autonomously using the available search and browsing tools/);
+  assert.match(prompt, /Do not ask the user to confirm sources, locations, dates, times, or time zones, or to authorize research/);
+  assert.match(prompt, /Open and inspect the forecast page or source data; do not rely only on search-result summaries/);
+  assert.match(prompt, /consult at least one second hourly-forecast source when tools and access are available/);
+  assert.match(prompt, /matches the location given for that day, the local training date, and the required hours/);
+  assert.match(prompt, /Check the source time zone, including local-time indications in its header or metadata/);
+  assert.match(prompt, /For locations in mainland Portugal, including Fânzeres, Gondomar, use Europe\/Lisbon/);
+  for (const interval of [
+    '00:00 ≤ hour < 08:00', '08:00 ≤ hour < 12:00', '12:00 ≤ hour < 14:00',
+    '14:00 ≤ hour < 18:00', '18:00 ≤ hour < 24:00',
+  ]) assert.ok(prompt.includes(interval), `generated EN prompt includes ${interval}`);
+  assert.match(prompt, /temperature range for the verified hours in °F/);
+  assert.match(prompt, /highest verified temperature in that window/);
+  assert.match(prompt, /Never replace this maximum with a daily maximum or temperatures outside the period/);
+  assert.match(prompt, /If coverage is partial, state that limitation/);
+  assert.match(prompt, /location, date, hourly coverage, or time zone/);
+  assert.match(prompt, /a date beyond the forecast horizon/);
+  assert.match(prompt, /Do not invent data or interrupt spreadsheet preparation to ask the user for confirmation/);
+  assert.match(prompt, /Cite the source, preferably with a direct link, and the lookup date and time with its time zone/);
+  assert.match(prompt, /Fill this column in the Excel file before delivering it/);
+  assert.match(prompt, /Use the actual dates of the week starting on 28\/09\/2026/);
+  assert.match(prompt, /73–75 °F, partly cloudy; 12:00–14:00 window, window high 75 °F/);
+  assert.match(prompt, /\| Date \| Day \| Period \| Type \| Workout \| Details \| Target HR \| RPE \| Shoe \| Location \| Weather Forecast \| Notes \|/);
   assert.match(prompt, /a ceiling, not a target/);
-  assert.match(prompt, /never invent weather/);
+  assert.match(prompt, /Do not invent an exact start time/);
+  assert.match(prompt, /existing “Weather Forecast” column without changing the 12 columns or the Kinesis import format/);
+  assert.match(prompt, /Maximum session time: 60 minutes; Location: Fânzeres, Gondomar/);
   assert.doesNotMatch(prompt, /Normal routine|Rotina normal/);
+  assert.doesNotMatch(prompt, /ask the user to confirm (?:the )?forecast/i);
   assert.match(PROMPT_TEMPLATE, /\{\{AVAILABILITY_BLOCK\}\}/);
   assert.match(PROMPT_TEMPLATE_EN, /\{\{AVAILABILITY_BLOCK\}\}/);
 });
@@ -403,7 +456,7 @@ test('buildPrompt keeps metric units and weather examples localized', () => {
     preferences: { distance_unit: 'km', temperature_unit: 'C' },
   });
   assert.match(prompt, /Use quilômetros para todas as distâncias e °C para todas as temperaturas/);
-  assert.match(prompt, /\(ex: 23–24 °C, parcialmente nublado \(~12h\)\)/);
+  assert.match(prompt, /\(ex\.: 23–24 °C, parcialmente nublado; janela 12h–14h, máxima da janela 24 °C\)/);
 });
 
 test('shoe prompt block includes active pairs, mileage, target and locale-specific labels', () => {
