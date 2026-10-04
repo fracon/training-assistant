@@ -85,8 +85,8 @@ test('day location validation matches the trimmed 200-character backend contract
   assert.equal(enMessages.aiCoach.availabilityLocationTooLong, 'Location must be at most 200 characters.');
 });
 
-test('prompt prints unavailable days and structured windows, maximum minutes, and location', () => {
-  const prompt = buildPrompt({ targetDate: new Date(2026, 8, 28), disponibilidade: week, lang: 'pt-BR', messages });
+test('generated Portuguese prompt assigns dates by weekday, not row position, for interleaved training days', () => {
+  const prompt = buildPrompt({ targetDate: new Date(2026, 9, 5), disponibilidade: week, lang: 'pt-BR', messages });
   assert.match(prompt, /Segunda: Pode treinar: sim; Período preferencial: 12h–14h; Tempo máximo disponível para a sessão: 60 minutos; Local: Fânzeres, Gondomar/);
   assert.match(prompt, /Terça: Pode treinar: não/);
   assert.match(prompt, /Quarta: Pode treinar: sim; Período preferencial: Antes das 08h; Tempo máximo disponível para a sessão: 45 minutos; Local: Porto/);
@@ -111,7 +111,13 @@ test('prompt prints unavailable days and structured windows, maximum minutes, an
   assert.match(prompt, /não interrompa a elaboração da planilha para pedir confirmação ao usuário/i);
   assert.match(prompt, /Cite a fonte consultada, preferencialmente com link direto, e a data e hora da consulta com o fuso correspondente/);
   assert.match(prompt, /Preencha essa coluna no Excel antes de entregá-lo/);
-  assert.match(prompt, /Use as datas efetivas da semana começando em 28\/09\/2026/);
+  assert.match(prompt, /Use as datas efetivas da semana começando em 05\/10\/2026, no formato DD\/MM\/YYYY/);
+  assert.match(prompt, /Calcule a data de cada treino pelo dia da semana, usando essa segunda-feira como referência: segunda \+0 dias, terça \+1, quarta \+2, quinta \+3, sexta \+4, sábado \+5 e domingo \+6/);
+  assert.match(prompt, /Dias omitidos ou sem treino não alteram as datas dos demais; a ordem ou quantidade de linhas não determina a data/);
+  assert.match(prompt, /Mais de um treino no mesmo dia usa a mesma data/);
+  assert.match(prompt, /A previsão do tempo deve corresponder à mesma data local atribuída ao treino/);
+  assert.match(prompt, /início em 05\/10\/2026, treinos somente na segunda e na quarta usam 05\/10\/2026 e 07\/10\/2026/);
+  assert.doesNotMatch(prompt, /avançando um dia por linha/i);
   assert.match(prompt, /ex\.: 23–24 °C, parcialmente nublado; janela 12h–14h, máxima da janela 24 °C/);
   assert.match(prompt, /\| Data \| Dia \| Período \| Tipo \| Treino \| Detalhes \| FC alvo \| RPE \| Tênis \| Localização \| Previsão do tempo \| Observações \|/);
   assert.match(prompt, /não é meta/);
@@ -122,11 +128,11 @@ test('prompt prints unavailable days and structured windows, maximum minutes, an
   assert.doesNotMatch(prompt, /08h–12h[^\n]*4 horas/);
 });
 
-test('English prompt has localized availability labels and no legacy routine', () => {
+test('generated English prompt assigns dates by weekday, not row position, for interleaved training days', () => {
   const en = JSON.parse(readFileSync(join(__dirname, '../src/public/locales/en.json')));
   const englishWeek = Object.fromEntries(Object.entries(week).map(([day, record]) => [day, record]));
   const prompt = buildPrompt({
-    targetDate: new Date(2026, 8, 28), disponibilidade: englishWeek, lang: 'en-US', messages: en,
+    targetDate: new Date(2026, 9, 5), disponibilidade: englishWeek, lang: 'en-US', messages: en,
     preferences: { distance_unit: 'mi', temperature_unit: 'F' },
   });
   assert.match(prompt, /Monday: Can train: yes; Preferred period: 12:00–14:00; Maximum session time: 60 minutes; Location: Fânzeres, Gondomar/);
@@ -151,7 +157,13 @@ test('English prompt has localized availability labels and no legacy routine', (
   assert.match(prompt, /Do not invent data or interrupt spreadsheet preparation to ask the user for confirmation/);
   assert.match(prompt, /Cite the source, preferably with a direct link, and the lookup date and time with its time zone/);
   assert.match(prompt, /Fill this column in the Excel file before delivering it/);
-  assert.match(prompt, /Use the actual dates of the week starting on 28\/09\/2026/);
+  assert.match(prompt, /Use the actual dates of the week starting on 05\/10\/2026, in DD\/MM\/YYYY format/);
+  assert.match(prompt, /Calculate each workout date from its weekday using that Monday as the reference: Monday \+0 days, Tuesday \+1, Wednesday \+2, Thursday \+3, Friday \+4, Saturday \+5, and Sunday \+6/);
+  assert.match(prompt, /Omitted days or days without a workout do not change the dates of other workouts; row order or row count does not determine a date/);
+  assert.match(prompt, /Multiple workouts on the same weekday use the same date/);
+  assert.match(prompt, /The weather forecast must match the same local date assigned to the workout/);
+  assert.match(prompt, /week starting on 05\/10\/2026, workouts only on Monday and Wednesday use 05\/10\/2026 and 07\/10\/2026/);
+  assert.doesNotMatch(prompt, /advancing one day per row/i);
   assert.match(prompt, /73–75 °F, partly cloudy; 12:00–14:00 window, window high 75 °F/);
   assert.match(prompt, /\| Date \| Day \| Period \| Type \| Workout \| Details \| Target HR \| RPE \| Shoe \| Location \| Weather Forecast \| Notes \|/);
   assert.match(prompt, /a ceiling, not a target/);
