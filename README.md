@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized prompts for an AI coach.
 
-Current application version: **0.19.3** (active beta development).
+Current application version: **0.19.4** (active beta development).
 
 ### Shoe mileage integrity
 
@@ -313,16 +313,32 @@ failed load keeps both operations blocked, preserves edits made locally, and
 offers a localized retry; older asynchronous responses cannot replace a newer
 load result.
 
-The prompt states each unavailable day and, for available days, its selected
-preferred period, maximum session minutes, and location. It explicitly tells
-the coach to use the highest valid hourly forecast temperature inside that
-period for heat adjustment, without presenting it as an exact training-hour
-temperature. Missing hourly data makes the forecast unavailable; daily maxima
-must not substitute for it. Minutes are a ceiling, not a goal or a conversion
-from the size of a period window. The prompt also directs
-the coach to consider local time and use weather only when valid forecast data
-exists. Kinesis does not add a weather API call to availability or invent an
-exact time inside a selected window; the existing optional Open-Meteo flow
+The prompt states each unavailable day and, for available days, its single
+preferred period, maximum session minutes, and exact user-entered location.
+The week-start date is rendered day-first in both prompt languages, matching
+the spreadsheet's required `DD/MM/YYYY` format and avoiding locale ambiguity.
+When the receiving AI agent has research/browser tools, the prompt makes that
+agent responsible for autonomously inspecting hourly-forecast source data,
+checking location, the actual local training date, hourly coverage and source
+time zone, and consulting a second hourly source if the first cannot verify
+those details and access is available. It specifies the local half-open period
+windows (`00:00–08:00`, `08:00–12:00`, `12:00–14:00`, `14:00–18:00`,
+`18:00–24:00`), applies `Europe/Lisbon` only to mainland Portugal (including
+Fânzeres/Gondomar), and requires date-appropriate daylight-saving behavior.
+The agent reports the range and highest verified temperature inside the
+selected window in the user's temperature unit; a daily maximum cannot replace
+it. Partial coverage and source/tool/access/horizon limitations are identified
+instead of being presented as a verified full-window maximum. The prompt tells
+the receiving agent not to ask the user to confirm forecast sources, location,
+dates, times, time zone, or research authorization, and to continue preparing
+the workbook if weather remains unavailable. It asks for source/link and
+lookup timestamp with time zone in the accompanying response, while keeping
+the existing 12-column workbook/import schema unchanged. This is instruction
+for the external agent that receives the generated prompt: Kinesis adds no
+forecast lookup, provider integration, or data transmission for AI Coach
+research. Session minutes remain a separate maximum including warm-up and
+cool-down, not a target or a conversion from the preferred period. The
+existing optional Open-Meteo form autofill remains a distinct feature and
 continues to receive only a planned training location/date.
 
 ### Home Dashboard

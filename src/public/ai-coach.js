@@ -6,11 +6,9 @@ import { formatDate as formatLocalizedDate, parseLocalizedDate } from './shared/
 import { formatDistance, distancePromptUnit, temperaturePromptUnit } from './shared/units.js';
 import { createDatePicker, readDatePickerValue } from './shared/datepicker.js';
 
-// Verbatim Portuguese briefing for the external AI Coach.
-// The wording below is a hard requirement — do not translate, rewrite
-// or "improve" it. Only the {{PLACEHOLDER}} tokens are replaced at
-// generation time; the template itself stays Portuguese regardless of
-// the UI language.
+// Localized Portuguese and English briefings for the external AI Coach.
+// Keep their meaning and placeholder contracts aligned; placeholders are
+// replaced at generation time using the current account preferences/state.
 export const PROMPT_TEMPLATE = `Quero que você gere minha planilha de treinos de corrida para a próxima semana, dando continuidade ao planejamento que já estamos seguindo.
 
 CONTEXTO DO CICLO ATUAL
@@ -50,7 +48,31 @@ DISPONIBILIDADE
 
 {{AVAILABILITY_BLOCK}}
 
-Planeje treinos somente em dias marcados como disponíveis. Se algum dia estiver sem configuração estruturada, não presuma disponibilidade e peça confirmação. Cada dia disponível tem um único período preferencial; use-o como janela de horário local para a previsão horária. O tempo informado é o limite máximo total da sessão, incluindo aquecimento e volta à calma; não é meta. Nunca interprete a janela do período como duração do treino. Considere o horário local da localidade. Use previsão somente quando houver dados válidos, nunca invente condições meteorológicas e informe quando não houver previsão válida. Para ajustar o calor, use a maior temperatura prevista entre as horas válidas dentro do período escolhido. Essa é a máxima da janela, não a temperatura exata de um horário de treino ainda não definido; não a substitua pela máxima diária.
+Planeje treinos somente em dias marcados como disponíveis. Se algum dia estiver sem configuração estruturada, não presuma disponibilidade e peça confirmação. Cada dia disponível tem um único período preferencial; use-o como janela de horário local para a previsão horária. O tempo informado é o limite máximo total da sessão, incluindo aquecimento e volta à calma; não é meta. Nunca interprete a janela do período como duração do treino.
+
+VERIFICAÇÃO OBRIGATÓRIA DA PREVISÃO DO TEMPO
+
+Faça esta pesquisa autonomamente, usando as ferramentas de pesquisa e navegação disponíveis. Não peça ao usuário para confirmar fontes, localidade, datas, horários ou fuso, nem autorização para pesquisar. Se não houver ferramentas ou acesso, não afirme que pesquisou: informe essa limitação e continue o planejamento sem interromper para pedir confirmação.
+
+Antes de marcar a previsão como indisponível:
+1. Abra e consulte o conteúdo da página ou os dados da fonte de previsão; não use somente resumos de resultados de busca.
+2. Verifique se os dados correspondem à localidade informada para aquele dia, à data local do treino e às horas necessárias do período preferencial. Confira o fuso horário da fonte, inclusive indicações locais no cabeçalho ou nos metadados.
+3. Use o fuso da localidade do treino e o horário de verão vigente naquela data. Para localidades em Portugal continental, incluindo Fânzeres, Gondomar, use Europe/Lisbon. Converta horários quando a fonte identificar explicitamente outro fuso. Não aplique Europe/Lisbon a localidades de outros fusos.
+4. Se a primeira fonte não permitir verificar localidade, data, cobertura horária ou fuso, consulte pelo menos uma segunda fonte de previsão horária, se houver ferramenta e acesso disponíveis.
+5. Diferencie limitação da fonte consultada de ausência de previsão: falhar em verificar uma fonte não demonstra que não exista previsão em outra.
+
+Selecione somente horas verificadas dentro do período preferencial daquele dia, sempre no horário local:
+- Antes das 8h: 00:00 ≤ hora < 08:00.
+- Entre 8h e 12h: 08:00 ≤ hora < 12:00.
+- Entre 12h e 14h: 12:00 ≤ hora < 14:00.
+- Entre 14h e 18h: 14:00 ≤ hora < 18:00.
+- Após as 18h: 18:00 ≤ hora < 24:00, ainda na data local do treino.
+
+Informe a faixa de temperaturas das horas verificadas, usando {{TEMPERATURE_UNIT_LABEL}}, e use a maior temperatura verificada nessa janela para avaliar o calor e ajustar o treino. Nunca substitua essa máxima pela máxima diária nem por temperaturas fora do período. Se a cobertura for parcial, declare a limitação; não apresente a maior temperatura observada como máxima de toda a janela sem cobertura suficiente.
+
+O período é uma preferência de horário, não a duração disponível para treinar. Respeite separadamente o tempo máximo informado, incluindo aquecimento e volta à calma. Não invente um horário exato de início. Preserve a data efetiva de cada dia da semana e a localidade informada para esse dia.
+
+Se, depois da pesquisa, os dados continuarem insuficientes, marque a previsão como indisponível e diga brevemente o que não foi verificado: localidade, data, cobertura horária ou fuso. Se o motivo for falta de ferramentas de navegação, falha de acesso ou data além do horizonte de previsão, informe-o. Não invente dados e não interrompa a elaboração da planilha para pedir confirmação ao usuário. Registre a previsão verificada ou a condição de indisponibilidade na coluna existente “Previsão do tempo”, sem alterar as 12 colunas nem o formato de importação do Kinesis. Cite a fonte consultada, preferencialmente com link direto, e a data e hora da consulta com o fuso correspondente na resposta que acompanha a planilha, não em novas colunas ou linhas. Preencha essa coluna no Excel antes de entregá-lo.
 
 CONTEXTO ADICIONAL DESTA SEMANA
 
@@ -66,8 +88,8 @@ INSTRUÇÕES PARA MONTAR A SEMANA
 6. Nos treinos de qualidade, especifique claramente: aquecimento; quantidade e duração dos blocos; recuperação; intensidade/FC/RPE; desaquecimento.
 7. Nos longos, especifique claramente cada parte do treino. Caso exista bloco controlado/progressivo, deixe explícito que ele deve ser realizado por esforço e indique o RPE esperado.
 8. Considere que meu percurso habitual possui bastante subida. Não determine que eu persiga pace nas subidas. FC pode subir significativamente nesses trechos; considere principalmente esforço e respiração.
-9. Considere temperatura e condições meteorológicas. Use previsão somente quando houver dados válidos para a localidade informada e horário dentro do período disponível. Não invente horário exato dentro da faixa nem condições meteorológicas. Sem previsão válida, informe a ausência e não presuma o clima.
-10. A previsão precisa ter dados válidos de horário compatíveis com o período escolhido. Se não for possível confirmá-los, trate a previsão como indisponível; não use apenas mínima/máxima diária nem invente horário exato. Para “antes das 08h” e “após as 18h”, limite a comparação ao dia local do treino, sem atravessar para outra data.
+9. Considere temperatura e condições meteorológicas conforme a VERIFICAÇÃO OBRIGATÓRIA DA PREVISÃO DO TEMPO. Ajuste o treino ao calor quando necessário; não presuma condições quando a previsão estiver indisponível.
+10. Não use máximas ou mínimas diárias como substitutas da previsão horária do período preferencial e não invente horário exato de início.
 11. Se houver previsão de calor forte, adapte o treino quando necessário e deixe isso explícito nas observações. Não prescreva intensidade inadequada apenas para manter o planejamento original.
 12. Escolha o tênis mais apropriado para cada sessão considerando os tênis que tenho disponíveis, o tipo de treino e nosso histórico recente com cada um.
 13. Considere qualquer dor ou desconforto recente, mas não continue tratando uma lesão antiga como ativa se os treinos posteriores demonstrarem recuperação completa.
@@ -82,7 +104,7 @@ As colunas devem ser, nesta ordem: Data, Dia, Período, Tipo, Treino, Detalhes, 
 Exemplo estrutural:
 | Data | Dia | Período | Tipo | Treino | Detalhes | FC alvo | RPE | Tênis | Localização | Previsão do tempo | Observações |
 
-Use datas no formato DD/MM/YYYY. Em "Período", use o horário/período real esperado (ex: ~12h). Em "Localização", copie exatamente a localidade informada para cada dia, preservando acentos, espaços, pontuação e nomes em outros idiomas, sem traduzir, normalizar, geocodificar, substituir pela localidade habitual ou inferir a partir da previsão do tempo. Em "Previsão do tempo", informe de maneira compacta {{WEATHER_EXAMPLE}}. Não inclua linhas para musculação.
+Use as datas efetivas da semana começando em {{DATA_DA_SEGUNDA}}, no formato DD/MM/YYYY. Calcule a data de cada treino pelo dia da semana, usando essa segunda-feira como referência: segunda +0 dias, terça +1, quarta +2, quinta +3, sexta +4, sábado +5 e domingo +6. Dias omitidos ou sem treino não alteram as datas dos demais; a ordem ou quantidade de linhas não determina a data. Mais de um treino no mesmo dia usa a mesma data. A previsão do tempo deve corresponder à mesma data local atribuída ao treino. Exemplo de cálculo (não é a semana solicitada): com início em 05/10/2026, treinos somente na segunda e na quarta usam 05/10/2026 e 07/10/2026. Em "Período", use o horário/período real esperado (ex: 12h–14h), sem inventar o horário exato de início. Em "Localização", copie exatamente a localidade informada para cada dia, preservando acentos, espaços, pontuação e nomes em outros idiomas, sem traduzir, normalizar, geocodificar, substituir pela localidade habitual ou inferir a partir da previsão do tempo. Em "Previsão do tempo", informe de maneira compacta {{WEATHER_EXAMPLE}} com a faixa observada e a máxima da janela quando a cobertura permitir; se indisponível ou parcial, registre também essa condição e seu motivo de forma breve. Não inclua linhas para musculação.
 
 ARQUIVO EXCEL
 
@@ -137,7 +159,31 @@ AVAILABILITY
 
 {{AVAILABILITY_BLOCK}}
 
-Plan sessions only on days marked available. If any day is unconfigured, do not assume availability and ask the user to confirm it. Each available day has one preferred training period; use it as the local-time window for the hourly forecast. The available time is the maximum total session duration, including warm-up and cool-down; it is a ceiling, not a target. Never interpret the period window as workout duration. Consider the local time at the stated location. Use forecasts only when valid data exists, never invent weather, and state when no valid forecast is available. For heat adjustment, use the highest valid predicted temperature among forecast hours inside the selected period. This is a window maximum, not the exact temperature at an as-yet-unspecified training time; do not replace it with a daily maximum.
+Plan sessions only on days marked available. If any day is unconfigured, do not assume availability and ask the user to confirm it. Each available day has one preferred training period; use it as the local-time window for the hourly forecast. The available time is the maximum total session duration, including warm-up and cool-down; it is a ceiling, not a target. Never interpret the period window as workout duration.
+
+MANDATORY WEATHER FORECAST VERIFICATION
+
+Perform this research autonomously using the available search and browsing tools. Do not ask the user to confirm sources, locations, dates, times, or time zones, or to authorize research. If browsing tools or access are unavailable, do not claim to have researched; state that limitation and continue planning without stopping to request confirmation.
+
+Before marking the forecast unavailable:
+1. Open and inspect the forecast page or source data; do not rely only on search-result summaries.
+2. Verify that the data matches the location given for that day, the local training date, and the required hours in the preferred period. Check the source time zone, including local-time indications in its header or metadata.
+3. Use the training location's time zone and the daylight-saving rules in effect on that date. For locations in mainland Portugal, including Fânzeres, Gondomar, use Europe/Lisbon. Convert times if the source explicitly identifies a different time zone. Do not apply Europe/Lisbon to locations in other time zones.
+4. If the first source cannot verify the location, date, hourly coverage, or time zone, consult at least one second hourly-forecast source when tools and access are available.
+5. Distinguish a limitation of the source consulted from a lack of forecasts: being unable to verify one source does not show that another has no forecast.
+
+Select only verified hours within that day's preferred period, using local time:
+- Before 08:00: 00:00 ≤ hour < 08:00.
+- 08:00 to 12:00: 08:00 ≤ hour < 12:00.
+- 12:00 to 14:00: 12:00 ≤ hour < 14:00.
+- 14:00 to 18:00: 14:00 ≤ hour < 18:00.
+- After 18:00: 18:00 ≤ hour < 24:00, still on the training's local date.
+
+Report the temperature range for the verified hours in {{TEMPERATURE_UNIT_LABEL}}, and use the highest verified temperature in that window to assess heat and adjust the workout. Never replace this maximum with a daily maximum or temperatures outside the period. If coverage is partial, state that limitation; do not present the highest observed temperature as the maximum for the whole window without sufficient coverage.
+
+The period is a time preference, not the available training duration. Separately respect the stated maximum time, including warm-up and cool-down. Do not invent an exact start time. Preserve the actual date of each weekday and the location supplied for that day.
+
+If the data remain insufficient after research, mark the forecast unavailable and briefly state what could not be verified: location, date, hourly coverage, or time zone. If the reason is unavailable browsing tools, access failure, or a date beyond the forecast horizon, state that reason. Do not invent data or interrupt spreadsheet preparation to ask the user for confirmation. Record the verified forecast or unavailable condition in the existing “Weather Forecast” column without changing the 12 columns or the Kinesis import format. Cite the source, preferably with a direct link, and the lookup date and time with its time zone in the response accompanying the spreadsheet, not in new columns or rows. Fill this column in the Excel file before delivering it.
 
 ADDITIONAL CONTEXT FOR THIS WEEK
 
@@ -153,8 +199,8 @@ INSTRUCTIONS FOR PLANNING THE WEEK
 6. For quality workouts, clearly specify: warm-up; number and duration of blocks; recovery; intensity/HR/RPE; cool-down.
 7. For long runs, clearly specify each part of the workout. If there is a controlled/progressive block, make it explicit that it should be done by effort and indicate the expected RPE.
 8. Consider that my usual route has plenty of hills. Do not dictate that I chase pace on uphills. HR may rise significantly in these sections; consider effort and breathing primarily.
-9. Consider temperature and weather conditions. Use a forecast only when valid data exists for the stated location and a time within the available period. Do not invent an exact time within the window or weather conditions. Without a valid forecast, state that it is unavailable and do not assume weather.
-10. The forecast must have valid time-specific data within the selected period. If that cannot be confirmed, treat the forecast as unavailable; do not rely only on daily min/max or invent an exact time. For “before 08” and “after 18”, constrain the comparison to the local training date and do not cross into another date.
+9. Consider temperature and weather conditions according to MANDATORY WEATHER FORECAST VERIFICATION. Adapt the workout to heat when needed; do not assume conditions when the forecast is unavailable.
+10. Do not use daily maxima or minima as a substitute for the hourly forecast in the preferred period, and do not invent an exact start time.
 11. If strong heat is forecasted, adapt the workout when necessary and make this explicit in the notes. Do not prescribe inappropriate intensity just to maintain the original plan.
 12. Choose the most appropriate shoe for each session considering the shoes I have available, the type of workout, and our recent history with each.
 13. Consider any recent pain or discomfort, but do not continue treating an old injury as active if subsequent workouts demonstrate full recovery.
@@ -169,7 +215,7 @@ The columns must be, in this order: Date, Day, Period, Type, Workout, Details, T
 Structural example:
 | Date | Day | Period | Type | Workout | Details | Target HR | RPE | Shoe | Location | Weather Forecast | Notes |
 
-Use dates in DD/MM/YYYY format. In "Period", use the actual expected time/period (e.g., ~12h or 8-9h). In "Location", copy the location provided for each day exactly, preserving accents, spaces, punctuation, and names in other languages, without translating, normalizing, geocoding, replacing it with the usual location, or inferring it from the weather forecast. In "Weather Forecast", report compactly {{WEATHER_EXAMPLE}}. Do not include rows for strength training.
+Use the actual dates of the week starting on {{DATA_DA_SEGUNDA}}, in DD/MM/YYYY format. Calculate each workout date from its weekday using that Monday as the reference: Monday +0 days, Tuesday +1, Wednesday +2, Thursday +3, Friday +4, Saturday +5, and Sunday +6. Omitted days or days without a workout do not change the dates of other workouts; row order or row count does not determine a date. Multiple workouts on the same weekday use the same date. The weather forecast must match the same local date assigned to the workout. Calculation example (not the requested week): for a week starting on 05/10/2026, workouts only on Monday and Wednesday use 05/10/2026 and 07/10/2026. In "Period", use the actual expected time/period (e.g., 12:00–14:00), without inventing an exact start time. In "Location", copy the location provided for each day exactly, preserving accents, spaces, punctuation, and names in other languages, without translating, normalizing, geocoding, replacing it with the usual location, or inferring it from the weather forecast. In "Weather Forecast", report compactly {{WEATHER_EXAMPLE}} with the observed range and window maximum when coverage supports it; if unavailable or partial, briefly record that status and its reason too. Do not include rows for strength training.
 
 EXCEL FILE
 
@@ -308,9 +354,10 @@ function unitInstruction(lang, preferences = {}) {
 
 function weatherExample(lang, preferences = {}) {
   const range = preferences.temperature_unit === 'F' ? '73–75 °F' : '23–24 °C';
+  const windowHigh = preferences.temperature_unit === 'F' ? '75 °F' : '24 °C';
   return lang === 'pt-BR'
-    ? `(ex: ${range}, parcialmente nublado (~12h))`
-    : `(e.g., ${range}, partly cloudy (~12h))`;
+    ? `(ex.: ${range}, parcialmente nublado; janela 12h–14h, máxima da janela ${windowHigh})`
+    : `(e.g., ${range}, partly cloudy; 12:00–14:00 window, window high ${windowHigh})`;
 }
 
 const DAY_MS = 86400000;
@@ -440,7 +487,9 @@ export function buildPrompt({ targetDate, disponibilidade = {}, contexto = '', l
   let prompt = replaceAll(
     template,
     '{{DATA_DA_SEGUNDA}}',
-    formatLocalizedDate(targetDate, templateLang)
+    // The week anchor uses the same unambiguous day-first format required by
+    // the Excel import schema in both prompt languages.
+    formatDiaSlashes(targetDate)
   );
   for (const [token, value] of Object.entries(formatCycleContext(cycle, previousWeek, templateLang, preferences))) {
     prompt = replaceAll(prompt, token, value);
