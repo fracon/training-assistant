@@ -128,7 +128,7 @@ test('cycles.js renders localized custom tooltips for every cycle action', () =>
     ['editTooltip', 'Edit cycle'],
     ['completeTooltip', 'Complete cycle'],
     ['cancelTooltip', 'Cancel cycle'],
-    ['promptTooltip', 'Request AI training'],
+    ['promptTooltip', 'Generate a macrocycle prompt'],
   ]) {
     assert.match(js, new RegExp(`data-i18n="cycles\\.${key}"`));
     assert.match(js, new RegExp(`t\\(messages, 'cycles\\.${key}'\\)`));
@@ -516,8 +516,8 @@ test('locale files expose every cycles string in both languages', () => {
   assert.equal(pt.cycles.pageTitle, 'Ciclos de Treino - Kinesis');
   assert.equal(en.shell.nav.cycles, 'Training Cycles');
   assert.equal(pt.shell.nav.cycles, 'Ciclos de Treino');
-  assert.equal(en.cycles.promptTitle, 'AI Coach Macrocycle Prompt');
-  assert.equal(pt.cycles.promptTitle, 'Prompt do Macrociclo – Coach IA');
+  assert.equal(en.cycles.promptTitle, 'Macrocycle prompt');
+  assert.equal(pt.cycles.promptTitle, 'Prompt de macrociclo');
 });
 
 /* ── API client functions ── */

@@ -168,6 +168,7 @@ function buildNavItem(item, activeId) {
     entry.href = item.href;
     if (item.id === activeId) entry.setAttribute('aria-current', 'page');
   }
+  entry.setAttribute('data-i18n-aria-label', item.labelKey);
   entry.appendChild(icon(item.icon));
   const label = el('span', 'nav-label sidebar-label');
   label.setAttribute('data-i18n', item.labelKey);

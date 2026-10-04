@@ -8,11 +8,12 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.19.4`); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.19.5`); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
-home dashboard, contextual training result, calendar, AI Coach, cycles, shoes,
+home dashboard, contextual training result, calendar, Planejamento com IA
+(`ai-coach`), cycles, shoes,
 and the admin-only administration page. Shared frontend responsibilities live under
 `src/public/shared/`: `shell.js` injects navigation and account controls;
 `onboarding.js` contains onboarding state/presentation helpers;
@@ -94,7 +95,7 @@ merely hidden — for every other account.
   fields are explicitly refused so no privilege, access, or column can be
   written indirectly.
 - Deleting an account relies on the existing foreign-key cascades for its
-  sessions, trainings, cycles, shoes, mileage ledger, and AI Coach
+  sessions, trainings, cycles, shoes, mileage ledger, and AI Planning
   availability.
 - Every web create, identity update, delete, and activity transition writes one
   `admin_audit_log` row (idempotent migration
@@ -195,7 +196,7 @@ onboarding record of the account is preserved.
   redirect to `/home.html`. `/training-result.html` is a protected contextual
   page for a specific training. The Calendar page requires an active cycle and
   redirects to cycle management when there is none.
-- The app supports planning and importing workouts, AI Coach prompt generation,
+- The app supports planning and importing workouts, Planejamento com IA prompt generation,
   calendar scheduling, manual and FIT results, single-FIT ZIP upload, shoe
   rotation, and a per-training shoe-mileage ledger. FIT/ZIP parsing and workout
   data processing are local to the application. Optional weather lookup sends
@@ -282,6 +283,7 @@ onboarding record of the account is preserved.
   every other entered value. Arrow keys and Space must operate the group, the
   focus ring is drawn on the emoji label, and the RPE transitions respect
   `prefers-reduced-motion`.
+- The public AI Coach feature label is “Planejamento com IA” (PT) / “AI Planning” (EN). Keep the `ai-coach` route, module, API/database names, and `aiCoach` locale namespace as stable technical identifiers. This UI rename must not rewrite any weekly, macrocycle, or workout-feedback prompt templates, including their titles, examples, instructions, or “coach” wording; keep prompt copy separate from presentation strings if a translation key is shared.
 - The Training Result page also has a separate, informational “How to create a
   workout” guide. Its declarative catalog lives in
   `src/public/shared/workout-creation-guidance.js` and is rendered by
@@ -358,7 +360,7 @@ visited page, or slide.
   automatically. Existing (`active`) accounts do not. “Agora não” / “Not now” persists
   `welcome_dismissed`; it does not block access to the app. The three primary
   actions link to existing shoes and cycle flows. The workout-plan slide opens
-  AI Coach/import when an active cycle exists; otherwise it directs the user to
+  Planejar com IA/import when an active cycle exists; otherwise it directs the user to
   create the required cycle first. Explicitly opening the setup guide does not
   open the welcome dialog.
 - The checklist is shown normally only while incomplete and not hidden. A
@@ -480,7 +482,7 @@ Resolved threads are not a substitute for validation. Distinguish local test
 results from checks published on GitHub, and do not promise that one Codex pass
 will find every issue.
 
-## AI Coach weekly availability
+## AI Planning weekly availability
 
 - `/api/ai-coach/availability` is authenticated and user-scoped. Store one record per weekday with `can_train`, canonical period IDs (`before_08`, `08_12`, `12_14`, `14_18`, `after_18`), `available_minutes` as whole minutes, and the exact `location` string.
 - Each available day stores one preferred period. Legacy rows with multiple periods remain readable, are flagged for explicit review, and cannot be saved or used for prompt generation until one is selected. Clients of `PUT /api/ai-coach/availability` must send exactly one period for each available day; multiple periods are rejected as an incompatible contract change released in version `0.19.0`, with migration required for clients using the previous request shape. `available_minutes` is the maximum full session duration, including warm-up and cool-down, not a target and not the length of the period window. The maximum is 720 minutes per day.

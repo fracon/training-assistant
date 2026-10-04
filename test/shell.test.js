@@ -67,11 +67,11 @@ test('sidebar state treats anything but "1" as expanded', () => {
   assert.equal(readSidebarCollapsed(stubStorage({ 'training-assistant:sidebar-collapsed': 'junk' })), false);
 });
 
-test('sidebar navigation follows Home, Request Workouts, Workouts, Shoes', () => {
+test('sidebar navigation follows Home, AI Planning, Workouts, Shoes', () => {
   assert.deepEqual(
     NAV_ITEMS.map((item) => item.id),
     ['dashboard', 'ai-coach', 'calendar', 'shoes'],
-    'Home dashboard first, then request workouts, then workouts, then shoes'
+    'Home dashboard first, then AI Planning, then workouts, then shoes'
   );
   assert.deepEqual(
     NAV_ITEMS.map((item) => [item.id, item.disabled]),
@@ -92,8 +92,8 @@ test('sidebar navigation follows Home, Request Workouts, Workouts, Shoes', () =>
   );
   assert.equal(en.shell.nav.home, 'Home');
   assert.equal(pt.shell.nav.home, 'Início');
-  assert.equal(en.shell.nav.requestWorkouts, 'Request Workouts');
-  assert.equal(pt.shell.nav.requestWorkouts, 'Solicitar Treinos');
+  assert.equal(en.shell.nav.requestWorkouts, 'AI Planning');
+  assert.equal(pt.shell.nav.requestWorkouts, 'Planejamento com IA');
   assert.equal(en.shell.nav.workouts, 'Workouts');
   assert.equal(pt.shell.nav.workouts, 'Treinos');
   assert.equal(en.shell.nav.shoes, 'Shoe Rotation');
@@ -132,6 +132,13 @@ test('every sidebar label key resolves in both locale files', () => {
     assert.equal(typeof lookup(en, key), 'string', `en.json missing ${key}`);
     assert.equal(typeof lookup(pt, key), 'string', `pt.json missing ${key}`);
   }
+});
+
+test('sidebar links keep translated accessible names when their labels are visually collapsed', () => {
+  const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
+  assert.match(js, /entry\.setAttribute\('data-i18n-aria-label', item\.labelKey\)/);
+  assert.equal(en.shell.nav.requestWorkouts, 'AI Planning');
+  assert.equal(pt.shell.nav.requestWorkouts, 'Planejamento com IA');
 });
 
 test('the footer carries only the app version, fetched from the backend', async () => {
@@ -379,7 +386,7 @@ test('shell.js NAV_ITEMS array includes cycles with repeat icon', () => {
   assert.match(js, /href:\s*'\/cycles\.html'/, 'cycles links to the cycles page');
 });
 
-test('Request Workouts uses the official Lucide sport-shoe icon', () => {
+test('AI Planning uses the official Lucide sport-shoe icon', () => {
   const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
   assert.match(js, /id:\s*'ai-coach',[\s\S]*?icon:\s*'sport-shoe'/);
   assert.doesNotMatch(js, /id:\s*'ai-coach',[\s\S]*?icon:\s*'bot'/);

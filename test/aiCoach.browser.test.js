@@ -153,6 +153,12 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     assert.equal(ready, true);
     const requestWorkoutsIcon = await evaluate(`(()=>{const item=document.querySelector('[data-nav-id="ai-coach"]');const icon=item?.querySelector('svg');const style=icon?getComputedStyle(icon):null;return {active:item?.classList.contains('active'),icon:icon?.getAttribute('data-lucide'),display:style?.display,color:style?.color}})()`);
     assert.deepEqual(requestWorkoutsIcon, { active: true, icon: 'sport-shoe', display: 'block', color: 'rgb(76, 110, 81)' });
+    const portugueseBranding = await evaluate(`(()=>{const item=document.querySelector('[data-nav-id="ai-coach"]');return {language:document.documentElement.lang,title:document.title,heading:document.querySelector('main h1').textContent.trim(),subtitle:document.querySelector('main .ai-coach-subtitle')?.textContent.trim(),label:item.querySelector('.nav-label').textContent.trim(),ariaLabel:item.getAttribute('aria-label'),scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth}})()`);
+    assert.deepEqual(portugueseBranding, { language: 'pt-BR', title: 'Planejamento com IA - Kinesis', heading: 'Planejamento com IA', subtitle: 'Organize seus objetivos e sua disponibilidade para preparar uma solicitação de treinos com IA.', label: 'Planejamento com IA', ariaLabel: 'Planejamento com IA', scrollWidth: 1280, viewportWidth: 1280 });
+    await evaluate(`document.getElementById('sidebarToggle').click()`);
+    const collapsedPortuguese = await evaluate(`(()=>{const item=document.querySelector('[data-nav-id="ai-coach"]');return {collapsed:document.querySelector('.app-shell').classList.contains('collapsed'),ariaLabel:item.getAttribute('aria-label'),labelVisible:getComputedStyle(item.querySelector('.nav-label')).display!=='none'}})()`);
+    assert.deepEqual(collapsedPortuguese, { collapsed: true, ariaLabel: 'Planejamento com IA', labelVisible: false });
+    await evaluate(`document.getElementById('sidebarToggle').click()`);
     await evaluate(`window.__setDay=(day,available)=>{const input=document.querySelector('[data-day="'+day+'"] [data-can-train]');if(input.checked!==available){input.click()}else if(input.closest('.day-row').dataset.configured!=='true'){input.dispatchEvent(new Event('change',{bubbles:true}))}}`);
     const pendingInitialGet = await initialGet;
     const pendingProtection = await evaluate(`(()=>{
@@ -648,6 +654,11 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
 
     await evaluate(`(()=>{const location=document.querySelector('[data-day="tuesday"] [data-location]');location.focus();location.setSelectionRange(2,7,'forward');document.querySelector('.lang-switch [data-lang="en-US"]').click()})()`);
     await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{if(document.documentElement.lang==='en-US')resolve(true);else if(Date.now()>end)reject(new Error('English language switch timed out'));else setTimeout(check,30)};check()})`);
+    const englishBranding = await evaluate(`(()=>{const item=document.querySelector('[data-nav-id="ai-coach"]');return {title:document.title,heading:document.querySelector('main h1').textContent.trim(),subtitle:document.querySelector('main .ai-coach-subtitle')?.textContent.trim(),label:item.querySelector('.nav-label').textContent.trim(),ariaLabel:item.getAttribute('aria-label'),scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth}})()`);
+    assert.deepEqual(englishBranding, { title: 'AI Planning - Kinesis', heading: 'AI Planning', subtitle: 'Organize your goals and availability to prepare an AI training request.', label: 'AI Planning', ariaLabel: 'AI Planning', scrollWidth: 1280, viewportWidth: 1280 });
+    await evaluate(`document.getElementById('sidebarToggle').click()`);
+    assert.deepEqual(await evaluate(`(()=>{const item=document.querySelector('[data-nav-id="ai-coach"]');return {collapsed:document.querySelector('.app-shell').classList.contains('collapsed'),ariaLabel:item.getAttribute('aria-label'),labelVisible:getComputedStyle(item.querySelector('.nav-label')).display!=='none'}})()`), { collapsed: true, ariaLabel: 'AI Planning', labelVisible: false });
+    await evaluate(`document.getElementById('sidebarToggle').click()`);
     const englishState = await evaluate(`(()=>{const duration=document.querySelector('[data-day="monday"] [data-duration]');return {language:document.documentElement.lang,label:document.querySelector('[data-day="monday"] .period-group legend').textContent,periods:document.querySelectorAll('[data-day="monday"] [data-period]:checked').length,location:document.querySelector('[data-day="tuesday"] [data-location]').value,durationPlaceholder:duration.placeholder,durationHint:duration.nextElementSibling.textContent,saveLabel:document.getElementById('saveAvailabilityLabel').textContent}})()`);
     assert.deepEqual(englishState, { language: 'en-US', label: 'Preferred period', periods: 1, location: 'Maspalomas, Gran Canaria', durationPlaceholder: 'e.g. 60', durationHint: 'From 1 to 720 minutes, including warm-up and cool-down.', saveLabel: 'Save weekly schedule' });
     const languageFocus = await evaluate(`(()=>{const location=document.querySelector('[data-day="tuesday"] [data-location]');return {focused:document.activeElement===location,start:location.selectionStart,end:location.selectionEnd,direction:location.selectionDirection}})()`);
@@ -775,6 +786,7 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     await evaluate(`new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>setTimeout(resolve,100))))`);
     const mobile = await evaluate(`(()=>({width:innerWidth,scrollWidth:document.documentElement.scrollWidth,days:document.querySelectorAll('#availabilityGrid .day-row').length,touchTarget:[...document.querySelectorAll('.period-option')].filter(el=>el.getClientRects().length>0).every(el=>el.getBoundingClientRect().height>=42)}))()`);
     assert.deepEqual(mobile, { width: 390, scrollWidth: 390, days: 7, touchTarget: true });
+    assert.deepEqual(await evaluate(`(()=>{const item=document.querySelector('[data-nav-id="ai-coach"]');return {title:document.title,heading:document.querySelector('main h1').textContent.trim(),label:item.querySelector('.nav-label').textContent.trim(),ariaLabel:item.getAttribute('aria-label'),width:innerWidth,scrollWidth:document.documentElement.scrollWidth}})()`), { title: 'AI Planning - Kinesis', heading: 'AI Planning', label: 'AI Planning', ariaLabel: 'AI Planning', width: 390, scrollWidth: 390 });
     await evaluate(`(()=>{const input=document.querySelector('[data-day="tuesday"] [data-location]');input.value='Mobile';input.dispatchEvent(new Event('input',{bubbles:true}))})()`);
     await command('Fetch.enable', { patterns: [{ urlPattern: '*api/ai-coach/availability*', requestStage: 'Response' }] });
     const mobileLocationAfterSave = await saveWithDelayedResponse(`(()=>{const input=document.querySelector('[data-day="tuesday"] [data-location]');input.value='Mobility';input.dispatchEvent(new Event('input',{bubbles:true}));input.focus();input.setSelectionRange(3,5,'backward');window.__focusedMobileLocation=input;return input.value})()`);
@@ -794,6 +806,6 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     if (chromeProcess.exitCode === null) await Promise.race([once(chromeProcess, 'exit'), delay(2000)]);
     await app.close();
     rmSync(profile, { recursive: true, force: true });
-    t.diagnostic('Verified authenticated AI Coach at 1280×800 and 390×844 in PT/EN, including legacy-period review/persistence, focus/caret preservation across delayed GET/PUT responses and language rerender, plus availability validation.');
+    t.diagnostic('Verified AI Planning / Planejamento com IA page and sidebar labels in PT/EN, expanded/collapsed desktop navigation, plus authenticated availability at 1280×800 and 390×844 with legacy-period review/persistence, focus/caret preservation across delayed GET/PUT responses, language rerender, and validation.');
   }
 });
