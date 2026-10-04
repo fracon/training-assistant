@@ -283,7 +283,7 @@ onboarding record of the account is preserved.
   every other entered value. Arrow keys and Space must operate the group, the
   focus ring is drawn on the emoji label, and the RPE transitions respect
   `prefers-reduced-motion`.
-- The public AI Coach feature label is “Planejamento com IA” (PT) / “AI Planning” (EN). Keep the `ai-coach` route, module, API/database names, and `aiCoach` locale namespace as stable technical identifiers. This UI rename must not rewrite any weekly, macrocycle, or workout-feedback prompt templates, including their titles, examples, instructions, or “coach” wording; keep prompt copy separate from presentation strings if a translation key is shared.
+- The public feature label is “Planejamento com IA” (PT) / “AI Planning” (EN). Keep the `ai-coach` route, module, API/database names, and `aiCoach` locale namespace as stable technical identifiers. This UI rename must not rewrite any weekly, macrocycle, or workout-feedback prompt templates, including their titles, examples, instructions, or “coach” wording; keep prompt copy separate from presentation strings if a translation key is shared.
 - The Training Result page also has a separate, informational “How to create a
   workout” guide. Its declarative catalog lives in
   `src/public/shared/workout-creation-guidance.js` and is rendered by
