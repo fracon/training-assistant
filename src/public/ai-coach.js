@@ -87,7 +87,7 @@ INSTRUÇÕES PARA MONTAR A SEMANA
 5. Nos treinos leves, priorize esforço e FC em vez de pace.
 6. Nos treinos de qualidade, especifique claramente: aquecimento; quantidade e duração dos blocos; recuperação; intensidade/FC/RPE; desaquecimento.
 7. Nos longos, especifique claramente cada parte do treino. Caso exista bloco controlado/progressivo, deixe explícito que ele deve ser realizado por esforço e indique o RPE esperado.
-8. Considere que meu percurso habitual possui bastante subida. Não determine que eu persiga pace nas subidas. FC pode subir significativamente nesses trechos; considere principalmente esforço e respiração.
+8. Não determine que eu persiga pace nas subidas. FC pode subir significativamente nesses trechos; considere principalmente esforço e respiração.
 9. Considere temperatura e condições meteorológicas conforme a VERIFICAÇÃO OBRIGATÓRIA DA PREVISÃO DO TEMPO. Ajuste o treino ao calor quando necessário; não presuma condições quando a previsão estiver indisponível.
 10. Não use máximas ou mínimas diárias como substitutas da previsão horária do período preferencial e não invente horário exato de início.
 11. Se houver previsão de calor forte, adapte o treino quando necessário e deixe isso explícito nas observações. Não prescreva intensidade inadequada apenas para manter o planejamento original.
@@ -198,7 +198,7 @@ INSTRUCTIONS FOR PLANNING THE WEEK
 5. On easy runs, prioritize effort and HR over pace.
 6. For quality workouts, clearly specify: warm-up; number and duration of blocks; recovery; intensity/HR/RPE; cool-down.
 7. For long runs, clearly specify each part of the workout. If there is a controlled/progressive block, make it explicit that it should be done by effort and indicate the expected RPE.
-8. Consider that my usual route has plenty of hills. Do not dictate that I chase pace on uphills. HR may rise significantly in these sections; consider effort and breathing primarily.
+8. Do not dictate that I chase pace on uphills. HR may rise significantly in these sections; consider effort and breathing primarily.
 9. Consider temperature and weather conditions according to MANDATORY WEATHER FORECAST VERIFICATION. Adapt the workout to heat when needed; do not assume conditions when the forecast is unavailable.
 10. Do not use daily maxima or minima as a substitute for the hourly forecast in the preferred period, and do not invent an exact start time.
 11. If strong heat is forecasted, adapt the workout when necessary and make this explicit in the notes. Do not prescribe inappropriate intensity just to maintain the original plan.

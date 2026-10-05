@@ -87,6 +87,9 @@ test('day location validation matches the trimmed 200-character backend contract
 
 test('generated Portuguese prompt assigns dates by weekday, not row position, for interleaved training days', () => {
   const prompt = buildPrompt({ targetDate: new Date(2026, 9, 5), disponibilidade: week, lang: 'pt-BR', messages });
+  assert.match(prompt, /8\. Não determine que eu persiga pace nas subidas\. FC pode subir significativamente nesses trechos; considere principalmente esforço e respiração\./);
+  assert.doesNotMatch(prompt, /meu percurso habitual possui bastante subida/i);
+  assert.match(prompt, /\n9\. Considere temperatura e condições meteorológicas/);
   assert.match(prompt, /Segunda: Pode treinar: sim; Período preferencial: 12h–14h; Tempo máximo disponível para a sessão: 60 minutos; Local: Fânzeres, Gondomar/);
   assert.match(prompt, /Terça: Pode treinar: não/);
   assert.match(prompt, /Quarta: Pode treinar: sim; Período preferencial: Antes das 08h; Tempo máximo disponível para a sessão: 45 minutos; Local: Porto/);
@@ -136,6 +139,9 @@ test('generated English prompt assigns dates by weekday, not row position, for i
     preferences: { distance_unit: 'mi', temperature_unit: 'F' },
   });
   assert.match(prompt, /Monday: Can train: yes; Preferred period: 12:00–14:00; Maximum session time: 60 minutes; Location: Fânzeres, Gondomar/);
+  assert.match(prompt, /8\. Do not dictate that I chase pace on uphills\. HR may rise significantly in these sections; consider effort and breathing primarily\./);
+  assert.doesNotMatch(prompt, /my usual route has plenty of hills/i);
+  assert.match(prompt, /\n9\. Consider temperature and weather conditions/);
   assert.match(prompt, /MANDATORY WEATHER FORECAST VERIFICATION/);
   assert.match(prompt, /Perform this research autonomously using the available search and browsing tools/);
   assert.match(prompt, /Do not ask the user to confirm sources, locations, dates, times, or time zones, or to authorize research/);

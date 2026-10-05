@@ -1,6 +1,6 @@
 {
   "name": "training-assistant",
-  "version": "0.19.5",
+  "version": "0.19.6",
   "description": "Self-hosted running training assistant with FIT analysis, training cycles, calendar planning, and AI-ready training prompts",
   "main": "src/server.js",
   "engines": {
