@@ -137,53 +137,37 @@
 
   <div id="onboardingWelcome" class="onboarding-welcome" hidden>
     <div class="onboarding-welcome-backdrop" data-onboarding-dismiss="true"></div>
-    <section class="onboarding-welcome-card" role="dialog" aria-modal="true" aria-labelledby="onboardingWelcomeTitle0" aria-describedby="onboardingWelcomeDescription0">
-      <div class="onboarding-welcome-slides">
-        <article class="onboarding-welcome-slide" data-onboarding-welcome-slide="0">
-          <div class="onboarding-welcome-media"><img src="/assets/onboarding/onboarding-shoes.png" data-i18n-alt="home.onboarding.shoesAlt" alt="Running shoes ready for training"></div>
-          <div class="onboarding-welcome-content">
-            <p class="eyebrow">Kinesis</p>
-            <p id="onboardingWelcomeStep" class="onboarding-welcome-step" role="status" aria-live="polite">1 of 3</p>
-            <h2 id="onboardingWelcomeTitle0" tabindex="-1" data-i18n="home.onboarding.shoesTitle">Add your running shoes</h2>
-            <p id="onboardingWelcomeDescription0" data-i18n="home.onboarding.shoesText">Track mileage automatically when you record training results.</p>
-            <a class="btn-primary onboarding-welcome-action" data-onboarding-action href="/shoes.html" data-i18n="home.onboarding.shoesAction">Add my shoes</a>
-          </div>
-        </article>
-        <article class="onboarding-welcome-slide" data-onboarding-welcome-slide="1" hidden>
-          <div class="onboarding-welcome-media"><img src="/assets/onboarding/onboarding-cycle.png" data-i18n-alt="home.onboarding.cycleAlt" alt="A training cycle mapped out"></div>
-          <div class="onboarding-welcome-content">
-            <p class="eyebrow">Kinesis</p>
-            <p class="onboarding-welcome-step" role="status" aria-live="polite">2 of 3</p>
-            <h2 id="onboardingWelcomeTitle1" tabindex="-1" data-i18n="home.onboarding.cycleTitle">Create your first cycle</h2>
-            <p id="onboardingWelcomeDescription1" data-i18n="home.onboarding.cycleText">Set a goal and give your training a clear direction.</p>
-            <a class="btn-primary onboarding-welcome-action" data-onboarding-action href="/cycles.html" data-i18n="home.onboarding.cycleAction">Create my cycle</a>
-          </div>
-        </article>
-        <article class="onboarding-welcome-slide" data-onboarding-welcome-slide="2" hidden>
-          <div class="onboarding-welcome-media"><img src="/assets/onboarding/onboarding-plan.png" data-i18n-alt="home.onboarding.planAlt" alt="A weekly training plan"></div>
-          <div class="onboarding-welcome-content">
-            <p class="eyebrow">Kinesis</p>
-            <p class="onboarding-welcome-step" role="status" aria-live="polite">3 of 3</p>
-            <h2 id="onboardingWelcomeTitle2" tabindex="-1" data-i18n="home.onboarding.planTitle">Add workouts to your calendar</h2>
-            <p id="onboardingWelcomeDescription2" data-i18n="home.onboarding.planText">Organize your goals and availability to prepare an AI training request.</p>
-            <p id="onboardingPlanPrerequisite" class="onboarding-welcome-prerequisite" hidden data-i18n="home.onboarding.planPrerequisite">Create a cycle first so your workouts have a place in your plan.</p>
-            <div class="onboarding-welcome-action-group">
-              <a class="btn-primary onboarding-welcome-action" data-onboarding-action href="/cycles.html" data-i18n="home.onboarding.planCycleAction">Create my cycle first</a>
-              <a class="btn-quiet onboarding-welcome-action-secondary" data-onboarding-action href="/cycles.html" hidden data-i18n="home.onboarding.importAction">Import a spreadsheet</a>
-            </div>
-          </div>
-        </article>
-      </div>
-      <div class="onboarding-welcome-footer">
-        <div class="onboarding-welcome-nav-slot onboarding-welcome-nav-slot-start"><button id="onboardingPrevious" class="onboarding-welcome-nav-control" type="button" hidden><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="m12.5 4.5-5.5 5.5 5.5 5.5" /></svg><span data-i18n="home.onboarding.previous">Back</span></button></div>
-        <div class="onboarding-welcome-indicators" role="group" aria-label="Onboarding steps" data-i18n-aria-label="home.onboarding.stepsLabel">
-          <button type="button" class="onboarding-welcome-indicator" data-onboarding-slide-control="0" aria-label="Step 1" data-i18n-aria-label="home.onboarding.stepOne" aria-current="step"></button>
-          <button type="button" class="onboarding-welcome-indicator" data-onboarding-slide-control="1" aria-label="Step 2" data-i18n-aria-label="home.onboarding.stepTwo"></button>
-          <button type="button" class="onboarding-welcome-indicator" data-onboarding-slide-control="2" aria-label="Step 3" data-i18n-aria-label="home.onboarding.stepThree"></button>
+    <section class="onboarding-welcome-card" role="dialog" aria-modal="true" aria-labelledby="onboardingWelcomeTitle" aria-describedby="onboardingWelcomeDescription">
+      <header class="onboarding-welcome-header">
+        <div>
+          <p class="eyebrow">Kinesis</p>
+          <h2 id="onboardingWelcomeTitle" tabindex="-1" data-i18n="home.onboarding.welcomeTitle">Welcome to Kinesis</h2>
         </div>
-        <div class="onboarding-welcome-nav-slot onboarding-welcome-nav-slot-end"><button id="onboardingNext" class="onboarding-welcome-nav-control" type="button"><span data-i18n="home.onboarding.nextSlide">Next</span><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="m7.5 4.5 5.5 5.5-5.5 5.5" /></svg></button></div>
+        <button id="onboardingWelcomeClose" class="modal-close" type="button" data-i18n-aria-label="home.onboarding.closeWelcome" aria-label="Close welcome">
+          <i data-lucide="x" aria-hidden="true"></i>
+        </button>
+      </header>
+      <div id="onboardingWelcomeDescription" class="onboarding-welcome-body" data-onboarding-description>
+        <div class="onboarding-welcome-player">
+          <video id="onboardingWelcomeVideo" controls playsinline preload="none" data-i18n-aria-label="home.onboarding.playerLabel" aria-label="Kinesis welcome presentation"></video>
+          <button id="onboardingWatchVideo" class="btn-primary" type="button" data-i18n="home.onboarding.watchVideo">Watch the introduction</button>
+          <p id="onboardingVideoStatus" class="onboarding-video-status" role="status" aria-live="polite" hidden></p>
+          <p class="onboarding-video-language" data-i18n="home.onboarding.videoLanguage">The video audio and on-screen text are in Portuguese.</p>
+        </div>
+        <div class="onboarding-welcome-summary">
+          <h3 data-i18n="home.onboarding.summaryTitle">Your first steps</h3>
+          <ol>
+            <li data-i18n="home.onboarding.summaryShoes">Register your running shoes.</li>
+            <li data-i18n="home.onboarding.summaryCycle">Create a training cycle.</li>
+            <li data-i18n="home.onboarding.summaryPlan">Request workouts, then import the spreadsheet into your calendar.</li>
+          </ol>
+        </div>
       </div>
-      <button id="onboardingLater" class="btn-quiet onboarding-welcome-later" type="button" data-i18n="home.onboarding.later">Skip for now</button>
+      <p id="onboardingWelcomeError" class="onboarding-welcome-error" role="alert" aria-live="assertive" hidden></p>
+      <footer class="onboarding-welcome-footer">
+        <button id="onboardingLater" class="btn-quiet" type="button" data-i18n="home.onboarding.later">Not now</button>
+        <button id="onboardingStart" class="btn-primary" type="button" data-i18n="home.onboarding.start">Get started</button>
+      </footer>
     </section>
   </div>
 

@@ -42,32 +42,13 @@ export function renderOnboardingStepStates(root, steps = {}, nextStep = null) {
 }
 
 export function shouldShowWelcome(state) {
-  return state?.status === 'new';
+  return state?.status === 'new' && !calculateOnboardingProgress(state).complete;
 }
 
-export function onboardingSlideNavigation(index, total = ONBOARDING_TOTAL_STEPS) {
-  const last = Math.max(0, total - 1);
-  const current = Math.max(0, Math.min(Number(index) || 0, last));
-  return {
-    current,
-    previous: Math.max(0, current - 1),
-    next: Math.min(last, current + 1),
-    isFirst: current === 0,
-    isLast: current === last,
-  };
-}
-
-export function onboardingPlanActions(hasActiveCycle) {
-  if (hasActiveCycle) {
-    return { primaryHref: '/ai-coach.html', primaryKey: 'aiAction', secondaryHref: '/calendar.html' };
-  }
-  return { primaryHref: '/cycles.html', primaryKey: 'planCycleAction', secondaryHref: null };
-}
-
-export function updateOnboardingDialogA11y(dialog, slide) {
-  if (!dialog || !slide) return false;
-  const title = slide.querySelector('h2[id]');
-  const description = slide.querySelector('[id^="onboardingWelcomeDescription"]');
+export function updateOnboardingDialogA11y(dialog, content) {
+  if (!dialog || !content) return false;
+  const title = content.querySelector('h2[id]');
+  const description = content.querySelector('[data-onboarding-description][id]');
   if (!title || !description) return false;
   dialog.setAttribute('aria-labelledby', title.id);
   dialog.setAttribute('aria-describedby', description.id);
@@ -75,7 +56,7 @@ export function updateOnboardingDialogA11y(dialog, slide) {
 }
 
 export function visibleOnboardingFocusableElements(dialog) {
-  return [...(dialog?.querySelectorAll('a, button') ?? [])].filter((element) => {
+  return [...(dialog?.querySelectorAll('a, button, video[controls]') ?? [])].filter((element) => {
     return !element.disabled && !element.closest('[hidden]');
   });
 }
@@ -101,16 +82,10 @@ export function trapOnboardingFocus(event, dialog, activeTitle) {
 }
 
 export function createWelcomeSession() {
-  let slide = 0;
   let suppressAutomaticWelcome = false;
   return {
-    get slide() { return slide; },
     suppressAutomatic() {
       suppressAutomaticWelcome = true;
-    },
-    setSlide(index, total) {
-      slide = onboardingSlideNavigation(index, total).current;
-      return slide;
     },
     ensureAutomatic(onboarding) {
       return !suppressAutomaticWelcome && shouldShowWelcome(onboarding);

@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized training-request prompts for use with an external AI.
 
-Current application version: **0.19.6** (active beta development).
+Current application version: **0.20.0** (active beta development).
 
 ### Shoe mileage integrity
 
@@ -41,11 +41,19 @@ Authenticated pages and APIs use server-side sessions. FIT files and workout dat
 
 ## Why
 
-New accounts receive a short PT/EN welcome carousel and a non-blocking setup
-guide. The guide's three steps are derived from that user's shoes, active cycle,
-and planned workout records. Dismissing welcome or hiding the guide changes only
-presentation state; opening the guide from the user menu is transient. Existing
-accounts do not receive the welcome automatically.
+New accounts receive a localized welcome presentation with an existing
+Portuguese-language video and a localized text summary, followed by the
+non-blocking setup guide. The video loads on demand and plays with sound only
+after the user selects “Assistir à apresentação” / “Watch the introduction”;
+the user can instead choose “Começar” / “Get started” to continue to the guide,
+or dismiss with “Agora não” / “Not now”, without watching. Dismissal is saved
+using the account's existing onboarding status, so it survives reloads and
+other browsers; existing accounts do not receive the video automatically.
+The guide remains available from the account menu, and its three steps are
+derived from that user's shoes, active cycle, and planned workout records.
+Opening the guide from the menu is transient. The video has no automatic
+animation or playback and respects reduced-motion preferences; if playback or
+loading fails, localized retry/continue actions remain available.
 
 AI training assistants are only as good as the data you give them. Exporting workouts by hand means losing detail. Kinesis turns the raw `.FIT` file your watch already recorded into a structured, metric-rich review request in seconds — so every recommendation is grounded in real numbers.
 
@@ -62,7 +70,7 @@ AI training assistants are only as good as the data you give them. Exporting wor
 - **User dropdown menu** — the authenticated user badge opens **Setup guide**, **Change Password**, and **Preferences**. Logout remains a separate topbar action.
 - **Secure change password flow** — a dedicated modal with client-side validation that accumulates every problem into a robust grouped error box (the only error surface — no stray inline hints), backed by hardened `scrypt` verification of the current password before re-hashing and storing the new one.
 - **Global route guards** — the Training Calendar is strictly gated: users without an active Training Cycle are redirected to the Cycles page by the server, and cycle-dependent navigation is disabled in the shell as a second line of defense.
-- **New-user onboarding** — the first-visit welcome and three-step setup checklist are available in English and Brazilian Portuguese. The guide can be reopened from the user dropdown without changing progress or presentation preferences.
+- **New-user onboarding** — a new account sees the Portuguese welcome video and localized summary, then the existing three-step checklist in English or Brazilian Portuguese. Playback with sound is user-initiated; the user may continue or dismiss without watching. The saved dismissal prevents the video returning, while the setup guide remains available from the user dropdown without changing progress.
 - **One-click logout** — invalidates the session on the server and clears the cookie.
 
 ### User Preferences Module
@@ -360,15 +368,24 @@ continues to receive only a planned training location/date.
 
 ### New-user onboarding
 
-While a newly registered account has onboarding status `new`, the dashboard
-automatically shows a three-slide welcome modal: add shoes, create a cycle, and
-prepare workouts. Its primary links lead to
-the existing shoe and cycle flows. The workout-planning slide opens Planejar
-com IA / Plan with AI or
-spreadsheet import when a cycle exists; otherwise it directs the user to create
-the required cycle first. The welcome is not a required tour. “Not now” persists
-dismissal by changing
-`onboarding_status` from `new` to `active` through the presentation endpoint.
+While a newly registered account has onboarding status `new` and has not
+completed all setup steps, the dashboard automatically opens the welcome
+dialog. The dialog uses the Portuguese video at
+`/assets/onboarding/kinesis-onboarding.mp4`; playback does not begin or load
+until the user explicitly selects “Assistir à apresentação” / “Watch the
+introduction”, and then retains the video's audio. The video is not translated
+for English: its Portuguese language is disclosed in both locales, and a
+localized summary explains registering shoes, creating a cycle, and requesting
+workouts followed by importing the spreadsheet into the calendar. A user may
+choose “Começar” / “Get started” to save dismissal and reveal the existing
+guide, or “Agora não” / “Not now” to save dismissal and continue in the app,
+without watching or completing any setup step. Saving uses the existing
+presentation endpoint and changes `onboarding_status` from `new` to `active`;
+the saved account state prevents the video from reappearing after reload, login,
+or another browser. Existing (`active`) accounts never receive it automatically.
+The video dialog supports keyboard focus containment, Escape, focus restoration,
+and reduced-motion preferences; playback/load errors are localized and do not
+block the actions.
 
 The compact checklist appears automatically while incomplete and not hidden by
 the saved preference. Its steps are calculated from data owned by the signed-in
@@ -640,7 +657,7 @@ read the collection.
 ## Usage
 
 1. Open **Sign In**. Create an account through **Register** (first name, last name, email, and password of at least 8 characters) or sign in to an existing account.
-2. A new account is offered the optional PT/EN welcome carousel. Use its actions to register shoes, create a cycle, then prepare workouts with Planejar com IA / Plan with AI or import an Excel plan. You may skip it and use the application freely; the dashboard checklist tracks data actually saved.
+2. A new account is offered the optional Portuguese welcome video with a localized summary. Select “Assistir à apresentação” / “Watch the introduction” to play it with sound, or continue/skip without watching. “Começar” opens the existing setup guide; its checklist tracks only data actually saved.
 3. Open the **Calendar**, choose a planned training, and enter conditions, shoes, perceived effort (RPE 1–5), and feedback on its result page. A realized RPE from 1 to 5 is required to save, generate the analysis prompt, or upload a result; the other feedback is optional.
 4. Choose **Import FIT or ZIP file** for activity data, or **Enter data manually** for aggregate distance and duration (with optional heart rate, elevation, and calories). A FIT/ZIP upload is persisted when its upload request succeeds.
 5. **Save and back to calendar** saves any pending manual result and complete feedback, then returns to the calendar. **Save and Generate Analysis Prompt** saves those data first, then generates the prompt from the canonical training state returned by the backend.

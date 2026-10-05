@@ -11,7 +11,6 @@ const { once } = require('node:events');
 const { tmpdir } = require('node:os');
 const { promisify } = require('node:util');
 const { setTimeout: delay } = require('node:timers/promises');
-const { createHash } = require('node:crypto');
 const { buildServer } = require('../src/server');
 const { createDatabase } = require('../src/db/database');
 const { buildFitFile } = require('./helpers/buildFitFile');
@@ -23,7 +22,7 @@ function findChrome() {
     .find((candidate) => existsSync(candidate));
 }
 
-async function runChromeAtViewport(chrome, url, { width, height, mobile, cookie = null, probeExpression = null, focusSelector = null, verifyTabNextSelector = null, verifyTabFollowingSelector = null, screenshotSuffix = '', keyboardActivateMenuItem = false, clickMenuItemAndFollowNavigation = false, verifyUserMenuTabOrder = false, keyboardFocusValidation = false, keyboardFocusLanguage = null }) {
+async function runChromeAtViewport(chrome, url, { width, height, mobile, cookie = null, probeExpression = null, focusSelector = null, verifyTabNextSelector = null, verifyTabFollowingSelector = null, screenshotSuffix = '', screenshotBeforeProbe = false, keyboardActivateMenuItem = false, clickMenuItemAndFollowNavigation = false, verifyUserMenuTabOrder = false, keyboardFocusValidation = false, keyboardFocusLanguage = null, userClickSelector = null, userClickPoint = null, userPressEscape = false, beforeUserClickExpression = null, waitForVideoPlayback = false }) {
   const portServer = createServer();
   portServer.listen(0, '127.0.0.1');
   await once(portServer, 'listening');
@@ -94,6 +93,50 @@ async function runChromeAtViewport(chrome, url, { width, height, mobile, cookie 
     });
     await command('Page.navigate', { url });
     await Promise.race([loaded, delay(15000).then(() => { throw new Error('Chrome page load timed out.'); })]);
+    if (beforeUserClickExpression) {
+      await command('Runtime.evaluate', {
+        expression: beforeUserClickExpression,
+        awaitPromise: true,
+        returnByValue: true,
+      });
+    }
+    if (userPressEscape) {
+      await command('Runtime.evaluate', {
+        expression: "new Promise((resolve,reject)=>{const end=Date.now()+15000;const check=()=>{const modal=document.getElementById('onboardingWelcome');if(document.body.classList.contains('shell-mounted')&&modal&&!modal.hidden){resolve(true);return}if(Date.now()>end){reject(new Error('Welcome dialog did not open before Escape'));return}setTimeout(check,50)};check()})",
+        awaitPromise: true,
+        returnByValue: true,
+      });
+      await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+      await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+    }
+    if (userClickSelector) {
+      const target = await command('Runtime.evaluate', {
+        expression: `new Promise((resolve,reject)=>{const end=Date.now()+15000;const check=()=>{const node=document.querySelector(${JSON.stringify(userClickSelector)});if(node&&!node.hidden&&node.getBoundingClientRect().width>0){const r=node.getBoundingClientRect();resolve({x:r.left+r.width/2,y:r.top+r.height/2});return}if(Date.now()>end){reject(new Error('User-gesture target did not become visible: '+${JSON.stringify(userClickSelector)}));return}setTimeout(check,50)};check()})`,
+        awaitPromise: true,
+        returnByValue: true,
+      });
+      const point = userClickPoint ?? target.result?.value;
+      assert.ok(point, `Chrome found visible user-gesture target ${userClickSelector}`);
+      await command('Input.dispatchMouseEvent', { type: 'mouseMoved', x: point.x, y: point.y });
+      await command('Input.dispatchMouseEvent', { type: 'mousePressed', x: point.x, y: point.y, button: 'left', clickCount: 1 });
+      await command('Input.dispatchMouseEvent', { type: 'mouseReleased', x: point.x, y: point.y, button: 'left', clickCount: 1 });
+      if (waitForVideoPlayback) {
+        await command('Runtime.evaluate', {
+          expression: "new Promise((resolve,reject)=>{const video=document.getElementById('onboardingWelcomeVideo');const status=document.getElementById('onboardingVideoStatus');const end=Date.now()+12000;const check=()=>{if(!status.hidden){resolve('error');return}if(!video.paused&&video.readyState>=2){resolve('playing');return}if(Date.now()>end){reject(new Error('Video did not reach a playable frame after the explicit click'));return}setTimeout(check,50)};check()})",
+          awaitPromise: true,
+          returnByValue: true,
+        });
+        if (process.env.ONBOARDING_VISUAL_REPORT === '1' && screenshotSuffix === '-video-playing') {
+          const screenshot = await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+          writeFileSync(`/tmp/kinesis-onboarding-${width}x${height}${screenshotSuffix}.png`, Buffer.from(screenshot.data, 'base64'));
+        }
+      }
+    }
+    const captureScreenshot = async () => {
+      const screenshot = await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+      writeFileSync(`/tmp/kinesis-onboarding-${width}x${height}${screenshotSuffix}.png`, Buffer.from(screenshot.data, 'base64'));
+    };
+    if (process.env.ONBOARDING_VISUAL_REPORT === '1' && screenshotBeforeProbe) await captureScreenshot();
     if (keyboardFocusValidation) {
       if (keyboardFocusLanguage) {
         await command('Runtime.evaluate', {
@@ -226,16 +269,13 @@ async function runChromeAtViewport(chrome, url, { width, height, mobile, cookie 
       assert.equal(value.error, undefined, value.error);
       assert.ok(value.result, 'visual measurement script completed');
     }
-    if (process.env.ONBOARDING_VISUAL_REPORT === '1') {
-      const screenshot = await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
-      writeFileSync(`/tmp/kinesis-onboarding-${width}x${height}${screenshotSuffix}.png`, Buffer.from(screenshot.data, 'base64'));
-    }
+    if (process.env.ONBOARDING_VISUAL_REPORT === '1' && !screenshotBeforeProbe) await captureScreenshot();
     await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
     await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
     const focusEvaluation = await command('Runtime.evaluate', {
       expression: focusSelector
         ? `(()=>{const tabActiveElementId=document.activeElement?.id;const control=document.querySelector(${JSON.stringify(focusSelector)});control?.focus();return {tabActiveElementId,actionOutline:control?getComputedStyle(control).outlineStyle:null,actionVisible:control?.matches(':focus-visible')??false}})()`
-        : `(()=>{const tabActiveElementId=document.activeElement?.id;const action=document.querySelector('.onboarding-welcome-slide:not([hidden]) [data-onboarding-action]:not([hidden])');const later=document.getElementById('onboardingLater');action?.focus();const actionOutline=action?getComputedStyle(action).outlineStyle:null;later?.focus();return {tabActiveElementId,actionOutline,laterOutline:later?getComputedStyle(later).outlineStyle:null}})()`,
+        : `(()=>{const tabActiveElementId=document.activeElement?.id;const action=document.getElementById('onboardingWatchVideo');const later=document.getElementById('onboardingLater');action?.focus();const actionOutline=action?getComputedStyle(action).outlineStyle:null;later?.focus();return {tabActiveElementId,actionOutline,laterOutline:later?getComputedStyle(later).outlineStyle:null}})()`,
       returnByValue: true,
     });
     if (focusEvaluation.result?.value) {
@@ -293,37 +333,24 @@ test('onboarding progress exposes three data-derived steps', async () => {
   assert.equal(module.shouldShowWelcome({ status: 'unknown' }), false);
 });
 
-test('welcome carousel moves one slide at a time and gates workout actions on an active cycle', async () => {
-  const { onboardingPlanActions, onboardingSlideNavigation } = await import(pathToFileURL(path.join(__dirname, '../src/public/shared/onboarding.js')));
-  assert.deepEqual(onboardingSlideNavigation(0), { current: 0, previous: 0, next: 1, isFirst: true, isLast: false });
-  assert.deepEqual(onboardingSlideNavigation(1), { current: 1, previous: 0, next: 2, isFirst: false, isLast: false });
-  assert.deepEqual(onboardingSlideNavigation(2), { current: 2, previous: 1, next: 2, isFirst: false, isLast: true });
-  assert.equal(onboardingSlideNavigation(-1).current, 0);
-  assert.equal(onboardingSlideNavigation(99).current, 2);
-  assert.deepEqual(onboardingPlanActions(false), {
-    primaryHref: '/cycles.html', primaryKey: 'planCycleAction', secondaryHref: null,
-  });
-  assert.deepEqual(onboardingPlanActions(true), {
-    primaryHref: '/ai-coach.html', primaryKey: 'aiAction', secondaryHref: '/calendar.html',
-  });
+test('welcome eligibility uses persisted new-account state and excludes completed setup', async () => {
+  const { shouldShowWelcome } = await import(pathToFileURL(path.join(__dirname, '../src/public/shared/onboarding.js')));
+  assert.equal(shouldShowWelcome({ status: 'new', steps: { shoes: false, cycle: false, trainings: false } }), true);
+  assert.equal(shouldShowWelcome({ status: 'new', steps: { shoes: true, cycle: true, trainings: true } }), false);
+  assert.equal(shouldShowWelcome({ status: 'active' }), false);
 });
 
 test('welcome session opens for new accounts and explicit guide requests suppress it for this visit', async () => {
   const { createWelcomeSession } = await import(pathToFileURL(path.join(__dirname, '../src/public/shared/onboarding.js')));
   const session = createWelcomeSession();
-  const fresh = { status: 'new', welcomeDismissed: false, guideHidden: false };
-  assert.equal(session.slide, 0);
+  const fresh = { status: 'new', guideHidden: false, steps: { shoes: false, cycle: false, trainings: false } };
   assert.equal(session.ensureAutomatic(fresh), true, 'a new account receives the automatic welcome');
   assert.equal(session.ensureAutomatic({ status: 'active' }), false, 'the persisted dismissal transitions the account out of first-visit status');
-  assert.equal(session.ensureAutomatic({ status: 'active', welcomeDismissed: false }), false, 'existing accounts never receive the automatic modal');
-  session.setSlide(2, 3);
-  assert.equal(session.slide, 2, 'the automatic welcome retains carousel navigation state');
+  assert.equal(session.ensureAutomatic({ status: 'active' }), false, 'existing accounts never receive the automatic modal');
   session.suppressAutomatic();
   assert.equal(session.ensureAutomatic(fresh), false);
-  assert.equal(fresh.status, 'new');
-  assert.equal(fresh.welcomeDismissed, false);
   const nextVisit = createWelcomeSession();
-  assert.equal(nextVisit.ensureAutomatic(fresh), true, 'the in-memory suppression does not persist across a new page visit');
+  assert.equal(nextVisit.ensureAutomatic(fresh), true, 'an undisposed account can see the welcome again on the next visit');
 });
 
 test('guide presentation keeps completed and hidden onboarding out of layout until explicitly requested', async () => {
@@ -361,15 +388,20 @@ test('welcome inert targeting excludes the dialog and preserves previously inert
   assert.deepEqual(backgroundInertTargets([shell, modal, alreadyInert], modal), [shell]);
 });
 
-test('onboarding UI keeps the existing destinations and accessibility hooks', () => {
+test('onboarding UI keeps the setup guide and accessible video welcome', () => {
   const fs = require('node:fs');
   const home = fs.readFileSync(path.join(__dirname, '../src/public/home.html'), 'utf8');
   const homeJs = fs.readFileSync(path.join(__dirname, '../src/public/home.js'), 'utf8');
   assert.match(home, /href="\/shoes\.html"/);
   assert.match(home, /href="\/cycles\.html"/);
-  assert.match(home, /href="\/ai-coach\.html"/);
   assert.match(home, /href="\/calendar\.html"/);
-  assert.match(home, /aria-labelledby="onboardingWelcomeTitle0"/);
+  assert.match(home, /aria-labelledby="onboardingWelcomeTitle"/);
+  assert.match(home, /aria-describedby="onboardingWelcomeDescription"/);
+  assert.match(home, /<video id="onboardingWelcomeVideo" controls playsinline preload="none"/);
+  assert.doesNotMatch(home, /\bautoplay\b|\bmuted\b|\bloop\b/);
+  assert.match(home, /id="onboardingWatchVideo"[^>]*data-i18n="home\.onboarding\.watchVideo"/);
+  assert.match(home, /id="onboardingStart"[^>]*data-i18n="home\.onboarding\.start"/);
+  assert.match(home, /id="onboardingLater"[^>]*data-i18n="home\.onboarding\.later"/);
   assert.match(home, /onboardingHide/);
   assert.match(home, /id="onboardingTitle"[^>]*tabindex="-1"/);
   assert.match(home, /id="onboardingEyebrow"[^>]*data-i18n="home\.onboarding\.nextStep"/);
@@ -395,32 +427,32 @@ test('onboarding UI keeps the existing destinations and accessibility hooks', ()
   assert.match(homeJs, /event\.key === 'Escape'/);
   assert.match(homeJs, /setAttribute\('inert', ''\)/);
   assert.match(homeJs, /focusWelcomeTitle\(\)/);
-  const slides = [...home.matchAll(/<article class="onboarding-welcome-slide" data-onboarding-welcome-slide="(\d+)"[\s\S]*?<\/article>/g)];
-  assert.equal(slides.length, 3);
-  for (const [index, asset] of ['onboarding-shoes.png', 'onboarding-cycle.png', 'onboarding-plan.png'].entries()) {
-    assert.match(slides[index][0], new RegExp(`/assets/onboarding/${asset}`));
-  }
-  assert.match(home, /id="onboardingPrevious"[^>]*hidden/);
-  assert.match(home, /id="onboardingNext"/);
-  assert.equal((home.match(/data-onboarding-slide-control=/g) || []).length, 3);
-  assert.match(homeJs, /event\.currentTarget\.getAttribute\('href'\)/);
-  assert.match(homeJs, /window\.location\.href = destination/);
+  assert.match(homeJs, /onboardingWelcomeVideo\.play\(\)/);
+  assert.match(homeJs, /assets\/onboarding\/kinesis-onboarding\.mp4/);
+  assert.match(homeJs, /updateOnboardingPresentation\(\{ welcome_dismissed: true \}\)/);
+  assert.match(homeJs, /onboardingWelcomeVideo\?\.pause\(\)/);
+  assert.match(homeJs, /dismissWelcome\(\{ openGuide: true \}\)/);
+  assert.doesNotMatch(homeJs, /renderWelcomeCarousel|onboardingSlideNavigation/);
   for (const asset of ['onboarding-shoes.png', 'onboarding-cycle.png', 'onboarding-plan.png']) {
     assert.ok(require('node:fs').existsSync(path.join(__dirname, '../src/public/assets/onboarding', asset)), `${asset} is committed at the HTML path`);
   }
 });
 
-test('welcome carousel copy is translated and action labels match their destinations', () => {
+test('welcome-video copy and the textual setup outline are localized in English and Portuguese', () => {
   const en = JSON.parse(readFileSync(path.join(__dirname, '../src/public/locales/en.json'), 'utf8'));
   const pt = JSON.parse(readFileSync(path.join(__dirname, '../src/public/locales/pt.json'), 'utf8'));
-  assert.equal(en.home.onboarding.shoesAction, 'Add my shoes');
-  assert.equal(pt.home.onboarding.shoesAction, 'Cadastrar meus tênis');
-  assert.equal(en.home.onboarding.stepProgress, '{current} of {total}');
-  assert.equal(pt.home.onboarding.stepProgress, '{current} de {total}');
-  assert.equal(en.home.onboarding.planTitle, 'Add workouts to your calendar');
-  assert.equal(pt.home.onboarding.planTitle, 'Adicione treinos ao calendário');
-  assert.equal(en.home.onboarding.planCycleAction, 'Create my cycle first');
-  assert.equal(pt.home.onboarding.planCycleAction, 'Criar meu ciclo primeiro');
+  assert.equal(en.home.onboarding.watchVideo, 'Watch the introduction');
+  assert.equal(pt.home.onboarding.watchVideo, 'Assistir à apresentação');
+  assert.equal(en.home.onboarding.start, 'Get started');
+  assert.equal(pt.home.onboarding.start, 'Começar');
+  assert.equal(en.home.onboarding.summaryShoes, 'Register your running shoes.');
+  assert.equal(pt.home.onboarding.summaryShoes, 'Cadastrar seus tênis de corrida.');
+  assert.equal(en.home.onboarding.summaryCycle, 'Create a training cycle.');
+  assert.equal(pt.home.onboarding.summaryCycle, 'Criar um ciclo de treino.');
+  assert.match(en.home.onboarding.summaryPlan, /Request workouts.*import the spreadsheet into your calendar/);
+  assert.match(pt.home.onboarding.summaryPlan, /Solicitar treinos.*importar a planilha no calendário/);
+  assert.match(en.home.onboarding.videoLanguage, /in Portuguese/);
+  assert.match(pt.home.onboarding.videoLanguage, /em português/);
   assert.equal(en.home.onboarding.nextStep, 'Next step');
   assert.equal(pt.home.onboarding.nextStep, 'Próxima etapa');
   assert.equal(en.home.onboarding.setupComplete, 'Setup complete');
@@ -630,106 +662,28 @@ test('dashboard onboarding cards render accessible states and aligned actions in
   }
 });
 
-test('real welcome markup keeps carousel geometry stable on desktop and mobile with cache-busted assets', async () => {
+test('real welcome-video dialog stays responsive and localized in Chrome', async () => {
   const chrome = findChrome();
   assert.ok(chrome, 'Chrome is required for onboarding visual validation.');
-  const root = path.join(__dirname, '..');
-  const publicDir = path.join(root, 'src/public');
+  const publicDir = path.join(__dirname, '../src/public');
   const home = readFileSync(path.join(publicDir, 'home.html'), 'utf8');
   const modalStart = home.indexOf('<div id="onboardingWelcome"');
   const modalEnd = home.indexOf('\n  <script src=', modalStart);
-  assert.ok(modalStart >= 0 && modalEnd > modalStart, 'the real welcome dialog markup is embedded in the browser fixture');
-  const imagePath = path.join(publicDir, 'assets/onboarding/onboarding-shoes.png');
-  const imageHash = createHash('sha256').update(readFileSync(imagePath)).digest('hex');
-  assert.equal(imageHash, 'a9cdfe175cb3824e451c8ca5ebf25bd5ea965e7192a04c1f219addedb671135b', 'the supplied replacement image is the expected committed binary');
-  const versionedModal = home.slice(modalStart, modalEnd)
-    .replace(' class="onboarding-welcome" hidden', ' class="onboarding-welcome"')
-    .replaceAll('/assets/onboarding/', `/assets/onboarding/?unused=`)
-    .replace(/\/assets\/onboarding\/\?unused=(onboarding-[^"?]+\.png)/g, `/assets/onboarding/$1?v=${imageHash}`);
-  const en = JSON.parse(readFileSync(path.join(publicDir, 'locales/en.json'), 'utf8'));
-  const pt = JSON.parse(readFileSync(path.join(publicDir, 'locales/pt.json'), 'utf8'));
-  const browserScript = `
-    import { createWelcomeSession, updateOnboardingDialogA11y, trapOnboardingFocus, visibleOnboardingFocusableElements } from '/shared/onboarding.js';
-    const locales = ${JSON.stringify({ en: en.home.onboarding, pt: pt.home.onboarding })};
-    const modal = document.getElementById('onboardingWelcome');
-    const dialog = modal.querySelector('[role="dialog"]');
-    const slides = [...modal.querySelectorAll('[data-onboarding-welcome-slide]')];
-    const previous = document.getElementById('onboardingPrevious');
-    const next = document.getElementById('onboardingNext');
-    const dots = [...modal.querySelectorAll('[data-onboarding-slide-control]')];
-    const later = document.getElementById('onboardingLater');
-    const session = createWelcomeSession();
-    const openedAutomatically = session.ensureAutomatic({ status: 'new' });
-    modal.hidden = !openedAutomatically;
-    function text(key, lang) { return locales[lang][key.split('.').pop()]; }
-    function render(index, lang) {
-      slides.forEach((slide, i) => { slide.hidden = i !== index; slide.setAttribute('aria-hidden', String(i !== index)); });
-      previous.hidden = index === 0;
-      next.hidden = index === 2;
-      document.getElementById('onboardingPlanPrerequisite').hidden = index !== 2;
-      document.querySelector('.onboarding-welcome-action-secondary').hidden = true;
-      dots.forEach((dot, i) => dot.setAttribute('aria-current', i === index ? 'step' : 'false'));
-      modal.querySelectorAll('[data-i18n]').forEach((element) => {
-        const key = element.dataset.i18n;
-        const translated = locales[lang][key.split('.').pop()];
-        if (translated) element.textContent = translated.replace('{current}', String(index + 1)).replace('{total}', '3');
-      });
-      updateOnboardingDialogA11y(dialog, slides[index]);
-      slides[index].querySelector('h2').focus();
-    }
-    const measurements = [];
-    function measureSlide(index, lang) {
-      session.setSlide(index, 3);
-      render(index, lang);
-      const rect = (element) => { const r = element.getBoundingClientRect(); return { x:r.x, y:r.y, width:r.width, height:r.height, centerX:r.x+r.width/2, right:r.right, bottom:r.bottom }; };
-      const slide = slides[index];
-      const content = slide.querySelector('.onboarding-welcome-content');
-      const image = slide.querySelector('img');
-      const media = slide.querySelector('.onboarding-welcome-media');
-      const title = slide.querySelector('h2');
-      const action = [...slide.querySelectorAll('[data-onboarding-action]')].find((element) => !element.hidden);
-      title.focus();
-      const shiftTab = new KeyboardEvent('keydown', { key:'Tab', shiftKey:true, cancelable:true });
-      trapOnboardingFocus(shiftTab, dialog, title);
-      const focusWrappedFromTitle = shiftTab.defaultPrevented && document.activeElement === later;
-      const currentImage = image.currentSrc;
-      const accessibleRefsAreActive = dialog.getAttribute('aria-labelledby') === title.id
-        && dialog.getAttribute('aria-describedby') === slide.querySelector('[id^="onboardingWelcomeDescription"]').id;
-      const visibleFilledActions = [...modal.querySelectorAll('.onboarding-welcome-slide:not([hidden]) .btn-primary')].length;
-      measurements.push({
-        index, lang, viewport:{ width:innerWidth, height:innerHeight }, card:rect(dialog), stepper:rect(modal.querySelector('.onboarding-welcome-indicators')),
-        media:rect(media), image:rect(image), content:rect(content), footer:rect(modal.querySelector('.onboarding-welcome-footer')),
-        later:rect(later), title:rect(title), titleOutline:getComputedStyle(title).outlineStyle,
-        laterStyle:{ fontSize:getComputedStyle(later).fontSize, fontWeight:getComputedStyle(later).fontWeight, color:getComputedStyle(later).color, background:getComputedStyle(later).backgroundColor, shadow:getComputedStyle(later).boxShadow, decoration:getComputedStyle(later).textDecorationLine, outlineStyle:getComputedStyle(later).outlineStyle, outlineWidth:getComputedStyle(later).outlineWidth, minHeight:getComputedStyle(later).minHeight },
-        laterBottomGap:dialog.getBoundingClientRect().bottom-later.getBoundingClientRect().bottom,
-        actionDecoration:getComputedStyle(action).textDecorationLine,
-        contentOverflow:content.scrollHeight-content.clientHeight,
-        imageLoaded:image.complete && image.naturalWidth>0, imageCurrentSrc:currentImage,
-        imageHashMatches:currentImage.includes('v=${imageHash}'), nextHidden:next.hidden, previousHidden:previous.hidden,
-        nextDisplay:getComputedStyle(next).display, previousDisplay:getComputedStyle(previous).display,
-        hiddenSecondaryFocusable:visibleOnboardingFocusableElements(dialog).includes(document.querySelector('.onboarding-welcome-action-secondary')),
-        focusWrappedFromTitle,
-        accessibleRefsAreActive, visibleFilledActions,
-        navBackground:getComputedStyle(next).backgroundColor,
-      });
-    }
-    window.__run = () => {
-      if (!openedAutomatically) throw new Error('A new account should automatically open the welcome dialog.');
-      for (const lang of ['en','pt']) for (let index=0; index<3; index+=1) measureSlide(index, lang);
-      document.body.dataset.visualResult = JSON.stringify({ measurements, openedAutomatically, oneDialog:document.querySelectorAll('[role="dialog"]').length === 1 });
-    };
-    try { window.__run(); } catch (error) { document.body.dataset.visualError = error.stack || String(error); }
-  `;
-  const documentHtml = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/home.css"></head><body><main id="appView"></main>${versionedModal}<script>window.addEventListener('error',event=>{document.body.dataset.visualError=event.message});window.addEventListener('unhandledrejection',event=>{document.body.dataset.visualError=String(event.reason)});</script><script type="module">${browserScript}</script></body></html>`;
-  const requests = [];
+  assert.ok(modalStart >= 0 && modalEnd > modalStart, 'the real welcome dialog markup is used');
+  const dialogMarkup = home.slice(modalStart, modalEnd).replace(' class="onboarding-welcome" hidden', ' class="onboarding-welcome"');
+  const locales = {
+    en: JSON.parse(readFileSync(path.join(publicDir, 'locales/en.json'), 'utf8')).home.onboarding,
+    pt: JSON.parse(readFileSync(path.join(publicDir, 'locales/pt.json'), 'utf8')).home.onboarding,
+  };
+  const probeExpression = "(()=>{const dict=" + JSON.stringify(locales) + ";const dialog=document.querySelector('[role=dialog]');const title=document.getElementById('onboardingWelcomeTitle');const video=document.getElementById('onboardingWelcomeVideo');const apply=lang=>{document.documentElement.lang=lang==='pt'?'pt-BR':'en';for(const node of document.querySelectorAll('[data-i18n]')){const key=node.dataset.i18n.split('.').pop();if(dict[lang][key])node.textContent=dict[lang][key]}for(const node of document.querySelectorAll('[data-i18n-aria-label]')){const key=node.dataset.i18nAriaLabel.split('.').pop();if(dict[lang][key])node.setAttribute('aria-label',dict[lang][key])}};const measure=()=>{const r=dialog.getBoundingClientRect();const f=document.querySelector('.onboarding-welcome-footer').getBoundingClientRect();const v=video.getBoundingClientRect();return{lang:document.documentElement.lang,title:title.textContent,watch:document.getElementById('onboardingWatchVideo').textContent,name:dialog.getAttribute('aria-labelledby')===title.id,description:dialog.getAttribute('aria-describedby')==='onboardingWelcomeDescription',video:{width:v.width,height:v.height,ratio:v.width/v.height,controls:video.controls,inline:video.playsInline,preload:video.preload,muted:video.muted,autoplay:video.autoplay,loop:video.loop,paused:video.paused,src:video.getAttribute('src')},footerVisible:[...document.querySelectorAll('.onboarding-welcome-footer button')].every(n=>n.getBoundingClientRect().height>0&&!n.hidden),summaryItems:[...document.querySelectorAll('.onboarding-welcome-summary li')].length,dialogInBounds:r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight,footerInBounds:f.top>=0&&f.bottom<=innerHeight,pageOverflow:document.documentElement.scrollWidth>innerWidth,animation:getComputedStyle(dialog).animationName}};const first=new URLSearchParams(location.search).get('lang')||'en';apply(first);const initial=measure();apply(first==='en'?'pt':'en');const changed=measure();apply(first);return{initial,changed,final:measure()}})()";
+  const documentHtml = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/home.css"></head><body><main id="appView"></main>' + dialogMarkup + '</body></html>';
   const server = createServer((request, response) => {
     const requestPath = decodeURIComponent((request.url || '/').split('?')[0]);
-    if (requestPath.startsWith('/assets/onboarding/')) requests.push(request.url);
     const relative = requestPath === '/' ? null : requestPath.replace(/^\//, '');
     try {
       const body = relative ? readFileSync(path.join(publicDir, relative)) : documentHtml;
-      const type = requestPath.endsWith('.css') ? 'text/css' : requestPath.endsWith('.js') ? 'text/javascript' : requestPath.endsWith('.png') ? 'image/png' : 'text/html';
-      response.writeHead(200, { 'content-type': `${type}; charset=utf-8`, 'cache-control': 'no-store, max-age=0' });
+      const type = requestPath.endsWith('.css') ? 'text/css' : requestPath.endsWith('.js') ? 'text/javascript' : requestPath.endsWith('.mp4') ? 'video/mp4' : 'text/html';
+      response.writeHead(200, { 'content-type': type, 'cache-control': 'no-store' });
       response.end(body);
     } catch {
       response.writeHead(404);
@@ -739,87 +693,47 @@ test('real welcome markup keeps carousel geometry stable on desktop and mobile w
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   const port = server.address().port;
-  const browserResults = [];
   try {
-    for (const [width, height] of [[1280, 800], [390, 844]]) {
-      browserResults.push(await runChromeAtViewport(chrome, `http://127.0.0.1:${port}/`, {
-        width, height, mobile: width < 600,
-      }));
+    for (const sample of [
+      { width: 1280, height: 900, mobile: false, lang: 'en' },
+      { width: 1280, height: 900, mobile: false, lang: 'pt' },
+      { width: 390, height: 844, mobile: true, lang: 'pt' },
+      { width: 390, height: 844, mobile: true, lang: 'en' },
+      { width: 360, height: 640, mobile: true, lang: 'en' },
+    ]) {
+      const result = await runChromeAtViewport(chrome, 'http://127.0.0.1:' + port + '/?lang=' + sample.lang, {
+        width: sample.width, height: sample.height, mobile: sample.mobile, screenshotSuffix: '-video-' + sample.lang,
+        probeExpression,
+      });
+      for (const view of [result.initial, result.changed, result.final]) {
+        assert.equal(view.name, true);
+        assert.equal(view.description, true);
+        assert.equal(view.video.controls, true);
+        assert.equal(view.video.inline, true);
+        assert.equal(view.video.preload, 'none');
+        assert.equal(view.video.paused, true, 'dialog opening and language changes do not start video');
+        assert.equal(view.video.muted, false, 'audio is not forced off');
+        assert.equal(view.video.autoplay, false);
+        assert.equal(view.video.loop, false);
+        assert.equal(view.video.src, null, 'the dialog does not fetch the video until playback is requested');
+        assert.ok(Math.abs(view.video.ratio - 16 / 9) < 0.02, 'the player preserves the asset aspect ratio');
+        assert.equal(view.footerVisible, true, 'both footer actions stay visible');
+        assert.equal(view.summaryItems, 3);
+        assert.equal(view.dialogInBounds, true, 'dialog fits the viewport');
+        assert.equal(view.footerInBounds, true, 'footer actions remain visible');
+        assert.equal(view.pageOverflow, false);
+        assert.equal(view.animation, 'none', 'the dialog has no automatic decorative animation');
+      }
+      assert.equal(result.initial.lang, sample.lang === 'pt' ? 'pt-BR' : 'en');
+      assert.equal(result.changed.lang, sample.lang === 'pt' ? 'en' : 'pt-BR');
+      assert.notEqual(result.initial.title, result.changed.title);
+      assert.notEqual(result.initial.watch, result.changed.watch);
+      assert.equal(result.final.title, result.initial.title);
+      assert.ok(result.final.video.width > 0);
     }
   } finally {
     server.close();
     await once(server, 'close');
-  }
-  assert.ok(requests.some((url) => url.includes(`/onboarding-shoes.png?v=${imageHash}`)), 'Chrome loaded the changed shoe illustration via a cache-busted URL');
-  for (const result of browserResults) {
-    assert.notEqual(result.keyboardFocusOutline, 'none', 'keyboard-focused primary action retains a visible ring');
-    assert.notEqual(result.laterKeyboardFocusOutline, 'none', 'keyboard-focused dismissal action retains a visible ring');
-    assert.equal(result.openedAutomatically, true);
-    assert.equal(result.oneDialog, true);
-    const grouped = new Map();
-    for (const sample of result.measurements) {
-      const key = `${sample.viewport.width}:${sample.lang}`;
-      const expectedGeometry = sample.viewport.width === 1280
-        ? { card: [260, 80, 760, 640], stepper: [611.953125, 647.765625, 56.09375, 9.265625] }
-        : { card: [16, 102, 358, 640], stepper: [166.953125, 669.765625, 56.09375, 9.265625] };
-      assert.deepEqual([sample.card.x, sample.card.y, sample.card.width, sample.card.height], expectedGeometry.card, `approved dialog dimensions remain unchanged for ${key}`);
-      assert.deepEqual([sample.stepper.x, sample.stepper.y, sample.stepper.width, sample.stepper.height], expectedGeometry.stepper, `approved stepper position remains unchanged for ${key}`);
-      const prior = grouped.get(key) ?? [];
-      prior.push(sample);
-      grouped.set(key, prior);
-      assert.equal(sample.stepper.centerX, sample.card.centerX, `stepper centered for ${key} slide ${sample.index + 1}`);
-      assert.equal(sample.nextHidden, sample.index === 2);
-      assert.equal(sample.previousHidden, sample.index === 0);
-      assert.equal(sample.previousDisplay === 'none', sample.index === 0);
-      assert.equal(sample.nextDisplay === 'none', sample.index === 2);
-      assert.equal(sample.hiddenSecondaryFocusable, false);
-      assert.equal(sample.focusWrappedFromTitle, true);
-      assert.equal(sample.accessibleRefsAreActive, true);
-      assert.equal(sample.visibleFilledActions, 1);
-      assert.equal(sample.titleOutline, 'none');
-      assert.equal(sample.actionDecoration, 'none');
-      assert.ok(Number.parseFloat(sample.laterStyle.fontSize) < 16, `dismiss action text is smaller than carousel navigation (${key})`);
-      assert.equal(sample.laterStyle.fontWeight, '500');
-      assert.equal(sample.laterStyle.color, 'rgb(139, 129, 114)');
-      assert.equal(sample.laterStyle.background, 'rgba(0, 0, 0, 0)');
-      assert.equal(sample.laterStyle.shadow, 'none');
-      assert.equal(sample.laterStyle.decoration, 'none');
-      assert.equal(sample.laterStyle.minHeight, '36px');
-      assert.ok(sample.laterBottomGap >= 12 && sample.laterBottomGap <= 16, `dismiss action has approximately 12–16px breathing room beneath it (${key}: ${sample.laterBottomGap}px)`);
-      assert.ok(sample.later.width >= 44, `dismiss action retains a generous hit target (${key})`);
-      assert.equal(sample.imageLoaded, true);
-      assert.equal(sample.imageHashMatches, true);
-      assert.equal(sample.media.x, sample.image.x);
-      assert.equal(sample.media.y, sample.image.y);
-      assert.equal(sample.media.width, sample.image.width);
-      assert.equal(sample.media.height, sample.image.height);
-      assert.equal(sample.navBackground, 'rgba(0, 0, 0, 0)');
-      assert.ok(sample.contentOverflow <= 1, `content fits without clipping (${key} slide ${sample.index + 1}: ${sample.contentOverflow}px)`);
-      assert.ok(Math.abs(sample.later.centerX - sample.card.centerX) < 0.5, `Now-not remains visually centered under navigation (${key}: ${sample.later.centerX} vs ${sample.card.centerX})`);
-    }
-    for (const [key, samples] of grouped) {
-      const first = samples[0];
-      for (const sample of samples.slice(1)) {
-        assert.deepEqual(sample.card, first.card, `dialog dimensions stable for ${key}`);
-        assert.deepEqual(sample.stepper, first.stepper, `stepper position stable for ${key}`);
-        assert.deepEqual(sample.media, first.media, `image pane stable for ${key}`);
-        assert.deepEqual(sample.content, first.content, `content pane stable for ${key}`);
-        assert.deepEqual(sample.footer, first.footer, `footer stable for ${key}`);
-      }
-    }
-  }
-  if (process.env.ONBOARDING_VISUAL_REPORT === '1') {
-    for (const result of browserResults) {
-      const measurements = result.measurements.filter((sample) => sample.lang === 'en');
-      const first = measurements[0];
-      console.log(JSON.stringify({
-        viewport: first.viewport,
-        dialog: { width: first.card.width, height: first.card.height, left: first.card.x, top: first.card.y },
-        stepperCenters: measurements.map((sample) => sample.stepper.centerX),
-        stepperRects: measurements.map(({ stepper }) => ({ x: stepper.x, y: stepper.y, width: stepper.width, height: stepper.height })),
-        slides: measurements.map((sample) => ({ slide: sample.index + 1, image: { width: sample.media.width, height: sample.media.height }, contentOverflow: sample.contentOverflow })),
-      }));
-    }
   }
 });
 
@@ -829,6 +743,11 @@ test('a new account gets the real automatic welcome and Not now persists dismiss
   const db = createDatabase({ filename: ':memory:' });
   const app = await buildServer({ db, sessionCookieSecure: false });
   try {
+    const assetPath = path.join(__dirname, '../src/public/assets/onboarding/kinesis-onboarding.mp4');
+    const servedVideo = await app.inject({ method: 'GET', url: '/assets/onboarding/kinesis-onboarding.mp4' });
+    assert.equal(servedVideo.statusCode, 200);
+    assert.match(servedVideo.headers['content-type'], /video\/mp4/);
+    assert.deepEqual(servedVideo.rawPayload, readFileSync(assetPath), 'the public URL serves the supplied video bytes unchanged');
     const registration = await app.inject({ method: 'POST', url: '/api/auth/register', payload: {
       email: 'welcome-first-visit@example.com', password: 'welcome-secret', first_name: 'New', last_name: 'Runner',
     } });
@@ -847,8 +766,9 @@ test('a new account gets the real automatic welcome and Not now persists dismiss
       const wait=async(predicate)=>{while(Date.now()<deadline){if(await predicate())return true;await new Promise(r=>setTimeout(r,60))}throw new Error('First-visit welcome transition timed out')};
       try{
         const modal=document.getElementById('onboardingWelcome');const dialog=modal.querySelector('[role="dialog"]');
-        await wait(()=>document.body.classList.contains('shell-mounted')&&!modal.hidden&&document.activeElement.id==='onboardingWelcomeTitle0');
-        const opened={visible:!modal.hidden,focused:document.activeElement.id,backgroundInert:[...document.body.children].filter(node=>node!==modal).every(node=>node.inert),dialogCount:document.querySelectorAll('[role="dialog"]').length,previewAbsent:!document.getElementById('onboardingPreview')};
+        await wait(()=>document.body.classList.contains('shell-mounted')&&!modal.hidden&&document.activeElement.id==='onboardingWelcomeTitle');
+        const video=document.getElementById('onboardingWelcomeVideo');
+        const opened={visible:!modal.hidden,focused:document.activeElement.id,backgroundInert:[...document.body.children].filter(node=>node!==modal).every(node=>node.inert),dialogCount:document.querySelectorAll('[role="dialog"]').length,videoPaused:video.paused,videoMuted:video.muted,videoSrc:video.getAttribute('src'),actionsVisible:[...document.querySelectorAll('.onboarding-welcome-footer button')].every(button=>!button.hidden)};
         document.getElementById('onboardingLater').click();
         await wait(async()=>modal.hidden&&(await fetch('/api/onboarding').then(response=>response.json())).onboarding?.status==='active');
         await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
@@ -860,7 +780,7 @@ test('a new account gets the real automatic welcome and Not now persists dismiss
     const result = await runChromeAtViewport(chrome, appUrl, {
       width: 1280, height: 800, mobile: false, cookie, probeExpression,
     });
-    assert.deepEqual(result.opened, { visible: true, focused: 'onboardingWelcomeTitle0', backgroundInert: true, dialogCount: 1, previewAbsent: true });
+    assert.deepEqual(result.opened, { visible: true, focused: 'onboardingWelcomeTitle', backgroundInert: true, dialogCount: 1, videoPaused: true, videoMuted: false, videoSrc: null, actionsVisible: true });
     assert.deepEqual(result.closed, { hidden: true, backgroundReleased: true, guideVisible: true });
     assert.equal(result.status, 'active', 'Not now persists the presentation preference by transitioning a first-visit account to active');
     const after = (await app.inject({ method: 'GET', url: '/api/onboarding', headers: { cookie: cookieHeader } })).json().onboarding;
@@ -873,6 +793,158 @@ test('a new account gets the real automatic welcome and Not now persists dismiss
     assert.equal(reload.hidden, true);
     assert.equal(reload.status, 'active');
     assert.equal(reload.guideVisible, true);
+  } finally {
+    await app.close();
+    db.close();
+  }
+});
+
+test('video playback starts only from the user gesture with sound and Start saves dismissal before opening the guide', async () => {
+  const chrome = findChrome();
+  assert.ok(chrome, 'Chrome is required for welcome-video playback validation.');
+  const db = createDatabase({ filename: ':memory:' });
+  const app = await buildServer({ db, sessionCookieSecure: false, unsplashFetch: async () => { throw new Error('Disable external hero requests in browser verification.'); } });
+  try {
+    const registration = await app.inject({ method: 'POST', url: '/api/auth/register', payload: {
+      email: 'welcome-video-start@example.com', password: 'welcome-secret', first_name: 'Video', last_name: 'Runner',
+    } });
+    assert.equal(registration.statusCode, 201);
+    const userId = db.prepare('SELECT id FROM users WHERE email = ?').get('welcome-video-start@example.com').id;
+    db.prepare("UPDATE users SET preferred_lang = 'pt-BR' WHERE id = ?").run(userId);
+    const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: {
+      email: 'welcome-video-start@example.com', password: 'welcome-secret',
+    } });
+    assert.equal(login.statusCode, 200);
+    const cookie = [].concat(login.headers['set-cookie'] ?? [])[0].split(';')[0].split('=')[1];
+    const appUrl = await app.listen({ port: 0, host: '127.0.0.1' });
+    const probeExpression = `new Promise(async(resolve,reject)=>{
+      const deadline=Date.now()+12000;
+      const wait=async(predicate)=>{while(Date.now()<deadline){if(await predicate())return true;await new Promise(r=>setTimeout(r,50))}throw new Error('Welcome player did not start in Chrome')};
+      try{
+        const video=document.getElementById('onboardingWelcomeVideo');
+        await wait(()=>!video.paused||!document.getElementById('onboardingVideoStatus').hidden);
+        const watchButton=document.getElementById('onboardingWatchVideo');
+        const summary=document.querySelector('.onboarding-welcome-summary');
+        const playback={playing:!video.paused,muted:video.muted,controls:video.controls,inline:video.playsInline,loop:video.loop,autoplay:video.autoplay,src:video.currentSrc?new URL(video.currentSrc).pathname:null,watchHidden:watchButton.hidden,watchVisible:watchButton.getClientRects().length>0,focusedPlayer:document.activeElement===video,summaryVisible:summary.getClientRects().length>0,summaryText:summary.textContent.trim(),error:document.getElementById('onboardingVideoStatus').textContent,title:document.getElementById('onboardingWelcomeTitle').textContent,watch:watchButton.textContent};
+        const beforeLanguage={time:video.currentTime,paused:video.paused};
+        const englishButton=document.querySelector('.lang-switch [data-lang="en-US"]');englishButton.click();
+        await wait(()=>document.documentElement.lang==='en-US'&&document.getElementById('onboardingWelcomeTitle').textContent==='Welcome to Kinesis');
+        const afterLanguage={time:video.currentTime,paused:video.paused,focus:document.activeElement.dataset.lang??document.activeElement.id,title:document.getElementById('onboardingWelcomeTitle').textContent,watch:document.getElementById('onboardingWatchVideo').textContent};
+        document.getElementById('onboardingStart').click();
+        await wait(async()=>document.getElementById('onboardingWelcome').hidden&&(await fetch('/api/onboarding').then(r=>r.json())).onboarding?.status==='active');
+        await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+        const saved=(await fetch('/api/onboarding').then(r=>r.json())).onboarding;
+        resolve({playback,beforeLanguage,afterLanguage,dialogHidden:document.getElementById('onboardingWelcome').hidden,videoPausedAfterClose:video.paused,guideVisible:!document.getElementById('onboardingGuide').hidden,guideFocused:document.activeElement.id==='onboardingTitle',status:saved.status,steps:saved.steps});
+      }catch(error){reject(error)}
+    })`;
+    const result = await runChromeAtViewport(chrome, appUrl, {
+      width: 1280, height: 800, mobile: false, cookie, probeExpression,
+      userClickSelector: '#onboardingWatchVideo', screenshotSuffix: '-video-playing', screenshotBeforeProbe: true,
+      waitForVideoPlayback: true,
+    });
+    assert.equal(result.playback.playing, true, result.playback.error || 'the real video plays after a trusted browser click');
+    assert.equal(result.playback.muted, false, 'playback retains sound');
+    assert.equal(result.playback.controls, true);
+    assert.equal(result.playback.inline, true);
+    assert.equal(result.playback.loop, false);
+    assert.equal(result.playback.autoplay, false);
+    assert.equal(result.playback.src, '/assets/onboarding/kinesis-onboarding.mp4');
+    assert.equal(result.playback.watchHidden, true, 'native controls own pause and replay after playback begins');
+    assert.equal(result.playback.watchVisible, false, 'the redundant play action leaves the visible layout');
+    assert.equal(result.playback.summaryVisible, true, 'the textual setup summary remains visible during playback');
+    assert.equal(result.playback.focusedPlayer, true, 'hiding the play action transfers keyboard focus to the native player');
+    assert.equal(result.playback.title, 'Boas-vindas ao Kinesis');
+    assert.equal(result.playback.watch, 'Assistir à apresentação');
+    assert.equal(result.afterLanguage.title, 'Welcome to Kinesis');
+    assert.equal(result.afterLanguage.watch, 'Watch the introduction');
+    assert.equal(result.afterLanguage.paused, false, 'changing language does not restart or pause the video');
+    assert.equal(result.afterLanguage.focus, 'onboardingWelcomeVideo', 'language translation does not steal player focus');
+    assert.ok(result.afterLanguage.time >= result.beforeLanguage.time, 'playback position is retained while language changes');
+    assert.equal(result.dialogHidden, true);
+    assert.equal(result.videoPausedAfterClose, true);
+    assert.equal(result.guideVisible, true);
+    assert.equal(result.guideFocused, true, 'Get started reveals the existing guide and focuses its heading');
+    assert.equal(result.status, 'active');
+    assert.deepEqual(result.steps, { shoes: false, cycle: false, trainings: false }, 'watching and starting do not complete setup steps');
+  } finally {
+    await app.close();
+    db.close();
+  }
+});
+
+test('Escape, the close button, and backdrop all persist the same welcome dismissal and restore focus', async () => {
+  const chrome = findChrome();
+  assert.ok(chrome, 'Chrome is required for welcome dismissal validation.');
+  const db = createDatabase({ filename: ':memory:' });
+  const app = await buildServer({ db, sessionCookieSecure: false, unsplashFetch: async () => { throw new Error('Disable external hero requests in browser verification.'); } });
+  try {
+    const email = 'welcome-close-paths@example.com';
+    await app.inject({ method: 'POST', url: '/api/auth/register', payload: { email, password: 'welcome-secret', first_name: 'Close', last_name: 'Runner' } });
+    const userId = db.prepare('SELECT id FROM users WHERE email = ?').get(email).id;
+    const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email, password: 'welcome-secret' } });
+    const cookie = [].concat(login.headers['set-cookie'] ?? [])[0].split(';')[0].split('=')[1];
+    const appUrl = await app.listen({ port: 0, host: '127.0.0.1' });
+    for (const [index, closePath] of ['escape', 'button', 'backdrop'].entries()) {
+      if (index > 0) db.prepare("UPDATE users SET onboarding_status = 'new' WHERE id = ?").run(userId);
+      const probeExpression = `new Promise(async(resolve,reject)=>{
+        const end=Date.now()+10000;const wait=async()=>{while(Date.now()<end){const modal=document.getElementById('onboardingWelcome');const state=await fetch('/api/onboarding').then(r=>r.json()).catch(()=>null);if(modal?.hidden&&state?.onboarding?.status==='active'){await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));resolve({hidden:modal.hidden,status:state.onboarding.status,focus:document.activeElement.id,inert:[...document.body.children].filter(node=>node!==modal).some(node=>node.inert),videoSrc:document.getElementById('onboardingWelcomeVideo').getAttribute('src')});return}await new Promise(r=>setTimeout(r,40))}reject(new Error('Welcome close action did not persist'))};wait()
+      })`;
+      const result = await runChromeAtViewport(chrome, appUrl, {
+        width: 390, height: 844, mobile: true, cookie, probeExpression,
+        userPressEscape: closePath === 'escape',
+        userClickSelector: closePath === 'button' ? '#onboardingWelcomeClose' : closePath === 'backdrop' ? '#onboardingWelcome' : null,
+        userClickPoint: closePath === 'backdrop' ? { x: 8, y: 8 } : null,
+      });
+      assert.equal(result.hidden, true, closePath + ' closes the dialog');
+      assert.equal(result.status, 'active', closePath + ' persists the shared welcome dismissal');
+      assert.equal(result.focus, 'onboardingTitle', closePath + ' restores focus to the now-visible guide when no visible trigger exists');
+      assert.equal(result.inert, false, closePath + ' releases the background');
+      assert.equal(result.videoSrc, null, closePath + ' does not load media without an explicit play action');
+    }
+  } finally {
+    await app.close();
+    db.close();
+  }
+});
+
+test('rejected playback stays retryable and a failed dismissal can be retried without duplicate requests', async () => {
+  const chrome = findChrome();
+  assert.ok(chrome, 'Chrome is required for welcome error-state validation.');
+  const db = createDatabase({ filename: ':memory:' });
+  const app = await buildServer({ db, sessionCookieSecure: false, unsplashFetch: async () => { throw new Error('Disable external hero requests in browser verification.'); } });
+  try {
+    const email = 'welcome-retry@example.com';
+    await app.inject({ method: 'POST', url: '/api/auth/register', payload: { email, password: 'welcome-secret', first_name: 'Retry', last_name: 'Runner' } });
+    const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email, password: 'welcome-secret' } });
+    const cookie = [].concat(login.headers['set-cookie'] ?? [])[0].split(';')[0].split('=')[1];
+    const appUrl = await app.listen({ port: 0, host: '127.0.0.1' });
+    const beforeClick = `new Promise((resolve,reject)=>{const end=Date.now()+12000;const wait=()=>{const modal=document.getElementById('onboardingWelcome');if(document.body.classList.contains('shell-mounted')&&modal&&!modal.hidden){const video=document.getElementById('onboardingWelcomeVideo');video.play=()=>Promise.reject(new Error('blocked'));const original=window.fetch.bind(window);window.__presentationCalls=0;window.fetch=(input,init)=>{const url=typeof input==='string'?input:input.url;if(url.includes('/api/onboarding/presentation')&&window.__presentationCalls===0){window.__presentationCalls++;return new Promise(resolve=>{window.__releasePresentationFailure=()=>resolve(new Response('{}',{status:503}))})}if(url.includes('/api/onboarding/presentation'))window.__presentationCalls++;return original(input,init)};resolve(true);return}if(Date.now()>end){reject(new Error('Welcome dialog did not open for retry test'));return}setTimeout(wait,50)};wait()})`;
+    const probeExpression = `new Promise(async(resolve,reject)=>{
+      const end=Date.now()+12000;const wait=async(predicate)=>{while(Date.now()<end){if(await predicate())return;await new Promise(r=>setTimeout(r,30))}throw new Error('Welcome error state did not settle')};
+      try{
+        const playStatus=document.getElementById('onboardingVideoStatus');const watch=document.getElementById('onboardingWatchVideo');
+        await wait(()=>!playStatus.hidden);
+        const playbackError={message:playStatus.textContent,watchVisible:!watch.hidden,dialogOpen:!document.getElementById('onboardingWelcome').hidden};
+        const start=document.getElementById('onboardingStart');start.click();
+        const disabledDuringSave=start.disabled;start.click();const duplicateCalls=window.__presentationCalls;
+        window.__releasePresentationFailure();
+        await wait(()=>!document.getElementById('onboardingWelcomeError').hidden&&!start.disabled);
+        const saveFailure={message:document.getElementById('onboardingWelcomeError').textContent,dialogOpen:!document.getElementById('onboardingWelcome').hidden,status:(await fetch('/api/onboarding').then(r=>r.json())).onboarding.status,enabled:!start.disabled,calls:window.__presentationCalls};
+        start.click();
+        await wait(async()=>document.getElementById('onboardingWelcome').hidden&&(await fetch('/api/onboarding').then(r=>r.json())).onboarding?.status==='active');
+        resolve({playbackError,disabledDuringSave,duplicateCalls,saveFailure,finalStatus:(await fetch('/api/onboarding').then(r=>r.json())).onboarding.status,guideVisible:!document.getElementById('onboardingGuide').hidden});
+      }catch(error){reject(error)}
+    })`;
+    const result = await runChromeAtViewport(chrome, appUrl, {
+      width: 390, height: 844, mobile: true, cookie, beforeUserClickExpression: beforeClick,
+      userClickSelector: '#onboardingWatchVideo', probeExpression,
+    });
+    assert.deepEqual(result.playbackError, { message: 'The video could not be played. Try again or continue without watching.', watchVisible: true, dialogOpen: true });
+    assert.equal(result.disabledDuringSave, true);
+    assert.equal(result.duplicateCalls, 1, 'a second action cannot submit while persistence is pending');
+    assert.deepEqual(result.saveFailure, { message: 'Your onboarding preference could not be saved. Please try again.', dialogOpen: true, status: 'new', enabled: true, calls: 1 });
+    assert.equal(result.finalStatus, 'active', 'retry persists the existing account preference');
+    assert.equal(result.guideVisible, true);
   } finally {
     await app.close();
     db.close();
@@ -994,7 +1066,7 @@ test('authenticated setup guide menu handles visible, hidden, completed, and exi
       try{await (${waitForGuide('Setup guide','0 of 3 steps', '&& !guide.hidden && modal.hidden')});
         const before=await fetch('/api/onboarding').then(response=>response.json());
         const after=await fetch('/api/onboarding').then(response=>response.json());
-        resolve({visible:!document.getElementById('onboardingGuide').hidden,focused:document.activeElement.id,welcomeHidden:document.getElementById('onboardingWelcome').hidden,statusBefore:before.onboarding.status,statusAfter:after.onboarding.status,unchanged:JSON.stringify(before.onboarding)===JSON.stringify(after.onboarding),url:location.pathname+location.search+location.hash,menuClosed:document.getElementById('userDropdown').classList.contains('hidden')});
+        resolve({visible:!document.getElementById('onboardingGuide').hidden,focused:document.activeElement.id,welcomeHidden:document.getElementById('onboardingWelcome').hidden,videoSrc:document.getElementById('onboardingWelcomeVideo').getAttribute('src'),statusBefore:before.onboarding.status,statusAfter:after.onboarding.status,unchanged:JSON.stringify(before.onboarding)===JSON.stringify(after.onboarding),url:location.pathname+location.search+location.hash,menuClosed:document.getElementById('userDropdown').classList.contains('hidden')});
       }catch(error){reject(error)}
     })`;
     const firstVisitResult = await runChromeAtViewport(chrome, appUrl.replace(/\/$/, '') + '/shoes.html?keep=new#first', {
@@ -1003,6 +1075,7 @@ test('authenticated setup guide menu handles visible, hidden, completed, and exi
     assert.equal(firstVisitResult.visible, true);
     assert.equal(firstVisitResult.focused, 'onboardingTitle');
     assert.equal(firstVisitResult.welcomeHidden, true, 'explicit guide navigation does not trigger first-visit welcome');
+    assert.equal(firstVisitResult.videoSrc, null, 'explicit guide access does not load the welcome asset');
     assert.equal(firstVisitResult.statusBefore, 'new');
     assert.equal(firstVisitResult.statusAfter, 'new', 'opening the guide does not activate or dismiss the welcome preference');
     assert.equal(firstVisitResult.unchanged, true);
@@ -1351,7 +1424,7 @@ test('authenticated result shoe options retranslate live without refetching or c
   }
 });
 
-test('browser dialog a11y follows the active slide and traps Shift+Tab from its title', async () => {
+test('browser video dialog a11y names its content and traps keyboard focus', async () => {
   const chrome = findChrome();
   assert.ok(chrome, 'Chrome is required for onboarding focus validation.');
   const root = path.join(__dirname, '..');

@@ -8,7 +8,7 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.19.6`); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.20.0`); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
@@ -356,13 +356,27 @@ visited page, or slide.
 
 ### Presentation, navigation, and accessibility
 
-- A genuinely new (`new`) account receives the three-slide PT/EN welcome
-  automatically. Existing (`active`) accounts do not. “Agora não” / “Not now” persists
-  `welcome_dismissed`; it does not block access to the app. The three primary
-  actions link to existing shoes and cycle flows. The workout-plan slide opens
-  Planejar com IA/import when an active cycle exists; otherwise it directs the user to
-  create the required cycle first. Explicitly opening the setup guide does not
-  open the welcome dialog.
+- A genuinely new (`new`) account with incomplete setup receives the localized
+  welcome dialog automatically; existing (`active`) accounts and accounts with
+  all setup steps complete do not. The dialog presents the existing Portuguese
+  video at `/assets/onboarding/kinesis-onboarding.mp4` and a localized text
+  summary of registering shoes, creating a cycle, and requesting workouts then
+  importing the spreadsheet into the calendar. The video asset is Portuguese
+  in both locales and is not presented as translated in English. The asset is
+  requested only after an explicit “Assistir à apresentação” / “Watch the
+  introduction” action, which plays it with audio; it has no autoplay or loop.
+  “Começar” / “Get started” persists `welcome_dismissed`
+  and opens the existing guide; “Agora não” / “Not now”, Escape, the close
+  action, and backdrop dismissal persist the same preference and restore focus.
+  Both actions are available without watching. A failed save keeps the dialog
+  open with a localized retryable error; media load/playback failures do not
+  block either action. Dismissal reuses the persisted onboarding status
+  (`new` → `active`), survives reload/login/browser changes, and changes no
+  setup progress. Existing accounts do not receive the video automatically.
+  The dialog has no motion that plays automatically and respects
+  `prefers-reduced-motion`; the summary remains available independently of the
+  video's Portuguese audio/on-screen text. Explicitly opening the setup guide
+  does not open the welcome dialog or load the video.
 - The checklist is shown normally only while incomplete and not hidden. A
   completed or hidden checklist remains hidden and absent from the dashboard
   layout (`hidden` keeps it out of layout and keyboard navigation); there is no
@@ -383,8 +397,8 @@ visited page, or slide.
   heading only after the guide is visible; respect reduced-motion preferences.
   When hiding from an explicit menu action, return focus to a stable visible
   control. No hidden control may remain in the tab order.
-- Keep the welcome dialog's accessible name/description synchronized to the
-  active slide. Preserve initial focus, Tab/Shift+Tab containment, Escape,
+- Keep the welcome dialog's accessible name/description synchronized to its
+  localized content. Preserve initial focus, Tab/Shift+Tab containment, Escape,
   focus restoration, and background `inert`. Programmatically focused
   non-interactive headings may suppress their own outline, but never remove
   visible focus styling from interactive controls. CSS must not override the
