@@ -530,7 +530,7 @@ test('prompt trims optional context and uses a dash when it is blank', () => {
   assert.match(empty, /CONTEXTO ADICIONAL DESTA SEMANA\n\n-\n/);
 });
 
-test('AI Coach locale dictionaries retain translated page, form, prompt and shoe strings', () => {
+test('Request Workouts locale dictionaries retain translated page, form, prompt and shoe strings', () => {
   for (const locale of [messages, enMessages]) {
     assert.equal(typeof locale.aiCoach.title, 'string');
     assert.equal(typeof locale.aiCoach.targetDate, 'string');
@@ -544,6 +544,18 @@ test('AI Coach locale dictionaries retain translated page, form, prompt and shoe
     assert.equal(typeof locale.aiCoach.copy, 'string');
   }
   assert.notEqual(messages.aiCoach.title, enMessages.aiCoach.title);
+  assert.equal(messages.aiCoach.title, 'Solicitar Treinos');
+  assert.equal(messages.aiCoach.pageTitle, 'Solicitar Treinos - Kinesis');
+  assert.equal(messages.aiCoach.subtitle, 'Organize seus objetivos e sua disponibilidade para preparar uma solicitação de treinos com IA.');
+  assert.equal(enMessages.aiCoach.title, 'Request Workouts');
+  assert.equal(enMessages.aiCoach.pageTitle, 'Request Workouts - Kinesis');
+  assert.equal(enMessages.aiCoach.subtitle, 'Organize your goals and availability to prepare an AI training request.');
+  assert.equal(messages.shell.nav.requestWorkouts, 'Solicitar Treinos');
+  assert.equal(enMessages.shell.nav.requestWorkouts, 'Request Workouts');
+  assert.equal(messages.home.onboarding.aiAction, 'Planejar com IA');
+  assert.equal(enMessages.home.onboarding.aiAction, 'Plan with AI');
+  assert.equal(messages.home.onboarding.planText, messages.aiCoach.subtitle);
+  assert.equal(enMessages.home.onboarding.planText, enMessages.aiCoach.subtitle);
   assert.equal(messages.aiCoach.periods['08_12'], '08h–12h');
   assert.equal(enMessages.aiCoach.periods['08_12'], '08:00–12:00');
   assert.equal(messages.aiCoach.durationPlaceholder, 'Ex.: 60');
@@ -624,13 +636,15 @@ test('AI Coach responsive layout and controls retain visible focus and shared bu
   assert.match(html, /id="availabilityGrid"/);
 });
 
-test('AI Coach page keeps shell, icon assets and all user-facing prompt controls', () => {
+test('Request Workouts page keeps shell, icon assets and all user-facing prompt controls', () => {
   const html = readFileSync(join(publicDir, 'ai-coach.html'), 'utf8');
   assert.match(html, /id="appView"/);
   assert.match(html, /shared\/shell\.js" type="module"/);
   assert.match(html, /ai-coach\.js" type="module"/);
   assert.match(html, /lucide@latest/);
   assert.match(html, /data-i18n="aiCoach\.title"/);
+  assert.match(html, /<title data-i18n="aiCoach\.pageTitle">Request Workouts - Kinesis<\/title>/);
+  assert.match(html, /<h1 data-i18n="aiCoach\.title">Request Workouts<\/h1>/);
   assert.match(html, /data-i18n="aiCoach\.generate"/);
   assert.match(html, /id="copyLabel" data-i18n="aiCoach\.copy"/);
 });

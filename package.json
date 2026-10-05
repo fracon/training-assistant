@@ -1,7 +1,7 @@
 {
   "name": "training-assistant",
-  "version": "0.19.4",
-  "description": "Self-hosted running training assistant with FIT analysis, training cycles, calendar planning, and AI-ready coaching prompts",
+  "version": "0.19.5",
+  "description": "Self-hosted running training assistant with FIT analysis, training cycles, calendar planning, and AI-ready training prompts",
   "main": "src/server.js",
   "engines": {
     "node": ">=24"

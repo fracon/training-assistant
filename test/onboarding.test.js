@@ -491,7 +491,7 @@ test('dashboard onboarding cards render accessible states and aligned actions in
         const body=card.querySelector('.onboarding-step-body');
         return{
           key,done,next,card:rect(card),image:rect(card.querySelector('img')),body:rect(body),actionArea:rect(actions),actionAreaHidden:actions.hidden,
-          links:links.map((link)=>{const style=getComputedStyle(link);const label=link.querySelector('span');const icon=link.querySelector('svg');return{href:new URL(link.href).pathname,classes:[...link.classList],rect:rect(link),label:rect(label),icon:rect(icon),iconHidden:icon.getAttribute('aria-hidden'),iconFocusable:icon.getAttribute('focusable'),iconTabIndex:icon.getAttribute('tabindex'),iconStroke:getComputedStyle(icon).stroke,color:style.color,background:style.backgroundColor,borderStyle:style.borderStyle,borderWidth:style.borderWidth,shadow:style.boxShadow,decoration:style.textDecorationLine,fontWeight:style.fontWeight}}),
+          links:links.map((link)=>{const style=getComputedStyle(link);const label=link.querySelector('span');const icon=link.querySelector('svg');return{href:new URL(link.href).pathname,text:label.textContent.trim(),classes:[...link.classList],rect:rect(link),label:rect(label),icon:rect(icon),iconHidden:icon.getAttribute('aria-hidden'),iconFocusable:icon.getAttribute('focusable'),iconTabIndex:icon.getAttribute('tabindex'),iconStroke:getComputedStyle(icon).stroke,color:style.color,background:style.backgroundColor,borderStyle:style.borderStyle,borderWidth:style.borderWidth,shadow:style.boxShadow,decoration:style.textDecorationLine,fontWeight:style.fontWeight}}),
           completeBadge:{hidden:completeBadge.hidden,text:completeBadge.innerText.trim(),rect:rect(completeBadge),color:getComputedStyle(completeBadge).color,opacity:getComputedStyle(completeBadge).opacity,description:card.getAttribute('aria-describedby'),iconHidden:completeBadge.querySelector('svg').getAttribute('aria-hidden')},
           nextBadge:{hidden:nextBadge.hidden,text:nextBadge.innerText.trim(),color:getComputedStyle(nextBadge).color},
           ariaCurrent:card.getAttribute('aria-current'),ariaDescribedBy:card.getAttribute('aria-describedby'),borderColor:getComputedStyle(card).borderTopColor,opacity:getComputedStyle(card).opacity,imageFilter:getComputedStyle(card.querySelector('img')).filter,
@@ -506,7 +506,7 @@ test('dashboard onboarding cards render accessible states and aligned actions in
       const focusTarget=guide.querySelector('[data-onboarding-actions]:not([hidden]) a[href="/ai-coach.html"]')??document.getElementById('onboardingHide');
       focusTarget.focus({preventScroll:true});
       const focus={matches:focusTarget.matches(':focus-visible'),outline:getComputedStyle(focusTarget).outlineStyle};
-      return{lang,count,progress:document.getElementById('onboardingProgress').textContent,listRole:guide.querySelector('.onboarding-steps').getAttribute('role'),listItemCount:cards.filter((card)=>card.getAttribute('role')==='listitem').length,cards:states,visitedRule,explicitStates,
+      return{lang,count,progress:document.getElementById('onboardingProgress').textContent,listRole:guide.querySelector('.onboarding-steps').getAttribute('role'),listItemCount:cards.filter((card)=>card.getAttribute('role')==='listitem').length,cards:states,planDescription:cards[2].querySelector('[data-i18n="home.onboarding.planText"]').textContent.trim(),visitedRule,explicitStates,
         hide:{color:getComputedStyle(document.getElementById('onboardingHide')).color,background:getComputedStyle(document.getElementById('onboardingHide')).backgroundColor,fontWeight:getComputedStyle(document.getElementById('onboardingHide')).fontWeight},focus,
         scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth};
     }
@@ -554,6 +554,9 @@ test('dashboard onboarding cards render accessible states and aligned actions in
       assert.equal(sample.progress, expectedProgress);
       assert.equal(sample.listRole, 'list');
       assert.equal(sample.listItemCount, 3);
+      assert.equal(sample.planDescription, sample.lang === 'pt'
+        ? 'Organize seus objetivos e sua disponibilidade para preparar uma solicitação de treinos com IA.'
+        : 'Organize your goals and availability to prepare an AI training request.');
       assert.equal(sample.visitedRule, true, 'dashboard CSS explicitly styles visited onboarding links');
       assert.equal(sample.explicitStates, true, 'link, visited, hover, focus-visible, and active states are explicitly styled');
       assert.ok(sample.cards.every((card) => card.opacity === '1'), 'pending and completed cards do not use disabled-looking opacity');
@@ -561,6 +564,8 @@ test('dashboard onboarding cards render accessible states and aligned actions in
       assert.ok(allActions.every((link) => link.classes.includes('onboarding-step-action')), 'every onboarding destination uses the one shared action class');
       assert.ok(allActions.every((link) => !link.classes.includes('onboarding-step-action-primary') && !link.classes.includes('onboarding-step-action-text')), 'filled and text-only action variants are gone');
       assert.deepEqual(allActions.map((link) => link.href), ['/shoes.html','/cycles.html','/ai-coach.html','/calendar.html']);
+      assert.equal(sample.cards[2].links.find((link) => link.href === '/ai-coach.html').text,
+        sample.lang === 'pt' ? 'Planejar com IA' : 'Plan with AI');
       assert.ok(allActions.every((link) => link.background === 'rgba(0, 0, 0, 0)' && link.borderStyle === 'none' && link.borderWidth === '0px' && link.shadow === 'none'), 'actions have a transparent, borderless, shadowless resting style');
       assert.ok(allActions.every((link) => link.decoration === 'none'), 'actions never use native link underlining');
       assert.ok(allActions.every((link) => link.iconHidden === 'true' && link.iconFocusable === 'false' && link.iconTabIndex === null), 'the trailing chevrons are decorative and not focusable');

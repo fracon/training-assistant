@@ -1,8 +1,8 @@
 # Kinesis
 
-A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized prompts for an AI coach.
+A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized training-request prompts for use with an external AI.
 
-Current application version: **0.19.4** (active beta development).
+Current application version: **0.19.5** (active beta development).
 
 ### Shoe mileage integrity
 
@@ -47,7 +47,7 @@ and planned workout records. Dismissing welcome or hiding the guide changes only
 presentation state; opening the guide from the user menu is transient. Existing
 accounts do not receive the welcome automatically.
 
-AI coaches are only as good as the data you give them. Exporting workouts by hand means losing detail. Kinesis turns the raw `.FIT` file your watch already recorded into a structured, metric-rich review request in seconds — so every recommendation from your AI coach is grounded in real numbers.
+AI training assistants are only as good as the data you give them. Exporting workouts by hand means losing detail. Kinesis turns the raw `.FIT` file your watch already recorded into a structured, metric-rich review request in seconds — so every recommendation is grounded in real numbers.
 
 ## Features
 
@@ -133,7 +133,7 @@ Huawei's documented plans are likewise model-dependent. See
 [`docs/workout-creation-compatibility.md`](docs/workout-creation-compatibility.md)
 for the sources and scope.
 
-Every realized result has one persisted source: `none`, `fit_upload`, or `manual` (`garmin_connect` is reserved for a future integration). A manual result intentionally has no synthetic FIT summary or laps. Replacing FIT data with manual aggregates, or manual aggregates with a FIT upload, requires explicit confirmation and executes atomically; the outgoing source's incompatible data is cleared. The result screen marks the source clearly, and its analysis prompt identifies manual data, notes the absence of laps, and states that Kinesis calculated pace from distance and duration. Since dashboard, calendar, and AI Coach already aggregate the canonical training metrics, manual results participate in weekly totals without a second source of truth.
+Every realized result has one persisted source: `none`, `fit_upload`, or `manual` (`garmin_connect` is reserved for a future integration). A manual result intentionally has no synthetic FIT summary or laps. Replacing FIT data with manual aggregates, or manual aggregates with a FIT upload, requires explicit confirmation and executes atomically; the outgoing source's incompatible data is cleared. The result screen marks the source clearly, and its analysis prompt identifies manual data, notes the absence of laps, and states that Kinesis calculated pace from distance and duration. Since dashboard, calendar, and the Request Workouts page already aggregate the canonical training metrics, manual results participate in weekly totals without a second source of truth.
 
 FIT activity pace uses a valid session distance paired with valid
 `total_timer_time`, falling back to session elapsed time, session average speed,
@@ -272,7 +272,7 @@ The footer fetches `/api/version` without caching, so it reflects the running ba
 
 #### Dynamic Training Prompt Generator
 
-The **AI Coach** page builds the weekly training request from the latest local application state when the user submits the form. It fetches the active cycle and injects its cycle name, goal, target race date, current week/total weeks, and days remaining immediately after the prompt introduction. It also fetches the previous week's calendar entries and summarizes completed workouts as a count, total distance in kilometres, and total time in minutes. Missing values use the prompt's `-` fallback, while valid stored values are preserved and formatted for the selected language.
+The **Solicitar Treinos / Request Workouts** page (internal route and module `ai-coach`) builds a weekly training request from the latest local application state when the user submits the form. It fetches the active cycle and injects its cycle name, goal, target race date, current week/total weeks, and days remaining immediately after the prompt introduction. It also fetches the previous week's calendar entries and summarizes completed workouts as a count, total distance in kilometres, and total time in minutes. Missing values use the prompt's `-` fallback, while valid stored values are preserved and formatted for the selected language. The feature prepares a prompt for use with an external AI; it does not generate the training plan itself.
 
 The generated briefing is fully localized: the Portuguese (`pt-BR`) and English (`en-US`) templates contain the same cycle and performance context fields, with localized labels and week wording. Context is resolved inside the generation action so it always reflects the currently active cycle, latest training data, and current i18n language.
 
@@ -296,7 +296,7 @@ target and is independent of the time window.
 
 The idempotent `2026-09-structured-ai-coach-availability-v1` migration creates
 the user/day table without rewriting existing training locations. The previous
-AI Coach text fields were transient and had no database persistence, so there
+AI Planning availability text fields were transient and had no database persistence, so there
 is no authoritative legacy availability to translate. Missing structured days
 are returned as unconfigured and require explicit review; on first use the
 frontend presents those missing days as unchecked/unavailable defaults while
@@ -312,6 +312,14 @@ saved or used to generate a prompt until the availability GET succeeds. A
 failed load keeps both operations blocked, preserves edits made locally, and
 offers a localized retry; older asynchronous responses cannot replace a newer
 load result.
+
+The page and menu are named **Solicitar Treinos** in Portuguese and **Request
+Workouts** in English. The onboarding actions remain **Planejar com IA** / **Plan
+with AI** and lead to this page. Existing routes, module names, API paths,
+database names, and locale keys containing `ai-coach`/`aiCoach` remain stable
+technical identifiers. The presentation rename does not rewrite any generated
+prompt: weekly, macrocycle, and workout-feedback templates and their “coach”
+wording remain unchanged.
 
 The prompt states each unavailable day and, for available days, its single
 preferred period, maximum session minutes, and exact user-entered location.
@@ -335,7 +343,7 @@ the workbook if weather remains unavailable. It asks for source/link and
 lookup timestamp with time zone in the accompanying response, while keeping
 the existing 12-column workbook/import schema unchanged. This is instruction
 for the external agent that receives the generated prompt: Kinesis adds no
-forecast lookup, provider integration, or data transmission for AI Coach
+forecast lookup, provider integration, or data transmission for AI Planning
 research. Session minutes remain a separate maximum including warm-up and
 cool-down, not a target or a conversion from the preferred period. The
 existing optional Open-Meteo form autofill remains a distinct feature and
@@ -355,7 +363,8 @@ continues to receive only a planned training location/date.
 While a newly registered account has onboarding status `new`, the dashboard
 automatically shows a three-slide welcome modal: add shoes, create a cycle, and
 prepare workouts. Its primary links lead to
-the existing shoe and cycle flows. The workout-planning slide opens AI Coach or
+the existing shoe and cycle flows. The workout-planning slide opens Planejar
+com IA / Plan with AI or
 spreadsheet import when a cycle exists; otherwise it directs the user to create
 the required cycle first. The welcome is not a required tour. “Not now” persists
 dismissal by changing
@@ -388,7 +397,7 @@ defaults are documented under [Onboarding API](#onboarding-api).
 
 ### Date and Locale Architecture
 
-All user-facing dates go through `src/public/shared/date.js`, the shared formatter used by the dashboard, cycle cards, workout sessions, and AI Coach prompt context. It parses date-only ISO values without timezone drift and uses `Intl.DateTimeFormat` with the active language:
+All user-facing dates go through `src/public/shared/date.js`, the shared formatter used by the dashboard, cycle cards, workout sessions, and AI Planning prompt context. It parses date-only ISO values without timezone drift and uses `Intl.DateTimeFormat` with the active language:
 
 - Portuguese (`pt`/`pt-BR`): `DD/MM/YYYY` (for example, `05/09/2026`)
 - English (`en`/`en-US`): `MM/DD/YYYY` (for example, `09/05/2026`)
@@ -399,7 +408,7 @@ Distance and temperature display conversions follow the same preference store
 through `src/public/shared/units.js`: stored kilometres/Celsius values are
 converted to miles/Fahrenheit only at presentation time.
 
-The AI Coach prompt generator reads the active preferences when the prompt is
+The AI Planning prompt builder reads the active preferences when the prompt is
 generated. It converts previous-week distance totals, formats shoe and workout
 metrics in the selected unit, and inserts localized instructions and weather
 examples (for example, `23–24 °C` or `73–75 °F`) in the active Portuguese or
@@ -409,7 +418,7 @@ specific location; it has no mandatory geographic default.
 
 ### Excel Training Import
 
-The Calendar page imports `.xlsx`/`.xls` plans and validates every row before persistence. The backend uses the SheetJS [`xlsx`](https://www.npmjs.com/package/xlsx) reader for workbook parsing, which tolerates namespace-prefixed XML emitted by Excel, LibreOffice, Google Sheets, and Numbers. The normalized rows then pass through `src/trainingImport.js`, which maps Portuguese and English aliases (including `Data`, `Dia`, `Período`, `Tipo`, `Treino`, `Detalhes`, `FC alvo`, `RPE`, `Tênis`, `Localização`, `Previsão do tempo`, and `Observações`) into the application schema. The AI Coach contract uses these 12 columns, while legacy spreadsheets without a location column remain valid and import with no planned location.
+The Calendar page imports `.xlsx`/`.xls` plans and validates every row before persistence. The backend uses the SheetJS [`xlsx`](https://www.npmjs.com/package/xlsx) reader for workbook parsing, which tolerates namespace-prefixed XML emitted by Excel, LibreOffice, Google Sheets, and Numbers. The normalized rows then pass through `src/trainingImport.js`, which maps Portuguese and English aliases (including `Data`, `Dia`, `Período`, `Tipo`, `Treino`, `Detalhes`, `FC alvo`, `RPE`, `Tênis`, `Localização`, `Previsão do tempo`, and `Observações`) into the application schema. The generated AI Planning workbook contract uses these 12 columns, while legacy spreadsheets without a location column remain valid and import with no planned location.
 
 Upload validation accepts the standard Excel MIME types and falls back to the `.xlsx`/`.xls` filename extension when browsers send generic types such as `application/octet-stream` or `application/zip`. SheetJS performs the structural parsing; genuinely corrupt buffers receive a 400 response instead of crashing the server. Excel serial dates are normalized to the correct calendar day before persistence, including workbooks whose XML contains namespace prefixes.
 
@@ -550,7 +559,7 @@ that would persist the change:
   unknown fields are rejected.
 - Unknown request fields are refused, so no column can be written indirectly.
 - Deleting an account removes its sessions, trainings, cycles, shoes, mileage
-  ledger, and AI Coach availability through the existing cascades.
+  ledger, and AI Planning availability through the existing cascades.
 
 Only `admin:bootstrap` and `admin:promote` can grant administrator status.
 Promotion is a local privileged operation and revokes existing sessions for the
@@ -631,7 +640,7 @@ read the collection.
 ## Usage
 
 1. Open **Sign In**. Create an account through **Register** (first name, last name, email, and password of at least 8 characters) or sign in to an existing account.
-2. A new account is offered the optional PT/EN welcome carousel. Use its actions to register shoes, create a cycle, then prepare workouts with AI Coach or import an Excel plan. You may skip it and use the application freely; the dashboard checklist tracks data actually saved.
+2. A new account is offered the optional PT/EN welcome carousel. Use its actions to register shoes, create a cycle, then prepare workouts with Planejar com IA / Plan with AI or import an Excel plan. You may skip it and use the application freely; the dashboard checklist tracks data actually saved.
 3. Open the **Calendar**, choose a planned training, and enter conditions, shoes, perceived effort (RPE 1–5), and feedback on its result page. A realized RPE from 1 to 5 is required to save, generate the analysis prompt, or upload a result; the other feedback is optional.
 4. Choose **Import FIT or ZIP file** for activity data, or **Enter data manually** for aggregate distance and duration (with optional heart rate, elevation, and calories). A FIT/ZIP upload is persisted when its upload request succeeds.
 5. **Save and back to calendar** saves any pending manual result and complete feedback, then returns to the calendar. **Save and Generate Analysis Prompt** saves those data first, then generates the prompt from the canonical training state returned by the backend.
@@ -928,7 +937,7 @@ Every primary flow is a standalone page (no single-page hacks, no overlapping la
 | Training result | `src/public/training-result.html` · `src/public/training-result.css` · `src/public/training-result.js` | Contextual FIT/ZIP and manual result capture, gated behind a session |
 | Home | `src/public/home.html` · `src/public/home.css` · `src/public/home.js` | Authenticated dashboard with onboarding, cycle, weekly metrics, tracker, and quote hero |
 | Calendar | `src/public/calendar.html` · `src/public/calendar.css` · `src/public/calendar.js` | Monthly training calendar and deduplicating Excel import |
-| AI Coach | `src/public/ai-coach.html` · `src/public/ai-coach.css` · `src/public/ai-coach.js` | Local prompt builder for weekly coaching plans |
+| Solicitar Treinos / Request Workouts | `src/public/ai-coach.html` · `src/public/ai-coach.css` · `src/public/ai-coach.js` | Local prompt builder for weekly training requests |
 | Cycles | `src/public/cycles.html` · `src/public/cycles.css` · `src/public/cycles.js` | Training-cycle management |
 | Shoes | `src/public/shoes.html` · `src/public/shoes.css` · `src/public/shoes.js` | Shoe rotation and mileage management |
 | Administration → Users | `src/public/admin-users.html` · `src/public/admin-users.css` · `src/public/admin-users.js` | Admin-only account list with create, edit, activate/deactivate, and delete |
@@ -1087,7 +1096,7 @@ node scripts/tryRealFit.js path/to/activity.fit
 - [Fastify](https://fastify.dev/) with `@fastify/multipart`, `@fastify/static`, and `@fastify/cookie`
 - [better-sqlite3](https://github.com/WiseLibs/better-sqlite3) for storage — strictly prepared statements, WAL mode, enforced foreign keys
 - [fit-file-parser](https://www.npmjs.com/package/fit-file-parser) for binary `.FIT` decoding
-- Multi-page vanilla HTML/CSS/JS frontend (login, register, dashboard, training result, calendar, AI Coach, cycles, shoes, administration) with shared ES modules, PT/EN translations, and DM Sans — zero build step
+- Multi-page vanilla HTML/CSS/JS frontend (login, register, dashboard, training result, calendar, Solicitar Treinos / Request Workouts, cycles, shoes, administration) with shared ES modules, PT/EN translations, and DM Sans — zero build step
 - Authentication built on Node's native `node:crypto` (`scrypt` hashing, timing-safe comparison, `randomBytes` session tokens)
 - [`node --test`](https://nodejs.org/api/test.html) + [c8](https://github.com/bcoe/c8) for testing with a hard 100% coverage gate
 - Docker (`node:24-alpine`) deployed on ZimaOS via Docker Compose

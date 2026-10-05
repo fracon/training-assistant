@@ -168,14 +168,21 @@ function buildNavItem(item, activeId) {
     entry.href = item.href;
     if (item.id === activeId) entry.setAttribute('aria-current', 'page');
   }
+  entry.setAttribute('data-i18n-aria-label', item.labelKey);
   entry.appendChild(icon(item.icon));
   const label = el('span', 'nav-label sidebar-label');
   label.setAttribute('data-i18n', item.labelKey);
   entry.appendChild(label);
   if (CYCLE_DEPENDENT_ITEMS.includes(item.id)) {
     const chip = el('span', 'soon-chip cycle-guard-badge hidden');
+    chip.id = `cycle-guard-${item.id}-description`;
     chip.setAttribute('data-i18n', 'shell.noCycle');
     entry.appendChild(chip);
+    entry.addEventListener('click', (event) => {
+      if (!entry.classList.contains('disabled')) return;
+      event.preventDefault();
+      window.location.href = CYCLE_REDIRECT_TO;
+    });
   }
   if (item.disabled) {
     const chip = el('span', 'soon-chip');
@@ -1033,10 +1040,7 @@ export function applyCycleGuard(shellRoot) {
       navEntry.classList.add('disabled');
       navEntry.setAttribute('aria-disabled', 'true');
       navEntry.removeAttribute('href');
-      navEntry.addEventListener('click', (e) => {
-        e.preventDefault();
-        window.location.href = CYCLE_REDIRECT_TO;
-      });
+      addDescribedBy(navEntry, navEntry.querySelector('.cycle-guard-badge')?.id);
     }
   }
   for (const badge of badges) {
@@ -1049,6 +1053,7 @@ function removeCycleGuard(shellRoot) {
   for (const navEntry of shellRoot.querySelectorAll('.nav-item')) {
     if (CYCLE_DEPENDENT_ITEMS.includes(navEntry.dataset.navId)) {
       const item = NAV_ITEMS.find((n) => n.id === navEntry.dataset.navId);
+      removeDescribedBy(navEntry, navEntry.querySelector('.cycle-guard-badge')?.id);
       navEntry.classList.remove('disabled');
       navEntry.removeAttribute('aria-disabled');
       if (item) navEntry.href = item.href;
@@ -1058,6 +1063,21 @@ function removeCycleGuard(shellRoot) {
     badge.classList.add('hidden');
   }
   refreshIcons();
+}
+
+function addDescribedBy(element, id) {
+  if (!id) return;
+  const references = (element.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean);
+  if (!references.includes(id)) references.push(id);
+  element.setAttribute('aria-describedby', references.join(' '));
+}
+
+function removeDescribedBy(element, id) {
+  if (!id) return;
+  const references = (element.getAttribute('aria-describedby') ?? '').split(/\s+/).filter(Boolean);
+  const remaining = references.filter((reference) => reference !== id);
+  if (remaining.length) element.setAttribute('aria-describedby', remaining.join(' '));
+  else element.removeAttribute('aria-describedby');
 }
 
 async function refreshCycleGuard(shellRoot) {
