@@ -3,8 +3,8 @@
     "name": "Kinesis"
   },
   "aiCoach": {
-    "title": "AI Planning",
-    "pageTitle": "AI Planning - Kinesis",
+    "title": "Request Workouts",
+    "pageTitle": "Request Workouts - Kinesis",
     "subtitle": "Organize your goals and availability to prepare an AI training request.",
     "targetDate": "Target date",
     "targetDateHint": "Week to plan. Defaults to next Monday.",
@@ -122,7 +122,7 @@
     "nav": {
       "home": "Home",
       "cycles": "Training Cycles",
-      "requestWorkouts": "AI Planning",
+      "requestWorkouts": "Request Workouts",
       "workouts": "Workouts",
       "shoes": "Shoe Rotation",
       "administration": "Administration",

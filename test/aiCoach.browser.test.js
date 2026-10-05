@@ -154,10 +154,18 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     const requestWorkoutsIcon = await evaluate(`(()=>{const item=document.querySelector('[data-nav-id="ai-coach"]');const icon=item?.querySelector('svg');const style=icon?getComputedStyle(icon):null;return {active:item?.classList.contains('active'),icon:icon?.getAttribute('data-lucide'),display:style?.display,color:style?.color}})()`);
     assert.deepEqual(requestWorkoutsIcon, { active: true, icon: 'sport-shoe', display: 'block', color: 'rgb(76, 110, 81)' });
     const portugueseBranding = await evaluate(`(()=>{const item=document.querySelector('[data-nav-id="ai-coach"]');return {language:document.documentElement.lang,title:document.title,heading:document.querySelector('main h1').textContent.trim(),subtitle:document.querySelector('main .ai-coach-subtitle')?.textContent.trim(),label:item.querySelector('.nav-label').textContent.trim(),ariaLabel:item.getAttribute('aria-label'),scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth}})()`);
-    assert.deepEqual(portugueseBranding, { language: 'pt-BR', title: 'Planejamento com IA - Kinesis', heading: 'Planejamento com IA', subtitle: 'Organize seus objetivos e sua disponibilidade para preparar uma solicitação de treinos com IA.', label: 'Planejamento com IA', ariaLabel: 'Planejamento com IA', scrollWidth: 1280, viewportWidth: 1280 });
+    assert.deepEqual(portugueseBranding, { language: 'pt-BR', title: 'Solicitar Treinos - Kinesis', heading: 'Solicitar Treinos', subtitle: 'Organize seus objetivos e sua disponibilidade para preparar uma solicitação de treinos com IA.', label: 'Solicitar Treinos', ariaLabel: 'Solicitar Treinos', scrollWidth: 1280, viewportWidth: 1280 });
     await evaluate(`document.getElementById('sidebarToggle').click()`);
     const collapsedPortuguese = await evaluate(`(()=>{const item=document.querySelector('[data-nav-id="ai-coach"]');return {collapsed:document.querySelector('.app-shell').classList.contains('collapsed'),ariaLabel:item.getAttribute('aria-label'),labelVisible:getComputedStyle(item.querySelector('.nav-label')).display!=='none'}})()`);
-    assert.deepEqual(collapsedPortuguese, { collapsed: true, ariaLabel: 'Planejamento com IA', labelVisible: false });
+    assert.deepEqual(collapsedPortuguese, { collapsed: true, ariaLabel: 'Solicitar Treinos', labelVisible: false });
+    const portugueseGuard = await evaluate(`(()=>{const ids=['ai-coach','calendar'];return ids.map(id=>{const item=document.querySelector('[data-nav-id="'+id+'"]');const reason=item.querySelector('.cycle-guard-badge');return {id,label:item.getAttribute('aria-label'),disabled:item.getAttribute('aria-disabled'),reason:reason.textContent.trim(),reasonId:reason.id,describedBy:(item.getAttribute('aria-describedby')||'').split(/\\s+/)}})})()`);
+    assert.deepEqual(portugueseGuard, [
+      { id: 'ai-coach', label: 'Solicitar Treinos', disabled: 'true', reason: 'Nenhum ciclo ativo', reasonId: 'cycle-guard-ai-coach-description', describedBy: ['cycle-guard-ai-coach-description'] },
+      { id: 'calendar', label: 'Treinos', disabled: 'true', reason: 'Nenhum ciclo ativo', reasonId: 'cycle-guard-calendar-description', describedBy: ['cycle-guard-calendar-description'] },
+    ]);
+    await evaluate(`window.dispatchEvent(new Event('kinesis:cycle-changed'));window.dispatchEvent(new Event('kinesis:cycle-changed'))`);
+    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+5000;const check=()=>{const item=document.querySelector('[data-nav-id="ai-coach"]');if(item.getAttribute('aria-describedby')==='cycle-guard-ai-coach-description')resolve(true);else if(Date.now()>end)reject(new Error('Repeated cycle refresh did not preserve the guarded description'));else setTimeout(check,20)};check()})`);
+    assert.equal(await evaluate(`document.querySelector('[data-nav-id="ai-coach"]').getAttribute('aria-describedby')`), 'cycle-guard-ai-coach-description');
     await evaluate(`document.getElementById('sidebarToggle').click()`);
     await evaluate(`window.__setDay=(day,available)=>{const input=document.querySelector('[data-day="'+day+'"] [data-can-train]');if(input.checked!==available){input.click()}else if(input.closest('.day-row').dataset.configured!=='true'){input.dispatchEvent(new Event('change',{bubbles:true}))}}`);
     const pendingInitialGet = await initialGet;
@@ -655,9 +663,13 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     await evaluate(`(()=>{const location=document.querySelector('[data-day="tuesday"] [data-location]');location.focus();location.setSelectionRange(2,7,'forward');document.querySelector('.lang-switch [data-lang="en-US"]').click()})()`);
     await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{if(document.documentElement.lang==='en-US')resolve(true);else if(Date.now()>end)reject(new Error('English language switch timed out'));else setTimeout(check,30)};check()})`);
     const englishBranding = await evaluate(`(()=>{const item=document.querySelector('[data-nav-id="ai-coach"]');return {title:document.title,heading:document.querySelector('main h1').textContent.trim(),subtitle:document.querySelector('main .ai-coach-subtitle')?.textContent.trim(),label:item.querySelector('.nav-label').textContent.trim(),ariaLabel:item.getAttribute('aria-label'),scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth}})()`);
-    assert.deepEqual(englishBranding, { title: 'AI Planning - Kinesis', heading: 'AI Planning', subtitle: 'Organize your goals and availability to prepare an AI training request.', label: 'AI Planning', ariaLabel: 'AI Planning', scrollWidth: 1280, viewportWidth: 1280 });
+    assert.deepEqual(englishBranding, { title: 'Request Workouts - Kinesis', heading: 'Request Workouts', subtitle: 'Organize your goals and availability to prepare an AI training request.', label: 'Request Workouts', ariaLabel: 'Request Workouts', scrollWidth: 1280, viewportWidth: 1280 });
+    assert.deepEqual(await evaluate(`(()=>['ai-coach','calendar'].map(id=>{const item=document.querySelector('[data-nav-id="'+id+'"]');const reason=item.querySelector('.cycle-guard-badge');return {label:item.getAttribute('aria-label'),reason:reason.textContent.trim(),describedBy:(item.getAttribute('aria-describedby')||'').split(/\\s+/)}}))()`), [
+      { label: 'Request Workouts', reason: 'No active cycle', describedBy: ['cycle-guard-ai-coach-description'] },
+      { label: 'Workouts', reason: 'No active cycle', describedBy: ['cycle-guard-calendar-description'] },
+    ]);
     await evaluate(`document.getElementById('sidebarToggle').click()`);
-    assert.deepEqual(await evaluate(`(()=>{const item=document.querySelector('[data-nav-id="ai-coach"]');return {collapsed:document.querySelector('.app-shell').classList.contains('collapsed'),ariaLabel:item.getAttribute('aria-label'),labelVisible:getComputedStyle(item.querySelector('.nav-label')).display!=='none'}})()`), { collapsed: true, ariaLabel: 'AI Planning', labelVisible: false });
+    assert.deepEqual(await evaluate(`(()=>{const item=document.querySelector('[data-nav-id="ai-coach"]');return {collapsed:document.querySelector('.app-shell').classList.contains('collapsed'),ariaLabel:item.getAttribute('aria-label'),labelVisible:getComputedStyle(item.querySelector('.nav-label')).display!=='none'}})()`), { collapsed: true, ariaLabel: 'Request Workouts', labelVisible: false });
     await evaluate(`document.getElementById('sidebarToggle').click()`);
     const englishState = await evaluate(`(()=>{const duration=document.querySelector('[data-day="monday"] [data-duration]');return {language:document.documentElement.lang,label:document.querySelector('[data-day="monday"] .period-group legend').textContent,periods:document.querySelectorAll('[data-day="monday"] [data-period]:checked').length,location:document.querySelector('[data-day="tuesday"] [data-location]').value,durationPlaceholder:duration.placeholder,durationHint:duration.nextElementSibling.textContent,saveLabel:document.getElementById('saveAvailabilityLabel').textContent}})()`);
     assert.deepEqual(englishState, { language: 'en-US', label: 'Preferred period', periods: 1, location: 'Maspalomas, Gran Canaria', durationPlaceholder: 'e.g. 60', durationHint: 'From 1 to 720 minutes, including warm-up and cool-down.', saveLabel: 'Save weekly schedule' });
@@ -786,7 +798,7 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     await evaluate(`new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>setTimeout(resolve,100))))`);
     const mobile = await evaluate(`(()=>({width:innerWidth,scrollWidth:document.documentElement.scrollWidth,days:document.querySelectorAll('#availabilityGrid .day-row').length,touchTarget:[...document.querySelectorAll('.period-option')].filter(el=>el.getClientRects().length>0).every(el=>el.getBoundingClientRect().height>=42)}))()`);
     assert.deepEqual(mobile, { width: 390, scrollWidth: 390, days: 7, touchTarget: true });
-    assert.deepEqual(await evaluate(`(()=>{const item=document.querySelector('[data-nav-id="ai-coach"]');return {title:document.title,heading:document.querySelector('main h1').textContent.trim(),label:item.querySelector('.nav-label').textContent.trim(),ariaLabel:item.getAttribute('aria-label'),width:innerWidth,scrollWidth:document.documentElement.scrollWidth}})()`), { title: 'AI Planning - Kinesis', heading: 'AI Planning', label: 'AI Planning', ariaLabel: 'AI Planning', width: 390, scrollWidth: 390 });
+    assert.deepEqual(await evaluate(`(()=>{const item=document.querySelector('[data-nav-id="ai-coach"]');return {title:document.title,heading:document.querySelector('main h1').textContent.trim(),label:item.querySelector('.nav-label').textContent.trim(),ariaLabel:item.getAttribute('aria-label'),width:innerWidth,scrollWidth:document.documentElement.scrollWidth}})()`), { title: 'Request Workouts - Kinesis', heading: 'Request Workouts', label: 'Request Workouts', ariaLabel: 'Request Workouts', width: 390, scrollWidth: 390 });
     await evaluate(`(()=>{const input=document.querySelector('[data-day="tuesday"] [data-location]');input.value='Mobile';input.dispatchEvent(new Event('input',{bubbles:true}))})()`);
     await command('Fetch.enable', { patterns: [{ urlPattern: '*api/ai-coach/availability*', requestStage: 'Response' }] });
     const mobileLocationAfterSave = await saveWithDelayedResponse(`(()=>{const input=document.querySelector('[data-day="tuesday"] [data-location]');input.value='Mobility';input.dispatchEvent(new Event('input',{bubbles:true}));input.focus();input.setSelectionRange(3,5,'backward');window.__focusedMobileLocation=input;return input.value})()`);
@@ -800,12 +812,26 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     await saveCurrentForm();
     const screenshot = await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
     assert.ok(screenshot.data.length > 1000, 'mobile headless rendering produced a screenshot');
+
+    const createdCycle = await app.inject({ method: 'POST', url: '/api/cycles', headers: { cookie: `ta_session=${cookie}` }, payload: { objective: 'Accessibility guard test' } });
+    assert.equal(createdCycle.statusCode, 201);
+    const cycleId = createdCycle.json().cycle.id;
+    await evaluate(`(()=>{const item=document.querySelector('[data-nav-id="ai-coach"]');item.setAttribute('aria-describedby','unrelated-description');window.dispatchEvent(new Event('kinesis:cycle-changed'))})()`);
+    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+5000;const check=()=>{const item=document.querySelector('[data-nav-id="ai-coach"]');if(!item.hasAttribute('aria-disabled'))resolve(true);else if(Date.now()>end)reject(new Error('Cycle activation did not remove navigation guard'));else setTimeout(check,20)};check()})`);
+    assert.deepEqual(await evaluate(`(()=>['ai-coach','calendar'].map(id=>{const item=document.querySelector('[data-nav-id="'+id+'"]');return {id,href:item.getAttribute('href'),disabled:item.hasAttribute('aria-disabled'),description:item.getAttribute('aria-describedby'),badgeHidden:item.querySelector('.cycle-guard-badge').classList.contains('hidden')}}))()`), [
+      { id: 'ai-coach', href: '/ai-coach.html', disabled: false, description: 'unrelated-description', badgeHidden: true },
+      { id: 'calendar', href: '/calendar.html', disabled: false, description: null, badgeHidden: true },
+    ]);
+    await app.inject({ method: 'DELETE', url: `/api/cycles/${cycleId}`, headers: { cookie: `ta_session=${cookie}` } });
+    await evaluate(`window.dispatchEvent(new Event('kinesis:cycle-changed'));window.dispatchEvent(new Event('kinesis:cycle-changed'))`);
+    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+5000;const check=()=>{const item=document.querySelector('[data-nav-id="ai-coach"]');if(item.getAttribute('aria-disabled')==='true'&&item.getAttribute('aria-describedby')==='unrelated-description cycle-guard-ai-coach-description')resolve(true);else if(Date.now()>end)reject(new Error('Removing the active cycle did not restore its localized guard description'));else setTimeout(check,20)};check()})`);
+    assert.equal(await evaluate(`document.querySelector('[data-nav-id="calendar"]').getAttribute('aria-describedby')`), 'cycle-guard-calendar-description');
   } finally {
     socket?.close();
     chromeProcess.kill('SIGTERM');
     if (chromeProcess.exitCode === null) await Promise.race([once(chromeProcess, 'exit'), delay(2000)]);
     await app.close();
     rmSync(profile, { recursive: true, force: true });
-    t.diagnostic('Verified AI Planning / Planejamento com IA page and sidebar labels in PT/EN, expanded/collapsed desktop navigation, plus authenticated availability at 1280×800 and 390×844 with legacy-period review/persistence, focus/caret preservation across delayed GET/PUT responses, language rerender, and validation.');
+    t.diagnostic('Verified Request Workouts / Solicitar Treinos page and sidebar labels in PT/EN, expanded/collapsed navigation, accessible cycle-guard name/descriptions through repeated no-cycle/active-cycle updates, and authenticated availability at 1280×800 and 390×844 with legacy-period review/persistence, focus/caret preservation across delayed GET/PUT responses, language rerender, and validation.');
   }
 });

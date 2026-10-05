@@ -1,6 +1,6 @@
 # Kinesis
 
-A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized prompts with Planejamento com IA / AI Planning.
+A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized training-request prompts for use with an external AI.
 
 Current application version: **0.19.5** (active beta development).
 
@@ -133,7 +133,7 @@ Huawei's documented plans are likewise model-dependent. See
 [`docs/workout-creation-compatibility.md`](docs/workout-creation-compatibility.md)
 for the sources and scope.
 
-Every realized result has one persisted source: `none`, `fit_upload`, or `manual` (`garmin_connect` is reserved for a future integration). A manual result intentionally has no synthetic FIT summary or laps. Replacing FIT data with manual aggregates, or manual aggregates with a FIT upload, requires explicit confirmation and executes atomically; the outgoing source's incompatible data is cleared. The result screen marks the source clearly, and its analysis prompt identifies manual data, notes the absence of laps, and states that Kinesis calculated pace from distance and duration. Since dashboard, calendar, and the AI Planning page already aggregate the canonical training metrics, manual results participate in weekly totals without a second source of truth.
+Every realized result has one persisted source: `none`, `fit_upload`, or `manual` (`garmin_connect` is reserved for a future integration). A manual result intentionally has no synthetic FIT summary or laps. Replacing FIT data with manual aggregates, or manual aggregates with a FIT upload, requires explicit confirmation and executes atomically; the outgoing source's incompatible data is cleared. The result screen marks the source clearly, and its analysis prompt identifies manual data, notes the absence of laps, and states that Kinesis calculated pace from distance and duration. Since dashboard, calendar, and the Request Workouts page already aggregate the canonical training metrics, manual results participate in weekly totals without a second source of truth.
 
 FIT activity pace uses a valid session distance paired with valid
 `total_timer_time`, falling back to session elapsed time, session average speed,
@@ -272,7 +272,7 @@ The footer fetches `/api/version` without caching, so it reflects the running ba
 
 #### Dynamic Training Prompt Generator
 
-The **Planejamento com IA / AI Planning** page (internal route and module `ai-coach`) builds a weekly training request from the latest local application state when the user submits the form. It fetches the active cycle and injects its cycle name, goal, target race date, current week/total weeks, and days remaining immediately after the prompt introduction. It also fetches the previous week's calendar entries and summarizes completed workouts as a count, total distance in kilometres, and total time in minutes. Missing values use the prompt's `-` fallback, while valid stored values are preserved and formatted for the selected language. The feature prepares a prompt for use with an external AI; it does not generate the training plan itself.
+The **Solicitar Treinos / Request Workouts** page (internal route and module `ai-coach`) builds a weekly training request from the latest local application state when the user submits the form. It fetches the active cycle and injects its cycle name, goal, target race date, current week/total weeks, and days remaining immediately after the prompt introduction. It also fetches the previous week's calendar entries and summarizes completed workouts as a count, total distance in kilometres, and total time in minutes. Missing values use the prompt's `-` fallback, while valid stored values are preserved and formatted for the selected language. The feature prepares a prompt for use with an external AI; it does not generate the training plan itself.
 
 The generated briefing is fully localized: the Portuguese (`pt-BR`) and English (`en-US`) templates contain the same cycle and performance context fields, with localized labels and week wording. Context is resolved inside the generation action so it always reflects the currently active cycle, latest training data, and current i18n language.
 
@@ -313,11 +313,12 @@ failed load keeps both operations blocked, preserves edits made locally, and
 offers a localized retry; older asynchronous responses cannot replace a newer
 load result.
 
-The public feature name is **Planejamento com IA** in Portuguese and **AI
-Planning** in English. Existing routes, module names, API paths, database names,
-and locale keys containing `ai-coach`/`aiCoach` remain stable technical
-identifiers. This interface rename does not rewrite any generated prompt: the
-weekly, macrocycle, and workout-feedback prompt templates and their “coach”
+The page and menu are named **Solicitar Treinos** in Portuguese and **Request
+Workouts** in English. The onboarding actions remain **Planejar com IA** / **Plan
+with AI** and lead to this page. Existing routes, module names, API paths,
+database names, and locale keys containing `ai-coach`/`aiCoach` remain stable
+technical identifiers. The presentation rename does not rewrite any generated
+prompt: weekly, macrocycle, and workout-feedback templates and their “coach”
 wording remain unchanged.
 
 The prompt states each unavailable day and, for available days, its single
@@ -936,7 +937,7 @@ Every primary flow is a standalone page (no single-page hacks, no overlapping la
 | Training result | `src/public/training-result.html` · `src/public/training-result.css` · `src/public/training-result.js` | Contextual FIT/ZIP and manual result capture, gated behind a session |
 | Home | `src/public/home.html` · `src/public/home.css` · `src/public/home.js` | Authenticated dashboard with onboarding, cycle, weekly metrics, tracker, and quote hero |
 | Calendar | `src/public/calendar.html` · `src/public/calendar.css` · `src/public/calendar.js` | Monthly training calendar and deduplicating Excel import |
-| Planejamento com IA / AI Planning | `src/public/ai-coach.html` · `src/public/ai-coach.css` · `src/public/ai-coach.js` | Local prompt builder for weekly training requests |
+| Solicitar Treinos / Request Workouts | `src/public/ai-coach.html` · `src/public/ai-coach.css` · `src/public/ai-coach.js` | Local prompt builder for weekly training requests |
 | Cycles | `src/public/cycles.html` · `src/public/cycles.css` · `src/public/cycles.js` | Training-cycle management |
 | Shoes | `src/public/shoes.html` · `src/public/shoes.css` · `src/public/shoes.js` | Shoe rotation and mileage management |
 | Administration → Users | `src/public/admin-users.html` · `src/public/admin-users.css` · `src/public/admin-users.js` | Admin-only account list with create, edit, activate/deactivate, and delete |
@@ -1095,7 +1096,7 @@ node scripts/tryRealFit.js path/to/activity.fit
 - [Fastify](https://fastify.dev/) with `@fastify/multipart`, `@fastify/static`, and `@fastify/cookie`
 - [better-sqlite3](https://github.com/WiseLibs/better-sqlite3) for storage — strictly prepared statements, WAL mode, enforced foreign keys
 - [fit-file-parser](https://www.npmjs.com/package/fit-file-parser) for binary `.FIT` decoding
-- Multi-page vanilla HTML/CSS/JS frontend (login, register, dashboard, training result, calendar, Planejamento com IA / AI Planning, cycles, shoes, administration) with shared ES modules, PT/EN translations, and DM Sans — zero build step
+- Multi-page vanilla HTML/CSS/JS frontend (login, register, dashboard, training result, calendar, Solicitar Treinos / Request Workouts, cycles, shoes, administration) with shared ES modules, PT/EN translations, and DM Sans — zero build step
 - Authentication built on Node's native `node:crypto` (`scrypt` hashing, timing-safe comparison, `randomBytes` session tokens)
 - [`node --test`](https://nodejs.org/api/test.html) + [c8](https://github.com/bcoe/c8) for testing with a hard 100% coverage gate
 - Docker (`node:24-alpine`) deployed on ZimaOS via Docker Compose
