@@ -492,6 +492,29 @@ will find every issue.
 - Applying a weekday setup is an explicit one-time copy from Monday to Tuesday–Friday. It never changes weekends or links records.
 - AI Coach prompts must state unavailable days and preserve the distinction between the one preferred period and the separate maximum session duration (including warm-up and cool-down), as well as each day's exact location and effective date. Render the week-start anchor day-first to match the spreadsheet's `DD/MM/YYYY` import format in both languages. Forecast research belongs to the external AI agent receiving the prompt: instruct it to research autonomously with available browsing tools, inspect forecast source content/data rather than search snippets alone, verify location/date/hourly coverage/source time zone, and use a second hourly source when the first is insufficient and access exists. Specify the canonical local half-open windows `00:00–08:00`, `08:00–12:00`, `12:00–14:00`, `14:00–18:00`, and `18:00–24:00`; apply `Europe/Lisbon` with date-appropriate DST only to mainland Portugal, never as a global default. Require the temperature range and highest verified temperature within the selected window, using the saved °C/°F preference; a daily maximum is not a substitute. Make partial coverage and location/date/hour/time-zone or tool/access/horizon failures explicit, require source and lookup timestamp in the response outside the workbook, and tell the agent not to ask the user to confirm forecast details or authorize research and not to interrupt workbook creation. Keep the 12-column spreadsheet/import schema unchanged; put verified or unavailable/partial status in its existing weather column. This prompt instruction adds no Kinesis forecast request, integration, control, confirmation, dependency, or external data transmission. Do not promise that an AI provider has internet access; the prompt must direct it to disclose unavailable tools/access. Do not contain “Rotina normal”/“Normal routine” defaults or invented conditions/times.
 
+## Planned OpenAI integration
+
+The owner-approved phased direction is documented in
+[docs/ai-integration-plan.md](docs/ai-integration-plan.md), tracked by issues
+#62-#65. It is planned work, not current runtime behavior. Read that plan in
+full before implementing any phase; update README, AGENTS, the plan and affected
+configuration/API/privacy documentation in every implementation PR. Preserve
+existing prompt wording and all other GOLDEN RULES.
+
+For those phases only, the owner authorizes a narrow future exception to rule 1:
+the configured backend may send the minimum selected structured training context
+and prompts to OpenAI for explicit cycle, weekly-workout and analysis operations
+using `store: false`. FIT/ZIP binaries, raw GPS tracks, credentials and
+unnecessary identifiers remain excluded; parsing and canonical metrics stay
+local. The existing runtime still has no LLM integration until the corresponding
+implementation is merged. See the plan for retention, ownership and debug limits.
+
+The owner also authorizes the limited Docker/Compose runtime environment wiring
+needed for this integration under rule 3. Never bake the API key into the image
+or change deployment ports, privileges or unrelated CI infrastructure.
+This initial documentation-only plan PR does not bump the application version;
+functional phase PRs follow the existing beta SemVer rule.
+
 ## Golden rules
 
 ## GOLDEN RULE — DESIGN SYSTEM FIRST / VISUAL CONSISTENCY
@@ -526,7 +549,8 @@ or fixes structural problems through cascaded overrides. When equivalent
 components appear different, inspect computed styles and real dimensions,
 including overflow; functional tests alone do not replace visual inspection.
 
-1. **Local-first privacy:** never send FIT files or workout data to an external
+1. **Local-first privacy:** except for the explicitly scoped future OpenAI
+   integration described above, never send FIT files or workout data to an external
    cloud API for processing. Preserve only the defined integrations: Open-Meteo
    receives planned location/date, Unsplash receives a generic image request,
    and the browser sends ZenQuotes a daily quote request; none may receive
