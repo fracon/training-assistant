@@ -4,6 +4,15 @@ A **secure, self-hosted, multi-user running application** for planning training 
 
 Current application version: **0.19.6** (active beta development).
 
+## Planned AI integration
+
+The [AI integration plan](docs/ai-integration-plan.md) defines the proposed
+OpenAI API foundation and training memory, followed by cycle planning, weekly
+workout generation and contextual analysis (issues #62-#65). These features are
+not implemented by this documentation change; current prompts still run
+locally for use with an external AI. API configuration, runtime data transmission
+and administrator debug will be documented as each phase is delivered.
+
 ### Shoe mileage integrity
 
 For each shoe, `shoes.base_mileage` is a non-negative user-authoritative
