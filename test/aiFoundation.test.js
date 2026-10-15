@@ -1556,3 +1556,75 @@ test('unexpected source-read failure after network completion discards output wi
   await s.stop();
   f.db.close();
 });
+
+test('cancellation prevents another SQLite connection from claiming a stale queued read', async () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const os = require('node:os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kinesis-ai-cancel-race-'));
+  const filename = path.join(dir, 'synthetic.sqlite');
+  const db = createDatabase({ filename });
+  let other;
+  let s;
+  try {
+    db.prepare(
+      "INSERT INTO users(id,email,password_hash,role) VALUES (1,'synthetic@example.invalid','synthetic','admin')",
+    ).run();
+    db.prepare(
+      "INSERT INTO trainings(id,user_id,dia,tipo,treino) VALUES (1,1,'2026-10-12','Run','Synthetic cancellation session')",
+    ).run();
+    const config = readAiConfig({
+      AI_ENABLED: 'true',
+      OPENAI_API_KEY: 'synthetic-test-key',
+    });
+    s = service({ db, config });
+    const execution = s.enqueue(1, body);
+    other = createDatabase({ filename });
+    other.pragma('busy_timeout=0');
+    const prepare = db.prepare.bind(db);
+    let reads = 0;
+    let attempted = false;
+    let writerBlocked = false;
+    db.prepare = (sql) => {
+      const stmt = prepare(sql);
+      if (sql === 'SELECT * FROM ai_executions WHERE id = ? AND user_id = ?') {
+        const get = stmt.get.bind(stmt);
+        stmt.get = (...args) => {
+          const row = get(...args);
+          reads++;
+          if (reads === 1 && row?.state === 'queued') {
+            attempted = true;
+            try {
+              other
+                .prepare(
+                  "UPDATE ai_executions SET state='running',attempts=attempts+1 WHERE id=? AND state='queued'",
+                )
+                .run(execution.id);
+            } catch (e) {
+              if (!/SQLITE_BUSY|SQLITE_LOCKED/.test(e.code)) throw e;
+              writerBlocked = true;
+            }
+          }
+          return row;
+        };
+      }
+      return stmt;
+    };
+    const cancelled = s.cancel(1, execution.id);
+    assert.equal(attempted, true);
+    assert.equal(writerBlocked, true);
+    assert.equal(cancelled.state, 'cancelled');
+    assert.equal(
+      db
+        .prepare('SELECT attempts FROM ai_executions WHERE id=?')
+        .get(execution.id).attempts,
+      0,
+    );
+    assert.equal(s.usage(1)[0].tokens, 0);
+  } finally {
+    if (s) await s.stop();
+    if (other?.open) other.close();
+    if (db.open) db.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

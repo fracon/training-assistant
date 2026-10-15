@@ -251,3 +251,14 @@ regression: paid work stays disabled while bounded defaults keep local memory
 and cleanup functional. An additional consolidated review is requested because
 the correction moves eligibility checks into claim/completion transactions; it
 is a deliberate persistence review, not an automatic request per corrective commit.
+
+The complementary review of `250570f` identified one additional P2 cancellation
+race. Cancellation now reads state and settles queued work or marks running work
+inside one immediate transaction. A regression uses two SQLite connections to
+prove a competing claim cannot slip between that read and a refund. Chrome also
+verifies real observation deletion with the shared CRUD JSON-null convention and
+focus deliberately moved during a held request. Final local gate: **1,173 tests
+passed**, zero failures/skips, all four required coverage metrics **100%**.
+The follow-up is a localized application of the reviewed transaction contract;
+no further automatic review was requested for this corrective commit. Owner
+review and merge remain pending, and phase 0 is still not integrated into main.

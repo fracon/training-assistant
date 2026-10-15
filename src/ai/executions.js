@@ -476,20 +476,24 @@ function createExecutionService({
     }
   }
   function cancel(userId, id) {
-    const result = get(userId, id);
-    const row = db
-      .prepare('SELECT * FROM ai_executions WHERE id = ? AND user_id = ?')
-      .get(id, userId);
-    if (row.state === 'queued')
-      finish(row, 'cancelled', { knownUnbilled: true });
-    else if (row.state === 'running')
-      db.prepare(
-        "UPDATE ai_executions SET state='cancelled',updated_at=? WHERE id = ? AND user_id = ?",
-      ).run(now(), id, userId);
-    return {
-      ...result,
-      state: TERMINAL.includes(row.state) ? row.state : 'cancelled',
-    };
+    return db
+      .transaction(() => {
+        const result = get(userId, id);
+        const row = db
+          .prepare('SELECT * FROM ai_executions WHERE id = ? AND user_id = ?')
+          .get(id, userId);
+        if (row.state === 'queued')
+          finish(row, 'cancelled', { knownUnbilled: true });
+        else if (row.state === 'running')
+          db.prepare(
+            "UPDATE ai_executions SET state='cancelled',updated_at=? WHERE id = ? AND user_id = ? AND state='running'",
+          ).run(now(), id, userId);
+        return {
+          ...result,
+          state: TERMINAL.includes(row.state) ? row.state : 'cancelled',
+        };
+      })
+      .immediate();
   }
   function recover() {
     for (const row of db

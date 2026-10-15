@@ -132,13 +132,16 @@ async function initMemory() {
           await mutate(async () => {
             await requestJson(
               `/api/ai/memory/${encodeURIComponent(entry.id)}`,
-              undefined,
+              null,
               'DELETE',
             );
             memory = await requestJson('/api/ai/memory', undefined, 'GET');
+            const restoreFocus =
+              document.activeElement === remove ||
+              document.activeElement === document.body;
             if (editing?.id === entry.id) resetEntry();
             renderEntries();
-            $('cancelEntry').focus();
+            if (restoreFocus) $('cancelEntry').focus();
           });
         });
         actions.append(edit, remove);

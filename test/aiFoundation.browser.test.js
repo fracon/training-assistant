@@ -222,6 +222,20 @@ test('training memory Chrome PT/EN desktop/mobile, ownership, keyboard, loading,
           `/tmp/kinesis-memory-${language}-${width}.png`,
           Buffer.from(shot.data, 'base64'),
         );
+        const savedScroll = await evaluate(
+          "document.querySelector('.main-content').scrollTop",
+        );
+        await evaluate("document.querySelector('.main-content').scrollTop=0");
+        const topShot = await command('Page.captureScreenshot', {
+          format: 'png',
+        });
+        writeFileSync(
+          `/tmp/kinesis-memory-top-${language}-${width}.png`,
+          Buffer.from(topShot.data, 'base64'),
+        );
+        await evaluate(
+          `document.querySelector('.main-content').scrollTop=${savedScroll}`,
+        );
       }
     }
     await command('Emulation.clearDeviceMetricsOverride');
@@ -439,6 +453,45 @@ test('training memory Chrome PT/EN desktop/mobile, ownership, keyboard, loading,
       ),
       false,
     );
+    // Hold the real DELETE request and move focus while the refresh is pending.
+    await command('Fetch.enable', {
+      patterns: [
+        { urlPattern: origin + '/api/ai/memory/*', requestStage: 'Request' },
+      ],
+    });
+    const pausedDelete = new Promise((resolve, reject) => {
+      const timeout = setTimeout(
+        () => reject(new Error('DELETE request was not intercepted')),
+        8000,
+      );
+      const handler = (event) => {
+        const message = JSON.parse(event.data);
+        if (
+          message.method === 'Fetch.requestPaused' &&
+          message.params.request.method === 'DELETE'
+        ) {
+          clearTimeout(timeout);
+          socket.removeEventListener('message', handler);
+          resolve(message.params.requestId);
+        }
+      };
+      socket.addEventListener('message', handler);
+    });
+    await evaluate(
+      "document.querySelector('.memory-entry [data-action=delete]').click()",
+    );
+    await waitFor("!!document.getElementById('confirmOkBtn')");
+    await evaluate("document.getElementById('confirmOkBtn').click()");
+    const deleteRequestId = await pausedDelete;
+    await evaluate("document.getElementById('goals').focus()");
+    await command('Fetch.continueRequest', { requestId: deleteRequestId });
+    await waitFor("!document.getElementById('reloadMemory').disabled");
+    await command('Fetch.disable');
+    assert.equal(
+      await evaluate("document.querySelectorAll('.memory-entry').length"),
+      0,
+    );
+    assert.equal(await evaluate('document.activeElement.id'), 'goals');
     const memoryStyles = await evaluate(
       `(()=>{const i=getComputedStyle(document.querySelector('#entryDate'));const b=getComputedStyle(document.querySelector('#profileForm button'));return {inputFont:i.fontFamily,inputRadius:i.borderRadius,buttonRadius:b.borderRadius}})()`,
     );
