@@ -86,7 +86,7 @@ account. All other corrections navigate to their existing source screen.
 | Totals | `buildContext` disjoint weekly calculation over canonical results, missing-metric counts | Same selected sources; calendar/result correction |
 | Prior experience | `ai_profiles.fields_json.experience` only | `PUT /api/ai/profile`; optional editor on memory page |
 
-The page reuses shell, shoe-card layout, shared forms/buttons, Snackbar, date and
+The page reuses shell, dashboard width/card rhythm, shared forms/buttons, Snackbar, date and
 unit formatters and the existing DatePicker in admin preview. `memoryOverview`
 projects `buildContext`'s bounded cycle-purpose selection in a read transaction;
 it does not create an independent registry or send a model request. Source links
@@ -95,6 +95,43 @@ date/period, plus update time where the canonical source supplies it. Session
 rows have no separate update timestamp; do not fabricate one. Missing values and
 empty states link to existing workflows. Actual execution selection varies by
 task/budget; this overview is not a guarantee that every displayed record is sent.
+
+### Memory presentation on the PR #67 branch
+
+Available on this branch only, pending merge of #67. The page uses the dashboard's
+1,080px content width, theme tokens and card spacing, with existing shared
+controls and native keyboard-accessible disclosures. No new visual library,
+profile fields, storage or paid summaries are introduced.
+
+- The compact header holds refresh and the context date. “How your context is
+  assembled” expands source, temporal and phase explanations; selection omissions
+  remain visible independently of that disclosure.
+- Goals and weekly availability sit side by side on desktop and stack on narrow
+  screens. Goals include the canonical cycle status (never inferred from its
+  target date). Availability uses a semantic Day / Period / Maximum / Location
+  table ordered by the account's preferred week start. Unconfigured days are not
+  invented. Equal source timestamps appear once; differing timestamps stay with
+  their rows. The warm-up/cool-down explanation appears once.
+- Sessions group date/title/completion, metrics and dated reports. RPE,
+  discomfort and other feedback stay visible. Only long planned workout details
+  expand on demand; disclosure state and focused source/disclosure identity
+  survive language/preference rerenders and refresh. A refresh never takes focus
+  away from a control deliberately focused while the request was pending.
+- Older reference sessions identify their existing overlap with weekly totals;
+  they must not be added again. Totals have labeled table columns, an explicit
+  missing-result count, and unknown average RPE when absent. Table regions can
+  be focused and scrolled by keyboard on narrow screens. Empty sections show
+  their period (where defined) and a specific source action without tall filler.
+- Prior experience remains the only optional inline editor, preserving optimistic
+  versions, conflicts and input typed during requests. Administrator debug is a
+  separate collapsed disclosure, absent from ordinary users' DOM. Opening it
+  exposes only the existing own-data free preview/execution controls.
+
+The readable `GET /api/ai/memory` projection additionally returns canonical
+`cycle.status` and boolean session `includedInAggregates` (true only for references
+already in aggregate totals). These are presentation metadata from the existing
+context, not a second computation or new snapshot policy. Context v3, prompt
+bytes, immutable snapshots, execution controls and ownership remain unchanged.
 
 ### Compatibility with the first PR #67 implementation
 
@@ -351,11 +388,16 @@ open PR. These are local results, separate from GitHub checks and owner review.
    information changes without another profile edit. Unknowns stay unknown.
 4. Save prior experience, then edit it in two tabs to exercise 409/reload with
    retained input. A common account sees no technical debug; an admin sees only
-   its own free preview/executions. Existing archived data has a download notice,
+   its own free preview/executions after expanding the administrator disclosure.
+   Existing archived data has a download notice,
    not active editor controls or hidden influence on future context.
 5. Run `node --test test/aiFoundation.test.js test/aiFoundation.routes.test.js
    test/aiMemoryOverview.test.js test/aiFoundation.browser.test.js`, then the full
    gates above. A local Chrome/Chromium executable is required for browser tests.
+6. Check PT/EN at desktop/mobile widths, switch the preferred week start, and
+   expand planning with Space. Dated RPE/discomfort must stay visible while
+   planning is collapsed. Focus the weekly table and use the arrow keys to
+   inspect overflowing columns; language changes must preserve its focus.
 
 The complete diff against updated main was critiqued for contracts, authorization,
 transactions, failure/restart/cancellation paths, bounded selection, preservation,
@@ -444,3 +486,25 @@ transactions, cancellation, quotas, focus/conflicts and prompt equivalence.
 These are deterministic/software validations, not coaching-quality evaluation.
 No paid OpenAI request was required or performed. Phase 0 remains implemented
 only in this open PR branch; functional generation belongs to later phases.
+
+### UI/UX consolidation validation
+
+For the presentation revision on this branch, both final `npm test` and
+`npm run test:coverage` passed **1,190 tests**, zero failures/skips; the required
+backend scope retains **100% Statements, Branches, Functions and Lines**. The
+48 byte-for-byte external prompt comparisons remain exact. `git diff --check`
+passed. Real Chrome covers PT/EN, desktop/mobile, ordinary/admin, empty/history,
+loading/errors/refresh, optimistic conflicts, input/focus preservation, preferred
+week ordering, differing source dates, legacy periods, Space disclosures, table
+keyboard scrolling, DatePicker and protected free preview. Frontend behavior is
+verified by browser tests, not by the backend coverage percentage.
+
+Read-only inspection with the authorized local login, compared with the Home
+screen, measured the observed memory page at **2,222px** of scrollable content
+versus **3,265px** before, at the same **1440×1000** viewport (about 32% less).
+Temporary private screenshots and credentials are excluded from the repository;
+automated browser fixtures are synthetic. No paid call/model-quality evaluation,
+schema migration, context-policy change, infrastructure change or version bump
+was needed. The complete diff against main and the UI batch were critiqued for
+contracts, ownership, compatibility, focus, responsive tables, missing data and
+regressions. This UI remains part of open PR #67, not integrated into main.

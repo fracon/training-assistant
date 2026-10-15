@@ -14,7 +14,10 @@ Existing external prompt workflows remain available and preserve PT/EN output.
 
 The account menu opens **Training memory / Memória de treinamento**: a bounded
 view of current cycle goals, saved availability, dated sessions/feedback and
-canonical weekly aggregates, with dates, sources and correction links. Recent
+canonical weekly aggregates, with dates, sources and correction links. The
+branch UI groups goals/routine, dated session feedback and supporting history;
+availability and totals use compact tables, while long planning details and
+administrator debug expand on demand. See the [presentation contract](docs/ai-foundation.md#memory-presentation-on-the-pr-67-branch). Recent
 discomfort/effort reports take priority over optional planning detail under the
 context budget; insufficient mandatory context is refused explicitly. Changes
 at those sources update the next view/context without duplicate editing. Only

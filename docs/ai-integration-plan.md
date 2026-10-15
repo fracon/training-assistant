@@ -156,6 +156,12 @@ the task and budget; the overview is not a promise that every record is sent.
 Build both from the same source mapping, so the overview does not become another
 independently maintained memory.
 
+The open PR #67 branch now presents this bounded view with grouped goal/routine
+cards, semantic availability/totals tables, visible dated feedback and expandable
+planning details. The [presentation contract](ai-foundation.md#memory-presentation-on-the-pr-67-branch)
+defines the delivered UI; it is not yet integrated into main and adds no later-phase
+generation or interpretation capabilities.
+
 ### Phase 0 boundary and correction
 
 - Keep the API foundation, store:false, prompt preservation, execution controls,

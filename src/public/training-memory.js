@@ -10,7 +10,7 @@ import { formatDate } from './shared/date.js';
 import { createDatePicker } from './shared/datepicker.js';
 import { formatDistance, formatPaceFromMetric } from './shared/units.js';
 import { BREATHING_LABEL_KEYS, MUSCLE_LABEL_KEYS, ENERGY_LABEL_KEYS } from './shared/analysis-prompts.js';
-import { copyPromptText } from './shared/workout-prompts.js';
+import { copyPromptText, DAY_DB_KEYS } from './shared/workout-prompts.js';
 
 async function initMemory() {
   const user = await initShell();
@@ -65,92 +65,146 @@ async function initMemory() {
   function renderOverview() {
     const root = $('memoryOverview');
     const focusedKey = root.contains(document.activeElement) ? document.activeElement.dataset.memoryLink : null;
+    const opened = new Set([...root.querySelectorAll('details[open]')].map((element) => element.dataset.memoryDisclosure));
     root.replaceChildren();
     const date = (value) => value ? formatDate(value.slice(0, 10), i18n.language) : t('unknown');
-    const paragraph = (parent, value, hint = false) => {
-      const p = document.createElement('p');
-      p.textContent = value;
-      if (hint) p.className = 'field-hint';
-      parent.append(p);
+    const node = (tag, className, text) => {
+      const element = document.createElement(tag);
+      if (className) element.className = className;
+      if (text != null) element.textContent = text;
+      return element;
     };
+    const paragraph = (parent, value, hint = false) => parent.append(node('p', hint ? 'field-hint' : '', value));
     const link = (parent, href, label, key) => {
-      const a = document.createElement('a'); a.className = 'btn-secondary'; a.dataset.memoryLink = key; a.href = href; a.textContent = label; parent.append(a);
+      const a = node('a', 'memory-source', label);
+      a.dataset.memoryLink = key; a.href = href; parent.append(a);
     };
-    const section = (key, origin, href) => {
-      const card = document.createElement('section'); card.className = 'shoe-card memory-section memory-entry';
-      const h = document.createElement('h2'); h.textContent = t(key); card.append(h);
-      paragraph(card, t(origin), true);
-      link(card, href, t('correctSource'), key);
-      root.append(card); return card;
+    const top = node('div', 'memory-summary-grid'); root.append(top);
+    const section = (key, origin, href, parent = root) => {
+      const card = node('section', 'shoe-card memory-section memory-entry');
+      const header = node('header', 'memory-card-header');
+      const h = node('h2', '', t(key)); h.id = `memory-${key}`;
+      card.setAttribute('aria-labelledby', h.id);
+      header.append(h);
+      const action = key === 'cycle' ? 'editCycle' : key === 'availability' ? 'editAvailability' : 'openCalendar';
+      link(header, href, t(action), key);
+      card.append(header); paragraph(card, t(origin), true);
+      parent.append(card); return card;
     };
-    const cycle = section('cycle', 'cycleOrigin', '/cycles.html');
+    const metric = (parent, label, value) => {
+      const item = node('div', 'memory-metric');
+      item.append(node('dt', '', label), node('dd', '', value)); parent.append(item);
+    };
+    const table = (parent, caption, headings) => {
+      const wrap = node('div', 'memory-table-wrap');
+      wrap.tabIndex = 0; wrap.setAttribute('role', 'region'); wrap.setAttribute('aria-label', caption);
+      wrap.dataset.memoryLink = `table:${parent.getAttribute('aria-labelledby')}`;
+      const table = node('table', 'memory-table');
+      table.append(node('caption', 'visually-hidden', caption));
+      const head = node('thead'); const row = node('tr');
+      for (const heading of headings) { const cell = node('th', '', heading); cell.scope = 'col'; row.append(cell); }
+      head.append(row); const body = node('tbody'); table.append(head, body); wrap.append(table); parent.append(wrap);
+      return body;
+    };
+    const cycle = section('cycle', 'cycleOrigin', '/cycles.html', top);
     if (memory.cycle) {
-      for (const [key, value] of [['objective', memory.cycle.objective], ['primaryGoal', memory.cycle.primaryGoal], ['secondaryGoal', memory.cycle.secondaryGoal], ['otherEvents', memory.cycle.otherEvents]])
-        if (value) paragraph(cycle, `${translate(i18n.messages, `cycles.${key}`)}: ${value}`);
-      paragraph(cycle, `${t('period')}: ${date(memory.cycle.startDate)} → ${date(memory.cycle.targetDate)}`, true);
+      paragraph(cycle, memory.cycle.objective);
+      const goals = node('dl', 'memory-facts'); cycle.append(goals);
+      for (const [key, value] of [['primaryGoal', memory.cycle.primaryGoal], ['secondaryGoal', memory.cycle.secondaryGoal], ['otherEvents', memory.cycle.otherEvents]])
+        if (value) metric(goals, translate(i18n.messages, `cycles.${key}`), value);
+      if (memory.cycle.status) metric(goals, t('status'), translate(i18n.messages, `cycles.status.${memory.cycle.status}`));
+      metric(goals, t('period'), `${date(memory.cycle.startDate)} → ${date(memory.cycle.targetDate)}`);
       paragraph(cycle, `${t('updated')}: ${date(memory.cycle.updatedAt)}`, true);
     } else paragraph(cycle, t('cycleEmpty'));
-    const availability = section('availability', 'availabilityOrigin', '/ai-coach.html');
+    const availability = section('availability', 'availabilityOrigin', '/ai-coach.html', top);
     if (!memory.availability.length) paragraph(availability, t('availabilityEmpty'));
-    if (memory.availability.length > 0 && memory.availability.length < 7) paragraph(availability, t('availabilityIncomplete'));
-    for (const row of memory.availability) {
-      const periods = row.periods.map((period) => translate(i18n.messages, `aiCoach.periods.${period}`)).join(', ');
-      const day = translate(i18n.messages, `aiCoach.days.${row.day}`);
-      paragraph(availability, `${day}: ${row.canTrain ? `${periods} · ${row.minutes} ${t('minutesMax')} · ${row.location}` : t('unavailable')}`);
-      if (row.periods.length > 1) paragraph(availability, t('availabilityReview'), true);
-      paragraph(availability, `${t('updated')}: ${date(row.updatedAt)}`, true);
+    else {
+      if (memory.availability.length < 7) paragraph(availability, t('availabilityIncomplete'), true);
+      const days = getUserPreferences().first_day_of_week === 'Sunday' ? [DAY_DB_KEYS[6], ...DAY_DB_KEYS.slice(0, 6)] : DAY_DB_KEYS;
+      const rows = [...memory.availability].sort((a, b) => days.indexOf(a.day) - days.indexOf(b.day));
+      const sameUpdate = new Set(rows.map((row) => row.updatedAt)).size === 1;
+      const body = table(availability, t('availability'), ['day', 'time', 'maximum', 'location'].map(t));
+      for (const row of rows) {
+        const tr = node('tr'); tr.dataset.day = row.day;
+        const day = node('th', '', translate(i18n.messages, `aiCoach.days.${row.day}`)); day.scope = 'row'; tr.append(day);
+        const periods = row.periods.map((period) => translate(i18n.messages, `aiCoach.periods.${period}`)).join(', ');
+        tr.append(node('td', '', row.canTrain ? periods || t('unknown') : t('unavailable')),
+          node('td', '', row.canTrain ? row.minutes == null ? t('unknown') : `${row.minutes} ${t('minutes')}` : '—'),
+          node('td', '', row.canTrain ? row.location || t('unknown') : '—'));
+        if (row.periods.length > 1) day.append(node('span', 'field-hint memory-row-note', t('availabilityReview')));
+        if (!sameUpdate) day.append(node('span', 'field-hint memory-row-note', `${t('updated')}: ${date(row.updatedAt)}`));
+        body.append(tr);
+      }
+      paragraph(availability, t('durationHint'), true);
+      if (sameUpdate) paragraph(availability, `${t('updated')}: ${date(rows[0].updatedAt)}`, true);
     }
     for (const [key, rows] of [['recent', memory.recent], ['upcoming', memory.upcoming], ['comparables', memory.comparables]]) {
       const card = section(key, 'sessionOrigin', '/calendar.html');
       if (key !== 'comparables') paragraph(card, key === 'recent'
         ? `${date(memory.ranges.detailedFrom)} → ${date(memory.asOf)}`
         : `${date(memory.asOf)} → ${date(memory.ranges.plannedTo)}`, true);
-      if (!rows.length) paragraph(card, t('sessionsEmpty'));
+      if (!rows.length) { card.classList.add('memory-empty'); paragraph(card, t('sessionsEmpty')); }
       for (const row of rows) {
-        const article = document.createElement('article');
-        paragraph(article, `${date(row.date)} · ${row.planned.treino || row.planned.tipo || t('unknown')}`);
-        if (row.planned.detalhes) paragraph(article, row.planned.detalhes);
+        const article = node('article', 'memory-session');
+        const title = node('h3', '', `${date(row.date)} · ${row.planned.treino || row.planned.tipo || t('unknown')}`);
+        article.append(title);
+        paragraph(article, row.actual.completed ? t('completed') : t('planned'), true);
         const actual = row.actual;
-        paragraph(article, actual.completed ? t('completed') : t('planned'), true);
-        const metrics = [];
-        if (actual.fit_distance !== null) metrics.push(formatDistance(actual.fit_distance, getUserPreferences().distance_unit));
-        if (actual.fit_duration) metrics.push(actual.fit_duration);
-        if (actual.fit_avg_pace) metrics.push(formatPaceFromMetric(actual.fit_avg_pace, getUserPreferences().distance_unit));
-        if (metrics.length) paragraph(article, metrics.join(' · '));
-        for (const [field, label, unit] of [['fit_avg_hr', 'session.manualAvgHr', 'bpm'], ['fit_max_hr', 'session.manualMaxHr', 'bpm'], ['fit_elevation_gain', 'session.manualElevation', ''], ['fit_calories', 'session.resultCalories', 'kcal']])
-          if (actual[field] != null) paragraph(article, `${translate(i18n.messages, label)}: ${actual[field]} ${unit}`);
+        const metrics = node('dl', 'memory-metrics');
+        if (actual.fit_distance != null) metric(metrics, t('distance'), formatDistance(actual.fit_distance, getUserPreferences().distance_unit));
+        if (actual.fit_duration) metric(metrics, t('duration'), actual.fit_duration);
+        if (actual.fit_avg_pace) metric(metrics, t('pace'), formatPaceFromMetric(actual.fit_avg_pace, getUserPreferences().distance_unit));
+        for (const [field, label, unit] of [['fit_avg_hr', 'session.manualAvgHr', 'bpm'], ['fit_max_hr', 'session.manualMaxHr', 'bpm'], ['fit_elevation_gain', 'session.manualElevation', 'm'], ['fit_calories', 'session.resultCalories', 'kcal']])
+          if (actual[field] != null) metric(metrics, translate(i18n.messages, label), `${actual[field]} ${unit}`);
+        if (metrics.childElementCount) article.append(metrics);
         const report = row.report;
+        const feedback = node('div', 'memory-feedback');
         for (const field of ['feedback_rpe', 'feedback_notas', 'feedback_breathing', 'feedback_muscle', 'feedback_energy', 'feedback_pain'])
           if (report[field] != null && report[field] !== '') {
             const labels = { feedback_breathing: BREATHING_LABEL_KEYS, feedback_muscle: MUSCLE_LABEL_KEYS, feedback_energy: ENERGY_LABEL_KEYS };
-            const key = labels[field]?.[report[field]];
-            const value = key ? translate(i18n.messages, key) : report[field];
-            paragraph(article, `${t(`feedback.${field}`)}: ${value}`);
+            const labelKey = labels[field]?.[report[field]];
+            const value = labelKey ? translate(i18n.messages, labelKey) : report[field];
+            paragraph(feedback, `${t(`feedback.${field}`)}: ${value}`);
           }
         if (report.feedback_has_pain === 'yes' || report.feedback_has_pain === 'no')
-          paragraph(article, `${t('feedback.feedback_has_pain')}: ${t(report.feedback_has_pain)}`);
-        paragraph(article, `${t('sessionOrigin')} · ${date(row.date)}`, true);
+          paragraph(feedback, `${t('feedback.feedback_has_pain')}: ${t(report.feedback_has_pain)}`);
+        if (feedback.childElementCount) {
+          feedback.prepend(node('p', 'field-hint', `${t('reportedOn')}: ${date(row.report.observedOn || row.date)}`));
+          article.append(feedback);
+        }
+        if (row.planned.detalhes) {
+          const details = node('details', 'memory-planning');
+          const detailKey = `details:${key}:${row.href}`;
+          details.dataset.memoryDisclosure = detailKey;
+          details.open = opened.has(detailKey);
+          const summary = node('summary', '', t('planningDetails')); summary.dataset.memoryLink = detailKey;
+          details.append(summary, node('p', '', row.planned.detalhes)); article.append(details);
+        }
+        if (row.includedInAggregates) paragraph(article, t('includedInAggregates'), true);
         link(article, row.href, t('openSession'), `${key}:${row.href}`); card.append(article);
       }
     }
     const weekly = section('weekly', 'weeklyOrigin', '/calendar.html');
     paragraph(weekly, `${date(memory.ranges.aggregateFrom)} → ${date(memory.ranges.aggregateTo)}`, true);
-    if (!memory.weekly.length) paragraph(weekly, t('aggregatesEmpty'));
-    for (const row of memory.weekly) {
-      paragraph(weekly, `${date(row.weekStart)} · ${row.completed}/${row.planned} ${t('completedCount')} · ${formatDistance(row.distanceKm, getUserPreferences().distance_unit)} · ${Math.round(row.durationSeconds / 60)} ${t('minutes')}`);
-      if (row.missingResults) paragraph(weekly, `${t('missingResults')}: ${row.missingResults}`, true);
-      if (row.averageRpe !== null) paragraph(weekly, `RPE: ${row.averageRpe.toFixed(1)}`);
+    if (!memory.weekly.length) { weekly.classList.add('memory-empty'); paragraph(weekly, t('aggregatesEmpty')); }
+    else {
+      weekly.append(node('p', 'field-hint memory-scroll-hint', t('tableHint')));
+      const body = table(weekly, t('weekly'), ['week', 'sessions', 'distance', 'duration', 'effort', 'missingResults'].map(t));
+      for (const row of memory.weekly) {
+        const tr = node('tr'); const heading = node('th', '', date(row.weekStart)); heading.scope = 'row'; tr.append(heading);
+        for (const value of [`${row.completed}/${row.planned}`, formatDistance(row.distanceKm, getUserPreferences().distance_unit), `${Math.round(row.durationSeconds / 60)} ${t('minutes')}`, row.averageRpe === null ? t('unknown') : row.averageRpe.toFixed(1), row.missingResults]) tr.append(node('td', '', value));
+        body.append(tr);
+      }
+      paragraph(weekly, t('totalsHint'), true);
     }
-    paragraph(root, t('temporalHint'), true);
-    paragraph(root, t('selectionHint'), true);
-    if (memory.selectionLimited) paragraph(root, t('selectionLimited'), true);
+    $('selectionNotice').hidden = !memory.selectionLimited;
     $('legacyNotice').hidden = !memory.legacyAvailable;
     const updated = memory.profile.fields.experience?.updatedAt;
     $('profileSource').textContent = updated
       ? `${t('authorities.user_report')} · ${t('updated')}: ${date(updated)}`
       : t('profileEmpty');
     $('memoryStatus').textContent = `${t('asOf')}: ${date(memory.asOf)}`;
-    if (focusedKey) [...root.querySelectorAll('a')].find((a) => a.dataset.memoryLink === focusedKey)?.focus();
+    if (focusedKey) [...root.querySelectorAll('[data-memory-link]')].find((a) => a.dataset.memoryLink === focusedKey)?.focus();
     controls();
   }
   async function mutate(action) {

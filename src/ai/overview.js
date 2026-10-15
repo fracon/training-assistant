@@ -18,6 +18,7 @@ function memoryOverview(db, userId, config, asOf) {
       planned: row.planned,
       actual: row.actual,
       report: row.report,
+      includedInAggregates: row.includedInAggregates === true,
       href: `/training-result.html?id=${encodeURIComponent(row.source.id)}`,
     });
     return {
@@ -27,6 +28,7 @@ function memoryOverview(db, userId, config, asOf) {
       ranges: context.ranges,
       cycle: context.cycle && {
         objective: context.cycle.objective,
+        status: context.cycle.status,
         primaryGoal: context.cycle.primary_goal,
         secondaryGoal: context.cycle.secondary_goal,
         otherEvents: context.cycle.other_events,

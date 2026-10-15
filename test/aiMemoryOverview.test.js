@@ -24,6 +24,9 @@ test('canonical corrections refresh the overview and next context; legacy data a
   const frozen=JSON.stringify(before);
   let overview=memoryOverview(db,1,config,asOf);
   assert.equal(overview.cycle.primaryGoal,'Old goal');
+  assert.equal(overview.cycle.status,'active');
+  assert.equal(overview.recent[0].includedInAggregates,false);
+  assert.equal(overview.comparables[0].includedInAggregates,true);
   assert.equal(overview.availability[0].location,'Old place');
   assert.equal(overview.availability[0].canTrain,true);
   assert.equal(overview.recent[0].report.feedback_pain,'Dated discomfort');

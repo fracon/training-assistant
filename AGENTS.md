@@ -536,7 +536,13 @@ with optimistic versions. Do not restore generic manual memory CRUD.
 - `src/ai/` owns the idempotent schema migration, optional experience,
   deterministic context policy, reusable prompts, runtime configuration,
   Responses client, durable execution/usage ledger and routes. The UI reuses
-  shell, shoe cards, shared forms/buttons, DatePicker (admin preview) and PT/EN.
+  shell, dashboard width/card rhythm, shared forms/buttons, DatePicker (admin
+  preview) and PT/EN. The presentation contract is in
+  `docs/ai-foundation.md#memory-presentation-on-the-pr-67-branch`: keep dated
+  discomfort/RPE visible, preserve expanded planning and source-link focus on
+  rerenders, respect the preferred week start, and keep technical debug separate
+  and collapsed. UI projections may expose canonical status/aggregate overlap;
+  they must not create another selection policy or change stored snapshots.
 - Schema is retained for compatibility: old profile keys and `ai_memory` rows
   are an inactive read-only archive, exposed only to their owner through
   `/api/ai/memory/legacy`. Experience saves preserve those keys. New contexts

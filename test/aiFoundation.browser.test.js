@@ -36,6 +36,10 @@ test('training memory Chrome PT/EN desktop/mobile, ownership, keyboard, loading,
   db.prepare("UPDATE training_cycles SET status='active',primary_goal='Synthetic goal',target_date='2026-12-01',start_date='2026-09-01' WHERE id='cycle'").run();
   db.prepare("INSERT INTO trainings(user_id,dia,tipo,treino,completed,feedback_rpe,feedback_pain,feedback_has_pain,fit_distance,fit_duration,result_data_source) VALUES (1,date('now'),'Run','Synthetic recent run',1,3,'Synthetic dated discomfort','yes',5,'30:00','manual'),(1,date('now','-30 days'),'Run','Synthetic older run',1,4,NULL,NULL,10,'1:00:00','manual'),(1,date('now','+2 days'),'Run','Synthetic planned run',0,NULL,NULL,NULL,NULL,NULL,'none')").run();
   db.prepare("INSERT INTO ai_coach_availability(user_id,day_key,can_train,available_periods,available_minutes,location) VALUES (1,'monday',1,?,60,'Synthetic locality')").run(JSON.stringify(['before_08']));
+  for (const day of ['tuesday','wednesday','thursday','friday','saturday','sunday'])
+    db.prepare("INSERT INTO ai_coach_availability(user_id,day_key,can_train,available_periods,available_minutes,location) VALUES (1,?,1,?,60,'Synthetic locality')").run(day,JSON.stringify(['before_08']));
+  db.prepare("UPDATE ai_coach_availability SET can_train=0,available_periods='[]',available_minutes=NULL,location='' WHERE user_id=1 AND day_key='sunday'").run();
+  db.prepare("UPDATE trainings SET detalhes=? WHERE user_id=1").run('Synthetic long planning details. '.repeat(25));
   const tokens = [1,2,3].map((id)=>createSession(db,id).token);
   const app = await buildServer({ db, sessionCookieSecure: false });
   const origin = await app.listen({ port: 0, host: '127.0.0.1' });
@@ -190,12 +194,14 @@ test('training memory Chrome PT/EN desktop/mobile, ownership, keyboard, loading,
           deviceScaleFactor: 1,
           mobile: width === 390,
         });
+        await delay(350); // Let the existing shell's responsive sidebar transition settle.
         await command('Emulation.setEmulatedMedia', {
           features: [{ name: 'prefers-reduced-motion', value: 'reduce' }],
         });
         assert.equal(
           await evaluate('document.documentElement.scrollWidth>innerWidth'),
           false,
+          JSON.stringify(await evaluate("[...document.querySelectorAll('main *')].filter(e=>e.getBoundingClientRect().right>innerWidth).map(e=>[e.tagName,e.className,e.getBoundingClientRect().width]).slice(0,12)")),
         );
         const shot = await command('Page.captureScreenshot', {
           format: 'png',
@@ -205,6 +211,11 @@ test('training memory Chrome PT/EN desktop/mobile, ownership, keyboard, loading,
           `/tmp/kinesis-memory-${language}-${width}.png`,
           Buffer.from(shot.data, 'base64'),
         );
+        for (const source of ['availability','recent','weekly']) {
+          await evaluate(`document.querySelector('[data-memory-link="${source}"]').closest('section').scrollIntoView({block:'start'})`);
+          const sectionShot = await command('Page.captureScreenshot',{format:'png'});
+          writeFileSync(`/tmp/kinesis-memory-section-${source}-${language}-${width}.png`,Buffer.from(sectionShot.data,'base64'));
+        }
         const savedScroll = await evaluate(
           "document.querySelector('.main-content').scrollTop",
         );
@@ -221,6 +232,30 @@ test('training memory Chrome PT/EN desktop/mobile, ownership, keyboard, loading,
         );
       }
     }
+    // Planning is progressive disclosure; dated reports never depend on opening it.
+    assert.equal(await evaluate("document.querySelector('.memory-planning').open"),false);
+    assert.equal(await evaluate("document.querySelector('.memory-feedback').getBoundingClientRect().height>0"),true);
+    await evaluate("document.querySelector('.memory-planning summary').focus()");
+    assert.equal(await evaluate('document.activeElement.tagName'),'SUMMARY');
+    for (const type of ['keyDown','keyUp']) await command('Input.dispatchKeyEvent',{type,key:' ',code:'Space',windowsVirtualKeyCode:32});
+    await waitFor("document.querySelector('.memory-planning').open");
+    await evaluate("document.dispatchEvent(new Event('app:languagechange'))");
+    assert.equal(await evaluate("document.querySelector('.memory-planning').open"),true);
+    assert.equal(await evaluate("document.activeElement.tagName"),'SUMMARY');
+    assert.equal(await evaluate("document.querySelector('.memory-table tbody tr').dataset.day"),'monday');
+    await evaluate("import('./shared/shell.js').then(m=>m.saveUserPreferences({...m.getUserPreferences(),first_day_of_week:'Sunday'}))");
+    assert.equal(await evaluate("document.querySelector('.memory-table tbody tr').dataset.day"),'sunday');
+    await evaluate("import('./shared/shell.js').then(m=>m.saveUserPreferences({...m.getUserPreferences(),first_day_of_week:'Monday'}))");
+    assert.equal(await evaluate("document.querySelectorAll('.memory-table caption').length>=2"),true);
+    await evaluate("document.querySelector('[data-memory-link=\"table:memory-weekly\"]').focus();document.dispatchEvent(new Event('app:languagechange'))");
+    assert.equal(await evaluate('document.activeElement.dataset.memoryLink'),'table:memory-weekly');
+    const tableScroll = await evaluate("(()=>{const region=document.querySelector('[data-memory-link=\"table:memory-weekly\"]');region.scrollLeft=0;return {before:region.scrollLeft,max:region.scrollWidth-region.clientWidth};})()");
+    assert.ok(tableScroll.max>0);
+    for (const type of ['keyDown','keyUp']) await command('Input.dispatchKeyEvent',{type,key:'ArrowRight',code:'ArrowRight',windowsVirtualKeyCode:39});
+    await waitFor("document.querySelector('[data-memory-link=\"table:memory-weekly\"]').scrollLeft>0");
+    assert.equal(await evaluate("document.getElementById('memoryDebug').open"),false);
+    assert.equal(await evaluate("document.getElementById('previewDate').getBoundingClientRect().height"),0);
+    await evaluate("document.querySelector('#memoryDebug > summary').click()");
     await command('Emulation.clearDeviceMetricsOverride');
     await evaluate(
       `document.querySelector('#previewForm [type=submit]').click()`,
@@ -264,6 +299,13 @@ test('training memory Chrome PT/EN desktop/mobile, ownership, keyboard, loading,
     db.prepare("UPDATE training_cycles SET primary_goal='Synthetic corrected goal' WHERE id='cycle'").run();
     await evaluate("document.getElementById('reloadMemory').click()");
     await waitFor("document.getElementById('memoryOverview').textContent.includes('Synthetic corrected goal')");
+    // Per-source dates remain visible when different; legacy periods stay explicit.
+    assert.equal(await evaluate("document.querySelectorAll('.memory-row-note').length"),0);
+    db.prepare("UPDATE ai_coach_availability SET updated_at='2026-01-01',available_periods=? WHERE user_id=1 AND day_key='monday'").run(JSON.stringify(['before_08','08_12']));
+    await evaluate("document.getElementById('reloadMemory').click()");
+    await waitFor("!document.getElementById('reloadMemory').disabled");
+    assert.equal(await evaluate("document.querySelectorAll('.memory-row-note').length"),8);
+    assert.equal(await evaluate("document.querySelector('[data-day=sunday] td').textContent"),'Indisponível');
     // Hold a real reload and move focus: the refresh must not take focus away.
     await command('Fetch.enable',{patterns:[{urlPattern:origin+'/api/ai/memory',requestStage:'Request'}]});
     const pausedLoad = new Promise((resolve) => {
@@ -332,6 +374,7 @@ test('training memory Chrome PT/EN desktop/mobile, ownership, keyboard, loading,
       await waitFor(`document.documentElement.lang==='${language}'`);
       for(const width of [1280,390]) {
         await command('Emulation.setDeviceMetricsOverride',{width,height:900,deviceScaleFactor:1,mobile:width===390});
+        await delay(350);
         assert.equal(await evaluate('document.documentElement.scrollWidth>innerWidth'),false);
         assert.equal(await evaluate("document.querySelector('#memoryOverview a').getAttribute('href')"),'/cycles.html');
         const shot=await command('Page.captureScreenshot',{format:'png'});
@@ -365,6 +408,7 @@ test('training memory Chrome PT/EN desktop/mobile, ownership, keyboard, loading,
         await waitFor(`document.documentElement.lang==='${language}'`);
         for(const width of [1280,390]) {
           await command('Emulation.setDeviceMetricsOverride',{width,height:900,deviceScaleFactor:1,mobile:width===390});
+          await delay(350);
           assert.equal(await evaluate('document.documentElement.scrollWidth>innerWidth'),false);
           assert.equal(await evaluate("!!document.getElementById('memoryDebug')"),roleCase==='admin-empty');
           const shot=await command('Page.captureScreenshot',{format:'png'});
