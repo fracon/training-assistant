@@ -6,6 +6,14 @@ Current application version: **0.19.6** (active beta development).
 
 ## Planned AI integration
 
+The planned training-memory screen is a consolidated view of context derived
+from cycles, availability and session feedback, with source/date information
+and links to correct the original records. It is not another form for goals,
+preferences or limitations. Only previous running experience is optional
+supplemental input in phase 0. Later AI interpretations will be identified as
+such and can be confirmed, corrected or dismissed by their owner. These are
+planned requirements; the phase 0 implementation in PR #67 needs revision.
+
 The [AI integration plan](docs/ai-integration-plan.md) defines the proposed
 OpenAI API foundation and training memory, followed by cycle planning, weekly
 workout generation and contextual analysis (issues #62-#65). These features are
