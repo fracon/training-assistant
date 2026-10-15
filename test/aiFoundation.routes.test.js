@@ -43,18 +43,7 @@ test('HTTP memory is owner scoped, locally editable, race safe, and denies inval
     [
       'PUT',
       '/api/ai/profile',
-      { fields: { goals: 'Synthetic' }, expected_version: 0 },
-    ],
-    [
-      'POST',
-      '/api/ai/memory',
-      {
-        kind: 'restriction',
-        text: 'Synthetic',
-        observed_on: '2026-10-01',
-        state: 'current',
-        expected_version: 0,
-      },
+      { fields: { experience: 'Synthetic' }, expected_version: 0 },
     ],
     ['GET', '/api/ai/executions'],
     ['GET', '/api/ai/context?purpose=cycle'],
@@ -62,52 +51,18 @@ test('HTTP memory is owner scoped, locally editable, race safe, and denies inval
   ])
     assert.equal((await send(method, url, payload, 0)).statusCode, 401);
   assert.equal((await send('GET', '/api/ai/memory')).json().profile.version, 0);
-  const profile = { fields: { goals: 'Synthetic goal' }, expected_version: 0 };
+  const profile = { fields: { experience: 'Synthetic goal' }, expected_version: 0 };
   assert.equal((await send('PUT', '/api/ai/profile', profile)).statusCode, 200);
   assert.equal((await send('PUT', '/api/ai/profile', profile)).statusCode, 409);
   assert.equal(
     (await send('GET', '/api/ai/memory', undefined, 2)).json().profile.version,
     0,
   );
-  const entry = {
-    kind: 'restriction',
-    text: 'Synthetic limitation',
-    observed_on: '2026-10-01',
-    state: 'current',
-    expected_version: 0,
-  };
-  const saved = (await send('POST', '/api/ai/memory', entry)).json();
-  const id = saved.entries[0].id;
-  assert.equal(
-    (await send('PUT', `/api/ai/memory/${id}`, entry)).statusCode,
-    400,
-  );
-  assert.equal(
-    (
-      await send(
-        'PUT',
-        `/api/ai/memory/${id}`,
-        { ...entry, state: 'resolved', expected_version: 1 },
-        2,
-      )
-    ).statusCode,
-    404,
-  );
-  assert.equal(
-    (
-      await send('PUT', `/api/ai/memory/${id}`, {
-        ...entry,
-        state: 'resolved',
-        expected_version: 1,
-      })
-    ).statusCode,
-    200,
-  );
-  assert.equal(
-    (await send('DELETE', `/api/ai/memory/${id}`, undefined, 2)).statusCode,
-    404,
-  );
-  assert.equal((await send('DELETE', `/api/ai/memory/${id}`)).statusCode, 204);
+  for (const [method,url] of [['POST','/api/ai/memory'],['PUT','/api/ai/memory/legacy-id'],['DELETE','/api/ai/memory/legacy-id']])
+    assert.equal((await send(method,url,{})).statusCode,404);
+  assert.deepEqual((await send('GET','/api/ai/memory/legacy')).json(),{fields:{},entries:[]});
+  assert.equal((await send('GET','/api/ai/context?purpose=cycle',undefined,2)).statusCode,403);
+  assert.equal((await send('PUT','/api/ai/profile',{fields:{goals:'duplicate'},expected_version:1})).statusCode,400);
   assert.equal(
     (await send('GET', '/api/ai/context?purpose=cycle&as_of=2026-10-14'))
       .statusCode,
@@ -317,4 +272,27 @@ test('invalid AI settings disable paid work without breaking startup, memory or 
     ).statusCode,
     503,
   );
+});
+
+test('existing source APIs update common-user memory and next admin context without paid calls', async (t) => {
+  let calls=0;
+  const {app,db,cookies}=await fixture(t,{aiClient:async()=>{calls++;throw Error('unexpected model call');}});
+  const send=(method,url,payload,user=1)=>app.inject({method,url,payload,headers:{cookie:cookies[user]}});
+  db.prepare("INSERT INTO training_cycles(id,user_id,objective,status) VALUES ('source',1,'Original goal','active')").run();
+  db.prepare("INSERT INTO trainings(id,user_id,dia,tipo,treino) VALUES (50,1,date('now'),'Run','Synthetic source session')").run();
+  const before=(await send('GET','/api/ai/context?purpose=cycle')).json();
+  assert.equal((await send('PUT','/api/cycles/source',{objective:'Corrected target',primary_goal:'Corrected primary goal'})).statusCode,200);
+  const days=require('../src/availability').DAY_KEYS.map((day)=>({day,can_train:day==='monday',available_periods:['before_08'],available_minutes:60,location:'Synthetic corrected locality'}));
+  assert.equal((await send('PUT','/api/ai-coach/availability',{days})).statusCode,200);
+  assert.equal((await send('PATCH','/api/trainings/50',{feedback_has_pain:'yes',feedback_pain:'Synthetic dated report'})).statusCode,200);
+  const overview=(await send('GET','/api/ai/memory')).json();
+  const after=(await send('GET','/api/ai/context?purpose=cycle')).json();
+  assert.equal(overview.cycle.objective,'Corrected target');
+  assert.equal(after.cycle.objective,overview.cycle.objective);
+  assert.equal(overview.availability.find((r)=>r.day==='monday').location,'Synthetic corrected locality');
+  assert.equal(overview.recent[0].report.feedback_pain,'Synthetic dated report');
+  assert.equal(overview.recent[0].date,after.recent[0].date);
+  assert.notEqual(after.hash,before.hash);
+  assert.deepEqual((await send('GET','/api/ai/memory',undefined,2)).json().recent,[]);
+  assert.equal(calls,0);
 });

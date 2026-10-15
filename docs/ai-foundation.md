@@ -2,7 +2,7 @@
 
 Status: implemented on `feat/ai-phase-0-foundation` ([open PR #67](https://github.com/fracon/training-assistant/pull/67)),
 validated locally and pending owner review; **not integrated into main**. Main includes the approved documentation
-plan (#66). Cycle, weekly-workout and analysis generation remain planned in
+plan and owner scope correction (#66/#68). Cycle, weekly-workout and analysis generation remain planned in
 #63–#65. This foundation does not enable those paid product operations.
 
 ## Configuration and deployment
@@ -68,24 +68,71 @@ Migration `2026-10-ai-foundation-v1` creates `ai_profiles`, `ai_memory`,
 idempotent and does not populate historical profiles or infer restrictions.
 Existing user, session, training, cycle, shoe and feedback rows are preserved.
 
-The account menu links to `/training-memory.html`. Owners can edit experience,
-goals, preferences and reported limitations, and create/correct/delete dated
-restrictions, milestones, interruptions and reported performed actions. Version
-checks refuse concurrent overwrites with 409. Reloading the saved version keeps
-unsaved input for review. Restriction states are explicit: current, resolved or
-unconfirmed. Age and absent symptom feedback never change the saved state.
+The account menu links to `/training-memory.html`. Both ordinary users and
+administrators see a source-backed consolidated view, not a parallel registry.
+Only optional previous running experience can be edited here (2,000 characters,
+optimistic version, 409 on conflict). Reloading the current version preserves
+unsaved input; saving never overwrites another account or restores a deleted
+account. All other corrections navigate to their existing source screen.
+
+### Source inventory and correction paths
+
+| Information | Canonical fields / functions | Existing API and correction UI |
+| --- | --- | --- |
+| Goals / race | `training_cycles.objective`, `primary_goal`, `secondary_goal`, `target_date`, `start_date`, `updated_at`; `getActiveCycle`, cycle CRUD | `/api/cycles`, `/api/cycles/active`, `PUT /api/cycles/:id`; `/cycles.html` |
+| Days / period / maximum duration / place | `ai_coach_availability.day_key`, `can_train`, `available_periods`, `available_minutes`, `location`, `updated_at`; availability domain | `GET/PUT /api/ai-coach/availability`; `/ai-coach.html` |
+| Plans / execution | `trainings.dia`, type/title/details, completion, canonical `fit_*`, `result_data_source`; `trainingView` | `/api/calendar/trainings`, `/api/trainings/:id`; `/calendar.html`, `/training-result.html?id=…` |
+| Dated reports / discomfort | `feedback_rpe`, notes, breathing, muscle, energy, has-pain and pain; `trainingView.report` | Existing training PATCH / result editor; same session link |
+| Totals | `buildContext` disjoint weekly calculation over canonical results, missing-metric counts | Same selected sources; calendar/result correction |
+| Prior experience | `ai_profiles.fields_json.experience` only | `PUT /api/ai/profile`; optional editor on memory page |
+
+The page reuses shell, shoe-card layout, shared forms/buttons, Snackbar, date and
+unit formatters and the existing DatePicker in admin preview. `memoryOverview`
+projects `buildContext`'s bounded cycle-purpose selection in a read transaction;
+it does not create an independent registry or send a model request. Source links
+remain regular keyboard-accessible links. Each item shows source and relevant
+date/period, plus update time where the canonical source supplies it. Session
+rows have no separate update timestamp; do not fabricate one. Missing values and
+empty states link to existing workflows. Actual execution selection varies by
+task/budget; this overview is not a guarantee that every displayed record is sent.
+
+### Compatibility with the first PR #67 implementation
+
+A read-only inspection of the configured local `data/database.sqlite` on
+2026-10-15 found `ai_profiles`, `ai_memory`, `ai_executions` present and **zero
+rows in each**. No real rows were changed or used as fixtures. Other installations
+may have data, so schema and records are retained; no destructive migration is
+needed. Reinitialization remains idempotent and is tested with existing records.
+
+- Earlier goals/preferences/limitations and **all** generic `ai_memory` entries
+  are inactive archives, not active source material. They never influence new
+  contexts, including rows labeled interpretation or recommendation.
+- The normal memory response contains only optional experience and the canonical
+  view. A notice and owner-only JSON download (`GET /api/ai/memory/legacy`) make
+  existing archived records accessible with their original dates/provenance.
+  There is no generic create/update/delete contract; old mutation URLs return 404.
+- Experience writes retain archived keys and metadata. No old goal is copied to
+  a cycle, and no old note becomes a fact/current restriction. Archives remain
+  until account deletion; ordinary execution retention does not erase them.
+- Policy `training-context-v2` excludes these fields. Saved execution snapshots
+  (including v1 inputs) remain exactly as used and inspectable in own admin debug;
+  freshness checks identify prior-policy results as outdated. Queued old work
+  fails source revalidation without dispatch; in-flight results cannot be applied
+  against changed context. There is no hidden regeneration or paid refresh.
 
 User reports, recorded canonical facts, planning records, derived aggregates,
 AI interpretations, recommendations and reported actions have distinct authority
-labels. The schema reserves interpretation/recommendation entries for trusted
-future operations; public writes cannot impersonate AI. Existing completion and
+labels. The retained archive schema is not a new interpretation editor or active lifecycle.
+Later interpretation producers must define evidence, disposition and supersession
+with confirm/correct/dismiss actions; historical responses must never resurrect
+a discarded/corrected interpretation. Public writes cannot impersonate AI. Existing completion and
 canonical result metrics supply observed outcomes. Recommendations never become
 performed facts by inclusion in a subsequent context. No recursive summarization
 or embeddings are introduced.
 
-Context policy `training-context-v1` selects mandatory profile, current
-restrictions, the active cycle and a requested owned resource first; it refuses
-an insufficient budget for that mandatory material. Other dated events, weekly
+Context policy `training-context-v2` selects optional supplied experience,
+the active cycle and a requested owned resource first; it refuses
+an insufficient budget for that mandatory material. Weekly
 availability, already scheduled upcoming sessions, recent sessions, aggregates,
 comparable sessions and shoes are
 selected deterministically. The recent and aggregate periods are disjoint:
@@ -94,7 +141,8 @@ upcoming workouts in the next detail-window span are included as planning
 records, with no inferred execution. Weekly
 aggregates use saved kilometres, duration and completion; unknown values remain
 explicit gaps. They are not inferred as zero-valued workouts or rest days.
-Up to three older completed comparable sessions are selected by saved training
+The ordinary history query is limited to the configured date window. A separate
+query retrieves at most three older completed comparable sessions, selected by saved training
 type for analysis, long-run type for weekly context, or recency for cycle context.
 Comparable records state whether they also belong to an aggregate, so their
 metrics must never be added again. The execution also records versions of every preserved-prompt dependency,
@@ -103,8 +151,8 @@ hashes, ranges, selection
 reasons, missing data and budget/cutoff omissions are included. There is no
 fabricated applied AI plan for an old cycle.
 
-Profiles/observations remain until the owner corrects/deletes them or deletes
-the account. Terminal execution payloads, context, results and usage expire after
+Experience remains editable; inactive archived records remain until account
+deletion. Terminal execution payloads, context, results and usage expire after
 90 days by default. Cleanup runs at startup and authenticated AI API access;
 it is opportunistic, not an exact wall-clock deletion guarantee. Queued/running
 work is not removed by terminal cleanup. Account deletion cascades all owned AI
@@ -140,12 +188,10 @@ are allowlisted, with no `user_id`, arbitrary model or arbitrary prompt option.
 
 | Method/path | Contract |
 | --- | --- |
-| `GET /api/ai/memory` | `{profile:{fields,version,updatedAt},entries}` |
-| `PUT /api/ai/profile` | `{fields:{experience?,goals?,preferences?,restrictions?},expected_version}`; strings <=2000 chars |
-| `POST /api/ai/memory` | `{kind,text,observed_on,state,expected_version:0}` |
-| `PUT /api/ai/memory/:id` | Same fields, positive `expected_version`; owned entry only |
-| `DELETE /api/ai/memory/:id` | 204, or 404 for an absent/unowned entry |
-| `GET /api/ai/context?purpose=...&resource_id=...&as_of=...` | Owner's selected structured memory; never an execution payload/prompt |
+| `GET /api/ai/memory` | Readable owner overview: `asOf`, `profile`, `cycle`, `availability`, `recent`, `upcoming`, `weekly`, `comparables`, `ranges`, `selectionLimited`, `legacyAvailable`; no technical payload/hash |
+| `PUT /api/ai/profile` | `{fields:{experience?},expected_version}`; strings <=2000 chars |
+| `GET /api/ai/memory/legacy` | Owner-only read-only archive `{fields,entries}`; excluded from new contexts |
+| `GET /api/ai/context?purpose=...&resource_id=...&as_of=...` | Administrator's own technical context only; ordinary users receive 403 and use the overview |
 | `POST /api/ai/executions` | `{purpose,resource_id?,target_date?,idempotency_key}` -> 202 and ID/state; purposes cycle/workouts/analysis; no registered production operations in phase 0 |
 | `GET /api/ai/executions` | Latest 50 owned execution identifiers/states |
 | `GET /api/ai/executions/:id` | Owned state, validated product response and outdated flag |
@@ -191,7 +237,7 @@ main `addd967` before extraction: 12 PT/EN × km/mi × missing/manual/FIT varian
 covering weekly, macrocycle, frontend analysis and backend Markdown variants.
 `test/aiFoundation.test.js` compares their output byte for byte; existing prompt
 and browser suites remain active. Browser checks cover PT/EN, desktop/mobile,
-DatePicker, grouped errors, keyboard focus, ownership and established shoe-form
+admin DatePicker, conflict errors, keyboard focus, ownership and established shoe-form
 computed styles. Screenshots are transient `/tmp` artifacts, never fixtures.
 
 Context evaluation scenarios and the quality rubric are in
@@ -208,57 +254,60 @@ Official references checked at implementation:
 [pricing](https://developers.openai.com/api/docs/pricing),
 [data controls](https://developers.openai.com/api/docs/guides/your-data).
 
-## Local delivery evidence (2026-10-15)
+## Validation status of this correction
 
-- `npm test`: 1,162 tests passed before the final focused refinements.
-- Initial delivery `npm run test:coverage` (which runs `npm test`): 1,166 passed, zero
-  failures/skips; Statements, Branches, Functions and Lines all 100% in the
-  repository's required instrumentation scope.
-- 48 byte-identical prompt comparisons across the 12 captured synthetic cases.
-- Real Chrome PT/EN at 1280px and 390px: saved profile/observations, failed-load
-  recovery with preserved input, conflicts, DatePicker keyboard/Escape/focus,
-  reduced motion, absent regular-user debug, and comparison with shoe-form
-  computed styles. Screenshots were inspected locally in `/tmp`.
-- `docker compose config --quiet` and `git diff --check` passed. Dockerfile,
-  image build instructions, deployment ports/user/volume and CI are unchanged;
-  no image rebuild or production deployment was performed.
-- No OpenAI key was configured, no paid request was made, and no real model
-  quality/project-access claim is inferred from mocks.
+The earlier review fixes remain in place: atomic dispatch/completion/cancellation,
+restart concurrency, complete prompt dependency versions and DatePicker month
+focus. Generic observation CRUD tests have been replaced with archive exclusion
+and canonical-source tests because that editor is removed by approved scope.
+The corrected branch passed these local gates on 2026-10-15:
 
-The complete diff was critiqued against main before publication. Corrections
-covered original/adapted prompt separation, FIT-lap and shoe-label source
-versions without GPS transmission, upcoming planning, admin-only usage/cost,
-expired reservations, conservative unknown usage and keyboard/input preservation.
-GitHub checks and Codex review are separate from these local results; integration
-into main still requires an owner-approved merge.
+- `npm test`: **1,176 passed**, zero failures/skips.
+- `npm run test:coverage`: **1,176 passed**, **100% Statements, Branches,
+  Functions and Lines** in the required backend/script scope. This is not a
+  claim of frontend instrumentation coverage or model quality.
+- 48 byte-identical external prompt comparisons against the unchanged baseline.
+- `aiMemoryOverview.test.js`: canonical-source corrections, empty states,
+  archive exclusion/preservation, idempotent initialization with existing data,
+  account ownership/activity, immutable persisted v1 snapshots and refusal to
+  dispatch old-policy queued work. HTTP tests update sources through existing
+  cycle, availability and feedback endpoints and assert no provider call.
+- Real Chrome: PT/EN, 1280/390px, regular/admin × empty/history; failed-load retry,
+  pending reload and deliberate focus change, experience conflict/reload/resave,
+  source links and language-change focus identity, dated yes/no discomfort,
+  admin preview and DatePicker Previous/Next/Escape. Input/button computed styles
+  match the established Shoes form. Transient screenshots were visually inspected
+  outside Git. The test blocks external font/icon CDNs; this is a local UI check.
+- `docker compose config --quiet` and `git diff --check` passed.
 
-### Coordinated review correction
+No `OPENAI_API_KEY` was present; no paid evaluation, deployment or image build
+was performed. Mock providers validate failure/accounting contracts only.
+Configuration, `.env.example`, Compose wiring, ports, volume and container user
+are unchanged by this scope correction. Version stays beta 0.20.0 for the same
+open PR. These are local results, separate from GitHub checks and owner review.
 
-The first Codex review of commit `e24fbde` reported three P2 findings. All were
-confirmed and corrected together: atomic dispatch revalidation, retargeting an
-observation's version after conflict/reload without erasing edits, and retaining
-calendar-toolbar focus after month navigation. The same correction adds atomic
-completion revalidation, source versions for every preserved-prompt dependency
-even when omitted by the context budget, and per-user restart concurrency.
-Regression tests first reproduced the latter two failures and now pass.
+### Local validation
 
-The coordinated correction gate ran `npm run test:coverage` again: **1,172
-tests passed**, zero failures/skips, and all four required metrics remain 100%.
-Chrome regression checks cover conflict/reload/resave with retained observation
-input, concurrent deletion without recreation, and Previous/Next month keyboard
-focus followed by Escape. Invalid numeric AI settings also have a startup/HTTP
-regression: paid work stays disabled while bounded defaults keep local memory
-and cleanup functional. An additional consolidated review is requested because
-the correction moves eligibility checks into claim/completion transactions; it
-is a deliberate persistence review, not an automatic request per corrective commit.
+1. Use a development database (never production for validation), install existing
+   dependencies, optionally copy `.env.example`, and run `npm start`. No API key
+   is needed for memory or free admin preview.
+2. Open the account menu → Training memory. With an empty account, follow the
+   cycle/availability/calendar links; leave experience blank if desired.
+3. Change an active cycle goal, save availability in Request Workouts, and edit
+   a dated session feedback. Return/reload memory: the selected canonical
+   information changes without another profile edit. Unknowns stay unknown.
+4. Save prior experience, then edit it in two tabs to exercise 409/reload with
+   retained input. A common account sees no technical debug; an admin sees only
+   its own free preview/executions. Existing archived data has a download notice,
+   not active editor controls or hidden influence on future context.
+5. Run `node --test test/aiFoundation.test.js test/aiFoundation.routes.test.js
+   test/aiMemoryOverview.test.js test/aiFoundation.browser.test.js`, then the full
+   gates above. A local Chrome/Chromium executable is required for browser tests.
 
-The complementary review of `250570f` identified one additional P2 cancellation
-race. Cancellation now reads state and settles queued work or marks running work
-inside one immediate transaction. A regression uses two SQLite connections to
-prove a competing claim cannot slip between that read and a refund. Chrome also
-verifies real observation deletion with the shared CRUD JSON-null convention and
-focus deliberately moved during a held request. Final local gate: **1,173 tests
-passed**, zero failures/skips, all four required coverage metrics **100%**.
-The follow-up is a localized application of the reviewed transaction contract;
-no further automatic review was requested for this corrective commit. Owner
-review and merge remain pending, and phase 0 is still not integrated into main.
+The complete diff against updated main was critiqued for contracts, authorization,
+transactions, failure/restart/cancellation paths, bounded selection, preservation,
+accessibility, prompt compatibility, documentation and tests. Coordinated fixes
+include explicit context-policy freshness, canonical yes/no report rendering,
+source-link focus identity and preserving edits during experience conflicts.
+Phases 1–3 and evidence/disposition-based AI interpretations remain planned;
+phase 0 is implemented in this branch and **not integrated into main**.

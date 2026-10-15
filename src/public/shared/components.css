@@ -2,6 +2,7 @@
    differences and component-specific variants. */
 
 .btn-secondary {
+  text-decoration: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;

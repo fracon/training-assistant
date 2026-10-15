@@ -7,14 +7,21 @@ Current application version: **0.20.0** (active beta development).
 ## AI integration: phase 0 on this branch
 
 The approved [integration plan](docs/ai-integration-plan.md) is integrated via
-PR #66. This branch implements issue #62's foundation and editable personal
-training memory; it is **not integrated into main until its PR is merged**.
+PRs #66 and #68. This branch implements issue #62's foundation and consolidated
+training memory; it is **not integrated into main until PR #67 is merged**.
 Cycle, weekly-workout and analysis generation remain planned in #63–#65.
 Existing external prompt workflows remain available and preserve PT/EN output.
 
-The account menu opens **Training memory / Memória de treinamento** to correct
-experience, goals and dated observations with explicit source/state. Admins can
-preview/copy their own existing prompts and inspect their own context/usage.
+The account menu opens **Training memory / Memória de treinamento**: a bounded
+view of current cycle goals, saved availability, dated sessions/feedback and
+canonical weekly aggregates, with dates, sources and correction links. Changes
+at those sources update the next view/context without duplicate editing. Only
+optional running experience from before Kinesis is edited here. Missing records
+remain explicit; discomfort is not a permanent restriction or a diagnosis.
+Earlier duplicate fields/observations are preserved in an owner-only downloadable
+archive and excluded from new contexts. Historical execution snapshots remain
+unchanged. Administrators have a separate section for their own free prompt
+preview and protected execution debug. Common users receive no technical payload.
 No paid product operation is registered in phase 0, so configuring the key does
 not start model calls. The asynchronous execution service, quotas, restart
 recovery and Responses client are prepared for the later registered operations.
@@ -962,6 +969,7 @@ Every primary flow is a standalone page (no single-page hacks, no overlapping la
 | Home | `src/public/home.html` · `src/public/home.css` · `src/public/home.js` | Authenticated dashboard with onboarding, cycle, weekly metrics, tracker, and quote hero |
 | Calendar | `src/public/calendar.html` · `src/public/calendar.css` · `src/public/calendar.js` | Monthly training calendar and deduplicating Excel import |
 | Solicitar Treinos / Request Workouts | `src/public/ai-coach.html` · `src/public/ai-coach.css` · `src/public/ai-coach.js` | Local prompt builder for weekly training requests |
+| Training memory | `src/public/training-memory.html` · `src/public/training-memory.css` · `src/public/training-memory.js` | Consolidated canonical context, source correction links and optional prior experience; separate own admin debug |
 | Cycles | `src/public/cycles.html` · `src/public/cycles.css` · `src/public/cycles.js` | Training-cycle management |
 | Shoes | `src/public/shoes.html` · `src/public/shoes.css` · `src/public/shoes.js` | Shoe rotation and mileage management |
 | Administration → Users | `src/public/admin-users.html` · `src/public/admin-users.css` · `src/public/admin-users.js` | Admin-only account list with create, edit, activate/deactivate, and delete |
@@ -996,7 +1004,7 @@ Shared code lives in `src/public/shared/`: `shell.js` injects the authenticated 
 ├── Dockerfile                  # Production image (node:24-alpine)
 ├── docker-compose.yml          # ZimaOS production deployment
 ├── docs/                       # Product and import compatibility documentation
-├── .env.example                # Optional Unsplash key template
+├── .env.example                # Optional backend runtime configuration
 ├── package.json                # Version and npm scripts
 └── package-lock.json           # Locked dependency tree
 ```

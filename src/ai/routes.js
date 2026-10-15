@@ -1,13 +1,13 @@
 'use strict';
 const {
   AiError,
-  readMemory,
   saveProfile,
-  saveEntry,
-  deleteEntry,
+  readLegacyMemory,
+  activeOwner,
   exactKeys,
 } = require('./memory');
 const { buildContext } = require('./context');
+const { memoryOverview } = require('./overview');
 const { readAiConfig } = require('./config');
 const { createExecutionService } = require('./executions');
 function registerAiRoutes(
@@ -30,22 +30,11 @@ function registerAiRoutes(
           .send({ error: 'aiInternalError', errors: ['aiInternalError'] });
       }
     });
-  route('get', '/api/ai/memory', (r) => readMemory(db, r.user.id));
+  route('get', '/api/ai/memory', (r) => memoryOverview(db, r.user.id, config));
   route('put', '/api/ai/profile', (r) => saveProfile(db, r.user.id, r.body));
-  route('post', '/api/ai/memory', (r) => saveEntry(db, r.user.id, r.body));
-  route('put', '/api/ai/memory/:id', (r) => {
-    if (
-      !Number.isInteger(r.body?.expected_version) ||
-      r.body.expected_version < 1
-    )
-      throw new AiError('invalidVersion');
-    return saveEntry(db, r.user.id, r.body, r.params.id);
-  });
-  route('delete', '/api/ai/memory/:id', (r, reply) => {
-    deleteEntry(db, r.user.id, r.params.id);
-    return reply.code(204).send();
-  });
+  route('get', '/api/ai/memory/legacy', (r) => readLegacyMemory(db, r.user.id));
   route('get', '/api/ai/context', (r) => {
+    if (activeOwner(db, r.user.id).role !== 'admin') throw new AiError('adminRequired', 403);
     exactKeys(r.query, ['purpose', 'resource_id', 'as_of']);
     return buildContext(db, r.user.id, {
       purpose: r.query.purpose,

@@ -10,8 +10,7 @@ const {
   date,
   readMemory,
   saveProfile,
-  saveEntry,
-  deleteEntry,
+  readLegacyMemory,
   hash,
 } = require('../src/ai/memory');
 const {
@@ -81,6 +80,9 @@ function service(fixture, options = {}) {
     now: () => '2026-10-14T12:00:00.000Z',
     ...options,
   });
+}
+function archiveEntry(db, userId, body, id = 'legacy', now = '2026-01-01T00:00:00Z') {
+  db.prepare('INSERT INTO ai_memory(id,user_id,kind,authority,text,observed_on,state,source_json,updated_at) VALUES (?,?,?,?,?,?,?,?,?)').run(id,userId,body.kind,'user_report',body.text,body.observed_on,body.state,'{}',now);
 }
 function failure(fn, code) {
   assert.throws(fn, (e) => e instanceof AiError && e.code === code);
@@ -204,8 +206,8 @@ test('idempotent migration preserves data; account deletion removes private AI d
       .get().n,
     1,
   );
-  saveProfile(db, 1, { fields: { goals: 'Synthetic' }, expected_version: 0 });
-  saveEntry(db, 1, {
+  saveProfile(db, 1, { fields: { experience: 'Synthetic' }, expected_version: 0 });
+  archiveEntry(db, 1, {
     kind: 'restriction',
     text: 'Synthetic',
     observed_on: '2026-01-01',
@@ -217,86 +219,34 @@ test('idempotent migration preserves data; account deletion removes private AI d
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM ai_memory').get().n, 0);
   db.close();
 });
-test('profile and observations validate ownership, concurrency, dates, source and states', () => {
+test('optional experience validates ownership, concurrency and preserves archived data without selecting it', () => {
   const { db } = setup();
   assert.equal(readMemory(db, 1).profile.version, 0);
-  assert.deepEqual(readMemory(db, 1).entries, []);
+  assert.deepEqual(readLegacyMemory(db, 1), { fields: {}, entries: [] });
   failure(() => activeOwner(db, 99), 'accountUnavailable');
   db.prepare('UPDATE users SET is_active=0 WHERE id=3').run();
   failure(() => activeOwner(db, 3), 'accountUnavailable');
-  for (const value of [null, [], { bad: 1 }])
-    failure(() => exactKeys(value, []), 'invalidFields');
-  for (const value of [null, '2026-02-30', 'bad'])
-    failure(() => date(value), 'invalidDate');
-  failure(
-    () => saveProfile(db, 1, { fields: { goals: 'x' }, expected_version: -1 }),
-    'invalidVersion',
-  );
-  failure(
-    () =>
-      saveProfile(db, 1, { fields: { arbitrary: 'x' }, expected_version: 0 }),
-    'invalidFields',
-  );
-  for (const value of [3, 'x'.repeat(2001)])
-    failure(
-      () =>
-        saveProfile(db, 1, { fields: { goals: value }, expected_version: 0 }),
-      'invalidText',
-    );
-  const saved = saveProfile(
-    db,
-    1,
-    {
-      fields: { experience: ' Synthetic experience ', goals: '' },
-      expected_version: 0,
-    },
-    '2026-10-01T00:00:00Z',
-  );
-  assert.equal(saved.profile.fields.experience.value, 'Synthetic experience');
-  assert.equal(saved.profile.fields.goals.value, '');
-  failure(
-    () =>
-      saveProfile(db, 1, { fields: { goals: 'changed' }, expected_version: 0 }),
-    'memoryConflict',
-  );
-  saveProfile(db, 1, { fields: { goals: 'Updated' }, expected_version: 1 });
-  const entry = {
-    kind: 'restriction',
-    text: 'Synthetic discomfort',
-    observed_on: '2026-01-01',
-    state: 'current',
-    expected_version: 0,
-  };
-  for (const changed of [
-    { kind: 'recommendation' },
-    { state: 'invented' },
-    { expected_version: -1 },
-  ])
-    failure(() => saveEntry(db, 1, { ...entry, ...changed }), 'invalidEntry');
-  failure(() => saveEntry(db, 1, { ...entry, text: ' ' }), 'invalidText');
-  saveEntry(db, 1, entry, 'entry', '2026-01-01T00:00:00Z');
-  failure(() => saveEntry(db, 2, entry, 'entry'), 'memoryNotFound');
-  failure(
-    () => saveEntry(db, 1, { ...entry, expected_version: 1 }, 'missing'),
-    'memoryNotFound',
-  );
-  failure(() => saveEntry(db, 1, entry, 'entry'), 'memoryConflict');
-  const updated = saveEntry(
-    db,
-    1,
-    { ...entry, state: 'resolved', expected_version: 1 },
-    'entry',
-    '2026-10-01T00:00:00Z',
-  );
-  assert.equal(updated.entries[0].version, 2);
-  assert.equal(updated.entries[0].source.originalObservedOn, '2026-01-01');
-  saveEntry(db, 1, { ...entry, kind: 'action' }, 'action');
-  assert.equal(
-    readMemory(db, 1).entries.find((e) => e.id === 'action').authority,
-    'user_action',
-  );
-  failure(() => deleteEntry(db, 2, 'entry'), 'memoryNotFound');
-  deleteEntry(db, 1, 'entry');
+  for (const value of [null, [], { bad: 1 }]) failure(() => exactKeys(value, []), 'invalidFields');
+  for (const value of [null, '2026-02-30', 'bad']) failure(() => date(value), 'invalidDate');
+  failure(() => saveProfile(db, 1, { fields: { experience: 'x' }, expected_version: -1 }), 'invalidVersion');
+  for (const key of ['goals','preferences','restrictions','arbitrary']) failure(() => saveProfile(db,1,{fields:{[key]:'x'},expected_version:0}), 'invalidFields');
+  for (const value of [3, 'x'.repeat(2001)]) failure(() => saveProfile(db,1,{fields:{experience:value},expected_version:0}), 'invalidText');
+  const old = { goals: { value: 'Archived duplicate', authority:'user_report' }, restrictions:{value:'Old note'} };
+  db.prepare("INSERT INTO ai_profiles VALUES (?,?,1,'2026-01-01')").run(1, JSON.stringify(old));
+  archiveEntry(db,1,{kind:'restriction',text:'Old discomfort',observed_on:'2026-01-01',state:'current'});
+  const saved = saveProfile(db,1,{fields:{experience:' Synthetic experience '},expected_version:1},'2026-10-01T00:00:00Z');
+  assert.equal(saved.profile.fields.experience.value,'Synthetic experience');
+  assert.deepEqual(Object.keys(saved.profile.fields),['experience']);
+  failure(() => saveProfile(db,1,{fields:{experience:'changed'},expected_version:1}),'memoryConflict');
+  const archived = readLegacyMemory(db,1);
+  assert.deepEqual(archived.fields,old);
+  assert.equal(archived.entries[0].text,'Old discomfort');
+  assert.deepEqual(readLegacyMemory(db,2),{fields:{},entries:[]});
+  initializeDatabase(db); initializeDatabase(db);
+  assert.deepEqual(readLegacyMemory(db,1),archived);
+  saveProfile(db,1,{fields:{experience:''},expected_version:2});
+  assert.equal(readMemory(db,1).profile.fields.experience.value,'');
+  assert.deepEqual(readLegacyMemory(db,1),archived);
   db.close();
 });
 test('context preserves temporal authority, canonical aggregates, gaps and comparable source references', () => {
@@ -309,7 +259,7 @@ test('context preserves temporal authority, canonical aggregates, gaps and compa
   };
   const first = buildContext(db, 1, args);
   assert.equal(first.recent.length, 1);
-  assert.ok(first.gaps.includes('Athlete profile has not been supplied.'));
+  assert.ok(first.gaps.includes('Optional prior running experience has not been supplied.'));
   assert.equal(first.resource.actual.fit_distance, 5);
   assert.equal(first.resource.report.authority, 'user_report');
   assert.equal(contextIsCurrent(db, 1, first, config), true);
@@ -324,7 +274,7 @@ test('context preserves temporal authority, canonical aggregates, gaps and compa
   db.prepare(
     "INSERT INTO trainings(user_id,dia,tipo,completed,fit_distance,fit_duration,feedback_rpe) VALUES (1,'2026-09-10','Run',1,12,'1:10:00',4),(1,'2026-09-11','Run',1,NULL,'bad',NULL),(1,'2026-09-12','Run',0,NULL,NULL,NULL),(1,'2025-01-01','Long run',1,15,'1:30:00',3)",
   ).run();
-  saveEntry(
+  archiveEntry(
     db,
     1,
     {
@@ -336,7 +286,7 @@ test('context preserves temporal authority, canonical aggregates, gaps and compa
     },
     'current',
   );
-  saveEntry(
+  archiveEntry(
     db,
     1,
     {
@@ -348,7 +298,7 @@ test('context preserves temporal authority, canonical aggregates, gaps and compa
     },
     'resolved',
   );
-  saveEntry(
+  archiveEntry(
     db,
     1,
     {
@@ -361,9 +311,9 @@ test('context preserves temporal authority, canonical aggregates, gaps and compa
     'milestone',
   );
   const context = buildContext(db, 1, args);
-  assert.equal(context.currentRestrictions.length, 1);
-  assert.equal(context.historicalEntries.length, 1);
-  assert.equal(context.events.length, 1);
+  assert.equal(context.currentRestrictions, undefined);
+  assert.equal(context.historicalEntries, undefined);
+  assert.equal(context.events, undefined);
   assert.equal(context.weekly[0].distanceKm, 12);
   assert.equal(context.weekly[0].planned, 3);
   assert.equal(context.weekly[0].completed, 2);
@@ -377,8 +327,8 @@ test('context preserves temporal authority, canonical aggregates, gaps and compa
   );
   assert.equal(contextIsCurrent(db, 1, first, config), false);
   assert.equal(
-    buildContext(db, 2, { ...args, resourceId: 2 }).currentRestrictions.length,
-    0,
+    buildContext(db, 2, { ...args, resourceId: 2 }).currentRestrictions,
+    undefined,
   );
   assert.notEqual(
     context.hash,
@@ -411,22 +361,11 @@ test('context preserves temporal authority, canonical aggregates, gaps and compa
   assert.equal(contextIsCurrent(db, 1, context, config), false);
   db.close();
 });
-test('context selection has explicit omissions and fails rather than truncating critical restrictions', () => {
+test('context selection has explicit omissions and fails rather than truncating critical cycle context', () => {
   const { db, config } = setup();
   config.limits.AI_CONTEXT_TOKENS = 5000;
   for (let i = 0; i < 25; i++)
-    saveEntry(
-      db,
-      1,
-      {
-        kind: 'milestone',
-        text: 'Synthetic '.repeat(100),
-        observed_on: '2026-01-01',
-        state: 'current',
-        expected_version: 0,
-      },
-      `event-${i}`,
-    );
+    db.prepare("INSERT INTO trainings(user_id,dia,tipo,detalhes) VALUES (1,'2026-10-12','Run',?)").run('Synthetic '.repeat(100));
   const ctx = buildContext(db, 1, {
     purpose: 'cycle',
     asOf: '2026-10-14',
@@ -910,18 +849,7 @@ test('context includes saved availability, shoes and unknown RPE without inventi
 test('context refuses a budget exhausted by omission metadata rather than dropping critical provenance', () => {
   const { db, config } = setup();
   for (let i = 0; i < 3; i++)
-    saveEntry(
-      db,
-      1,
-      {
-        kind: 'milestone',
-        text: 'Synthetic '.repeat(200),
-        observed_on: '2026-01-01',
-        state: 'current',
-        expected_version: 0,
-      },
-      `large-${i}`,
-    );
+    db.prepare("INSERT INTO trainings(user_id,dia,tipo,detalhes) VALUES (1,'2026-10-12','Run',?)").run('Synthetic '.repeat(200));
   let refused = false;
   for (let budget = 1000; budget < 2500; budget += 10) {
     config.limits.AI_CONTEXT_TOKENS = budget;
@@ -1121,7 +1049,7 @@ test('queued reservation expires across UTC days and disabled configuration bloc
   }
 });
 
-test('configuration rejects multiline credentials and profile limitations remain unconfirmed reports', () => {
+test('configuration rejects multiline credentials and redundant profile fields are rejected', () => {
   assert.ok(
     readAiConfig({
       AI_ENABLED: 'true',
@@ -1129,11 +1057,7 @@ test('configuration rejects multiline credentials and profile limitations remain
     }).errors.includes('OPENAI_API_KEY'),
   );
   const { db } = setup();
-  const memory = saveProfile(db, 1, {
-    fields: { restrictions: 'Synthetic reported limitation' },
-    expected_version: 0,
-  });
-  assert.equal(memory.profile.fields.restrictions.state, 'unconfirmed');
+  failure(() => saveProfile(db, 1, { fields: { restrictions: 'Legacy' }, expected_version: 0 }), 'invalidFields');
   assert.equal(
     macro.translateDistance('en-US', 'custom synthetic distance'),
     'custom synthetic distance',
@@ -1256,7 +1180,8 @@ test('evaluation corpus yields different traceable evidence for the same session
     asOf: '2026-10-14',
     config: fixture.config,
   });
-  assert.equal(context.events[0].authority, 'recommendation');
+  assert.equal(context.events, undefined);
+  assert.equal(JSON.stringify(context).includes('Synthetic rest suggestion'), false);
   assert.equal(context.resource.actual.completed, true);
   assert.equal(context.resource.actual.fit_distance, 5);
   assert.ok(corpus.rubric.authority);

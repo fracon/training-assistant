@@ -2,7 +2,7 @@
 
 const { AiError, hash, readMemory, activeOwner, date } = require('./memory');
 const { readAiConfig } = require('./config');
-const POLICY_VERSION = 'training-context-v1';
+const POLICY_VERSION = 'training-context-v2';
 const TRAINING_COLUMNS = `id, dia, tipo, treino, detalhes, fc_alvo, rpe, completed, training_cycle_id,
   fit_distance, fit_duration, fit_avg_pace, fit_avg_hr, fit_max_hr, fit_elevation_gain, fit_calories,
   result_data_source, tenis, periodo, location, previsao, observacoes, feedback_shoe, feedback_shoe_id, has_smartwatch, fit_summary_json, feedback_rpe, feedback_notas, feedback_weather, feedback_terrain,
@@ -110,9 +110,9 @@ function buildContext(
   const aggregateFrom = dayOffset(asOf, 1 - config.limits.AI_HISTORY_WEEKS * 7);
   const rows = db
     .prepare(
-      `SELECT ${TRAINING_COLUMNS} FROM trainings WHERE user_id = ? AND dia <= ? ORDER BY dia DESC,id DESC`,
+      `SELECT ${TRAINING_COLUMNS} FROM trainings WHERE user_id = ? AND dia >= ? AND dia <= ? ORDER BY dia DESC,id DESC`,
     )
-    .all(userId, asOf);
+    .all(userId, aggregateFrom, asOf);
   const recent = rows.filter((row) => row.dia >= detailedFrom);
   const aggregateRows = rows.filter(
     (row) => row.dia >= aggregateFrom && row.dia < detailedFrom,
@@ -172,12 +172,9 @@ function buildContext(
       aggregateTo: dayOffset(detailedFrom, -1),
       plannedTo: dayOffset(asOf, config.limits.AI_DETAIL_DAYS),
     },
-    profile: memory.profile,
-    currentRestrictions: [],
-    historicalEntries: [],
+    profile: { fields: memory.profile.fields },
     cycle: null,
     resource: null,
-    events: [],
     upcoming: [],
     recent: [],
     weekly: [],
@@ -192,23 +189,13 @@ function buildContext(
     totalsPolicy:
       'Detailed and aggregated periods are disjoint. Comparable sessions are references, never additional totals.',
   };
-  addReference({ type: 'profile', id: 'self', version: hash(memory.profile) });
+  addReference({ type: 'profile', id: 'self', version: hash(context.profile) });
   addReference({
     type: 'preferences',
     id: 'self',
     version: hash(context.preferences),
   });
   // Mandatory context is never silently truncated; a too-small budget refuses dispatch.
-  const mandatory = memory.entries.filter(
-    (e) =>
-      e.kind === 'restriction' &&
-      e.state === 'current' &&
-      e.observed_on <= asOf,
-  );
-  for (const entry of mandatory) {
-    context.currentRestrictions.push(entry);
-    addReference(source('memory', entry));
-  }
   if (cycle) {
     context.cycle = {
       ...cycle,
@@ -228,9 +215,10 @@ function buildContext(
   }
   if (!cycle)
     context.gaps.push('No active cycle or applied AI planning version.');
-  if (!rows.length) context.gaps.push('No recorded training history.');
+  if (!db.prepare('SELECT 1 FROM trainings WHERE user_id = ? AND dia <= ? LIMIT 1').get(userId, asOf))
+    context.gaps.push('No recorded training history.');
   if (!Object.keys(memory.profile.fields).length)
-    context.gaps.push('Athlete profile has not been supplied.');
+    context.gaps.push('Optional prior running experience has not been supplied.');
   const budget = config.limits.AI_CONTEXT_TOKENS;
   if (tokenBound(context) > budget)
     throw new AiError('criticalContextTooLarge', 413);
@@ -248,10 +236,6 @@ function buildContext(
       });
     }
   }
-  for (const entry of memory.entries.filter((e) => !mandatory.includes(e)))
-    select(entry.state === 'resolved' ? 'historicalEntries' : 'events', entry, [
-      source('memory', entry),
-    ]);
   const availability = db
     .prepare(
       'SELECT day_key,can_train,available_periods,available_minutes,location,updated_at FROM ai_coach_availability WHERE user_id = ? ORDER BY day_key',
@@ -278,18 +262,12 @@ function buildContext(
       { ...g, averageRpe: g.rpeCount ? g.rpeSum / g.rpeCount : null },
       g.sources,
     );
-  const older = rows.filter(
-    (row) => row.dia < detailedFrom && row.completed === 1,
-  );
-  const ranked = older
-    .filter((row) =>
-      purpose === 'analysis'
-        ? row.tipo === resource?.tipo
-        : purpose === 'workouts'
-          ? /long|longo|longão/i.test(row.tipo)
-          : true,
-    )
-    .slice(0, 3);
+  // Retrieve at most three comparable records, including older history; never load the entire log.
+  const ranked = db.prepare(`SELECT ${TRAINING_COLUMNS} FROM trainings
+    WHERE user_id = ? AND dia < ? AND completed = 1
+      AND (? != 'analysis' OR tipo = ?)
+      AND (? != 'workouts' OR lower(tipo) LIKE '%long%' OR lower(tipo) LIKE '%longo%' OR lower(tipo) LIKE '%longão%')
+    ORDER BY dia DESC,id DESC LIMIT 3`).all(userId, detailedFrom, purpose, resource?.tipo ?? null, purpose);
   for (const row of ranked)
     select(
       'comparables',
@@ -311,7 +289,7 @@ function buildContext(
     )
     .all(userId))
     select('shoes', row, [source('shoe', row)]);
-  const olderCount = rows.filter((row) => row.dia < aggregateFrom).length;
+  const olderCount = db.prepare('SELECT COUNT(*) AS n FROM trainings WHERE user_id = ? AND dia < ?').get(userId, aggregateFrom).n;
   if (olderCount)
     context.omissions.push({
       type: 'training',
@@ -330,6 +308,7 @@ function buildContext(
 }
 function contextIsCurrent(db, userId, context, config) {
   try {
+    if (context.policyVersion !== POLICY_VERSION) return false;
     return (
       buildContext(db, userId, {
         purpose: context.purpose,

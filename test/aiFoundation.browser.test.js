@@ -28,12 +28,15 @@ test('training memory Chrome PT/EN desktop/mobile, ownership, keyboard, loading,
   assert.ok(chrome);
   const db = createDatabase({ filename: ':memory:' });
   db.prepare(
-    "INSERT INTO users(id,email,password_hash,role) VALUES (1,'synthetic-admin@example.invalid','synthetic','admin'),(2,'synthetic-user@example.invalid','synthetic','user')",
+    "INSERT INTO users(id,email,password_hash,role) VALUES (1,'synthetic-admin@example.invalid','synthetic','admin'),(2,'synthetic-user@example.invalid','synthetic','user'),(3,'synthetic-new-admin@example.invalid','synthetic','admin')",
   ).run();
   db.prepare(
     "INSERT INTO training_cycles(id,user_id,objective) VALUES ('cycle',1,'Synthetic cycle')",
   ).run();
-  const tokens = [createSession(db, 1).token, createSession(db, 2).token];
+  db.prepare("UPDATE training_cycles SET status='active',primary_goal='Synthetic goal',target_date='2026-12-01',start_date='2026-09-01' WHERE id='cycle'").run();
+  db.prepare("INSERT INTO trainings(user_id,dia,tipo,treino,completed,feedback_rpe,feedback_pain,feedback_has_pain,fit_distance,fit_duration,result_data_source) VALUES (1,date('now'),'Run','Synthetic recent run',1,3,'Synthetic dated discomfort','yes',5,'30:00','manual'),(1,date('now','-30 days'),'Run','Synthetic older run',1,4,NULL,NULL,10,'1:00:00','manual'),(1,date('now','+2 days'),'Run','Synthetic planned run',0,NULL,NULL,NULL,NULL,NULL,'none')").run();
+  db.prepare("INSERT INTO ai_coach_availability(user_id,day_key,can_train,available_periods,available_minutes,location) VALUES (1,'monday',1,?,60,'Synthetic locality')").run(JSON.stringify(['before_08']));
+  const tokens = [1,2,3].map((id)=>createSession(db,id).token);
   const app = await buildServer({ db, sessionCookieSecure: false });
   const origin = await app.listen({ port: 0, host: '127.0.0.1' });
   const debugPort = await freePort();
@@ -147,7 +150,7 @@ test('training memory Chrome PT/EN desktop/mobile, ownership, keyboard, loading,
       true,
     );
     await evaluate(
-      "document.getElementById('goals').value='Synthetic edit during failed load';document.getElementById('goals').dispatchEvent(new Event('input',{bubbles:true}))",
+      "document.getElementById('experience').value='Synthetic edit during failed load';document.getElementById('experience').dispatchEvent(new Event('input',{bubbles:true}))",
     );
     await command('Network.setBlockedURLs', {
       urls: ['*unpkg.com*', '*fonts.googleapis.com*', '*fonts.gstatic.com*'],
@@ -158,7 +161,7 @@ test('training memory Chrome PT/EN desktop/mobile, ownership, keyboard, loading,
       "document.getElementById('profileForm')?.querySelector('[type=submit]')?.disabled===false",
     );
     assert.equal(
-      await evaluate("document.getElementById('goals').value"),
+      await evaluate("document.getElementById('experience').value"),
       'Synthetic edit during failed load',
     );
     for (const language of ['en-US', 'pt-BR']) {
@@ -176,30 +179,10 @@ test('training memory Chrome PT/EN desktop/mobile, ownership, keyboard, loading,
       await waitFor(
         `!document.getElementById('profileForm').querySelector('[type=submit]').disabled`,
       );
-      await evaluate(`document.getElementById('entryForm').requestSubmit()`);
-      assert.equal(await evaluate('document.activeElement.id'), 'entryText');
-      assert.equal(
-        await evaluate(
-          `document.getElementById('entryText').getAttribute('aria-invalid')`,
-        ),
-        'true',
-      );
-      assert.ok(
-        (
-          await evaluate(`document.getElementById('memoryError').textContent`)
-        ).includes(language === 'pt-BR' ? 'descrição' : 'description'),
-      );
-      await evaluate(
-        `document.getElementById('entryText').value='Synthetic reported restriction ${language}';document.getElementById('entryDate').click();document.querySelector('#entryDate').parentElement.querySelector('[data-date="2026-10-01"]').click();document.getElementById('entryForm').requestSubmit()`,
-      );
-      await waitFor(
-        `document.querySelectorAll('.memory-entry').length===${language === 'pt-BR' ? 2 : 1}`,
-      );
-      assert.equal(await evaluate('document.activeElement.id'), 'entryText');
-      const styles = await evaluate(
-        `(()=>{const input=getComputedStyle(document.getElementById('entryDate'));const label=getComputedStyle(document.querySelector('label[for=entryDate]'));const btn=getComputedStyle(document.querySelector('#profileForm button'));return {input:{font:input.fontFamily,border:input.borderRadius,background:input.backgroundColor},label:label.fontWeight,button:{font:btn.fontFamily,radius:btn.borderRadius},overflow:document.documentElement.scrollWidth>innerWidth}})()`,
-      );
-      assert.equal(styles.overflow, false);
+      assert.equal(await evaluate("document.querySelectorAll('#goals,#preferences,#restrictions,#entryForm').length"),0);
+      assert.ok((await evaluate("document.getElementById('memoryOverview').textContent")).includes('Synthetic cycle'));
+      assert.ok((await evaluate("document.getElementById('memoryOverview').textContent")).includes(language==='pt-BR'?'Desconforto relatado: Sim':'Discomfort reported: Yes'));
+      assert.equal(await evaluate("document.querySelector('#memoryOverview a').getAttribute('href')"),'/cycles.html');
       for (const width of [1280, 390]) {
         await command('Emulation.setDeviceMetricsOverride', {
           width,
@@ -246,7 +229,7 @@ test('training memory Chrome PT/EN desktop/mobile, ownership, keyboard, loading,
     assert.ok(
       (
         await evaluate(`document.getElementById('contextPreview').value`)
-      ).includes('training-context-v1'),
+      ).includes('training-context-v2'),
     );
     assert.equal(
       requests.some((r) => r.url.includes('api.openai.com')),
@@ -257,13 +240,13 @@ test('training memory Chrome PT/EN desktop/mobile, ownership, keyboard, loading,
       'UPDATE ai_profiles SET version=version+1 WHERE user_id=1',
     ).run();
     await evaluate(
-      `document.getElementById('goals').value='Synthetic preserved edit';document.getElementById('profileForm').requestSubmit()`,
+      `document.getElementById('experience').value='Synthetic preserved edit';document.getElementById('experience').dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('profileForm').requestSubmit()`,
     );
     await waitFor(
       `document.getElementById('memoryError').classList.contains('hidden')===false`,
     );
     assert.equal(
-      await evaluate(`document.getElementById('goals').value`),
+      await evaluate(`document.getElementById('experience').value`),
       'Synthetic preserved edit',
     );
     await evaluate(`document.getElementById('reloadMemory').click()`);
@@ -271,229 +254,47 @@ test('training memory Chrome PT/EN desktop/mobile, ownership, keyboard, loading,
       `!document.getElementById('profileForm').querySelector('[type=submit]').disabled`,
     );
     assert.equal(
-      await evaluate(`document.getElementById('goals').value`),
+      await evaluate(`document.getElementById('experience').value`),
       'Synthetic preserved edit',
     );
-    await evaluate(`document.getElementById('entryText').focus()`);
-    await command('Input.dispatchKeyEvent', {
-      type: 'keyDown',
-      key: 'Tab',
-      code: 'Tab',
-      windowsVirtualKeyCode: 9,
-    });
-    await command('Input.dispatchKeyEvent', {
-      type: 'keyUp',
-      key: 'Tab',
-      code: 'Tab',
-      windowsVirtualKeyCode: 9,
-    });
-    assert.equal(await evaluate('document.activeElement.id'), 'entryDate');
-    assert.equal(
-      await evaluate(`document.activeElement.matches(':focus-visible')`),
-      true,
-    );
-    await command('Input.dispatchKeyEvent', {
-      type: 'keyDown',
-      key: 'Enter',
-      code: 'Enter',
-      windowsVirtualKeyCode: 13,
-    });
-    await command('Input.dispatchKeyEvent', {
-      type: 'keyUp',
-      key: 'Enter',
-      code: 'Enter',
-      windowsVirtualKeyCode: 13,
-    });
-    assert.equal(
-      await evaluate(
-        "document.getElementById('entryDate').getAttribute('aria-expanded')",
-      ),
-      'true',
-    );
-    assert.equal(
-      await evaluate("document.activeElement.matches('[data-date]')"),
-      true,
-    );
-    await command('Input.dispatchKeyEvent', {
-      type: 'keyDown',
-      key: 'ArrowRight',
-      code: 'ArrowRight',
-      windowsVirtualKeyCode: 39,
-    });
-    await command('Input.dispatchKeyEvent', {
-      type: 'keyUp',
-      key: 'ArrowRight',
-      code: 'ArrowRight',
-      windowsVirtualKeyCode: 39,
-    });
-    await command('Input.dispatchKeyEvent', {
-      type: 'keyDown',
-      key: 'Escape',
-      code: 'Escape',
-      windowsVirtualKeyCode: 27,
-    });
-    await command('Input.dispatchKeyEvent', {
-      type: 'keyUp',
-      key: 'Escape',
-      code: 'Escape',
-      windowsVirtualKeyCode: 27,
-    });
-    assert.equal(await evaluate('document.activeElement.id'), 'entryDate');
-    assert.equal(
-      await evaluate(
-        "document.getElementById('entryDate').getAttribute('aria-expanded')",
-      ),
-      'false',
-    );
-    // Month navigation must keep keyboard focus on replacement toolbar nodes.
-    await command('Input.dispatchKeyEvent', {
-      type: 'keyDown',
-      key: 'Enter',
-      code: 'Enter',
-      windowsVirtualKeyCode: 13,
-    });
-    await command('Input.dispatchKeyEvent', {
-      type: 'keyUp',
-      key: 'Enter',
-      code: 'Enter',
-      windowsVirtualKeyCode: 13,
-    });
-    for (const action of ['previous', 'next']) {
-      await evaluate(
-        `document.querySelector('#entryDate-calendar-popup [data-calendar-action="${action}"]').focus()`,
-      );
-      await command('Input.dispatchKeyEvent', {
-        type: 'keyDown',
-        key: 'Enter',
-        code: 'Enter',
-        windowsVirtualKeyCode: 13,
-      });
-      await command('Input.dispatchKeyEvent', {
-        type: 'keyUp',
-        key: 'Enter',
-        code: 'Enter',
-        windowsVirtualKeyCode: 13,
-      });
-      assert.equal(
-        await evaluate('document.activeElement.dataset.calendarAction'),
-        action,
-      );
-      assert.equal(
-        await evaluate(
-          "document.getElementById('entryDate').getAttribute('aria-expanded')",
-        ),
-        'true',
-      );
-    }
-    await command('Input.dispatchKeyEvent', {
-      type: 'keyDown',
-      key: 'Escape',
-      code: 'Escape',
-      windowsVirtualKeyCode: 27,
-    });
-    await command('Input.dispatchKeyEvent', {
-      type: 'keyUp',
-      key: 'Escape',
-      code: 'Escape',
-      windowsVirtualKeyCode: 27,
-    });
-    assert.equal(await evaluate('document.activeElement.id'), 'entryDate');
-    await evaluate(`document.querySelector('.memory-entry button').click()`);
-    assert.equal(await evaluate('document.activeElement.id'), 'entryText');
-    const editedId = await evaluate(
-      "document.querySelector('.memory-entry button').dataset.entryId",
-    );
-    db.prepare('UPDATE ai_memory SET version=version+1 WHERE id=?').run(
-      editedId,
-    );
-    await evaluate(
-      "document.getElementById('entryText').value='Synthetic preserved observation edit';document.getElementById('entryForm').requestSubmit()",
-    );
-    await waitFor(
-      "!document.getElementById('memoryError').classList.contains('hidden')",
-    );
-    assert.equal(
-      await evaluate("document.getElementById('entryText').value"),
-      'Synthetic preserved observation edit',
-    );
-    await evaluate("document.getElementById('reloadMemory').click()");
-    await waitFor(
-      "!document.getElementById('entryForm').querySelector('[type=submit]').disabled",
-    );
-    assert.equal(
-      await evaluate("document.getElementById('entryText').value"),
-      'Synthetic preserved observation edit',
-    );
-    await evaluate("document.getElementById('entryForm').requestSubmit()");
-    await waitFor("document.getElementById('entryText').value===''");
-    assert.equal(
-      db.prepare('SELECT text FROM ai_memory WHERE id=?').get(editedId).text,
-      'Synthetic preserved observation edit',
-    );
-    await evaluate(
-      `document.querySelector('[data-entry-id="${editedId}"][data-action="edit"]').click();document.getElementById('entryText').value='Synthetic edit after deletion'`,
-    );
-    db.prepare('DELETE FROM ai_memory WHERE id=?').run(editedId);
-    await evaluate("document.getElementById('reloadMemory').click()");
+    await evaluate("document.getElementById('profileForm').requestSubmit()");
     await waitFor("!document.getElementById('reloadMemory').disabled");
-    assert.equal(
-      await evaluate(
-        "document.getElementById('entryForm').querySelector('[type=submit]').disabled",
-      ),
-      true,
-    );
-    assert.equal(
-      await evaluate("document.getElementById('entryText').value"),
-      'Synthetic edit after deletion',
-    );
-    await evaluate("document.getElementById('cancelEntry').click()");
-    assert.equal(
-      await evaluate(
-        "document.getElementById('entryForm').querySelector('[type=submit]').disabled",
-      ),
-      false,
-    );
-    // Hold the real DELETE request and move focus while the refresh is pending.
-    await command('Fetch.enable', {
-      patterns: [
-        { urlPattern: origin + '/api/ai/memory/*', requestStage: 'Request' },
-      ],
+    assert.equal(db.prepare('SELECT fields_json FROM ai_profiles WHERE user_id=1').get().fields_json.includes('Synthetic preserved edit'),true);
+    // Canonical corrections appear on refresh, without another personal form.
+    db.prepare("UPDATE training_cycles SET primary_goal='Synthetic corrected goal' WHERE id='cycle'").run();
+    await evaluate("document.getElementById('reloadMemory').click()");
+    await waitFor("document.getElementById('memoryOverview').textContent.includes('Synthetic corrected goal')");
+    // Hold a real reload and move focus: the refresh must not take focus away.
+    await command('Fetch.enable',{patterns:[{urlPattern:origin+'/api/ai/memory',requestStage:'Request'}]});
+    const pausedLoad = new Promise((resolve) => {
+      const handler = (event) => { const message=JSON.parse(event.data); if(message.method==='Fetch.requestPaused') {socket.removeEventListener('message',handler);resolve(message.params.requestId);} };
+      socket.addEventListener('message',handler);
     });
-    const pausedDelete = new Promise((resolve, reject) => {
-      const timeout = setTimeout(
-        () => reject(new Error('DELETE request was not intercepted')),
-        8000,
-      );
-      const handler = (event) => {
-        const message = JSON.parse(event.data);
-        if (
-          message.method === 'Fetch.requestPaused' &&
-          message.params.request.method === 'DELETE'
-        ) {
-          clearTimeout(timeout);
-          socket.removeEventListener('message', handler);
-          resolve(message.params.requestId);
-        }
-      };
-      socket.addEventListener('message', handler);
-    });
-    await evaluate(
-      "document.querySelector('.memory-entry [data-action=delete]').click()",
-    );
-    await waitFor("!!document.getElementById('confirmOkBtn')");
-    await evaluate("document.getElementById('confirmOkBtn').click()");
-    const deleteRequestId = await pausedDelete;
-    await evaluate("document.getElementById('goals').focus()");
-    await command('Fetch.continueRequest', { requestId: deleteRequestId });
+    await evaluate("document.getElementById('reloadMemory').click()");
+    const requestId=await pausedLoad;
+    await evaluate("document.getElementById('experience').focus()");
+    await command('Fetch.continueRequest',{requestId});
     await waitFor("!document.getElementById('reloadMemory').disabled");
     await command('Fetch.disable');
-    assert.equal(
-      await evaluate("document.querySelectorAll('.memory-entry').length"),
-      0,
-    );
-    assert.equal(await evaluate('document.activeElement.id'), 'goals');
+    assert.equal(await evaluate('document.activeElement.id'),'experience');
+    // The remaining admin DatePicker keeps the reviewed keyboard/month behavior.
+    await evaluate("document.getElementById('previewPurpose').value='workouts';document.getElementById('previewPurpose').dispatchEvent(new Event('change'));document.getElementById('previewDate').focus()");
+    const key = async (key,code,windowsVirtualKeyCode) => {for(const type of ['keyDown','keyUp']) await command('Input.dispatchKeyEvent',{type,key,code,windowsVirtualKeyCode});};
+    await key('Enter','Enter',13);
+    assert.equal(await evaluate("document.getElementById('previewDate').getAttribute('aria-expanded')"),'true');
+    for(const action of ['previous','next']) {
+      await evaluate(`document.querySelector('#previewDate-calendar-popup [data-calendar-action="${action}"]').focus()`);
+      await key('Enter','Enter',13);
+      assert.equal(await evaluate('document.activeElement.dataset.calendarAction'),action);
+    }
+    await key('Escape','Escape',27);
+    assert.equal(await evaluate('document.activeElement.id'),'previewDate');
+    // Source links remain keyboard controls and point at established pages.
+    await evaluate("document.querySelector('#memoryOverview a').focus()");
+    await key('Tab','Tab',9);
+    assert.equal(await evaluate("document.activeElement.tagName"),'A');
     const memoryStyles = await evaluate(
-      `(()=>{const i=getComputedStyle(document.querySelector('#entryDate'));const b=getComputedStyle(document.querySelector('#profileForm button'));return {inputFont:i.fontFamily,inputRadius:i.borderRadius,buttonRadius:b.borderRadius}})()`,
+      `(()=>{const i=getComputedStyle(document.querySelector('#previewDate'));const b=getComputedStyle(document.querySelector('#profileForm button'));return {inputFont:i.fontFamily,inputRadius:i.borderRadius,buttonRadius:b.borderRadius}})()`,
     );
     await command('Page.navigate', { url: origin + '/shoes.html' });
     await waitFor(
@@ -523,9 +324,55 @@ test('training memory Chrome PT/EN desktop/mobile, ownership, keyboard, loading,
       null,
     );
     assert.equal(
-      await evaluate(`document.querySelectorAll('.memory-entry').length`),
-      0,
+      await evaluate(`document.querySelectorAll('#memoryOverview section').length`),
+      6,
     );
+    for(const language of ['en-US','pt-BR']) {
+      await evaluate(`document.querySelector(".lang-switch [data-lang='${language}']").click()`);
+      await waitFor(`document.documentElement.lang==='${language}'`);
+      for(const width of [1280,390]) {
+        await command('Emulation.setDeviceMetricsOverride',{width,height:900,deviceScaleFactor:1,mobile:width===390});
+        assert.equal(await evaluate('document.documentElement.scrollWidth>innerWidth'),false);
+        assert.equal(await evaluate("document.querySelector('#memoryOverview a').getAttribute('href')"),'/cycles.html');
+        const shot=await command('Page.captureScreenshot',{format:'png'});
+        writeFileSync(`/tmp/kinesis-memory-empty-${language}-${width}.png`,Buffer.from(shot.data,'base64'));
+      }
+    }
+    db.prepare("INSERT INTO training_cycles(id,user_id,objective,status) VALUES ('user-cycle',2,'Own regular cycle','active')").run();
+    db.prepare("INSERT INTO trainings(user_id,dia,tipo,treino,feedback_pain,feedback_has_pain) VALUES (2,date('now'),'Run','Own regular session','Dated synthetic discomfort','yes')").run();
+    await evaluate("document.getElementById('reloadMemory').click()");
+    await waitFor("document.getElementById('memoryOverview').textContent.includes('Dated synthetic discomfort')");
+    assert.equal(await evaluate("document.getElementById('memoryOverview').textContent.includes('Synthetic corrected goal')"),false);
+    db.prepare("UPDATE trainings SET feedback_has_pain='no',feedback_pain='' WHERE user_id=2").run();
+    await evaluate("document.getElementById('reloadMemory').click()");
+    await waitFor("document.getElementById('memoryOverview').textContent.includes('Desconforto relatado: Não')");
+    // Check focus identity across translation when several links share the same URL.
+    await evaluate("document.querySelector('[data-memory-link=weekly]').focus()");
+    await evaluate(`document.querySelector(".lang-switch [data-lang='en-US']").click()`);
+    await waitFor("document.documentElement.lang==='en-US'");
+    // Changing language through a pointer legitimately focuses its trigger;
+    // dispatching the event with the source link focused preserves that link.
+    await evaluate("document.querySelector('[data-memory-link=weekly]').focus();document.dispatchEvent(new Event('app:languagechange'))");
+    assert.equal(await evaluate('document.activeElement.dataset.memoryLink'),'weekly');
+    for(const roleCase of ['regular-history','admin-empty']) {
+      if(roleCase==='admin-empty') {
+        await command('Network.setCookie',{name:SESSION_COOKIE_NAME,value:tokens[2],url:origin,httpOnly:true});
+        await command('Page.navigate',{url:origin+'/training-memory.html'});
+        await waitFor("document.getElementById('profileForm')?.querySelector('[type=submit]')?.disabled===false");
+      }
+      for(const language of ['en-US','pt-BR']) {
+        await evaluate(`document.querySelector(".lang-switch [data-lang='${language}']").click()`);
+        await waitFor(`document.documentElement.lang==='${language}'`);
+        for(const width of [1280,390]) {
+          await command('Emulation.setDeviceMetricsOverride',{width,height:900,deviceScaleFactor:1,mobile:width===390});
+          assert.equal(await evaluate('document.documentElement.scrollWidth>innerWidth'),false);
+          assert.equal(await evaluate("!!document.getElementById('memoryDebug')"),roleCase==='admin-empty');
+          const shot=await command('Page.captureScreenshot',{format:'png'});
+          writeFileSync(`/tmp/kinesis-memory-${roleCase}-${language}-${width}.png`,Buffer.from(shot.data,'base64'));
+        }
+      }
+    }
+    assert.equal(requests.some((r)=>r.url.includes('api.openai.com')),false);
   } finally {
     socket?.close();
     process.kill('SIGTERM');

@@ -1,13 +1,15 @@
 import {
   initShell,
   getShellI18n,
-  showConfirm,
+  getUserPreferences,
   showShellToast,
 } from './shared/shell.js';
 import { requestJson } from './shared/api.js';
 import { translate } from './shared/i18n.js';
 import { formatDate } from './shared/date.js';
 import { createDatePicker } from './shared/datepicker.js';
+import { formatDistance, formatPaceFromMetric } from './shared/units.js';
+import { BREATHING_LABEL_KEYS, MUSCLE_LABEL_KEYS, ENERGY_LABEL_KEYS } from './shared/analysis-prompts.js';
 import { copyPromptText } from './shared/workout-prompts.js';
 
 async function initMemory() {
@@ -16,10 +18,7 @@ async function initMemory() {
   const $ = (id) => document.getElementById(id);
   const i18n = getShellI18n();
   const t = (key) => translate(i18n.messages, `memory.${key}`);
-  const fields = ['experience', 'goals', 'preferences', 'restrictions'];
-  const picker = createDatePicker($('entryDate'), {
-    getLanguage: () => i18n.language,
-  });
+  const fields = ['experience'];
   const previewPicker =
     user.role === 'admin'
       ? createDatePicker($('previewDate'), { getLanguage: () => i18n.language })
@@ -28,8 +27,6 @@ async function initMemory() {
   for (const field of fields)
     $(field).addEventListener('input', () => dirty.add(field));
   let memory = null;
-  let editing = null;
-  let editingMissing = false;
   let busy = false;
   let resources = null;
   let loaded = false;
@@ -40,12 +37,7 @@ async function initMemory() {
   else $('memoryDebug').hidden = false;
   function controls() {
     $('profileForm').querySelector('[type=submit]').disabled = !loaded || busy;
-    $('entryForm').querySelector('[type=submit]').disabled =
-      !loaded || busy || editingMissing;
     $('reloadMemory').disabled = busy;
-    $('cancelEntry').disabled = busy;
-    for (const button of $('memoryEntries').querySelectorAll('button'))
-      button.disabled = busy;
     if (user.role === 'admin')
       $('previewForm').querySelector('[type=submit]').disabled =
         !resources || busy;
@@ -56,6 +48,7 @@ async function initMemory() {
       code && t(`errors.${code}`) !== `memory.errors.${code}`
         ? `errors.${code}`
         : 'errors.generic';
+    $('memoryStatus').textContent = '';
     const message = t(errorKey);
     $('memoryError').textContent = message;
     $('memoryError').classList.remove('hidden');
@@ -69,105 +62,95 @@ async function initMemory() {
       input.removeAttribute('aria-describedby');
     }
   }
-  function renderEntries() {
-    const focused = $('memoryEntries').contains(document.activeElement)
-      ? {
-          id: document.activeElement.dataset.entryId,
-          action: document.activeElement.dataset.action,
-        }
-      : null;
-    $('memoryEntries').replaceChildren();
-    if (!memory.entries.length) {
+  function renderOverview() {
+    const root = $('memoryOverview');
+    const focusedKey = root.contains(document.activeElement) ? document.activeElement.dataset.memoryLink : null;
+    root.replaceChildren();
+    const date = (value) => value ? formatDate(value.slice(0, 10), i18n.language) : t('unknown');
+    const paragraph = (parent, value, hint = false) => {
       const p = document.createElement('p');
-      p.className = 'field-hint';
-      p.textContent = t('empty');
-      $('memoryEntries').append(p);
+      p.textContent = value;
+      if (hint) p.className = 'field-hint';
+      parent.append(p);
+    };
+    const link = (parent, href, label, key) => {
+      const a = document.createElement('a'); a.className = 'btn-secondary'; a.dataset.memoryLink = key; a.href = href; a.textContent = label; parent.append(a);
+    };
+    const section = (key, origin, href) => {
+      const card = document.createElement('section'); card.className = 'shoe-card memory-section memory-entry';
+      const h = document.createElement('h2'); h.textContent = t(key); card.append(h);
+      paragraph(card, t(origin), true);
+      link(card, href, t('correctSource'), key);
+      root.append(card); return card;
+    };
+    const cycle = section('cycle', 'cycleOrigin', '/cycles.html');
+    if (memory.cycle) {
+      for (const [key, value] of [['objective', memory.cycle.objective], ['primaryGoal', memory.cycle.primaryGoal], ['secondaryGoal', memory.cycle.secondaryGoal], ['otherEvents', memory.cycle.otherEvents]])
+        if (value) paragraph(cycle, `${translate(i18n.messages, `cycles.${key}`)}: ${value}`);
+      paragraph(cycle, `${t('period')}: ${date(memory.cycle.startDate)} → ${date(memory.cycle.targetDate)}`, true);
+      paragraph(cycle, `${t('updated')}: ${date(memory.cycle.updatedAt)}`, true);
+    } else paragraph(cycle, t('cycleEmpty'));
+    const availability = section('availability', 'availabilityOrigin', '/ai-coach.html');
+    if (!memory.availability.length) paragraph(availability, t('availabilityEmpty'));
+    if (memory.availability.length > 0 && memory.availability.length < 7) paragraph(availability, t('availabilityIncomplete'));
+    for (const row of memory.availability) {
+      const periods = row.periods.map((period) => translate(i18n.messages, `aiCoach.periods.${period}`)).join(', ');
+      const day = translate(i18n.messages, `aiCoach.days.${row.day}`);
+      paragraph(availability, `${day}: ${row.canTrain ? `${periods} · ${row.minutes} ${t('minutesMax')} · ${row.location}` : t('unavailable')}`);
+      if (row.periods.length > 1) paragraph(availability, t('availabilityReview'), true);
+      paragraph(availability, `${t('updated')}: ${date(row.updatedAt)}`, true);
     }
-    for (const entry of memory.entries) {
-      const card = document.createElement('article');
-      card.className = 'shoe-card memory-entry';
-      const title = document.createElement('h3');
-      title.textContent = `${t(`kinds.${entry.kind}`)} · ${t(`states.${entry.state}`)}`;
-      const content = document.createElement('p');
-      content.textContent = entry.text;
-      const source = document.createElement('p');
-      source.className = 'field-hint';
-      source.textContent = `${t(`authorities.${entry.authority}`)} · ${formatDate(entry.observed_on, i18n.language)} · ${t('updated')}: ${formatDate(entry.updated_at.slice(0, 10), i18n.language)}`;
-      card.append(title, content, source);
-      if (['user_report', 'user_action'].includes(entry.authority)) {
-        const actions = document.createElement('div');
-        actions.className = 'form-actions';
-        const edit = document.createElement('button');
-        edit.type = 'button';
-        edit.dataset.entryId = entry.id;
-        edit.dataset.action = 'edit';
-        edit.className = 'btn-secondary';
-        edit.textContent = t('edit');
-        edit.addEventListener('click', () => {
-          editing = entry;
-          editingMissing = false;
-          $('entryKind').value = entry.kind;
-          $('entryText').value = entry.text;
-          picker.setValue(entry.observed_on);
-          $('entryState').value = entry.state;
-          controls();
-          $('entryText').focus();
-        });
-        const remove = document.createElement('button');
-        remove.type = 'button';
-        remove.dataset.entryId = entry.id;
-        remove.dataset.action = 'delete';
-        remove.className = 'btn-secondary';
-        remove.textContent = t('delete');
-        remove.addEventListener('click', async () => {
-          if (
-            !(await showConfirm({
-              title: t('delete'),
-              message: t('deleteConfirm'),
-              confirmLabel: t('delete'),
-              cancelLabel: t('cancel'),
-            }))
-          )
-            return;
-          await mutate(async () => {
-            await requestJson(
-              `/api/ai/memory/${encodeURIComponent(entry.id)}`,
-              null,
-              'DELETE',
-            );
-            memory = await requestJson('/api/ai/memory', undefined, 'GET');
-            const restoreFocus =
-              document.activeElement === remove ||
-              document.activeElement === document.body;
-            if (editing?.id === entry.id) resetEntry();
-            renderEntries();
-            if (restoreFocus) $('cancelEntry').focus();
-          });
-        });
-        actions.append(edit, remove);
-        card.append(actions);
+    for (const [key, rows] of [['recent', memory.recent], ['upcoming', memory.upcoming], ['comparables', memory.comparables]]) {
+      const card = section(key, 'sessionOrigin', '/calendar.html');
+      if (key !== 'comparables') paragraph(card, key === 'recent'
+        ? `${date(memory.ranges.detailedFrom)} → ${date(memory.asOf)}`
+        : `${date(memory.asOf)} → ${date(memory.ranges.plannedTo)}`, true);
+      if (!rows.length) paragraph(card, t('sessionsEmpty'));
+      for (const row of rows) {
+        const article = document.createElement('article');
+        paragraph(article, `${date(row.date)} · ${row.planned.treino || row.planned.tipo || t('unknown')}`);
+        if (row.planned.detalhes) paragraph(article, row.planned.detalhes);
+        const actual = row.actual;
+        paragraph(article, actual.completed ? t('completed') : t('planned'), true);
+        const metrics = [];
+        if (actual.fit_distance !== null) metrics.push(formatDistance(actual.fit_distance, getUserPreferences().distance_unit));
+        if (actual.fit_duration) metrics.push(actual.fit_duration);
+        if (actual.fit_avg_pace) metrics.push(formatPaceFromMetric(actual.fit_avg_pace, getUserPreferences().distance_unit));
+        if (metrics.length) paragraph(article, metrics.join(' · '));
+        for (const [field, label, unit] of [['fit_avg_hr', 'session.manualAvgHr', 'bpm'], ['fit_max_hr', 'session.manualMaxHr', 'bpm'], ['fit_elevation_gain', 'session.manualElevation', ''], ['fit_calories', 'session.resultCalories', 'kcal']])
+          if (actual[field] != null) paragraph(article, `${translate(i18n.messages, label)}: ${actual[field]} ${unit}`);
+        const report = row.report;
+        for (const field of ['feedback_rpe', 'feedback_notas', 'feedback_breathing', 'feedback_muscle', 'feedback_energy', 'feedback_pain'])
+          if (report[field] != null && report[field] !== '') {
+            const labels = { feedback_breathing: BREATHING_LABEL_KEYS, feedback_muscle: MUSCLE_LABEL_KEYS, feedback_energy: ENERGY_LABEL_KEYS };
+            const key = labels[field]?.[report[field]];
+            const value = key ? translate(i18n.messages, key) : report[field];
+            paragraph(article, `${t(`feedback.${field}`)}: ${value}`);
+          }
+        if (report.feedback_has_pain === 'yes' || report.feedback_has_pain === 'no')
+          paragraph(article, `${t('feedback.feedback_has_pain')}: ${t(report.feedback_has_pain)}`);
+        paragraph(article, `${t('sessionOrigin')} · ${date(row.date)}`, true);
+        link(article, row.href, t('openSession'), `${key}:${row.href}`); card.append(article);
       }
-      $('memoryEntries').append(card);
     }
-    if (focused)
-      [...$('memoryEntries').querySelectorAll('button')]
-        .find(
-          (button) =>
-            button.dataset.entryId === focused.id &&
-            button.dataset.action === focused.action,
-        )
-        ?.focus();
-    const updated = memory.profile.updatedAt;
+    const weekly = section('weekly', 'weeklyOrigin', '/calendar.html');
+    paragraph(weekly, `${date(memory.ranges.aggregateFrom)} → ${date(memory.ranges.aggregateTo)}`, true);
+    if (!memory.weekly.length) paragraph(weekly, t('aggregatesEmpty'));
+    for (const row of memory.weekly) {
+      paragraph(weekly, `${date(row.weekStart)} · ${row.completed}/${row.planned} ${t('completedCount')} · ${formatDistance(row.distanceKm, getUserPreferences().distance_unit)} · ${Math.round(row.durationSeconds / 60)} ${t('minutes')}`);
+      if (row.missingResults) paragraph(weekly, `${t('missingResults')}: ${row.missingResults}`, true);
+      if (row.averageRpe !== null) paragraph(weekly, `RPE: ${row.averageRpe.toFixed(1)}`);
+    }
+    paragraph(root, t('temporalHint'), true);
+    paragraph(root, t('selectionHint'), true);
+    if (memory.selectionLimited) paragraph(root, t('selectionLimited'), true);
+    $('legacyNotice').hidden = !memory.legacyAvailable;
+    const updated = memory.profile.fields.experience?.updatedAt;
     $('profileSource').textContent = updated
-      ? `${t('authorities.user_report')} · ${t('updated')}: ${formatDate(updated.slice(0, 10), i18n.language)}`
+      ? `${t('authorities.user_report')} · ${t('updated')}: ${date(updated)}`
       : t('profileEmpty');
-    controls();
-  }
-  function resetEntry() {
-    editing = null;
-    editingMissing = false;
-    $('entryForm').reset();
-    picker.setValue('');
+    $('memoryStatus').textContent = `${t('asOf')}: ${date(memory.asOf)}`;
+    if (focusedKey) [...root.querySelectorAll('a')].find((a) => a.dataset.memoryLink === focusedKey)?.focus();
     controls();
   }
   async function mutate(action) {
@@ -185,28 +168,19 @@ async function initMemory() {
       controls();
     }
   }
-  async function load(initial = false) {
+  async function load() {
     if (busy) return;
     busy = true;
     controls();
     clearError();
+    $('memoryStatus').textContent = t('loading');
     try {
-      const populate = initial || !loaded;
       memory = await requestJson('/api/ai/memory', undefined, 'GET');
-      if (editing) {
-        const refreshed = memory.entries.find(
-          (entry) => entry.id === editing.id,
-        );
-        editingMissing = !refreshed;
-        if (refreshed) editing = refreshed;
-        else error({ codes: ['memoryNotFound'] });
-      }
       loaded = true;
-      if (populate)
-        for (const field of fields)
+      for (const field of fields)
           if (!dirty.has(field))
             $(field).value = memory.profile.fields[field]?.value || '';
-      renderEntries();
+      renderOverview();
     } catch (e) {
       error(e);
     } finally {
@@ -214,78 +188,24 @@ async function initMemory() {
       controls();
     }
   }
-  $('reloadMemory').addEventListener('click', () => load(false));
+  $('reloadMemory').addEventListener('click', () => load());
   $('profileForm').addEventListener('submit', (event) => {
     event.preventDefault();
     if (!loaded) return;
     mutate(async () => {
-      memory = await requestJson(
+      const submitted = $('experience').value;
+      const saved = await requestJson(
         '/api/ai/profile',
         {
-          fields: Object.fromEntries(fields.map((key) => [key, $(key).value])),
+          fields: { experience: submitted },
           expected_version: memory.profile.version,
         },
         'PUT',
       );
-      renderEntries();
+      memory.profile = saved.profile;
+      if ($('experience').value === submitted) dirty.delete('experience');
+      renderOverview();
     });
-  });
-  $('entryForm').addEventListener('submit', (event) => {
-    event.preventDefault();
-    if (!loaded) return;
-    if (!$('entryText').value.trim() || !picker.getValue()) {
-      clearError();
-      const input = !$('entryText').value.trim()
-        ? $('entryText')
-        : $('entryDate');
-      input.setAttribute('aria-invalid', 'true');
-      input.setAttribute('aria-describedby', 'memoryError');
-      errorKey = 'errors.required';
-      $('memoryError').textContent = t(errorKey);
-      $('memoryError').classList.remove('hidden');
-      input.focus();
-      return;
-    }
-    mutate(async () => {
-      const snapshot = JSON.stringify({
-        kind: $('entryKind').value,
-        text: $('entryText').value,
-        date: picker.getValue(),
-        state: $('entryState').value,
-      });
-      memory = await requestJson(
-        editing
-          ? `/api/ai/memory/${encodeURIComponent(editing.id)}`
-          : '/api/ai/memory',
-        {
-          kind: $('entryKind').value,
-          text: $('entryText').value,
-          observed_on: picker.getValue(),
-          state: $('entryState').value,
-          expected_version: editing?.version || 0,
-        },
-        editing ? 'PUT' : 'POST',
-      );
-      const unchanged =
-        snapshot ===
-        JSON.stringify({
-          kind: $('entryKind').value,
-          text: $('entryText').value,
-          date: picker.getValue(),
-          state: $('entryState').value,
-        });
-      const focusBelongsToForm =
-        $('entryForm').contains(document.activeElement) ||
-        document.activeElement === document.body;
-      if (unchanged) resetEntry();
-      renderEntries();
-      if (unchanged && focusBelongsToForm) $('entryText').focus();
-    });
-  });
-  $('cancelEntry').addEventListener('click', () => {
-    resetEntry();
-    clearError();
-    $('entryText').focus();
   });
   if (user.role === 'admin') {
     function renderResources() {
@@ -381,14 +301,14 @@ async function initMemory() {
     }
     controls();
   }
+  document.addEventListener('kinesis:preferences-changed', () => { if (memory) renderOverview(); });
   document.addEventListener('app:languagechange', () => {
-    picker.refresh();
     previewPicker?.refresh();
-    if (memory) renderEntries();
+    if (memory) renderOverview();
     if (errorKey) $('memoryError').textContent = t(errorKey);
     refreshResources();
     debugLabels.forEach((update) => update());
   });
-  await load(true);
+  await load();
 }
 if (typeof document !== 'undefined') initMemory();

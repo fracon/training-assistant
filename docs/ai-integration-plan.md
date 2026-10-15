@@ -1,9 +1,9 @@
 # Kinesis AI integration plan
 
-Status: documentation integrated via PR #66; phase 0 implemented on branch
+Status: documentation integrated via PRs #66 and #68; phase 0 implemented on branch
 `feat/ai-phase-0-foundation`, validated locally, pending PR review and merge.
 Phases 1–3 remain planned. This branch is not integrated into main.
-Owner-approved direction: 2026-10-14.
+Owner-approved direction: 2026-10-14; memory correction approved 2026-10-15 (#68).
 Baseline reviewed: main application version 0.19.6.
 
 This is the shared implementation contract for integrating OpenAI into Kinesis.
@@ -18,7 +18,7 @@ and documented by the implementing agent.
 
 | Phase | Issue | Dependency | Status |
 | --- | --- | --- | --- |
-| 0: API foundation and training memory | [#62](https://github.com/fracon/training-assistant/issues/62) | Documentation plan merged (#66) | Implemented in [open PR #67](https://github.com/fracon/training-assistant/pull/67); not integrated |
+| 0: API foundation and training memory | [#62](https://github.com/fracon/training-assistant/issues/62) | Documentation plan/correction merged (#66/#68) | Implemented in [open PR #67](https://github.com/fracon/training-assistant/pull/67); not integrated |
 | 1: Cycle planning | [#63](https://github.com/fracon/training-assistant/issues/63) | Phase 0 merged | Planned |
 | 2: Weekly workout requests | [#64](https://github.com/fracon/training-assistant/issues/64) | Phase 1 merged | Planned |
 | 3: Contextual workout analysis | [#65](https://github.com/fracon/training-assistant/issues/65) | Phase 2 merged | Planned |
@@ -123,8 +123,8 @@ work must not recreate its data.
 Owner correction, 2026-10-15: memory is a readable and correctable view of the
 athlete context assembled from application use, not a second profile form.
 This replaces the original requirement for manually maintained goals,
-preferences, limitations and generic dated observations. The initial phase 0
-implementation in PR #67 needs this correction before acceptance.
+preferences, limitations and generic dated observations. The revised phase 0 implementation in open PR #67 applies this correction;
+it remains subject to review and is not integrated into main.
 
 Before adding any field, inventory existing sources, their owner, update flow,
 temporal meaning and consumers. Reuse that source. Document a concrete missing
@@ -412,11 +412,19 @@ do not run the application suite without a concrete functional risk.
 
 ## Phase 0 implementation decisions on this branch
 
-The [foundation contract](ai-foundation.md) records the profile placement in the
+The [foundation contract](ai-foundation.md) records the consolidated-view placement in the
 account menu; schema/modules; deterministic source selection and explicit gaps;
 90-day opportunistic cleanup; transactional quotas and conservative cost rates;
 uncertain restart recovery; owner-only administrator debug; and synthetic prompt
-equivalence/evaluation fixtures. Native fetch implements Responses with no SDK
+equivalence/evaluation fixtures. The source inventory maps cycles (`objective`, goals, target/start dates) to
+`/cycles.html`; structured weekly availability to `/ai-coach.html`; bounded
+sessions/feedback and canonical aggregates to calendar/result screens. Only
+previous running experience uses the supplemental editor. The UI is a product
+projection of context policy `training-context-v2`, with no raw debug for ordinary
+users. Existing profile duplicate keys and generic memory rows remain in a
+read-only owner archive and are excluded from new selection. No schema deletion
+or reinterpretation occurs; exact historical execution snapshots stay intact.
+Native fetch implements Responses with no SDK
 retry side effects. There are no registered paid product adapters in phase 0.
 Functional cycle, weekly and analysis adapters remain in their planned phases.
 Mock tests are separate from real model quality/access evaluation.

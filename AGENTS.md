@@ -13,7 +13,7 @@ rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
 home dashboard, contextual training result, calendar, Solicitar Treinos
-(`ai-coach`), cycles, shoes,
+(`ai-coach`), cycles, shoes, training memory,
 and the admin-only administration page. Shared frontend responsibilities live under
 `src/public/shared/`: `shell.js` injects navigation and account controls;
 `onboarding.js` contains onboarding state/presentation helpers;
@@ -495,7 +495,7 @@ will find every issue.
 ## OpenAI foundation and future phases
 
 The approved [plan](docs/ai-integration-plan.md) is integrated in main through
-PR #66. Phase 0 (#62) is implemented on `feat/ai-phase-0-foundation`
+PRs #66/#68. Phase 0 (#62) is implemented on `feat/ai-phase-0-foundation`
 ([open PR #67](https://github.com/fracon/training-assistant/pull/67)), pending
 owner review and merge; do not call it integrated until its PR merges.
 Phases 1–3 remain planned and must be delivered sequentially in separate PRs.
@@ -516,21 +516,26 @@ confirm/correct/dismiss state; old analyses must not resurrect discarded
 interpretations. The exact execution payload remains separate admin-only,
 owner-scoped debug. See the plan for phase boundaries and PR #67 correction.
 
+The revised documentation is integrated via #68. The runtime correction is
+available only in the open PR #67 branch until merged. The view and paid-context
+selection share `src/ai/context.js`; `overview.js` projects readable owner data
+without payload/hash/configuration. `memory.js` accepts only optional experience
+with optimistic versions. Do not restore generic manual memory CRUD.
 
-The owner-approved phased direction is documented in
-[docs/ai-integration-plan.md](docs/ai-integration-plan.md), tracked by issues
-#62-#65. It is planned work, not current runtime behavior. Read that plan in
-full before implementing any phase; update README, AGENTS, the plan and affected
-configuration/API/privacy documentation in every implementation PR. Preserve
-existing prompt wording and all other GOLDEN RULES.
-
-- `src/ai/` owns the idempotent schema migration, editable owner-scoped memory,
-  deterministic context policy, reusable prompt service, runtime configuration,
-  Responses client, durable execution/usage ledger and routes. Personal memory
-  UI uses the shared shell, forms, DatePicker and PT/EN dictionaries.
-- Public memory writes cannot impersonate an AI interpretation/recommendation.
-  Explicit states/source/dates distinguish current, resolved and unconfirmed
-  observations. Missing history is not rest; missing symptoms are not resolution.
+- `src/ai/` owns the idempotent schema migration, optional experience,
+  deterministic context policy, reusable prompts, runtime configuration,
+  Responses client, durable execution/usage ledger and routes. The UI reuses
+  shell, shoe cards, shared forms/buttons, DatePicker (admin preview) and PT/EN.
+- Schema is retained for compatibility: old profile keys and `ai_memory` rows
+  are an inactive read-only archive, exposed only to their owner through
+  `/api/ai/memory/legacy`. Experience saves preserve those keys. New contexts
+  never select that archive, including old interpretations/recommendations.
+  Snapshots are immutable; context policy v2 makes old execution results stale
+  without rewriting them. No semantic migration or silent deletion is allowed.
+- Facts, dated reports, calculations, future interpretations/recommendations
+  and performed actions remain distinct. Interpretation confirmation/correction/
+  dismissal belongs to later producers, not phase 0. Corrected/discarded content
+  must not reenter active context through old responses.
 - Preserve byte-identical external PT/EN prompts. Pure browser/backend generators
   live in `shared/workout-prompts.js`, `shared/analysis-prompts.js` and
   `src/ai/{prompts,markdownGenerator}.js`; legacy imports remain compatible.
@@ -555,12 +560,12 @@ existing prompt wording and all other GOLDEN RULES.
   can dispatch untouched queued work after revalidation. Local cancellation
   makes no claim about provider billing. Global anonymous consumption survives
   account deletion; owned AI data cascades. Cleanup defaults to 90 days and runs
-  at startup/authenticated AI access; profile/observations last until corrected,
-  explicitly deleted or account deletion.
+  at startup/authenticated AI access. Experience is editable; inactive archived
+  records remain until account deletion. Owned records cascade on deletion.
 - Runtime-only Compose environment wiring is authorized under golden rule 3;
   never bake the key into Dockerfile/image or change ports/privileges/CI.
 - Tests: `aiFoundation.test.js`, `aiFoundation.routes.test.js`,
-  `aiFoundation.browser.test.js`, existing prompt/result/coach/shell/onboarding
+  `aiFoundation.browser.test.js`, `aiMemoryOverview.test.js`, existing prompt/result/coach/shell/onboarding
   suites, then npm test and 100% c8 in all four metrics. Use synthetic fixtures
   and mocked providers. Model-quality evaluation is separate, controlled and
   cost-recorded; a mock is never evidence of real model quality or access.

@@ -9,33 +9,22 @@
 </head>
 <body>
 <main id="appView"><section class="shoes-page memory-page">
-  <header class="shoes-header"><div class="shoes-header-text"><h1 data-i18n="memory.title">Training memory</h1><p class="shoes-subtitle" data-i18n="memory.subtitle">Keep your goals, experience and observations up to date.</p></div></header>
+  <header class="shoes-header"><div class="shoes-header-text"><h1 data-i18n="memory.title">Training memory</h1><p class="shoes-subtitle" data-i18n="memory.subtitle">Context from your cycles, availability and dated feedback.</p></div></header>
   <p class="field-hint" data-i18n="memory.boundary">This information is saved locally. AI planning and analysis are not available yet.</p>
   <div id="memoryError" class="form-error hidden" role="alert" tabindex="-1"></div>
   <button id="reloadMemory" class="btn-secondary" type="button" data-i18n="memory.reload">Reload saved information</button>
+  <p id="memoryStatus" class="field-hint" role="status" aria-live="polite"></p>
+  <div id="memoryOverview"></div>
   <section class="shoe-card memory-section" aria-labelledby="profileHeading">
-    <h2 id="profileHeading" data-i18n="memory.profile">Athlete profile</h2>
+    <h2 id="profileHeading" data-i18n="memory.profile">Previous running experience</h2>
+    <p class="field-hint" id="experienceHint" data-i18n="memory.experienceHint">Optional background from before your Kinesis history.</p>
     <form id="profileForm" novalidate>
-      <div class="field"><label class="field-label" for="experience" data-i18n="memory.experience">Running experience</label><textarea class="prompt-textarea" id="experience" maxlength="2000" rows="3"></textarea></div>
-      <div class="field"><label class="field-label" for="goals" data-i18n="memory.goals">Goals</label><textarea class="prompt-textarea" id="goals" maxlength="2000" rows="3"></textarea></div>
-      <div class="field"><label class="field-label" for="preferences" data-i18n="memory.preferences">Training preferences</label><textarea class="prompt-textarea" id="preferences" maxlength="2000" rows="3"></textarea></div>
-      <div class="field"><label class="field-label" for="restrictions" data-i18n="memory.restrictions">Reported limitations</label><textarea class="prompt-textarea" id="restrictions" maxlength="2000" rows="3"></textarea><p class="field-hint" data-i18n="memory.restrictionsHint">Use dated observations below to track whether a restriction is current, resolved or needs an update.</p></div>
+      <div class="field"><label class="field-label" for="experience" data-i18n="memory.experience">Previous running experience (optional)</label><textarea class="prompt-textarea" id="experience" maxlength="2000" rows="3" aria-describedby="experienceHint"></textarea></div>
       <p id="profileSource" class="field-hint"></p>
-      <div class="form-actions"><button class="btn-primary" type="submit" disabled data-i18n="memory.saveProfile">Save profile</button></div>
+      <div class="form-actions"><button class="btn-primary" type="submit" disabled data-i18n="memory.saveProfile">Save experience</button></div>
     </form>
   </section>
-  <section class="shoe-card memory-section" aria-labelledby="entryHeading">
-    <h2 id="entryHeading" tabindex="-1" data-i18n="memory.observations">Dated observations</h2>
-    <p class="field-hint" data-i18n="memory.temporalHint">An old observation stays in its saved state until you update it. Missing feedback does not mean recovery or rest.</p>
-    <form id="entryForm" novalidate>
-      <div class="field"><label class="field-label" for="entryKind" data-i18n="memory.kind">Type</label><select id="entryKind"><option value="restriction" data-i18n="memory.kinds.restriction">Restriction</option><option value="milestone" data-i18n="memory.kinds.milestone">Milestone / target event</option><option value="interruption" data-i18n="memory.kinds.interruption">Training interruption</option><option value="action" data-i18n="memory.kinds.action">Reported action performed</option></select></div>
-      <div class="field"><label class="field-label" for="entryText" data-i18n="memory.description">Description</label><textarea class="prompt-textarea" id="entryText" rows="3" maxlength="2000" required></textarea></div>
-      <div class="field"><label class="field-label" for="entryDate" data-i18n="memory.observedOn">Observation / effective date</label><input id="entryDate" type="text" required autocomplete="off"></div>
-      <div class="field"><label class="field-label" for="entryState" data-i18n="memory.state">State</label><select id="entryState"><option value="current" data-i18n="memory.states.current">Current</option><option value="resolved" data-i18n="memory.states.resolved">Resolved</option><option value="unconfirmed" data-i18n="memory.states.unconfirmed">Needs an update</option></select></div>
-      <div class="form-actions"><button id="cancelEntry" class="btn-secondary" type="button" data-i18n="memory.newEntry">New observation</button><button class="btn-primary" type="submit" disabled data-i18n="memory.saveEntry">Save observation</button></div>
-    </form>
-    <div id="memoryEntries" class="shoe-list"></div>
-  </section>
+  <p id="legacyNotice" class="field-hint" hidden><span data-i18n="memory.legacyNotice">Previous supplemental records are archived and excluded from new contexts.</span> <a class="btn-secondary" href="/api/ai/memory/legacy" download="kinesis-legacy-memory.json" data-i18n="memory.legacyDownload">Download my archived records</a></p>
   <section id="memoryDebug" class="shoe-card memory-section" hidden aria-labelledby="debugHeading">
     <h2 id="debugHeading" data-i18n="memory.debug">Administrator: own prompt and context</h2>
     <p class="field-hint" data-i18n="memory.debugHint">Free local preview. No model request is sent.</p>
