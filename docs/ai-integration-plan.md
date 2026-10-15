@@ -424,6 +424,8 @@ projection of context policy `training-context-v2`, with no raw debug for ordina
 users. Existing profile duplicate keys and generic memory rows remain in a
 read-only owner archive and are excluded from new selection. No schema deletion
 or reinterpretation occurs; exact historical execution snapshots stay intact.
+Weekly comparable lookup uses both type and workout-name long-run labels.
+The 429 retry/cancellation decision is atomic, including reservation settlement.
 Native fetch implements Responses with no SDK
 retry side effects. There are no registered paid product adapters in phase 0.
 Functional cycle, weekly and analysis adapters remain in their planned phases.

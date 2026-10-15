@@ -143,7 +143,8 @@ aggregates use saved kilometres, duration and completion; unknown values remain
 explicit gaps. They are not inferred as zero-valued workouts or rest days.
 The ordinary history query is limited to the configured date window. A separate
 query retrieves at most three older completed comparable sessions, selected by saved training
-type for analysis, long-run type for weekly context, or recency for cycle context.
+type for analysis, long-run labels in either `tipo` or `treino` for weekly
+context (including imported `tipo=Corrida`, `treino=Longão`), or recency for cycle context.
 Comparable records state whether they also belong to an aggregate, so their
 metrics must never be added again. The execution also records versions of every preserved-prompt dependency,
 including records omitted from detailed model context. Source IDs/content
@@ -219,7 +220,9 @@ A local idempotency key returns the original execution even after reload;
 changing its request parameters returns 409. Cancellation cannot free a running
 reservation while the call remains unresolved. Known refusals, incomplete output,
 invalid JSON and invalid domain responses are terminal and never applied.
-Only explicit 429 responses may retry (bounded by AI_RETRIES). Network failure,
+Only explicit 429 responses may retry (bounded by AI_RETRIES). Retry eligibility
+and requeue/settlement use one immediate transaction, so a concurrent local
+cancellation cannot strand an unsettled reservation or concurrency slot. Network failure,
 timeout, malformed transport output or server 5xx is uncertain and never
 replayed automatically. On restart, persisted running work becomes uncertain;
 queued work can resume after account, source and adapter checks, respecting
@@ -311,3 +314,31 @@ include explicit context-policy freshness, canonical yes/no report rendering,
 source-link focus identity and preserving edits during experience conflicts.
 Phases 1–3 and evidence/disposition-based AI interpretations remain planned;
 phase 0 is implemented in this branch and **not integrated into main**.
+
+
+### Consolidated P2 correction after review of 056d18f
+
+Both findings were reproduced with failing regressions before correction:
+
+- Weekly comparable lookup now checks the workout name (`treino`) as well as
+  the training type (`tipo`), preserving ownership, completed-only selection,
+  historical date bounds, ordering and the three-record limit. Imported
+  `Corrida` / `Longão` and `Run` / `Long run` rows are covered alongside the
+  legacy type-based representation and excluded private/incomplete/recent rows.
+- The 429 retry state read and requeue-or-settlement decision now share one
+  immediate transaction. A second SQLite connection either cancels before
+  that transaction (settled without retry), or waits until the queued retry can
+  be cancelled and settled. No network call holds this transaction. The
+  regression checks cancelled state, settlement, empty response, released
+  user/global tokens and cost, recorded attempt count, and a new reservation
+  without restarting. Unknown provider outcomes retain their existing policy.
+
+Final local gates for this corrective batch: `npm test` and
+`npm run test:coverage` each passed **1,178 tests**, zero failures/skips; all four
+required coverage metrics are **100%**. The full suite includes the existing
+real-Chrome checks and all 48 exact prompt comparisons. `git diff --check`
+passed. No UI, schema, runtime configuration, version or product-phase change
+was introduced; no paid model evaluation was performed. Earlier 1,176-test
+results above describe the preceding scope correction. This remains an open
+PR implementation, not integrated into main. No new automatic review is
+requested for this localized correction of the already reviewed contracts.

@@ -422,29 +422,32 @@ function createExecutionService({
     } catch (error) {
       const code =
         error instanceof AiError ? error.code : 'providerOutcomeUncertain';
-      const current = db
-        .prepare('SELECT state FROM ai_executions WHERE id = ?')
-        .get(id);
-      if (
-        code === 'providerRateLimited' &&
-        row.attempts <= cfg.retries &&
-        current?.state === 'running' &&
-        !stopped
-      ) {
-        db.prepare(
-          "UPDATE ai_executions SET state='queued',updated_at=? WHERE id = ? AND state='running'",
-        ).run(now(), id);
-      } else
-        finish(
-          row,
-          code === 'providerOutcomeUncertain' ? 'uncertain' : 'failed',
-          {
-            error: code,
-            knownUnbilled: ['providerRateLimited', 'providerRejected'].includes(
-              code,
-            ),
-          },
-        );
+      // Retry eligibility and cancellation settlement share one write transaction.
+      db.transaction(() => {
+        const current = db
+          .prepare('SELECT state FROM ai_executions WHERE id = ?')
+          .get(id);
+        if (
+          code === 'providerRateLimited' &&
+          row.attempts <= cfg.retries &&
+          current?.state === 'running' &&
+          !stopped
+        ) {
+          db.prepare(
+            "UPDATE ai_executions SET state='queued',updated_at=? WHERE id = ? AND state='running'",
+          ).run(now(), id);
+        } else
+          finish(
+            row,
+            code === 'providerOutcomeUncertain' ? 'uncertain' : 'failed',
+            {
+              error: code,
+              knownUnbilled: ['providerRateLimited', 'providerRejected'].includes(
+                code,
+              ),
+            },
+          );
+      }).immediate();
     }
   }
   function schedule() {

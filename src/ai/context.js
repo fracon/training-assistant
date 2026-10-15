@@ -266,7 +266,7 @@ function buildContext(
   const ranked = db.prepare(`SELECT ${TRAINING_COLUMNS} FROM trainings
     WHERE user_id = ? AND dia < ? AND completed = 1
       AND (? != 'analysis' OR tipo = ?)
-      AND (? != 'workouts' OR lower(tipo) LIKE '%long%' OR lower(tipo) LIKE '%longo%' OR lower(tipo) LIKE '%longão%')
+      AND (? != 'workouts' OR lower(tipo) LIKE '%long%' OR lower(treino) LIKE '%long%')
     ORDER BY dia DESC,id DESC LIMIT 3`).all(userId, detailedFrom, purpose, resource?.tipo ?? null, purpose);
   for (const row of ranked)
     select(

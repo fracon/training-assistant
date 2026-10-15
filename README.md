@@ -20,7 +20,9 @@ optional running experience from before Kinesis is edited here. Missing records
 remain explicit; discomfort is not a permanent restriction or a diagnosis.
 Earlier duplicate fields/observations are preserved in an owner-only downloadable
 archive and excluded from new contexts. Historical execution snapshots remain
-unchanged. Administrators have a separate section for their own free prompt
+unchanged. Weekly comparable context recognizes long-run labels in the imported
+workout name as well as the training type. Administrators have a separate section
+for their own free prompt
 preview and protected execution debug. Common users receive no technical payload.
 No paid product operation is registered in phase 0, so configuring the key does
 not start model calls. The asynchronous execution service, quotas, restart

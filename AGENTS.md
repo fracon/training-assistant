@@ -540,6 +540,8 @@ with optimistic versions. Do not restore generic manual memory CRUD.
   live in `shared/workout-prompts.js`, `shared/analysis-prompts.js` and
   `src/ai/{prompts,markdownGenerator}.js`; legacy imports remain compatible.
   The synthetic baseline captured from main addd967 is tested byte for byte.
+  Weekly comparable selection checks long-run labels in both `tipo` and `treino`,
+  since spreadsheet imports commonly store `tipo=Corrida`, `treino=Longão`.
 - Production phase 0 registers no paid adapters. Trusted backend operations in
   later phases register their versioned output adapters and domain validators;
   HTTP must never accept an arbitrary prompt/model/tool. Do not introduce
@@ -555,7 +557,10 @@ with optimistic versions. Do not restore generic manual memory CRUD.
   never keep a transaction open during network calls. Recheck account activity,
   ownership and source versions before dispatch/access/application. Deletion or
   cancellation must never recreate data or silently refund uncertain usage.
-- Explicit 429 alone may retry, within the bound. Network/timeouts/5xx/transport
+- Explicit 429 alone may retry, within the bound. Read execution state and
+  decide retry versus cancellation settlement in one immediate transaction;
+  a losing retry must never strand an unsettled cancelled reservation.
+  Network/timeouts/5xx/transport
   uncertainty and restart-interrupted calls never replay automatically. Restart
   can dispatch untouched queued work after revalidation. Local cancellation
   makes no claim about provider billing. Global anonymous consumption survives

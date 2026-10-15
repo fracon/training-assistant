@@ -1553,3 +1553,93 @@ test('cancellation prevents another SQLite connection from claiming a stale queu
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('weekly comparables recognize imported long runs in workout names with owner, completion and date bounds', () => {
+  const { db, config } = setup();
+  try {
+    db.prepare(`INSERT INTO trainings(id,user_id,dia,tipo,treino,completed) VALUES
+      (10,1,'2026-09-25','Corrida','Longão',1),
+      (11,1,'2026-09-24','Run','Long run',1),
+      (12,1,'2026-09-23','Long run','Legacy type label',1),
+      (13,1,'2026-09-22','Corrida','Longo',1),
+      (14,2,'2026-09-27','Corrida','Longão privado',1),
+      (15,1,'2026-09-27','Corrida','Longão incompleto',0),
+      (16,1,'2026-10-13','Corrida','Longão recente',1),
+      (17,1,'2026-10-16','Corrida','Longão futuro',1),
+      (18,1,'2026-09-28','Corrida','Rodagem leve',1)`).run();
+    const context = buildContext(db,1,{purpose:'workouts',asOf:'2026-10-14',config});
+    assert.deepEqual(context.comparables.map((r)=>r.source.id),['10','11','12']);
+    assert.ok(context.comparables.every((r)=>r.selectionReason==='previous_long_run'));
+    assert.ok(context.comparables.every((r)=>r.includedInAggregates));
+  } finally { db.close(); }
+});
+
+test('429 retry and cancellation arbitrate atomically across two SQLite connections without stranded reservations', async () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const os = require('node:os');
+  for (const timing of ['before-read', 'after-read']) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kinesis-ai-retry-cancel-'));
+    const db = createDatabase({filename:path.join(dir,'synthetic.sqlite')});
+    let other, s, otherService;
+    let prepare;
+    try {
+      db.prepare("INSERT INTO users(id,email,password_hash,role) VALUES (1,'synthetic@example.invalid','synthetic','admin')").run();
+      db.prepare("INSERT INTO trainings(id,user_id,dia,tipo,treino) VALUES (1,1,'2026-10-12','Run','Synthetic retry session')").run();
+      const config = readAiConfig({AI_ENABLED:'true',OPENAI_API_KEY:'synthetic-test-key'});
+      other = createDatabase({filename:path.join(dir,'synthetic.sqlite')});
+      other.pragma('busy_timeout=0');
+      otherService = service({db:other,config});
+      let execution, calls=0, attempted=false, blocked=false;
+      s=service({db,config},{client:async()=>{
+        calls++;
+        assert.equal(db.inTransaction,false);
+        if(timing==='before-read') otherService.cancel(1,execution.id);
+        throw new AiError('providerRateLimited',429);
+      }});
+      execution=s.enqueue(1,body);
+      prepare=db.prepare.bind(db);
+      db.prepare=(sql)=>{
+        const stmt=prepare(sql);
+        if(timing==='after-read' && sql==='SELECT state FROM ai_executions WHERE id = ?') {
+          const get=stmt.get.bind(stmt);
+          stmt.get=(...args)=>{
+            const row=get(...args);
+            if(!attempted) {
+              attempted=true;
+              try {otherService.cancel(1,execution.id);}
+              catch(e) {if(!/SQLITE_BUSY|SQLITE_LOCKED/.test(e.code)) throw e; blocked=true;}
+            }
+            return row;
+          };
+        }
+        return stmt;
+      };
+      await s.dispatch(execution.id);
+      db.prepare=prepare;
+      assert.equal(calls,1);
+      if(timing==='after-read') {
+        assert.equal(attempted,true);
+        // If retry owns the lock, cancellation subsequently settles its queued retry.
+        if(blocked) otherService.cancel(1,execution.id);
+      }
+      const row=db.prepare('SELECT state,settled,response_json FROM ai_executions WHERE id=?').get(execution.id);
+      assert.equal(row.state,'cancelled');
+      assert.equal(row.settled,1);
+      assert.equal(row.response_json,null);
+      assert.equal(s.usage(1)[0].tokens,0);
+      assert.equal(s.usage(1)[0].cost,0);
+      const global=db.prepare('SELECT tokens,cost,calls FROM ai_global_usage').get();
+      assert.equal(global.tokens,0);assert.equal(global.cost,0);assert.equal(global.calls,1);
+      // The reservation and concurrency slot are available without a restart.
+      assert.ok(s.enqueue(1,{...body,idempotency_key:'next-after-cancel'}).id);
+    } finally {
+      if(prepare) db.prepare=prepare;
+      if(s) await s.stop();
+      if(otherService) await otherService.stop();
+      if(other?.open) other.close();
+      if(db.open) db.close();
+      fs.rmSync(dir,{recursive:true,force:true});
+    }
+  }
+});
