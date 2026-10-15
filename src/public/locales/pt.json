@@ -968,5 +968,95 @@
       "sat": "Sáb",
       "sun": "Dom"
     }
+  },
+  "memory": {
+    "pageTitle": "Memória de treinamento - Kinesis",
+    "title": "Memória de treinamento",
+    "subtitle": "Mantenha objetivos, experiência e observações atualizados.",
+    "boundary": "Estas informações são salvas localmente. Planejamento e análise por IA ainda não estão disponíveis.",
+    "reload": "Recarregar informações salvas",
+    "profile": "Perfil do atleta",
+    "experience": "Experiência em corrida",
+    "goals": "Objetivos",
+    "preferences": "Preferências de treinamento",
+    "restrictions": "Limitações relatadas",
+    "restrictionsHint": "Use as observações datadas abaixo para acompanhar se uma restrição está atual, resolvida ou precisa de atualização.",
+    "saveProfile": "Salvar perfil",
+    "observations": "Observações datadas",
+    "temporalHint": "Uma observação antiga permanece no estado salvo até você atualizá-la. A falta de feedback não significa recuperação ou descanso.",
+    "kind": "Tipo",
+    "description": "Descrição",
+    "observedOn": "Data da observação / vigência",
+    "state": "Estado",
+    "newEntry": "Nova observação",
+    "saveEntry": "Salvar observação",
+    "empty": "Nenhuma observação registrada.",
+    "updated": "Atualizado",
+    "profileEmpty": "Perfil ainda não informado.",
+    "edit": "Editar",
+    "delete": "Excluir",
+    "deleteConfirm": "Excluir esta observação permanentemente?",
+    "cancel": "Cancelar",
+    "saved": "Informações salvas.",
+    "debug": "Administrador: próprio prompt e contexto",
+    "debugHint": "Prévia local gratuita. Nenhuma solicitação é enviada ao modelo.",
+    "purpose": "Finalidade",
+    "resource": "Ciclo / treino salvo",
+    "weekDate": "Semana iniciando na segunda-feira",
+    "preview": "Gerar prévia local",
+    "prompt": "Prompt externo",
+    "copy": "Copiar prompt",
+    "copied": "Prompt copiado.",
+    "context": "Contexto selecionado e origem",
+    "usage": "Consumo registrado",
+    "tokens": "tokens",
+    "kinds": {
+      "restriction": "Restrição",
+      "milestone": "Marco / prova-alvo",
+      "interruption": "Interrupção do treinamento",
+      "action": "Ação realizada e relatada",
+      "recommendation": "Recomendação da IA",
+      "interpretation": "Interpretação da IA"
+    },
+    "states": {
+      "current": "Atual",
+      "resolved": "Resolvida",
+      "unconfirmed": "Sem atualização"
+    },
+    "authorities": {
+      "user_report": "Relatado por você",
+      "user_action": "Ação relatada por você",
+      "recommendation": "Recomendação da IA",
+      "ai_interpretation": "Interpretação da IA"
+    },
+    "purposes": {
+      "cycle": "Ciclo",
+      "workouts": "Treinos semanais",
+      "analysis": "Análise do treino"
+    },
+    "executionStates": {
+      "queued": "Na fila",
+      "running": "Em execução",
+      "completed": "Concluída",
+      "failed": "Falhou",
+      "uncertain": "Resultado no provedor incerto",
+      "cancelled": "Cancelada localmente",
+      "outdated": "Fontes alteradas"
+    },
+    "errors": {
+      "generic": "Não foi possível concluir esta ação. Os valores digitados foram preservados. Tente novamente.",
+      "required": "Informe a descrição e uma data válida para a observação.",
+      "memoryConflict": "As informações salvas mudaram. Recarregue, revise os valores digitados e salve novamente.",
+      "memoryNotFound": "Esta observação não está mais disponível.",
+      "resourceNotFound": "O ciclo ou treino selecionado não está mais disponível.",
+      "invalidDate": "Selecione uma data válida. Solicitações semanais começam na segunda-feira.",
+      "availabilityNeedsReview": "Revise e salve os sete dias de disponibilidade antes de gerar a prévia.",
+      "criticalContextTooLarge": "O contexto obrigatório excede o limite configurado.",
+      "contextTooLarge": "O contexto selecionado excede o limite configurado.",
+      "invalidText": "Cada campo de texto deve ter até 2.000 caracteres.",
+      "invalidFields": "Há campos inválidos.",
+      "invalidEntry": "Revise o tipo e o estado da observação.",
+      "invalidVersion": "Recarregue as informações salvas antes de salvar."
+    }
   }
 }

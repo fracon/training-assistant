@@ -2,16 +2,28 @@
 
 A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized training-request prompts for use with an external AI.
 
-Current application version: **0.19.6** (active beta development).
+Current application version: **0.20.0** (active beta development).
 
-## Planned AI integration
+## AI integration: phase 0 on this branch
 
-The [AI integration plan](docs/ai-integration-plan.md) defines the proposed
-OpenAI API foundation and training memory, followed by cycle planning, weekly
-workout generation and contextual analysis (issues #62-#65). These features are
-not implemented by this documentation change; current prompts still run
-locally for use with an external AI. API configuration, runtime data transmission
-and administrator debug will be documented as each phase is delivered.
+The approved [integration plan](docs/ai-integration-plan.md) is integrated via
+PR #66. This branch implements issue #62's foundation and editable personal
+training memory; it is **not integrated into main until its PR is merged**.
+Cycle, weekly-workout and analysis generation remain planned in #63–#65.
+Existing external prompt workflows remain available and preserve PT/EN output.
+
+The account menu opens **Training memory / Memória de treinamento** to correct
+experience, goals and dated observations with explicit source/state. Admins can
+preview/copy their own existing prompts and inspect their own context/usage.
+No paid product operation is registered in phase 0, so configuring the key does
+not start model calls. The asynchronous execution service, quotas, restart
+recovery and Responses client are prepared for the later registered operations.
+
+See [AI foundation](docs/ai-foundation.md) for runtime settings, ZimaOS setup,
+API/schema contracts, retention/privacy, source selection, migration and tests.
+`OPENAI_API_KEY` is backend-only, injected at runtime; absent/disabled/invalid
+configuration keeps the existing application usable. Provider requests use
+`store:false`; this does not promise zero provider retention.
 
 ### Shoe mileage integrity
 
@@ -68,7 +80,7 @@ AI training assistants are only as good as the data you give them. Exporting wor
 - **Reversible account suspension** — deactivating a regular account ends its sessions immediately and blocks sign-in while keeping every training, cycle, shoe, and preference record. The state is a database-constrained `users.is_active` column, activation restores the login without restoring revoked sessions, and a correct password on a suspended account is refused with a localized message.
 - **Secure sessions** — 256-bit random session tokens stored in SQLite, delivered as `HttpOnly` / `Secure` / `SameSite=Lax` cookies with server-side expiry.
 - **Server-side route gating** — unauthenticated visitors are redirected to the login page by Fastify itself; the training tool is never rendered without a valid session.
-- **User dropdown menu** — the authenticated user badge opens **Setup guide**, **Change Password**, and **Preferences**. Logout remains a separate topbar action.
+- **User dropdown menu** — the authenticated user badge opens **Setup guide**, **Training memory**, **Change Password**, and **Preferences**. Logout remains a separate topbar action.
 - **Secure change password flow** — a dedicated modal with client-side validation that accumulates every problem into a robust grouped error box (the only error surface — no stray inline hints), backed by hardened `scrypt` verification of the current password before re-hashing and storing the new one.
 - **Global route guards** — the Training Calendar is strictly gated: users without an active Training Cycle are redirected to the Cycles page by the server, and cycle-dependent navigation is disabled in the shell as a second line of defense.
 - **New-user onboarding** — the first-visit welcome and three-step setup checklist are available in English and Brazilian Portuguese. The guide can be reopened from the user dropdown without changing progress or presentation preferences.
@@ -502,7 +514,7 @@ Configuration via environment variables:
 
 `UNSPLASH_API_KEY` is also accepted as a legacy alias by the server. `dotenv`
 loads `.env` from the process working directory at startup; the environment
-values above are the supported runtime configuration.
+values above and the [AI settings](docs/ai-foundation.md#configuration-and-deployment) are the supported runtime configuration.
 
 For local setup, optionally copy `.env.example` to `.env` and put your Unsplash **Access Key**
 in `UNSPLASH_ACCESS_KEY`; `dotenv` loads `.env` when `npm start` runs. The server also accepts the legacy
@@ -717,6 +729,9 @@ INSTRUÇÕES PARA A ANÁLISE
 Except for the public version and authentication routes, these API endpoints
 require the authenticated `ta_session` cookie. Protected data reads and writes
 are scoped to the signed-in user's records.
+
+The phase 0 memory, execution and owner-only admin debug endpoints are listed
+in [AI foundation API contracts](docs/ai-foundation.md#api-and-service-contract).
 
 ### Route index
 
@@ -964,6 +979,7 @@ Shared code lives in `src/public/shared/`: `shell.js` injects the authenticated 
 │   ├── start.js                # Entry point (PORT/HOST/DATABASE_FILE and dotenv)
 │   ├── fitParser.js            # .FIT → normalized activity/lap/totals summary
 │   ├── markdownGenerator.js    # Training feedback → localized analysis prompt
+│   ├── ai/                     # Phase 0 context, prompts, Responses client, executions and quotas
 │   ├── auth/                   # Passwords (scrypt), registration, sessions and auth guard
 │   ├── db/                     # SQLite schema, initialization and idempotent migrations
 │   ├── cycles.js               # Training-cycle persistence and prompt context
@@ -1041,6 +1057,9 @@ services:
       - "8081:3000"
     environment:
       - UNSPLASH_ACCESS_KEY=${UNSPLASH_ACCESS_KEY:-}
+      - AI_ENABLED=${AI_ENABLED:-false}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      # Full bounded AI configuration is in the repository Compose file.
     volumes:
       - ./data:/app/data
 ```

@@ -8,7 +8,7 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.19.6`); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.20.0`); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
@@ -492,28 +492,56 @@ will find every issue.
 - Applying a weekday setup is an explicit one-time copy from Monday to Tuesday–Friday. It never changes weekends or links records.
 - AI Coach prompts must state unavailable days and preserve the distinction between the one preferred period and the separate maximum session duration (including warm-up and cool-down), as well as each day's exact location and effective date. Render the week-start anchor day-first to match the spreadsheet's `DD/MM/YYYY` import format in both languages. Forecast research belongs to the external AI agent receiving the prompt: instruct it to research autonomously with available browsing tools, inspect forecast source content/data rather than search snippets alone, verify location/date/hourly coverage/source time zone, and use a second hourly source when the first is insufficient and access exists. Specify the canonical local half-open windows `00:00–08:00`, `08:00–12:00`, `12:00–14:00`, `14:00–18:00`, and `18:00–24:00`; apply `Europe/Lisbon` with date-appropriate DST only to mainland Portugal, never as a global default. Require the temperature range and highest verified temperature within the selected window, using the saved °C/°F preference; a daily maximum is not a substitute. Make partial coverage and location/date/hour/time-zone or tool/access/horizon failures explicit, require source and lookup timestamp in the response outside the workbook, and tell the agent not to ask the user to confirm forecast details or authorize research and not to interrupt workbook creation. Keep the 12-column spreadsheet/import schema unchanged; put verified or unavailable/partial status in its existing weather column. This prompt instruction adds no Kinesis forecast request, integration, control, confirmation, dependency, or external data transmission. Do not promise that an AI provider has internet access; the prompt must direct it to disclose unavailable tools/access. Do not contain “Rotina normal”/“Normal routine” defaults or invented conditions/times.
 
-## Planned OpenAI integration
+## OpenAI foundation and future phases
 
-The owner-approved phased direction is documented in
-[docs/ai-integration-plan.md](docs/ai-integration-plan.md), tracked by issues
-#62-#65. It is planned work, not current runtime behavior. Read that plan in
-full before implementing any phase; update README, AGENTS, the plan and affected
-configuration/API/privacy documentation in every implementation PR. Preserve
-existing prompt wording and all other GOLDEN RULES.
+The approved [plan](docs/ai-integration-plan.md) is integrated in main through
+PR #66. Phase 0 (#62) is implemented on `feat/ai-phase-0-foundation`, pending
+PR review and merge; do not call it integrated until its PR merges.
+Phases 1–3 remain planned and must be delivered sequentially in separate PRs.
+Read the plan and [foundation contract](docs/ai-foundation.md) in full before
+changing this service. Update README, AGENTS, the plan and affected configuration,
+API/privacy documentation with delivered behavior and honest branch status.
 
-For those phases only, the owner authorizes a narrow future exception to rule 1:
-the configured backend may send the minimum selected structured training context
-and prompts to OpenAI for explicit cycle, weekly-workout and analysis operations
-using `store: false`. FIT/ZIP binaries, raw GPS tracks, credentials and
-unnecessary identifiers remain excluded; parsing and canonical metrics stay
-local. The existing runtime still has no LLM integration until the corresponding
-implementation is merged. See the plan for retention, ownership and debug limits.
-
-The owner also authorizes the limited Docker/Compose runtime environment wiring
-needed for this integration under rule 3. Never bake the API key into the image
-or change deployment ports, privileges or unrelated CI infrastructure.
-This initial documentation-only plan PR does not bump the application version;
-functional phase PRs follow the existing beta SemVer rule.
+- `src/ai/` owns the idempotent schema migration, editable owner-scoped memory,
+  deterministic context policy, reusable prompt service, runtime configuration,
+  Responses client, durable execution/usage ledger and routes. Personal memory
+  UI uses the shared shell, forms, DatePicker and PT/EN dictionaries.
+- Public memory writes cannot impersonate an AI interpretation/recommendation.
+  Explicit states/source/dates distinguish current, resolved and unconfirmed
+  observations. Missing history is not rest; missing symptoms are not resolution.
+- Preserve byte-identical external PT/EN prompts. Pure browser/backend generators
+  live in `shared/workout-prompts.js`, `shared/analysis-prompts.js` and
+  `src/ai/{prompts,markdownGenerator}.js`; legacy imports remain compatible.
+  The synthetic baseline captured from main addd967 is tested byte for byte.
+- Production phase 0 registers no paid adapters. Trusted backend operations in
+  later phases register their versioned output adapters and domain validators;
+  HTTP must never accept an arbitrary prompt/model/tool. Do not introduce
+  functional generation early or hide conflicting delivery instructions.
+- The configured backend is authorized to send minimum selected structured
+  context for explicit later cycle/workout/analysis operations using `store:false`.
+  Keep FIT/ZIP binaries, raw GPS, credentials and unnecessary identifiers local.
+  No generic logs contain prompts, context, responses, keys or provider errors.
+- Persist source versions, exact protected debug payloads, configuration, state,
+  usage/cost ceilings and sanitized errors. Admin debug is current-role checked
+  and restricted to its own data. Keep ordinary users' existing prompt flows.
+- Reserve user/global cost/tokens/calls transactionally before network dispatch;
+  never keep a transaction open during network calls. Recheck account activity,
+  ownership and source versions before dispatch/access/application. Deletion or
+  cancellation must never recreate data or silently refund uncertain usage.
+- Explicit 429 alone may retry, within the bound. Network/timeouts/5xx/transport
+  uncertainty and restart-interrupted calls never replay automatically. Restart
+  can dispatch untouched queued work after revalidation. Local cancellation
+  makes no claim about provider billing. Global anonymous consumption survives
+  account deletion; owned AI data cascades. Cleanup defaults to 90 days and runs
+  at startup/authenticated AI access; profile/observations last until corrected,
+  explicitly deleted or account deletion.
+- Runtime-only Compose environment wiring is authorized under golden rule 3;
+  never bake the key into Dockerfile/image or change ports/privileges/CI.
+- Tests: `aiFoundation.test.js`, `aiFoundation.routes.test.js`,
+  `aiFoundation.browser.test.js`, existing prompt/result/coach/shell/onboarding
+  suites, then npm test and 100% c8 in all four metrics. Use synthetic fixtures
+  and mocked providers. Model-quality evaluation is separate, controlled and
+  cost-recorded; a mock is never evidence of real model quality or access.
 
 ## Golden rules
 

@@ -968,5 +968,95 @@
       "sat": "Sat",
       "sun": "Sun"
     }
+  },
+  "memory": {
+    "pageTitle": "Training memory - Kinesis",
+    "title": "Training memory",
+    "subtitle": "Keep your goals, experience and observations up to date.",
+    "boundary": "This information is saved locally. AI planning and analysis are not available yet.",
+    "reload": "Reload saved information",
+    "profile": "Athlete profile",
+    "experience": "Running experience",
+    "goals": "Goals",
+    "preferences": "Training preferences",
+    "restrictions": "Reported limitations",
+    "restrictionsHint": "Use dated observations below to track whether a restriction is current, resolved or needs an update.",
+    "saveProfile": "Save profile",
+    "observations": "Dated observations",
+    "temporalHint": "An old observation stays in its saved state until you update it. Missing feedback does not mean recovery or rest.",
+    "kind": "Type",
+    "description": "Description",
+    "observedOn": "Observation / effective date",
+    "state": "State",
+    "newEntry": "New observation",
+    "saveEntry": "Save observation",
+    "empty": "No observations recorded.",
+    "updated": "Updated",
+    "profileEmpty": "No profile provided yet.",
+    "edit": "Edit",
+    "delete": "Delete",
+    "deleteConfirm": "Permanently delete this observation?",
+    "cancel": "Cancel",
+    "saved": "Information saved.",
+    "debug": "Administrator: own prompt and context",
+    "debugHint": "Free local preview. No model request is sent.",
+    "purpose": "Purpose",
+    "resource": "Saved cycle / workout",
+    "weekDate": "Week starting Monday",
+    "preview": "Preview locally",
+    "prompt": "External prompt",
+    "copy": "Copy prompt",
+    "copied": "Prompt copied.",
+    "context": "Selected context and provenance",
+    "usage": "Recorded consumption",
+    "tokens": "tokens",
+    "kinds": {
+      "restriction": "Restriction",
+      "milestone": "Milestone / target event",
+      "interruption": "Training interruption",
+      "action": "Reported action performed",
+      "recommendation": "AI recommendation",
+      "interpretation": "AI interpretation"
+    },
+    "states": {
+      "current": "Current",
+      "resolved": "Resolved",
+      "unconfirmed": "Needs an update"
+    },
+    "authorities": {
+      "user_report": "Reported by you",
+      "user_action": "Action reported by you",
+      "recommendation": "AI recommendation",
+      "ai_interpretation": "AI interpretation"
+    },
+    "purposes": {
+      "cycle": "Cycle",
+      "workouts": "Weekly workouts",
+      "analysis": "Workout analysis"
+    },
+    "executionStates": {
+      "queued": "Queued",
+      "running": "Running",
+      "completed": "Completed",
+      "failed": "Failed",
+      "uncertain": "Provider outcome uncertain",
+      "cancelled": "Cancelled locally",
+      "outdated": "Sources changed"
+    },
+    "errors": {
+      "generic": "Unable to complete this action. Your entered values were kept. Try again.",
+      "required": "Enter a description and a valid observation date.",
+      "memoryConflict": "Saved information changed. Reload it, review your entered values and save again.",
+      "memoryNotFound": "This observation is no longer available.",
+      "resourceNotFound": "The selected cycle or workout is no longer available.",
+      "invalidDate": "Select a valid date. Weekly requests start on Monday.",
+      "availabilityNeedsReview": "Review and save all seven availability days before previewing.",
+      "criticalContextTooLarge": "The required context exceeds the configured limit.",
+      "contextTooLarge": "The selected context exceeds the configured limit.",
+      "invalidText": "Keep each text field within 2,000 characters.",
+      "invalidFields": "Some fields are invalid.",
+      "invalidEntry": "Review the observation type and state.",
+      "invalidVersion": "Reload the saved information before saving."
+    }
   }
 }

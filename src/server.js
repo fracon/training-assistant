@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('node:path');
+const { registerAiRoutes } = require('./ai/routes');
 const Fastify = require('fastify');
 const multipart = require('@fastify/multipart');
 const fastifyStatic = require('@fastify/static');
@@ -277,6 +278,11 @@ async function buildServer(options = {}) {
     return reply.sendFile('ai-coach.html');
   });
 
+  app.get('/training-memory.html', async (request, reply) => {
+    if (!sessionOf(request)) return reply.redirect('/login.html');
+    return reply.sendFile('training-memory.html');
+  });
+
   app.get('/cycles.html', async (request, reply) => {
     if (!sessionOf(request)) {
       return reply.redirect('/login.html');
@@ -380,6 +386,8 @@ async function buildServer(options = {}) {
       });
       return { status: 'ok' };
     });
+
+    registerAiRoutes(app, { db, requireAuth, config: options.aiConfig, operations: options.aiOperations, client: options.aiClient });
 
     app.get('/api/me', { preHandler: requireAuth }, async (request) => {
       return { user: request.user };

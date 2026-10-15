@@ -540,6 +540,7 @@ function migrateDatabase(db) {
     db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(activityMarker);
   });
   initializeAccountActivity();
+  require('../ai/schema').migrateAi(db);
 }
 
 function initializeDatabase(db) {

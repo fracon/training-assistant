@@ -1,0 +1,72 @@
+'use strict';
+
+function migrateAi(db) {
+  db.transaction(() => {
+    const marker = '2026-10-ai-foundation-v1';
+    if (
+      db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(marker)
+    )
+      return;
+    db.exec(`
+      CREATE TABLE ai_profiles (
+        user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        fields_json TEXT NOT NULL DEFAULT '{}',
+        version INTEGER NOT NULL DEFAULT 1,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE ai_memory (
+        id TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL CHECK(kind IN ('restriction','milestone','interruption','recommendation','interpretation','action')),
+        authority TEXT NOT NULL CHECK(authority IN ('user_report','ai_interpretation','recommendation','user_action')),
+        text TEXT NOT NULL,
+        observed_on TEXT NOT NULL,
+        state TEXT NOT NULL CHECK(state IN ('current','resolved','unconfirmed')),
+        source_json TEXT NOT NULL,
+        version INTEGER NOT NULL DEFAULT 1,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX ai_memory_owner ON ai_memory(user_id, observed_on);
+      CREATE TABLE ai_executions (
+        id TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        idempotency_key TEXT NOT NULL,
+        purpose TEXT NOT NULL CHECK(purpose IN ('cycle','workouts','analysis')),
+        resource_id TEXT,
+        input_hash TEXT NOT NULL,
+        prompt_version TEXT NOT NULL,
+        external_prompt TEXT NOT NULL,
+        context_json TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        configuration_json TEXT NOT NULL,
+        state TEXT NOT NULL CHECK(state IN ('queued','running','completed','failed','uncertain','cancelled','outdated')),
+        response_json TEXT,
+        usage_json TEXT,
+        error_code TEXT,
+        reserved_tokens INTEGER NOT NULL,
+        charged_tokens INTEGER NOT NULL DEFAULT 0,
+        reserved_cost REAL NOT NULL,
+        charged_cost REAL NOT NULL DEFAULT 0,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        settled INTEGER NOT NULL DEFAULT 0 CHECK(settled IN (0,1)),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(user_id,idempotency_key)
+      );
+      CREATE INDEX ai_execution_owner ON ai_executions(user_id,created_at);
+      CREATE TABLE ai_global_usage (
+        day TEXT PRIMARY KEY, tokens INTEGER NOT NULL DEFAULT 0, cost REAL NOT NULL DEFAULT 0, calls INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE TABLE ai_usage (
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        day TEXT NOT NULL,
+        tokens INTEGER NOT NULL DEFAULT 0,
+        cost REAL NOT NULL DEFAULT 0,
+        calls INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY(user_id,day)
+      );
+    `);
+    db.prepare('INSERT INTO schema_migrations(name) VALUES (?)').run(marker);
+  }).immediate();
+}
+module.exports = { migrateAi };

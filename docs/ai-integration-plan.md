@@ -1,6 +1,8 @@
 # Kinesis AI integration plan
 
-Status: planned; no phase is implemented by this document.
+Status: documentation integrated via PR #66; phase 0 implemented on branch
+`feat/ai-phase-0-foundation`, validated locally, pending PR review and merge.
+Phases 1–3 remain planned. This branch is not integrated into main.
 Owner-approved direction: 2026-10-14.
 Baseline reviewed: main application version 0.19.6.
 
@@ -16,7 +18,7 @@ and documented by the implementing agent.
 
 | Phase | Issue | Dependency | Status |
 | --- | --- | --- | --- |
-| 0: API foundation and training memory | [#62](https://github.com/fracon/training-assistant/issues/62) | Documentation plan merged | Planned |
+| 0: API foundation and training memory | [#62](https://github.com/fracon/training-assistant/issues/62) | Documentation plan merged (#66) | Implemented on branch; not integrated |
 | 1: Cycle planning | [#63](https://github.com/fracon/training-assistant/issues/63) | Phase 0 merged | Planned |
 | 2: Weekly workout requests | [#64](https://github.com/fracon/training-assistant/issues/64) | Phase 1 merged | Planned |
 | 3: Contextual workout analysis | [#65](https://github.com/fracon/training-assistant/issues/65) | Phase 2 merged | Planned |
@@ -31,7 +33,8 @@ A large phase may use smaller dependent PRs within its issue.
 Mark status as planned, implemented in an open PR, or integrated, with evidence.
 An open PR or passing local tests is not a completed merge. Functional releases
 stay in beta 0.x and follow AGENTS SemVer rules against the actual main version.
-This initial documentation-only plan leaves application version unchanged.
+The documentation-only PR left application version unchanged. The functional
+phase 0 branch increments beta to 0.20.0.
 
 ## Intended experience
 
@@ -83,7 +86,9 @@ prompt/model/tool proxy. Render model responses safely.
 
 ## Runtime configuration and data boundary
 
-Planned configuration, not supported by this documentation PR:
+Phase 0 configuration is implemented on this branch; see the complete settings,
+defaults and bounds in [AI foundation](ai-foundation.md). Paid product adapters
+remain unregistered until their individual phases:
 
 - `OPENAI_API_KEY`: server-only secret injected into the running container.
 - `AI_ENABLED`: explicit feature switch.
@@ -328,6 +333,17 @@ Every implementation PR must:
 
 For this initial documentation-only PR, inspect links, references and whitespace;
 do not run the application suite without a concrete functional risk.
+
+## Phase 0 implementation decisions on this branch
+
+The [foundation contract](ai-foundation.md) records the profile placement in the
+account menu; schema/modules; deterministic source selection and explicit gaps;
+90-day opportunistic cleanup; transactional quotas and conservative cost rates;
+uncertain restart recovery; owner-only administrator debug; and synthetic prompt
+equivalence/evaluation fixtures. Native fetch implements Responses with no SDK
+retry side effects. There are no registered paid product adapters in phase 0.
+Functional cycle, weekly and analysis adapters remain in their planned phases.
+Mock tests are separate from real model quality/access evaluation.
 
 ## Implementation decisions to record
 

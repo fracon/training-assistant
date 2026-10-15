@@ -1,0 +1,11 @@
+.memory-section { margin-top: 1.4rem; }
+.memory-section h2 { font-size: 1.1rem; margin: 0 0 1rem; }
+.memory-section .field { margin-bottom: 1rem; }
+.memory-section textarea { resize: vertical; }
+.memory-section .shoe-list { margin-top: 1.2rem; }
+.memory-entry p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.memory-entry .form-actions { flex-wrap: wrap; }
+.memory-page [hidden] { display: none !important; }
+#memoryError { margin-bottom: 1rem; }
+#entryHeading:focus { outline: none; }
+@media (max-width: 560px) { .memory-page .form-actions { flex-wrap: wrap; } }
