@@ -494,6 +494,20 @@ will find every issue.
 
 ## Planned OpenAI integration
 
+Owner correction (2026-10-15): training memory is an evolving, source-backed
+athlete-context view, not a parallel profile/observation form. Goals come from
+cycles; availability/preferences from Request Workouts; metrics and discomfort
+from dated sessions/feedback. Corrections navigate to those sources. Only prior
+running experience is optional supplemental input in phase 0. Do not add
+duplicate goals/preferences/limitations or generic manual observations CRUD.
+Inventory existing sources before proposing new fields. The view must show
+origin/date and uncertainty, without turning discomfort into a permanent
+restriction. Later AI interpretations need evidence and owner-controlled
+confirm/correct/dismiss state; old analyses must not resurrect discarded
+interpretations. The exact execution payload remains separate admin-only,
+owner-scoped debug. See the plan for phase boundaries and PR #67 correction.
+
+
 The owner-approved phased direction is documented in
 [docs/ai-integration-plan.md](docs/ai-integration-plan.md), tracked by issues
 #62-#65. It is planned work, not current runtime behavior. Read that plan in
