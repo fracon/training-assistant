@@ -103,8 +103,14 @@ Available on this branch only, pending merge of #67. The page uses the dashboard
 controls and native keyboard-accessible disclosures. No new visual library,
 profile fields, storage or paid summaries are introduced.
 
-- The compact header holds refresh and the context date. “How your context is
-  assembled” expands source, temporal and phase explanations; selection omissions
+- The compact header holds the title and context date; context loads on opening.
+  There is no permanent refresh action. A failed memory load exposes “Try again”
+  beside its error, hidden after success. Experience conflicts instead expose
+  “Reload saved version” beside the conflict, retaining typed experience. Other
+  save/preview errors do not expose a memory-load retry. Recovery restores focus
+  to the page heading or experience input only if the user has not moved it.
+  “How your context is assembled” expands source, temporal and phase explanations;
+  selection omissions
   remain visible independently of that disclosure.
 - Goals and weekly availability sit side by side on desktop and stack on narrow
   screens. Goals include the canonical cycle status (never inferred from its

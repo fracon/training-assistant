@@ -10,8 +10,7 @@
 <body>
 <main id="appView"><section class="shoes-page memory-page">
   <header class="shoes-header memory-header">
-    <div class="shoes-header-text"><h1 data-i18n="memory.title">Training memory</h1><p class="shoes-subtitle" data-i18n="memory.shortSubtitle">Your goals, routine and recorded training history.</p></div>
-    <button id="reloadMemory" class="btn-secondary" type="button" data-i18n="memory.reload">Refresh context</button>
+    <div class="shoes-header-text"><h1 tabindex="-1" data-i18n="memory.title">Training memory</h1><p class="shoes-subtitle" data-i18n="memory.shortSubtitle">Your goals, routine and recorded training history.</p></div>
   </header>
   <p id="memoryStatus" class="field-hint" role="status" aria-live="polite"></p>
   <details class="memory-explanation">
@@ -23,6 +22,8 @@
   </details>
   <p id="selectionNotice" class="field-hint memory-selection" hidden data-i18n="memory.selectionLimited"></p>
   <div id="memoryError" class="form-error hidden" role="alert" tabindex="-1"></div>
+  <button id="reloadMemory" class="btn-secondary memory-recovery" type="button" hidden data-i18n="memory.retry">Try again</button>
+  <button id="refreshMemoryVersion" class="btn-secondary memory-recovery" type="button" hidden data-i18n="memory.refreshVersion">Reload saved version</button>
   <div id="memoryOverview"></div>
   <section class="shoe-card memory-section" aria-labelledby="profileHeading">
     <h2 id="profileHeading" data-i18n="memory.profile">Previous running experience</h2>

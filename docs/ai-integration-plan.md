@@ -158,7 +158,8 @@ independently maintained memory.
 
 The open PR #67 branch now presents this bounded view with grouped goal/routine
 cards, semantic availability/totals tables, visible dated feedback and expandable
-planning details. The [presentation contract](ai-foundation.md#memory-presentation-on-the-pr-67-branch)
+planning details. Context loads on opening; load failures expose a retry action,
+not a persistent refresh control. The [presentation contract](ai-foundation.md#memory-presentation-on-the-pr-67-branch)
 defines the delivered UI; it is not yet integrated into main and adds no later-phase
 generation or interpretation capabilities.
 

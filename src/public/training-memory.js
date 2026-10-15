@@ -38,11 +38,12 @@ async function initMemory() {
   function controls() {
     $('profileForm').querySelector('[type=submit]').disabled = !loaded || busy;
     $('reloadMemory').disabled = busy;
+    $('refreshMemoryVersion').disabled = busy;
     if (user.role === 'admin')
       $('previewForm').querySelector('[type=submit]').disabled =
         !resources || busy;
   }
-  function error(error, focus = true) {
+  function error(error, focus = true, retryLoad = false) {
     const code = error?.codes?.[0];
     errorKey =
       code && t(`errors.${code}`) !== `memory.errors.${code}`
@@ -52,11 +53,15 @@ async function initMemory() {
     const message = t(errorKey);
     $('memoryError').textContent = message;
     $('memoryError').classList.remove('hidden');
+    $('reloadMemory').hidden = !retryLoad;
+    $('refreshMemoryVersion').hidden = code !== 'memoryConflict';
     if (focus) $('memoryError').focus();
   }
   function clearError() {
     errorKey = null;
     $('memoryError').classList.add('hidden');
+    $('reloadMemory').hidden = true;
+    $('refreshMemoryVersion').hidden = true;
     for (const input of document.querySelectorAll('[aria-invalid]')) {
       input.removeAttribute('aria-invalid');
       input.removeAttribute('aria-describedby');
@@ -224,6 +229,8 @@ async function initMemory() {
   }
   async function load() {
     if (busy) return;
+    const trigger = document.activeElement;
+    const recoverFocus = trigger === $('reloadMemory') || trigger === $('refreshMemoryVersion');
     busy = true;
     controls();
     clearError();
@@ -235,14 +242,17 @@ async function initMemory() {
           if (!dirty.has(field))
             $(field).value = memory.profile.fields[field]?.value || '';
       renderOverview();
+      if (recoverFocus && document.activeElement === document.body)
+        (trigger === $('refreshMemoryVersion') ? $('experience') : document.querySelector('.memory-header h1')).focus();
     } catch (e) {
-      error(e);
+      error(e, true, true);
     } finally {
       busy = false;
       controls();
     }
   }
-  $('reloadMemory').addEventListener('click', () => load());
+  for (const id of ['reloadMemory', 'refreshMemoryVersion'])
+    $(id).addEventListener('click', () => { if (!$(id).hidden) load(); });
   $('profileForm').addEventListener('submit', (event) => {
     event.preventDefault();
     if (!loaded) return;

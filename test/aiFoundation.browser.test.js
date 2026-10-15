@@ -124,6 +124,10 @@ test('training memory Chrome PT/EN desktop/mobile, ownership, keyboard, loading,
       }
       throw Error('Timed out: ' + expr);
     };
+    const reopenMemory = async () => {
+      await command('Page.navigate',{url:origin+'/training-memory.html'});
+      await waitFor("document.getElementById('profileForm')?.querySelector('[type=submit]')?.disabled===false");
+    };
     await command('Network.enable');
     await command('Network.setBlockedURLs', {
       urls: ['*unpkg.com*', '*fonts.googleapis.com*', '*fonts.gstatic.com*'],
@@ -159,7 +163,10 @@ test('training memory Chrome PT/EN desktop/mobile, ownership, keyboard, loading,
     await command('Network.setBlockedURLs', {
       urls: ['*unpkg.com*', '*fonts.googleapis.com*', '*fonts.gstatic.com*'],
     });
-    await evaluate("document.getElementById('reloadMemory').click()");
+    assert.equal(await evaluate("document.getElementById('reloadMemory').hidden"),false);
+    assert.equal(await evaluate("document.getElementById('reloadMemory').textContent"),'Try again');
+    assert.equal(await evaluate("document.querySelector('.memory-header button')"),null);
+    await evaluate("document.getElementById('reloadMemory').focus();document.getElementById('reloadMemory').click()");
 
     await waitFor(
       "document.getElementById('profileForm')?.querySelector('[type=submit]')?.disabled===false",
@@ -168,6 +175,9 @@ test('training memory Chrome PT/EN desktop/mobile, ownership, keyboard, loading,
       await evaluate("document.getElementById('experience').value"),
       'Synthetic edit during failed load',
     );
+    assert.equal(await evaluate("document.getElementById('reloadMemory').hidden"),true);
+    assert.equal(await evaluate("document.getElementById('refreshMemoryVersion').hidden"),true);
+    assert.equal(await evaluate("document.activeElement.tagName"),'H1');
     for (const language of ['en-US', 'pt-BR']) {
       await evaluate(
         `document.querySelector(".lang-switch [data-lang='${language}']").click()`,
@@ -183,6 +193,9 @@ test('training memory Chrome PT/EN desktop/mobile, ownership, keyboard, loading,
       await waitFor(
         `!document.getElementById('profileForm').querySelector('[type=submit]').disabled`,
       );
+      assert.equal(await evaluate("document.querySelector('.memory-header button')"),null);
+      assert.equal(await evaluate("document.getElementById('reloadMemory').hidden"),true);
+      assert.equal(await evaluate("document.getElementById('refreshMemoryVersion').hidden"),true);
       assert.equal(await evaluate("document.querySelectorAll('#goals,#preferences,#restrictions,#entryForm').length"),0);
       assert.ok((await evaluate("document.getElementById('memoryOverview').textContent")).includes('Synthetic cycle'));
       assert.ok((await evaluate("document.getElementById('memoryOverview').textContent")).includes(language==='pt-BR'?'Desconforto relatado: Sim':'Discomfort reported: Yes'));
@@ -284,7 +297,9 @@ test('training memory Chrome PT/EN desktop/mobile, ownership, keyboard, loading,
       await evaluate(`document.getElementById('experience').value`),
       'Synthetic preserved edit',
     );
-    await evaluate(`document.getElementById('reloadMemory').click()`);
+    assert.equal(await evaluate("document.getElementById('reloadMemory').hidden"),true);
+    assert.equal(await evaluate("document.getElementById('refreshMemoryVersion').hidden"),false);
+    await evaluate(`document.getElementById('refreshMemoryVersion').focus();document.getElementById('refreshMemoryVersion').click()`);
     await waitFor(
       `!document.getElementById('profileForm').querySelector('[type=submit]').disabled`,
     );
@@ -293,32 +308,37 @@ test('training memory Chrome PT/EN desktop/mobile, ownership, keyboard, loading,
       'Synthetic preserved edit',
     );
     await evaluate("document.getElementById('profileForm').requestSubmit()");
-    await waitFor("!document.getElementById('reloadMemory').disabled");
+    await waitFor("!document.querySelector('#profileForm [type=submit]').disabled");
     assert.equal(db.prepare('SELECT fields_json FROM ai_profiles WHERE user_id=1').get().fields_json.includes('Synthetic preserved edit'),true);
     // Canonical corrections appear on refresh, without another personal form.
     db.prepare("UPDATE training_cycles SET primary_goal='Synthetic corrected goal' WHERE id='cycle'").run();
-    await evaluate("document.getElementById('reloadMemory').click()");
+    await reopenMemory();
     await waitFor("document.getElementById('memoryOverview').textContent.includes('Synthetic corrected goal')");
     // Per-source dates remain visible when different; legacy periods stay explicit.
     assert.equal(await evaluate("document.querySelectorAll('.memory-row-note').length"),0);
     db.prepare("UPDATE ai_coach_availability SET updated_at='2026-01-01',available_periods=? WHERE user_id=1 AND day_key='monday'").run(JSON.stringify(['before_08','08_12']));
-    await evaluate("document.getElementById('reloadMemory').click()");
-    await waitFor("!document.getElementById('reloadMemory').disabled");
+    await reopenMemory();
+    await waitFor("!document.querySelector('#profileForm [type=submit]').disabled");
     assert.equal(await evaluate("document.querySelectorAll('.memory-row-note').length"),8);
     assert.equal(await evaluate("document.querySelector('[data-day=sunday] td').textContent"),'Indisponível');
+    // A real conflict exposes version recovery, without a permanent refresh action.
+    db.prepare('UPDATE ai_profiles SET version=version+1 WHERE user_id=1').run();
+    await evaluate("document.getElementById('profileForm').requestSubmit()");
+    await waitFor("document.getElementById('refreshMemoryVersion').hidden===false");
     // Hold a real reload and move focus: the refresh must not take focus away.
     await command('Fetch.enable',{patterns:[{urlPattern:origin+'/api/ai/memory',requestStage:'Request'}]});
     const pausedLoad = new Promise((resolve) => {
       const handler = (event) => { const message=JSON.parse(event.data); if(message.method==='Fetch.requestPaused') {socket.removeEventListener('message',handler);resolve(message.params.requestId);} };
       socket.addEventListener('message',handler);
     });
-    await evaluate("document.getElementById('reloadMemory').click()");
+    await evaluate("document.getElementById('refreshMemoryVersion').focus();document.getElementById('refreshMemoryVersion').click()");
     const requestId=await pausedLoad;
     await evaluate("document.getElementById('experience').focus()");
     await command('Fetch.continueRequest',{requestId});
-    await waitFor("!document.getElementById('reloadMemory').disabled");
+    await waitFor("!document.querySelector('#profileForm [type=submit]').disabled");
     await command('Fetch.disable');
     assert.equal(await evaluate('document.activeElement.id'),'experience');
+    await evaluate("document.getElementById('memoryDebug').open=true");
     // The remaining admin DatePicker keeps the reviewed keyboard/month behavior.
     await evaluate("document.getElementById('previewPurpose').value='workouts';document.getElementById('previewPurpose').dispatchEvent(new Event('change'));document.getElementById('previewDate').focus()");
     const key = async (key,code,windowsVirtualKeyCode) => {for(const type of ['keyDown','keyUp']) await command('Input.dispatchKeyEvent',{type,key,code,windowsVirtualKeyCode});};
@@ -383,11 +403,11 @@ test('training memory Chrome PT/EN desktop/mobile, ownership, keyboard, loading,
     }
     db.prepare("INSERT INTO training_cycles(id,user_id,objective,status) VALUES ('user-cycle',2,'Own regular cycle','active')").run();
     db.prepare("INSERT INTO trainings(user_id,dia,tipo,treino,feedback_pain,feedback_has_pain) VALUES (2,date('now'),'Run','Own regular session','Dated synthetic discomfort','yes')").run();
-    await evaluate("document.getElementById('reloadMemory').click()");
+    await reopenMemory();
     await waitFor("document.getElementById('memoryOverview').textContent.includes('Dated synthetic discomfort')");
     assert.equal(await evaluate("document.getElementById('memoryOverview').textContent.includes('Synthetic corrected goal')"),false);
     db.prepare("UPDATE trainings SET feedback_has_pain='no',feedback_pain='' WHERE user_id=2").run();
-    await evaluate("document.getElementById('reloadMemory').click()");
+    await reopenMemory();
     await waitFor("document.getElementById('memoryOverview').textContent.includes('Desconforto relatado: Não')");
     // Check focus identity across translation when several links share the same URL.
     await evaluate("document.querySelector('[data-memory-link=weekly]').focus()");

@@ -1,7 +1,6 @@
 /* Match the dashboard's content width, card rhythm and shared control tokens. */
 .memory-page { max-width: 1080px; padding: 1.4rem 1.4rem 2rem; }
-.memory-header { align-items: center; gap: 1rem; margin-bottom: .5rem; }
-.memory-header .btn-secondary { flex-shrink: 0; }
+.memory-header { margin-bottom: .5rem; }
 .memory-page p { margin: 0; line-height: 1.55; overflow-wrap: anywhere; }
 .memory-page .shoes-subtitle { margin-top: .5rem; }
 #memoryStatus { margin-bottom: .75rem; }
@@ -56,7 +55,6 @@
 @media (max-width: 900px) { .memory-summary-grid { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 560px) {
   .memory-page { padding: 1rem; }
-  .memory-header { align-items: flex-start; flex-direction: column; }
   .memory-section { padding: 1rem; }
   .memory-card-header { align-items: flex-start; flex-wrap: wrap; gap: .25rem .75rem; }
   .memory-page .form-actions { flex-wrap: wrap; }
@@ -72,3 +70,5 @@
 .memory-section[aria-labelledby="memory-weekly"] .memory-table td { white-space: nowrap; }
 .memory-scroll-hint { display: none; }
 @media (max-width: 900px) { .memory-scroll-hint { display: block; margin-top: .5rem !important; } }
+
+.memory-recovery { margin-bottom: 1rem; }

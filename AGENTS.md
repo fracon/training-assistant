@@ -541,7 +541,9 @@ with optimistic versions. Do not restore generic manual memory CRUD.
   `docs/ai-foundation.md#memory-presentation-on-the-pr-67-branch`: keep dated
   discomfort/RPE visible, preserve expanded planning and source-link focus on
   rerenders, respect the preferred week start, and keep technical debug separate
-  and collapsed. UI projections may expose canonical status/aggregate overlap;
+  and collapsed. Do not restore a persistent context-refresh control: load on
+  opening, offer retry only on load failure, and offer saved-version recovery
+  only on experience conflicts, preserving unsaved input and focus. UI projections may expose canonical status/aggregate overlap;
   they must not create another selection policy or change stored snapshots.
 - Schema is retained for compatibility: old profile keys and `ai_memory` rows
   are an inactive read-only archive, exposed only to their owner through
