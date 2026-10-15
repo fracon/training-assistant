@@ -61,6 +61,9 @@ export function createDatePicker(input, { isoInput = null, getLanguage = () => '
     if (notify) onChange(iso);
   }
   function render() {
+    const focused = popup.contains(document.activeElement) ? document.activeElement : null;
+    const focusedAction = focused?.dataset.calendarAction;
+    const focusedDate = focused?.dataset.date;
     const locale = localeOf(getLanguage());
     popup.setAttribute('aria-label', locale === 'pt-BR' ? 'Escolher data' : 'Choose date');
     const start = firstDayIndex(getWeekStart());
@@ -80,6 +83,8 @@ export function createDatePicker(input, { isoInput = null, getLanguage = () => '
     const nextLabel = locale === 'pt-BR' ? 'Próximo mês' : 'Next month';
     popup.innerHTML = `<div class="date-picker-toolbar"><button type="button" data-calendar-action="previous" aria-label="${previousLabel}">‹</button><strong>${monthLabel(monthStart, locale)}</strong><button type="button" data-calendar-action="next" aria-label="${nextLabel}">›</button></div><div class="date-picker-weekdays">${headings.map((label) => `<span>${label}</span>`).join('')}</div><div class="date-picker-grid">${cells.join('')}</div>`;
     input.value = formatDate(selected, getLanguage());
+    if (focusedAction) popup.querySelector(`[data-calendar-action="${focusedAction}"]`)?.focus();
+    else if (focusedDate) popup.querySelector(`[data-date="${focusedDate}"]`)?.focus();
   }
   function close() {
     const restore = popup.contains(document.activeElement);

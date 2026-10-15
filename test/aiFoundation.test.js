@@ -1381,3 +1381,178 @@ test('disk restart preserves snapshots and resumes an untouched queue without st
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('restart respects a reduced per-user concurrency limit for already reserved work', async () => {
+  const f = setup({ AI_CONCURRENCY_USER: '2' });
+  const first = service(f);
+  const a = first.enqueue(1, body);
+  const b = first.enqueue(1, {
+    ...body,
+    idempotency_key: 'synthetic-second-own',
+  });
+  await first.stop();
+  f.config.limits.AI_CONCURRENCY_USER = 1;
+  let resolve;
+  const held = new Promise((r) => (resolve = r));
+  const resumed = service(f, {
+    client: async () => {
+      await held;
+      return {
+        value: { ok: true },
+        usage: { input: 10, output: 5, cached: 0 },
+        error: null,
+      };
+    },
+  });
+  try {
+    resumed.recover();
+    await delay(10);
+    assert.equal(
+      f.db
+        .prepare(
+          "SELECT COUNT(*) AS n FROM ai_executions WHERE state='running'",
+        )
+        .get().n,
+      1,
+    );
+    resolve();
+    assert.equal((await wait(resumed, 1, a.id)).state, 'completed');
+    assert.equal((await wait(resumed, 1, b.id)).state, 'completed');
+  } finally {
+    resolve();
+    await resumed.stop();
+    f.db.close();
+  }
+});
+
+test('prompt-only source changes invalidate a weekly execution even when detailed context was omitted', async () => {
+  const f = setup({ AI_CONTEXT_TOKENS: '5000' });
+  for (const day of [
+    'monday',
+    'tuesday',
+    'wednesday',
+    'thursday',
+    'friday',
+    'saturday',
+    'sunday',
+  ])
+    f.db
+      .prepare(
+        "INSERT INTO ai_coach_availability(user_id,day_key,can_train,available_periods) VALUES (1,?,0,'[]')",
+      )
+      .run(day);
+  f.db
+    .prepare('UPDATE trainings SET feedback_notas=? WHERE id=1')
+    .run('Synthetic reported note '.repeat(200));
+  const s = service(f, { operations: { workouts: operation } });
+  try {
+    const row = s.enqueue(1, {
+      purpose: 'workouts',
+      target_date: '2026-10-19',
+      idempotency_key: 'synthetic-omitted-prompt',
+    });
+    const snapshot = s.get(1, row.id, true);
+    assert.equal(snapshot.context.recent.length, 0);
+    f.db.prepare('UPDATE trainings SET fit_distance=7 WHERE id=1').run();
+    assert.equal(s.get(1, row.id).outdated, true);
+  } finally {
+    await s.stop();
+    f.db.close();
+  }
+});
+
+test('prompt dependency lookup enforces owned resources and a malformed historical snapshot fails closed', async () => {
+  const { promptSources } = require('../src/ai/prompt-service');
+  const f = setup();
+  failure(
+    () => promptSources(f.db, 1, { purpose: 'cycle', resourceId: 'other' }),
+    'resourceNotFound',
+  );
+  failure(
+    () => promptSources(f.db, 1, { purpose: 'analysis', resourceId: 2 }),
+    'resourceNotFound',
+  );
+  failure(
+    () => promptSources(f.db, 1, { purpose: 'arbitrary' }),
+    'invalidPurpose',
+  );
+  const s = service(f);
+  const row = s.enqueue(1, body);
+  const config = JSON.parse(
+    f.db
+      .prepare('SELECT configuration_json FROM ai_executions WHERE id=?')
+      .get(row.id).configuration_json,
+  );
+  delete config.promptRequest;
+  f.db
+    .prepare('UPDATE ai_executions SET configuration_json=? WHERE id=?')
+    .run(JSON.stringify(config), row.id);
+  assert.equal(s.get(1, row.id).outdated, true);
+  await s.dispatch(row.id);
+  assert.equal(s.get(1, row.id).state, 'outdated');
+  await s.stop();
+  f.db.close();
+});
+
+test('dispatch and completion revalidate inside their write transactions, with network outside', async () => {
+  const f = setup();
+  const s = service(f, {
+    client: async () => {
+      assert.equal(f.db.inTransaction, false);
+      return {
+        value: { ok: true },
+        usage: { input: 10, output: 5, cached: 0 },
+        error: null,
+      };
+    },
+  });
+  const row = s.enqueue(1, body);
+  const prepare = f.db.prepare.bind(f.db);
+  const checks = [];
+  f.db.prepare = (sql) => {
+    const stmt = prepare(sql);
+    if (sql.startsWith('SELECT id, role, is_active')) {
+      const get = stmt.get.bind(stmt);
+      stmt.get = (...args) => {
+        checks.push(f.db.inTransaction);
+        return get(...args);
+      };
+    }
+    return stmt;
+  };
+  try {
+    await s.dispatch(row.id);
+    assert.ok(checks.length > 0);
+    assert.ok(checks.every(Boolean));
+  } finally {
+    f.db.prepare = prepare;
+    await s.stop();
+    f.db.close();
+  }
+});
+
+test('unexpected source-read failure after network completion discards output without raw error exposure', async () => {
+  const f = setup();
+  let resolve;
+  const held = new Promise((r) => (resolve = r));
+  const s = service(f, { client: () => held });
+  const row = s.enqueue(1, body);
+  const dispatched = s.dispatch(row.id);
+  f.db.prepare('DROP TABLE ai_profiles').run();
+  resolve({
+    value: { ok: true },
+    usage: { input: 10, output: 5, cached: 0 },
+    error: null,
+  });
+  await dispatched;
+  const saved = f.db
+    .prepare(
+      'SELECT state,error_code,response_json FROM ai_executions WHERE id=?',
+    )
+    .get(row.id);
+  assert.equal(saved.state, 'outdated');
+  assert.equal(saved.error_code, 'sourceChanged');
+  assert.equal(saved.response_json, null);
+  await s.stop();
+  f.db.close();
+});

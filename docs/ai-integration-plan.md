@@ -18,7 +18,7 @@ and documented by the implementing agent.
 
 | Phase | Issue | Dependency | Status |
 | --- | --- | --- | --- |
-| 0: API foundation and training memory | [#62](https://github.com/fracon/training-assistant/issues/62) | Documentation plan merged (#66) | Implemented on branch; not integrated |
+| 0: API foundation and training memory | [#62](https://github.com/fracon/training-assistant/issues/62) | Documentation plan merged (#66) | Implemented in [open PR #67](https://github.com/fracon/training-assistant/pull/67); not integrated |
 | 1: Cycle planning | [#63](https://github.com/fracon/training-assistant/issues/63) | Phase 0 merged | Planned |
 | 2: Weekly workout requests | [#64](https://github.com/fracon/training-assistant/issues/64) | Phase 1 merged | Planned |
 | 3: Contextual workout analysis | [#65](https://github.com/fracon/training-assistant/issues/65) | Phase 2 merged | Planned |

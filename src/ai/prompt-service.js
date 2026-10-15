@@ -3,7 +3,7 @@
 const weekly = require('../public/shared/workout-prompts.js');
 const analysis = require('../public/shared/analysis-prompts.js');
 const { buildMacrocyclePrompt } = require('./prompts');
-const { AiError, activeOwner } = require('./memory');
+const { AiError, activeOwner, hash, date } = require('./memory');
 const { TRAINING_COLUMNS } = require('./context');
 const PROMPT_VERSION = 'external-prompts-v1';
 function renderPrompt(
@@ -98,4 +98,63 @@ function renderPrompt(
     }),
   });
 }
-module.exports = { renderPrompt, PROMPT_VERSION };
+// Track every database dependency of the preserved external prompt, even when
+// its detailed record was omitted from the model context by the selection budget.
+function promptSources(
+  db,
+  userId,
+  { purpose, resourceId = null, targetDate = null },
+) {
+  activeOwner(db, userId);
+  const reference = (type, row, id = row.id) => ({
+    type,
+    id: String(id),
+    version: hash(row),
+  });
+  if (purpose === 'cycle' || purpose === 'analysis') {
+    const row =
+      purpose === 'cycle'
+        ? db
+            .prepare(
+              'SELECT * FROM training_cycles WHERE user_id = ? AND id = ?',
+            )
+            .get(userId, resourceId)
+        : db
+            .prepare(
+              `SELECT ${TRAINING_COLUMNS} FROM trainings WHERE user_id = ? AND id = ?`,
+            )
+            .get(userId, resourceId);
+    if (!row) throw new AiError('resourceNotFound', 404);
+    return [reference(purpose === 'cycle' ? 'cycle' : 'training', row)];
+  }
+  if (purpose !== 'workouts') throw new AiError('invalidPurpose');
+  date(targetDate);
+  const previousStart = weekly.dateInputValue(
+    weekly.addDays(weekly.parseInputDate(targetDate), -7),
+  );
+  return [
+    ...db
+      .prepare(
+        "SELECT * FROM training_cycles WHERE user_id = ? AND status='active' ORDER BY id",
+      )
+      .all(userId)
+      .map((row) => reference('cycle', row)),
+    ...db
+      .prepare(
+        `SELECT ${TRAINING_COLUMNS} FROM trainings WHERE user_id = ? AND dia >= ? AND dia < ? ORDER BY id`,
+      )
+      .all(userId, previousStart, targetDate)
+      .map((row) => reference('training', row)),
+    ...db
+      .prepare('SELECT * FROM shoes WHERE user_id = ? ORDER BY id')
+      .all(userId)
+      .map((row) => reference('shoe', row)),
+    ...db
+      .prepare(
+        'SELECT * FROM ai_coach_availability WHERE user_id = ? ORDER BY day_key',
+      )
+      .all(userId)
+      .map((row) => reference('availability', row, row.day_key)),
+  ];
+}
+module.exports = { renderPrompt, promptSources, PROMPT_VERSION };

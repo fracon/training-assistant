@@ -495,8 +495,9 @@ will find every issue.
 ## OpenAI foundation and future phases
 
 The approved [plan](docs/ai-integration-plan.md) is integrated in main through
-PR #66. Phase 0 (#62) is implemented on `feat/ai-phase-0-foundation`, pending
-PR review and merge; do not call it integrated until its PR merges.
+PR #66. Phase 0 (#62) is implemented on `feat/ai-phase-0-foundation`
+([open PR #67](https://github.com/fracon/training-assistant/pull/67)), pending
+owner review and merge; do not call it integrated until its PR merges.
 Phases 1–3 remain planned and must be delivered sequentially in separate PRs.
 Read the plan and [foundation contract](docs/ai-foundation.md) in full before
 changing this service. Update README, AGENTS, the plan and affected configuration,

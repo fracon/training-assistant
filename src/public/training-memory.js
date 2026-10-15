@@ -29,6 +29,7 @@ async function initMemory() {
     $(field).addEventListener('input', () => dirty.add(field));
   let memory = null;
   let editing = null;
+  let editingMissing = false;
   let busy = false;
   let resources = null;
   let loaded = false;
@@ -39,7 +40,8 @@ async function initMemory() {
   else $('memoryDebug').hidden = false;
   function controls() {
     $('profileForm').querySelector('[type=submit]').disabled = !loaded || busy;
-    $('entryForm').querySelector('[type=submit]').disabled = !loaded || busy;
+    $('entryForm').querySelector('[type=submit]').disabled =
+      !loaded || busy || editingMissing;
     $('reloadMemory').disabled = busy;
     $('cancelEntry').disabled = busy;
     for (const button of $('memoryEntries').querySelectorAll('button'))
@@ -103,10 +105,12 @@ async function initMemory() {
         edit.textContent = t('edit');
         edit.addEventListener('click', () => {
           editing = entry;
+          editingMissing = false;
           $('entryKind').value = entry.kind;
           $('entryText').value = entry.text;
           picker.setValue(entry.observed_on);
           $('entryState').value = entry.state;
+          controls();
           $('entryText').focus();
         });
         const remove = document.createElement('button');
@@ -158,8 +162,10 @@ async function initMemory() {
   }
   function resetEntry() {
     editing = null;
+    editingMissing = false;
     $('entryForm').reset();
     picker.setValue('');
+    controls();
   }
   async function mutate(action) {
     if (busy) return;
@@ -184,6 +190,14 @@ async function initMemory() {
     try {
       const populate = initial || !loaded;
       memory = await requestJson('/api/ai/memory', undefined, 'GET');
+      if (editing) {
+        const refreshed = memory.entries.find(
+          (entry) => entry.id === editing.id,
+        );
+        editingMissing = !refreshed;
+        if (refreshed) editing = refreshed;
+        else error({ codes: ['memoryNotFound'] });
+      }
       loaded = true;
       if (populate)
         for (const field of fields)

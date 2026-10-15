@@ -331,8 +331,114 @@ test('training memory Chrome PT/EN desktop/mobile, ownership, keyboard, loading,
       ),
       'false',
     );
+    // Month navigation must keep keyboard focus on replacement toolbar nodes.
+    await command('Input.dispatchKeyEvent', {
+      type: 'keyDown',
+      key: 'Enter',
+      code: 'Enter',
+      windowsVirtualKeyCode: 13,
+    });
+    await command('Input.dispatchKeyEvent', {
+      type: 'keyUp',
+      key: 'Enter',
+      code: 'Enter',
+      windowsVirtualKeyCode: 13,
+    });
+    for (const action of ['previous', 'next']) {
+      await evaluate(
+        `document.querySelector('#entryDate-calendar-popup [data-calendar-action="${action}"]').focus()`,
+      );
+      await command('Input.dispatchKeyEvent', {
+        type: 'keyDown',
+        key: 'Enter',
+        code: 'Enter',
+        windowsVirtualKeyCode: 13,
+      });
+      await command('Input.dispatchKeyEvent', {
+        type: 'keyUp',
+        key: 'Enter',
+        code: 'Enter',
+        windowsVirtualKeyCode: 13,
+      });
+      assert.equal(
+        await evaluate('document.activeElement.dataset.calendarAction'),
+        action,
+      );
+      assert.equal(
+        await evaluate(
+          "document.getElementById('entryDate').getAttribute('aria-expanded')",
+        ),
+        'true',
+      );
+    }
+    await command('Input.dispatchKeyEvent', {
+      type: 'keyDown',
+      key: 'Escape',
+      code: 'Escape',
+      windowsVirtualKeyCode: 27,
+    });
+    await command('Input.dispatchKeyEvent', {
+      type: 'keyUp',
+      key: 'Escape',
+      code: 'Escape',
+      windowsVirtualKeyCode: 27,
+    });
+    assert.equal(await evaluate('document.activeElement.id'), 'entryDate');
     await evaluate(`document.querySelector('.memory-entry button').click()`);
     assert.equal(await evaluate('document.activeElement.id'), 'entryText');
+    const editedId = await evaluate(
+      "document.querySelector('.memory-entry button').dataset.entryId",
+    );
+    db.prepare('UPDATE ai_memory SET version=version+1 WHERE id=?').run(
+      editedId,
+    );
+    await evaluate(
+      "document.getElementById('entryText').value='Synthetic preserved observation edit';document.getElementById('entryForm').requestSubmit()",
+    );
+    await waitFor(
+      "!document.getElementById('memoryError').classList.contains('hidden')",
+    );
+    assert.equal(
+      await evaluate("document.getElementById('entryText').value"),
+      'Synthetic preserved observation edit',
+    );
+    await evaluate("document.getElementById('reloadMemory').click()");
+    await waitFor(
+      "!document.getElementById('entryForm').querySelector('[type=submit]').disabled",
+    );
+    assert.equal(
+      await evaluate("document.getElementById('entryText').value"),
+      'Synthetic preserved observation edit',
+    );
+    await evaluate("document.getElementById('entryForm').requestSubmit()");
+    await waitFor("document.getElementById('entryText').value===''");
+    assert.equal(
+      db.prepare('SELECT text FROM ai_memory WHERE id=?').get(editedId).text,
+      'Synthetic preserved observation edit',
+    );
+    await evaluate(
+      `document.querySelector('[data-entry-id="${editedId}"][data-action="edit"]').click();document.getElementById('entryText').value='Synthetic edit after deletion'`,
+    );
+    db.prepare('DELETE FROM ai_memory WHERE id=?').run(editedId);
+    await evaluate("document.getElementById('reloadMemory').click()");
+    await waitFor("!document.getElementById('reloadMemory').disabled");
+    assert.equal(
+      await evaluate(
+        "document.getElementById('entryForm').querySelector('[type=submit]').disabled",
+      ),
+      true,
+    );
+    assert.equal(
+      await evaluate("document.getElementById('entryText').value"),
+      'Synthetic edit after deletion',
+    );
+    await evaluate("document.getElementById('cancelEntry').click()");
+    assert.equal(
+      await evaluate(
+        "document.getElementById('entryForm').querySelector('[type=submit]').disabled",
+      ),
+      false,
+    );
     const memoryStyles = await evaluate(
       `(()=>{const i=getComputedStyle(document.querySelector('#entryDate'));const b=getComputedStyle(document.querySelector('#profileForm button'));return {inputFont:i.fontFamily,inputRadius:i.borderRadius,buttonRadius:b.borderRadius}})()`,
     );

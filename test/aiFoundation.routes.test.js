@@ -275,3 +275,46 @@ test('HTTP asynchronous contract survives polling/reload with mock-only register
   assert.equal(failed.statusCode, 500);
   assert.equal(failed.json().error, 'aiInternalError');
 });
+
+test('invalid AI settings disable paid work without breaking startup, memory or cleanup', async (t) => {
+  const config = readAiConfig({
+    AI_ENABLED: 'true',
+    OPENAI_API_KEY: 'synthetic-test-key',
+    AI_RETENTION_DAYS: 'bad',
+    AI_CONTEXT_TOKENS: 'bad',
+    AI_TIMEOUT_MS: 'bad',
+  });
+  const { app, cookies } = await fixture(t, { aiConfig: config });
+  const headers = { cookie: cookies[1] };
+  assert.equal(
+    (await app.inject({ method: 'GET', url: '/api/ai/memory', headers }))
+      .statusCode,
+    200,
+  );
+  assert.equal(
+    (
+      await app.inject({
+        method: 'GET',
+        url: '/api/ai/context?purpose=cycle',
+        headers,
+      })
+    ).statusCode,
+    200,
+  );
+  const usage = (
+    await app.inject({ method: 'GET', url: '/api/ai/admin/usage', headers })
+  ).json();
+  assert.equal(usage.enabled, false);
+  assert.ok(usage.configurationErrors.includes('AI_RETENTION_DAYS'));
+  assert.equal(
+    (
+      await app.inject({
+        method: 'POST',
+        url: '/api/ai/executions',
+        headers,
+        payload: { purpose: 'cycle', idempotency_key: 'synthetic-invalid' },
+      })
+    ).statusCode,
+    503,
+  );
+});

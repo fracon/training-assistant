@@ -1,7 +1,7 @@
 # AI foundation (phase 0, issue #62)
 
-Status: implemented on `feat/ai-phase-0-foundation`, validated locally and pending PR
-review; **not integrated into main**. Main includes the approved documentation
+Status: implemented on `feat/ai-phase-0-foundation` ([open PR #67](https://github.com/fracon/training-assistant/pull/67)),
+validated locally and pending owner review; **not integrated into main**. Main includes the approved documentation
 plan (#66). Cycle, weekly-workout and analysis generation remain planned in
 #63–#65. This foundation does not enable those paid product operations.
 
@@ -32,7 +32,8 @@ remains `./data:/app/data`, and the container continues to use the `node` user.
 | `AI_RETENTION_DAYS` | 90 | 7–365 for terminal execution/debug and usage retention |
 | `AI_RETRIES` | 1 | 0–2; only an explicit provider 429 can retry |
 
-Invalid settings disable paid AI rather than breaking the rest of the app.
+Invalid settings disable paid AI; invalid numeric limits retain bounded local
+defaults so startup, personal memory and cleanup remain usable.
 Administrator usage reports expose invalid setting **names**, never values or
 credentials. Model documentation and public pricing were checked on 2026-10-14;
 project access and actual model quality require a real controlled evaluation.
@@ -96,7 +97,9 @@ explicit gaps. They are not inferred as zero-valued workouts or rest days.
 Up to three older completed comparable sessions are selected by saved training
 type for analysis, long-run type for weekly context, or recency for cycle context.
 Comparable records state whether they also belong to an aggregate, so their
-metrics must never be added again. Source IDs/content hashes, ranges, selection
+metrics must never be added again. The execution also records versions of every preserved-prompt dependency,
+including records omitted from detailed model context. Source IDs/content
+hashes, ranges, selection
 reasons, missing data and budget/cutoff omissions are included. There is no
 fabricated applied AI plan for an old cycle.
 
@@ -173,11 +176,12 @@ invalid JSON and invalid domain responses are terminal and never applied.
 Only explicit 429 responses may retry (bounded by AI_RETRIES). Network failure,
 timeout, malformed transport output or server 5xx is uncertain and never
 replayed automatically. On restart, persisted running work becomes uncertain;
-queued work can resume after account, source and adapter checks. Reservations
+queued work can resume after account, source and adapter checks, respecting
+both current per-user and global concurrency limits. Reservations
 from a previous UTC day expire without dispatch rather than bypassing today's
 allowance; disabled configuration also refuses dispatch. Ownership,
-activity and selected source versions are rechecked before dispatch and after
-completion; deleted or changed data is never recreated or applied. Later phases
+activity and source versions (including prompt-only dependencies) are
+rechecked atomically with the queued-to-running claim and final result write; deleted or changed data is never recreated or applied. Later phases
 must also revalidate and apply atomically/idempotently at their own domain boundary.
 
 ## Validation and evaluation
@@ -207,7 +211,7 @@ Official references checked at implementation:
 ## Local delivery evidence (2026-10-15)
 
 - `npm test`: 1,162 tests passed before the final focused refinements.
-- Final `npm run test:coverage` (which runs `npm test`): 1,166 passed, zero
+- Initial delivery `npm run test:coverage` (which runs `npm test`): 1,166 passed, zero
   failures/skips; Statements, Branches, Functions and Lines all 100% in the
   repository's required instrumentation scope.
 - 48 byte-identical prompt comparisons across the 12 captured synthetic cases.
@@ -227,3 +231,23 @@ versions without GPS transmission, upcoming planning, admin-only usage/cost,
 expired reservations, conservative unknown usage and keyboard/input preservation.
 GitHub checks and Codex review are separate from these local results; integration
 into main still requires an owner-approved merge.
+
+### Coordinated review correction
+
+The first Codex review of commit `e24fbde` reported three P2 findings. All were
+confirmed and corrected together: atomic dispatch revalidation, retargeting an
+observation's version after conflict/reload without erasing edits, and retaining
+calendar-toolbar focus after month navigation. The same correction adds atomic
+completion revalidation, source versions for every preserved-prompt dependency
+even when omitted by the context budget, and per-user restart concurrency.
+Regression tests first reproduced the latter two failures and now pass.
+
+The coordinated correction gate ran `npm run test:coverage` again: **1,172
+tests passed**, zero failures/skips, and all four required metrics remain 100%.
+Chrome regression checks cover conflict/reload/resave with retained observation
+input, concurrent deletion without recreation, and Previous/Next month keyboard
+focus followed by Escape. Invalid numeric AI settings also have a startup/HTTP
+regression: paid work stays disabled while bounded defaults keep local memory
+and cleanup functional. An additional consolidated review is requested because
+the correction moves eligibility checks into claim/completion transactions; it
+is a deliberate persistence review, not an automatic request per corrective commit.

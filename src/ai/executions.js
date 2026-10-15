@@ -3,7 +3,11 @@
 const { randomUUID } = require('node:crypto');
 const { AiError, hash, activeOwner, exactKeys } = require('./memory');
 const { buildContext, contextIsCurrent, tokenBound } = require('./context');
-const { renderPrompt, PROMPT_VERSION } = require('./prompt-service');
+const {
+  renderPrompt,
+  promptSources,
+  PROMPT_VERSION,
+} = require('./prompt-service');
 const { RATES } = require('./config');
 const { buildPayload, createResponsesClient } = require('./client');
 const TERMINAL = ['completed', 'failed', 'uncertain', 'cancelled', 'outdated'];
@@ -24,6 +28,17 @@ function createExecutionService({
   let stopped = false;
   let scheduled = false;
   const inFlight = new Map();
+  function promptIsCurrent(row) {
+    try {
+      const settings = JSON.parse(row.configuration_json);
+      return (
+        hash(promptSources(db, row.user_id, settings.promptRequest)) ===
+        hash(settings.promptSources)
+      );
+    } catch {
+      return false;
+    }
+  }
   function get(userId, id, debug = false) {
     const user = activeOwner(db, userId);
     if (debug && user.role !== 'admin') throw new AiError('adminRequired', 403);
@@ -32,7 +47,8 @@ function createExecutionService({
       .get(userId, id);
     if (!row) throw new AiError('executionNotFound', 404);
     const context = JSON.parse(row.context_json);
-    const current = contextIsCurrent(db, userId, context, config);
+    const current =
+      contextIsCurrent(db, userId, context, config) && promptIsCurrent(row);
     const result = {
       id: row.id,
       purpose: row.purpose,
@@ -205,6 +221,16 @@ function createExecutionService({
           rate,
           rateVersion: '2026-10-14-conservative-ceiling',
           requestHash,
+          promptRequest: {
+            purpose: body.purpose,
+            resourceId: body.resource_id ?? null,
+            targetDate: body.target_date ?? null,
+          },
+          promptSources: promptSources(db, userId, {
+            purpose: body.purpose,
+            resourceId: body.resource_id ?? null,
+            targetDate: body.target_date ?? null,
+          }),
           retries: limits.AI_RETRIES,
         };
         db.prepare(
@@ -234,7 +260,13 @@ function createExecutionService({
   function finish(
     row,
     state,
-    { value = null, usage = null, error = null, knownUnbilled = false } = {},
+    {
+      value = null,
+      usage = null,
+      error = null,
+      knownUnbilled = false,
+      verifySources = false,
+    } = {},
   ) {
     db.transaction(() => {
       const current = db
@@ -242,6 +274,25 @@ function createExecutionService({
         .get(row.id, row.user_id);
       if (!current || current.settled) return;
       const cfg = JSON.parse(row.configuration_json);
+      if (verifySources) {
+        let currentSources = false;
+        try {
+          currentSources =
+            contextIsCurrent(
+              db,
+              row.user_id,
+              JSON.parse(row.context_json),
+              config,
+            ) && promptIsCurrent(row);
+        } catch {
+          currentSources = false;
+        }
+        if (!currentSources) {
+          state = 'outdated';
+          value = null;
+          error = 'sourceChanged';
+        }
+      }
       const rate = cfg.rate;
       const tokens = usage
         ? usage.input + usage.output
@@ -291,48 +342,69 @@ function createExecutionService({
       );
     }).immediate();
   }
+  function claim(id) {
+    return db
+      .transaction(() => {
+        let row = db
+          .prepare('SELECT * FROM ai_executions WHERE id = ?')
+          .get(id);
+        if (!row || row.state !== 'queued') return;
+        if (
+          !config.enabled ||
+          row.created_at.slice(0, 10) !== now().slice(0, 10)
+        ) {
+          finish(row, 'failed', {
+            error: config.enabled ? 'reservationExpired' : 'aiUnavailable',
+            knownUnbilled: true,
+          });
+          return;
+        }
+        const context = JSON.parse(row.context_json);
+        try {
+          activeOwner(db, row.user_id);
+        } catch {
+          finish(row, 'cancelled', {
+            error: 'accountUnavailable',
+            knownUnbilled: true,
+          });
+          return;
+        }
+        if (
+          !contextIsCurrent(db, row.user_id, context, config) ||
+          !promptIsCurrent(row)
+        ) {
+          finish(row, 'outdated', {
+            error: 'sourceChanged',
+            knownUnbilled: true,
+          });
+          return;
+        }
+        const operation = operations[row.purpose];
+        const cfg = JSON.parse(row.configuration_json);
+        if (!operation || operation.version !== cfg.adapterVersion) {
+          finish(row, 'failed', {
+            error: 'adapterUnavailable',
+            knownUnbilled: true,
+          });
+          return;
+        }
+        if (
+          !db
+            .prepare(
+              "UPDATE ai_executions SET state='running',attempts=attempts+1,updated_at=? WHERE id = ? AND state='queued'",
+            )
+            .run(now(), id).changes
+        )
+          return;
+        return db.prepare('SELECT * FROM ai_executions WHERE id = ?').get(id);
+      })
+      .immediate();
+  }
   async function dispatch(id) {
-    let row = db.prepare('SELECT * FROM ai_executions WHERE id = ?').get(id);
-    if (!row || row.state !== 'queued') return;
-    if (!config.enabled || row.created_at.slice(0, 10) !== now().slice(0, 10)) {
-      finish(row, 'failed', {
-        error: config.enabled ? 'reservationExpired' : 'aiUnavailable',
-        knownUnbilled: true,
-      });
-      return;
-    }
-    const context = JSON.parse(row.context_json);
-    try {
-      activeOwner(db, row.user_id);
-    } catch {
-      finish(row, 'cancelled', {
-        error: 'accountUnavailable',
-        knownUnbilled: true,
-      });
-      return;
-    }
-    if (!contextIsCurrent(db, row.user_id, context, config)) {
-      finish(row, 'outdated', { error: 'sourceChanged', knownUnbilled: true });
-      return;
-    }
+    const row = claim(id);
+    if (!row) return;
     const operation = operations[row.purpose];
     const cfg = JSON.parse(row.configuration_json);
-    if (!operation || operation.version !== cfg.adapterVersion) {
-      finish(row, 'failed', {
-        error: 'adapterUnavailable',
-        knownUnbilled: true,
-      });
-      return;
-    }
-    if (
-      !db
-        .prepare(
-          "UPDATE ai_executions SET state='running',attempts=attempts+1,updated_at=? WHERE id = ? AND state='queued'",
-        )
-        .run(now(), id).changes
-    )
-      return;
-    row = db.prepare('SELECT * FROM ai_executions WHERE id = ?').get(id);
     try {
       const response = await call(JSON.parse(row.payload_json));
       let valid = false;
@@ -341,22 +413,11 @@ function createExecutionService({
       } catch {
         valid = false;
       }
-      let current = false;
-      try {
-        activeOwner(db, row.user_id);
-        current = contextIsCurrent(db, row.user_id, context, config);
-      } catch {
-        current = false;
-      }
-      const state = !current ? 'outdated' : valid ? 'completed' : 'failed';
-      finish(row, state, {
-        value: current && valid ? response.value : null,
+      finish(row, valid ? 'completed' : 'failed', {
+        value: valid ? response.value : null,
         usage: response.usage,
-        error: !current
-          ? 'sourceChanged'
-          : valid
-            ? null
-            : response.error || 'invalidDomainResponse',
+        error: valid ? null : response.error || 'invalidDomainResponse',
+        verifySources: true,
       });
     } catch (error) {
       const code =
@@ -398,16 +459,20 @@ function createExecutionService({
     if (stopped || !db.open) return;
     const rows = db
       .prepare(
-        "SELECT id FROM ai_executions WHERE state='queued' ORDER BY created_at,id",
+        "SELECT id,user_id FROM ai_executions WHERE state='queued' ORDER BY created_at,id",
       )
       .all();
     for (const row of rows) {
       if (inFlight.size >= limits.AI_CONCURRENCY_GLOBAL) break;
+      const activeForUser = [...inFlight.values()].filter(
+        (job) => job.userId === row.user_id,
+      ).length;
+      if (activeForUser >= limits.AI_CONCURRENCY_USER) continue;
       const task = dispatch(row.id).finally(() => {
         inFlight.delete(row.id);
         schedule();
       });
-      inFlight.set(row.id, task);
+      inFlight.set(row.id, { task, userId: row.user_id });
     }
   }
   function cancel(userId, id) {
@@ -458,7 +523,7 @@ function createExecutionService({
   }
   async function stop() {
     stopped = true;
-    await Promise.allSettled([...inFlight.values()]);
+    await Promise.allSettled([...inFlight.values()].map((job) => job.task));
   }
   return {
     enqueue,

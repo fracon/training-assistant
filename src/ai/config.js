@@ -30,9 +30,9 @@ function readAiConfig(env = process.env) {
   for (const [key, [fallback, min, max]] of Object.entries(LIMITS)) {
     const value =
       env[key] === undefined || env[key] === '' ? fallback : Number(env[key]);
-    if (!Number.isInteger(value) || value < min || value > max)
-      errors.push(key);
-    config.limits[key] = value;
+    const valid = Number.isInteger(value) && value >= min && value <= max;
+    if (!valid) errors.push(key);
+    config.limits[key] = valid ? value : fallback;
   }
   for (const purpose of ['cycle', 'workouts', 'analysis']) {
     const key = `AI_MODEL_${purpose.toUpperCase()}`;
@@ -46,8 +46,9 @@ function readAiConfig(env = process.env) {
   })) {
     const value =
       env[key] === undefined || env[key] === '' ? fallback : Number(env[key]);
-    if (!Number.isFinite(value) || value <= 0 || value > 1000) errors.push(key);
-    config.limits[key] = value;
+    const valid = Number.isFinite(value) && value > 0 && value <= 1000;
+    if (!valid) errors.push(key);
+    config.limits[key] = valid ? value : fallback;
   }
   if (!config.apiKey) config.enabled = false;
   config.errors = errors;
