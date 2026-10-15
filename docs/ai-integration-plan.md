@@ -1,7 +1,9 @@
 # Kinesis AI integration plan
 
-Status: planned; no phase is implemented by this document.
-Owner-approved direction: 2026-10-14; memory scope corrected on 2026-10-15.
+Status: documentation integrated via PRs #66 and #68; phase 0 implemented on branch
+`feat/ai-phase-0-foundation`, validated locally, pending PR review and merge.
+Phases 1–3 remain planned. This branch is not integrated into main.
+Owner-approved direction: 2026-10-14; memory correction approved 2026-10-15 (#68).
 Baseline reviewed: main application version 0.19.6.
 
 This is the shared implementation contract for integrating OpenAI into Kinesis.
@@ -16,7 +18,7 @@ and documented by the implementing agent.
 
 | Phase | Issue | Dependency | Status |
 | --- | --- | --- | --- |
-| 0: API foundation and training memory | [#62](https://github.com/fracon/training-assistant/issues/62) | Documentation plan merged | PR #67 open; memory UX revision required |
+| 0: API foundation and training memory | [#62](https://github.com/fracon/training-assistant/issues/62) | Documentation plan/correction merged (#66/#68) | Implemented in [open PR #67](https://github.com/fracon/training-assistant/pull/67); not integrated |
 | 1: Cycle planning | [#63](https://github.com/fracon/training-assistant/issues/63) | Phase 0 merged | Planned |
 | 2: Weekly workout requests | [#64](https://github.com/fracon/training-assistant/issues/64) | Phase 1 merged | Planned |
 | 3: Contextual workout analysis | [#65](https://github.com/fracon/training-assistant/issues/65) | Phase 2 merged | Planned |
@@ -31,7 +33,8 @@ A large phase may use smaller dependent PRs within its issue.
 Mark status as planned, implemented in an open PR, or integrated, with evidence.
 An open PR or passing local tests is not a completed merge. Functional releases
 stay in beta 0.x and follow AGENTS SemVer rules against the actual main version.
-This initial documentation-only plan leaves application version unchanged.
+The documentation-only PR left application version unchanged. The functional
+phase 0 branch increments beta to 0.20.0.
 
 ## Intended experience
 
@@ -83,7 +86,9 @@ prompt/model/tool proxy. Render model responses safely.
 
 ## Runtime configuration and data boundary
 
-Planned configuration, not supported by this documentation PR:
+Phase 0 configuration is implemented on this branch; see the complete settings,
+defaults and bounds in [AI foundation](ai-foundation.md). Paid product adapters
+remain unregistered until their individual phases:
 
 - `OPENAI_API_KEY`: server-only secret injected into the running container.
 - `AI_ENABLED`: explicit feature switch.
@@ -118,8 +123,8 @@ work must not recreate its data.
 Owner correction, 2026-10-15: memory is a readable and correctable view of the
 athlete context assembled from application use, not a second profile form.
 This replaces the original requirement for manually maintained goals,
-preferences, limitations and generic dated observations. The initial phase 0
-implementation in PR #67 needs this correction before acceptance.
+preferences, limitations and generic dated observations. The revised phase 0 implementation in open PR #67 applies this correction;
+it remains subject to review and is not integrated into main.
 
 Before adding any field, inventory existing sources, their owner, update flow,
 temporal meaning and consumers. Reuse that source. Document a concrete missing
@@ -150,6 +155,13 @@ only through administrator debug. Explain that actual selection depends on
 the task and budget; the overview is not a promise that every record is sent.
 Build both from the same source mapping, so the overview does not become another
 independently maintained memory.
+
+The open PR #67 branch now presents this bounded view with grouped goal/routine
+cards, semantic availability/totals tables, visible dated feedback and expandable
+planning details. Context loads on opening; load failures expose a retry action,
+not a persistent refresh control. The [presentation contract](ai-foundation.md#memory-presentation-on-the-pr-67-branch)
+defines the delivered UI; it is not yet integrated into main and adds no later-phase
+generation or interpretation capabilities.
 
 ### Phase 0 boundary and correction
 
@@ -404,6 +416,31 @@ Every implementation PR must:
 
 For this initial documentation-only PR, inspect links, references and whitespace;
 do not run the application suite without a concrete functional risk.
+
+## Phase 0 implementation decisions on this branch
+
+The [foundation contract](ai-foundation.md) records the consolidated-view placement in the
+account menu; schema/modules; deterministic source selection and explicit gaps;
+90-day opportunistic cleanup; transactional quotas and conservative cost rates;
+uncertain restart recovery; owner-only administrator debug; and synthetic prompt
+equivalence/evaluation fixtures. The source inventory maps cycles (`objective`, goals, target/start dates) to
+`/cycles.html`; structured weekly availability to `/ai-coach.html`; bounded
+sessions/feedback and canonical aggregates to calendar/result screens. Only
+previous running experience uses the supplemental editor. The UI is a product
+projection of context policy `training-context-v3`, with no raw debug for ordinary
+users. Existing profile duplicate keys and generic memory rows remain in a
+read-only owner archive and are excluded from new selection. No schema deletion
+or reinterpretation occurs; exact historical execution snapshots stay intact.
+Weekly comparable lookup uses both type and workout-name long-run labels.
+The 429 retry/cancellation decision is atomic, including reservation settlement.
+Recent-context priority, compact planning, mandatory reports and final-budget
+refusal follow the [effective selection policy](ai-foundation.md#effective-selection-policy-training-context-v3).
+A scoped shared ES-module manifest resolves backend loading without changing
+the CommonJS root or external prompt output; see the same foundation contract.
+Native fetch implements Responses with no SDK
+retry side effects. There are no registered paid product adapters in phase 0.
+Functional cycle, weekly and analysis adapters remain in their planned phases.
+Mock tests are separate from real model quality/access evaluation.
 
 ## Implementation decisions to record
 

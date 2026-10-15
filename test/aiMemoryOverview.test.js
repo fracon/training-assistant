@@ -1,0 +1,94 @@
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { createDatabase, initializeDatabase } = require('../src/db/database');
+const { memoryOverview } = require('../src/ai/overview');
+const { buildContext, contextIsCurrent } = require('../src/ai/context');
+const { saveProfile, readLegacyMemory } = require('../src/ai/memory');
+const { readAiConfig } = require('../src/ai/config');
+const { createExecutionService } = require('../src/ai/executions');
+
+test('canonical corrections refresh the overview and next context; legacy data and past snapshots stay separate', async () => {
+  const db = createDatabase({ filename: ':memory:' });
+  for (const id of [1,2]) db.prepare("INSERT INTO users(id,email,password_hash,role) VALUES (?,?,'synthetic','user')").run(id,`overview-${id}@example.invalid`);
+  const config=readAiConfig({});
+  const asOf='2026-10-14';
+  const args={purpose:'cycle',asOf,config};
+  const empty=memoryOverview(db,1,config,asOf);
+  assert.equal(empty.cycle,null); assert.deepEqual(empty.recent,[]);
+  assert.equal(empty.legacyAvailable,false); assert.equal(empty.profile.version,0);
+  db.prepare("INSERT INTO training_cycles(id,user_id,objective,primary_goal,target_date,status) VALUES ('own',1,'Target race','Old goal','2026-12-01','active'),('private',2,'Private goal',NULL,NULL,'active')").run();
+  db.prepare("INSERT INTO ai_coach_availability(user_id,day_key,can_train,available_periods,available_minutes,location) VALUES (1,'monday',1,?,60,'Old place')").run(JSON.stringify(['before_08']));
+  db.prepare("INSERT INTO trainings(id,user_id,dia,tipo,treino,feedback_has_pain,feedback_pain,completed,feedback_rpe,fit_distance,fit_duration,result_data_source) VALUES (1,1,'2026-10-12','Run','Recent','yes','Dated discomfort',1,4,5,'30:00','manual'),(2,1,'2026-09-01','Run','Older',NULL,NULL,1,3,10,'1:00:00','manual'),(3,1,'2026-10-16','Run','Upcoming',NULL,NULL,0,NULL,NULL,NULL,'none'),(4,2,'2026-10-12','Run','Private',NULL,NULL,0,NULL,NULL,NULL,'none')").run();
+  const before=buildContext(db,1,args);
+  const frozen=JSON.stringify(before);
+  let overview=memoryOverview(db,1,config,asOf);
+  assert.equal(overview.cycle.primaryGoal,'Old goal');
+  assert.equal(overview.cycle.status,'active');
+  assert.equal(overview.recent[0].includedInAggregates,false);
+  assert.equal(overview.comparables[0].includedInAggregates,true);
+  assert.equal(overview.availability[0].location,'Old place');
+  assert.equal(overview.availability[0].canTrain,true);
+  assert.equal(overview.recent[0].report.feedback_pain,'Dated discomfort');
+  assert.equal(overview.recent[0].report.observedOn,'2026-10-12');
+  assert.equal(overview.recent[0].href,'/training-result.html?id=1');
+  assert.equal(overview.upcoming[0].planned.treino,'Upcoming');
+  assert.equal(overview.weekly[0].distanceKm,10);
+  assert.equal(overview.comparables[0].planned.treino,'Older');
+  for(const field of ['hash','sources','configuration','payload','policyVersion','omissions']) assert.equal(field in overview,false);
+  assert.equal(JSON.stringify(overview).includes('Private'),false);
+  db.prepare("UPDATE training_cycles SET primary_goal='Corrected goal' WHERE id='own'").run();
+  db.prepare("UPDATE ai_coach_availability SET location='Corrected place',available_minutes=90 WHERE user_id=1").run();
+  db.prepare("UPDATE trainings SET feedback_pain='Corrected dated report' WHERE id=1").run();
+  overview=memoryOverview(db,1,config,asOf);
+  const next=buildContext(db,1,args);
+  assert.equal(overview.cycle.primaryGoal,next.cycle.primary_goal);
+  assert.equal(overview.availability[0].location,next.availability[0].location);
+  assert.equal(overview.recent[0].report.feedback_pain,next.recent[0].report.feedback_pain);
+  assert.equal(contextIsCurrent(db,1,before,config),false);
+  assert.equal(JSON.stringify(before),frozen);
+  assert.equal(next.currentRestrictions,undefined);
+  // Old profile and generic rows survive reinitialization and experience edits, without changing selected context.
+  db.prepare("INSERT INTO ai_profiles VALUES (?,?,1,'2026-01-01')").run(1,JSON.stringify({goals:{value:'Legacy goal'},restrictions:{value:'Legacy limitation'}}));
+  db.prepare("INSERT INTO ai_memory VALUES ('old',1,'restriction','user_report','Legacy restriction','2026-01-01','current','{}',1,'2026-01-01')").run();
+  initializeDatabase(db); initializeDatabase(db);
+  assert.equal(buildContext(db,1,args).hash,next.hash);
+  assert.equal(memoryOverview(db,1,config,asOf).legacyAvailable,true);
+  const archived=readLegacyMemory(db,1);
+  saveProfile(db,1,{fields:{experience:'Before Kinesis'},expected_version:1});
+  assert.deepEqual(readLegacyMemory(db,1),archived);
+  assert.equal(buildContext(db,1,args).profile.fields.experience.value,'Before Kinesis');
+  assert.deepEqual(readLegacyMemory(db,2),{fields:{},entries:[]});
+  const s=createExecutionService({db,config,client:()=>{throw Error('No paid calls allowed');}});
+  memoryOverview(db,1,config,asOf); await s.stop();
+  // The notice also covers an archive containing only generic entries.
+  db.prepare('DELETE FROM ai_profiles WHERE user_id=1').run();
+  assert.equal(memoryOverview(db,1,config,asOf).legacyAvailable,true);
+  db.prepare('UPDATE users SET is_active=0 WHERE id=1').run();
+  assert.throws(()=>memoryOverview(db,1,config,asOf),/accountUnavailable/);
+  db.close();
+});
+
+for (const previousPolicy of ['training-context-v1', 'training-context-v2'])
+test(`policy upgrade keeps persisted ${previousPolicy} snapshots intact and refuses queued legacy context before network`, async () => {
+  const db=createDatabase({filename:':memory:'});
+  db.prepare("INSERT INTO users(id,email,password_hash,role) VALUES (1,'snapshot@example.invalid','synthetic','admin')").run();
+  db.prepare("INSERT INTO training_cycles(id,user_id,objective,status) VALUES ('cycle',1,'Synthetic target','active')").run();
+  const config=readAiConfig({AI_ENABLED:'true',OPENAI_API_KEY:'synthetic-test-key'});
+  let calls=0;
+  const adapter={version:'synthetic-v1',adaptPrompt:(p)=>p,instructions:'Synthetic only',format:{type:'json_object'},validate:()=>true};
+  const service=createExecutionService({db,config,operations:{cycle:adapter},client:async()=>{calls++;return {value:{ok:true},usage:null,error:null};},now:()=> '2026-10-14T12:00:00Z'});
+  const row=service.enqueue(1,{purpose:'cycle',resource_id:'cycle',idempotency_key:'snapshot-legacy'});
+  const original=JSON.parse(db.prepare('SELECT context_json FROM ai_executions WHERE id=?').get(row.id).context_json);
+  // Synthetic existing-installation snapshot. Reinitializing must preserve its exact old text.
+  const legacy=JSON.stringify({...original,policyVersion:previousPolicy,profile:{fields:{goals:{value:'Legacy duplicate'}}},currentRestrictions:[{text:'Legacy restriction'}]});
+  db.prepare('UPDATE ai_executions SET context_json=? WHERE id=?').run(legacy,row.id);
+  initializeDatabase(db); initializeDatabase(db);
+  assert.equal(service.get(1,row.id,true).outdated,true);
+  assert.equal(service.get(1,row.id,true).context.profile.fields.goals.value,'Legacy duplicate');
+  await service.dispatch(row.id);
+  assert.equal(calls,0);
+  assert.equal(db.prepare('SELECT context_json FROM ai_executions WHERE id=?').get(row.id).context_json,legacy);
+  assert.equal(service.get(1,row.id).state,'outdated');
+  await service.stop();db.close();
+});

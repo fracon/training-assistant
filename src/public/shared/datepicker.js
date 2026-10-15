@@ -46,6 +46,10 @@ export function createDatePicker(input, { isoInput = null, getLanguage = () => '
   const popup = document.createElement('div');
   popup.className = 'date-picker-popup hidden';
   popup.setAttribute('role', 'dialog');
+  popup.id = `${input.id}-calendar-popup`;
+  input.setAttribute('aria-haspopup', 'dialog');
+  input.setAttribute('aria-controls', popup.id);
+  input.setAttribute('aria-expanded', 'false');
   wrapper.appendChild(popup);
   let visibleMonth = dateFromIso(isoInput?.value || input.dataset.iso || '') || new Date();
 
@@ -57,7 +61,11 @@ export function createDatePicker(input, { isoInput = null, getLanguage = () => '
     if (notify) onChange(iso);
   }
   function render() {
+    const focused = popup.contains(document.activeElement) ? document.activeElement : null;
+    const focusedAction = focused?.dataset.calendarAction;
+    const focusedDate = focused?.dataset.date;
     const locale = localeOf(getLanguage());
+    popup.setAttribute('aria-label', locale === 'pt-BR' ? 'Escolher data' : 'Choose date');
     const start = firstDayIndex(getWeekStart());
     const monthStart = new Date(visibleMonth.getFullYear(), visibleMonth.getMonth(), 1);
     const offset = (monthStart.getDay() - start + 7) % 7;
@@ -75,9 +83,16 @@ export function createDatePicker(input, { isoInput = null, getLanguage = () => '
     const nextLabel = locale === 'pt-BR' ? 'Próximo mês' : 'Next month';
     popup.innerHTML = `<div class="date-picker-toolbar"><button type="button" data-calendar-action="previous" aria-label="${previousLabel}">‹</button><strong>${monthLabel(monthStart, locale)}</strong><button type="button" data-calendar-action="next" aria-label="${nextLabel}">›</button></div><div class="date-picker-weekdays">${headings.map((label) => `<span>${label}</span>`).join('')}</div><div class="date-picker-grid">${cells.join('')}</div>`;
     input.value = formatDate(selected, getLanguage());
+    if (focusedAction) popup.querySelector(`[data-calendar-action="${focusedAction}"]`)?.focus();
+    else if (focusedDate) popup.querySelector(`[data-date="${focusedDate}"]`)?.focus();
   }
-  function close() { popup.classList.add('hidden'); }
-  input.addEventListener('click', (event) => { event.stopPropagation(); render(); popup.classList.toggle('hidden'); });
+  function close() {
+    const restore = popup.contains(document.activeElement);
+    popup.classList.add('hidden');
+    input.setAttribute('aria-expanded', 'false');
+    if (restore) input.focus();
+  }
+  input.addEventListener('click', (event) => { event.stopPropagation(); render(); popup.classList.toggle('hidden'); input.setAttribute('aria-expanded', String(!popup.classList.contains('hidden'))); });
   popup.addEventListener('click', (event) => {
     event.stopPropagation();
     const action = event.target.closest('[data-calendar-action]')?.dataset.calendarAction;
@@ -85,6 +100,24 @@ export function createDatePicker(input, { isoInput = null, getLanguage = () => '
     const day = event.target.closest('[data-date]')?.dataset.date;
     if (day) { visibleMonth = dateFromIso(day); updateValue(day); close(); }
   });
+  input.addEventListener('keydown', (event) => {
+    if (!['Enter', ' ', 'ArrowDown'].includes(event.key)) return;
+    event.preventDefault();
+    render();
+    popup.classList.remove('hidden');
+    input.setAttribute('aria-expanded', 'true');
+    (popup.querySelector('.is-selected') || popup.querySelector('[data-date]')).focus();
+  });
+  popup.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') { event.preventDefault(); close(); return; }
+    const delta = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[event.key];
+    if (!delta || !event.target.matches('[data-date]')) return;
+    event.preventDefault();
+    const days = [...popup.querySelectorAll('[data-date]')];
+    const index = days.indexOf(event.target);
+    days[Math.min(days.length - 1, Math.max(0, index + delta))].focus();
+  });
+  document.addEventListener('focusin', (event) => { if (!wrapper.contains(event.target)) close(); });
   document.addEventListener('click', (event) => { if (!wrapper.contains(event.target)) close(); });
   document.addEventListener('app:languagechange', render);
   document.addEventListener('kinesis:preferences-changed', render);

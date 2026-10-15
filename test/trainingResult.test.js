@@ -1167,7 +1167,7 @@ test('training-result.html ships the planned location field and weather spinner'
 });
 
 test('training-result.js wires toggling, saving, generation and i18n refreshes', () => {
-  const js = readFileSync(join(publicDir, 'training-result.js'), 'utf8');
+  const js = readFileSync(join(publicDir, 'training-result.js'), 'utf8') + readFileSync(join(publicDir, 'shared/analysis-prompts.js'), 'utf8');
   const markup = readFileSync(join(publicDir, 'training-result.html'), 'utf8');
 
   assert.match(js, /import \{ initShell, getShellI18n, getUserPreferences, showConfirm, showShellToast, refreshIcons \} from '\.\/shared\/shell\.js';/);
@@ -1466,7 +1466,7 @@ test('the RPE group is required, described, and never hides an invalid control',
 });
 
 test('training-result.js refuses the terminal actions without an answered RPE', () => {
-  const js = readFileSync(join(publicDir, 'training-result.js'), 'utf8');
+  const js = readFileSync(join(publicDir, 'training-result.js'), 'utf8') + readFileSync(join(publicDir, 'shared/analysis-prompts.js'), 'utf8');
   const guard = js.match(/const requireFeedbackRpe = \(\) => \{[\s\S]*?\n  \};/)?.[0] ?? '';
   assert.match(guard, /if \(isAnsweredFeedbackRpe\(rpe\)\) return rpe;/);
   assert.match(guard, /rpeError\.textContent = t\(rpeErrorKey\);/);

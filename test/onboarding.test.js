@@ -200,7 +200,7 @@ async function runChromeAtViewport(chrome, url, { width, height, mobile, cookie 
         returnByValue: true,
       });
       const tabOrder = [];
-      for (let index = 0; index < 3; index += 1) {
+      for (let index = 0; index < 4; index += 1) {
         await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
         await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
         const focus = await command('Runtime.evaluate', { expression: 'document.activeElement?.id', returnByValue: true });
@@ -958,7 +958,7 @@ test('authenticated setup guide menu handles visible, hidden, completed, and exi
     assert.equal(visibleResult.progress, '0 de 3 etapas');
     assert.equal(visibleResult.setupGuideLabel, 'Guia de configuração');
     assert.equal(visibleResult.eyebrow, 'Próxima etapa', 'incomplete Portuguese guide uses the next-step label');
-    assert.deepEqual(visibleResult.userMenuTabOrder, ['userSetupGuide', 'userChangePassword', 'userPreferences']);
+    assert.deepEqual(visibleResult.userMenuTabOrder, ['userSetupGuide', 'userTrainingMemory', 'userChangePassword', 'userPreferences']);
     assert.deepEqual(visibleResult.firstVisibleChildren, ['hero', 'onboarding-guide card-section'], 'an incomplete, unhidden checklist remains directly beneath the hero');
     assert.equal(visibleResult.removed, true);
     assert.equal(visibleResult.previewAbsent, true);

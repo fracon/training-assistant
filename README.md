@@ -2,24 +2,43 @@
 
 A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized training-request prompts for use with an external AI.
 
-Current application version: **0.19.6** (active beta development).
+Current application version: **0.20.0** (active beta development).
 
-## Planned AI integration
+## AI integration: phase 0 on this branch
 
-The planned training-memory screen is a consolidated view of context derived
-from cycles, availability and session feedback, with source/date information
-and links to correct the original records. It is not another form for goals,
-preferences or limitations. Only previous running experience is optional
-supplemental input in phase 0. Later AI interpretations will be identified as
-such and can be confirmed, corrected or dismissed by their owner. These are
-planned requirements; the phase 0 implementation in PR #67 needs revision.
+The approved [integration plan](docs/ai-integration-plan.md) is integrated via
+PRs #66 and #68. This branch implements issue #62's foundation and consolidated
+training memory; it is **not integrated into main until PR #67 is merged**.
+Cycle, weekly-workout and analysis generation remain planned in #63–#65.
+Existing external prompt workflows remain available and preserve PT/EN output.
 
-The [AI integration plan](docs/ai-integration-plan.md) defines the proposed
-OpenAI API foundation and training memory, followed by cycle planning, weekly
-workout generation and contextual analysis (issues #62-#65). These features are
-not implemented by this documentation change; current prompts still run
-locally for use with an external AI. API configuration, runtime data transmission
-and administrator debug will be documented as each phase is delivered.
+The account menu opens **Training memory / Memória de treinamento**: a bounded
+view of current cycle goals, saved availability, dated sessions/feedback and
+canonical weekly aggregates, with dates, sources and correction links. The
+branch UI groups goals/routine, dated session feedback and supporting history;
+availability and totals use compact tables, while long planning details and
+administrator debug expand on demand. Context loads automatically on opening;
+“Tentar novamente / Try again” appears only after a loading failure. See the [presentation contract](docs/ai-foundation.md#memory-presentation-on-the-pr-67-branch). Recent
+discomfort/effort reports take priority over optional planning detail under the
+context budget; insufficient mandatory context is refused explicitly. Changes
+at those sources update the next view/context without duplicate editing. Only
+optional running experience from before Kinesis is edited here. Missing records
+remain explicit; discomfort is not a permanent restriction or a diagnosis.
+Earlier duplicate fields/observations are preserved in an owner-only downloadable
+archive and excluded from new contexts. Historical execution snapshots remain
+unchanged. Weekly comparable context recognizes long-run labels in the imported
+workout name as well as the training type. Administrators have a separate section
+for their own free prompt
+preview and protected execution debug. Common users receive no technical payload.
+No paid product operation is registered in phase 0, so configuring the key does
+not start model calls. The asynchronous execution service, quotas, restart
+recovery and Responses client are prepared for the later registered operations.
+
+See [AI foundation](docs/ai-foundation.md) for runtime settings, ZimaOS setup,
+API/schema contracts, retention/privacy, source selection, migration and tests.
+`OPENAI_API_KEY` is backend-only, injected at runtime; absent/disabled/invalid
+configuration keeps the existing application usable. Provider requests use
+`store:false`; this does not promise zero provider retention.
 
 ### Shoe mileage integrity
 
@@ -76,7 +95,7 @@ AI training assistants are only as good as the data you give them. Exporting wor
 - **Reversible account suspension** — deactivating a regular account ends its sessions immediately and blocks sign-in while keeping every training, cycle, shoe, and preference record. The state is a database-constrained `users.is_active` column, activation restores the login without restoring revoked sessions, and a correct password on a suspended account is refused with a localized message.
 - **Secure sessions** — 256-bit random session tokens stored in SQLite, delivered as `HttpOnly` / `Secure` / `SameSite=Lax` cookies with server-side expiry.
 - **Server-side route gating** — unauthenticated visitors are redirected to the login page by Fastify itself; the training tool is never rendered without a valid session.
-- **User dropdown menu** — the authenticated user badge opens **Setup guide**, **Change Password**, and **Preferences**. Logout remains a separate topbar action.
+- **User dropdown menu** — the authenticated user badge opens **Setup guide**, **Training memory**, **Change Password**, and **Preferences**. Logout remains a separate topbar action.
 - **Secure change password flow** — a dedicated modal with client-side validation that accumulates every problem into a robust grouped error box (the only error surface — no stray inline hints), backed by hardened `scrypt` verification of the current password before re-hashing and storing the new one.
 - **Global route guards** — the Training Calendar is strictly gated: users without an active Training Cycle are redirected to the Cycles page by the server, and cycle-dependent navigation is disabled in the shell as a second line of defense.
 - **New-user onboarding** — the first-visit welcome and three-step setup checklist are available in English and Brazilian Portuguese. The guide can be reopened from the user dropdown without changing progress or presentation preferences.
@@ -510,7 +529,7 @@ Configuration via environment variables:
 
 `UNSPLASH_API_KEY` is also accepted as a legacy alias by the server. `dotenv`
 loads `.env` from the process working directory at startup; the environment
-values above are the supported runtime configuration.
+values above and the [AI settings](docs/ai-foundation.md#configuration-and-deployment) are the supported runtime configuration.
 
 For local setup, optionally copy `.env.example` to `.env` and put your Unsplash **Access Key**
 in `UNSPLASH_ACCESS_KEY`; `dotenv` loads `.env` when `npm start` runs. The server also accepts the legacy
@@ -725,6 +744,9 @@ INSTRUÇÕES PARA A ANÁLISE
 Except for the public version and authentication routes, these API endpoints
 require the authenticated `ta_session` cookie. Protected data reads and writes
 are scoped to the signed-in user's records.
+
+The phase 0 memory, execution and owner-only admin debug endpoints are listed
+in [AI foundation API contracts](docs/ai-foundation.md#api-and-service-contract).
 
 ### Route index
 
@@ -955,9 +977,15 @@ Every primary flow is a standalone page (no single-page hacks, no overlapping la
 | Home | `src/public/home.html` · `src/public/home.css` · `src/public/home.js` | Authenticated dashboard with onboarding, cycle, weekly metrics, tracker, and quote hero |
 | Calendar | `src/public/calendar.html` · `src/public/calendar.css` · `src/public/calendar.js` | Monthly training calendar and deduplicating Excel import |
 | Solicitar Treinos / Request Workouts | `src/public/ai-coach.html` · `src/public/ai-coach.css` · `src/public/ai-coach.js` | Local prompt builder for weekly training requests |
+| Training memory | `src/public/training-memory.html` · `src/public/training-memory.css` · `src/public/training-memory.js` | Consolidated canonical context, source correction links and optional prior experience; separate own admin debug |
 | Cycles | `src/public/cycles.html` · `src/public/cycles.css` · `src/public/cycles.js` | Training-cycle management |
 | Shoes | `src/public/shoes.html` · `src/public/shoes.css` · `src/public/shoes.js` | Shoe rotation and mileage management |
 | Administration → Users | `src/public/admin-users.html` · `src/public/admin-users.css` · `src/public/admin-users.js` | Admin-only account list with create, edit, activate/deactivate, and delete |
+
+`src/public/shared/package.json` explicitly scopes shared JavaScript as ES modules
+for browser imports and synchronous Node 24 consumers. The backend and root
+package remain CommonJS. See the [module boundary](docs/ai-foundation.md#explicit-module-boundary)
+for the preserved consumers and Docker layout.
 
 Shared code lives in `src/public/shared/`: `shell.js` injects the authenticated shell and user menu; `onboarding.js` owns welcome/checklist state and the transient guide signal; `i18n.js` and `locales/` provide PT/EN; `theme.css` owns tokens and shared controls; `api.js`, validators, date, units, preferences, and supporting modules are reused by pages. `src/trainingImport.js` normalizes SheetJS workbook data on the backend.
 
@@ -972,6 +1000,7 @@ Shared code lives in `src/public/shared/`: `shell.js` injects the authenticated 
 │   ├── start.js                # Entry point (PORT/HOST/DATABASE_FILE and dotenv)
 │   ├── fitParser.js            # .FIT → normalized activity/lap/totals summary
 │   ├── markdownGenerator.js    # Training feedback → localized analysis prompt
+│   ├── ai/                     # Phase 0 context, prompts, Responses client, executions and quotas
 │   ├── auth/                   # Passwords (scrypt), registration, sessions and auth guard
 │   ├── db/                     # SQLite schema, initialization and idempotent migrations
 │   ├── cycles.js               # Training-cycle persistence and prompt context
@@ -988,7 +1017,7 @@ Shared code lives in `src/public/shared/`: `shell.js` injects the authenticated 
 ├── Dockerfile                  # Production image (node:24-alpine)
 ├── docker-compose.yml          # ZimaOS production deployment
 ├── docs/                       # Product and import compatibility documentation
-├── .env.example                # Optional Unsplash key template
+├── .env.example                # Optional backend runtime configuration
 ├── package.json                # Version and npm scripts
 └── package-lock.json           # Locked dependency tree
 ```
@@ -1049,6 +1078,9 @@ services:
       - "8081:3000"
     environment:
       - UNSPLASH_ACCESS_KEY=${UNSPLASH_ACCESS_KEY:-}
+      - AI_ENABLED=${AI_ENABLED:-false}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      # Full bounded AI configuration is in the repository Compose file.
     volumes:
       - ./data:/app/data
 ```

@@ -8,12 +8,12 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.19.6`); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.20.0`); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
 home dashboard, contextual training result, calendar, Solicitar Treinos
-(`ai-coach`), cycles, shoes,
+(`ai-coach`), cycles, shoes, training memory,
 and the admin-only administration page. Shared frontend responsibilities live under
 `src/public/shared/`: `shell.js` injects navigation and account controls;
 `onboarding.js` contains onboarding state/presentation helpers;
@@ -492,7 +492,27 @@ will find every issue.
 - Applying a weekday setup is an explicit one-time copy from Monday to Tuesday–Friday. It never changes weekends or links records.
 - AI Coach prompts must state unavailable days and preserve the distinction between the one preferred period and the separate maximum session duration (including warm-up and cool-down), as well as each day's exact location and effective date. Render the week-start anchor day-first to match the spreadsheet's `DD/MM/YYYY` import format in both languages. Forecast research belongs to the external AI agent receiving the prompt: instruct it to research autonomously with available browsing tools, inspect forecast source content/data rather than search snippets alone, verify location/date/hourly coverage/source time zone, and use a second hourly source when the first is insufficient and access exists. Specify the canonical local half-open windows `00:00–08:00`, `08:00–12:00`, `12:00–14:00`, `14:00–18:00`, and `18:00–24:00`; apply `Europe/Lisbon` with date-appropriate DST only to mainland Portugal, never as a global default. Require the temperature range and highest verified temperature within the selected window, using the saved °C/°F preference; a daily maximum is not a substitute. Make partial coverage and location/date/hour/time-zone or tool/access/horizon failures explicit, require source and lookup timestamp in the response outside the workbook, and tell the agent not to ask the user to confirm forecast details or authorize research and not to interrupt workbook creation. Keep the 12-column spreadsheet/import schema unchanged; put verified or unavailable/partial status in its existing weather column. This prompt instruction adds no Kinesis forecast request, integration, control, confirmation, dependency, or external data transmission. Do not promise that an AI provider has internet access; the prompt must direct it to disclose unavailable tools/access. Do not contain “Rotina normal”/“Normal routine” defaults or invented conditions/times.
 
-## Planned OpenAI integration
+## OpenAI foundation and future phases
+
+The approved [plan](docs/ai-integration-plan.md) is integrated in main through
+PRs #66/#68. Phase 0 (#62) is implemented on `feat/ai-phase-0-foundation`
+([open PR #67](https://github.com/fracon/training-assistant/pull/67)), pending
+owner review and merge; do not call it integrated until its PR merges.
+Phases 1–3 remain planned and must be delivered sequentially in separate PRs.
+Read the plan and [foundation contract](docs/ai-foundation.md) in full before
+changing this service. Update README, AGENTS, the plan and affected configuration,
+API/privacy documentation with delivered behavior and honest branch status.
+
+Context selection priorities and explicit module boundaries are defined in the
+[foundation contract](docs/ai-foundation.md#effective-selection-policy-training-context-v3).
+Keep complete recent discomfort/RPE 4–5 reports ahead of optional planning;
+refuse insufficient mandatory budgets rather than silently dropping reports.
+Do not duplicate requested sessions in recent/upcoming/comparables or count
+references as extra totals. Include final metadata in the byte bound.
+`src/public/shared/package.json` scopes shared JS as ES modules; the root,
+backend and legacy `public/form-state.js` remain CommonJS-compatible. Do not
+remove that scope, introduce top-level await into synchronous shared imports,
+or suppress Node module warnings.
 
 Owner correction (2026-10-15): training memory is an evolving, source-backed
 athlete-context view, not a parallel profile/observation form. Goals come from
@@ -507,27 +527,72 @@ confirm/correct/dismiss state; old analyses must not resurrect discarded
 interpretations. The exact execution payload remains separate admin-only,
 owner-scoped debug. See the plan for phase boundaries and PR #67 correction.
 
+The revised documentation is integrated via #68. The runtime correction is
+available only in the open PR #67 branch until merged. The view and paid-context
+selection share `src/ai/context.js`; `overview.js` projects readable owner data
+without payload/hash/configuration. `memory.js` accepts only optional experience
+with optimistic versions. Do not restore generic manual memory CRUD.
 
-The owner-approved phased direction is documented in
-[docs/ai-integration-plan.md](docs/ai-integration-plan.md), tracked by issues
-#62-#65. It is planned work, not current runtime behavior. Read that plan in
-full before implementing any phase; update README, AGENTS, the plan and affected
-configuration/API/privacy documentation in every implementation PR. Preserve
-existing prompt wording and all other GOLDEN RULES.
-
-For those phases only, the owner authorizes a narrow future exception to rule 1:
-the configured backend may send the minimum selected structured training context
-and prompts to OpenAI for explicit cycle, weekly-workout and analysis operations
-using `store: false`. FIT/ZIP binaries, raw GPS tracks, credentials and
-unnecessary identifiers remain excluded; parsing and canonical metrics stay
-local. The existing runtime still has no LLM integration until the corresponding
-implementation is merged. See the plan for retention, ownership and debug limits.
-
-The owner also authorizes the limited Docker/Compose runtime environment wiring
-needed for this integration under rule 3. Never bake the API key into the image
-or change deployment ports, privileges or unrelated CI infrastructure.
-This initial documentation-only plan PR does not bump the application version;
-functional phase PRs follow the existing beta SemVer rule.
+- `src/ai/` owns the idempotent schema migration, optional experience,
+  deterministic context policy, reusable prompts, runtime configuration,
+  Responses client, durable execution/usage ledger and routes. The UI reuses
+  shell, dashboard width/card rhythm, shared forms/buttons, DatePicker (admin
+  preview) and PT/EN. The presentation contract is in
+  `docs/ai-foundation.md#memory-presentation-on-the-pr-67-branch`: keep dated
+  discomfort/RPE visible, preserve expanded planning and source-link focus on
+  rerenders, respect the preferred week start, and keep technical debug separate
+  and collapsed. Do not restore a persistent context-refresh control: load on
+  opening, offer retry only on load failure, and offer saved-version recovery
+  only on experience conflicts, preserving unsaved input and focus. UI projections may expose canonical status/aggregate overlap;
+  they must not create another selection policy or change stored snapshots.
+- Schema is retained for compatibility: old profile keys and `ai_memory` rows
+  are an inactive read-only archive, exposed only to their owner through
+  `/api/ai/memory/legacy`. Experience saves preserve those keys. New contexts
+  never select that archive, including old interpretations/recommendations.
+  Snapshots are immutable; context policy v3 makes v1/v2 execution results stale
+  without rewriting them. No semantic migration or silent deletion is allowed.
+- Facts, dated reports, calculations, future interpretations/recommendations
+  and performed actions remain distinct. Interpretation confirmation/correction/
+  dismissal belongs to later producers, not phase 0. Corrected/discarded content
+  must not reenter active context through old responses.
+- Preserve byte-identical external PT/EN prompts. Pure browser/backend generators
+  live in `shared/workout-prompts.js`, `shared/analysis-prompts.js` and
+  `src/ai/{prompts,markdownGenerator}.js`; legacy imports remain compatible.
+  The synthetic baseline captured from main addd967 is tested byte for byte.
+  Weekly comparable selection checks long-run labels in both `tipo` and `treino`,
+  since spreadsheet imports commonly store `tipo=Corrida`, `treino=Longão`.
+- Production phase 0 registers no paid adapters. Trusted backend operations in
+  later phases register their versioned output adapters and domain validators;
+  HTTP must never accept an arbitrary prompt/model/tool. Do not introduce
+  functional generation early or hide conflicting delivery instructions.
+- The configured backend is authorized to send minimum selected structured
+  context for explicit later cycle/workout/analysis operations using `store:false`.
+  Keep FIT/ZIP binaries, raw GPS, credentials and unnecessary identifiers local.
+  No generic logs contain prompts, context, responses, keys or provider errors.
+- Persist source versions, exact protected debug payloads, configuration, state,
+  usage/cost ceilings and sanitized errors. Admin debug is current-role checked
+  and restricted to its own data. Keep ordinary users' existing prompt flows.
+- Reserve user/global cost/tokens/calls transactionally before network dispatch;
+  never keep a transaction open during network calls. Recheck account activity,
+  ownership and source versions before dispatch/access/application. Deletion or
+  cancellation must never recreate data or silently refund uncertain usage.
+- Explicit 429 alone may retry, within the bound. Read execution state and
+  decide retry versus cancellation settlement in one immediate transaction;
+  a losing retry must never strand an unsettled cancelled reservation.
+  Network/timeouts/5xx/transport
+  uncertainty and restart-interrupted calls never replay automatically. Restart
+  can dispatch untouched queued work after revalidation. Local cancellation
+  makes no claim about provider billing. Global anonymous consumption survives
+  account deletion; owned AI data cascades. Cleanup defaults to 90 days and runs
+  at startup/authenticated AI access. Experience is editable; inactive archived
+  records remain until account deletion. Owned records cascade on deletion.
+- Runtime-only Compose environment wiring is authorized under golden rule 3;
+  never bake the key into Dockerfile/image or change ports/privileges/CI.
+- Tests: `aiFoundation.test.js`, `aiFoundation.routes.test.js`,
+  `aiFoundation.browser.test.js`, `aiMemoryOverview.test.js`, existing prompt/result/coach/shell/onboarding
+  suites, then npm test and 100% c8 in all four metrics. Use synthetic fixtures
+  and mocked providers. Model-quality evaluation is separate, controlled and
+  cost-recorded; a mock is never evidence of real model quality or access.
 
 ## Golden rules
 

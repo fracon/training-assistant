@@ -275,6 +275,15 @@ export function buildUserMenu() {
   setupGuideLabel.textContent = 'Setup guide';
   setupGuide.appendChild(setupGuideLabel);
   dropdown.appendChild(setupGuide);
+  const memory = el('a', 'user-menu-item');
+  memory.id = 'userTrainingMemory';
+  memory.href = '/training-memory.html';
+  memory.appendChild(icon('notebook-pen'));
+  const memoryLabel = el('span');
+  memoryLabel.setAttribute('data-i18n', 'memory.title');
+  memoryLabel.textContent = 'Training memory';
+  memory.appendChild(memoryLabel);
+  dropdown.appendChild(memory);
   const changePassword = el('button', 'user-menu-item');
   changePassword.type = 'button';
   changePassword.id = 'userChangePassword';

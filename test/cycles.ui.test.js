@@ -414,15 +414,15 @@ test('cycles.js prompt request passes lng query parameter from getShellI18n().la
 });
 
 test('prompts.js exports DISTANCE_TRANSLATIONS and translateDistance', () => {
-  const js = readFileSync(join(__dirname, '..', 'src', 'prompts.js'), 'utf8');
+  const js = readFileSync(join(__dirname, '..', 'src', 'ai', 'prompts.js'), 'utf8');
   assert.match(js, /const DISTANCE_TRANSLATIONS/);
   assert.match(js, /function translateDistance\(lang,\s*distance\)/);
-  assert.match(js, /module\.exports.*DISTANCE_TRANSLATIONS/);
-  assert.match(js, /module\.exports.*translateDistance/);
+  assert.match(js, /module\.exports[\s\S]*DISTANCE_TRANSLATIONS/);
+  assert.match(js, /module\.exports[\s\S]*translateDistance/);
 });
 
 test('prompts.js buildMacrocyclePrompt uses translateDistance for distance', () => {
-  const js = readFileSync(join(__dirname, '..', 'src', 'prompts.js'), 'utf8');
+  const js = readFileSync(join(__dirname, '..', 'src', 'ai', 'prompts.js'), 'utf8');
   assert.match(js, /translateDistance\(lang,\s*cycle\.distance\)/);
 });
 
