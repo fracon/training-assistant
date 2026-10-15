@@ -1,7 +1,7 @@
 # Kinesis AI integration plan
 
 Status: planned; no phase is implemented by this document.
-Owner-approved direction: 2026-10-14.
+Owner-approved direction: 2026-10-14; memory scope corrected on 2026-10-15.
 Baseline reviewed: main application version 0.19.6.
 
 This is the shared implementation contract for integrating OpenAI into Kinesis.
@@ -16,7 +16,7 @@ and documented by the implementing agent.
 
 | Phase | Issue | Dependency | Status |
 | --- | --- | --- | --- |
-| 0: API foundation and training memory | [#62](https://github.com/fracon/training-assistant/issues/62) | Documentation plan merged | Planned |
+| 0: API foundation and training memory | [#62](https://github.com/fracon/training-assistant/issues/62) | Documentation plan merged | PR #67 open; memory UX revision required |
 | 1: Cycle planning | [#63](https://github.com/fracon/training-assistant/issues/63) | Phase 0 merged | Planned |
 | 2: Weekly workout requests | [#64](https://github.com/fracon/training-assistant/issues/64) | Phase 1 merged | Planned |
 | 3: Contextual workout analysis | [#65](https://github.com/fracon/training-assistant/issues/65) | Phase 2 merged | Planned |
@@ -113,52 +113,118 @@ also contain personal data: protect them, define retention and cleanup, and
 remove owned AI/profile data on account deletion. A deleted account's in-flight
 work must not recreate its data.
 
-## Training memory: continuity is a requirement
+## Training memory: a transparent, evolving view
 
-All three operations share the same context service, not three independently
-maintained memories.
+Owner correction, 2026-10-15: memory is a readable and correctable view of the
+athlete context assembled from application use, not a second profile form.
+This replaces the original requirement for manually maintained goals,
+preferences, limitations and generic dated observations. The initial phase 0
+implementation in PR #67 needs this correction before acceptance.
 
-| Layer | Contents | Authority |
+Before adding any field, inventory existing sources, their owner, update flow,
+temporal meaning and consumers. Reuse that source. Document a concrete missing
+need before proposing a new field. Do not create parallel facts that can
+contradict an existing cycle, availability record or workout feedback.
+
+| Information shown | Authoritative source | Correction path |
 | --- | --- | --- |
-| Athlete profile | Experience, goals, preferences, availability, reported restrictions | User-editable with source/date |
-| Current planning | Cycle, phase, target event, weekly objectives, rationale | Applied plan version |
-| Recent execution | Planned vs actual metrics, RPE, feedback, conditions | Canonical saved records |
-| Long-term evolution | Weekly aggregates, interruptions, events, comparable sessions | Derived from traceable records |
-| Recommendations | Prior suggestions, reasons, later observed outcomes | Explicitly labeled AI interpretation |
+| Goals and target event | Current cycle; applied plan when available | Open/edit the cycle |
+| Available days, preferred period, maximum duration and place | Request Workouts availability | Open/edit availability |
+| Recorded metrics and execution | Saved sessions and canonical results | Open the corresponding session |
+| Discomfort and subjective feedback | Dated session feedback | Open/edit the feedback at its source |
+| Previous running experience | Optional user-supplied background not available in Kinesis | Edit this supplemental field directly |
+| Trends and totals | Deterministic computations over source records | Inspect/correct supporting records |
+| AI patterns and recommendations (later phases) | Versioned model interpretation with evidence | Confirm, correct or dismiss the interpretation |
+
+All three operations share one context service. The user-facing memory page
+may remain, but must become a useful consolidated view, not an empty form
+requiring the athlete to repeat information. Use clear localized explanations:
+training history is assembled automatically; prior experience is optional.
+Each displayed item has an origin, relevant date/range, update/version and a
+link to its source where applicable. Empty states say what is missing and link
+to the existing workflow; they never imply model knowledge that does not exist.
+
+Ordinary users can inspect their own consolidated profile/context. This is
+distinct from the exact purpose-specific payload of an execution, available
+only through administrator debug. Explain that actual selection depends on
+the task and budget; the overview is not a promise that every record is sent.
+Build both from the same source mapping, so the overview does not become another
+independently maintained memory.
+
+### Phase 0 boundary and correction
+
+- Keep the API foundation, store:false, prompt preservation, execution controls,
+  provenance and historical-context selection.
+- Remove duplicate manual goals, generic preferences and limitations fields
+  from the new memory UI and API contracts. Do not simply hide active duplicate
+  sources behind the same context builder.
+- Remove generic manual CRUD for restrictions, milestones, interruptions and
+  performed actions from this phase. Reuse actual cycles, sessions and feedback.
+  A gap in recorded workouts does not supply an interruption reason.
+- Keep only optional previous-running-experience input, with ownership and
+  version checks. The page otherwise reads current source data and directs
+  corrections back to the relevant existing screen.
+- Do not create paid background summarization, generated profile narratives,
+  an AI interpretation editor or new inferred diagnoses in phase 0.
+- Keep administrator technical debug visually separate from the athlete view.
+- Preserve existing development/test records safely: inspect schema/data usage
+  and document compatibility or migration before removing fields/endpoints.
+  Do not drop user-entered data silently or reinterpret old duplicate fields
+  as authoritative facts. Existing stored values must not keep influencing new
+  contexts unnoticed. Historical execution snapshots remain traceable.
+
+### Evidence and evolution
 
 Facts, user reports, AI interpretations, recommendations and actual execution
-must remain distinguishable. A suggestion to rest is not evidence of rest.
-A missed/unrecorded session is not proof of rest; an absent pain report is not
-proof that pain resolved. Do not infer an enduring restriction from an old note.
+remain distinguishable. A suggestion to rest is not evidence of rest.
+An unrecorded session is not proof of rest; absence of a discomfort report is
+not proof of recovery. A dated discomfort report is not a permanent limitation
+or diagnosis. Present date and uncertainty; do not invent an active/resolved
+status from age or silence.
 
-Profile/restriction records must be readable and correctable by their owner.
-Track source, observation/effective dates, update date and states such as current,
-resolved or unconfirmed. Do not automatically turn an old symptom into either
-a current diagnosis or a resolved condition.
+The profile evolves as source records change. Refresh/rebuild derived context
+from those records without a paid model call. Correcting cycle or feedback
+updates future context and invalidates stale derived views as needed, while
+past execution snapshots retain the inputs actually used.
 
-Initial context selection policy:
+When phases 1-3 produce interpretations, keep them dated, versioned and linked
+to evidence and originating execution. Display them as interpretations, not
+facts, and provide owner-scoped confirm/correct/dismiss actions with concurrency
+protection. Confirmation means user endorsement, not objective measurement.
+A correction is a dated user statement attached to that interpretation; it
+must not rewrite underlying measurements or silently become a permanent rule.
+
+Corrected or dismissed interpretations must not re-enter active context merely
+because an older response or summary repeats them. Keep the original snapshot
+for traceability but apply the current disposition when building future inputs,
+including retrieval from historical analyses. New evidence may support a new
+explicitly distinguished interpretation; it must not silently reactivate the
+old one. Define/test evidence identity and supersession when the first such
+producer is implemented. No separate paid calls solely to maintain memory.
+
+### Context selection
+
+Initial selection policy:
 
 - Approximately two weeks of detailed sessions.
 - Eight to twelve weeks of computed weekly aggregates and relevant events.
-- Older milestones, target events, interruptions and still-relevant restrictions.
-- Task-specific comparable sessions, such as previous long runs outside the
-  recent window, with differences in conditions made explicit.
+- Older milestones/target events and dated reports relevant to the task.
+- Comparable sessions, such as earlier long runs, with condition differences.
 
-These are evaluation starting points, not unconditional medical or retention
-rules. Use a documented deterministic selection policy and token budget.
-Prioritize current restrictions, cycle objectives and relevant events; disclose
+These are evaluation starting points, not medical or retention rules. Use a
+documented deterministic policy and token budget. Prioritize relevant user
+corrections, cycle objectives and source-backed recent concerns; disclose
 omissions, missing coverage and historical cutoffs. Never silently discard
 critical context or double-count detailed and aggregated records.
 
-Compute totals/trends locally from canonical units. Any narrative summarization
-must retain source references and remain labeled as interpretation. Do not
-recursively summarize summaries into untraceable facts. Start without embeddings
-or a separate retrieval infrastructure.
+Compute totals/trends locally from canonical units. Narrative interpretations
+must retain sources and labels. Do not recursively summarize summaries into
+untraceable facts. Start without embeddings or separate retrieval infrastructure.
 
-Save a context snapshot/version for each execution: selected source IDs and
-versions, date ranges, computed facts, omissions and the actual rendered input.
-Later corrections affect future contexts; historical responses remain traceable
-to the inputs they actually received and are marked outdated when appropriate.
+Save each execution's selected source IDs/versions, date ranges, derived facts,
+omissions and exact rendered input. Source edits affect future inputs and mark
+outdated responses appropriately. No source edit triggers an automatic paid
+regeneration.
 
 ## Prompt preservation and API output
 
@@ -227,7 +293,9 @@ evaluation corpus for real model quality. Include:
 
 - Same workout with different histories and justified different guidance.
 - New athlete with no history; incomplete records with explicit uncertainty.
-- Return after interruption, elevated reported effort, resolved restrictions.
+- Elevated reported effort and dated discomfort without inferred permanent limitations.
+- Source edits reflected in memory and future inputs without duplicate profiles.
+- Corrected/dismissed interpretations not resurrected by old responses.
 - Recommendation that was not followed; changed feedback after an analysis.
 - Similar workouts under different terrain/weather conditions.
 - PT/EN and unit preferences; cycle-to-week-to-analysis continuity.
@@ -240,27 +308,32 @@ Do not claim 100% code coverage establishes the quality of training advice.
 
 ### Phase 0: foundation
 
-Deliver API/configuration, reusable prompts, context/profile UI and APIs,
-traceable memory, execution persistence, cost controls, protected debug
-foundation and evaluation fixtures. Choose the smallest compatible schema and
+Deliver API/configuration, reusable prompts, a source-backed athlete-context
+view with correction links and optional prior-experience input, execution
+persistence, cost controls, protected debug foundation and evaluation fixtures.
+Do not build duplicate personal-field or generic observation CRUD. Choose the smallest compatible schema and
 modules after inspecting the existing code. Migrations must be idempotent and
 preserve existing user data. Leave feature-specific generation for later phases.
 
 ### Phase 1: generate cycles
 
-Use goals, target event, experience, availability, current restrictions and
-history to generate a cycle proposal. Keep cycle identity/status separate from
+Use cycle goals/target event, optional prior experience, saved availability,
+dated session feedback and history to generate a cycle proposal. Keep cycle identity/status separate from
 generated planning versions. Validate phase dates and domain values; show a
 proposal before explicit atomic application. Preserve one active cycle and
 manual cycle creation. Regeneration must not overwrite an applied plan silently.
 
 Persist the accepted planning/rationale for weekly context. Old cycles without
 an AI plan remain supported and must not receive fabricated backfill.
+Any reusable athlete interpretation produced here must follow the correction
+and disposition contract above; implement the shared minimal lifecycle when
+first needed, rather than defer the user's ability to correct it.
 
 ### Phase 2: request weekly workouts
 
 Use the applied cycle plan where present, recent execution, feedback,
-availability, shoes and forecast evidence. Keep Solicitar Treinos / Request
+availability, shoes and forecast evidence. Respect the current disposition of
+prior interpretations and user corrections. Keep Solicitar Treinos / Request
 Workouts labels and existing technical routes stable. Explain maintenance,
 progression or recovery using available evidence.
 
@@ -305,6 +378,9 @@ recommendations. Do not automatically change metrics, cycle or calendar.
 Persist analysis with input versions; edits make prior analysis visibly outdated.
 Regeneration is explicit, not a hidden paid side effect. Feed recommendations
 into future contexts as dated interpretations, not as facts or permanent rules.
+Expose source-backed patterns in the memory view using the shared
+confirm/correct/dismiss lifecycle; old analyses cannot resurrect a dismissed
+interpretation. Reuse or complete that lifecycle rather than duplicate it.
 IA failure must never undo a successfully saved result or shoe-mileage update.
 
 ## Documentation and completion gate
@@ -334,14 +410,16 @@ do not run the application suite without a concrete functional risk.
 The approved boundaries above are fixed. Agents should record concrete choices
 and evidence for these remaining details in the relevant phase:
 
-- Phase 0: profile placement using existing UI; schema/module names; context
+- Phase 0: source inventory and consolidated-view placement; compatibility with
+  PR #67's original data/schema; schema/module names; context
   limits/selection algorithm; retention/cleanup defaults; execution recovery;
   quota settings; verified model access and price references.
 - Phase 1: structured planning schema and compatibility with current cycle CRUD.
 - Phase 2: hourly provider/second-source mechanism, cache freshness, output schema
   and conflict policy consistent with existing import/calendar contracts.
-- Phase 3: analysis structure and criteria for outdated context, preserving
-  source/version traceability.
+- First interpretation-producing phase (1-3): evidence identity, disposition and
+  supersession semantics for confirmed/corrected/dismissed interpretations.
+- Phase 3: analysis structure and outdated-context criteria with traceability.
 
 Escalate genuinely new product/security decisions; do not turn routine choices
 already covered by this plan into repeated approval requests.
