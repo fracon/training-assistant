@@ -2,6 +2,7 @@ import { initShell, getShellI18n, getUserPreferences, refreshIcons } from './sha
 import { translate } from './shared/i18n.js';
 import { formatDate as formatLocalizedDate, formatDateInput, parseLocalizedDate } from './shared/date.js';
 import { createDatePicker, readDatePickerValue } from './shared/datepicker.js';
+import { createCyclePlanning } from './shared/cycle-planning.js';
 import { showConfirm } from './shared/confirm-modal.js';
 import {
   fetchCycles,
@@ -69,6 +70,7 @@ function renderCycleCard(cycle, messages, language = 'en-US') {
           <div class="custom-tooltip" data-i18n="cycles.promptTooltip">${escapeHtml(t(messages, 'cycles.promptTooltip'))}</div>
         </button>
       ` : ''}
+      <button type="button" class="btn-secondary" data-action="planning" data-id="${cycle.id}">${escapeHtml(t(messages,'cyclePlanning.open'))}</button>
     </div>`;
   return card;
 }
@@ -339,6 +341,7 @@ export async function initCyclesPage() {
 
   const i18n = getShellI18n();
   const cycles = [];
+  const planning = createCyclePlanning({i18n,user});
 
   const addBtn = document.getElementById('addCycleBtn');
   const modalCloseBtn = document.getElementById('cycleModalCloseBtn');
@@ -369,6 +372,7 @@ export async function initCyclesPage() {
   cycleListEl.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
+    if (btn.dataset.action === 'planning') { planning.open(btn.dataset.id,btn); return; }
     handleAction(btn.dataset.action, btn.dataset.id, cycles, i18n.messages, i18n.language);
   });
 

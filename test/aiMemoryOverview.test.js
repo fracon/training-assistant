@@ -69,7 +69,7 @@ test('canonical corrections refresh the overview and next context; legacy data a
   db.close();
 });
 
-for (const previousPolicy of ['training-context-v1', 'training-context-v2'])
+for (const previousPolicy of ['training-context-v1', 'training-context-v2', 'training-context-v3'])
 test(`policy upgrade keeps persisted ${previousPolicy} snapshots intact and refuses queued legacy context before network`, async () => {
   const db=createDatabase({filename:':memory:'});
   db.prepare("INSERT INTO users(id,email,password_hash,role) VALUES (1,'snapshot@example.invalid','synthetic','admin')").run();

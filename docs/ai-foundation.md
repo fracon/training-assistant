@@ -1,9 +1,11 @@
 # AI foundation (phase 0, issue #62)
 
-Status: implemented on `feat/ai-phase-0-foundation` ([open PR #67](https://github.com/fracon/training-assistant/pull/67)),
-validated locally and pending owner review; **not integrated into main**. Main includes the approved documentation
-plan and owner scope correction (#66/#68). Cycle, weekly-workout and analysis generation remain planned in
-#63–#65. This foundation does not enable those paid product operations.
+Status: phase 0 is integrated through merged [PR #67](https://github.com/fracon/training-assistant/pull/67),
+merge `648d6a0`, following #66/#68. The issue #63 branch adds only the cycle
+product adapter and explicit planning application; see [cycle planning](ai-cycle-planning.md).
+That phase is not integrated until its own PR merges. #64/#65 remain future.
+Historical validation sections below record pre-merge phase 0 batches, not the
+current merge status.
 
 ## Configuration and deployment
 
@@ -98,7 +100,7 @@ task/budget; this overview is not a guarantee that every displayed record is sen
 
 ### Memory presentation on the PR #67 branch
 
-Available on this branch only, pending merge of #67. The page uses the dashboard's
+Integrated in main through PR #67. The page uses the dashboard's
 1,080px content width, theme tokens and card spacing, with existing shared
 controls and native keyboard-accessible disclosures. No new visual library,
 profile fields, storage or paid summaries are introduced.
@@ -229,6 +231,17 @@ Policy v1/v2 snapshots remain byte-for-byte historical inputs. The v3 freshness
 check marks them outdated and refuses dispatch of old-policy queued work without
 automatic paid regeneration. No source row or historical snapshot is rewritten.
 
+### Context extension: training-context-v4
+
+The issue #63 branch retains the priority/budget rules above. It additionally
+selects at most three previous non-active cycles for cycle generation, after
+recent reports and availability, before optional planning detail. For subsequent
+tasks it preserves the current cycle's applied planning as mandatory, explicitly
+labeled architecture with dated versions, source freshness and near-term phase
+selection; see [cycle continuity](ai-cycle-planning.md#continuity-and-interpretation-boundary).
+Plan-local assessments are excluded. v1/v2/v3 execution snapshots remain immutable
+and are marked outdated under v4. No weekly/analysis product adapter is registered.
+
 ### Explicit module boundary
 
 `src/public/shared/package.json` declares `"type":"module"` for the existing
@@ -264,8 +277,9 @@ their own** snapshots and generate/copy existing external prompts for free.
 Existing manual prompt workflows remain available to all users until their
 individual replacement phases. Model responses render as text/data, never HTML.
 
-Phase 0's production registry has no paid operation adapters, so enabling AI
-alone sends no athlete context to OpenAI. Future registered adapters may send
+Phase 0 introduced no paid adapters. The issue #63 branch registers only cycle
+planning; enabling AI alone sends no athlete context to OpenAI. Explicit cycle
+generation sends
 only selected structured context and the rendered prompt. They must version
 permitted delivery changes and validate the complete domain result. FIT/ZIP
 binaries, raw GPS tracks, account email/name, session tokens and API credentials
@@ -286,7 +300,7 @@ are allowlisted, with no `user_id`, arbitrary model or arbitrary prompt option.
 | `PUT /api/ai/profile` | `{fields:{experience?},expected_version}`; strings <=2000 chars |
 | `GET /api/ai/memory/legacy` | Owner-only read-only archive `{fields,entries}`; excluded from new contexts |
 | `GET /api/ai/context?purpose=...&resource_id=...&as_of=...` | Administrator's own technical context only; ordinary users receive 403 and use the overview |
-| `POST /api/ai/executions` | `{purpose,resource_id?,target_date?,idempotency_key}` -> 202 and ID/state; purposes cycle/workouts/analysis; no registered production operations in phase 0 |
+| `POST /api/ai/executions` | `{purpose,resource_id?,target_date?,idempotency_key}` -> 202 and ID/state; purposes cycle/workouts/analysis; cycle adapter on issue #63 branch; workouts/analysis unregistered |
 | `GET /api/ai/executions` | Latest 50 owned execution identifiers/states |
 | `GET /api/ai/executions/:id` | Owned state, validated product response and outdated flag |
 | `POST /api/ai/executions/:id/cancel` | Empty object; local cancellation, never a promise of no provider cost |
@@ -302,10 +316,14 @@ required context -> 413. Provider errors have stable sanitized codes.
 
 `createExecutionService` is reused by the next phases through a trusted
 server-side registry of purpose adapters (version, explicit `adaptPrompt` transformation, output
-instructions, schema and validator). HTTP cannot register adapters. The adapter is deliberately absent
-from production in phase 0: append-only JSON instructions are not a substitute
+instructions, schema and context-aware validator). Trusted adapters may provide
+synchronous `prepare`, `onEnqueued`, `onCompleted` and `cleanup` hooks. Enqueue
+and completion hooks share the existing atomic write transactions; none may
+perform network I/O. Cleanup preserves accepted product artifacts while removing
+expired unapplied proposals. HTTP cannot register adapters. Phase 0 originally registered no product adapter; issue #63 adds only cycle planning: append-only JSON instructions are not a substitute
 for adapting conflicting Excel/weather delivery instructions in later phases.
-No cycle/calendar/result application API is introduced now.
+The cycle application contract is in [cycle planning](ai-cycle-planning.md);
+calendar/result application remains future scope.
 
 An execution reserves per-user/global tokens, cost and maximum attempts inside
 one immediate transaction, then dispatches outside any database transaction.
@@ -411,7 +429,8 @@ accessibility, prompt compatibility, documentation and tests. Coordinated fixes
 include explicit context-policy freshness, canonical yes/no report rendering,
 source-link focus identity and preserving edits during experience conflicts.
 Phases 1–3 and evidence/disposition-based AI interpretations remain planned;
-phase 0 is implemented in this branch and **not integrated into main**.
+phase 0 was subsequently integrated through merged PR #67; the issue #63
+branch is a separate, not-yet-merged phase.
 
 
 ### Consolidated P2 correction after review of 056d18f
@@ -437,8 +456,7 @@ required coverage metrics are **100%**. The full suite includes the existing
 real-Chrome checks and all 48 exact prompt comparisons. `git diff --check`
 passed. No UI, schema, runtime configuration, version or product-phase change
 was introduced; no paid model evaluation was performed. Earlier 1,176-test
-results above describe the preceding scope correction. This remains an open
-PR implementation, not integrated into main. No new automatic review is
+results above describe the preceding scope correction. This phase 0 batch was subsequently integrated through PR #67. No new automatic review is
 requested for this localized correction of the already reviewed contracts.
 
 ### Priority and module-boundary correction after 81420d5
@@ -490,8 +508,9 @@ The complete diff against main and the corrective batch were reviewed for source
 priority, budget/omission metadata, deduplication, module consumers, authorization,
 transactions, cancellation, quotas, focus/conflicts and prompt equivalence.
 These are deterministic/software validations, not coaching-quality evaluation.
-No paid OpenAI request was required or performed. Phase 0 remains implemented
-only in this open PR branch; functional generation belongs to later phases.
+No paid OpenAI request was required or performed for this phase 0 batch,
+subsequently integrated through PR #67. Cycle generation is now implemented
+separately on the issue #63 branch.
 
 ### UI/UX consolidation validation
 
@@ -513,4 +532,4 @@ automated browser fixtures are synthetic. No paid call/model-quality evaluation,
 schema migration, context-policy change, infrastructure change or version bump
 was needed. The complete diff against main and the UI batch were critiqued for
 contracts, ownership, compatibility, focus, responsive tables, missing data and
-regressions. This UI remains part of open PR #67, not integrated into main.
+regressions. This phase 0 UI was subsequently integrated through merged PR #67.

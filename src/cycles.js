@@ -108,7 +108,7 @@ function updateCycle(db, id, userId, updates) {
   const keys = Object.keys(fields);
   if (keys.length === 0) return existing;
   const assignments = keys.map((k) => `${k} = ?`).join(', ');
-  db.prepare(`UPDATE training_cycles SET ${assignments}, updated_at = datetime('now') WHERE id = ? AND user_id = ?`)
+  db.prepare(`UPDATE training_cycles SET ${assignments}, planning_revision = planning_revision + 1, updated_at = datetime('now') WHERE id = ? AND user_id = ?`)
     .run(...keys.map((k) => fields[k]), id, userId);
   return getCycleById(db, id, userId);
 }

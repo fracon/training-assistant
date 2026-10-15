@@ -2,20 +2,34 @@
 
 A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized training-request prompts for use with an external AI.
 
-Current application version: **0.20.0** (active beta development).
+Current application version: **0.21.0** (active beta development).
 
-## AI integration: phase 0 on this branch
+## AI integration: cycle planning on this branch
 
-The approved [integration plan](docs/ai-integration-plan.md) is integrated via
-PRs #66 and #68. This branch implements issue #62's foundation and consolidated
-training memory; it is **not integrated into main until PR #67 is merged**.
-Cycle, weekly-workout and analysis generation remain planned in #63–#65.
+Phase 0 (#62) and the approved plan are integrated in main through PRs #66,
+#68 and **#67** (merge `648d6a0`). This **0.21.0 beta** branch implements #63:
+cycle planning, proposal review and explicit application. It is not integrated
+until this phase's PR merges. Weekly generation (#64) and result analysis (#65)
+remain future phases.
+
+Open **Training Cycles → Long-term planning** on an existing cycle. Saving a
+cycle only registers its goals; **Generate planning** explicitly requests AI
+phases and rationale. Reloading recovers processing/results. **Apply proposal**
+creates a planning version; generating again never silently replaces it. Manual
+cycle management works without AI. The target date must be valid and not in the
+past; generation uses the later of today and the saved start date. Only an active
+cycle can receive a new applied plan. No weekly calendar is generated.
+
+See the [cycle planning contract and real-test steps](docs/ai-cycle-planning.md).
+No provider credential was available for this implementation's evaluation;
+mock/browser tests do not establish model quality or project access.
+
 Existing external prompt workflows remain available and preserve PT/EN output.
 
 The account menu opens **Training memory / Memória de treinamento**: a bounded
 view of current cycle goals, saved availability, dated sessions/feedback and
 canonical weekly aggregates, with dates, sources and correction links. The
-branch UI groups goals/routine, dated session feedback and supporting history;
+memory UI groups goals/routine, dated session feedback and supporting history;
 availability and totals use compact tables, while long planning details and
 administrator debug expand on demand. Context loads automatically on opening;
 “Tentar novamente / Try again” appears only after a loading failure. See the [presentation contract](docs/ai-foundation.md#memory-presentation-on-the-pr-67-branch). Recent
@@ -30,9 +44,9 @@ unchanged. Weekly comparable context recognizes long-run labels in the imported
 workout name as well as the training type. Administrators have a separate section
 for their own free prompt
 preview and protected execution debug. Common users receive no technical payload.
-No paid product operation is registered in phase 0, so configuring the key does
-not start model calls. The asynchronous execution service, quotas, restart
-recovery and Responses client are prepared for the later registered operations.
+Only the cycle product adapter is registered on this branch. Configuring the key
+does not itself start a call: generation is explicit. The integrated execution
+service handles quotas, restart recovery, cancellation and uncertain outcomes.
 
 See [AI foundation](docs/ai-foundation.md) for runtime settings, ZimaOS setup,
 API/schema contracts, retention/privacy, source selection, migration and tests.
@@ -73,7 +87,7 @@ selection; unrelated feedback saves preserve it. Replacing it with an active
 shoe starts mileage accounting on the replacement without subtracting an
 unledgered historical distance from the retired shoe.
 
-Authenticated pages and APIs use server-side sessions. FIT files and workout data are processed by the Kinesis application server, not sent to external processing services. Optional weather lookup sends the planned location and date to Open-Meteo. If `UNSPLASH_ACCESS_KEY` (or its accepted legacy alias `UNSPLASH_API_KEY`) is configured, the Kinesis server asks Unsplash for a generic running image and registers the image download. The dashboard makes a daily quote request to ZenQuotes and falls back to bundled localized quotes. These integrations do not send FIT files, workout data, or user-entered training context; as with other network requests, providers may receive connection metadata such as the requesting IP address.
+Authenticated pages and APIs use server-side sessions. FIT decoding and workout metrics are processed locally by the Kinesis server. Explicit cycle-planning generation may send the bounded structured context and adapted prompt to OpenAI, as documented in [cycle-planning privacy](docs/ai-cycle-planning.md#runtime-configuration-provider-and-privacy); binaries, raw GPS and credentials are excluded. Optional weather lookup sends the planned location and date to Open-Meteo. If `UNSPLASH_ACCESS_KEY` (or its accepted legacy alias `UNSPLASH_API_KEY`) is configured, the Kinesis server asks Unsplash for a generic running image and registers the image download. The dashboard makes a daily quote request to ZenQuotes and falls back to bundled localized quotes. These integrations do not send FIT files, workout data, or user-entered training context; as with other network requests, providers may receive connection metadata such as the requesting IP address.
 
 ## Why
 
@@ -680,7 +694,7 @@ read the collection.
 3. Open the **Calendar**, choose a planned training, and enter conditions, shoes, perceived effort (RPE 1–5), and feedback on its result page. A realized RPE from 1 to 5 is required to save, generate the analysis prompt, or upload a result; the other feedback is optional.
 4. Choose **Import FIT or ZIP file** for activity data, or **Enter data manually** for aggregate distance and duration (with optional heart rate, elevation, and calories). A FIT/ZIP upload is persisted when its upload request succeeds.
 5. **Save and back to calendar** saves any pending manual result and complete feedback, then returns to the calendar. **Save and Generate Analysis Prompt** saves those data first, then generates the prompt from the canonical training state returned by the backend.
-6. Copy the generated prompt to your chosen AI assistant. Kinesis does not send the prompt to an LLM.
+6. Copy the generated prompt to your chosen AI assistant. This external analysis-prompt workflow does not call an LLM; explicit cycle-planning generation is a separate opt-in action.
 7. Use **Logout** in the top bar to end the server-side session.
 
 An administrator uses **Users** in the sidebar's **Administration** group to
@@ -780,6 +794,8 @@ in [AI foundation API contracts](docs/ai-foundation.md#api-and-service-contract)
 | `PUT /api/cycles/:id` | Session | Update owned cycle |
 | `DELETE /api/cycles/:id` | Session | Delete owned cycle |
 | `GET /api/cycles/:id/prompt` | Session | Read cycle prompt context |
+| `GET /api/cycles/:id/planning` | Session | Read owned planning/proposals and recover processing |
+| `POST /api/cycles/:id/planning/:proposalId/apply` | Session | Explicit atomic/idempotent planning application |
 | `GET /api/shoes` | Session | List owned shoes |
 | `POST /api/shoes` | Session | Create shoe |
 | `PUT /api/shoes/:id` | Session | Update owned shoe |
@@ -978,7 +994,7 @@ Every primary flow is a standalone page (no single-page hacks, no overlapping la
 | Calendar | `src/public/calendar.html` · `src/public/calendar.css` · `src/public/calendar.js` | Monthly training calendar and deduplicating Excel import |
 | Solicitar Treinos / Request Workouts | `src/public/ai-coach.html` · `src/public/ai-coach.css` · `src/public/ai-coach.js` | Local prompt builder for weekly training requests |
 | Training memory | `src/public/training-memory.html` · `src/public/training-memory.css` · `src/public/training-memory.js` | Consolidated canonical context, source correction links and optional prior experience; separate own admin debug |
-| Cycles | `src/public/cycles.html` · `src/public/cycles.css` · `src/public/cycles.js` | Training-cycle management |
+| Cycles | `src/public/cycles.html` · `src/public/cycles.css` · `src/public/cycles.js` | Training-cycle management and long-term planning proposals |
 | Shoes | `src/public/shoes.html` · `src/public/shoes.css` · `src/public/shoes.js` | Shoe rotation and mileage management |
 | Administration → Users | `src/public/admin-users.html` · `src/public/admin-users.css` · `src/public/admin-users.js` | Admin-only account list with create, edit, activate/deactivate, and delete |
 

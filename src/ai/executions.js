@@ -189,6 +189,7 @@ function createExecutionService({
           resourceId: body.resource_id ?? null,
           config,
         });
+        operation.prepare?.(context);
         const prompt = renderPrompt(db, userId, {
           purpose: body.purpose,
           resourceId: body.resource_id ?? null,
@@ -252,6 +253,7 @@ function createExecutionService({
           at,
           at,
         );
+        operation.onEnqueued?.(db.prepare('SELECT * FROM ai_executions WHERE id=?').get(id),context);
         schedule();
         return get(userId, id);
       })
@@ -310,6 +312,7 @@ function createExecutionService({
           : row.reserved_cost;
       // Cancellation does not erase billed or uncertain usage. The result is discarded.
       const cancelled = current.state === 'cancelled';
+      if (!cancelled && state === 'completed') operations[row.purpose].onCompleted?.(row,value);
       db.prepare(
         'UPDATE ai_global_usage SET tokens=tokens+?,cost=cost+?,calls=calls+? WHERE day = ?',
       ).run(
@@ -409,7 +412,7 @@ function createExecutionService({
       const response = await call(JSON.parse(row.payload_json));
       let valid = false;
       try {
-        valid = !response.error && operation.validate(response.value) === true;
+        valid = !response.error && operation.validate(response.value, JSON.parse(row.context_json)) === true;
       } catch {
         valid = false;
       }
@@ -519,6 +522,7 @@ function createExecutionService({
     db.prepare('DELETE FROM ai_global_usage WHERE day < ?').run(
       cutoff.slice(0, 10),
     );
+    for (const operation of Object.values(operations)) operation.cleanup?.();
   }
   function usage(userId) {
     activeOwner(db, userId);

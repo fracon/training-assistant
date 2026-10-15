@@ -2,7 +2,7 @@
 
 const { AiError, hash, readMemory, activeOwner, date } = require('./memory');
 const { readAiConfig } = require('./config');
-const POLICY_VERSION = 'training-context-v3';
+const POLICY_VERSION = 'training-context-v4';
 const TRAINING_COLUMNS = `id, dia, tipo, treino, detalhes, fc_alvo, rpe, completed, training_cycle_id,
   fit_distance, fit_duration, fit_avg_pace, fit_avg_hr, fit_max_hr, fit_elevation_gain, fit_calories,
   result_data_source, tenis, periodo, location, previsao, observacoes, feedback_shoe, feedback_shoe_id, has_smartwatch, fit_summary_json, feedback_rpe, feedback_notas, feedback_weather, feedback_terrain,
@@ -237,6 +237,25 @@ function buildContext(
     context.gaps.push('No recorded training history.');
   if (!Object.keys(memory.profile.fields).length)
     context.gaps.push('Optional prior running experience has not been supplied.');
+  if (purpose !== 'cycle' && cycle) {
+    const applied = db.prepare('SELECT * FROM cycle_plan_versions WHERE user_id=? AND cycle_id=? ORDER BY version DESC LIMIT 1').get(userId,cycle.id);
+    if (applied) {
+      const plan = JSON.parse(applied.plan_json);
+      context.appliedPlan = {
+        authority:'applied_planning',cycleId:cycle.id,version:applied.version,
+        executionId:applied.id,appliedAt:applied.applied_at,
+        outdated:!contextIsCurrent(db,userId,JSON.parse(applied.fingerprint_json),config),
+        start:plan.start,end:plan.end,
+        architecture:plan.phases.map(({name,start,end,objective})=>({name,start,end,objective})),
+        phases:plan.phases.filter((phase)=>phase.end>=asOf && phase.start<=context.ranges.plannedTo),
+        indicators:plan.indicators,adaptations:plan.adaptations,
+        uncertainties:plan.uncertainties,
+      };
+      const outsideWindow=plan.phases.length-context.appliedPlan.phases.length;
+      if (outsideWindow) context.omissions.push({type:'cycle_plan_phases',count:outsideWindow,reason:'phase_details_outside_task_window'});
+      addReference({type:'cycle_plan',id:applied.id,version:hash(applied)});
+    }
+  }
   const budget = config.limits.AI_CONTEXT_TOKENS;
   const reduced = (key, row) => ({ type: key, id: String(row.id), reason: 'planning_details_omitted', fields: PLANNING_DETAIL_FIELDS });
   // All recent explicit concerns and RPE 4/5 reports are retained whole before
@@ -285,6 +304,11 @@ function buildContext(
   }
   if (purpose !== 'workouts') for (const row of availability)
     select('availability', row, [availabilitySource(row)]);
+  if (purpose === 'cycle') {
+    context.previousCycles = [];
+    for (const previous of db.prepare("SELECT * FROM training_cycles WHERE user_id=? AND id!=? AND status!='active' ORDER BY created_at DESC,id LIMIT 3").all(userId,resourceId ?? ''))
+      select('previousCycles',{...previous,user_id:undefined,authority:'applied_record'},[source('cycle',previous)]);
+  }
   // Only after compact reports have had their turn, spend spare bytes on planning prose.
   for (const row of recent) {
     const index = context.recent.findIndex((view) => view.source.id === String(row.id));
