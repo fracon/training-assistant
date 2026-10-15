@@ -503,6 +503,17 @@ Read the plan and [foundation contract](docs/ai-foundation.md) in full before
 changing this service. Update README, AGENTS, the plan and affected configuration,
 API/privacy documentation with delivered behavior and honest branch status.
 
+Context selection priorities and explicit module boundaries are defined in the
+[foundation contract](docs/ai-foundation.md#effective-selection-policy-training-context-v3).
+Keep complete recent discomfort/RPE 4–5 reports ahead of optional planning;
+refuse insufficient mandatory budgets rather than silently dropping reports.
+Do not duplicate requested sessions in recent/upcoming/comparables or count
+references as extra totals. Include final metadata in the byte bound.
+`src/public/shared/package.json` scopes shared JS as ES modules; the root,
+backend and legacy `public/form-state.js` remain CommonJS-compatible. Do not
+remove that scope, introduce top-level await into synchronous shared imports,
+or suppress Node module warnings.
+
 Owner correction (2026-10-15): training memory is an evolving, source-backed
 athlete-context view, not a parallel profile/observation form. Goals come from
 cycles; availability/preferences from Request Workouts; metrics and discomfort
@@ -530,7 +541,7 @@ with optimistic versions. Do not restore generic manual memory CRUD.
   are an inactive read-only archive, exposed only to their owner through
   `/api/ai/memory/legacy`. Experience saves preserve those keys. New contexts
   never select that archive, including old interpretations/recommendations.
-  Snapshots are immutable; context policy v2 makes old execution results stale
+  Snapshots are immutable; context policy v3 makes v1/v2 execution results stale
   without rewriting them. No semantic migration or silent deletion is allowed.
 - Facts, dated reports, calculations, future interpretations/recommendations
   and performed actions remain distinct. Interpretation confirmation/correction/

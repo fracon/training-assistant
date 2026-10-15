@@ -66,7 +66,8 @@ test('canonical corrections refresh the overview and next context; legacy data a
   db.close();
 });
 
-test('policy upgrade keeps persisted v1 snapshots intact and refuses queued legacy context before network', async () => {
+for (const previousPolicy of ['training-context-v1', 'training-context-v2'])
+test(`policy upgrade keeps persisted ${previousPolicy} snapshots intact and refuses queued legacy context before network`, async () => {
   const db=createDatabase({filename:':memory:'});
   db.prepare("INSERT INTO users(id,email,password_hash,role) VALUES (1,'snapshot@example.invalid','synthetic','admin')").run();
   db.prepare("INSERT INTO training_cycles(id,user_id,objective,status) VALUES ('cycle',1,'Synthetic target','active')").run();
@@ -77,7 +78,7 @@ test('policy upgrade keeps persisted v1 snapshots intact and refuses queued lega
   const row=service.enqueue(1,{purpose:'cycle',resource_id:'cycle',idempotency_key:'snapshot-legacy'});
   const original=JSON.parse(db.prepare('SELECT context_json FROM ai_executions WHERE id=?').get(row.id).context_json);
   // Synthetic existing-installation snapshot. Reinitializing must preserve its exact old text.
-  const legacy=JSON.stringify({...original,policyVersion:'training-context-v1',profile:{fields:{goals:{value:'Legacy duplicate'}}},currentRestrictions:[{text:'Legacy restriction'}]});
+  const legacy=JSON.stringify({...original,policyVersion:previousPolicy,profile:{fields:{goals:{value:'Legacy duplicate'}}},currentRestrictions:[{text:'Legacy restriction'}]});
   db.prepare('UPDATE ai_executions SET context_json=? WHERE id=?').run(legacy,row.id);
   initializeDatabase(db); initializeDatabase(db);
   assert.equal(service.get(1,row.id,true).outdated,true);

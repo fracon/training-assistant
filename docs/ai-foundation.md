@@ -114,7 +114,8 @@ needed. Reinitialization remains idempotent and is tested with existing records.
 - Experience writes retain archived keys and metadata. No old goal is copied to
   a cycle, and no old note becomes a fact/current restriction. Archives remain
   until account deletion; ordinary execution retention does not erase them.
-- Policy `training-context-v2` excludes these fields. Saved execution snapshots
+- Since policy `training-context-v2`, these fields are excluded; current policy v3
+  also changes recent-context priority and invalidates v1/v2 execution freshness. Saved execution snapshots
   (including v1 inputs) remain exactly as used and inspectable in own admin debug;
   freshness checks identify prior-policy results as outdated. Queued old work
   fails source revalidation without dispatch; in-flight results cannot be applied
@@ -130,27 +131,76 @@ canonical result metrics supply observed outcomes. Recommendations never become
 performed facts by inclusion in a subsequent context. No recursive summarization
 or embeddings are introduced.
 
-Context policy `training-context-v2` selects optional supplied experience,
-the active cycle and a requested owned resource first; it refuses
-an insufficient budget for that mandatory material. Weekly
-availability, already scheduled upcoming sessions, recent sessions, aggregates,
-comparable sessions and shoes are
-selected deterministically. The recent and aggregate periods are disjoint:
-14 detailed days and the older part of a 12-week window by default. Saved
-upcoming workouts in the next detail-window span are included as planning
-records, with no inferred execution. Weekly
-aggregates use saved kilometres, duration and completion; unknown values remain
-explicit gaps. They are not inferred as zero-valued workouts or rest days.
-The ordinary history query is limited to the configured date window. A separate
-query retrieves at most three older completed comparable sessions, selected by saved training
-type for analysis, long-run labels in either `tipo` or `treino` for weekly
-context (including imported `tipo=Corrida`, `treino=Longão`), or recency for cycle context.
-Comparable records state whether they also belong to an aggregate, so their
-metrics must never be added again. The execution also records versions of every preserved-prompt dependency,
-including records omitted from detailed model context. Source IDs/content
-hashes, ranges, selection
-reasons, missing data and budget/cutoff omissions are included. There is no
-fabricated applied AI plan for an old cycle.
+### Effective selection policy: training-context-v3
+
+The same deterministic service serves cycle, workouts and analysis; the memory
+page projects its cycle-purpose selection. Default limits remain unchanged:
+14 detailed days, older disjoint aggregates within 12 weeks, up to three older
+comparables and saved future sessions within the next detail-window span.
+Historical queries remain bounded. Unknown values are not zero-valued workouts,
+rest days, diagnoses or evidence of recovery.
+
+1. Preserve supplied experience, current cycle and the requested owned resource.
+   The requested session is the sole detailed copy: it is excluded from recent,
+   upcoming and comparable lists. Its full content is mandatory.
+2. Preserve **all** recent explicit discomfort reports (`feedback_has_pain=yes`
+   or a nonblank saved discomfort description) and recorded RPE 4/5. These
+   sessions start with compact planning but retain their complete report,
+   canonical metrics, source/version and dates. This rank is a selection rule,
+   not a clinical interpretation or a permanent restriction. Contradictory or
+   missing reports remain as recorded; no state is inferred from silence.
+3. For workouts, preserve all configured weekly availability as essential task
+   data. Missing days remain explicit gaps; this never invents availability.
+   If mandatory material does not fit, return 413 `criticalContextTooLarge`.
+4. Give remaining recent sessions a chance **in compact form before planning
+   prose**: discomfort first, then valid reported RPE descending, then date
+   descending and numeric ID descending. Missing/invalid RPE ranks last without
+   changing its stored value. Preserve complete reports or record omission of
+   the whole optional session. For cycle/analysis, availability is optional next.
+5. With spare budget, restore recent planning prose in that same order. Then
+   select weekly aggregates, purpose-specific comparables, future sessions and
+   shoes. Future sessions try full detail, then compact planning, then an
+   explicit whole-record omission. Planning reduction removes only `detalhes`,
+   `observacoes` and `previsao`; report text is never clipped to fit.
+
+Every selected source retains its content hash, even when its planning prose
+is omitted. Reductions and exclusions are recorded in `omissions`, bounded to
+a count and examples for large sets; a nonempty omission list also marks the
+ordinary overview as selection-limited. Optional additions reserve 1,024 bytes
+for final metadata. The final serialized snapshot, including provenance,
+omissions, gaps and SHA-256 hash, must fit `AI_CONTEXT_TOKENS` (a conservative
+UTF-8 byte bound); otherwise return 413 `contextTooLarge`. Nothing oversized or
+silently truncated is sent. Increasing the default was not the solution.
+
+Aggregates are calculated locally from canonical completed-session metrics,
+with missing-result counts and no overlap with detailed recent dates. Requested
+and comparable sessions that also occur in aggregates carry
+`includedInAggregates`: they are references, never extra totals. Each source is
+listed once globally. Weekly comparable lookup checks type **and workout name**
+for long-run labels; analysis uses saved type and cycle uses recency. The
+execution additionally versions every preserved-prompt dependency, including
+sources omitted from the model context. No applied AI plan is fabricated for
+an old cycle.
+
+Policy v1/v2 snapshots remain byte-for-byte historical inputs. The v3 freshness
+check marks them outdated and refuses dispatch of old-policy queued work without
+automatic paid regeneration. No source row or historical snapshot is rewritten.
+
+### Explicit module boundary
+
+`src/public/shared/package.json` declares `"type":"module"` for the existing
+shared frontend ES modules, including the reusable weekly/analysis generators
+and their transitive `date.js`, `units.js` and `i18n.js` imports. The CommonJS
+backend loads these synchronous ES modules through Node 24's `require(esm)`;
+shared code must remain safe to import without browser globals or top-level
+await. Browsers keep the same URLs and module imports; prompt text is unchanged.
+
+The root package and backend remain CommonJS. The narrower shared scope leaves
+`src/public/form-state.js`'s legacy CommonJS/UMD consumers intact, while existing
+backend/test `require` and browser `import` consumers use the same utilities.
+No warning suppression, duplicate prompt, dependency or module migration is
+introduced. The existing Dockerfile's `COPY src ./src` includes the scoped
+manifest automatically; no Dockerfile, Compose or deployment change is needed.
 
 Experience remains editable; inactive archived records remain until account
 deletion. Terminal execution payloads, context, results and usage expire after
@@ -342,3 +392,55 @@ was introduced; no paid model evaluation was performed. Earlier 1,176-test
 results above describe the preceding scope correction. This remains an open
 PR implementation, not integrated into main. No new automatic review is
 requested for this localized correction of the already reviewed contracts.
+
+### Priority and module-boundary correction after 81420d5
+
+Reproduction on Node **24.18.0**, before changes: the default 12,000-byte policy
+selected **six upcoming sessions and zero recent sessions** from the supplied
+seven-session/340-character scenario; the dated discomfort/RPE 5 report was
+missing. The new regression failed on that result. With v3 it selects **one
+recent and six upcoming sessions**, preserving the whole report, reducing one
+future session's planning prose and explicitly omitting another. The final
+snapshot is **11,038 bytes**, including provenance, omissions and hash; the
+configured limit is unchanged. Additional regressions cover an oversubscribed
+recent list, all three purposes, full requested resources, essential availability,
+explicit 413s, no-pain/missing reports, deterministic ranking, aggregate references
+and immutable persisted v1/v2 snapshots.
+
+`--trace-warnings` reproduced MODULE_TYPELESS_PACKAGE_JSON in both real `npm run
+dev` and `npm start` before correction. `--trace-require-module=all` located the
+CommonJS chain `server → routes → executions → prompt-service → shared prompt
+generators`, whose transitive date/units/i18n files lacked explicit module type.
+The scoped shared manifest removes the cause. A subprocess regression imports
+the CommonJS server, shared generators and date utility, verifies legacy
+`form-state.js` remains CommonJS-compatible, and checks that stderr has no
+MODULE_TYPELESS_PACKAGE_JSON. It does not suppress or filter application warnings.
+
+Final local validation for this batch:
+
+- `npm test`: **1,190 passed**, zero failures/skips.
+- `npm run test:coverage`: **1,190 passed**, zero failures/skips;
+  **100% Statements, Branches, Functions and Lines** in the required scope.
+- All **48** deterministic external PT/EN prompt comparisons remain exact.
+- Chrome memory/free preview PT/EN desktop/mobile passed, as did the existing
+  Request Workouts browser test. One initial coverage run timed out waiting for
+  its availability grid; that test passed in isolation and the complete coverage
+  gate was rerun successfully without weakening or changing the test.
+- Real `npm run dev` and `npm start` with temporary SQLite databases on Node
+  24.18.0 reached `/api/version` (200) with `--trace-warnings` and no typeless
+  warning. Neither full final suite emitted that warning.
+- The unchanged Dockerfile built successfully. An isolated container with no
+  external network or published port, ephemeral `/app/data`, Node **24.22.0**,
+  and UID **1000** started `npm start` without that warning and returned version
+  0.20.0 (HTTP 200). The scoped manifest was present in `/app/src/public/shared`.
+  The container was stopped/removed; no production deployment or real database
+  was touched. No image, Dockerfile, Compose or CI configuration change is needed.
+- `git diff --check` passed. Existing main was already included in the PR branch;
+  no destructive reset, force push or further version increment was used.
+
+The complete diff against main and the corrective batch were reviewed for source
+priority, budget/omission metadata, deduplication, module consumers, authorization,
+transactions, cancellation, quotas, focus/conflicts and prompt equivalence.
+These are deterministic/software validations, not coaching-quality evaluation.
+No paid OpenAI request was required or performed. Phase 0 remains implemented
+only in this open PR branch; functional generation belongs to later phases.

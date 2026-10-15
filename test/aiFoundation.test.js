@@ -258,7 +258,8 @@ test('context preserves temporal authority, canonical aggregates, gaps and compa
     config,
   };
   const first = buildContext(db, 1, args);
-  assert.equal(first.recent.length, 1);
+  assert.equal(first.recent.length, 0);
+  assert.equal(first.resource.source.id, '1');
   assert.ok(first.gaps.includes('Optional prior running experience has not been supplied.'));
   assert.equal(first.resource.actual.fit_distance, 5);
   assert.equal(first.resource.report.authority, 'user_report');

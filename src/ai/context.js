@@ -2,7 +2,7 @@
 
 const { AiError, hash, readMemory, activeOwner, date } = require('./memory');
 const { readAiConfig } = require('./config');
-const POLICY_VERSION = 'training-context-v2';
+const POLICY_VERSION = 'training-context-v3';
 const TRAINING_COLUMNS = `id, dia, tipo, treino, detalhes, fc_alvo, rpe, completed, training_cycle_id,
   fit_distance, fit_duration, fit_avg_pace, fit_avg_hr, fit_max_hr, fit_elevation_gain, fit_calories,
   result_data_source, tenis, periodo, location, previsao, observacoes, feedback_shoe, feedback_shoe_id, has_smartwatch, fit_summary_json, feedback_rpe, feedback_notas, feedback_weather, feedback_terrain,
@@ -70,6 +70,20 @@ function trainingView(row) {
     ].filter((key) => row[key] === null),
   };
 }
+// A selection rank, not a diagnosis or a persistent athlete restriction.
+function recentPriority(row) {
+  if (row.feedback_has_pain === 'yes' ||
+      (typeof row.feedback_pain === 'string' && row.feedback_pain.trim() !== ''))
+    return 6;
+  return Number.isInteger(row.feedback_rpe) && row.feedback_rpe >= 1 && row.feedback_rpe <= 5
+    ? row.feedback_rpe : 0;
+}
+const PLANNING_DETAIL_FIELDS = ['detalhes', 'observacoes', 'previsao'];
+function compactSession(row) {
+  const view = trainingView(row);
+  for (const key of PLANNING_DETAIL_FIELDS) delete view.planned[key];
+  return view;
+}
 function buildContext(
   db,
   userId,
@@ -113,7 +127,9 @@ function buildContext(
       `SELECT ${TRAINING_COLUMNS} FROM trainings WHERE user_id = ? AND dia >= ? AND dia <= ? ORDER BY dia DESC,id DESC`,
     )
     .all(userId, aggregateFrom, asOf);
-  const recent = rows.filter((row) => row.dia >= detailedFrom);
+  const resourceTrainingId = purpose === 'analysis' ? resource?.id ?? null : null;
+  const recent = rows.filter((row) => row.dia >= detailedFrom && row.id !== resourceTrainingId)
+    .sort((a, b) => recentPriority(b) - recentPriority(a) || b.dia.localeCompare(a.dia) || b.id - a.id);
   const aggregateRows = rows.filter(
     (row) => row.dia >= aggregateFrom && row.dia < detailedFrom,
   );
@@ -187,7 +203,7 @@ function buildContext(
       'Unrecorded sessions do not establish rest. Missing symptom reports do not establish resolution. Recommendations are not performed actions.',
     ],
     totalsPolicy:
-      'Detailed and aggregated periods are disjoint. Comparable sessions are references, never additional totals.',
+      'Detailed and aggregated periods are disjoint. Requested and comparable sessions are references, never additional totals; includedInAggregates identifies overlap. Each detailed session appears once.',
   };
   addReference({ type: 'profile', id: 'self', version: hash(context.profile) });
   addReference({
@@ -209,6 +225,8 @@ function buildContext(
       purpose === 'analysis'
         ? trainingView(resource)
         : { ...resource, user_id: undefined, authority: 'applied_record' };
+    if (purpose === 'analysis') context.resource.includedInAggregates =
+      resource.dia >= aggregateFrom && resource.dia < detailedFrom;
     addReference(
       source(purpose === 'analysis' ? 'training' : 'cycle', resource),
     );
@@ -220,42 +238,66 @@ function buildContext(
   if (!Object.keys(memory.profile.fields).length)
     context.gaps.push('Optional prior running experience has not been supplied.');
   const budget = config.limits.AI_CONTEXT_TOKENS;
-  if (tokenBound(context) > budget)
-    throw new AiError('criticalContextTooLarge', 413);
-  function select(key, item, refs) {
+  const reduced = (key, row) => ({ type: key, id: String(row.id), reason: 'planning_details_omitted', fields: PLANNING_DETAIL_FIELDS });
+  // All recent explicit concerns and RPE 4/5 reports are retained whole before
+  // optional details. If these cores cannot fit, refuse rather than hide them.
+  const critical = recent.filter((row) => recentPriority(row) >= 4);
+  for (const row of critical) {
+    context.recent.push(compactSession(row));
+    addReference(source('training', row));
+    context.omissions.push(reduced('recent', row));
+  }
+  function trySelect(key, item, refs, omission = null) {
     context[key].push(item);
     const before = references.length;
     refs.forEach(addReference);
+    if (omission) context.omissions.push(omission);
     if (tokenBound(context) > budget - 1024) {
       context[key].pop();
       references.splice(before);
-      context.omissions.push({
-        type: key,
-        id: refs[0].id,
-        reason: 'context_budget',
-      });
+      if (omission) context.omissions.pop();
+      return false;
     }
+    return true;
+  }
+  function select(key, item, refs) {
+    if (!trySelect(key, item, refs)) context.omissions.push({
+      type: key, id: refs[0].id, reason: 'context_budget',
+    });
   }
   const availability = db
     .prepare(
       'SELECT day_key,can_train,available_periods,available_minutes,location,updated_at FROM ai_coach_availability WHERE user_id = ? ORDER BY day_key',
     )
     .all(userId);
-  for (const row of availability)
-    select('availability', row, [
-      { type: 'availability', id: row.day_key, version: hash(row) },
-    ]);
   if (availability.length !== 7)
     context.gaps.push('Weekly availability is incomplete.');
-  const upcoming = db
-    .prepare(
-      `SELECT ${TRAINING_COLUMNS} FROM trainings WHERE user_id = ? AND dia > ? AND dia <= ? ORDER BY dia,id`,
-    )
-    .all(userId, asOf, context.ranges.plannedTo);
-  for (const row of upcoming)
-    select('upcoming', trainingView(row), [source('training', row)]);
-  for (const row of recent)
-    select('recent', trainingView(row), [source('training', row)]);
+  const availabilitySource = (row) => ({ type: 'availability', id: row.day_key, version: hash(row) });
+  // Configured availability is essential for workouts. Missing days stay missing.
+  if (purpose === 'workouts') for (const row of availability) {
+    context.availability.push(row);
+    addReference(availabilitySource(row));
+  }
+  if (tokenBound(context) > budget) throw new AiError('criticalContextTooLarge', 413);
+  for (const row of recent.filter((row) => recentPriority(row) < 4)) {
+    if (!trySelect('recent', compactSession(row), [source('training', row)], reduced('recent', row)))
+      context.omissions.push({ type: 'recent', id: String(row.id), reason: 'context_budget' });
+  }
+  if (purpose !== 'workouts') for (const row of availability)
+    select('availability', row, [availabilitySource(row)]);
+  // Only after compact reports have had their turn, spend spare bytes on planning prose.
+  for (const row of recent) {
+    const index = context.recent.findIndex((view) => view.source.id === String(row.id));
+    if (index === -1) continue;
+    const compact = context.recent[index];
+    const omissionIndex = context.omissions.findIndex((item) => item.type === 'recent' && item.id === String(row.id));
+    const [omission] = context.omissions.splice(omissionIndex, 1);
+    context.recent[index] = trainingView(row);
+    if (tokenBound(context) > budget - 1024) {
+      context.recent[index] = compact;
+      context.omissions.splice(omissionIndex, 0, omission);
+    }
+  }
   for (const g of groups.values())
     select(
       'weekly',
@@ -265,9 +307,10 @@ function buildContext(
   // Retrieve at most three comparable records, including older history; never load the entire log.
   const ranked = db.prepare(`SELECT ${TRAINING_COLUMNS} FROM trainings
     WHERE user_id = ? AND dia < ? AND completed = 1
+      AND (? IS NULL OR id != ?)
       AND (? != 'analysis' OR tipo = ?)
       AND (? != 'workouts' OR lower(tipo) LIKE '%long%' OR lower(treino) LIKE '%long%')
-    ORDER BY dia DESC,id DESC LIMIT 3`).all(userId, detailedFrom, purpose, resource?.tipo ?? null, purpose);
+    ORDER BY dia DESC,id DESC LIMIT 3`).all(userId, detailedFrom, resourceTrainingId, resourceTrainingId, purpose, resource?.tipo ?? null, purpose);
   for (const row of ranked)
     select(
       'comparables',
@@ -283,6 +326,15 @@ function buildContext(
       },
       [source('training', row)],
     );
+  const upcoming = db.prepare(`SELECT ${TRAINING_COLUMNS} FROM trainings
+    WHERE user_id = ? AND dia > ? AND dia <= ? AND (? IS NULL OR id != ?)
+    ORDER BY dia,id`).all(userId, asOf, context.ranges.plannedTo, resourceTrainingId, resourceTrainingId);
+  for (const row of upcoming) {
+    const refs = [source('training', row)];
+    if (!trySelect('upcoming', trainingView(row), refs) &&
+        !trySelect('upcoming', compactSession(row), refs, reduced('upcoming', row)))
+      context.omissions.push({ type: 'upcoming', id: String(row.id), reason: 'context_budget' });
+  }
   for (const row of db
     .prepare(
       'SELECT id,brand,model,status,mileage,target_mileage,updated_at FROM shoes WHERE user_id = ? ORDER BY id',

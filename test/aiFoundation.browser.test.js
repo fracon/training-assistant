@@ -229,7 +229,7 @@ test('training memory Chrome PT/EN desktop/mobile, ownership, keyboard, loading,
     assert.ok(
       (
         await evaluate(`document.getElementById('contextPreview').value`)
-      ).includes('training-context-v2'),
+      ).includes('training-context-v3'),
     );
     assert.equal(
       requests.some((r) => r.url.includes('api.openai.com')),

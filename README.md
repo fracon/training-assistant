@@ -14,7 +14,9 @@ Existing external prompt workflows remain available and preserve PT/EN output.
 
 The account menu opens **Training memory / Memória de treinamento**: a bounded
 view of current cycle goals, saved availability, dated sessions/feedback and
-canonical weekly aggregates, with dates, sources and correction links. Changes
+canonical weekly aggregates, with dates, sources and correction links. Recent
+discomfort/effort reports take priority over optional planning detail under the
+context budget; insufficient mandatory context is refused explicitly. Changes
 at those sources update the next view/context without duplicate editing. Only
 optional running experience from before Kinesis is edited here. Missing records
 remain explicit; discomfort is not a permanent restriction or a diagnosis.
@@ -975,6 +977,11 @@ Every primary flow is a standalone page (no single-page hacks, no overlapping la
 | Cycles | `src/public/cycles.html` · `src/public/cycles.css` · `src/public/cycles.js` | Training-cycle management |
 | Shoes | `src/public/shoes.html` · `src/public/shoes.css` · `src/public/shoes.js` | Shoe rotation and mileage management |
 | Administration → Users | `src/public/admin-users.html` · `src/public/admin-users.css` · `src/public/admin-users.js` | Admin-only account list with create, edit, activate/deactivate, and delete |
+
+`src/public/shared/package.json` explicitly scopes shared JavaScript as ES modules
+for browser imports and synchronous Node 24 consumers. The backend and root
+package remain CommonJS. See the [module boundary](docs/ai-foundation.md#explicit-module-boundary)
+for the preserved consumers and Docker layout.
 
 Shared code lives in `src/public/shared/`: `shell.js` injects the authenticated shell and user menu; `onboarding.js` owns welcome/checklist state and the transient guide signal; `i18n.js` and `locales/` provide PT/EN; `theme.css` owns tokens and shared controls; `api.js`, validators, date, units, preferences, and supporting modules are reused by pages. `src/trainingImport.js` normalizes SheetJS workbook data on the backend.
 

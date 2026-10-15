@@ -420,12 +420,16 @@ equivalence/evaluation fixtures. The source inventory maps cycles (`objective`, 
 `/cycles.html`; structured weekly availability to `/ai-coach.html`; bounded
 sessions/feedback and canonical aggregates to calendar/result screens. Only
 previous running experience uses the supplemental editor. The UI is a product
-projection of context policy `training-context-v2`, with no raw debug for ordinary
+projection of context policy `training-context-v3`, with no raw debug for ordinary
 users. Existing profile duplicate keys and generic memory rows remain in a
 read-only owner archive and are excluded from new selection. No schema deletion
 or reinterpretation occurs; exact historical execution snapshots stay intact.
 Weekly comparable lookup uses both type and workout-name long-run labels.
 The 429 retry/cancellation decision is atomic, including reservation settlement.
+Recent-context priority, compact planning, mandatory reports and final-budget
+refusal follow the [effective selection policy](ai-foundation.md#effective-selection-policy-training-context-v3).
+A scoped shared ES-module manifest resolves backend loading without changing
+the CommonJS root or external prompt output; see the same foundation contract.
 Native fetch implements Responses with no SDK
 retry side effects. There are no registered paid product adapters in phase 0.
 Functional cycle, weekly and analysis adapters remain in their planned phases.
