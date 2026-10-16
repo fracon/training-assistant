@@ -475,8 +475,11 @@ Recheck provider-specific behavior when implementing:
 The [cycle planning contract](ai-cycle-planning.md) records the structured A–F
 schema, three allowlisted delivery transformations, durable proposals, explicit
 versioned application, migration and concurrency checks. It reuses the integrated
-execution/client/context/debug/cost pipeline. Context v4 preserves v3's recent
-report priorities, adds bounded preceding cycles and supplies applied architecture
-to later task contexts, without reusing plan-local athlete assessments. No weekly
+execution/client/context/debug/cost pipeline. Context v5 preserves v3's recent
+report priorities, adds bounded preceding cycles and supplies applied planning
+to later task contexts through budgeted optional selection after reports and
+availability. Identity/provenance remains mandatory; see the
+[effective extension policy](ai-foundation.md#context-extension-training-context-v5).
+It does not reuse plan-local athlete assessments. No weekly
 calendar, hourly research or result analysis operation is registered. Main still
 contains phase 0 only until this phase's PR is merged.

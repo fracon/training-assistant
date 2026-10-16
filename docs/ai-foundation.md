@@ -231,16 +231,34 @@ Policy v1/v2 snapshots remain byte-for-byte historical inputs. The v3 freshness
 check marks them outdated and refuses dispatch of old-policy queued work without
 automatic paid regeneration. No source row or historical snapshot is rewritten.
 
-### Context extension: training-context-v4
+### Context extension: training-context-v5
 
 The issue #63 branch retains the priority/budget rules above. It additionally
 selects at most three previous non-active cycles for cycle generation, after
-recent reports and availability, before optional planning detail. For subsequent
-tasks it preserves the current cycle's applied planning as mandatory, explicitly
-labeled architecture with dated versions, source freshness and near-term phase
-selection; see [cycle continuity](ai-cycle-planning.md#continuity-and-interpretation-boundary).
-Plan-local assessments are excluded. v1/v2/v3 execution snapshots remain immutable
-and are marked outdated under v4. No weekly/analysis product adapter is registered.
+recent reports and availability, before optional planning detail.
+
+For subsequent tasks, only the current applied plan's identity, dates, version,
+source hash and freshness flag are mandatory. After all recent compact reports
+and availability have had their turn, select optional planning in this order:
+macro architecture entries (name/dates/objective), relevant near-term phases,
+indicators, adaptation rules as a whole, and uncertainties. Array entries retain
+their saved order; each entry or rules object is included whole or explicitly
+omitted through the same budget path as optional session data. This precedes
+restoration of recent planning prose. An omitted rules object is `null`; omitted
+array entries are absent. No report is clipped to accommodate planning.
+
+Optional selection reserves 1,024 bytes for final metadata and includes the
+already-retained plan source reference in the bound. `omissions` identifies the
+field (`architecture`, `phases`, `indicators`, `adaptations`, `uncertainties`), plan
+ID and `context_budget`; the existing bounded count/examples policy applies.
+Phase details outside the task window retain their separate omission reason.
+Insufficient mandatory material still returns 413; optional plan prose alone
+must not cause that refusal. See [cycle continuity](ai-cycle-planning.md#continuity-and-interpretation-boundary).
+
+Plan-local assessments are excluded. v1/v2/v3/v4 execution snapshots remain
+immutable and are marked outdated under v5, without automatic paid regeneration.
+This corrects v4's unconditional inclusion of applied planning details. No
+weekly/analysis product adapter is registered.
 
 ### Explicit module boundary
 

@@ -24,7 +24,7 @@ backfilled. No elapsed preparation is invented. No weekly sessions are generated
 The phase 0 context service provides the selected cycle, its original goals,
 optional previous-running-experience supplement, saved Request Workouts
 availability, recent reports, canonical aggregates and reference sessions.
-Context v4 also selects at most three preceding non-active canonical cycles.
+Context v5 also selects at most three preceding non-active canonical cycles.
 The v3 discomfort/RPE priority, full critical reports, byte budget, provenance,
 omission disclosure and explicit 413 on insufficient mandatory context remain.
 Missing history, missing symptom updates and missing sessions establish neither
@@ -123,13 +123,16 @@ An account deleted or suspended during generation cannot be recreated/applied.
 
 ## Continuity and interpretation boundary
 
-Context v4 marks historical v1/v2/v3 snapshots outdated without rewriting them.
+Context v5 marks historical v1/v2/v3/v4 snapshots outdated without rewriting them.
 For future workouts/analysis it includes the active cycle's latest applied plan,
 labeled `applied_planning`, versioned and dated, with an outdated-source flag.
-The full macro architecture (name/dates/objective), phases relevant to the
-selected near-term window, indicators, adaptation rules and declared limitations
-are supplied as planning, never as completed work. Mandatory material still
-refuses an insufficient context budget rather than silently truncating reports.
+Plan identity and provenance are mandatory. Macro architecture, near-term phase
+details, indicators, adaptation rules and uncertainties are optional planning,
+never completed work; they use the shared budget path after recent reports and
+availability. Omitted details remain explicit. The exact priority and omission
+contract is in [context v5](ai-foundation.md#context-extension-training-context-v5).
+Mandatory material still refuses an insufficient budget rather than truncating
+reports; extensive optional planning cannot trigger that mandatory refusal.
 
 A–C assessments and speculative assumptions stay in the reviewable planning artifact. They are not extracted
 as persistent athlete characteristics or fed back as a reusable profile. No
@@ -225,7 +228,7 @@ MODULE_TYPELESS_PACKAGE_JSON warning. Browser checks cover PT/EN desktop/mobile,
 ordinary/admin, processing recovery, error, proposal/application, keyboard/focus,
 scrolling and visual comparison with the existing cycle/prompt modals.
 
-### Local delivery evidence
+### Initial local delivery evidence
 
 Final full gates: **`npm test`: 1,205 passed**; **`npm run test:coverage`: 1,205
 passed**, zero failures/skips and **100% Statements, Branches, Functions and
@@ -252,3 +255,38 @@ expired start dates, explicit base-version conflict messaging, scope-safe async
 responses and delivery phrases repeated inside user fields. Results above are
 local, not GitHub checks or a real-model quality evaluation. No key was available
 and no paid evaluation was performed. #64/#65 remain unimplemented.
+
+### PR #69 context-budget review correction
+
+Review of `1b78241` identified unconditional insertion of applied plan prose
+before mandatory-report validation. Two regressions (workouts and analysis)
+failed with `criticalContextTooLarge` before the correction, despite sufficient
+space for their reports and required sources. Policy v5 uses the existing
+budget selector for optional planning; see the continuity contract above.
+
+Three added regressions cover extensive phase/adaptation prose, requested
+resource and seven-day availability preservation, deterministic partial
+architecture selection, complete dated discomfort/RPE, source deduplication,
+explicit omissions, insufficient mandatory budgets and immutable v4 snapshots.
+A separate synthetic check retained one complete discomfort/RPE 5 report and
+seven availability rows in **5,710 / 12,000 bytes**; phase/adaptation details were
+explicitly omitted. No default limit increase or paid model call was needed.
+
+Final corrective validation on Node **24.18.0**:
+
+- Targeted context, planning, foundation/prompt and module suites: **62 passed**.
+- `npm test`: **1,208 passed**, zero failures/skips.
+- `npm run test:coverage`: **1,208 passed**, **100% Statements, Branches,
+  Functions and Lines** in the required backend/script scope.
+- Existing 48 byte-identical external prompt comparisons and real-Chrome
+  suites passed, including PT/EN memory/preview and cycle planning flows.
+- Real `npm run dev` and `npm start` with temporary databases returned version
+  0.21.0 (HTTP 200), with `--trace-warnings` and no typeless-module warning.
+- Complete diff against main and this correction reviewed for ownership,
+  transactions, quota/cancellation, selection, compatibility, accessibility,
+  documentation and tests; `git diff --check` passed.
+
+These are local software validations with simulated provider responses, not a
+model-quality evaluation. Beta remains **0.21.0**; this phase remains available
+on the PR #69 branch until merge. No schema/configuration/infrastructure change
+or additional automatic review request is introduced by this correction.

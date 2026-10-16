@@ -503,9 +503,12 @@ changing this service. Update README, AGENTS, the plan and affected configuratio
 API/privacy documentation with delivered behavior and honest branch status.
 
 Context selection priorities and explicit module boundaries are defined in the
-[foundation contract](docs/ai-foundation.md#context-extension-training-context-v4).
+[foundation contract](docs/ai-foundation.md#context-extension-training-context-v5).
 Keep complete recent discomfort/RPE 4–5 reports ahead of optional planning;
 refuse insufficient mandatory budgets rather than silently dropping reports.
+Applied plan identity/provenance stays mandatory; select its architecture and
+prose through the shared budget path after recent reports and availability,
+recording omissions. Do not let optional planning cause mandatory-context refusal.
 Do not duplicate requested sessions in recent/upcoming/comparables or count
 references as extra totals. Include final metadata in the byte bound.
 `src/public/shared/package.json` scopes shared JS as ES modules; the root,
@@ -605,7 +608,7 @@ Regeneration is a separate proposal, never an implicit write to applied versions
 Applied architecture is `applied_planning`, not performed training. Plan-local
 A–C assessments never become reusable athlete traits. Do not add speculative
 interpretation CRUD. See `docs/ai-cycle-planning.md` for schema, retention,
-context v4, configuration and real evaluation. Tests live in
+context v5, configuration and real evaluation. Tests live in
 `cyclePlanning{,.routes,.browser}.test.js`; keep provider calls mocked in CI.
 
 ## Golden rules

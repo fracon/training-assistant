@@ -34,7 +34,10 @@ availability and totals use compact tables, while long planning details and
 administrator debug expand on demand. Context loads automatically on opening;
 “Tentar novamente / Try again” appears only after a loading failure. See the [presentation contract](docs/ai-foundation.md#memory-presentation-on-the-pr-67-branch). Recent
 discomfort/effort reports take priority over optional planning detail under the
-context budget; insufficient mandatory context is refused explicitly. Changes
+context budget, including when an applied cycle plan has extensive detail. Plan
+identity and provenance remain available; optional architecture/phase text is
+budgeted after reports and availability, with explicit omissions. Insufficient
+mandatory context is refused explicitly. Changes
 at those sources update the next view/context without duplicate editing. Only
 optional running experience from before Kinesis is edited here. Missing records
 remain explicit; discomfort is not a permanent restriction or a diagnosis.

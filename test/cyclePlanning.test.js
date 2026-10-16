@@ -180,3 +180,68 @@ test('later task context supplies relevant applied phases and discloses omitted 
  assert.ok(context.omissions.some(o=>o.reason==='phase_details_outside_task_window' && o.count===1));
  await service.stop();db.close();
 });
+
+for (const purpose of ['workouts', 'analysis']) {
+ test(`${purpose} budgets applied planning after complete recent reports and required sources`,async(t)=>{
+  const db=fixture();t.after(()=>db.close());
+  const {DAY_KEYS}=require('../src/availability');
+  for(const day of DAY_KEYS) db.prepare(`INSERT INTO ai_coach_availability
+   (user_id,day_key,can_train,available_periods,available_minutes,location)
+   VALUES(1,?,1,'["before_08"]',60,'Synthetic locality')`).run(day);
+  const recent=db.prepare(`INSERT INTO trainings(user_id,dia,tipo,treino,completed,feedback_rpe,feedback_has_pain,feedback_pain)
+   VALUES(1,?,'Run','Recent synthetic report',1,5,'yes','Complete dated synthetic discomfort')`).run(today).lastInsertRowid;
+  const requested=db.prepare("INSERT INTO trainings(user_id,dia,tipo,treino) VALUES(1,?,'Run','Requested synthetic session')").run(today).lastInsertRowid;
+  const {service,config}=harness(db,async(payload)=>{
+   const plan=planFor(JSON.parse(payload.input[0].content[0].text).context);
+   for(const key of phaseFields) if(!['name','objective'].includes(key)) plan.phases[0][key]='Optional planning prose. '.repeat(60);
+   for(const key of Object.keys(plan.adaptations)) plan.adaptations[key]='Optional adaptation. '.repeat(75);
+   return {value:plan,usage:null,error:null};
+  });t.after(()=>service.stop());
+  const proposal=enqueue(service);assert.equal((await complete(service,proposal.id)).state,'completed');
+  applyCyclePlan(db,1,'cycle',proposal.id,{expected_version:0},service);
+  const args={purpose,resourceId:purpose==='analysis'?requested:null,config};
+  const context=buildContext(db,1,args);
+  const report=context.recent.find(r=>r.source.id===String(recent));
+  assert.equal(report.report.feedback_pain,'Complete dated synthetic discomfort');
+  assert.equal(report.report.feedback_rpe,5);assert.equal(report.report.observedOn,today);
+  assert.equal(context.appliedPlan.version,1);assert.equal(context.appliedPlan.outdated,false);
+  assert.equal(context.appliedPlan.architecture.length,1);assert.equal(context.appliedPlan.phases.length,0);
+  assert.equal(context.appliedPlan.adaptations,null);
+  assert.ok(context.omissions.some(o=>o.type==='phases' && o.id===proposal.id && o.reason==='context_budget'));
+  assert.equal(context.sources.filter(s=>s.type==='cycle_plan' && s.id===proposal.id).length,1);
+  if(purpose==='workouts') assert.equal(context.availability.length,7);
+  else assert.equal(context.resource.source.id,String(requested));
+  assert.ok(require('../src/ai/context').tokenBound(context)<=config.limits.AI_CONTEXT_TOKENS);
+  assert.deepEqual(buildContext(db,1,args),context);
+  const historical={...context,policyVersion:'training-context-v4'};const frozen=JSON.stringify(historical);
+  assert.equal(require('../src/ai/context').contextIsCurrent(db,1,historical,config),false);
+  assert.equal(JSON.stringify(historical),frozen);
+  config.limits.AI_CONTEXT_TOKENS=1000;
+  assert.throws(()=>buildContext(db,1,args),e=>e.code==='criticalContextTooLarge' && e.status===413);
+ });
+}
+
+test('oversized applied architecture is selected deterministically without crowding mandatory reports',async(t)=>{
+ const db=fixture();
+ db.prepare(`INSERT INTO trainings(user_id,dia,tipo,treino,completed,feedback_rpe,feedback_has_pain,feedback_pain)
+  VALUES(1,?,'Run','Synthetic session',1,5,'yes','Whole dated report')`).run(today);
+ let generated;
+ const {service,config}=harness(db,async(payload)=>{
+  generated=planFor(JSON.parse(payload.input[0].content[0].text).context);
+  const template=generated.phases[0];
+  generated.phases=Array.from({length:12},(_,i)=>({...template,start:future(i),end:future(i===11?28:i),name:'N'.repeat(1500),objective:'O'.repeat(1500)}));
+  return {value:generated,usage:null,error:null};
+ });t.after(async()=>{await service.stop();db.close();});
+ const proposal=enqueue(service);assert.equal((await complete(service,proposal.id)).state,'completed');
+ applyCyclePlan(db,1,'cycle',proposal.id,{expected_version:0},service);
+ const args={purpose:'workouts',config};const context=buildContext(db,1,args);
+ assert.equal(context.recent[0].report.feedback_pain,'Whole dated report');
+ assert.ok(context.appliedPlan.architecture.length>0 && context.appliedPlan.architecture.length<12);
+ assert.deepEqual(context.appliedPlan.architecture,generated.phases.slice(0,context.appliedPlan.architecture.length).map(({name,start,end,objective})=>({name,start,end,objective})));
+ assert.ok(context.omissions.some(o=>o.type==='architecture' && o.reason==='context_budget'));
+ assert.ok(context.omissions.some(o=>o.reason==='selection_omissions'));
+ assert.ok(require('../src/ai/context').tokenBound(context)<=config.limits.AI_CONTEXT_TOKENS);
+ assert.deepEqual(buildContext(db,1,args),context);
+ const cycleContext=buildContext(db,1,{purpose:'cycle',resourceId:'cycle',config});
+ assert.equal(cycleContext.appliedPlan,undefined);assert.equal(cycleContext.recent[0].report.feedback_pain,'Whole dated report');
+});
