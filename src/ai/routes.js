@@ -10,9 +10,11 @@ const { buildContext } = require('./context');
 const { memoryOverview } = require('./overview');
 const { readAiConfig } = require('./config');
 const { createExecutionService } = require('./executions');
+const { createCyclePlanAdapter } = require('./cycle-plan-adapter');
+const { readCyclePlanning, applyCyclePlan } = require('./cycle-plans');
 function registerAiRoutes(
   app,
-  { db, requireAuth, config = readAiConfig(), operations = {}, client },
+  { db, requireAuth, config = readAiConfig(), operations = { cycle:createCyclePlanAdapter(db) }, client },
 ) {
   const service = createExecutionService({ db, config, operations, client });
   const route = (method, path, handler) =>
@@ -30,6 +32,8 @@ function registerAiRoutes(
           .send({ error: 'aiInternalError', errors: ['aiInternalError'] });
       }
     });
+  route('get', '/api/cycles/:id/planning', (r) => readCyclePlanning(db,r.user.id,r.params.id,service,config));
+  route('post', '/api/cycles/:id/planning/:proposalId/apply', (r) => applyCyclePlan(db,r.user.id,r.params.id,r.params.proposalId,r.body,service));
   route('get', '/api/ai/memory', (r) => memoryOverview(db, r.user.id, config));
   route('put', '/api/ai/profile', (r) => saveProfile(db, r.user.id, r.body));
   route('get', '/api/ai/memory/legacy', (r) => readLegacyMemory(db, r.user.id));

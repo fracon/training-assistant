@@ -1069,6 +1069,10 @@ async function buildServer(options = {}) {
       return { status: 'ok' };
     });
 
+    // Authentication reloads the current role; admin access never bypasses ownership.
+    const requireAdmin = createRequireAdmin();
+    const adminPreHandler = [requireAuth, requireAdmin];
+
     // ── Training Cycles CRUD ────────────────────────────────────
     app.get('/api/cycles', { preHandler: requireAuth }, async (request) => {
       const cycles = getCyclesByUserId(db, request.user.id);
@@ -1115,7 +1119,7 @@ async function buildServer(options = {}) {
       return { status: 'ok' };
     });
 
-    app.get('/api/cycles/:id/prompt', { preHandler: requireAuth }, async (request, reply) => {
+    app.get('/api/cycles/:id/prompt', { preHandler: adminPreHandler }, async (request, reply) => {
       const cycle = getCycleById(db, request.params.id, request.user.id);
       if (!cycle) {
         return reply.code(404).send({ error: 'Cycle not found.' });
@@ -1167,11 +1171,6 @@ async function buildServer(options = {}) {
     });
 
     // ── Administration: account CRUD ────────────────────────────
-    // requireAdmin re-reads the role from the users row on every request, so a
-    // demoted account loses access immediately. Admin status never widens the
-    // ownership scope of the user-scoped routes above.
-    const requireAdmin = createRequireAdmin();
-    const adminPreHandler = [requireAuth, requireAdmin];
 
     const feedbackFailure = (reply, error) => {
       if (error instanceof FeedbackError) {

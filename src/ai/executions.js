@@ -1,5 +1,6 @@
 'use strict';
 
+const { sanitizeDiagnostic, saveDiagnostic } = require('./diagnostics');
 const { randomUUID } = require('node:crypto');
 const { AiError, hash, activeOwner, exactKeys } = require('./memory');
 const { buildContext, contextIsCurrent, tokenBound } = require('./context');
@@ -62,8 +63,10 @@ function createExecutionService({
     if (debug)
       Object.assign(result, {
         context,
+        diagnostics: JSON.parse(row.diagnostics_json),
         usage: row.usage_json ? JSON.parse(row.usage_json) : null,
         estimatedCostUsd: row.charged_cost,
+        costBasis: row.usage_json ? 'reported_usage_estimate' : !row.settled ? 'reservation_pending' : row.charged_tokens===0 ? 'known_unbilled' : 'reserved_unknown_usage',
         externalPrompt: row.external_prompt,
         payload: JSON.parse(row.payload_json),
         configuration: JSON.parse(row.configuration_json),
@@ -189,6 +192,7 @@ function createExecutionService({
           resourceId: body.resource_id ?? null,
           config,
         });
+        operation.prepare?.(context);
         const prompt = renderPrompt(db, userId, {
           purpose: body.purpose,
           resourceId: body.resource_id ?? null,
@@ -232,6 +236,8 @@ function createExecutionService({
             targetDate: body.target_date ?? null,
           }),
           retries: limits.AI_RETRIES,
+          timeoutMs: limits.AI_TIMEOUT_MS,
+          applicationVersion: require('../../package.json').version,
         };
         db.prepare(
           `INSERT INTO ai_executions(id,user_id,idempotency_key,purpose,resource_id,input_hash,prompt_version,external_prompt,context_json,payload_json,configuration_json,state,reserved_tokens,reserved_cost,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,'queued',?,?,?,?)`,
@@ -252,6 +258,7 @@ function createExecutionService({
           at,
           at,
         );
+        operation.onEnqueued?.(db.prepare('SELECT * FROM ai_executions WHERE id=?').get(id),context);
         schedule();
         return get(userId, id);
       })
@@ -266,6 +273,7 @@ function createExecutionService({
       error = null,
       knownUnbilled = false,
       verifySources = false,
+      diagnostic = null,
     } = {},
   ) {
     db.transaction(() => {
@@ -291,8 +299,10 @@ function createExecutionService({
           state = 'outdated';
           value = null;
           error = 'sourceChanged';
+          diagnostic={...diagnostic,stage:'sources',code:error};
         }
       }
+      if(diagnostic || error)saveDiagnostic(db,row.id,current.attempts,diagnostic || {stage:'lifecycle',code:error});
       const rate = cfg.rate;
       const tokens = usage
         ? usage.input + usage.output
@@ -310,6 +320,7 @@ function createExecutionService({
           : row.reserved_cost;
       // Cancellation does not erase billed or uncertain usage. The result is discarded.
       const cancelled = current.state === 'cancelled';
+      if (!cancelled && state === 'completed') operations[row.purpose].onCompleted?.(row,value);
       db.prepare(
         'UPDATE ai_global_usage SET tokens=tokens+?,cost=cost+?,calls=calls+? WHERE day = ?',
       ).run(
@@ -396,7 +407,9 @@ function createExecutionService({
             .run(now(), id).changes
         )
           return;
-        return db.prepare('SELECT * FROM ai_executions WHERE id = ?').get(id);
+        const claimed=db.prepare('SELECT * FROM ai_executions WHERE id = ?').get(id);
+        saveDiagnostic(db,id,claimed.attempts,{stage:'transport',clientRequestId:`kin_${id}_${claimed.attempts}`});
+        return claimed;
       })
       .immediate();
   }
@@ -405,51 +418,41 @@ function createExecutionService({
     if (!row) return;
     const operation = operations[row.purpose];
     const cfg = JSON.parse(row.configuration_json);
+    const clientRequestId=`kin_${row.id}_${row.attempts}`;
+    const started=Date.now();
+    let response;
     try {
-      const response = await call(JSON.parse(row.payload_json));
-      let valid = false;
-      try {
-        valid = !response.error && operation.validate(response.value) === true;
-      } catch {
-        valid = false;
-      }
-      finish(row, valid ? 'completed' : 'failed', {
-        value: valid ? response.value : null,
-        usage: response.usage,
-        error: valid ? null : response.error || 'invalidDomainResponse',
-        verifySources: true,
-      });
+      response = await call(JSON.parse(row.payload_json),{clientRequestId});
     } catch (error) {
-      const code =
-        error instanceof AiError ? error.code : 'providerOutcomeUncertain';
-      // Retry eligibility and cancellation settlement share one write transaction.
-      db.transaction(() => {
-        const current = db
-          .prepare('SELECT state FROM ai_executions WHERE id = ?')
-          .get(id);
-        if (
-          code === 'providerRateLimited' &&
-          row.attempts <= cfg.retries &&
-          current?.state === 'running' &&
-          !stopped
-        ) {
-          db.prepare(
-            "UPDATE ai_executions SET state='queued',updated_at=? WHERE id = ? AND state='running'",
-          ).run(now(), id);
-        } else
-          finish(
-            row,
-            code === 'providerOutcomeUncertain' ? 'uncertain' : 'failed',
-            {
-              error: code,
-              knownUnbilled: ['providerRateLimited', 'providerRejected'].includes(
-                code,
-              ),
-            },
-          );
+      const code=error instanceof AiError?error.code:'providerOutcomeUncertain';
+      const diagnostic=sanitizeDiagnostic({...error?.diagnostic,stage:error?.diagnostic?.stage || (['providerOutcomeUncertain','providerTimeout'].includes(code)?'transport':'provider_http'),clientRequestId,code,durationMs:Date.now()-started});
+      db.transaction(()=>{
+        const current=db.prepare('SELECT state FROM ai_executions WHERE id = ?').get(id);
+        if(code==='providerRateLimited' && row.attempts<=cfg.retries && current?.state==='running' && !stopped) {
+          saveDiagnostic(db,id,row.attempts,diagnostic);
+          db.prepare("UPDATE ai_executions SET state='queued',updated_at=? WHERE id=? AND state='running'").run(now(),id);
+        } else finish(row,['providerOutcomeUncertain','providerTimeout'].includes(code)?'uncertain':'failed',{
+          error:code,diagnostic,knownUnbilled:['providerRateLimited','providerRejected'].includes(code),
+        });
       }).immediate();
+      return;
+    }
+    let valid=false,validation=null;
+    try {
+      valid=!response.error && operation.validate(response.value,JSON.parse(row.context_json))===true;
+      if(!valid && !response.error)validation=operation.diagnose?.(response.value,JSON.parse(row.context_json)) || {code:'domain_invalid',path:'$'};
+    } catch { validation={code:'validator_exception',path:'$'}; }
+    const code=valid?null:response.error || 'invalidDomainResponse';
+    const diagnostic=sanitizeDiagnostic({...response.diagnostic,clientRequestId,durationMs:Date.now()-started,
+      code:code || 'completed',stage:validation?(validation.code.startsWith('shape_')?'schema':'domain'):response.diagnostic?.stage || (valid?'completed':'provider_response'),validation});
+    try {
+      finish(row,valid?'completed':'failed',{value:valid?response.value:null,usage:response.usage,error:code,diagnostic,verifySources:true});
+    } catch {
+      // A rolled-back proposal write must not erase already known provider usage.
+      finish(row,'failed',{usage:response.usage,error:'resultPersistenceFailed',diagnostic:{...diagnostic,stage:'persistence',code:'resultPersistenceFailed'}});
     }
   }
+
   function schedule() {
     if (stopped || scheduled) return;
     scheduled = true;
@@ -519,6 +522,7 @@ function createExecutionService({
     db.prepare('DELETE FROM ai_global_usage WHERE day < ?').run(
       cutoff.slice(0, 10),
     );
+    for (const operation of Object.values(operations)) operation.cleanup?.();
   }
   function usage(userId) {
     activeOwner(db, userId);

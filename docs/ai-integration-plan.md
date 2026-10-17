@@ -1,8 +1,29 @@
 # Kinesis AI integration plan
 
-Status: documentation integrated via PRs #66 and #68; phase 0 implemented on branch
-`feat/ai-phase-0-foundation`, validated locally, pending PR review and merge.
-Phases 1–3 remain planned. This branch is not integrated into main.
+Runtime diagnostics on the #63 branch now report effective AI readiness without
+credentials. Explicit enablement plus a runtime key and restart are required;
+startup does not verify model access or call the provider.
+
+Approved #63 correction on this branch: a cycle may target a race, a personal
+running distance, or another goal already supported by its registration. No new
+race field/type selector is introduced. A valid target date defines the deadline;
+`end >= max(reference, saved start)` remains inclusive. Specific validation errors
+replace the generic race/date refusal. API adapter `cycle-delivery-v2` scopes
+competition-specific equipment/nutrition/taper guidance to an explicit race,
+without modifying the external PT/EN prompts. See the cycle-planning contract for
+codes, historical compatibility and controlled evaluation limitations.
+
+The #63 branch also adds bounded owner-admin execution diagnostics and clear
+terminal-failure alerts. This does not create another job/client/cost system.
+Known usage survives failed proposal persistence; only the existing authorized
+429 retry may repeat a provider call. Response limits include reasoning. Limit
+changes require an explicit operator choice, not an automatic retry/fallback.
+See the foundation/migration and cycle-planning diagnostic contracts. This is
+implemented on the PR branch, not integrated before merge.
+
+Status: documentation integrated via PRs #66/#68; phase 0 integrated through
+merged PR #67 (`648d6a0`). Phase 1 is implemented on the issue #63 branch,
+not integrated before its PR merges. Phases 2–3 remain planned.
 Owner-approved direction: 2026-10-14; memory correction approved 2026-10-15 (#68).
 Baseline reviewed: main application version 0.19.6.
 
@@ -18,8 +39,8 @@ and documented by the implementing agent.
 
 | Phase | Issue | Dependency | Status |
 | --- | --- | --- | --- |
-| 0: API foundation and training memory | [#62](https://github.com/fracon/training-assistant/issues/62) | Documentation plan/correction merged (#66/#68) | Implemented in [open PR #67](https://github.com/fracon/training-assistant/pull/67); not integrated |
-| 1: Cycle planning | [#63](https://github.com/fracon/training-assistant/issues/63) | Phase 0 merged | Planned |
+| 0: API foundation and training memory | [#62](https://github.com/fracon/training-assistant/issues/62) | Documentation plan/correction merged (#66/#68) | Integrated via [merged PR #67](https://github.com/fracon/training-assistant/pull/67) |
+| 1: Cycle planning | [#63](https://github.com/fracon/training-assistant/issues/63) | Phase 0 merged | Implemented on issue #63 branch; pending PR/merge |
 | 2: Weekly workout requests | [#64](https://github.com/fracon/training-assistant/issues/64) | Phase 1 merged | Planned |
 | 3: Contextual workout analysis | [#65](https://github.com/fracon/training-assistant/issues/65) | Phase 2 merged | Planned |
 
@@ -86,8 +107,8 @@ prompt/model/tool proxy. Render model responses safely.
 
 ## Runtime configuration and data boundary
 
-Phase 0 configuration is implemented on this branch; see the complete settings,
-defaults and bounds in [AI foundation](ai-foundation.md). Paid product adapters
+Phase 0 configuration is integrated; see the complete settings,
+defaults and bounds in [AI foundation](ai-foundation.md). The issue #63 branch registers only cycle planning; other paid product adapters
 remain unregistered until their individual phases:
 
 - `OPENAI_API_KEY`: server-only secret injected into the running container.
@@ -123,8 +144,7 @@ work must not recreate its data.
 Owner correction, 2026-10-15: memory is a readable and correctable view of the
 athlete context assembled from application use, not a second profile form.
 This replaces the original requirement for manually maintained goals,
-preferences, limitations and generic dated observations. The revised phase 0 implementation in open PR #67 applies this correction;
-it remains subject to review and is not integrated into main.
+preferences, limitations and generic dated observations. The phase 0 implementation integrated through PR #67 applies this correction.
 
 Before adding any field, inventory existing sources, their owner, update flow,
 temporal meaning and consumers. Reuse that source. Document a concrete missing
@@ -156,12 +176,12 @@ the task and budget; the overview is not a promise that every record is sent.
 Build both from the same source mapping, so the overview does not become another
 independently maintained memory.
 
-The open PR #67 branch now presents this bounded view with grouped goal/routine
+The integrated PR #67 implementation presents this bounded view with grouped goal/routine
 cards, semantic availability/totals tables, visible dated feedback and expandable
 planning details. Context loads on opening; load failures expose a retry action,
 not a persistent refresh control. The [presentation contract](ai-foundation.md#memory-presentation-on-the-pr-67-branch)
-defines the delivered UI; it is not yet integrated into main and adds no later-phase
-generation or interpretation capabilities.
+defines the integrated phase 0 UI. Cycle generation is implemented separately
+on the issue #63 branch; other generation and interpretation capabilities remain future scope.
 
 ### Phase 0 boundary and correction
 
@@ -334,6 +354,11 @@ dated session feedback and history to generate a cycle proposal. Keep cycle iden
 generated planning versions. Validate phase dates and domain values; show a
 proposal before explicit atomic application. Preserve one active cycle and
 manual cycle creation. Regeneration must not overwrite an applied plan silently.
+Owner-approved guided experience (PR #69 correction): successful active-cycle
+registration/edit leads to the existing planning step, after confirmed persistence.
+Generation is a separate explicit choice; deferral preserves the cycle/plan and
+outdated flags. The card remains a later entry point. Technical prompts are
+admin-only explicit debug, never the automatic post-save destination.
 
 Persist the accepted planning/rationale for weekly context. Old cycles without
 an AI plan remain supported and must not receive fabricated backfill.
@@ -417,7 +442,7 @@ Every implementation PR must:
 For this initial documentation-only PR, inspect links, references and whitespace;
 do not run the application suite without a concrete functional risk.
 
-## Phase 0 implementation decisions on this branch
+## Integrated phase 0 decisions
 
 The [foundation contract](ai-foundation.md) records the consolidated-view placement in the
 account menu; schema/modules; deterministic source selection and explicit gaps;
@@ -470,3 +495,23 @@ Recheck provider-specific behavior when implementing:
 - [Models](https://developers.openai.com/api/docs/models)
 - [Pricing](https://developers.openai.com/api/docs/pricing)
 - [Data controls](https://developers.openai.com/api/docs/guides/your-data)
+
+## Phase 1 implementation on the issue #63 branch
+
+The [cycle planning contract](ai-cycle-planning.md) records the structured A–F
+schema, three allowlisted delivery transformations, durable proposals, explicit
+versioned application, migration and concurrency checks. It reuses the integrated
+execution/client/context/debug/cost pipeline. Context v5 preserves v3's recent
+report priorities, adds bounded preceding cycles and supplies applied planning
+to later task contexts through budgeted optional selection after reports and
+availability. Identity/provenance remains mandatory; see the
+[effective extension policy](ai-foundation.md#context-extension-training-context-v5).
+The Cycle planning card icon and CRUD-style product modal expose this flow to
+owned cycles for regular/admin accounts. A successful active save opens that
+product step, recovers persisted execution/proposal state and uses backend plan
+freshness. No-op saves preserve revisions; real edits/reversals invalidate as
+before. The original free cycle prompt is admin-only and explicitly requested;
+no save opens it. See the [presentation/access contract](ai-cycle-planning.md#presentation-and-free-prompt-access).
+It does not reuse plan-local athlete assessments. No weekly
+calendar, hourly research or result analysis operation is registered. Main still
+contains phase 0 only until this phase's PR is merged.

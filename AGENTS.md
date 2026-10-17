@@ -8,7 +8,7 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.20.0`); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.21.0`); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
@@ -495,18 +495,20 @@ will find every issue.
 ## OpenAI foundation and future phases
 
 The approved [plan](docs/ai-integration-plan.md) is integrated in main through
-PRs #66/#68. Phase 0 (#62) is implemented on `feat/ai-phase-0-foundation`
-([open PR #67](https://github.com/fracon/training-assistant/pull/67)), pending
-owner review and merge; do not call it integrated until its PR merges.
-Phases 1–3 remain planned and must be delivered sequentially in separate PRs.
+PRs #66/#68. Phase 0 (#62) is integrated through merged PR #67 (`648d6a0`).
+Phase 1 (#63) is implemented on `feat/issue-63-cycle-planning`, pending its own
+PR/merge; #64 and #65 remain future phases.
 Read the plan and [foundation contract](docs/ai-foundation.md) in full before
 changing this service. Update README, AGENTS, the plan and affected configuration,
 API/privacy documentation with delivered behavior and honest branch status.
 
 Context selection priorities and explicit module boundaries are defined in the
-[foundation contract](docs/ai-foundation.md#effective-selection-policy-training-context-v3).
+[foundation contract](docs/ai-foundation.md#context-extension-training-context-v5).
 Keep complete recent discomfort/RPE 4–5 reports ahead of optional planning;
 refuse insufficient mandatory budgets rather than silently dropping reports.
+Applied plan identity/provenance stays mandatory; select its architecture and
+prose through the shared budget path after recent reports and availability,
+recording omissions. Do not let optional planning cause mandatory-context refusal.
 Do not duplicate requested sessions in recent/upcoming/comparables or count
 references as extra totals. Include final metadata in the byte bound.
 `src/public/shared/package.json` scopes shared JS as ES modules; the root,
@@ -527,8 +529,7 @@ confirm/correct/dismiss state; old analyses must not resurrect discarded
 interpretations. The exact execution payload remains separate admin-only,
 owner-scoped debug. See the plan for phase boundaries and PR #67 correction.
 
-The revised documentation is integrated via #68. The runtime correction is
-available only in the open PR #67 branch until merged. The view and paid-context
+The revised documentation and runtime correction are integrated via #68/#67. The view and paid-context
 selection share `src/ai/context.js`; `overview.js` projects readable owner data
 without payload/hash/configuration. `memory.js` accepts only optional experience
 with optimistic versions. Do not restore generic manual memory CRUD.
@@ -549,7 +550,7 @@ with optimistic versions. Do not restore generic manual memory CRUD.
   are an inactive read-only archive, exposed only to their owner through
   `/api/ai/memory/legacy`. Experience saves preserve those keys. New contexts
   never select that archive, including old interpretations/recommendations.
-  Snapshots are immutable; context policy v3 makes v1/v2 execution results stale
+  Snapshots are immutable; context policy v4 makes v1/v2/v3 execution results stale
   without rewriting them. No semantic migration or silent deletion is allowed.
 - Facts, dated reports, calculations, future interpretations/recommendations
   and performed actions remain distinct. Interpretation confirmation/correction/
@@ -561,8 +562,8 @@ with optimistic versions. Do not restore generic manual memory CRUD.
   The synthetic baseline captured from main addd967 is tested byte for byte.
   Weekly comparable selection checks long-run labels in both `tipo` and `treino`,
   since spreadsheet imports commonly store `tipo=Corrida`, `treino=Longão`.
-- Production phase 0 registers no paid adapters. Trusted backend operations in
-  later phases register their versioned output adapters and domain validators;
+- Phase 0 provided the infrastructure. This branch registers only the cycle
+  product adapter, documented in `docs/ai-cycle-planning.md`;
   HTTP must never accept an arbitrary prompt/model/tool. Do not introduce
   functional generation early or hide conflicting delivery instructions.
 - The configured backend is authorized to send minimum selected structured
@@ -593,6 +594,92 @@ with optimistic versions. Do not restore generic manual memory CRUD.
   suites, then npm test and 100% c8 in all four metrics. Use synthetic fixtures
   and mocked providers. Model-quality evaluation is separate, controlled and
   cost-recorded; a mock is never evidence of real model quality or access.
+
+## Cycle planning (issue #63, branch implementation)
+
+The free macrocycle prompt (`GET /api/cycles/:id/prompt`) requires the existing
+`requireAuth` + `requireAdmin` chain and owner-scoped cycle lookup. Authentication
+loads the current database role; administrator status cannot cross ownership.
+Pass the account role through every cycle render/save/action/language path:
+regular users have no prompt button or prompt modal and never fetch/open one on
+save. Admins retain free prompt generation/copy only as an explicit card debug
+action; neither role gets an automatic technical prompt after saving.
+Product AI generation is owner-authorized for both roles, never admin-only.
+
+“Planejamento do ciclo” / “Cycle planning” is a `.btn-icon` card action with decorative
+Lucide `calendar-range`, translated accessible name and existing hover/focus
+custom tooltip, including on inactive cycles. Opening reads planning only.
+The product modal uses CRUD `.modal-card`/`.modal-header`/Lucide x and
+`.form-actions`, with one scrollable body and aligned wrapping footer; do not
+reuse `.prompt-modal-card` or `.prompt-modal-actions` padding. Proposal and
+applied-version headings/badge distinguish artifacts. Admin inspection stays in
+a separate secondary body section. Preserve trap/inert, keyboard/Escape/backdrop,
+focus restoration, language, reduced motion and stale-response protections.
+
+
+Approved guided flow: canonical POST/PUT `{cycle}` response updates/upserts the
+card before the form closes and active-cycle planning opens. No model call on
+save/open/defer. Use returned IDs, current i18n at asynchronous completion, form
+revision tokens, shared focus trap/inert and a save lock. Late/failed initial-list
+or active-state reads cannot overwrite an acknowledged local record. A later
+planning-read failure has its own saved-cycle message and free retry, never a
+registration failure or a second create. Closing a pending form prevents its
+late response from opening another modal; it does not undo a submitted write.
+
+Read planning state before offering actions. Recover running/ready proposals;
+use backend outdated flags and optimistic versions, not frontend freshness math.
+After an edit, offer new planning/Keep for now for an outdated plan, generation
+for an unplanned active cycle, or consultation for a current applied plan.
+Unavailable/inactive states hide generation; Done/defer only closes. New proposals
+never replace applied plans automatically. Keep unknown-acknowledgement generation
+keys per cycle across modal transitions; clear obsolete polling before switching
+cycles. Weekly generation stays in #64. Browser regressions also live in
+`cyclePlanningFlow.browser.test.js` (synthetic provider only).
+
+`cycle-plan-adapter.js` v2 adapts the three allowlisted delivery spans plus three
+explicit, owner-approved competition-conditional spans (equipment, nutrition,
+taper), preserving external prompt bytes. A race is optional; target_date is the
+goal deadline. Validate calendar dates and inclusive end >= max(asOf, saved start)
+before reservations. Past start/absent start and target equal to asOf remain
+supported. Distinguish missing/invalid target, invalid start, end before saved
+start, end before reference and inactive cycle with stable localized codes. It
+validates `cycle-plan-v1`. Execution lifecycle callbacks write pending/validated
+proposals inside existing enqueue/settlement transactions. `cycle-plans.js`
+owns read/apply; account/cycle/proposal/execution ownership and freshness are
+revalidated inside immediate application, with optimistic base version and an
+idempotent applied proposal ID. Never hold SQLite transactions over network.
+`planning_revision` increments only for actual stored-value changes, compared
+atomically with SQLite column affinities. No-op saves preserve timestamps and
+freshness; edit followed by reversal still increments twice. Never reset historical
+revisions or mark an outdated plan current just because it is kept.
+Regeneration is a separate proposal, never an implicit write to applied versions.
+Applied architecture is `applied_planning`, not performed training. Plan-local
+A–C assessments never become reusable athlete traits. Do not add speculative
+interpretation CRUD. See `docs/ai-cycle-planning.md` for schema, retention,
+context v5, configuration and real evaluation. Tests live in
+`cyclePlanning{,.routes,.browser}.test.js` and `cyclePlanningDates.test.js`; keep provider calls mocked in CI.
+
+Execution diagnostics are stored in `ai_executions.diagnostics_json` through the
+idempotent `2026-10-ai-execution-diagnostics-v1` migration. Keep at most three
+allowlisted per-attempt records, with no provider message/body, athlete values or
+secrets. Correlate `X-Client-Request-Id` with the execution and attempt; retain
+provider request/response IDs only in owner-scoped current-admin debug, alongside
+HTTP/status/incomplete reason, reasoning count, duration and safe validation paths.
+Never expose this metadata through ordinary execution/polling APIs. Keep known
+usage if proposal persistence rolls back; uncertain usage retains its reservation.
+Only an explicit 429 may retry under the existing limits/cancellation transaction;
+opening, polling, parsing errors, incomplete/invalid output and uncertainty never
+start another paid operation. A failed subsequent read remains a separate error.
+The product modal uses the existing alert for terminal execution reasons without
+stealing focus on polling. Test `aiDiagnostics{,.browser}.test.js` with simulated
+HTTP responses; real generation requires explicit authorization and a synthetic
+cycle, and never applies a proposal automatically.
+
+Startup AI diagnostics must use the same validated configuration passed to the
+execution service. Log only key presence, effective enabled state, disable reason
+and invalid setting names; never secrets or invalid values. Keep explicit
+`AI_ENABLED=true` opt-in and document restart after dotenv changes. Readiness
+is not verification of provider credentials and must not trigger paid calls.
 
 ## Golden rules
 

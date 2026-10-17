@@ -1,9 +1,13 @@
 # AI foundation (phase 0, issue #62)
 
-Status: implemented on `feat/ai-phase-0-foundation` ([open PR #67](https://github.com/fracon/training-assistant/pull/67)),
-validated locally and pending owner review; **not integrated into main**. Main includes the approved documentation
-plan and owner scope correction (#66/#68). Cycle, weekly-workout and analysis generation remain planned in
-#63–#65. This foundation does not enable those paid product operations.
+Status: phase 0 is integrated through merged [PR #67](https://github.com/fracon/training-assistant/pull/67),
+merge `648d6a0`, following #66/#68. The issue #63 branch adds only the cycle
+product adapter and explicit planning application; see [cycle planning](ai-cycle-planning.md).
+That phase is not integrated until its own PR merges. #64/#65 remain future.
+Cycle goals may be noncompetitive; the target date is a goal deadline, not a
+required race. See the [calendar and adapter contract](ai-cycle-planning.md#goal-deadlines-and-calendar-validation).
+Historical validation sections below record pre-merge phase 0 batches, not the
+current merge status.
 
 ## Configuration and deployment
 
@@ -14,6 +18,15 @@ and recreate the container with `docker compose up -d`. Keep that file private.
 Compose passes the key at runtime; the Dockerfile does not contain it, and
 `.dockerignore` excludes `.env*`. Ports remain `8081:3000`, the persistent volume
 remains `./data:/app/data`, and the container continues to use the `node` user.
+
+Adding `OPENAI_API_KEY` alone does not enable generation: set `AI_ENABLED=true`
+explicitly. Restart `npm run dev` / `npm start` after editing `.env` (Node watch
+tracks imported code, not dotenv file changes); recreate Compose containers after
+runtime variable changes. Existing process environment takes precedence over
+`.env`. Startup prints `[Kinesis] OpenAI:` with key presence, effective enabled
+state, disabled/missing/invalid reason and invalid setting names only. It never
+prints key values. Ready means locally configured, not verified provider access;
+startup does not make a provider call. Reload the cycle page after restart.
 
 | Variable | Default | Bounds / meaning |
 | --- | --- | --- |
@@ -61,6 +74,38 @@ unknown outcomes retain the full reservation. Review rates against official
 pricing before enabling a functional phase. Do not enable paid tools or a
 premium tier without updating this accounting contract.
 
+### Execution diagnostics on the issue #63 branch
+
+`2026-10-ai-execution-diagnostics-v1` idempotently adds `diagnostics_json` to
+`ai_executions`, default `[]`. Existing snapshots, usage, errors, proposals and
+applied versions are preserved; missing historical metadata is not invented.
+Diagnostics live in the existing execution row and follow its retention and
+account-deletion cascade, with at most three bounded attempt records.
+
+Only current-admin own-execution debug returns diagnostics. Common polling and
+planning responses contain the stable product error, not technical IDs or
+validation paths. The allowlist includes stage/code, attempt, duration/effective client timeout, HTTP
+status, request/response/client correlation IDs, known provider status, only
+`max_output_tokens`/`content_filter` incomplete reasons, reasoning-token count,
+transport reason (`timeout`/`network`), output-text item/byte counts and schema/domain code with a schema-defined path.
+No body, refusal text, provider error prose, notes, Authorization or API key is
+logged or copied into those records. Input/output/cache usage keeps its existing
+accounting. Admin `costBasis` explicitly distinguishes `reservation_pending`,
+`reported_usage_estimate`, `known_unbilled` and `reserved_unknown_usage`; the last
+is a reserved estimate, not confirmed provider spend. Reasoning is included in provider output and is **not added twice**.
+New execution configuration records application version and timeout. Historical
+executions did not save exact runtime SHA/timeout, so these cannot be backfilled.
+
+`X-Client-Request-Id=kin_<execution UUID>_<attempt>` is saved before network dispatch
+and used only for correlation, not as provider-side deduplication. SQLite
+idempotency and transactional claim remain the duplication boundary. A retry's
+metadata is saved in the same transaction as its 429 requeue. A restart keeps the
+client correlation and records uncertainty; it never resends an uncertain call.
+If proposal persistence fails after a response, the transaction rolls back and a
+sanitized `resultPersistenceFailed` settles the **known** usage instead of
+misclassifying the call as transport uncertainty. No schema/domain rule is relaxed.
+See the [operator workflow](ai-cycle-planning.md#failure-diagnostics-and-provider-correlation).
+
 ## Data, migration and privacy
 
 Migration `2026-10-ai-foundation-v1` creates `ai_profiles`, `ai_memory`,
@@ -98,7 +143,7 @@ task/budget; this overview is not a guarantee that every displayed record is sen
 
 ### Memory presentation on the PR #67 branch
 
-Available on this branch only, pending merge of #67. The page uses the dashboard's
+Integrated in main through PR #67. The page uses the dashboard's
 1,080px content width, theme tokens and card spacing, with existing shared
 controls and native keyboard-accessible disclosures. No new visual library,
 profile fields, storage or paid summaries are introduced.
@@ -229,6 +274,35 @@ Policy v1/v2 snapshots remain byte-for-byte historical inputs. The v3 freshness
 check marks them outdated and refuses dispatch of old-policy queued work without
 automatic paid regeneration. No source row or historical snapshot is rewritten.
 
+### Context extension: training-context-v5
+
+The issue #63 branch retains the priority/budget rules above. It additionally
+selects at most three previous non-active cycles for cycle generation, after
+recent reports and availability, before optional planning detail.
+
+For subsequent tasks, only the current applied plan's identity, dates, version,
+source hash and freshness flag are mandatory. After all recent compact reports
+and availability have had their turn, select optional planning in this order:
+macro architecture entries (name/dates/objective), relevant near-term phases,
+indicators, adaptation rules as a whole, and uncertainties. Array entries retain
+their saved order; each entry or rules object is included whole or explicitly
+omitted through the same budget path as optional session data. This precedes
+restoration of recent planning prose. An omitted rules object is `null`; omitted
+array entries are absent. No report is clipped to accommodate planning.
+
+Optional selection reserves 1,024 bytes for final metadata and includes the
+already-retained plan source reference in the bound. `omissions` identifies the
+field (`architecture`, `phases`, `indicators`, `adaptations`, `uncertainties`), plan
+ID and `context_budget`; the existing bounded count/examples policy applies.
+Phase details outside the task window retain their separate omission reason.
+Insufficient mandatory material still returns 413; optional plan prose alone
+must not cause that refusal. See [cycle continuity](ai-cycle-planning.md#continuity-and-interpretation-boundary).
+
+Plan-local assessments are excluded. v1/v2/v3/v4 execution snapshots remain
+immutable and are marked outdated under v5, without automatic paid regeneration.
+This corrects v4's unconditional inclusion of applied planning details. No
+weekly/analysis product adapter is registered.
+
 ### Explicit module boundary
 
 `src/public/shared/package.json` declares `"type":"module"` for the existing
@@ -264,8 +338,9 @@ their own** snapshots and generate/copy existing external prompts for free.
 Existing manual prompt workflows remain available to all users until their
 individual replacement phases. Model responses render as text/data, never HTML.
 
-Phase 0's production registry has no paid operation adapters, so enabling AI
-alone sends no athlete context to OpenAI. Future registered adapters may send
+Phase 0 introduced no paid adapters. The issue #63 branch registers only cycle
+planning; enabling AI alone sends no athlete context to OpenAI. Explicit cycle
+generation sends
 only selected structured context and the rendered prompt. They must version
 permitted delivery changes and validate the complete domain result. FIT/ZIP
 binaries, raw GPS tracks, account email/name, session tokens and API credentials
@@ -286,7 +361,7 @@ are allowlisted, with no `user_id`, arbitrary model or arbitrary prompt option.
 | `PUT /api/ai/profile` | `{fields:{experience?},expected_version}`; strings <=2000 chars |
 | `GET /api/ai/memory/legacy` | Owner-only read-only archive `{fields,entries}`; excluded from new contexts |
 | `GET /api/ai/context?purpose=...&resource_id=...&as_of=...` | Administrator's own technical context only; ordinary users receive 403 and use the overview |
-| `POST /api/ai/executions` | `{purpose,resource_id?,target_date?,idempotency_key}` -> 202 and ID/state; purposes cycle/workouts/analysis; no registered production operations in phase 0 |
+| `POST /api/ai/executions` | `{purpose,resource_id?,target_date?,idempotency_key}` -> 202 and ID/state; purposes cycle/workouts/analysis; cycle adapter on issue #63 branch; workouts/analysis unregistered |
 | `GET /api/ai/executions` | Latest 50 owned execution identifiers/states |
 | `GET /api/ai/executions/:id` | Owned state, validated product response and outdated flag |
 | `POST /api/ai/executions/:id/cancel` | Empty object; local cancellation, never a promise of no provider cost |
@@ -302,10 +377,14 @@ required context -> 413. Provider errors have stable sanitized codes.
 
 `createExecutionService` is reused by the next phases through a trusted
 server-side registry of purpose adapters (version, explicit `adaptPrompt` transformation, output
-instructions, schema and validator). HTTP cannot register adapters. The adapter is deliberately absent
-from production in phase 0: append-only JSON instructions are not a substitute
+instructions, schema and context-aware validator). Trusted adapters may provide
+synchronous `prepare`, `onEnqueued`, `onCompleted` and `cleanup` hooks. Enqueue
+and completion hooks share the existing atomic write transactions; none may
+perform network I/O. Cleanup preserves accepted product artifacts while removing
+expired unapplied proposals. HTTP cannot register adapters. Phase 0 originally registered no product adapter; issue #63 adds only cycle planning: append-only JSON instructions are not a substitute
 for adapting conflicting Excel/weather delivery instructions in later phases.
-No cycle/calendar/result application API is introduced now.
+The cycle application contract is in [cycle planning](ai-cycle-planning.md);
+calendar/result application remains future scope.
 
 An execution reserves per-user/global tokens, cost and maximum attempts inside
 one immediate transaction, then dispatches outside any database transaction.
@@ -411,7 +490,8 @@ accessibility, prompt compatibility, documentation and tests. Coordinated fixes
 include explicit context-policy freshness, canonical yes/no report rendering,
 source-link focus identity and preserving edits during experience conflicts.
 Phases 1–3 and evidence/disposition-based AI interpretations remain planned;
-phase 0 is implemented in this branch and **not integrated into main**.
+phase 0 was subsequently integrated through merged PR #67; the issue #63
+branch is a separate, not-yet-merged phase.
 
 
 ### Consolidated P2 correction after review of 056d18f
@@ -437,8 +517,7 @@ required coverage metrics are **100%**. The full suite includes the existing
 real-Chrome checks and all 48 exact prompt comparisons. `git diff --check`
 passed. No UI, schema, runtime configuration, version or product-phase change
 was introduced; no paid model evaluation was performed. Earlier 1,176-test
-results above describe the preceding scope correction. This remains an open
-PR implementation, not integrated into main. No new automatic review is
+results above describe the preceding scope correction. This phase 0 batch was subsequently integrated through PR #67. No new automatic review is
 requested for this localized correction of the already reviewed contracts.
 
 ### Priority and module-boundary correction after 81420d5
@@ -490,8 +569,9 @@ The complete diff against main and the corrective batch were reviewed for source
 priority, budget/omission metadata, deduplication, module consumers, authorization,
 transactions, cancellation, quotas, focus/conflicts and prompt equivalence.
 These are deterministic/software validations, not coaching-quality evaluation.
-No paid OpenAI request was required or performed. Phase 0 remains implemented
-only in this open PR branch; functional generation belongs to later phases.
+No paid OpenAI request was required or performed for this phase 0 batch,
+subsequently integrated through PR #67. Cycle generation is now implemented
+separately on the issue #63 branch.
 
 ### UI/UX consolidation validation
 
@@ -513,4 +593,4 @@ automated browser fixtures are synthetic. No paid call/model-quality evaluation,
 schema migration, context-policy change, infrastructure change or version bump
 was needed. The complete diff against main and the UI batch were critiqued for
 contracts, ownership, compatibility, focus, responsive tables, missing data and
-regressions. This UI remains part of open PR #67, not integrated into main.
+regressions. This phase 0 UI was subsequently integrated through merged PR #67.

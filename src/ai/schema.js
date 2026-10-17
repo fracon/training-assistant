@@ -69,4 +69,13 @@ function migrateAi(db) {
     db.prepare('INSERT INTO schema_migrations(name) VALUES (?)').run(marker);
   }).immediate();
 }
-module.exports = { migrateAi };
+function migrateAiDiagnostics(db) {
+  db.transaction(() => {
+    const marker='2026-10-ai-execution-diagnostics-v1';
+    if(db.prepare('SELECT 1 FROM schema_migrations WHERE name=?').get(marker))return;
+    if(!db.pragma('table_info(ai_executions)').some(column=>column.name==='diagnostics_json'))
+      db.exec("ALTER TABLE ai_executions ADD COLUMN diagnostics_json TEXT NOT NULL DEFAULT '[]'");
+    db.prepare('INSERT INTO schema_migrations(name) VALUES(?)').run(marker);
+  }).immediate();
+}
+module.exports = { migrateAi, migrateAiDiagnostics };
