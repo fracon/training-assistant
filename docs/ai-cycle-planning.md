@@ -232,6 +232,11 @@ recommendations/criteria, not a generated registry of athlete traits.
 
 ## Runtime configuration, provider and privacy
 
+Backend readiness is reported safely at startup; adding the key still requires
+`AI_ENABLED=true` and a backend restart. See the [configuration troubleshooting
+guide](ai-foundation.md#configuration-and-deployment). No automatic provider check
+or generation occurs.
+
 Use the integrated backend `OPENAI_API_KEY`, `AI_ENABLED=true` and
 `AI_MODEL_CYCLE` (default `gpt-6.1-sol`), with no fallback. No new secret or runtime
 setting is introduced. For the first real trial use **AI_MAX_OUTPUT_TOKENS=8192**

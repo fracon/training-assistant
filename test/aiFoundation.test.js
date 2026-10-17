@@ -1644,3 +1644,22 @@ test('429 retry and cancellation arbitrate atomically across two SQLite connecti
     }
   }
 });
+
+test('startup AI diagnostics explain readiness without exposing credentials or invalid values', () => {
+  const { aiStartupStatus } = require('../src/ai/config');
+  for (const [env, status, enabled, keyConfigured] of [
+    [{}, 'missing OPENAI_API_KEY', false, false],
+    [{AI_ENABLED:'true'}, 'missing OPENAI_API_KEY', false, false],
+    [{OPENAI_API_KEY:'synthetic-secret'}, 'disabled: set AI_ENABLED=true', false, true],
+    [{AI_ENABLED:'false',OPENAI_API_KEY:'synthetic-secret'}, 'disabled: set AI_ENABLED=true', false, true],
+    [{AI_ENABLED:'true',OPENAI_API_KEY:'synthetic-secret'}, 'ready (provider access not verified)', true, true],
+    [{AI_ENABLED:'true',OPENAI_API_KEY:'synthetic-secret',AI_MODEL_CYCLE:'invalid-model'}, 'invalid configuration', false, true],
+  ]) {
+    const diagnostic = aiStartupStatus(readAiConfig(env));
+    assert.equal(diagnostic.status, status);
+    assert.equal(diagnostic.enabled, enabled);
+    assert.equal(diagnostic.keyConfigured, keyConfigured);
+    assert.ok(!JSON.stringify(diagnostic).includes('synthetic-secret'));
+    assert.ok(!JSON.stringify(diagnostic).includes('invalid-model'));
+  }
+});

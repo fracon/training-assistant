@@ -17,6 +17,15 @@ Compose passes the key at runtime; the Dockerfile does not contain it, and
 `.dockerignore` excludes `.env*`. Ports remain `8081:3000`, the persistent volume
 remains `./data:/app/data`, and the container continues to use the `node` user.
 
+Adding `OPENAI_API_KEY` alone does not enable generation: set `AI_ENABLED=true`
+explicitly. Restart `npm run dev` / `npm start` after editing `.env` (Node watch
+tracks imported code, not dotenv file changes); recreate Compose containers after
+runtime variable changes. Existing process environment takes precedence over
+`.env`. Startup prints `[Kinesis] OpenAI:` with key presence, effective enabled
+state, disabled/missing/invalid reason and invalid setting names only. It never
+prints key values. Ready means locally configured, not verified provider access;
+startup does not make a provider call. Reload the cycle page after restart.
+
 | Variable | Default | Bounds / meaning |
 | --- | --- | --- |
 | `AI_ENABLED` | `false` | Explicit `true` or `false` |

@@ -653,6 +653,12 @@ interpretation CRUD. See `docs/ai-cycle-planning.md` for schema, retention,
 context v5, configuration and real evaluation. Tests live in
 `cyclePlanning{,.routes,.browser}.test.js`; keep provider calls mocked in CI.
 
+Startup AI diagnostics must use the same validated configuration passed to the
+execution service. Log only key presence, effective enabled state, disable reason
+and invalid setting names; never secrets or invalid values. Keep explicit
+`AI_ENABLED=true` opt-in and document restart after dotenv changes. Readiness
+is not verification of provider credentials and must not trigger paid calls.
+
 ## Golden rules
 
 ## GOLDEN RULE — DESIGN SYSTEM FIRST / VISUAL CONSISTENCY

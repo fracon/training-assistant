@@ -79,6 +79,10 @@ service handles quotas, restart recovery, cancellation and uncertain outcomes.
 
 See [AI foundation](docs/ai-foundation.md) for runtime settings, ZimaOS setup,
 API/schema contracts, retention/privacy, source selection, migration and tests.
+Generation requires both `AI_ENABLED=true` and `OPENAI_API_KEY`. Restart the backend
+after `.env` changes; startup now reports safe OpenAI readiness diagnostics
+without printing credentials. See the foundation configuration guide.
+
 `OPENAI_API_KEY` is backend-only, injected at runtime; absent/disabled/invalid
 configuration keeps the existing application usable. Provider requests use
 `store:false`; this does not promise zero provider retention.

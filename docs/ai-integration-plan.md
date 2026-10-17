@@ -1,5 +1,9 @@
 # Kinesis AI integration plan
 
+Runtime diagnostics on the #63 branch now report effective AI readiness without
+credentials. Explicit enablement plus a runtime key and restart are required;
+startup does not verify model access or call the provider.
+
 Status: documentation integrated via PRs #66/#68; phase 0 integrated through
 merged PR #67 (`648d6a0`). Phase 1 is implemented on the issue #63 branch,
 not integrated before its PR merges. Phases 2–3 remain planned.
