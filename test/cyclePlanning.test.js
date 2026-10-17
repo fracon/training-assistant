@@ -3,7 +3,7 @@ const test=require('node:test');const assert=require('node:assert/strict');
 const {createDatabase,initializeDatabase}=require('../src/db/database');
 const {readAiConfig}=require('../src/ai/config');
 const {createExecutionService}=require('../src/ai/executions');
-const {createCyclePlanAdapter,adaptPrompt,DELIVERY}=require('../src/ai/cycle-plan-adapter');
+const {createCyclePlanAdapter,adaptPrompt,DELIVERY,GOAL_CONDITIONS}=require('../src/ai/cycle-plan-adapter');
 const {schema,phaseFields,planningWindow,validatePlan,validShape}=require('../src/ai/cycle-plan-schema');
 const {readCyclePlanning,applyCyclePlan}=require('../src/ai/cycle-plans');
 const {buildContext}=require('../src/ai/context');
@@ -15,21 +15,22 @@ const {fixture,planFor,harness,complete,today,future}=require('./fixtures/ai/cyc
 let counter=0;
 function enqueue(s,resource='cycle'){return s.enqueue(1,{purpose:'cycle',resource_id:resource,idempotency_key:`planning-${++counter}`});}
 
-test('delivery adapter changes exactly three delivery instructions in PT/EN, preserving all other prompt bytes',()=>{
+test('delivery adapter changes three delivery instructions and scopes competition guidance in PT/EN, preserving all other prompt bytes',()=>{
  for(const lang of ['pt-BR','en-US']){
   const prompt=buildMacrocyclePrompt({objective:'Synthetic'},lang);let adapted=adaptPrompt(prompt);
-  const from=DELIVERY[lang==='pt-BR'?'pt':'en'];
+  const from=[...DELIVERY[lang==='pt-BR'?'pt':'en'],...GOAL_CONDITIONS[lang==='pt-BR'?'pt':'en'].map(([original])=>original)];
   assert.equal(adapted.includes(from[0]),false);assert.equal(adapted.includes(from[1]),false);assert.equal(adapted.includes(from[2]),false);
   let cursor=0;for(const segment of prompt.split(new RegExp(from.map(v=>v.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('|')))){const index=adapted.indexOf(segment,cursor);assert.ok(index>=cursor);cursor=index+segment.length;}
   assert.equal((adapted.match(/\n\d+\. /g)||[]).length,22);
  }
  for(const [language,lang] of [['pt','pt-BR'],['en','en-US']]) {
-  const injected=DELIVERY[language].join(' ');
+  const injected=[...DELIVERY[language],...GOAL_CONDITIONS[language].map(([original])=>original)].join(' ');
   const original=buildMacrocyclePrompt({objective:'Synthetic',other_events:injected},lang);
   const adapted=adaptPrompt(original);
   assert.equal(adapted.slice(0,adapted.indexOf('\n2.')),original.slice(0,original.indexOf('\n2.')));
-  for(const phrase of DELIVERY[language])assert.equal(adapted.split(phrase).length,2);
+  for(const phrase of [...DELIVERY[language],...GOAL_CONDITIONS[language].slice(0,2).map(([original])=>original)])assert.equal(adapted.split(phrase).length,2);
  }
+ for(const lang of ['pt-BR','en-US'])for(const [original] of GOAL_CONDITIONS[lang==='pt-BR'?'pt':'en'])assert.throws(()=>adaptPrompt(buildMacrocyclePrompt({objective:'Synthetic'},lang).replace(original,'')),/promptAdapterMismatch/);
  assert.throws(()=>adaptPrompt('Quero invalid'),/promptAdapterMismatch/);
  assert.throws(()=>adaptPrompt('Invalid'),/promptAdapterMismatch/);
 });
@@ -49,8 +50,8 @@ test('planning validator rejects malformed shape, unknown fields, gaps, overlaps
  assert.equal(validShape('',schema.properties.cycleId),false);
  assert.throws(()=>planningWindow({...context,resource:null}),/cycleNotActive/);
  assert.throws(()=>planningWindow({...context,resource:{...context.resource,status:'completed'}}),/cycleNotActive/);
- assert.throws(()=>planningWindow({...context,resource:{...context.resource,target_date:future(-1)}}),/invalidPlanningDates/);
- assert.throws(()=>planningWindow({...context,resource:{...context.resource,start_date:'bad'}}),/invalidDate/);
+ assert.throws(()=>planningWindow({...context,resource:{...context.resource,target_date:future(-1)}}),/planningTargetBeforeStart/);
+ assert.throws(()=>planningWindow({...context,resource:{...context.resource,start_date:'bad'}}),/planningStartDateInvalid/);
  assert.equal(planningWindow({...context,resource:{...context.resource,start_date:null}}).start,today);
  assert.equal(planningWindow({...context,resource:{...context.resource,start_date:future(5)}}).start,future(5));
  assert.equal(validatePlan(good,{...context,resource:null}),false);db.close();
@@ -105,7 +106,7 @@ test('ownership, account activity, stale sources, conflicts, expired proposals a
  const second=enqueue(service);await complete(service,second.id);updateCycle(db,'cycle',1,{status:'completed'});
  assert.throws(()=>applyCyclePlan(db,1,'cycle',second.id,{expected_version:0},service),/planningOutdated/);
  assert.throws(()=>enqueue(service),/cycleNotActive/);
- updateCycle(db,'cycle',1,{status:'active',target_date:future(-1)});assert.throws(()=>enqueue(service),/invalidPlanningDates/);
+ updateCycle(db,'cycle',1,{status:'active',target_date:future(-1)});assert.throws(()=>enqueue(service),/planningTargetBeforeStart/);
  updateCycle(db,'cycle',1,{target_date:future(28)});const third=enqueue(service);await complete(service,third.id);db.prepare('DELETE FROM ai_executions WHERE id=?').run(third.id);
  assert.throws(()=>applyCyclePlan(db,1,'cycle',third.id,{expected_version:0},service),/proposalExpired/);
  assert.equal(db.prepare('SELECT COUNT(*) n FROM cycle_plan_versions').get().n,0);

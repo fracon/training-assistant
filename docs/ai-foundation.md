@@ -4,6 +4,8 @@ Status: phase 0 is integrated through merged [PR #67](https://github.com/fracon/
 merge `648d6a0`, following #66/#68. The issue #63 branch adds only the cycle
 product adapter and explicit planning application; see [cycle planning](ai-cycle-planning.md).
 That phase is not integrated until its own PR merges. #64/#65 remain future.
+Cycle goals may be noncompetitive; the target date is a goal deadline, not a
+required race. See the [calendar and adapter contract](ai-cycle-planning.md#goal-deadlines-and-calendar-validation).
 Historical validation sections below record pre-merge phase 0 batches, not the
 current merge status.
 

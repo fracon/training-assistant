@@ -133,11 +133,12 @@ test('Chrome cycle planning PT/EN desktop/mobile: recovered generation, proposal
   release();release=null;await delay(50);await key('Escape','Escape',27);
   // Invalid dates produce an actionable localized error without starting a call.
   db.prepare("UPDATE training_cycles SET target_date='bad' WHERE id='private'").run();await open();const before=calls;await evaluate("document.getElementById('cyclePlanningGenerate').click()");await wait("!document.getElementById('cyclePlanningError').hidden");assert.equal(calls,before);assert.equal(await evaluate('document.activeElement.id'),'cyclePlanningError');
-  assert.ok((await evaluate("document.getElementById('cyclePlanningError').textContent")).includes('datas válidas'));
+  assert.equal(await evaluate("document.getElementById('cyclePlanningError').textContent"),require('../src/public/locales/pt.json').cyclePlanning.errors.planningTargetDateInvalid);
   for(const language of ['pt-BR','en-US'])for(const width of [1280,768,390]) {
    await command('Emulation.setDeviceMetricsOverride',{width,height:900,deviceScaleFactor:1,mobile:width===390});
    await evaluate(`document.querySelector('.lang-switch [data-lang="${language}"]').click()`);
     await wait(`document.documentElement.lang==='${language}' && document.querySelector('[data-action=planning]').getAttribute('aria-label')==='${language==='pt-BR'?'Planejamento do ciclo':'Cycle planning'}'`);
+   assert.equal(await evaluate("document.getElementById('cyclePlanningError').textContent"),require(`../src/public/locales/${language==='pt-BR'?'pt':'en'}.json`).cyclePlanning.errors.planningTargetDateInvalid);
    await capture(`error-${language}-${width}`);
    assert.equal(await evaluate('document.activeElement.id'),'cyclePlanningError');
   }

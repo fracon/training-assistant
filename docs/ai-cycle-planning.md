@@ -150,13 +150,33 @@ runs after transport/refusal/completion checks and again on application.
 Semantic coaching quality still requires real evaluation; structural validation
 cannot establish the truth of free-text clinical or performance claims.
 
-`cycle-delivery-v1` changes exactly three delivery spans of the original PT/EN
-macrocycle prompt, leaving its 22 numbered sections and coaching content intact:
+`cycle-delivery-v2` preserves the three delivery adaptations originally delivered
+in v1, retaining all 22 numbered sections:
 
 1. “Plan in detail only the current/next week” becomes architecture only for this
    operation (weekly calendars belong to #64).
 2. The first-response delivery line maps A–F, in the original order, to schema fields.
 3. The summary-table delivery sentence maps its columns to structured phases.
+
+The approved noncompetitive-goal correction also scopes three original spans
+**only in the API adapter**:
+
+- Equipment: “Do not introduce new equipment near the race…” becomes conditional
+  on an explicitly registered race.
+- Nutrition: “Use the cycle's long runs to develop and validate the race nutrition
+  strategy” becomes goal-relevant nutrition with race strategy conditional.
+- Section 17 TAPER receives an explicit condition: its race guidance applies only
+  to a registered race; otherwise recovery follows the goal and observed response,
+  without imposing competitive taper.
+
+The original template already says “Main race or objective” and “Race/objective
+date”; these are preserved. Higher-priority adapter instructions clarify that a
+race is optional, target_date is the goal deadline, and event/registration/date or
+participation must not be invented. Schema, source identities, contiguous phases,
+application and external/weekly/analysis prompt output are unchanged. Historical
+v1 snapshots retain their original prompt/payload/version; the existing execution
+service refuses an old queued adapter version rather than silently reinterpreting
+it. Applied plans and completed snapshots are not rewritten.
 
 The transformations are explicit/versioned and tested as an allowlisted diff,
 including user fields containing matching delivery sentences: only the final
@@ -283,15 +303,59 @@ permit cross-account access, including for administrators.
 Application errors: `planningConflict`, `planningOutdated`, `proposalExpired`,
 `invalidPlanningResponse` (409); malformed fields/version (400); unowned/missing
 cycle/proposal (404); inactive/anonymous account (401). Generation additionally
-returns `cycleNotActive`/`invalidPlanningDates` (400), existing quota/concurrency
+returns the specific calendar/active-state codes below (400), existing quota/concurrency
 (429), disabled/invalid configuration (503), context budget (413), and sanitized
 provider states. No partial plan is applied on any failure.
 
+## Goal deadlines and calendar validation
+
+A race is **not required**. `objective`, `primary_goal`, distance and the existing
+optional event text already represent a personal distance goal, competition or
+other supported training objective. No event name, signup, duplicated goal or
+cycle-type selector is added. The form explains the existing target date as the
+deadline for the goal. Manual registration remains usable without planning dates;
+generation requires a real target date and never invents one.
+
+`planningWindow()` requires an active cycle. Backend values are exact date-only
+`YYYY-MM-DD`, not localized strings or timestamps. The existing DatePicker shows
+DD/MM/YYYY in PT and MM/DD/YYYY in EN and sends unchanged canonical dates. Invalid
+calendar dates (including impossible days), localized API date strings and
+timestamps are refused. Missing/empty start retains the reference-date fallback;
+a past start plans only the remaining period, and a future start is honored.
+The effective start is `max(context.asOf, saved start)`, with the existing UTC
+calendar reference used consistently by context generation. Target equal to the
+effective start is **accepted**, including a one-day plan today: this was already
+the `<` comparison contract, not a new relaxation. No timestamp timezone conversion
+is applied to saved calendar fields.
+
+| HTTP 400 code | Condition / correction |
+| --- | --- |
+| `cycleNotActive` | No active requested cycle; status must allow generation |
+| `planningTargetDateRequired` | Missing/empty target; set a goal deadline in Edit cycle |
+| `planningTargetDateInvalid` | Invalid/impossible/noncanonical target; correct target |
+| `planningStartDateInvalid` | Invalid nonempty saved start; correct start |
+| `planningTargetBeforeStart` | Target earlier than saved start; correct interval |
+| `planningTargetBeforeReference` | Otherwise target earlier than current reference; select a remaining planning period |
+
+Validation order is active state, target presence/shape, optional start shape,
+saved interval, then remaining interval. Refusals happen in adapter preparation
+before budget reservation, execution/proposal persistence or provider call. Legacy
+`invalidPlanningDates` remains translated neutrally for historical compatibility;
+new date refusals use specific stable codes. The error retains focused localized
+feedback and the saved cycle; close and use its existing Edit cycle action.
+
+Confirmed local reproduction (read-only, no personal content copied): the saved
+active cycles' target dates preceded the current context reference, while their
+saved starts also preceded it. v1 returned `invalidPlanningDates`, then PT wrongly
+called it a required future race. There was no event-field check. Synthetic fixed
+2030 tests failed before this change on the generic error, and now identify the
+actual target/reference failure. Dates from real cycles are not fixtures.
+
 ## Real evaluation and local verification
 
-No authorized provider key was present during implementation. No paid call was
-made, and simulated outputs are not evidence of model quality. The browser and
-automated suites exercise contracts, not physiology or provider access.
+Initial implementation had no authorized provider key and used simulated outputs.
+A later owner-authorized single-call evaluation is recorded below. Automated suites
+still use mocks and establish contracts, not physiology or provider quality.
 
 For the first small real evaluation, using only synthetic or explicitly permitted
 athlete records and a development database:
@@ -472,3 +536,45 @@ Beta remains **0.21.0** and phase 1 remains on PR #69 until merge.
 Provider responses in tests are simulated, not evidence of model quality. The
 new helper under `test/helpers/chrome.cjs` reuses the established Chrome/CDP
 pattern without a browser dependency or CI network requirement.
+
+### Noncompetitive-goal correction: one real evaluation
+
+On 2026-10-17, one owner-authorized request used an isolated in-memory development
+database, synthetic athlete/goal “run 10 km without participating in a race”, no
+history, a 56-day window and no production records. It used the configured
+`gpt-6.1-sol`, `cycle-delivery-v2`, medium reasoning, `store:false`, no tools,
+60,000 ms timeout, 2,048 output-token ceiling and **zero retries** for a strict
+maximum of one provider attempt. Existing consumption reservations/settlement
+handled the call. The credential remained inside backend runtime, unprinted.
+
+The provider request reached completion handling but returned `providerIncomplete`:
+input **4,373**, output **2,048**, cached **0** tokens; conservative application
+estimate **USD 0.052585** (not an invoice). No valid proposal or applied plan was
+persisted, and no second request was made. Output reached its configured ceiling;
+this run cannot establish the quality of a complete plan. The documented existing
+8,192 output-token setting can be selected by the operator for a subsequent
+explicit interface evaluation, within current limits; no default or live limit
+was changed to conceal this result. The rejection was after the provider request,
+distinct from the original pre-call date-validation failure.
+
+Local reproduction: create a synthetic active cycle with objective “Run 10 km
+without competition”, optional distance 10 km, and a target 8 weeks ahead. Save,
+review the automatic planning step, then explicitly Generate. With no start, the
+reference date is used; an earlier saved start also plans from the reference.
+Missing/past target reports the exact correction in Edit cycle. Review and Apply
+remain separate, and generation failure preserves registration.
+
+Final correction gates on Node 24.18.0: **107 targeted regression tests**, plus the
+five new date/HTTP/real-Chrome tests; `npm test` and `npm run test:coverage` each
+**1,223 passed**, zero failures/skips, **100% Statements, Branches, Functions,
+Lines** in the required instrumented scope. The existing 48 byte-identical prompt
+comparisons and module-boundary checks pass. Chrome covers PT/EN personal goals,
+canonical dates, error focus, editing, generation and explicit application at
+1280/390px; the prior suite additionally checks error relocalization and focus at
+768px. The first full run caught an assertion expecting the removed generic date
+wording; it now asserts the exact field-specific translation in both languages.
+Both complete gates were repeated successfully. The complete diff against main
+was critiqued for compatibility, ownership, source freshness, date boundaries,
+paid-call ordering, adapter changes, accessibility and documentation;
+`git diff --check` and `git diff main --check` pass. No real cycle was changed,
+no screenshots/credentials are committed, and beta remains 0.21.0 on open PR #69.

@@ -19,8 +19,9 @@ Agora não** closes the step and preserves the saved cycle. Weekly workouts are
 requested separately; integrated weekly generation (#64) remains future work.
 Reloading recovers processing/results. **Apply proposal**
 creates a planning version; generating again never silently replaces it. Manual
-cycle management works without AI. The target date must be valid and not in the
-past; generation uses the later of today and the saved start date. Only an active
+cycle management works without AI. A race is optional: the target date is the deadline for a personal goal (for
+example, running 10 km) or a race. It must be a valid calendar date on or after
+the effective start, including today; generation uses the later of today and the saved start date. Only an active
 cycle can receive a new applied plan. No weekly calendar is generated.
 
 After editing, the same step reads backend freshness: an outdated applied plan
@@ -33,8 +34,10 @@ registration; the saved card remains available to resume. Identical stored value
 do not advance the cycle revision, while real edits and reversions still do.
 
 See the [cycle planning contract and real-test steps](docs/ai-cycle-planning.md).
-No provider credential was available for this implementation's evaluation;
-mock/browser tests do not establish model quality or project access.
+Initial implementation used simulated provider responses. One later controlled
+noncompetitive-goal request reached the real provider but was incomplete at the
+configured 2,048 output-token ceiling; see the evaluation evidence in that contract.
+Mocks do not establish model quality, and no valid real proposal was obtained.
 
 The cycle card's **Cycle planning / Planejamento do ciclo** icon uses the existing custom
 hover/keyboard tooltip and opens saved planning without a paid call or cycle
@@ -355,7 +358,7 @@ The footer fetches `/api/version` without caching, so it reflects the running ba
 
 #### Dynamic Training Prompt Generator
 
-The **Solicitar Treinos / Request Workouts** page (internal route and module `ai-coach`) builds a weekly training request from the latest local application state when the user submits the form. It fetches the active cycle and injects its cycle name, goal, target race date, current week/total weeks, and days remaining immediately after the prompt introduction. It also fetches the previous week's calendar entries and summarizes completed workouts as a count, total distance in kilometres, and total time in minutes. Missing values use the prompt's `-` fallback, while valid stored values are preserved and formatted for the selected language. The feature prepares a prompt for use with an external AI; it does not generate the training plan itself.
+The **Solicitar Treinos / Request Workouts** page (internal route and module `ai-coach`) builds a weekly training request from the latest local application state when the user submits the form. It fetches the active cycle and injects its cycle name, goal, goal target date, current week/total weeks, and days remaining immediately after the prompt introduction. It also fetches the previous week's calendar entries and summarizes completed workouts as a count, total distance in kilometres, and total time in minutes. Missing values use the prompt's `-` fallback, while valid stored values are preserved and formatted for the selected language. The feature prepares a prompt for use with an external AI; it does not generate the training plan itself.
 
 The generated briefing is fully localized: the Portuguese (`pt-BR`) and English (`en-US`) templates contain the same cycle and performance context fields, with localized labels and week wording. Context is resolved inside the generation action so it always reflects the currently active cycle, latest training data, and current i18n language.
 

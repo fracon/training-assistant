@@ -1,5 +1,5 @@
 'use strict';
-const { date } = require('./memory');
+const { date, AiError } = require('./memory');
 const VERSION = 'cycle-plan-v1';
 const text = { type: 'string', minLength: 1, maxLength: 1600 };
 const texts = { type: 'array', items: text, maxItems: 12 };
@@ -22,13 +22,20 @@ function validShape(value, spec) {
   if (spec.type === 'array') return Array.isArray(value) && value.length >= (spec.minItems || 0) && value.length <= spec.maxItems && value.every((item)=>validShape(item,spec.items));
   return typeof value === 'string' && (spec.enum ? spec.enum.includes(value) : value.trim().length >= spec.minLength && value.length <= spec.maxLength);
 }
+function planningDate(value, code) {
+  try { return date(value); } catch { throw new AiError(code); }
+}
 function planningWindow(context) {
   const cycle = context.resource;
-  if (!cycle || cycle.status !== 'active') throw new Error('cycleNotActive');
-  const end = date(cycle.target_date);
-  const start = cycle.start_date ? date(cycle.start_date) : context.asOf;
-  const effectiveStart = start > context.asOf ? start : context.asOf;
-  if (end < effectiveStart) throw new Error('invalidPlanningDates');
+  if (!cycle || cycle.status !== 'active') throw new AiError('cycleNotActive');
+  if (cycle.target_date == null || cycle.target_date === '') throw new AiError('planningTargetDateRequired');
+  const end = planningDate(cycle.target_date, 'planningTargetDateInvalid');
+  const reference = date(context.asOf);
+  const start = cycle.start_date == null || cycle.start_date === '' ? null
+    : planningDate(cycle.start_date, 'planningStartDateInvalid');
+  if (start !== null && end < start) throw new AiError('planningTargetBeforeStart');
+  const effectiveStart = start !== null && start > reference ? start : reference;
+  if (end < effectiveStart) throw new AiError('planningTargetBeforeReference');
   return { start:effectiveStart, end };
 }
 function validatePlan(value, context) {

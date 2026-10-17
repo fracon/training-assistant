@@ -636,7 +636,13 @@ keys per cycle across modal transitions; clear obsolete polling before switching
 cycles. Weekly generation stays in #64. Browser regressions also live in
 `cyclePlanningFlow.browser.test.js` (synthetic provider only).
 
-`cycle-plan-adapter.js` adapts only the three allowlisted delivery spans and
+`cycle-plan-adapter.js` v2 adapts the three allowlisted delivery spans plus three
+explicit, owner-approved competition-conditional spans (equipment, nutrition,
+taper), preserving external prompt bytes. A race is optional; target_date is the
+goal deadline. Validate calendar dates and inclusive end >= max(asOf, saved start)
+before reservations. Past start/absent start and target equal to asOf remain
+supported. Distinguish missing/invalid target, invalid start, end before saved
+start, end before reference and inactive cycle with stable localized codes. It
 validates `cycle-plan-v1`. Execution lifecycle callbacks write pending/validated
 proposals inside existing enqueue/settlement transactions. `cycle-plans.js`
 owns read/apply; account/cycle/proposal/execution ownership and freshness are
@@ -651,7 +657,7 @@ Applied architecture is `applied_planning`, not performed training. Plan-local
 A–C assessments never become reusable athlete traits. Do not add speculative
 interpretation CRUD. See `docs/ai-cycle-planning.md` for schema, retention,
 context v5, configuration and real evaluation. Tests live in
-`cyclePlanning{,.routes,.browser}.test.js`; keep provider calls mocked in CI.
+`cyclePlanning{,.routes,.browser}.test.js` and `cyclePlanningDates.test.js`; keep provider calls mocked in CI.
 
 Startup AI diagnostics must use the same validated configuration passed to the
 execution service. Log only key presence, effective enabled state, disable reason
