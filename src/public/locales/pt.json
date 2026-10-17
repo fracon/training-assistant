@@ -1090,10 +1090,11 @@
     "totalsHint": "Distância e duração usam apenas resultados registrados. Métricas ausentes são contadas à parte; sessões de referência não são somadas novamente."
   },
   "cyclePlanning": {
+    "admin": "Detalhes administrativos",
     "proposalConflict": "Outra proposta foi aplicada após esta geração. Gere uma nova proposta usando a versão atual do planejamento.",
     "inactiveCycle": "Este ciclo não está ativo. O planejamento salvo continua disponível.",
-    "open": "Planejamento de longo prazo",
-    "title": "Planejamento de longo prazo do ciclo",
+    "open": "Planejar ciclo",
+    "title": "Planejar ciclo",
     "hint": "Salvar o ciclo registra seus objetivos. Gerar planejamento envia o contexto selecionado à IA para propor fases; revise e aplique explicitamente. Nenhum calendário semanal será criado.",
     "generate": "Gerar planejamento",
     "regenerate": "Gerar nova proposta",

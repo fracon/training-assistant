@@ -480,6 +480,10 @@ report priorities, adds bounded preceding cycles and supplies applied planning
 to later task contexts through budgeted optional selection after reports and
 availability. Identity/provenance remains mandatory; see the
 [effective extension policy](ai-foundation.md#context-extension-training-context-v5).
+The Plan cycle card icon and CRUD-style product modal expose this flow to owned
+cycles for regular/admin accounts. The original free cycle prompt is admin-only,
+including the backend endpoint and creation preview; regular saves never request
+it. See the [presentation/access contract](ai-cycle-planning.md#presentation-and-free-prompt-access).
 It does not reuse plan-local athlete assessments. No weekly
 calendar, hourly research or result analysis operation is registered. Main still
 contains phase 0 only until this phase's PR is merged.

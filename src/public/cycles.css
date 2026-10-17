@@ -482,11 +482,34 @@
   }
 }
 
-/* Planning uses the existing cycle/prompt modal and shared controls. */
+/* Product planning reuses the CRUD card/header/footer, not prompt-output layout. */
 .cycle-planning-modal[hidden], .cycle-planning-modal [hidden] { display: none !important; }
-.cycle-plan-section { margin-top: 1.2rem; padding-top: 1rem; border-top: 1px solid var(--line); }
-.cycle-plan-section p, .cycle-plan-section li { line-height: 1.55; overflow-wrap: anywhere; white-space: pre-wrap; }
-.cycle-plan-phase { margin-top: 1rem; padding-top: .75rem; border-top: 1px solid var(--line); }
-.cycle-plan-phase h4 { margin: 0 0 .5rem; }
-.cycle-planning-modal .prompt-modal-actions { flex-wrap: wrap; gap: .5rem; }
-.cycle-planning-modal .modal-card { overflow-y: auto; }
+.cycle-planning-card {
+  max-width: 800px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.cycle-planning-card .modal-header { gap: 1rem; flex-shrink: 0; }
+.cycle-planning-card .modal-header h2 { min-width: 0; overflow-wrap: anywhere; }
+.cycle-planning-card .modal-close { flex-shrink: 0; }
+.cycle-planning-body {
+  min-height: 0;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  display: grid;
+  gap: 1rem;
+}
+.cycle-planning-content, .cycle-plan-section, .cycle-plan-phase { display: grid; gap: .6rem; min-width: 0; }
+.cycle-plan-section, .cycle-plan-phase { padding-top: 1rem; border-top: 1px solid var(--line); }
+.cycle-planning-body :is(p, h3, h4, ul) { margin: 0; }
+.cycle-planning-body ul { padding-left: 1.1rem; }
+.cycle-plan-section :is(p, li) { line-height: 1.55; white-space: pre-wrap; }
+.cycle-plan-section .cycle-card-header { margin: 0; gap: .6rem; flex-wrap: wrap; }
+.cycle-planning-card .form-actions { flex-shrink: 0; flex-wrap: wrap; }
+.cycle-planning-card .form-actions button { max-width: 100%; }
+#cyclePlanningAdmin .btn-secondary { justify-self: start; }
+#cyclePlanningDebugOutput { padding: .75rem; overflow-wrap: anywhere; }
+@media (prefers-reduced-motion: reduce) {
+  .cycle-planning-card, .cycle-planning-modal button, .cycle-card-actions .custom-tooltip { animation: none; transition: none; }
+}

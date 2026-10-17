@@ -14,7 +14,7 @@ const REGISTER_PAYLOAD = {
   last_name: 'Runner',
 };
 
-async function setup() {
+async function setup({ admin = false } = {}) {
   const db = createDatabase({ filename: ':memory:' });
   const app = await buildServer({ db, sessionCookieSecure: false });
 
@@ -34,6 +34,7 @@ async function setup() {
     .prepare('SELECT id FROM users WHERE lower(email) = lower(?)')
     .get(REGISTER_PAYLOAD.email).id;
 
+  if (admin) db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(userId);
   return { db, app, cookie, userId };
 }
 
@@ -482,7 +483,7 @@ test('DELETE /api/cycles/:id allows creating a new active cycle after deletion',
 /* ── GET /api/cycles/:id/prompt ── */
 
 test('GET /api/cycles/:id/prompt returns prompt text for an existing cycle', async () => {
-  const { db, app, cookie, userId } = await setup();
+  const { db, app, cookie, userId } = await setup({ admin: true });
   const id = seedCycle(db, userId, {
     objective: 'Marathon',
     target_date: '2026-12-01',
@@ -508,7 +509,7 @@ test('GET /api/cycles/:id/prompt returns prompt text for an existing cycle', asy
 });
 
 test('GET /api/cycles/:id/prompt returns 404 for non-existent cycle', async () => {
-  const { app, cookie } = await setup();
+  const { app, cookie } = await setup({ admin: true });
   const res = await app.inject({
     method: 'GET',
     url: '/api/cycles/non-existent/prompt',
@@ -519,7 +520,7 @@ test('GET /api/cycles/:id/prompt returns 404 for non-existent cycle', async () =
 });
 
 test("GET /api/cycles/:id/prompt returns 404 for another user's cycle", async () => {
-  const { db, app, cookie } = await setup();
+  const { db, app, cookie } = await setup({ admin: true });
   db.prepare(
     "INSERT INTO users (email, password_hash) VALUES ('other@test.com', 'hash')"
   ).run();
@@ -535,7 +536,7 @@ test("GET /api/cycles/:id/prompt returns 404 for another user's cycle", async ()
 });
 
 test('GET /api/cycles/:id/prompt uses pt-BR template when user prefers pt-BR', async () => {
-  const { db, app, cookie, userId } = await setup();
+  const { db, app, cookie, userId } = await setup({ admin: true });
   db.prepare('UPDATE users SET preferred_lang = ? WHERE id = ?').run('pt-BR', userId);
   const id = seedCycle(db, userId, { objective: 'Maratona', distance: null });
 
@@ -550,7 +551,7 @@ test('GET /api/cycles/:id/prompt uses pt-BR template when user prefers pt-BR', a
 });
 
 test('GET /api/cycles/:id/prompt uses fallback dashes when cycle fields are empty', async () => {
-  const { db, app, cookie, userId } = await setup();
+  const { db, app, cookie, userId } = await setup({ admin: true });
   const crypto = require('node:crypto');
   const id = crypto.randomUUID();
   db.prepare(
@@ -570,7 +571,7 @@ test('GET /api/cycles/:id/prompt uses fallback dashes when cycle fields are empt
 });
 
 test('GET /api/cycles/:id/prompt?lng=pt translates distance to Portuguese', async () => {
-  const { db, app, cookie, userId } = await setup();
+  const { db, app, cookie, userId } = await setup({ admin: true });
   const id = seedCycle(db, userId, { distance: 'half_marathon' });
 
   const res = await app.inject({
@@ -584,7 +585,7 @@ test('GET /api/cycles/:id/prompt?lng=pt translates distance to Portuguese', asyn
 });
 
 test('GET /api/cycles/:id/prompt?lng=en translates distance to English', async () => {
-  const { db, app, cookie, userId } = await setup();
+  const { db, app, cookie, userId } = await setup({ admin: true });
   const id = seedCycle(db, userId, { distance: 'half_marathon' });
 
   const res = await app.inject({
@@ -598,7 +599,7 @@ test('GET /api/cycles/:id/prompt?lng=en translates distance to English', async (
 });
 
 test('GET /api/cycles/:id/prompt?lng=pt translates marathon to Maratona', async () => {
-  const { db, app, cookie, userId } = await setup();
+  const { db, app, cookie, userId } = await setup({ admin: true });
   const id = seedCycle(db, userId, { distance: 'marathon' });
 
   const res = await app.inject({
@@ -643,7 +644,7 @@ test('PUT /api/cycles/:id surfaces unexpected errors as HTTP 500', async () => {
 /* ── Full CRUD lifecycle ── */
 
 test('full CRUD lifecycle: create, list, get active, update, prompt, delete', async () => {
-  const { app, cookie } = await setup();
+  const { app, cookie } = await setup({ admin: true });
 
   const create = await app.inject({
     method: 'POST',
@@ -726,4 +727,22 @@ test('DISTANCE_TRANSLATIONS covers all distance keys for both locales', () => {
     assert.ok(DISTANCE_TRANSLATIONS.pt[key], `pt missing: ${key}`);
     assert.ok(DISTANCE_TRANSLATIONS.en[key], `en missing: ${key}`);
   }
+});
+
+
+test('cycle prompt requires the current admin role while planning and manual editing remain available to users', async (t) => {
+  const { db, app, cookie, userId } = await setup();
+  t.after(async () => { await app.close(); db.close(); });
+  const id = seedCycle(db, userId);
+  const get = () => app.inject({method: 'GET', url: `/api/cycles/${id}/prompt`, headers: {cookie}});
+  assert.equal((await get()).statusCode, 403);
+  const planning = await app.inject({method: 'GET', url: `/api/cycles/${id}/planning`, headers: {cookie}});
+  assert.equal(planning.statusCode, 200);
+  assert.equal(planning.json().canGenerate, true);
+  db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(userId);
+  assert.equal((await get()).statusCode, 200);
+  db.prepare("UPDATE users SET role = 'user' WHERE id = ?").run(userId);
+  assert.equal((await get()).statusCode, 403);
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM ai_executions').get().n, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM ai_usage').get().n, 0);
 });

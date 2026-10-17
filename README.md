@@ -12,7 +12,7 @@ cycle planning, proposal review and explicit application. It is not integrated
 until this phase's PR merges. Weekly generation (#64) and result analysis (#65)
 remain future phases.
 
-Open **Training Cycles → Long-term planning** on an existing cycle. Saving a
+Open **Training Cycles → Plan cycle / Planejar ciclo** on an existing cycle. Saving a
 cycle only registers its goals; **Generate planning** explicitly requests AI
 phases and rationale. Reloading recovers processing/results. **Apply proposal**
 creates a planning version; generating again never silently replaces it. Manual
@@ -24,7 +24,20 @@ See the [cycle planning contract and real-test steps](docs/ai-cycle-planning.md)
 No provider credential was available for this implementation's evaluation;
 mock/browser tests do not establish model quality or project access.
 
-Existing external prompt workflows remain available and preserve PT/EN output.
+The cycle card's **Plan cycle / Planejar ciclo** icon uses the existing custom
+hover/keyboard tooltip and opens saved planning without a paid call or cycle
+activation, including inactive cycles. Its product modal follows the cycle/shoe
+CRUD header and close control, with a bounded scrollable body and wrapping footer
+actions. Proposal and applied version remain separate; administrative inspection
+is a secondary section inside the body.
+
+Free macrocycle prompt generation/copy is **administrator-only**, scoped to the
+administrator's own cycles and guarded by the current backend role. Common
+accounts have no prompt controls or prompt modal; saving/editing their cycles
+never requests or opens a prompt. Administrators retain the existing free prompt
+preview after creating a cycle and from an active card. AI planning remains
+available to authorized owners of either role. External PT/EN prompt output is
+unchanged.
 
 The account menu opens **Training memory / Memória de treinamento**: a bounded
 view of current cycle goals, saved availability, dated sessions/feedback and
@@ -796,7 +809,7 @@ in [AI foundation API contracts](docs/ai-foundation.md#api-and-service-contract)
 | `POST /api/cycles` | Session | Create cycle |
 | `PUT /api/cycles/:id` | Session | Update owned cycle |
 | `DELETE /api/cycles/:id` | Session | Delete owned cycle |
-| `GET /api/cycles/:id/prompt` | Session | Read cycle prompt context |
+| `GET /api/cycles/:id/prompt` | Admin | Free prompt for an owned cycle |
 | `GET /api/cycles/:id/planning` | Session | Read owned planning/proposals and recover processing |
 | `POST /api/cycles/:id/planning/:proposalId/apply` | Session | Explicit atomic/idempotent planning application |
 | `GET /api/shoes` | Session | List owned shoes |

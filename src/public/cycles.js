@@ -30,7 +30,7 @@ function translateDistance(messages, distance) {
   return (translated !== key && translated) ? translated : distance;
 }
 
-function renderCycleCard(cycle, messages, language = 'en-US') {
+function renderCycleCard(cycle, messages, language = 'en-US', user = null) {
   const card = document.createElement('div');
   card.className = 'cycle-card';
   card.dataset.cycleId = cycle.id;
@@ -65,17 +65,22 @@ function renderCycleCard(cycle, messages, language = 'en-US') {
           <i data-lucide="x-circle"></i>
           <div class="custom-tooltip" data-i18n="cycles.cancelTooltip">${escapeHtml(t(messages, 'cycles.cancelTooltip'))}</div>
         </button>
+      ` : ''}
+      ${cycle.status === 'active' && user?.role === 'admin' ? `
         <button type="button" class="btn-icon cycle-prompt-btn" data-action="prompt" data-id="${cycle.id}" aria-label="${t(messages, 'cycles.generatePrompt')}">
           <i data-lucide="sparkles"></i>
           <div class="custom-tooltip" data-i18n="cycles.promptTooltip">${escapeHtml(t(messages, 'cycles.promptTooltip'))}</div>
         </button>
       ` : ''}
-      <button type="button" class="btn-secondary" data-action="planning" data-id="${cycle.id}">${escapeHtml(t(messages,'cyclePlanning.open'))}</button>
+      <button type="button" class="btn-icon" data-action="planning" data-id="${cycle.id}" aria-label="${escapeHtml(t(messages, 'cyclePlanning.open'))}">
+        <i data-lucide="calendar-range" aria-hidden="true"></i>
+        <div class="custom-tooltip">${escapeHtml(t(messages, 'cyclePlanning.open'))}</div>
+      </button>
     </div>`;
   return card;
 }
 
-function renderList(cycles, messages, language = 'en-US') {
+function renderList(cycles, messages, language = 'en-US', user = null) {
   const listEl = document.getElementById('cycleList');
   const emptyEl = document.getElementById('cycleEmpty');
   listEl.innerHTML = '';
@@ -86,7 +91,7 @@ function renderList(cycles, messages, language = 'en-US') {
   }
   emptyEl.classList.add('hidden');
   for (const cycle of cycles) {
-    listEl.appendChild(renderCycleCard(cycle, messages, language));
+    listEl.appendChild(renderCycleCard(cycle, messages, language, user));
   }
   refreshIcons();
 }
@@ -189,7 +194,7 @@ function showToast(messages, messageKey, duration = 2500, type = 'success') {
   setTimeout(() => toast.classList.remove('visible'), duration);
 }
 
-async function handleSubmit(cycles, messages, language = 'en-US') {
+async function handleSubmit(cycles, messages, language = 'en-US', user = null) {
   const form = document.getElementById('cycleForm');
   const mode = form.dataset.mode;
   const objective = document.getElementById('cycleObjective').value.trim();
@@ -223,12 +228,12 @@ async function handleSubmit(cycles, messages, language = 'en-US') {
       const updated = await fetchCycles();
       cycles.length = 0;
       cycles.push(...updated);
-      renderList(cycles, messages, language);
+      renderList(cycles, messages, language, user);
       showToast(messages, 'cycles.success.add');
       window.dispatchEvent(new CustomEvent('kinesis:cycle-changed'));
-      if (result.cycle) {
+      if (user?.role === 'admin' && result.cycle) {
         try {
-          const promptResult = await requestJson(`/api/cycles/${result.cycle.id}/prompt`, null, 'GET');
+          const promptResult = await requestJson(`/api/cycles/${result.cycle.id}/prompt?lng=${language === 'pt-BR' ? 'pt' : 'en'}`, null, 'GET');
           if (promptResult.prompt) showPromptModal(promptResult.prompt, messages);
         } catch { /* prompt fetch failed — non-critical */ }
       }
@@ -238,7 +243,7 @@ async function handleSubmit(cycles, messages, language = 'en-US') {
       const updated = await fetchCycles();
       cycles.length = 0;
       cycles.push(...updated);
-      renderList(cycles, messages, language);
+      renderList(cycles, messages, language, user);
       showToast(messages, 'cycles.success.edit');
     }
   } catch {
@@ -249,7 +254,7 @@ async function handleSubmit(cycles, messages, language = 'en-US') {
   }
 }
 
-async function handleAction(action, id, cycles, messages, language = 'en-US') {
+async function handleAction(action, id, cycles, messages, language = 'en-US', user = null) {
   if (action === 'edit') {
     const cycle = cycles.find((c) => String(c.id) === String(id));
     if (cycle) openModal('edit', cycle, messages, language);
@@ -269,7 +274,7 @@ async function handleAction(action, id, cycles, messages, language = 'en-US') {
     const updated = await fetchCycles();
     cycles.length = 0;
     cycles.push(...updated);
-    renderList(cycles, messages, language);
+    renderList(cycles, messages, language, user);
     window.dispatchEvent(new CustomEvent('kinesis:cycle-changed'));
     return;
   }
@@ -287,13 +292,13 @@ async function handleAction(action, id, cycles, messages, language = 'en-US') {
     const updated = await fetchCycles();
     cycles.length = 0;
     cycles.push(...updated);
-    renderList(cycles, messages, language);
+    renderList(cycles, messages, language, user);
     showToast(messages, 'cycles.success.delete');
     window.dispatchEvent(new CustomEvent('kinesis:cycle-changed'));
     return;
   }
 
-  if (action === 'prompt') {
+  if (action === 'prompt' && user?.role === 'admin') {
     try {
       const lng = (getShellI18n().language === 'pt-BR') ? 'pt' : 'en';
       const result = await requestJson(`/api/cycles/${id}/prompt?lng=${lng}`, null, 'GET');
@@ -366,26 +371,30 @@ export async function initCyclesPage() {
 
   form.addEventListener('submit', (e) => {
     e.preventDefault();
-    handleSubmit(cycles, i18n.messages, i18n.language);
+    handleSubmit(cycles, i18n.messages, i18n.language, user);
   });
 
   cycleListEl.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
     if (btn.dataset.action === 'planning') { planning.open(btn.dataset.id,btn); return; }
-    handleAction(btn.dataset.action, btn.dataset.id, cycles, i18n.messages, i18n.language);
+    handleAction(btn.dataset.action, btn.dataset.id, cycles, i18n.messages, i18n.language, user);
   });
 
-  document.getElementById('promptCloseBtn').addEventListener('click', hidePromptModal);
-  document.getElementById('promptCopyBtn').addEventListener('click', () => handleCopyPrompt(i18n.messages));
-  document.getElementById('promptModal').addEventListener('click', (e) => {
-    if (e.target.classList.contains('modal-backdrop')) hidePromptModal();
-  });
+  if (user.role === 'admin') {
+    document.getElementById('promptCloseBtn').addEventListener('click', hidePromptModal);
+    document.getElementById('promptCopyBtn').addEventListener('click', () => handleCopyPrompt(i18n.messages));
+    document.getElementById('promptModal').addEventListener('click', (e) => {
+      if (e.target.classList.contains('modal-backdrop')) hidePromptModal();
+    });
+  } else {
+    document.getElementById('promptModal').remove();
+  }
 
   document.addEventListener('app:languagechange', () => {
     const msgs = i18n.messages;
     document.title = translate(msgs, 'cycles.pageTitle');
-    renderList(cycles, msgs, i18n.language);
+    renderList(cycles, msgs, i18n.language, user);
     for (const id of ['cycleTargetDate', 'cycleStartDate']) {
       const input = document.getElementById(id);
       const iso = input.dataset.iso || parseLocalizedDate(input.value, i18n.language);
@@ -406,7 +415,7 @@ export async function initCyclesPage() {
     }
 
     const promptModal = document.getElementById('promptModal');
-    if (!promptModal.classList.contains('hidden')) {
+    if (promptModal && !promptModal.classList.contains('hidden')) {
       const promptTitle = promptModal.querySelector('[data-i18n="cycles.promptTitle"]');
       const copyLabel = document.querySelector('#promptCopyBtn span');
       if (promptTitle) promptTitle.textContent = translate(msgs, 'cycles.promptTitle');
@@ -417,7 +426,7 @@ export async function initCyclesPage() {
   try {
     const fetched = await fetchCycles();
     cycles.push(...fetched);
-      renderList(cycles, i18n.messages, i18n.language);
+      renderList(cycles, i18n.messages, i18n.language, user);
   } catch { /* load failed — non-critical */ }
 
   await checkActiveCycle(addBtn, i18n.messages);

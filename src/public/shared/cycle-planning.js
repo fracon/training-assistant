@@ -23,8 +23,11 @@ export function createCyclePlanning({ i18n, user }) {
     error.textContent=localized.startsWith('cyclePlanning.')?t('errors.generic'):localized;
     error.hidden=false;error.focus();
   }
-  function renderPlan(plan,heading) {
-    const section=el('section',null,'cycle-plan-section');section.append(el('h3',heading));
+  function renderPlan(plan,heading,version=null) {
+    const section=el('section',null,'cycle-plan-section');
+    const header=el('header',null,'cycle-card-header');header.append(el('h3',heading));
+    if(version!==null)header.append(el('span',`${t('version')} ${version}`,'cycle-status status-active'));
+    section.append(header);
     const pair=(label,value)=>{const p=el('p');p.append(el('strong',`${label}: `),document.createTextNode(value));section.append(p);};
     pair(t('period'),`${formatDate(plan.start,i18n.language)} → ${formatDate(plan.end,i18n.language)}`);
     for(const field of ['assessment','continuity','feasibility']) pair(t(field),plan[field]);
@@ -50,11 +53,13 @@ export function createCyclePlanning({ i18n, user }) {
     const running=execution && ['queued','running'].includes(execution.state);
     const candidate=execution?.state==='completed' && !latest.applied;
     generate.textContent=t(state.proposals.length?'regenerate':'generate');
+    generate.hidden=Boolean(running);
     generate.className=candidate?'btn-secondary':'btn-primary';
     generate.disabled=busy || !state.available || !state.canGenerate || running;
     apply.hidden=!candidate;apply.disabled=!candidate || busy || execution?.outdated || latest.baseVersion!==(state.applied?.version || 0);
     cancel.hidden=!running;cancel.disabled=busy;
     debug.hidden=user.role!=='admin' || !execution;
+    document.getElementById('cyclePlanningAdmin').hidden=debug.hidden;
     status.textContent=!state.available?t('unavailable'):!state.canGenerate?t('inactiveCycle'):latest?.applied?t('applied'):execution?t(`states.${execution.state}`):t('manualIndependent');
     content.replaceChildren();
     if(candidate) {
@@ -64,7 +69,7 @@ export function createCyclePlanning({ i18n, user }) {
     }
     if(state.applied) {
       if(state.applied.outdated)content.append(el('p',t('appliedOutdated'),'field-hint'));
-      renderPlan(state.applied.plan,`${t('applied')} · ${t('version')} ${state.applied.version}`);
+      renderPlan(state.applied.plan,t('applied'),state.applied.version);
     }
     if(!candidate && !state.applied)content.append(el('p',t('empty'),'field-hint'));
     if(execution?.error)content.append(el('p',t(`errors.${execution.error}`).startsWith('cyclePlanning.')?t('errors.generic'):t(`errors.${execution.error}`),'field-hint'));
@@ -110,7 +115,9 @@ export function createCyclePlanning({ i18n, user }) {
   document.addEventListener('app:languagechange',()=>{render();if(errorCode)showError({codes:[errorCode]});});
   return {async open(id,button){
     cycleId=id;trigger=button;generation++;state=null;busy=false;key=null;errorCode=null;
-    error.hidden=true;content.replaceChildren();generate.disabled=true;apply.hidden=true;cancel.hidden=true;debug.hidden=true;
+    document.getElementById('cyclePlanningAdmin').hidden=true;
+    generate.textContent=t('generate');generate.className='btn-primary';
+    error.hidden=true;content.replaceChildren();generate.hidden=false;generate.disabled=true;apply.hidden=true;cancel.hidden=true;debug.hidden=true;
     document.getElementById('cyclePlanningDebugDetails').hidden=true;
     document.getElementById('cyclePlanningDebugOutput').textContent='';
     modal.hidden=false;status.textContent=t('loading');trap.activate();document.getElementById('cyclePlanningClose').focus();

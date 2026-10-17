@@ -597,6 +597,25 @@ with optimistic versions. Do not restore generic manual memory CRUD.
 
 ## Cycle planning (issue #63, branch implementation)
 
+The free macrocycle prompt (`GET /api/cycles/:id/prompt`) requires the existing
+`requireAuth` + `requireAdmin` chain and owner-scoped cycle lookup. Authentication
+loads the current database role; administrator status cannot cross ownership.
+Pass the account role through every cycle render/save/action/language path:
+regular users have no prompt button or prompt modal and never fetch/open one on
+save. Admins retain free creation preview and active-card generation/copy.
+Product AI generation is owner-authorized for both roles, never admin-only.
+
+“Planejar ciclo” / “Plan cycle” is a `.btn-icon` card action with decorative
+Lucide `calendar-range`, translated accessible name and existing hover/focus
+custom tooltip, including on inactive cycles. Opening reads planning only.
+The product modal uses CRUD `.modal-card`/`.modal-header`/Lucide x and
+`.form-actions`, with one scrollable body and aligned wrapping footer; do not
+reuse `.prompt-modal-card` or `.prompt-modal-actions` padding. Proposal and
+applied-version headings/badge distinguish artifacts. Admin inspection stays in
+a separate secondary body section. Preserve trap/inert, keyboard/Escape/backdrop,
+focus restoration, language, reduced motion and stale-response protections.
+
+
 `cycle-plan-adapter.js` adapts only the three allowlisted delivery spans and
 validates `cycle-plan-v1`. Execution lifecycle callbacks write pending/validated
 proposals inside existing enqueue/settlement transactions. `cycle-plans.js`

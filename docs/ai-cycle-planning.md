@@ -8,8 +8,8 @@ Weekly generation #64 and result analysis #65 are not implemented here.
 
 Cycle registration (`src/cycles.js`, existing `/api/cycles` CRUD) still records
 objective, goal, target/start dates, distance, previous experience at that distance
-and other events. It works without AI. The new **Long-term planning** action on
-the same cycle card opens the existing modal structure, shared controls and theme.
+and other events. It works without AI. The **Plan cycle / Planejar ciclo** icon action on
+the same cycle card opens the product modal, shared controls and theme.
 It shows saved planning separately from a new proposal, with PT/EN labels.
 
 **Generate planning** explicitly starts a paid request when runtime configuration
@@ -38,6 +38,40 @@ Local cancellation does not guarantee that provider billing stops. A lost POST
 response reuses the same idempotency key while that action remains open; a known
 new request receives a new key. No paid call runs automatically on load or restart
 except untouched queued work under the existing recovery contract.
+
+## Presentation and free prompt access
+
+The card uses the same 32×32 `.btn-icon` action as edit/complete/cancel, with a
+15×15 decorative Lucide `calendar-range`, translated aria-label and the existing
+custom hover/focus tooltip: **Planejar ciclo / Plan cycle**. No native title is
+added. Inactive cycles keep this read access. Opening never generates, applies
+or activates a cycle.
+
+The **Planejar ciclo / Plan cycle** modal follows the cycle and shoe CRUD
+references: `.modal-card`, `.modal-header` and the 30×30 `.modal-close` containing
+an 18×18 Lucide x. The existing cycle modal padding is shared by header, body and
+footer. A flexible, vertically scrollable body separates explanation, live status,
+localized error, proposal and applied plan; paragraph/heading spacing is explicit.
+The applied version uses the existing cycle status badge. Width uses the existing
+800px extended-modal limit; header/close and footer stay visible, long text wraps,
+and actions wrap without new button sizes or horizontal scrolling.
+
+Footer `.form-actions` uses the established primary/secondary buttons: generate
+initially, status plus cancellation while processing, apply as primary when a
+proposal is ready, and regenerate for an applied plan. Technical inspection is a
+secondary admin-only section in the scrollable body. The product modal does not
+use prompt-output card/action classes. Focus trap/inert, Escape/backdrop, restored
+trigger after rerender, language changes and out-of-order polling stay intact.
+
+`GET /api/cycles/:id/prompt` now uses the shared authentication/admin chain:
+anonymous 401, current non-admin 403, owned admin cycle 200 and unowned/missing
+admin cycle 404. It is a free local renderer; it does not reserve budget or call
+OpenAI. Regular accounts have neither a card prompt action nor its modal/listeners.
+Creating/editing a regular account's cycle only saves/rerenders; it never fetches
+or opens the prompt. Admin creation retains the existing automatic free preview
+in the current UI language; the active-card action and clipboard copy remain.
+Every save/refresh/language render and delegated prompt handler carries the role
+restriction. This does not restrict AI planning to administrators.
 
 ## Structured output and delivery adapter
 
@@ -74,8 +108,8 @@ The transformations are explicit/versioned and tested as an allowlisted diff,
 including user fields containing matching delivery sentences: only the final
 fixed-template occurrence is changed.
 The external generator is unchanged, including weekly/analysis prompts. All
-external baseline comparisons remain byte-for-byte tests. Existing free external
-prompt generation/copy remains available; administrators additionally inspect
+external baseline comparisons remain byte-for-byte tests. Free external macrocycle
+prompt generation/copy is restricted to administrators for their own cycles; they also inspect
 only their own exact execution payload/context, original external prompt,
 adapter/model versions, sanitized errors and usage/cost in the planning modal or
 Training memory debug. Common accounts never receive those technical payloads.
@@ -178,6 +212,7 @@ permit cross-account access, including for administrators.
 
 | Endpoint | Contract |
 | --- | --- |
+| `GET /api/cycles/:id/prompt` | current admin only, owned cycle, free original PT/EN prompt; 401/403/404 as above |
 | `GET /api/cycles/:id/planning` | availability/canGenerate, cycle revision, latest applied plan (or null), latest 20 ordered proposals and their safe execution state/result; no exact payload/model/key |
 | `POST /api/ai/executions` | existing `{purpose:"cycle",resource_id,idempotency_key}`; only cycle adapter registered here |
 | `GET /api/ai/executions/:id` | existing safe owner polling |
@@ -205,7 +240,7 @@ athlete records and a development database:
 1. Install dependencies, set backend runtime key, AI_ENABLED=true,
    AI_MODEL_CYCLE=gpt-6.1-sol, AI_MAX_OUTPUT_TOKENS=8192; run `npm start` on Node 24.
 2. Create/edit an owned active cycle with a future target and optional start date.
-   Leave history absent first. Open Long-term planning and generate once. Reload
+   Leave history absent first. Open Plan cycle and generate once. Reload
    during processing, review A–F, uncertainty and dates, then apply explicitly.
 3. As admin inspect the same execution: record model, adapter/policy versions,
    actual usage and estimated cost (not the key or personal prompt in reports).
@@ -226,7 +261,7 @@ cyclePlanning.browser.test.js; existing foundation/prompt/context/CRUD tests,
 its required backend scope), `git diff --check` and Node 24 startup without the
 MODULE_TYPELESS_PACKAGE_JSON warning. Browser checks cover PT/EN desktop/mobile,
 ordinary/admin, processing recovery, error, proposal/application, keyboard/focus,
-scrolling and visual comparison with the existing cycle/prompt modals.
+scrolling and visual comparison with the existing cycle/shoe CRUD modals.
 
 ### Initial local delivery evidence
 
@@ -290,3 +325,48 @@ These are local software validations with simulated provider responses, not a
 model-quality evaluation. Beta remains **0.21.0**; this phase remains available
 on the PR #69 branch until merge. No schema/configuration/infrastructure change
 or additional automatic review request is introduced by this correction.
+
+### PR #69 presentation and prompt-access correction
+
+Free cycle prompts now enforce the current admin role and ownership on the
+backend and every frontend path. Regular creation/edit, language changes and
+rerenders do not fetch or expose the prompt. Product generation remains available
+to regular owners. The presentation/access contract above describes the icon,
+CRUD modal layout, scrollable body and secondary technical inspection.
+
+Local validation on Node **24.18.0**, beta **0.21.0**:
+
+- **196 targeted tests**: cycles/domain/HTTP/UI, product routes, foundation prompt
+  comparisons and explicit module boundary.
+- `npm test` and `npm run test:coverage`: **1,212 passed each**, zero failures/skips;
+  required backend/script coverage **100% Statements, Branches, Functions, Lines**.
+  All 48 external prompt comparisons remain byte-identical.
+- Real Chrome: PT/EN × regular/admin × **1280, 768 and 390px**, initial/loading,
+  processing/reload, proposal/apply, errors, inactive plans, mouse/keyboard
+  tooltip, Tab/Shift+Tab, Escape/backdrop, trap/inert, language/focus restoration,
+  reduced motion, stale polling and no automatic generation. Regular manual
+  creation/edit and forged prompt events produce no prompt request; admin free
+  preview/copy does not call the provider.
+- Compared rendered cycle/shoe CRUD modals and card controls. Card actions match
+  **32×32px**; close controls share dimensions/styles at **30×30px**, with the
+  real Lucide x at **18×18px** and calendar-range at the existing 15px icon size.
+  Body/footer bounds align and long content has no horizontal overflow. The
+  real Lucide **1.59.0** UMD asset was verified locally, outside Git, through
+  `KINESIS_TEST_LUCIDE_FILE`; standard automated runs block external CDNs and
+  require no downloaded asset. External font CDNs are blocked in the harness;
+  reference and product captures use the same font fallback/computed family.
+- Initial combined runs exposed test readiness races (asynchronous language and
+  reference-page initialization). The harness now awaits the actual localized
+  label and loaded reference form, retaining strict behavior/style assertions.
+  Both complete gates were repeated successfully.
+- Real `npm run dev` / `npm start` with temporary databases returned HTTP 200,
+  version 0.21.0, without MODULE_TYPELESS_PACKAGE_JSON. `git diff --check` passed.
+
+No owner screenshots of this screen were attached; visual references were the
+existing cycle/shoe screens and shared components. Screenshots remain temporary,
+synthetic provider responses are not a model-quality evaluation, and no paid
+call or production data change was needed. The complete diff against main was
+critiqued for authorization, ownership, all prompt paths, focus/concurrency,
+compatibility, source/persistence invariants, presentation, documentation and
+tests. This correction does not change schema, prompts, context policy, runtime
+configuration or infrastructure. Phase 1 remains unmerged on PR #69.

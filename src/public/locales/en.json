@@ -1090,10 +1090,11 @@
     "totalsHint": "Distance and duration use recorded results only. Missing metrics are counted separately; reference sessions are not added again."
   },
   "cyclePlanning": {
+    "admin": "Administrator details",
     "proposalConflict": "Another proposal was applied after this generation. Generate a new proposal using the current planning version.",
     "inactiveCycle": "This cycle is no longer active. Saved planning remains available.",
-    "open": "Long-term planning",
-    "title": "Long-term cycle planning",
+    "open": "Plan cycle",
+    "title": "Plan cycle",
     "hint": "Saving a cycle records your goals. Generating planning sends selected context to AI to propose phases; review and apply explicitly. No weekly calendar is created.",
     "generate": "Generate planning",
     "regenerate": "Generate new proposal",
