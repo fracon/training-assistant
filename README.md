@@ -12,19 +12,31 @@ cycle planning, proposal review and explicit application. It is not integrated
 until this phase's PR merges. Weekly generation (#64) and result analysis (#65)
 remain future phases.
 
-Open **Training Cycles → Plan cycle / Planejar ciclo** on an existing cycle. Saving a
-cycle only registers its goals; **Generate planning** explicitly requests AI
-phases and rationale. Reloading recovers processing/results. **Apply proposal**
+Saving an active cycle confirms its registration and opens **Cycle planning /
+Planejamento do ciclo** using the ID returned by the backend. **Generate plan /
+Gerar planejamento** explicitly requests AI phases and rationale; **Not now /
+Agora não** closes the step and preserves the saved cycle. Weekly workouts are
+requested separately; integrated weekly generation (#64) remains future work.
+Reloading recovers processing/results. **Apply proposal**
 creates a planning version; generating again never silently replaces it. Manual
 cycle management works without AI. The target date must be valid and not in the
 past; generation uses the later of today and the saved start date. Only an active
 cycle can receive a new applied plan. No weekly calendar is generated.
 
+After editing, the same step reads backend freshness: an outdated applied plan
+offers **Generate new plan / Gerar novo planejamento** or **Keep for now / Manter
+por enquanto**. Keeping does not clear the outdated flag. Current proposals and
+running executions are recovered; a current applied plan can simply be reviewed.
+Inactive cycles retain read access. Disabled AI hides generation and offers Done.
+A failed planning/list read never turns an acknowledged save into a failed
+registration; the saved card remains available to resume. Identical stored values
+do not advance the cycle revision, while real edits and reversions still do.
+
 See the [cycle planning contract and real-test steps](docs/ai-cycle-planning.md).
 No provider credential was available for this implementation's evaluation;
 mock/browser tests do not establish model quality or project access.
 
-The cycle card's **Plan cycle / Planejar ciclo** icon uses the existing custom
+The cycle card's **Cycle planning / Planejamento do ciclo** icon uses the existing custom
 hover/keyboard tooltip and opens saved planning without a paid call or cycle
 activation, including inactive cycles. Its product modal follows the cycle/shoe
 CRUD header and close control, with a bounded scrollable body and wrapping footer
@@ -35,7 +47,8 @@ Free macrocycle prompt generation/copy is **administrator-only**, scoped to the
 administrator's own cycles and guarded by the current backend role. Common
 accounts have no prompt controls or prompt modal; saving/editing their cycles
 never requests or opens a prompt. Administrators retain the existing free prompt
-preview after creating a cycle and from an active card. AI planning remains
+preview/copy as an explicit action from an active card; saving never opens the
+technical prompt for either role. AI planning remains
 available to authorized owners of either role. External PT/EN prompt output is
 unchanged.
 

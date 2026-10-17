@@ -513,3 +513,7 @@
 @media (prefers-reduced-motion: reduce) {
   .cycle-planning-card, .cycle-planning-modal button, .cycle-card-actions .custom-tooltip { animation: none; transition: none; }
 }
+
+/* Inactive cards have a single planning action: keep its longer tooltip on-screen. */
+.cycle-card-actions > [data-action="planning"]:first-child .custom-tooltip { left: 0; transform: translateY(4px); }
+.cycle-card-actions > [data-action="planning"]:first-child:is(:hover, :focus-visible) .custom-tooltip { transform: translateY(0); }

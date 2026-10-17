@@ -13,15 +13,19 @@ export function createCyclePlanning({ i18n, user }) {
   const apply = document.getElementById('cyclePlanningApply');
   const cancel = document.getElementById('cyclePlanningCancel');
   const debug = document.getElementById('cyclePlanningDebug');
-  let cycleId=null, trigger=null, state=null, generation=0, readSequence=0, timer=null, busy=false, key=null, errorCode=null;
+  const later = document.getElementById('cyclePlanningLater');
+  const retry = document.getElementById('cyclePlanningRetry');
+  const pendingKeys = new Map();
+  let cycleId=null, trigger=null, state=null, generation=0, readSequence=0, timer=null, busy=false, errorCode=null, saved=null, readFailed=false;
   const t = (key) => translate(i18n.messages,`cyclePlanning.${key}`);
   const trap=createDialogFocusTrap(modal,close);
   const el=(tag,text,className)=>{const n=document.createElement(tag);if(text!=null)n.textContent=text;if(className)n.className=className;return n;};
-  function showError(e) {
-    errorCode=e?.codes?.[0] || 'generic';
+  function showError(e, read=false) {
+    if (read) readFailed=true;
+    errorCode=read ? (saved ? 'savedLoadError' : 'loadError') : e?.codes?.[0] || 'generic';
     const localized=t(`errors.${errorCode}`);
     error.textContent=localized.startsWith('cyclePlanning.')?t('errors.generic'):localized;
-    error.hidden=false;error.focus();
+    error.hidden=false;render();error.focus();
   }
   function renderPlan(plan,heading,version=null) {
     const section=el('section',null,'cycle-plan-section');
@@ -48,19 +52,31 @@ export function createCyclePlanning({ i18n, user }) {
     content.append(section);
   }
   function render() {
-    if(!state)return;
+    const current = state?.applied && !state.applied.outdated;
+    const hint = saved && state?.available===false ? 'savedUnavailableHint' : saved === 'add' ? 'createdHint' : saved === 'edit' ?
+      (state?.applied?.outdated ? 'editedOutdatedHint' : current ? 'editedCurrentHint' : 'editedHint') : 'hint';
+    document.getElementById('cyclePlanningHint').textContent=t(hint);
+    later.textContent=t(state?.applied?.outdated ? 'keep' : current || state?.available===false || state?.canGenerate===false ? 'done' : 'notNow');
+    later.className='btn-secondary';
+    retry.hidden=!readFailed;retry.disabled=busy;retry.className='btn-primary';
+    generate.hidden=!state || readFailed;
+    if(!state){status.textContent=t(readFailed && !busy?'loadFailed':'loading');generate.textContent=t('generate');return;}
     const latest=state.proposals[0];const execution=latest?.execution;
     const running=execution && ['queued','running'].includes(execution.state);
     const candidate=execution?.state==='completed' && !latest.applied;
+    const conflict=candidate && latest.baseVersion!==(state.applied?.version || 0);
+    const ready=candidate && !execution.outdated && !conflict && state.canGenerate;
     generate.textContent=t(state.proposals.length?'regenerate':'generate');
-    generate.hidden=Boolean(running);
-    generate.className=candidate?'btn-secondary':'btn-primary';
-    generate.disabled=busy || !state.available || !state.canGenerate || running;
-    apply.hidden=!candidate;apply.disabled=!candidate || busy || execution?.outdated || latest.baseVersion!==(state.applied?.version || 0);
+    generate.hidden=readFailed || !state.available || !state.canGenerate || Boolean(running) || Boolean(saved && current && !ready);
+    generate.className=ready?'btn-secondary':'btn-primary';
+    generate.disabled=readFailed || busy || !state.available || !state.canGenerate || running;
+    apply.hidden=!ready || readFailed;apply.disabled=readFailed || busy;
+    later.className=!readFailed && (!state.available || !state.canGenerate || (saved && current && !ready)) && !ready ? 'btn-primary' : 'btn-secondary';
+    if(running)later.textContent=t('close');
     cancel.hidden=!running;cancel.disabled=busy;
     debug.hidden=user.role!=='admin' || !execution;
     document.getElementById('cyclePlanningAdmin').hidden=debug.hidden;
-    status.textContent=!state.available?t('unavailable'):!state.canGenerate?t('inactiveCycle'):latest?.applied?t('applied'):execution?t(`states.${execution.state}`):t('manualIndependent');
+    status.textContent=readFailed?t(busy?'loading':'loadFailed'):!state.available?t('unavailable'):!state.canGenerate?t('inactiveCycle'):latest?.applied?t(state.applied?.outdated?'appliedNeedsReview':'applied'):candidate && (execution.outdated || conflict)?t('proposalOutdated'):execution?t(`states.${execution.state}`):t(saved?'readyToPlan':'manualIndependent');
     content.replaceChildren();
     if(candidate) {
       if(latest.baseVersion!==(state.applied?.version || 0))content.append(el('p',t('proposalConflict'),'field-hint'));
@@ -75,24 +91,30 @@ export function createCyclePlanning({ i18n, user }) {
     if(execution?.error)content.append(el('p',t(`errors.${execution.error}`).startsWith('cyclePlanning.')?t('errors.generic'):t(`errors.${execution.error}`),'field-hint'));
   }
   async function refresh(token=generation) {
+    if(token!==generation || modal.hidden)return;
     const request=++readSequence;
     const result=await requestJson(`/api/cycles/${encodeURIComponent(cycleId)}/planning`,undefined,'GET');
     if(token!==generation || request!==readSequence || modal.hidden)return;
-    state=result;render();clearTimeout(timer);
+    state=result;readFailed=false;error.hidden=true;errorCode=null;render();clearTimeout(timer);
     if(state.proposals[0]?.execution && ['queued','running'].includes(state.proposals[0].execution.state))
-      timer=setTimeout(()=>refresh(token).catch((e)=>{if(token===generation && !modal.hidden)showError(e);}),1500);
+      timer=setTimeout(()=>refresh(token).catch((e)=>{if(token===generation && !modal.hidden)showError(e,true);}),1500);
   }
-  async function action(fn) {
-    if(busy || !state)return;
+  async function action(fn, allowEmpty=false) {
+    if(busy || (!state && !allowEmpty))return;
     const token=generation;busy=true;error.hidden=true;errorCode=null;render();
-    try { await fn();if(token===generation && !modal.hidden)await refresh(token); }
+    try {
+      await fn();
+      if(token===generation && !modal.hidden)try { await refresh(token); } catch(e) { if(token===generation && !modal.hidden)showError(e,true); }
+    }
     catch(e){if(token===generation && !modal.hidden)showError(e);}
     finally{if(token===generation){busy=false;render();if(!modal.hidden && document.activeElement===document.body)document.getElementById('cyclePlanningClose').focus();}}
   }
   generate.addEventListener('click',()=>action(async()=>{
     // Keep the key after a lost response; a deliberate generation after a known result gets a new one.
-    key ||= crypto.randomUUID();
-    await requestJson('/api/ai/executions',{purpose:'cycle',resource_id:cycleId,idempotency_key:key});key=null;
+    const id=cycleId;
+    const key=pendingKeys.get(id) || crypto.randomUUID();pendingKeys.set(id,key);
+    await requestJson('/api/ai/executions',{purpose:'cycle',resource_id:id,idempotency_key:key});
+    if(pendingKeys.get(id)===key)pendingKeys.delete(id);
   }));
   apply.addEventListener('click',()=>action(async()=>{
     await requestJson(`/api/cycles/${encodeURIComponent(cycleId)}/planning/${encodeURIComponent(state.proposals[0].id)}/apply`,{expected_version:state.applied?.version || 0});
@@ -105,23 +127,27 @@ export function createCyclePlanning({ i18n, user }) {
     document.getElementById('cyclePlanningDebugOutput').textContent=JSON.stringify(exact,null,2);
     document.getElementById('cyclePlanningDebugDetails').hidden=false;
   }));
-  function close() {
+  function close(restore=true) {
     generation++;clearTimeout(timer);modal.hidden=true;trap.deactivate();busy=false;
     const target=trigger?.isConnected?trigger:[...document.querySelectorAll('[data-action=planning]')].find((button)=>button.dataset.id===cycleId);
-    target?.focus();
+    if(restore)target?.focus();
   }
-  document.getElementById('cyclePlanningClose').addEventListener('click',close);
+  document.getElementById('cyclePlanningClose').addEventListener('click',()=>close());
+  later.addEventListener('click',()=>close());
+  retry.addEventListener('click',()=>action(async()=>{},true));
   modal.addEventListener('click',(e)=>{if(e.target===modal)close();});
   document.addEventListener('app:languagechange',()=>{render();if(errorCode)showError({codes:[errorCode]});});
-  return {async open(id,button){
-    cycleId=id;trigger=button;generation++;state=null;busy=false;key=null;errorCode=null;
+  return {close,async open(id,button,options={}){
+    clearTimeout(timer);
+    modal.dataset.cycleId=String(id);
+    cycleId=id;trigger=button;generation++;state=null;busy=false;errorCode=null;saved=options.saved || null;readFailed=false;
     document.getElementById('cyclePlanningAdmin').hidden=true;
     generate.textContent=t('generate');generate.className='btn-primary';
     error.hidden=true;content.replaceChildren();generate.hidden=false;generate.disabled=true;apply.hidden=true;cancel.hidden=true;debug.hidden=true;
     document.getElementById('cyclePlanningDebugDetails').hidden=true;
     document.getElementById('cyclePlanningDebugOutput').textContent='';
-    modal.hidden=false;status.textContent=t('loading');trap.activate();document.getElementById('cyclePlanningClose').focus();
+    modal.hidden=false;render();status.textContent=t('loading');trap.activate();document.getElementById('cyclePlanningClose').focus();
     const token=generation;
-    try{await refresh(token);}catch(e){if(token===generation && !modal.hidden)showError(e);}
+    try{await refresh(token);}catch(e){if(token===generation && !modal.hidden)showError(e,true);}
   }};
 }

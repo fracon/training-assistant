@@ -245,3 +245,17 @@ test('oversized applied architecture is selected deterministically without crowd
  const cycleContext=buildContext(db,1,{purpose:'cycle',resourceId:'cycle',config});
  assert.equal(cycleContext.appliedPlan,undefined);assert.equal(cycleContext.recent[0].report.feedback_pain,'Whole dated report');
 });
+
+test('saving identical canonical cycle values keeps planning fresh, including numeric form strings',async(t)=>{
+ const db=fixture();db.prepare("UPDATE training_cycles SET run_count=3 WHERE id='cycle'").run();
+ const {service,config}=harness(db);t.after(async()=>{await service.stop();db.close();});
+ const proposal=enqueue(service);await complete(service,proposal.id);applyCyclePlan(db,1,'cycle',proposal.id,{expected_version:0},service);
+ const before=db.prepare("SELECT * FROM training_cycles WHERE id='cycle'").get();
+ updateCycle(db,'cycle',1,{objective:before.objective,primary_goal:before.primary_goal,run_count:'3',target_date:before.target_date});
+ assert.deepEqual(db.prepare("SELECT * FROM training_cycles WHERE id='cycle'").get(),before);
+ assert.equal(readCyclePlanning(db,1,'cycle',service,config).applied.outdated,false);
+ assert.equal(service.get(1,proposal.id).outdated,false);
+ updateCycle(db,'cycle',1,{primary_goal:'Changed'});updateCycle(db,'cycle',1,{primary_goal:before.primary_goal});
+ assert.equal(db.prepare("SELECT planning_revision FROM training_cycles WHERE id='cycle'").get().planning_revision,before.planning_revision+2);
+ assert.equal(readCyclePlanning(db,1,'cycle',service,config).applied.outdated,true);
+});

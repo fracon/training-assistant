@@ -333,6 +333,11 @@ dated session feedback and history to generate a cycle proposal. Keep cycle iden
 generated planning versions. Validate phase dates and domain values; show a
 proposal before explicit atomic application. Preserve one active cycle and
 manual cycle creation. Regeneration must not overwrite an applied plan silently.
+Owner-approved guided experience (PR #69 correction): successful active-cycle
+registration/edit leads to the existing planning step, after confirmed persistence.
+Generation is a separate explicit choice; deferral preserves the cycle/plan and
+outdated flags. The card remains a later entry point. Technical prompts are
+admin-only explicit debug, never the automatic post-save destination.
 
 Persist the accepted planning/rationale for weekly context. Old cycles without
 an AI plan remain supported and must not receive fabricated backfill.
@@ -480,10 +485,12 @@ report priorities, adds bounded preceding cycles and supplies applied planning
 to later task contexts through budgeted optional selection after reports and
 availability. Identity/provenance remains mandatory; see the
 [effective extension policy](ai-foundation.md#context-extension-training-context-v5).
-The Plan cycle card icon and CRUD-style product modal expose this flow to owned
-cycles for regular/admin accounts. The original free cycle prompt is admin-only,
-including the backend endpoint and creation preview; regular saves never request
-it. See the [presentation/access contract](ai-cycle-planning.md#presentation-and-free-prompt-access).
+The Cycle planning card icon and CRUD-style product modal expose this flow to
+owned cycles for regular/admin accounts. A successful active save opens that
+product step, recovers persisted execution/proposal state and uses backend plan
+freshness. No-op saves preserve revisions; real edits/reversals invalidate as
+before. The original free cycle prompt is admin-only and explicitly requested;
+no save opens it. See the [presentation/access contract](ai-cycle-planning.md#presentation-and-free-prompt-access).
 It does not reuse plan-local athlete assessments. No weekly
 calendar, hourly research or result analysis operation is registered. Main still
 contains phase 0 only until this phase's PR is merged.

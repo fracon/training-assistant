@@ -37,7 +37,7 @@
   </main>
 
   <div id="cycleModal" class="modal-backdrop hidden">
-    <div class="modal-card" role="dialog" aria-modal="true">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="cycleModalTitle">
       <header class="modal-header">
         <h2 id="cycleModalTitle" data-i18n="cycles.formTitleAdd">Add New Cycle</h2>
         <button type="button" id="cycleModalCloseBtn" class="modal-close" aria-label="Close">
@@ -126,13 +126,13 @@
   <div id="cyclePlanningModal" class="modal-backdrop cycle-planning-modal" hidden>
     <div class="modal-card cycle-planning-card" role="dialog" aria-modal="true" aria-labelledby="cyclePlanningHeading" aria-describedby="cyclePlanningHint">
       <header class="modal-header">
-        <h2 id="cyclePlanningHeading" data-i18n="cyclePlanning.title">Plan cycle</h2>
+        <h2 id="cyclePlanningHeading" data-i18n="cyclePlanning.title">Cycle planning</h2>
         <button id="cyclePlanningClose" type="button" class="modal-close" data-i18n-aria-label="cyclePlanning.close" aria-label="Close">
           <i data-lucide="x" aria-hidden="true"></i>
         </button>
       </header>
       <div class="cycle-planning-body">
-        <p id="cyclePlanningHint" class="field-hint" data-i18n="cyclePlanning.hint"></p>
+        <p id="cyclePlanningHint" class="field-hint"></p>
         <p id="cyclePlanningStatus" role="status" aria-live="polite"></p>
         <p id="cyclePlanningError" class="form-error" role="alert" tabindex="-1" hidden></p>
         <div id="cyclePlanningContent" class="cycle-planning-content"></div>
@@ -143,6 +143,8 @@
         </section>
       </div>
       <footer class="form-actions">
+        <button id="cyclePlanningLater" type="button" class="btn-secondary">Not now</button>
+        <button id="cyclePlanningRetry" type="button" class="btn-secondary" hidden data-i18n="cyclePlanning.retry">Try again</button>
         <button id="cyclePlanningCancel" type="button" class="btn-secondary" hidden data-i18n="cyclePlanning.cancel">Cancel generation</button>
         <button id="cyclePlanningGenerate" type="button" class="btn-primary" disabled data-i18n="cyclePlanning.generate">Generate planning</button>
         <button id="cyclePlanningApply" type="button" class="btn-primary" hidden data-i18n="cyclePlanning.apply">Apply proposal</button>

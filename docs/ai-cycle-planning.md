@@ -8,7 +8,7 @@ Weekly generation #64 and result analysis #65 are not implemented here.
 
 Cycle registration (`src/cycles.js`, existing `/api/cycles` CRUD) still records
 objective, goal, target/start dates, distance, previous experience at that distance
-and other events. It works without AI. The **Plan cycle / Planejar ciclo** icon action on
+and other events. It works without AI. The **Cycle planning / Planejamento do ciclo** icon action on
 the same cycle card opens the product modal, shared controls and theme.
 It shows saved planning separately from a new proposal, with PT/EN labels.
 
@@ -34,8 +34,9 @@ The existing persisted execution service handles enqueue, reserve, dispatch,
 retries/cancellation, uncertain outcomes, restart recovery and source revalidation.
 The modal polls the owner-scoped planning view while queued/running. Reopening
 or reloading recovers durable state; closing the dialog does not cancel a call.
-Local cancellation does not guarantee that provider billing stops. A lost POST
-response reuses the same idempotency key while that action remains open; a known
+Local cancellation does not guarantee that provider billing stops. A lost generation POST
+response retains its idempotency key per cycle across modal transitions in the
+current page; a known
 new request receives a new key. No paid call runs automatically on load or restart
 except untouched queued work under the existing recovery contract.
 
@@ -43,11 +44,11 @@ except untouched queued work under the existing recovery contract.
 
 The card uses the same 32×32 `.btn-icon` action as edit/complete/cancel, with a
 15×15 decorative Lucide `calendar-range`, translated aria-label and the existing
-custom hover/focus tooltip: **Planejar ciclo / Plan cycle**. No native title is
+custom hover/focus tooltip: **Planejamento do ciclo / Cycle planning**. No native title is
 added. Inactive cycles keep this read access. Opening never generates, applies
 or activates a cycle.
 
-The **Planejar ciclo / Plan cycle** modal follows the cycle and shoe CRUD
+The **Planejamento do ciclo / Cycle planning** modal follows the cycle and shoe CRUD
 references: `.modal-card`, `.modal-header` and the 30×30 `.modal-close` containing
 an 18×18 Lucide x. The existing cycle modal padding is shared by header, body and
 footer. A flexible, vertically scrollable body separates explanation, live status,
@@ -67,11 +68,64 @@ trigger after rerender, language changes and out-of-order polling stay intact.
 anonymous 401, current non-admin 403, owned admin cycle 200 and unowned/missing
 admin cycle 404. It is a free local renderer; it does not reserve budget or call
 OpenAI. Regular accounts have neither a card prompt action nor its modal/listeners.
-Creating/editing a regular account's cycle only saves/rerenders; it never fetches
-or opens the prompt. Admin creation retains the existing automatic free preview
-in the current UI language; the active-card action and clipboard copy remain.
+Saving either account role's cycle never fetches or opens the technical prompt.
+Admin preview/copy remains an explicit active-card debug action. The automatic
+post-save destination is the product planning step for both roles.
 Every save/refresh/language render and delegated prompt handler carries the role
 restriction. This does not restrict AI planning to administrators.
+
+## Guided creation and editing
+
+This owner-approved experience is implemented on the PR #69 branch, pending merge:
+**save registration → cycle planning → separately requested weekly workouts**.
+The card/modal label is **Planejamento do ciclo / Cycle planning**. The existing
+card icon and corrected CRUD modal remain; there is no wizard or new visual system.
+
+`POST /api/cycles` / `PUT /api/cycles/:id` returns the persisted `{cycle}`. The page upserts that
+canonical record immediately, updates active-cycle navigation, closes/deactivates
+the form trap, and opens planning for the returned ID when its status is active.
+It does not depend on a second list read to recover that card. Source-of-truth
+planning state is read through the existing GET endpoint before actions appear.
+
+| Persisted state | Presentation/actions |
+| --- | --- |
+| Newly saved/unplanned active cycle | Saved confirmation, phases/priorities explanation and separate weekly-workout wording; Generate plan / Not now |
+| Edited active cycle with outdated applied plan | Saved changes and earlier-information explanation; Generate new plan / Keep for now |
+| Current applied plan after save | Consult version and Done; no unnecessary regeneration offer |
+| Running execution | Recover status/polling; Close and existing local cancellation; never enqueue on open |
+| Current unapplied proposal | Review and explicitly Apply; opening/saving does not apply it |
+| Outdated/conflicting proposal | Explain why it cannot be applied; offer new generation when eligible |
+| Inactive saved cycle | No automatic generation step after saving; card still opens read-only planning |
+| Disabled/unconfigured AI | Saved cycle and unavailable explanation, Done; generation hidden, existing plans readable |
+
+Defer/Keep/Done only closes the modal. It never deletes/reverts a cycle, removes
+an applied version, clears an outdated flag or calls the provider. Generation
+creates another proposal; application stays explicit and atomic.
+
+Freshness comes exclusively from backend execution/applied-plan flags and version
+contracts. `updateCycle` atomically compares submitted values with persisted
+columns using SQLite affinities and null-safe `IS`: e.g. numeric form string
+`"3"` equals stored INTEGER 3. A no-op touches no revision or timestamp; a real
+change and reversal still advance the revision twice. There is no migration,
+revision rollback, historical snapshot rewrite or automatic freshness repair.
+
+The save lock prevents duplicate submits. A form revision token suppresses late
+errors/transitions after close or another form opens. Late acknowledged writes
+still update their own cards; closing cannot undo a write already submitted.
+Post-write rendering uses current i18n. List and active-read versions protect
+local acknowledged state against older responses. Form/planning share the existing
+trap/inert and restore focus to the saved cycle's visible planning icon after
+rerender, with no overlapping dialogs.
+
+A failed planning read after save explains that registration succeeded, keeps
+the card, disables generation/application until reloaded and offers a free retry.
+It never reports a registration failure or retries POST creation. Read errors
+and old polling responses cannot alter another open cycle. Pending poll timers
+are cleared on switch, and stale callbacks are rejected before issuing reads.
+Unknown generation acknowledgements keep the same per-cycle key across modal
+close/reopen in the current page; reload recovers durable backend state.
+No new execution/job/client/cost mechanism, profile fields, output schema or
+training-prompt instructions are introduced. #64/#65 remain future phases.
 
 ## Structured output and delivery adapter
 
@@ -126,7 +180,7 @@ initialization, adds `training_cycles.planning_revision` (initial zero) and:
   source references and application time.
 
 No existing cycle, profile, training, session or historical execution is rewritten.
-Every actual cycle edit increments its revision, even for edits in the same
+Every actual stored-value change increments its revision, even in the same
 second, preventing change-and-revert from authorizing an old proposal. Source
 hashes also capture other canonical changes.
 
@@ -240,7 +294,7 @@ athlete records and a development database:
 1. Install dependencies, set backend runtime key, AI_ENABLED=true,
    AI_MODEL_CYCLE=gpt-6.1-sol, AI_MAX_OUTPUT_TOKENS=8192; run `npm start` on Node 24.
 2. Create/edit an owned active cycle with a future target and optional start date.
-   Leave history absent first. Open Plan cycle and generate once. Reload
+   Leave history absent first. The Cycle planning step opens after saving; generate once explicitly. Reload
    during processing, review A–F, uncertainty and dates, then apply explicitly.
 3. As admin inspect the same execution: record model, adapter/policy versions,
    actual usage and estimated cost (not the key or personal prompt in reports).
@@ -370,3 +424,46 @@ critiqued for authorization, ownership, all prompt paths, focus/concurrency,
 compatibility, source/persistence invariants, presentation, documentation and
 tests. This correction does not change schema, prompts, context policy, runtime
 configuration or infrastructure. Phase 1 remains unmerged on PR #69.
+
+### Guided-flow correction evidence (2026-10-17)
+
+The approved guided flow above supersedes the earlier creation preview behavior.
+Beta remains **0.21.0** and phase 1 remains on PR #69 until merge.
+
+- The new no-op regression failed before correction (`planning_revision` advanced
+  from 0 to 1 for identical values). It now preserves the entire cycle row and
+  backend plan freshness, including numeric form strings, while change/reversal
+  still advances twice and marks the plan outdated.
+- **210 targeted tests** passed (cycle domain/HTTP/UI, planning, foundation prompt
+  comparisons and module boundary). Final `npm test` and `npm run test:coverage`
+  each passed **1,217 tests**, zero failures/skips; required backend/script scope
+  is **100% Statements, Branches, Functions, Lines**. All 48 external prompt
+  comparisons remain byte-identical.
+- Three added real-Chrome regressions cover PT/EN × admin/regular × **1280, 768,
+  390px**, confirmed creation, deferral, explicit generate/review/apply, failed
+  generation, unchanged/current-plan edits, changed/outdated plans and Keep,
+  ready/stale proposals, persisted running work and completion while closed.
+  They also cover inactive saves/consultation, disabled AI, failed planning and
+  late failed initial-list reads, double submits, language during pending save,
+  delayed save/read responses, and lost generation acknowledgements using the
+  same per-cycle key without an additional execution.
+- Form keyboard checks include initial focus, Tab/Shift+Tab containment and
+  Escape closing an open DatePicker before the form. Form/planning never overlap;
+  trap/inert and restored focus target the matching visible card. Existing Chrome
+  control/style comparisons against cycle/shoe modals, free admin prompt/copy,
+  tooltip mouse/keyboard, reduced motion and old polling checks remain active.
+  The inactive card's longer PT tooltip is anchored within the viewport.
+- Current synthetic screenshots were visually inspected at desktop/mobile and
+  intermediate widths. The local visual run uses the same real Lucide asset
+  outside Git; ordinary coverage runs block CDNs and exercise the fallback.
+  Shared font fallbacks are consistent with the reference screens. No owner
+  screenshots were attached. Temporary captures are not committed.
+- The complete diff against main was critiqued; coordinated fixes included
+  DatePicker Escape priority, accessible form naming, saved-vs-read failure
+  boundaries, polling invalidation and a single primary retry action.
+  `git diff --check` passed. No schema migration, prompt/schema/context-policy
+  change, infrastructure update, paid evaluation or production data write occurs.
+
+Provider responses in tests are simulated, not evidence of model quality. The
+new helper under `test/helpers/chrome.cjs` reuses the established Chrome/CDP
+pattern without a browser dependency or CI network requirement.

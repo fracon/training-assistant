@@ -2,11 +2,11 @@ import { initShell, getShellI18n, getUserPreferences, refreshIcons } from './sha
 import { translate } from './shared/i18n.js';
 import { formatDate as formatLocalizedDate, formatDateInput, parseLocalizedDate } from './shared/date.js';
 import { createDatePicker, readDatePickerValue } from './shared/datepicker.js';
+import { createDialogFocusTrap } from './shared/dialog-focus.js';
 import { createCyclePlanning } from './shared/cycle-planning.js';
 import { showConfirm } from './shared/confirm-modal.js';
 import {
   fetchCycles,
-  fetchActiveCycle,
   createCycle,
   updateCycle,
   deleteCycle,
@@ -194,15 +194,65 @@ function showToast(messages, messageKey, duration = 2500, type = 'success') {
   setTimeout(() => toast.classList.remove('visible'), duration);
 }
 
-async function handleSubmit(cycles, messages, language = 'en-US', user = null) {
+function planningButton(id) {
+  return [...document.querySelectorAll('[data-action="planning"]')].find((button) => button.dataset.id === String(id));
+}
+
+function createCycleFormFlow({ i18n, planning, onSaved }) {
+  const modal = document.getElementById('cycleModal');
+  const form = document.getElementById('cycleForm');
+  const save = document.getElementById('cycleSaveBtn');
+  let revision = 0, saving = false, trigger = null;
+  const trap = createDialogFocusTrap(modal, () => {
+    const picker = modal.querySelector('input[aria-expanded="true"]');
+    if (picker) { picker.datePicker.destroy();return; }
+    close();
+  });
+  function close(restore = true) {
+    if (modal.classList.contains('hidden')) return;
+    revision++;
+    closeModal();trap.deactivate();
+    if (restore) {
+      const target = trigger?.isConnected && !trigger.disabled ? trigger : planningButton(form.dataset.cycleId) || document.getElementById('addCycleBtn');
+      if (!target.disabled) target.focus();
+    }
+  }
+  return {
+    open(mode, cycle, button) {
+      planning.close(false);revision++;trigger = button;
+      openModal(mode, cycle, i18n.messages, i18n.language);
+      save.disabled = saving;trap.activate();document.getElementById('cycleObjective').focus();
+    },
+    close,
+    begin() {
+      if (saving || modal.classList.contains('hidden')) return null;
+      saving = true;save.disabled = true;
+      document.getElementById('cycleFormError').classList.add('hidden');
+      document.getElementById('cycleFormError').textContent='';
+      document.getElementById('cycleSaveLabel').textContent = t(i18n.messages, 'cycles.saving');
+      return revision;
+    },
+    current(token) { return token === revision && !modal.classList.contains('hidden'); },
+    finish() {
+      saving = false;save.disabled = false;
+      document.getElementById('cycleSaveLabel').textContent = t(i18n.messages, 'cycles.saveCycle');
+    },
+    record: onSaved,
+  };
+}
+
+async function handleSubmit(i18n, formFlow, planning) {
   const form = document.getElementById('cycleForm');
   const mode = form.dataset.mode;
+  const id = form.dataset.cycleId;
+  const { messages, language } = i18n;
   const objective = document.getElementById('cycleObjective').value.trim();
-
   if (!objective) {
     showFormError('cycles.errors.objectiveRequired', messages);
     return;
   }
+  const token = formFlow.begin();
+  if (token === null) return;
 
   const payload = {
     objective,
@@ -216,48 +266,32 @@ async function handleSubmit(cycles, messages, language = 'en-US', user = null) {
     other_events: document.getElementById('cycleOtherEvents').value || null,
   };
 
-  const saveBtn = document.getElementById('cycleSaveBtn');
-  const saveLabel = document.getElementById('cycleSaveLabel');
-  saveBtn.disabled = true;
-  saveLabel.textContent = t(messages, 'cycles.saving');
-
+  let result;
   try {
-    if (mode === 'add') {
-      const result = await createCycle(payload);
-      closeModal();
-      const updated = await fetchCycles();
-      cycles.length = 0;
-      cycles.push(...updated);
-      renderList(cycles, messages, language, user);
-      showToast(messages, 'cycles.success.add');
-      window.dispatchEvent(new CustomEvent('kinesis:cycle-changed'));
-      if (user?.role === 'admin' && result.cycle) {
-        try {
-          const promptResult = await requestJson(`/api/cycles/${result.cycle.id}/prompt?lng=${language === 'pt-BR' ? 'pt' : 'en'}`, null, 'GET');
-          if (promptResult.prompt) showPromptModal(promptResult.prompt, messages);
-        } catch { /* prompt fetch failed — non-critical */ }
-      }
-    } else {
-      await updateCycle(form.dataset.cycleId, payload);
-      closeModal();
-      const updated = await fetchCycles();
-      cycles.length = 0;
-      cycles.push(...updated);
-      renderList(cycles, messages, language, user);
-      showToast(messages, 'cycles.success.edit');
-    }
+    result = mode === 'add' ? await createCycle(payload) : await updateCycle(id, payload);
+    if (!result?.cycle?.id) throw new Error('Missing saved cycle.');
   } catch {
-    showFormError('cycles.errors.save', messages);
-  } finally {
-    saveBtn.disabled = false;
-    saveLabel.textContent = t(messages, 'cycles.saveCycle');
+    if (formFlow.current(token)) showFormError('cycles.errors.save', i18n.messages);
+    formFlow.finish();
+    return;
   }
+
+  // The write response is canonical. A later read cannot turn this into a failed
+  // save or discard the only card from which the person can resume planning.
+  const saved = result.cycle;
+  const button = formFlow.record(saved);
+  window.dispatchEvent(new CustomEvent('kinesis:cycle-changed'));
+  if (!formFlow.current(token)) { formFlow.finish();return; }
+  showToast(i18n.messages, mode === 'add' ? 'cycles.success.add' : 'cycles.success.edit');
+  formFlow.close(false);formFlow.finish();
+  if (saved.status === 'active') planning.open(saved.id, button, { saved: mode });
+  else button?.focus();
 }
 
-async function handleAction(action, id, cycles, messages, language = 'en-US', user = null) {
+async function handleAction(action, id, cycles, messages, language = 'en-US', user = null, formFlow, button) {
   if (action === 'edit') {
     const cycle = cycles.find((c) => String(c.id) === String(id));
-    if (cycle) openModal('edit', cycle, messages, language);
+    if (cycle) formFlow.open('edit', cycle, button);
     return;
   }
 
@@ -328,24 +362,13 @@ async function handleCopyPrompt(messages) {
   }
 }
 
-async function checkActiveCycle(addBtn, messages) {
-  const activeCycle = await fetchActiveCycle();
-  const tooltip = addBtn.closest('.add-cycle-wrapper').querySelector('.custom-tooltip');
-  if (activeCycle) {
-    addBtn.disabled = true;
-    tooltip.textContent = t(messages, 'cycles.disabledTooltip');
-  } else {
-    addBtn.disabled = false;
-    tooltip.textContent = '';
-  }
-}
-
 export async function initCyclesPage() {
   const user = await initShell({ active: 'cycles' });
   if (!user) return null;
 
   const i18n = getShellI18n();
   const cycles = [];
+  let listRevision = 0, activeRead = 0;
   const planning = createCyclePlanning({i18n,user});
 
   const addBtn = document.getElementById('addCycleBtn');
@@ -354,6 +377,26 @@ export async function initCyclesPage() {
   const form = document.getElementById('cycleForm');
   const cycleListEl = document.getElementById('cycleList');
 
+  const formFlow = createCycleFormFlow({ i18n, planning, onSaved(saved) {
+    listRevision++;
+    const index = cycles.findIndex((cycle) => cycle.id === saved.id);
+    if (index === -1) cycles.unshift(saved);else cycles[index] = saved;
+    renderList(cycles, i18n.messages, i18n.language, user);
+    setActiveButton(cycles.some((cycle) => cycle.status === 'active'));
+    return planningButton(saved.id);
+  }});
+  function setActiveButton(active) {
+    addBtn.disabled = active;
+    addBtn.closest('.add-cycle-wrapper').querySelector('.custom-tooltip').textContent = active ? t(i18n.messages, 'cycles.disabledTooltip') : '';
+  }
+  async function checkActiveCycle() {
+    const request = ++activeRead, revision = listRevision;
+    try {
+      const result = await requestJson('/api/cycles/active', undefined, 'GET');
+      if (request === activeRead && revision === listRevision) setActiveButton(Boolean(result.cycle));
+    } catch { /* Keep the last confirmed state, including a newly saved active cycle. */ }
+  }
+
   for (const id of ['cycleTargetDate', 'cycleStartDate']) {
     createDatePicker(document.getElementById(id), {
       getLanguage: () => i18n.language,
@@ -361,24 +404,24 @@ export async function initCyclesPage() {
     });
   }
 
-  addBtn.addEventListener('click', () => openModal('add', null, i18n.messages, i18n.language));
-  modalCloseBtn.addEventListener('click', closeModal);
-  formCancelBtn.addEventListener('click', closeModal);
+  addBtn.addEventListener('click', () => formFlow.open('add', null, addBtn));
+  modalCloseBtn.addEventListener('click', () => formFlow.close());
+  formCancelBtn.addEventListener('click', () => formFlow.close());
 
   document.getElementById('cycleModal').addEventListener('click', (e) => {
-    if (e.target.classList.contains('modal-backdrop')) closeModal();
+    if (e.target.classList.contains('modal-backdrop')) formFlow.close();
   });
 
   form.addEventListener('submit', (e) => {
     e.preventDefault();
-    handleSubmit(cycles, i18n.messages, i18n.language, user);
+    handleSubmit(i18n, formFlow, planning);
   });
 
   cycleListEl.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
-    if (btn.dataset.action === 'planning') { planning.open(btn.dataset.id,btn); return; }
-    handleAction(btn.dataset.action, btn.dataset.id, cycles, i18n.messages, i18n.language, user);
+    if (btn.dataset.action === 'planning') { formFlow.close(false);planning.open(btn.dataset.id,btn);return; }
+    handleAction(btn.dataset.action, btn.dataset.id, cycles, i18n.messages, i18n.language, user, formFlow, btn);
   });
 
   if (user.role === 'admin') {
@@ -401,7 +444,7 @@ export async function initCyclesPage() {
       setDateInput(id, iso, i18n.language);
       input.placeholder = i18n.language === 'pt-BR' ? 'DD/MM/YYYY' : 'MM/DD/YYYY';
     }
-    checkActiveCycle(addBtn, msgs);
+    checkActiveCycle();
 
     const modal = document.getElementById('cycleModal');
     if (!modal.classList.contains('hidden')) {
@@ -424,14 +467,14 @@ export async function initCyclesPage() {
   });
 
   try {
+    const revision = listRevision;
     const fetched = await fetchCycles();
-    cycles.push(...fetched);
-      renderList(cycles, i18n.messages, i18n.language, user);
+    if (revision === listRevision) { cycles.push(...fetched);renderList(cycles, i18n.messages, i18n.language, user); }
   } catch { /* load failed — non-critical */ }
 
-  await checkActiveCycle(addBtn, i18n.messages);
+  await checkActiveCycle();
 
-  window.addEventListener('kinesis:cycle-changed', () => checkActiveCycle(addBtn, i18n.messages));
+  window.addEventListener('kinesis:cycle-changed', () => checkActiveCycle());
 
   return user;
 }

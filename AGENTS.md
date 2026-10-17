@@ -602,10 +602,11 @@ The free macrocycle prompt (`GET /api/cycles/:id/prompt`) requires the existing
 loads the current database role; administrator status cannot cross ownership.
 Pass the account role through every cycle render/save/action/language path:
 regular users have no prompt button or prompt modal and never fetch/open one on
-save. Admins retain free creation preview and active-card generation/copy.
+save. Admins retain free prompt generation/copy only as an explicit card debug
+action; neither role gets an automatic technical prompt after saving.
 Product AI generation is owner-authorized for both roles, never admin-only.
 
-“Planejar ciclo” / “Plan cycle” is a `.btn-icon` card action with decorative
+“Planejamento do ciclo” / “Cycle planning” is a `.btn-icon` card action with decorative
 Lucide `calendar-range`, translated accessible name and existing hover/focus
 custom tooltip, including on inactive cycles. Opening reads planning only.
 The product modal uses CRUD `.modal-card`/`.modal-header`/Lucide x and
@@ -616,13 +617,35 @@ a separate secondary body section. Preserve trap/inert, keyboard/Escape/backdrop
 focus restoration, language, reduced motion and stale-response protections.
 
 
+Approved guided flow: canonical POST/PUT `{cycle}` response updates/upserts the
+card before the form closes and active-cycle planning opens. No model call on
+save/open/defer. Use returned IDs, current i18n at asynchronous completion, form
+revision tokens, shared focus trap/inert and a save lock. Late/failed initial-list
+or active-state reads cannot overwrite an acknowledged local record. A later
+planning-read failure has its own saved-cycle message and free retry, never a
+registration failure or a second create. Closing a pending form prevents its
+late response from opening another modal; it does not undo a submitted write.
+
+Read planning state before offering actions. Recover running/ready proposals;
+use backend outdated flags and optimistic versions, not frontend freshness math.
+After an edit, offer new planning/Keep for now for an outdated plan, generation
+for an unplanned active cycle, or consultation for a current applied plan.
+Unavailable/inactive states hide generation; Done/defer only closes. New proposals
+never replace applied plans automatically. Keep unknown-acknowledgement generation
+keys per cycle across modal transitions; clear obsolete polling before switching
+cycles. Weekly generation stays in #64. Browser regressions also live in
+`cyclePlanningFlow.browser.test.js` (synthetic provider only).
+
 `cycle-plan-adapter.js` adapts only the three allowlisted delivery spans and
 validates `cycle-plan-v1`. Execution lifecycle callbacks write pending/validated
 proposals inside existing enqueue/settlement transactions. `cycle-plans.js`
 owns read/apply; account/cycle/proposal/execution ownership and freshness are
 revalidated inside immediate application, with optimistic base version and an
 idempotent applied proposal ID. Never hold SQLite transactions over network.
-`planning_revision` increments on cycle edits; migration preserves existing data.
+`planning_revision` increments only for actual stored-value changes, compared
+atomically with SQLite column affinities. No-op saves preserve timestamps and
+freshness; edit followed by reversal still increments twice. Never reset historical
+revisions or mark an outdated plan current just because it is kept.
 Regeneration is a separate proposal, never an implicit write to applied versions.
 Applied architecture is `applied_planning`, not performed training. Plan-local
 A–C assessments never become reusable athlete traits. Do not add speculative

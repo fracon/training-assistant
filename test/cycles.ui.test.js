@@ -290,8 +290,8 @@ test('cycles.js exports the expected pure functions', () => {
 test('cycles.js modal opens for add and edit with correct titles', () => {
   const js = readFileSync(join(publicDir, 'cycles.js'), 'utf8');
 
-  assert.match(js, /openModal\('add',\s*null/);
-  assert.match(js, /openModal\('edit',\s*cycle/);
+  assert.match(js, /formFlow\.open\('add',\s*null/);
+  assert.match(js, /formFlow\.open\('edit',\s*cycle/);
   assert.match(js, /data-i18n',\s*'cycles\.formTitleAdd'/);
   assert.match(js, /data-i18n',\s*'cycles\.formTitleEdit'/);
 });
@@ -321,7 +321,7 @@ test('cycles.js dispatches kinesis:cycle-changed after create, complete, and can
 test('cycles.js listens for kinesis:cycle-changed to re-enable the add button', () => {
   const js = readFileSync(join(publicDir, 'cycles.js'), 'utf8');
   assert.match(js, /addEventListener\('kinesis:cycle-changed'/);
-  assert.match(js, /checkActiveCycle\(addBtn/);
+  assert.match(js, /checkActiveCycle\(\)/);
 });
 
 test('cycles.js action handlers use i18n.messages not a stale closure', () => {
@@ -329,9 +329,9 @@ test('cycles.js action handlers use i18n.messages not a stale closure', () => {
 
   assert.doesNotMatch(js, /const messages = i18n\.messages/);
 
-  assert.match(js, /openModal\('add',\s*null,\s*i18n\.messages,\s*i18n\.language\)/);
-  assert.match(js, /handleSubmit\(cycles,\s*i18n\.messages,\s*i18n\.language,\s*user\)/);
-  assert.match(js, /handleAction\(btn\.dataset\.action,\s*btn\.dataset\.id,\s*cycles,\s*i18n\.messages,\s*i18n\.language,\s*user\)/);
+  assert.match(js, /formFlow\.open\('add',\s*null,\s*addBtn\)/);
+  assert.match(js, /handleSubmit\(i18n,\s*formFlow,\s*planning\)/);
+  assert.match(js, /handleAction\(btn\.dataset\.action,\s*btn\.dataset\.id,\s*cycles,\s*i18n\.messages,\s*i18n\.language,\s*user,\s*formFlow,\s*btn\)/);
   assert.match(js, /renderList\(cycles,\s*i18n\.messages,\s*i18n\.language,\s*user\)/);
 
   assert.match(js, /const msgs = i18n\.messages/);
@@ -354,14 +354,13 @@ test('cycles.js validates objective before submit', () => {
 
 test('cycles.js shows form errors using cycles.errors.* keys', () => {
   const js = readFileSync(join(publicDir, 'cycles.js'), 'utf8');
-  assert.match(js, /showFormError\('cycles\.errors\.save',\s*messages\)/);
+  assert.match(js, /showFormError\('cycles\.errors\.save',\s*i18n\.messages\)/);
   assert.match(js, /showToast\(messages,\s*'cycles\.errors\.prompt',\s*2500,\s*'error'\)/);
 });
 
 test('cycles.js uses cycles.success.* keys for success toasts', () => {
   const js = readFileSync(join(publicDir, 'cycles.js'), 'utf8');
-  assert.match(js, /showToast\(messages,\s*'cycles\.success\.add'\)/);
-  assert.match(js, /showToast\(messages,\s*'cycles\.success\.edit'\)/);
+  assert.match(js, /showToast\(i18n\.messages, mode === 'add' \? 'cycles\.success\.add' : 'cycles\.success\.edit'\)/);
   assert.match(js, /showToast\(messages,\s*'cycles\.success\.delete'\)/);
 });
 
@@ -437,8 +436,8 @@ test('cycles.js translates distance keys via translateDistance helper', () => {
 test('cycles.js checks active cycle and disables add button when active exists', () => {
   const js = readFileSync(join(publicDir, 'cycles.js'), 'utf8');
   assert.match(js, /checkActiveCycle/);
-  assert.match(js, /fetchActiveCycle/);
-  assert.match(js, /addBtn\.disabled = true/);
+  assert.match(js, /requestJson\('\/api\/cycles\/active', undefined, 'GET'\)/);
+  assert.match(js, /addBtn\.disabled = active/);
   assert.match(js, /cycles\.disabledTooltip/);
   assert.doesNotMatch(js, /addBtn\.title/, 'must not use native title attribute');
   assert.match(js, /\.custom-tooltip/, 'writes tooltip text via custom-tooltip class');
@@ -558,8 +557,8 @@ test('cycle planning action is a localized decorative icon with the existing cus
   assert.match(js, /class="btn-icon" data-action="planning"[^>]+aria-label=/);
   assert.match(js, /data-lucide="calendar-range" aria-hidden="true"/);
   assert.match(js, /class="custom-tooltip">\$\{escapeHtml\(t\(messages, 'cyclePlanning.open'\)\)\}/);
-  assert.equal(en.cyclePlanning.open, 'Plan cycle');
-  assert.equal(pt.cyclePlanning.open, 'Planejar ciclo');
+  assert.equal(en.cyclePlanning.open, 'Cycle planning');
+  assert.equal(pt.cyclePlanning.open, 'Planejamento do ciclo');
   assert.equal(en.cyclePlanning.title, en.cyclePlanning.open);
   assert.equal(pt.cyclePlanning.title, pt.cyclePlanning.open);
 });
@@ -574,10 +573,12 @@ test('planning modal reuses CRUD header/close/footer with a separate scrolling p
   assert.ok(html.indexOf('id="cyclePlanningAdmin"') < html.indexOf('<footer'));
 });
 
-test('cycle prompt rendering, automatic preview and delegated action require the account role', () => {
+test('cycle prompt rendering and delegated debug require admin; saves open product planning only', () => {
   const js = readFileSync(join(publicDir, 'cycles.js'), 'utf8');
   assert.match(js, /cycle.status === 'active' && user\?\.role === 'admin'/);
-  assert.match(js, /user\?\.role === 'admin' && result.cycle/);
+  const save = js.slice(js.indexOf('async function handleSubmit'), js.indexOf('async function handleAction'));
+  assert.doesNotMatch(save, /\/prompt|showPromptModal/);
+  assert.match(save, /planning\.open\(saved.id, button, \{ saved: mode \}\)/);
   assert.match(js, /action === 'prompt' && user\?\.role === 'admin'/);
   assert.match(js, /document.getElementById\('promptModal'\).remove\(\)/);
 });
