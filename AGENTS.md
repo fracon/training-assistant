@@ -659,6 +659,22 @@ interpretation CRUD. See `docs/ai-cycle-planning.md` for schema, retention,
 context v5, configuration and real evaluation. Tests live in
 `cyclePlanning{,.routes,.browser}.test.js` and `cyclePlanningDates.test.js`; keep provider calls mocked in CI.
 
+Execution diagnostics are stored in `ai_executions.diagnostics_json` through the
+idempotent `2026-10-ai-execution-diagnostics-v1` migration. Keep at most three
+allowlisted per-attempt records, with no provider message/body, athlete values or
+secrets. Correlate `X-Client-Request-Id` with the execution and attempt; retain
+provider request/response IDs only in owner-scoped current-admin debug, alongside
+HTTP/status/incomplete reason, reasoning count, duration and safe validation paths.
+Never expose this metadata through ordinary execution/polling APIs. Keep known
+usage if proposal persistence rolls back; uncertain usage retains its reservation.
+Only an explicit 429 may retry under the existing limits/cancellation transaction;
+opening, polling, parsing errors, incomplete/invalid output and uncertainty never
+start another paid operation. A failed subsequent read remains a separate error.
+The product modal uses the existing alert for terminal execution reasons without
+stealing focus on polling. Test `aiDiagnostics{,.browser}.test.js` with simulated
+HTTP responses; real generation requires explicit authorization and a synthetic
+cycle, and never applies a proposal automatically.
+
 Startup AI diagnostics must use the same validated configuration passed to the
 execution service. Log only key presence, effective enabled state, disable reason
 and invalid setting names; never secrets or invalid values. Keep explicit

@@ -13,6 +13,14 @@ competition-specific equipment/nutrition/taper guidance to an explicit race,
 without modifying the external PT/EN prompts. See the cycle-planning contract for
 codes, historical compatibility and controlled evaluation limitations.
 
+The #63 branch also adds bounded owner-admin execution diagnostics and clear
+terminal-failure alerts. This does not create another job/client/cost system.
+Known usage survives failed proposal persistence; only the existing authorized
+429 retry may repeat a provider call. Response limits include reasoning. Limit
+changes require an explicit operator choice, not an automatic retry/fallback.
+See the foundation/migration and cycle-planning diagnostic contracts. This is
+implemented on the PR branch, not integrated before merge.
+
 Status: documentation integrated via PRs #66/#68; phase 0 integrated through
 merged PR #67 (`648d6a0`). Phase 1 is implemented on the issue #63 branch,
 not integrated before its PR merges. Phases 2–3 remain planned.

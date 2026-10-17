@@ -76,7 +76,7 @@ export function createCyclePlanning({ i18n, user }) {
     cancel.hidden=!running;cancel.disabled=busy;
     debug.hidden=user.role!=='admin' || !execution;
     document.getElementById('cyclePlanningAdmin').hidden=debug.hidden;
-    status.textContent=readFailed?t(busy?'loading':'loadFailed'):!state.available?t('unavailable'):!state.canGenerate?t('inactiveCycle'):latest?.applied?t(state.applied?.outdated?'appliedNeedsReview':'applied'):candidate && (execution.outdated || conflict)?t('proposalOutdated'):execution?t(`states.${execution.state}`):t(saved?'readyToPlan':'manualIndependent');
+    status.textContent=readFailed?t(busy?'loading':'loadFailed'):busy?t('loading'):!state.available?t('unavailable'):!state.canGenerate?t('inactiveCycle'):latest?.applied?t(state.applied?.outdated?'appliedNeedsReview':'applied'):candidate && (execution.outdated || conflict)?t('proposalOutdated'):execution?t(`states.${execution.state}`):t(saved?'readyToPlan':'manualIndependent');
     content.replaceChildren();
     if(candidate) {
       if(latest.baseVersion!==(state.applied?.version || 0))content.append(el('p',t('proposalConflict'),'field-hint'));
@@ -88,7 +88,14 @@ export function createCyclePlanning({ i18n, user }) {
       renderPlan(state.applied.plan,t('applied'),state.applied.version);
     }
     if(!candidate && !state.applied)content.append(el('p',t('empty'),'field-hint'));
-    if(execution?.error)content.append(el('p',t(`errors.${execution.error}`).startsWith('cyclePlanning.')?t('errors.generic'):t(`errors.${execution.error}`),'field-hint'));
+    if(!errorCode && !readFailed) {
+      error.hidden=true;
+      if(!busy && execution?.error) {
+        const message=t(`errors.${execution.error}`);
+        error.textContent=message.startsWith('cyclePlanning.')?t('errors.generic'):message;
+        error.hidden=false;
+      }
+    }
   }
   async function refresh(token=generation) {
     if(token!==generation || modal.hidden)return;

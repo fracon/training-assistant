@@ -1149,7 +1149,7 @@
       "planningOutdated": "Esta proposta está desatualizada ou incompleta e não pode ser aplicada.",
       "proposalExpired": "A execução expirou. Gere uma nova proposta.",
       "invalidDomainResponse": "A resposta não passou na validação do planejamento. Nada foi aplicado.",
-      "providerIncomplete": "O planejamento ficou incompleto. Seu ciclo e o plano aplicado não foram alterados. Você pode solicitar uma nova proposta.",
+      "providerIncomplete": "O provedor não concluiu a resposta. Nada foi aplicado e pode ter ocorrido consumo. O responsável pela instalação deve revisar o diagnóstico e o limite de resposta antes de outra geração paga.",
       "providerRefused": "O provedor recusou a solicitação. Nada foi aplicado.",
       "providerOutcomeUncertain": "O resultado do provedor é incerto. Não haverá repetição automática; pode ter ocorrido consumo.",
       "usageLimit": "O limite configurado de consumo foi atingido.",
@@ -1167,7 +1167,13 @@
       "planningTargetDateInvalid": "Informe uma data-alvo válida em Editar ciclo.",
       "planningStartDateInvalid": "Revise a data de início em Editar ciclo.",
       "planningTargetBeforeStart": "A data-alvo deve ser igual ou posterior à data de início cadastrada. Revise as datas em Editar ciclo.",
-      "planningTargetBeforeReference": "A data-alvo já passou. Informe em Editar ciclo uma data-alvo igual ou posterior a hoje para planejar o período restante."
+      "planningTargetBeforeReference": "A data-alvo já passou. Informe em Editar ciclo uma data-alvo igual ou posterior a hoje para planejar o período restante.",
+      "providerOutputLimit": "A resposta atingiu o limite configurado antes de concluir o planejamento. Nada foi aplicado; pode ter ocorrido consumo. O responsável pela instalação deve revisar o limite de resposta antes de uma nova geração paga.",
+      "providerContentFiltered": "O provedor interrompeu a resposta por sua política de conteúdo. Nada foi aplicado; pode ter ocorrido consumo. Revise as informações antes de solicitar outra geração.",
+      "providerFailed": "O provedor não concluiu o processamento. Nada foi aplicado. Consulte o responsável pela instalação antes de tentar novamente.",
+      "resultPersistenceFailed": "A resposta foi recebida, mas não foi possível salvar a proposta. Seu ciclo e o plano aplicado foram preservados. Pode ter ocorrido consumo; consulte o responsável pela instalação.",
+      "restartOutcomeUncertain": "O servidor reiniciou durante a geração. O resultado é incerto e pode ter ocorrido consumo. Não haverá repetição automática.",
+      "providerTimeout": "O tempo de espera esgotou antes de receber a resposta. O provedor pode ter processado a solicitação e gerado consumo. O resultado é incerto; não haverá repetição automática. Consulte o responsável pela instalação antes de gerar novamente."
     },
     "states": {
       "queued": "Na fila",

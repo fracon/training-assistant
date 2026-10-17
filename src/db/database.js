@@ -541,6 +541,7 @@ function migrateDatabase(db) {
   });
   initializeAccountActivity();
   require('../ai/schema').migrateAi(db);
+  require('../ai/schema').migrateAiDiagnostics(db);
   require('../ai/cycle-plan-migration').migrateCyclePlans(db);
 }
 

@@ -74,6 +74,38 @@ unknown outcomes retain the full reservation. Review rates against official
 pricing before enabling a functional phase. Do not enable paid tools or a
 premium tier without updating this accounting contract.
 
+### Execution diagnostics on the issue #63 branch
+
+`2026-10-ai-execution-diagnostics-v1` idempotently adds `diagnostics_json` to
+`ai_executions`, default `[]`. Existing snapshots, usage, errors, proposals and
+applied versions are preserved; missing historical metadata is not invented.
+Diagnostics live in the existing execution row and follow its retention and
+account-deletion cascade, with at most three bounded attempt records.
+
+Only current-admin own-execution debug returns diagnostics. Common polling and
+planning responses contain the stable product error, not technical IDs or
+validation paths. The allowlist includes stage/code, attempt, duration/effective client timeout, HTTP
+status, request/response/client correlation IDs, known provider status, only
+`max_output_tokens`/`content_filter` incomplete reasons, reasoning-token count,
+transport reason (`timeout`/`network`), output-text item/byte counts and schema/domain code with a schema-defined path.
+No body, refusal text, provider error prose, notes, Authorization or API key is
+logged or copied into those records. Input/output/cache usage keeps its existing
+accounting. Admin `costBasis` explicitly distinguishes `reservation_pending`,
+`reported_usage_estimate`, `known_unbilled` and `reserved_unknown_usage`; the last
+is a reserved estimate, not confirmed provider spend. Reasoning is included in provider output and is **not added twice**.
+New execution configuration records application version and timeout. Historical
+executions did not save exact runtime SHA/timeout, so these cannot be backfilled.
+
+`X-Client-Request-Id=kin_<execution UUID>_<attempt>` is saved before network dispatch
+and used only for correlation, not as provider-side deduplication. SQLite
+idempotency and transactional claim remain the duplication boundary. A retry's
+metadata is saved in the same transaction as its 429 requeue. A restart keeps the
+client correlation and records uncertainty; it never resends an uncertain call.
+If proposal persistence fails after a response, the transaction rolls back and a
+sanitized `resultPersistenceFailed` settles the **known** usage instead of
+misclassifying the call as transport uncertainty. No schema/domain rule is relaxed.
+See the [operator workflow](ai-cycle-planning.md#failure-diagnostics-and-provider-correlation).
+
 ## Data, migration and privacy
 
 Migration `2026-10-ai-foundation-v1` creates `ai_profiles`, `ai_memory`,

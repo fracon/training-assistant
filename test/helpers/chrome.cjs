@@ -13,7 +13,7 @@ async function launchChrome(t) {
  const profile=mkdtempSync(join(tmpdir(),'kinesis-flow-chrome-'));
  const child=spawn('/usr/bin/google-chrome',['--headless=new','--no-sandbox','--disable-gpu','--disable-dev-shm-usage','--no-first-run','--remote-allow-origins=*',`--remote-debugging-port=${port}`,`--user-data-dir=${profile}`,'about:blank'],{stdio:'ignore'});
  let socket;
- t.after(async()=>{socket?.close();const exited=child.exitCode===null && child.signalCode===null?once(child,'exit'):Promise.resolve();child.kill('SIGTERM');await exited;rmSync(profile,{recursive:true,force:true});});
+ t.after(async()=>{socket?.close();const exited=child.exitCode===null && child.signalCode===null?once(child,'exit'):Promise.resolve();child.kill('SIGTERM');await exited;rmSync(profile,{recursive:true,force:true,maxRetries:5,retryDelay:100});});
  for(let i=0;i<200;i++){try{if((await fetch(`http://127.0.0.1:${port}/json/version`)).ok)break;}catch{}await delay(50);}
  const target=await(await fetch(`http://127.0.0.1:${port}/json/new?about:blank`,{method:'PUT'})).json();
  socket=new WebSocket(target.webSocketDebuggerUrl);await once(socket,'open');

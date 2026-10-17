@@ -1262,7 +1262,7 @@ test('provider timeout is uncertain and does not expose transport error text', a
   });
   await assert.rejects(
     call({ store: false }),
-    (error) => error.code === 'providerOutcomeUncertain',
+    (error) => error.code === 'providerTimeout' && error.diagnostic.transportReason === 'timeout',
   );
 });
 

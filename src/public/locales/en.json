@@ -1149,7 +1149,7 @@
       "planningOutdated": "This proposal is outdated or incomplete and cannot be applied.",
       "proposalExpired": "The execution expired. Generate a new proposal.",
       "invalidDomainResponse": "The response failed planning validation. Nothing was applied.",
-      "providerIncomplete": "The plan was incomplete. Your cycle and applied plan are unchanged. You can request a new proposal.",
+      "providerIncomplete": "The provider did not complete the response. Nothing was applied and usage may have been charged. The installation operator should review diagnostics and the response limit before another paid generation.",
       "providerRefused": "The provider refused this request. Nothing was applied.",
       "providerOutcomeUncertain": "The provider outcome is uncertain. It will not be retried automatically; usage may have occurred.",
       "usageLimit": "The configured usage limit was reached.",
@@ -1167,7 +1167,13 @@
       "planningTargetDateInvalid": "Set a valid target date in Edit cycle.",
       "planningStartDateInvalid": "Review the start date in Edit cycle.",
       "planningTargetBeforeStart": "The target date must be on or after the saved start date. Review the dates in Edit cycle.",
-      "planningTargetBeforeReference": "The target date has passed. Set a target date on or after today in Edit cycle to plan the remaining period."
+      "planningTargetBeforeReference": "The target date has passed. Set a target date on or after today in Edit cycle to plan the remaining period.",
+      "providerOutputLimit": "The response reached the configured limit before completing the plan. Nothing was applied; usage may have been charged. The installation operator should review the response limit before another paid generation.",
+      "providerContentFiltered": "The provider interrupted the response under its content policy. Nothing was applied; usage may have been charged. Review the information before requesting another generation.",
+      "providerFailed": "The provider did not complete processing. Nothing was applied. Contact the installation operator before trying again.",
+      "resultPersistenceFailed": "The response was received, but the proposal could not be saved. Your cycle and applied plan were preserved. Usage may have been charged; contact the installation operator.",
+      "restartOutcomeUncertain": "The server restarted during generation. The outcome is uncertain and usage may have been charged. There will be no automatic retry.",
+      "providerTimeout": "The wait timed out before a response was received. The provider may have processed the request and charged usage. The outcome is uncertain; there will be no automatic retry. Contact the installation operator before generating again."
     },
     "states": {
       "queued": "Queued",

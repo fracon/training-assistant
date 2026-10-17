@@ -307,6 +307,91 @@ returns the specific calendar/active-state codes below (400), existing quota/con
 (429), disabled/invalid configuration (503), context budget (413), and sanitized
 provider states. No partial plan is applied on any failure.
 
+## Failure diagnostics and provider correlation
+
+The product modal presents the persisted failure reason in its existing localized
+alert, instead of relegating it to a muted note below planning content. A read
+failure keeps its own free Retry action and never changes a completed/failed
+execution into a new paid call. Opening, saving, deferring and polling remain free.
+No partial/invalid/incomplete response becomes a usable proposal or applied plan.
+
+| Stable reason | Stage / handling |
+| --- | --- |
+| `aiUnavailable` / `adapterUnavailable` | Local configuration or missing adapter; no provider call |
+| `providerRejected` | Provider HTTP rejection; admin sees HTTP status (including auth/model-access failures), never its raw body |
+| `providerRateLimited` | HTTP 429; only this condition may retry within configured limits |
+| `providerOutcomeUncertain` / `providerTimeout` / `restartOutcomeUncertain` | Transport/timeout/HTTP 5xx or restart; no automatic retry, reservation preserved if usage unknown |
+| `providerOutputLimit` | `incomplete_details.reason=max_output_tokens`; known usage kept; operator reviews budget before an explicit paid retry |
+| `providerContentFiltered` / `providerRefused` | Policy interruption/refusal; no partial output or automatic retry |
+| `providerIncomplete` / `providerFailed` | Other/legacy incomplete status or explicit failed status; no automatic retry |
+| `providerInvalidResponse` | Unexpected foreground status, content shape, multiple/absent text or invalid JSON with known response envelope; no retry |
+| `invalidDomainResponse` | Schema/domain refusal, with a value-free code/path in admin debug |
+| `sourceChanged` | Source revalidation refused settlement; usage retained, no proposal applied |
+| `resultPersistenceFailed` | Atomic proposal write rolled back; known provider usage retained and no plan applied |
+
+Malformed transport bodies cannot yield reliable usage; their parsing-stage
+metadata accompanies uncertainty, rather than promising no charge. Structured
+Outputs does not mean a completed plan was returned: response status/refusal,
+JSON shape and domain constraints are independent gates. The existing strict
+`cycle-plan-v1` schema, adapter v2 coaching/delivery text and dates/evidence rules
+are unchanged. The diagnostic validator reports only known field paths (for
+example `$.phases[0].evidence`), never the rejected value or arbitrary input key.
+
+Current administrators inspect **only their own** executions using the existing
+collapsed debug action/API. New bounded diagnostics retain per-attempt correlation,
+provider HTTP status/IDs, status/incomplete reason, transport reason (timeout/network), reasoning count, output-text
+counts/bytes, duration/effective client timeout and validation stage/path. Admin `costBasis` distinguishes pending reservation, reported-usage estimate,
+known unbilled rejection and reserved unknown usage. These are not provider
+invoices; an uncertain reservation must not be presented as a confirmed charge. New configuration
+snapshots record application version and timeout; the exact build SHA is not
+exposed by `/api/version` and cannot be asserted retrospectively. The migration,
+allowlist and retention are documented in [AI foundation](ai-foundation.md#execution-diagnostics-on-the-issue-63-branch).
+
+### Existing failure investigated before another paid call
+
+The localhost advertised version **0.21.0**; the checked-out branch began at
+`730b86d`. There was one persisted failed cycle execution, **attempts=1**, adapter
+`cycle-delivery-v2`, policy `training-context-v5`, model `gpt-6.1-sol`, medium
+reasoning, **max_output_tokens=2048**, configured retries=1, duration about 55.7s.
+Its known usage was **7,929 input + 2,048 output, 0 cached**, conservative cost
+**USD 0.070365**, and no usable response/proposal. One dev watcher with one server
+child was present. A real Chrome login to the supplied account confirmed the
+persisted failure and the new visible explanation, without a new generation,
+cycle write or prompt disclosure. No account identifier or credentials are
+included in this evidence.
+
+The persisted `providerIncomplete` proves rejection at response-completion
+handling, before schema/domain validation could accept a plan. Output equalled
+the configured ceiling; exhaustion is strongly supported, but the old client
+**discarded** `incomplete_details`, reasoning details, returned-text counts and
+provider request/response IDs. Therefore its exact incomplete reason, returned
+text and the second provider entry cannot be reconstructed. It would be incorrect
+to assert two retries/duplicate clicks or two backend executions from the reported
+provider count. The owner had no request IDs available. A previous separately
+documented in-memory evaluation is another known source of a provider request,
+but cannot be matched to the second entry without timing/ID evidence.
+
+Offline reproduction uses a synthetic Responses envelope with the same usage
+structure: reasoning-only output, `status=incomplete`, reason `max_output_tokens`.
+Before correction it lost that reason as generic `providerIncomplete`; after,
+it yields `providerOutputLimit`, preserves billed usage, and records safe IDs,
+reasoning/text counts and stage. Other tests cover 429 retry/cancellation,
+idempotent replay/lost acknowledgements, nonretryable failures, ownership,
+source changes, rollback and free recovery from a later read failure.
+
+### Response budget and the controlled retest
+
+[OpenAI reasoning documentation](https://developers.openai.com/api/docs/guides/reasoning?api-mode=responses)
+explains that the output allowance includes reasoning and visible answer tokens;
+limit exhaustion can finish without a usable answer. The structured A–F plan
+requires more than a short visible reply. **2,048 is not a validated sufficient
+budget** for this operation. Based on the observed ceiling exhaustion, the
+operator authorized an **8,192** budget for one isolated evaluation, within the
+existing configured bounds. The live `.env`, default, model, 60s timeout and 429
+retry policy are not silently changed. A larger budget is not a success guarantee;
+continue to enforce input/output reservations and daily cost/call limits. Do not
+repeat automatically after incomplete or uncertain output.
+
 ## Goal deadlines and calendar validation
 
 A race is **not required**. `objective`, `primary_goal`, distance and the existing
@@ -578,3 +663,71 @@ was critiqued for compatibility, ownership, source freshness, date boundaries,
 paid-call ordering, adapter changes, accessibility and documentation;
 `git diff --check` and `git diff main --check` pass. No real cycle was changed,
 no screenshots/credentials are committed, and beta remains 0.21.0 on open PR #69.
+
+### Result of this investigation's authorized real retest
+
+Exactly **one** new paid-provider request was attempted through one browser Generate
+on an isolated temporary application and in-memory database. Authentication used
+the supplied test credentials through a non-echoed input channel; credentials are
+not in commands, artifacts or this document. Only a clearly marked synthetic
+10 km noncompetitive goal and empty history entered context. The original
+localhost active cycle, planning, account data and `.env` were not changed.
+No proposal was applied. Same model/medium reasoning, `store:false`, strict schema,
+60,000 ms timeout and configured retry=1; the sole authorized override was 8,192
+output tokens in that instance.
+
+There was **one execution, attempts=1, provider calls=1**. The response did not
+arrive within the deadline (transport duration **60,004 ms**), yielding
+`providerOutcomeUncertain`, no HTTP status/response ID, no known usage and no
+usable plan. The **USD 0.236895** retained is a conservative reservation, **not a
+confirmed charge**. The client correlation ID was retained to support provider
+investigation. No automatic or manual retry followed. The instance was closed;
+the synthetic evaluation summary contains no credentials or athlete data.
+
+The observed deadline exposed another diagnostic gap: timeouts and other network
+errors shared one code. The final client now checks the abort signal and emits
+`providerTimeout`, transport reason `timeout`, including a timeout during body
+receipt (retaining any HTTP/request ID already available). Both retain uncertain
+billing and never retry. Simulated abort/body-deadline tests reproduce this
+without more paid calls. The earlier incomplete response and this later timeout
+are different failure stages; neither is a schema/domain refusal or proof of a
+duplicate provider request.
+
+For a **future, separately authorized** evaluation, the operator can consider
+`AI_MAX_OUTPUT_TOKENS=8192` and `AI_TIMEOUT_MS=120000`, both within existing bounds,
+with daily limits reviewed first. This is justified by observed exhaustion at
+2,048 and the subsequent 60s deadline, not a claim that 120s guarantees a valid or
+useful plan. No live/default limit or retry rule was changed. No second paid test
+is performed in this investigation. Real generation **did not pass**; quality of
+a complete plan remains unvalidated.
+
+### Final validation of the diagnostic correction
+
+On Node 24.18.0, **69 targeted backend/foundation/module tests** passed; additional
+Chrome diagnostics cover PT/EN, admin/regular, 1280/390px, one call per explicit
+click, exact limit/timeout alerts, protected metadata, retained applied version,
+and a failed subsequent read recovered without a new generation. The existing
+lost-acknowledgement/idempotency, 429/cancellation, ownership and prompt suites
+remain active. A real read-only login to the supplied localhost account and the
+single isolated paid browser evaluation are distinguished from simulated tests.
+
+Final `npm test` and `npm run test:coverage` each passed **1,236 tests**, zero
+failures/skips; instrumented scope is **100% Statements, Branches, Functions,
+Lines**, with all 48 exact external prompt comparisons. `git diff --check` and
+`git diff main --check` passed. Current screenshots were inspected using the
+existing modal/error styles, without new CSS; standard harness runs block external
+fonts/icons, as in prior visual checks. Captures remain temporary and synthetic.
+
+Earlier runs exposed temporary Chrome-profile cleanup contention and a fixture
+starting another adapter before stopping its previous worker; cleanup now retries
+bounded filesystem removal after process exit and the fixture stops its worker.
+A Request Workouts focus assertion also failed once under concurrent runs; its
+unchanged isolated suite passed, and the complete final gates passed. No assertion
+was removed. The new browser test now waits for persisted language and the new
+terminal action, rather than mistaking a previous failure for the new result.
+The product hides the old terminal alert while an action is pending and uses its
+existing Loading state. The complete diff was critiqued for authorization,
+privacy, accounting/rollback, retries/concurrency, migration/retention,
+accessibility, compatibility and documentation, with findings corrected together.
+Beta remains **0.21.0**; PR #69 stays open and unmerged. No new automatic review
+request or further paid call is made.

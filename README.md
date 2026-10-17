@@ -33,11 +33,20 @@ A failed planning/list read never turns an acknowledged save into a failed
 registration; the saved card remains available to resume. Identical stored values
 do not advance the cycle revision, while real edits and reversions still do.
 
+Failed generation now displays its localized reason prominently, including response
+limit, uncertainty, changed sources and proposal persistence. Administrators can
+inspect bounded per-attempt diagnostics for their own executions; neither response
+bodies nor credentials enter generic logs. Known usage remains accounted for even
+when a proposal cannot be saved. See the [failure diagnosis contract](docs/ai-cycle-planning.md#failure-diagnostics-and-provider-correlation).
+
 See the [cycle planning contract and real-test steps](docs/ai-cycle-planning.md).
 Initial implementation used simulated provider responses. One later controlled
 noncompetitive-goal request reached the real provider but was incomplete at the
 configured 2,048 output-token ceiling; see the evaluation evidence in that contract.
-Mocks do not establish model quality, and no valid real proposal was obtained.
+The subsequent isolated 8,192-token evaluation timed out at 60s with unknown
+usage; its reservation is not a confirmed charge. Mocks do not establish model
+quality, and no valid real proposal was obtained. See the documented operator
+settings before any separately authorized paid evaluation.
 
 The cycle card's **Cycle planning / Planejamento do ciclo** icon uses the existing custom
 hover/keyboard tooltip and opens saved planning without a paid call or cycle

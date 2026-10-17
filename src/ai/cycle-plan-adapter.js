@@ -1,5 +1,5 @@
 'use strict';
-const { schema, validatePlan, planningWindow } = require('./cycle-plan-schema');
+const { schema, validatePlan, planningWindow, diagnosePlan } = require('./cycle-plan-schema');
 const { AiError } = require('./memory');
 const DELIVERY = {
   pt: ['Planeje detalhadamente apenas a semana atual/próxima.', 'Nesta primeira resposta, entregue nesta ordem:', 'Inclua uma tabela resumida com: Fase, Semanas aproximadas, Objetivo, Longo, Qualidade, Volume.'],
@@ -47,7 +47,7 @@ function createCyclePlanAdapter(db) {
     version: 'cycle-delivery-v2', adaptPrompt,
     instructions: 'Return cycle-plan-v1 JSON matching the schema, in the athlete language. Map A assessment, B continuity, C feasibility/confidence, D phases, E indicators, F adaptations. Assessment is a tentative plan-local evaluation, never a diagnosis or a reusable athlete profile. Do not invent history, recovery or prior volume. List uncertainties, conservative assumptions and questions explicitly. No weekly sessions, calendar, weather lookup or tools. A race is optional: the objective may be a personal distance or another training goal. The target date is the deadline for that objective, not evidence of a race. Never invent an event, registration, race date or participation. Competition-specific guidance applies only when explicitly supported by the registered objective/context. The date window is max(asOf, saved cycle start) through the saved target date inclusive. Phases must cover that window exactly, ordered and contiguous. Evidence entries are selected context source references formatted type:id. Keep explanations concise; evidence must support each phase rationale. Conditions not supported by data remain uncertainties. Missing data may yield insufficient_data confidence. Dates and cycleId must match context.resource. Do not prescribe exact distant weekly mileage.',
     format: { type:'json_schema', name:'cycle_plan', strict:true, schema },
-    validate: validatePlan,
+    validate: validatePlan, diagnose: diagnosePlan,
     prepare(context) {
       planningWindow(context);
     },
