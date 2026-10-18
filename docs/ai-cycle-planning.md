@@ -3,6 +3,9 @@
 Status: **implemented on `feat/issue-63-cycle-planning`, not integrated until its
 PR merges**. Beta **0.21.0** builds on phase 0 merged in PR #67 (`648d6a0`).
 Weekly generation #64 and result analysis #65 are not implemented here.
+The [2026-10-18 real evaluation](#end-to-end-real-evaluation-2026-10-18) completed
+generation, validation, explicit application and recovery with the operational
+settings below; the quality limitations are recorded separately.
 
 ## Product flow and existing sources
 
@@ -259,12 +262,14 @@ or generation occurs.
 
 Use the integrated backend `OPENAI_API_KEY`, `AI_ENABLED=true` and
 `AI_MODEL_CYCLE` (default `gpt-6.1-sol`), with no fallback. No new secret or runtime
-setting is introduced. For the first real trial use **AI_MAX_OUTPUT_TOKENS=8192**
-(the existing upper bound, includes reasoning); the preserved default 2048 may
-be insufficient for the complete A–F plan and then fails explicitly without
-application. Review the existing daily token/call/cost limits before enabling.
-`AI_TIMEOUT_MS` remains bounded; a timeout is uncertain, not an automatic retry.
-`.env.example` documents the trial setting without changing defaults or Compose.
+setting is introduced. For complete A–F planning explicitly set **AI_MAX_OUTPUT_TOKENS=8192**
+(the existing upper bound, includes reasoning) and **AI_TIMEOUT_MS=120000**.
+These are the settings demonstrated in the real evaluation below and now supplied
+by `.env.example`. Unset backend/Compose fallbacks remain 2048/60000 and have not
+delivered this flow; existing installations must configure both values and
+restart/recreate the backend. Review the daily token/call/cost limits first.
+A timeout remains uncertain, never an automatic retry. No main environment or
+production configuration was changed.
 
 Official documentation checked on 2026-10-15 confirms
 [GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol) supports
@@ -446,7 +451,8 @@ For the first small real evaluation, using only synthetic or explicitly permitte
 athlete records and a development database:
 
 1. Install dependencies, set backend runtime key, AI_ENABLED=true,
-   AI_MODEL_CYCLE=gpt-6.1-sol, AI_MAX_OUTPUT_TOKENS=8192; run `npm start` on Node 24.
+   AI_MODEL_CYCLE=gpt-6.1-sol, AI_MAX_OUTPUT_TOKENS=8192, AI_TIMEOUT_MS=120000
+   and AI_RETRIES=0 for a single-attempt evaluation; run `npm start` on Node 24.
 2. Create/edit an owned active cycle with a future target and optional start date.
    Leave history absent first. The Cycle planning step opens after saving; generate once explicitly. Reload
    during processing, review A–F, uncertainty and dates, then apply explicitly.
@@ -731,3 +737,136 @@ privacy, accounting/rollback, retries/concurrency, migration/retention,
 accessibility, compatibility and documentation, with findings corrected together.
 Beta remains **0.21.0**; PR #69 stays open and unmerged. No new automatic review
 request or further paid call is made.
+
+
+## End-to-end real evaluation (2026-10-18)
+
+This supersedes the earlier **evaluation result**, not its historical evidence or
+accounting. The runtime code evaluated was `8912104` (beta 0.21.0); this follow-up
+changes only the configuration example, its regression test and documentation.
+PR #69 remains unmerged. No second new call was needed.
+
+### Isolation, preflight and effective configuration
+
+A temporary development application used a separate SQLite file and the supplied
+test login solely for authentication, with synthetic account presentation and an
+empty training history. Through real Chrome, an active cycle was saved with the
+goal of running 10 km **without competition**, no start date and target 2026-12-13.
+The effective inclusive window was 2026-10-18–2026-12-13. The real/personal cycle,
+main `.env` and production were untouched; no credentials or captures are committed.
+
+Before Generate, the actual context, unchanged external prompt, adapter and strict
+payload were built offline. The complete input byte bound plus protocol allowance
+was 22,833; the existing conservative rate ceiling reserved **USD 0.237045**, below
+the authorized USD 1.00 total. Saving/opening produced **zero executions/calls**.
+The application reserved consumption atomically before dispatch.
+
+| Effective setting | Value |
+| --- | --- |
+| Model / reasoning | `gpt-6.1-sol` / `medium` |
+| Output / timeout | 8192 tokens / 120000ms |
+| Retries / provider attempts | 0 / 1 maximum |
+| Concurrency user/global | 1 / 1 |
+| Daily USD user/global | 1 / 1 |
+| Daily call user/global | 2 / 2 |
+| Daily tokens user/global | 100000 / 500000 |
+| Context budget | 12000 conservative bytes |
+| Adapter / context / schema | cycle-delivery-v2 / training-context-v5 / cycle-plan-v1 |
+| API | foreground Responses, `store:false`, strict JSON schema, no tools |
+
+Current [model](https://developers.openai.com/api/docs/models/gpt-6.1-sol),
+[reasoning](https://developers.openai.com/api/docs/guides/reasoning?api-mode=responses)
+and [Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs?api-mode=responses)
+documentation was checked before spending. Medium reasoning and strict output
+are supported; the output limit includes reasoning and visible content. Limits
+were selected from the two earlier failures, not increased indefinitely. The
+existing conservative rates were retained; no fallback or schema change was made.
+
+### Actual result and accounting
+
+One explicit Generate created **one execution, one attempt and one provider call**:
+`024da62e-f4d4-4e32-bf82-e27acc5b2121`, client correlation
+`kin_024da62e-f4d4-4e32-bf82-e27acc5b2121_1`. Provider request/response IDs were
+retained in the isolated execution's protected diagnostics, not generic logs.
+HTTP 200, provider `completed`, duration **78,479ms**, one JSON text of 13,008 bytes.
+Parsing, strict shape, cycle identity, dates, continuity and source-reference
+validation passed; the proposal appeared in the product modal.
+
+Known provider usage: **4,409 input, 2,989 output, 0 cached tokens**. The output
+already includes **165 reasoning tokens**; they are not counted twice. The
+application reconciled its reservation to **USD 0.06688 estimated cost** using the
+saved conservative rate ceiling. This is a reported-usage estimate, **not a
+confirmed provider invoice**. There were no new uncertain attempts in this run;
+the preceding investigation's USD 0.236895 uncertain reservation remains a
+separate historical amount, not an additional known charge or a refund.
+
+The complete proposal was read before explicit application. Four phases cover
+the whole inclusive window without gaps/overlap: verify current capacity, build
+conditionally, approach 10 km, then assess readiness for the personal goal.
+Each cites the selected cycle. The proposal acknowledges absent history and
+availability, uses `insufficient_data` confidence and conditional checkpoints,
+never invents a race, completed sessions, prior volume or recovery. It supplies
+adaptation criteria and questions instead of distant fixed weekly mileage.
+
+**Observed quality limitation:** one phase expresses easy effort as RPE 2–4/10,
+while Kinesis records RPE 1–5. The current free-text validator does not enforce
+semantic scale consistency. No saved output was silently edited or converted;
+application below is exclusively a synthetic persistence test, not endorsement of
+this prescription. The sample therefore establishes a working product path, not
+full coaching-quality acceptance. Explicit scale grounding and semantic quality
+evaluation remain necessary before treating such advice as directly aligned with
+Kinesis feedback; one sample cannot measure reliability across athletes/histories.
+
+### Review, explicit application and recovery
+
+After review, the existing **Apply proposal** action created version 1. A full
+page reload followed by the cycle card action recovered the identical applied
+JSON/version from SQLite. Reapplying the same proposal with the original expected
+version returned `{appliedVersion:1,alreadyApplied:true}`; the database still held
+exactly one version. No generation happened during apply, reload or reopening.
+
+Both future `workouts` and `analysis` contexts recovered version 1 with
+`authority:applied_planning`, current source provenance and explicit omissions for
+three phases outside the near-term detail window. No training record was created
+(count remained zero), and plan-local athlete assessments stayed excluded from
+those contexts. This verifies the continuity contract without implementing
+weekly/analysis generation.
+
+Chrome inspection covered proposal and applied states, PT/EN UI at 1280/768/390px,
+including reload, translated headings/date presentation, long-body scrolling to
+the end, no horizontal overflow, Tab/Shift+Tab containment and Escape restoring
+focus to the correct cycle planning card control. The generated Portuguese text remains Portuguese when
+switching UI language; it is a persisted artifact, not paid translation. Ordinary
+accounts have no technical prompt control. Existing Lucide was injected locally
+for visual inspection (close 30×30, icon 18×18); external fonts were blocked by the
+standard harness. Captures are temporary, never fixtures or PR attachments.
+
+The changed example supplies the demonstrated output/timeout values without
+enabling AI or supplying a key. Backend/Compose fallbacks remain deliberately
+explicit in the foundation configuration table: **2048/60000 is not the validated
+full-plan setup**. Operators set both values in local runtime `.env` or the Compose
+environment and restart/recreate; this evaluation made no such main/production
+change. Neither 8192 nor 120s guarantees success for all input histories.
+
+
+### Final verification of this follow-up
+
+On Node 24.18.0: 56 offline planning/route/prompt tests passed before payment;
+69 targeted tests passed after the example correction. The new example regression
+failed before the fix (`2048 !== 8192`) and passes with evaluated settings while
+keeping the feature disabled and the key empty. Final `npm test` and
+`npm run test:coverage` each passed **1,237 tests**, zero failures/skips; required
+Statements, Branches, Functions and Lines are **100%**. All 48 deterministic
+external prompt comparisons remain exact. Automated providers are simulated;
+they are separate from the single real call and proposal review above.
+
+Real isolated `npm run dev` and `npm start` returned HTTP 200/version 0.21.0 with
+`--trace-warnings`, without MODULE_TYPELESS_PACKAGE_JSON or a paid startup call.
+`git diff --check` and `git diff main --check` passed. The complete PR diff and
+this follow-up were critiqued against authorization, source freshness,
+transactions/accounting, retries, compatibility, focus, privacy and documentation;
+prior runtime corrections remain intact. This follow-up changes no runtime code,
+training prompt or schema, and does not increment the same PR's beta version.
+Only the public example/test/documentation are committed; private temporary
+SQLite, screenshots and credentials remain outside Git. No new automatic review,
+merge, deployment or additional paid generation is requested/performed.

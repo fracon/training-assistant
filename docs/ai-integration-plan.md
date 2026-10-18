@@ -21,6 +21,15 @@ changes require an explicit operator choice, not an automatic retry/fallback.
 See the foundation/migration and cycle-planning diagnostic contracts. This is
 implemented on the PR branch, not integrated before merge.
 
+Functional evidence on 2026-10-18: one isolated real Chrome generation completed
+with 8192 output tokens, 120s timeout and zero retries; the reviewed four-phase
+proposal was explicitly applied and recovered after reload. This demonstrates the
+synthetic end-to-end path, not general model quality. Operational configuration
+must explicitly set those limits; the runtime example now does so while legacy
+unset/Compose fallbacks remain unchanged. See the [evaluation record](ai-cycle-planning.md#end-to-end-real-evaluation-2026-10-18)
+for usage, budget and the RPE-scale limitation. No second call, live configuration
+change or phase #64/#65 implementation was needed.
+
 Status: documentation integrated via PRs #66/#68; phase 0 integrated through
 merged PR #67 (`648d6a0`). Phase 1 is implemented on the issue #63 branch,
 not integrated before its PR merges. Phases 2–3 remain planned.

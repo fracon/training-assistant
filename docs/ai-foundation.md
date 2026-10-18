@@ -45,6 +45,28 @@ startup does not make a provider call. Reload the cycle page after restart.
 | `AI_RETENTION_DAYS` | 90 | 7–365 for terminal execution/debug and usage retention |
 | `AI_RETRIES` | 1 | 0–2; only an explicit provider 429 can retry |
 
+### Operational cycle-planning settings
+
+For the complete A–F cycle plan use **`AI_MAX_OUTPUT_TOKENS=8192`** and
+**`AI_TIMEOUT_MS=120000`** explicitly. `.env.example` supplies these settings;
+the table above describes the unchanged backend fallbacks, not the example.
+Existing `.env` files are not rewritten when the example changes. Compose also
+retains its legacy 2048/60000 fallbacks: set both values in the operator's runtime
+configuration before recreating the container. No production setting is changed
+by this PR. Environment values take precedence over dotenv; restart after edits.
+
+The 2026-10-18 isolated Chrome evaluation used the configured `gpt-6.1-sol`,
+medium reasoning, those output/timeout limits, `AI_RETRIES=0`, concurrency 1/1,
+daily USD caps 1/1 and daily call caps 2/2. One provider attempt completed in
+78,479ms and yielded a validated, explicitly applied/reloaded version. The
+conservative reservation was USD 0.237045; known usage reconciled it to an
+estimated USD 0.06688. These settings are a demonstrated small case, not a
+latency/quality guarantee for every history. Keep one-attempt evaluation overrides
+separate from the deployment's documented 429 retry policy. See the
+[complete evidence and limitations](ai-cycle-planning.md#end-to-end-real-evaluation-2026-10-18).
+The earlier 2048-token exhaustion and 60s timeout remain historical failures;
+unknown usage from an earlier timeout is not refunded or relabeled as known.
+
 Invalid settings disable paid AI; invalid numeric limits retain bounded local
 defaults so startup, personal memory and cleanup remain usable.
 Administrator usage reports expose invalid setting **names**, never values or

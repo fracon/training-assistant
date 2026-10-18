@@ -43,10 +43,22 @@ See the [cycle planning contract and real-test steps](docs/ai-cycle-planning.md)
 Initial implementation used simulated provider responses. One later controlled
 noncompetitive-goal request reached the real provider but was incomplete at the
 configured 2,048 output-token ceiling; see the evaluation evidence in that contract.
-The subsequent isolated 8,192-token evaluation timed out at 60s with unknown
-usage; its reservation is not a confirmed charge. Mocks do not establish model
-quality, and no valid real proposal was obtained. See the documented operator
-settings before any separately authorized paid evaluation.
+A subsequent isolated 8,192-token evaluation timed out at 60s with unknown
+usage; its reservation is not a confirmed charge. On **2026-10-18**, one real
+Chrome generation with **8,192 tokens / 120s / zero retries** completed in 78.5s.
+Its four-phase proposal passed validation, was explicitly applied as version 1
+and recovered after reload; repeated application created no duplicate.
+Known use was 4,409 input + 2,989 output tokens (165 reasoning included), with a
+conservative application estimate of **USD 0.06688**, not an invoice. The
+[real evaluation and limitations](docs/ai-cycle-planning.md#end-to-end-real-evaluation-2026-10-18)
+record the synthetic-only scope and the observed RPE-scale inconsistency.
+
+**Operational setup:** `.env.example` now supplies `AI_MAX_OUTPUT_TOKENS=8192` and
+`AI_TIMEOUT_MS=120000`. Set both explicitly in existing local/Compose runtime
+configuration and restart/recreate the backend. Unset backend and Compose
+fallbacks remain 2048/60000 and are **not validated sufficient for full plans**.
+This task changed neither the main `.env` nor production. See the
+[configuration guide](docs/ai-foundation.md#configuration-and-deployment).
 
 The cycle card's **Cycle planning / Planejamento do ciclo** icon uses the existing custom
 hover/keyboard tooltip and opens saved planning without a paid call or cycle

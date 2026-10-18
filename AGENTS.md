@@ -675,6 +675,20 @@ stealing focus on polling. Test `aiDiagnostics{,.browser}.test.js` with simulate
 HTTP responses; real generation requires explicit authorization and a synthetic
 cycle, and never applies a proposal automatically.
 
+Operational setup for cycle planning must explicitly use the evaluated
+`AI_MAX_OUTPUT_TOKENS=8192` / `AI_TIMEOUT_MS=120000` values from `.env.example`.
+Unset backend/Compose fallbacks remain 2048/60000 and are not a demonstrated
+full-plan configuration; distinguish these in documentation. The 2026-10-18 real
+isolated Chrome evaluation completed with one attempt (`AI_RETRIES=0`), reviewed,
+applied version 1 and recovered after reload, without creating training records.
+See `docs/ai-cycle-planning.md#end-to-end-real-evaluation-2026-10-18` for accounting
+and the observed RPE /10 versus Kinesis 1–5 quality limitation. A successful
+schema/domain gate does not certify free-text coaching quality. Never silently
+convert a generated scale, rewrite the saved response or describe one synthetic
+sample as a broad athlete-quality evaluation. Automated tests stay mocked; paid
+calls require explicit budgets/authorization and uncertain calls count
+conservatively. This correction does not change provider/schema/adapter behavior.
+
 Startup AI diagnostics must use the same validated configuration passed to the
 execution service. Log only key presence, effective enabled state, disable reason
 and invalid setting names; never secrets or invalid values. Keep explicit

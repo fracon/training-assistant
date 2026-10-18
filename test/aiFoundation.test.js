@@ -1663,3 +1663,19 @@ test('startup AI diagnostics explain readiness without exposing credentials or i
     assert.ok(!JSON.stringify(diagnostic).includes('invalid-model'));
   }
 });
+
+test('runtime example provides the evaluated full-plan limits without enabling paid AI', () => {
+  const { readFileSync } = require('node:fs');
+  const { resolve } = require('node:path');
+  const env = require('dotenv').parse(readFileSync(resolve(__dirname, '../.env.example')));
+  const config = readAiConfig(env);
+  assert.deepEqual(config.errors, []);
+  assert.equal(config.enabled, false);
+  assert.equal(config.apiKey, '');
+  assert.equal(config.models.cycle, 'gpt-6.1-sol');
+  assert.equal(config.limits.AI_MAX_OUTPUT_TOKENS, 8192);
+  assert.equal(config.limits.AI_TIMEOUT_MS, 120000);
+  // Existing installations retain their bounded fallback; setup must be explicit.
+  assert.equal(readAiConfig({}).limits.AI_MAX_OUTPUT_TOKENS, 2048);
+  assert.equal(readAiConfig({}).limits.AI_TIMEOUT_MS, 60000);
+});
