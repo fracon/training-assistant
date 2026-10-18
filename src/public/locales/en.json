@@ -1092,6 +1092,7 @@
   },
   "cyclePlanning": {
     "admin": "Administrator details",
+    "proposalIncompatible": "Incompatible proposal. Generate a new proposal for review.",
     "proposalOutdated": "This proposal is outdated. You can generate a new plan using the saved changes.",
     "proposalConflict": "Another proposal was applied after this generation. Generate a new proposal using the current planning version.",
     "inactiveCycle": "This cycle is no longer active. Saved planning remains available.",
@@ -1115,6 +1116,7 @@
     "version": "Version",
     "period": "Period",
     "outdated": "Sources changed. Generate a new proposal before applying.",
+    "appliedRpeIncompatible": "This plan uses an effort scale incompatible with Kinesis RPE 1–5. The original is preserved for review, but its guidance will not be used in future contexts. Generate and review a new proposal to replace it explicitly.",
     "appliedOutdated": "Sources have changed since this plan was applied. It remains a dated planning reference, not evidence of completed training.",
     "assessment": "A. Current state (tentative assessment)",
     "continuity": "B. Continuity",
@@ -1148,6 +1150,7 @@
       "planningConflict": "Another planning version was applied. Reopen and review it before regenerating.",
       "planningOutdated": "This proposal is outdated or incomplete and cannot be applied.",
       "proposalExpired": "The execution expired. Generate a new proposal.",
+      "planningRpeIncompatible": "Planning was rejected for using an effort scale incompatible with RPE 1–5. No new version was applied. A new generation requires your choice and may incur a charge.",
       "invalidDomainResponse": "The response failed planning validation. Nothing was applied.",
       "providerIncomplete": "The provider did not complete the response. Nothing was applied and usage may have been charged. The installation operator should review diagnostics and the response limit before another paid generation.",
       "providerRefused": "The provider refused this request. Nothing was applied.",

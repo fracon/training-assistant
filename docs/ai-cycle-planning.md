@@ -153,7 +153,7 @@ runs after transport/refusal/completion checks and again on application.
 Semantic coaching quality still requires real evaluation; structural validation
 cannot establish the truth of free-text clinical or performance claims.
 
-`cycle-delivery-v2` preserves the three delivery adaptations originally delivered
+`cycle-delivery-v3` preserves the three delivery adaptations originally delivered
 in v1, retaining all 22 numbered sections:
 
 1. “Plan in detail only the current/next week” becomes architecture only for this
@@ -190,6 +190,143 @@ prompt generation/copy is restricted to administrators for their own cycles; the
 only their own exact execution payload/context, original external prompt,
 adapter/model versions, sanitized errors and usage/cost in the planning modal or
 Training memory debug. Common accounts never receive those technical payloads.
+
+## RPE compatibility (cycle-delivery-v3)
+
+### Confirmed source and minimal instruction
+
+The external PT/EN macrocycle prompt requests “RPE/sensação esperada” / “expected
+RPE/sensation” without defining a scale. It does not instruct RPE/10. Adapter v2
+also omitted the scale. Read-only inspection of the isolated real evaluation
+confirmed an empty history, no incompatible scale in its context/instructions,
+and an incompatible numeric reference in the returned first phase's intensity.
+The rendering displays the stored text; it did not convert a correct value.
+The confirmed cause is an unspecified unit contract that allowed the model to
+choose another scale, plus missing output validation — not disobedience of an
+explicit 1–5 instruction or evidence of a 1–10 training record.
+
+Adapter **`cycle-delivery-v3`** adds only this integrated unit instruction:
+
+> RPE in Kinesis uses a scale of 1 to 5: every numeric effort prescription or reference must use that scale, never RPE/10, a 0–10 scale or values above 5. Heart rate, pace, distance, percentages and other quantities keep their own units.
+
+The six existing allowlisted delivery/competition transformations, all 22
+training sections, original PT/EN external outputs, schema `cycle-plan-v1`, model
+and reasoning stay unchanged. New payloads record v3; old snapshots keep their
+actual v2 payload. Already queued v2 work is not silently sent with v3 instructions:
+the existing adapter-version claim check refuses it. Historical completed valid
+proposals are still eligible after current domain validation; no blanket invalidation.
+
+### Bounded validation and refusal
+
+`cycle-plan-rpe.js` checks explicit numeric effort references in **all generated
+narrative fields**: A–C assessment/continuity/feasibility, every phase text field
+including names/objectives/intensity/rationale, indicators, adaptations,
+uncertainties, assumptions and questions. Identity, dates, enums and evidence IDs
+are not interpreted as effort prose. The same `rpeIssue` traversal is reused in
+response validation, existing-proposal read/application and applied-plan context
+selection, avoiding divergent rules.
+
+Covered PT/EN notation includes RPE/perceived effort/exertion and Portuguese
+perceived-effort/effort-scale labels, values, decimal comma/dot, ranges with
+dash/a/e/to/and, slash/de/em/out-of denominators, numeric readings before RPE,
+common qualifiers such as approximate/approximately and “aproximado de”, and
+parenthesized named scales. A generic “effort/esforço” is examined only with an
+explicit denominator. Numerators/range endpoints must be within 1–5; an explicit
+denominator must be 5; a parenthesized named scale after a reading must be 1–5. Heart rate,
+pace, distances, dates and percentages keep their own units; the word RPE alone
+is allowed. Matching normalizes an in-memory copy for case/accents only; it
+never changes persisted/displayed content or converts between effort scales.
+
+The guard is deliberately **not** a general language interpreter. It does not
+prove physiological suitability or all semantic correctness, resolve arbitrary
+paraphrases/numbers spelled out in words, or interpret negation. Explicit
+incompatible references remain rejected even when quoted as an example. Unlabeled
+numbers are not assumed to be RPE. A passing check is not a quality certificate.
+
+Refusal returns **`planningRpeIncompatible`**, keeps execution `failed` and does
+not populate validated response/proposal content. Existing known input/output
+usage remains reconciled; there is **no automatic retry** or partial application.
+The existing current-admin owner debug records domain code **`rpe_scale`** with a
+schema-defined path (e.g. `$.phases[0].intensity`); no rejected values/body/credentials
+enter diagnostics. PT/EN product alerts explain RPE 1–5, no new applied version
+and that another generation is an explicit potentially paid action. No new client,
+worker, generic interpretation engine or cost mechanism is introduced.
+
+### Existing proposals and applied versions
+
+An affected historical proposal receives `compatibilityError:planningRpeIncompatible`
+on owner-scoped planning reads, stays readable for traceability, and has no Apply
+control. An application request revalidates inside the existing transaction and
+returns HTTP **409** with the same code before inserting a version. Changing the
+UI cannot bypass this. Compatible historical proposals still work.
+
+Applied versions are **never edited/deleted/converted**. An affected applied
+version receives that compatibility flag and an explicit warning: the original
+is retained for consultation, but its guidance will not feed later tasks. The
+next workouts/analysis context keeps only its identity, dates, version and source
+reference/hash, plus an explicit gap and `incompatible_rpe_scale` omission. It
+excludes **all** guidance from that affected plan, including architecture,
+phases, indicators, adaptations and uncertainty prose, so incompatible advice
+cannot reenter through another field. Checking/consulting costs nothing.
+
+This flag is independent of source freshness. No context-policy version bump,
+blanket plan invalidation, migration, database rewrite or regeneration occurs;
+compatible v5 contexts retain their content/hashes. Contexts actually changed by
+exclusion naturally fail old fingerprint comparison. An idempotent repeat Apply
+of an already applied proposal remains a no-op, not a new application or a way
+to reenable its guidance. Replacement requires a newly validated proposal and an
+explicit Apply; the earlier version remains in history.
+
+Read-only inspection confirmed the reported real **version 1 exists only in the
+isolated synthetic evaluation database**; the principal local database had zero
+applied versions. The new guard identified `$.phases[0].intensity` in that saved
+result and future-context inspection selected zero phase/architecture entries,
+while its JSON stayed identical. The cycle/account belonging to the responsible
+person and production were not modified. No real output was copied into fixtures;
+synthetic cases reproduce only the notation/qualifier structure.
+
+This correction makes **zero new paid calls**. The prior successful real v2 call
+remains evidence of the earlier product path only, not of v3 compliance or this
+validator. The new instruction and rejection behavior are tested with simulated
+providers. Operational settings remain gpt-6.1-sol/medium/8192/120000; the evaluated
+single-attempt override is still AI_RETRIES=0. See the [deployment configuration
+steps](ai-foundation.md#operational-cycle-planning-settings); editing `.env.example`
+does not update explicit older variables or a running container.
+
+### Validation of the RPE correction
+
+Synthetic regressions failed before the correction for the observed notation,
+its “aproximado de” qualifier, parenthesized RPE labels and calendar values next
+to RPE. The final guard rejects incompatible syntax while preserving legitimate
+1–5 ranges and unrelated dates, FC, distances and percentages. Known-usage,
+no-retry, HTTP 409/ownership, old-proposal revalidation, selective exclusion,
+immutability and explicit replacement/version history tests pass.
+
+Final local gates on Node 24.18.0: **82 targeted tests**, followed by
+`npm test` and `npm run test:coverage`, **1,247 passed each**, zero failures/skips,
+**100% Statements, Branches, Functions and Lines** in the required instrumented
+scope. All 48 exact external prompt comparisons remain intact. The standalone
+new guard also reaches 100% in all four metrics with synthetic syntax cases.
+Final complete gates ran serially after the adversarial notation checks; an
+intermediate overlapping coverage collection was not used as acceptance evidence.
+
+Real Chrome with a **simulated** provider covers PT/EN × ordinary/admin ×
+1280/390px: unit-specific refusal alert, no Apply, one simulated operation per
+double click, intact applied version, localized legacy exclusion warning, Escape
+and focus restoration, and no horizontal overflow. Temporary synthetic captures
+were visually inspected against the existing planning modal/alert/controls;
+Lucide was loaded locally for inspection and no CSS or new visual pattern was
+introduced. Existing focus, quotas, context, ownership, prompt and guided-flow
+suites remain green.
+
+Isolated `npm run dev` and `npm start` return HTTP 200/version 0.21.0 without
+MODULE_TYPELESS_PACKAGE_JSON, with AI disabled and temporary databases. The full
+diff was critiqued for domain validation, false rejection of other units/dates,
+known/uncertain accounting, ownership, atomic application, historic snapshots,
+context exclusion, compatibility, accessibility and privacy; findings were fixed
+in one corrective batch. `git diff --check` and `git diff main --check` pass.
+No real model call, deployment, production/personal-cycle write or credential
+copy occurred. Beta remains 0.21.0; PR #69 is open and no new review is requested.
 
 ## Persistence, concurrency and retention
 
@@ -338,8 +475,8 @@ Malformed transport bodies cannot yield reliable usage; their parsing-stage
 metadata accompanies uncertainty, rather than promising no charge. Structured
 Outputs does not mean a completed plan was returned: response status/refusal,
 JSON shape and domain constraints are independent gates. The existing strict
-`cycle-plan-v1` schema, adapter v2 coaching/delivery text and dates/evidence rules
-are unchanged. The diagnostic validator reports only known field paths (for
+`cycle-plan-v1` schema and dates/evidence rules are unchanged. Adapter v3 adds
+explicit RPE units and the compatibility guard described below. The diagnostic validator reports only known field paths (for
 example `$.phases[0].evidence`), never the rejected value or arbitrary input key.
 
 Current administrators inspect **only their own** executions using the existing
@@ -809,8 +946,9 @@ never invents a race, completed sessions, prior volume or recovery. It supplies
 adaptation criteria and questions instead of distant fixed weekly mileage.
 
 **Observed quality limitation:** one phase expresses easy effort as RPE 2–4/10,
-while Kinesis records RPE 1–5. The current free-text validator does not enforce
-semantic scale consistency. No saved output was silently edited or converted;
+while Kinesis records RPE 1–5. At the time of that v2 evaluation, the free-text validator did not enforce
+semantic scale consistency. The subsequent [v3 correction](#rpe-compatibility-cycle-delivery-v3)
+rejects those explicit references and excludes affected saved guidance. No saved output was silently edited or converted;
 application below is exclusively a synthetic persistence test, not endorsement of
 this prescription. The sample therefore establishes a working product path, not
 full coaching-quality acceptance. Explicit scale grounding and semantic quality

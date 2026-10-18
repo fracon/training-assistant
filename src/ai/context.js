@@ -2,6 +2,7 @@
 
 const { AiError, hash, readMemory, activeOwner, date } = require('./memory');
 const { readAiConfig } = require('./config');
+const { rpeIssue } = require('./cycle-plan-schema');
 const POLICY_VERSION = 'training-context-v5';
 const TRAINING_COLUMNS = `id, dia, tipo, treino, detalhes, fc_alvo, rpe, completed, training_cycle_id,
   fit_distance, fit_duration, fit_avg_pace, fit_avg_hr, fit_max_hr, fit_elevation_gain, fit_calories,
@@ -249,13 +250,19 @@ function buildContext(
         start:plan.start,end:plan.end,
         architecture:[],phases:[],indicators:[],adaptations:null,uncertainties:[],
       };
-      appliedDetails = {
-        architecture:plan.phases.map(({name,start,end,objective})=>({name,start,end,objective})),
-        phases:plan.phases.filter((phase)=>phase.end>=asOf && phase.start<=context.ranges.plannedTo),
-        indicators:plan.indicators,adaptations:plan.adaptations,uncertainties:plan.uncertainties,
-      };
-      const outsideWindow=plan.phases.length-appliedDetails.phases.length;
-      if (outsideWindow) context.omissions.push({type:'cycle_plan_phases',count:outsideWindow,reason:'phase_details_outside_task_window'});
+      if (rpeIssue(plan)) {
+        context.appliedPlan.compatibilityError='planningRpeIncompatible';
+        context.omissions.push({type:'cycle_plan',id:applied.id,reason:'incompatible_rpe_scale'});
+        context.gaps.push('Applied planning guidance is excluded because it contains an incompatible RPE scale. The original remains available for review and explicit replacement.');
+      } else {
+        appliedDetails = {
+          architecture:plan.phases.map(({name,start,end,objective})=>({name,start,end,objective})),
+          phases:plan.phases.filter((phase)=>phase.end>=asOf && phase.start<=context.ranges.plannedTo),
+          indicators:plan.indicators,adaptations:plan.adaptations,uncertainties:plan.uncertainties,
+        };
+        const outsideWindow=plan.phases.length-appliedDetails.phases.length;
+        if (outsideWindow) context.omissions.push({type:'cycle_plan_phases',count:outsideWindow,reason:'phase_details_outside_task_window'});
+      }
       addReference({type:'cycle_plan',id:applied.id,version:hash(applied)});
     }
   }

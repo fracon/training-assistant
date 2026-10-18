@@ -67,6 +67,15 @@ separate from the deployment's documented 429 retry policy. See the
 The earlier 2048-token exhaustion and 60s timeout remain historical failures;
 unknown usage from an earlier timeout is not refunded or relabeled as known.
 
+Older explicit values still override these recommended values: update the actual
+runtime source (local `.env`, Compose `.env`/`--env-file`, shell exports or the
+hosting environment UI), not only `.env.example`. For a deployed image, obtain
+the intended build with `docker compose pull`, then recreate with
+`docker compose up -d --force-recreate`. A plain `docker compose restart` retains
+the container environment. Copying/editing the example cannot change an existing
+container; Compose's shell environment can also override its `.env` interpolation.
+These are operator instructions, not deployment actions performed by this task.
+
 Invalid settings disable paid AI; invalid numeric limits retain bounded local
 defaults so startup, personal memory and cleanup remain usable.
 Administrator usage reports expose invalid setting **names**, never values or
@@ -324,6 +333,28 @@ Plan-local assessments are excluded. v1/v2/v3/v4 execution snapshots remain
 immutable and are marked outdated under v5, without automatic paid regeneration.
 This corrects v4's unconditional inclusion of applied planning details. No
 weekly/analysis product adapter is registered.
+
+### Applied-planning RPE compatibility on the issue #63 branch
+
+The cycle adapter now uses `cycle-delivery-v3`, declaring RPE 1–5, with a shared
+bounded text guard. The schema, model, medium reasoning, v5 selection policy and
+external prompt versions remain unchanged. See the [exact compatibility
+contract](ai-cycle-planning.md#rpe-compatibility-cycle-delivery-v3).
+
+Owner planning reads return the stable `compatibilityError:planningRpeIncompatible`
+only on affected proposals/applied plans; no raw validation path is added to
+ordinary payloads. New output refusal uses that product code and an admin-only
+`rpe_scale` diagnostic/path, with known usage preserved and no retry.
+
+Affected saved guidance is excluded as a whole from future `workouts`/`analysis`
+contexts; plan identity/version/dates/provenance remain, with `compatibilityError`,
+an explicit gap and omission reason `incompatible_rpe_scale`. No incompatible
+phase, indicator or adaptation text is recycled as valid guidance. This is a
+compatibility check, independent of `outdated`; compatible plans and their context
+hashes are not globally invalidated. Only contexts actually changed by exclusion
+receive different hashes. Historical snapshots and applied JSON are untouched;
+consulting/checking compatibility is free. A new reviewed proposal must be applied
+explicitly to replace a version. No schema migration or data rewrite is needed.
 
 ### Explicit module boundary
 

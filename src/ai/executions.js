@@ -442,7 +442,7 @@ function createExecutionService({
       valid=!response.error && operation.validate(response.value,JSON.parse(row.context_json))===true;
       if(!valid && !response.error)validation=operation.diagnose?.(response.value,JSON.parse(row.context_json)) || {code:'domain_invalid',path:'$'};
     } catch { validation={code:'validator_exception',path:'$'}; }
-    const code=valid?null:response.error || 'invalidDomainResponse';
+    const code=valid?null:response.error || (validation?.code==='rpe_scale'?'planningRpeIncompatible':'invalidDomainResponse');
     const diagnostic=sanitizeDiagnostic({...response.diagnostic,clientRequestId,durationMs:Date.now()-started,
       code:code || 'completed',stage:validation?(validation.code.startsWith('shape_')?'schema':'domain'):response.diagnostic?.stage || (valid?'completed':'provider_response'),validation});
     try {

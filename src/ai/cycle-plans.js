@@ -1,7 +1,7 @@
 'use strict';
 const { AiError, activeOwner, exactKeys, hash } = require('./memory');
 const { contextIsCurrent } = require('./context');
-const { validatePlan } = require('./cycle-plan-schema');
+const { validatePlan, rpeIssue } = require('./cycle-plan-schema');
 function ownCycle(db,userId,cycleId) {
   activeOwner(db,userId);
   const cycle=db.prepare('SELECT * FROM training_cycles WHERE id=? AND user_id=?').get(cycleId,userId);
@@ -23,10 +23,11 @@ function readCyclePlanning(db,userId,cycleId,service,config,asOf=new Date().toIS
       return {
       id:row.id,sequence:row.sequence,baseVersion:row.base_version,createdAt:row.created_at,
       execution,
+      ...(row.plan_json && rpeIssue(JSON.parse(row.plan_json)) ? {compatibilityError:'planningRpeIncompatible'} : {}),
       applied: Boolean(db.prepare('SELECT 1 FROM cycle_plan_versions WHERE id=? AND user_id=?').get(row.id,userId)),
     };});
     return { available:config.enabled,canGenerate:cycle.status==='active',cycleRevision:cycle.planning_revision,
-      applied:applied && {id:applied.id,version:applied.version,plan:applied.plan,appliedAt:applied.appliedAt,outdated:!contextIsCurrent(db,userId,applied.fingerprint,config)},proposals };
+      applied:applied && {id:applied.id,version:applied.version,plan:applied.plan,appliedAt:applied.appliedAt,...(rpeIssue(applied.plan)?{compatibilityError:'planningRpeIncompatible'}:{}),outdated:!contextIsCurrent(db,userId,applied.fingerprint,config)},proposals };
   })();
 }
 function applyCyclePlan(db,userId,cycleId,proposalId,body,service,now=new Date().toISOString()) {
@@ -47,6 +48,7 @@ function applyCyclePlan(db,userId,cycleId,proposalId,body,service,now=new Date()
     const row=db.prepare('SELECT context_json FROM ai_executions WHERE id=? AND user_id=?').get(proposal.execution_id,userId);
     const context=JSON.parse(row.context_json);
     const plan=JSON.parse(proposal.plan_json);
+    if (rpeIssue(plan)) throw new AiError('planningRpeIncompatible',409);
     if (plan.start < now.slice(0,10)) throw new AiError('planningOutdated',409);
     if (context.resource.id!==cycleId || !validatePlan(plan,context)) throw new AiError('invalidPlanningResponse',409);
     db.prepare('INSERT INTO cycle_plan_versions(id,user_id,cycle_id,version,plan_json,context_hash,cycle_hash,fingerprint_json,sources_json,applied_at) VALUES (?,?,?,?,?,?,?,?,?,?)').run(proposal.id,userId,cycleId,version+1,proposal.plan_json,context.hash,hash(cycle),JSON.stringify({hash:context.hash,asOf:context.asOf,purpose:context.purpose,resource:{id:cycleId},policyVersion:context.policyVersion}),JSON.stringify(context.sources),now);

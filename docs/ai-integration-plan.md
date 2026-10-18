@@ -8,7 +8,7 @@ Approved #63 correction on this branch: a cycle may target a race, a personal
 running distance, or another goal already supported by its registration. No new
 race field/type selector is introduced. A valid target date defines the deadline;
 `end >= max(reference, saved start)` remains inclusive. Specific validation errors
-replace the generic race/date refusal. API adapter `cycle-delivery-v2` scopes
+replace the generic race/date refusal. API adapter `cycle-delivery-v3` retains v2 scope of
 competition-specific equipment/nutrition/taper guidance to an explicit race,
 without modifying the external PT/EN prompts. See the cycle-planning contract for
 codes, historical compatibility and controlled evaluation limitations.
@@ -20,6 +20,15 @@ Known usage survives failed proposal persistence; only the existing authorized
 changes require an explicit operator choice, not an automatic retry/fallback.
 See the foundation/migration and cycle-planning diagnostic contracts. This is
 implemented on the PR branch, not integrated before merge.
+
+Subsequent RPE correction on this branch: adapter v3 explicitly uses Kinesis
+RPE 1–5, with bounded textual rejection of incompatible scales in generated
+planning. Existing affected plans remain traceable but their guidance is excluded
+from future context until explicit replacement; compatible plans stay usable.
+This does not rewrite external training prompts or globally invalidate snapshots.
+The [RPE contract](ai-cycle-planning.md#rpe-compatibility-cycle-delivery-v3) records
+syntax coverage, errors, historic compatibility and tests with simulated providers.
+No new real call was made; the real v2 success below does not validate new code.
 
 Functional evidence on 2026-10-18: one isolated real Chrome generation completed
 with 8192 output tokens, 120s timeout and zero retries; the reviewed four-phase

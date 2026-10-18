@@ -636,7 +636,7 @@ keys per cycle across modal transitions; clear obsolete polling before switching
 cycles. Weekly generation stays in #64. Browser regressions also live in
 `cyclePlanningFlow.browser.test.js` (synthetic provider only).
 
-`cycle-plan-adapter.js` v2 adapts the three allowlisted delivery spans plus three
+`cycle-plan-adapter.js` v3 retains v2 adaptations of the three allowlisted delivery spans plus three
 explicit, owner-approved competition-conditional spans (equipment, nutrition,
 taper), preserving external prompt bytes. A race is optional; target_date is the
 goal deadline. Validate calendar dates and inclusive end >= max(asOf, saved start)
@@ -682,12 +682,30 @@ full-plan configuration; distinguish these in documentation. The 2026-10-18 real
 isolated Chrome evaluation completed with one attempt (`AI_RETRIES=0`), reviewed,
 applied version 1 and recovered after reload, without creating training records.
 See `docs/ai-cycle-planning.md#end-to-end-real-evaluation-2026-10-18` for accounting
-and the observed RPE /10 versus Kinesis 1–5 quality limitation. A successful
+and the historical RPE /10 divergence, now guarded by the compatibility contract below. A successful
 schema/domain gate does not certify free-text coaching quality. Never silently
 convert a generated scale, rewrite the saved response or describe one synthetic
 sample as a broad athlete-quality evaluation. Automated tests stay mocked; paid
 calls require explicit budgets/authorization and uncertain calls count
 conservatively. This correction does not change provider/schema/adapter behavior.
+
+Cycle planning uses Kinesis RPE 1–5. Adapter `cycle-delivery-v3` explicitly binds
+all numeric effort references to that scale, leaving HR/pace/other units and all
+external PT/EN prompt bytes unchanged. `cycle-plan-rpe.js` is a bounded textual
+guard, reused through schema `rpeIssue` for response validation, application,
+compatibility reads and future context. Inspect every generated narrative field;
+never alter/convert/clip the response to pass. Reject incompatible references as
+`planningRpeIncompatible`, diagnostic `rpe_scale` plus allowlisted field path only.
+Preserve known usage and terminal failure; never retry invalid output automatically.
+Historical affected proposals are revalidated before new application. Applied
+originals stay readable with `compatibilityError` and an exclusion warning; retain
+identity/provenance but omit all affected guidance from later contexts with
+`incompatible_rpe_scale`. No silent replacement, deletion, migration or blanket
+freshness invalidation: unchanged compatible v5 contexts remain unchanged. The
+owner replaces planning only through a new reviewed proposal and explicit Apply.
+The previous real synthetic version 1 remains immutable; this correction has
+**no new paid evaluation**. See `docs/ai-cycle-planning.md#rpe-compatibility-cycle-delivery-v3`
+and `cyclePlanningRpe{,.browser}.test.js` for scope, limitations and regression tests.
 
 Startup AI diagnostics must use the same validated configuration passed to the
 execution service. Log only key presence, effective enabled state, disable reason

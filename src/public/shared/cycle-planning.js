@@ -52,7 +52,7 @@ export function createCyclePlanning({ i18n, user }) {
     content.append(section);
   }
   function render() {
-    const current = state?.applied && !state.applied.outdated;
+    const current = state?.applied && !state.applied.outdated && !state.applied.compatibilityError;
     const hint = saved && state?.available===false ? 'savedUnavailableHint' : saved === 'add' ? 'createdHint' : saved === 'edit' ?
       (state?.applied?.outdated ? 'editedOutdatedHint' : current ? 'editedCurrentHint' : 'editedHint') : 'hint';
     document.getElementById('cyclePlanningHint').textContent=t(hint);
@@ -65,7 +65,7 @@ export function createCyclePlanning({ i18n, user }) {
     const running=execution && ['queued','running'].includes(execution.state);
     const candidate=execution?.state==='completed' && !latest.applied;
     const conflict=candidate && latest.baseVersion!==(state.applied?.version || 0);
-    const ready=candidate && !execution.outdated && !conflict && state.canGenerate;
+    const ready=candidate && !latest.compatibilityError && !execution.outdated && !conflict && state.canGenerate;
     generate.textContent=t(state.proposals.length?'regenerate':'generate');
     generate.hidden=readFailed || !state.available || !state.canGenerate || Boolean(running) || Boolean(saved && current && !ready);
     generate.className=ready?'btn-secondary':'btn-primary';
@@ -76,7 +76,7 @@ export function createCyclePlanning({ i18n, user }) {
     cancel.hidden=!running;cancel.disabled=busy;
     debug.hidden=user.role!=='admin' || !execution;
     document.getElementById('cyclePlanningAdmin').hidden=debug.hidden;
-    status.textContent=readFailed?t(busy?'loading':'loadFailed'):busy?t('loading'):!state.available?t('unavailable'):!state.canGenerate?t('inactiveCycle'):latest?.applied?t(state.applied?.outdated?'appliedNeedsReview':'applied'):candidate && (execution.outdated || conflict)?t('proposalOutdated'):execution?t(`states.${execution.state}`):t(saved?'readyToPlan':'manualIndependent');
+    status.textContent=readFailed?t(busy?'loading':'loadFailed'):busy?t('loading'):!state.available?t('unavailable'):!state.canGenerate?t('inactiveCycle'):latest?.applied?t(state.applied?.outdated || state.applied?.compatibilityError?'appliedNeedsReview':'applied'):latest?.compatibilityError?t('proposalIncompatible'):candidate && (execution.outdated || conflict)?t('proposalOutdated'):execution?t(`states.${execution.state}`):t(saved?'readyToPlan':'manualIndependent');
     content.replaceChildren();
     if(candidate) {
       if(latest.baseVersion!==(state.applied?.version || 0))content.append(el('p',t('proposalConflict'),'field-hint'));
@@ -84,14 +84,16 @@ export function createCyclePlanning({ i18n, user }) {
       renderPlan(execution.response,t('proposal'));
     }
     if(state.applied) {
+      if(state.applied.compatibilityError)content.append(el('p',t('appliedRpeIncompatible'),'field-hint'));
       if(state.applied.outdated)content.append(el('p',t('appliedOutdated'),'field-hint'));
       renderPlan(state.applied.plan,t('applied'),state.applied.version);
     }
     if(!candidate && !state.applied)content.append(el('p',t('empty'),'field-hint'));
     if(!errorCode && !readFailed) {
       error.hidden=true;
-      if(!busy && execution?.error) {
-        const message=t(`errors.${execution.error}`);
+      const failure=(!latest?.applied && latest?.compatibilityError) || execution?.error;
+      if(!busy && failure) {
+        const message=t(`errors.${failure}`);
         error.textContent=message.startsWith('cyclePlanning.')?t('errors.generic'):message;
         error.hidden=false;
       }

@@ -52,6 +52,16 @@ Known use was 4,409 input + 2,989 output tokens (165 reasoning included), with a
 conservative application estimate of **USD 0.06688**, not an invoice. The
 [real evaluation and limitations](docs/ai-cycle-planning.md#end-to-end-real-evaluation-2026-10-18)
 record the synthetic-only scope and the observed RPE-scale inconsistency.
+The subsequent **RPE correction** on this branch uses adapter `cycle-delivery-v3`
+to require Kinesis **RPE 1–5** and rejects explicit incompatible numeric effort
+references across generated planning text. No conversion or partial application
+occurs; known usage is retained and rejection never triggers an automatic retry.
+Existing affected proposals cannot be newly applied. An affected applied version
+remains readable with a warning, while its guidance is excluded from future
+contexts until explicit replacement; compatible plans stay usable. See the
+[RPE compatibility contract](docs/ai-cycle-planning.md#rpe-compatibility-cycle-delivery-v3).
+This correction uses simulated providers only; the prior real call tested v2,
+not v3 or the new validator.
 
 **Operational setup:** `.env.example` now supplies `AI_MAX_OUTPUT_TOKENS=8192` and
 `AI_TIMEOUT_MS=120000`. Set both explicitly in existing local/Compose runtime

@@ -1,5 +1,6 @@
 'use strict';
 const { date, AiError } = require('./memory');
+const { incompatibleRpe } = require('./cycle-plan-rpe');
 const VERSION = 'cycle-plan-v1';
 const text = { type: 'string', minLength: 1, maxLength: 1600 };
 const texts = { type: 'array', items: text, maxItems: 12 };
@@ -51,8 +52,22 @@ function shapeIssue(value,spec,path='$') {
   if(spec.enum)return spec.enum.includes(value)?null:issue('shape_enum');
   return value.trim().length<spec.minLength || value.length>spec.maxLength?issue('shape_length'):null;
 }
+// Scale checks inspect narrative fields only after validating the stored shape.
+// Evidence IDs, identity, enums and calendar fields are not generated effort prose.
+function rpeIssue(plan) {
+  if (shapeIssue(plan,schema)) return null;
+  const fields = [
+    ...['assessment','continuity','feasibility'].map(key=>[plan[key],`$.${key}`]),
+    ...plan.phases.flatMap((phase,i)=>phaseFields.map(key=>[phase[key],`$.phases[${i}].${key}`])),
+    ...['indicators','uncertainties','assumptions','questions'].flatMap(key=>plan[key].map((text,i)=>[text,`$.${key}[${i}]`])),
+    ...Object.entries(plan.adaptations).map(([key,text])=>[text,`$.adaptations.${key}`]),
+  ];
+  for (const [text,path] of fields) if (incompatibleRpe(text)) return {code:'rpe_scale',path};
+  return null;
+}
 function diagnosePlan(value, context) {
   const shape=shapeIssue(value,schema);if(shape)return shape;
+  const effort=rpeIssue(value);if(effort)return effort;
   let window;
   try { window=planningWindow(context); } catch { return {code:'context_window',path:'$'}; }
   if(value.cycleId!==context.resource.id)return {code:'cycle_identity',path:'$.cycleId'};
@@ -71,4 +86,4 @@ function diagnosePlan(value, context) {
   return value.phases.at(-1).end===value.end?null:{code:'phase_coverage',path:'$.phases'};
 }
 function validatePlan(value,context) { try { return diagnosePlan(value,context)===null; } catch { return false; } }
-module.exports = { VERSION, schema, phaseFields, validShape, planningWindow, validatePlan, diagnosePlan, shapeIssue };
+module.exports = { VERSION, schema, phaseFields, validShape, planningWindow, validatePlan, diagnosePlan, shapeIssue, rpeIssue };

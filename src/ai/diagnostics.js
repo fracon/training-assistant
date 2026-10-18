@@ -1,8 +1,8 @@
 'use strict';
 // Deliberately closed vocabulary. No provider message, response text or athlete value.
 const STAGES=['transport','provider_http','provider_response','parsing','schema','domain','persistence','sources','lifecycle','completed'];
-const CODES=['providerOutcomeUncertain','providerTimeout','providerRejected','providerRateLimited','providerIncomplete','providerOutputLimit','providerContentFiltered','providerRefused','providerInvalidResponse','providerFailed','invalidDomainResponse','resultPersistenceFailed','sourceChanged','completed','restartOutcomeUncertain','reservationExpired','aiUnavailable','accountUnavailable','adapterUnavailable'];
-const VALIDATION=['shape_type','shape_fields','shape_length','shape_enum','cycle_identity','window_start','window_end','phase_date','phase_continuity','phase_interval','phase_evidence','phase_coverage','context_window','validator_exception','domain_invalid'];
+const CODES=['providerOutcomeUncertain','providerTimeout','providerRejected','providerRateLimited','providerIncomplete','providerOutputLimit','providerContentFiltered','providerRefused','providerInvalidResponse','providerFailed','invalidDomainResponse','planningRpeIncompatible','resultPersistenceFailed','sourceChanged','completed','restartOutcomeUncertain','reservationExpired','aiUnavailable','accountUnavailable','adapterUnavailable'];
+const VALIDATION=['shape_type','shape_fields','shape_length','shape_enum','cycle_identity','window_start','window_end','phase_date','phase_continuity','phase_interval','phase_evidence','phase_coverage','context_window','validator_exception','domain_invalid','rpe_scale'];
 const PATH=/^\$(?:\.(?:schemaVersion|cycleId|start|end|assessment|continuity|feasibility|confidence|phases|indicators|adaptations|uncertainties|assumptions|questions|name|objective|volume|longRuns|quality|intensity|easyRuns|strength|risks|advanceCriteria|rationale|evidence|increase|maintain|reduce|replaceQuality|reduceLongRun)|\[\d{1,2}\])*$/;
 function sanitizeDiagnostic(value={}) {
  const out={};

@@ -1092,6 +1092,7 @@
   },
   "cyclePlanning": {
     "admin": "Detalhes administrativos",
+    "proposalIncompatible": "Proposta incompatível. Gere uma nova proposta para revisão.",
     "proposalOutdated": "Esta proposta está desatualizada. Você pode gerar um novo planejamento com as alterações salvas.",
     "proposalConflict": "Outra proposta foi aplicada após esta geração. Gere uma nova proposta usando a versão atual do planejamento.",
     "inactiveCycle": "Este ciclo não está ativo. O planejamento salvo continua disponível.",
@@ -1115,6 +1116,7 @@
     "version": "Versão",
     "period": "Período",
     "outdated": "As fontes mudaram. Gere uma nova proposta antes de aplicar.",
+    "appliedRpeIncompatible": "Este planejamento usa uma escala de esforço incompatível com o RPE 1–5 do Kinesis. O original foi preservado para consulta, mas suas orientações não serão usadas nos próximos contextos. Gere e revise uma nova proposta para substituí-lo explicitamente.",
     "appliedOutdated": "As fontes mudaram desde a aplicação. Este plano continua como referência datada, não como evidência de treinos realizados.",
     "assessment": "A. Estado atual (avaliação provisória)",
     "continuity": "B. Continuidade",
@@ -1148,6 +1150,7 @@
       "planningConflict": "Outra versão foi aplicada. Reabra e revise antes de gerar novamente.",
       "planningOutdated": "Esta proposta está desatualizada ou incompleta e não pode ser aplicada.",
       "proposalExpired": "A execução expirou. Gere uma nova proposta.",
+      "planningRpeIncompatible": "O planejamento foi recusado por usar uma escala de esforço incompatível com RPE 1–5. Nenhuma nova versão foi aplicada. Uma nova geração exige sua escolha e pode ter custo.",
       "invalidDomainResponse": "A resposta não passou na validação do planejamento. Nada foi aplicado.",
       "providerIncomplete": "O provedor não concluiu a resposta. Nada foi aplicado e pode ter ocorrido consumo. O responsável pela instalação deve revisar o diagnóstico e o limite de resposta antes de outra geração paga.",
       "providerRefused": "O provedor recusou a solicitação. Nada foi aplicado.",
