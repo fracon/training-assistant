@@ -145,10 +145,9 @@ test('cycles.css reveals action tooltips on hover and keyboard focus', () => {
   assert.match(css, /\.cycle-card-actions \.btn-icon:focus-visible \.custom-tooltip/);
   assert.match(css, /bottom:\s*110%/);
   assert.match(css, /\.cycle-card-actions \.btn-icon\s*\{[^}]*position:\s*relative/s);
-  assert.match(css, /\[data-action="planning"\] \.custom-tooltip\s*\{[^}]*top:\s*calc\(100% \+ 4px\);[^}]*left:\s*0;/s);
-  assert.match(css, /\[data-action="planning"\]:is\(:hover, :focus-visible\) \.custom-tooltip\s*\{[^}]*transform:\s*translateY\(0\);/s);
-  assert.doesNotMatch(css, /\[data-action="planning"\]\s*\{\s*position:\s*static;/);
-  assert.match(css, /align the tooltip to its button edge to keep it in the viewport/);
+  assert.match(css, /\.cycle-card-actions \.custom-tooltip\s*\{[^}]*bottom:\s*110%;[^}]*left:\s*50%;[^}]*translateX\(-50%\) translateY\(4px\)/s);
+  assert.doesNotMatch(css, /\.cycle-card-actions \[data-action="planning"\] \.custom-tooltip/);
+  assert.match(css, /@media \(max-width: 480px\)[\s\S]*\.cycle-card-actions:has\(> \[data-action="planning"\]:only-child\)[\s\S]*left:\s*0;/);
 });
 
 test('cycles.html modal is at body root level outside main', () => {

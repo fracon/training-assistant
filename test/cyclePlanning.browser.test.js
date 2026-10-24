@@ -62,27 +62,35 @@ test('Chrome cycle planning PT/EN desktop/mobile: recovered generation, proposal
     assert.equal(await evaluate("document.querySelector('[data-cycle-planning-primary]').classList.contains('cycle-status')"),true);
     assert.equal(await evaluate("document.querySelector('[data-cycle-planning-primary]').classList.contains('status-completed')"),true);
     assert.deepEqual(await controlStyle('[data-action=planning]'),await controlStyle('[data-action=edit]'));
-    const point=await evaluate("(()=>{const r=document.querySelector('[data-action=planning]').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()");
-    await command('Input.dispatchMouseEvent',{type:'mouseMoved',...point});await delay(200);
-    assert.equal(await evaluate("getComputedStyle(document.querySelector('[data-action=planning] .custom-tooltip')).opacity"),'1');
-    assert.equal(await evaluate("(()=>{const button=document.querySelector('[data-action=planning]'),tip=button.querySelector('.custom-tooltip'),b=button.getBoundingClientRect(),r=tip.getBoundingClientRect();return Math.abs(b.left-r.left)<=2 && r.top>=b.bottom && r.top-b.bottom<=8 && r.left>=0 && r.right<=innerWidth;})()"),true);
-    assert.equal(await evaluate("document.querySelector('[data-action=planning] .custom-tooltip').textContent"),planningAction);
+    for(const action of ['edit','complete','cancel','planning']){
+     const point=await evaluate(`(()=>{const r=document.querySelector('[data-action=${action}]').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()`);
+     await command('Input.dispatchMouseEvent',{type:'mouseMoved',...point});await delay(200);
+     const tooltip=await evaluate(`(()=>{const button=document.querySelector('[data-action=${action}]'),tip=button.querySelector('.custom-tooltip'),b=button.getBoundingClientRect(),r=tip.getBoundingClientRect();return {opacity:getComputedStyle(tip).opacity,centerDelta:Math.abs((b.left+b.right-r.left-r.right)/2),aboveGap:b.top-r.bottom,visible:r.left>=0&&r.right<=innerWidth,text:tip.textContent,label:button.getAttribute('aria-label'),nativeTitle:button.hasAttribute('title')};})()`);
+     assert.equal(tooltip.opacity,'1',`${action} tooltip appears on hover`);
+     assert.ok(tooltip.centerDelta<=2,`${action} tooltip is centered on its button: ${JSON.stringify(tooltip)}`);
+     assert.ok(tooltip.aboveGap>=0&&tooltip.aboveGap<=8,`${action} tooltip opens above and close to its button: ${JSON.stringify(tooltip)}`);
+     assert.equal(tooltip.visible,true,`${action} tooltip stays within the viewport`);
+     assert.ok(tooltip.text.trim().length>0&&tooltip.label,`${action} retains translated tooltip and accessible name`);
+     assert.equal(tooltip.nativeTitle,false);
+     if(action==='planning') assert.equal(tooltip.text,planningAction);
+    }
+    if(account===0&&language==='pt-BR'&&width===1280) await capture('cycle-card-tooltips');
     await command('Input.dispatchMouseEvent',{type:'mouseMoved',x:0,y:0});
     await evaluate("document.querySelector('[data-action=cancel]').focus()");await key('Tab','Tab',9);if(account===0)await key('Tab','Tab',9);await delay(200);
     assert.equal(await evaluate('document.activeElement.dataset.action'),'planning');
     assert.equal(await evaluate("getComputedStyle(document.querySelector('[data-action=planning] .custom-tooltip')).opacity"),'1');
-    assert.equal(await evaluate("(()=>{const button=document.querySelector('[data-action=planning]'),tip=button.querySelector('.custom-tooltip'),b=button.getBoundingClientRect(),r=tip.getBoundingClientRect();return Math.abs(b.left-r.left)<=2 && r.top>=b.bottom && r.top-b.bottom<=8;})()"),true);
+    assert.equal(await evaluate("(()=>{const button=document.querySelector('[data-action=planning]'),tip=button.querySelector('.custom-tooltip'),b=button.getBoundingClientRect(),r=tip.getBoundingClientRect();return Math.abs((b.left+b.right-r.left-r.right)/2)<=2 && b.top>=r.bottom && b.top-r.bottom<=8;})()"),true);
     assert.equal(await evaluate("document.querySelector('[data-action=planning] .custom-tooltip').textContent"),planningAction);
     if(account===0 && width===1280){
      await evaluate("document.getElementById('sidebarToggle').click()");await wait("document.querySelector('.app-shell').classList.contains('collapsed')");
      const collapsedPoint=await evaluate("(()=>{const r=document.querySelector('[data-action=planning]').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()");await command('Input.dispatchMouseEvent',{type:'mouseMoved',...collapsedPoint});await delay(200);
      assert.equal(await evaluate("getComputedStyle(document.querySelector('[data-action=planning] .custom-tooltip')).opacity"),'1');
-     assert.equal(await evaluate("(()=>{const b=document.querySelector('[data-action=planning]').getBoundingClientRect(),r=document.querySelector('[data-action=planning] .custom-tooltip').getBoundingClientRect();return Math.abs(b.left-r.left)<=2 && r.top>=b.bottom && r.top-b.bottom<=8 && r.left>=0 && r.right<=innerWidth;})()"),true);
+     assert.equal(await evaluate("(()=>{const b=document.querySelector('[data-action=planning]').getBoundingClientRect(),r=document.querySelector('[data-action=planning] .custom-tooltip').getBoundingClientRect();return Math.abs((b.left+b.right-r.left-r.right)/2)<=2 && b.top>=r.bottom && b.top-r.bottom<=8 && r.left>=0 && r.right<=innerWidth;})()"),true);
      await evaluate("const spacer=document.createElement('div');spacer.id='tooltip-scroll-fixture';spacer.style.height='700px';document.querySelector('.cycle-list').before(spacer);document.querySelector('.main-content').scrollTop=400");await delay(200);
      const scrolledPoint=await evaluate("(()=>{const r=document.querySelector('[data-action=planning]').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()");await command('Input.dispatchMouseEvent',{type:'mouseMoved',...scrolledPoint});await delay(200);
      assert.equal(await evaluate("document.querySelector('.main-content').scrollTop>0"),true);
      assert.equal(await evaluate("getComputedStyle(document.querySelector('[data-action=planning] .custom-tooltip')).opacity"),'1');
-     assert.equal(await evaluate("(()=>{const b=document.querySelector('[data-action=planning]').getBoundingClientRect(),r=document.querySelector('[data-action=planning] .custom-tooltip').getBoundingClientRect();return Math.abs(b.left-r.left)<=2 && r.top>=b.bottom && r.top-b.bottom<=8 && r.left>=0 && r.right<=innerWidth;})()"),true);
+     assert.equal(await evaluate("(()=>{const b=document.querySelector('[data-action=planning]').getBoundingClientRect(),r=document.querySelector('[data-action=planning] .custom-tooltip').getBoundingClientRect();return Math.abs((b.left+b.right-r.left-r.right)/2)<=2 && b.top>=r.bottom && b.top-r.bottom<=8 && r.left>=0 && r.right<=innerWidth;})()"),true);
      await evaluate("document.querySelector('.main-content').scrollTop=0;document.getElementById('tooltip-scroll-fixture').remove();document.getElementById('sidebarToggle').click()");await wait("!document.querySelector('.app-shell').classList.contains('collapsed')");
     }
     const callsBeforeOpen=calls;

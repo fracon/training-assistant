@@ -260,6 +260,16 @@
   transform: translateX(-50%) translateY(0);
 }
 
+@media (max-width: 480px) {
+  .cycle-card-actions:has(> [data-action="planning"]:only-child) > [data-action="planning"] .custom-tooltip {
+    left: 0;
+    transform: translateY(4px);
+  }
+  .cycle-card-actions:has(> [data-action="planning"]:only-child) > [data-action="planning"]:is(:hover, :focus-visible) .custom-tooltip {
+    transform: translateY(0);
+  }
+}
+
 .btn-icon:hover {
   background: rgba(139, 129, 114, 0.1);
   color: var(--ink);
@@ -538,16 +548,4 @@
 #cyclePlanningDebugOutput { padding: .75rem; overflow-wrap: anywhere; }
 @media (prefers-reduced-motion: reduce) {
   .cycle-planning-card, .cycle-planning-modal button, .cycle-card-actions .custom-tooltip { animation: none; transition: none; }
-}
-
-/* This action is at the start of the card footer on narrow screens; align the tooltip to its button edge to keep it in the viewport. */
-.cycle-card-actions [data-action="planning"] .custom-tooltip {
-  position: absolute;
-  top: calc(100% + 4px);
-  bottom: auto;
-  left: 0;
-  transform: translateY(4px);
-}
-.cycle-card-actions [data-action="planning"]:is(:hover, :focus-visible) .custom-tooltip {
-  transform: translateY(0);
 }

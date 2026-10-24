@@ -138,8 +138,10 @@ test('Chrome persistence boundaries: closed save, failed reads, unavailable AI, 
  assert.equal(await evaluate("document.getElementById('cyclePlanningModal').dataset.cycleId"),'history');assert.equal(calls,0);
  assert.equal(await evaluate("document.getElementById('cyclePlanningError').hidden"),true);
  await click('cyclePlanningLater');assert.equal(await evaluate('document.activeElement.dataset.id'),'history');
- const tooltipBounds=await evaluate("(()=>{const b=document.querySelector('[data-action=planning][data-id=history]'),r=b.querySelector('.custom-tooltip').getBoundingClientRect(),c=b.closest('.cycle-card').getBoundingClientRect();return [r.left,r.right,innerWidth,b.getBoundingClientRect().left,b.getBoundingClientRect().right,c.left,c.right];})()");
- assert.ok(tooltipBounds[0]>=0 && tooltipBounds[1]<=tooltipBounds[2],JSON.stringify(tooltipBounds));
+ const tooltipBounds=await evaluate("(()=>{const b=document.querySelector('[data-action=planning][data-id=history]'),r=b.querySelector('.custom-tooltip').getBoundingClientRect(),button=b.getBoundingClientRect();return {left:r.left,right:r.right,width:innerWidth,buttonLeft:button.left,buttonTop:button.top,buttonBottom:button.bottom,tooltipTop:r.top,tooltipBottom:r.bottom};})()");
+ assert.ok(tooltipBounds.left>=0 && tooltipBounds.right<=tooltipBounds.width,JSON.stringify(tooltipBounds));
+ assert.ok(Math.abs(tooltipBounds.left-tooltipBounds.buttonLeft)<=2,JSON.stringify(tooltipBounds));
+ assert.ok(tooltipBounds.tooltipTop<tooltipBounds.buttonTop && tooltipBounds.tooltipBottom-tooltipBounds.buttonTop<=2 && tooltipBounds.buttonTop-tooltipBounds.tooltipBottom<=8,JSON.stringify(tooltipBounds));
  // No post-save list fetch is required: even failed list/active reads cannot erase the acknowledged row.
  await command('Network.setBlockedURLs',{urls:['*unpkg.com*','*fonts.googleapis.com*','*fonts.gstatic.com*',origin+'/api/cycles/active',origin+`/api/cycles/${first.id}/planning`]});
  await evaluate("document.querySelector('[data-action=edit]').click();document.getElementById('cyclePrimaryGoal').value='Persisted despite failed read';document.getElementById('cycleForm').requestSubmit()");

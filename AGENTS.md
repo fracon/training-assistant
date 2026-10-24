@@ -615,9 +615,12 @@ Product AI generation is owner-authorized for both roles, never admin-only.
 
 “Planejamento do ciclo” / “Cycle planning” is a `.btn-icon` card action with decorative
 Lucide `calendar-range`, translated accessible name and existing hover/focus
-custom tooltip below its own button, including on inactive cycles. The tooltip
-aligns its left edge to the action button so it stays visible on narrow screens.
-Opening reads planning only.
+custom tooltip above and centered on its own button, using the same positioning
+and animation as the other card actions, including on inactive cycles. The button
+remains its positioning reference. On narrow screens, when planning is the only
+card action, its tooltip aligns to the button's left edge to remain inside the
+viewport while keeping the shared above-button spacing and animation. Opening
+reads planning only.
 The cycle state badge remains independent from a planning row: the card metadata
 label (`Planning:` / `Planejamento:`) uses the existing strong-label style and
 the short state value uses the existing neutral `.cycle-status` badge. Secondary
