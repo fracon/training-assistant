@@ -2,6 +2,7 @@ require('dotenv').config();
 
 'use strict';
 
+const { readAiConfig, aiStartupStatus } = require('./ai/config');
 const { buildServer } = require('./server');
 const { createDatabase, resolveDatabaseFile } = require('./db/database');
 
@@ -14,9 +15,12 @@ console.log(
   Boolean(process.env.UNSPLASH_ACCESS_KEY || process.env.UNSPLASH_API_KEY),
 );
 
+const aiConfig = readAiConfig();
+console.log('[Kinesis] OpenAI:', aiStartupStatus(aiConfig));
+
 async function main() {
   const db = createDatabase({ filename: databaseFile });
-  const app = await buildServer({ db });
+  const app = await buildServer({ db, aiConfig });
   await app.listen({ port, host: process.env.HOST || '127.0.0.1' });
   console.log(`Kinesis ready at ${app.server.address().address}:${port}`);
 }

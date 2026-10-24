@@ -2,8 +2,8 @@
 
 const MODELS = ['gpt-6.1-sol', 'gpt-6-luna', 'gpt-6-astra'];
 const LIMITS = {
-  AI_MAX_OUTPUT_TOKENS: [2048, 128, 8192],
-  AI_TIMEOUT_MS: [60000, 1000, 180000],
+  AI_MAX_OUTPUT_TOKENS: [8192, 128, 8192],
+  AI_TIMEOUT_MS: [120000, 1000, 180000],
   AI_CONCURRENCY_GLOBAL: [2, 1, 8],
   AI_CONCURRENCY_USER: [1, 1, 2],
   AI_DAILY_TOKENS_USER: [100000, 1000, 10000000],
@@ -55,6 +55,18 @@ function readAiConfig(env = process.env) {
   if (errors.length) config.enabled = false;
   return config;
 }
+// Safe startup diagnostics: never return the credential or invalid setting values.
+function aiStartupStatus(config) {
+  return {
+    keyConfigured: Boolean(config.apiKey),
+    enabled: config.enabled,
+    status: config.errors.length ? 'invalid configuration'
+      : config.enabled ? 'ready (provider access not verified)'
+      : !config.apiKey ? 'missing OPENAI_API_KEY'
+      : 'disabled: set AI_ENABLED=true',
+    invalidSettings: config.errors,
+  };
+}
 // Conservative published rate ceilings, USD / million tokens, 2026-10-14.
 // No tools, fast/ultrafast tiers or automatic model fallback are enabled.
 const RATES = {
@@ -62,4 +74,4 @@ const RATES = {
   'gpt-6-luna': { input: 0.2, cached: 0.02, cacheWrite: 0.25, output: 0.75 },
   'gpt-6-astra': { input: 20, cached: 2, cacheWrite: 25, output: 75 },
 };
-module.exports = { readAiConfig, LIMITS, MODELS, RATES };
+module.exports = { readAiConfig, aiStartupStatus, LIMITS, MODELS, RATES };

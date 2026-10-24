@@ -286,6 +286,13 @@ test('feedback browser flows keep async state, PT/EN forms, focus, filters, and 
     assert.equal(await evaluate('document.getElementById("feedbackError").textContent'), 'Your feedback could not be sent. Your text is still here; please try again.');
     t.diagnostic('Verified feedback triage and global submission at 1024×768 and 390×844 in PT/EN, including stale filter responses, pending mutation containment, unsaved draft/caret preservation, mobile overflow, focus restoration, computed global modal bounds on admin/home/shoes, and detail card hierarchy, long-text wrapping, aligned controls, and separated actions.');
   } finally {
-    socket?.close(); chromeProcess.kill('SIGTERM'); rmSync(profile, { recursive: true, force: true }); await app.close();
+    socket?.close();
+    if (chromeProcess.exitCode === null) {
+      const exited = once(chromeProcess, 'exit');
+      chromeProcess.kill('SIGTERM');
+      await exited;
+    }
+    rmSync(profile, { recursive: true, force: true });
+    await app.close();
   }
 });

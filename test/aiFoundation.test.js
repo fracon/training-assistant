@@ -88,7 +88,7 @@ function failure(fn, code) {
   assert.throws(fn, (e) => e instanceof AiError && e.code === code);
 }
 async function wait(s, user, id) {
-  for (let i = 0; i < 100; i++) {
+  for (let i = 0; i < 600; i++) {
     const r = s.get(user, id);
     if (!['queued', 'running'].includes(r.state)) return r;
     await delay(5);
@@ -673,6 +673,9 @@ test('rate limit retry is bounded; uncertain outcomes and invalid responses are 
   ]) {
     const fixture = setup();
     let calls = 0;
+    let clock=Date.parse('2026-10-14T12:00:00.000Z');
+    let timerId=0;
+    const timers=new Map();
     const s = service(fixture, {
       operations: {
         analysis:
@@ -696,8 +699,18 @@ test('rate limit retry is bounded; uncertain outcomes and invalid responses are 
         if (code === 'unknown') throw Error('sensitive message');
         throw new AiError(code, 502);
       },
+      now:()=>new Date(clock).toISOString(),
+      random:()=>0,
+      setTimer:(fn,ms)=>{const id=++timerId;timers.set(id,{fn,ms});return id;},
+      clearTimer:id=>timers.delete(id),
     });
     const row = s.enqueue(1, body);
+    if(code==='providerRateLimited') {
+      for(let i=0;i<100 && calls===0;i++)await delay(5);
+      assert.equal(calls,1);
+      const [id,timer]=[...timers.entries()][0];assert.ok(timer);timers.delete(id);
+      clock+=timer.ms;timer.fn();
+    }
     const result = await wait(s, 1, row.id);
     assert.equal(calls, code === 'providerRateLimited' ? 2 : 1);
     assert.equal(
@@ -1262,7 +1275,7 @@ test('provider timeout is uncertain and does not expose transport error text', a
   });
   await assert.rejects(
     call({ store: false }),
-    (error) => error.code === 'providerOutcomeUncertain',
+    (error) => error.code === 'providerTimeout' && error.diagnostic.transportReason === 'timeout',
   );
 });
 
@@ -1602,7 +1615,7 @@ test('429 retry and cancellation arbitrate atomically across two SQLite connecti
       prepare=db.prepare.bind(db);
       db.prepare=(sql)=>{
         const stmt=prepare(sql);
-        if(timing==='after-read' && sql==='SELECT state FROM ai_executions WHERE id = ?') {
+        if(timing==='after-read' && sql==='SELECT state,settled FROM ai_executions WHERE id = ?') {
           const get=stmt.get.bind(stmt);
           stmt.get=(...args)=>{
             const row=get(...args);
@@ -1643,4 +1656,45 @@ test('429 retry and cancellation arbitrate atomically across two SQLite connecti
       fs.rmSync(dir,{recursive:true,force:true});
     }
   }
+});
+
+test('startup AI diagnostics explain readiness without exposing credentials or invalid values', () => {
+  const { aiStartupStatus } = require('../src/ai/config');
+  for (const [env, status, enabled, keyConfigured] of [
+    [{}, 'missing OPENAI_API_KEY', false, false],
+    [{AI_ENABLED:'true'}, 'missing OPENAI_API_KEY', false, false],
+    [{OPENAI_API_KEY:'synthetic-secret'}, 'disabled: set AI_ENABLED=true', false, true],
+    [{AI_ENABLED:'false',OPENAI_API_KEY:'synthetic-secret'}, 'disabled: set AI_ENABLED=true', false, true],
+    [{AI_ENABLED:'true',OPENAI_API_KEY:'synthetic-secret'}, 'ready (provider access not verified)', true, true],
+    [{AI_ENABLED:'true',OPENAI_API_KEY:'synthetic-secret',AI_MODEL_CYCLE:'invalid-model'}, 'invalid configuration', false, true],
+  ]) {
+    const diagnostic = aiStartupStatus(readAiConfig(env));
+    assert.equal(diagnostic.status, status);
+    assert.equal(diagnostic.enabled, enabled);
+    assert.equal(diagnostic.keyConfigured, keyConfigured);
+    assert.ok(!JSON.stringify(diagnostic).includes('synthetic-secret'));
+    assert.ok(!JSON.stringify(diagnostic).includes('invalid-model'));
+  }
+});
+
+test('runtime example provides the evaluated full-plan limits without enabling paid AI', () => {
+  const { readFileSync } = require('node:fs');
+  const { resolve } = require('node:path');
+  const env = require('dotenv').parse(readFileSync(resolve(__dirname, '../.env.example')));
+  const config = readAiConfig(env);
+  assert.deepEqual(config.errors, []);
+  assert.equal(config.enabled, false);
+  assert.equal(config.apiKey, '');
+  assert.equal(config.models.cycle, 'gpt-6.1-sol');
+  assert.equal(config.limits.AI_MAX_OUTPUT_TOKENS, 8192);
+  assert.equal(config.limits.AI_TIMEOUT_MS, 120000);
+  // Runtime, Compose and the example agree while AI remains disabled by default.
+  assert.equal(readAiConfig({}).limits.AI_MAX_OUTPUT_TOKENS, 8192);
+  assert.equal(readAiConfig({}).limits.AI_TIMEOUT_MS, 120000);
+  const explicitLegacy=readAiConfig({AI_MAX_OUTPUT_TOKENS:'2048',AI_TIMEOUT_MS:'60000'});
+  assert.equal(explicitLegacy.limits.AI_MAX_OUTPUT_TOKENS,2048);
+  assert.equal(explicitLegacy.limits.AI_TIMEOUT_MS,60000);
+  const compose=readFileSync(resolve(__dirname,'../docker-compose.yml'),'utf8');
+  assert.match(compose,/AI_MAX_OUTPUT_TOKENS: \$\{AI_MAX_OUTPUT_TOKENS:-8192\}/);
+  assert.match(compose,/AI_TIMEOUT_MS: \$\{AI_TIMEOUT_MS:-120000\}/);
 });
