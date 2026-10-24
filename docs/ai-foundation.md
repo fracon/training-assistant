@@ -143,6 +143,12 @@ Migration `2026-10-ai-foundation-v1` creates `ai_profiles`, `ai_memory`,
 idempotent and does not populate historical profiles or infer restrictions.
 Existing user, session, training, cycle, shoe and feedback rows are preserved.
 
+Cycle planning's `2026-10-cycle-plan-fingerprint-v1` repair migration also checks
+older databases where the planning v1 marker exists but the applied-version
+fingerprint column does not. It adds the column in place; existing version
+content is untouched and missing historical fingerprints are treated as stale,
+not reconstructed or trusted. See [planning persistence](ai-cycle-planning.md#persistence-concurrency-and-retention).
+
 The account menu links to `/training-memory.html`. Both ordinary users and
 administrators see a source-backed consolidated view, not a parallel registry.
 Only optional previous running experience can be edited here (2,000 characters,

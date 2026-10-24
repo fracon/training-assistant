@@ -149,6 +149,24 @@ test('migration from a phase-0 database preserves cycles and records without inv
  assert.equal(db.prepare('SELECT COUNT(*) n FROM cycle_plan_versions').get().n,0);db.close();
 });
 
+test('fingerprint repair migration preserves old applied plans and marks missing freshness data outdated',async()=>{
+ const db=fixture();const {service,config}=harness(db);const proposal=enqueue(service);await complete(service,proposal.id);
+ applyCyclePlan(db,1,'cycle',proposal.id,{expected_version:0},service);
+ const before=db.prepare('SELECT id,user_id,cycle_id,version,plan_json,context_hash,cycle_hash,sources_json,applied_at FROM cycle_plan_versions WHERE id=?').get(proposal.id);
+ db.exec('ALTER TABLE cycle_plan_versions DROP COLUMN fingerprint_json');
+ db.prepare("DELETE FROM schema_migrations WHERE name='2026-10-cycle-plan-fingerprint-v1'").run();
+ initializeDatabase(db);initializeDatabase(db);
+ const after=db.prepare('SELECT id,user_id,cycle_id,version,plan_json,context_hash,cycle_hash,sources_json,applied_at,fingerprint_json FROM cycle_plan_versions WHERE id=?').get(proposal.id);
+ assert.deepEqual(Object.fromEntries(Object.entries(after).filter(([key])=>key!=='fingerprint_json')),before);
+ assert.equal(after.fingerprint_json,'{}');
+ assert.equal(db.prepare("SELECT COUNT(*) n FROM schema_migrations WHERE name='2026-10-cycle-plan-fingerprint-v1'").get().n,1);
+ const view=readCyclePlanning(db,1,'cycle',service,config);
+ assert.equal(view.applied.version,1);assert.equal(view.applied.outdated,true);
+ assert.deepEqual(applyCyclePlan(db,1,'cycle',proposal.id,{expected_version:0},service),{appliedVersion:1,alreadyApplied:true});
+ assert.equal(db.prepare('SELECT COUNT(*) n FROM cycle_plan_versions WHERE cycle_id=?').get('cycle').n,1);
+ await service.stop();db.close();
+});
+
 test('same-second cycle edits cannot restore a proposal freshness by reverting field values',async()=>{
  const db=fixture();const {service}=harness(db);const proposal=enqueue(service);await complete(service,proposal.id);
  updateCycle(db,'cycle',1,{primary_goal:'Temporary synthetic edit'});updateCycle(db,'cycle',1,{primary_goal:null});

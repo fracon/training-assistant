@@ -540,6 +540,9 @@ product step, recovers persisted execution/proposal state and uses backend plan
 freshness. No-op saves preserve revisions; real edits/reversals invalidate as
 before. The original free cycle prompt is admin-only and explicitly requested;
 no save opens it. See the [presentation/access contract](ai-cycle-planning.md#presentation-and-free-prompt-access).
+The branch also repairs older cycle-planning schemas missing the applied-plan
+fingerprint without replacing records; those legacy plans remain readable and
+are conservatively marked outdated.
 It does not reuse plan-local athlete assessments. No weekly
 calendar, hourly research or result analysis operation is registered. Main still
 contains phase 0 only until this phase's PR is merged.

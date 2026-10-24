@@ -12,6 +12,22 @@ const { readAiConfig } = require('./config');
 const { createExecutionService } = require('./executions');
 const { createCyclePlanAdapter } = require('./cycle-plan-adapter');
 const { readCyclePlanning, applyCyclePlan } = require('./cycle-plans');
+function logUnexpectedError(error, request) {
+  const frames = typeof error?.stack === 'string'
+    ? error.stack.split('\n').slice(1, 8).map((frame) => frame.trim().slice(0, 240))
+    : [];
+  const diagnostic = {
+    event: 'ai_route_unexpected_error',
+    method: request.method,
+    route: request.routeOptions?.url || 'unknown',
+    errorName: /^[A-Za-z][A-Za-z0-9]{0,39}$/.test(error?.name || '') ? error.name : 'Error',
+    errorCode: /^[A-Z0-9_]{1,40}$/.test(error?.code || '') ? error.code : null,
+    frames,
+  };
+  // Do not log error.message, SQL, request values, prompts, response bodies,
+  // account identifiers or credentials. Stack frames retain code locations.
+  console.error(`[Kinesis] ${JSON.stringify(diagnostic)}`);
+}
 function registerAiRoutes(
   app,
   { db, requireAuth, config = readAiConfig(), operations = { cycle:createCyclePlanAdapter(db) }, client },
@@ -27,6 +43,7 @@ function registerAiRoutes(
           return reply
             .code(error.status)
             .send({ error: error.code, errors: [error.code] });
+        logUnexpectedError(error, request);
         return reply
           .code(500)
           .send({ error: 'aiInternalError', errors: ['aiInternalError'] });
@@ -78,4 +95,4 @@ function registerAiRoutes(
   service.recover();
   return service;
 }
-module.exports = { registerAiRoutes };
+module.exports = { registerAiRoutes, logUnexpectedError };

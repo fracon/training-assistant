@@ -5,6 +5,17 @@ const { buildServer } = require('../src/server');
 const { createDatabase } = require('../src/db/database');
 const { createSession, SESSION_COOKIE_NAME } = require('../src/auth/sessions');
 const { readAiConfig } = require('../src/ai/config');
+const { logUnexpectedError } = require('../src/ai/routes');
+test('unexpected AI error diagnostics bound malformed metadata and never echo error details',()=>{
+  const originalConsoleError=console.error;const logs=[];console.error=(...values)=>logs.push(values.join(' '));
+  try {
+    logUnexpectedError({name:'',code:'',message:'sensitive request payload',stack:null},{method:'POST'});
+  } finally { console.error=originalConsoleError; }
+  assert.equal(logs.length,1);
+  const diagnostic=JSON.parse(logs[0].replace(/^\[Kinesis\] /,''));
+  assert.deepEqual(diagnostic,{event:'ai_route_unexpected_error',method:'POST',route:'unknown',errorName:'Error',errorCode:null,frames:[]});
+  assert.doesNotMatch(logs[0],/sensitive request payload/);
+});
 async function fixture(t, extra = {}) {
   const db = createDatabase({ filename: ':memory:' });
   for (let i = 1; i <= 3; i++)
@@ -226,9 +237,21 @@ test('HTTP asynchronous contract survives polling/reload with mock-only register
   assert.equal((await send('GET', '/api/ai/admin/usage')).statusCode, 403);
   // Unexpected internal errors are ordinary HTTP 500s, with no leaked provider/SQL message.
   db.prepare('DROP TABLE ai_profiles').run();
-  const failed = await send('GET', '/api/ai/memory');
+  const originalConsoleError = console.error;
+  const diagnosticLogs = [];
+  console.error = (...values) => diagnosticLogs.push(values.join(' '));
+  let failed;
+  try {
+    failed = await send('GET', '/api/ai/memory');
+  } finally {
+    console.error = originalConsoleError;
+  }
   assert.equal(failed.statusCode, 500);
   assert.equal(failed.json().error, 'aiInternalError');
+  assert.equal(diagnosticLogs.length, 1);
+  assert.match(diagnosticLogs[0], /ai_route_unexpected_error/);
+  assert.match(diagnosticLogs[0], /SQLITE_ERROR/);
+  assert.doesNotMatch(diagnosticLogs[0], /no such table|SELECT |DROP TABLE|planner@example|synthetic-test-key/i);
 });
 
 test('invalid AI settings disable paid work without breaking startup, memory or cleanup', async (t) => {

@@ -339,6 +339,16 @@ initialization, adds `training_cycles.planning_revision` (initial zero) and:
   originating context/cycle hashes, minimal context freshness fingerprint,
   source references and application time.
 
+An existing database may already have the v1 marker while its original
+`cycle_plan_versions` table lacks `fingerprint_json`. The follow-up
+`2026-10-cycle-plan-fingerprint-v1` migration checks the actual columns on every
+initialization, adds the missing column transactionally, and is safe to rerun.
+Existing plan rows and JSON are preserved. Rows with no historical fingerprint
+receive `{}` and are conservatively considered outdated by the existing context
+freshness check; they remain readable and idempotently applied, but that missing
+metadata cannot certify them as current. New applications persist the complete
+fingerprint. No plan is rewritten or deleted by this repair.
+
 No existing cycle, profile, training, session or historical execution is rewritten.
 Every actual stored-value change increments its revision, even in the same
 second, preventing change-and-revert from authorizing an old proposal. Source
@@ -368,6 +378,13 @@ bounded default of 90 days. Unapplied proposals are cleaned once their retained
 execution is gone; applied plans and source fingerprints remain without keeping
 expired raw execution payloads. Cycle/account deletion cascades planning records.
 An account deleted or suspended during generation cannot be recreated/applied.
+
+Unexpected errors from AI routes are logged with a stable event, route template,
+error class/code and bounded stack frames. Error messages, SQL, request values,
+prompts, provider bodies, account identifiers and credentials are omitted; the
+client continues to receive the generic `aiInternalError` for genuinely
+unexpected failures. Expected ownership, freshness and version conflicts retain
+their localized domain codes.
 
 ## Continuity and interpretation boundary
 

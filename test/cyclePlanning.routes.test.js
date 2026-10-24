@@ -1,10 +1,18 @@
 'use strict';
 const test=require('node:test');const assert=require('node:assert/strict');
 const {buildServer}=require('../src/server');const {createSession,SESSION_COOKIE_NAME}=require('../src/auth/sessions');
+const {initializeDatabase}=require('../src/db/database');
 const {readAiConfig}=require('../src/ai/config');const {planFor,fixture}=require('./fixtures/ai/cycle-planning.cjs');
 const {setTimeout:delay}=require('node:timers/promises');
 test('production cycle adapter HTTP generation/poll/apply is scoped, atomic and unavailable gracefully',async(t)=>{
- const db=fixture();let calls=0;const config=readAiConfig({AI_ENABLED:'true',OPENAI_API_KEY:'synthetic-key'});
+ const db=fixture();
+ // Reproduce a database where cycle planning v1 is already marked applied,
+ // but the earlier version of that migration omitted its fingerprint column.
+ db.exec('ALTER TABLE cycle_plan_versions DROP COLUMN fingerprint_json');
+ db.prepare("DELETE FROM schema_migrations WHERE name='2026-10-cycle-plan-fingerprint-v1'").run();
+ initializeDatabase(db);
+ assert.ok(db.pragma('table_info(cycle_plan_versions)').some(column=>column.name==='fingerprint_json'));
+ let calls=0;const config=readAiConfig({AI_ENABLED:'true',OPENAI_API_KEY:'synthetic-key'});
  const app=await buildServer({db,sessionCookieSecure:false,aiConfig:config,aiClient:async(payload)=>{calls++;assert.equal(payload.store,false);assert.equal(payload.text.format.type,'json_schema');assert.equal(payload.tools.length,0);return {value:planFor(JSON.parse(payload.input[0].content[0].text).context),usage:{input:40,output:100,cached:0},error:null};}});
  t.after(async()=>{await app.close();db.close();});
  const tokens=[null,createSession(db,1).token,createSession(db,2).token];

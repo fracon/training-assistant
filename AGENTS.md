@@ -658,6 +658,12 @@ idempotent applied proposal ID. Never hold SQLite transactions over network.
 atomically with SQLite column affinities. No-op saves preserve timestamps and
 freshness; edit followed by reversal still increments twice. Never reset historical
 revisions or mark an outdated plan current just because it is kept.
+The idempotent `2026-10-cycle-plan-fingerprint-v1` repair adds a missing
+`cycle_plan_versions.fingerprint_json` to databases that already recorded the
+older planning migration. Preserve existing versions; a missing historical
+fingerprint means outdated, never infer freshness. AI route unexpected-error logs
+must omit messages, SQL, request values, prompts, provider bodies, account IDs and
+credentials while retaining a bounded stack location for diagnosis.
 Regeneration is a separate proposal, never an implicit write to applied versions.
 Applied architecture is `applied_planning`, not performed training. Plan-local
 A–C assessments never become reusable athlete traits. Do not add speculative

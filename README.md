@@ -38,6 +38,12 @@ limit, uncertainty, changed sources and proposal persistence. Administrators can
 inspect bounded per-attempt diagnostics for their own executions; neither response
 bodies nor credentials enter generic logs. Known usage remains accounted for even
 when a proposal cannot be saved. See the [failure diagnosis contract](docs/ai-cycle-planning.md#failure-diagnostics-and-provider-correlation).
+The cycle-planning schema also has an idempotent repair migration for existing
+databases whose earlier planning migration omitted the applied-plan freshness
+fingerprint. Existing plans are preserved; plans without that historical
+fingerprint are reported outdated instead of being treated as current. Unexpected
+AI-route failures log only a sanitized code/stack location, never SQL text or
+request values.
 
 See the [cycle planning contract and real-test steps](docs/ai-cycle-planning.md).
 Initial implementation used simulated provider responses. One later controlled
