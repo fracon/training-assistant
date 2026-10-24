@@ -560,7 +560,9 @@ test('cycle planning action is a localized decorative icon with the existing cus
   assert.match(js, /class="btn-icon" data-action="planning"[^>]+aria-label=/);
   assert.match(js, /data-lucide="calendar-range" aria-hidden="true"/);
   assert.match(js, /class="custom-tooltip">\$\{escapeHtml\(planningAction\)\}/);
-  assert.match(js, /data-cycle-planning-status hidden/);
+  assert.match(js, /class="cycle-card-meta cycle-planning-indicator" data-cycle-planning-status hidden/);
+  assert.match(js, /data-cycle-planning-label/);
+  assert.match(js, /class="cycle-status status-completed" data-cycle-planning-primary/);
   assert.match(js, /data-cycle-planning-primary/);
   assert.match(js, /data-cycle-planning-secondary hidden/);
   assert.match(js, /onSummaryChange\(id,summary\)/);
@@ -568,10 +570,24 @@ test('cycle planning action is a localized decorative icon with the existing cus
   assert.equal(pt.cyclePlanning.open, 'Planejamento do ciclo');
   assert.equal(en.cyclePlanning.title, en.cyclePlanning.open);
   assert.equal(pt.cyclePlanning.title, pt.cyclePlanning.open);
-  assert.equal(en.cyclePlanning.cardStatus.states.none, 'No plan yet');
-  assert.equal(pt.cyclePlanning.cardStatus.states.none, 'Planejamento não criado');
-  assert.equal(en.cyclePlanning.cardStatus.states.applied_incompatible.includes('incompatible'), true);
-  assert.equal(pt.cyclePlanning.cardStatus.states.applied_incompatible.includes('incompatível'), true);
+  assert.equal(en.cyclePlanning.cardStatus.label, 'Planning:');
+  assert.equal(pt.cyclePlanning.cardStatus.label, 'Planejamento:');
+  assert.deepEqual(en.cyclePlanning.cardStatus.states, {
+    none: 'Not created', pending: 'Generating…', failed: 'Not completed', proposal_ready: 'Proposal ready',
+    applied_current: 'Up to date', applied_outdated: 'Out of date', applied_incompatible: 'Needs review',
+    unavailable: 'AI unavailable', read_error: 'Status unavailable',
+  });
+  assert.deepEqual(pt.cyclePlanning.cardStatus.states, {
+    none: 'Não criado', pending: 'Gerando…', failed: 'Não concluído', proposal_ready: 'Proposta pronta',
+    applied_current: 'Atualizado', applied_outdated: 'Desatualizado', applied_incompatible: 'Precisa de revisão',
+    unavailable: 'IA indisponível', read_error: 'Consulta indisponível',
+  });
+  assert.equal(en.cyclePlanning.cardStatus.secondary.newPending, 'Generating new proposal…');
+  assert.equal(pt.cyclePlanning.cardStatus.secondary.newPending, 'Gerando nova proposta…');
+  assert.equal(en.cyclePlanning.cardStatus.secondary.newProposalReady, 'New proposal ready for review.');
+  assert.equal(pt.cyclePlanning.cardStatus.secondary.newProposalReady, 'Nova proposta pronta para revisão.');
+  assert.equal(en.cyclePlanning.cardStatus.secondary.updateFailed, 'The update was not completed.');
+  assert.equal(pt.cyclePlanning.cardStatus.secondary.updateFailed, 'A atualização não foi concluída.');
 });
 
 test('planning modal reuses CRUD header/close/footer with a separate scrolling product body', () => {

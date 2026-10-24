@@ -173,15 +173,16 @@
 }
 
 .cycle-planning-indicator {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
   gap: 0.25rem 0.55rem;
   margin: 0 0 0.55rem;
-  color: var(--muted);
-  font-size: 0.82rem;
-  line-height: 1.4;
   overflow-wrap: anywhere;
+}
+
+.cycle-planning-main {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
 }
 
 .cycle-planning-indicator[hidden],
@@ -190,7 +191,10 @@
 }
 
 .cycle-planning-secondary {
+  flex-basis: 100%;
   opacity: 0.82;
+  font-size: 0.82rem;
+  line-height: 1.4;
 }
 
 .cycle-card-actions {

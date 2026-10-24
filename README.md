@@ -93,14 +93,16 @@ CRUD header and close control, with a bounded scrollable body and wrapping foote
 actions. Proposal and applied version remain separate; administrative inspection
 is a secondary section inside the body.
 
-Each card separately shows the planning state; **Active / Ativo** continues to
-describe only the cycle. The compact owner-scoped summary distinguishes no plan,
-pending generation, a usable proposal, current/outdated applied planning, RPE
-incompatibility, failed updates and unavailable AI. An applied version remains
-the card's primary status after a later generation fails; a separate short note
-can show the update or proposal state. Proposals are examined newest first, but
-only a current, compatible proposal based on the currently applied version is
-selected for review. A failed later attempt cannot hide an earlier usable one.
+Each card shows a **Planning: / Planejamento:** label with a subtle neutral
+badge; **Active / Ativo** continues to describe only the cycle. The compact
+owner-scoped summary distinguishes no plan, pending generation, a usable
+proposal, current/outdated applied planning, RPE incompatibility, failed updates
+and unavailable AI using short localized badge values. An applied version
+remains the card's primary status after a later generation fails; a short
+auxiliary line can show the update or proposal state. Proposals are examined
+newest first, but only a current, compatible proposal based on the currently
+applied version is selected for review. A failed later attempt cannot hide an
+earlier usable one.
 `GET /api/cycles` carries this summary without plan contents, prompts or debug
 data. Cards refresh it when planning is read and poll the existing list only
 while a visible page has a pending execution. Clicking the existing icon opens

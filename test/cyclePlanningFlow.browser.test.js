@@ -47,7 +47,8 @@ test('Chrome saved-cycle flow: explicit generation, defer, no-op edits, stale pl
   const cycle=db.prepare("SELECT * FROM training_cycles WHERE user_id=? AND status='active'").get(userId);assert.ok(cycle);
   assert.equal(saveRequests,requestsBefore+1);assert.equal(calls,before);assert.equal(promptRequests,0);
   assert.equal(await evaluate("document.getElementById('cyclePlanningHint').textContent.includes('"+(language==='pt-BR'?'Seu ciclo foi salvo':'Your cycle was saved')+"')"),true);
-  assert.ok((await evaluate("document.querySelector('.cycle-planning-indicator').textContent")).includes(language==='pt-BR'?'Planejamento não criado':'No plan yet'));
+  assert.equal(await evaluate("document.querySelector('[data-cycle-planning-label]').textContent"),language==='pt-BR'?'Planejamento:':'Planning:');
+  assert.equal(await evaluate("document.querySelector('[data-cycle-planning-primary]').textContent"),language==='pt-BR'?'Não criado':'Not created');
   assert.equal(await evaluate("document.getElementById('cycleModal').classList.contains('hidden')"),true);
   assert.equal(await evaluate("!!document.getElementById('appView').closest('[inert]')"),true);
   assert.equal(await evaluate('document.activeElement.id'),'cyclePlanningClose');
@@ -56,22 +57,27 @@ test('Chrome saved-cycle flow: explicit generation, defer, no-op edits, stale pl
   await capture(`created-${account}-${language}-${width}`);
   await click('cyclePlanningLater');await wait("document.getElementById('cyclePlanningModal').hidden");
   assert.equal(await evaluate('document.activeElement.dataset.id'),cycle.id);assert.equal(calls,before);
-  const visualSample=account===0 && language==='pt-BR' && width===390;
-  if(visualSample)await capture('cycle-card-no-plan-pt-390');
+  const visualSample=account===0 && [1280,390].includes(width);
+  const visualSuffix=`${language==='pt-BR'?'pt':'en'}-${width}`;
+  if(visualSample){
+   if(width===1280 && await evaluate("document.querySelector('.app-shell').classList.contains('collapsed')"))await click('sidebarToggle');
+   await capture(`cycle-card-no-plan-${visualSuffix}`);
+   if(width===1280){await click('sidebarToggle');await wait("document.querySelector('.app-shell').classList.contains('collapsed')");await capture(`cycle-card-no-plan-${visualSuffix}-collapsed`);await click('sidebarToggle');await wait("!document.querySelector('.app-shell').classList.contains('collapsed')");}
+  }
   assert.equal(db.prepare('SELECT COUNT(*) n FROM training_cycles WHERE user_id=?').get(userId).n,1);
   await openCard(cycle.id);outcome='success';await click('cyclePlanningGenerate');await click('cyclePlanningGenerate');
   await wait("!document.getElementById('cyclePlanningCancel').hidden");assert.equal(calls,before+1);
-  assert.ok((await evaluate("document.querySelector('.cycle-planning-indicator').textContent")).includes(language==='pt-BR'?'Gerando planejamento':'Generating plan'));
+  assert.equal(await evaluate("document.querySelector('[data-cycle-planning-primary]').textContent"),language==='pt-BR'?'Gerando…':'Generating…');
   assert.equal(db.prepare('SELECT COUNT(*) n FROM cycle_plan_versions WHERE cycle_id=?').get(cycle.id).n,0);
   await click('cyclePlanningLater');release();release=null;
   for(let i=0;i<100;i++){if(db.prepare("SELECT state FROM ai_executions WHERE resource_id=? ORDER BY created_at DESC LIMIT 1").get(cycle.id)?.state==='completed')break;await delay(20);}
   assert.equal(await evaluate("document.getElementById('cyclePlanningModal').hidden"),true);
-  if(visualSample){await wait("document.querySelector('.cycle-planning-indicator').textContent.includes('Proposta pronta para revisão')");await capture('cycle-card-proposal-pt-390');}
+  if(visualSample){await wait(`document.querySelector('[data-cycle-planning-primary]').textContent==='${language==='pt-BR'?'Proposta pronta':'Proposal ready'}'`);await capture(`cycle-card-proposal-${visualSuffix}`);}
   await openCard(cycle.id);await wait("!document.getElementById('cyclePlanningApply').hidden");assert.equal(calls,before+1);
   await click('cyclePlanningApply');await wait("document.getElementById('cyclePlanningApply').hidden && document.querySelector('.cycle-status.status-active')");
-  assert.ok((await evaluate("document.querySelector('.cycle-planning-indicator').textContent")).includes(language==='pt-BR'?'Planejamento atualizado':'Plan up to date'));
+  assert.equal(await evaluate("document.querySelector('[data-cycle-planning-primary]').textContent"),language==='pt-BR'?'Atualizado':'Up to date');
   await key('Escape','Escape',27);
-  if(visualSample)await capture('cycle-card-applied-pt-390');
+  if(visualSample)await capture(`cycle-card-applied-${visualSuffix}`);
   await edit(null);await wait("document.getElementById('cyclePlanningHint').textContent.includes('"+(language==='pt-BR'?'está atualizado':'is current')+"')");
   assert.equal(await evaluate("document.getElementById('cyclePlanningGenerate').hidden"),true);
   assert.equal(db.prepare('SELECT planning_revision FROM training_cycles WHERE id=?').get(cycle.id).planning_revision,0);
@@ -85,13 +91,19 @@ test('Chrome saved-cycle flow: explicit generation, defer, no-op edits, stale pl
   const overview=await app.inject({method:'GET',url:`/api/cycles/${cycle.id}/planning`,headers:{cookie:`${SESSION_COOKIE_NAME}=${tokens[account]}`}});
   assert.equal(overview.json().applied.outdated,true);
   await edit(null);outcome='incomplete';await click('cyclePlanningGenerate');await wait("!document.getElementById('cyclePlanningCancel').hidden");release();release=null;
-  await wait("document.querySelector('.cycle-planning-indicator').textContent.includes('"+(language==='pt-BR'?'não foi concluída':'not completed')+"')");
+  await wait("document.querySelector('[data-cycle-planning-primary]').textContent==='"+(language==='pt-BR'?'Desatualizado':'Out of date')+"'");
+  await wait("document.querySelector('[data-cycle-planning-secondary]').textContent==='"+(language==='pt-BR'?'A atualização não foi concluída.':'The update was not completed.')+"'");
   const cardPlanningStatus=await evaluate("document.querySelector('.cycle-planning-indicator').textContent");
-  assert.ok(cardPlanningStatus.includes(language==='pt-BR'?'não foi concluída':'not completed'),cardPlanningStatus);
+  assert.equal(await evaluate("document.querySelector('[data-cycle-planning-label]').textContent"),language==='pt-BR'?'Planejamento:':'Planning:');
+  assert.equal(await evaluate("document.querySelector('[data-cycle-planning-primary]').textContent"),language==='pt-BR'?'Desatualizado':'Out of date',cardPlanningStatus);
+  assert.equal(await evaluate("document.querySelector('[data-cycle-planning-secondary]').textContent"),language==='pt-BR'?'A atualização não foi concluída.':'The update was not completed.');
+  assert.equal(await evaluate("document.querySelector('[data-cycle-planning-secondary]').hidden"),false);
   assert.equal(db.prepare('SELECT id FROM training_cycles WHERE id=?').get(cycle.id).id,cycle.id);
   assert.equal(db.prepare('SELECT COUNT(*) n FROM cycle_plan_versions WHERE cycle_id=?').get(cycle.id).n,1);
   assert.equal(await evaluate("document.getElementById('cycleFormError').classList.contains('hidden')"),true);
-  await click('cyclePlanningLater');assert.equal(promptRequests,0);
+  await click('cyclePlanningLater');await wait("document.getElementById('cyclePlanningModal').hidden");
+  if(visualSample)await capture(`cycle-card-update-failed-${visualSuffix}`);
+  assert.equal(promptRequests,0);
   db.prepare('DELETE FROM training_cycles WHERE id=?').run(cycle.id);
  }
 });
@@ -159,7 +171,7 @@ test('Chrome persistence boundaries: closed save, failed reads, unavailable AI, 
  // A no-op edit automatically resumes the persisted execution rather than enqueuing another.
  await evaluate("document.querySelector('[data-action=edit]').click();document.getElementById('cycleForm').requestSubmit()");await wait("!document.getElementById('cyclePlanningCancel').hidden");assert.equal(calls,1);
  await click('cyclePlanningLater');
- await wait("document.querySelector('.cycle-planning-indicator').textContent.includes('Gerando planejamento')");
+ await wait("document.querySelector('[data-cycle-planning-primary]').textContent==='Gerando…'");
  release();release=null;
  for(let i=0;i<100;i++){if(db.prepare('SELECT state FROM ai_executions WHERE resource_id=?').get(current.id)?.state==='completed')break;await delay(20);}
  assert.equal(await evaluate("document.getElementById('cyclePlanningModal').hidden"),true);

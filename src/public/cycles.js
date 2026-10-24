@@ -47,11 +47,13 @@ function planningSecondaryKey(status) {
 }
 function renderPlanningIndicator(card, summary, messages) {
   const indicator=card.querySelector('[data-cycle-planning-status]');
+  const label=indicator?.querySelector('[data-cycle-planning-label]');
   const primary=indicator?.querySelector('[data-cycle-planning-primary]');
   const secondary=indicator?.querySelector('[data-cycle-planning-secondary]');
   const button=card.querySelector('[data-action="planning"]');
   const tooltip=button?.querySelector('.custom-tooltip');
-  if (!indicator || !primary || !secondary || !button || !summary?.status) return;
+  if (!indicator || !label || !primary || !secondary || !button || !summary?.status) return;
+  label.textContent=t(messages,'cyclePlanning.cardStatus.label');
   primary.textContent=t(messages,`cyclePlanning.cardStatus.states.${summary.status}`);
   indicator.hidden=false;
   const secondaryKey=summary.secondary;
@@ -87,10 +89,10 @@ function renderCycleCard(cycle, messages, language = 'en-US', user = null) {
       ${cycle.start_date ? `<span><strong>${t(messages, 'cycles.startDate')}:</strong> ${escapeHtml(formatLocalizedDate(cycle.start_date, language))}</span>` : ''}
       ${cycle.primary_goal ? `<span><strong>${t(messages, 'cycles.primaryGoal')}:</strong> ${escapeHtml(cycle.primary_goal)}</span>` : ''}
     </div>
-    <p class="cycle-planning-indicator" data-cycle-planning-status hidden>
-      <span data-cycle-planning-primary></span>
+    <div class="cycle-card-meta cycle-planning-indicator" data-cycle-planning-status hidden>
+      <span class="cycle-planning-main"><strong data-cycle-planning-label></strong><span class="cycle-status status-completed" data-cycle-planning-primary></span></span>
       <span class="cycle-planning-secondary" data-cycle-planning-secondary hidden></span>
-    </p>
+    </div>
     <div class="cycle-card-actions">
       ${cycle.status === 'active' ? `
         <button type="button" class="btn-icon cycle-edit-btn" data-action="edit" data-id="${cycle.id}" aria-label="${t(messages, 'cycles.edit')}">

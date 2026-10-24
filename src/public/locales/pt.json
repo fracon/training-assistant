@@ -1098,21 +1098,22 @@
     "inactiveCycle": "Este ciclo não está ativo. O planejamento salvo continua disponível.",
     "open": "Planejamento do ciclo",
     "cardStatus": {
+      "label": "Planejamento:",
       "states": {
-        "none": "Planejamento não criado",
-        "pending": "Gerando planejamento…",
-        "failed": "Planejamento não concluído",
-        "proposal_ready": "Proposta pronta para revisão",
-        "applied_current": "Planejamento atualizado",
-        "applied_outdated": "Planejamento desatualizado",
-        "applied_incompatible": "Planejamento incompatível — precisa de revisão",
-        "unavailable": "Planejamento por IA indisponível",
-        "read_error": "Não foi possível consultar o planejamento"
+        "none": "Não criado",
+        "pending": "Gerando…",
+        "failed": "Não concluído",
+        "proposal_ready": "Proposta pronta",
+        "applied_current": "Atualizado",
+        "applied_outdated": "Desatualizado",
+        "applied_incompatible": "Precisa de revisão",
+        "unavailable": "IA indisponível",
+        "read_error": "Consulta indisponível"
       },
       "secondary": {
         "newPending": "Gerando nova proposta…",
-        "newProposalReady": "Nova proposta pronta para revisão",
-        "updateFailed": "A atualização não foi concluída",
+        "newProposalReady": "Nova proposta pronta para revisão.",
+        "updateFailed": "A atualização não foi concluída.",
         "unavailable": "O planejamento por IA está temporariamente indisponível"
       },
       "actions": {

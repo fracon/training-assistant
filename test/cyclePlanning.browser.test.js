@@ -50,12 +50,17 @@ test('Chrome cycle planning PT/EN desktop/mobile: recovered generation, proposal
     const hasAppliedPlan=Boolean(db.prepare('SELECT 1 FROM cycle_plan_versions WHERE user_id=? AND cycle_id=?').get(account+1,account===0?'cycle':'private'));
     const planningAction=hasAppliedPlan?(language==='pt-BR'?'Ver planejamento':'View plan'):(language==='pt-BR'?'Gerar planejamento':'Generate plan');
     const modalTitle=language==='pt-BR'?'Planejamento do ciclo':'Cycle planning';
+    const planningValue=hasAppliedPlan?(language==='pt-BR'?'Atualizado':'Up to date'):(language==='pt-BR'?'Não criado':'Not created');
     await wait(`document.documentElement.lang==='${language}' && document.querySelector('[data-action=planning]').getAttribute('aria-label')==='${planningAction}'`);
     assert.equal(await evaluate('document.documentElement.scrollWidth>innerWidth'),false);
     assert.equal(await evaluate("!!document.querySelector('[data-action=prompt]')"),account===0);
     assert.equal(await evaluate("!!document.getElementById('promptModal')"),account===0);
     assert.equal(await evaluate("document.querySelector('[data-action=planning]').getAttribute('aria-label')"),planningAction);
     assert.equal(await evaluate("document.querySelector('[data-action=planning]').hasAttribute('title')"),false);
+    assert.equal(await evaluate("document.querySelector('[data-cycle-planning-label]').textContent"),language==='pt-BR'?'Planejamento:':'Planning:');
+    assert.equal(await evaluate("document.querySelector('[data-cycle-planning-primary]').textContent"),planningValue);
+    assert.equal(await evaluate("document.querySelector('[data-cycle-planning-primary]').classList.contains('cycle-status')"),true);
+    assert.equal(await evaluate("document.querySelector('[data-cycle-planning-primary]').classList.contains('status-completed')"),true);
     assert.deepEqual(await controlStyle('[data-action=planning]'),await controlStyle('[data-action=edit]'));
     const point=await evaluate("(()=>{const r=document.querySelector('[data-action=planning]').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()");
     await command('Input.dispatchMouseEvent',{type:'mouseMoved',...point});await delay(200);

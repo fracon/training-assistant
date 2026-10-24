@@ -1206,8 +1206,13 @@ no real-call or coaching-quality claim.
 ## Per-cycle planning status (current PR branch)
 
 The card's **Active / Ativo** badge still describes the cycle lifecycle only.
-A separate localized text line reports planning state, so an active cycle can
-correctly show no plan, pending work, a proposal, an applied plan or an issue
+Planning appears on its own metadata row: the localized **Planning: /
+Planejamento:** label uses the same strong-label style as other cycle metadata,
+followed by a short state value in the existing neutral `.cycle-status` badge.
+Any update or proposal note appears beneath it in the existing secondary
+helper-text style. This keeps the planning state legible without changing cycle
+activation. An active cycle can correctly show no plan, pending work, a
+proposal, an applied plan or an issue
 without changing activation or manual cycle use. The existing planning icon is
 the only action and always opens the product modal; generating remains an
 explicit modal action. Listing, opening, updating the status and changing locale

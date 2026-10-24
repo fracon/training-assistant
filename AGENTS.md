@@ -615,7 +615,10 @@ Product AI generation is owner-authorized for both roles, never admin-only.
 “Planejamento do ciclo” / “Cycle planning” is a `.btn-icon` card action with decorative
 Lucide `calendar-range`, translated accessible name and existing hover/focus
 custom tooltip, including on inactive cycles. Opening reads planning only.
-The cycle state badge remains independent from a localized planning-status line.
+The cycle state badge remains independent from a planning row: the card metadata
+label (`Planning:` / `Planejamento:`) uses the existing strong-label style and
+the short state value uses the existing neutral `.cycle-status` badge. Secondary
+update/proposal information stays on a separate muted helper-text line.
 `GET /api/cycles` attaches only a compact owner-scoped `planningSummary` (status,
 short secondary state, availability and generation eligibility); it never sends
 plan text, prompts, context or diagnostics for card rendering. Proposal selection
