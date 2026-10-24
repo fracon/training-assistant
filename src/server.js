@@ -8,7 +8,12 @@ const Fastify = require('fastify');
 const multipart = require('@fastify/multipart');
 const fastifyStatic = require('@fastify/static');
 const fastifyCookie = require('@fastify/cookie');
-const { parseFitFile, normalizeCalories, formatDuration, formatPace } = require('./fitParser');
+const {
+  parseFitFile,
+  normalizeCalories,
+  formatDuration,
+  formatPace,
+} = require('./fitParser');
 const { FitUploadError, resolveFitBuffer } = require('./fitUpload');
 const { normalizeManualResults } = require('./manualResults');
 const {
@@ -19,7 +24,10 @@ const {
 const { generateMarkdown } = require('./markdownGenerator');
 const { registerUser, RegistrationError } = require('./auth/registration');
 const { loginUser, LoginError } = require('./auth/login');
-const { changePassword, ChangePasswordError } = require('./auth/changePassword');
+const {
+  changePassword,
+  ChangePasswordError,
+} = require('./auth/changePassword');
 const {
   SESSION_COOKIE_NAME,
   deleteSession,
@@ -52,10 +60,14 @@ const {
   normalizeTemperatureUnit,
 } = require('./auth/preferences');
 const XLSX = require('xlsx');
-const { parseRows } = require('./trainingImport');
+const { parseRows, trainingSignature } = require('./trainingImport');
 const { resolveTrainingWeather } = require('./weather');
 const { buildMacrocyclePrompt } = require('./prompts');
-const { normalizeAvailabilityWeek, getAvailabilityWeek, saveAvailabilityWeek } = require('./availability');
+const {
+  normalizeAvailabilityWeek,
+  getAvailabilityWeek,
+  saveAvailabilityWeek,
+} = require('./availability');
 const { fetchHeroImage } = require('./unsplash');
 const {
   FeedbackError,
@@ -87,17 +99,25 @@ const { version: APP_VERSION } = require('../package.json');
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
 function getOnboardingState(db, userId) {
-  const user = db.prepare(
-    'SELECT onboarding_status, onboarding_guide_hidden FROM users WHERE id = ?'
-  ).get(userId);
-  const shoes = db.prepare('SELECT 1 FROM shoes WHERE user_id = ? LIMIT 1').get(userId);
-  const cycle = db.prepare(
-    "SELECT 1 FROM training_cycles WHERE user_id = ? AND status = 'active' LIMIT 1"
-  ).get(userId);
-  const trainings = db.prepare('SELECT 1 FROM trainings WHERE user_id = ? LIMIT 1').get(userId);
-  const firstTraining = db.prepare(
-    'SELECT id FROM trainings WHERE user_id = ? ORDER BY id LIMIT 1'
-  ).get(userId);
+  const user = db
+    .prepare(
+      'SELECT onboarding_status, onboarding_guide_hidden FROM users WHERE id = ?',
+    )
+    .get(userId);
+  const shoes = db
+    .prepare('SELECT 1 FROM shoes WHERE user_id = ? LIMIT 1')
+    .get(userId);
+  const cycle = db
+    .prepare(
+      "SELECT 1 FROM training_cycles WHERE user_id = ? AND status = 'active' LIMIT 1",
+    )
+    .get(userId);
+  const trainings = db
+    .prepare('SELECT 1 FROM trainings WHERE user_id = ? LIMIT 1')
+    .get(userId);
+  const firstTraining = db
+    .prepare('SELECT id FROM trainings WHERE user_id = ? ORDER BY id LIMIT 1')
+    .get(userId);
   const steps = {
     shoes: Boolean(shoes),
     cycle: Boolean(cycle),
@@ -172,7 +192,9 @@ function normalizeIsoDate(value) {
   const text = value.trim();
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
   if (!match) return null;
-  const probe = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  const probe = new Date(
+    Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])),
+  );
   const iso =
     `${probe.getUTCFullYear()}-${String(probe.getUTCMonth() + 1).padStart(2, '0')}-` +
     `${String(probe.getUTCDate()).padStart(2, '0')}`;
@@ -188,7 +210,8 @@ function adminPageAliasTarget(rawUrl) {
     return null;
   }
   for (const page of ['/admin-users.html', '/admin-feedback.html']) {
-    if (rawPath !== page && path.posix.normalize(decodedPath) === page) return page;
+    if (rawPath !== page && path.posix.normalize(decodedPath) === page)
+      return page;
   }
   return null;
 }
@@ -221,7 +244,10 @@ async function buildServer(options = {}) {
     /* c8 ignore next 8 -- exercised through Fastify's static wildcard dispatch. */
     const adminAlias = adminPageAliasTarget(request.raw.url ?? request.url);
     if (adminAlias) {
-      const decision = adminAliasDecision(options.db, request.cookies?.[SESSION_COOKIE_NAME]);
+      const decision = adminAliasDecision(
+        options.db,
+        request.cookies?.[SESSION_COOKIE_NAME],
+      );
       if (decision === 'login') return reply.redirect('/login.html');
       if (decision === 'home') return reply.redirect('/home.html');
       return reply.sendFile(adminAlias.slice(1));
@@ -238,7 +264,8 @@ async function buildServer(options = {}) {
   };
   const requireAuth = options.db
     ? createRequireAuth(options.db)
-    : async (_request, reply) => reply.code(401).send({ error: 'Authentication required.' });
+    : async (_request, reply) =>
+        reply.code(401).send({ error: 'Authentication required.' });
 
   app.get('/', async (request, reply) => {
     const session = sessionOf(request);
@@ -337,12 +364,33 @@ async function buildServer(options = {}) {
   if (options.db) {
     const db = options.db;
     const aiConfig = options.aiConfig || readAiConfig();
-    const aiService = registerAiRoutes(app, { db, requireAuth, config: aiConfig, operations: options.aiOperations, client: options.aiClient });
-    const cycleWithPlanningSummary = (cycle,userId) => {
+    const aiService = registerAiRoutes(app, {
+      db,
+      requireAuth,
+      config: aiConfig,
+      operations: options.aiOperations,
+      client: options.aiClient,
+      weatherFetch: options.weatherFetch,
+    });
+    const cycleWithPlanningSummary = (cycle, userId) => {
       let planningSummary;
-      try { planningSummary=readCyclePlanningSummary(db,userId,cycle.id,aiService,aiConfig); }
-      catch { planningSummary={status:'read_error',secondary:null,available:Boolean(aiConfig.enabled),canGenerate:false}; }
-      return { ...cycle,planningSummary };
+      try {
+        planningSummary = readCyclePlanningSummary(
+          db,
+          userId,
+          cycle.id,
+          aiService,
+          aiConfig,
+        );
+      } catch {
+        planningSummary = {
+          status: 'read_error',
+          secondary: null,
+          available: Boolean(aiConfig.enabled),
+          canGenerate: false,
+        };
+      }
+      return { ...cycle, planningSummary };
     };
 
     app.post('/api/auth/register', async (request, reply) => {
@@ -401,82 +449,126 @@ async function buildServer(options = {}) {
       return { user: request.user };
     });
 
-    app.get('/api/ai-coach/availability', { preHandler: requireAuth }, async (request) => {
-      return { availability: getAvailabilityWeek(db, request.user.id) };
-    });
+    app.get(
+      '/api/ai-coach/availability',
+      { preHandler: requireAuth },
+      async (request) => {
+        return { availability: getAvailabilityWeek(db, request.user.id) };
+      },
+    );
 
-    app.put('/api/ai-coach/availability', { preHandler: requireAuth }, async (request, reply) => {
-      const normalized = normalizeAvailabilityWeek(request.body);
-      if (!normalized.valid) return reply.code(400).send({ error: normalized.error });
-      return { availability: saveAvailabilityWeek(db, request.user.id, normalized.days) };
-    });
+    app.put(
+      '/api/ai-coach/availability',
+      { preHandler: requireAuth },
+      async (request, reply) => {
+        const normalized = normalizeAvailabilityWeek(request.body);
+        if (!normalized.valid)
+          return reply.code(400).send({ error: normalized.error });
+        return {
+          availability: saveAvailabilityWeek(
+            db,
+            request.user.id,
+            normalized.days,
+          ),
+        };
+      },
+    );
 
     app.get('/api/onboarding', { preHandler: requireAuth }, async (request) => {
       return { onboarding: getOnboardingState(db, request.user.id) };
     });
 
-    app.patch('/api/onboarding/presentation', { preHandler: requireAuth }, async (request, reply) => {
-      const body = request.body ?? {};
-      const keys = Object.keys(body);
-      const supported = ['welcome_dismissed', 'guide_hidden'];
-      if (keys.length === 0 || keys.some((key) => !supported.includes(key))) {
-        return reply.code(400).send({ error: 'Unsupported onboarding preference.' });
-      }
-      if (body.welcome_dismissed !== undefined && typeof body.welcome_dismissed !== 'boolean') {
-        return reply.code(400).send({ error: 'welcome_dismissed must be a boolean.' });
-      }
-      if (body.guide_hidden !== undefined && typeof body.guide_hidden !== 'boolean') {
-        return reply.code(400).send({ error: 'guide_hidden must be a boolean.' });
-      }
-      const update = db.transaction(() => {
-        if (body.welcome_dismissed === true) {
-          db.prepare(
-            "UPDATE users SET onboarding_status = CASE WHEN onboarding_status = 'new' THEN 'active' ELSE onboarding_status END WHERE id = ?"
-          ).run(request.user.id);
+    app.patch(
+      '/api/onboarding/presentation',
+      { preHandler: requireAuth },
+      async (request, reply) => {
+        const body = request.body ?? {};
+        const keys = Object.keys(body);
+        const supported = ['welcome_dismissed', 'guide_hidden'];
+        if (keys.length === 0 || keys.some((key) => !supported.includes(key))) {
+          return reply
+            .code(400)
+            .send({ error: 'Unsupported onboarding preference.' });
         }
-        if (body.guide_hidden !== undefined) {
-          db.prepare('UPDATE users SET onboarding_guide_hidden = ? WHERE id = ?').run(
-            body.guide_hidden ? 1 : 0,
-            request.user.id
-          );
+        if (
+          body.welcome_dismissed !== undefined &&
+          typeof body.welcome_dismissed !== 'boolean'
+        ) {
+          return reply
+            .code(400)
+            .send({ error: 'welcome_dismissed must be a boolean.' });
         }
-      });
-      update();
-      return { onboarding: getOnboardingState(db, request.user.id) };
-    });
+        if (
+          body.guide_hidden !== undefined &&
+          typeof body.guide_hidden !== 'boolean'
+        ) {
+          return reply
+            .code(400)
+            .send({ error: 'guide_hidden must be a boolean.' });
+        }
+        const update = db.transaction(() => {
+          if (body.welcome_dismissed === true) {
+            db.prepare(
+              "UPDATE users SET onboarding_status = CASE WHEN onboarding_status = 'new' THEN 'active' ELSE onboarding_status END WHERE id = ?",
+            ).run(request.user.id);
+          }
+          if (body.guide_hidden !== undefined) {
+            db.prepare(
+              'UPDATE users SET onboarding_guide_hidden = ? WHERE id = ?',
+            ).run(body.guide_hidden ? 1 : 0, request.user.id);
+          }
+        });
+        update();
+        return { onboarding: getOnboardingState(db, request.user.id) };
+      },
+    );
 
     app.get('/api/hero-image', { preHandler: requireAuth }, async () => {
-      return loadHeroImage({ fetchImpl: options.unsplashFetch || globalThis.fetch });
+      return loadHeroImage({
+        fetchImpl: options.unsplashFetch || globalThis.fetch,
+      });
     });
 
-    app.put('/api/auth/password', { preHandler: requireAuth }, async (request, reply) => {
-      try {
-        const result = await changeUserPassword(db, request.user.id, request.body);
-        return reply.send(result);
-      } catch (error) {
-        if (error instanceof ChangePasswordError) {
-          const payload = { error: error.message };
-          if (Array.isArray(error.errors) && error.errors.length > 0) {
-            payload.errors = error.errors;
+    app.put(
+      '/api/auth/password',
+      { preHandler: requireAuth },
+      async (request, reply) => {
+        try {
+          const result = await changeUserPassword(
+            db,
+            request.user.id,
+            request.body,
+          );
+          return reply.send(result);
+        } catch (error) {
+          if (error instanceof ChangePasswordError) {
+            const payload = { error: error.message };
+            if (Array.isArray(error.errors) && error.errors.length > 0) {
+              payload.errors = error.errors;
+            }
+            return reply.code(error.status).send(payload);
           }
-          return reply.code(error.status).send(payload);
+          throw error;
         }
-        throw error;
-      }
-    });
+      },
+    );
 
-    app.patch('/api/users/me/language', { preHandler: requireAuth }, async (request, reply) => {
-      const requested = request.body?.preferred_lang;
-      if (!isSupportedLanguage(requested)) {
-        return reply.code(400).send({ error: 'Unsupported language.' });
-      }
-      const language = normalizeLanguage(requested);
-      db.prepare('UPDATE users SET preferred_lang = ? WHERE id = ?').run(
-        language,
-        request.user.id
-      );
-      return { preferred_lang: language };
-    });
+    app.patch(
+      '/api/users/me/language',
+      { preHandler: requireAuth },
+      async (request, reply) => {
+        const requested = request.body?.preferred_lang;
+        if (!isSupportedLanguage(requested)) {
+          return reply.code(400).send({ error: 'Unsupported language.' });
+        }
+        const language = normalizeLanguage(requested);
+        db.prepare('UPDATE users SET preferred_lang = ? WHERE id = ?').run(
+          language,
+          request.user.id,
+        );
+        return { preferred_lang: language };
+      },
+    );
 
     app.patch(
       '/api/users/me/calendar-preference',
@@ -489,187 +581,225 @@ async function buildServer(options = {}) {
         const firstDay = normalizeWeekStart(requested);
         db.prepare('UPDATE users SET first_day_of_week = ? WHERE id = ?').run(
           firstDay,
-          request.user.id
+          request.user.id,
         );
         return { first_day_of_week: firstDay };
-      }
+      },
     );
 
-    app.patch('/api/users/me/preferences', { preHandler: requireAuth }, async (request, reply) => {
-      const body = request.body ?? {};
-      const firstDay = body.first_day_of_week;
-      const distanceUnit = body.distance_unit;
-      const temperatureUnit = body.temperature_unit;
-      if (!isSupportedWeekStart(firstDay) ||
+    app.patch(
+      '/api/users/me/preferences',
+      { preHandler: requireAuth },
+      async (request, reply) => {
+        const body = request.body ?? {};
+        const firstDay = body.first_day_of_week;
+        const distanceUnit = body.distance_unit;
+        const temperatureUnit = body.temperature_unit;
+        if (
+          !isSupportedWeekStart(firstDay) ||
           !isSupportedDistanceUnit(distanceUnit) ||
-          !isSupportedTemperatureUnit(temperatureUnit)) {
-        return reply.code(400).send({ error: 'Unsupported preference.' });
-      }
-      const normalized = {
-        first_day_of_week: normalizeWeekStart(firstDay),
-        distance_unit: normalizeDistanceUnit(distanceUnit),
-        temperature_unit: normalizeTemperatureUnit(temperatureUnit),
-      };
-      db.prepare(
-        'UPDATE users SET first_day_of_week = ?, distance_unit = ?, temperature_unit = ? WHERE id = ?'
-      ).run(
-        normalized.first_day_of_week,
-        normalized.distance_unit,
-        normalized.temperature_unit,
-        request.user.id
-      );
-      return normalized;
-    });
+          !isSupportedTemperatureUnit(temperatureUnit)
+        ) {
+          return reply.code(400).send({ error: 'Unsupported preference.' });
+        }
+        const normalized = {
+          first_day_of_week: normalizeWeekStart(firstDay),
+          distance_unit: normalizeDistanceUnit(distanceUnit),
+          temperature_unit: normalizeTemperatureUnit(temperatureUnit),
+        };
+        db.prepare(
+          'UPDATE users SET first_day_of_week = ?, distance_unit = ?, temperature_unit = ? WHERE id = ?',
+        ).run(
+          normalized.first_day_of_week,
+          normalized.distance_unit,
+          normalized.temperature_unit,
+          request.user.id,
+        );
+        return normalized;
+      },
+    );
 
-    app.get('/api/calendar/trainings', { preHandler: requireAuth }, async (request) => {
-      const rawFrom = request.query?.from;
-      const rawTo = request.query?.to;
-      const from =
-        typeof rawFrom === 'string' && rawFrom.trim() !== '' ? rawFrom.trim() : null;
-      const to = typeof rawTo === 'string' && rawTo.trim() !== '' ? rawTo.trim() : null;
-      const conditions = ['user_id = ?'];
-      const params = [request.user.id];
-      if (from) {
-        conditions.push('dia >= ?');
-        params.push(from);
-      }
-      if (to) {
-        conditions.push('dia <= ?');
-        params.push(to);
-      }
-      const trainings = db
-        .prepare(
-          `SELECT id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes,
+    app.get(
+      '/api/calendar/trainings',
+      { preHandler: requireAuth },
+      async (request) => {
+        const rawFrom = request.query?.from;
+        const rawTo = request.query?.to;
+        const from =
+          typeof rawFrom === 'string' && rawFrom.trim() !== ''
+            ? rawFrom.trim()
+            : null;
+        const to =
+          typeof rawTo === 'string' && rawTo.trim() !== ''
+            ? rawTo.trim()
+            : null;
+        const conditions = ['user_id = ?'];
+        const params = [request.user.id];
+        if (from) {
+          conditions.push('dia >= ?');
+          params.push(from);
+        }
+        if (to) {
+          conditions.push('dia <= ?');
+          params.push(to);
+        }
+        const trainings = db
+          .prepare(
+            `SELECT id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes,
                   fit_distance, fit_duration
-           FROM trainings WHERE ${conditions.join(' AND ')} ORDER BY dia, id`
-        )
-        .all(...params);
-      return { trainings };
-    });
+           FROM trainings WHERE ${conditions.join(' AND ')} ORDER BY dia, id`,
+          )
+          .all(...params);
+        return { trainings };
+      },
+    );
 
-    app.post('/api/calendar/import', { preHandler: requireAuth }, async (request, reply) => {
-      const activeCycle = getActiveCycle(db, request.user.id);
-      if (!activeCycle) {
-        return reply.code(400).send({ error: 'No active training cycle. Create one first.' });
-      }
+    app.post(
+      '/api/calendar/import',
+      { preHandler: requireAuth },
+      async (request, reply) => {
+        const activeCycle = getActiveCycle(db, request.user.id);
+        if (!activeCycle) {
+          return reply
+            .code(400)
+            .send({ error: 'No active training cycle. Create one first.' });
+        }
 
-      if (!request.isMultipart()) {
-        return reply.code(400).send({ error: 'Expected multipart/form-data upload.' });
-      }
+        if (!request.isMultipart()) {
+          return reply
+            .code(400)
+            .send({ error: 'Expected multipart/form-data upload.' });
+        }
 
-      let fileBuffer = null;
-      let fileName = '';
-      let fileMimeType = '';
-      try {
-        for await (const part of request.parts()) {
-          if (part.type === 'file' && part.fieldname === 'file') {
-            fileName = part.filename;
-            fileMimeType = part.mimetype;
-            fileBuffer = await part.toBuffer();
+        let fileBuffer = null;
+        let fileName = '';
+        let fileMimeType = '';
+        try {
+          for await (const part of request.parts()) {
+            if (part.type === 'file' && part.fieldname === 'file') {
+              fileName = part.filename;
+              fileMimeType = part.mimetype;
+              fileBuffer = await part.toBuffer();
+            }
           }
+        } catch (error) {
+          request.log.warn(error);
+          return reply
+            .code(413)
+            .send({ error: 'File exceeds the size limit.' });
         }
-      } catch (error) {
-        request.log.warn(error);
-        return reply.code(413).send({ error: 'File exceeds the size limit.' });
-      }
 
-      if (!fileBuffer) {
-        return reply.code(400).send({ error: 'Missing spreadsheet file.' });
-      }
+        if (!fileBuffer) {
+          return reply.code(400).send({ error: 'Missing spreadsheet file.' });
+        }
 
-      const hasSpreadsheetExtension = /\.(xlsx|xls)$/i.test(fileName);
-      const hasSpreadsheetMimeType = [
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'application/vnd.ms-excel',
-      ].includes(fileMimeType);
-      const isXlsx = /\.xlsx$/i.test(fileName);
-      const hasZipSignature = fileBuffer.subarray(0, 2).equals(Buffer.from('PK'));
-      if (
-        (!hasSpreadsheetExtension && !hasSpreadsheetMimeType) ||
-        (isXlsx && !hasZipSignature)
-      ) {
-        return reply.code(400).send({
-          error: 'Unsupported spreadsheet file. Please upload a valid .xlsx or .xls workbook.',
+        const hasSpreadsheetExtension = /\.(xlsx|xls)$/i.test(fileName);
+        const hasSpreadsheetMimeType = [
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          'application/vnd.ms-excel',
+        ].includes(fileMimeType);
+        const isXlsx = /\.xlsx$/i.test(fileName);
+        const hasZipSignature = fileBuffer
+          .subarray(0, 2)
+          .equals(Buffer.from('PK'));
+        if (
+          (!hasSpreadsheetExtension && !hasSpreadsheetMimeType) ||
+          (isXlsx && !hasZipSignature)
+        ) {
+          return reply.code(400).send({
+            error:
+              'Unsupported spreadsheet file. Please upload a valid .xlsx or .xls workbook.',
+          });
+        }
+
+        let workbook;
+        try {
+          workbook = XLSX.read(fileBuffer, { type: 'buffer' });
+        } catch (error) {
+          request.log.warn(error);
+          return reply.code(400).send({
+            error:
+              'Unsupported spreadsheet file. Please upload a valid .xlsx or .xls workbook.',
+          });
+        }
+
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = sheetName ? workbook.Sheets[sheetName] : null;
+        if (!worksheet) {
+          return reply
+            .code(400)
+            .send({ error: 'The spreadsheet has no sheets.' });
+        }
+
+        const { records, errors } = parseRows(
+          XLSX.utils.sheet_to_json(worksheet, {
+            header: 1,
+            defval: '',
+            raw: true,
+          }),
+        );
+        if (errors.length > 0) {
+          return reply.code(400).send({ errors });
+        }
+        if (records.length === 0) {
+          return reply
+            .code(400)
+            .send({
+              errors: [
+                { row: 1, col: 'Data', error: 'No training rows found.' },
+              ],
+            });
+        }
+
+        const existingSignatures = new Set(
+          db
+            .prepare(
+              'SELECT dia, treino, detalhes FROM trainings WHERE user_id = ?',
+            )
+            .all(request.user.id)
+            .map(trainingSignature),
+        );
+        const newRecords = records.filter((record) => {
+          const signature = trainingSignature(record);
+          if (existingSignatures.has(signature)) return false;
+          existingSignatures.add(signature);
+          return true;
         });
-      }
 
-      let workbook;
-      try {
-        workbook = XLSX.read(fileBuffer, { type: 'buffer' });
-      } catch (error) {
-        request.log.warn(error);
-        return reply.code(400).send({
-          error: 'Unsupported spreadsheet file. Please upload a valid .xlsx or .xls workbook.',
-        });
-      }
-
-      const sheetName = workbook.SheetNames[0];
-      const worksheet = sheetName ? workbook.Sheets[sheetName] : null;
-      if (!worksheet) {
-        return reply.code(400).send({ error: 'The spreadsheet has no sheets.' });
-      }
-
-      const { records, errors } = parseRows(XLSX.utils.sheet_to_json(worksheet, {
-        header: 1,
-        defval: '',
-        raw: true,
-      }));
-      if (errors.length > 0) {
-        return reply.code(400).send({ errors });
-      }
-      if (records.length === 0) {
-        return reply.code(400).send({ errors: [{ row: 1, col: 'Data', error: 'No training rows found.' }] });
-      }
-
-      const trainingSignature = (record) =>
-        JSON.stringify([record.dia, record.treino, record.detalhes]);
-      const existingSignatures = new Set(
-        db
-          .prepare('SELECT dia, treino, detalhes FROM trainings WHERE user_id = ?')
-          .all(request.user.id)
-          .map(trainingSignature)
-      );
-      const newRecords = records.filter((record) => {
-        const signature = trainingSignature(record);
-        if (existingSignatures.has(signature)) return false;
-        existingSignatures.add(signature);
-        return true;
-      });
-
-      const insert = db.prepare(
-        `INSERT INTO trainings
+        const insert = db.prepare(
+          `INSERT INTO trainings
            (user_id, training_cycle_id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes, location)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      );
-      const insertMany = db.transaction((rows) => {
-        for (const record of rows) {
-          insert.run(
-            request.user.id,
-            activeCycle.id,
-            record.dia,
-            record.periodo,
-            record.tipo,
-            record.treino,
-            record.detalhes,
-            record.fc_alvo,
-            record.rpe,
-            record.tenis,
-            record.previsao,
-            record.observacoes,
-            record.location === '' ? null : record.location
-          );
-        }
-      });
-      insertMany(newRecords);
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        );
+        const insertMany = db.transaction((rows) => {
+          for (const record of rows) {
+            insert.run(
+              request.user.id,
+              activeCycle.id,
+              record.dia,
+              record.periodo,
+              record.tipo,
+              record.treino,
+              record.detalhes,
+              record.fc_alvo,
+              record.rpe,
+              record.tenis,
+              record.previsao,
+              record.observacoes,
+              record.location === '' ? null : record.location,
+            );
+          }
+        });
+        insertMany(newRecords);
 
-      return {
-        imported: newRecords.length,
-        skipped: records.length - newRecords.length,
-      };
-    });
+        return {
+          imported: newRecords.length,
+          skipped: records.length - newRecords.length,
+        };
+      },
+    );
 
-    const TRAINING_COLUMNS =
-      `id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes, location, feedback_rpe, feedback_notas, completed, has_smartwatch,
+    const TRAINING_COLUMNS = `id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes, location, feedback_rpe, feedback_notas, completed, has_smartwatch,
        CASE
          WHEN feedback_shoe_id IS NULL THEN feedback_shoe
          WHEN EXISTS (SELECT 1 FROM shoes s WHERE s.id = feedback_shoe_id AND s.user_id = trainings.user_id)
@@ -680,327 +810,434 @@ async function buildServer(options = {}) {
        feedback_hr_source, feedback_weather, feedback_terrain, feedback_breathing, feedback_muscle, feedback_energy, feedback_has_pain, feedback_pain, fit_duration, fit_distance, fit_avg_pace, fit_avg_hr, fit_max_hr, fit_elevation_gain, fit_calories, fit_summary_json, result_data_source`;
 
     const findTraining = db.prepare(
-      `SELECT ${TRAINING_COLUMNS} FROM trainings WHERE id = ? AND user_id = ?`
+      `SELECT ${TRAINING_COLUMNS} FROM trainings WHERE id = ? AND user_id = ?`,
     );
 
-    app.get('/api/trainings/:id', { preHandler: requireAuth }, async (request, reply) => {
-      const id = Number(request.params.id);
-      if (!Number.isInteger(id) || id <= 0) {
-        return reply.code(400).send({ error: 'Invalid training id.' });
-      }
-      const training = findTraining.get(id, request.user.id);
-      if (!training) {
-        return reply.code(404).send({ error: 'Training not found.' });
-      }
-      return { training };
-    });
-
-    app.get('/api/weather', { preHandler: requireAuth }, async (request, reply) => {
-      const location =
-        typeof request.query?.location === 'string' ? request.query.location.trim() : '';
-      const date = normalizeIsoDate(request.query?.date);
-      if (location === '') {
-        return reply.code(400).send({ error: 'location is required.' });
-      }
-      if (date === null) {
-        return reply.code(400).send({ error: 'date must be a valid date in YYYY-MM-DD format.' });
-      }
-      const result = await resolveTrainingWeather(location, date, options.weatherFetch);
-      if (!result.ok) {
-        return reply.code(result.status).send({ error: result.error });
-      }
-      return reply.send({
-        location: result.location,
-        latitude: result.latitude,
-        longitude: result.longitude,
-        date: result.date,
-        temperature_c: result.temperature_c,
-        weather_code: result.weather_code,
-        source: result.source,
-      });
-    });
-
-    app.patch('/api/trainings/:id', { preHandler: requireAuth }, async (request, reply) => {
-      const id = Number(request.params.id);
-      if (!Number.isInteger(id) || id <= 0) {
-        return reply.code(400).send({ error: 'Invalid training id.' });
-      }
-
-      const body = request.body ?? {};
-      const updates = {};
-
-      try {
-        if (body.feedback_shoe_id !== undefined) {
-          const shoe = resolveOwnedShoe(db, request.user.id, body.feedback_shoe_id);
-          updates.feedback_shoe_id = shoe?.id ?? null;
-          updates.feedback_shoe = shoe ? `${shoe.brand} ${shoe.model}`.trim() : null;
-        } else if (body.feedback_shoe !== undefined) {
-          const shoe = resolveOwnedShoeLabel(db, request.user.id, body.feedback_shoe);
-          updates.feedback_shoe_id = shoe?.id ?? null;
-          updates.feedback_shoe = shoe ? `${shoe.brand} ${shoe.model}`.trim() : null;
+    app.get(
+      '/api/trainings/:id',
+      { preHandler: requireAuth },
+      async (request, reply) => {
+        const id = Number(request.params.id);
+        if (!Number.isInteger(id) || id <= 0) {
+          return reply.code(400).send({ error: 'Invalid training id.' });
         }
-      } catch (error) {
-        return reply.code(error.status).send({ error: error.message });
-      }
+        const training = findTraining.get(id, request.user.id);
+        if (!training) {
+          return reply.code(404).send({ error: 'Training not found.' });
+        }
+        return { training };
+      },
+    );
 
-      if (body.feedback_rpe !== undefined) {
-        const parsed = parseRpe(body.feedback_rpe);
-        if (!parsed.ok) {
-          return reply.code(400).send({ error: parsed.error });
+    app.get(
+      '/api/weather',
+      { preHandler: requireAuth },
+      async (request, reply) => {
+        const location =
+          typeof request.query?.location === 'string'
+            ? request.query.location.trim()
+            : '';
+        const date = normalizeIsoDate(request.query?.date);
+        if (location === '') {
+          return reply.code(400).send({ error: 'location is required.' });
         }
-        updates.feedback_rpe = parsed.value;
-      }
-      if (body.feedback_notas !== undefined) {
-        if (body.feedback_notas !== null && typeof body.feedback_notas !== 'string') {
-          return reply.code(400).send({ error: 'feedback_notas must be a string.' });
+        if (date === null) {
+          return reply
+            .code(400)
+            .send({ error: 'date must be a valid date in YYYY-MM-DD format.' });
         }
-        updates.feedback_notas =
-          typeof body.feedback_notas === 'string' ? body.feedback_notas.trim() : null;
-      }
-      if (body.completed !== undefined) {
-        if (typeof body.completed !== 'boolean') {
-          return reply.code(400).send({ error: 'completed must be a boolean.' });
+        const result = await resolveTrainingWeather(
+          location,
+          date,
+          options.weatherFetch,
+        );
+        if (!result.ok) {
+          return reply.code(result.status).send({ error: result.error });
         }
-        updates.completed = body.completed ? 1 : 0;
-      }
-      if (body.has_smartwatch !== undefined) {
-        if (typeof body.has_smartwatch !== 'boolean') {
-          return reply.code(400).send({ error: 'has_smartwatch must be a boolean.' });
-        }
-        updates.has_smartwatch = body.has_smartwatch ? 1 : 0;
-      }
-      if (body.feedback_has_pain !== undefined) {
-        const value = body.feedback_has_pain;
-        if (value !== null && value !== 'yes' && value !== 'no') {
-          return reply.code(400).send({
-            error: 'feedback_has_pain must be "yes", "no", or null.',
-          });
-        }
-        updates.feedback_has_pain = value;
-      }
+        return reply.send({
+          location: result.location,
+          latitude: result.latitude,
+          longitude: result.longitude,
+          date: result.date,
+          temperature_c: result.temperature_c,
+          weather_code: result.weather_code,
+          source: result.source,
+        });
+      },
+    );
 
-      const FEEDBACK_TEXT_FIELDS = [
-        'feedback_hr_source',
-        'feedback_weather',
-        'feedback_terrain',
-        'feedback_breathing',
-        'feedback_muscle',
-        'feedback_energy',
-        'feedback_pain',
-      ];
-      for (const field of FEEDBACK_TEXT_FIELDS) {
-        if (body[field] !== undefined) {
-          if (body[field] !== null && typeof body[field] !== 'string') {
-            return reply.code(400).send({ error: `${field} must be a string.` });
+    app.patch(
+      '/api/trainings/:id',
+      { preHandler: requireAuth },
+      async (request, reply) => {
+        const id = Number(request.params.id);
+        if (!Number.isInteger(id) || id <= 0) {
+          return reply.code(400).send({ error: 'Invalid training id.' });
+        }
+
+        const body = request.body ?? {};
+        const updates = {};
+
+        try {
+          if (body.feedback_shoe_id !== undefined) {
+            const shoe = resolveOwnedShoe(
+              db,
+              request.user.id,
+              body.feedback_shoe_id,
+            );
+            updates.feedback_shoe_id = shoe?.id ?? null;
+            updates.feedback_shoe = shoe
+              ? `${shoe.brand} ${shoe.model}`.trim()
+              : null;
+          } else if (body.feedback_shoe !== undefined) {
+            const shoe = resolveOwnedShoeLabel(
+              db,
+              request.user.id,
+              body.feedback_shoe,
+            );
+            updates.feedback_shoe_id = shoe?.id ?? null;
+            updates.feedback_shoe = shoe
+              ? `${shoe.brand} ${shoe.model}`.trim()
+              : null;
           }
-          updates[field] =
-            typeof body[field] === 'string' ? body[field].trim() : null;
+        } catch (error) {
+          return reply.code(error.status).send({ error: error.message });
         }
-      }
 
-      const fields = Object.keys(updates);
-      if (fields.length === 0) {
-        return reply.code(400).send({ error: 'No feedback fields provided.' });
-      }
-      const own = (object, field) => Object.prototype.hasOwnProperty.call(object, field);
-      const carriesRpeOrCompletion = own(updates, 'feedback_rpe') || own(updates, 'completed');
+        if (body.feedback_rpe !== undefined) {
+          const parsed = parseRpe(body.feedback_rpe);
+          if (!parsed.ok) {
+            return reply.code(400).send({ error: parsed.error });
+          }
+          updates.feedback_rpe = parsed.value;
+        }
+        if (body.feedback_notas !== undefined) {
+          if (
+            body.feedback_notas !== null &&
+            typeof body.feedback_notas !== 'string'
+          ) {
+            return reply
+              .code(400)
+              .send({ error: 'feedback_notas must be a string.' });
+          }
+          updates.feedback_notas =
+            typeof body.feedback_notas === 'string'
+              ? body.feedback_notas.trim()
+              : null;
+        }
+        if (body.completed !== undefined) {
+          if (typeof body.completed !== 'boolean') {
+            return reply
+              .code(400)
+              .send({ error: 'completed must be a boolean.' });
+          }
+          updates.completed = body.completed ? 1 : 0;
+        }
+        if (body.has_smartwatch !== undefined) {
+          if (typeof body.has_smartwatch !== 'boolean') {
+            return reply
+              .code(400)
+              .send({ error: 'has_smartwatch must be a boolean.' });
+          }
+          updates.has_smartwatch = body.has_smartwatch ? 1 : 0;
+        }
+        if (body.feedback_has_pain !== undefined) {
+          const value = body.feedback_has_pain;
+          if (value !== null && value !== 'yes' && value !== 'no') {
+            return reply.code(400).send({
+              error: 'feedback_has_pain must be "yes", "no", or null.',
+            });
+          }
+          updates.feedback_has_pain = value;
+        }
 
-      if (!findTraining.get(id, request.user.id)) {
-        return reply.code(404).send({ error: 'Training not found.' });
-      }
-
-      const assignments = fields.map((field) => `${field} = ?`).join(', ');
-      const saveFeedback = db.transaction(() => {
-        const before = findTraining.get(id, request.user.id);
-        // A concluded workout cannot exist without the effort it was concluded
-        // with, so the request is judged by the state it would leave behind,
-        // not by the field it happens to carry. The row is re-read here so the
-        // decision uses the same snapshot the update is applied to, and both
-        // effective values come from this request when it names them. A request
-        // that names neither cannot change the pair, so a partial edit of a
-        // concluded session — including one that predates this rule and has no
-        // effort yet — stays unrestricted.
-        if (carriesRpeOrCompletion) {
-          const effectiveCompleted = own(updates, 'completed')
-            ? updates.completed
-            : before.completed;
-          const effectiveRpe = own(updates, 'feedback_rpe')
-            ? updates.feedback_rpe
-            : before.feedback_rpe;
-          if (effectiveCompleted === 1) {
-            const refused = conclusionRpeError(effectiveRpe);
-            if (refused) return refused;
+        const FEEDBACK_TEXT_FIELDS = [
+          'feedback_hr_source',
+          'feedback_weather',
+          'feedback_terrain',
+          'feedback_breathing',
+          'feedback_muscle',
+          'feedback_energy',
+          'feedback_pain',
+        ];
+        for (const field of FEEDBACK_TEXT_FIELDS) {
+          if (body[field] !== undefined) {
+            if (body[field] !== null && typeof body[field] !== 'string') {
+              return reply
+                .code(400)
+                .send({ error: `${field} must be a string.` });
+            }
+            updates[field] =
+              typeof body[field] === 'string' ? body[field].trim() : null;
           }
         }
-        db.prepare(
-          `UPDATE trainings SET ${assignments} WHERE id = ? AND user_id = ?`
-        ).run(...fields.map((field) => updates[field]), id, request.user.id);
-        const after = findTraining.get(id, request.user.id);
-        reconcileShoeMileage(db, request.user.id, before, after);
-        return null;
-      });
-      const refused = saveFeedback();
-      if (refused) return reply.code(400).send({ error: refused });
 
-      return { training: findTraining.get(id, request.user.id) };
-    });
+        const fields = Object.keys(updates);
+        if (fields.length === 0) {
+          return reply
+            .code(400)
+            .send({ error: 'No feedback fields provided.' });
+        }
+        const own = (object, field) =>
+          Object.prototype.hasOwnProperty.call(object, field);
+        const carriesRpeOrCompletion =
+          own(updates, 'feedback_rpe') || own(updates, 'completed');
+
+        if (!findTraining.get(id, request.user.id)) {
+          return reply.code(404).send({ error: 'Training not found.' });
+        }
+
+        const assignments = fields.map((field) => `${field} = ?`).join(', ');
+        const saveFeedback = db.transaction(() => {
+          const before = findTraining.get(id, request.user.id);
+          // A concluded workout cannot exist without the effort it was concluded
+          // with, so the request is judged by the state it would leave behind,
+          // not by the field it happens to carry. The row is re-read here so the
+          // decision uses the same snapshot the update is applied to, and both
+          // effective values come from this request when it names them. A request
+          // that names neither cannot change the pair, so a partial edit of a
+          // concluded session — including one that predates this rule and has no
+          // effort yet — stays unrestricted.
+          if (carriesRpeOrCompletion) {
+            const effectiveCompleted = own(updates, 'completed')
+              ? updates.completed
+              : before.completed;
+            const effectiveRpe = own(updates, 'feedback_rpe')
+              ? updates.feedback_rpe
+              : before.feedback_rpe;
+            if (effectiveCompleted === 1) {
+              const refused = conclusionRpeError(effectiveRpe);
+              if (refused) return refused;
+            }
+          }
+          db.prepare(
+            `UPDATE trainings SET ${assignments} WHERE id = ? AND user_id = ?`,
+          ).run(...fields.map((field) => updates[field]), id, request.user.id);
+          const after = findTraining.get(id, request.user.id);
+          reconcileShoeMileage(db, request.user.id, before, after);
+          return null;
+        });
+        const refused = saveFeedback();
+        if (refused) return reply.code(400).send({ error: refused });
+
+        return { training: findTraining.get(id, request.user.id) };
+      },
+    );
 
     // Dedicated reschedule endpoint for the Calendar drag-and-drop flow.
     // It accepts exactly one field (`date`, zero-padded YYYY-MM-DD) and
     // never touches the feedback columns owned by PATCH /api/trainings/:id.
-    app.patch('/api/trainings/:id/reschedule', { preHandler: requireAuth }, async (request, reply) => {
-      const id = Number(request.params.id);
-      if (!Number.isInteger(id) || id <= 0) {
-        return reply.code(400).send({ error: 'Invalid training id.' });
-      }
-
-      const body = request.body ?? {};
-      const keys = Object.keys(body);
-      if (keys.length !== 1 || keys[0] !== 'date') {
-        return reply.code(400).send({ error: 'Request body must contain only the date field.' });
-      }
-
-      const date = normalizeIsoDate(body.date);
-      if (date === null) {
-        return reply.code(400).send({
-          error: 'date must be a valid date in YYYY-MM-DD format.',
-        });
-      }
-
-      if (!findTraining.get(id, request.user.id)) {
-        return reply.code(404).send({ error: 'Training not found.' });
-      }
-
-      db.prepare('UPDATE trainings SET dia = ? WHERE id = ? AND user_id = ?').run(
-        date,
-        id,
-        request.user.id
-      );
-
-      return { training: findTraining.get(id, request.user.id) };
-    });
-
-    app.put('/api/trainings/:id/manual-results', { preHandler: requireAuth }, async (request, reply) => {
-      const id = Number(request.params.id);
-      if (!Number.isInteger(id) || id <= 0) {
-        return reply.code(400).send({ error: 'Invalid training id.' });
-      }
-      const normalized = normalizeManualResults(request.body ?? {});
-      if (!normalized.ok) return reply.code(400).send({ error: normalized.error });
-      const current = findTraining.get(id, request.user.id);
-      if (!current) return reply.code(404).send({ error: 'Training not found.' });
-      if (current.result_data_source === 'fit_upload' && !normalized.value.confirm_replace_fit) {
-        return reply.code(409).send({ error: 'Confirm FIT replacement before saving manual results.' });
-      }
-      const saveManual = db.transaction((values) => {
-        const before = findTraining.get(id, request.user.id);
-        // A manual write always concludes the workout, so the effort the request
-        // supplies is the one the conclusion carries; only a genuinely omitted
-        // field falls back to the stored one, and a supplied empty or unusable
-        // value is a request to conclude without an effort.
-        const effectiveRpe = values.feedback_rpe_supplied ? values.feedback_rpe : before.feedback_rpe;
-        const refused = conclusionRpeError(effectiveRpe);
-        if (refused) return refused;
-        db.prepare(
-          `UPDATE trainings SET fit_duration = ?, fit_distance = ?, fit_avg_pace = ?,
-            fit_avg_hr = ?, fit_max_hr = ?, fit_elevation_gain = ?, fit_calories = ?,
-            fit_summary_json = NULL, result_data_source = 'manual', completed = 1,
-            feedback_rpe = ?
-           WHERE id = ? AND user_id = ?`
-        ).run(
-          values.fit_duration, values.distance_km, values.fit_avg_pace, values.avg_hr,
-          values.max_hr, values.elevation_gain_m, values.calories, effectiveRpe,
-          id, request.user.id
-        );
-        reconcileShoeMileage(db, request.user.id, before, findTraining.get(id, request.user.id));
-        return null;
-      });
-      const refused = saveManual(normalized.value);
-      if (refused) return reply.code(400).send({ error: refused });
-      return { training: findTraining.get(id, request.user.id) };
-    });
-
-    app.post('/api/trainings/:id/fit', { preHandler: requireAuth }, async (request, reply) => {
-      const id = Number(request.params.id);
-      if (!Number.isInteger(id) || id <= 0) {
-        return reply.code(400).send({ error: 'Invalid training id.' });
-      }
-
-      if (!findTraining.get(id, request.user.id)) {
-        return reply.code(404).send({ error: 'Training not found.' });
-      }
-
-      if (!request.isMultipart()) {
-        return reply.code(400).send({ error: 'Expected multipart/form-data upload.' });
-      }
-
-      let fileBuffer = null;
-      let fileName = '';
-      let confirmReplaceManual = false;
-      let requestedRpe;
-      let rpeSupplied = false;
-      try {
-        for await (const part of request.parts()) {
-          if (part.type === 'file' && part.fieldname === 'file') {
-            fileName = part.filename;
-            fileBuffer = await part.toBuffer();
-          } else if (part.type === 'field' && part.fieldname === 'confirm_replace_manual') {
-            confirmReplaceManual = part.value === 'true';
-          } else if (part.type === 'field' && part.fieldname === 'feedback_rpe') {
-            rpeSupplied = true;
-            requestedRpe = part.value;
-          }
+    app.patch(
+      '/api/trainings/:id/reschedule',
+      { preHandler: requireAuth },
+      async (request, reply) => {
+        const id = Number(request.params.id);
+        if (!Number.isInteger(id) || id <= 0) {
+          return reply.code(400).send({ error: 'Invalid training id.' });
         }
-      } catch (error) {
-        request.log.warn(error);
-        return reply.code(413).send({ error: 'File exceeds the size limit.' });
-      }
 
-      if (!fileBuffer) {
-        return reply.code(400).send({ error: 'Missing .FIT file field.' });
-      }
+        const body = request.body ?? {};
+        const keys = Object.keys(body);
+        if (keys.length !== 1 || keys[0] !== 'date') {
+          return reply
+            .code(400)
+            .send({ error: 'Request body must contain only the date field.' });
+        }
 
-      const current = findTraining.get(id, request.user.id);
-      if (current.result_data_source === 'manual' && !confirmReplaceManual) {
-        return reply.code(409).send({ error: 'Confirm manual result replacement before uploading a FIT file.' });
-      }
+        const date = normalizeIsoDate(body.date);
+        if (date === null) {
+          return reply.code(400).send({
+            error: 'date must be a valid date in YYYY-MM-DD format.',
+          });
+        }
 
-      try {
-        const fitBuffer = await resolveFitBuffer({ buffer: fileBuffer, filename: fileName });
-        const result = await parseFile(fitBuffer);
-        const fitDuration = result.totals?.durationSeconds > 0
-          ? (result.totals.durationLabel ?? formatDuration(result.totals.durationSeconds))
-          : '0:00';
+        if (!findTraining.get(id, request.user.id)) {
+          return reply.code(404).send({ error: 'Training not found.' });
+        }
 
-        const fitDistance = result.totals?.distanceKm ?? 0;
-        const fitAvgPace = result.totals?.avgPaceSecondsPerKm != null
-          ? (result.totals.avgPaceLabel ?? formatPace(result.totals.avgPaceSecondsPerKm))
-          : null;
-        const fitAvgHr = result.totals?.avgHeartRate ?? null;
-        const fitMaxHr = result.totals?.maxHeartRate ?? null;
-        const fitElevation = result.totals?.ascentMeters ?? null;
-        const fitCalories = normalizeCalories(result.totals?.calories);
-        const canonicalTotals = {
-          ...result.totals,
-          calories: fitCalories,
-        };
-        const fitSummaryJson = JSON.stringify({
-          activity: result.activity,
-          totals: canonicalTotals,
-          laps: result.laps,
-        });
+        db.prepare(
+          'UPDATE trainings SET dia = ? WHERE id = ? AND user_id = ?',
+        ).run(date, id, request.user.id);
 
-        const saveFit = db.transaction(() => {
+        return { training: findTraining.get(id, request.user.id) };
+      },
+    );
+
+    app.put(
+      '/api/trainings/:id/manual-results',
+      { preHandler: requireAuth },
+      async (request, reply) => {
+        const id = Number(request.params.id);
+        if (!Number.isInteger(id) || id <= 0) {
+          return reply.code(400).send({ error: 'Invalid training id.' });
+        }
+        const normalized = normalizeManualResults(request.body ?? {});
+        if (!normalized.ok)
+          return reply.code(400).send({ error: normalized.error });
+        const current = findTraining.get(id, request.user.id);
+        if (!current)
+          return reply.code(404).send({ error: 'Training not found.' });
+        if (
+          current.result_data_source === 'fit_upload' &&
+          !normalized.value.confirm_replace_fit
+        ) {
+          return reply
+            .code(409)
+            .send({
+              error: 'Confirm FIT replacement before saving manual results.',
+            });
+        }
+        const saveManual = db.transaction((values) => {
           const before = findTraining.get(id, request.user.id);
-          // The upload concludes the workout, so the effort the request supplies
-          // is the one the conclusion carries; only a genuinely omitted field
-          // falls back to the stored one, and a supplied empty or unusable value
-          // is a request to conclude without an effort.
-          const effectiveRpe = rpeSupplied ? reportedRpe(requestedRpe) : before.feedback_rpe;
+          // A manual write always concludes the workout, so the effort the request
+          // supplies is the one the conclusion carries; only a genuinely omitted
+          // field falls back to the stored one, and a supplied empty or unusable
+          // value is a request to conclude without an effort.
+          const effectiveRpe = values.feedback_rpe_supplied
+            ? values.feedback_rpe
+            : before.feedback_rpe;
           const refused = conclusionRpeError(effectiveRpe);
           if (refused) return refused;
           db.prepare(
-            `UPDATE trainings SET
+            `UPDATE trainings SET fit_duration = ?, fit_distance = ?, fit_avg_pace = ?,
+            fit_avg_hr = ?, fit_max_hr = ?, fit_elevation_gain = ?, fit_calories = ?,
+            fit_summary_json = NULL, result_data_source = 'manual', completed = 1,
+            feedback_rpe = ?
+           WHERE id = ? AND user_id = ?`,
+          ).run(
+            values.fit_duration,
+            values.distance_km,
+            values.fit_avg_pace,
+            values.avg_hr,
+            values.max_hr,
+            values.elevation_gain_m,
+            values.calories,
+            effectiveRpe,
+            id,
+            request.user.id,
+          );
+          reconcileShoeMileage(
+            db,
+            request.user.id,
+            before,
+            findTraining.get(id, request.user.id),
+          );
+          return null;
+        });
+        const refused = saveManual(normalized.value);
+        if (refused) return reply.code(400).send({ error: refused });
+        return { training: findTraining.get(id, request.user.id) };
+      },
+    );
+
+    app.post(
+      '/api/trainings/:id/fit',
+      { preHandler: requireAuth },
+      async (request, reply) => {
+        const id = Number(request.params.id);
+        if (!Number.isInteger(id) || id <= 0) {
+          return reply.code(400).send({ error: 'Invalid training id.' });
+        }
+
+        if (!findTraining.get(id, request.user.id)) {
+          return reply.code(404).send({ error: 'Training not found.' });
+        }
+
+        if (!request.isMultipart()) {
+          return reply
+            .code(400)
+            .send({ error: 'Expected multipart/form-data upload.' });
+        }
+
+        let fileBuffer = null;
+        let fileName = '';
+        let confirmReplaceManual = false;
+        let requestedRpe;
+        let rpeSupplied = false;
+        try {
+          for await (const part of request.parts()) {
+            if (part.type === 'file' && part.fieldname === 'file') {
+              fileName = part.filename;
+              fileBuffer = await part.toBuffer();
+            } else if (
+              part.type === 'field' &&
+              part.fieldname === 'confirm_replace_manual'
+            ) {
+              confirmReplaceManual = part.value === 'true';
+            } else if (
+              part.type === 'field' &&
+              part.fieldname === 'feedback_rpe'
+            ) {
+              rpeSupplied = true;
+              requestedRpe = part.value;
+            }
+          }
+        } catch (error) {
+          request.log.warn(error);
+          return reply
+            .code(413)
+            .send({ error: 'File exceeds the size limit.' });
+        }
+
+        if (!fileBuffer) {
+          return reply.code(400).send({ error: 'Missing .FIT file field.' });
+        }
+
+        const current = findTraining.get(id, request.user.id);
+        if (current.result_data_source === 'manual' && !confirmReplaceManual) {
+          return reply
+            .code(409)
+            .send({
+              error:
+                'Confirm manual result replacement before uploading a FIT file.',
+            });
+        }
+
+        try {
+          const fitBuffer = await resolveFitBuffer({
+            buffer: fileBuffer,
+            filename: fileName,
+          });
+          const result = await parseFile(fitBuffer);
+          const fitDuration =
+            result.totals?.durationSeconds > 0
+              ? (result.totals.durationLabel ??
+                formatDuration(result.totals.durationSeconds))
+              : '0:00';
+
+          const fitDistance = result.totals?.distanceKm ?? 0;
+          const fitAvgPace =
+            result.totals?.avgPaceSecondsPerKm != null
+              ? (result.totals.avgPaceLabel ??
+                formatPace(result.totals.avgPaceSecondsPerKm))
+              : null;
+          const fitAvgHr = result.totals?.avgHeartRate ?? null;
+          const fitMaxHr = result.totals?.maxHeartRate ?? null;
+          const fitElevation = result.totals?.ascentMeters ?? null;
+          const fitCalories = normalizeCalories(result.totals?.calories);
+          const canonicalTotals = {
+            ...result.totals,
+            calories: fitCalories,
+          };
+          const fitSummaryJson = JSON.stringify({
+            activity: result.activity,
+            totals: canonicalTotals,
+            laps: result.laps,
+          });
+
+          const saveFit = db.transaction(() => {
+            const before = findTraining.get(id, request.user.id);
+            // The upload concludes the workout, so the effort the request supplies
+            // is the one the conclusion carries; only a genuinely omitted field
+            // falls back to the stored one, and a supplied empty or unusable value
+            // is a request to conclude without an effort.
+            const effectiveRpe = rpeSupplied
+              ? reportedRpe(requestedRpe)
+              : before.feedback_rpe;
+            const refused = conclusionRpeError(effectiveRpe);
+            if (refused) return refused;
+            db.prepare(
+              `UPDATE trainings SET
             fit_duration = ?,
             fit_distance = ?,
             fit_avg_pace = ?,
@@ -1012,70 +1249,85 @@ async function buildServer(options = {}) {
             result_data_source = 'fit_upload',
             completed = 1,
             feedback_rpe = ?
-          WHERE id = ? AND user_id = ?`
-          ).run(
-            fitDuration,
-            fitDistance,
-            fitAvgPace,
-            fitAvgHr,
-            fitMaxHr,
-            fitElevation,
-            fitCalories,
-            fitSummaryJson,
-            effectiveRpe,
-            id,
-            request.user.id
-          );
-          reconcileShoeMileage(db, request.user.id, before, findTraining.get(id, request.user.id));
-          return null;
-        });
-        const refused = saveFit();
-        if (refused) return reply.code(400).send({ error: refused });
+          WHERE id = ? AND user_id = ?`,
+            ).run(
+              fitDuration,
+              fitDistance,
+              fitAvgPace,
+              fitAvgHr,
+              fitMaxHr,
+              fitElevation,
+              fitCalories,
+              fitSummaryJson,
+              effectiveRpe,
+              id,
+              request.user.id,
+            );
+            reconcileShoeMileage(
+              db,
+              request.user.id,
+              before,
+              findTraining.get(id, request.user.id),
+            );
+            return null;
+          });
+          const refused = saveFit();
+          if (refused) return reply.code(400).send({ error: refused });
 
-        return {
-          fit_duration: fitDuration,
-          fit_distance: fitDistance,
-          fit_avg_pace: fitAvgPace,
-          fit_avg_hr: fitAvgHr,
-          fit_max_hr: fitMaxHr,
-          fit_elevation_gain: fitElevation,
-          fit_calories: fitCalories,
-          result_data_source: 'fit_upload',
-          laps: result.laps,
-        };
-      } catch (error) {
-        request.log.error(error);
-        if (error instanceof FitUploadError) {
-          return reply.code(400).send({ error: error.message, code: error.code });
+          return {
+            fit_duration: fitDuration,
+            fit_distance: fitDistance,
+            fit_avg_pace: fitAvgPace,
+            fit_avg_hr: fitAvgHr,
+            fit_max_hr: fitMaxHr,
+            fit_elevation_gain: fitElevation,
+            fit_calories: fitCalories,
+            result_data_source: 'fit_upload',
+            laps: result.laps,
+          };
+        } catch (error) {
+          request.log.error(error);
+          if (error instanceof FitUploadError) {
+            return reply
+              .code(400)
+              .send({ error: error.message, code: error.code });
+          }
+          return reply.code(422).send({
+            error: 'Could not parse the .FIT file.',
+            detail: error.message,
+          });
         }
-        return reply.code(422).send({
-          error: 'Could not parse the .FIT file.',
-          detail: error.message,
-        });
-      }
-    });
+      },
+    );
 
     // Safely owns the session before deleting so a foreign id can never be
     // removed through the calendar delete flow.
-    app.delete('/api/trainings/:id', { preHandler: requireAuth }, async (request, reply) => {
-      const id = Number(request.params.id);
-      if (!Number.isInteger(id) || id <= 0) {
-        return reply.code(400).send({ error: 'Invalid training id.' });
-      }
+    app.delete(
+      '/api/trainings/:id',
+      { preHandler: requireAuth },
+      async (request, reply) => {
+        const id = Number(request.params.id);
+        if (!Number.isInteger(id) || id <= 0) {
+          return reply.code(400).send({ error: 'Invalid training id.' });
+        }
 
-      if (!findTraining.get(id, request.user.id)) {
-        return reply.code(404).send({ error: 'Training not found.' });
-      }
+        if (!findTraining.get(id, request.user.id)) {
+          return reply.code(404).send({ error: 'Training not found.' });
+        }
 
-      const removeTraining = db.transaction(() => {
-        const before = findTraining.get(id, request.user.id);
-        reconcileShoeMileage(db, request.user.id, before, null);
-        db.prepare('DELETE FROM trainings WHERE id = ? AND user_id = ?').run(id, request.user.id);
-      });
-      removeTraining();
+        const removeTraining = db.transaction(() => {
+          const before = findTraining.get(id, request.user.id);
+          reconcileShoeMileage(db, request.user.id, before, null);
+          db.prepare('DELETE FROM trainings WHERE id = ? AND user_id = ?').run(
+            id,
+            request.user.id,
+          );
+        });
+        removeTraining();
 
-      return { status: 'ok' };
-    });
+        return { status: 'ok' };
+      },
+    );
 
     // Authentication reloads the current role; admin access never bypasses ownership.
     const requireAdmin = createRequireAdmin();
@@ -1083,174 +1335,269 @@ async function buildServer(options = {}) {
 
     // ── Training Cycles CRUD ────────────────────────────────────
     app.get('/api/cycles', { preHandler: requireAuth }, async (request) => {
-      const cycles = getCyclesByUserId(db, request.user.id)
-        .map((cycle) => cycleWithPlanningSummary(cycle,request.user.id));
+      const cycles = getCyclesByUserId(db, request.user.id).map((cycle) =>
+        cycleWithPlanningSummary(cycle, request.user.id),
+      );
       return { cycles };
     });
 
-    app.get('/api/cycles/active', { preHandler: requireAuth }, async (request) => {
-      const cycle = getActiveCycle(db, request.user.id);
-      return { cycle: cycle || null };
-    });
+    app.get(
+      '/api/cycles/active',
+      { preHandler: requireAuth },
+      async (request) => {
+        const cycle = getActiveCycle(db, request.user.id);
+        return { cycle: cycle || null };
+      },
+    );
 
-    app.post('/api/cycles', { preHandler: requireAuth }, async (request, reply) => {
-      try {
-        const cycle = createCycle(db, request.user.id, request.body);
-        return reply.code(201).send({ cycle: cycleWithPlanningSummary(cycle,request.user.id) });
-      } catch (error) {
-        if (error instanceof CycleError) {
-          return reply.code(error.status).send({ error: error.message });
+    app.post(
+      '/api/cycles',
+      { preHandler: requireAuth },
+      async (request, reply) => {
+        try {
+          const cycle = createCycle(db, request.user.id, request.body);
+          return reply
+            .code(201)
+            .send({ cycle: cycleWithPlanningSummary(cycle, request.user.id) });
+        } catch (error) {
+          if (error instanceof CycleError) {
+            return reply.code(error.status).send({ error: error.message });
+          }
+          throw error;
         }
-        throw error;
-      }
-    });
+      },
+    );
 
-    app.put('/api/cycles/:id', { preHandler: requireAuth }, async (request, reply) => {
-      try {
-        const cycle = updateCycle(db, request.params.id, request.user.id, request.body);
+    app.put(
+      '/api/cycles/:id',
+      { preHandler: requireAuth },
+      async (request, reply) => {
+        try {
+          const cycle = updateCycle(
+            db,
+            request.params.id,
+            request.user.id,
+            request.body,
+          );
+          if (!cycle) {
+            return reply.code(404).send({ error: 'Cycle not found.' });
+          }
+          return { cycle: cycleWithPlanningSummary(cycle, request.user.id) };
+        } catch (error) {
+          if (error instanceof CycleError) {
+            return reply.code(error.status).send({ error: error.message });
+          }
+          throw error;
+        }
+      },
+    );
+
+    app.delete(
+      '/api/cycles/:id',
+      { preHandler: requireAuth },
+      async (request, reply) => {
+        const deleted = deleteCycle(db, request.params.id, request.user.id);
+        if (!deleted) {
+          return reply.code(404).send({ error: 'Cycle not found.' });
+        }
+        return { status: 'ok' };
+      },
+    );
+
+    app.get(
+      '/api/cycles/:id/prompt',
+      { preHandler: adminPreHandler },
+      async (request, reply) => {
+        const cycle = getCycleById(db, request.params.id, request.user.id);
         if (!cycle) {
           return reply.code(404).send({ error: 'Cycle not found.' });
         }
-        return { cycle: cycleWithPlanningSummary(cycle,request.user.id) };
-      } catch (error) {
-        if (error instanceof CycleError) {
-          return reply.code(error.status).send({ error: error.message });
-        }
-        throw error;
-      }
-    });
-
-    app.delete('/api/cycles/:id', { preHandler: requireAuth }, async (request, reply) => {
-      const deleted = deleteCycle(db, request.params.id, request.user.id);
-      if (!deleted) {
-        return reply.code(404).send({ error: 'Cycle not found.' });
-      }
-      return { status: 'ok' };
-    });
-
-    app.get('/api/cycles/:id/prompt', { preHandler: adminPreHandler }, async (request, reply) => {
-      const cycle = getCycleById(db, request.params.id, request.user.id);
-      if (!cycle) {
-        return reply.code(404).send({ error: 'Cycle not found.' });
-      }
-      const lng = request.query.lng === 'pt' ? 'pt-BR' : (request.query.lng === 'en' ? 'en-US' : request.user.preferred_lang);
-      const prompt = buildMacrocyclePrompt(cycle, lng);
-      return { prompt };
-    });
+        const lng =
+          request.query.lng === 'pt'
+            ? 'pt-BR'
+            : request.query.lng === 'en'
+              ? 'en-US'
+              : request.user.preferred_lang;
+        const prompt = buildMacrocyclePrompt(cycle, lng);
+        return { prompt };
+      },
+    );
 
     // ── Shoes CRUD ──────────────────────────────────────────────
-    app.get('/api/shoes', { preHandler: requireAuth }, async (request, reply) => {
-      const shoes = getShoesByUserId(db, request.user.id);
-      return { shoes };
-    });
+    app.get(
+      '/api/shoes',
+      { preHandler: requireAuth },
+      async (request, reply) => {
+        const shoes = getShoesByUserId(db, request.user.id);
+        return { shoes };
+      },
+    );
 
-    app.post('/api/shoes', { preHandler: requireAuth }, async (request, reply) => {
-      try {
-        const shoe = createShoe(db, request.user.id, request.body);
-        return reply.code(201).send({ shoe });
-      } catch (error) {
-        if (error instanceof ShoeError) {
-          return reply.code(error.status).send({ error: error.message });
+    app.post(
+      '/api/shoes',
+      { preHandler: requireAuth },
+      async (request, reply) => {
+        try {
+          const shoe = createShoe(db, request.user.id, request.body);
+          return reply.code(201).send({ shoe });
+        } catch (error) {
+          if (error instanceof ShoeError) {
+            return reply.code(error.status).send({ error: error.message });
+          }
+          throw error;
         }
-        throw error;
-      }
-    });
+      },
+    );
 
-    app.put('/api/shoes/:id', { preHandler: requireAuth }, async (request, reply) => {
-      try {
-        const shoe = updateShoe(db, request.params.id, request.user.id, request.body);
-        if (!shoe) {
+    app.put(
+      '/api/shoes/:id',
+      { preHandler: requireAuth },
+      async (request, reply) => {
+        try {
+          const shoe = updateShoe(
+            db,
+            request.params.id,
+            request.user.id,
+            request.body,
+          );
+          if (!shoe) {
+            return reply.code(404).send({ error: 'Shoe not found.' });
+          }
+          return { shoe };
+        } catch (error) {
+          if (error instanceof ShoeError) {
+            return reply.code(error.status).send({ error: error.message });
+          }
+          throw error;
+        }
+      },
+    );
+
+    app.delete(
+      '/api/shoes/:id',
+      { preHandler: requireAuth },
+      async (request, reply) => {
+        const deleted = deleteShoe(db, request.params.id, request.user.id);
+        if (!deleted) {
           return reply.code(404).send({ error: 'Shoe not found.' });
         }
-        return { shoe };
-      } catch (error) {
-        if (error instanceof ShoeError) {
-          return reply.code(error.status).send({ error: error.message });
-        }
-        throw error;
-      }
-    });
-
-    app.delete('/api/shoes/:id', { preHandler: requireAuth }, async (request, reply) => {
-      const deleted = deleteShoe(db, request.params.id, request.user.id);
-      if (!deleted) {
-        return reply.code(404).send({ error: 'Shoe not found.' });
-      }
-      return { status: 'ok' };
-    });
+        return { status: 'ok' };
+      },
+    );
 
     // ── Administration: account CRUD ────────────────────────────
 
     const feedbackFailure = (reply, error) => {
       if (error instanceof FeedbackError) {
-        return reply.code(error.status).send({ error: error.message, errors: [error.code] });
+        return reply
+          .code(error.status)
+          .send({ error: error.message, errors: [error.code] });
       }
       throw error;
     };
 
-    app.post('/api/feedback', { preHandler: requireAuth }, async (request, reply) => {
-      try {
-        return reply.code(201).send({ feedback: createFeedback(db, request.user, request.body) });
-      } catch (error) {
-        return feedbackFailure(reply, error);
-      }
-    });
-
-    app.get('/api/admin/feedback', { preHandler: adminPreHandler }, async (request, reply) => {
-      try {
-        const query = request.query;
-        const allowed = ['status', 'type', 'page', 'limit'];
-        for (const key of Object.keys(query)) {
-          if (!allowed.includes(key)) throw new FeedbackError(400, 'unknownField', `Unsupported field: ${key}.`);
+    app.post(
+      '/api/feedback',
+      { preHandler: requireAuth },
+      async (request, reply) => {
+        try {
+          return reply
+            .code(201)
+            .send({ feedback: createFeedback(db, request.user, request.body) });
+        } catch (error) {
+          return feedbackFailure(reply, error);
         }
-        const parsePositive = (value, code) => {
-          if (value === undefined) return undefined;
-          if (!/^\d+$/.test(String(value)) || Number(value) < 1 || !Number.isSafeInteger(Number(value))) {
-            throw new FeedbackError(400, code, 'Pagination value is invalid.');
+      },
+    );
+
+    app.get(
+      '/api/admin/feedback',
+      { preHandler: adminPreHandler },
+      async (request, reply) => {
+        try {
+          const query = request.query;
+          const allowed = ['status', 'type', 'page', 'limit'];
+          for (const key of Object.keys(query)) {
+            if (!allowed.includes(key))
+              throw new FeedbackError(
+                400,
+                'unknownField',
+                `Unsupported field: ${key}.`,
+              );
           }
-          return Number(value);
-        };
-        return listFeedback(db, {
-          status: query.status,
-          type: query.type,
-          page: parsePositive(query.page, 'invalidPage'),
-          limit: parsePositive(query.limit, 'invalidLimit'),
-        });
-      } catch (error) {
-        return feedbackFailure(reply, error);
-      }
-    });
+          const parsePositive = (value, code) => {
+            if (value === undefined) return undefined;
+            if (
+              !/^\d+$/.test(String(value)) ||
+              Number(value) < 1 ||
+              !Number.isSafeInteger(Number(value))
+            ) {
+              throw new FeedbackError(
+                400,
+                code,
+                'Pagination value is invalid.',
+              );
+            }
+            return Number(value);
+          };
+          return listFeedback(db, {
+            status: query.status,
+            type: query.type,
+            page: parsePositive(query.page, 'invalidPage'),
+            limit: parsePositive(query.limit, 'invalidLimit'),
+          });
+        } catch (error) {
+          return feedbackFailure(reply, error);
+        }
+      },
+    );
 
-    app.get('/api/admin/feedback/:id', { preHandler: adminPreHandler }, async (request, reply) => {
-      try {
-        return { feedback: getFeedback(db, request.params.id) };
-      } catch (error) {
-        return feedbackFailure(reply, error);
-      }
-    });
+    app.get(
+      '/api/admin/feedback/:id',
+      { preHandler: adminPreHandler },
+      async (request, reply) => {
+        try {
+          return { feedback: getFeedback(db, request.params.id) };
+        } catch (error) {
+          return feedbackFailure(reply, error);
+        }
+      },
+    );
 
-    app.patch('/api/admin/feedback/:id', { preHandler: adminPreHandler }, async (request, reply) => {
-      try {
-        return { feedback: updateFeedback(db, request.params.id, request.body) };
-      } catch (error) {
-        return feedbackFailure(reply, error);
-      }
-    });
+    app.patch(
+      '/api/admin/feedback/:id',
+      { preHandler: adminPreHandler },
+      async (request, reply) => {
+        try {
+          return {
+            feedback: updateFeedback(db, request.params.id, request.body),
+          };
+        } catch (error) {
+          return feedbackFailure(reply, error);
+        }
+      },
+    );
 
-    app.delete('/api/admin/feedback/:id', { preHandler: adminPreHandler }, async (request, reply) => {
-      try {
-        return deleteFeedback(db, request.params.id);
-      } catch (error) {
-        return feedbackFailure(reply, error);
-      }
-    });
+    app.delete(
+      '/api/admin/feedback/:id',
+      { preHandler: adminPreHandler },
+      async (request, reply) => {
+        try {
+          return deleteFeedback(db, request.params.id);
+        } catch (error) {
+          return feedbackFailure(reply, error);
+        }
+      },
+    );
 
     // One envelope for every account failure: a stable machine code for the
     // interface plus a human message, and anything unexpected keeps bubbling up
     // to the global error handler.
     const accountFailure = (reply, error) => {
       if (error instanceof AdminUserError) {
-        return reply.code(error.status).send({ error: error.message, errors: [error.code] });
+        return reply
+          .code(error.status)
+          .send({ error: error.message, errors: [error.code] });
       }
       throw error;
     };
@@ -1259,121 +1606,174 @@ async function buildServer(options = {}) {
       return { users: listAccounts(db) };
     });
 
-    app.get('/api/admin/users/:id', { preHandler: adminPreHandler }, async (request, reply) => {
-      try {
-        return { user: getAccount(db, request.params.id) };
-      } catch (error) {
-        return accountFailure(reply, error);
-      }
-    });
+    app.get(
+      '/api/admin/users/:id',
+      { preHandler: adminPreHandler },
+      async (request, reply) => {
+        try {
+          return { user: getAccount(db, request.params.id) };
+        } catch (error) {
+          return accountFailure(reply, error);
+        }
+      },
+    );
 
-    app.post('/api/admin/users', { preHandler: adminPreHandler }, async (request, reply) => {
-      try {
-        return reply.code(201).send({ user: await createAccount(db, request.user, request.body) });
-      } catch (error) {
-        return accountFailure(reply, error);
-      }
-    });
+    app.post(
+      '/api/admin/users',
+      { preHandler: adminPreHandler },
+      async (request, reply) => {
+        try {
+          return reply
+            .code(201)
+            .send({
+              user: await createAccount(db, request.user, request.body),
+            });
+        } catch (error) {
+          return accountFailure(reply, error);
+        }
+      },
+    );
 
-    app.put('/api/admin/users/:id', { preHandler: adminPreHandler }, async (request, reply) => {
-      try {
-        return { user: updateAccount(db, request.user, request.params.id, request.body) };
-      } catch (error) {
-        return accountFailure(reply, error);
-      }
-    });
+    app.put(
+      '/api/admin/users/:id',
+      { preHandler: adminPreHandler },
+      async (request, reply) => {
+        try {
+          return {
+            user: updateAccount(
+              db,
+              request.user,
+              request.params.id,
+              request.body,
+            ),
+          };
+        } catch (error) {
+          return accountFailure(reply, error);
+        }
+      },
+    );
 
     // Reversible access suspension for regular accounts. The state is never a
     // field of the create or update bodies, and the target's role and current
     // state are re-read inside the write transaction, so activating an account
     // through this endpoint can never restore administrator privileges.
-    app.post('/api/admin/users/:id/activity', { preHandler: adminPreHandler }, async (request, reply) => {
-      try {
-        return { user: setAccountActivity(db, request.user, request.params.id, request.body) };
-      } catch (error) {
-        return accountFailure(reply, error);
-      }
-    });
+    app.post(
+      '/api/admin/users/:id/activity',
+      { preHandler: adminPreHandler },
+      async (request, reply) => {
+        try {
+          return {
+            user: setAccountActivity(
+              db,
+              request.user,
+              request.params.id,
+              request.body,
+            ),
+          };
+        } catch (error) {
+          return accountFailure(reply, error);
+        }
+      },
+    );
 
-    app.delete('/api/admin/users/:id', { preHandler: adminPreHandler }, async (request, reply) => {
-      try {
-        deleteAccount(db, request.user, request.params.id);
-        return { status: 'ok' };
-      } catch (error) {
-        return accountFailure(reply, error);
-      }
-    });
+    app.delete(
+      '/api/admin/users/:id',
+      { preHandler: adminPreHandler },
+      async (request, reply) => {
+        try {
+          deleteAccount(db, request.user, request.params.id);
+          return { status: 'ok' };
+        } catch (error) {
+          return accountFailure(reply, error);
+        }
+      },
+    );
   }
 
-  app.post('/api/fit/parse', { preHandler: requireAuth }, async (request, reply) => {
-    if (!request.isMultipart()) {
-      return reply.code(400).send({ error: 'Expected multipart/form-data upload.' });
-    }
+  app.post(
+    '/api/fit/parse',
+    { preHandler: requireAuth },
+    async (request, reply) => {
+      if (!request.isMultipart()) {
+        return reply
+          .code(400)
+          .send({ error: 'Expected multipart/form-data upload.' });
+      }
 
-    let fileBuffer = null;
-    let fileName = '';
-    const fields = {};
+      let fileBuffer = null;
+      let fileName = '';
+      const fields = {};
 
-    try {
-      for await (const part of request.parts()) {
-        if (part.type === 'file') {
-          fileBuffer = await part.toBuffer();
-          fileName = part.filename;
-        } else {
-          fields[part.fieldname] = part.value;
+      try {
+        for await (const part of request.parts()) {
+          if (part.type === 'file') {
+            fileBuffer = await part.toBuffer();
+            fileName = part.filename;
+          } else {
+            fields[part.fieldname] = part.value;
+          }
         }
+      } catch (error) {
+        request.log.warn(error);
+        return reply.code(413).send({ error: 'File exceeds the size limit.' });
       }
-    } catch (error) {
-      request.log.warn(error);
-      return reply.code(413).send({ error: 'File exceeds the size limit.' });
-    }
 
-    if (!fileBuffer) {
-      return reply.code(400).send({ error: 'Missing .FIT file field.' });
-    }
-
-    if (!/\.fit$/i.test(fileName)) {
-      return reply.code(400).send({ error: 'Only .FIT files are supported.' });
-    }
-
-    const rpeAlvo = parseRpe(fields.rpe_alvo);
-    if (!rpeAlvo.ok) {
-      return reply.code(400).send({ error: rpeAlvo.error });
-    }
-
-    const rpePercebido = parseRpe(fields.rpe_percebido);
-    if (!rpePercebido.ok) {
-      return reply.code(400).send({ error: rpePercebido.error });
-    }
-
-    try {
-      const summary = await parseFile(fileBuffer);
-      const feedback = {};
-      for (const [fieldName, feedbackKey] of Object.entries(FIELD_MAP)) {
-        feedback[feedbackKey] = fields[fieldName];
+      if (!fileBuffer) {
+        return reply.code(400).send({ error: 'Missing .FIT file field.' });
       }
-      feedback.rpeAlvo = rpeAlvo.value;
-      feedback.rpePercebido = rpePercebido.value;
-      const lang = sessionOf(request)?.user.preferred_lang || DEFAULT_LANGUAGE;
-      const markdown = generateMarkdown(summary, feedback, lang);
-      return reply.send({
-        fileName,
-        sizeBytes: fileBuffer.length,
-        activity: summary.activity,
-        laps: summary.laps,
-        totals: summary.totals,
-        markdown,
-      });
-    } catch (error) {
-      request.log.error(error);
-      return reply.code(422).send({
-        error: 'Could not read lap data from this .FIT file.',
-        detail: error.message,
-      });
-    }
-  });
+
+      if (!/\.fit$/i.test(fileName)) {
+        return reply
+          .code(400)
+          .send({ error: 'Only .FIT files are supported.' });
+      }
+
+      const rpeAlvo = parseRpe(fields.rpe_alvo);
+      if (!rpeAlvo.ok) {
+        return reply.code(400).send({ error: rpeAlvo.error });
+      }
+
+      const rpePercebido = parseRpe(fields.rpe_percebido);
+      if (!rpePercebido.ok) {
+        return reply.code(400).send({ error: rpePercebido.error });
+      }
+
+      try {
+        const summary = await parseFile(fileBuffer);
+        const feedback = {};
+        for (const [fieldName, feedbackKey] of Object.entries(FIELD_MAP)) {
+          feedback[feedbackKey] = fields[fieldName];
+        }
+        feedback.rpeAlvo = rpeAlvo.value;
+        feedback.rpePercebido = rpePercebido.value;
+        const lang =
+          sessionOf(request)?.user.preferred_lang || DEFAULT_LANGUAGE;
+        const markdown = generateMarkdown(summary, feedback, lang);
+        return reply.send({
+          fileName,
+          sizeBytes: fileBuffer.length,
+          activity: summary.activity,
+          laps: summary.laps,
+          totals: summary.totals,
+          markdown,
+        });
+      } catch (error) {
+        request.log.error(error);
+        return reply.code(422).send({
+          error: 'Could not read lap data from this .FIT file.',
+          detail: error.message,
+        });
+      }
+    },
+  );
 
   return app;
 }
 
-module.exports = { adminAliasDecision, buildServer, isAdminPageAlias, parseRpe, MAX_FILE_BYTES };
+module.exports = {
+  adminAliasDecision,
+  buildServer,
+  isAdminPageAlias,
+  parseRpe,
+  MAX_FILE_BYTES,
+};

@@ -84,7 +84,7 @@ test('geocodeLocation accepts an exact matching locality and stops at the first 
         ok: true,
         json: async () => ({
           results: [
-            { name: 'Fânzeres', admin1: 'Porto District', admin2: 'Gondomar Municipality', country: 'Portugal', country_code: 'PT', latitude: 41.16754, longitude: -8.52981 },
+            { name: 'Fânzeres', admin1: 'Porto District', admin2: 'Gondomar Municipality', country: 'Portugal', country_code: 'PT', latitude: 41.16754, longitude: -8.52981, timezone: 'Europe/Lisbon' },
             { name: 'Fânzeres', admin1: 'Other', country: 'Elsewhere', latitude: 1, longitude: 2 },
           ],
         }),
@@ -93,7 +93,7 @@ test('geocodeLocation accepts an exact matching locality and stops at the first 
     ],
   ]);
   const geo = await geocodeLocation('Fânzeres, Gondomar, Porto, Portugal', fetchImpl);
-  assert.deepEqual(geo, { name: 'Fânzeres', latitude: 41.16754, longitude: -8.52981 });
+  assert.deepEqual(geo, { name: 'Fânzeres', latitude: 41.16754, longitude: -8.52981, timezone: 'Europe/Lisbon' });
   assert.equal(calls, 1);
 });
 

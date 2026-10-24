@@ -138,7 +138,10 @@ function cellToText(value) {
   }
   if (typeof value === 'object') {
     if (Array.isArray(value.richText)) {
-      return value.richText.map((part) => part.text).join('').trim();
+      return value.richText
+        .map((part) => part.text)
+        .join('')
+        .trim();
     }
     if ('result' in value) return cellToText(value.result);
     if (typeof value.text === 'string') return value.text.trim();
@@ -176,11 +179,12 @@ function parseSheet(worksheet) {
       fieldsByColumn = {};
       const total = Math.max(row.cellCount ?? 0, 0);
       for (let column = 1; column <= total; column += 1) {
-        const header = FIELD_BY_HEADER[accentless(cellToText(cellValue(column)))];
+        const header =
+          FIELD_BY_HEADER[accentless(cellToText(cellValue(column)))];
         if (header) fieldsByColumn[column] = header;
       }
       headerOk = REQUIRED_FIELDS.every((required) =>
-        Object.values(fieldsByColumn).includes(required)
+        Object.values(fieldsByColumn).includes(required),
       );
       for (const required of REQUIRED_FIELDS) {
         if (!Object.values(fieldsByColumn).includes(required)) {
@@ -202,9 +206,10 @@ function parseSheet(worksheet) {
     let soleText = '';
     for (const [column, field] of Object.entries(fieldsByColumn)) {
       const rawValue = cellValue(Number(column));
-      const text = field === 'dia' && typeof rawValue === 'number'
-        ? rawValue
-        : cellToText(rawValue);
+      const text =
+        field === 'dia' && typeof rawValue === 'number'
+          ? rawValue
+          : cellToText(rawValue);
       const displayText = cellToText(text);
       values[field] = text;
       if (displayText !== '') {
@@ -276,6 +281,12 @@ function parseRows(rows) {
   });
 }
 
+// Keep the calendar importer and other trusted creation paths on the same
+// date/name/details identity rule used for idempotent imports.
+function trainingSignature(record) {
+  return JSON.stringify([record.dia, record.treino, record.detalhes]);
+}
+
 module.exports = {
   FIELD_BY_HEADER,
   FIELD_ORDER,
@@ -289,4 +300,5 @@ module.exports = {
   cellToText,
   parseSheet,
   parseRows,
+  trainingSignature,
 };

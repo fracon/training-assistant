@@ -14,7 +14,9 @@ export async function requestJson(url, body, method = 'POST') {
   }
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const error = new Error(payload.error || 'Something went wrong. Please try again.');
+    const error = new Error(
+      payload.error || 'Something went wrong. Please try again.',
+    );
     if (Array.isArray(payload.errors) && payload.errors.length > 0) {
       error.codes = payload.errors;
     }
@@ -29,7 +31,9 @@ export function signIn(email, password) {
 
 export async function fetchHeroImage() {
   try {
-    const response = await fetch('/api/hero-image', { headers: { accept: 'application/json' } });
+    const response = await fetch('/api/hero-image', {
+      headers: { accept: 'application/json' },
+    });
     if (!response.ok) return null;
     return response.json();
   } catch {
@@ -42,14 +46,18 @@ export function registerAccount(payload) {
 }
 
 export function updateLanguagePreference(lang) {
-  return requestJson('/api/users/me/language', { preferred_lang: lang }, 'PATCH');
+  return requestJson(
+    '/api/users/me/language',
+    { preferred_lang: lang },
+    'PATCH',
+  );
 }
 
 export function updateCalendarPreference(firstDay) {
   return requestJson(
     '/api/users/me/calendar-preference',
     { first_day_of_week: firstDay },
-    'PATCH'
+    'PATCH',
   );
 }
 
@@ -59,7 +67,9 @@ export function updateUserPreferences(preferences) {
 
 export async function fetchOnboarding() {
   try {
-    const response = await fetch('/api/onboarding', { headers: { accept: 'application/json' } });
+    const response = await fetch('/api/onboarding', {
+      headers: { accept: 'application/json' },
+    });
     if (!response.ok) return null;
     const payload = await response.json();
     return payload.onboarding ?? null;
@@ -73,15 +83,74 @@ export function updateOnboardingPresentation(presentation) {
 }
 
 export async function fetchAiCoachAvailability() {
-  const response = await fetch('/api/ai-coach/availability', { headers: { accept: 'application/json' } });
+  const response = await fetch('/api/ai-coach/availability', {
+    headers: { accept: 'application/json' },
+  });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.error || 'Could not load availability.');
+  if (!response.ok)
+    throw new Error(payload.error || 'Could not load availability.');
   return payload.availability;
 }
 
 export async function saveAiCoachAvailability(days) {
-  const payload = await requestJson('/api/ai-coach/availability', { days }, 'PUT');
+  const payload = await requestJson(
+    '/api/ai-coach/availability',
+    { days },
+    'PUT',
+  );
   return payload.availability;
+}
+
+export async function fetchAiExecutions() {
+  const response = await fetch('/api/ai/executions', {
+    headers: { accept: 'application/json' },
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok)
+    throw Object.assign(
+      new Error(payload.error || 'Could not read executions.'),
+      { codes: payload.errors },
+    );
+  return payload.executions || [];
+}
+export async function fetchAiExecution(id) {
+  const response = await fetch(`/api/ai/executions/${encodeURIComponent(id)}`, {
+    headers: { accept: 'application/json' },
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok)
+    throw Object.assign(
+      new Error(payload.error || 'Could not read execution.'),
+      { codes: payload.errors },
+    );
+  return payload;
+}
+export function startAiExecution(body) {
+  return requestJson('/api/ai/executions', body);
+}
+export function cancelAiExecution(id) {
+  return requestJson(`/api/ai/executions/${encodeURIComponent(id)}/cancel`, {});
+}
+export async function fetchWeeklyProposal(id) {
+  const response = await fetch(
+    `/api/ai/workouts/${encodeURIComponent(id)}/proposal`,
+    { headers: { accept: 'application/json' } },
+  );
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok)
+    throw Object.assign(
+      new Error(payload.error || 'Could not read proposal.'),
+      { codes: payload.errors },
+    );
+  return payload;
+}
+export function applyWeeklyProposal(id, expectedHash) {
+  return requestJson(`/api/ai/workouts/${encodeURIComponent(id)}/apply`, {
+    expected_response_hash: expectedHash,
+  });
+}
+export function fetchAiAdminPreview(body) {
+  return requestJson('/api/ai/admin/preview', body);
 }
 
 export function changePassword(payload) {
@@ -97,11 +166,18 @@ export async function fetchAdminFeedback(query = {}) {
   for (const [key, value] of Object.entries(query)) {
     if (value !== undefined && value !== '') params.set(key, value);
   }
-  const response = await fetch(`/api/admin/feedback${params.toString() ? `?${params}` : ''}`, {
-    headers: { accept: 'application/json' },
-  });
+  const response = await fetch(
+    `/api/admin/feedback${params.toString() ? `?${params}` : ''}`,
+    {
+      headers: { accept: 'application/json' },
+    },
+  );
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw Object.assign(new Error(payload.error || 'Could not load feedback.'), { codes: payload.errors });
+  if (!response.ok)
+    throw Object.assign(
+      new Error(payload.error || 'Could not load feedback.'),
+      { codes: payload.errors },
+    );
   return payload;
 }
 
@@ -123,9 +199,12 @@ export async function fetchCalendarTrainings(from, to) {
     if (from) params.set('from', from);
     if (to) params.set('to', to);
     const query = params.toString();
-    const response = await fetch(`/api/calendar/trainings${query ? `?${query}` : ''}`, {
-      headers: { accept: 'application/json' },
-    });
+    const response = await fetch(
+      `/api/calendar/trainings${query ? `?${query}` : ''}`,
+      {
+        headers: { accept: 'application/json' },
+      },
+    );
     if (!response.ok) return [];
     const payload = await response.json();
     return Array.isArray(payload.trainings) ? payload.trainings : [];
@@ -186,7 +265,10 @@ export async function importTrainingsFile(file) {
   form.append('file', file);
   let response;
   try {
-    response = await fetch('/api/calendar/import', { method: 'POST', body: form });
+    response = await fetch('/api/calendar/import', {
+      method: 'POST',
+      body: form,
+    });
   } catch {
     throw Object.assign(new Error('Network unavailable. Please try again.'), {
       rowErrors: null,
@@ -211,7 +293,9 @@ export async function signOut() {
 
 export async function currentUser() {
   try {
-    const response = await fetch('/api/me', { headers: { accept: 'application/json' } });
+    const response = await fetch('/api/me', {
+      headers: { accept: 'application/json' },
+    });
     if (!response.ok) {
       return null;
     }
@@ -224,7 +308,9 @@ export async function currentUser() {
 
 export async function fetchShoes() {
   try {
-    const response = await fetch('/api/shoes', { headers: { accept: 'application/json' } });
+    const response = await fetch('/api/shoes', {
+      headers: { accept: 'application/json' },
+    });
     if (!response.ok) return [];
     const payload = await response.json();
     return Array.isArray(payload.shoes) ? payload.shoes : [];
@@ -247,7 +333,9 @@ export function deleteShoe(id) {
 
 export async function fetchCycles() {
   try {
-    const response = await fetch('/api/cycles', { headers: { accept: 'application/json' } });
+    const response = await fetch('/api/cycles', {
+      headers: { accept: 'application/json' },
+    });
     if (!response.ok) return [];
     const payload = await response.json();
     return Array.isArray(payload.cycles) ? payload.cycles : [];
@@ -258,7 +346,9 @@ export async function fetchCycles() {
 
 export async function fetchActiveCycle() {
   try {
-    const response = await fetch('/api/cycles/active', { headers: { accept: 'application/json' } });
+    const response = await fetch('/api/cycles/active', {
+      headers: { accept: 'application/json' },
+    });
     if (!response.ok) return null;
     const payload = await response.json();
     return payload.cycle ?? null;
@@ -282,18 +372,24 @@ export function deleteCycle(id) {
 // Administrative account endpoints. The backend is the authorization boundary;
 // a 401 or 403 here rejects rather than degrading to an empty list.
 export async function fetchAdminUsers() {
-  const response = await fetch('/api/admin/users', { headers: { accept: 'application/json' } });
+  const response = await fetch('/api/admin/users', {
+    headers: { accept: 'application/json' },
+  });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.error || 'Could not load accounts.');
+  if (!response.ok)
+    throw new Error(payload.error || 'Could not load accounts.');
   return Array.isArray(payload.users) ? payload.users : [];
 }
 
 export async function fetchAdminUser(id) {
-  const response = await fetch(`/api/admin/users/${id}`, { headers: { accept: 'application/json' } });
+  const response = await fetch(`/api/admin/users/${id}`, {
+    headers: { accept: 'application/json' },
+  });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     const error = new Error(payload.error || 'Could not load the account.');
-    if (Array.isArray(payload.errors) && payload.errors.length > 0) error.codes = payload.errors;
+    if (Array.isArray(payload.errors) && payload.errors.length > 0)
+      error.codes = payload.errors;
     throw error;
   }
   return payload.user ?? null;

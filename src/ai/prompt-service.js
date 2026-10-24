@@ -9,7 +9,13 @@ const PROMPT_VERSION = 'external-prompts-v1';
 function renderPrompt(
   db,
   userId,
-  { purpose, resourceId = null, targetDate = null },
+  {
+    purpose,
+    resourceId = null,
+    targetDate = null,
+    optionalContext = '',
+    allowMissingCycle = false,
+  },
 ) {
   const user = activeOwner(db, userId);
   const lang = user.preferred_lang;
@@ -60,7 +66,7 @@ function renderPrompt(
       "SELECT * FROM training_cycles WHERE user_id = ? AND status='active'",
     )
     .get(userId);
-  if (!cycle) throw new AiError('resourceNotFound', 404);
+  if (!cycle && !allowMissingCycle) throw new AiError('resourceNotFound', 404);
   const availability = db
     .prepare(
       'SELECT day_key AS day, can_train, available_periods, available_minutes, location FROM ai_coach_availability WHERE user_id = ? ORDER BY day_key',
@@ -90,6 +96,7 @@ function renderPrompt(
     lang,
     messages,
     shoes,
+    contexto: optionalContext,
     ...weekly.buildPromptContext({
       cycle,
       trainings,
@@ -132,6 +139,9 @@ function promptSources(
   const previousStart = weekly.dateInputValue(
     weekly.addDays(weekly.parseInputDate(targetDate), -7),
   );
+  const plannedEnd = weekly.dateInputValue(
+    weekly.addDays(weekly.parseInputDate(targetDate), 6),
+  );
   return [
     ...db
       .prepare(
@@ -141,9 +151,9 @@ function promptSources(
       .map((row) => reference('cycle', row)),
     ...db
       .prepare(
-        `SELECT ${TRAINING_COLUMNS} FROM trainings WHERE user_id = ? AND dia >= ? AND dia < ? ORDER BY id`,
+        `SELECT ${TRAINING_COLUMNS} FROM trainings WHERE user_id = ? AND dia >= ? AND dia <= ? ORDER BY id`,
       )
-      .all(userId, previousStart, targetDate)
+      .all(userId, previousStart, plannedEnd)
       .map((row) => reference('training', row)),
     ...db
       .prepare('SELECT * FROM shoes WHERE user_id = ? ORDER BY id')

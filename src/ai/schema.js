@@ -71,11 +71,34 @@ function migrateAi(db) {
 }
 function migrateAiDiagnostics(db) {
   db.transaction(() => {
-    const marker='2026-10-ai-execution-diagnostics-v1';
-    if(db.prepare('SELECT 1 FROM schema_migrations WHERE name=?').get(marker))return;
-    if(!db.pragma('table_info(ai_executions)').some(column=>column.name==='diagnostics_json'))
-      db.exec("ALTER TABLE ai_executions ADD COLUMN diagnostics_json TEXT NOT NULL DEFAULT '[]'");
+    const marker = '2026-10-ai-execution-diagnostics-v1';
+    if (db.prepare('SELECT 1 FROM schema_migrations WHERE name=?').get(marker))
+      return;
+    if (
+      !db
+        .pragma('table_info(ai_executions)')
+        .some((column) => column.name === 'diagnostics_json')
+    )
+      db.exec(
+        "ALTER TABLE ai_executions ADD COLUMN diagnostics_json TEXT NOT NULL DEFAULT '[]'",
+      );
     db.prepare('INSERT INTO schema_migrations(name) VALUES(?)').run(marker);
   }).immediate();
 }
-module.exports = { migrateAi, migrateAiDiagnostics };
+function migrateWeeklyWorkouts(db) {
+  db.transaction(() => {
+    const marker = '2026-10-weekly-workouts-v1';
+    if (db.prepare('SELECT 1 FROM schema_migrations WHERE name=?').get(marker))
+      return;
+    db.exec(`CREATE TABLE IF NOT EXISTS weekly_workout_proposals (
+      execution_id TEXT PRIMARY KEY REFERENCES ai_executions(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      week_start TEXT NOT NULL,
+      applied_at TEXT,
+      application_json TEXT,
+      created_at TEXT NOT NULL
+    ); CREATE INDEX IF NOT EXISTS weekly_workout_owner ON weekly_workout_proposals(user_id,week_start,created_at);`);
+    db.prepare('INSERT INTO schema_migrations(name) VALUES(?)').run(marker);
+  }).immediate();
+}
+module.exports = { migrateAi, migrateAiDiagnostics, migrateWeeklyWorkouts };

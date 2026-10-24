@@ -573,6 +573,28 @@
   user-select: all;
 }
 
+#weeklyProposalSection[hidden],
+#resultSection[hidden] { display: none; }
+
+.weekly-proposal-list { display: grid; gap: 1rem; }
+.weekly-proposal-card {
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+}
+.weekly-proposal-card h3 { margin: 0 0 0.75rem; font-size: 1rem; }
+.weekly-proposal-card dl { display: grid; grid-template-columns: minmax(7rem, 0.28fr) minmax(0, 1fr); gap: 0.45rem 0.8rem; margin: 0; }
+.weekly-proposal-card dt { color: var(--muted); font-size: 0.84rem; font-weight: 600; }
+.weekly-proposal-card dd { min-width: 0; margin: 0; overflow-wrap: anywhere; font-size: 0.9rem; }
+#weeklyProposalError { margin: 0.75rem 0; color: var(--danger); }
+#weeklyProposalContent > p { overflow-wrap: anywhere; }
+@media (max-width: 520px) {
+  .weekly-proposal-card dl { grid-template-columns: minmax(0, 1fr); gap: 0.2rem; }
+  .weekly-proposal-card dd { margin-bottom: 0.55rem; }
+}
+
 @media (max-width: 640px) {
   .day-summary {
     gap: 0.15rem 0.5rem;

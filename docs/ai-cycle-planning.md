@@ -1,8 +1,11 @@
 # Cycle planning — issue #63
 
-Status: **implemented on `feat/issue-63-cycle-planning`, not integrated until its
-PR merges**. Beta **0.21.0** builds on phase 0 merged in PR #67 (`648d6a0`).
-Weekly generation #64 and result analysis #65 are not implemented here.
+Status: cycle planning is integrated via merged PR #69. The original phase 1
+branch ran at beta **0.21.0** after phase 0 merged in PR #67 (`648d6a0`); the
+branch-only notes and evaluations below are retained as historical records.
+Weekly generation #64 is implemented separately on its dedicated 0.22.0 issue
+branch; see [weekly workouts](ai-weekly-workouts.md). Result analysis #65 remains
+future scope.
 The [2026-10-24 final v3 evaluation](#end-to-end-final-v3-evaluation-2026-10-24)
 completed real generation, RPE validation, explicit application and reload recovery
 on the final runtime code. Earlier evaluations and their limitations remain below.

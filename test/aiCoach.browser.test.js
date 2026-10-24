@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { existsSync, mkdtempSync, rmSync } = require('node:fs');
+const { existsSync, mkdtempSync, rmSync, writeFileSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
@@ -11,9 +11,14 @@ const { once } = require('node:events');
 const { setTimeout: delay } = require('node:timers/promises');
 const { buildServer } = require('../src/server');
 const { createDatabase } = require('../src/db/database');
+const { readAiConfig } = require('../src/ai/config');
 
 function findChrome() {
-  return ['/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'].find((file) => existsSync(file));
+  return [
+    '/usr/bin/google-chrome',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+  ].find((file) => existsSync(file));
 }
 
 async function freePort() {
@@ -29,33 +34,149 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
   const chrome = findChrome();
   assert.ok(chrome, 'Chrome is required for AI Coach browser verification.');
   const db = createDatabase({ filename: ':memory:' });
-  const app = await buildServer({ db, sessionCookieSecure: false });
-  await app.inject({ method: 'POST', url: '/api/auth/register', payload: {
-    email: 'availability-browser@example.test', password: 'runner-secret-1',
-    first_name: 'Coach', last_name: 'Runner', preferred_lang: 'pt-BR',
-  } });
-  const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: {
-    email: 'availability-browser@example.test', password: 'runner-secret-1',
-  } });
-  const cookie = [].concat(login.headers['set-cookie'] || [])[0].split(';')[0].split('=')[1];
+  let simulatedProviderCalls = 0;
+  const app = await buildServer({
+    db,
+    sessionCookieSecure: false,
+    aiConfig: readAiConfig({
+      AI_ENABLED: 'true',
+      OPENAI_API_KEY: 'synthetic-browser-key',
+      AI_RETRIES: '0',
+    }),
+    weatherFetch: async (url) => {
+      const parsed = new URL(url);
+      if (parsed.hostname === 'geocoding-api.open-meteo.com') {
+        const location = parsed.searchParams.get('name').split(',')[0];
+        return {
+          ok: true,
+          json: async () => ({
+            results: [
+              {
+                name: location,
+                latitude: 41.1,
+                longitude: -8.6,
+                country_code: 'PT',
+                country: 'Portugal',
+                admin1: 'Porto',
+              },
+            ],
+          }),
+        };
+      }
+      const day = parsed.searchParams.get('start_date');
+      return {
+        ok: true,
+        json: async () => ({
+          timezone: 'Europe/Lisbon',
+          hourly: {
+            time: Array.from(
+              { length: 24 },
+              (_, hour) => `${day}T${String(hour).padStart(2, '0')}:00`,
+            ),
+            temperature_2m: Array.from({ length: 24 }, (_, hour) => 12 + hour),
+            weather_code: Array(24).fill(2),
+          },
+        }),
+      };
+    },
+    aiClient: async (payload) => {
+      simulatedProviderCalls++;
+      const context = JSON.parse(payload.input[0].content[0].text).context;
+      const value = {
+        schemaVersion: 'weekly-workouts-v1',
+        weekStart: context.resource.weekStart,
+        sessions: [
+          {
+            date: '2026-10-26',
+            weekday: 'monday',
+            period: '12_14',
+            type: 'Easy run',
+            workout: 'Easy run with strides',
+            details: 'Warm-up, main set and cool-down',
+            targetHr: '120-140 bpm',
+            rpe: 3,
+            shoeId: null,
+            location: 'Legacy Porto',
+            weather: 'Use verified Kinesis forecast',
+            notes: '',
+            durationMinutes: 45,
+            justification:
+              'This follows the saved context and recorded training.',
+            evidence: ['weather:monday:2026-10-26'],
+          },
+        ],
+      };
+      return {
+        value,
+        usage: { input: 10, output: 10, cached: 0 },
+        error: null,
+      };
+    },
+  });
+  await app.inject({
+    method: 'POST',
+    url: '/api/auth/register',
+    payload: {
+      email: 'availability-browser@example.test',
+      password: 'runner-secret-1',
+      first_name: 'Coach',
+      last_name: 'Runner',
+      preferred_lang: 'pt-BR',
+    },
+  });
+  db.prepare(
+    "UPDATE users SET role = 'admin' WHERE email = 'availability-browser@example.test'",
+  ).run();
+  const login = await app.inject({
+    method: 'POST',
+    url: '/api/auth/login',
+    payload: {
+      email: 'availability-browser@example.test',
+      password: 'runner-secret-1',
+    },
+  });
+  const cookie = []
+    .concat(login.headers['set-cookie'] || [])[0]
+    .split(';')[0]
+    .split('=')[1];
   const baseUrl = await app.listen({ port: 0, host: '127.0.0.1' });
   const debugPort = await freePort();
-  const profile = mkdtempSync(path.join(tmpdir(), 'kinesis-availability-chrome-'));
-  const chromeProcess = spawn(chrome, [
-    '--headless=new', '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage', '--no-first-run',
-    '--remote-allow-origins=*', `--remote-debugging-port=${debugPort}`,
-    `--user-data-dir=${profile}`, 'about:blank',
-  ], { stdio: 'ignore' });
+  const profile = mkdtempSync(
+    path.join(tmpdir(), 'kinesis-availability-chrome-'),
+  );
+  const chromeProcess = spawn(
+    chrome,
+    [
+      '--headless=new',
+      '--no-sandbox',
+      '--disable-gpu',
+      '--disable-dev-shm-usage',
+      '--no-first-run',
+      '--remote-allow-origins=*',
+      `--remote-debugging-port=${debugPort}`,
+      `--user-data-dir=${profile}`,
+      'about:blank',
+    ],
+    { stdio: 'ignore' },
+  );
   let socket;
   try {
     const debugUrl = `http://127.0.0.1:${debugPort}`;
     let versionResponse;
     for (let attempt = 0; attempt < 100; attempt += 1) {
-      try { versionResponse = await fetch(`${debugUrl}/json/version`); if (versionResponse.ok) break; } catch {}
+      try {
+        versionResponse = await fetch(`${debugUrl}/json/version`);
+        if (versionResponse.ok) break;
+      } catch {}
       await delay(50);
     }
-    assert.ok(versionResponse?.ok, 'Chrome DevTools endpoint became available.');
-    const targetResponse = await fetch(`${debugUrl}/json/new?about:blank`, { method: 'PUT' });
+    assert.ok(
+      versionResponse?.ok,
+      'Chrome DevTools endpoint became available.',
+    );
+    const targetResponse = await fetch(`${debugUrl}/json/new?about:blank`, {
+      method: 'PUT',
+    });
     const target = await targetResponse.json();
     socket = new WebSocket(target.webSocketDebuggerUrl);
     await new Promise((resolve, reject) => {
@@ -69,8 +190,12 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     socket.addEventListener('message', (event) => {
       const message = JSON.parse(event.data);
       if (message.method) {
-        const waiterIndex = cdpEventWaiters.findIndex((waiter) => waiter.method === message.method && waiter.predicate(message));
-        if (waiterIndex >= 0) cdpEventWaiters.splice(waiterIndex, 1)[0].resolve(message);
+        const waiterIndex = cdpEventWaiters.findIndex(
+          (waiter) =>
+            waiter.method === message.method && waiter.predicate(message),
+        );
+        if (waiterIndex >= 0)
+          cdpEventWaiters.splice(waiterIndex, 1)[0].resolve(message);
         else cdpEvents.push(message);
         return;
       }
@@ -80,14 +205,18 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       if (message.error) handler.reject(new Error(message.error.message));
       else handler.resolve(message.result);
     });
-    const command = (method, params = {}) => new Promise((resolve, reject) => {
-      const commandId = ++id;
-      pending.set(commandId, { resolve, reject });
-      socket.send(JSON.stringify({ id: commandId, method, params }));
-    });
+    const command = (method, params = {}) =>
+      new Promise((resolve, reject) => {
+        const commandId = ++id;
+        pending.set(commandId, { resolve, reject });
+        socket.send(JSON.stringify({ id: commandId, method, params }));
+      });
     const waitForCdpEvent = (method, predicate = () => true) => {
-      const queuedIndex = cdpEvents.findIndex((event) => event.method === method && predicate(event));
-      if (queuedIndex >= 0) return Promise.resolve(cdpEvents.splice(queuedIndex, 1)[0]);
+      const queuedIndex = cdpEvents.findIndex(
+        (event) => event.method === method && predicate(event),
+      );
+      if (queuedIndex >= 0)
+        return Promise.resolve(cdpEvents.splice(queuedIndex, 1)[0]);
       return new Promise((resolve, reject) => {
         const waiter = { method, predicate, resolve: null, reject };
         const timeout = setTimeout(() => {
@@ -98,27 +227,55 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
           }
         }, 15000);
         timeout.unref?.();
-        waiter.resolve = (event) => { clearTimeout(timeout); resolve(event); };
+        waiter.resolve = (event) => {
+          clearTimeout(timeout);
+          resolve(event);
+        };
         cdpEventWaiters.push(waiter);
       });
     };
-    const waitForAvailabilityResponse = (method) => waitForCdpEvent('Fetch.requestPaused', (event) =>
-      event.params.request.method === method && event.params.request.url.includes('/api/ai-coach/availability'));
-    const releaseAvailabilityResponse = (event) => command('Fetch.continueRequest', { requestId: event.params.requestId });
+    const waitForAvailabilityResponse = (method) =>
+      waitForCdpEvent(
+        'Fetch.requestPaused',
+        (event) =>
+          event.params.request.method === method &&
+          event.params.request.url.includes('/api/ai-coach/availability'),
+      );
+    const releaseAvailabilityResponse = (event) =>
+      command('Fetch.continueRequest', { requestId: event.params.requestId });
     const evaluate = async (expression) => {
-      const result = await command('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
-      if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text);
+      const result = await command('Runtime.evaluate', {
+        expression,
+        awaitPromise: true,
+        returnByValue: true,
+      });
+      if (result.exceptionDetails)
+        throw new Error(
+          result.exceptionDetails.exception?.description ||
+            result.exceptionDetails.text,
+        );
       return result.result.value;
     };
-    const waitForText = (selector, expected) => evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{const element=document.querySelector(${JSON.stringify(selector)});if(element?.textContent.trim()===${JSON.stringify(expected)}){resolve(true);return}if(Date.now()>end){reject(new Error('Timed out waiting for expected text'));return}requestAnimationFrame(check)};check()})`);
-    const saveWithDelayedResponse = async (editExpression, afterSubmitEdit = null) => {
+    const waitForText = (selector, expected) =>
+      evaluate(
+        `new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{const element=document.querySelector(${JSON.stringify(selector)});if(element?.textContent.trim()===${JSON.stringify(expected)}){resolve(true);return}if(Date.now()>end){reject(new Error('Timed out waiting for expected text '+JSON.stringify({selector,expected,actual:element?.textContent,visible:element&&!element.hidden})));return}setTimeout(check,30)};check()})`,
+      );
+    const saveWithDelayedResponse = async (
+      editExpression,
+      afterSubmitEdit = null,
+    ) => {
       const responsePending = waitForAvailabilityResponse('PUT');
       await evaluate(`document.getElementById('saveAvailability').click()`);
       const response = await responsePending;
       const edit = await evaluate(editExpression);
       if (afterSubmitEdit) await afterSubmitEdit();
       await releaseAvailabilityResponse(response);
-      await waitForText('#availabilityStatus', 'Availability changed while saving. Save again before generating the prompt.');
+      const changedText = (await evaluate(
+        `document.documentElement.lang.startsWith('en')`,
+      ))
+        ? 'Availability changed while saving. Save again before generating the proposal.'
+        : 'A disponibilidade mudou durante o salvamento. Salve novamente antes de gerar a proposta.';
+      await waitForText('#availabilityStatus', changedText);
       return edit;
     };
     const saveCurrentForm = async () => {
@@ -126,17 +283,42 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       await waitForText('#availabilityStatus', 'Weekly schedule saved.');
     };
     const pressKey = async (key, code, keyCode, modifiers = 0) => {
-      await command('Input.dispatchKeyEvent', { type: 'keyDown', key, code, windowsVirtualKeyCode: keyCode, modifiers });
-      await command('Input.dispatchKeyEvent', { type: 'keyUp', key, code, windowsVirtualKeyCode: keyCode, modifiers });
+      await command('Input.dispatchKeyEvent', {
+        type: 'keyDown',
+        key,
+        code,
+        windowsVirtualKeyCode: keyCode,
+        modifiers,
+      });
+      await command('Input.dispatchKeyEvent', {
+        type: 'keyUp',
+        key,
+        code,
+        windowsVirtualKeyCode: keyCode,
+        modifiers,
+      });
     };
     await command('Page.enable');
     await command('Runtime.enable');
     await command('Network.enable');
     const origin = new URL(baseUrl).origin;
-    const cookieResult = await command('Network.setCookie', { name: 'ta_session', value: cookie, url: origin });
+    const cookieResult = await command('Network.setCookie', {
+      name: 'ta_session',
+      value: cookie,
+      url: origin,
+    });
     assert.equal(cookieResult.success, true);
-    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
-    await command('Fetch.enable', { patterns: [{ urlPattern: '*api/ai-coach/availability*', requestStage: 'Response' }] });
+    await command('Emulation.setDeviceMetricsOverride', {
+      width: 1280,
+      height: 800,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    await command('Fetch.enable', {
+      patterns: [
+        { urlPattern: '*api/ai-coach/availability*', requestStage: 'Response' },
+      ],
+    });
     const initialGet = waitForAvailabilityResponse('GET');
     const loaded = new Promise((resolve) => {
       const listener = (event) => {
@@ -148,26 +330,85 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       socket.addEventListener('message', listener);
     });
     await command('Page.navigate', { url: `${baseUrl}/ai-coach.html` });
-    await Promise.race([loaded, delay(15000).then(() => { throw new Error('AI Coach page load timed out.'); })]);
-    const ready = await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+12000;const check=()=>{if(document.querySelectorAll('#availabilityGrid .day-row').length===7){resolve(true);return}if(Date.now()>end){reject(new Error('Availability grid did not render'));return}requestAnimationFrame(check)};check()})`);
-    assert.equal(ready, true);
-    const requestWorkoutsIcon = await evaluate(`(()=>{const item=document.querySelector('[data-nav-id="ai-coach"]');const icon=item?.querySelector('svg');const style=icon?getComputedStyle(icon):null;return {active:item?.classList.contains('active'),icon:icon?.getAttribute('data-lucide'),display:style?.display,color:style?.color}})()`);
-    assert.deepEqual(requestWorkoutsIcon, { active: true, icon: 'sport-shoe', display: 'block', color: 'rgb(76, 110, 81)' });
-    const portugueseBranding = await evaluate(`(()=>{const item=document.querySelector('[data-nav-id="ai-coach"]');return {language:document.documentElement.lang,title:document.title,heading:document.querySelector('main h1').textContent.trim(),subtitle:document.querySelector('main .ai-coach-subtitle')?.textContent.trim(),label:item.querySelector('.nav-label').textContent.trim(),ariaLabel:item.getAttribute('aria-label'),scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth}})()`);
-    assert.deepEqual(portugueseBranding, { language: 'pt-BR', title: 'Solicitar Treinos - Kinesis', heading: 'Solicitar Treinos', subtitle: 'Organize seus objetivos e sua disponibilidade para preparar uma solicitação de treinos com IA.', label: 'Solicitar Treinos', ariaLabel: 'Solicitar Treinos', scrollWidth: 1280, viewportWidth: 1280 });
-    await evaluate(`document.getElementById('sidebarToggle').click()`);
-    const collapsedPortuguese = await evaluate(`(()=>{const item=document.querySelector('[data-nav-id="ai-coach"]');return {collapsed:document.querySelector('.app-shell').classList.contains('collapsed'),ariaLabel:item.getAttribute('aria-label'),labelVisible:getComputedStyle(item.querySelector('.nav-label')).display!=='none'}})()`);
-    assert.deepEqual(collapsedPortuguese, { collapsed: true, ariaLabel: 'Solicitar Treinos', labelVisible: false });
-    const portugueseGuard = await evaluate(`(()=>{const ids=['ai-coach','calendar'];return ids.map(id=>{const item=document.querySelector('[data-nav-id="'+id+'"]');const reason=item.querySelector('.cycle-guard-badge');return {id,label:item.getAttribute('aria-label'),disabled:item.getAttribute('aria-disabled'),reason:reason.textContent.trim(),reasonId:reason.id,describedBy:(item.getAttribute('aria-describedby')||'').split(/\\s+/)}})})()`);
-    assert.deepEqual(portugueseGuard, [
-      { id: 'ai-coach', label: 'Solicitar Treinos', disabled: 'true', reason: 'Nenhum ciclo ativo', reasonId: 'cycle-guard-ai-coach-description', describedBy: ['cycle-guard-ai-coach-description'] },
-      { id: 'calendar', label: 'Treinos', disabled: 'true', reason: 'Nenhum ciclo ativo', reasonId: 'cycle-guard-calendar-description', describedBy: ['cycle-guard-calendar-description'] },
+    await Promise.race([
+      loaded,
+      delay(15000).then(() => {
+        throw new Error('AI Coach page load timed out.');
+      }),
     ]);
-    await evaluate(`window.dispatchEvent(new Event('kinesis:cycle-changed'));window.dispatchEvent(new Event('kinesis:cycle-changed'))`);
-    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+5000;const check=()=>{const item=document.querySelector('[data-nav-id="ai-coach"]');if(item.getAttribute('aria-describedby')==='cycle-guard-ai-coach-description')resolve(true);else if(Date.now()>end)reject(new Error('Repeated cycle refresh did not preserve the guarded description'));else setTimeout(check,20)};check()})`);
-    assert.equal(await evaluate(`document.querySelector('[data-nav-id="ai-coach"]').getAttribute('aria-describedby')`), 'cycle-guard-ai-coach-description');
+    const ready = await evaluate(
+      `new Promise((resolve,reject)=>{const end=Date.now()+12000;const check=()=>{if(document.querySelectorAll('#availabilityGrid .day-row').length===7){resolve(true);return}if(Date.now()>end){reject(new Error('Availability grid did not render'));return}requestAnimationFrame(check)};check()})`,
+    );
+    assert.equal(ready, true);
+    const requestWorkoutsIcon = await evaluate(
+      `(()=>{const item=document.querySelector('[data-nav-id="ai-coach"]');const icon=item?.querySelector('svg');const style=icon?getComputedStyle(icon):null;return {active:item?.classList.contains('active'),icon:icon?.getAttribute('data-lucide'),display:style?.display,color:style?.color}})()`,
+    );
+    assert.deepEqual(requestWorkoutsIcon, {
+      active: true,
+      icon: 'sport-shoe',
+      display: 'block',
+      color: 'rgb(76, 110, 81)',
+    });
+    const portugueseBranding = await evaluate(
+      `(()=>{const item=document.querySelector('[data-nav-id="ai-coach"]');return {language:document.documentElement.lang,title:document.title,heading:document.querySelector('main h1').textContent.trim(),subtitle:document.querySelector('main .ai-coach-subtitle')?.textContent.trim(),label:item.querySelector('.nav-label').textContent.trim(),ariaLabel:item.getAttribute('aria-label'),scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth}})()`,
+    );
+    assert.deepEqual(portugueseBranding, {
+      language: 'pt-BR',
+      title: 'Solicitar Treinos - Kinesis',
+      heading: 'Solicitar Treinos',
+      subtitle:
+        'Organize seus objetivos e sua disponibilidade para preparar uma solicitação de treinos com IA.',
+      label: 'Solicitar Treinos',
+      ariaLabel: 'Solicitar Treinos',
+      scrollWidth: 1280,
+      viewportWidth: 1280,
+    });
     await evaluate(`document.getElementById('sidebarToggle').click()`);
-    await evaluate(`window.__setDay=(day,available)=>{const input=document.querySelector('[data-day="'+day+'"] [data-can-train]');if(input.checked!==available){input.click()}else if(input.closest('.day-row').dataset.configured!=='true'){input.dispatchEvent(new Event('change',{bubbles:true}))}}`);
+    const collapsedPortuguese = await evaluate(
+      `(()=>{const item=document.querySelector('[data-nav-id="ai-coach"]');return {collapsed:document.querySelector('.app-shell').classList.contains('collapsed'),ariaLabel:item.getAttribute('aria-label'),labelVisible:getComputedStyle(item.querySelector('.nav-label')).display!=='none'}})()`,
+    );
+    assert.deepEqual(collapsedPortuguese, {
+      collapsed: true,
+      ariaLabel: 'Solicitar Treinos',
+      labelVisible: false,
+    });
+    const portugueseGuard = await evaluate(
+      `(()=>{const ids=['ai-coach','calendar'];return ids.map(id=>{const item=document.querySelector('[data-nav-id="'+id+'"]');const reason=item.querySelector('.cycle-guard-badge');return {id,label:item.getAttribute('aria-label'),disabled:item.getAttribute('aria-disabled'),reason:reason.textContent.trim(),reasonId:reason.id,describedBy:(item.getAttribute('aria-describedby')||'').split(/\\s+/)}})})()`,
+    );
+    assert.deepEqual(portugueseGuard, [
+      {
+        id: 'ai-coach',
+        label: 'Solicitar Treinos',
+        disabled: 'true',
+        reason: 'Nenhum ciclo ativo',
+        reasonId: 'cycle-guard-ai-coach-description',
+        describedBy: ['cycle-guard-ai-coach-description'],
+      },
+      {
+        id: 'calendar',
+        label: 'Treinos',
+        disabled: 'true',
+        reason: 'Nenhum ciclo ativo',
+        reasonId: 'cycle-guard-calendar-description',
+        describedBy: ['cycle-guard-calendar-description'],
+      },
+    ]);
+    await evaluate(
+      `window.dispatchEvent(new Event('kinesis:cycle-changed'));window.dispatchEvent(new Event('kinesis:cycle-changed'))`,
+    );
+    await evaluate(
+      `new Promise((resolve,reject)=>{const end=Date.now()+5000;const check=()=>{const item=document.querySelector('[data-nav-id="ai-coach"]');if(item.getAttribute('aria-describedby')==='cycle-guard-ai-coach-description')resolve(true);else if(Date.now()>end)reject(new Error('Repeated cycle refresh did not preserve the guarded description'));else setTimeout(check,20)};check()})`,
+    );
+    assert.equal(
+      await evaluate(
+        `document.querySelector('[data-nav-id="ai-coach"]').getAttribute('aria-describedby')`,
+      ),
+      'cycle-guard-ai-coach-description',
+    );
+    await evaluate(`document.getElementById('sidebarToggle').click()`);
+    await evaluate(
+      `window.__setDay=(day,available)=>{const input=document.querySelector('[data-day="'+day+'"] [data-can-train]');if(input.checked!==available){input.click()}else if(input.closest('.day-row').dataset.configured!=='true'){input.dispatchEvent(new Event('change',{bubbles:true}))}}`,
+    );
     const pendingInitialGet = await initialGet;
     const pendingProtection = await evaluate(`(()=>{
       window.__prematurePutCount=0;
@@ -178,14 +419,27 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       document.getElementById('promptForm').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
       return { saveDisabled:save.disabled, generateDisabled:document.getElementById('generateBtn').disabled, prompt:document.getElementById('promptOutput').textContent, putCount:window.__prematurePutCount };
     })()`);
-    assert.deepEqual(pendingProtection, { saveDisabled: true, generateDisabled: true, prompt: '', putCount: 0 },
-      'pending availability cannot be saved or generated');
-    await evaluate(`(()=>{const input=document.getElementById('baseLocation');input.value='Lisboa';input.dispatchEvent(new Event('change',{bubbles:true}));return true})()`);
+    assert.deepEqual(
+      pendingProtection,
+      { saveDisabled: true, generateDisabled: true, prompt: '', putCount: 0 },
+      'pending availability cannot be saved or generated',
+    );
+    await evaluate(
+      `(()=>{const input=document.getElementById('baseLocation');input.value='Lisboa';input.dispatchEvent(new Event('change',{bubbles:true}));return true})()`,
+    );
     await releaseAvailabilityResponse(pendingInitialGet);
-    const initialAvailabilityLoaded = await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{if(!document.getElementById('availabilityReview').hidden){resolve(true);return}if(Date.now()>end){reject(new Error('New-user availability review notice did not load'));return}requestAnimationFrame(check)};check()})`);
+    const initialAvailabilityLoaded = await evaluate(
+      `new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{if(!document.getElementById('availabilityReview').hidden){resolve(true);return}if(Date.now()>end){reject(new Error('New-user availability review notice did not load'));return}requestAnimationFrame(check)};check()})`,
+    );
     assert.equal(initialAvailabilityLoaded, true);
-    const newUserState = await evaluate(`(()=>({review:!document.getElementById('availabilityReview').hidden,unselected:[...document.querySelectorAll('#availabilityGrid .day-row')].every(row=>!row.querySelector('input[data-can-train]:checked')),locations:[...document.querySelectorAll('[data-location]')].every(input=>input.value==='')}))()`);
-    assert.deepEqual(newUserState, { review: true, unselected: true, locations: true });
+    const newUserState = await evaluate(
+      `(()=>({review:!document.getElementById('availabilityReview').hidden,unselected:[...document.querySelectorAll('#availabilityGrid .day-row')].every(row=>!row.querySelector('input[data-can-train]:checked')),locations:[...document.querySelectorAll('[data-location]')].every(input=>input.value==='')}))()`,
+    );
+    assert.deepEqual(newUserState, {
+      review: true,
+      unselected: true,
+      locations: true,
+    });
 
     const initialDayControls = await evaluate(`(()=>{
       const rows=[...document.querySelectorAll('#availabilityGrid .day-row')];
@@ -213,7 +467,14 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       afterLabelClick: false,
       expanded: { hidden: false, disabled: true },
       reclosed: true,
-      chevron: { sameButtonSize: true, closedIconCentered: true, openIconCentered: true, closedButtonCentered: true, openButtonCentered: true, transformOrigin: '8px 8px' },
+      chevron: {
+        sameButtonSize: true,
+        closedIconCentered: true,
+        openIconCentered: true,
+        closedButtonCentered: true,
+        openButtonCentered: true,
+        transformOrigin: '8px 8px',
+      },
     });
 
     const firstUseState = await evaluate(`(()=>{
@@ -228,18 +489,33 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       const untouched=['tuesday','thursday','saturday','sunday'].every(day=>!document.querySelector('[data-day="'+day+'"] [data-can-train]').checked);
       return { selected, untouched, generateEnabled:!document.getElementById('generateBtn').disabled };
     })()`);
-    assert.deepEqual(firstUseState, { selected: true, untouched: true, generateEnabled: true },
-      'a new user can select only the days they intend to train');
+    assert.deepEqual(
+      firstUseState,
+      { selected: true, untouched: true, generateEnabled: true },
+      'a new user can select only the days they intend to train',
+    );
     const firstSaveResponsePending = waitForAvailabilityResponse('PUT');
     await evaluate(`document.getElementById('saveAvailability').click()`);
     const firstSaveResponse = await firstSaveResponsePending;
-    const firstSavePayload = JSON.parse(firstSaveResponse.params.request.postData);
-    assert.deepEqual(firstSavePayload.days.map((day) => ({ day: day.day, can_train: day.can_train })), [
-      { day: 'monday', can_train: true }, { day: 'tuesday', can_train: false },
-      { day: 'wednesday', can_train: true }, { day: 'thursday', can_train: false },
-      { day: 'friday', can_train: true }, { day: 'saturday', can_train: false },
-      { day: 'sunday', can_train: false },
-    ], 'the first save sends explicit false values for untouched days');
+    const firstSavePayload = JSON.parse(
+      firstSaveResponse.params.request.postData,
+    );
+    assert.deepEqual(
+      firstSavePayload.days.map((day) => ({
+        day: day.day,
+        can_train: day.can_train,
+      })),
+      [
+        { day: 'monday', can_train: true },
+        { day: 'tuesday', can_train: false },
+        { day: 'wednesday', can_train: true },
+        { day: 'thursday', can_train: false },
+        { day: 'friday', can_train: true },
+        { day: 'saturday', can_train: false },
+        { day: 'sunday', can_train: false },
+      ],
+      'the first save sends explicit false values for untouched days',
+    );
     await releaseAvailabilityResponse(firstSaveResponse);
     await waitForText('#availabilityStatus', 'Agenda semanal salva.');
 
@@ -294,9 +570,16 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       return {collapsed,expanded,errors,errorVisible,emptyLocation,locationVisible,locationHiddenWhenExpanded};
     })()`);
     assert.deepEqual(daySummaryAndErrors, {
-      collapsed: { summaryVisible: true, incompleteVisible: true, separateLines: true },
+      collapsed: {
+        summaryVisible: true,
+        incompleteVisible: true,
+        separateLines: true,
+      },
       expanded: { summaryVisible: false, incompleteVisible: true },
-      errors: ['O tempo disponível deve ser um número inteiro entre 1 e 720 minutos.', 'Informe a localidade deste dia disponível.'],
+      errors: [
+        'O tempo disponível deve ser um número inteiro entre 1 e 720 minutos.',
+        'Informe a localidade deste dia disponível.',
+      ],
       errorVisible: true,
       emptyLocation: { hidden: true, display: 'none', rects: 0 },
       locationVisible: true,
@@ -315,17 +598,51 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       for(const day of ['tuesday','wednesday','thursday','friday','saturday','sunday'])window.__setDay(day, false);
       return {valueLength:location.value.length,trimmedLength:location.value.trim().length,errorHidden:monday.querySelector('[data-day-error]').hidden,invalid:location.getAttribute('aria-invalid'),generateDisabled:document.getElementById('generateBtn').disabled};
     })()`);
-    assert.deepEqual(exactLimitLocation, { valueLength: 204, trimmedLength: 200, errorHidden: true, invalid: 'false', generateDisabled: false });
+    assert.deepEqual(exactLimitLocation, {
+      valueLength: 204,
+      trimmedLength: 200,
+      errorHidden: true,
+      invalid: 'false',
+      generateDisabled: false,
+    });
     await command('Fetch.disable');
     await evaluate(`document.getElementById('saveAvailability').click()`);
-    const exactLimitSaveStatus = await evaluate(`new Promise(resolve=>{const end=Date.now()+8000;const check=()=>{const status=document.getElementById('availabilityStatus').textContent.trim();if(status||Date.now()>end){resolve(status);return}requestAnimationFrame(check)};check()})`);
+    const exactLimitSaveStatus = await evaluate(
+      `new Promise(resolve=>{const end=Date.now()+8000;const check=()=>{const status=document.getElementById('availabilityStatus').textContent.trim();if(status||Date.now()>end){resolve(status);return}requestAnimationFrame(check)};check()})`,
+    );
     assert.equal(exactLimitSaveStatus, 'Agenda semanal salva.');
-    const saveVisualState = await evaluate(`(()=>{const button=document.getElementById('saveAvailability');const status=document.getElementById('availabilityStatus');const style=getComputedStyle(button);return {label:document.getElementById('saveAvailabilityLabel').textContent,icon:button.querySelector('[data-lucide="save"]')?.getAttribute('aria-hidden')||button.querySelector('svg')?.getAttribute('aria-hidden'),success:status.classList.contains('is-success'),error:status.classList.contains('is-error'),border:style.borderStyle,borderRadius:style.borderRadius,scrollWidth:document.documentElement.scrollWidth,clientWidth:document.documentElement.clientWidth}})()`);
-    assert.deepEqual(saveVisualState, {label: 'Salvar agenda semanal', icon: 'true', success: true, error: false, border: 'none', borderRadius: '8px', scrollWidth: 1280, clientWidth: 1280});
-    const exactLocationSaved = await app.inject({ method: 'GET', url: '/api/ai-coach/availability', headers: { cookie: `ta_session=${cookie}` } });
-    assert.equal(exactLocationSaved.json().availability.days[0].location, `  ${'B'.repeat(200)}  `);
-    const desktop = await evaluate(`(()=>({width:innerWidth,scrollWidth:document.documentElement.scrollWidth,language:document.documentElement.lang,reviewVisible:!document.getElementById('availabilityReview').hidden,days:document.querySelectorAll('#availabilityGrid .day-row').length}))()`);
-    assert.deepEqual(desktop, { width: 1280, scrollWidth: 1280, language: 'pt-BR', reviewVisible: false, days: 7 });
+    const saveVisualState = await evaluate(
+      `(()=>{const button=document.getElementById('saveAvailability');const status=document.getElementById('availabilityStatus');const style=getComputedStyle(button);return {label:document.getElementById('saveAvailabilityLabel').textContent,icon:button.querySelector('[data-lucide="save"]')?.getAttribute('aria-hidden')||button.querySelector('svg')?.getAttribute('aria-hidden'),success:status.classList.contains('is-success'),error:status.classList.contains('is-error'),border:style.borderStyle,borderRadius:style.borderRadius,scrollWidth:document.documentElement.scrollWidth,clientWidth:document.documentElement.clientWidth}})()`,
+    );
+    assert.deepEqual(saveVisualState, {
+      label: 'Salvar agenda semanal',
+      icon: 'true',
+      success: true,
+      error: false,
+      border: 'none',
+      borderRadius: '8px',
+      scrollWidth: 1280,
+      clientWidth: 1280,
+    });
+    const exactLocationSaved = await app.inject({
+      method: 'GET',
+      url: '/api/ai-coach/availability',
+      headers: { cookie: `ta_session=${cookie}` },
+    });
+    assert.equal(
+      exactLocationSaved.json().availability.days[0].location,
+      `  ${'B'.repeat(200)}  `,
+    );
+    const desktop = await evaluate(
+      `(()=>({width:innerWidth,scrollWidth:document.documentElement.scrollWidth,language:document.documentElement.lang,reviewVisible:!document.getElementById('availabilityReview').hidden,days:document.querySelectorAll('#availabilityGrid .day-row').length}))()`,
+    );
+    assert.deepEqual(desktop, {
+      width: 1280,
+      scrollWidth: 1280,
+      language: 'pt-BR',
+      reviewVisible: false,
+      days: 7,
+    });
 
     const agendaGeometry = await evaluate(`(()=>{
       const row=document.querySelector('[data-day="monday"]');
@@ -338,9 +655,22 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       return {card:{left:card.left,right:card.right},periodItems,periodListWidth:periodList.getBoundingClientRect().width,durationWidth:duration.width,locationWidth:location.width};
     })()`);
     assert.equal(agendaGeometry.periodItems.length, 5);
-    assert.ok(agendaGeometry.periodItems.every((item) => item.left === agendaGeometry.periodItems[0].left), 'periods stay in one compact column');
-    assert.ok(agendaGeometry.durationWidth < agendaGeometry.card.right - agendaGeometry.card.left, 'duration stays compact');
-    assert.ok(agendaGeometry.locationWidth < agendaGeometry.card.right - agendaGeometry.card.left, 'location stays content-proportional');
+    assert.ok(
+      agendaGeometry.periodItems.every(
+        (item) => item.left === agendaGeometry.periodItems[0].left,
+      ),
+      'periods stay in one compact column',
+    );
+    assert.ok(
+      agendaGeometry.durationWidth <
+        agendaGeometry.card.right - agendaGeometry.card.left,
+      'duration stays compact',
+    );
+    assert.ok(
+      agendaGeometry.locationWidth <
+        agendaGeometry.card.right - agendaGeometry.card.left,
+      'location stays content-proportional',
+    );
 
     const computedFormStyles = await evaluate(`(()=>{
       const monday=document.querySelector('[data-day="monday"]');
@@ -355,7 +685,7 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       const copy=document.getElementById('applyWeekdays');
       const style=(element)=>{const s=getComputedStyle(element);return {fontFamily:s.fontFamily,fontSize:s.fontSize,fontWeight:s.fontWeight,lineHeight:s.lineHeight,color:s.color,backgroundColor:s.backgroundColor,border:s.border,borderStyle:s.borderStyle,borderRadius:s.borderRadius,padding:s.padding,margin:s.margin,width:s.width,height:s.height}};
       return {duration:style(duration),location:style(location),base:style(base),durationLabel:style(durationLabel),locationLabel:style(locationLabel),baseLabel:style(baseLabel),durationHint:style(durationHint),baseHint:style(baseHint),copy:style(copy)};
-    })()`) ;
+    })()`);
     const availabilityStructure = await evaluate(`(()=>{
       const rows=[...document.querySelectorAll('.day-row')];
       const ids=[...document.querySelectorAll('#availabilityGrid [id]')].map(el=>el.id);
@@ -365,30 +695,62 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
         return duration?.id && location?.id && row.querySelector('label[for="'+duration.id+'"]') && row.querySelector('label[for="'+location.id+'"]') && row.querySelector('p.field-hint[id="'+duration.dataset.hintId+'"]');
       })};
     })()`);
-    assert.deepEqual(availabilityStructure, { rows: 7, uniqueIds: true, fields: true }, 'daily fields keep unique labels and hints');
     assert.deepEqual(
-      ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'color'].map((key) => computedFormStyles.duration[key]),
-      ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'color'].map((key) => computedFormStyles.location[key]),
+      availabilityStructure,
+      { rows: 7, uniqueIds: true, fields: true },
+      'daily fields keep unique labels and hints',
+    );
+    assert.deepEqual(
+      ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'color'].map(
+        (key) => computedFormStyles.duration[key],
+      ),
+      ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'color'].map(
+        (key) => computedFormStyles.location[key],
+      ),
       'duration and location inputs share control typography',
     );
     assert.deepEqual(
-      ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'color'].map((key) => computedFormStyles.location[key]),
-      ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'color'].map((key) => computedFormStyles.base[key]),
+      ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'color'].map(
+        (key) => computedFormStyles.location[key],
+      ),
+      ['fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'color'].map(
+        (key) => computedFormStyles.base[key],
+      ),
       'availability inputs match base location typography',
     );
     assert.deepEqual(
-      ['fontFamily', 'fontSize', 'fontWeight', 'color'].map((key) => computedFormStyles.durationLabel[key]),
-      ['fontFamily', 'fontSize', 'fontWeight', 'color'].map((key) => computedFormStyles.locationLabel[key]),
+      ['fontFamily', 'fontSize', 'fontWeight', 'color'].map(
+        (key) => computedFormStyles.durationLabel[key],
+      ),
+      ['fontFamily', 'fontSize', 'fontWeight', 'color'].map(
+        (key) => computedFormStyles.locationLabel[key],
+      ),
       'availability labels share label hierarchy',
     );
     assert.deepEqual(
-      ['fontFamily', 'fontSize', 'fontWeight', 'color'].map((key) => computedFormStyles.locationLabel[key]),
-      ['fontFamily', 'fontSize', 'fontWeight', 'color'].map((key) => computedFormStyles.baseLabel[key]),
+      ['fontFamily', 'fontSize', 'fontWeight', 'color'].map(
+        (key) => computedFormStyles.locationLabel[key],
+      ),
+      ['fontFamily', 'fontSize', 'fontWeight', 'color'].map(
+        (key) => computedFormStyles.baseLabel[key],
+      ),
       'availability labels match base location label hierarchy',
     );
-    assert.equal(computedFormStyles.durationHint.fontWeight, computedFormStyles.baseHint.fontWeight, 'hints stay regular');
-    assert.equal(computedFormStyles.copy.borderStyle, 'none', 'copy action is not input-like');
-    assert.equal(computedFormStyles.copy.backgroundColor, 'rgba(0, 0, 0, 0)', 'copy action is transparent');
+    assert.equal(
+      computedFormStyles.durationHint.fontWeight,
+      computedFormStyles.baseHint.fontWeight,
+      'hints stay regular',
+    );
+    assert.equal(
+      computedFormStyles.copy.borderStyle,
+      'none',
+      'copy action is not input-like',
+    );
+    assert.equal(
+      computedFormStyles.copy.backgroundColor,
+      'rgba(0, 0, 0, 0)',
+      'copy action is transparent',
+    );
 
     const portugueseDurationField = await evaluate(`(()=>{
       const input=document.querySelector('[data-day="monday"] [data-duration]');
@@ -408,12 +770,32 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       return state;
     })()`);
     assert.deepEqual(
-      { placeholder: portugueseDurationField.placeholder, hint: portugueseDurationField.hint, value: portugueseDurationField.value, values: portugueseDurationField.values },
-      { placeholder: 'Ex.: 60', hint: 'De 1 a 720 minutos, incluindo aquecimento e volta à calma.', value: '', values: ['1', '60', '720'] },
+      {
+        placeholder: portugueseDurationField.placeholder,
+        hint: portugueseDurationField.hint,
+        value: portugueseDurationField.value,
+        values: portugueseDurationField.values,
+      },
+      {
+        placeholder: 'Ex.: 60',
+        hint: 'De 1 a 720 minutos, incluindo aquecimento e volta à calma.',
+        value: '',
+        values: ['1', '60', '720'],
+      },
     );
-    assert.ok(portugueseDurationField.width <= 144, 'duration input remains compact');
-    assert.ok(portugueseDurationField.textWidth < portugueseDurationField.available, 'Portuguese placeholder fits the compact input');
-    assert.equal(portugueseDurationField.scrollWidth, portugueseDurationField.clientWidth, 'Portuguese layout has no horizontal overflow');
+    assert.ok(
+      portugueseDurationField.width <= 144,
+      'duration input remains compact',
+    );
+    assert.ok(
+      portugueseDurationField.textWidth < portugueseDurationField.available,
+      'Portuguese placeholder fits the compact input',
+    );
+    assert.equal(
+      portugueseDurationField.scrollWidth,
+      portugueseDurationField.clientWidth,
+      'Portuguese layout has no horizontal overflow',
+    );
 
     for (const { width, height, mobile } of [
       { width: 1440, height: 900, mobile: false },
@@ -425,8 +807,15 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       { width: 800, height: 800, mobile: false },
       { width: 320, height: 700, mobile: true },
     ]) {
-      await command('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile });
-      await evaluate(`new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`);
+      await command('Emulation.setDeviceMetricsOverride', {
+        width,
+        height,
+        deviceScaleFactor: 1,
+        mobile,
+      });
+      await evaluate(
+        `new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`,
+      );
       const intermediate = await evaluate(`(()=>{
         const row=document.querySelector('[data-day="monday"]');
         const card=row.getBoundingClientRect();
@@ -436,13 +825,36 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
         const details=row.querySelector('.day-details').getBoundingClientRect();
         return {width:innerWidth,scrollWidth:document.documentElement.scrollWidth,inside:header.left>=card.left&&header.right<=card.right&&expand.left>=card.left&&expand.right<=card.right,summaryInside:summary.right<=card.right,detailsInside:details.left>=card.left&&details.right<=card.right};
       })()`);
-      assert.equal(intermediate.scrollWidth, width, `no horizontal overflow at ${width}px`);
-      assert.equal(intermediate.inside, true, `day header remains inside card at ${width}px`);
-      assert.equal(intermediate.summaryInside, true, `day summary remains inside card at ${width}px`);
-      assert.equal(intermediate.detailsInside, true, `day details remain inside card at ${width}px`);
+      assert.equal(
+        intermediate.scrollWidth,
+        width,
+        `no horizontal overflow at ${width}px`,
+      );
+      assert.equal(
+        intermediate.inside,
+        true,
+        `day header remains inside card at ${width}px`,
+      );
+      assert.equal(
+        intermediate.summaryInside,
+        true,
+        `day summary remains inside card at ${width}px`,
+      );
+      assert.equal(
+        intermediate.detailsInside,
+        true,
+        `day details remain inside card at ${width}px`,
+      );
     }
-    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
-    await evaluate(`new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`);
+    await command('Emulation.setDeviceMetricsOverride', {
+      width: 1280,
+      height: 800,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    await evaluate(
+      `new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`,
+    );
 
     await evaluate(`(()=>{
       const days=['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
@@ -459,25 +871,71 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       return {enabled:!document.getElementById('generateBtn').disabled,periods:document.querySelectorAll('[data-day="monday"] [data-period]:checked').length};
     })()`);
     await pressKey('Tab', 'Tab', 9);
-    const tabState = await evaluate(`(()=>({tag:document.activeElement.tagName,value:document.activeElement.value,focusVisible:document.activeElement.matches(':focus-visible')}))()`);
+    const tabState = await evaluate(
+      `(()=>({tag:document.activeElement.tagName,value:document.activeElement.value,focusVisible:document.activeElement.matches(':focus-visible')}))()`,
+    );
     assert.equal(tabState.tag, 'INPUT');
     assert.equal(tabState.focusVisible, true);
-    await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Shift', code: 'ShiftLeft', windowsVirtualKeyCode: 16, modifiers: 8 });
-    await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, modifiers: 8 });
-    await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, modifiers: 8 });
-    await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Shift', code: 'ShiftLeft', windowsVirtualKeyCode: 16 });
+    await command('Input.dispatchKeyEvent', {
+      type: 'keyDown',
+      key: 'Shift',
+      code: 'ShiftLeft',
+      windowsVirtualKeyCode: 16,
+      modifiers: 8,
+    });
+    await command('Input.dispatchKeyEvent', {
+      type: 'keyDown',
+      key: 'Tab',
+      code: 'Tab',
+      windowsVirtualKeyCode: 9,
+      modifiers: 8,
+    });
+    await command('Input.dispatchKeyEvent', {
+      type: 'keyUp',
+      key: 'Tab',
+      code: 'Tab',
+      windowsVirtualKeyCode: 9,
+      modifiers: 8,
+    });
+    await command('Input.dispatchKeyEvent', {
+      type: 'keyUp',
+      key: 'Shift',
+      code: 'ShiftLeft',
+      windowsVirtualKeyCode: 16,
+    });
     const shiftTabState = await evaluate(`document.activeElement.id`);
     assert.equal(shiftTabState, 'applyWeekdays');
     await pressKey('Enter', 'Enter', 13);
-    const applyState = await evaluate(`(()=>({enabled:!document.getElementById('generateBtn').disabled,periods:document.querySelectorAll('[data-day="monday"] [data-period]:checked').length,focused:document.activeElement.matches(':focus-visible')}))()`);
+    const applyState = await evaluate(
+      `(()=>({enabled:!document.getElementById('generateBtn').disabled,periods:document.querySelectorAll('[data-day="monday"] [data-period]:checked').length,focused:document.activeElement.matches(':focus-visible')}))()`,
+    );
     assert.deepEqual(applyState, { enabled: true, periods: 1, focused: true });
-    await evaluate(`document.querySelector('[data-day="monday"] [data-period="before_08"]').focus()`);
+    await evaluate(
+      `document.querySelector('[data-day="monday"] [data-period="before_08"]').focus()`,
+    );
     await pressKey(' ', 'Space', 32);
-    assert.equal(await evaluate(`document.querySelector('[data-day="monday"] [data-period="before_08"]').checked`), true);
+    assert.equal(
+      await evaluate(
+        `document.querySelector('[data-day="monday"] [data-period="before_08"]').checked`,
+      ),
+      true,
+    );
     await pressKey(' ', 'Space', 32);
-    assert.equal(await evaluate(`document.querySelector('[data-day="monday"] [data-period="before_08"]').checked`), true);
-    await evaluate(`document.querySelector('[data-day="monday"] [data-period="08_12"]').click()`);
-    assert.deepEqual(await evaluate(`(()=>({selected:document.querySelector('[data-day="monday"] [data-period="08_12"]').checked,count:document.querySelectorAll('[data-day="monday"] [data-period]:checked').length}))()`), { selected: true, count: 1 });
+    assert.equal(
+      await evaluate(
+        `document.querySelector('[data-day="monday"] [data-period="before_08"]').checked`,
+      ),
+      true,
+    );
+    await evaluate(
+      `document.querySelector('[data-day="monday"] [data-period="08_12"]').click()`,
+    );
+    assert.deepEqual(
+      await evaluate(
+        `(()=>({selected:document.querySelector('[data-day="monday"] [data-period="08_12"]').checked,count:document.querySelectorAll('[data-day="monday"] [data-period]:checked').length}))()`,
+      ),
+      { selected: true, count: 1 },
+    );
 
     const weekdayCopy = await evaluate(`(()=>{
       const monday=document.querySelector('[data-day="monday"]');
@@ -494,22 +952,54 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       const button=document.getElementById('saveAvailability');button.click();
       return {weekdayRows,weekendUnchanged,saturdayHidden:hidden.hidden,saturdayFieldsDisabled:disabled,tuesdayLocation:tuesday.value,mondayLocation};
     })()`);
-    const copyState = await evaluate(`(()=>({weekdayRows:['tuesday','wednesday','thursday','friday'].map(day=>document.querySelector('[data-day="'+day+'"]').querySelectorAll('[data-period]:checked').length),saturdayHidden:document.querySelector('[data-day="saturday"] .day-details').hidden,saturdayDisabled:[...document.querySelectorAll('[data-day="saturday"] .day-details input,[data-day="saturday"] .day-details select')].every(control=>control.disabled),tuesdayLocation:document.querySelector('[data-day="tuesday"] [data-location]').value,mondayLocation:document.querySelector('[data-day="monday"] [data-location]').value}))()`);
+    const copyState = await evaluate(
+      `(()=>({weekdayRows:['tuesday','wednesday','thursday','friday'].map(day=>document.querySelector('[data-day="'+day+'"]').querySelectorAll('[data-period]:checked').length),saturdayHidden:document.querySelector('[data-day="saturday"] .day-details').hidden,saturdayDisabled:[...document.querySelectorAll('[data-day="saturday"] .day-details input,[data-day="saturday"] .day-details select')].every(control=>control.disabled),tuesdayLocation:document.querySelector('[data-day="tuesday"] [data-location]').value,mondayLocation:document.querySelector('[data-day="monday"] [data-location]').value}))()`,
+    );
     assert.deepEqual(weekdayCopy.weekdayRows, [1, 1, 1, 1]);
-    assert.equal(weekdayCopy.weekendUnchanged, true, 'applying weekdays leaves Saturday and Sunday untouched');
-    assert.deepEqual(copyState, { weekdayRows: [1, 1, 1, 1], saturdayHidden: true, saturdayDisabled: true, tuesdayLocation: 'Maspalomas, Gran Canaria', mondayLocation: 'Porto' });
-    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+5000;const check=()=>{if(document.getElementById('availabilityStatus').textContent.trim())resolve(true);else if(Date.now()>end)reject(new Error('Save status did not appear'));else setTimeout(check,30)};check()})`);
-    const persisted = await app.inject({ method: 'GET', url: '/api/ai-coach/availability', headers: { cookie: `ta_session=${cookie}` } });
+    assert.equal(
+      weekdayCopy.weekendUnchanged,
+      true,
+      'applying weekdays leaves Saturday and Sunday untouched',
+    );
+    assert.deepEqual(copyState, {
+      weekdayRows: [1, 1, 1, 1],
+      saturdayHidden: true,
+      saturdayDisabled: true,
+      tuesdayLocation: 'Maspalomas, Gran Canaria',
+      mondayLocation: 'Porto',
+    });
+    await evaluate(
+      `new Promise((resolve,reject)=>{const end=Date.now()+5000;const check=()=>{if(document.getElementById('availabilityStatus').textContent.trim())resolve(true);else if(Date.now()>end)reject(new Error('Save status did not appear'));else setTimeout(check,30)};check()})`,
+    );
+    const persisted = await app.inject({
+      method: 'GET',
+      url: '/api/ai-coach/availability',
+      headers: { cookie: `ta_session=${cookie}` },
+    });
     assert.equal(persisted.statusCode, 200);
     assert.equal(persisted.json().availability.days[0].available_minutes, 60);
-    assert.equal(persisted.json().availability.days[1].location, 'Maspalomas, Gran Canaria');
+    assert.equal(
+      persisted.json().availability.days[1].location,
+      'Maspalomas, Gran Canaria',
+    );
     assert.equal(persisted.json().availability.days[5].can_train, false);
-    const nonPresetDays = persisted.json().availability.days.map((day) => ({ ...day }));
+    const nonPresetDays = persisted
+      .json()
+      .availability.days.map((day) => ({ ...day }));
     nonPresetDays[0].available_minutes = 75;
     nonPresetDays[1].available_minutes = 137;
-    const apiSave = await app.inject({ method: 'PUT', url: '/api/ai-coach/availability', headers: { cookie: `ta_session=${cookie}` }, payload: { days: nonPresetDays } });
+    const apiSave = await app.inject({
+      method: 'PUT',
+      url: '/api/ai-coach/availability',
+      headers: { cookie: `ta_session=${cookie}` },
+      payload: { days: nonPresetDays },
+    });
     assert.equal(apiSave.statusCode, 200);
-    const apiGet = await app.inject({ method: 'GET', url: '/api/ai-coach/availability', headers: { cookie: `ta_session=${cookie}` } });
+    const apiGet = await app.inject({
+      method: 'GET',
+      url: '/api/ai-coach/availability',
+      headers: { cookie: `ta_session=${cookie}` },
+    });
     assert.equal(apiGet.json().availability.days[0].available_minutes, 75);
     assert.equal(apiGet.json().availability.days[1].available_minutes, 137);
 
@@ -523,10 +1013,23 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       socket.addEventListener('message', listener);
     });
     await command('Page.reload');
-    await Promise.race([reloaded, delay(15000).then(() => { throw new Error('AI Coach reload timed out.'); })]);
-    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+12000;const check=()=>{const monday=document.querySelector('[data-day="monday"] [data-duration]');const tuesday=document.querySelector('[data-day="tuesday"] [data-duration]');if(monday?.value==='75'&&tuesday?.value==='137')resolve(true);else if(Date.now()>end)reject(new Error('Saved non-preset durations did not render after reload'));else setTimeout(check,30)};check()})`);
-    const renderedDurations = await evaluate(`(()=>({monday:document.querySelector('[data-day="monday"] [data-duration]').value,tuesday:document.querySelector('[data-day="tuesday"] [data-duration]').value,valid:!document.getElementById('generateBtn').disabled}))()`);
-    assert.deepEqual(renderedDurations, { monday: '75', tuesday: '137', valid: true });
+    await Promise.race([
+      reloaded,
+      delay(15000).then(() => {
+        throw new Error('AI Coach reload timed out.');
+      }),
+    ]);
+    await evaluate(
+      `new Promise((resolve,reject)=>{const end=Date.now()+12000;const check=()=>{const monday=document.querySelector('[data-day="monday"] [data-duration]');const tuesday=document.querySelector('[data-day="tuesday"] [data-duration]');if(monday?.value==='75'&&tuesday?.value==='137')resolve(true);else if(Date.now()>end)reject(new Error('Saved non-preset durations did not render after reload'));else setTimeout(check,30)};check()})`,
+    );
+    const renderedDurations = await evaluate(
+      `(()=>({monday:document.querySelector('[data-day="monday"] [data-duration]').value,tuesday:document.querySelector('[data-day="tuesday"] [data-duration]').value,valid:!document.getElementById('generateBtn').disabled}))()`,
+    );
+    assert.deepEqual(renderedDurations, {
+      monday: '75',
+      tuesday: '137',
+      valid: true,
+    });
     const portugueseLimit = await evaluate(`(()=>{
       const duration=document.querySelector('[data-day="monday"] [data-duration]');
       const generate=document.getElementById('generateBtn');
@@ -546,17 +1049,35 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     })()`);
     assert.deepEqual(portugueseLimit, {
       maxValid: true,
-      invalid: { formValid: false, error: 'O tempo disponível deve ser um número inteiro entre 1 e 720 minutos.', durationInvalid: 'true' },
+      invalid: {
+        formValid: false,
+        error:
+          'O tempo disponível deve ser um número inteiro entre 1 e 720 minutos.',
+        durationInvalid: 'true',
+      },
       putCount: 0,
     });
     await evaluate(`document.getElementById('saveAvailability').click()`);
-    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+5000;const check=()=>{if(document.getElementById('availabilityStatus').textContent.trim())resolve(true);else if(Date.now()>end)reject(new Error('Round-trip save status did not appear'));else setTimeout(check,30)};check()})`);
-    const roundTrip = await app.inject({ method: 'GET', url: '/api/ai-coach/availability', headers: { cookie: `ta_session=${cookie}` } });
+    await evaluate(
+      `new Promise((resolve,reject)=>{const end=Date.now()+5000;const check=()=>{if(document.getElementById('availabilityStatus').textContent.trim())resolve(true);else if(Date.now()>end)reject(new Error('Round-trip save status did not appear'));else setTimeout(check,30)};check()})`,
+    );
+    const roundTrip = await app.inject({
+      method: 'GET',
+      url: '/api/ai-coach/availability',
+      headers: { cookie: `ta_session=${cookie}` },
+    });
     assert.equal(roundTrip.json().availability.days[0].available_minutes, 75);
     assert.equal(roundTrip.json().availability.days[1].available_minutes, 137);
-    assert.equal(roundTrip.json().availability.days[1].location, 'Maspalomas, Gran Canaria');
+    assert.equal(
+      roundTrip.json().availability.days[1].location,
+      'Maspalomas, Gran Canaria',
+    );
 
-    await command('Fetch.enable', { patterns: [{ urlPattern: '*api/ai-coach/availability*', requestStage: 'Response' }] });
+    await command('Fetch.enable', {
+      patterns: [
+        { urlPattern: '*api/ai-coach/availability*', requestStage: 'Response' },
+      ],
+    });
     const savedGet = waitForAvailabilityResponse('GET');
     const savedReload = new Promise((resolve) => {
       const listener = (event) => {
@@ -568,7 +1089,12 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       socket.addEventListener('message', listener);
     });
     await command('Page.reload');
-    await Promise.race([savedReload, delay(15000).then(() => { throw new Error('AI Coach reload timed out.'); })]);
+    await Promise.race([
+      savedReload,
+      delay(15000).then(() => {
+        throw new Error('AI Coach reload timed out.');
+      }),
+    ]);
     const savedGetResponse = await savedGet;
     const existingPendingProtection = await evaluate(`(()=>{
       window.__existingPendingPutCount=0;
@@ -579,17 +1105,38 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       document.getElementById('promptForm').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
       return { saveDisabled:save.disabled, generateDisabled:document.getElementById('generateBtn').disabled, putCount:window.__existingPendingPutCount };
     })()`);
-    assert.deepEqual(existingPendingProtection, { saveDisabled: true, generateDisabled: true, putCount: 0 },
-      'an existing schedule cannot be overwritten while its GET is pending');
-    await evaluate(`(()=>{const daily=document.querySelector('[data-day="tuesday"] input[data-can-train]');daily.focus();window.__focusedDailyChoice=daily;const input=document.getElementById('baseLocation');input.value='Coimbra';input.dispatchEvent(new Event('change',{bubbles:true}));window.__beforeGetFocus=document.activeElement===daily})()`);
+    assert.deepEqual(
+      existingPendingProtection,
+      { saveDisabled: true, generateDisabled: true, putCount: 0 },
+      'an existing schedule cannot be overwritten while its GET is pending',
+    );
+    await evaluate(
+      `(()=>{const daily=document.querySelector('[data-day="tuesday"] input[data-can-train]');daily.focus();window.__focusedDailyChoice=daily;const input=document.getElementById('baseLocation');input.value='Coimbra';input.dispatchEvent(new Event('change',{bubbles:true}));window.__beforeGetFocus=document.activeElement===daily})()`,
+    );
     await releaseAvailabilityResponse(savedGetResponse);
-    const savedGetState = await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{const monday=document.querySelector('[data-day="monday"] [data-duration]');const tuesday=document.querySelector('[data-day="tuesday"] [data-duration]');if(monday?.value==='75'&&tuesday?.value==='137'){resolve({monday:monday.value,tuesday:tuesday.value,review:!document.getElementById('availabilityReview').hidden});return}if(Date.now()>end){reject(new Error('Saved week did not load after base-location edit'));return}requestAnimationFrame(check)};check()})`);
-    const savedGetFocus = await evaluate(`(()=>{const input=document.querySelector('[data-day="tuesday"] input[data-can-train]');return {before:window.__beforeGetFocus,focused:document.activeElement===input,sameNode:window.__focusedDailyChoice===input}})()`);
-    assert.deepEqual(savedGetState, { monday: '75', tuesday: '137', review: false });
-    assert.deepEqual(savedGetFocus, { before: true, focused: true, sameNode: false });
+    const savedGetState = await evaluate(
+      `new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{const monday=document.querySelector('[data-day="monday"] [data-duration]');const tuesday=document.querySelector('[data-day="tuesday"] [data-duration]');if(monday?.value==='75'&&tuesday?.value==='137'){resolve({monday:monday.value,tuesday:tuesday.value,review:!document.getElementById('availabilityReview').hidden});return}if(Date.now()>end){reject(new Error('Saved week did not load after base-location edit'));return}requestAnimationFrame(check)};check()})`,
+    );
+    const savedGetFocus = await evaluate(
+      `(()=>{const input=document.querySelector('[data-day="tuesday"] input[data-can-train]');return {before:window.__beforeGetFocus,focused:document.activeElement===input,sameNode:window.__focusedDailyChoice===input}})()`,
+    );
+    assert.deepEqual(savedGetState, {
+      monday: '75',
+      tuesday: '137',
+      review: false,
+    });
+    assert.deepEqual(savedGetFocus, {
+      before: true,
+      focused: true,
+      sameNode: false,
+    });
 
     await command('Fetch.disable');
-    await command('Fetch.enable', { patterns: [{ urlPattern: '*api/ai-coach/availability*', requestStage: 'Response' }] });
+    await command('Fetch.enable', {
+      patterns: [
+        { urlPattern: '*api/ai-coach/availability*', requestStage: 'Response' },
+      ],
+    });
     const failedGet = waitForAvailabilityResponse('GET');
     const failedReload = new Promise((resolve) => {
       const listener = (event) => {
@@ -601,17 +1148,35 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       socket.addEventListener('message', listener);
     });
     await command('Page.reload');
-    await Promise.race([failedReload, delay(15000).then(() => { throw new Error('AI Coach failure reload timed out.'); })]);
+    await Promise.race([
+      failedReload,
+      delay(15000).then(() => {
+        throw new Error('AI Coach failure reload timed out.');
+      }),
+    ]);
     const failedGetResponse = await failedGet;
     await command('Fetch.fulfillRequest', {
       requestId: failedGetResponse.params.requestId,
       responseCode: 503,
       responseHeaders: [{ name: 'Content-Type', value: 'application/json' }],
-      body: Buffer.from(JSON.stringify({ error: 'temporary failure' })).toString('base64'),
+      body: Buffer.from(
+        JSON.stringify({ error: 'temporary failure' }),
+      ).toString('base64'),
     });
-    const failureState = await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{const error=document.getElementById('availabilityError');if(error.textContent.includes('Não foi possível carregar')){const save=document.getElementById('saveAvailability');window.__failedPutCount=0;const nativeFetch=window.fetch.bind(window);window.fetch=(input,init)=>{if((init?.method||'GET').toUpperCase()==='PUT'&&String(input).includes('/api/ai-coach/availability'))window.__failedPutCount+=1;return nativeFetch(input,init)};save.click();document.getElementById('promptForm').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));resolve({saveDisabled:save.disabled,generateDisabled:document.getElementById('generateBtn').disabled,retryVisible:!document.getElementById('availabilityRetry').hidden,putCount:window.__failedPutCount,prompt:document.getElementById('promptOutput').textContent});return}if(Date.now()>end)reject(new Error('Availability load error was not rendered'));else requestAnimationFrame(check)};check()})`);
-    assert.deepEqual(failureState, { saveDisabled: true, generateDisabled: true, retryVisible: true, putCount: 0, prompt: '' },
-      'a failed availability load keeps both operations blocked');
+    const failureState = await evaluate(
+      `new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{const error=document.getElementById('availabilityError');if(error.textContent.includes('Não foi possível carregar')){const save=document.getElementById('saveAvailability');window.__failedPutCount=0;const nativeFetch=window.fetch.bind(window);window.fetch=(input,init)=>{if((init?.method||'GET').toUpperCase()==='PUT'&&String(input).includes('/api/ai-coach/availability'))window.__failedPutCount+=1;return nativeFetch(input,init)};save.click();document.getElementById('promptForm').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));resolve({saveDisabled:save.disabled,generateDisabled:document.getElementById('generateBtn').disabled,retryVisible:!document.getElementById('availabilityRetry').hidden,putCount:window.__failedPutCount,prompt:document.getElementById('promptOutput').textContent});return}if(Date.now()>end)reject(new Error('Availability load error was not rendered'));else requestAnimationFrame(check)};check()})`,
+    );
+    assert.deepEqual(
+      failureState,
+      {
+        saveDisabled: true,
+        generateDisabled: true,
+        retryVisible: true,
+        putCount: 0,
+        prompt: '',
+      },
+      'a failed availability load keeps both operations blocked',
+    );
 
     const retryGet = waitForAvailabilityResponse('GET');
     const retryEdit = await evaluate(`(()=>{
@@ -623,12 +1188,29 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       document.getElementById('availabilityRetry').click();
       return { location:location.value, duration:duration.value, saveDisabled:document.getElementById('saveAvailability').disabled, generateDisabled:document.getElementById('generateBtn').disabled };
     })()`);
-    assert.deepEqual(retryEdit, { location: 'Local edit', duration: '90', saveDisabled: true, generateDisabled: true });
+    assert.deepEqual(retryEdit, {
+      location: 'Local edit',
+      duration: '90',
+      saveDisabled: true,
+      generateDisabled: true,
+    });
     const retryResponse = await retryGet;
-    assert.deepEqual(await evaluate(`(()=>({saveDisabled:document.getElementById('saveAvailability').disabled,generateDisabled:document.getElementById('generateBtn').disabled}))()`), { saveDisabled: true, generateDisabled: true });
+    assert.deepEqual(
+      await evaluate(
+        `(()=>({saveDisabled:document.getElementById('saveAvailability').disabled,generateDisabled:document.getElementById('generateBtn').disabled}))()`,
+      ),
+      { saveDisabled: true, generateDisabled: true },
+    );
     await releaseAvailabilityResponse(retryResponse);
-    const recoveredState = await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{const monday=document.querySelector('[data-day="monday"] [data-duration]');const tuesday=document.querySelector('[data-day="tuesday"] [data-duration]');if(monday?.value==='90'&&document.querySelector('[data-day="monday"] [data-location]')?.value==='Local edit'&&tuesday?.value==='137'){resolve({monday:monday.value,tuesday:tuesday.value,review:!document.getElementById('availabilityReview').hidden,saveDisabled:document.getElementById('saveAvailability').disabled});return}if(Date.now()>end)reject(new Error('Availability retry did not preserve local edits: '+JSON.stringify({monday:monday?.value,mondayLocation:document.querySelector('[data-day="monday"] [data-location]')?.value,tuesday:tuesday?.value,error:document.getElementById('availabilityError').textContent,retryHidden:document.getElementById('availabilityRetry').hidden,saveDisabled:document.getElementById('saveAvailability').disabled})));else requestAnimationFrame(check)};check()})`);
-    assert.deepEqual(recoveredState, { monday: '90', tuesday: '137', review: false, saveDisabled: false });
+    const recoveredState = await evaluate(
+      `new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{const monday=document.querySelector('[data-day="monday"] [data-duration]');const tuesday=document.querySelector('[data-day="tuesday"] [data-duration]');if(monday?.value==='90'&&document.querySelector('[data-day="monday"] [data-location]')?.value==='Local edit'&&tuesday?.value==='137'){resolve({monday:monday.value,tuesday:tuesday.value,review:!document.getElementById('availabilityReview').hidden,saveDisabled:document.getElementById('saveAvailability').disabled});return}if(Date.now()>end)reject(new Error('Availability retry did not preserve local edits: '+JSON.stringify({monday:monday?.value,mondayLocation:document.querySelector('[data-day="monday"] [data-location]')?.value,tuesday:tuesday?.value,error:document.getElementById('availabilityError').textContent,retryHidden:document.getElementById('availabilityRetry').hidden,saveDisabled:document.getElementById('saveAvailability').disabled})));else requestAnimationFrame(check)};check()})`,
+    );
+    assert.deepEqual(recoveredState, {
+      monday: '90',
+      tuesday: '137',
+      review: false,
+      saveDisabled: false,
+    });
 
     const editedGet = waitForAvailabilityResponse('GET');
     const editedReload = new Promise((resolve) => {
@@ -641,197 +1223,706 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       socket.addEventListener('message', listener);
     });
     await command('Page.reload');
-    await Promise.race([editedReload, delay(15000).then(() => { throw new Error('AI Coach reload timed out.'); })]);
+    await Promise.race([
+      editedReload,
+      delay(15000).then(() => {
+        throw new Error('AI Coach reload timed out.');
+      }),
+    ]);
     const editedGetResponse = await editedGet;
-    await evaluate(`(()=>{const row=document.querySelector('[data-day="monday"]');const inputToggle=row.querySelector('[data-can-train]');if(!inputToggle.checked)inputToggle.click();row.querySelector('[data-period="12_14"]').click();const input=row.querySelector('[data-duration]');input.value='95';input.dispatchEvent(new Event('input',{bubbles:true}));const location=row.querySelector('[data-location]');location.focus()})()`);
+    await evaluate(
+      `(()=>{const row=document.querySelector('[data-day="monday"]');const inputToggle=row.querySelector('[data-can-train]');if(!inputToggle.checked)inputToggle.click();row.querySelector('[data-period="12_14"]').click();const input=row.querySelector('[data-duration]');input.value='95';input.dispatchEvent(new Event('input',{bubbles:true}));const location=row.querySelector('[data-location]');location.focus()})()`,
+    );
     await command('Input.insertText', { text: 'Aveiro' });
-    await evaluate(`(()=>{const input=document.querySelector('[data-day="monday"] [data-duration]');input.focus();window.__focusedGetDuration=input})()`);
+    await evaluate(
+      `(()=>{const input=document.querySelector('[data-day="monday"] [data-duration]');input.focus();window.__focusedGetDuration=input})()`,
+    );
     await pressKey('ArrowUp', 'ArrowUp', 38);
     await releaseAvailabilityResponse(editedGetResponse);
-    const mergedGetState = await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{const monday=document.querySelector('[data-day="monday"] [data-duration]');const tuesday=document.querySelector('[data-day="tuesday"] [data-duration]');if(monday?.value==='96'&&tuesday?.value==='137'){resolve({monday:monday.value,tuesday:tuesday.value,review:!document.getElementById('availabilityReview').hidden});return}if(Date.now()>end){reject(new Error('Concurrent day edit was not merged with saved availability'));return}requestAnimationFrame(check)};check()})`);
-    const mergedGetFocus = await evaluate(`(()=>{const input=document.querySelector('[data-day="monday"] [data-duration]');return {focused:document.activeElement===input,sameNode:window.__focusedGetDuration===input,value:input.value,location:document.querySelector('[data-day="monday"] [data-location]').value}})()`);
-    assert.deepEqual(mergedGetState, { monday: '96', tuesday: '137', review: false });
-    assert.deepEqual(mergedGetFocus, { focused: true, sameNode: true, value: '96', location: 'Aveiro' });
+    const mergedGetState = await evaluate(
+      `new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{const monday=document.querySelector('[data-day="monday"] [data-duration]');const tuesday=document.querySelector('[data-day="tuesday"] [data-duration]');if(monday?.value==='96'&&tuesday?.value==='137'){resolve({monday:monday.value,tuesday:tuesday.value,review:!document.getElementById('availabilityReview').hidden});return}if(Date.now()>end){reject(new Error('Concurrent day edit was not merged with saved availability'));return}requestAnimationFrame(check)};check()})`,
+    );
+    const mergedGetFocus = await evaluate(
+      `(()=>{const input=document.querySelector('[data-day="monday"] [data-duration]');return {focused:document.activeElement===input,sameNode:window.__focusedGetDuration===input,value:input.value,location:document.querySelector('[data-day="monday"] [data-location]').value}})()`,
+    );
+    assert.deepEqual(mergedGetState, {
+      monday: '96',
+      tuesday: '137',
+      review: false,
+    });
+    assert.deepEqual(mergedGetFocus, {
+      focused: true,
+      sameNode: true,
+      value: '96',
+      location: 'Aveiro',
+    });
     await pressKey('ArrowUp', 'ArrowUp', 38);
-    assert.equal(await evaluate(`document.querySelector('[data-day="monday"] [data-duration]').value`), '97',
-      'duration keyboard input continues in the preserved edited row after GET reconciliation');
-    assert.equal(await evaluate(`document.querySelector('[data-day="monday"] [data-location]').value`), 'Aveiro');
+    assert.equal(
+      await evaluate(
+        `document.querySelector('[data-day="monday"] [data-duration]').value`,
+      ),
+      '97',
+      'duration keyboard input continues in the preserved edited row after GET reconciliation',
+    );
+    assert.equal(
+      await evaluate(
+        `document.querySelector('[data-day="monday"] [data-location]').value`,
+      ),
+      'Aveiro',
+    );
     await command('Fetch.disable');
     await evaluate(`document.getElementById('saveAvailability').click()`);
-    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+5000;const check=()=>{if(document.getElementById('availabilityStatus').textContent.includes('salva'))resolve(true);else if(Date.now()>end)reject(new Error('Merged GET edit did not save'));else requestAnimationFrame(check)};check()})`);
+    await evaluate(
+      `new Promise((resolve,reject)=>{const end=Date.now()+5000;const check=()=>{if(document.getElementById('availabilityStatus').textContent.includes('salva'))resolve(true);else if(Date.now()>end)reject(new Error('Merged GET edit did not save'));else requestAnimationFrame(check)};check()})`,
+    );
 
-    await evaluate(`(()=>{const location=document.querySelector('[data-day="tuesday"] [data-location]');location.focus();location.setSelectionRange(2,7,'forward');document.querySelector('.lang-switch [data-lang="en-US"]').click()})()`);
-    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{if(document.documentElement.lang==='en-US')resolve(true);else if(Date.now()>end)reject(new Error('English language switch timed out'));else setTimeout(check,30)};check()})`);
-    const englishBranding = await evaluate(`(()=>{const item=document.querySelector('[data-nav-id="ai-coach"]');return {title:document.title,heading:document.querySelector('main h1').textContent.trim(),subtitle:document.querySelector('main .ai-coach-subtitle')?.textContent.trim(),label:item.querySelector('.nav-label').textContent.trim(),ariaLabel:item.getAttribute('aria-label'),scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth}})()`);
-    assert.deepEqual(englishBranding, { title: 'Request Workouts - Kinesis', heading: 'Request Workouts', subtitle: 'Organize your goals and availability to prepare an AI training request.', label: 'Request Workouts', ariaLabel: 'Request Workouts', scrollWidth: 1280, viewportWidth: 1280 });
-    assert.deepEqual(await evaluate(`(()=>['ai-coach','calendar'].map(id=>{const item=document.querySelector('[data-nav-id="'+id+'"]');const reason=item.querySelector('.cycle-guard-badge');return {label:item.getAttribute('aria-label'),reason:reason.textContent.trim(),describedBy:(item.getAttribute('aria-describedby')||'').split(/\\s+/)}}))()`), [
-      { label: 'Request Workouts', reason: 'No active cycle', describedBy: ['cycle-guard-ai-coach-description'] },
-      { label: 'Workouts', reason: 'No active cycle', describedBy: ['cycle-guard-calendar-description'] },
-    ]);
+    await evaluate(
+      `(()=>{const location=document.querySelector('[data-day="tuesday"] [data-location]');location.focus();location.setSelectionRange(2,7,'forward');document.querySelector('.lang-switch [data-lang="en-US"]').click()})()`,
+    );
+    await evaluate(
+      `new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{if(document.documentElement.lang==='en-US')resolve(true);else if(Date.now()>end)reject(new Error('English language switch timed out'));else setTimeout(check,30)};check()})`,
+    );
+    const englishBranding = await evaluate(
+      `(()=>{const item=document.querySelector('[data-nav-id="ai-coach"]');return {title:document.title,heading:document.querySelector('main h1').textContent.trim(),subtitle:document.querySelector('main .ai-coach-subtitle')?.textContent.trim(),label:item.querySelector('.nav-label').textContent.trim(),ariaLabel:item.getAttribute('aria-label'),scrollWidth:document.documentElement.scrollWidth,viewportWidth:innerWidth}})()`,
+    );
+    assert.deepEqual(englishBranding, {
+      title: 'Request Workouts - Kinesis',
+      heading: 'Request Workouts',
+      subtitle:
+        'Organize your goals and availability to prepare an AI training request.',
+      label: 'Request Workouts',
+      ariaLabel: 'Request Workouts',
+      scrollWidth: 1280,
+      viewportWidth: 1280,
+    });
+    assert.deepEqual(
+      await evaluate(
+        `(()=>['ai-coach','calendar'].map(id=>{const item=document.querySelector('[data-nav-id="'+id+'"]');const reason=item.querySelector('.cycle-guard-badge');return {label:item.getAttribute('aria-label'),reason:reason.textContent.trim(),describedBy:(item.getAttribute('aria-describedby')||'').split(/\\s+/)}}))()`,
+      ),
+      [
+        {
+          label: 'Request Workouts',
+          reason: 'No active cycle',
+          describedBy: ['cycle-guard-ai-coach-description'],
+        },
+        {
+          label: 'Workouts',
+          reason: 'No active cycle',
+          describedBy: ['cycle-guard-calendar-description'],
+        },
+      ],
+    );
     await evaluate(`document.getElementById('sidebarToggle').click()`);
-    assert.deepEqual(await evaluate(`(()=>{const item=document.querySelector('[data-nav-id="ai-coach"]');return {collapsed:document.querySelector('.app-shell').classList.contains('collapsed'),ariaLabel:item.getAttribute('aria-label'),labelVisible:getComputedStyle(item.querySelector('.nav-label')).display!=='none'}})()`), { collapsed: true, ariaLabel: 'Request Workouts', labelVisible: false });
+    assert.deepEqual(
+      await evaluate(
+        `(()=>{const item=document.querySelector('[data-nav-id="ai-coach"]');return {collapsed:document.querySelector('.app-shell').classList.contains('collapsed'),ariaLabel:item.getAttribute('aria-label'),labelVisible:getComputedStyle(item.querySelector('.nav-label')).display!=='none'}})()`,
+      ),
+      { collapsed: true, ariaLabel: 'Request Workouts', labelVisible: false },
+    );
     await evaluate(`document.getElementById('sidebarToggle').click()`);
-    const englishState = await evaluate(`(()=>{const duration=document.querySelector('[data-day="monday"] [data-duration]');return {language:document.documentElement.lang,label:document.querySelector('[data-day="monday"] .period-group legend').textContent,periods:document.querySelectorAll('[data-day="monday"] [data-period]:checked').length,location:document.querySelector('[data-day="tuesday"] [data-location]').value,durationPlaceholder:duration.placeholder,durationHint:duration.nextElementSibling.textContent,saveLabel:document.getElementById('saveAvailabilityLabel').textContent}})()`);
-    assert.deepEqual(englishState, { language: 'en-US', label: 'Preferred period', periods: 1, location: 'Maspalomas, Gran Canaria', durationPlaceholder: 'e.g. 60', durationHint: 'From 1 to 720 minutes, including warm-up and cool-down.', saveLabel: 'Save weekly schedule' });
-    const languageFocus = await evaluate(`(()=>{const location=document.querySelector('[data-day="tuesday"] [data-location]');return {focused:document.activeElement===location,start:location.selectionStart,end:location.selectionEnd,direction:location.selectionDirection}})()`);
+    const englishState = await evaluate(
+      `(()=>{const duration=document.querySelector('[data-day="monday"] [data-duration]');return {language:document.documentElement.lang,label:document.querySelector('[data-day="monday"] .period-group legend').textContent,periods:document.querySelectorAll('[data-day="monday"] [data-period]:checked').length,location:document.querySelector('[data-day="tuesday"] [data-location]').value,durationPlaceholder:duration.placeholder,durationHint:duration.nextElementSibling.textContent,saveLabel:document.getElementById('saveAvailabilityLabel').textContent}})()`,
+    );
+    assert.deepEqual(englishState, {
+      language: 'en-US',
+      label: 'Preferred period',
+      periods: 1,
+      location: 'Maspalomas, Gran Canaria',
+      durationPlaceholder: 'e.g. 60',
+      durationHint: 'From 1 to 720 minutes, including warm-up and cool-down.',
+      saveLabel: 'Save weekly schedule',
+    });
+    const languageFocus = await evaluate(
+      `(()=>{const location=document.querySelector('[data-day="tuesday"] [data-location]');return {focused:document.activeElement===location,start:location.selectionStart,end:location.selectionEnd,direction:location.selectionDirection}})()`,
+    );
     assert.equal(languageFocus.focused || languageFocus.start === 0, true);
 
-    const englishLocationLimit = await evaluate(`(()=>{const location=document.querySelector('[data-day="monday"] [data-location]');const saved=location.value;location.value='E'.repeat(201);location.dispatchEvent(new Event('input',{bubbles:true}));const row=location.closest('.day-row');const state={error:row.querySelector('[data-day-error]').textContent,invalid:location.getAttribute('aria-invalid'),generateDisabled:document.getElementById('generateBtn').disabled};location.value=saved;location.dispatchEvent(new Event('input',{bubbles:true}));return state})()`);
-    assert.deepEqual(englishLocationLimit, { error: 'Location must be at most 200 characters.', invalid: 'true', generateDisabled: true });
+    const englishLocationLimit = await evaluate(
+      `(()=>{const location=document.querySelector('[data-day="monday"] [data-location]');const saved=location.value;location.value='E'.repeat(201);location.dispatchEvent(new Event('input',{bubbles:true}));const row=location.closest('.day-row');const state={error:row.querySelector('[data-day-error]').textContent,invalid:location.getAttribute('aria-invalid'),generateDisabled:document.getElementById('generateBtn').disabled};location.value=saved;location.dispatchEvent(new Event('input',{bubbles:true}));return state})()`,
+    );
+    assert.deepEqual(englishLocationLimit, {
+      error: 'Location must be at most 200 characters.',
+      invalid: 'true',
+      generateDisabled: true,
+    });
 
-    const englishLimit = await evaluate(`(()=>{const duration=document.querySelector('[data-day="monday"] [data-duration]');duration.value='721';duration.dispatchEvent(new Event('input',{bubbles:true}));const error=duration.closest('.day-row').querySelector('[data-day-error]').textContent;const disabled=document.getElementById('generateBtn').disabled;duration.value='75';duration.dispatchEvent(new Event('input',{bubbles:true}));return {error,disabled}})()`);
-    assert.deepEqual(englishLimit, { error: 'Available time must be a whole number between 1 and 720 minutes.', disabled: true });
+    const englishLimit = await evaluate(
+      `(()=>{const duration=document.querySelector('[data-day="monday"] [data-duration]');duration.value='721';duration.dispatchEvent(new Event('input',{bubbles:true}));const error=duration.closest('.day-row').querySelector('[data-day-error]').textContent;const disabled=document.getElementById('generateBtn').disabled;duration.value='75';duration.dispatchEvent(new Event('input',{bubbles:true}));return {error,disabled}})()`,
+    );
+    assert.deepEqual(englishLimit, {
+      error: 'Available time must be a whole number between 1 and 720 minutes.',
+      disabled: true,
+    });
 
-    await evaluate(`document.getElementById('generateBtn').click()`);
-    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+12000;const check=()=>{const prompt=document.getElementById('promptOutput').textContent;if(prompt.includes('Maximum session time: 60 minutes')&&prompt.includes('Maspalomas, Gran Canaria'))resolve(true);else if(Date.now()>end)reject(new Error('Structured English prompt did not appear'));else setTimeout(check,40)};check()})`);
-    const prompt = await evaluate(`document.getElementById('promptOutput').textContent`);
+    await evaluate(`document.getElementById('externalPromptBtn').click()`);
+    await evaluate(
+      `new Promise((resolve,reject)=>{const end=Date.now()+12000;const check=()=>{const prompt=document.getElementById('promptOutput').textContent;if(prompt.includes('Maximum session time: 60 minutes')&&prompt.includes('Maspalomas, Gran Canaria'))resolve(true);else if(Date.now()>end)reject(new Error('Structured English prompt did not appear'));else setTimeout(check,40)};check()})`,
+    );
+    const prompt = await evaluate(
+      `document.getElementById('promptOutput').textContent`,
+    );
     assert.match(prompt, /highest verified temperature in that window/);
-    assert.match(prompt, /Do not ask the user to confirm sources, locations, dates, times, or time zones, or to authorize research/);
+    assert.match(
+      prompt,
+      /Do not ask the user to confirm sources, locations, dates, times, or time zones, or to authorize research/,
+    );
     assert.match(prompt, /18:00 ≤ hour < 24:00/);
-    assert.match(prompt, /source time zone, including local-time indications in its header or metadata/);
+    assert.match(
+      prompt,
+      /source time zone, including local-time indications in its header or metadata/,
+    );
     assert.match(prompt, /If coverage is partial, state that limitation/);
-    assert.match(prompt, /consult at least one second hourly-forecast source when tools and access are available/);
+    assert.match(
+      prompt,
+      /consult at least one second hourly-forecast source when tools and access are available/,
+    );
     assert.match(prompt, /Cite the source, preferably with a direct link/);
-    assert.match(prompt, /Do not invent data or interrupt spreadsheet preparation to ask the user for confirmation/);
-    assert.match(prompt, /\| Date \| Day \| Period \| Type \| Workout \| Details \| Target HR \| RPE \| Shoe \| Location \| Weather Forecast \| Notes \|/);
+    assert.match(
+      prompt,
+      /Do not invent data or interrupt spreadsheet preparation to ask the user for confirmation/,
+    );
+    assert.match(
+      prompt,
+      /\| Date \| Day \| Period \| Type \| Workout \| Details \| Target HR \| RPE \| Shoe \| Location \| Weather Forecast \| Notes \|/,
+    );
     assert.match(prompt, /a ceiling, not a target/);
     assert.doesNotMatch(prompt, /Normal routine|Rotina normal/);
 
-    await evaluate(`(()=>{const input=document.querySelector('[data-day="monday"] [data-duration]');input.value='96';input.dispatchEvent(new Event('input',{bubbles:true}))})()`);
-    await command('Fetch.enable', { patterns: [{ urlPattern: '*api/ai-coach/availability*', requestStage: 'Response' }] });
+    await evaluate(
+      `(()=>{const input=document.querySelector('[data-day="monday"] [data-duration]');input.value='96';input.dispatchEvent(new Event('input',{bubbles:true}))})()`,
+    );
+    await command('Fetch.enable', {
+      patterns: [
+        { urlPattern: '*api/ai-coach/availability*', requestStage: 'Response' },
+      ],
+    });
     const durationAfterSave = await saveWithDelayedResponse(
       `(()=>{const input=document.querySelector('[data-day="monday"] [data-duration]');input.focus();window.__focusedPutDuration=input;return true})()`,
       async () => pressKey('ArrowUp', 'ArrowUp', 38),
     );
     assert.equal(durationAfterSave, true);
-    assert.deepEqual(await evaluate(`(()=>{const input=document.querySelector('[data-day="monday"] [data-duration]');return {value:input.value,focused:document.activeElement===input,sameNode:window.__focusedPutDuration===input}})()`),
-      { value: '97', focused: true, sameNode: true });
+    assert.deepEqual(
+      await evaluate(
+        `(()=>{const input=document.querySelector('[data-day="monday"] [data-duration]');return {value:input.value,focused:document.activeElement===input,sameNode:window.__focusedPutDuration===input}})()`,
+      ),
+      { value: '97', focused: true, sameNode: true },
+    );
     await pressKey('ArrowUp', 'ArrowUp', 38);
-    assert.equal(await evaluate(`document.querySelector('[data-day="monday"] [data-duration]').value`), '98',
-      'duration keyboard input continues after PUT reconciliation');
+    assert.equal(
+      await evaluate(
+        `document.querySelector('[data-day="monday"] [data-duration]').value`,
+      ),
+      '98',
+      'duration keyboard input continues after PUT reconciliation',
+    );
     await command('Fetch.disable');
     await saveCurrentForm();
 
-    await command('Fetch.enable', { patterns: [{ urlPattern: '*api/ai-coach/availability*', requestStage: 'Response' }] });
-    const periodAfterSave = await saveWithDelayedResponse(`(()=>{const input=document.querySelector('[data-day="monday"] [data-period="before_08"]');input.click();document.getElementById('optionalContext').focus();return {checked:input.checked,focus:document.activeElement.id}})()`);
-    assert.deepEqual(periodAfterSave, { checked: true, focus: 'optionalContext' });
-    assert.equal(await evaluate(`document.querySelector('[data-day="monday"] [data-period="before_08"]').checked`), true);
-    assert.equal(await evaluate(`document.activeElement.id`), 'optionalContext', 'PUT reconciliation does not steal focus moved to another control');
+    await command('Fetch.enable', {
+      patterns: [
+        { urlPattern: '*api/ai-coach/availability*', requestStage: 'Response' },
+      ],
+    });
+    const periodAfterSave = await saveWithDelayedResponse(
+      `(()=>{const input=document.querySelector('[data-day="monday"] [data-period="before_08"]');input.click();document.getElementById('optionalContext').focus();return {checked:input.checked,focus:document.activeElement.id}})()`,
+    );
+    assert.deepEqual(periodAfterSave, {
+      checked: true,
+      focus: 'optionalContext',
+    });
+    assert.equal(
+      await evaluate(
+        `document.querySelector('[data-day="monday"] [data-period="before_08"]').checked`,
+      ),
+      true,
+    );
+    assert.equal(
+      await evaluate(`document.activeElement.id`),
+      'optionalContext',
+      'PUT reconciliation does not steal focus moved to another control',
+    );
     await command('Fetch.disable');
     await saveCurrentForm();
 
-    await command('Fetch.enable', { patterns: [{ urlPattern: '*api/ai-coach/availability*', requestStage: 'Response' }] });
+    await command('Fetch.enable', {
+      patterns: [
+        { urlPattern: '*api/ai-coach/availability*', requestStage: 'Response' },
+      ],
+    });
     const locationAfterSave = await saveWithDelayedResponse(
       `(()=>{const input=document.querySelector('[data-day="monday"] [data-location]');input.focus();window.__focusedPutLocation=input;return true})()`,
       async () => {
-        await evaluate(`(()=>{const input=document.querySelector('[data-day="monday"] [data-location]');input.value='';input.focus()})()`);
+        await evaluate(
+          `(()=>{const input=document.querySelector('[data-day="monday"] [data-location]');input.value='';input.focus()})()`,
+        );
         await command('Input.insertText', { text: 'Braga' });
-        await evaluate(`document.querySelector('[data-day="monday"] [data-location]').setSelectionRange(1,4,'backward')`);
+        await evaluate(
+          `document.querySelector('[data-day="monday"] [data-location]').setSelectionRange(1,4,'backward')`,
+        );
       },
     );
     assert.equal(locationAfterSave, true);
-    assert.deepEqual(await evaluate(`(()=>{const input=document.querySelector('[data-day="monday"] [data-location]');return {value:input.value,focused:document.activeElement===input,sameNode:window.__focusedPutLocation===input,start:input.selectionStart,end:input.selectionEnd,direction:input.selectionDirection}})()`),
-      { value: 'Braga', focused: true, sameNode: true, start: 1, end: 4, direction: 'backward' });
+    assert.deepEqual(
+      await evaluate(
+        `(()=>{const input=document.querySelector('[data-day="monday"] [data-location]');return {value:input.value,focused:document.activeElement===input,sameNode:window.__focusedPutLocation===input,start:input.selectionStart,end:input.selectionEnd,direction:input.selectionDirection}})()`,
+      ),
+      {
+        value: 'Braga',
+        focused: true,
+        sameNode: true,
+        start: 1,
+        end: 4,
+        direction: 'backward',
+      },
+    );
     await command('Input.insertText', { text: 'X' });
-    assert.equal(await evaluate(`document.querySelector('[data-day="monday"] [data-location]').value`), 'BXa',
-      'typing replaces the selected text correctly after PUT reconciliation');
+    assert.equal(
+      await evaluate(
+        `document.querySelector('[data-day="monday"] [data-location]').value`,
+      ),
+      'BXa',
+      'typing replaces the selected text correctly after PUT reconciliation',
+    );
     await command('Fetch.disable');
     await saveCurrentForm();
 
-    await command('Fetch.enable', { patterns: [{ urlPattern: '*api/ai-coach/availability*', requestStage: 'Response' }] });
-    const availabilityAfterSave = await saveWithDelayedResponse(`(()=>{const input=document.querySelector('[data-day="sunday"] [data-can-train]');input.focus();if(input.checked)input.click();return {no:!input.checked,detailsHidden:document.querySelector('[data-day="sunday"] .day-details').hidden,focused:document.activeElement===input}})()`);
-    assert.deepEqual(availabilityAfterSave, { no: true, detailsHidden: true, focused: true });
-    assert.equal(await evaluate(`document.querySelector('[data-day="sunday"] [data-can-train]').checked`), false);
+    await command('Fetch.enable', {
+      patterns: [
+        { urlPattern: '*api/ai-coach/availability*', requestStage: 'Response' },
+      ],
+    });
+    const availabilityAfterSave = await saveWithDelayedResponse(
+      `(()=>{const input=document.querySelector('[data-day="sunday"] [data-can-train]');input.focus();if(input.checked)input.click();return {no:!input.checked,detailsHidden:document.querySelector('[data-day="sunday"] .day-details').hidden,focused:document.activeElement===input}})()`,
+    );
+    assert.deepEqual(availabilityAfterSave, {
+      no: true,
+      detailsHidden: true,
+      focused: true,
+    });
+    assert.equal(
+      await evaluate(
+        `document.querySelector('[data-day="sunday"] [data-can-train]').checked`,
+      ),
+      false,
+    );
     await command('Fetch.disable');
     await saveCurrentForm();
 
-    const promptBeforeGenerateRace = await evaluate(`document.getElementById('promptOutput').textContent`);
-    await command('Fetch.enable', { patterns: [{ urlPattern: '*api/ai-coach/availability*', requestStage: 'Response' }] });
+    const promptBeforeGenerateRace = await evaluate(
+      `document.getElementById('promptOutput').textContent`,
+    );
+    await command('Fetch.enable', {
+      patterns: [
+        { urlPattern: '*api/ai-coach/availability*', requestStage: 'Response' },
+      ],
+    });
     const generateResponsePending = waitForAvailabilityResponse('PUT');
     await evaluate(`document.getElementById('generateBtn').click()`);
     const generateResponse = await generateResponsePending;
-    await evaluate(`(()=>{const input=document.querySelector('[data-day="monday"] [data-location]');input.value='Porto após gerar';input.dispatchEvent(new Event('input',{bubbles:true}))})()`);
+    await evaluate(
+      `(()=>{const input=document.querySelector('[data-day="monday"] [data-location]');input.value='Porto após gerar';input.dispatchEvent(new Event('input',{bubbles:true}))})()`,
+    );
     await releaseAvailabilityResponse(generateResponse);
-    await waitForText('#availabilityStatus', 'Availability changed while saving. Save again before generating the prompt.');
-    assert.equal(await evaluate(`document.querySelector('[data-day="monday"] [data-location]').value`), 'Porto após gerar');
-    assert.equal(await evaluate(`document.getElementById('promptOutput').textContent`), promptBeforeGenerateRace,
-      'Generate does not produce a prompt from the stale submitted snapshot');
+    await waitForText(
+      '#availabilityStatus',
+      'Availability changed while saving. Save again before generating the proposal.',
+    );
+    assert.equal(
+      await evaluate(
+        `document.querySelector('[data-day="monday"] [data-location]').value`,
+      ),
+      'Porto após gerar',
+    );
+    assert.equal(
+      await evaluate(`document.getElementById('promptOutput').textContent`),
+      promptBeforeGenerateRace,
+      'Generate does not produce a prompt from the stale submitted snapshot',
+    );
     await command('Fetch.disable');
 
-    db.prepare(`UPDATE ai_coach_availability SET available_periods = ?, available_minutes = ?, location = ? WHERE user_id = 1 AND day_key = 'monday'`)
-      .run(JSON.stringify(['08_12', '14_18']), 75, 'Legacy Porto');
-    await command('Fetch.enable', { patterns: [{ urlPattern: '*api/ai-coach/availability*', requestStage: 'Response' }] });
+    db.prepare(
+      `UPDATE ai_coach_availability SET available_periods = ?, available_minutes = ?, location = ? WHERE user_id = 1 AND day_key = 'monday'`,
+    ).run(JSON.stringify(['08_12', '14_18']), 75, 'Legacy Porto');
+    await command('Fetch.enable', {
+      patterns: [
+        { urlPattern: '*api/ai-coach/availability*', requestStage: 'Response' },
+      ],
+    });
     const legacyGetPending = waitForAvailabilityResponse('GET');
     await command('Page.reload');
     const legacyGet = await legacyGetPending;
     await releaseAvailabilityResponse(legacyGet);
-    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{const summary=document.querySelector('[data-day="monday"] [data-legacy-period-summary]');if(summary&&document.documentElement.lang==='en-US'){resolve(true);return}if(Date.now()>end){reject(new Error('Legacy availability summary did not render'));return}requestAnimationFrame(check)};check()})`);
-    const legacyEnglish = await evaluate(`(()=>{const row=document.querySelector('[data-day="monday"]');return {summary:row.querySelector('[data-legacy-period-summary]').textContent,checked:row.querySelectorAll('[data-period]:checked').length,duration:row.querySelector('[data-duration]').value,location:row.querySelector('[data-location]').value,saveDisabled:document.getElementById('saveAvailability').disabled,generateDisabled:document.getElementById('generateBtn').disabled}})()`);
-    assert.deepEqual(legacyEnglish, { summary: 'Previously saved periods08:00–12:00; 14:00–18:00These options were saved previously. Choose one preferred period to replace them.', checked: 0, duration: '75', location: 'Legacy Porto', saveDisabled: true, generateDisabled: true });
-    await evaluate(`document.querySelector('.lang-switch [data-lang="pt-BR"]').click()`);
-    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{if(document.documentElement.lang==='pt-BR')resolve(true);else if(Date.now()>end)reject(new Error('Portuguese legacy summary switch timed out'));else setTimeout(check,30)};check()})`);
-    assert.deepEqual(await evaluate(`(()=>{const row=document.querySelector('[data-day="monday"]');return {summary:row.querySelector('[data-legacy-period-summary]').textContent,checked:row.querySelectorAll('[data-period]:checked').length}})()`), { summary: 'Períodos anteriores salvos08h–12h; 14h–18hEstas opções foram salvas anteriormente. Escolha um único período preferencial para substituí-las.', checked: 0 });
-    await evaluate(`document.querySelector('.lang-switch [data-lang="en-US"]').click()`);
-    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{if(document.documentElement.lang==='en-US')resolve(true);else if(Date.now()>end)reject(new Error('English legacy summary switch timed out'));else setTimeout(check,30)};check()})`);
-    await evaluate(`document.querySelector('[data-day="monday"] [data-expand]').click()`);
-    await evaluate(`document.querySelector('[data-day="monday"] [data-expand]').click()`);
-    const legacyAfterRerender = await evaluate(`(()=>{const row=document.querySelector('[data-day="monday"]');return {summary:row.querySelector('[data-legacy-period-summary]').textContent,checked:row.querySelectorAll('[data-period]:checked').length,hidden:row.querySelector('.day-details').hidden}})()`);
+    await evaluate(
+      `new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{const summary=document.querySelector('[data-day="monday"] [data-legacy-period-summary]');if(summary&&document.documentElement.lang==='en-US'){resolve(true);return}if(Date.now()>end){reject(new Error('Legacy availability summary did not render'));return}requestAnimationFrame(check)};check()})`,
+    );
+    const legacyEnglish = await evaluate(
+      `(()=>{const row=document.querySelector('[data-day="monday"]');return {summary:row.querySelector('[data-legacy-period-summary]').textContent,checked:row.querySelectorAll('[data-period]:checked').length,duration:row.querySelector('[data-duration]').value,location:row.querySelector('[data-location]').value,saveDisabled:document.getElementById('saveAvailability').disabled,generateDisabled:document.getElementById('generateBtn').disabled}})()`,
+    );
+    assert.deepEqual(legacyEnglish, {
+      summary:
+        'Previously saved periods08:00–12:00; 14:00–18:00These options were saved previously. Choose one preferred period to replace them.',
+      checked: 0,
+      duration: '75',
+      location: 'Legacy Porto',
+      saveDisabled: true,
+      generateDisabled: true,
+    });
+    await evaluate(
+      `document.querySelector('.lang-switch [data-lang="pt-BR"]').click()`,
+    );
+    await evaluate(
+      `new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{if(document.documentElement.lang==='pt-BR')resolve(true);else if(Date.now()>end)reject(new Error('Portuguese legacy summary switch timed out'));else setTimeout(check,30)};check()})`,
+    );
+    assert.deepEqual(
+      await evaluate(
+        `(()=>{const row=document.querySelector('[data-day="monday"]');return {summary:row.querySelector('[data-legacy-period-summary]').textContent,checked:row.querySelectorAll('[data-period]:checked').length}})()`,
+      ),
+      {
+        summary:
+          'Períodos anteriores salvos08h–12h; 14h–18hEstas opções foram salvas anteriormente. Escolha um único período preferencial para substituí-las.',
+        checked: 0,
+      },
+    );
+    await evaluate(
+      `document.querySelector('.lang-switch [data-lang="en-US"]').click()`,
+    );
+    await evaluate(
+      `new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{if(document.documentElement.lang==='en-US')resolve(true);else if(Date.now()>end)reject(new Error('English legacy summary switch timed out'));else setTimeout(check,30)};check()})`,
+    );
+    await evaluate(
+      `document.querySelector('[data-day="monday"] [data-expand]').click()`,
+    );
+    await evaluate(
+      `document.querySelector('[data-day="monday"] [data-expand]').click()`,
+    );
+    const legacyAfterRerender = await evaluate(
+      `(()=>{const row=document.querySelector('[data-day="monday"]');return {summary:row.querySelector('[data-legacy-period-summary]').textContent,checked:row.querySelectorAll('[data-period]:checked').length,hidden:row.querySelector('.day-details').hidden}})()`,
+    );
     assert.equal(legacyAfterRerender.checked, 0);
     assert.match(legacyAfterRerender.summary, /Previously saved periods/);
     assert.equal(legacyAfterRerender.hidden, true);
     const legacyPutPending = waitForAvailabilityResponse('PUT');
-    const selectedLegacyPeriod = await evaluate(`(()=>{const row=document.querySelector('[data-day="monday"]');row.querySelector('[data-period="12_14"]').click();return {checked:row.querySelectorAll('[data-period]:checked').length,summary:row.querySelector('[data-legacy-period-summary]'),generateDisabled:document.getElementById('generateBtn').disabled}})()`);
-    assert.deepEqual(selectedLegacyPeriod, { checked: 1, summary: null, generateDisabled: false });
+    const selectedLegacyPeriod = await evaluate(
+      `(()=>{const row=document.querySelector('[data-day="monday"]');row.querySelector('[data-period="12_14"]').click();return {checked:row.querySelectorAll('[data-period]:checked').length,summary:row.querySelector('[data-legacy-period-summary]'),generateDisabled:document.getElementById('generateBtn').disabled}})()`,
+    );
+    assert.deepEqual(selectedLegacyPeriod, {
+      checked: 1,
+      summary: null,
+      generateDisabled: false,
+    });
     await evaluate(`document.getElementById('saveAvailability').click()`);
     const legacyPut = await legacyPutPending;
     const legacyBody = JSON.parse(legacyPut.params.request.postData);
     const mondayPayload = legacyBody.days.find((day) => day.day === 'monday');
-    assert.deepEqual(mondayPayload, { day: 'monday', can_train: true, available_periods: ['12_14'], available_minutes: 75, location: 'Legacy Porto' });
+    assert.deepEqual(mondayPayload, {
+      day: 'monday',
+      can_train: true,
+      available_periods: ['12_14'],
+      available_minutes: 75,
+      location: 'Legacy Porto',
+    });
     await releaseAvailabilityResponse(legacyPut);
     await waitForText('#availabilityStatus', 'Weekly schedule saved.');
-    const persistedLegacy = await app.inject({ method: 'GET', url: '/api/ai-coach/availability', headers: { cookie: `ta_session=${cookie}` } });
-    const persistedMonday = persistedLegacy.json().availability.days.find((day) => day.day === 'monday');
-    assert.deepEqual({ periods: persistedMonday.available_periods, minutes: persistedMonday.available_minutes, location: persistedMonday.location, needsReview: persistedLegacy.json().availability.needsReview }, { periods: ['12_14'], minutes: 75, location: 'Legacy Porto', needsReview: false });
+    const persistedLegacy = await app.inject({
+      method: 'GET',
+      url: '/api/ai-coach/availability',
+      headers: { cookie: `ta_session=${cookie}` },
+    });
+    const persistedMonday = persistedLegacy
+      .json()
+      .availability.days.find((day) => day.day === 'monday');
+    assert.deepEqual(
+      {
+        periods: persistedMonday.available_periods,
+        minutes: persistedMonday.available_minutes,
+        location: persistedMonday.location,
+        needsReview: persistedLegacy.json().availability.needsReview,
+      },
+      {
+        periods: ['12_14'],
+        minutes: 75,
+        location: 'Legacy Porto',
+        needsReview: false,
+      },
+    );
     await command('Fetch.disable');
 
-    await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
-    await evaluate(`new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>setTimeout(resolve,100))))`);
-    const mobile = await evaluate(`(()=>({width:innerWidth,scrollWidth:document.documentElement.scrollWidth,days:document.querySelectorAll('#availabilityGrid .day-row').length,touchTarget:[...document.querySelectorAll('.period-option')].filter(el=>el.getClientRects().length>0).every(el=>el.getBoundingClientRect().height>=42)}))()`);
-    assert.deepEqual(mobile, { width: 390, scrollWidth: 390, days: 7, touchTarget: true });
-    assert.deepEqual(await evaluate(`(()=>{const item=document.querySelector('[data-nav-id="ai-coach"]');return {title:document.title,heading:document.querySelector('main h1').textContent.trim(),label:item.querySelector('.nav-label').textContent.trim(),ariaLabel:item.getAttribute('aria-label'),width:innerWidth,scrollWidth:document.documentElement.scrollWidth}})()`), { title: 'Request Workouts - Kinesis', heading: 'Request Workouts', label: 'Request Workouts', ariaLabel: 'Request Workouts', width: 390, scrollWidth: 390 });
-    await evaluate(`(()=>{const input=document.querySelector('[data-day="tuesday"] [data-location]');input.value='Mobile';input.dispatchEvent(new Event('input',{bubbles:true}))})()`);
-    await command('Fetch.enable', { patterns: [{ urlPattern: '*api/ai-coach/availability*', requestStage: 'Response' }] });
-    const mobileLocationAfterSave = await saveWithDelayedResponse(`(()=>{const input=document.querySelector('[data-day="tuesday"] [data-location]');input.value='Mobility';input.dispatchEvent(new Event('input',{bubbles:true}));input.focus();input.setSelectionRange(3,5,'backward');window.__focusedMobileLocation=input;return input.value})()`);
+    await command('Emulation.setDeviceMetricsOverride', {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 1,
+      mobile: true,
+    });
+    await evaluate(
+      `new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>setTimeout(resolve,100))))`,
+    );
+    const mobile = await evaluate(
+      `(()=>({width:innerWidth,scrollWidth:document.documentElement.scrollWidth,days:document.querySelectorAll('#availabilityGrid .day-row').length,touchTarget:[...document.querySelectorAll('.period-option')].filter(el=>el.getClientRects().length>0).every(el=>el.getBoundingClientRect().height>=42)}))()`,
+    );
+    assert.deepEqual(mobile, {
+      width: 390,
+      scrollWidth: 390,
+      days: 7,
+      touchTarget: true,
+    });
+    assert.deepEqual(
+      await evaluate(
+        `(()=>{const item=document.querySelector('[data-nav-id="ai-coach"]');return {title:document.title,heading:document.querySelector('main h1').textContent.trim(),label:item.querySelector('.nav-label').textContent.trim(),ariaLabel:item.getAttribute('aria-label'),width:innerWidth,scrollWidth:document.documentElement.scrollWidth}})()`,
+      ),
+      {
+        title: 'Request Workouts - Kinesis',
+        heading: 'Request Workouts',
+        label: 'Request Workouts',
+        ariaLabel: 'Request Workouts',
+        width: 390,
+        scrollWidth: 390,
+      },
+    );
+    await evaluate(
+      `(()=>{const input=document.querySelector('[data-day="tuesday"] [data-location]');input.value='Mobile';input.dispatchEvent(new Event('input',{bubbles:true}))})()`,
+    );
+    await command('Fetch.enable', {
+      patterns: [
+        { urlPattern: '*api/ai-coach/availability*', requestStage: 'Response' },
+      ],
+    });
+    const mobileLocationAfterSave = await saveWithDelayedResponse(
+      `(()=>{const input=document.querySelector('[data-day="tuesday"] [data-location]');input.value='Mobility';input.dispatchEvent(new Event('input',{bubbles:true}));input.focus();input.setSelectionRange(3,5,'backward');window.__focusedMobileLocation=input;return input.value})()`,
+    );
     assert.equal(mobileLocationAfterSave, 'Mobility');
     await evaluate(`new Promise(requestAnimationFrame)`);
-    assert.deepEqual(await evaluate(`(()=>{const input=document.querySelector('[data-day="tuesday"] [data-location]');return {focused:document.activeElement===input,sameNode:window.__focusedMobileLocation===input,start:input.selectionStart,end:input.selectionEnd,direction:input.selectionDirection}})()`),
-      { focused: false, sameNode: true, start: 3, end: 5, direction: 'backward' });
+    assert.deepEqual(
+      await evaluate(
+        `(()=>{const input=document.querySelector('[data-day="tuesday"] [data-location]');return {focused:document.activeElement===input,sameNode:window.__focusedMobileLocation===input,start:input.selectionStart,end:input.selectionEnd,direction:input.selectionDirection}})()`,
+      ),
+      {
+        focused: false,
+        sameNode: true,
+        start: 3,
+        end: 5,
+        direction: 'backward',
+      },
+    );
     await command('Input.insertText', { text: 'X' });
-    assert.equal(await evaluate(`document.querySelector('[data-day="tuesday"] [data-location]').value`), 'Mobility');
+    assert.equal(
+      await evaluate(
+        `document.querySelector('[data-day="tuesday"] [data-location]').value`,
+      ),
+      'Mobility',
+    );
     await command('Fetch.disable');
     await saveCurrentForm();
-    const screenshot = await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
-    assert.ok(screenshot.data.length > 1000, 'mobile headless rendering produced a screenshot');
+    const screenshot = await command('Page.captureScreenshot', {
+      format: 'png',
+      captureBeyondViewport: false,
+    });
+    assert.ok(
+      screenshot.data.length > 1000,
+      'mobile headless rendering produced a screenshot',
+    );
 
-    const createdCycle = await app.inject({ method: 'POST', url: '/api/cycles', headers: { cookie: `ta_session=${cookie}` }, payload: { objective: 'Accessibility guard test' } });
+    const createdCycle = await app.inject({
+      method: 'POST',
+      url: '/api/cycles',
+      headers: { cookie: `ta_session=${cookie}` },
+      payload: { objective: 'Accessibility guard test' },
+    });
     assert.equal(createdCycle.statusCode, 201);
     const cycleId = createdCycle.json().cycle.id;
-    await evaluate(`(()=>{const item=document.querySelector('[data-nav-id="ai-coach"]');item.setAttribute('aria-describedby','unrelated-description');window.dispatchEvent(new Event('kinesis:cycle-changed'))})()`);
-    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+5000;const check=()=>{const item=document.querySelector('[data-nav-id="ai-coach"]');if(!item.hasAttribute('aria-disabled'))resolve(true);else if(Date.now()>end)reject(new Error('Cycle activation did not remove navigation guard'));else setTimeout(check,20)};check()})`);
-    assert.deepEqual(await evaluate(`(()=>['ai-coach','calendar'].map(id=>{const item=document.querySelector('[data-nav-id="'+id+'"]');return {id,href:item.getAttribute('href'),disabled:item.hasAttribute('aria-disabled'),description:item.getAttribute('aria-describedby'),badgeHidden:item.querySelector('.cycle-guard-badge').classList.contains('hidden')}}))()`), [
-      { id: 'ai-coach', href: '/ai-coach.html', disabled: false, description: 'unrelated-description', badgeHidden: true },
-      { id: 'calendar', href: '/calendar.html', disabled: false, description: null, badgeHidden: true },
+    await evaluate(
+      `(()=>{const item=document.querySelector('[data-nav-id="ai-coach"]');item.setAttribute('aria-describedby','unrelated-description');window.dispatchEvent(new Event('kinesis:cycle-changed'))})()`,
+    );
+    await evaluate(
+      `new Promise((resolve,reject)=>{const end=Date.now()+5000;const check=()=>{const item=document.querySelector('[data-nav-id="ai-coach"]');if(!item.hasAttribute('aria-disabled'))resolve(true);else if(Date.now()>end)reject(new Error('Cycle activation did not remove navigation guard'));else setTimeout(check,20)};check()})`,
+    );
+    assert.deepEqual(
+      await evaluate(
+        `(()=>['ai-coach','calendar'].map(id=>{const item=document.querySelector('[data-nav-id="'+id+'"]');return {id,href:item.getAttribute('href'),disabled:item.hasAttribute('aria-disabled'),description:item.getAttribute('aria-describedby'),badgeHidden:item.querySelector('.cycle-guard-badge').classList.contains('hidden')}}))()`,
+      ),
+      [
+        {
+          id: 'ai-coach',
+          href: '/ai-coach.html',
+          disabled: false,
+          description: 'unrelated-description',
+          badgeHidden: true,
+        },
+        {
+          id: 'calendar',
+          href: '/calendar.html',
+          disabled: false,
+          description: null,
+          badgeHidden: true,
+        },
+      ],
+    );
+    await evaluate(`document.getElementById('generateBtn').click()`);
+    await delay(1500);
+    await waitForText(
+      '#weeklyProposalStatus',
+      'Review the proposal before applying it.',
+    );
+    const review = await evaluate(
+      `(()=>({cards:document.querySelectorAll('.weekly-proposal-card').length,text:document.getElementById('weeklyProposalContent').textContent,applyHidden:document.getElementById('weeklyApply').hidden}))()`,
+    );
+    assert.equal(review.cards, 1);
+    assert.match(review.text, /Easy run with strides/);
+    assert.match(review.text, /This follows the saved context/);
+    assert.match(review.text, /Only Open-Meteo is available/);
+    assert.equal(review.applyHidden, false);
+    assert.equal(simulatedProviderCalls, 1);
+    await evaluate(
+      `document.getElementById('weeklyProposalSection').scrollIntoView({block:'start'})`,
+    );
+    writeFileSync(
+      path.join(tmpdir(), 'kinesis-weekly-proposal-review.png'),
+      Buffer.from(
+        (
+          await command('Page.captureScreenshot', {
+            format: 'png',
+            captureBeyondViewport: false,
+          })
+        ).data,
+        'base64',
+      ),
+    );
+    await evaluate(`document.getElementById('weeklyApply').click()`);
+    await waitForText(
+      '#weeklyProposalStatus',
+      'Added 1 workouts. 0 matching workouts were ignored.',
+    );
+    assert.equal(
+      db
+        .prepare(
+          'SELECT COUNT(*) AS n FROM trainings WHERE user_id=(SELECT id FROM users WHERE email=?)',
+        )
+        .get('availability-browser@example.test').n,
+      1,
+    );
+    await evaluate(
+      `document.querySelector('.lang-switch [data-lang="pt-BR"]').click()`,
+    );
+    await evaluate(
+      `new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{if(document.documentElement.lang==='pt-BR')resolve(true);else if(Date.now()>end)reject(new Error('Weekly proposal Portuguese rerender timed out'));else setTimeout(check,30)};check()})`,
+    );
+    assert.equal(
+      await evaluate(
+        `document.querySelector('.weekly-proposal-card h3').textContent`,
+      ),
+      'Segunda · 26/10/2026 · 12h–14h · 45 min',
+    );
+    assert.match(
+      await evaluate(
+        `document.getElementById('weeklyProposalContent').textContent`,
+      ),
+      /Somente Open-Meteo está disponível/,
+    );
+    writeFileSync(
+      path.join(tmpdir(), 'kinesis-weekly-proposal-review-pt.png'),
+      Buffer.from(
+        (
+          await command('Page.captureScreenshot', {
+            format: 'png',
+            captureBeyondViewport: false,
+          })
+        ).data,
+        'base64',
+      ),
+    );
+    assert.equal(simulatedProviderCalls, 1);
+    await command('Emulation.setDeviceMetricsOverride', {
+      width: 1280,
+      height: 800,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
+    await app.inject({
+      method: 'DELETE',
+      url: `/api/cycles/${cycleId}`,
+      headers: { cookie: `ta_session=${cookie}` },
+    });
+    await evaluate(
+      `window.dispatchEvent(new Event('kinesis:cycle-changed'));window.dispatchEvent(new Event('kinesis:cycle-changed'))`,
+    );
+    await evaluate(
+      `new Promise((resolve,reject)=>{const end=Date.now()+5000;const check=()=>{const item=document.querySelector('[data-nav-id="ai-coach"]');if(item.getAttribute('aria-disabled')==='true'&&item.getAttribute('aria-describedby')==='unrelated-description cycle-guard-ai-coach-description')resolve(true);else if(Date.now()>end)reject(new Error('Removing the active cycle did not restore its localized guard description'));else setTimeout(check,20)};check()})`,
+    );
+    assert.equal(
+      await evaluate(
+        `document.querySelector('[data-nav-id="calendar"]').getAttribute('aria-describedby')`,
+      ),
+      'cycle-guard-calendar-description',
+    );
+    db.prepare(
+      "UPDATE users SET role='user' WHERE email='availability-browser@example.test'",
+    ).run();
+    const regularReload = new Promise((resolve) => {
+      const listener = (event) => {
+        if (JSON.parse(event.data).method === 'Page.loadEventFired') {
+          socket.removeEventListener('message', listener);
+          resolve();
+        }
+      };
+      socket.addEventListener('message', listener);
+    });
+    await command('Page.reload');
+    await Promise.race([
+      regularReload,
+      delay(12000).then(() => {
+        throw new Error('Regular-account reload timed out.');
+      }),
     ]);
-    await app.inject({ method: 'DELETE', url: `/api/cycles/${cycleId}`, headers: { cookie: `ta_session=${cookie}` } });
-    await evaluate(`window.dispatchEvent(new Event('kinesis:cycle-changed'));window.dispatchEvent(new Event('kinesis:cycle-changed'))`);
-    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+5000;const check=()=>{const item=document.querySelector('[data-nav-id="ai-coach"]');if(item.getAttribute('aria-disabled')==='true'&&item.getAttribute('aria-describedby')==='unrelated-description cycle-guard-ai-coach-description')resolve(true);else if(Date.now()>end)reject(new Error('Removing the active cycle did not restore its localized guard description'));else setTimeout(check,20)};check()})`);
-    assert.equal(await evaluate(`document.querySelector('[data-nav-id="calendar"]').getAttribute('aria-describedby')`), 'cycle-guard-calendar-description');
+    await evaluate(
+      `new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{if(!document.getElementById('saveAvailability').disabled)resolve(true);else if(Date.now()>end)reject(new Error('Regular-account availability did not load'));else setTimeout(check,25)};check()})`,
+    );
+    await waitForText(
+      '#weeklyProposalStatus',
+      'Adicionados 1 treinos. 0 treinos correspondentes foram ignorados.',
+    );
+    assert.deepEqual(
+      await evaluate(
+        `(()=>({externalPromptHidden:document.getElementById('externalPromptBtn').hidden,technicalPromptHidden:document.getElementById('resultSection').hidden,proposalVisible:!document.getElementById('weeklyProposalSection').hidden,width:innerWidth,scrollWidth:document.documentElement.scrollWidth}))()`,
+      ),
+      {
+        externalPromptHidden: true,
+        technicalPromptHidden: true,
+        proposalVisible: true,
+        width: 1280,
+        scrollWidth: 1280,
+      },
+    );
+    assert.equal(
+      await evaluate(
+        `document.querySelector('.weekly-proposal-card h3').textContent`,
+      ),
+      'Segunda · 26/10/2026 · 12h–14h · 45 min',
+    );
+    assert.equal(
+      simulatedProviderCalls,
+      1,
+      'reload recovers the same applied execution without replaying the provider',
+    );
+    writeFileSync(
+      path.join(tmpdir(), 'kinesis-weekly-proposal-regular-pt.png'),
+      Buffer.from(
+        (
+          await command('Page.captureScreenshot', {
+            format: 'png',
+            captureBeyondViewport: false,
+          })
+        ).data,
+        'base64',
+      ),
+    );
   } finally {
     socket?.close();
     chromeProcess.kill('SIGTERM');
-    if (chromeProcess.exitCode === null) await Promise.race([once(chromeProcess, 'exit'), delay(2000)]);
+    if (chromeProcess.exitCode === null)
+      await Promise.race([once(chromeProcess, 'exit'), delay(2000)]);
     await app.close();
     rmSync(profile, { recursive: true, force: true });
-    t.diagnostic('Verified Request Workouts / Solicitar Treinos page and sidebar labels in PT/EN, expanded/collapsed navigation, accessible cycle-guard name/descriptions through repeated no-cycle/active-cycle updates, and authenticated availability at 1280×800 and 390×844 with legacy-period review/persistence, focus/caret preservation across delayed GET/PUT responses, language rerender, and validation.');
+    t.diagnostic(
+      'Verified the unchanged external prompt for an administrator, weekly proposal review/application and PT/EN rerender in Chrome on mobile, desktop availability/keyboard behavior, and ordinary-account ownership through simulated-provider API tests.',
+    );
   }
 });

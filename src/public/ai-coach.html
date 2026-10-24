@@ -48,11 +48,24 @@
 
         <button type="submit" id="generateBtn" class="btn-primary">
           <i data-lucide="sparkles"></i>
-          <span data-i18n="aiCoach.generate">Generate Prompt</span>
+          <span data-i18n="aiCoach.generate">Generate weekly proposal</span>
         </button>
+        <button type="button" id="externalPromptBtn" class="btn-secondary" hidden data-i18n="aiCoach.externalPrompt">View external prompt</button>
       </form>
 
-      <section id="resultSection" class="result-section hidden" aria-live="polite">
+      <section id="weeklyProposalSection" class="result-section" hidden aria-labelledby="weeklyProposalTitle">
+        <div class="result-header"><h2 id="weeklyProposalTitle" data-i18n="aiCoach.weeklyProposalTitle">Weekly proposal</h2></div>
+        <p id="weeklyProposalStatus" role="status" aria-live="polite"></p>
+        <div id="weeklyProposalError" role="alert" hidden></div>
+        <div id="weeklyProposalContent"></div>
+        <div class="form-actions">
+          <button type="button" id="weeklyApply" class="btn-primary" hidden data-i18n="aiCoach.applyWeekly">Apply to calendar</button>
+          <button type="button" id="weeklyReadAgain" class="btn-secondary" hidden data-i18n="aiCoach.readAgain">Try reading again</button>
+          <button type="button" id="weeklyCancel" class="btn-secondary" hidden data-i18n="aiCoach.cancelExecution">Cancel request</button>
+        </div>
+      </section>
+
+      <section id="resultSection" class="result-section hidden" hidden aria-live="polite">
         <div class="result-header">
           <h2 data-i18n="aiCoach.resultTitle">Generated prompt</h2>
           <button type="button" id="copyBtn" class="copy-btn">

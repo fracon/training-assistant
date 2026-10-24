@@ -73,11 +73,16 @@ function trainingView(row) {
 }
 // A selection rank, not a diagnosis or a persistent athlete restriction.
 function recentPriority(row) {
-  if (row.feedback_has_pain === 'yes' ||
-      (typeof row.feedback_pain === 'string' && row.feedback_pain.trim() !== ''))
+  if (
+    row.feedback_has_pain === 'yes' ||
+    (typeof row.feedback_pain === 'string' && row.feedback_pain.trim() !== '')
+  )
     return 6;
-  return Number.isInteger(row.feedback_rpe) && row.feedback_rpe >= 1 && row.feedback_rpe <= 5
-    ? row.feedback_rpe : 0;
+  return Number.isInteger(row.feedback_rpe) &&
+    row.feedback_rpe >= 1 &&
+    row.feedback_rpe <= 5
+    ? row.feedback_rpe
+    : 0;
 }
 const PLANNING_DETAIL_FIELDS = ['detalhes', 'observacoes', 'previsao'];
 function compactSession(row) {
@@ -93,6 +98,9 @@ function buildContext(
     resourceId = null,
     asOf = new Date().toISOString().slice(0, 10),
     config = readAiConfig(),
+    taskDate = null,
+    weather = [],
+    taskNotes = '',
   },
 ) {
   if (!['cycle', 'workouts', 'analysis'].includes(purpose))
@@ -128,9 +136,16 @@ function buildContext(
       `SELECT ${TRAINING_COLUMNS} FROM trainings WHERE user_id = ? AND dia >= ? AND dia <= ? ORDER BY dia DESC,id DESC`,
     )
     .all(userId, aggregateFrom, asOf);
-  const resourceTrainingId = purpose === 'analysis' ? resource?.id ?? null : null;
-  const recent = rows.filter((row) => row.dia >= detailedFrom && row.id !== resourceTrainingId)
-    .sort((a, b) => recentPriority(b) - recentPriority(a) || b.dia.localeCompare(a.dia) || b.id - a.id);
+  const resourceTrainingId =
+    purpose === 'analysis' ? (resource?.id ?? null) : null;
+  const recent = rows
+    .filter((row) => row.dia >= detailedFrom && row.id !== resourceTrainingId)
+    .sort(
+      (a, b) =>
+        recentPriority(b) - recentPriority(a) ||
+        b.dia.localeCompare(a.dia) ||
+        b.id - a.id,
+    );
   const aggregateRows = rows.filter(
     (row) => row.dia >= aggregateFrom && row.dia < detailedFrom,
   );
@@ -206,6 +221,24 @@ function buildContext(
     totalsPolicy:
       'Detailed and aggregated periods are disjoint. Requested and comparable sessions are references, never additional totals; includedInAggregates identifies overlap. Each detailed session appears once.',
   };
+  if (purpose === 'workouts') {
+    context.resource = { weekStart: date(taskDate || asOf) };
+    context.weather = Array.isArray(weather) ? weather : [];
+    for (const evidence of context.weather) {
+      if (
+        evidence &&
+        typeof evidence.weekday === 'string' &&
+        typeof evidence.date === 'string'
+      )
+        addReference({
+          type: 'weather',
+          id: `${evidence.weekday}:${evidence.date}`,
+          version: hash(evidence),
+        });
+    }
+    if (typeof taskNotes === 'string' && taskNotes.trim())
+      context.taskNotes = { authority: 'user_report', text: taskNotes.trim() };
+  }
   addReference({ type: 'profile', id: 'self', version: hash(context.profile) });
   addReference({
     type: 'preferences',
@@ -226,48 +259,102 @@ function buildContext(
       purpose === 'analysis'
         ? trainingView(resource)
         : { ...resource, user_id: undefined, authority: 'applied_record' };
-    if (purpose === 'analysis') context.resource.includedInAggregates =
-      resource.dia >= aggregateFrom && resource.dia < detailedFrom;
+    if (purpose === 'analysis')
+      context.resource.includedInAggregates =
+        resource.dia >= aggregateFrom && resource.dia < detailedFrom;
     addReference(
       source(purpose === 'analysis' ? 'training' : 'cycle', resource),
     );
   }
   if (!cycle)
     context.gaps.push('No active cycle or applied AI planning version.');
-  if (!db.prepare('SELECT 1 FROM trainings WHERE user_id = ? AND dia <= ? LIMIT 1').get(userId, asOf))
+  if (
+    !db
+      .prepare('SELECT 1 FROM trainings WHERE user_id = ? AND dia <= ? LIMIT 1')
+      .get(userId, asOf)
+  )
     context.gaps.push('No recorded training history.');
   if (!Object.keys(memory.profile.fields).length)
-    context.gaps.push('Optional prior running experience has not been supplied.');
+    context.gaps.push(
+      'Optional prior running experience has not been supplied.',
+    );
   let appliedDetails = null;
   if (purpose !== 'cycle' && cycle) {
-    const applied = db.prepare('SELECT * FROM cycle_plan_versions WHERE user_id=? AND cycle_id=? ORDER BY version DESC LIMIT 1').get(userId,cycle.id);
+    const applied = db
+      .prepare(
+        'SELECT * FROM cycle_plan_versions WHERE user_id=? AND cycle_id=? ORDER BY version DESC LIMIT 1',
+      )
+      .get(userId, cycle.id);
     if (applied) {
       const plan = JSON.parse(applied.plan_json);
       context.appliedPlan = {
-        authority:'applied_planning',cycleId:cycle.id,version:applied.version,
-        executionId:applied.id,appliedAt:applied.applied_at,
-        outdated:!contextIsCurrent(db,userId,JSON.parse(applied.fingerprint_json),config),
-        start:plan.start,end:plan.end,
-        architecture:[],phases:[],indicators:[],adaptations:null,uncertainties:[],
+        authority: 'applied_planning',
+        cycleId: cycle.id,
+        version: applied.version,
+        executionId: applied.id,
+        appliedAt: applied.applied_at,
+        outdated: !contextIsCurrent(
+          db,
+          userId,
+          JSON.parse(applied.fingerprint_json),
+          config,
+        ),
+        start: plan.start,
+        end: plan.end,
+        architecture: [],
+        phases: [],
+        indicators: [],
+        adaptations: null,
+        uncertainties: [],
       };
       if (rpeIssue(plan)) {
-        context.appliedPlan.compatibilityError='planningRpeIncompatible';
-        context.omissions.push({type:'cycle_plan',id:applied.id,reason:'incompatible_rpe_scale'});
-        context.gaps.push('Applied planning guidance is excluded because it contains an incompatible RPE scale. The original remains available for review and explicit replacement.');
+        context.appliedPlan.compatibilityError = 'planningRpeIncompatible';
+        context.omissions.push({
+          type: 'cycle_plan',
+          id: applied.id,
+          reason: 'incompatible_rpe_scale',
+        });
+        context.gaps.push(
+          'Applied planning guidance is excluded because it contains an incompatible RPE scale. The original remains available for review and explicit replacement.',
+        );
       } else {
         appliedDetails = {
-          architecture:plan.phases.map(({name,start,end,objective})=>({name,start,end,objective})),
-          phases:plan.phases.filter((phase)=>phase.end>=asOf && phase.start<=context.ranges.plannedTo),
-          indicators:plan.indicators,adaptations:plan.adaptations,uncertainties:plan.uncertainties,
+          architecture: plan.phases.map(({ name, start, end, objective }) => ({
+            name,
+            start,
+            end,
+            objective,
+          })),
+          phases: plan.phases.filter(
+            (phase) =>
+              phase.end >= asOf && phase.start <= context.ranges.plannedTo,
+          ),
+          indicators: plan.indicators,
+          adaptations: plan.adaptations,
+          uncertainties: plan.uncertainties,
         };
-        const outsideWindow=plan.phases.length-appliedDetails.phases.length;
-        if (outsideWindow) context.omissions.push({type:'cycle_plan_phases',count:outsideWindow,reason:'phase_details_outside_task_window'});
+        const outsideWindow = plan.phases.length - appliedDetails.phases.length;
+        if (outsideWindow)
+          context.omissions.push({
+            type: 'cycle_plan_phases',
+            count: outsideWindow,
+            reason: 'phase_details_outside_task_window',
+          });
       }
-      addReference({type:'cycle_plan',id:applied.id,version:hash(applied)});
+      addReference({
+        type: 'cycle_plan',
+        id: applied.id,
+        version: hash(applied),
+      });
     }
   }
   const budget = config.limits.AI_CONTEXT_TOKENS;
-  const reduced = (key, row) => ({ type: key, id: String(row.id), reason: 'planning_details_omitted', fields: PLANNING_DETAIL_FIELDS });
+  const reduced = (key, row) => ({
+    type: key,
+    id: String(row.id),
+    reason: 'planning_details_omitted',
+    fields: PLANNING_DETAIL_FIELDS,
+  });
   // All recent explicit concerns and RPE 4/5 reports are retained whole before
   // optional details. If these cores cannot fit, refuse rather than hide them.
   const critical = recent.filter((row) => recentPriority(row) >= 4);
@@ -291,9 +378,12 @@ function buildContext(
     return true;
   }
   function select(key, item, refs, target = context) {
-    if (!trySelect(key, item, refs, null, target)) context.omissions.push({
-      type: key, id: refs[0].id, reason: 'context_budget',
-    });
+    if (!trySelect(key, item, refs, null, target))
+      context.omissions.push({
+        type: key,
+        id: refs[0].id,
+        reason: 'context_budget',
+      });
   }
   const availability = db
     .prepare(
@@ -302,40 +392,78 @@ function buildContext(
     .all(userId);
   if (availability.length !== 7)
     context.gaps.push('Weekly availability is incomplete.');
-  const availabilitySource = (row) => ({ type: 'availability', id: row.day_key, version: hash(row) });
+  const availabilitySource = (row) => ({
+    type: 'availability',
+    id: row.day_key,
+    version: hash(row),
+  });
   // Configured availability is essential for workouts. Missing days stay missing.
-  if (purpose === 'workouts') for (const row of availability) {
-    context.availability.push(row);
-    addReference(availabilitySource(row));
-  }
-  if (tokenBound(context) > budget) throw new AiError('criticalContextTooLarge', 413);
+  if (purpose === 'workouts')
+    for (const row of availability) {
+      context.availability.push(row);
+      addReference(availabilitySource(row));
+    }
+  if (tokenBound(context) > budget)
+    throw new AiError('criticalContextTooLarge', 413);
   for (const row of recent.filter((row) => recentPriority(row) < 4)) {
-    if (!trySelect('recent', compactSession(row), [source('training', row)], reduced('recent', row)))
-      context.omissions.push({ type: 'recent', id: String(row.id), reason: 'context_budget' });
+    if (
+      !trySelect(
+        'recent',
+        compactSession(row),
+        [source('training', row)],
+        reduced('recent', row),
+      )
+    )
+      context.omissions.push({
+        type: 'recent',
+        id: String(row.id),
+        reason: 'context_budget',
+      });
   }
-  if (purpose !== 'workouts') for (const row of availability)
-    select('availability', row, [availabilitySource(row)]);
+  if (purpose !== 'workouts')
+    for (const row of availability)
+      select('availability', row, [availabilitySource(row)]);
   if (purpose === 'cycle') {
     context.previousCycles = [];
-    for (const previous of db.prepare("SELECT * FROM training_cycles WHERE user_id=? AND id!=? AND status!='active' ORDER BY created_at DESC,id LIMIT 3").all(userId,resourceId ?? ''))
-      select('previousCycles',{...previous,user_id:undefined,authority:'applied_record'},[source('cycle',previous)]);
+    for (const previous of db
+      .prepare(
+        "SELECT * FROM training_cycles WHERE user_id=? AND id!=? AND status!='active' ORDER BY created_at DESC,id LIMIT 3",
+      )
+      .all(userId, resourceId ?? ''))
+      select(
+        'previousCycles',
+        { ...previous, user_id: undefined, authority: 'applied_record' },
+        [source('cycle', previous)],
+      );
   }
   // Applied plan identity/provenance is mandatory, but its prose must never
   // displace reports or task availability. Architecture precedes phase detail;
   // each whole optional item uses the same budget and omission path as sessions.
   if (appliedDetails) {
     const refs = references.filter((ref) => ref.type === 'cycle_plan');
-    for (const key of ['architecture', 'phases', 'indicators', 'adaptations', 'uncertainties']) {
-      const items = Array.isArray(appliedDetails[key]) ? appliedDetails[key] : [appliedDetails[key]];
+    for (const key of [
+      'architecture',
+      'phases',
+      'indicators',
+      'adaptations',
+      'uncertainties',
+    ]) {
+      const items = Array.isArray(appliedDetails[key])
+        ? appliedDetails[key]
+        : [appliedDetails[key]];
       for (const item of items) select(key, item, refs, context.appliedPlan);
     }
   }
   // Only after compact reports have had their turn, spend spare bytes on planning prose.
   for (const row of recent) {
-    const index = context.recent.findIndex((view) => view.source.id === String(row.id));
+    const index = context.recent.findIndex(
+      (view) => view.source.id === String(row.id),
+    );
     if (index === -1) continue;
     const compact = context.recent[index];
-    const omissionIndex = context.omissions.findIndex((item) => item.type === 'recent' && item.id === String(row.id));
+    const omissionIndex = context.omissions.findIndex(
+      (item) => item.type === 'recent' && item.id === String(row.id),
+    );
     const [omission] = context.omissions.splice(omissionIndex, 1);
     context.recent[index] = trainingView(row);
     if (tokenBound(context) > budget - 1024) {
@@ -350,12 +478,24 @@ function buildContext(
       g.sources,
     );
   // Retrieve at most three comparable records, including older history; never load the entire log.
-  const ranked = db.prepare(`SELECT ${TRAINING_COLUMNS} FROM trainings
+  const ranked = db
+    .prepare(
+      `SELECT ${TRAINING_COLUMNS} FROM trainings
     WHERE user_id = ? AND dia < ? AND completed = 1
       AND (? IS NULL OR id != ?)
       AND (? != 'analysis' OR tipo = ?)
       AND (? != 'workouts' OR lower(tipo) LIKE '%long%' OR lower(treino) LIKE '%long%')
-    ORDER BY dia DESC,id DESC LIMIT 3`).all(userId, detailedFrom, resourceTrainingId, resourceTrainingId, purpose, resource?.tipo ?? null, purpose);
+    ORDER BY dia DESC,id DESC LIMIT 3`,
+    )
+    .all(
+      userId,
+      detailedFrom,
+      resourceTrainingId,
+      resourceTrainingId,
+      purpose,
+      resource?.tipo ?? null,
+      purpose,
+    );
   for (const row of ranked)
     select(
       'comparables',
@@ -371,14 +511,35 @@ function buildContext(
       },
       [source('training', row)],
     );
-  const upcoming = db.prepare(`SELECT ${TRAINING_COLUMNS} FROM trainings
+  const upcoming = db
+    .prepare(
+      `SELECT ${TRAINING_COLUMNS} FROM trainings
     WHERE user_id = ? AND dia > ? AND dia <= ? AND (? IS NULL OR id != ?)
-    ORDER BY dia,id`).all(userId, asOf, context.ranges.plannedTo, resourceTrainingId, resourceTrainingId);
+    ORDER BY dia,id`,
+    )
+    .all(
+      userId,
+      asOf,
+      context.ranges.plannedTo,
+      resourceTrainingId,
+      resourceTrainingId,
+    );
   for (const row of upcoming) {
     const refs = [source('training', row)];
-    if (!trySelect('upcoming', trainingView(row), refs) &&
-        !trySelect('upcoming', compactSession(row), refs, reduced('upcoming', row)))
-      context.omissions.push({ type: 'upcoming', id: String(row.id), reason: 'context_budget' });
+    if (
+      !trySelect('upcoming', trainingView(row), refs) &&
+      !trySelect(
+        'upcoming',
+        compactSession(row),
+        refs,
+        reduced('upcoming', row),
+      )
+    )
+      context.omissions.push({
+        type: 'upcoming',
+        id: String(row.id),
+        reason: 'context_budget',
+      });
   }
   for (const row of db
     .prepare(
@@ -386,7 +547,11 @@ function buildContext(
     )
     .all(userId))
     select('shoes', row, [source('shoe', row)]);
-  const olderCount = db.prepare('SELECT COUNT(*) AS n FROM trainings WHERE user_id = ? AND dia < ?').get(userId, aggregateFrom).n;
+  const olderCount = db
+    .prepare(
+      'SELECT COUNT(*) AS n FROM trainings WHERE user_id = ? AND dia < ?',
+    )
+    .get(userId, aggregateFrom).n;
   if (olderCount)
     context.omissions.push({
       type: 'training',
@@ -413,6 +578,9 @@ function contextIsCurrent(db, userId, context, config) {
           context.resource?.source?.id || context.resource?.id || null,
         asOf: context.asOf,
         config,
+        taskDate: context.resource?.weekStart,
+        weather: context.weather || [],
+        taskNotes: context.taskNotes?.text || '',
       }).hash === context.hash
     );
   } catch (error) {
