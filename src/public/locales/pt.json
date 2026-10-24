@@ -1097,6 +1097,33 @@
     "proposalConflict": "Outra proposta foi aplicada após esta geração. Gere uma nova proposta usando a versão atual do planejamento.",
     "inactiveCycle": "Este ciclo não está ativo. O planejamento salvo continua disponível.",
     "open": "Planejamento do ciclo",
+    "cardStatus": {
+      "states": {
+        "none": "Planejamento não criado",
+        "pending": "Gerando planejamento…",
+        "failed": "Planejamento não concluído",
+        "proposal_ready": "Proposta pronta para revisão",
+        "applied_current": "Planejamento atualizado",
+        "applied_outdated": "Planejamento desatualizado",
+        "applied_incompatible": "Planejamento incompatível — precisa de revisão",
+        "unavailable": "Planejamento por IA indisponível",
+        "read_error": "Não foi possível consultar o planejamento"
+      },
+      "secondary": {
+        "newPending": "Gerando nova proposta…",
+        "newProposalReady": "Nova proposta pronta para revisão",
+        "updateFailed": "A atualização não foi concluída",
+        "unavailable": "O planejamento por IA está temporariamente indisponível"
+      },
+      "actions": {
+        "generate": "Gerar planejamento",
+        "viewProgress": "Acompanhar",
+        "viewDetails": "Ver detalhes",
+        "reviewProposal": "Revisar proposta",
+        "viewPlan": "Ver planejamento",
+        "reviewPlan": "Revisar planejamento"
+      }
+    },
     "title": "Planejamento do ciclo",
     "hint": "Organize sua preparação em fases e prioridades com os dados disponíveis no Kinesis. Os treinos semanais são solicitados separadamente.",
     "generate": "Gerar planejamento",

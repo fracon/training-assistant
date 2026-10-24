@@ -144,6 +144,9 @@ test('cycles.css reveals action tooltips on hover and keyboard focus', () => {
   assert.match(css, /\.cycle-card-actions \.btn-icon:hover \.custom-tooltip/);
   assert.match(css, /\.cycle-card-actions \.btn-icon:focus-visible \.custom-tooltip/);
   assert.match(css, /bottom:\s*110%/);
+  assert.match(css, /\[data-action="planning"\] \.custom-tooltip\s*\{[^}]*top: calc\(100% \+ 4px\);[^}]*right: 0;[^}]*left: auto/s);
+  assert.match(css, /\[data-action="planning"\] \{ position: static; \}/);
+  assert.match(css, /Keep the planning tooltip below the action so it does not cover the status line/);
 });
 
 test('cycles.html modal is at body root level outside main', () => {
@@ -556,11 +559,19 @@ test('cycle planning action is a localized decorative icon with the existing cus
   const js = readFileSync(join(publicDir, 'cycles.js'), 'utf8');
   assert.match(js, /class="btn-icon" data-action="planning"[^>]+aria-label=/);
   assert.match(js, /data-lucide="calendar-range" aria-hidden="true"/);
-  assert.match(js, /class="custom-tooltip">\$\{escapeHtml\(t\(messages, 'cyclePlanning.open'\)\)\}/);
+  assert.match(js, /class="custom-tooltip">\$\{escapeHtml\(planningAction\)\}/);
+  assert.match(js, /data-cycle-planning-status hidden/);
+  assert.match(js, /data-cycle-planning-primary/);
+  assert.match(js, /data-cycle-planning-secondary hidden/);
+  assert.match(js, /onSummaryChange\(id,summary\)/);
   assert.equal(en.cyclePlanning.open, 'Cycle planning');
   assert.equal(pt.cyclePlanning.open, 'Planejamento do ciclo');
   assert.equal(en.cyclePlanning.title, en.cyclePlanning.open);
   assert.equal(pt.cyclePlanning.title, pt.cyclePlanning.open);
+  assert.equal(en.cyclePlanning.cardStatus.states.none, 'No plan yet');
+  assert.equal(pt.cyclePlanning.cardStatus.states.none, 'Planejamento não criado');
+  assert.equal(en.cyclePlanning.cardStatus.states.applied_incompatible.includes('incompatible'), true);
+  assert.equal(pt.cyclePlanning.cardStatus.states.applied_incompatible.includes('incompatível'), true);
 });
 
 test('planning modal reuses CRUD header/close/footer with a separate scrolling product body', () => {

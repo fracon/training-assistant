@@ -47,6 +47,7 @@ test('Chrome saved-cycle flow: explicit generation, defer, no-op edits, stale pl
   const cycle=db.prepare("SELECT * FROM training_cycles WHERE user_id=? AND status='active'").get(userId);assert.ok(cycle);
   assert.equal(saveRequests,requestsBefore+1);assert.equal(calls,before);assert.equal(promptRequests,0);
   assert.equal(await evaluate("document.getElementById('cyclePlanningHint').textContent.includes('"+(language==='pt-BR'?'Seu ciclo foi salvo':'Your cycle was saved')+"')"),true);
+  assert.ok((await evaluate("document.querySelector('.cycle-planning-indicator').textContent")).includes(language==='pt-BR'?'Planejamento não criado':'No plan yet'));
   assert.equal(await evaluate("document.getElementById('cycleModal').classList.contains('hidden')"),true);
   assert.equal(await evaluate("!!document.getElementById('appView').closest('[inert]')"),true);
   assert.equal(await evaluate('document.activeElement.id'),'cyclePlanningClose');
@@ -55,16 +56,22 @@ test('Chrome saved-cycle flow: explicit generation, defer, no-op edits, stale pl
   await capture(`created-${account}-${language}-${width}`);
   await click('cyclePlanningLater');await wait("document.getElementById('cyclePlanningModal').hidden");
   assert.equal(await evaluate('document.activeElement.dataset.id'),cycle.id);assert.equal(calls,before);
+  const visualSample=account===0 && language==='pt-BR' && width===390;
+  if(visualSample)await capture('cycle-card-no-plan-pt-390');
   assert.equal(db.prepare('SELECT COUNT(*) n FROM training_cycles WHERE user_id=?').get(userId).n,1);
   await openCard(cycle.id);outcome='success';await click('cyclePlanningGenerate');await click('cyclePlanningGenerate');
   await wait("!document.getElementById('cyclePlanningCancel').hidden");assert.equal(calls,before+1);
+  assert.ok((await evaluate("document.querySelector('.cycle-planning-indicator').textContent")).includes(language==='pt-BR'?'Gerando planejamento':'Generating plan'));
   assert.equal(db.prepare('SELECT COUNT(*) n FROM cycle_plan_versions WHERE cycle_id=?').get(cycle.id).n,0);
   await click('cyclePlanningLater');release();release=null;
   for(let i=0;i<100;i++){if(db.prepare("SELECT state FROM ai_executions WHERE resource_id=? ORDER BY created_at DESC LIMIT 1").get(cycle.id)?.state==='completed')break;await delay(20);}
   assert.equal(await evaluate("document.getElementById('cyclePlanningModal').hidden"),true);
+  if(visualSample){await wait("document.querySelector('.cycle-planning-indicator').textContent.includes('Proposta pronta para revisão')");await capture('cycle-card-proposal-pt-390');}
   await openCard(cycle.id);await wait("!document.getElementById('cyclePlanningApply').hidden");assert.equal(calls,before+1);
   await click('cyclePlanningApply');await wait("document.getElementById('cyclePlanningApply').hidden && document.querySelector('.cycle-status.status-active')");
+  assert.ok((await evaluate("document.querySelector('.cycle-planning-indicator').textContent")).includes(language==='pt-BR'?'Planejamento atualizado':'Plan up to date'));
   await key('Escape','Escape',27);
+  if(visualSample)await capture('cycle-card-applied-pt-390');
   await edit(null);await wait("document.getElementById('cyclePlanningHint').textContent.includes('"+(language==='pt-BR'?'está atualizado':'is current')+"')");
   assert.equal(await evaluate("document.getElementById('cyclePlanningGenerate').hidden"),true);
   assert.equal(db.prepare('SELECT planning_revision FROM training_cycles WHERE id=?').get(cycle.id).planning_revision,0);
@@ -78,7 +85,9 @@ test('Chrome saved-cycle flow: explicit generation, defer, no-op edits, stale pl
   const overview=await app.inject({method:'GET',url:`/api/cycles/${cycle.id}/planning`,headers:{cookie:`${SESSION_COOKIE_NAME}=${tokens[account]}`}});
   assert.equal(overview.json().applied.outdated,true);
   await edit(null);outcome='incomplete';await click('cyclePlanningGenerate');await wait("!document.getElementById('cyclePlanningCancel').hidden");release();release=null;
-  await wait("document.getElementById('cyclePlanningStatus').textContent.includes('"+(language==='pt-BR'?'Falha na geração':'failed')+"')");
+  await wait("document.querySelector('.cycle-planning-indicator').textContent.includes('"+(language==='pt-BR'?'não foi concluída':'not completed')+"')");
+  const cardPlanningStatus=await evaluate("document.querySelector('.cycle-planning-indicator').textContent");
+  assert.ok(cardPlanningStatus.includes(language==='pt-BR'?'não foi concluída':'not completed'),cardPlanningStatus);
   assert.equal(db.prepare('SELECT id FROM training_cycles WHERE id=?').get(cycle.id).id,cycle.id);
   assert.equal(db.prepare('SELECT COUNT(*) n FROM cycle_plan_versions WHERE cycle_id=?').get(cycle.id).n,1);
   assert.equal(await evaluate("document.getElementById('cycleFormError').classList.contains('hidden')"),true);
@@ -117,8 +126,8 @@ test('Chrome persistence boundaries: closed save, failed reads, unavailable AI, 
  assert.equal(await evaluate("document.getElementById('cyclePlanningModal').dataset.cycleId"),'history');assert.equal(calls,0);
  assert.equal(await evaluate("document.getElementById('cyclePlanningError').hidden"),true);
  await click('cyclePlanningLater');assert.equal(await evaluate('document.activeElement.dataset.id'),'history');
- const tooltipBounds=await evaluate("(()=>{const r=document.querySelector('[data-action=planning][data-id=history] .custom-tooltip').getBoundingClientRect();return [r.left,r.right,innerWidth];})()");
- assert.ok(tooltipBounds[0]>=0 && tooltipBounds[1]<=tooltipBounds[2]);
+ const tooltipBounds=await evaluate("(()=>{const b=document.querySelector('[data-action=planning][data-id=history]'),r=b.querySelector('.custom-tooltip').getBoundingClientRect(),c=b.closest('.cycle-card').getBoundingClientRect();return [r.left,r.right,innerWidth,b.getBoundingClientRect().left,b.getBoundingClientRect().right,c.left,c.right];})()");
+ assert.ok(tooltipBounds[0]>=0 && tooltipBounds[1]<=tooltipBounds[2],JSON.stringify(tooltipBounds));
  // No post-save list fetch is required: even failed list/active reads cannot erase the acknowledged row.
  await command('Network.setBlockedURLs',{urls:['*unpkg.com*','*fonts.googleapis.com*','*fonts.gstatic.com*',origin+'/api/cycles/active',origin+`/api/cycles/${first.id}/planning`]});
  await evaluate("document.querySelector('[data-action=edit]').click();document.getElementById('cyclePrimaryGoal').value='Persisted despite failed read';document.getElementById('cycleForm').requestSubmit()");
@@ -149,7 +158,9 @@ test('Chrome persistence boundaries: closed save, failed reads, unavailable AI, 
  await click('cyclePlanningLater');
  // A no-op edit automatically resumes the persisted execution rather than enqueuing another.
  await evaluate("document.querySelector('[data-action=edit]').click();document.getElementById('cycleForm').requestSubmit()");await wait("!document.getElementById('cyclePlanningCancel').hidden");assert.equal(calls,1);
- await click('cyclePlanningLater');release();release=null;
+ await click('cyclePlanningLater');
+ await wait("document.querySelector('.cycle-planning-indicator').textContent.includes('Gerando planejamento')");
+ release();release=null;
  for(let i=0;i<100;i++){if(db.prepare('SELECT state FROM ai_executions WHERE resource_id=?').get(current.id)?.state==='completed')break;await delay(20);}
  assert.equal(await evaluate("document.getElementById('cyclePlanningModal').hidden"),true);
  await evaluate("document.querySelector('[data-action=edit]').click();document.getElementById('cycleForm').requestSubmit()");await wait("!document.getElementById('cyclePlanningApply').hidden");assert.equal(calls,1);

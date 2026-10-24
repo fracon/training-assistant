@@ -427,6 +427,14 @@ are allowlisted, with no `user_id`, arbitrary model or arbitrary prompt option.
 | `GET /api/ai/admin/executions/:id` | Admin-owned exact payload/context/configuration/usage/error |
 | `GET /api/ai/admin/usage` | Admin-owned usage and sanitized configuration availability |
 
+The existing authenticated `GET /api/cycles` also carries a minimal,
+owner-scoped `planningSummary` per cycle (`status`, `secondary`, `available`,
+`canGenerate`) for card presentation. It does not contain planning JSON,
+provider responses, prompts, context or diagnostics. Status selection uses the
+cycle-planning freshness, compatibility and base-version contracts, and a
+summary read error does not change the cycle record. See the [cycle planning
+status contract](ai-cycle-planning.md#per-cycle-planning-status-current-pr-branch).
+
 States: queued, running, completed, failed, uncertain, cancelled, outdated.
 Missing/disabled key -> 503 `aiUnavailable`; unregistered feature -> 409
 `phaseNotAvailable`; quotas/concurrency -> 429; owner/role -> 401/403;

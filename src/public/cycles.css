@@ -172,7 +172,29 @@
   color: var(--ink);
 }
 
+.cycle-planning-indicator {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.55rem;
+  margin: 0 0 0.55rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.cycle-planning-indicator[hidden],
+.cycle-planning-secondary[hidden] {
+  display: none;
+}
+
+.cycle-planning-secondary {
+  opacity: 0.82;
+}
+
 .cycle-card-actions {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -514,6 +536,16 @@
   .cycle-planning-card, .cycle-planning-modal button, .cycle-card-actions .custom-tooltip { animation: none; transition: none; }
 }
 
-/* Inactive cards have a single planning action: keep its longer tooltip on-screen. */
-.cycle-card-actions > [data-action="planning"]:first-child .custom-tooltip { left: 0; transform: translateY(4px); }
-.cycle-card-actions > [data-action="planning"]:first-child:is(:hover, :focus-visible) .custom-tooltip { transform: translateY(0); }
+/* Keep the planning tooltip below the action so it does not cover the status line. */
+.cycle-card-actions [data-action="planning"] .custom-tooltip {
+  position: absolute;
+  top: calc(100% + 4px);
+  bottom: auto;
+  right: 0;
+  left: auto;
+  transform: translateY(-4px);
+}
+.cycle-card-actions [data-action="planning"] { position: static; }
+.cycle-card-actions [data-action="planning"]:is(:hover, :focus-visible) .custom-tooltip {
+  transform: translateY(0);
+}

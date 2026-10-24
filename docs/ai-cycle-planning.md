@@ -1202,3 +1202,48 @@ Identical polling updates do not rewrite the polite live region. The existing
 Chrome flow and diagnostic browser suites cover PT/EN, responsive widths,
 recovery and error states with simulated provider responses; this follow-up has
 no real-call or coaching-quality claim.
+
+## Per-cycle planning status (current PR branch)
+
+The card's **Active / Ativo** badge still describes the cycle lifecycle only.
+A separate localized text line reports planning state, so an active cycle can
+correctly show no plan, pending work, a proposal, an applied plan or an issue
+without changing activation or manual cycle use. The existing planning icon is
+the only action and always opens the product modal; generating remains an
+explicit modal action. Listing, opening, updating the status and changing locale
+do not call the provider.
+
+`GET /api/cycles` returns each owned cycle with a compact `planningSummary`:
+`status`, `secondary`, `available` and `canGenerate`. It contains no plan,
+response, prompt, execution context, usage or diagnostic payload. A failed
+summary read is represented as `status: read_error`; the cycle is still returned.
+The UI does not replace a previously confirmed state with a polling read error.
+The same summary is included in the existing planning read; successful saves
+also return it, while a post-save summary read failure cannot turn the saved
+cycle into a failed registration.
+
+The primary status has one deterministic priority: a persisted applied version
+always wins, classified as current, outdated by source fingerprint, or
+incompatible with RPE 1–5. Without an applied version, the backend scans at most
+the newest 20 proposals in descending sequence and selects the first unapplied
+proposal that is based on the current applied version, completed, fresh, RPE
+compatible, identical to its persisted proposal JSON, and valid against its
+saved context and cycle domain. That candidate remains visible if a later
+attempt failed. If none is usable, pending work precedes a terminal/incompatible/
+stale result; otherwise the summary reports no plan or unavailable AI. Inactive
+cycles remain readable and set `canGenerate: false`.
+
+When an applied plan exists, a pending update, a new usable proposal, a failed
+update, or AI unavailability is a separate short secondary status; it never
+replaces the applied plan's primary state. Source changes and RPE incompatibility
+have distinct primary states. Stale, conflicting, invalid and incompatible
+proposals are never selected for Apply. The modal continues to show diagnostics
+and reasons; cards do not become a diagnostic panel.
+
+The modal's existing poll updates its card. If it closes while work is pending,
+the page polls the existing cycle list as one request at a time, only while the
+page is visible and at least one cycle is pending; it stops when no pending state
+remains. Opening the modal cancels that list poll. Stale list responses and
+failed reads cannot overwrite a newer per-cycle summary. The summary does not
+alter freshness, compatibility, version-base, ownership or application rules.
+It summarizes current backend artifacts and makes no additional paid call.

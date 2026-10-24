@@ -93,6 +93,21 @@ CRUD header and close control, with a bounded scrollable body and wrapping foote
 actions. Proposal and applied version remain separate; administrative inspection
 is a secondary section inside the body.
 
+Each card separately shows the planning state; **Active / Ativo** continues to
+describe only the cycle. The compact owner-scoped summary distinguishes no plan,
+pending generation, a usable proposal, current/outdated applied planning, RPE
+incompatibility, failed updates and unavailable AI. An applied version remains
+the card's primary status after a later generation fails; a separate short note
+can show the update or proposal state. Proposals are examined newest first, but
+only a current, compatible proposal based on the currently applied version is
+selected for review. A failed later attempt cannot hide an earlier usable one.
+`GET /api/cycles` carries this summary without plan contents, prompts or debug
+data. Cards refresh it when planning is read and poll the existing list only
+while a visible page has a pending execution. Clicking the existing icon opens
+the modal; it never generates or activates a cycle by itself. A summary read
+failure remains visibly distinct from generation failure and preserves a known
+card state.
+
 Free macrocycle prompt generation/copy is **administrator-only**, scoped to the
 administrator's own cycles and guarded by the current backend role. Common
 accounts have no prompt controls or prompt modal; saving/editing their cycles
@@ -871,7 +886,7 @@ in [AI foundation API contracts](docs/ai-foundation.md#api-and-service-contract)
 | `DELETE /api/trainings/:id` | Session | Delete an owned training |
 | `POST /api/fit/parse` | Session | Parse a FIT upload and return analysis data |
 | `GET /api/weather` | Session | Resolve planned location and date through Open-Meteo |
-| `GET /api/cycles` | Session | List owned cycles |
+| `GET /api/cycles` | Session | List owned cycles with minimal `planningSummary` (`status`, `secondary`, `available`, `canGenerate`); no plan/prompt/context/debug content |
 | `GET /api/cycles/active` | Session | Read active cycle |
 | `POST /api/cycles` | Session | Create cycle |
 | `PUT /api/cycles/:id` | Session | Update owned cycle |

@@ -17,6 +17,14 @@ test('production cycle adapter HTTP generation/poll/apply is scoped, atomic and 
  t.after(async()=>{await app.close();db.close();});
  const tokens=[null,createSession(db,1).token,createSession(db,2).token];
  const send=(method,url,payload,user=1)=>app.inject({method,url,payload,headers:user?{cookie:`${SESSION_COOKIE_NAME}=${tokens[user]}`}:{}});
+ const listed=await send('GET','/api/cycles');assert.equal(listed.statusCode,200);
+ assert.deepEqual(listed.json().cycles[0].planningSummary,{status:'none',secondary:null,available:true,canGenerate:true});
+ assert.equal(JSON.stringify(listed.json()).includes('Synthetic planning recommendation'),false);
+ assert.equal(listed.json().cycles.some(c=>c.id==='private'),false);
+ db.prepare("INSERT INTO cycle_plan_proposals(id,user_id,cycle_id,sequence,base_version,plan_json,created_at) VALUES('broken-summary',1,'cycle',1,0,'{','2026-10-24T00:00:00.000Z')").run();
+ const readError=await send('GET','/api/cycles');assert.equal(readError.statusCode,200);
+ assert.equal(readError.json().cycles[0].id,'cycle');assert.equal(readError.json().cycles[0].planningSummary.status,'read_error');
+ db.prepare("DELETE FROM cycle_plan_proposals WHERE id='broken-summary'").run();
  assert.equal((await send('GET','/api/cycles/cycle/planning',null,0)).statusCode,401);
  assert.equal((await send('GET','/api/cycles/private/planning')).statusCode,404);
  assert.equal((await send('GET','/api/cycles/cycle/planning',null,2)).statusCode,404);
@@ -37,6 +45,8 @@ test('no key leaves manual registration usable and reports generation unavailabi
  const db=fixture();const app=await buildServer({db,sessionCookieSecure:false,aiConfig:readAiConfig({})});t.after(async()=>{await app.close();db.close();});
  const cookie=`${SESSION_COOKIE_NAME}=${createSession(db,1).token}`;
  const get=await app.inject({method:'GET',url:'/api/cycles/cycle/planning',headers:{cookie}});assert.equal(get.json().available,false);
+ const listed=await app.inject({method:'GET',url:'/api/cycles',headers:{cookie}});
+ assert.equal(listed.json().cycles[0].planningSummary.status,'unavailable');
  assert.equal((await app.inject({method:'POST',url:'/api/ai/executions',headers:{cookie},payload:{purpose:'cycle',resource_id:'cycle',idempotency_key:'disabled-plan'}})).statusCode,503);
  assert.equal((await app.inject({method:'PUT',url:'/api/cycles/cycle',headers:{cookie},payload:{primary_goal:'Still editable'}})).statusCode,200);
 });

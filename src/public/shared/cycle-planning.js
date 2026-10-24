@@ -4,7 +4,7 @@ import { formatDate } from './date.js';
 import { createDialogFocusTrap } from './dialog-focus.js';
 
 // Product flow only. The backend owns dispatch, validation, versions and application.
-export function createCyclePlanning({ i18n, user }) {
+export function createCyclePlanning({ i18n, user, onSummaryChange = () => {}, onGenerationRequested = () => {}, onOpen = () => {}, onClose = () => {} }) {
   const modal = document.getElementById('cyclePlanningModal');
   const content = document.getElementById('cyclePlanningContent');
   const status = document.getElementById('cyclePlanningStatus');
@@ -18,11 +18,14 @@ export function createCyclePlanning({ i18n, user }) {
   const pendingKeys = new Map();
   let cycleId=null, trigger=null, state=null, generation=0, readSequence=0, timer=null, busy=false, errorCode=null, saved=null, readFailed=false;
   const t = (key) => translate(i18n.messages,`cyclePlanning.${key}`);
+  const latestProposal = () => state?.proposals?.[0] || null;
+  const selectedProposal = () => state?.proposals?.find((proposal)=>proposal.id===state.selectedProposalId) || latestProposal();
+  const pendingProposal = () => state?.proposals?.find((proposal)=>proposal.execution && ['queued','running'].includes(proposal.execution.state)) || null;
   const trap=createDialogFocusTrap(modal,close);
   const el=(tag,text,className)=>{const n=document.createElement(tag);if(text!=null)n.textContent=text;if(className)n.className=className;return n;};
   function showError(e, read=false, focus=true) {
     if (read) readFailed=true;
-    const running=state?.proposals?.[0]?.execution && ['queued','running'].includes(state.proposals[0].execution.state);
+    const running=Boolean(pendingProposal());
     errorCode=read ? (running ? 'progressLoadError' : saved ? 'savedLoadError' : 'loadError') : e?.codes?.[0] || 'generic';
     const localized=t(`errors.${errorCode}`);
     error.textContent=localized.startsWith('cyclePlanning.')?t('errors.generic'):localized;
@@ -62,11 +65,11 @@ export function createCyclePlanning({ i18n, user }) {
     retry.hidden=!readFailed;retry.disabled=busy;retry.className='btn-primary';retry.textContent=t('retryLoad');
     generate.hidden=!state || readFailed;
     if(!state){status.textContent=t(readFailed && !busy?'loadFailed':'loading');generate.textContent=t('generate');return;}
-    const latest=state.proposals[0];const execution=latest?.execution;
-    const running=execution && ['queued','running'].includes(execution.state);
-    const candidate=execution?.state==='completed' && !latest.applied;
-    const conflict=candidate && latest.baseVersion!==(state.applied?.version || 0);
-    const ready=candidate && !latest.compatibilityError && !execution.outdated && !conflict && state.canGenerate;
+    const latest=latestProposal();const proposal=selectedProposal();const execution=proposal?.execution;
+    const runningProposal=pendingProposal();const running=Boolean(runningProposal);
+    const candidate=execution?.state==='completed' && !proposal.applied;
+    const conflict=candidate && proposal.baseVersion!==(state.applied?.version || 0);
+    const ready=candidate && state.selectedProposalId===proposal.id && !proposal.compatibilityError && !execution.outdated && !conflict && state.canGenerate;
     generate.textContent=t(state.proposals.length?'regenerate':'generate');
     generate.hidden=readFailed || !state.available || !state.canGenerate || Boolean(running) || Boolean(saved && current && !ready);
     generate.className=ready?'btn-secondary':'btn-primary';
@@ -77,15 +80,23 @@ export function createCyclePlanning({ i18n, user }) {
     cancel.hidden=!running;cancel.disabled=busy;
     debug.hidden=user.role!=='admin' || !execution;
     document.getElementById('cyclePlanningAdmin').hidden=debug.hidden;
-    const statusMessage=readFailed?t(busy?'loading':errorCode==='progressLoadError'?'progressLoadFailed':'loadFailed'):busy?t('loading'):!state.available?t('unavailable'):!state.canGenerate?t('inactiveCycle'):latest?.applied?t(state.applied?.outdated || state.applied?.compatibilityError?'appliedNeedsReview':'applied'):latest?.compatibilityError?t('proposalIncompatible'):candidate && (execution.outdated || conflict)?t('proposalOutdated'):execution?.error==='providerRateLimited' && running?t('retryWaiting'):execution?.state==='queued'?(execution?.error==='providerRateLimited'?t('retryWaiting'):t('states.queued')):execution?.state==='running'?t('states.running'):execution?t(`states.${execution.state}`):t(saved?'readyToPlan':'manualIndependent');
+    const statusProposal=runningProposal || proposal || latest;
+    const statusExecution=statusProposal?.execution;
+    const statusMessage=readFailed?t(busy?'loading':errorCode==='progressLoadError'?'progressLoadFailed':'loadFailed'):busy?t('loading'):!state.available?t('unavailable'):!state.canGenerate?t('inactiveCycle'):state.applied?t(state.applied.compatibilityError?'appliedNeedsReview':state.applied.outdated?'appliedNeedsReview':'applied'):proposal?.compatibilityError?t('proposalIncompatible'):candidate && (execution.outdated || conflict)?t('proposalOutdated'):statusExecution?.error==='providerRateLimited' && running?t('retryWaiting'):statusExecution?.state==='queued'?(statusExecution?.error==='providerRateLimited'?t('retryWaiting'):t('states.queued')):statusExecution?.state==='running'?t('states.running'):statusExecution?t(`states.${statusExecution.state}`):t(saved?'readyToPlan':'manualIndependent');
     // Avoid rewriting the polite live region on every polling response.
     if(status.textContent!==statusMessage)status.textContent=statusMessage;
     content.replaceChildren();
     if(candidate) {
-      if(latest.baseVersion!==(state.applied?.version || 0))content.append(el('p',t('proposalConflict'),'field-hint'));
+      if(proposal.baseVersion!==(state.applied?.version || 0))content.append(el('p',t('proposalConflict'),'field-hint'));
       if(execution.outdated)content.append(el('p',t('outdated'),'field-hint'));
       renderPlan(execution.response,t('proposal'));
     }
+    if(state.summary?.secondary==='new_pending')content.append(el('p',t('cardStatus.secondary.newPending'),'field-hint'));
+    if(state.summary?.secondary==='new_proposal_ready')content.append(el('p',t('cardStatus.secondary.newProposalReady'),'field-hint'));
+    if(state.summary?.secondary==='update_failed')content.append(el('p',t('cardStatus.secondary.updateFailed'),'field-hint'));
+    if(state.summary?.secondary==='unavailable')content.append(el('p',t('cardStatus.secondary.unavailable'),'field-hint'));
+    if(state.applied && ['failed','uncertain','cancelled','outdated'].includes(statusExecution?.state))
+      content.append(el('p',t(`states.${statusExecution.state}`),'field-hint'));
     if(state.applied) {
       if(state.applied.compatibilityError)content.append(el('p',t('appliedRpeIncompatible'),'field-hint'));
       if(state.applied.outdated)content.append(el('p',t('appliedOutdated'),'field-hint'));
@@ -94,7 +105,8 @@ export function createCyclePlanning({ i18n, user }) {
     if(!candidate && !state.applied)content.append(el('p',t('empty'),'field-hint'));
     if(!errorCode && !readFailed) {
       error.hidden=true;
-      const failure=(!latest?.applied && latest?.compatibilityError) || execution?.error;
+      const failureProposal=latest?.id!==proposal?.id ? latest : proposal;
+      const failure=(!failureProposal?.applied && failureProposal?.compatibilityError) || failureProposal?.execution?.error;
       if(!busy && failure && !running) {
         const message=t(`errors.${failure}`);
         error.textContent=message.startsWith('cyclePlanning.')?t('errors.generic'):message;
@@ -115,7 +127,8 @@ export function createCyclePlanning({ i18n, user }) {
     } finally { clearTimeout(readTimer); }
     if(token!==generation || request!==readSequence || modal.hidden)return;
     state=result;readFailed=false;error.hidden=true;errorCode=null;render();clearTimeout(timer);
-    if(state.proposals[0]?.execution && ['queued','running'].includes(state.proposals[0].execution.state))
+    onSummaryChange(cycleId,state.summary);
+    if(pendingProposal())
       timer=setTimeout(()=>refresh(token).catch((e)=>{if(token===generation && !modal.hidden)showError(e,true,false);}),1500);
   }
   async function action(fn, allowEmpty=false) {
@@ -131,23 +144,26 @@ export function createCyclePlanning({ i18n, user }) {
   generate.addEventListener('click',()=>action(async()=>{
     // Keep the key after a lost response; a deliberate generation after a known result gets a new one.
     const id=cycleId;
+    onGenerationRequested(id);
     const key=pendingKeys.get(id) || crypto.randomUUID();pendingKeys.set(id,key);
     await requestJson('/api/ai/executions',{purpose:'cycle',resource_id:id,idempotency_key:key});
     if(pendingKeys.get(id)===key)pendingKeys.delete(id);
   }));
   apply.addEventListener('click',()=>action(async()=>{
-    await requestJson(`/api/cycles/${encodeURIComponent(cycleId)}/planning/${encodeURIComponent(state.proposals[0].id)}/apply`,{expected_version:state.applied?.version || 0});
+    const proposal=selectedProposal();
+    await requestJson(`/api/cycles/${encodeURIComponent(cycleId)}/planning/${encodeURIComponent(proposal.id)}/apply`,{expected_version:state.applied?.version || 0});
   }));
-  cancel.addEventListener('click',()=>action(()=>requestJson(`/api/ai/executions/${encodeURIComponent(state.proposals[0].execution.id)}/cancel`,{})));
+  cancel.addEventListener('click',()=>action(()=>requestJson(`/api/ai/executions/${encodeURIComponent(pendingProposal()?.execution.id)}/cancel`,{})));
   debug.addEventListener('click',()=>action(async()=>{
     const token=generation;
-    const exact=await requestJson(`/api/ai/admin/executions/${encodeURIComponent(state.proposals[0].execution.id)}`,undefined,'GET');
+    const exact=await requestJson(`/api/ai/admin/executions/${encodeURIComponent((latestProposal() || selectedProposal())?.execution?.id)}`,undefined,'GET');
     if(token!==generation || modal.hidden)return;
     document.getElementById('cyclePlanningDebugOutput').textContent=JSON.stringify(exact,null,2);
     document.getElementById('cyclePlanningDebugDetails').hidden=false;
   }));
   function close(restore=true) {
     generation++;clearTimeout(timer);modal.hidden=true;trap.deactivate();busy=false;
+    onClose(cycleId,state?.summary);
     const target=trigger?.isConnected?trigger:[...document.querySelectorAll('[data-action=planning]')].find((button)=>button.dataset.id===cycleId);
     if(restore)target?.focus();
   }
@@ -160,6 +176,7 @@ export function createCyclePlanning({ i18n, user }) {
     clearTimeout(timer);
     modal.dataset.cycleId=String(id);
     cycleId=id;trigger=button;generation++;state=null;busy=false;errorCode=null;saved=options.saved || null;readFailed=false;
+    onOpen(id);
     document.getElementById('cyclePlanningAdmin').hidden=true;
     generate.textContent=t('generate');generate.className='btn-primary';
     error.hidden=true;content.replaceChildren();generate.hidden=false;generate.disabled=true;apply.hidden=true;cancel.hidden=true;debug.hidden=true;

@@ -47,12 +47,14 @@ test('Chrome cycle planning PT/EN desktop/mobile: recovered generation, proposal
    for(const language of ['en-US','pt-BR'])for(const width of [1280,768,390]){
     await command('Emulation.setDeviceMetricsOverride',{width,height:900,deviceScaleFactor:1,mobile:width===390});await delay(350);
     await evaluate(`document.querySelector('.lang-switch [data-lang="${language}"]').click()`);
-    await wait(`document.documentElement.lang==='${language}' && document.querySelector('[data-action=planning]').getAttribute('aria-label')==='${language==='pt-BR'?'Planejamento do ciclo':'Cycle planning'}'`);
+    const hasAppliedPlan=Boolean(db.prepare('SELECT 1 FROM cycle_plan_versions WHERE user_id=? AND cycle_id=?').get(account+1,account===0?'cycle':'private'));
+    const planningAction=hasAppliedPlan?(language==='pt-BR'?'Ver planejamento':'View plan'):(language==='pt-BR'?'Gerar planejamento':'Generate plan');
+    const modalTitle=language==='pt-BR'?'Planejamento do ciclo':'Cycle planning';
+    await wait(`document.documentElement.lang==='${language}' && document.querySelector('[data-action=planning]').getAttribute('aria-label')==='${planningAction}'`);
     assert.equal(await evaluate('document.documentElement.scrollWidth>innerWidth'),false);
     assert.equal(await evaluate("!!document.querySelector('[data-action=prompt]')"),account===0);
     assert.equal(await evaluate("!!document.getElementById('promptModal')"),account===0);
-    const label=language==='pt-BR'?'Planejamento do ciclo':'Cycle planning';
-    assert.equal(await evaluate("document.querySelector('[data-action=planning]').getAttribute('aria-label')"),label);
+    assert.equal(await evaluate("document.querySelector('[data-action=planning]').getAttribute('aria-label')"),planningAction);
     assert.equal(await evaluate("document.querySelector('[data-action=planning]').hasAttribute('title')"),false);
     assert.deepEqual(await controlStyle('[data-action=planning]'),await controlStyle('[data-action=edit]'));
     const point=await evaluate("(()=>{const r=document.querySelector('[data-action=planning]').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()");
@@ -65,7 +67,7 @@ test('Chrome cycle planning PT/EN desktop/mobile: recovered generation, proposal
     const callsBeforeOpen=calls;
     await loadingOpen(`${account}-${language}-${width}`);assert.equal(calls,callsBeforeOpen);assert.equal(await evaluate('document.activeElement.id'),'cyclePlanningClose');
     assert.equal(await evaluate("document.getElementById('cyclePlanningClose').getAttribute('aria-label')"),language==='pt-BR'?'Fechar':'Close');
-    assert.equal(await evaluate("document.getElementById('cyclePlanningHeading').textContent"),label);
+    assert.equal(await evaluate("document.getElementById('cyclePlanningHeading').textContent"),modalTitle);
     assert.equal(await evaluate("!!document.getElementById('appView').closest('[inert]')"),true);
     const planningClose=await controlStyle('#cyclePlanningClose');referenceClose=planningClose;
     await evaluate("document.getElementById('cycleModal').classList.remove('hidden')");
@@ -126,9 +128,9 @@ test('Chrome cycle planning PT/EN desktop/mobile: recovered generation, proposal
   socket.addEventListener('message',holdPoll);
   await command('Fetch.enable',{patterns:[{urlPattern:origin+'/api/cycles/private/planning',requestStage:'Response'}]});
   await firstPoll;await evaluate("document.getElementById('cyclePlanningCancel').click()");
-  await wait("document.getElementById('cyclePlanningStatus').textContent.includes('cancelada')");
+  await wait("document.getElementById('cyclePlanningContent').textContent.includes('Geração cancelada localmente')");
   await command('Fetch.continueResponse',{requestId:held});await delay(100);
-  assert.ok((await evaluate("document.getElementById('cyclePlanningStatus').textContent")).includes('cancelada'));
+  assert.ok((await evaluate("document.getElementById('cyclePlanningContent').textContent")).includes('Geração cancelada localmente'));
   await command('Fetch.disable');socket.removeEventListener('message',holdPoll);
   release();release=null;await delay(50);await key('Escape','Escape',27);
   // Invalid dates produce an actionable localized error without starting a call.
@@ -137,7 +139,7 @@ test('Chrome cycle planning PT/EN desktop/mobile: recovered generation, proposal
   for(const language of ['pt-BR','en-US'])for(const width of [1280,768,390]) {
    await command('Emulation.setDeviceMetricsOverride',{width,height:900,deviceScaleFactor:1,mobile:width===390});
    await evaluate(`document.querySelector('.lang-switch [data-lang="${language}"]').click()`);
-    await wait(`document.documentElement.lang==='${language}' && document.querySelector('[data-action=planning]').getAttribute('aria-label')==='${language==='pt-BR'?'Planejamento do ciclo':'Cycle planning'}'`);
+    await wait(`document.documentElement.lang==='${language}' && document.querySelector('[data-action=planning]').getAttribute('aria-label')==='${language==='pt-BR'?'Revisar planejamento':'Review plan'}'`);
    assert.equal(await evaluate("document.getElementById('cyclePlanningError').textContent"),require(`../src/public/locales/${language==='pt-BR'?'pt':'en'}.json`).cyclePlanning.errors.planningTargetDateInvalid);
    await capture(`error-${language}-${width}`);
    assert.equal(await evaluate('document.activeElement.id'),'cyclePlanningError');
@@ -165,7 +167,7 @@ test('Chrome cycle planning PT/EN desktop/mobile: recovered generation, proposal
   await evaluate("document.querySelector('[data-action=edit]').click();document.getElementById('cyclePrimaryGoal').value='Edited synthetic goal';document.getElementById('cycleForm').requestSubmit()");
   await wait("document.getElementById('cycleModal').classList.contains('hidden') && document.getElementById('cycleList').textContent.includes('Edited synthetic goal')");
   await evaluate("document.querySelector('.lang-switch [data-lang=\"en-US\"]').click()");
-  await wait("document.documentElement.lang==='en-US' && document.querySelector('[data-action=planning]').getAttribute('aria-label')==='Cycle planning'");
+  await wait("document.documentElement.lang==='en-US' && document.querySelector('[data-action=planning]').getAttribute('aria-label')==='View details'");
   assert.equal(await evaluate("!!document.querySelector('[data-action=prompt]')"),false);
   await evaluate("(()=>{const b=document.createElement('button');b.dataset.action='prompt';b.dataset.id='private';document.getElementById('cycleList').append(b);b.click();b.remove();})()");await delay(100);
   assert.equal(promptRequests,promptsBeforeManual);assert.equal(calls,paidBeforeManual);

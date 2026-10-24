@@ -540,6 +540,14 @@ product step, recovers persisted execution/proposal state and uses backend plan
 freshness. No-op saves preserve revisions; real edits/reversals invalidate as
 before. The original free cycle prompt is admin-only and explicitly requested;
 no save opens it. See the [presentation/access contract](ai-cycle-planning.md#presentation-and-free-prompt-access).
+The branch also presents planning status separately from active/inactive cycle
+state. `GET /api/cycles` includes an owner-scoped summary only; a current applied
+plan remains primary across failed updates, and the newest usable current proposal
+is selected deterministically without hiding an earlier valid proposal after a
+later failed attempt. Read errors do not become false “no plan” states. The card
+icon still opens the existing modal without generating. This status projection
+is branch-only with #69 and is not integrated into main before merge; details are
+in the [planning-status contract](ai-cycle-planning.md#per-cycle-planning-status-current-pr-branch).
 The branch also repairs older cycle-planning schemas missing the applied-plan
 fingerprint without replacing records; those legacy plans remain readable and
 are conservatively marked outdated.

@@ -29,6 +29,39 @@ function translateDistance(messages, distance) {
   const translated = t(messages, key);
   return (translated !== key && translated) ? translated : distance;
 }
+function planningActionKey(summary) {
+  const status=summary?.status;
+  if (status==='none' && summary.canGenerate===false) return null;
+  return ({
+    none: 'generate', pending: 'viewProgress', failed: 'viewDetails',
+    proposal_ready: 'reviewProposal', applied_current: 'viewPlan',
+    applied_outdated: 'reviewPlan', applied_incompatible: 'reviewPlan',
+    unavailable: 'viewDetails', read_error: 'viewDetails',
+  })[status] || 'open';
+}
+function planningSecondaryKey(status) {
+  return ({
+    new_pending: 'newPending', new_proposal_ready: 'newProposalReady',
+    update_failed: 'updateFailed', unavailable: 'unavailable',
+  })[status] || null;
+}
+function renderPlanningIndicator(card, summary, messages) {
+  const indicator=card.querySelector('[data-cycle-planning-status]');
+  const primary=indicator?.querySelector('[data-cycle-planning-primary]');
+  const secondary=indicator?.querySelector('[data-cycle-planning-secondary]');
+  const button=card.querySelector('[data-action="planning"]');
+  const tooltip=button?.querySelector('.custom-tooltip');
+  if (!indicator || !primary || !secondary || !button || !summary?.status) return;
+  primary.textContent=t(messages,`cyclePlanning.cardStatus.states.${summary.status}`);
+  indicator.hidden=false;
+  const secondaryKey=summary.secondary;
+  secondary.hidden=!secondaryKey;
+  secondary.textContent=secondaryKey?t(messages,`cyclePlanning.cardStatus.secondary.${planningSecondaryKey(secondaryKey)}`):'';
+  const actionKey=planningActionKey(summary);
+  const action=actionKey?t(messages,`cyclePlanning.cardStatus.actions.${actionKey}`):t(messages,'cyclePlanning.open');
+  button.setAttribute('aria-label',action);
+  tooltip.textContent=action;
+}
 
 function renderCycleCard(cycle, messages, language = 'en-US', user = null) {
   const card = document.createElement('div');
@@ -39,6 +72,9 @@ function renderCycleCard(cycle, messages, language = 'en-US', user = null) {
   const statusClass = `status-${cycle.status}`;
   const statusLabel = t(messages, `cycles.status.${cycle.status}`);
   const displayDistance = translateDistance(messages, cycle.distance);
+  const planningStatus=cycle.planningSummary?.status;
+  const actionKey=planningActionKey(cycle.planningSummary);
+  const planningAction=planningStatus && actionKey ? t(messages,`cyclePlanning.cardStatus.actions.${actionKey}`) : t(messages,'cyclePlanning.open');
 
   card.innerHTML = `
     <div class="cycle-card-header">
@@ -51,6 +87,10 @@ function renderCycleCard(cycle, messages, language = 'en-US', user = null) {
       ${cycle.start_date ? `<span><strong>${t(messages, 'cycles.startDate')}:</strong> ${escapeHtml(formatLocalizedDate(cycle.start_date, language))}</span>` : ''}
       ${cycle.primary_goal ? `<span><strong>${t(messages, 'cycles.primaryGoal')}:</strong> ${escapeHtml(cycle.primary_goal)}</span>` : ''}
     </div>
+    <p class="cycle-planning-indicator" data-cycle-planning-status hidden>
+      <span data-cycle-planning-primary></span>
+      <span class="cycle-planning-secondary" data-cycle-planning-secondary hidden></span>
+    </p>
     <div class="cycle-card-actions">
       ${cycle.status === 'active' ? `
         <button type="button" class="btn-icon cycle-edit-btn" data-action="edit" data-id="${cycle.id}" aria-label="${t(messages, 'cycles.edit')}">
@@ -72,11 +112,12 @@ function renderCycleCard(cycle, messages, language = 'en-US', user = null) {
           <div class="custom-tooltip" data-i18n="cycles.promptTooltip">${escapeHtml(t(messages, 'cycles.promptTooltip'))}</div>
         </button>
       ` : ''}
-      <button type="button" class="btn-icon" data-action="planning" data-id="${cycle.id}" aria-label="${escapeHtml(t(messages, 'cyclePlanning.open'))}">
+      <button type="button" class="btn-icon" data-action="planning" data-id="${cycle.id}" aria-label="${escapeHtml(planningAction)}">
         <i data-lucide="calendar-range" aria-hidden="true"></i>
-        <div class="custom-tooltip">${escapeHtml(t(messages, 'cyclePlanning.open'))}</div>
+        <div class="custom-tooltip">${escapeHtml(planningAction)}</div>
       </button>
     </div>`;
+  renderPlanningIndicator(card,cycle.planningSummary,messages);
   return card;
 }
 
@@ -368,8 +409,50 @@ export async function initCyclesPage() {
 
   const i18n = getShellI18n();
   const cycles = [];
-  let listRevision = 0, activeRead = 0;
-  const planning = createCyclePlanning({i18n,user});
+  let listRevision = 0, activeRead = 0, summaryEpoch = 0, summaryRead = 0, summaryTimer = null;
+  const pendingSummaryCycles = new Set();
+  const planningModal=document.getElementById('cyclePlanningModal');
+  const summaryIsPending=(summary)=>summary?.status==='pending' || summary?.secondary==='new_pending';
+  function schedulePlanningSummaryRead() {
+    clearTimeout(summaryTimer);
+    if (!planningModal.hidden || document.visibilityState==='hidden' ||
+        (!pendingSummaryCycles.size && !cycles.some((cycle)=>summaryIsPending(cycle.planningSummary)))) return;
+    summaryTimer=setTimeout(async()=>{
+      const request=++summaryRead, epoch=summaryEpoch;
+      if (!planningModal.hidden || document.visibilityState==='hidden') {
+        schedulePlanningSummaryRead();
+        return;
+      }
+      try {
+        const result=await requestJson('/api/cycles',undefined,'GET');
+        if(request!==summaryRead || epoch!==summaryEpoch || planningModal.hidden===false) return;
+        const latest=new Map(result.cycles.map((cycle)=>[String(cycle.id),cycle.planningSummary]));
+        for (const id of [...pendingSummaryCycles]) if (!latest.has(id)) pendingSummaryCycles.delete(id);
+        for(const cycle of cycles) {
+          const summary=latest.get(String(cycle.id));
+          if(summary) {
+            if(summary.status==='read_error' && cycle.planningSummary?.status && cycle.planningSummary.status!=='read_error') continue;
+            cycle.planningSummary=summary;
+            if(summaryIsPending(summary))pendingSummaryCycles.add(String(cycle.id));
+            else pendingSummaryCycles.delete(String(cycle.id));
+            const card=[...cycleListEl.querySelectorAll('.cycle-card')].find((item)=>item.dataset.cycleId===String(cycle.id));
+            if(card)renderPlanningIndicator(card,summary,i18n.messages);
+          }
+        }
+      } catch { /* A read failure keeps the last confirmed summary. */ }
+      schedulePlanningSummaryRead();
+    },3000);
+  }
+  const planning = createCyclePlanning({i18n,user,onSummaryChange(id,summary){
+    if (!summary?.status) return;
+    summaryEpoch++;
+    if(summaryIsPending(summary))pendingSummaryCycles.add(String(id));
+    else pendingSummaryCycles.delete(String(id));
+    const cycle=cycles.find((item)=>String(item.id)===String(id));
+    if (cycle) cycle.planningSummary=summary;
+    const card=[...cycleListEl.querySelectorAll('.cycle-card')].find((item)=>item.dataset.cycleId===String(id));
+    if (card) renderPlanningIndicator(card,summary,i18n.messages);
+  },onGenerationRequested(id){pendingSummaryCycles.add(String(id));schedulePlanningSummaryRead();},onOpen(){clearTimeout(summaryTimer);summaryRead++;},onClose(){schedulePlanningSummaryRead();}});
 
   const addBtn = document.getElementById('addCycleBtn');
   const modalCloseBtn = document.getElementById('cycleModalCloseBtn');
@@ -385,6 +468,7 @@ export async function initCyclesPage() {
     setActiveButton(cycles.some((cycle) => cycle.status === 'active'));
     return planningButton(saved.id);
   }});
+  document.addEventListener('visibilitychange',schedulePlanningSummaryRead);
   function setActiveButton(active) {
     addBtn.disabled = active;
     addBtn.closest('.add-cycle-wrapper').querySelector('.custom-tooltip').textContent = active ? t(i18n.messages, 'cycles.disabledTooltip') : '';
@@ -469,7 +553,7 @@ export async function initCyclesPage() {
   try {
     const revision = listRevision;
     const fetched = await fetchCycles();
-    if (revision === listRevision) { cycles.push(...fetched);renderList(cycles, i18n.messages, i18n.language, user); }
+    if (revision === listRevision) { cycles.push(...fetched);renderList(cycles, i18n.messages, i18n.language, user);schedulePlanningSummaryRead(); }
   } catch { /* load failed — non-critical */ }
 
   await checkActiveCycle();

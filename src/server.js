@@ -2,6 +2,8 @@
 
 const path = require('node:path');
 const { registerAiRoutes } = require('./ai/routes');
+const { readAiConfig } = require('./ai/config');
+const { readCyclePlanningSummary } = require('./ai/cycle-plans');
 const Fastify = require('fastify');
 const multipart = require('@fastify/multipart');
 const fastifyStatic = require('@fastify/static');
@@ -334,6 +336,14 @@ async function buildServer(options = {}) {
 
   if (options.db) {
     const db = options.db;
+    const aiConfig = options.aiConfig || readAiConfig();
+    const aiService = registerAiRoutes(app, { db, requireAuth, config: aiConfig, operations: options.aiOperations, client: options.aiClient });
+    const cycleWithPlanningSummary = (cycle,userId) => {
+      let planningSummary;
+      try { planningSummary=readCyclePlanningSummary(db,userId,cycle.id,aiService,aiConfig); }
+      catch { planningSummary={status:'read_error',secondary:null,available:Boolean(aiConfig.enabled),canGenerate:false}; }
+      return { ...cycle,planningSummary };
+    };
 
     app.post('/api/auth/register', async (request, reply) => {
       try {
@@ -386,8 +396,6 @@ async function buildServer(options = {}) {
       });
       return { status: 'ok' };
     });
-
-    registerAiRoutes(app, { db, requireAuth, config: options.aiConfig, operations: options.aiOperations, client: options.aiClient });
 
     app.get('/api/me', { preHandler: requireAuth }, async (request) => {
       return { user: request.user };
@@ -1075,7 +1083,8 @@ async function buildServer(options = {}) {
 
     // ── Training Cycles CRUD ────────────────────────────────────
     app.get('/api/cycles', { preHandler: requireAuth }, async (request) => {
-      const cycles = getCyclesByUserId(db, request.user.id);
+      const cycles = getCyclesByUserId(db, request.user.id)
+        .map((cycle) => cycleWithPlanningSummary(cycle,request.user.id));
       return { cycles };
     });
 
@@ -1087,7 +1096,7 @@ async function buildServer(options = {}) {
     app.post('/api/cycles', { preHandler: requireAuth }, async (request, reply) => {
       try {
         const cycle = createCycle(db, request.user.id, request.body);
-        return reply.code(201).send({ cycle });
+        return reply.code(201).send({ cycle: cycleWithPlanningSummary(cycle,request.user.id) });
       } catch (error) {
         if (error instanceof CycleError) {
           return reply.code(error.status).send({ error: error.message });
@@ -1102,7 +1111,7 @@ async function buildServer(options = {}) {
         if (!cycle) {
           return reply.code(404).send({ error: 'Cycle not found.' });
         }
-        return { cycle };
+        return { cycle: cycleWithPlanningSummary(cycle,request.user.id) };
       } catch (error) {
         if (error instanceof CycleError) {
           return reply.code(error.status).send({ error: error.message });

@@ -615,6 +615,21 @@ Product AI generation is owner-authorized for both roles, never admin-only.
 “Planejamento do ciclo” / “Cycle planning” is a `.btn-icon` card action with decorative
 Lucide `calendar-range`, translated accessible name and existing hover/focus
 custom tooltip, including on inactive cycles. Opening reads planning only.
+The cycle state badge remains independent from a localized planning-status line.
+`GET /api/cycles` attaches only a compact owner-scoped `planningSummary` (status,
+short secondary state, availability and generation eligibility); it never sends
+plan text, prompts, context or diagnostics for card rendering. Proposal selection
+is deterministic: scan the newest 20 owned proposals in descending sequence and
+select the first current, RPE-compatible, domain-valid, unapplied proposal whose
+base version matches the applied version. A later failed attempt does not hide
+an earlier usable proposal. Applied planning remains primary; a pending update,
+ready proposal, failed update or unavailable AI appears separately. Incompatible
+RPE and source freshness have distinct statuses. Summary read failures do not
+become “no plan” or generation failures, and a polling read error cannot replace
+a previously confirmed card state. The list is polled in one request only while
+a visible page has pending cycle work; the open modal uses its existing poll.
+The one card icon always opens the modal; only its explicit Generate action can
+enqueue work. Opening, listing, refreshing and language changes are free reads.
 The product modal uses CRUD `.modal-card`/`.modal-header`/Lucide x and
 `.form-actions`, with one scrollable body and aligned wrapping footer; do not
 reuse `.prompt-modal-card` or `.prompt-modal-actions` padding. Proposal and

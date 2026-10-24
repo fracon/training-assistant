@@ -1097,6 +1097,33 @@
     "proposalConflict": "Another proposal was applied after this generation. Generate a new proposal using the current planning version.",
     "inactiveCycle": "This cycle is no longer active. Saved planning remains available.",
     "open": "Cycle planning",
+    "cardStatus": {
+      "states": {
+        "none": "No plan yet",
+        "pending": "Generating plan…",
+        "failed": "Planning not completed",
+        "proposal_ready": "Proposal ready for review",
+        "applied_current": "Plan up to date",
+        "applied_outdated": "Plan out of date",
+        "applied_incompatible": "Plan needs review: incompatible effort scale",
+        "unavailable": "AI planning unavailable",
+        "read_error": "Planning status could not be loaded"
+      },
+      "secondary": {
+        "newPending": "Generating new proposal…",
+        "newProposalReady": "New proposal ready for review",
+        "updateFailed": "Update not completed",
+        "unavailable": "AI planning is temporarily unavailable"
+      },
+      "actions": {
+        "generate": "Generate plan",
+        "viewProgress": "View progress",
+        "viewDetails": "View details",
+        "reviewProposal": "Review proposal",
+        "viewPlan": "View plan",
+        "reviewPlan": "Review plan"
+      }
+    },
     "title": "Cycle planning",
     "hint": "Organize your preparation into phases and priorities using the information available in Kinesis. Weekly workouts are requested separately.",
     "generate": "Generate plan",
