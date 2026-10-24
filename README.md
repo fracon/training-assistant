@@ -63,12 +63,22 @@ contexts until explicit replacement; compatible plans stay usable. See the
 This correction uses simulated providers only; the prior real call tested v2,
 not v3 or the new validator.
 
-**Operational setup:** `.env.example` now supplies `AI_MAX_OUTPUT_TOKENS=8192` and
-`AI_TIMEOUT_MS=120000`. Set both explicitly in existing local/Compose runtime
-configuration and restart/recreate the backend. Unset backend and Compose
-fallbacks remain 2048/60000 and are **not validated sufficient for full plans**.
-This task changed neither the main `.env` nor production. See the
+**Operational setup:** Backend, Compose and `.env.example` default to
+`AI_MAX_OUTPUT_TOKENS=8192` and `AI_TIMEOUT_MS=120000`. Existing local/Compose
+values such as 2048/60000 continue to override them and must be updated by the
+operator. This task changed neither the main `.env` nor production. See the
 [configuration guide](docs/ai-foundation.md#configuration-and-deployment).
+
+An explicit HTTP 429 may be retried only within `AI_RETRIES`: Kinesis honors a
+valid `Retry-After` up to 60 seconds, with a one-second minimum, or uses bounded
+exponential backoff with jitter when the header is missing/invalid. A wait over
+60 seconds ends with a temporary-unavailability message instead of an early
+request. The queued due time survives restart; cancellation, account/source
+checks, quotas and the existing reservation are revalidated before dispatch.
+Timeouts, uncertain transport/5xx outcomes, incomplete/invalid/refused output,
+RPE incompatibility and persistence failure are never replayed automatically.
+Progress can be closed and reopened; a failed status read offers a free read
+retry, not another generation.
 
 The cycle card's **Cycle planning / Planejamento do ciclo** icon uses the existing custom
 hover/keyboard tooltip and opens saved planning without a paid call or cycle

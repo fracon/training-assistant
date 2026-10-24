@@ -11,6 +11,7 @@ const {
 } = require('./prompt-service');
 const { RATES } = require('./config');
 const { buildPayload, createResponsesClient } = require('./client');
+const { retryDelayMs } = require('./retry-policy');
 const TERMINAL = ['completed', 'failed', 'uncertain', 'cancelled', 'outdated'];
 function createExecutionService({
   db,
@@ -18,6 +19,9 @@ function createExecutionService({
   operations = {},
   client,
   now = () => new Date().toISOString(),
+  random = Math.random,
+  setTimer = setTimeout,
+  clearTimer = clearTimeout,
 }) {
   const limits = config.limits;
   const call =
@@ -29,6 +33,16 @@ function createExecutionService({
   let stopped = false;
   let scheduled = false;
   const inFlight = new Map();
+  const retryTimers = new Map();
+  function clearRetry(id) {
+    const timer=retryTimers.get(id);
+    if(timer!==undefined){clearTimer(timer);retryTimers.delete(id);}
+  }
+  function scheduleRetry(id, dueAt) {
+    const delay=Math.max(0,Date.parse(dueAt)-Date.parse(now()));
+    const timer=setTimer(()=>{retryTimers.delete(id);schedule();},delay);
+    retryTimers.set(id,timer);
+  }
   function promptIsCurrent(row) {
     try {
       const settings = JSON.parse(row.configuration_json);
@@ -360,6 +374,9 @@ function createExecutionService({
           .prepare('SELECT * FROM ai_executions WHERE id = ?')
           .get(id);
         if (!row || row.state !== 'queued') return;
+        const cfg=JSON.parse(row.configuration_json);
+        const dueAt=Date.parse(row.updated_at);
+        if(Number.isFinite(dueAt) && dueAt>Date.parse(now()))return;
         if (
           !config.enabled ||
           row.created_at.slice(0, 10) !== now().slice(0, 10)
@@ -368,6 +385,20 @@ function createExecutionService({
             error: config.enabled ? 'reservationExpired' : 'aiUnavailable',
             knownUnbilled: true,
           });
+          return;
+        }
+        const day=row.created_at.slice(0,10);
+        const userUsage=db.prepare('SELECT tokens,cost,calls FROM ai_usage WHERE user_id=? AND day=?').get(row.user_id,day);
+        const globalUsage=db.prepare('SELECT tokens,cost,calls FROM ai_global_usage WHERE day=?').get(day);
+        const reservationCurrent=row.settled===0 && row.attempts<=cfg.retries && row.reserved_tokens>0 && row.reserved_cost>=0 &&
+          userUsage && globalUsage && userUsage.tokens>=row.reserved_tokens && globalUsage.tokens>=row.reserved_tokens &&
+          userUsage.cost+1e-9>=row.reserved_cost && globalUsage.cost+1e-9>=row.reserved_cost &&
+          userUsage.calls>=cfg.retries+1 && globalUsage.calls>=cfg.retries+1 &&
+          userUsage.tokens<=limits.AI_DAILY_TOKENS_USER && globalUsage.tokens<=limits.AI_DAILY_TOKENS_GLOBAL &&
+          userUsage.cost<=limits.AI_DAILY_USD_USER && globalUsage.cost<=limits.AI_DAILY_USD_GLOBAL &&
+          userUsage.calls<=limits.AI_DAILY_CALLS_USER && globalUsage.calls<=limits.AI_DAILY_CALLS_GLOBAL;
+        if(!reservationCurrent){
+          finish(row,'failed',{error:'usageLimit',knownUnbilled:true});
           return;
         }
         const context = JSON.parse(row.context_json);
@@ -391,7 +422,6 @@ function createExecutionService({
           return;
         }
         const operation = operations[row.purpose];
-        const cfg = JSON.parse(row.configuration_json);
         if (!operation || operation.version !== cfg.adapterVersion) {
           finish(row, 'failed', {
             error: 'adapterUnavailable',
@@ -402,7 +432,7 @@ function createExecutionService({
         if (
           !db
             .prepare(
-              "UPDATE ai_executions SET state='running',attempts=attempts+1,updated_at=? WHERE id = ? AND state='queued'",
+              "UPDATE ai_executions SET state='running',attempts=attempts+1,error_code=NULL,updated_at=? WHERE id = ? AND state='queued'",
             )
             .run(now(), id).changes
         )
@@ -425,16 +455,21 @@ function createExecutionService({
       response = await call(JSON.parse(row.payload_json),{clientRequestId});
     } catch (error) {
       const code=error instanceof AiError?error.code:'providerOutcomeUncertain';
-      const diagnostic=sanitizeDiagnostic({...error?.diagnostic,stage:error?.diagnostic?.stage || (['providerOutcomeUncertain','providerTimeout'].includes(code)?'transport':'provider_http'),clientRequestId,code,durationMs:Date.now()-started});
+      const retry=code==='providerRateLimited'?retryDelayMs({retryAfterMs:error?.retryAfterMs,attempt:row.attempts,random}):null;
+      let retryAt=null;
+      const disposition=code!=='providerRateLimited'?undefined:row.attempts>cfg.retries?'attempt_limit':retry.disposition;
+      const diagnostic=sanitizeDiagnostic({...error?.diagnostic,stage:error?.diagnostic?.stage || (['providerOutcomeUncertain','providerTimeout'].includes(code)?'transport':'provider_http'),clientRequestId,code,durationMs:Date.now()-started,retryDisposition:disposition,retryDelayMs:disposition==='scheduled'?retry.delayMs:undefined});
       db.transaction(()=>{
-        const current=db.prepare('SELECT state FROM ai_executions WHERE id = ?').get(id);
-        if(code==='providerRateLimited' && row.attempts<=cfg.retries && current?.state==='running' && !stopped) {
+        const current=db.prepare('SELECT state,settled FROM ai_executions WHERE id = ?').get(id);
+        if(code==='providerRateLimited' && row.attempts<=cfg.retries && current?.state==='running' && current.settled===0 && !stopped && retry.disposition==='scheduled') {
           saveDiagnostic(db,id,row.attempts,diagnostic);
-          db.prepare("UPDATE ai_executions SET state='queued',updated_at=? WHERE id=? AND state='running'").run(now(),id);
+          retryAt=new Date(Date.parse(now())+retry.delayMs).toISOString();
+          db.prepare("UPDATE ai_executions SET state='queued',error_code='providerRateLimited',updated_at=? WHERE id=? AND state='running' AND settled=0").run(retryAt,id);
         } else finish(row,['providerOutcomeUncertain','providerTimeout'].includes(code)?'uncertain':'failed',{
           error:code,diagnostic,knownUnbilled:['providerRateLimited','providerRejected'].includes(code),
         });
       }).immediate();
+      if(retryAt)scheduleRetry(id,retryAt);
       return;
     }
     let valid=false,validation=null;
@@ -465,10 +500,12 @@ function createExecutionService({
     if (stopped || !db.open) return;
     const rows = db
       .prepare(
-        "SELECT id,user_id FROM ai_executions WHERE state='queued' ORDER BY created_at,id",
+        "SELECT id,user_id,updated_at FROM ai_executions WHERE state='queued' ORDER BY created_at,id",
       )
       .all();
     for (const row of rows) {
+      if(retryTimers.has(row.id) || inFlight.has(row.id))continue;
+      if(Date.parse(row.updated_at)>Date.parse(now())){scheduleRetry(row.id,row.updated_at);continue;}
       if (inFlight.size >= limits.AI_CONCURRENCY_GLOBAL) break;
       const activeForUser = [...inFlight.values()].filter(
         (job) => job.userId === row.user_id,
@@ -482,7 +519,7 @@ function createExecutionService({
     }
   }
   function cancel(userId, id) {
-    return db
+    const result=db
       .transaction(() => {
         const result = get(userId, id);
         const row = db
@@ -500,6 +537,8 @@ function createExecutionService({
         };
       })
       .immediate();
+    if(result.state==='cancelled')clearRetry(id);
+    return result;
   }
   function recover() {
     for (const row of db
@@ -534,6 +573,7 @@ function createExecutionService({
   }
   async function stop() {
     stopped = true;
+    for(const id of retryTimers.keys())clearRetry(id);
     await Promise.allSettled([...inFlight.values()].map((job) => job.task));
   }
   return {

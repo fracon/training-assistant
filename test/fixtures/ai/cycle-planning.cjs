@@ -27,6 +27,6 @@ function harness(db,client){
  const service=createExecutionService({db,config,operations:{cycle:adapter},client:client || (async payload=>({value:planFor(JSON.parse(payload.input[0].content[0].text).context),usage:{input:200,output:300,cached:0},error:null}))});
  return {config,adapter,service};
 }
-async function complete(s,id){for(let i=0;i<100;i++){const r=s.get(1,id);if(!['running','queued'].includes(r.state))return r;await delay(5);}throw Error('not complete');}
+async function complete(s,id){for(let i=0;i<600;i++){const r=s.get(1,id);if(!['running','queued'].includes(r.state))return r;await delay(5);}throw Error('not complete');}
 
 module.exports={fixture,planFor,harness,complete,today,future};

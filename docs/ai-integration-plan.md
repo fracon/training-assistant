@@ -34,10 +34,20 @@ Functional evidence on 2026-10-18: one isolated real Chrome generation completed
 with 8192 output tokens, 120s timeout and zero retries; the reviewed four-phase
 proposal was explicitly applied and recovered after reload. This demonstrates the
 synthetic end-to-end path, not general model quality. Operational configuration
-must explicitly set those limits; the runtime example now does so while legacy
-unset/Compose fallbacks remain unchanged. See the [evaluation record](ai-cycle-planning.md#end-to-end-real-evaluation-2026-10-18)
+uses those aligned backend/example/Compose defaults, while explicit old operator
+values continue to override them. See the [evaluation record](ai-cycle-planning.md#end-to-end-real-evaluation-2026-10-18)
 for usage, budget and the RPE-scale limitation. No second call, live configuration
 change or phase #64/#65 implementation was needed.
+
+Current #69 branch follow-up aligns `AI_MAX_OUTPUT_TOKENS=8192` and
+`AI_TIMEOUT_MS=120000` defaults and adds bounded delayed recovery only for HTTP
+429. The retry waits for validated `Retry-After` (up to 60 seconds) or bounded
+jittered backoff, persists its due time for restart recovery, and revalidates
+cancellation, account, sources and reservation before dispatch. Other uncertain
+or invalid results are not replayed. The product UI distinguishes progress-read
+failure from generation failure and provides a free read retry. These changes
+are branch-only until merge; the real evaluation above predates them and is not
+their live-provider validation.
 
 Status: documentation integrated via PRs #66/#68; phase 0 integrated through
 merged PR #67 (`648d6a0`). Phase 1 is implemented on the issue #63 branch,

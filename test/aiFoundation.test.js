@@ -88,7 +88,7 @@ function failure(fn, code) {
   assert.throws(fn, (e) => e instanceof AiError && e.code === code);
 }
 async function wait(s, user, id) {
-  for (let i = 0; i < 100; i++) {
+  for (let i = 0; i < 600; i++) {
     const r = s.get(user, id);
     if (!['queued', 'running'].includes(r.state)) return r;
     await delay(5);
@@ -673,6 +673,9 @@ test('rate limit retry is bounded; uncertain outcomes and invalid responses are 
   ]) {
     const fixture = setup();
     let calls = 0;
+    let clock=Date.parse('2026-10-14T12:00:00.000Z');
+    let timerId=0;
+    const timers=new Map();
     const s = service(fixture, {
       operations: {
         analysis:
@@ -696,8 +699,18 @@ test('rate limit retry is bounded; uncertain outcomes and invalid responses are 
         if (code === 'unknown') throw Error('sensitive message');
         throw new AiError(code, 502);
       },
+      now:()=>new Date(clock).toISOString(),
+      random:()=>0,
+      setTimer:(fn,ms)=>{const id=++timerId;timers.set(id,{fn,ms});return id;},
+      clearTimer:id=>timers.delete(id),
     });
     const row = s.enqueue(1, body);
+    if(code==='providerRateLimited') {
+      for(let i=0;i<100 && calls===0;i++)await delay(5);
+      assert.equal(calls,1);
+      const [id,timer]=[...timers.entries()][0];assert.ok(timer);timers.delete(id);
+      clock+=timer.ms;timer.fn();
+    }
     const result = await wait(s, 1, row.id);
     assert.equal(calls, code === 'providerRateLimited' ? 2 : 1);
     assert.equal(
@@ -1602,7 +1615,7 @@ test('429 retry and cancellation arbitrate atomically across two SQLite connecti
       prepare=db.prepare.bind(db);
       db.prepare=(sql)=>{
         const stmt=prepare(sql);
-        if(timing==='after-read' && sql==='SELECT state FROM ai_executions WHERE id = ?') {
+        if(timing==='after-read' && sql==='SELECT state,settled FROM ai_executions WHERE id = ?') {
           const get=stmt.get.bind(stmt);
           stmt.get=(...args)=>{
             const row=get(...args);
@@ -1675,7 +1688,13 @@ test('runtime example provides the evaluated full-plan limits without enabling p
   assert.equal(config.models.cycle, 'gpt-6.1-sol');
   assert.equal(config.limits.AI_MAX_OUTPUT_TOKENS, 8192);
   assert.equal(config.limits.AI_TIMEOUT_MS, 120000);
-  // Existing installations retain their bounded fallback; setup must be explicit.
-  assert.equal(readAiConfig({}).limits.AI_MAX_OUTPUT_TOKENS, 2048);
-  assert.equal(readAiConfig({}).limits.AI_TIMEOUT_MS, 60000);
+  // Runtime, Compose and the example agree while AI remains disabled by default.
+  assert.equal(readAiConfig({}).limits.AI_MAX_OUTPUT_TOKENS, 8192);
+  assert.equal(readAiConfig({}).limits.AI_TIMEOUT_MS, 120000);
+  const explicitLegacy=readAiConfig({AI_MAX_OUTPUT_TOKENS:'2048',AI_TIMEOUT_MS:'60000'});
+  assert.equal(explicitLegacy.limits.AI_MAX_OUTPUT_TOKENS,2048);
+  assert.equal(explicitLegacy.limits.AI_TIMEOUT_MS,60000);
+  const compose=readFileSync(resolve(__dirname,'../docker-compose.yml'),'utf8');
+  assert.match(compose,/AI_MAX_OUTPUT_TOKENS: \$\{AI_MAX_OUTPUT_TOKENS:-8192\}/);
+  assert.match(compose,/AI_TIMEOUT_MS: \$\{AI_TIMEOUT_MS:-120000\}/);
 });

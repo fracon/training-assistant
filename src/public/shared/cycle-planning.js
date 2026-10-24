@@ -20,12 +20,13 @@ export function createCyclePlanning({ i18n, user }) {
   const t = (key) => translate(i18n.messages,`cyclePlanning.${key}`);
   const trap=createDialogFocusTrap(modal,close);
   const el=(tag,text,className)=>{const n=document.createElement(tag);if(text!=null)n.textContent=text;if(className)n.className=className;return n;};
-  function showError(e, read=false) {
+  function showError(e, read=false, focus=true) {
     if (read) readFailed=true;
-    errorCode=read ? (saved ? 'savedLoadError' : 'loadError') : e?.codes?.[0] || 'generic';
+    const running=state?.proposals?.[0]?.execution && ['queued','running'].includes(state.proposals[0].execution.state);
+    errorCode=read ? (running ? 'progressLoadError' : saved ? 'savedLoadError' : 'loadError') : e?.codes?.[0] || 'generic';
     const localized=t(`errors.${errorCode}`);
     error.textContent=localized.startsWith('cyclePlanning.')?t('errors.generic'):localized;
-    error.hidden=false;render();error.focus();
+    error.hidden=false;render();if(focus)error.focus();
   }
   function renderPlan(plan,heading,version=null) {
     const section=el('section',null,'cycle-plan-section');
@@ -58,7 +59,7 @@ export function createCyclePlanning({ i18n, user }) {
     document.getElementById('cyclePlanningHint').textContent=t(hint);
     later.textContent=t(state?.applied?.outdated ? 'keep' : current || state?.available===false || state?.canGenerate===false ? 'done' : 'notNow');
     later.className='btn-secondary';
-    retry.hidden=!readFailed;retry.disabled=busy;retry.className='btn-primary';
+    retry.hidden=!readFailed;retry.disabled=busy;retry.className='btn-primary';retry.textContent=t('retryLoad');
     generate.hidden=!state || readFailed;
     if(!state){status.textContent=t(readFailed && !busy?'loadFailed':'loading');generate.textContent=t('generate');return;}
     const latest=state.proposals[0];const execution=latest?.execution;
@@ -76,7 +77,9 @@ export function createCyclePlanning({ i18n, user }) {
     cancel.hidden=!running;cancel.disabled=busy;
     debug.hidden=user.role!=='admin' || !execution;
     document.getElementById('cyclePlanningAdmin').hidden=debug.hidden;
-    status.textContent=readFailed?t(busy?'loading':'loadFailed'):busy?t('loading'):!state.available?t('unavailable'):!state.canGenerate?t('inactiveCycle'):latest?.applied?t(state.applied?.outdated || state.applied?.compatibilityError?'appliedNeedsReview':'applied'):latest?.compatibilityError?t('proposalIncompatible'):candidate && (execution.outdated || conflict)?t('proposalOutdated'):execution?t(`states.${execution.state}`):t(saved?'readyToPlan':'manualIndependent');
+    const statusMessage=readFailed?t(busy?'loading':errorCode==='progressLoadError'?'progressLoadFailed':'loadFailed'):busy?t('loading'):!state.available?t('unavailable'):!state.canGenerate?t('inactiveCycle'):latest?.applied?t(state.applied?.outdated || state.applied?.compatibilityError?'appliedNeedsReview':'applied'):latest?.compatibilityError?t('proposalIncompatible'):candidate && (execution.outdated || conflict)?t('proposalOutdated'):execution?.error==='providerRateLimited' && running?t('retryWaiting'):execution?.state==='queued'?(execution?.error==='providerRateLimited'?t('retryWaiting'):t('states.queued')):execution?.state==='running'?t('states.running'):execution?t(`states.${execution.state}`):t(saved?'readyToPlan':'manualIndependent');
+    // Avoid rewriting the polite live region on every polling response.
+    if(status.textContent!==statusMessage)status.textContent=statusMessage;
     content.replaceChildren();
     if(candidate) {
       if(latest.baseVersion!==(state.applied?.version || 0))content.append(el('p',t('proposalConflict'),'field-hint'));
@@ -92,7 +95,7 @@ export function createCyclePlanning({ i18n, user }) {
     if(!errorCode && !readFailed) {
       error.hidden=true;
       const failure=(!latest?.applied && latest?.compatibilityError) || execution?.error;
-      if(!busy && failure) {
+      if(!busy && failure && !running) {
         const message=t(`errors.${failure}`);
         error.textContent=message.startsWith('cyclePlanning.')?t('errors.generic'):message;
         error.hidden=false;
@@ -102,11 +105,18 @@ export function createCyclePlanning({ i18n, user }) {
   async function refresh(token=generation) {
     if(token!==generation || modal.hidden)return;
     const request=++readSequence;
-    const result=await requestJson(`/api/cycles/${encodeURIComponent(cycleId)}/planning`,undefined,'GET');
+    let readTimer;
+    let result;
+    try {
+      result=await Promise.race([
+        requestJson(`/api/cycles/${encodeURIComponent(cycleId)}/planning`,undefined,'GET'),
+        new Promise((_,reject)=>{readTimer=setTimeout(()=>reject(Object.assign(new Error(),{codes:['planningReadTimeout']})),10000);}),
+      ]);
+    } finally { clearTimeout(readTimer); }
     if(token!==generation || request!==readSequence || modal.hidden)return;
     state=result;readFailed=false;error.hidden=true;errorCode=null;render();clearTimeout(timer);
     if(state.proposals[0]?.execution && ['queued','running'].includes(state.proposals[0].execution.state))
-      timer=setTimeout(()=>refresh(token).catch((e)=>{if(token===generation && !modal.hidden)showError(e,true);}),1500);
+      timer=setTimeout(()=>refresh(token).catch((e)=>{if(token===generation && !modal.hidden)showError(e,true,false);}),1500);
   }
   async function action(fn, allowEmpty=false) {
     if(busy || (!state && !allowEmpty))return;
@@ -145,7 +155,7 @@ export function createCyclePlanning({ i18n, user }) {
   later.addEventListener('click',()=>close());
   retry.addEventListener('click',()=>action(async()=>{},true));
   modal.addEventListener('click',(e)=>{if(e.target===modal)close();});
-  document.addEventListener('app:languagechange',()=>{render();if(errorCode)showError({codes:[errorCode]});});
+  document.addEventListener('app:languagechange',()=>{const code=errorCode;render();if(code)showError({codes:[code]},readFailed,false);});
   return {close,async open(id,button,options={}){
     clearTimeout(timer);
     modal.dataset.cycleId=String(id);

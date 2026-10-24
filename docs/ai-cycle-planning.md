@@ -399,14 +399,14 @@ or generation occurs.
 
 Use the integrated backend `OPENAI_API_KEY`, `AI_ENABLED=true` and
 `AI_MODEL_CYCLE` (default `gpt-6.1-sol`), with no fallback. No new secret or runtime
-setting is introduced. For complete A–F planning explicitly set **AI_MAX_OUTPUT_TOKENS=8192**
+setting is introduced. Complete A–F planning defaults to **AI_MAX_OUTPUT_TOKENS=8192**
 (the existing upper bound, includes reasoning) and **AI_TIMEOUT_MS=120000**.
-These are the settings demonstrated in the real evaluation below and now supplied
-by `.env.example`. Unset backend/Compose fallbacks remain 2048/60000 and have not
-delivered this flow; existing installations must configure both values and
-restart/recreate the backend. Review the daily token/call/cost limits first.
-A timeout remains uncertain, never an automatic retry. No main environment or
-production configuration was changed.
+These are the settings demonstrated in the real evaluation below and supplied
+by `.env.example`. The defaults were subsequently aligned across backend and
+Compose; explicitly configured older values still override them and must be
+updated in the operator's environment. Review daily token/call/cost limits
+first. A timeout remains uncertain, never an automatic retry. No main
+environment or production configuration was changed.
 
 Official documentation checked on 2026-10-15 confirms
 [GPT-6.1 Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol) supports
@@ -979,12 +979,13 @@ accounts have no technical prompt control. Existing Lucide was injected locally
 for visual inspection (close 30×30, icon 18×18); external fonts were blocked by the
 standard harness. Captures are temporary, never fixtures or PR attachments.
 
-The changed example supplies the demonstrated output/timeout values without
-enabling AI or supplying a key. Backend/Compose fallbacks remain deliberately
-explicit in the foundation configuration table: **2048/60000 is not the validated
-full-plan setup**. Operators set both values in local runtime `.env` or the Compose
-environment and restart/recreate; this evaluation made no such main/production
-change. Neither 8192 nor 120s guarantees success for all input histories.
+At the time of this evaluation, the example supplied the demonstrated
+output/timeout values without enabling AI or supplying a key, while backend and
+Compose fallbacks were 2048/60000. The later configuration correction below
+aligns all three defaults. Existing explicit values still take precedence and
+must be changed in the actual runtime environment; editing an example does not
+change an existing container. Neither 8192 nor 120s guarantees success for all
+input histories.
 
 
 ### Final verification of this follow-up
@@ -1142,6 +1143,45 @@ follow-up. `git diff --check` passed.
 No functional defect or concrete blocker to the tested integration path was found.
 This is one synthetic empty-history case with the explicit operational settings,
 not broad coaching-quality, production deployment or performance certification.
-Unset legacy 2048/60000 fallbacks are still not the validated full-plan setup;
-operators must set the documented 8192/120000 runtime values. No new weekly
-workouts/analysis generation, automatic review request or merge was performed.
+At that point, unset legacy 2048/60000 fallbacks were still not the validated
+full-plan setup. The configuration correction below supersedes that operational
+guidance. No new weekly workouts/analysis generation, automatic review request
+or merge was performed.
+
+## Configuration, 429 recovery and failure UX follow-up
+
+This follow-up is implemented on the existing #69 branch and has not been
+merged. Backend parsing defaults, `.env.example`, and Compose fallbacks now agree
+on `AI_MAX_OUTPUT_TOKENS=8192` and `AI_TIMEOUT_MS=120000`; AI remains disabled by
+default. Explicit operator values continue to take precedence. Update the actual
+dotenv/Compose/shell/hosting configuration and recreate the container; changing
+`.env.example` alone does not change a running process. Model, reasoning, quotas,
+reservation policy and deployment infrastructure are unchanged. No deployment
+or paid model call was made in this follow-up. The successful 2026-10-18 real
+evaluation remains evidence for runtime `8dd42352acc145960fdc81a32ded8561f253680c`
+only, not for code changed afterward.
+
+Only an explicit HTTP 429 can be retried, and only within the execution's saved
+`AI_RETRIES` allowance. A valid `Retry-After` in seconds or HTTP-date is honored
+for 1–60 seconds; a longer requested wait ends the execution with temporary
+unavailability rather than retrying early. Missing/invalid headers use bounded
+exponential backoff with jitter (one-second minimum, 30-second cap). The due time
+is stored in the existing queued execution timestamp; no transaction remains
+open during the wait. Restart resumes the remaining wait. Cancellation and the
+retry decision remain transactional; before another call the worker rechecks
+current account activity, ownership, source versions, adapter, quota and the
+existing reservation. Reservations are held through the wait. Timeout/uncertain
+transport, 5xx, refusal, incomplete/invalid/RPE-incompatible output and
+persistence failure never replay automatically.
+
+PT/EN cycle planning now explains queued/running and 429 wait without invented
+progress, allows closing/reopening the same execution, and exposes cancellation
+while the execution is pending. A failed progress read is distinct from a
+generation failure; **Try loading again / Tentar carregar novamente** only reads
+the existing execution. Temporary provider unavailability, uncertain outcomes,
+invalid proposals and persistence failures have separate user-facing messages.
+Applying a still-valid proposal remains retryable without calling the provider.
+Identical polling updates do not rewrite the polite live region. The existing
+Chrome flow and diagnostic browser suites cover PT/EN, responsive widths,
+recovery and error states with simulated provider responses; this follow-up has
+no real-call or coaching-quality claim.

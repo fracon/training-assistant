@@ -577,9 +577,15 @@ with optimistic versions. Do not restore generic manual memory CRUD.
   never keep a transaction open during network calls. Recheck account activity,
   ownership and source versions before dispatch/access/application. Deletion or
   cancellation must never recreate data or silently refund uncertain usage.
-- Explicit 429 alone may retry, within the bound. Read execution state and
-  decide retry versus cancellation settlement in one immediate transaction;
-  a losing retry must never strand an unsettled cancelled reservation.
+- Explicit 429 alone may retry, within `AI_RETRIES`. Honor a valid
+  `Retry-After` up to 60 seconds (minimum one second); otherwise use bounded
+  exponential backoff with jitter. A requested wait beyond 60 seconds is
+  terminal and must not be shortened into an early call. Persist the due time
+  on the queued execution so restart resumes the same wait. Read execution
+  state and decide retry versus cancellation settlement in one immediate
+  transaction; a losing retry must never strand an unsettled cancelled
+  reservation. Before dispatch, recheck current account, ownership, sources,
+  adapter and the reserved quota. Never hold SQLite transactions during wait.
   Network/timeouts/5xx/transport
   uncertainty and restart-interrupted calls never replay automatically. Restart
   can dispatch untouched queued work after revalidation. Local cancellation
@@ -667,18 +673,21 @@ provider request/response IDs only in owner-scoped current-admin debug, alongsid
 HTTP/status/incomplete reason, reasoning count, duration and safe validation paths.
 Never expose this metadata through ordinary execution/polling APIs. Keep known
 usage if proposal persistence rolls back; uncertain usage retains its reservation.
-Only an explicit 429 may retry under the existing limits/cancellation transaction;
-opening, polling, parsing errors, incomplete/invalid output and uncertainty never
-start another paid operation. A failed subsequent read remains a separate error.
+Only an explicit 429 may retry under the existing limits/cancellation transaction
+and bounded wait; opening, polling, parsing errors, incomplete/invalid output and
+uncertainty never start another paid operation. A failed subsequent read remains
+a separate error with a free retry. Keep the 429 wait, ordinary queued/running
+copy, temporary-unavailability and uncertain-result copy localized in PT/EN.
+Do not rewrite the polite live region on each identical polling response.
 The product modal uses the existing alert for terminal execution reasons without
 stealing focus on polling. Test `aiDiagnostics{,.browser}.test.js` with simulated
 HTTP responses; real generation requires explicit authorization and a synthetic
 cycle, and never applies a proposal automatically.
 
-Operational setup for cycle planning must explicitly use the evaluated
-`AI_MAX_OUTPUT_TOKENS=8192` / `AI_TIMEOUT_MS=120000` values from `.env.example`.
-Unset backend/Compose fallbacks remain 2048/60000 and are not a demonstrated
-full-plan configuration; distinguish these in documentation. The 2026-10-18 real
+Operational setup for cycle planning uses the defaults
+`AI_MAX_OUTPUT_TOKENS=8192` / `AI_TIMEOUT_MS=120000` in backend, `.env.example`
+and Compose. Existing explicit environment values still override defaults and
+must be updated by the operator. The 2026-10-18 real
 isolated Chrome evaluation completed with one attempt (`AI_RETRIES=0`), reviewed,
 applied version 1 and recovered after reload, without creating training records.
 See `docs/ai-cycle-planning.md#end-to-end-real-evaluation-2026-10-18` for accounting

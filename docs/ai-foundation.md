@@ -33,8 +33,8 @@ startup does not make a provider call. Reload the cycle page after restart.
 | `AI_ENABLED` | `false` | Explicit `true` or `false` |
 | `OPENAI_API_KEY` | empty | Backend environment only; absent means unavailable |
 | `AI_MODEL_CYCLE` / `AI_MODEL_WORKOUTS` / `AI_MODEL_ANALYSIS` | `gpt-6.1-sol` | Allowlist: `gpt-6.1-sol`, `gpt-6-luna`, `gpt-6-astra`; no fallback |
-| `AI_MAX_OUTPUT_TOKENS` | 2048 | 128–8192, includes model reasoning/output allowance |
-| `AI_TIMEOUT_MS` | 60000 | 1000–180000 |
+| `AI_MAX_OUTPUT_TOKENS` | 8192 | 128–8192, includes model reasoning/output allowance |
+| `AI_TIMEOUT_MS` | 120000 | 1000–180000 |
 | `AI_CONCURRENCY_USER` / `AI_CONCURRENCY_GLOBAL` | 1 / 2 | 1–2 / 1–8 outstanding executions |
 | `AI_DAILY_TOKENS_USER` / `AI_DAILY_TOKENS_GLOBAL` | 100000 / 500000 | 1000–10000000 / 1000–100000000 |
 | `AI_DAILY_CALLS_USER` / `AI_DAILY_CALLS_GLOBAL` | 10 / 100 | 1–100 / 1–1000; reserve maximum retry attempts |
@@ -47,13 +47,13 @@ startup does not make a provider call. Reload the cycle page after restart.
 
 ### Operational cycle-planning settings
 
-For the complete A–F cycle plan use **`AI_MAX_OUTPUT_TOKENS=8192`** and
-**`AI_TIMEOUT_MS=120000`** explicitly. `.env.example` supplies these settings;
-the table above describes the unchanged backend fallbacks, not the example.
-Existing `.env` files are not rewritten when the example changes. Compose also
-retains its legacy 2048/60000 fallbacks: set both values in the operator's runtime
-configuration before recreating the container. No production setting is changed
-by this PR. Environment values take precedence over dotenv; restart after edits.
+Backend defaults, `.env.example`, and Compose fallbacks now agree on
+**`AI_MAX_OUTPUT_TOKENS=8192`** and **`AI_TIMEOUT_MS=120000`**. AI remains disabled
+by default. Existing `.env`, Compose interpolation files, shell exports and
+hosting environment values are explicit overrides and keep their old values
+until the operator changes them. No production environment or deployment is
+changed by this PR. Environment values take precedence over dotenv; recreate a
+container after changing its configuration.
 
 The 2026-10-18 isolated Chrome evaluation used the configured `gpt-6.1-sol`,
 medium reasoning, those output/timeout limits, `AI_RETRIES=0`, concurrency 1/1,
@@ -67,10 +67,9 @@ separate from the deployment's documented 429 retry policy. See the
 The earlier 2048-token exhaustion and 60s timeout remain historical failures;
 unknown usage from an earlier timeout is not refunded or relabeled as known.
 
-Older explicit values still override these recommended values: update the actual
+Older explicit values still override these defaults: update the actual
 runtime source (local `.env`, Compose `.env`/`--env-file`, shell exports or the
-hosting environment UI), not only `.env.example`. For a deployed image, obtain
-the intended build with `docker compose pull`, then recreate with
+hosting environment UI), not only `.env.example`. Recreate the container with
 `docker compose up -d --force-recreate`. A plain `docker compose restart` retains
 the container environment. Copying/editing the example cannot change an existing
 container; Compose's shell environment can also override its `.env` interpolation.
@@ -445,15 +444,23 @@ A local idempotency key returns the original execution even after reload;
 changing its request parameters returns 409. Cancellation cannot free a running
 reservation while the call remains unresolved. Known refusals, incomplete output,
 invalid JSON and invalid domain responses are terminal and never applied.
-Only explicit 429 responses may retry (bounded by AI_RETRIES). Retry eligibility
-and requeue/settlement use one immediate transaction, so a concurrent local
+Only explicit 429 responses may retry (bounded by AI_RETRIES). A valid
+`Retry-After` in seconds or HTTP-date is honored for 1–60 seconds; a requested
+wait beyond 60 seconds is terminal. Missing or invalid headers use exponential
+backoff with jitter, capped at 30 seconds, with a one-second minimum. The due
+timestamp is persisted on the queued execution's existing `updated_at` field;
+the worker waits without a database transaction, and restart resumes the
+remaining wait. Claim revalidates account activity, ownership, sources, adapter,
+and reservation/quota before the next attempt. Retry eligibility and
+requeue/settlement use one immediate transaction, so a concurrent local
 cancellation cannot strand an unsettled reservation or concurrency slot. Network failure,
 timeout, malformed transport output or server 5xx is uncertain and never
 replayed automatically. On restart, persisted running work becomes uncertain;
 queued work can resume after account, source and adapter checks, respecting
 both current per-user and global concurrency limits. Reservations
 from a previous UTC day expire without dispatch rather than bypassing today's
-allowance; disabled configuration also refuses dispatch. Ownership,
+allowance; the reservation remains held during the wait. Disabled configuration
+also refuses dispatch. Ownership,
 activity and source versions (including prompt-only dependencies) are
 rechecked atomically with the queued-to-running claim and final result write; deleted or changed data is never recreated or applied. Later phases
 must also revalidate and apply atomically/idempotently at their own domain boundary.

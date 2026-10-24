@@ -6,8 +6,9 @@ const VALIDATION=['shape_type','shape_fields','shape_length','shape_enum','cycle
 const PATH=/^\$(?:\.(?:schemaVersion|cycleId|start|end|assessment|continuity|feasibility|confidence|phases|indicators|adaptations|uncertainties|assumptions|questions|name|objective|volume|longRuns|quality|intensity|easyRuns|strength|risks|advanceCriteria|rationale|evidence|increase|maintain|reduce|replaceQuality|reduceLongRun)|\[\d{1,2}\])*$/;
 function sanitizeDiagnostic(value={}) {
  const out={};
- for(const [key,allowed] of Object.entries({stage:STAGES,code:CODES,providerStatus:['completed','incomplete','failed','cancelled','queued','in_progress'],incompleteReason:['max_output_tokens','content_filter'],transportReason:['timeout','network']})) if(allowed.includes(value[key]))out[key]=value[key];
+ for(const [key,allowed] of Object.entries({stage:STAGES,code:CODES,providerStatus:['completed','incomplete','failed','cancelled','queued','in_progress'],incompleteReason:['max_output_tokens','content_filter'],transportReason:['timeout','network'],retryDisposition:['scheduled','attempt_limit','outside_window']})) if(allowed.includes(value[key]))out[key]=value[key];
  for(const key of ['attempt','durationMs','timeoutMs','reasoningTokens','outputTextCount','outputTextBytes'])if(Number.isSafeInteger(value[key]) && value[key]>=0)out[key]=value[key];
+ if(Number.isSafeInteger(value.retryDelayMs) && value.retryDelayMs>=0 && value.retryDelayMs<=60000)out.retryDelayMs=value.retryDelayMs;
  if(Number.isInteger(value.httpStatus) && value.httpStatus>=100 && value.httpStatus<=599)out.httpStatus=value.httpStatus;
  for(const [key,pattern] of [['requestId',/^req_[A-Za-z0-9_-]{1,192}$/],['responseId',/^resp_[A-Za-z0-9_-]{1,192}$/],['clientRequestId',/^kin_[a-f\d-]{36}_[1-3]$/]])if(typeof value[key]==='string' && pattern.test(value[key]))out[key]=value[key];
  if(VALIDATION.includes(value.validation?.code) && typeof value.validation.path==='string' && value.validation.path.length<=160 && PATH.test(value.validation.path))out.validation={code:value.validation.code,path:value.validation.path};

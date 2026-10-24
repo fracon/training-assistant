@@ -18,6 +18,8 @@ test('transport, HTTP, filtering, refusal, provider failure and malformed output
   const r=await client(raw,200,{'x-request-id':'req_test'} )({},correlation);assert.equal(r.error,code);assert.ok(!JSON.stringify(r.diagnostic).includes('private'));assert.equal(r.diagnostic.httpStatus,200);assert.equal(r.diagnostic.clientRequestId,correlation.clientRequestId);
  }
  for(const status of [400,401,403,429,500,408,409])await assert.rejects(client({error:{message:'private credential'}},status,{'x-request-id':'req_http'} )({},correlation),e=>{assert.equal(e.diagnostic.httpStatus,status);assert.equal(e.diagnostic.stage,'provider_http');assert.ok(!JSON.stringify(e.diagnostic).includes('private'));return true;});
+ const dateLimited=createResponsesClient({apiKey:'synthetic',timeoutMs:1000,now:()=>Date.parse('2026-10-24T12:00:00Z'),fetchImpl:async()=>new Response('{}',{status:429,headers:{'Retry-After':'Sat, 24 Oct 2026 12:00:05 GMT'}})});
+ await assert.rejects(dateLimited({}),e=>e.code==='providerRateLimited' && e.retryAfterMs===5000);
  for(const raw of [null,[],1])await assert.rejects(client(raw)({}),e=>e.diagnostic.stage==='parsing');
  const transport=createResponsesClient({apiKey:'synthetic',timeoutMs:1000,fetchImpl:async()=>{throw Error('private transport message');}});await assert.rejects(transport({}),e=>e.diagnostic.stage==='transport' && !e.message.includes('private'));
  let header;const check=createResponsesClient({apiKey:'synthetic',timeoutMs:1000,fetchImpl:async(_,options)=>{header=options.headers['X-Client-Request-Id'];return new Response(JSON.stringify(success));}});await check({},correlation);assert.equal(header,correlation.clientRequestId);
@@ -31,6 +33,8 @@ test('closed diagnostic vocabulary rejects values, arbitrary paths, identifiers 
  for(const path of ['$.privateValue','x','x'.repeat(161)])assert.deepEqual(sanitizeDiagnostic({validation:{code:'shape_type',path}}),{});
  assert.deepEqual(sanitizeDiagnostic({validation:{code:'private',path:'$'}}),{});
  assert.deepEqual(sanitizeDiagnostic({validation:{code:'shape_type',path:'$.phases[0].rationale'},stage:'schema',code:'invalidDomainResponse',providerStatus:'completed',incompleteReason:'max_output_tokens',requestId:'bad',responseId:'resp_safe',headers:'private'}),{stage:'schema',code:'invalidDomainResponse',providerStatus:'completed',incompleteReason:'max_output_tokens',responseId:'resp_safe',validation:{code:'shape_type',path:'$.phases[0].rationale'}});
+ assert.deepEqual(sanitizeDiagnostic({retryDisposition:'scheduled',retryDelayMs:60000}),{retryDisposition:'scheduled',retryDelayMs:60000});
+ for(const value of [-1,60001,1.5,'private'])assert.deepEqual(sanitizeDiagnostic({retryDisposition:'private',retryDelayMs:value}),{});
  const db=fixture();saveDiagnostic(db,'missing',1,{});db.close();
 });
 
@@ -46,10 +50,15 @@ test('diagnostics migration preserves existing snapshots and is idempotent on ma
  db.prepare("DELETE FROM schema_migrations WHERE name='2026-10-ai-execution-diagnostics-v1'").run();migrateAiDiagnostics(db);assert.equal(db.prepare("SELECT COUNT(*) n FROM schema_migrations WHERE name='2026-10-ai-execution-diagnostics-v1'").get().n,1);service.stop();db.close();
 });
 
-function setupService(db,call,operations) {
+test('execution service builds the configured provider client without making a request when no client is injected',async()=>{
+ const db=fixture();const config=readAiConfig({AI_ENABLED:'false'});
+ const service=createExecutionService({db,config});await service.stop();db.close();
+});
+
+function setupService(db,call,operations,options={}) {
  const config=readAiConfig({AI_ENABLED:'true',OPENAI_API_KEY:'synthetic-key'});
  const adapter=createCyclePlanAdapter(db);
- const service=createExecutionService({db,config,operations:operations || {cycle:adapter},client:call});
+ const service=createExecutionService({db,config,operations:operations || {cycle:adapter},client:call,...options});
  return {service,adapter,config};
 }
 const request={purpose:'cycle',resource_id:'cycle',idempotency_key:'diagnostic-generation'};
@@ -70,6 +79,64 @@ test('per-attempt correlation distinguishes authorized 429 retry from invalid, i
   if(kind==='invalid'){assert.equal(r.error,'invalidDomainResponse');assert.deepEqual(r.diagnostics[0].validation,{code:'shape_fields',path:'$'});assert.equal(r.diagnostics[0].stage,'schema');assert.deepEqual(r.usage,{input:10,output:20,cached:0});}
   if(kind==='uncertain'){assert.equal(r.state,'uncertain');assert.equal(r.estimatedCostUsd,r.reservedCostUsd);assert.equal(r.costBasis,'reserved_unknown_usage');assert.equal(r.usage,null);}
   await service.stop();db.close();
+ }
+});
+
+test('429 waits for Retry-After, remains single-flight, and resumes after restart without an early call',async(t)=>{
+ const db=fixture();let calls=0;let now='2026-10-24T12:00:00.000Z';let nextTimer=0;const timers=new Map();
+ const timerOptions={now:()=>now,random:()=>0,setTimer:(fn,ms)=>{const id=++nextTimer;timers.set(id,{fn,ms});return id;},clearTimer:id=>timers.delete(id)};
+ const {service}=setupService(db,async(payload,metadata)=>{
+  calls++;
+  if(calls===1)return client({},429,{'retry-after':'2'})(payload,metadata);
+  const context=JSON.parse(payload.input[0].content[0].text).context;
+  return {value:planFor(context),usage:{input:10,output:20,cached:0},error:null};
+ },undefined,timerOptions);t.after(async()=>{await service.stop();db.close();});
+ const row=service.enqueue(1,request);
+ for(let i=0;i<100 && calls===0;i++)await new Promise(r=>setTimeout(r,5));
+ assert.equal(calls,1);let queued=service.get(1,row.id,true);assert.equal(queued.state,'queued');assert.equal(queued.attempts,1);
+ assert.equal(queued.diagnostics[0].retryDisposition,'scheduled');assert.equal(queued.diagnostics[0].retryDelayMs,2000);
+ assert.equal([...timers.values()][0].ms,2000);
+ // Simulate a process restart while the persisted due time is still pending.
+ await service.stop();
+ const resumed=setupService(db,async(payload,metadata)=>{
+  calls++;const context=JSON.parse(payload.input[0].content[0].text).context;
+  return {value:planFor(context),usage:{input:10,output:20,cached:0},error:null};
+ },undefined,{...timerOptions,clearTimer:id=>timers.delete(id)}).service;
+ t.after(()=>resumed.stop());resumed.recover();await new Promise(r=>setImmediate(r));
+ assert.equal(calls,1);assert.equal([...timers.values()][0].ms,2000);
+ await resumed.dispatch(row.id);assert.equal(calls,1);
+ now='2026-10-24T12:00:01.999Z';
+ const early=[...timers.entries()][0];timers.delete(early[0]);early[1].fn();
+ await new Promise(r=>setTimeout(r,10));assert.equal(calls,1);assert.equal([...timers.values()][0].ms,1);
+ now='2026-10-24T12:00:02.000Z';const due=[...timers.entries()][0];timers.delete(due[0]);due[1].fn();
+ await complete(resumed,row.id);assert.equal(calls,2);const result=resumed.get(1,row.id,true);
+ assert.equal(result.state,'completed');assert.equal(result.attempts,2);assert.equal(result.diagnostics.length,2);
+ assert.equal(result.diagnostics[1].attempt,2);assert.equal(db.prepare('SELECT COUNT(*) n FROM cycle_plan_versions').get().n,0);
+});
+
+test('429 retry revalidates cancellation, account, sources and bounded Retry-After before dispatch',async(t)=>{
+ for(const outcome of ['cancel','inactive','changed','quota-reduced','outside-window']) {
+  const db=fixture();let calls=0,clock=Date.parse('2026-10-24T12:00:00.000Z'),timerId=0;const timers=new Map();
+  const initialized=setupService(db,async(payload,metadata)=>{calls++;const response=client({},429,{'retry-after':outcome==='outside-window'?'61':'1'});return response(payload,metadata);},undefined,{
+   now:()=>new Date(clock).toISOString(),setTimer:(fn,ms)=>{const id=++timerId;timers.set(id,{fn,ms});return id;},clearTimer:id=>timers.delete(id),random:()=>0,
+  });const {service}=initialized;t.after(async()=>{await service.stop();db.close();});
+  const row=service.enqueue(1,request);
+  for(let i=0;i<100 && calls===0;i++)await new Promise(r=>setTimeout(r,5));
+  assert.equal(calls,1);const initial=service.get(1,row.id,true);
+  if(outcome==='outside-window'){
+   assert.equal(initial.state,'failed');assert.equal(initial.error,'providerRateLimited');assert.equal(initial.diagnostics[0].retryDisposition,'outside_window');assert.equal(initial.attempts,1);assert.equal(timers.size,0);continue;
+  }
+  if(outcome==='cancel'){
+   service.cancel(1,row.id);assert.equal(timers.size,0);assert.equal(service.get(1,row.id).state,'cancelled');continue;
+  }
+  if(outcome==='inactive')db.prepare('UPDATE users SET is_active=0 WHERE id=1').run();
+  if(outcome==='changed')db.prepare("UPDATE training_cycles SET objective='Changed during wait' WHERE id='cycle'").run();
+  if(outcome==='quota-reduced')initialized.config.limits.AI_DAILY_CALLS_USER=0;
+  const [id,timer]=[...timers.entries()][0];assert.ok(timer);timers.delete(id);clock+=timer.ms;timer.fn();
+  for(let i=0;i<100 && ['queued','running'].includes(db.prepare('SELECT state FROM ai_executions WHERE id=?').get(row.id).state);i++)await new Promise(r=>setTimeout(r,5));
+  const result=db.prepare('SELECT state,error_code,settled FROM ai_executions WHERE id=?').get(row.id);assert.equal(calls,1);assert.equal(result.settled,1);
+  assert.equal(result.state,outcome==='inactive'?'cancelled':outcome==='quota-reduced'?'failed':'outdated');
+  assert.equal(result.error_code,outcome==='inactive'?'accountUnavailable':outcome==='quota-reduced'?'usageLimit':'sourceChanged');
  }
 });
 
@@ -104,7 +171,7 @@ test('diagnostic exceptions stay sanitized; metadata is bounded and reservation 
  const db=fixture();const adapter=createCyclePlanAdapter(db);adapter.validate=()=>{throw Error('private validation message');};
  const {service}=setupService(db,async()=>({value:{},usage:null,error:null}),{cycle:adapter});t.after(async()=>{await service.stop();db.close();});
  const row=service.enqueue(1,request);await complete(service,row.id);const r=service.get(1,row.id,true);assert.deepEqual(r.diagnostics[0].validation,{code:'validator_exception',path:'$'});assert.equal(r.diagnostics[0].stage,'domain');
- const {saveDiagnostic}=require('../src/ai/diagnostics');for(let attempt=1;attempt<=5;attempt++)saveDiagnostic(db,row.id,attempt,{stage:'transport'});const after=service.get(1,row.id,true);assert.deepEqual(after.diagnostics.map(d=>d.attempt),[3,4,5]);assert.equal(after.externalPrompt,r.externalPrompt);assert.equal(after.payload.model,r.payload.model);assert.equal(after.configuration.timeoutMs,60000);
+ const {saveDiagnostic}=require('../src/ai/diagnostics');for(let attempt=1;attempt<=5;attempt++)saveDiagnostic(db,row.id,attempt,{stage:'transport'});const after=service.get(1,row.id,true);assert.deepEqual(after.diagnostics.map(d=>d.attempt),[3,4,5]);assert.equal(after.externalPrompt,r.externalPrompt);assert.equal(after.payload.model,r.payload.model);assert.equal(after.configuration.timeoutMs,120000);
  await service.stop();
  const base={version:'synthetic',format:{},instructions:'synthetic',adaptPrompt:p=>p,validate:()=>false};
  const other=setupService(db,async()=>({value:{},usage:null,error:null}),{cycle:base}).service;t.after(()=>other.stop());const next=other.enqueue(1,{...request,idempotency_key:'generic-validator'});await complete(other,next.id);assert.equal(other.get(1,next.id).error,'invalidDomainResponse');assert.equal(other.get(1,next.id,true).diagnostics[0].validation.code,'domain_invalid');
