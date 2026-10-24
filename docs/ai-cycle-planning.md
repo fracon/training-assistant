@@ -3,9 +3,9 @@
 Status: **implemented on `feat/issue-63-cycle-planning`, not integrated until its
 PR merges**. Beta **0.21.0** builds on phase 0 merged in PR #67 (`648d6a0`).
 Weekly generation #64 and result analysis #65 are not implemented here.
-The [2026-10-18 real evaluation](#end-to-end-real-evaluation-2026-10-18) completed
-generation, validation, explicit application and recovery with the operational
-settings below; the quality limitations are recorded separately.
+The [2026-10-24 final v3 evaluation](#end-to-end-final-v3-evaluation-2026-10-24)
+completed real generation, RPE validation, explicit application and reload recovery
+on the final runtime code. Earlier evaluations and their limitations remain below.
 
 ## Product flow and existing sources
 
@@ -1008,3 +1008,140 @@ training prompt or schema, and does not increment the same PR's beta version.
 Only the public example/test/documentation are committed; private temporary
 SQLite, screenshots and credentials remain outside Git. No new automatic review,
 merge, deployment or additional paid generation is requested/performed.
+
+
+## End-to-end final v3 evaluation (2026-10-24)
+
+### Runtime and spending boundary
+
+The executed runtime was **8dd42352acc145960fdc81a32ded8561f253680c**, beta
+**0.21.0**, matching the open PR's HEAD before this documentation-only follow-up.
+No runtime code, prompt, configuration default, schema or production setting was
+changed. A temporary development process and separate SQLite file used the
+authorized test login solely for authentication and synthetic account presentation.
+No personal cycle/history was copied or modified. The API key stayed in backend
+runtime; neither its value nor credentials, payloads, private records or captures
+are versioned.
+
+The effective persisted payload/configuration, not just `.env.example`, confirmed:
+
+| Setting | Executed value |
+| --- | --- |
+| Adapter / context / schema | `cycle-delivery-v3` / `training-context-v5` / `cycle-plan-v1` |
+| Model / reasoning | `gpt-6.1-sol` / `medium` |
+| Output ceiling / timeout | 8192 tokens / 120000ms |
+| API | Responses, `store:false`, foreground, strict JSON schema, no tools |
+| Retries / concurrency user and global | 0 / 1 and 1 |
+| Daily call caps user and global | 1 and 1 |
+| Daily USD caps user and global | 0.50 and 0.50 |
+| Context bound / daily token caps | 12000 bytes / 100000 user, 500000 global |
+
+There was no queued/running work before this evaluation. Offline preparation
+validated the adapter/window and built the exact payload, including its explicit
+RPE 1–5 instruction. The conservative complete-input bound plus protocol allowance
+was **23,071**; the existing execution ledger reserved **USD 0.238235** before
+dispatch, below the authorized **USD 0.50** ceiling. One-attempt instrumentation
+also refused any second provider invocation. The configured native client was
+used unchanged; no simulated provider replaced this call. Official
+[model](https://developers.openai.com/api/docs/models/gpt-6.1-sol) and
+[Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs)
+contracts were checked before the request; medium reasoning and strict output
+remain supported. There was no fallback, deployment or main `.env` edit.
+
+### Real browser sequence and result
+
+Real Chrome created a clearly identified synthetic active cycle: **run 10 km
+without competition**, no saved start, target **2026-12-19**, eight weeks after
+the test. The inclusive planning window was **2026-10-24–2026-12-19** (57 days).
+Saving opened planning; **Not now** closed it without undoing registration. The
+card icon reopened it. At that point there were **zero executions and zero
+provider calls**. One explicit Generate click created one execution:
+
+`c6902a4b-b3b1-4f4a-a695-484362f607d8`, client correlation
+`kin_c6902a4b-b3b1-4f4a-a695-484362f607d8_1`.
+
+A full reload while its persisted state was `running` and reopening planning
+recovered that same execution/polling. There was no second execution or call.
+The provider returned **HTTP 200 / completed** in **61,597ms**, with one JSON
+output text (13,587 bytes). Parsing, schema, cycle identity/window, contiguous
+phases, source references and the current RPE/domain validator all passed.
+Provider request/response IDs remain in the isolated protected diagnostics;
+generic logs and public evidence contain no full prompt or response.
+
+Known usage reported by the provider was **4,463 input + 3,148 output, 0 cached
+tokens**. The output includes **151 reasoning tokens**, counted once. The ledger
+reconciled the reservation to **USD 0.069535 estimated cost** under the saved
+conservative rate ceiling. Reservation and usage-based estimate are distinct;
+provider invoice/final billed amount was not accessed. This evaluation had
+**one real call, one execution, one attempt, no retry and no uncertain outcome**.
+Earlier incomplete/timeout attempts remain separate historical evidence.
+
+### Content review and RPE
+
+The entire real proposal was read before application. Four ordered, gapless
+phases cover the exact window: identify the starting point, consolidate
+continuity/endurance, conditionally approach 10 km, then adjust recovery and
+decide whether to attempt the personal goal. Every phase cites the selected
+cycle. The plan recognizes absent history/availability, uses `insufficient_data`
+confidence and conditional progression, and does not invent completed training,
+prior volume, recovery or a race. The continuous-running interpretation is an
+explicit provisional assumption to confirm, not a claimed user fact.
+
+**The model did mention numeric RPE.** Phase intensity text uses **RPE 1–2** and
+optional moderate **RPE 3**, explicitly on the **1–5** scale; indicators/questions
+also identify that scale. Review of all narrative fields found no RPE/10, 0–10
+scale or value above 5. The same saved output passes `rpeIssue` without conversion,
+rewriting or suppression. Thus this sample demonstrates compatible real numeric
+references under v3, not merely absence of RPE. The bounded guard and one sample
+do not prove every semantic claim, physiological suitability or reliability for
+all athletes. Synthetic tests remain the evidence that incompatible outputs are
+refused, known usage retained and automatic retries prevented.
+
+### Application, recovery, continuity and interface
+
+After review, explicit browser Apply created **version 1**. Reloading/reopening
+recovered identical plan JSON and version. Repeating the authorized apply request
+with the original expected version returned
+`{appliedVersion:1,alreadyApplied:true}`; exactly one applied version remained.
+Apply, reopen, polling, language changes and reads created no extra provider call.
+
+Before language-variation checks, both future `workouts` and `analysis` contexts
+identified this version and originating execution with `authority:applied_planning`,
+correct source/hash, `outdated:false` and **no RPE compatibilityError**. Two relevant
+phase details were selected; two outside the task window were explicitly omitted.
+This is planning guidance, not completed work. Training/calendar record count
+remained **zero**. A separate synthetic administrative ownership control did not
+change the generated owner's plan; real/personal data remained outside the instance.
+
+Saved-result inspection covered **PT/EN at 1280, 768 and 390px**, scroll to the
+end, no horizontal body/page overflow, 30×30 close control / 18×18 Lucide x,
+Tab/Shift+Tab containment, Escape and focus restoration to the correct planning
+icon. Its translated custom tooltip appeared on focus/hover with no native title.
+Labels and dates relocalize; persisted Portuguese generated prose stays Portuguese,
+without a paid translation. Existing Lucide was injected locally; the standard
+Chrome harness blocked external font/CDN requests. Screenshots remained temporary.
+
+The ordinary account had no prompt action in the DOM or visible technical debug.
+On the running instance its prompt, execution-debug and technical-context requests
+returned **403**; anonymous prompt/debug returned **401**. A separate synthetic
+admin accessed its own free prompt (**200**) but the generated owner's prompt and
+execution debug returned **404**. Existing mocked route tests additionally confirm
+admin own-execution inspection. No authorization check generated another plan.
+
+### Verification and limitations
+
+The eight targeted RPE tests passed, followed by **44** planning-route,
+foundation/prompt and real-Chrome RPE-refusal tests: **52 tests total**, zero
+failures/skips. The foundation comparisons preserve all **48** external prompt
+outputs byte for byte. Their provider responses are simulated, distinct from the
+single successful real call above. Full `npm test` and four-metric 100% coverage
+results at the unchanged runtime HEAD remain the **1,247-test** gates recorded in
+the preceding RPE correction; they were not rerun for this documentation-only
+follow-up. `git diff --check` passed.
+
+No functional defect or concrete blocker to the tested integration path was found.
+This is one synthetic empty-history case with the explicit operational settings,
+not broad coaching-quality, production deployment or performance certification.
+Unset legacy 2048/60000 fallbacks are still not the validated full-plan setup;
+operators must set the documented 8192/120000 runtime values. No new weekly
+workouts/analysis generation, automatic review request or merge was performed.
