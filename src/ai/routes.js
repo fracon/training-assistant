@@ -10,9 +10,27 @@ const { buildContext } = require('./context');
 const { memoryOverview } = require('./overview');
 const { readAiConfig } = require('./config');
 const { createExecutionService } = require('./executions');
+const { createCyclePlanAdapter } = require('./cycle-plan-adapter');
+const { readCyclePlanning, applyCyclePlan } = require('./cycle-plans');
+function logUnexpectedError(error, request) {
+  const frames = typeof error?.stack === 'string'
+    ? error.stack.split('\n').slice(1, 8).map((frame) => frame.trim().slice(0, 240))
+    : [];
+  const diagnostic = {
+    event: 'ai_route_unexpected_error',
+    method: request.method,
+    route: request.routeOptions?.url || 'unknown',
+    errorName: /^[A-Za-z][A-Za-z0-9]{0,39}$/.test(error?.name || '') ? error.name : 'Error',
+    errorCode: /^[A-Z0-9_]{1,40}$/.test(error?.code || '') ? error.code : null,
+    frames,
+  };
+  // Do not log error.message, SQL, request values, prompts, response bodies,
+  // account identifiers or credentials. Stack frames retain code locations.
+  console.error(`[Kinesis] ${JSON.stringify(diagnostic)}`);
+}
 function registerAiRoutes(
   app,
-  { db, requireAuth, config = readAiConfig(), operations = {}, client },
+  { db, requireAuth, config = readAiConfig(), operations = { cycle:createCyclePlanAdapter(db) }, client },
 ) {
   const service = createExecutionService({ db, config, operations, client });
   const route = (method, path, handler) =>
@@ -25,11 +43,14 @@ function registerAiRoutes(
           return reply
             .code(error.status)
             .send({ error: error.code, errors: [error.code] });
+        logUnexpectedError(error, request);
         return reply
           .code(500)
           .send({ error: 'aiInternalError', errors: ['aiInternalError'] });
       }
     });
+  route('get', '/api/cycles/:id/planning', (r) => readCyclePlanning(db,r.user.id,r.params.id,service,config));
+  route('post', '/api/cycles/:id/planning/:proposalId/apply', (r) => applyCyclePlan(db,r.user.id,r.params.id,r.params.proposalId,r.body,service));
   route('get', '/api/ai/memory', (r) => memoryOverview(db, r.user.id, config));
   route('put', '/api/ai/profile', (r) => saveProfile(db, r.user.id, r.body));
   route('get', '/api/ai/memory/legacy', (r) => readLegacyMemory(db, r.user.id));
@@ -74,4 +95,4 @@ function registerAiRoutes(
   service.recover();
   return service;
 }
-module.exports = { registerAiRoutes };
+module.exports = { registerAiRoutes, logUnexpectedError };

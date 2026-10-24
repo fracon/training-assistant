@@ -1,5 +1,6 @@
 'use strict';
 
+const { sanitizeDiagnostic, saveDiagnostic } = require('./diagnostics');
 const { randomUUID } = require('node:crypto');
 const { AiError, hash, activeOwner, exactKeys } = require('./memory');
 const { buildContext, contextIsCurrent, tokenBound } = require('./context');
@@ -10,6 +11,7 @@ const {
 } = require('./prompt-service');
 const { RATES } = require('./config');
 const { buildPayload, createResponsesClient } = require('./client');
+const { retryDelayMs } = require('./retry-policy');
 const TERMINAL = ['completed', 'failed', 'uncertain', 'cancelled', 'outdated'];
 function createExecutionService({
   db,
@@ -17,6 +19,9 @@ function createExecutionService({
   operations = {},
   client,
   now = () => new Date().toISOString(),
+  random = Math.random,
+  setTimer = setTimeout,
+  clearTimer = clearTimeout,
 }) {
   const limits = config.limits;
   const call =
@@ -28,6 +33,16 @@ function createExecutionService({
   let stopped = false;
   let scheduled = false;
   const inFlight = new Map();
+  const retryTimers = new Map();
+  function clearRetry(id) {
+    const timer=retryTimers.get(id);
+    if(timer!==undefined){clearTimer(timer);retryTimers.delete(id);}
+  }
+  function scheduleRetry(id, dueAt) {
+    const delay=Math.max(0,Date.parse(dueAt)-Date.parse(now()));
+    const timer=setTimer(()=>{retryTimers.delete(id);schedule();},delay);
+    retryTimers.set(id,timer);
+  }
   function promptIsCurrent(row) {
     try {
       const settings = JSON.parse(row.configuration_json);
@@ -62,8 +77,10 @@ function createExecutionService({
     if (debug)
       Object.assign(result, {
         context,
+        diagnostics: JSON.parse(row.diagnostics_json),
         usage: row.usage_json ? JSON.parse(row.usage_json) : null,
         estimatedCostUsd: row.charged_cost,
+        costBasis: row.usage_json ? 'reported_usage_estimate' : !row.settled ? 'reservation_pending' : row.charged_tokens===0 ? 'known_unbilled' : 'reserved_unknown_usage',
         externalPrompt: row.external_prompt,
         payload: JSON.parse(row.payload_json),
         configuration: JSON.parse(row.configuration_json),
@@ -189,6 +206,7 @@ function createExecutionService({
           resourceId: body.resource_id ?? null,
           config,
         });
+        operation.prepare?.(context);
         const prompt = renderPrompt(db, userId, {
           purpose: body.purpose,
           resourceId: body.resource_id ?? null,
@@ -232,6 +250,8 @@ function createExecutionService({
             targetDate: body.target_date ?? null,
           }),
           retries: limits.AI_RETRIES,
+          timeoutMs: limits.AI_TIMEOUT_MS,
+          applicationVersion: require('../../package.json').version,
         };
         db.prepare(
           `INSERT INTO ai_executions(id,user_id,idempotency_key,purpose,resource_id,input_hash,prompt_version,external_prompt,context_json,payload_json,configuration_json,state,reserved_tokens,reserved_cost,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,'queued',?,?,?,?)`,
@@ -252,6 +272,7 @@ function createExecutionService({
           at,
           at,
         );
+        operation.onEnqueued?.(db.prepare('SELECT * FROM ai_executions WHERE id=?').get(id),context);
         schedule();
         return get(userId, id);
       })
@@ -266,6 +287,7 @@ function createExecutionService({
       error = null,
       knownUnbilled = false,
       verifySources = false,
+      diagnostic = null,
     } = {},
   ) {
     db.transaction(() => {
@@ -291,8 +313,10 @@ function createExecutionService({
           state = 'outdated';
           value = null;
           error = 'sourceChanged';
+          diagnostic={...diagnostic,stage:'sources',code:error};
         }
       }
+      if(diagnostic || error)saveDiagnostic(db,row.id,current.attempts,diagnostic || {stage:'lifecycle',code:error});
       const rate = cfg.rate;
       const tokens = usage
         ? usage.input + usage.output
@@ -310,6 +334,7 @@ function createExecutionService({
           : row.reserved_cost;
       // Cancellation does not erase billed or uncertain usage. The result is discarded.
       const cancelled = current.state === 'cancelled';
+      if (!cancelled && state === 'completed') operations[row.purpose].onCompleted?.(row,value);
       db.prepare(
         'UPDATE ai_global_usage SET tokens=tokens+?,cost=cost+?,calls=calls+? WHERE day = ?',
       ).run(
@@ -349,6 +374,9 @@ function createExecutionService({
           .prepare('SELECT * FROM ai_executions WHERE id = ?')
           .get(id);
         if (!row || row.state !== 'queued') return;
+        const cfg=JSON.parse(row.configuration_json);
+        const dueAt=Date.parse(row.updated_at);
+        if(Number.isFinite(dueAt) && dueAt>Date.parse(now()))return;
         if (
           !config.enabled ||
           row.created_at.slice(0, 10) !== now().slice(0, 10)
@@ -357,6 +385,20 @@ function createExecutionService({
             error: config.enabled ? 'reservationExpired' : 'aiUnavailable',
             knownUnbilled: true,
           });
+          return;
+        }
+        const day=row.created_at.slice(0,10);
+        const userUsage=db.prepare('SELECT tokens,cost,calls FROM ai_usage WHERE user_id=? AND day=?').get(row.user_id,day);
+        const globalUsage=db.prepare('SELECT tokens,cost,calls FROM ai_global_usage WHERE day=?').get(day);
+        const reservationCurrent=row.settled===0 && row.attempts<=cfg.retries && row.reserved_tokens>0 && row.reserved_cost>=0 &&
+          userUsage && globalUsage && userUsage.tokens>=row.reserved_tokens && globalUsage.tokens>=row.reserved_tokens &&
+          userUsage.cost+1e-9>=row.reserved_cost && globalUsage.cost+1e-9>=row.reserved_cost &&
+          userUsage.calls>=cfg.retries+1 && globalUsage.calls>=cfg.retries+1 &&
+          userUsage.tokens<=limits.AI_DAILY_TOKENS_USER && globalUsage.tokens<=limits.AI_DAILY_TOKENS_GLOBAL &&
+          userUsage.cost<=limits.AI_DAILY_USD_USER && globalUsage.cost<=limits.AI_DAILY_USD_GLOBAL &&
+          userUsage.calls<=limits.AI_DAILY_CALLS_USER && globalUsage.calls<=limits.AI_DAILY_CALLS_GLOBAL;
+        if(!reservationCurrent){
+          finish(row,'failed',{error:'usageLimit',knownUnbilled:true});
           return;
         }
         const context = JSON.parse(row.context_json);
@@ -380,7 +422,6 @@ function createExecutionService({
           return;
         }
         const operation = operations[row.purpose];
-        const cfg = JSON.parse(row.configuration_json);
         if (!operation || operation.version !== cfg.adapterVersion) {
           finish(row, 'failed', {
             error: 'adapterUnavailable',
@@ -391,12 +432,14 @@ function createExecutionService({
         if (
           !db
             .prepare(
-              "UPDATE ai_executions SET state='running',attempts=attempts+1,updated_at=? WHERE id = ? AND state='queued'",
+              "UPDATE ai_executions SET state='running',attempts=attempts+1,error_code=NULL,updated_at=? WHERE id = ? AND state='queued'",
             )
             .run(now(), id).changes
         )
           return;
-        return db.prepare('SELECT * FROM ai_executions WHERE id = ?').get(id);
+        const claimed=db.prepare('SELECT * FROM ai_executions WHERE id = ?').get(id);
+        saveDiagnostic(db,id,claimed.attempts,{stage:'transport',clientRequestId:`kin_${id}_${claimed.attempts}`});
+        return claimed;
       })
       .immediate();
   }
@@ -405,51 +448,46 @@ function createExecutionService({
     if (!row) return;
     const operation = operations[row.purpose];
     const cfg = JSON.parse(row.configuration_json);
+    const clientRequestId=`kin_${row.id}_${row.attempts}`;
+    const started=Date.now();
+    let response;
     try {
-      const response = await call(JSON.parse(row.payload_json));
-      let valid = false;
-      try {
-        valid = !response.error && operation.validate(response.value) === true;
-      } catch {
-        valid = false;
-      }
-      finish(row, valid ? 'completed' : 'failed', {
-        value: valid ? response.value : null,
-        usage: response.usage,
-        error: valid ? null : response.error || 'invalidDomainResponse',
-        verifySources: true,
-      });
+      response = await call(JSON.parse(row.payload_json),{clientRequestId});
     } catch (error) {
-      const code =
-        error instanceof AiError ? error.code : 'providerOutcomeUncertain';
-      // Retry eligibility and cancellation settlement share one write transaction.
-      db.transaction(() => {
-        const current = db
-          .prepare('SELECT state FROM ai_executions WHERE id = ?')
-          .get(id);
-        if (
-          code === 'providerRateLimited' &&
-          row.attempts <= cfg.retries &&
-          current?.state === 'running' &&
-          !stopped
-        ) {
-          db.prepare(
-            "UPDATE ai_executions SET state='queued',updated_at=? WHERE id = ? AND state='running'",
-          ).run(now(), id);
-        } else
-          finish(
-            row,
-            code === 'providerOutcomeUncertain' ? 'uncertain' : 'failed',
-            {
-              error: code,
-              knownUnbilled: ['providerRateLimited', 'providerRejected'].includes(
-                code,
-              ),
-            },
-          );
+      const code=error instanceof AiError?error.code:'providerOutcomeUncertain';
+      const retry=code==='providerRateLimited'?retryDelayMs({retryAfterMs:error?.retryAfterMs,attempt:row.attempts,random}):null;
+      let retryAt=null;
+      const disposition=code!=='providerRateLimited'?undefined:row.attempts>cfg.retries?'attempt_limit':retry.disposition;
+      const diagnostic=sanitizeDiagnostic({...error?.diagnostic,stage:error?.diagnostic?.stage || (['providerOutcomeUncertain','providerTimeout'].includes(code)?'transport':'provider_http'),clientRequestId,code,durationMs:Date.now()-started,retryDisposition:disposition,retryDelayMs:disposition==='scheduled'?retry.delayMs:undefined});
+      db.transaction(()=>{
+        const current=db.prepare('SELECT state,settled FROM ai_executions WHERE id = ?').get(id);
+        if(code==='providerRateLimited' && row.attempts<=cfg.retries && current?.state==='running' && current.settled===0 && !stopped && retry.disposition==='scheduled') {
+          saveDiagnostic(db,id,row.attempts,diagnostic);
+          retryAt=new Date(Date.parse(now())+retry.delayMs).toISOString();
+          db.prepare("UPDATE ai_executions SET state='queued',error_code='providerRateLimited',updated_at=? WHERE id=? AND state='running' AND settled=0").run(retryAt,id);
+        } else finish(row,['providerOutcomeUncertain','providerTimeout'].includes(code)?'uncertain':'failed',{
+          error:code,diagnostic,knownUnbilled:['providerRateLimited','providerRejected'].includes(code),
+        });
       }).immediate();
+      if(retryAt)scheduleRetry(id,retryAt);
+      return;
+    }
+    let valid=false,validation=null;
+    try {
+      valid=!response.error && operation.validate(response.value,JSON.parse(row.context_json))===true;
+      if(!valid && !response.error)validation=operation.diagnose?.(response.value,JSON.parse(row.context_json)) || {code:'domain_invalid',path:'$'};
+    } catch { validation={code:'validator_exception',path:'$'}; }
+    const code=valid?null:response.error || (validation?.code==='rpe_scale'?'planningRpeIncompatible':'invalidDomainResponse');
+    const diagnostic=sanitizeDiagnostic({...response.diagnostic,clientRequestId,durationMs:Date.now()-started,
+      code:code || 'completed',stage:validation?(validation.code.startsWith('shape_')?'schema':'domain'):response.diagnostic?.stage || (valid?'completed':'provider_response'),validation});
+    try {
+      finish(row,valid?'completed':'failed',{value:valid?response.value:null,usage:response.usage,error:code,diagnostic,verifySources:true});
+    } catch {
+      // A rolled-back proposal write must not erase already known provider usage.
+      finish(row,'failed',{usage:response.usage,error:'resultPersistenceFailed',diagnostic:{...diagnostic,stage:'persistence',code:'resultPersistenceFailed'}});
     }
   }
+
   function schedule() {
     if (stopped || scheduled) return;
     scheduled = true;
@@ -462,10 +500,12 @@ function createExecutionService({
     if (stopped || !db.open) return;
     const rows = db
       .prepare(
-        "SELECT id,user_id FROM ai_executions WHERE state='queued' ORDER BY created_at,id",
+        "SELECT id,user_id,updated_at FROM ai_executions WHERE state='queued' ORDER BY created_at,id",
       )
       .all();
     for (const row of rows) {
+      if(retryTimers.has(row.id) || inFlight.has(row.id))continue;
+      if(Date.parse(row.updated_at)>Date.parse(now())){scheduleRetry(row.id,row.updated_at);continue;}
       if (inFlight.size >= limits.AI_CONCURRENCY_GLOBAL) break;
       const activeForUser = [...inFlight.values()].filter(
         (job) => job.userId === row.user_id,
@@ -479,7 +519,7 @@ function createExecutionService({
     }
   }
   function cancel(userId, id) {
-    return db
+    const result=db
       .transaction(() => {
         const result = get(userId, id);
         const row = db
@@ -497,6 +537,8 @@ function createExecutionService({
         };
       })
       .immediate();
+    if(result.state==='cancelled')clearRetry(id);
+    return result;
   }
   function recover() {
     for (const row of db
@@ -519,6 +561,7 @@ function createExecutionService({
     db.prepare('DELETE FROM ai_global_usage WHERE day < ?').run(
       cutoff.slice(0, 10),
     );
+    for (const operation of Object.values(operations)) operation.cleanup?.();
   }
   function usage(userId) {
     activeOwner(db, userId);
@@ -530,6 +573,7 @@ function createExecutionService({
   }
   async function stop() {
     stopped = true;
+    for(const id of retryTimers.keys())clearRetry(id);
     await Promise.allSettled([...inFlight.values()].map((job) => job.task));
   }
   return {

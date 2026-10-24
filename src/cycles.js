@@ -108,8 +108,12 @@ function updateCycle(db, id, userId, updates) {
   const keys = Object.keys(fields);
   if (keys.length === 0) return existing;
   const assignments = keys.map((k) => `${k} = ?`).join(', ');
-  db.prepare(`UPDATE training_cycles SET ${assignments}, updated_at = datetime('now') WHERE id = ? AND user_id = ?`)
-    .run(...keys.map((k) => fields[k]), id, userId);
+  // Compare atomically using SQLite column affinities (e.g. form '3' vs INTEGER 3).
+  // A no-op must not change timestamps/revision or invalidate accepted planning.
+  const unchanged = keys.map((k) => `${k} IS ?`).join(' AND ');
+  const values = keys.map((k) => fields[k]);
+  db.prepare(`UPDATE training_cycles SET ${assignments}, planning_revision = planning_revision + 1, updated_at = datetime('now') WHERE id = ? AND user_id = ? AND NOT (${unchanged})`)
+    .run(...values, id, userId, ...values);
   return getCycleById(db, id, userId);
 }
 
