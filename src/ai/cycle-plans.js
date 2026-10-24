@@ -21,7 +21,6 @@ function proposalIsUsable(db,userId,cycleId,proposal,baseVersion,asOf) {
   try {
     const stored=db.prepare("SELECT p.plan_json,e.context_json FROM cycle_plan_proposals p JOIN ai_executions e ON e.id=p.execution_id WHERE p.id=? AND p.user_id=? AND p.cycle_id=? AND e.purpose='cycle' AND e.resource_id=?")
       .get(proposal.id,userId,cycleId,cycleId);
-    if (!stored) return false;
     if (!stored.plan_json) return false;
     const plan=JSON.parse(stored.plan_json);
     if (JSON.stringify(plan)!==JSON.stringify(proposal.execution.response)) return false;

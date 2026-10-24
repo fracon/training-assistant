@@ -144,9 +144,11 @@ test('cycles.css reveals action tooltips on hover and keyboard focus', () => {
   assert.match(css, /\.cycle-card-actions \.btn-icon:hover \.custom-tooltip/);
   assert.match(css, /\.cycle-card-actions \.btn-icon:focus-visible \.custom-tooltip/);
   assert.match(css, /bottom:\s*110%/);
-  assert.match(css, /\[data-action="planning"\] \.custom-tooltip\s*\{[^}]*top: calc\(100% \+ 4px\);[^}]*right: 0;[^}]*left: auto/s);
-  assert.match(css, /\[data-action="planning"\] \{ position: static; \}/);
-  assert.match(css, /Keep the planning tooltip below the action so it does not cover the status line/);
+  assert.match(css, /\.cycle-card-actions \.btn-icon\s*\{[^}]*position:\s*relative/s);
+  assert.match(css, /\[data-action="planning"\] \.custom-tooltip\s*\{[^}]*top:\s*calc\(100% \+ 4px\);[^}]*left:\s*0;/s);
+  assert.match(css, /\[data-action="planning"\]:is\(:hover, :focus-visible\) \.custom-tooltip\s*\{[^}]*transform:\s*translateY\(0\);/s);
+  assert.doesNotMatch(css, /\[data-action="planning"\]\s*\{\s*position:\s*static;/);
+  assert.match(css, /align the tooltip to its button edge to keep it in the viewport/);
 });
 
 test('cycles.html modal is at body root level outside main', () => {

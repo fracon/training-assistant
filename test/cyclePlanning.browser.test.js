@@ -65,10 +65,26 @@ test('Chrome cycle planning PT/EN desktop/mobile: recovered generation, proposal
     const point=await evaluate("(()=>{const r=document.querySelector('[data-action=planning]').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()");
     await command('Input.dispatchMouseEvent',{type:'mouseMoved',...point});await delay(200);
     assert.equal(await evaluate("getComputedStyle(document.querySelector('[data-action=planning] .custom-tooltip')).opacity"),'1');
+    assert.equal(await evaluate("(()=>{const button=document.querySelector('[data-action=planning]'),tip=button.querySelector('.custom-tooltip'),b=button.getBoundingClientRect(),r=tip.getBoundingClientRect();return Math.abs(b.left-r.left)<=2 && r.top>=b.bottom && r.top-b.bottom<=8 && r.left>=0 && r.right<=innerWidth;})()"),true);
+    assert.equal(await evaluate("document.querySelector('[data-action=planning] .custom-tooltip').textContent"),planningAction);
     await command('Input.dispatchMouseEvent',{type:'mouseMoved',x:0,y:0});
     await evaluate("document.querySelector('[data-action=cancel]').focus()");await key('Tab','Tab',9);if(account===0)await key('Tab','Tab',9);await delay(200);
     assert.equal(await evaluate('document.activeElement.dataset.action'),'planning');
     assert.equal(await evaluate("getComputedStyle(document.querySelector('[data-action=planning] .custom-tooltip')).opacity"),'1');
+    assert.equal(await evaluate("(()=>{const button=document.querySelector('[data-action=planning]'),tip=button.querySelector('.custom-tooltip'),b=button.getBoundingClientRect(),r=tip.getBoundingClientRect();return Math.abs(b.left-r.left)<=2 && r.top>=b.bottom && r.top-b.bottom<=8;})()"),true);
+    assert.equal(await evaluate("document.querySelector('[data-action=planning] .custom-tooltip').textContent"),planningAction);
+    if(account===0 && width===1280){
+     await evaluate("document.getElementById('sidebarToggle').click()");await wait("document.querySelector('.app-shell').classList.contains('collapsed')");
+     const collapsedPoint=await evaluate("(()=>{const r=document.querySelector('[data-action=planning]').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()");await command('Input.dispatchMouseEvent',{type:'mouseMoved',...collapsedPoint});await delay(200);
+     assert.equal(await evaluate("getComputedStyle(document.querySelector('[data-action=planning] .custom-tooltip')).opacity"),'1');
+     assert.equal(await evaluate("(()=>{const b=document.querySelector('[data-action=planning]').getBoundingClientRect(),r=document.querySelector('[data-action=planning] .custom-tooltip').getBoundingClientRect();return Math.abs(b.left-r.left)<=2 && r.top>=b.bottom && r.top-b.bottom<=8 && r.left>=0 && r.right<=innerWidth;})()"),true);
+     await evaluate("const spacer=document.createElement('div');spacer.id='tooltip-scroll-fixture';spacer.style.height='700px';document.querySelector('.cycle-list').before(spacer);document.querySelector('.main-content').scrollTop=400");await delay(200);
+     const scrolledPoint=await evaluate("(()=>{const r=document.querySelector('[data-action=planning]').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()");await command('Input.dispatchMouseEvent',{type:'mouseMoved',...scrolledPoint});await delay(200);
+     assert.equal(await evaluate("document.querySelector('.main-content').scrollTop>0"),true);
+     assert.equal(await evaluate("getComputedStyle(document.querySelector('[data-action=planning] .custom-tooltip')).opacity"),'1');
+     assert.equal(await evaluate("(()=>{const b=document.querySelector('[data-action=planning]').getBoundingClientRect(),r=document.querySelector('[data-action=planning] .custom-tooltip').getBoundingClientRect();return Math.abs(b.left-r.left)<=2 && r.top>=b.bottom && r.top-b.bottom<=8 && r.left>=0 && r.right<=innerWidth;})()"),true);
+     await evaluate("document.querySelector('.main-content').scrollTop=0;document.getElementById('tooltip-scroll-fixture').remove();document.getElementById('sidebarToggle').click()");await wait("!document.querySelector('.app-shell').classList.contains('collapsed')");
+    }
     const callsBeforeOpen=calls;
     await loadingOpen(`${account}-${language}-${width}`);assert.equal(calls,callsBeforeOpen);assert.equal(await evaluate('document.activeElement.id'),'cyclePlanningClose');
     assert.equal(await evaluate("document.getElementById('cyclePlanningClose').getAttribute('aria-label')"),language==='pt-BR'?'Fechar':'Close');

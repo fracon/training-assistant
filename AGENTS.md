@@ -427,8 +427,9 @@ save, the prompt generation, and the FIT upload before any request, in PT and
 EN, with keyboard selection, focus placement, preserved input, and a legacy
 completed result that stays editable).
 
-`npm run test:coverage` enforces exactly 100% Statements, Branches, Functions,
-and Lines for c8-instrumented files under `src/**` (excluding
+`npm run test:coverage` runs Node's test runner with concurrency set to one and
+enforces exactly 100% Statements, Branches, Functions, and Lines for
+c8-instrumented files under `src/**` (excluding
 `src/public/**` and `src/start.js`) plus `scripts/admin-prompts.js`,
 `scripts/admin-runtime.js`, and `scripts/admin-commands.js`. This percentage is
 not instrumentation coverage of the frontend. Frontend behavior tests remain
@@ -614,7 +615,9 @@ Product AI generation is owner-authorized for both roles, never admin-only.
 
 “Planejamento do ciclo” / “Cycle planning” is a `.btn-icon` card action with decorative
 Lucide `calendar-range`, translated accessible name and existing hover/focus
-custom tooltip, including on inactive cycles. Opening reads planning only.
+custom tooltip below its own button, including on inactive cycles. The tooltip
+aligns its left edge to the action button so it stays visible on narrow screens.
+Opening reads planning only.
 The cycle state badge remains independent from a planning row: the card metadata
 label (`Planning:` / `Planejamento:`) uses the existing strong-label style and
 the short state value uses the existing neutral `.cycle-status` badge. Secondary

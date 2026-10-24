@@ -47,9 +47,11 @@ except untouched queued work under the existing recovery contract.
 
 The card uses the same 32×32 `.btn-icon` action as edit/complete/cancel, with a
 15×15 decorative Lucide `calendar-range`, translated aria-label and the existing
-custom hover/focus tooltip: **Planejamento do ciclo / Cycle planning**. No native title is
-added. Inactive cycles keep this read access. Opening never generates, applies
-or activates a cycle.
+custom hover/focus tooltip: **Planejamento do ciclo / Cycle planning**. The
+tooltip opens below the button and aligns to its left edge so it remains visible
+near the viewport edge without moving to the far edge of the card. No native
+title is added. Inactive cycles keep this read access.
+Opening never generates, applies or activates a cycle.
 
 The **Planejamento do ciclo / Cycle planning** modal follows the cycle and shoe CRUD
 references: `.modal-card`, `.modal-header` and the 30×30 `.modal-close` containing

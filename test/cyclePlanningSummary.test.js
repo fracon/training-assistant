@@ -1,7 +1,7 @@
 'use strict';
 const test=require('node:test');
 const assert=require('node:assert/strict');
-const {readCyclePlanning,applyCyclePlan}=require('../src/ai/cycle-plans');
+const {readCyclePlanning,readCyclePlanningSummary,applyCyclePlan}=require('../src/ai/cycle-plans');
 const {buildContext}=require('../src/ai/context');
 const {AiError}=require('../src/ai/memory');
 const {fixture,planFor,harness,complete,today,future}=require('./fixtures/ai/cycle-planning.cjs');
@@ -81,6 +81,53 @@ test('stale, incompatible, conflicting and invalid proposals never receive the r
  state=readCyclePlanning(db,1,'cycle',service,config);assert.equal(state.summary.status,'failed');
  db.prepare('UPDATE cycle_plan_proposals SET base_version=0,plan_json=? WHERE id=?').run('{}',row.id);
  state=readCyclePlanning(db,1,'cycle',service,config);assert.equal(state.summary.status,'failed');
+ db.prepare('UPDATE cycle_plan_proposals SET plan_json=NULL WHERE id=?').run(row.id);
+ state=readCyclePlanning(db,1,'cycle',service,config);assert.equal(state.summary.status,'failed');
+ db.prepare('UPDATE cycle_plan_proposals SET plan_json=? WHERE id=?').run(JSON.stringify(plan),row.id);
+ const corruptContextService={...service,get(userId,id){const execution=service.get(userId,id);db.prepare("UPDATE ai_executions SET context_json='{' WHERE id=?").run(id);return execution;}};
+ state=readCyclePlanning(db,1,'cycle',corruptContextService,config);assert.equal(state.summary.status,'failed');
+});
+
+test('planning summary revalidates expired and RPE-incompatible artifacts',async(t)=>{
+ const db=fixture();const {config,service}=harness(db);t.after(async()=>{await service.stop();db.close();});
+ const expired=enqueue(service);await complete(service,expired.id);
+ const later=new Date(Date.now()+45*86400000).toISOString().slice(0,10);
+ assert.equal(readCyclePlanningSummary(db,1,'cycle',service,config,later).status,'failed');
+
+ db.prepare('DELETE FROM cycle_plan_proposals').run();
+ const invalid=enqueue(service);await complete(service,invalid.id);
+ const invalidPlan=JSON.parse(db.prepare('SELECT plan_json FROM cycle_plan_proposals WHERE id=?').get(invalid.id).plan_json);
+ invalidPlan.phases[0].intensity='RPE 8/10';
+ db.prepare('UPDATE cycle_plan_proposals SET plan_json=? WHERE id=?').run(JSON.stringify(invalidPlan),invalid.id);
+ db.prepare('UPDATE ai_executions SET response_json=? WHERE id=?').run(JSON.stringify(invalidPlan),invalid.id);
+ const summary=readCyclePlanningSummary(db,1,'cycle',service,config);
+ assert.equal(summary.status,'failed');
+});
+
+test('planning summary preserves applied-plan compatibility and distinguishes unavailability',async(t)=>{
+ const db=fixture();const {config,service}=harness(db);t.after(async()=>{await service.stop();db.close();});
+ const proposal=enqueue(service);await complete(service,proposal.id);
+ applyCyclePlan(db,1,'cycle',proposal.id,{expected_version:0},service);
+ assert.equal(readCyclePlanningSummary(db,1,'cycle',service,config).status,'applied_current');
+ const disabled={...config,enabled:false};
+ assert.deepEqual(readCyclePlanningSummary(db,1,'cycle',service,disabled),{status:'applied_current',secondary:'unavailable',available:false,canGenerate:false});
+ const applied=JSON.parse(db.prepare('SELECT plan_json FROM cycle_plan_versions WHERE id=?').get(proposal.id).plan_json);
+ applied.phases[0].intensity='RPE 9/10';
+ db.prepare('UPDATE cycle_plan_versions SET plan_json=? WHERE id=?').run(JSON.stringify(applied),proposal.id);
+ assert.equal(readCyclePlanningSummary(db,1,'cycle',service,config).status,'applied_incompatible');
+});
+
+test('a usable proposal remains visible while a later proposal is pending',async(t)=>{
+ const db=fixture();let release;const {config,service}=harness(db,async(payload)=>{
+  if(release)await new Promise(resolve=>release=resolve);
+  return {value:planFor(JSON.parse(payload.input[0].content[0].text).context),usage:null,error:null};
+ });t.after(async()=>{release?.();await service.stop();db.close();});
+ const ready=enqueue(service);await complete(service,ready.id);
+ release=()=>{};
+ const pending=enqueue(service);await waitFor(service,pending.id,'running');
+ const summary=readCyclePlanning(db,1,'cycle',service,config).summary;
+ assert.equal(summary.status,'proposal_ready');assert.equal(summary.secondary,'new_pending');
+ service.cancel(1,pending.id);release();await complete(service,pending.id);
 });
 
 test('applied plan remains primary through updates, failure, source changes and RPE incompatibility',async(t)=>{

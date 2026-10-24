@@ -540,16 +540,14 @@
   .cycle-planning-card, .cycle-planning-modal button, .cycle-card-actions .custom-tooltip { animation: none; transition: none; }
 }
 
-/* Keep the planning tooltip below the action so it does not cover the status line. */
+/* This action is at the start of the card footer on narrow screens; align the tooltip to its button edge to keep it in the viewport. */
 .cycle-card-actions [data-action="planning"] .custom-tooltip {
   position: absolute;
   top: calc(100% + 4px);
   bottom: auto;
-  right: 0;
-  left: auto;
-  transform: translateY(-4px);
+  left: 0;
+  transform: translateY(4px);
 }
-.cycle-card-actions [data-action="planning"] { position: static; }
 .cycle-card-actions [data-action="planning"]:is(:hover, :focus-visible) .custom-tooltip {
   transform: translateY(0);
 }
