@@ -1202,7 +1202,17 @@ test('Request Workouts locale dictionaries retain translated page, form, prompt 
     assert.equal(typeof locale.aiCoach.shoesFallback, 'string');
     assert.equal(typeof locale.aiCoach.generate, 'string');
     assert.equal(typeof locale.aiCoach.copy, 'string');
+    assert.equal(typeof locale.aiCoach.weeklyApplySuccessTitle, 'string');
+    assert.equal(typeof locale.aiCoach.weeklyApplySuccessMessage, 'string');
+    assert.equal(typeof locale.aiCoach.weeklyApplyErrorTitle, 'string');
+    assert.equal(typeof locale.aiCoach.weeklyApplyUnknownMessage, 'string');
+    assert.equal(locale.aiCoach.ok, 'OK');
   }
+  assert.equal(messages.aiCoach.weeklyApplySuccessTitle, 'Treinos adicionados');
+  assert.equal(messages.aiCoach.weeklyApplySuccessMessage, 'Seus treinos foram adicionados ao calendário.');
+  assert.equal(messages.aiCoach.weeklyApplyErrorTitle, 'Não foi possível adicionar os treinos');
+  assert.equal(enMessages.aiCoach.weeklyApplySuccessTitle, 'Workouts added');
+  assert.equal(enMessages.aiCoach.weeklyApplySuccessMessage, 'Your workouts were added to the calendar.');
   assert.notEqual(messages.aiCoach.title, enMessages.aiCoach.title);
   assert.equal(messages.aiCoach.title, 'Solicitar Treinos');
   assert.equal(messages.aiCoach.pageTitle, 'Solicitar Treinos - Kinesis');
@@ -1378,7 +1388,7 @@ test('Request Workouts keeps the admin prompt in an accessible dialog with share
     html,
     /<title data-i18n="aiCoach\.pageTitle">Request Workouts - Kinesis<\/title>/,
   );
-  assert.match(html, /<h1 data-i18n="aiCoach\.title">Request Workouts<\/h1>/);
+  assert.match(html, /<h1 id="aiCoachTitle" tabindex="-1" data-i18n="aiCoach\.title">Request Workouts<\/h1>/);
   assert.match(html, /data-i18n="aiCoach\.generate"/);
   assert.match(html, /href="shared\/components\.css"/);
   assert.match(
@@ -1392,6 +1402,11 @@ test('Request Workouts keeps the admin prompt in an accessible dialog with share
   assert.match(html, /id="externalPromptModal" class="modal-backdrop hidden" hidden/);
   assert.match(html, /role="dialog" aria-modal="true" aria-labelledby="externalPromptTitle"/);
   assert.match(html, /id="externalPromptClose" class="modal-close"/);
+  assert.match(html, /id="weeklyApplyResultModal" class="modal-backdrop hidden" hidden/);
+  assert.match(html, /aria-labelledby="weeklyApplyResultTitle" aria-describedby="weeklyApplyResultMessage"/);
+  assert.match(html, /id="weeklyApplyResultClose" class="modal-close"[\s\S]*?data-lucide="x" aria-hidden="true"/);
+  assert.match(html, /class="confirm-actions"[\s\S]*?id="weeklyApplyResultOk" class="btn btn-primary"/);
+  assert.doesNotMatch(html, /id="weeklyAppliedConfirmation"|id="weeklyAppliedStatus"|id="weeklyCalendarLink"/);
   assert.match(html, /id="promptOutput" class="prompt-output external-prompt-output"/);
   assert.match(html, /class="form-actions external-prompt-actions"[\s\S]*?id="closePromptBtn" class="btn-secondary"[\s\S]*?id="copyBtn" class="btn-primary"/);
   assert.doesNotMatch(html, /id="resultSection"/);
@@ -1400,6 +1415,12 @@ test('Request Workouts keeps the admin prompt in an accessible dialog with share
   assert.match(css, /\.external-prompt-card\s*\{[\s\S]*?max-height:\s*calc\(100dvh - 2rem\)[\s\S]*?overflow:\s*hidden/);
   assert.match(css, /\.external-prompt-output\s*\{[\s\S]*?overflow:\s*auto[\s\S]*?user-select:\s*text/);
   assert.match(css, /#weeklyCancel\[hidden\][\s\S]*?display:\s*none/);
+  assert.match(css, /#weeklyApplyResultModal\[hidden\][\s\S]*?display:\s*none/);
+  const js = readFileSync(join(publicDir, 'ai-coach.js'), 'utf8');
+  assert.match(js, /createDialogFocusTrap\(\s*applyResultModal,\s*closeApplyResult/);
+  assert.match(js, /applyResultModal\.addEventListener\('click'/);
+  assert.match(js, /applyResultMessage\.textContent = ''/);
+  assert.match(js, /weeklyApplyUnknownMessage/);
 });
 
 test('clipboard helper reports success, unsupported clipboard, and rejected writes', async () => {

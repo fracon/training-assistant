@@ -13,7 +13,7 @@
   <main id="appView">
     <section class="ai-coach-page">
       <header class="ai-coach-header">
-        <h1 data-i18n="aiCoach.title">Request Workouts</h1>
+        <h1 id="aiCoachTitle" tabindex="-1" data-i18n="aiCoach.title">Request Workouts</h1>
         <p class="ai-coach-subtitle" data-i18n="aiCoach.subtitle">Organize your goals and availability to prepare an AI training request.</p>
       </header>
 
@@ -72,14 +72,24 @@
         </div>
       </section>
 
-      <section id="weeklyAppliedConfirmation" class="weekly-applied-confirmation" hidden>
-        <p id="weeklyAppliedStatus" class="weekly-applied-status" role="status" tabindex="-1"></p>
-        <p id="weeklyAppliedIgnored" class="weekly-applied-ignored" hidden></p>
-        <a id="weeklyCalendarLink" class="btn-secondary weekly-calendar-link" hidden data-i18n="aiCoach.viewAppliedCalendar">Ver no calendário</a>
-      </section>
-
     </section>
   </main>
+
+  <div id="weeklyApplyResultModal" class="modal-backdrop hidden" hidden>
+    <section class="modal-card weekly-apply-result-card" role="dialog" aria-modal="true" aria-labelledby="weeklyApplyResultTitle" aria-describedby="weeklyApplyResultMessage">
+      <header class="modal-header">
+        <h2 id="weeklyApplyResultTitle"></h2>
+        <button type="button" id="weeklyApplyResultClose" class="modal-close" aria-label="Fechar" data-i18n-aria-label="aiCoach.closeApplyResult">
+          <i data-lucide="x" aria-hidden="true"></i>
+        </button>
+      </header>
+      <p id="weeklyApplyResultMessage" class="weekly-apply-result-message"></p>
+      <p id="weeklyApplyResultIgnored" class="weekly-apply-result-ignored" hidden></p>
+      <div class="confirm-actions">
+        <button type="button" id="weeklyApplyResultOk" class="btn btn-primary" data-i18n="aiCoach.ok">OK</button>
+      </div>
+    </section>
+  </div>
 
   <div id="externalPromptModal" class="modal-backdrop hidden" hidden>
     <section class="modal-card external-prompt-card" role="dialog" aria-modal="true" aria-labelledby="externalPromptTitle">

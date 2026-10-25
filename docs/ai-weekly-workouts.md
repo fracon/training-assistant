@@ -36,23 +36,26 @@ the user can retain the proposal for review but must generate a fresh one to
 apply against changed sources. Existing import behavior and the 12-column
 XLSX/XLS contract remain independent and unchanged.
 
-Once application succeeds, the proposal cards and Apply action are replaced by
-the persisted added/duplicate counts and a localized link to the applied week
-in Calendar. Reload recovers that terminal state without restoring a pending
-preview; recovery selects only the latest workout execution. If the apply
-response is lost, the page reads that same proposal before deciding success. A
-failed status read can be retried for free and never starts another generation.
-The response, full forecast evidence, and application record remain available
-in the protected execution/debug view.
+After successful application, the proposal cards and Apply action are removed
+and a dismissible localized result modal reports that workouts were added. It
+mentions the persisted ignored-duplicate count only when nonzero. The shared
+modal supports its close icon, Escape, focus containment and restoration to a
+stable page control. Closing it clears its presentation content and leaves no
+permanent applied-result panel; the form is ready for a new explicit request.
+Reload or returning to the page recovers the applied terminal state without
+reopening the modal or restoring an older proposal. The response, complete
+forecast evidence and application record remain in the protected execution/
+debug data.
 
-The applied state is a compact confirmation outside the proposal review panel:
-the added count is always shown, while an ignored-duplicate count appears only
-when nonzero. The form remains available for another explicit request. A
-confirmed application hides review/apply/read/cancel controls; its Calendar
-link targets the applied Monday. If the apply response or its follow-up read is
-uncertain, another Apply action stays unavailable until a free read resolves
-the same saved proposal. Request tokens invalidate older polls when applying
-or cancelling so they cannot reopen stale controls.
+Known application failures use a localized, dismissible result modal without
+internal codes or provider details; the still-usable proposal remains available
+after dismissal. If the apply response and the subsequent state read are both
+uncertain, the result modal says that application could not be confirmed and
+the Apply action stays suppressed. A free read of the same proposal resolves
+the state before success or failure is stated or another Apply action is made
+available. A successful persisted application found by that read opens the
+success modal once. Request tokens invalidate older polls when applying or
+cancelling so they cannot reopen stale controls or stack result dialogs.
 
 The administrator's unchanged free external prompt opens in the shared
 accessible dialog pattern rather than inline in the page. Its scrollable text

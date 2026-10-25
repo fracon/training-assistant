@@ -602,8 +602,7 @@ body.external-prompt-open { overflow: hidden; }
 
 #weeklyProposalSection[hidden],
 #externalPromptModal[hidden],
-#weeklyAppliedConfirmation[hidden],
-#weeklyCalendarLink[hidden],
+#weeklyApplyResultModal[hidden],
 #weeklyProposalActions[hidden],
 #weeklyProposalStatus[hidden],
 #weeklyApply[hidden],
@@ -612,19 +611,11 @@ body.external-prompt-open { overflow: hidden; }
 #externalPromptError[hidden],
 #promptCopyStatus:empty { display: none; }
 
-.weekly-applied-confirmation {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.4rem 0.9rem;
-  margin-top: 1rem;
-  padding-top: 0.85rem;
-  border-top: 1px solid var(--line);
-}
-.weekly-applied-status, .weekly-applied-ignored { margin: 0; }
-.weekly-applied-status { font-weight: 600; }
-.weekly-applied-ignored { flex: 1 1 100%; color: var(--muted); font-size: 0.86rem; }
-.weekly-calendar-link { width: fit-content; text-decoration: none; }
+.weekly-apply-result-card .modal-header { margin-bottom: 0.75rem; }
+.weekly-apply-result-message,
+.weekly-apply-result-ignored { margin: 0; line-height: 1.55; }
+.weekly-apply-result-message { color: var(--ink); }
+.weekly-apply-result-ignored { margin-top: 0.6rem; color: var(--muted); font-size: 0.9rem; }
 .weekly-proposal-actions { flex-wrap: wrap; }
 .weekly-proposal-actions > button { white-space: nowrap; }
 
@@ -653,8 +644,6 @@ body.external-prompt-open { overflow: hidden; }
 .weekly-proposal-meta dd { color: var(--muted); font-size: 0.86rem; }
 .weekly-proposal-text { margin-top: 0.85rem; padding-top: 0.75rem; border-top: 1px solid var(--line); }
 .weekly-proposal-notes p { white-space: pre-wrap; }
-.weekly-applied-status { margin: 0.5rem 0; }
-.weekly-calendar-link { display: inline-flex; width: fit-content; margin-top: 0.35rem; text-decoration: none; }
 #weeklyProposalError { margin: 0.75rem 0; color: var(--danger); }
 #weeklyProposalContent > p { overflow-wrap: anywhere; }
 @media (max-width: 520px) {

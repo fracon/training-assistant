@@ -229,10 +229,12 @@ function setupAiCoachPage(user) {
   const weeklyReadAgain = document.getElementById('weeklyReadAgain');
   const weeklyCancel = document.getElementById('weeklyCancel');
   const weeklyActions = document.getElementById('weeklyProposalActions');
-  const weeklyAppliedConfirmation = document.getElementById('weeklyAppliedConfirmation');
-  const weeklyAppliedStatus = document.getElementById('weeklyAppliedStatus');
-  const weeklyAppliedIgnored = document.getElementById('weeklyAppliedIgnored');
-  const weeklyCalendarLink = document.getElementById('weeklyCalendarLink');
+  const applyResultModal = document.getElementById('weeklyApplyResultModal');
+  const applyResultTitle = document.getElementById('weeklyApplyResultTitle');
+  const applyResultMessage = document.getElementById('weeklyApplyResultMessage');
+  const applyResultIgnored = document.getElementById('weeklyApplyResultIgnored');
+  const applyResultClose = document.getElementById('weeklyApplyResultClose');
+  const applyResultOk = document.getElementById('weeklyApplyResultOk');
   const isAdmin = user?.role === 'admin';
   if (!isAdmin) {
     externalPromptBtn.remove();
@@ -251,10 +253,86 @@ function setupAiCoachPage(user) {
     readyExternalPrompt = null,
     weeklyReadPending = false,
     promptOrigin = null,
-    promptCopiedTimer = null;
+    promptCopiedTimer = null,
+    applyResult = null,
+    applyResultReturnFocus = null;
   const promptFocusTrap = isAdmin
     ? createDialogFocusTrap(promptModal, closeExternalPrompt)
     : null;
+  const applyResultFocusTrap = createDialogFocusTrap(
+    applyResultModal,
+    closeApplyResult,
+  );
+
+  function applyResultCopy() {
+    if (!applyResult) return;
+    if (applyResult.kind === 'success') {
+      applyResultTitle.textContent = t('aiCoach.weeklyApplySuccessTitle');
+      applyResultMessage.textContent = t('aiCoach.weeklyApplySuccessMessage');
+      applyResultIgnored.hidden = !(applyResult.ignored > 0);
+      if (applyResult.ignored > 0) {
+        applyResultIgnored.textContent = (applyResult.ignored === 1
+          ? t('aiCoach.weeklyApplyIgnoredOne')
+          : t('aiCoach.weeklyApplyIgnoredMany')).replace(
+          '{count}',
+          String(applyResult.ignored),
+        );
+      }
+    } else if (applyResult.kind === 'unknown') {
+      applyResultTitle.textContent = t('aiCoach.weeklyApplyUnknownTitle');
+      applyResultMessage.textContent = t('aiCoach.weeklyApplyUnknownMessage');
+      applyResultIgnored.hidden = true;
+      applyResultIgnored.textContent = '';
+    } else {
+      applyResultTitle.textContent = t('aiCoach.weeklyApplyErrorTitle');
+      applyResultMessage.textContent = t(
+        applyResult.conflict
+          ? 'aiCoach.weeklyConflict'
+          : 'aiCoach.weeklyApplyError',
+      );
+      applyResultIgnored.hidden = true;
+      applyResultIgnored.textContent = '';
+    }
+  }
+
+  function closeApplyResult() {
+    if (applyResultModal.hidden) return;
+    applyResultModal.hidden = true;
+    applyResultModal.classList.add('hidden');
+    applyResultFocusTrap.deactivate();
+    const preferred = applyResultReturnFocus;
+    applyResultReturnFocus = null;
+    applyResult = null;
+    applyResultTitle.textContent = '';
+    applyResultMessage.textContent = '';
+    applyResultIgnored.textContent = '';
+    applyResultIgnored.hidden = true;
+    const canFocus = (element) =>
+      element?.isConnected &&
+      !element.hidden &&
+      !element.disabled &&
+      getComputedStyle(element).display !== 'none';
+    const target = canFocus(preferred)
+      ? preferred
+      : canFocus(weeklyReadAgain)
+        ? weeklyReadAgain
+        : canFocus(weeklyApply)
+          ? weeklyApply
+          : document.getElementById('aiCoachTitle');
+    target?.focus({ preventScroll: true });
+  }
+
+  function showApplyResult(result, returnFocus) {
+    if (!applyResultModal.hidden) return;
+    applyResult = result;
+    applyResultReturnFocus = returnFocus;
+    applyResultCopy();
+    applyResultModal.hidden = false;
+    applyResultModal.classList.remove('hidden');
+    applyResultFocusTrap.activate();
+    applyResultOk.focus();
+    refreshIcons();
+  }
 
   function closeExternalPrompt() {
     if (!isAdmin || promptModal.hidden) return;
@@ -308,17 +386,12 @@ function setupAiCoachPage(user) {
     return `${element.tagName}:${element.className || ''}`;
   }
 
-  function renderWeeklyProposal(proposal, { focusApplied = false } = {}) {
+  function renderWeeklyProposal(proposal) {
     if (!proposal) return;
     currentProposal = proposal;
     weeklyContent.replaceChildren();
     const response = proposal.proposal || proposal.response;
     const state = proposal.state;
-    weeklyAppliedConfirmation.hidden = true;
-    weeklyAppliedStatus.textContent = '';
-    weeklyAppliedIgnored.hidden = true;
-    weeklyCalendarLink.removeAttribute('href');
-    weeklyCalendarLink.hidden = true;
     weeklyApply.hidden = true;
     weeklyReadAgain.hidden = true;
     weeklyCancel.hidden = true;
@@ -332,21 +405,6 @@ function setupAiCoachPage(user) {
       weeklyStatus.textContent = '';
       weeklyStatus.hidden = true;
       lastWeeklyState = '';
-      const added = Number(proposal.application.added) || 0;
-      weeklyAppliedStatus.textContent = added === 1
-        ? t('aiCoach.weeklyAppliedAddedOne')
-        : t('aiCoach.weeklyAppliedAddedMany').replace('{added}', String(added));
-      const ignored = Number(proposal.application.ignored) || 0;
-      if (ignored > 0) {
-        weeklyAppliedIgnored.textContent = ignored === 1
-          ? t('aiCoach.weeklyAppliedIgnoredOne')
-          : t('aiCoach.weeklyAppliedIgnoredMany').replace('{ignored}', String(ignored));
-        weeklyAppliedIgnored.hidden = false;
-      }
-      weeklyCalendarLink.href = `/calendar.html?week=${encodeURIComponent(proposal.weekStart || proposal.application.weekStart || '')}`;
-      weeklyCalendarLink.hidden = false;
-      weeklyAppliedConfirmation.hidden = false;
-      if (focusApplied) weeklyAppliedStatus.focus({ preventScroll: true });
       return;
     }
     weeklySection.hidden = false;
@@ -759,8 +817,12 @@ function setupAiCoachPage(user) {
       );
       currentProposal.application = applied;
       applicationStatusUnknown = false;
-      renderWeeklyProposal(currentProposal, { focusApplied: true });
+      renderWeeklyProposal(currentProposal);
       sessionStorage.removeItem('kinesis-weekly-request-key');
+      showApplyResult(
+        { kind: 'success', ignored: Number(applied.ignored) || 0 },
+        document.getElementById('aiCoachTitle'),
+      );
     } catch (error) {
       // A lost POST response is resolved by reading this same persisted
       // proposal. It never starts another generation or assumes failure.
@@ -771,8 +833,15 @@ function setupAiCoachPage(user) {
       if (persisted?.application) {
         currentProposal = { ...currentProposal, ...persisted };
         applicationStatusUnknown = false;
-        renderWeeklyProposal(currentProposal, { focusApplied: true });
+        renderWeeklyProposal(currentProposal);
         sessionStorage.removeItem('kinesis-weekly-request-key');
+        showApplyResult(
+          {
+            kind: 'success',
+            ignored: Number(persisted.application.ignored) || 0,
+          },
+          document.getElementById('aiCoachTitle'),
+        );
         return;
       }
       if (persisted) {
@@ -784,6 +853,7 @@ function setupAiCoachPage(user) {
         weeklyApply.hidden = true;
         weeklyCancel.hidden = true;
         weeklyReadAgain.hidden = false;
+        syncWeeklyActions();
       }
       const stale = error.codes?.some(
         (code) => code.includes('Conflict') || code.includes('Outdated'),
@@ -792,10 +862,28 @@ function setupAiCoachPage(user) {
         weeklyApply.hidden = true;
         await refreshWeeklyExecution(activeExecutionId);
       }
-      weeklyError.hidden = false;
-      weeklyError.textContent = stale
-        ? t('aiCoach.weeklyConflict')
-        : t('aiCoach.weeklyApplyError');
+      if (currentProposal?.application) {
+        sessionStorage.removeItem('kinesis-weekly-request-key');
+        showApplyResult(
+          {
+            kind: 'success',
+            ignored: Number(currentProposal.application.ignored) || 0,
+          },
+          document.getElementById('aiCoachTitle'),
+        );
+      } else if (applicationStatusUnknown) {
+        weeklyError.hidden = true;
+        showApplyResult(
+          { kind: 'unknown' },
+          weeklyReadAgain,
+        );
+      } else {
+        weeklyError.hidden = true;
+        showApplyResult(
+          { kind: 'error', conflict: stale },
+          weeklyApply.hidden ? weeklyReadAgain : weeklyApply,
+        );
+      }
     } finally {
       actionPending = false;
       if (!applicationStatusUnknown)
@@ -814,19 +902,33 @@ function setupAiCoachPage(user) {
           const proposal = await fetchWeeklyProposal(activeExecutionId);
           applicationStatusUnknown = false;
           currentProposal = proposal;
-          renderWeeklyProposal(proposal, { focusApplied: Boolean(proposal.application) });
-          if (proposal.application)
+          renderWeeklyProposal(proposal);
+          if (proposal.application) {
             sessionStorage.removeItem('kinesis-weekly-request-key');
-          else {
+            showApplyResult(
+              {
+                kind: 'success',
+                ignored: Number(proposal.application.ignored) || 0,
+              },
+              document.getElementById('aiCoachTitle'),
+            );
+          } else {
             weeklyApply.hidden = proposal.state !== 'completed' || proposal.outdated || !(proposal.proposal || proposal.response);
             weeklyCancel.hidden = !['queued', 'running'].includes(proposal.state);
             weeklyReadAgain.hidden = !['failed', 'uncertain'].includes(proposal.state);
-            weeklyError.hidden = false;
-            weeklyError.textContent = t('aiCoach.weeklyApplyError');
+            weeklyError.hidden = true;
+            syncWeeklyActions();
+            showApplyResult(
+              { kind: 'error' },
+              weeklyApply.hidden ? weeklyReadAgain : weeklyApply,
+            );
           }
         } catch {
           applicationStatusUnknown = true;
-          showWeeklyReadError();
+          weeklyError.hidden = true;
+          weeklyReadAgain.hidden = false;
+          syncWeeklyActions();
+          showApplyResult({ kind: 'unknown' }, weeklyReadAgain);
         } finally {
           actionPending = false;
           weeklyReadPending = false;
@@ -1600,6 +1702,7 @@ function setupAiCoachPage(user) {
     targetDatePicker.refresh();
     updateValidation();
     if (currentProposal) renderWeeklyProposal(currentProposal);
+    if (applyResult) applyResultCopy();
   });
 
   saveAvailabilityLabel.textContent = t('aiCoach.saveAvailability');
@@ -1630,6 +1733,11 @@ function setupAiCoachPage(user) {
     });
     copyBtn.addEventListener('click', () => void handleCopy());
   }
+  applyResultClose.addEventListener('click', closeApplyResult);
+  applyResultOk.addEventListener('click', closeApplyResult);
+  applyResultModal.addEventListener('click', (event) => {
+    if (event.target === applyResultModal) closeApplyResult();
+  });
 }
 
 export async function initAiCoach() {

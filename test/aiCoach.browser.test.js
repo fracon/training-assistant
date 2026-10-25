@@ -12,6 +12,7 @@ const { setTimeout: delay } = require('node:timers/promises');
 const { buildServer } = require('../src/server');
 const { createDatabase } = require('../src/db/database');
 const { readAiConfig } = require('../src/ai/config');
+const { materializePrescription } = require('../src/ai/weekly-workouts');
 
 function findChrome() {
   return [
@@ -37,6 +38,23 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
   const expectedSessionNotes =
     '<img src=x onerror="alert(1)">\nSessão sem pressa · café ☕\n' +
     'Observação contextual longa. '.repeat(30);
+  const makeSession = (date, weekday) => ({
+    date,
+    weekday,
+    period: '12_14',
+    sessionKind: 'easy',
+    prescription: [
+      { phase: 'warmup', repetitions: 1, minutes: 5, distanceMeters: null, instruction: 'Run gently and loosen up.', effort: 'Conversational breathing.', rpe: 2, targetHr: '', paceTargetSecondsPerKm: null, paceSecondsPerKm: null, recoveryMinutes: null, recoveryGuidance: null, recoveryRpe: null },
+      { phase: 'main', repetitions: 1, minutes: 35, distanceMeters: null, instruction: 'Run continuously with relaxed form.', effort: 'Comfortable effort; speak in full sentences.', rpe: 3, targetHr: '', paceTargetSecondsPerKm: null, paceSecondsPerKm: null, recoveryMinutes: null, recoveryGuidance: null, recoveryRpe: null },
+      { phase: 'cooldown', repetitions: 1, minutes: 5, distanceMeters: null, instruction: 'Ease down gradually.', effort: 'Very easy breathing.', rpe: 1, targetHr: '', paceTargetSecondsPerKm: null, paceSecondsPerKm: null, recoveryMinutes: null, recoveryGuidance: null, recoveryRpe: null },
+    ],
+    shoeId: null,
+    location: 'Legacy Porto',
+    weather: 'Use verified Kinesis forecast',
+    notes: expectedSessionNotes,
+    justification: 'This follows the saved context and recorded training.',
+    evidence: [`weather:${weekday}:${date}`],
+  });
   let simulatedProviderCalls = 0;
   const app = await buildServer({
     db,
@@ -110,24 +128,8 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
         schemaVersion: 'weekly-workouts-v3',
         weekStart: context.resource.weekStart,
         sessions: [
-          {
-            date: '2026-10-26',
-            weekday: 'monday',
-            period: '12_14',
-            sessionKind: 'easy',
-            prescription: [
-              { phase: 'warmup', repetitions: 1, minutes: 5, distanceMeters: null, instruction: 'Run gently and loosen up.', effort: 'Conversational breathing.', rpe: 2, targetHr: '', paceTargetSecondsPerKm: null, paceSecondsPerKm: null, recoveryMinutes: null, recoveryGuidance: null, recoveryRpe: null },
-              { phase: 'main', repetitions: 1, minutes: 35, distanceMeters: null, instruction: 'Run continuously with relaxed form.', effort: 'Comfortable effort; speak in full sentences.', rpe: 3, targetHr: '', paceTargetSecondsPerKm: null, paceSecondsPerKm: null, recoveryMinutes: null, recoveryGuidance: null, recoveryRpe: null },
-              { phase: 'cooldown', repetitions: 1, minutes: 5, distanceMeters: null, instruction: 'Ease down gradually.', effort: 'Very easy breathing.', rpe: 1, targetHr: '', paceTargetSecondsPerKm: null, paceSecondsPerKm: null, recoveryMinutes: null, recoveryGuidance: null, recoveryRpe: null },
-            ],
-            shoeId: null,
-            location: 'Legacy Porto',
-            weather: 'Use verified Kinesis forecast',
-            notes: expectedSessionNotes,
-            justification:
-              'This follows the saved context and recorded training.',
-            evidence: ['weather:monday:2026-10-26'],
-          },
+          makeSession('2026-10-26', 'monday'),
+          makeSession('2026-10-28', 'wednesday'),
         ],
       };
       return {
@@ -1963,6 +1965,15 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
         },
       ],
     );
+    await evaluate(`(()=>{const row=document.querySelector('[data-day="wednesday"]');const toggle=row.querySelector('[data-can-train]');if(!toggle.checked)toggle.click();row.querySelector('[data-period="12_14"]').click();const duration=row.querySelector('[data-duration]');duration.value='75';duration.dispatchEvent(new Event('input',{bubbles:true}));const location=row.querySelector('[data-location]');location.value='Legacy Porto';location.dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('saveAvailability').click()})()`);
+    await waitForText('#availabilityStatus', 'Weekly schedule saved.');
+    const duplicate = materializePrescription(
+      makeSession('2026-10-26', 'monday'),
+      'en-US',
+    ).value;
+    const duplicateId = db.prepare(
+      `INSERT INTO trainings(user_id,training_cycle_id,dia,periodo,tipo,treino,detalhes,fc_alvo,rpe,previsao,observacoes,location,completed,feedback_rpe,feedback_notas) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,1,3,?)`,
+    ).run(1, cycleId, duplicate.date, duplicate.period, duplicate.type, duplicate.workout, duplicate.details, duplicate.targetHr, duplicate.rpe, duplicate.weather, duplicate.notes, duplicate.location, 'Resultado sintético preservado').lastInsertRowid;
     await evaluate(`document.getElementById('generateBtn').click()`);
     await delay(1500);
     await waitForText(
@@ -1984,7 +1995,7 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     const review = await evaluate(
       `(()=>({cards:document.querySelectorAll('.weekly-proposal-card').length,text:document.getElementById('weeklyProposalContent').textContent,applyHidden:document.getElementById('weeklyApply').hidden}))()`,
     );
-    assert.equal(review.cards, 1);
+    assert.equal(review.cards, 2);
     assert.match(review.text, /Easy run/);
     assert.match(review.text, /Execution: Run continuously/);
     assert.match(review.text, /Effort: Comfortable effort/);
@@ -2011,7 +2022,7 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     assert.match(review.text, /FC alvo|Target HR/);
     assert.match(review.text, /period high: .*°C/);
     assert.equal(review.applyHidden, false);
-    assert.equal(await evaluate(`getComputedStyle(document.getElementById('weeklyCalendarLink')).display`), 'none');
+    assert.equal(await evaluate(`document.getElementById('weeklyApplyResultModal').hidden`), true);
     const reviewedDetails = await evaluate(
       `document.querySelector('.weekly-proposal-details').textContent`,
     );
@@ -2039,19 +2050,60 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
         'base64',
       ),
     );
-    await evaluate(`(()=>{const original=window.fetch.bind(window);window.fetch=async(...args)=>{const response=await original(...args);const url=typeof args[0]==='string'?args[0]:args[0].url;const method=(args[1]?.method||'GET').toUpperCase();if(url.includes('/api/ai/workouts/')&&url.endsWith('/apply')&&method==='POST'){window.fetch=original;throw new TypeError('synthetic response lost after commit')}return response}})()`);
-    await evaluate(`document.getElementById('weeklyApply').click()`);
-    await waitForText(
-      '#weeklyAppliedStatus',
-      '1 workout added to the calendar.',
-    );
+    await evaluate(`(()=>{const original=window.fetch.bind(window);window.__applyRequests=0;window.__postWasLost=false;window.__failedAppliedRead=false;window.fetch=async(...args)=>{const url=typeof args[0]==='string'?args[0]:args[0].url;const method=(args[1]?.method||'GET').toUpperCase();if(url.includes('/api/ai/workouts/')&&url.endsWith('/apply')&&method==='POST'){window.__applyRequests++;if(window.__applyRequests===1)return new Response(JSON.stringify({error:'Synthetic refusal',errors:['weeklyProposalInvalid']}),{status:422,headers:{'content-type':'application/json'}});if(window.__applyRequests===2){await original(...args);window.__postWasLost=true;throw new TypeError('synthetic response lost after commit')}}if(method==='GET'&&url.includes('/api/ai/workouts/')&&url.endsWith('/proposal')&&window.__postWasLost&&!window.__failedAppliedRead){window.__failedAppliedRead=true;window.fetch=original;throw new TypeError('synthetic status read unavailable')}return original(...args)}})()`);
+    await evaluate(`document.getElementById('weeklyApply').click();document.getElementById('weeklyApply').click()`);
+    await waitForText('#weeklyApplyResultTitle', 'Could not add the workouts');
+    assert.equal(await evaluate(`document.getElementById('weeklyApplyResultModal').hidden`), false);
+    assert.match(await evaluate(`document.getElementById('weeklyApplyResultMessage').textContent`), /proposal|calendar/i);
+    assert.doesNotMatch(await evaluate(`document.getElementById('weeklyApplyResultMessage').textContent`), /weeklyProposalInvalid|SQL|stack/i);
+    assert.equal(await evaluate(`document.querySelectorAll('.weekly-proposal-card').length`), 2);
+    assert.equal(await evaluate(`window.__applyRequests`), 1, 'a double click submits one application request');
+    assert.equal(await evaluate(`document.activeElement.id`), 'weeklyApplyResultOk');
+    await pressKey('Tab', 'Tab', 9, 1);
+    assert.equal(await evaluate(`document.activeElement.id`), 'weeklyApplyResultClose');
+    await pressKey('Tab', 'Tab', 9);
+    assert.equal(await evaluate(`document.activeElement.id`), 'weeklyApplyResultOk');
+    await pressKey('Escape', 'Escape', 27);
+    await evaluate(`new Promise(resolve=>{const check=()=>document.getElementById('weeklyApplyResultModal').hidden?resolve(true):requestAnimationFrame(check);check()})`);
+    assert.equal(await evaluate(`document.activeElement.id`), 'weeklyApply', 'the dismiss action restores focus to the available application control');
+    await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await evaluate(`document.getElementById('weeklyApply').click();document.getElementById('weeklyApply').click()`);
+    await waitForText('#weeklyApplyResultTitle', 'Could not confirm the result');
+    assert.match(await evaluate(`document.getElementById('weeklyApplyResultMessage').textContent`), /Check the same proposal's status/);
+    assert.equal(await evaluate(`document.getElementById('weeklyApply').hidden`), true);
+    assert.equal(await evaluate(`document.getElementById('weeklyReadAgain').hidden`), false);
+    assert.equal(await evaluate(`window.__applyRequests`), 2, 'a second double click still creates only one request');
+    const unknownModalLayout = await evaluate(`(()=>({width:innerWidth,scrollWidth:document.documentElement.scrollWidth,cardWidth:document.querySelector('.weekly-apply-result-card').getBoundingClientRect().width,ok:document.getElementById('weeklyApplyResultOk').textContent.trim(),close:document.getElementById('weeklyApplyResultClose').getAttribute('aria-label')}))()`);
+    assert.deepEqual(unknownModalLayout, { width: 390, scrollWidth: 390, cardWidth: unknownModalLayout.cardWidth, ok: 'OK', close: 'Close result' });
+    assert.ok(unknownModalLayout.cardWidth <= 358);
+    await evaluate(`document.getElementById('weeklyApplyResultClose').click()`);
+    await evaluate(`new Promise(resolve=>{const check=()=>document.getElementById('weeklyApplyResultModal').hidden?resolve(true):requestAnimationFrame(check);check()})`);
+    assert.equal(await evaluate(`document.activeElement.id`), 'weeklyReadAgain');
+    await evaluate(`(()=>{window.__testOriginalFetch=window.fetch.bind(window);window.__retryStatusReadFailed=false;window.fetch=async(...args)=>{const url=typeof args[0]==='string'?args[0]:args[0].url;const method=(args[1]?.method||'GET').toUpperCase();if(method==='GET'&&url.includes('/api/ai/workouts/')&&url.endsWith('/proposal')&&!window.__retryStatusReadFailed){window.__retryStatusReadFailed=true;throw new TypeError('synthetic repeated status read unavailable')}return window.__testOriginalFetch(...args)}})()`);
+    await evaluate(`document.getElementById('weeklyReadAgain').click()`);
+    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+5000;const check=()=>{const modal=document.getElementById('weeklyApplyResultModal');if(!modal.hidden&&document.getElementById('weeklyApplyResultTitle').textContent==='Could not confirm the result')resolve(true);else if(Date.now()>end)reject(new Error('A failed status retry did not retain the uncertain result modal'));else setTimeout(check,20)};check()})`);
+    assert.equal(await evaluate(`document.getElementById('weeklyApply').hidden`), true);
+    await evaluate(`document.getElementById('weeklyApplyResultOk').click()`);
+    await evaluate(`new Promise(resolve=>{const check=()=>document.getElementById('weeklyApplyResultModal').hidden?resolve(true):requestAnimationFrame(check);check()})`);
+    assert.equal(await evaluate(`document.activeElement.id`), 'weeklyReadAgain');
+    await evaluate(`document.getElementById('weeklyReadAgain').click()`);
+    await waitForText('#weeklyApplyResultTitle', 'Workouts added');
+    assert.equal(await evaluate(`document.getElementById('weeklyApplyResultMessage').textContent`), 'Your workouts were added to the calendar.');
+    assert.equal(await evaluate(`document.getElementById('weeklyApplyResultIgnored').textContent`), '1 existing workout was skipped.');
+    assert.equal(await evaluate(`document.getElementById('weeklyApplyResultModal').hidden`), false);
+    assert.equal(await evaluate(`document.activeElement.id`), 'weeklyApplyResultOk');
+    assert.equal(await evaluate(`document.querySelectorAll('.weekly-proposal-card').length`), 0);
+    assert.equal(await evaluate(`document.getElementById('weeklyProposalSection').hidden`), true);
+    assert.equal(await evaluate(`document.querySelectorAll('#weeklyApplyResultModal:not([hidden])').length`), 1, 'polling/recovery opens only one result dialog');
+    await evaluate(`new Promise(resolve=>setTimeout(resolve,300))`);
+    writeFileSync(path.join(tmpdir(), 'kinesis-weekly-apply-success-mobile-en.png'), Buffer.from((await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false })).data, 'base64'));
     assert.equal(
       db
         .prepare(
           'SELECT COUNT(*) AS n FROM trainings WHERE user_id=(SELECT id FROM users WHERE email=?)',
         )
         .get('availability-browser@example.test').n,
-      1,
+      2,
     );
     assert.equal(
       db
@@ -2061,29 +2113,22 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
         .get('availability-browser@example.test').observacoes,
       expectedSessionNotes,
     );
+    assert.deepEqual(
+      db.prepare('SELECT completed,feedback_rpe,feedback_notas FROM trainings WHERE id=?').get(duplicateId),
+      { completed: 1, feedback_rpe: 3, feedback_notas: 'Resultado sintético preservado' },
+      'the existing concluded workout and its result remain intact when skipped',
+    );
     const savedDetails = db
         .prepare(
-          'SELECT detalhes FROM trainings WHERE user_id=(SELECT id FROM users WHERE email=?)',
+          'SELECT detalhes FROM trainings WHERE user_id=(SELECT id FROM users WHERE email=?) AND dia=?',
         )
-        .get('availability-browser@example.test').detalhes;
-    const savedWeather = db.prepare('SELECT previsao FROM trainings WHERE user_id=(SELECT id FROM users WHERE email=?)').get('availability-browser@example.test').previsao;
+        .get('availability-browser@example.test', '2026-10-28').detalhes;
+    const savedWeather = db.prepare('SELECT previsao FROM trainings WHERE user_id=(SELECT id FROM users WHERE email=?) AND dia=?').get('availability-browser@example.test', '2026-10-28').previsao;
     assert.equal(savedWeather, reviewedWeather, 'the compact verified forecast is identical in preview and the calendar row');
     for (const instruction of ['Run gently and loosen up.', 'Run continuously with relaxed form.', 'Ease down gradually.', 'RPE 2/5', 'RPE 3/5', 'RPE 1/5']) {
       assert.ok(reviewedDetails.includes(instruction), `preview includes ${instruction}`);
       assert.ok(savedDetails.includes(instruction), `calendar details preserve ${instruction}`);
     }
-    assert.equal(await evaluate(`document.querySelectorAll('.weekly-proposal-card').length`), 0);
-    assert.equal(await evaluate(`document.getElementById('weeklyProposalSection').hidden`), true);
-    assert.equal(await evaluate(`document.getElementById('weeklyAppliedConfirmation').hidden`), false);
-    assert.deepEqual(await evaluate(`(()=>Object.fromEntries(['weeklyApply','weeklyReadAgain','weeklyCancel'].map(id=>[id,getComputedStyle(document.getElementById(id)).display])))()`), { weeklyApply: 'none', weeklyReadAgain: 'none', weeklyCancel: 'none' });
-    assert.equal(await evaluate(`document.activeElement.id`), 'weeklyAppliedStatus');
-    assert.match(await evaluate(`document.getElementById('weeklyCalendarLink').getAttribute('href')`), /calendar\.html\?week=2026-10-26/);
-    await evaluate(
-      `document.querySelector('.lang-switch [data-lang="pt-BR"]').click()`,
-    );
-    await evaluate(
-      `new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{if(document.documentElement.lang==='pt-BR')resolve(true);else if(Date.now()>end)reject(new Error('Weekly proposal Portuguese rerender timed out'));else setTimeout(check,30)};check()})`,
-    );
     assert.deepEqual(
       await evaluate(
         `(()=>({primaryIcon:document.querySelector('#generateBtn svg')?.getAttribute('data-lucide'),secondaryIcon:document.querySelector('#externalPromptBtn svg')?.getAttribute('data-lucide'),primaryLabel:document.querySelector('#generateBtn span').textContent.trim(),secondaryLabel:document.querySelector('#externalPromptBtn span').textContent.trim()}))()`,
@@ -2091,13 +2136,24 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       {
         primaryIcon: 'calendar-plus',
         secondaryIcon: 'sparkles',
-        primaryLabel: 'Gerar proposta semanal',
-        secondaryLabel: 'Ver prompt externo',
+        primaryLabel: 'Generate weekly proposal',
+        secondaryLabel: 'View external prompt',
       },
     );
     assert.equal(await evaluate(`document.querySelectorAll('.weekly-proposal-card').length`), 0);
-    assert.equal(await evaluate(`document.getElementById('weeklyCalendarLink').textContent`), 'Ver no calendário');
-    assert.equal(await evaluate(`document.getElementById('weeklyAppliedStatus').textContent`), '1 treino adicionado ao calendário.');
+    await evaluate(`document.getElementById('weeklyApplyResultOk').click()`);
+    await evaluate(`new Promise(resolve=>{const check=()=>document.getElementById('weeklyApplyResultModal').hidden?resolve(true):requestAnimationFrame(check);check()})`);
+    assert.equal(await evaluate(`document.getElementById('weeklyApplyResultMessage').textContent`), '');
+    assert.equal(await evaluate(`document.activeElement.id`), 'aiCoachTitle');
+    assert.equal(await evaluate(`document.getElementById('weeklyProposalSection').hidden`), true);
+    assert.equal(await evaluate(`document.getElementById('weeklyApplyResultModal').hidden`), true);
+    assert.equal(await evaluate(`document.getElementById('weeklyAppliedConfirmation')`), null);
+    await evaluate(`document.querySelector('.lang-switch [data-lang="pt-BR"]').click()`);
+    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{if(document.documentElement.lang==='pt-BR')resolve(true);else if(Date.now()>end)reject(new Error('Post-application Portuguese switch timed out'));else setTimeout(check,30)};check()})`);
+    await evaluate(`new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>setTimeout(resolve,100))))`);
+    assert.equal(await evaluate(`document.querySelector('#generateBtn span').textContent.trim()`), 'Gerar proposta semanal');
+    assert.equal(await evaluate(`document.querySelector('#externalPromptBtn span').textContent.trim()`), 'Ver prompt externo');
+    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
     writeFileSync(
       path.join(tmpdir(), 'kinesis-weekly-proposal-review-pt.png'),
       Buffer.from(
@@ -2157,19 +2213,17 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     await evaluate(
       `new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{if(!document.getElementById('saveAvailability').disabled)resolve(true);else if(Date.now()>end)reject(new Error('Regular-account availability did not load'));else setTimeout(check,25)};check()})`,
     );
-    await waitForText(
-      '#weeklyAppliedStatus',
-      '1 treino adicionado ao calendário.',
-    );
+    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{if(!document.getElementById('externalPromptBtn')&&!document.getElementById('externalPromptModal'))resolve(true);else if(Date.now()>end)reject(new Error('The regular account retained administrative prompt controls'));else setTimeout(check,25)};check()})`);
     assert.deepEqual(
       await evaluate(
-        `(()=>({externalPromptPresent:!!document.getElementById('externalPromptBtn'),technicalPromptPresent:!!document.getElementById('externalPromptModal'),proposalVisible:!document.getElementById('weeklyProposalSection').hidden,appliedConfirmationVisible:!document.getElementById('weeklyAppliedConfirmation').hidden,width:innerWidth,scrollWidth:document.documentElement.scrollWidth}))()`,
+        `(()=>({externalPromptPresent:!!document.getElementById('externalPromptBtn'),technicalPromptPresent:!!document.getElementById('externalPromptModal'),proposalVisible:!document.getElementById('weeklyProposalSection').hidden,resultModalVisible:!document.getElementById('weeklyApplyResultModal').hidden,resultText:document.getElementById('weeklyApplyResultMessage').textContent,width:innerWidth,scrollWidth:document.documentElement.scrollWidth}))()`,
       ),
       {
         externalPromptPresent: false,
         technicalPromptPresent: false,
         proposalVisible: false,
-        appliedConfirmationVisible: true,
+        resultModalVisible: false,
+        resultText: '',
         width: 1280,
         scrollWidth: 1280,
       },

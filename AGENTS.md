@@ -516,13 +516,16 @@ running work, apply only for a current completed proposal, and a same-execution
 read after terminal/read failures. Verified weather displays only the compact temperature
 range, period maximum and available verified conditions; partial/unavailable
 coverage remains explicit. Full source/query evidence remains protected with
-the execution. After successful application, remove proposal cards and expose
-the saved added/ignored counts plus a link to the applied calendar week;
-reload must preserve this terminal state, and a lost apply response is resolved
-by a free read of the same proposal. The applied confirmation stays compact
-outside the review panel, shows ignored duplicates only when nonzero, and keeps
-the form available for a new explicit request. Never let an older poll restore
-applied cards or actions. Open-Meteo hourly evidence is bound to an exact revisioned availability
+the execution. After successful application, remove proposal cards and show the
+saved result in a dismissible shared modal; include ignored duplicates only
+when nonzero. Closing the modal returns focus to a stable visible control and
+leaves no permanent result panel. Reload preserves the applied terminal state
+without reopening the modal or selecting an older proposal. A lost apply
+response is resolved by a free read of the same proposal; until then, suppress
+Apply and never imply success or failure. Known application failures use the
+localized result modal and keep a still-usable proposal available. Never let an
+older poll restore applied cards/actions or open a duplicate result dialog.
+Open-Meteo hourly evidence is bound to an exact revisioned availability
 snapshot before reservation/dispatch and application. Forecast IANA timezone
 identity and distinct UTC hourly instants are checked through DST; the
 16-date horizon is enforced locally, while Open-Meteo requests use
