@@ -60,7 +60,13 @@ warmup/cooldown have no recovery fields. Warmup, each main block and cooldown ar
 reviewable independently. Progressions/fartleks use multiple ordered main
 components to express changing effort. Pace/HR targets can be absent; the
 instruction should use supported effort and breathing cues instead of
-inventing metrics or zones.
+inventing metrics or zones. The strict request schema declares the same numeric
+bounds enforced by the domain validator, including repetitions, distances,
+paces, recoveries and both RPE fields. It also matches the location (200),
+weather (1,000), notes and justification (2,000) string limits. Nullable
+fields remain explicit; cross-field rules such as requiring recovery guidance
+only on repeated main components remain domain-validated and are stated in the
+adapter instructions.
 
 Duration is calculated only from structured fields: timed component minutes ×
 repetitions, plus `(repetitions - 1) × recoveryMinutes`, warmup and cooldown.
@@ -90,7 +96,10 @@ semantically parse every natural-language contradiction about duration or
 distance. The delivery prompt tells the model not to add alternate time or
 distance prescriptions to prose. Notes (persisted as `observacoes`) and
 proposal-only justifications stay separate and are shown in full before
-application; text is rendered safely with line breaks.
+application; text is rendered safely with line breaks. The adapter asks the
+model to keep complete materialized `details` at or below 2,000 characters.
+JSON Schema cannot express the combined length of all rendered component lines,
+so the backend rejects overlength output without truncating or repairing it.
 
 Materialization yields the same 12 import fields (`date`, `weekday`, `period`,
 `type`, `workout`, `details`, `targetHr`, `rpe`, `shoeId`, `location`,
@@ -234,6 +243,19 @@ setting, limit, model, deployment, `.env`, main database or production state.
 Open-Meteo receives only coordinates derived from the saved location plus the
 date/timezone needed for hourly weather. Network providers can receive ordinary
 connection metadata. `store:false` is not a promise of zero provider retention.
+
+The complete context snapshot retains each forecast's exact query URL,
+coordinates, source binding (owner, weekday, local date, period, location and
+availability revision), lookup time, timezone, coverage, window, hourly values
+and limitations. `projectContextForModel()` sends the model only the relevant
+date/weekday/period, source/link, lookup time, timezone/status/reason, coverage,
+window and compact hourly tuples, plus shared limitations. It omits internal
+owner/revision bindings, coordinates, exact query URLs and duplicate source
+version hashes from the provider view; those remain in the owner-scoped
+execution snapshot and its freshness hash. Source type/ID references remain
+available to the response validator. The conservative context byte budget uses
+the same projection as the request, without raising its configured limit or
+dropping forecast samples.
 
 The main page's free external prompt is still explicitly available to admins
 only; its prompt template output is byte-preserved. Admin preview/debug routes

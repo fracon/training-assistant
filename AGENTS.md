@@ -506,8 +506,12 @@ identity and distinct UTC hourly instants are checked through DST; the
 16-date horizon is enforced locally, while Open-Meteo requests use
 `start_date`/`end_date` without mutually exclusive `forecast_days`. Compact
 hourly tuples retain instant, local time/offset, temperature and WMO code
-inside the existing context budget. Record and display that no authorized independent hourly
-source is configured; no daily maximum is substituted. Ambiguous, partial,
+inside the existing context budget. The execution snapshot retains the full
+forecast query and availability binding, while the provider receives a
+freshness-safe projection containing the source, coverage and verified hourly
+evidence; use the same projection for payload budgeting. Record and display
+that no authorized independent hourly source is configured; no daily maximum
+is substituted. Ambiguous, partial,
 incompatible-timezone, out-of-horizon and unavailable forecasts are explicit,
 with planning continuing without invented weather. v1/v2 proposals cannot be
 reviewed/applied under v3; their snapshots and historical calendar rows remain

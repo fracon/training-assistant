@@ -4,10 +4,100 @@ const assert = require('node:assert/strict');
 const { createDatabase } = require('../src/db/database');
 const { AiError, hash } = require('../src/ai/memory');
 const { readAiConfig } = require('../src/ai/config');
+const { buildContext, tokenBound, projectContextForModel } = require('../src/ai/context');
+const { buildPayload } = require('../src/ai/client');
 const { buildServer } = require('../src/server');
 const weekly = require('../src/ai/weekly-workouts');
 const { DAY_KEYS } = require('../src/availability');
+const { saveAvailabilityWeek } = require('../src/availability');
 const { trainingSignature } = require('../src/trainingImport');
+
+test('weekly structured schema exposes the same numeric bounds as domain validation', () => {
+  const step = weekly.schema.properties.sessions.items.properties.prescription.items;
+  const integerBounds = (field) => {
+    const spec = step.properties[field];
+    const integer = spec.anyOf?.find((part) => part.type === 'integer') || spec;
+    return [integer.minimum, integer.maximum];
+  };
+  assert.deepEqual(integerBounds('repetitions'), [1, 30]);
+  assert.deepEqual(integerBounds('minutes'), [1, 720]);
+  assert.deepEqual(integerBounds('distanceMeters'), [50, 100000]);
+  assert.deepEqual(integerBounds('paceSecondsPerKm'), [120, 1800]);
+  assert.deepEqual(integerBounds('paceTargetSecondsPerKm'), [120, 1800]);
+  assert.deepEqual(integerBounds('recoveryMinutes'), [0, 30]);
+  assert.deepEqual(integerBounds('rpe'), [1, 5]);
+  assert.deepEqual(integerBounds('recoveryRpe'), [1, 5]);
+  assert.equal(
+    weekly.schema.properties.sessions.items.properties.weather.maxLength,
+    1000,
+  );
+});
+
+test('weekly model projection handles absent evidence and keeps full execution-only fields out of provider context', () => {
+  assert.equal(projectContextForModel(null), null);
+  const cycle = { purpose: 'cycle', hash: 'kept' };
+  assert.equal(projectContextForModel(cycle), cycle);
+  const noWeather = projectContextForModel({
+    purpose: 'workouts', weather: 'not-an-array', hash: 'internal',
+    sources: [{ type: 'weather', id: 'monday:2026-10-26', version: 'internal' }],
+  });
+  assert.equal(noWeather.hash, undefined);
+  assert.equal(noWeather.weather, 'not-an-array');
+  assert.deepEqual(noWeather.sources, [{ type: 'weather', id: 'monday:2026-10-26' }]);
+  assert.equal(noWeather.weatherLimitations, undefined);
+  const input = {
+    purpose: 'workouts',
+    weather: [null, { weekday: 'monday', limitations: ['shared limit', 42], userId: 1 }],
+    refs: [null, 7, { type: 'training', id: 'one', version: 'internal', label: 'run' }, { type: 'training', id: 'two', label: 'run' }],
+  };
+  const projected = projectContextForModel(input);
+  assert.deepEqual(projected.weather, [{}, { weekday: 'monday' }]);
+  assert.deepEqual(projected.weatherLimitations, ['shared limit']);
+  assert.deepEqual(projected.refs, [null, 7, { type: 'training', id: 'one' }, { type: 'training', id: 'two', label: 'run' }]);
+  assert.equal(input.weather[1].userId, 1);
+});
+
+test('weekly forecast snapshot stays complete while model context fits its budget', () => {
+  const db = createDatabase({ filename: ':memory:' });
+  db.prepare("INSERT INTO users(id,email,password_hash,role,preferred_lang) VALUES(1,'budget@example.invalid','synthetic','user','pt-BR')").run();
+  db.prepare("INSERT INTO training_cycles(id,user_id,objective,distance,run_count,primary_goal,start_date,status) VALUES('cycle',1,'Build consistent endurance','10 km',4,'Consistency','2026-08-01','active')").run();
+  saveAvailabilityWeek(db, 1, DAY_KEYS.map((day, index) => ({
+    day,
+    can_train: index < 6,
+    available_periods: index < 6 ? [index === 5 ? '08_12' : 'before_08'] : [],
+    available_minutes: index < 6 ? (index === 5 ? 90 : 60) : null,
+    location: index < 6 ? 'Fanzeres' : '',
+  })));
+  db.prepare("INSERT INTO shoes(id,user_id,brand,model,status) VALUES('shoe',1,'Synthetic','Daily','active')").run();
+  const training = db.prepare("INSERT INTO trainings(user_id,training_cycle_id,dia,periodo,tipo,treino,detalhes,completed,feedback_rpe,result_data_source,fit_distance,fit_duration,feedback_notas,feedback_terrain,feedback_breathing,feedback_energy,feedback_has_pain) VALUES(1,'cycle',?,'before_08','Corrida','Synthetic session','Completed synthetic run',1,?,'manual',5,'00:30:00','Dated synthetic feedback','Plano','conversational','normal','no')");
+  for (const [day, rpe] of [['2026-09-28',3],['2026-10-01',4],['2026-10-04',3],['2026-10-07',2],['2026-10-10',4],['2026-10-14',3],['2026-10-18',3],['2026-10-21',4]]) training.run(day,rpe);
+  const config = readAiConfig({ AI_ENABLED: 'true', OPENAI_API_KEY: 'synthetic', AI_CONTEXT_TOKENS: '12000' });
+  const weather = DAY_KEYS.slice(0,6).map((weekday, index) => ({
+    weekday, date: weekly.addIsoDays('2026-10-26',index), period: index === 5 ? '08_12' : 'before_08',
+    source:'Open-Meteo',sourceUrl:'https://open-meteo.com',lookedUpAt:'2026-10-25T12:00:00.000Z',
+    timezone:'Europe/Lisbon',resolvedTimezone:'Europe/Lisbon',status:'verified',coverage:{expectedHours:index===5?4:8,verifiedHours:index===5?4:8},window:{minC:10,maxC:12.5},
+    hours:Array.from({length:index===5?4:8},(_,hour)=>[1792998000+hour*3600,`${String(hour).padStart(2,'0')}:00+00:00`,10+hour/2,3]),
+    latitude:41.16754,longitude:-8.52981,url:`https://api.open-meteo.com/v1/forecast?start_date=${weekly.addIsoDays('2026-10-26',index)}`,
+    sourceBinding:{userId:1,weekday,date:weekly.addIsoDays('2026-10-26',index),period:index===5?'08_12':'before_08',location:'Fanzeres',availabilityRevision:1},
+    limitations:['No authorized independent second hourly source is configured; only Open-Meteo evidence is available.'],
+  }));
+  const context = buildContext(db,1,{purpose:'workouts',config,taskDate:'2026-10-26',weather});
+  assert.deepEqual(context.weather,weather);
+  assert.ok(tokenBound(context) <= 12000);
+  const adapter = weekly.createWeeklyWorkoutAdapter(db);
+  const payload = buildPayload({model:'gpt-6.1-sol',context,prompt:'Synthetic prompt',adapter:{...adapter,adaptPrompt:()=> 'Adapted synthetic prompt'},maxOutputTokens:8192});
+  const sent = JSON.parse(payload.input[0].content[0].text).context;
+  assert.equal(sent.weather.length,6);
+  assert.equal(sent.weather[0].hours.length,8);
+  assert.equal(sent.weather[0].sourceBinding,undefined);
+  assert.equal(sent.weather[0].url,undefined);
+  assert.equal(sent.weather[0].latitude,undefined);
+  assert.ok(sent.weatherLimitations.includes(weather[0].limitations[0]));
+  assert.ok(sent.sources.every((source) => !Object.hasOwn(source,'version')));
+  assert.equal(context.weather[0].sourceBinding.userId,1);
+  assert.equal(context.weather[0].url,weather[0].url);
+  db.close();
+});
 
 function forecastFetcher({
   day = '2026-10-25',
@@ -2050,7 +2140,13 @@ test('authenticated weekly execution recovers the same owner proposal and applie
   const sentContext = JSON.parse(
     calls[0].input[0].content[0].text,
   ).context;
-  assert.deepEqual(sentContext.weather[0].sourceBinding, {
+  assert.equal(sentContext.weather[0].sourceBinding, undefined);
+  assert.equal(sentContext.weather[0].url, undefined);
+  assert.ok(sentContext.weather[0].hours.length > 0);
+  const storedContext = JSON.parse(
+    db.prepare('SELECT context_json FROM ai_executions WHERE id=?').get(executionId).context_json,
+  );
+  assert.deepEqual(storedContext.weather[0].sourceBinding, {
     userId: owner,
     weekday: 'monday',
     date: '2026-10-26',

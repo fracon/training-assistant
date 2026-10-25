@@ -11,9 +11,46 @@ const TRAINING_COLUMNS = `id, dia, tipo, treino, detalhes, fc_alvo, rpe, complet
 function dayOffset(day, days) {
   return new Date(Date.parse(day) + days * 86400000).toISOString().slice(0, 10);
 }
+function projectContextForModel(context) {
+  if (!context || context.purpose !== 'workouts') return context;
+  const result = { ...context };
+  delete result.hash;
+  const limitations = new Set();
+  if (Array.isArray(context.weather))
+    result.weather = context.weather.map((evidence) => {
+      for (const item of evidence?.limitations || [])
+        if (typeof item === 'string') limitations.add(item);
+      const fields = [
+        'weekday', 'date', 'period', 'source', 'sourceUrl', 'lookedUpAt',
+        'timezone', 'status', 'reason', 'coverage', 'window', 'hours',
+      ];
+      return Object.fromEntries(
+        fields.filter((key) => Object.hasOwn(evidence || {}, key))
+          .map((key) => [key, evidence[key]]),
+      );
+    });
+  if (limitations.size) result.weatherLimitations = [...limitations];
+  const stripSourceVersions = (value) => {
+    if (Array.isArray(value)) return value.map(stripSourceVersions);
+    if (!value || typeof value !== 'object') return value;
+    if (typeof value.type === 'string' && Object.hasOwn(value, 'id') &&
+        Object.hasOwn(value, 'version'))
+      return { type: value.type, id: value.id };
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, stripSourceVersions(item)]),
+    );
+  };
+  return stripSourceVersions(result);
+}
+
 // A conservative byte upper bound, not a claim to be the model's tokenizer.
+// Workouts retain the complete evidence in the execution snapshot, while the
+// budget uses the smaller model projection that omits owner/query bindings.
 function tokenBound(value) {
-  return Buffer.byteLength(JSON.stringify(value), 'utf8');
+  const bounded = value?.purpose === 'workouts'
+    ? projectContextForModel(value)
+    : value;
+  return Buffer.byteLength(JSON.stringify(bounded), 'utf8');
 }
 function duration(value) {
   if (typeof value !== 'string' || !/^\d+(?::[0-5]\d){1,2}$/.test(value))
@@ -594,5 +631,6 @@ module.exports = {
   buildContext,
   contextIsCurrent,
   tokenBound,
+  projectContextForModel,
   duration,
 };
