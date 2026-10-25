@@ -548,43 +548,13 @@
   font-weight: 700;
 }
 
-.copy-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  padding: 0.45rem 0.9rem;
-  border: 1px solid var(--line-strong);
-  border-radius: 8px;
-  background: var(--bg);
-  color: var(--ink);
-  font-size: 0.85rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
-}
-
-.copy-btn:hover {
-  border-color: var(--accent);
-  background: var(--card);
-}
-
-.copy-btn.copied {
-  border-color: var(--ok);
-  color: var(--ok);
-}
-
-.copy-btn svg {
-  width: 16px;
-  height: 16px;
-}
-
 .prompt-output {
   width: 100%;
   max-width: 100%;
   margin: 0;
   padding: 1rem;
-  max-height: 60vh;
-  overflow-y: auto;
+  max-height: none;
+  overflow: auto;
   white-space: pre-wrap;
   word-break: break-word;
   background: var(--bg);
@@ -593,13 +563,70 @@
   font-family: inherit;
   font-size: 0.88rem;
   line-height: 1.5;
-  user-select: all;
+  user-select: text;
 }
 
+.external-prompt-card {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: min(54rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  overflow: hidden;
+}
+.external-prompt-card .modal-header { flex: 0 0 auto; }
+.external-prompt-output {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  user-select: text;
+}
+.prompt-copy-status { flex: 0 0 auto; min-height: 1.25em; margin: 0.5rem 0 0; color: var(--muted); font-size: 0.84rem; }
+.external-prompt-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--line);
+}
+.external-prompt-actions button { width: auto; max-width: 100%; min-width: 0; white-space: nowrap; }
+.external-prompt-actions button svg { width: 16px; height: 16px; }
+.external-prompt-error { margin: 0; color: var(--danger); font-size: 0.86rem; }
+body.external-prompt-open { overflow: hidden; }
+
 #weeklyProposalSection[hidden],
-#resultSection[hidden] { display: none; }
-#weeklyAppliedStatus[hidden],
-#weeklyCalendarLink[hidden] { display: none; }
+#externalPromptModal[hidden],
+#weeklyAppliedConfirmation[hidden],
+#weeklyCalendarLink[hidden],
+#weeklyProposalActions[hidden],
+#weeklyProposalStatus[hidden],
+#weeklyApply[hidden],
+#weeklyReadAgain[hidden],
+#weeklyCancel[hidden],
+#externalPromptError[hidden],
+#promptCopyStatus:empty { display: none; }
+
+.weekly-applied-confirmation {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.9rem;
+  margin-top: 1rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--line);
+}
+.weekly-applied-status, .weekly-applied-ignored { margin: 0; }
+.weekly-applied-status { font-weight: 600; }
+.weekly-applied-ignored { flex: 1 1 100%; color: var(--muted); font-size: 0.86rem; }
+.weekly-calendar-link { width: fit-content; text-decoration: none; }
+.weekly-proposal-actions { flex-wrap: wrap; }
+.weekly-proposal-actions > button { white-space: nowrap; }
 
 .weekly-proposal-list { display: grid; gap: 1rem; }
 .weekly-proposal-card {
@@ -633,6 +660,9 @@
 @media (max-width: 520px) {
   .weekly-proposal-summary { grid-template-columns: minmax(0, 1fr); gap: 0.45rem; }
   .weekly-proposal-card { padding: 0.85rem; }
+  .external-prompt-card { max-height: calc(100dvh - 1rem); padding: 1rem; }
+  .external-prompt-card .modal-header { margin-bottom: 0.75rem; }
+  .external-prompt-actions { gap: 0.5rem; flex-wrap: nowrap; }
 }
 
 @media (max-width: 640px) {

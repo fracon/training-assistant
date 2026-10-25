@@ -45,6 +45,26 @@ failed status read can be retried for free and never starts another generation.
 The response, full forecast evidence, and application record remain available
 in the protected execution/debug view.
 
+The applied state is a compact confirmation outside the proposal review panel:
+the added count is always shown, while an ignored-duplicate count appears only
+when nonzero. The form remains available for another explicit request. A
+confirmed application hides review/apply/read/cancel controls; its Calendar
+link targets the applied Monday. If the apply response or its follow-up read is
+uncertain, another Apply action stays unavailable until a free read resolves
+the same saved proposal. Request tokens invalidate older polls when applying
+or cancelling so they cannot reopen stale controls.
+
+The administrator's unchanged free external prompt opens in the shared
+accessible dialog pattern rather than inline in the page. Its scrollable text
+preserves the generated string verbatim and supports selection; the footer uses
+shared secondary/primary buttons. The close control, backdrop and Escape restore
+focus to the initiating action; the shared focus trap contains Tab navigation
+and inerts the background. Copy feedback is announced politely, and clipboard
+failure leaves the prompt available. Ordinary accounts have no prompt dialog
+or trigger in the initialized DOM; the preview endpoint independently checks
+the current administrator role and ownership. Reading/copying this prompt
+does not enqueue weekly generation.
+
 ## Structured contract and validation
 
 The delivery adapter is versioned independently of

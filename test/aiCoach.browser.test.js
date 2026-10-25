@@ -1451,6 +1451,55 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     const prompt = await evaluate(
       `document.getElementById('promptOutput').textContent`,
     );
+    assert.deepEqual(
+      await evaluate(`(()=>({modalOpen:!document.getElementById('externalPromptModal').hidden,oldInlineSection:!!document.getElementById('resultSection'),initialFocus:document.activeElement.id,scrollWidth:document.documentElement.scrollWidth,clientWidth:document.documentElement.clientWidth}))()`),
+      { modalOpen: true, oldInlineSection: false, initialFocus: 'externalPromptClose', scrollWidth: 1280, clientWidth: 1280 },
+    );
+    const desktopPromptActions = await evaluate(`(()=>{const card=document.querySelector('.external-prompt-card'),footer=document.querySelector('.external-prompt-actions'),close=document.getElementById('closePromptBtn'),copy=document.getElementById('copyBtn');return {cardWidth:card.getBoundingClientRect().width,footerRight:footer.getBoundingClientRect().right,lastActionRight:copy.getBoundingClientRect().right,closeWidth:close.getBoundingClientRect().width,copyWidth:copy.getBoundingClientRect().width,closeLabel:close.textContent.trim(),copyLabel:copy.textContent.trim()}})()`);
+    assert.ok(desktopPromptActions.cardWidth > 700);
+    assert.ok(desktopPromptActions.footerRight - desktopPromptActions.lastActionRight < 2);
+    assert.ok(desktopPromptActions.copyWidth < 240);
+    assert.equal(desktopPromptActions.closeLabel, 'Close');
+    assert.equal(desktopPromptActions.copyLabel, 'Copy prompt');
+    await evaluate(`new Promise((resolve)=>setTimeout(resolve,300))`);
+    writeFileSync(path.join(tmpdir(), 'kinesis-external-prompt-desktop-en.png'), Buffer.from((await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false })).data, 'base64'));
+    await evaluate(`Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async()=>{throw new Error('clipboard unavailable')}}});document.getElementById('copyBtn').click()`);
+    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+2000;const check=()=>{if(document.getElementById('promptCopyStatus').textContent.includes('Could not copy'))resolve(true);else if(Date.now()>end)reject(new Error('Copy failure was not announced'));else setTimeout(check,20)};check()})`);
+    assert.equal(await evaluate(`document.getElementById('promptOutput').textContent`), prompt, 'copy failure preserves the full prompt');
+    await evaluate(`(()=>{Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async(text)=>{window.__copiedPrompt=text}}});const modal=document.getElementById('externalPromptModal');modal.querySelector('#externalPromptClose').dispatchEvent(new KeyboardEvent('keydown',{key:'Tab',shiftKey:true,bubbles:true,cancelable:true}));})()`);
+    assert.equal(await evaluate(`document.activeElement.id`), 'copyBtn');
+    await evaluate(`document.getElementById('copyBtn').click()`);
+    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+2000;const check=()=>{if(document.getElementById('promptCopyStatus').textContent==='Prompt copied.')resolve(true);else if(Date.now()>end)reject(new Error('Copy success was not announced'));else setTimeout(check,20)};check()})`);
+    assert.equal(await evaluate(`window.__copiedPrompt`), prompt, 'copy keeps the full prompt byte-for-byte');
+    await evaluate(`document.getElementById('closePromptBtn').click()`);
+    assert.equal(await evaluate(`document.getElementById('externalPromptModal').hidden`), true);
+    assert.equal(await evaluate(`document.activeElement.id`), 'externalPromptBtn');
+    await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await evaluate(`document.querySelector('.lang-switch [data-lang="pt-BR"]').click()`);
+    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+5000;const check=()=>{if(document.documentElement.lang==='pt-BR')resolve(true);else if(Date.now()>end)reject(new Error('Portuguese prompt dialog locale timed out'));else setTimeout(check,20)};check()})`);
+    await evaluate(`document.getElementById('externalPromptBtn').click()`);
+    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{if(!document.getElementById('externalPromptModal').hidden)resolve(true);else if(Date.now()>end)reject(new Error('External prompt modal did not reopen'));else setTimeout(check,25)};check()})`);
+    const mobilePromptDialog = await evaluate(`(()=>{const card=document.querySelector('.external-prompt-card'),body=document.getElementById('promptOutput'),close=document.getElementById('closePromptBtn'),copy=document.getElementById('copyBtn'),footer=document.querySelector('.external-prompt-actions'),closeRect=close.getBoundingClientRect(),copyRect=copy.getBoundingClientRect();return {language:document.documentElement.lang,title:document.getElementById('externalPromptTitle').textContent,close:close.textContent.trim(),copy:copy.textContent.trim(),width:innerWidth,scrollWidth:document.documentElement.scrollWidth,cardWidth:card.getBoundingClientRect().width,cardHeight:card.getBoundingClientRect().height,viewportHeight:innerHeight,bodyScrollable:body.scrollHeight>body.clientHeight,overflowX:body.scrollWidth>body.clientWidth,buttonsSameRow:Math.abs((closeRect.top+closeRect.height/2)-(copyRect.top+copyRect.height/2))<2,actionsRightAligned:footer.getBoundingClientRect().right-copyRect.right<2}})()`);
+    assert.equal(mobilePromptDialog.language, 'pt-BR');
+    assert.equal(mobilePromptDialog.title, 'Prompt externo');
+    assert.equal(mobilePromptDialog.close, 'Fechar');
+    assert.equal(mobilePromptDialog.copy, 'Copiar prompt');
+    assert.equal(mobilePromptDialog.width, 390);
+    assert.equal(mobilePromptDialog.scrollWidth, 390);
+    assert.ok(mobilePromptDialog.cardWidth <= 358);
+    assert.ok(mobilePromptDialog.cardHeight <= mobilePromptDialog.viewportHeight - 16);
+    assert.equal(mobilePromptDialog.bodyScrollable, true);
+    assert.equal(mobilePromptDialog.overflowX, false);
+    assert.equal(mobilePromptDialog.buttonsSameRow, true);
+    assert.equal(mobilePromptDialog.actionsRightAligned, true);
+    await evaluate(`new Promise((resolve)=>setTimeout(resolve,300))`);
+    writeFileSync(path.join(tmpdir(), 'kinesis-external-prompt-mobile-pt.png'), Buffer.from((await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false })).data, 'base64'));
+    await evaluate(`document.getElementById('externalPromptClose').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))`);
+    assert.equal(await evaluate(`document.getElementById('externalPromptModal').hidden`), true);
+    assert.equal(await evaluate(`document.activeElement.id`), 'externalPromptBtn');
+    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+    await evaluate(`document.querySelector('.lang-switch [data-lang="en-US"]').click()`);
+    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+5000;const check=()=>{if(document.documentElement.lang==='en-US')resolve(true);else if(Date.now()>end)reject(new Error('English prompt dialog locale reset timed out'));else setTimeout(check,20)};check()})`);
     assert.match(prompt, /highest verified temperature in that window/);
     assert.match(
       prompt,
@@ -1994,7 +2043,7 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     await evaluate(`document.getElementById('weeklyApply').click()`);
     await waitForText(
       '#weeklyAppliedStatus',
-      'Added 1 workouts. 0 matching workouts were ignored.',
+      '1 workout added to the calendar.',
     );
     assert.equal(
       db
@@ -2024,6 +2073,9 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       assert.ok(savedDetails.includes(instruction), `calendar details preserve ${instruction}`);
     }
     assert.equal(await evaluate(`document.querySelectorAll('.weekly-proposal-card').length`), 0);
+    assert.equal(await evaluate(`document.getElementById('weeklyProposalSection').hidden`), true);
+    assert.equal(await evaluate(`document.getElementById('weeklyAppliedConfirmation').hidden`), false);
+    assert.deepEqual(await evaluate(`(()=>Object.fromEntries(['weeklyApply','weeklyReadAgain','weeklyCancel'].map(id=>[id,getComputedStyle(document.getElementById(id)).display])))()`), { weeklyApply: 'none', weeklyReadAgain: 'none', weeklyCancel: 'none' });
     assert.equal(await evaluate(`document.activeElement.id`), 'weeklyAppliedStatus');
     assert.match(await evaluate(`document.getElementById('weeklyCalendarLink').getAttribute('href')`), /calendar\.html\?week=2026-10-26/);
     await evaluate(
@@ -2045,7 +2097,7 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     );
     assert.equal(await evaluate(`document.querySelectorAll('.weekly-proposal-card').length`), 0);
     assert.equal(await evaluate(`document.getElementById('weeklyCalendarLink').textContent`), 'Ver no calendário');
-    assert.match(await evaluate(`document.getElementById('weeklyAppliedStatus').textContent`), /Adicionados 1 treinos/);
+    assert.equal(await evaluate(`document.getElementById('weeklyAppliedStatus').textContent`), '1 treino adicionado ao calendário.');
     writeFileSync(
       path.join(tmpdir(), 'kinesis-weekly-proposal-review-pt.png'),
       Buffer.from(
@@ -2107,16 +2159,17 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     );
     await waitForText(
       '#weeklyAppliedStatus',
-      'Adicionados 1 treinos. 0 treinos correspondentes foram ignorados.',
+      '1 treino adicionado ao calendário.',
     );
     assert.deepEqual(
       await evaluate(
-        `(()=>({externalPromptPresent:!!document.getElementById('externalPromptBtn'),technicalPromptHidden:document.getElementById('resultSection').hidden,proposalVisible:!document.getElementById('weeklyProposalSection').hidden,width:innerWidth,scrollWidth:document.documentElement.scrollWidth}))()`,
+        `(()=>({externalPromptPresent:!!document.getElementById('externalPromptBtn'),technicalPromptPresent:!!document.getElementById('externalPromptModal'),proposalVisible:!document.getElementById('weeklyProposalSection').hidden,appliedConfirmationVisible:!document.getElementById('weeklyAppliedConfirmation').hidden,width:innerWidth,scrollWidth:document.documentElement.scrollWidth}))()`,
       ),
       {
         externalPromptPresent: false,
-        technicalPromptHidden: true,
-        proposalVisible: true,
+        technicalPromptPresent: false,
+        proposalVisible: false,
+        appliedConfirmationVisible: true,
         width: 1280,
         scrollWidth: 1280,
       },

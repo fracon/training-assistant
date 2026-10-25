@@ -57,35 +57,49 @@
             <span data-i18n="aiCoach.externalPrompt">View external prompt</span>
           </button>
         </div>
+        <p id="externalPromptError" class="external-prompt-error" role="alert" hidden></p>
       </form>
 
       <section id="weeklyProposalSection" class="result-section" hidden aria-labelledby="weeklyProposalTitle">
         <div class="result-header"><h2 id="weeklyProposalTitle" data-i18n="aiCoach.weeklyProposalTitle">Weekly proposal</h2></div>
-        <p id="weeklyProposalStatus" role="status" aria-live="polite"></p>
-        <p id="weeklyAppliedStatus" class="weekly-applied-status" role="status" tabindex="-1" hidden></p>
-        <a id="weeklyCalendarLink" class="btn-secondary weekly-calendar-link" hidden data-i18n="aiCoach.viewAppliedCalendar">Ver no calendário</a>
+        <p id="weeklyProposalStatus" role="status" aria-live="polite" hidden></p>
         <div id="weeklyProposalError" role="alert" hidden></div>
         <div id="weeklyProposalContent"></div>
-        <div class="form-actions">
+        <div id="weeklyProposalActions" class="form-actions weekly-proposal-actions" hidden>
           <button type="button" id="weeklyApply" class="btn-primary" hidden data-i18n="aiCoach.applyWeekly">Apply to calendar</button>
           <button type="button" id="weeklyReadAgain" class="btn-secondary" hidden data-i18n="aiCoach.readAgain">Try reading again</button>
           <button type="button" id="weeklyCancel" class="btn-secondary" hidden data-i18n="aiCoach.cancelExecution">Cancel request</button>
         </div>
       </section>
 
-      <section id="resultSection" class="result-section hidden" hidden aria-live="polite">
-        <div class="result-header">
-          <h2 data-i18n="aiCoach.resultTitle">Generated prompt</h2>
-          <button type="button" id="copyBtn" class="copy-btn">
-            <span class="copy-icon"><i data-lucide="copy"></i></span>
-            <span id="copyLabel" data-i18n="aiCoach.copy">Copy to Clipboard</span>
-          </button>
-        </div>
-        <pre id="promptOutput" class="prompt-output" tabindex="0"></pre>
+      <section id="weeklyAppliedConfirmation" class="weekly-applied-confirmation" hidden>
+        <p id="weeklyAppliedStatus" class="weekly-applied-status" role="status" tabindex="-1"></p>
+        <p id="weeklyAppliedIgnored" class="weekly-applied-ignored" hidden></p>
+        <a id="weeklyCalendarLink" class="btn-secondary weekly-calendar-link" hidden data-i18n="aiCoach.viewAppliedCalendar">Ver no calendário</a>
       </section>
 
     </section>
   </main>
+
+  <div id="externalPromptModal" class="modal-backdrop hidden" hidden>
+    <section class="modal-card external-prompt-card" role="dialog" aria-modal="true" aria-labelledby="externalPromptTitle">
+      <header class="modal-header">
+        <h2 id="externalPromptTitle" data-i18n="aiCoach.resultTitle">External prompt</h2>
+        <button type="button" id="externalPromptClose" class="modal-close" aria-label="Close" data-i18n-aria-label="aiCoach.closePrompt">
+          <i data-lucide="x" aria-hidden="true"></i>
+        </button>
+      </header>
+      <pre id="promptOutput" class="prompt-output external-prompt-output" tabindex="0" aria-labelledby="externalPromptTitle"></pre>
+      <p id="promptCopyStatus" class="prompt-copy-status" role="status" aria-live="polite"></p>
+      <div class="form-actions external-prompt-actions">
+        <button type="button" id="closePromptBtn" class="btn-secondary" data-i18n="aiCoach.closePrompt">Close</button>
+        <button type="button" id="copyBtn" class="btn-primary">
+          <i id="copyIcon" data-lucide="copy" aria-hidden="true"></i>
+          <span id="copyLabel" data-i18n="aiCoach.copy">Copy prompt</span>
+        </button>
+      </div>
+    </section>
+  </div>
 
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="shared/shell.js" type="module"></script>

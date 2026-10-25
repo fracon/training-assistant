@@ -507,13 +507,22 @@ fallback and never infer a target from observed average/maximum HR. Free text
 is not parsed as another duration source. Notes persisted to `observacoes`
 and proposal-only natural-language justifications appear in the complete
 review; technical evidence IDs stay in protected diagnostics and are omitted
-from common cards. Verified weather displays only the compact temperature
+from common cards. The exact free external prompt is admin-only, shown in a
+shared accessible modal with a bounded internal reading area and compact
+footer; ordinary accounts have neither its content nor controls after role
+resolution. Opening/copying remains a free preview and never starts weekly
+generation. Proposal controls are state-specific: cancel only for queued or
+running work, apply only for a current completed proposal, and a same-execution
+read after terminal/read failures. Verified weather displays only the compact temperature
 range, period maximum and available verified conditions; partial/unavailable
 coverage remains explicit. Full source/query evidence remains protected with
 the execution. After successful application, remove proposal cards and expose
 the saved added/ignored counts plus a link to the applied calendar week;
 reload must preserve this terminal state, and a lost apply response is resolved
-by a free read of the same proposal. Open-Meteo hourly evidence is bound to an exact revisioned availability
+by a free read of the same proposal. The applied confirmation stays compact
+outside the review panel, shows ignored duplicates only when nonzero, and keeps
+the form available for a new explicit request. Never let an older poll restore
+applied cards or actions. Open-Meteo hourly evidence is bound to an exact revisioned availability
 snapshot before reservation/dispatch and application. Forecast IANA timezone
 identity and distinct UTC hourly instants are checked through DST; the
 16-date horizon is enforced locally, while Open-Meteo requests use

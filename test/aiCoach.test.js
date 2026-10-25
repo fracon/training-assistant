@@ -1367,7 +1367,7 @@ test('AI Coach responsive layout and controls retain visible focus and shared bu
   assert.match(html, /id="availabilityGrid"/);
 });
 
-test('Request Workouts page keeps shell, icon assets and all user-facing prompt controls', () => {
+test('Request Workouts keeps the admin prompt in an accessible dialog with shared actions', () => {
   const html = readFileSync(join(publicDir, 'ai-coach.html'), 'utf8');
   assert.match(html, /id="appView"/);
   assert.match(html, /shared\/shell\.js" type="module"/);
@@ -1389,7 +1389,17 @@ test('Request Workouts page keeps shell, icon assets and all user-facing prompt 
     readFileSync(join(publicDir, 'ai-coach.css'), 'utf8'),
     /\.prompt-submit-actions\s*\{[\s\S]*?flex-wrap:\s*wrap[\s\S]*?gap:/,
   );
-  assert.match(html, /id="copyLabel" data-i18n="aiCoach\.copy"/);
+  assert.match(html, /id="externalPromptModal" class="modal-backdrop hidden" hidden/);
+  assert.match(html, /role="dialog" aria-modal="true" aria-labelledby="externalPromptTitle"/);
+  assert.match(html, /id="externalPromptClose" class="modal-close"/);
+  assert.match(html, /id="promptOutput" class="prompt-output external-prompt-output"/);
+  assert.match(html, /class="form-actions external-prompt-actions"[\s\S]*?id="closePromptBtn" class="btn-secondary"[\s\S]*?id="copyBtn" class="btn-primary"/);
+  assert.doesNotMatch(html, /id="resultSection"/);
+  assert.match(readFileSync(join(publicDir, 'ai-coach.js'), 'utf8'), /createDialogFocusTrap\(promptModal, closeExternalPrompt\)/);
+  const css = readFileSync(join(publicDir, 'ai-coach.css'), 'utf8');
+  assert.match(css, /\.external-prompt-card\s*\{[\s\S]*?max-height:\s*calc\(100dvh - 2rem\)[\s\S]*?overflow:\s*hidden/);
+  assert.match(css, /\.external-prompt-output\s*\{[\s\S]*?overflow:\s*auto[\s\S]*?user-select:\s*text/);
+  assert.match(css, /#weeklyCancel\[hidden\][\s\S]*?display:\s*none/);
 });
 
 test('clipboard helper reports success, unsupported clipboard, and rejected writes', async () => {
