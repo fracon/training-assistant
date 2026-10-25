@@ -19,7 +19,10 @@ const {
   applyWeeklyProposal,
   monday,
 } = require('./weekly-workouts');
-const { getAvailabilityWeek } = require('../availability');
+const {
+  getAvailabilityWeek,
+  getAvailabilitySnapshot,
+} = require('../availability');
 const {
   validateAvailabilityDay,
 } = require('../public/shared/workout-prompts.js');
@@ -127,6 +130,7 @@ function registerAiRoutes(
         availability.days.some((day) => validateAvailabilityDay(day).length > 0)
       )
         throw new AiError('availabilityNeedsReview');
+      const availabilitySnapshot = getAvailabilitySnapshot(db, r.user.id);
       evidence = {
         weekStart,
         weather: await collectWeeklyWeather(
@@ -134,8 +138,11 @@ function registerAiRoutes(
           r.user.id,
           weekStart,
           weatherFetch,
+          () => new Date(),
+          availabilitySnapshot.rows,
         ),
         userId: r.user.id,
+        availabilitySnapshot,
       };
     }
     return reply.code(202).send(service.enqueue(r.user.id, r.body, evidence));

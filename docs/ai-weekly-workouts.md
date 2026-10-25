@@ -12,7 +12,7 @@ availability controls, then offers an explicit paid weekly generation action.
 It uses the phase 0/#69 execution service, quotas, atomic reservations,
 Responses client, bounded 429-only retry, cancellation, diagnostics, context
 freshness and durable recovery. The operation is registered as
-`weekly-workouts-v1`; each proposal points to its execution. On reload, the page
+`weekly-workouts-v2`; each proposal points to its execution. On reload, the page
 reads the user's latest weekly execution and retrieves the same persisted
 proposal. Progress polling is bounded; a long-running or failed progress read
 ends loading and exposes a free manual reread. An uncertain start is
@@ -42,16 +42,36 @@ The delivery adapter is versioned independently of
 `src/public/shared/workout-prompts.js`. External PT/EN prompts remain byte-for-
 byte preserved. The adapter replaces the weather-research and spreadsheet
 delivery sections deterministically for this operation, preserving the
-training guidance. It requires a JSON object with `schemaVersion`, Monday
-`weekStart`, and sessions. Every session has the exact 12 import fields
-(`date`, `weekday`, `period`, `type`, `workout`, `details`, `targetHr`, `rpe`,
-`shoeId`, `location`, `weather`, `notes`) and proposal fields
-(`durationMinutes`, `justification`, `evidence`).
+training guidance. The adapted prompt retains the source's planning guidance
+but omits its rendered cycle, availability, shoe and optional-context blocks;
+the versioned shared context is supplied once as structured data. This avoids
+duplicating personal context in the bounded model payload. It requires a JSON
+object with `schemaVersion`, Monday
+`weekStart`, and sessions. The model supplies session kind and ordered warmup,
+main and cooldown prescription components. Each component specifies
+repetitions and either minutes or distance in meters, with optional
+paceSecondsPerKm and recovery minutes between repetitions. The backend derives
+duration, workout/type labels and details from this prescription; no independent
+duration/details claim can contradict it. Distance-based duration is an
+estimate: supplied pace is applied to each distance repetition and rounded up
+to whole minutes; recovery and warmup/cooldown are included. The preview labels
+estimated duration and persists the same materialized details it displays.
+Notes (persisted as `observacoes`) and proposal-only justifications are shown
+in full before application. Notes are rendered as text with line breaks.
+
+Materialization yields the same 12 import fields (`date`, `weekday`, `period`,
+`type`, `workout`, `details`, `targetHr`, `rpe`, `shoeId`, `location`,
+`weather`, `notes`) plus proposal fields (`durationMinutes`, `justification`,
+`evidence`). Proposals from `weekly-workouts-v1` are explicitly incompatible
+with v2 review/application. Their execution snapshots and any saved application
+result remain intact, but the current proposal UI refuses to render old output
+under the v2 contract. No old calendar records are rewritten.
 
 Dates are checked as Monday plus the declared weekday offset, independent of
 session order. Only saved available days and that day's unique preferred
-period are accepted. Each session duration includes warm-up/cool-down; all
-sessions on a day are summed and bounded by saved available minutes. RPE is
+period are accepted. Derived duration includes warm-up/cool-down and
+between-repeat recovery; all sessions on a day are summed and bounded by saved
+available minutes. RPE is
 either null or an integer on the explicit Kinesis 1–5 scale. A shoe must be an
 active shoe in the owner's current snapshot. Location must exactly match the
 saved string. Evidence identifiers must refer to captured context sources.
@@ -77,34 +97,56 @@ Weekly weather is a backend flow separate from the existing daily result
 autofill. It reuses the established Open-Meteo geocoding and location-context
 ambiguity rules, then requests `temperature_2m` and `weather_code` hourly data
 from Open-Meteo Forecast. Queries contain saved location-derived coordinates,
-the requested local calendar date, and `timezone=auto`; no workout text or FIT
-data is included. No API key, paid source, browser search or additional provider
-is used. There is no authorized second hourly source in this deployment; if
+the requested local calendar date, `forecast_days=16`, `timeformat=unixtime`,
+and the resolved geocoder timezone; no workout text or FIT data is included.
+Open-Meteo documents a 16-day maximum and UTC epoch timestamps for its hourly
+forecast ([Forecast API](https://open-meteo.com/en/docs)). The supported range
+is the current local date through 15 days ahead inclusive. No API key, paid
+source, browser search or additional provider is used. There is no authorized
+second hourly source in this deployment; if
 Open-Meteo cannot provide trustworthy data the execution records that
 limitation and planning continues without a forecast claim.
 
 The verified preferred windows are local-time half-open intervals:
 `[00:00,08:00)`, `[08:00,12:00)`, `[12:00,14:00)`, `[14:00,18:00)`,
-`[18:00,24:00)`. The response timezone is validated and its DST rules determine
-expected hourly coverage for the date. The geocoded timezone determines the
-local-date horizon, which is rechecked against the forecast timezone. Each
-weather evidence item notes that no authorized independent second hourly source
+`[18:00,24:00)`. The forecast timezone must be the same canonical IANA zone as
+the resolved geocoder timezone. Runtime IANA alias resolution is used; offset
+equality is never sufficient. Requested/returned zones and mismatch reason are
+retained. UTC epoch instants are checked for hourly alignment, strict order and
+uniqueness. Coverage is the set of expected instants inside the local interval,
+not sample count. Missing, duplicated, unordered, invalid or misaligned
+timestamps cannot produce verified coverage. Fall-back's repeated local hour
+is valid only when represented by two distinct UTC instants; otherwise
+coverage is unavailable/partial. Each weather evidence item notes that no authorized independent second hourly source
 is configured. Only finite hourly values that match
 the requested local date and selected interval contribute to the minimum and
 maximum. The local interval high is never replaced with `daily` maximum.
-The local date used for the 15-day bound comes from the geocoded location's
-timezone when available and is rechecked against the forecast response timezone.
+The local date used for the 16-date horizon comes from the geocoded location's
+timezone.
 Missing hour(s), unresolved/ambiguous geocoding, an invalid timezone, missing
 hourly fields, an out-of-horizon date, or provider failure remain explicitly
 partial/unavailable. Partial data is preserved for audit but not presented as
 a complete window. No fallback weather value is invented and no end user is
 asked to confirm weather, timezone, research or authorization.
 
+Availability has a monotonically increasing per-user/day revision. The route
+captures its complete availability snapshot before forecast requests and holds
+no SQLite transaction open while waiting on weather. Each evidence item is
+bound to owner ID, weekday, local date, period, exact location and revision.
+Before enqueue/reservation/provider dispatch, an immediate transaction verifies
+the active owner and exact snapshot. Any change, including change-and-revert,
+returns a localized conflict without reserving or calling OpenAI. Application
+also checks current execution freshness and availability revision.
+
 Each forecast evidence item saved in the execution context retains exact
 location/date/period, source name/link, query URL when made, lookup time,
 coordinates, source timezone, local hourly values, expected/verified coverage,
 window temperature range/high and limitations/reason. The model receives the
-hourly evidence as untrusted context under the shared safety instructions; it
+hourly evidence as untrusted context under the shared safety instructions. To
+stay inside the existing context budget without dropping forecast evidence,
+verified samples are stored compactly as `[UTC epoch seconds, local HH:MM with
+UTC offset, temperature Celsius, WMO code]`; the top-level evidence retains the
+date and IANA timezone. The model receives the evidence; it
 cannot change app rules. The UI shows the source and coverage in the proposal.
 Calendar records receive the derived source/range summary in the existing
 weather field; the complete evidence remains with the execution.
@@ -115,7 +157,11 @@ Migration `2026-10-weekly-workouts-v1` creates `weekly_workout_proposals`,
 keyed by execution and cascading from the owned execution/user. It stores the
 week reference, creation time and the atomic application timestamp/result.
 Existing user/calendar rows are not rewritten or backfilled. The migration is
-idempotent and runs through the normal database initialization path. Open a new
+idempotent and runs through the normal database initialization path.
+Migration `2026-10-weekly-availability-revision-v1` adds a revision defaulting
+to 1 while preserving legacy availability; repeated initialization is safe.
+Proposals are not rewritten; the adapter version gate refuses v1 responses for
+v2 review/application. Open a new
 database and rerun initialization; also initialize a database with existing
 users, cycles, executions and trainings to verify that those records and
 ownership remain intact. Re-running an older migration is not a substitute for

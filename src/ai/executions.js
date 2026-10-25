@@ -4,6 +4,7 @@ const { sanitizeDiagnostic, saveDiagnostic } = require('./diagnostics');
 const { randomUUID } = require('node:crypto');
 const { AiError, hash, activeOwner, exactKeys } = require('./memory');
 const { buildContext, contextIsCurrent, tokenBound } = require('./context');
+const { availabilitySnapshotMatches } = require('../availability');
 const {
   renderPrompt,
   promptSources,
@@ -235,6 +236,15 @@ function createExecutionService({
             throw new AiError('idempotencyConflict', 409);
           return get(userId, prior.id);
         }
+        if (
+          body.purpose === 'workouts' &&
+          !availabilitySnapshotMatches(
+            db,
+            userId,
+            trustedEvidence.availabilitySnapshot,
+          )
+        )
+          throw new AiError('weeklyAvailabilityConflict', 409);
         if (!config.enabled) throw new AiError('aiUnavailable', 503);
         const operation = operations[body.purpose];
         if (!operation) throw new AiError('phaseNotAvailable', 409);

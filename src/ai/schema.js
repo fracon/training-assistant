@@ -101,4 +101,22 @@ function migrateWeeklyWorkouts(db) {
     db.prepare('INSERT INTO schema_migrations(name) VALUES(?)').run(marker);
   }).immediate();
 }
-module.exports = { migrateAi, migrateAiDiagnostics, migrateWeeklyWorkouts };
+function migrateWeeklyAvailabilityRevision(db) {
+  db.transaction(() => {
+    const marker = '2026-10-weekly-availability-revision-v1';
+    if (db.prepare('SELECT 1 FROM schema_migrations WHERE name=?').get(marker))
+      return;
+    const columns = db.pragma('table_info(ai_coach_availability)');
+    if (!columns.some((column) => column.name === 'revision'))
+      db.exec(
+        'ALTER TABLE ai_coach_availability ADD COLUMN revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0)',
+      );
+    db.prepare('INSERT INTO schema_migrations(name) VALUES(?)').run(marker);
+  }).immediate();
+}
+module.exports = {
+  migrateAi,
+  migrateAiDiagnostics,
+  migrateWeeklyWorkouts,
+  migrateWeeklyAvailabilityRevision,
+};

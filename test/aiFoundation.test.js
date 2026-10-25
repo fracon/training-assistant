@@ -19,6 +19,7 @@ const {
   duration,
 } = require('../src/ai/context');
 const { createExecutionService } = require('../src/ai/executions');
+const { getAvailabilitySnapshot } = require('../src/availability');
 const { renderPrompt } = require('../src/ai/prompt-service');
 const { createResponsesClient, buildPayload } = require('../src/ai/client');
 const baseline = require('./fixtures/ai/prompt-baseline.json');
@@ -1012,8 +1013,9 @@ test('weekly executions have no resource ID, use stable idempotency and immutabl
     target_date: '2026-10-19',
     idempotency_key: 'synthetic-week',
   };
-  const queued = s.enqueue(1, request);
-  assert.equal(s.enqueue(1, request).id, queued.id);
+  const evidence = { availabilitySnapshot: getAvailabilitySnapshot(fixture.db, 1), weather: [] };
+  const queued = s.enqueue(1, request, evidence);
+  assert.equal(s.enqueue(1, request, evidence).id, queued.id);
   assert.equal(
     s.preview(1, { purpose: 'workouts', target_date: '2026-10-19' }).paid,
     false,
@@ -1024,7 +1026,7 @@ test('weekly executions have no resource ID, use stable idempotency and immutabl
   const next = s.enqueue(1, {
     ...request,
     idempotency_key: 'synthetic-week-two',
-  });
+  }, evidence);
   delete operations.workouts;
   await s.dispatch(next.id);
   assert.equal(s.get(1, next.id).error, 'adapterUnavailable');
@@ -1510,7 +1512,7 @@ test('prompt-only source changes invalidate a weekly execution even when detaile
       purpose: 'workouts',
       target_date: '2026-10-19',
       idempotency_key: 'synthetic-omitted-prompt',
-    });
+    }, { availabilitySnapshot: getAvailabilitySnapshot(f.db, 1), weather: [] });
     const snapshot = s.get(1, row.id, true);
     assert.equal(snapshot.context.recent.length, 0);
     f.db.prepare('UPDATE trainings SET fit_distance=7 WHERE id=1').run();

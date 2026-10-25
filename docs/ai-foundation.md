@@ -433,6 +433,14 @@ are allowlisted, with no `user_id`, arbitrary model or arbitrary prompt option.
 | `GET /api/ai/admin/executions/:id` | Admin-owned exact payload/context/configuration/usage/error |
 | `GET /api/ai/admin/usage` | Admin-owned usage and sanitized configuration availability |
 
+On the #64 branch, weekly availability GET responses also expose a per-day
+source revision. Migration `2026-10-weekly-availability-revision-v1` adds it
+idempotently to existing rows with default 1. A weekly request captures the
+owner's exact availability snapshot before weather lookup and verifies it
+again transactionally before reservation and dispatch; proposal freshness
+also includes those revisions. This supplements rather than replaces the
+existing owner-scoped availability contract.
+
 The existing authenticated `GET /api/cycles` also carries a minimal,
 owner-scoped `planningSummary` per cycle (`status`, `secondary`, `available`,
 `canGenerate`) for card presentation. It does not contain planning JSON,

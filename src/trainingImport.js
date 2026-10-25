@@ -283,8 +283,13 @@ function parseRows(rows) {
 
 // Keep the calendar importer and other trusted creation paths on the same
 // date/name/details identity rule used for idempotent imports.
+function normalizeTrainingDetails(details) {
+  return details === '' ? null : details;
+}
+
 function trainingSignature(record) {
-  return JSON.stringify([record.dia, record.treino, record.detalhes]);
+  const details = normalizeTrainingDetails(record.detalhes);
+  return JSON.stringify([record.dia, record.treino, details]);
 }
 
 module.exports = {
@@ -300,5 +305,6 @@ module.exports = {
   cellToText,
   parseSheet,
   parseRows,
+  normalizeTrainingDetails,
   trainingSignature,
 };

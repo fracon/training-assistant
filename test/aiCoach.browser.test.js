@@ -34,6 +34,9 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
   const chrome = findChrome();
   assert.ok(chrome, 'Chrome is required for AI Coach browser verification.');
   const db = createDatabase({ filename: ':memory:' });
+  const expectedSessionNotes =
+    '<img src=x onerror="alert(1)">\nSessão sem pressa · café ☕\n' +
+    'Observação contextual longa. '.repeat(30);
   let simulatedProviderCalls = 0;
   const app = await buildServer({
     db,
@@ -56,6 +59,7 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
                 latitude: 41.1,
                 longitude: -8.6,
                 country_code: 'PT',
+                timezone: 'Europe/Lisbon',
                 country: 'Portugal',
                 admin1: 'Porto',
               },
@@ -64,17 +68,37 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
         };
       }
       const day = parsed.searchParams.get('start_date');
+      const formatter = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Europe/Lisbon',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        hourCycle: 'h23',
+      });
+      const time = [],
+        temperatures = [],
+        codes = [];
+      const from = Date.parse(`${day}T00:00:00Z`) - 36 * 3600000;
+      for (let instant = from; instant <= from + 96 * 3600000; instant += 3600000) {
+        const parts = Object.fromEntries(
+          formatter
+            .formatToParts(new Date(instant))
+            .map((part) => [part.type, part.value]),
+        );
+        if (`${parts.year}-${parts.month}-${parts.day}` !== day) continue;
+        time.push(instant / 1000);
+        temperatures.push(12 + Number(parts.hour));
+        codes.push(2);
+      }
       return {
         ok: true,
         json: async () => ({
           timezone: 'Europe/Lisbon',
           hourly: {
-            time: Array.from(
-              { length: 24 },
-              (_, hour) => `${day}T${String(hour).padStart(2, '0')}:00`,
-            ),
-            temperature_2m: Array.from({ length: 24 }, (_, hour) => 12 + hour),
-            weather_code: Array(24).fill(2),
+            time,
+            temperature_2m: temperatures,
+            weather_code: codes,
           },
         }),
       };
@@ -83,23 +107,25 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       simulatedProviderCalls++;
       const context = JSON.parse(payload.input[0].content[0].text).context;
       const value = {
-        schemaVersion: 'weekly-workouts-v1',
+        schemaVersion: 'weekly-workouts-v2',
         weekStart: context.resource.weekStart,
         sessions: [
           {
             date: '2026-10-26',
             weekday: 'monday',
             period: '12_14',
-            type: 'Easy run',
-            workout: 'Easy run with strides',
-            details: 'Warm-up, main set and cool-down',
+            sessionKind: 'easy',
+            prescription: [
+              { phase: 'warmup', repetitions: 1, minutes: 5, distanceMeters: null, paceSecondsPerKm: null, recoveryMinutes: null },
+              { phase: 'main', repetitions: 1, minutes: 35, distanceMeters: null, paceSecondsPerKm: null, recoveryMinutes: null },
+              { phase: 'cooldown', repetitions: 1, minutes: 5, distanceMeters: null, paceSecondsPerKm: null, recoveryMinutes: null },
+            ],
             targetHr: '120-140 bpm',
             rpe: 3,
             shoeId: null,
             location: 'Legacy Porto',
             weather: 'Use verified Kinesis forecast',
-            notes: '',
-            durationMinutes: 45,
+            notes: expectedSessionNotes,
             justification:
               'This follows the saved context and recorded training.',
             evidence: ['weather:monday:2026-10-26'],
@@ -1766,8 +1792,24 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       `(()=>({cards:document.querySelectorAll('.weekly-proposal-card').length,text:document.getElementById('weeklyProposalContent').textContent,applyHidden:document.getElementById('weeklyApply').hidden}))()`,
     );
     assert.equal(review.cards, 1);
-    assert.match(review.text, /Easy run with strides/);
+    assert.match(review.text, /Easy run/);
     assert.match(review.text, /This follows the saved context/);
+    assert.match(review.text, /<img src=x onerror="alert\(1\)">/);
+    assert.match(review.text, /Sessão sem pressa · café ☕/);
+    assert.equal(
+      await evaluate(
+        `document.querySelector('.weekly-proposal-notes').textContent`,
+      ),
+      expectedSessionNotes,
+      'the complete long multiline note is available before applying',
+    );
+    assert.equal(
+      await evaluate(
+        `document.querySelectorAll('.weekly-proposal-card img').length`,
+      ),
+      0,
+      'notes are rendered as text rather than interpreted as markup',
+    );
     assert.match(review.text, /Only Open-Meteo is available/);
     assert.equal(review.applyHidden, false);
     assert.equal(simulatedProviderCalls, 1);
@@ -1798,6 +1840,14 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
         )
         .get('availability-browser@example.test').n,
       1,
+    );
+    assert.equal(
+      db
+        .prepare(
+          'SELECT observacoes FROM trainings WHERE user_id=(SELECT id FROM users WHERE email=?)',
+        )
+        .get('availability-browser@example.test').observacoes,
+      expectedSessionNotes,
     );
     await evaluate(
       `document.querySelector('.lang-switch [data-lang="pt-BR"]').click()`,

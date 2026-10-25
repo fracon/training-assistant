@@ -387,7 +387,7 @@ function buildContext(
   }
   const availability = db
     .prepare(
-      'SELECT day_key,can_train,available_periods,available_minutes,location,updated_at FROM ai_coach_availability WHERE user_id = ? ORDER BY day_key',
+      'SELECT day_key,can_train,available_periods,available_minutes,location,revision,updated_at FROM ai_coach_availability WHERE user_id = ? ORDER BY day_key',
     )
     .all(userId);
   if (availability.length !== 7)

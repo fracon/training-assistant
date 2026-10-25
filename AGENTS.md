@@ -490,27 +490,34 @@ will find every issue.
 
 Weekly proposal generation and application reuse the existing AI execution,
 quota, reservation, Responses client, context, diagnostics and recovery system;
-do not add another job pipeline. Version the delivery adapter independently
-from the byte-preserved PT/EN external prompts. Open-Meteo hourly evidence is
-fetched for the saved exact location and local preferred half-open period,
-stored with the execution and treated as untrusted evidence. The geocoded
-location timezone sets the local-date horizon and is checked against the
-forecast timezone. Record and display that no authorized independent hourly
-source is configured. Only a complete hourly window is described as complete;
-no daily maximum is substituted.
-Ambiguous, partial, invalid-timezone, out-of-horizon and unavailable forecasts
-are explicit, with planning continuing without invented weather. Proposal
-application is an explicit owner-scoped transaction, rechecks freshness and
-ownership, preserves results and uses the calendar's existing deduplication.
+do not add another job pipeline. The weekly-workouts-v2 delivery adapter is
+versioned independently from byte-preserved PT/EN external prompts. It retains
+training guidance while sending shared athlete context only once. Structured
+warmup/main/cooldown components derive duration and persisted details; distance
+durations are estimated from the supplied pace and rounded up. Notes persisted
+to `observacoes` and proposal-only justifications appear in the complete
+review. Open-Meteo hourly evidence is bound to an exact revisioned availability
+snapshot before reservation/dispatch and application. Forecast IANA timezone
+identity and distinct UTC hourly instants are checked through DST; the
+16-date horizon is explicit in the request. Compact hourly tuples retain
+instant, local time/offset, temperature and WMO code inside the existing
+context budget. Record and display that no authorized independent hourly
+source is configured; no daily maximum is substituted. Ambiguous, partial,
+incompatible-timezone, out-of-horizon and unavailable forecasts are explicit,
+with planning continuing without invented weather. v1 proposals cannot be
+reviewed/applied under the v2 contract; no historical calendar rows are
+rewritten. Application is an explicit owner-scoped transaction, rechecks
+freshness and ownership, preserves results and uses the calendar's existing
+deduplication.
 See [`docs/ai-weekly-workouts.md`](docs/ai-weekly-workouts.md).
 
-- `/api/ai-coach/availability` is authenticated and user-scoped. Store one record per weekday with `can_train`, canonical period IDs (`before_08`, `08_12`, `12_14`, `14_18`, `after_18`), `available_minutes` as whole minutes, and the exact `location` string.
+- `/api/ai-coach/availability` is authenticated and user-scoped. Store one record per weekday with `can_train`, canonical period IDs (`before_08`, `08_12`, `12_14`, `14_18`, `after_18`), `available_minutes` as whole minutes, the exact `location` string, and an internal monotonic `revision` used to bind weather lookups to source versions.
 - Each available day stores one preferred period. Legacy rows with multiple periods remain readable, are flagged for explicit review, and cannot be saved or used for prompt generation until one is selected. Clients of `PUT /api/ai-coach/availability` must send exactly one period for each available day; multiple periods are rejected as an incompatible contract change released in version `0.19.0`, with migration required for clients using the previous request shape. `available_minutes` is the maximum full session duration, including warm-up and cool-down, not a target and not the length of the period window. The maximum is 720 minutes per day.
 - Unavailable days canonicalize to no periods, null duration, and empty location. Available days require at least one known period, positive duration, and a location; validate in the backend as well as the UI.
 - The idempotent `2026-09-structured-ai-coach-availability-v1` migration does not derive periods or duration from old free text. The earlier AI Coach availability form was transient and did not persist these values; missing structured records must remain unconfigured and be reviewed. On first use the frontend presents missing rows as unchecked/unavailable defaults, without clearing `needsReview`; explicit unavailable rows remain unavailable after persistence.
 - Initial availability defaults are presentation-only: they are never eligible for persistence or prompt generation until the authenticated GET has completed successfully. A failed load keeps save/generate blocked, preserves local edits, and may be retried; late responses from older load attempts must not replace a newer result.
 - Applying a weekday setup is an explicit one-time copy from Monday to Tuesday–Friday. It never changes weekends or links records.
-- The administrator-only external prompt continues to preserve its existing PT/EN wording and 12-column XLSX/XLS import contract. Its browser/research instructions apply only to that free prompt; the weekly paid adapter replaces conflicting Excel/research delivery instructions with backend-supplied hourly evidence and structured `weekly-workouts-v1` output. It uses local half-open availability windows and the source timezone/DST, records coverage/source/link/query/limitations, never substitutes a daily maximum, and continues without weather claims when coverage is not reliable. No second provider or paid search is configured. RPE is explicitly the Kinesis 1–5 scale in both adapter and backend validation.
+- The administrator-only external prompt continues to preserve its existing PT/EN wording and 12-column XLSX/XLS import contract. Its browser/research instructions apply only to that free prompt; the weekly paid adapter replaces conflicting Excel/research delivery instructions with backend-supplied hourly evidence and structured `weekly-workouts-v2` output. It derives duration/details from ordered timed/distance prescription components, previews persisted notes, binds forecasts to an exact revisioned availability snapshot, validates timezone identity and epoch-hour coverage through DST, and never substitutes a daily maximum. Unreliable weather remains explicitly unavailable and never blocks planning. No second provider or paid search is configured. RPE is explicitly the Kinesis 1–5 scale in both adapter and backend validation. Existing v1 proposals are incompatible with v2 and cannot be applied under the changed schema; old calendar data remains untouched.
 
 ## OpenAI foundation and future phases
 

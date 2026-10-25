@@ -99,6 +99,7 @@ CREATE TABLE IF NOT EXISTS ai_coach_availability (
   available_periods TEXT NOT NULL DEFAULT '[]',
   available_minutes INTEGER,
   location TEXT NOT NULL DEFAULT '',
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
   PRIMARY KEY (user_id, day_key),
   CHECK ((can_train = 0 AND available_periods = '[]' AND available_minutes IS NULL AND location = '') OR
@@ -268,6 +269,7 @@ function migrateDatabase(db) {
     available_periods TEXT NOT NULL DEFAULT '[]',
     available_minutes INTEGER,
     location TEXT NOT NULL DEFAULT '',
+    revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (user_id, day_key),
     CHECK ((can_train = 0 AND available_periods = '[]' AND available_minutes IS NULL AND location = '') OR
@@ -688,6 +690,7 @@ function migrateDatabase(db) {
   require('../ai/schema').migrateAi(db);
   require('../ai/schema').migrateAiDiagnostics(db);
   require('../ai/schema').migrateWeeklyWorkouts(db);
+  require('../ai/schema').migrateWeeklyAvailabilityRevision(db);
   require('../ai/cycle-plan-migration').migrateCyclePlans(db);
 }
 

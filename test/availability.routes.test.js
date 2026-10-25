@@ -59,7 +59,7 @@ test('PUT validates and saves structured days while isolating users', async () =
   assert.equal(response.json().availability.days[0].available_minutes, 60);
   assert.equal(response.json().availability.days[0].location, 'Fânzeres, Gondomar');
   assert.deepEqual(response.json().availability.days[2], {
-    day: 'wednesday', can_train: false, available_periods: [], available_minutes: null, location: '',
+    day: 'wednesday', can_train: false, available_periods: [], available_minutes: null, location: '', revision: 1,
   });
   const other = await app.inject({ method: 'GET', url: '/api/ai-coach/availability', headers: { cookie: cookies[1] } });
   assert.equal(other.json().availability.needsReview, true);

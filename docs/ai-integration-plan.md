@@ -560,7 +560,7 @@ implemented on the current issue #64 branch and is documented in
 ## Phase 2 implementation on the issue #64 branch
 
 Weekly proposals reuse the persisted execution and quota pipeline with a
-versioned `weekly-workouts-v1` adapter. External PT/EN prompt templates remain
+versioned `weekly-workouts-v2` adapter. External PT/EN prompt templates remain
 unchanged; only the paid adapter replaces conflicting spreadsheet/research
 delivery requirements with backend-verified hourly evidence and structured
 output. Proposals are owner-scoped, recoverable, reviewed before explicit

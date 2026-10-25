@@ -7,13 +7,25 @@ const { readAiConfig } = require('../src/ai/config');
 const { buildServer } = require('../src/server');
 const weekly = require('../src/ai/weekly-workouts');
 const { DAY_KEYS } = require('../src/availability');
+const { trainingSignature } = require('../src/trainingImport');
 
 function forecastFetcher({
   day = '2026-10-25',
   timezone = 'Europe/Lisbon',
+  geocoderTimezone = 'Europe/Lisbon',
   omitHour = null,
+  duplicateHour = null,
+  outOfOrder = false,
   ambiguous = false,
 } = {}) {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    hourCycle: 'h23',
+  });
   return async (url) => {
     const parsed = new URL(url);
     if (parsed.hostname === 'geocoding-api.open-meteo.com')
@@ -27,7 +39,7 @@ function forecastFetcher({
                   latitude: 41.1,
                   longitude: -8.6,
                   country_code: 'PT',
-                  timezone: 'Europe/Lisbon',
+                  timezone: geocoderTimezone,
                   country: 'Portugal',
                   admin1: 'Porto',
                 },
@@ -36,7 +48,7 @@ function forecastFetcher({
                   latitude: 41.2,
                   longitude: -8.7,
                   country_code: 'PT',
-                  timezone: 'Europe/Lisbon',
+                  timezone: geocoderTimezone,
                   country: 'Portugal',
                   admin1: 'Porto',
                 },
@@ -47,7 +59,7 @@ function forecastFetcher({
                   latitude: 41.1,
                   longitude: -8.6,
                   country_code: 'PT',
-                  timezone: 'Europe/Lisbon',
+                  timezone: geocoderTimezone,
                   country: 'Portugal',
                   admin1: 'Porto',
                 },
@@ -57,22 +69,36 @@ function forecastFetcher({
     const times = [];
     const temps = [];
     const codes = [];
-    for (let hour = 0; hour < 24; hour++) {
-      if (hour === omitHour) continue;
-      const suffix = String(hour).padStart(2, '0');
-      times.push(`${day}T${suffix}:00`);
+    const base = Date.parse(`${day}T00:00:00Z`) - 36 * 3600000;
+    const end = base + 96 * 3600000;
+    for (let instant = base; instant <= end; instant += 3600000) {
+      const parts = Object.fromEntries(
+        formatter
+          .formatToParts(new Date(instant))
+          .map((part) => [part.type, part.value]),
+      );
+      const localDate = `${parts.year}-${parts.month}-${parts.day}`;
+      const hour = Number(parts.hour);
+      if (localDate !== day || hour === omitHour) continue;
+      const epoch = instant / 1000;
+      times.push(epoch);
       temps.push(hour === 15 ? 38 : hour + 10);
       codes.push(hour === 15 ? 0 : 3);
-      if (day === '2026-10-25' && hour === 2) {
-        times.push(`${day}T02:00`);
-        temps.push(12);
+      if (hour === duplicateHour) {
+        times.push(epoch);
+        temps.push(hour + 10);
         codes.push(3);
       }
+    }
+    if (outOfOrder && times.length > 3) {
+      [times[1], times[2]] = [times[2], times[1]];
+      [temps[1], temps[2]] = [temps[2], temps[1]];
+      [codes[1], codes[2]] = [codes[2], codes[1]];
     }
     return {
       ok: true,
       json: async () => ({
-        timezone,
+          timezone,
         hourly: { time: times, temperature_2m: temps, weather_code: codes },
       }),
     };
@@ -94,24 +120,49 @@ function availability(
   };
 }
 function session(overrides = {}) {
+  const { durationMinutes = 60, ...fields } = overrides;
+  const mainMinutes = Math.max(1, durationMinutes - 20);
   return {
     date: '2026-10-26',
     weekday: 'monday',
     period: '08_12',
-    type: 'Corrida',
-    workout: 'Corrida fácil',
-    details: 'Aquecimento e desaquecimento incluídos',
+    sessionKind: 'easy',
+    prescription: [
+      {
+        phase: 'warmup',
+        repetitions: 1,
+        minutes: 10,
+        distanceMeters: null,
+        paceSecondsPerKm: null,
+        recoveryMinutes: null,
+      },
+      {
+        phase: 'main',
+        repetitions: 1,
+        minutes: mainMinutes,
+        distanceMeters: null,
+        paceSecondsPerKm: null,
+        recoveryMinutes: null,
+      },
+      {
+        phase: 'cooldown',
+        repetitions: 1,
+        minutes: 10,
+        distanceMeters: null,
+        paceSecondsPerKm: null,
+        recoveryMinutes: null,
+      },
+    ],
     targetHr: '120-140 bpm',
     rpe: 3,
     shoeId: null,
     location: 'Porto, Portugal',
     weather: 'Open-Meteo verified',
     notes: '',
-    durationMinutes: 60,
     justification:
       'A progressão acompanha o plano aplicado e os treinos registados.',
     evidence: ['cycle:cycle'],
-    ...overrides,
+    ...fields,
   };
 }
 function proposal(sessions = [session()]) {
@@ -128,7 +179,7 @@ function validationContext(overrides = {}) {
   };
 }
 
-test('weekly adapter replaces only conflicting delivery sections and is deterministic in PT/EN', () => {
+test('weekly adapter retains training guidance and replaces context duplication and conflicting delivery sections deterministically', () => {
   for (const language of ['pt-BR', 'en-US']) {
     const source =
       language === 'pt-BR'
@@ -136,7 +187,7 @@ test('weekly adapter replaces only conflicting delivery sections and is determin
         : 'INTRO\nMANDATORY WEATHER FORECAST VERIFICATION\nRESEARCH\nADDITIONAL CONTEXT FOR THIS WEEK\nMIDDLE\nINSTRUCTIONS FOR PLANNING THE WEEK\nTRAINING GUIDANCE\nSPREADSHEET FORMAT\nEXCEL';
     const first = weekly.adaptPrompt(source, language);
     assert.equal(weekly.adaptPrompt(source, language), first);
-    assert.match(first, /INTRO/);
+    assert.doesNotMatch(first, /INTRO|MIDDLE/);
     assert.match(first, /TRAINING GUIDANCE/);
     assert.match(first, /structured|estruturada/i);
     assert.doesNotMatch(
@@ -277,6 +328,140 @@ test('weekly proposal validates dates from weekday, one preferred period, cumula
   );
 });
 
+test('weekly identity treats only null and empty details as the same imported value', () => {
+  assert.equal(
+    trainingSignature({ dia: '2026-10-26', treino: 'Run', detalhes: null }),
+    trainingSignature({ dia: '2026-10-26', treino: 'Run', detalhes: '' }),
+  );
+  assert.notEqual(
+    trainingSignature({ dia: '2026-10-26', treino: 'Run', detalhes: ' ' }),
+    trainingSignature({ dia: '2026-10-26', treino: 'Run', detalhes: null }),
+  );
+});
+
+test('existing NULL and empty details share a dedup signature without rewriting completed results', () => {
+  const db = createDatabase({ filename: ':memory:' });
+  db.prepare(
+    "INSERT INTO users(id,email,password_hash) VALUES(1,'canonical@example.invalid','synthetic')",
+  ).run();
+  db.prepare(`INSERT INTO trainings
+    (id,user_id,dia,tipo,treino,detalhes,completed,feedback_rpe,result_data_source)
+    VALUES (1,1,'2026-10-26','Run','Easy run',NULL,1,3,'manual'),
+           (2,1,'2026-10-26','Run','Easy run','',1,4,'fit_upload')`).run();
+  const rows = db
+    .prepare('SELECT dia,treino,detalhes,completed,feedback_rpe,result_data_source FROM trainings ORDER BY id')
+    .all();
+  assert.equal(new Set(rows.map(trainingSignature)).size, 1);
+  assert.equal(rows[0].detalhes, null);
+  assert.equal(rows[1].detalhes, '');
+  assert.deepEqual(
+    rows.map((row) => [row.completed, row.feedback_rpe, row.result_data_source]),
+    [
+      [1, 3, 'manual'],
+      [1, 4, 'fit_upload'],
+    ],
+  );
+  db.close();
+});
+
+test('weekly duration is derived from structured components and rejects a second free-text total', () => {
+  const valid = proposal([session({ durationMinutes: 30 })]);
+  assert.equal(weekly.validateWeeklyProposal(valid, validationContext()), null);
+  assert.equal(weekly.materializePrescription(valid.sessions[0]).value.durationMinutes, 30);
+  const inconsistent = {
+    ...valid,
+    sessions: [
+      { ...valid.sessions[0], durationMinutes: 30, details: 'Main set lasts 60 minutes.' },
+    ],
+  };
+  assert.equal(
+    weekly.validateWeeklyProposal(inconsistent, validationContext())?.code,
+    'shape',
+  );
+});
+
+test('weekly prescription counts repeated work, between-repeat recovery and distance estimates', () => {
+  const value = session({
+    prescription: [
+      { phase: 'warmup', repetitions: 1, minutes: 10, distanceMeters: null, paceSecondsPerKm: null, recoveryMinutes: null },
+      { phase: 'main', repetitions: 4, minutes: null, distanceMeters: 400, paceSecondsPerKm: 300, recoveryMinutes: 3 },
+      { phase: 'cooldown', repetitions: 1, minutes: 5, distanceMeters: null, paceSecondsPerKm: null, recoveryMinutes: null },
+    ],
+  });
+  const materialized = weekly.materializePrescription(value, 'en-US');
+  assert.equal(materialized.value.durationMinutes, 32);
+  assert.equal(materialized.value.durationEstimated, true);
+  assert.match(materialized.value.details, /4 × 400 m \(~2 min each/);
+  assert.match(materialized.value.details, /3 min recovery between repeats/);
+  const noRecoveryBetweenFinalRep = {
+    ...value,
+    prescription: value.prescription.map((step) =>
+      step.phase === 'main' ? { ...step, recoveryMinutes: null } : step,
+    ),
+  };
+  assert.equal(
+    weekly.materializePrescription(noRecoveryBetweenFinalRep).value.durationMinutes,
+    23,
+  );
+  const contradictoryUnits = {
+    ...value,
+    prescription: value.prescription.map((step) =>
+      step.phase === 'main' ? { ...step, minutes: 10 } : step,
+    ),
+  };
+  assert.equal(weekly.materializePrescription(contradictoryUnits).error, 'prescription_units');
+});
+
+test('weekly prescription localizes Portuguese labels and rejects invalid structured durations', () => {
+  const distance = session({
+    prescription: [
+      { phase: 'warmup', repetitions: 1, minutes: 10, distanceMeters: null, paceSecondsPerKm: null, recoveryMinutes: null },
+      { phase: 'main', repetitions: 4, minutes: null, distanceMeters: 400, paceSecondsPerKm: 300, recoveryMinutes: 3 },
+      { phase: 'cooldown', repetitions: 1, minutes: 5, distanceMeters: null, paceSecondsPerKm: null, recoveryMinutes: null },
+    ],
+  });
+  const portuguese = weekly.materializePrescription(distance, 'pt-BR');
+  assert.match(portuguese.value.workout, /Corrida/);
+  assert.match(portuguese.value.details, /Principal: 4 × 400 m/);
+  assert.match(portuguese.value.details, /3 min de recuperação entre as repetições/);
+  assert.match(portuguese.value.details, /Duração estimada/);
+  assert.match(
+    weekly.materializePrescription(session(), 'pt-BR').value.details,
+    /Duração calculada/,
+  );
+  assert.equal(
+    weekly.materializePrescription({ ...distance, sessionKind: 'unknown' }).error,
+    'session_kind',
+  );
+
+  const invalidSteps = [
+    { phase: 'warmup', repetitions: 2, minutes: 10, distanceMeters: null, paceSecondsPerKm: null, recoveryMinutes: null },
+    { phase: 'main', repetitions: 31, minutes: 10, distanceMeters: null, paceSecondsPerKm: null, recoveryMinutes: null },
+    { phase: 'warmup', repetitions: 1, minutes: 721, distanceMeters: null, paceSecondsPerKm: null, recoveryMinutes: null },
+    { phase: 'main', repetitions: 1, minutes: null, distanceMeters: 100001, paceSecondsPerKm: 300, recoveryMinutes: null },
+    { phase: 'main', repetitions: 2, minutes: 10, distanceMeters: null, paceSecondsPerKm: null, recoveryMinutes: 31 },
+  ];
+  for (const step of invalidSteps) {
+    const steps = [
+      { phase: 'warmup', repetitions: 1, minutes: 10, distanceMeters: null, paceSecondsPerKm: null, recoveryMinutes: null },
+      { phase: 'main', repetitions: 1, minutes: 10, distanceMeters: null, paceSecondsPerKm: null, recoveryMinutes: null },
+      { phase: 'cooldown', repetitions: 1, minutes: 5, distanceMeters: null, paceSecondsPerKm: null, recoveryMinutes: null },
+    ];
+    steps[step.phase === 'warmup' ? 0 : 1] = step;
+    const result = weekly.materializePrescription({ ...distance, prescription: steps });
+    assert.ok(result.error, JSON.stringify(step));
+  }
+  const tooLong = {
+    ...distance,
+    prescription: [
+      { phase: 'warmup', repetitions: 1, minutes: 241, distanceMeters: null, paceSecondsPerKm: null, recoveryMinutes: null },
+      { phase: 'main', repetitions: 1, minutes: 241, distanceMeters: null, paceSecondsPerKm: null, recoveryMinutes: null },
+      { phase: 'cooldown', repetitions: 1, minutes: 241, distanceMeters: null, paceSecondsPerKm: null, recoveryMinutes: null },
+    ],
+  };
+  assert.equal(weekly.materializePrescription(tooLong).error, 'prescription_value');
+});
+
 test('weekly validation covers every invariant failure and optional context branch', () => {
   const base = validationContext();
   const rejected = [
@@ -293,12 +478,9 @@ test('weekly validation covers every invariant failure and optional context bran
       { ...base, shoes: [{ id: 'retired', status: 'retired' }] },
       'shoe',
     ],
-    [proposal([session({ type: '' })]), base, 'required'],
-    [proposal([session({ workout: '' })]), base, 'required'],
+    [proposal([session({ sessionKind: 'unknown' })]), base, 'session_kind'],
+    [proposal([session({ sessionKind: '' })]), base, 'session_kind'],
     [proposal([session({ justification: '' })]), base, 'required'],
-    [proposal([session({ type: 't'.repeat(101) })]), base, 'text_length'],
-    [proposal([session({ workout: 'w'.repeat(201) })]), base, 'text_length'],
-    [proposal([session({ details: 'd'.repeat(2001) })]), base, 'text_length'],
     [proposal([session({ targetHr: 'h'.repeat(81) })]), base, 'text_length'],
     [proposal([session({ weather: 'w'.repeat(1001) })]), base, 'text_length'],
     [proposal([session({ notes: 'n'.repeat(2001) })]), base, 'text_length'],
@@ -308,9 +490,8 @@ test('weekly validation covers every invariant failure and optional context bran
       'text_length',
     ],
     [proposal([session({ targetHr: 'easy' })]), base, 'unit'],
-    [proposal([session({ type: 'RPE 8/10' })]), base, 'incompatible_rpe'],
-    [proposal([session({ workout: 'RPE 8/10' })]), base, 'incompatible_rpe'],
-    [proposal([session({ details: 'RPE 8/10' })]), base, 'incompatible_rpe'],
+    [proposal([session({ type: 'RPE 8/10' })]), base, 'shape'],
+    [proposal([session({ details: 'RPE 8/10' })]), base, 'shape'],
     [proposal([session({ targetHr: 'RPE 8/10' })]), base, 'incompatible_rpe'],
     [proposal([session({ weather: 'RPE 8/10' })]), base, 'incompatible_rpe'],
     [proposal([session({ notes: 'RPE 8/10' })]), base, 'incompatible_rpe'],
@@ -336,7 +517,11 @@ test('weekly validation covers every invariant failure and optional context bran
     ],
   ];
   for (const [value, context, code] of rejected)
-    assert.equal(weekly.validateWeeklyProposal(value, context)?.code, code);
+    assert.equal(
+      weekly.validateWeeklyProposal(value, context)?.code,
+      code,
+      `expected ${code} for ${JSON.stringify(value.sessions?.[0])}`,
+    );
   const noForecast = { ...base, weather: undefined };
   assert.equal(weekly.validateWeeklyProposal(proposal(), noForecast), null);
   assert.equal(
@@ -367,11 +552,27 @@ test('weekly adapter preparation, legacy availability weather and proposal reads
     '2026-10-26',
     forecastFetcher(),
   );
+  const unchangedEvidence = { status: 'unavailable' };
+  assert.equal(
+    weekly.compactWeatherEvidence(unchangedEvidence),
+    unchangedEvidence,
+  );
   assert.deepEqual(evidence, [
     {
       status: 'unavailable',
       reason: 'availability_needs_review',
       weekday: 'monday',
+      date: '2026-10-26',
+      period: null,
+      location: 'Porto',
+      sourceBinding: {
+        userId: 1,
+        weekday: 'monday',
+        date: '2026-10-26',
+        period: null,
+        location: 'Porto',
+        availabilityRevision: 1,
+      },
     },
   ]);
   const adapter = weekly.createWeeklyWorkoutAdapter(db);
@@ -388,8 +589,14 @@ test('weekly adapter preparation, legacy availability weather and proposal reads
     resource: { weekStart: '2026-10-26' },
   };
   db.prepare(
-    `INSERT INTO ai_executions(id,user_id,idempotency_key,purpose,input_hash,prompt_version,external_prompt,context_json,payload_json,configuration_json,state,reserved_tokens,reserved_cost,created_at,updated_at) VALUES(?,1,'read-week-key','workouts','x','v','prompt',?,'{}','{}','completed',1,0,?,?)`,
-  ).run(id, JSON.stringify(savedContext), timestamp, timestamp);
+    `INSERT INTO ai_executions(id,user_id,idempotency_key,purpose,input_hash,prompt_version,external_prompt,context_json,payload_json,configuration_json,state,reserved_tokens,reserved_cost,created_at,updated_at) VALUES(?,1,'read-week-key','workouts','x','v','prompt',?,'{}',?,'completed',1,0,?,?)`,
+  ).run(
+    id,
+    JSON.stringify(savedContext),
+    JSON.stringify({ adapterVersion: weekly.VERSION }),
+    timestamp,
+    timestamp,
+  );
   db.prepare(
     'INSERT INTO weekly_workout_proposals(execution_id,user_id,week_start,created_at) VALUES(?,1,?,?)',
   ).run(id, '2026-10-26', timestamp);
@@ -426,10 +633,62 @@ test('weekly adapter preparation, legacy availability weather and proposal reads
       .shoeLabel,
     'Sample Run',
   );
+  db.prepare('UPDATE ai_executions SET configuration_json=? WHERE id=?').run(
+    JSON.stringify({ adapterVersion: 'weekly-workouts-v1' }),
+    id,
+  );
+  assert.throws(
+    () => weekly.readWeeklyProposal(db, 1, id, fullService),
+    (error) =>
+      error instanceof AiError && error.code === 'weeklySchemaIncompatible',
+  );
   assert.throws(
     () => weekly.readWeeklyProposal(db, 2, id, emptyService),
     (error) => error instanceof AiError && error.code === 'proposalNotFound',
   );
+  db.prepare('UPDATE ai_executions SET configuration_json=? WHERE id=?').run(
+    JSON.stringify({ adapterVersion: weekly.VERSION }),
+    id,
+  );
+  assert.throws(
+    () =>
+      weekly.readWeeklyProposal(db, 1, id, {
+        get: () => ({
+          id,
+          purpose: 'workouts',
+          response: proposal([session({ prescription: [] })]),
+        }),
+      }),
+    (error) =>
+      error instanceof AiError && error.code === 'weeklyProposalInvalid',
+  );
+  db.pragma('foreign_keys = OFF');
+  db.prepare('DELETE FROM ai_executions WHERE id=?').run(id);
+  assert.throws(
+    () => weekly.readWeeklyProposal(db, 1, id, emptyService),
+    (error) => error instanceof AiError && error.code === 'proposalNotFound',
+  );
+  db.close();
+});
+
+test('weekly weather collector uses its default clock only after a valid availability snapshot', async () => {
+  const db = createDatabase({ filename: ':memory:' });
+  db.prepare(
+    "INSERT INTO users(id,email,password_hash,role,preferred_lang) VALUES(1,'weather-clock@example.invalid','synthetic','user','en-US')",
+  ).run();
+  db.prepare(
+    `INSERT INTO ai_coach_availability
+      (user_id,day_key,can_train,available_periods,available_minutes,location)
+      VALUES(1,'monday',1,'[\"08_12\"]',120,'Porto, Portugal')`,
+  ).run();
+  const evidence = await weekly.collectWeeklyWeather(
+    db,
+    1,
+    '2026-10-26',
+    forecastFetcher({ day: '2026-10-26' }),
+  );
+  assert.equal(evidence[0].status, 'verified');
+  assert.ok(Number.isFinite(Date.parse(evidence[0].lookedUpAt)));
   db.close();
 });
 
@@ -450,6 +709,21 @@ test('hourly forecast uses local half-open windows, excludes daily highs and res
   assert.equal(result.timezone, 'Europe/Lisbon');
   assert.equal(result.coverage.expectedHours, 9);
   assert.equal(result.coverage.verifiedHours, 9);
+  assert.equal(
+    result.hours.filter((hour) => hour.localTime.startsWith('2026-10-25T01:00'))
+      .length,
+    2,
+    'two distinct UTC instants preserve the legitimate autumn repeated hour',
+  );
+  const spring = await weekly.readHourlyForecast(
+    'Porto, Portugal',
+    '2026-03-29',
+    { weekday: 'sunday', period: 'before_08' },
+    forecastFetcher({ day: '2026-03-29' }),
+    new Date('2026-03-28T12:00:00Z'),
+  );
+  assert.equal(spring.status, 'verified');
+  assert.deepEqual(spring.coverage, { verifiedHours: 7, expectedHours: 7 });
   assert.equal(result.window.maxC, 17);
   assert.ok(result.window.maxC < 38);
   assert.equal(
@@ -457,6 +731,23 @@ test('hourly forecast uses local half-open windows, excludes daily highs and res
     false,
   );
   assert.equal(weekly.weatherValue(result, 'F', 'pt-BR').includes('°F'), true);
+  const utc = await weekly.readHourlyForecast(
+    'Porto, Portugal',
+    '2026-10-26',
+    { weekday: 'monday', period: '08_12' },
+    forecastFetcher({
+      day: '2026-10-26',
+      timezone: 'UTC',
+      geocoderTimezone: 'UTC',
+    }),
+    new Date('2026-10-25T12:00:00Z'),
+  );
+  assert.equal(utc.status, 'verified');
+  assert.ok(utc.hours.every((hour) => hour.localTime.endsWith('Z')));
+  assert.throws(
+    () => weekly.expectedWindowInstants('2026-10-26', 12, 8, 'Europe/Lisbon'),
+    /Unresolvable hourly window/,
+  );
 });
 
 test('hourly forecast reports partial, ambiguity, invalid timezone, missing fields, horizon and outage explicitly', async () => {
@@ -470,6 +761,41 @@ test('hourly forecast reports partial, ambiguity, invalid timezone, missing fiel
   );
   assert.equal(partial.status, 'partial');
   assert.equal(partial.coverage.verifiedHours, 8);
+  const missingHourlyValue = await weekly.readHourlyForecast(
+    'Porto, Portugal',
+    '2026-10-25',
+    { weekday: 'sunday', period: 'before_08' },
+    async (url) => {
+      const result = await forecastFetcher()(url);
+      if (url.includes('geocoding-api')) return result;
+      const payload = await result.json();
+      payload.hourly.weather_code[0] = null;
+      return { ok: true, json: async () => payload };
+    },
+    now,
+  );
+  assert.equal(missingHourlyValue.status, 'partial');
+  assert.equal(missingHourlyValue.coverage.verifiedHours, 8);
+  const duplicateReplacesMissing = await weekly.readHourlyForecast(
+    'Porto, Portugal',
+    '2026-10-25',
+    { weekday: 'sunday', period: 'before_08' },
+    forecastFetcher({ omitHour: 6, duplicateHour: 5 }),
+    now,
+  );
+  assert.notEqual(
+    duplicateReplacesMissing.status,
+    'verified',
+    'a repeated timestamp cannot compensate for a missing hour',
+  );
+  const unordered = await weekly.readHourlyForecast(
+    'Porto, Portugal',
+    '2026-10-26',
+    { weekday: 'monday', period: '08_12' },
+    forecastFetcher({ day: '2026-10-26', outOfOrder: true }),
+    now,
+  );
+  assert.equal(unordered.reason, 'hourly_timestamps_invalid');
   const ambiguous = await weekly.readHourlyForecast(
     'Porto, Portugal',
     '2026-10-25',
@@ -482,10 +808,48 @@ test('hourly forecast reports partial, ambiguity, invalid timezone, missing fiel
     'Porto, Portugal',
     '2026-10-25',
     { weekday: 'sunday', period: 'before_08' },
-    forecastFetcher({ timezone: 'Mars/Phobos' }),
+    async (url) => {
+      const response = await forecastFetcher()(url);
+      if (url.includes('geocoding-api')) return response;
+      const result = await response.json();
+      result.timezone = 'Mars/Phobos';
+      return { ok: true, json: async () => result };
+    },
     now,
   );
   assert.equal(timezone.reason, 'invalid_timezone');
+  const mismatchedTimezone = await weekly.readHourlyForecast(
+    'Porto, Portugal',
+    '2026-10-25',
+    { weekday: 'sunday', period: 'before_08' },
+    forecastFetcher({ timezone: 'Asia/Tokyo' }),
+    now,
+  );
+  assert.equal(mismatchedTimezone.status, 'unavailable');
+  assert.equal(mismatchedTimezone.reason, 'timezone_mismatch');
+  assert.equal(mismatchedTimezone.resolvedTimezone, 'Europe/Lisbon');
+  assert.equal(mismatchedTimezone.timezone, 'Asia/Tokyo');
+  const sameOffsetDifferentZone = await weekly.readHourlyForecast(
+    'Porto, Portugal',
+    '2026-10-25',
+    { weekday: 'sunday', period: 'before_08' },
+    forecastFetcher({ timezone: 'Europe/London' }),
+    now,
+  );
+  assert.equal(sameOffsetDifferentZone.reason, 'timezone_mismatch');
+  const aliasZone = await weekly.readHourlyForecast(
+    'Porto, Portugal',
+    '2026-10-26',
+    { weekday: 'monday', period: '08_12' },
+    forecastFetcher({
+      day: '2026-10-26',
+      timezone: 'Europe/London',
+      geocoderTimezone: 'Europe/Belfast',
+    }),
+    now,
+  );
+  assert.equal(aliasZone.status, 'verified');
+  assert.equal(aliasZone.resolvedTimezone, 'Europe/London');
   const missing = await weekly.readHourlyForecast(
     'Porto, Portugal',
     '2026-10-25',
@@ -497,7 +861,7 @@ test('hourly forecast reports partial, ambiguity, invalid timezone, missing fiel
             ok: true,
             json: async () => ({
               timezone: 'Europe/Lisbon',
-              hourly: { time: [], temperature_2m: [] },
+              hourly: { time: [], temperature_2m: [], weather_code: [] },
             }),
           },
     now,
@@ -558,17 +922,20 @@ test('hourly forecast reports partial, ambiguity, invalid timezone, missing fiel
     },
     new Date('2026-10-24T23:30:00.000Z'),
   );
-  assert.equal(timezoneDrift.reason, 'outside_forecast_horizon');
+  assert.equal(timezoneDrift.reason, 'timezone_mismatch');
   const unavailable = await weekly.readHourlyForecast(
     'Porto, Portugal',
     '2026-10-25',
     { weekday: 'sunday', period: 'before_08' },
-    async () => {
+    async (url) => {
+      if (url.includes('geocoding-api')) return forecastFetcher()(url);
       throw Error('network');
     },
     now,
   );
   assert.equal(unavailable.reason, 'forecast_service_unavailable');
+  assert.equal(unavailable.resolvedTimezone, 'Europe/Lisbon');
+  assert.match(unavailable.url, /timezone=Europe%2FLisbon/);
   assert.match(weekly.weatherValue(partial, 'C', 'en-US'), /partial/i);
   assert.match(weekly.weatherValue(null, 'C', 'pt-BR'), /indisponível/i);
 });
@@ -599,7 +966,7 @@ test('hourly weather rejects provider gaps and uses the half-open evening window
         : forecastFetcher()(url),
     now,
   );
-  assert.equal(missingGeocoderTimezone.status, 'verified');
+  assert.equal(missingGeocoderTimezone.reason, 'resolved_timezone_missing');
   const invalidGeocoderTimezone = await weekly.readHourlyForecast(
     'Porto, Portugal',
     '2026-10-25',
@@ -696,7 +1063,7 @@ test('hourly weather rejects provider gaps and uses the half-open evening window
   assert.equal(noTemps.reason, 'timezone_or_hourly_data_missing');
   const noWeatherCodes = await weekly.readHourlyForecast(
     'Porto, Portugal',
-    '2026-10-25',
+    '2026-10-26',
     { weekday: 'sunday', period: '08_12' },
     async (url) =>
       url.includes('geocoding-api')
@@ -708,7 +1075,9 @@ test('hourly weather rejects provider gaps and uses the half-open evening window
               hourly: {
                 time: Array.from(
                   { length: 24 },
-                  (_, hour) => `2026-10-25T${String(hour).padStart(2, '0')}:00`,
+                  (_, hour) =>
+                    Date.parse(`2026-10-26T${String(hour).padStart(2, '0')}:00:00Z`) /
+                    1000,
                 ),
                 temperature_2m: Array(24).fill(14),
               },
@@ -716,8 +1085,22 @@ test('hourly weather rejects provider gaps and uses the half-open evening window
           },
     now,
   );
-  assert.equal(noWeatherCodes.status, 'verified');
-  assert.equal(noWeatherCodes.hours[0].weatherCode, null);
+  assert.equal(noWeatherCodes.status, 'unavailable');
+  assert.equal(noWeatherCodes.reason, 'timezone_or_hourly_data_missing');
+  const misaligned = await weekly.readHourlyForecast(
+    'Porto, Portugal',
+    '2026-10-26',
+    { weekday: 'monday', period: '08_12' },
+    async (url) => {
+      const result = await forecastFetcher({ day: '2026-10-26' })(url);
+      if (url.includes('geocoding-api')) return result;
+      const payload = await result.json();
+      payload.hourly.weather_code.pop();
+      return { ok: true, json: async () => payload };
+    },
+    now,
+  );
+  assert.equal(misaligned.reason, 'hourly_values_misaligned');
   const evening = await weekly.readHourlyForecast(
     'Porto, Portugal',
     '2026-10-25',
@@ -726,6 +1109,14 @@ test('hourly weather rejects provider gaps and uses the half-open evening window
     now,
   );
   assert.equal(evening.coverage.expectedHours, 6);
+  assert.equal(
+    weekly.hoursInLocalWindow('2026-10-25', 18, 24, 'Europe/Lisbon'),
+    6,
+  );
+  assert.equal(
+    weekly.hoursInLocalWindow('2026-10-26', 8, 12, 'Europe/Lisbon'),
+    4,
+  );
   assert.throws(
     () => weekly.hoursInLocalWindow('2011-12-30', 8, 12, 'Pacific/Apia'),
     /Unresolvable local boundary/,
@@ -770,9 +1161,45 @@ test('weekly Open-Meteo URL and Monday/date validation are bounded and canonical
   assert.equal(weekly.addIsoDays('2026-10-26', 6), '2026-11-01');
   const url = new URL(weekly.hourlyUrl(41.1, -8.6, '2026-10-26'));
   assert.equal(url.searchParams.get('hourly'), 'temperature_2m,weather_code');
+  assert.equal(url.searchParams.get('forecast_days'), '16');
+  assert.equal(url.searchParams.get('timeformat'), 'unixtime');
   assert.equal(url.searchParams.get('timezone'), 'auto');
+  assert.equal(
+    new URL(weekly.hourlyUrl(41.1, -8.6, '2026-10-26', 'Europe/Lisbon'))
+      .searchParams.get('timezone'),
+    'Europe/Lisbon',
+  );
   assert.equal(DAY_KEYS.length, 7);
   assert.equal(hash({ a: 1 }).length, 64);
+});
+
+test('weekly forecast accepts the first and sixteenth local dates, then refuses day seventeen', async () => {
+  const now = new Date('2026-10-24T12:00:00.000Z');
+  const first = await weekly.readHourlyForecast(
+    'Porto, Portugal',
+    '2026-10-24',
+    { weekday: 'saturday', period: '08_12' },
+    forecastFetcher({ day: '2026-10-24' }),
+    now,
+  );
+  assert.equal(first.status, 'verified');
+  const sixteenth = await weekly.readHourlyForecast(
+    'Porto, Portugal',
+    '2026-11-08',
+    { weekday: 'sunday', period: '08_12' },
+    forecastFetcher({ day: '2026-11-08' }),
+    now,
+  );
+  assert.equal(sixteenth.status, 'verified');
+  const seventeenth = await weekly.readHourlyForecast(
+    'Porto, Portugal',
+    '2026-11-09',
+    { weekday: 'monday', period: '08_12' },
+    forecastFetcher({ day: '2026-11-09' }),
+    now,
+  );
+  assert.equal(seventeenth.reason, 'outside_forecast_horizon');
+  assert.equal(seventeenth.lookupAttempted, false);
 });
 
 test('proposal application preserves existing results, deduplicates within the week and is idempotent', () => {
@@ -799,26 +1226,29 @@ test('proposal application preserves existing results, deduplicates within the w
   );
   const first = session();
   const second = session({
-    workout: 'Corrida progressiva',
-    details: 'Sessão adicional',
-    durationMinutes: 60,
+    sessionKind: 'progression',
   });
   const third = session({
-    workout: 'Rodagem leve sem detalhes',
-    details: '',
+    sessionKind: 'long',
     targetHr: '',
     rpe: null,
     shoeId: 'active-shoe',
     notes: '',
-    durationMinutes: 60,
   });
-  const result = proposal([first, second, third]);
+  const firstMaterialized = weekly.materializePrescription(first).value;
+  const result = proposal([first, second, second, third]);
   db.prepare(
     "INSERT INTO shoes(id,user_id,brand,model) VALUES('active-shoe',1,'Sample','Daily')",
   ).run();
   db.prepare(
     "INSERT INTO trainings(id,user_id,training_cycle_id,dia,periodo,tipo,treino,detalhes,completed,feedback_rpe,result_data_source) VALUES(1,1,'cycle',?,?,?,?,?,1,3,'manual')",
-  ).run(first.date, first.period, first.type, first.workout, first.details);
+  ).run(
+    first.date,
+    first.period,
+    firstMaterialized.type,
+    firstMaterialized.workout,
+    firstMaterialized.details,
+  );
   const context = {
     resource: { weekStart: '2026-10-26' },
     availability: [row],
@@ -831,8 +1261,14 @@ test('proposal application preserves existing results, deduplicates within the w
   const id = 'week-execution';
   const timestamp = '2026-10-24T12:00:00.000Z';
   db.prepare(
-    `INSERT INTO ai_executions(id,user_id,idempotency_key,purpose,input_hash,prompt_version,external_prompt,context_json,payload_json,configuration_json,state,reserved_tokens,reserved_cost,created_at,updated_at) VALUES(?,1,'week-idempotency','workouts','x','v','prompt',?,'{}','{}','completed',1,0,?,?)`,
-  ).run(id, JSON.stringify(context), timestamp, timestamp);
+    `INSERT INTO ai_executions(id,user_id,idempotency_key,purpose,input_hash,prompt_version,external_prompt,context_json,payload_json,configuration_json,state,reserved_tokens,reserved_cost,created_at,updated_at) VALUES(?,1,'week-idempotency','workouts','x','v','prompt',?,'{}',?,'completed',1,0,?,?)`,
+  ).run(
+    id,
+    JSON.stringify(context),
+    JSON.stringify({ adapterVersion: weekly.VERSION }),
+    timestamp,
+    timestamp,
+  );
   db.prepare(
     'INSERT INTO weekly_workout_proposals(execution_id,user_id,week_start,created_at) VALUES(?,1,?,?)',
   ).run(id, '2026-10-26', timestamp);
@@ -895,7 +1331,9 @@ test('proposal application preserves existing results, deduplicates within the w
     1,
     'a failed concurrent deletion is rolled back with the transaction',
   );
-  const invalidProposal = proposal([session({ workout: '' })]);
+  const invalidProposal = proposal([
+    session({ prescription: [{ phase: 'main', repetitions: 1 }] }),
+  ]);
   expectCode(
     { expected_response_hash: hash(invalidProposal) },
     {
@@ -925,6 +1363,22 @@ test('proposal application preserves existing results, deduplicates within the w
     savedContext,
     id,
   );
+  const configJson = db
+    .prepare('SELECT configuration_json FROM ai_executions WHERE id=?')
+    .get(id).configuration_json;
+  db.prepare('UPDATE ai_executions SET configuration_json=? WHERE id=?').run(
+    JSON.stringify({ adapterVersion: 'weekly-workouts-v1' }),
+    id,
+  );
+  expectCode(
+    { expected_response_hash: hash(result) },
+    service,
+    'weeklySchemaIncompatible',
+  );
+  db.prepare('UPDATE ai_executions SET configuration_json=? WHERE id=?').run(
+    configJson,
+    id,
+  );
   db.prepare(
     "UPDATE training_cycles SET status='completed' WHERE id='cycle'",
   ).run();
@@ -950,7 +1404,7 @@ test('proposal application preserves existing results, deduplicates within the w
       ignored: firstApply.ignored,
       alreadyApplied: firstApply.alreadyApplied,
     },
-    { added: 2, ignored: 1, alreadyApplied: false },
+    { added: 2, ignored: 2, alreadyApplied: false },
   );
   assert.deepEqual(
     db
@@ -970,11 +1424,11 @@ test('proposal application preserves existing results, deduplicates within the w
   );
   const applied = weekly.readWeeklyProposal(db, 1, id, service);
   assert.equal(applied.application.added, 2);
-  assert.equal(applied.proposal.sessions[2].shoeLabel, 'Sample Daily');
+  assert.equal(applied.proposal.sessions[3].shoeLabel, 'Sample Daily');
   assert.equal(
     db
       .prepare(
-        "SELECT tenis,detalhes,fc_alvo,rpe,observacoes,location,previsao FROM trainings WHERE treino='Rodagem leve sem detalhes'",
+        "SELECT tenis,detalhes,fc_alvo,rpe,observacoes,location,previsao FROM trainings WHERE treino='Long run'",
       )
       .get().tenis,
     'Sample Daily',
@@ -1018,6 +1472,15 @@ test('proposal application preserves existing results, deduplicates within the w
 test('authenticated weekly execution recovers the same owner proposal and applies it without provider replay', async (t) => {
   const db = createDatabase({ filename: ':memory:' });
   const calls = [];
+  let holdForecast = false;
+  let markForecastRequested;
+  let releaseForecast;
+  const forecastRequested = new Promise((resolve) => {
+    markForecastRequested = resolve;
+  });
+  const forecastGate = new Promise((resolve) => {
+    releaseForecast = resolve;
+  });
   const aiConfig = readAiConfig({
     AI_ENABLED: 'true',
     OPENAI_API_KEY: 'synthetic-test-key',
@@ -1046,18 +1509,42 @@ test('authenticated weekly execution recovers the same owner proposal and applie
             ],
           }),
         };
+      if (holdForecast) {
+        markForecastRequested();
+        await forecastGate;
+      }
       const day = parsed.searchParams.get('start_date');
+      const formatter = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Europe/Lisbon',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        hourCycle: 'h23',
+      });
+      const times = [],
+        temperatures = [],
+        codes = [];
+      const from = Date.parse(`${day}T00:00:00Z`) - 36 * 3600000;
+      for (let instant = from; instant <= from + 96 * 3600000; instant += 3600000) {
+        const parts = Object.fromEntries(
+          formatter
+            .formatToParts(new Date(instant))
+            .map((part) => [part.type, part.value]),
+        );
+        if (`${parts.year}-${parts.month}-${parts.day}` !== day) continue;
+        times.push(instant / 1000);
+        temperatures.push(10 + Number(parts.hour));
+        codes.push(2);
+      }
       return {
         ok: true,
         json: async () => ({
           timezone: 'Europe/Lisbon',
           hourly: {
-            time: Array.from(
-              { length: 24 },
-              (_, hour) => `${day}T${String(hour).padStart(2, '0')}:00`,
-            ),
-            temperature_2m: Array.from({ length: 24 }, (_, hour) => 10 + hour),
-            weather_code: Array(24).fill(2),
+            time: times,
+            temperature_2m: temperatures,
+            weather_code: codes,
           },
         }),
       };
@@ -1161,6 +1648,17 @@ test('authenticated weekly execution recovers the same owner proposal and applie
   assert.equal(read.statusCode, 200);
   assert.equal(read.json().proposal.sessions[0].date, '2026-10-26');
   assert.equal(read.json().weatherEvidence[0].status, 'verified');
+  const sentContext = JSON.parse(
+    calls[0].input[0].content[0].text,
+  ).context;
+  assert.deepEqual(sentContext.weather[0].sourceBinding, {
+    userId: owner,
+    weekday: 'monday',
+    date: '2026-10-26',
+    period: '08_12',
+    location: 'Porto, Portugal',
+    availabilityRevision: 1,
+  });
   assert.ok(read.json().responseHash);
   const applied = await app.inject({
     method: 'POST',
@@ -1197,6 +1695,44 @@ test('authenticated weekly execution recovers the same owner proposal and applie
         idempotency_key: key,
       },
     });
+  const savedAvailability = (await app.inject({
+    method: 'GET',
+    url: '/api/ai-coach/availability',
+    headers: { cookie },
+  })).json().availability.days;
+  const saveAvailability = (days) =>
+    app.inject({
+      method: 'PUT',
+      url: '/api/ai-coach/availability',
+      headers: { cookie },
+      payload: { days },
+    });
+  holdForecast = true;
+  const racingRequest = request('weekly-race-location-001');
+  await forecastRequested;
+  const changedLocation = savedAvailability.map((day) =>
+    day.day === 'monday' ? { ...day, location: 'Lisbon, Portugal' } : day,
+  );
+  assert.equal((await saveAvailability(changedLocation)).statusCode, 200);
+  assert.equal((await saveAvailability(savedAvailability)).statusCode, 200);
+  holdForecast = false;
+  releaseForecast();
+  const racedResponse = await racingRequest;
+  assert.equal(racedResponse.statusCode, 409, racedResponse.body);
+  assert.ok(
+    ['availabilityChanged', 'weeklyAvailabilityConflict'].includes(
+      racedResponse.json().errors[0],
+    ),
+  );
+  assert.equal(calls.length, 1, 'changed weather inputs never dispatch AI');
+  assert.equal(
+    db
+      .prepare(
+        "SELECT COUNT(*) AS n FROM ai_executions WHERE user_id=? AND idempotency_key='weekly-race-location-001'",
+      )
+      .get(owner).n,
+    0,
+  );
   aiConfig.enabled = false;
   assert.equal(
     (await request('weekly-disabled-001')).json().errors[0],
@@ -1230,4 +1766,108 @@ test('authenticated weekly execution recovers the same owner proposal and applie
     (await request('weekly-legacy-period-001')).json().errors[0],
     'availabilityNeedsReview',
   );
+});
+
+test('weekly forecast revalidates an owner deactivated or deleted while weather is pending', async () => {
+  for (const state of ['deactivate', 'delete']) {
+    const db = createDatabase({ filename: ':memory:' });
+    let signalForecast;
+    let releaseForecast;
+    const forecastStarted = new Promise((resolve) => {
+      signalForecast = resolve;
+    });
+    const forecastGate = new Promise((resolve) => {
+      releaseForecast = resolve;
+    });
+    let providerCalls = 0;
+    const fetcher = forecastFetcher({ day: '2026-10-26' });
+    const app = await buildServer({
+      db,
+      sessionCookieSecure: false,
+      aiConfig: readAiConfig({
+        AI_ENABLED: 'true',
+        OPENAI_API_KEY: 'synthetic-test-key',
+        AI_RETRIES: '0',
+      }),
+      weatherFetch: async (url) => {
+        if (url.includes('geocoding-api')) return fetcher(url);
+        signalForecast();
+        await forecastGate;
+        return fetcher(url);
+      },
+      aiClient: async () => {
+        providerCalls++;
+        return { error: null, usage: { input: 1, output: 1 }, value: {} };
+      },
+    });
+    try {
+      await app.inject({
+        method: 'POST',
+        url: '/api/auth/register',
+        payload: {
+          email: `pending-${state}@example.invalid`,
+          password: 'weekly-secret-123',
+          first_name: 'Weekly',
+          last_name: 'Runner',
+        },
+      });
+      const login = await app.inject({
+        method: 'POST',
+        url: '/api/auth/login',
+        payload: {
+          email: `pending-${state}@example.invalid`,
+          password: 'weekly-secret-123',
+        },
+      });
+      const cookie = [].concat(login.headers['set-cookie'] || [])[0].split(';')[0];
+      const userId = db.prepare('SELECT id FROM users').get().id;
+      db.prepare(
+        "INSERT INTO training_cycles(id,user_id,objective,status) VALUES('pending-cycle',?,'Base','active')",
+      ).run(userId);
+      for (const day of DAY_KEYS) {
+        const monday = day === 'monday';
+        db.prepare(`INSERT INTO ai_coach_availability
+          (user_id,day_key,can_train,available_periods,available_minutes,location)
+          VALUES(?,?,?,?,?,?)`).run(
+          userId,
+          day,
+          monday ? 1 : 0,
+          JSON.stringify(monday ? ['08_12'] : []),
+          monday ? 60 : null,
+          monday ? 'Porto, Portugal' : '',
+        );
+      }
+      const pending = app.inject({
+        method: 'POST',
+        url: '/api/ai/executions',
+        headers: { cookie },
+        payload: {
+          purpose: 'workouts',
+          target_date: '2026-10-26',
+          idempotency_key: `pending-${state}-forecast`,
+        },
+      });
+      await forecastStarted;
+      if (state === 'deactivate') {
+        db.prepare('DELETE FROM sessions WHERE user_id=?').run(userId);
+        db.prepare('UPDATE users SET is_active=0 WHERE id=?').run(userId);
+      } else {
+        db.prepare('DELETE FROM users WHERE id=?').run(userId);
+      }
+      releaseForecast();
+      const response = await pending;
+      assert.equal(response.statusCode, 401, response.body);
+      assert.equal(response.json().errors[0], 'accountUnavailable');
+      assert.equal(providerCalls, 0);
+      assert.equal(
+        db.prepare('SELECT COUNT(*) AS n FROM ai_executions').get().n,
+        0,
+      );
+      assert.equal(db.prepare('SELECT COUNT(*) AS n FROM ai_usage').get().n, 0);
+    } finally {
+      releaseForecast();
+      await app.close();
+      db.close();
+    }
+  }
 });

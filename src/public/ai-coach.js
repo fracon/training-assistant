@@ -298,7 +298,11 @@ function setupAiCoachPage(user) {
       const article = document.createElement('article');
       article.className = 'weekly-proposal-card';
       const heading = document.createElement('h3');
-      heading.textContent = t('aiCoach.weeklySession')
+      heading.textContent = t(
+        session.durationEstimated
+          ? 'aiCoach.weeklySessionEstimated'
+          : 'aiCoach.weeklySession',
+      )
         .replace(
           '{weekday}',
           t(
@@ -318,6 +322,7 @@ function setupAiCoachPage(user) {
         );
       });
       const values = [
+        [t('aiCoach.typeLabel'), session.type],
         [t('aiCoach.workout'), session.workout],
         [t('aiCoach.detailsLabel'), session.details],
         [t('aiCoach.targetHrLabel'), session.targetHr],
@@ -328,6 +333,7 @@ function setupAiCoachPage(user) {
         [t('aiCoach.shoeLabel'), session.shoeLabel || '—'],
         [t('aiCoach.locationLabel'), session.location],
         [t('aiCoach.weatherLabel'), session.weather],
+        [t('aiCoach.weeklyNotes'), session.notes],
         [t('aiCoach.weeklyRationale'), session.justification],
         [t('aiCoach.weeklyEvidence'), evidenceLabels.join(', ')],
       ];
@@ -335,6 +341,8 @@ function setupAiCoachPage(user) {
         const dt = document.createElement('dt');
         dt.textContent = label;
         const dd = document.createElement('dd');
+        if (label === t('aiCoach.weeklyNotes'))
+          dd.className = 'weekly-proposal-notes';
         dd.textContent = value || '—';
         table.append(dt, dd);
       }
@@ -416,10 +424,17 @@ function setupAiCoachPage(user) {
           1800,
         );
       }
-    } catch {
+    } catch (error) {
       if (token === readAttempt && activeExecutionId === id) {
-        weeklyReadUnavailable = true;
-        showWeeklyReadError();
+        if (error.codes?.includes('weeklySchemaIncompatible')) {
+          weeklyReadUnavailable = false;
+          weeklyError.hidden = false;
+          weeklyError.textContent = t('aiCoach.weeklySchemaIncompatible');
+          weeklyReadAgain.hidden = true;
+        } else {
+          weeklyReadUnavailable = true;
+          showWeeklyReadError();
+        }
         updateValidation();
       }
     }
@@ -518,6 +533,8 @@ function setupAiCoachPage(user) {
       const codes = error.codes || [];
       weeklyError.textContent = codes.includes('availabilityNeedsReview')
         ? t('aiCoach.availabilityReview')
+        : codes.includes('weeklyAvailabilityConflict')
+          ? t('aiCoach.weeklyAvailabilityConflict')
         : codes.some((code) =>
               [
                 'aiUnavailable',
@@ -531,6 +548,10 @@ function setupAiCoachPage(user) {
             ? t('aiCoach.weeklyConflict')
             : t('aiCoach.weeklyUncertain');
       weeklyReadAgain.hidden = false;
+      if (codes.includes('weeklyAvailabilityConflict')) {
+        sessionStorage.removeItem('kinesis-weekly-request-key');
+        weeklyReadAgain.hidden = true;
+      }
     } finally {
       actionPending = false;
       generateBtn.disabled = false;
