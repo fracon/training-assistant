@@ -232,6 +232,14 @@ only; its prompt template output is byte-preserved. Admin preview/debug routes
 read the current database role and owner scope. Common users cannot request a
 prompt or technical diagnostics through the UI or API.
 
+The request form places its two actions in the existing wrapping `.form-actions`
+layout: the product generation action is primary with Lucide `calendar-plus`,
+and the admin-only free prompt preview uses the shared `.btn-secondary` style
+with Lucide `sparkles`. The page loads `shared/components.css` for that shared
+button contract. Both icons are decorative; translated labels provide accessible
+names. The actions remain content-sized and wrap on narrow screens. Generating
+still creates a proposal for review and never applies calendar entries.
+
 ## Verification and real evaluation
 
 Automated tests use local fixtures and simulated providers only. They verify

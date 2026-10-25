@@ -1378,6 +1378,15 @@ test('Request Workouts page keeps shell, icon assets and all user-facing prompt 
   );
   assert.match(html, /<h1 data-i18n="aiCoach\.title">Request Workouts<\/h1>/);
   assert.match(html, /data-i18n="aiCoach\.generate"/);
+  assert.match(html, /href="shared\/components\.css"/);
+  assert.match(
+    html,
+    /<div class="form-actions prompt-submit-actions">[\s\S]*?<button type="submit" id="generateBtn" class="btn-primary">\s*<i data-lucide="calendar-plus" aria-hidden="true"><\/i>\s*<span data-i18n="aiCoach\.generate">[\s\S]*?<button type="button" id="externalPromptBtn" class="btn-secondary" hidden>\s*<i data-lucide="sparkles" aria-hidden="true"><\/i>\s*<span data-i18n="aiCoach\.externalPrompt">/,
+  );
+  assert.match(
+    readFileSync(join(publicDir, 'ai-coach.css'), 'utf8'),
+    /\.prompt-submit-actions\s*\{[\s\S]*?flex-wrap:\s*wrap[\s\S]*?gap:/,
+  );
   assert.match(html, /id="copyLabel" data-i18n="aiCoach\.copy"/);
 });
 

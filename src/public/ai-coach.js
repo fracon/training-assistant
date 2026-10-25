@@ -231,7 +231,8 @@ function setupAiCoachPage(user) {
   const weeklyReadAgain = document.getElementById('weeklyReadAgain');
   const weeklyCancel = document.getElementById('weeklyCancel');
   const isAdmin = user?.role === 'admin';
-  externalPromptBtn.hidden = !isAdmin;
+  if (!isAdmin) externalPromptBtn.remove();
+  else externalPromptBtn.hidden = false;
   resultSection.hidden = !isAdmin;
   let activeExecutionId = null,
     readAttempt = 0,
@@ -676,10 +677,11 @@ function setupAiCoachPage(user) {
       weeklyCancel.disabled = false;
     }
   });
-  externalPromptBtn.addEventListener(
-    'click',
-    () => void handleExternalPrompt(),
-  );
+  if (isAdmin)
+    externalPromptBtn.addEventListener(
+      'click',
+      () => void handleExternalPrompt(),
+    );
   void recoverWeeklyExecution();
 
   targetDateInput.dataset.iso = dateInputValue(nextMonday());

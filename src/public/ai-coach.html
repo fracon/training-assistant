@@ -6,6 +6,7 @@
   <link rel="icon" href="/assets/brand/favicon.png?v=5" type="image/png">
   <title data-i18n="aiCoach.pageTitle">Request Workouts - Kinesis</title>
   <link rel="stylesheet" href="shared/shell.css">
+  <link rel="stylesheet" href="shared/components.css">
   <link rel="stylesheet" href="ai-coach.css">
 </head>
 <body>
@@ -46,11 +47,16 @@
             placeholder="Examples: travel, schedule changes, poor sleep, fatigue, pain/discomfort, work commitments, inability to run, shoe preference..."></textarea>
         </div>
 
-        <button type="submit" id="generateBtn" class="btn-primary">
-          <i data-lucide="sparkles"></i>
-          <span data-i18n="aiCoach.generate">Generate weekly proposal</span>
-        </button>
-        <button type="button" id="externalPromptBtn" class="btn-secondary" hidden data-i18n="aiCoach.externalPrompt">View external prompt</button>
+        <div class="form-actions prompt-submit-actions">
+          <button type="submit" id="generateBtn" class="btn-primary">
+            <i data-lucide="calendar-plus" aria-hidden="true"></i>
+            <span data-i18n="aiCoach.generate">Generate weekly proposal</span>
+          </button>
+          <button type="button" id="externalPromptBtn" class="btn-secondary" hidden>
+            <i data-lucide="sparkles" aria-hidden="true"></i>
+            <span data-i18n="aiCoach.externalPrompt">View external prompt</span>
+          </button>
+        </div>
       </form>
 
       <section id="weeklyProposalSection" class="result-section" hidden aria-labelledby="weeklyProposalTitle">

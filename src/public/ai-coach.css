@@ -504,6 +504,29 @@
   opacity: 0.55;
 }
 
+.prompt-submit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.prompt-submit-actions > button {
+  width: auto;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.prompt-submit-actions > button[hidden] {
+  display: none;
+}
+
+.prompt-submit-actions > button > svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+}
+
 .result-section {
   margin-top: 1.25rem;
 }

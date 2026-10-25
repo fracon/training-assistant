@@ -364,6 +364,67 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       `new Promise((resolve,reject)=>{const end=Date.now()+12000;const check=()=>{if(document.querySelectorAll('#availabilityGrid .day-row').length===7){resolve(true);return}if(Date.now()>end){reject(new Error('Availability grid did not render'));return}requestAnimationFrame(check)};check()})`,
     );
     assert.equal(ready, true);
+    const actionPresentation = await evaluate(
+      `(()=>{const primary=document.getElementById('generateBtn'),secondary=document.getElementById('externalPromptBtn');const primaryIcon=primary.querySelector('svg'),secondaryIcon=secondary.querySelector('svg');const primaryStyle=getComputedStyle(primary),secondaryStyle=getComputedStyle(secondary);secondary.hidden=true;const hiddenDisplay=getComputedStyle(secondary).display;secondary.hidden=false;return {language:document.documentElement.lang,secondaryHidden:secondary.hidden,hiddenDisplay,primaryLabel:primary.querySelector('span').textContent.trim(),secondaryLabel:secondary.querySelector('span').textContent.trim(),primaryDisplay:primaryStyle.display,secondaryDisplay:secondaryStyle.display,primaryAlign:primaryStyle.alignItems,secondaryAlign:secondaryStyle.alignItems,secondaryWidth:secondary.getBoundingClientRect().width,secondaryHeight:secondary.getBoundingClientRect().height,secondaryBorderRadius:secondaryStyle.borderRadius,secondaryBackground:secondaryStyle.backgroundColor,primaryIcon:primaryIcon?.getAttribute('data-lucide'),secondaryIcon:secondaryIcon?.getAttribute('data-lucide'),iconsAreSvg:primaryIcon?.tagName==='svg'&&secondaryIcon?.tagName==='svg',iconsDecorative:primaryIcon?.getAttribute('aria-hidden')==='true'&&secondaryIcon?.getAttribute('aria-hidden')==='true',actionOverflow:document.getElementById('promptForm').scrollWidth>document.getElementById('promptForm').clientWidth}})()`,
+    );
+    assert.deepEqual(actionPresentation, {
+      language: 'pt-BR',
+      secondaryHidden: false,
+      hiddenDisplay: 'none',
+      primaryLabel: 'Gerar proposta semanal',
+      secondaryLabel: 'Ver prompt externo',
+      primaryDisplay: 'flex',
+      secondaryDisplay: 'flex',
+      primaryAlign: 'center',
+      secondaryAlign: 'center',
+      secondaryWidth: actionPresentation.secondaryWidth,
+      secondaryHeight: actionPresentation.secondaryHeight,
+      secondaryBorderRadius: '999px',
+      secondaryBackground: 'rgba(0, 0, 0, 0)',
+      primaryIcon: 'calendar-plus',
+      secondaryIcon: 'sparkles',
+      iconsAreSvg: true,
+      iconsDecorative: true,
+      actionOverflow: false,
+    });
+    assert.ok(actionPresentation.secondaryWidth > 100);
+    assert.ok(actionPresentation.secondaryWidth < 300);
+    assert.ok(actionPresentation.secondaryHeight >= 36);
+    await evaluate(
+      `document.querySelector('.prompt-submit-actions').scrollIntoView({block:'center'})`,
+    );
+    writeFileSync(
+      path.join(tmpdir(), 'kinesis-weekly-actions-desktop-pt.png'),
+      Buffer.from(
+        (
+          await command('Page.captureScreenshot', {
+            format: 'png',
+            captureBeyondViewport: false,
+          })
+        ).data,
+        'base64',
+      ),
+    );
+    await evaluate(`document.querySelector('.lang-switch [data-lang="en-US"]').click()`);
+    await evaluate(
+      `new Promise((resolve,reject)=>{const end=Date.now()+5000;const check=()=>{if(document.documentElement.lang==='en-US')resolve(true);else if(Date.now()>end)reject(new Error('English action labels did not render'));else requestAnimationFrame(check)};check()})`,
+    );
+    assert.deepEqual(
+      await evaluate(
+        `(()=>({generate:document.querySelector('#generateBtn span').textContent.trim(),external:document.querySelector('#externalPromptBtn span').textContent.trim(),primaryIcon:document.querySelector('#generateBtn svg')?.getAttribute('data-lucide'),secondaryIcon:document.querySelector('#externalPromptBtn svg')?.getAttribute('data-lucide'),adminActionPresent:!!document.getElementById('externalPromptBtn')}))()`,
+      ),
+      {
+        generate: 'Generate weekly proposal',
+        external: 'View external prompt',
+        primaryIcon: 'calendar-plus',
+        secondaryIcon: 'sparkles',
+        adminActionPresent: true,
+      },
+    );
+    await evaluate(`document.querySelector('.lang-switch [data-lang="pt-BR"]').click()`);
+    await evaluate(
+      `new Promise((resolve,reject)=>{const end=Date.now()+5000;const check=()=>{if(document.documentElement.lang==='pt-BR')resolve(true);else if(Date.now()>end)reject(new Error('Portuguese action labels did not restore'));else requestAnimationFrame(check)};check()})`,
+    );
     const requestWorkoutsIcon = await evaluate(
       `(()=>{const item=document.querySelector('[data-nav-id="ai-coach"]');const icon=item?.querySelector('svg');const style=icon?getComputedStyle(icon):null;return {active:item?.classList.contains('active'),icon:icon?.getAttribute('data-lucide'),display:style?.display,color:style?.color}})()`,
     );
@@ -1379,6 +1440,11 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     });
 
     await evaluate(`document.getElementById('externalPromptBtn').click()`);
+    assert.equal(
+      simulatedProviderCalls,
+      0,
+      'viewing the external prompt does not start a provider generation',
+    );
     await evaluate(
       `new Promise((resolve,reject)=>{const end=Date.now()+12000;const check=()=>{const prompt=document.getElementById('promptOutput').textContent;if(prompt.includes('Maximum session time: 60 minutes')&&prompt.includes('Maspalomas, Gran Canaria'))resolve(true);else if(Date.now()>end)reject(new Error('Structured English prompt did not appear'));else setTimeout(check,40)};check()})`,
     );
@@ -1441,6 +1507,21 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     );
     await command('Fetch.disable');
     await saveCurrentForm();
+    await evaluate(
+      `document.querySelector('.prompt-submit-actions').scrollIntoView({block:'center'})`,
+    );
+    writeFileSync(
+      path.join(tmpdir(), 'kinesis-weekly-actions-desktop-en.png'),
+      Buffer.from(
+        (
+          await command('Page.captureScreenshot', {
+            format: 'png',
+            captureBeyondViewport: false,
+          })
+        ).data,
+        'base64',
+      ),
+    );
 
     await command('Fetch.enable', {
       patterns: [
@@ -1677,6 +1758,10 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       deviceScaleFactor: 1,
       mobile: true,
     });
+    await evaluate(`document.querySelector('.lang-switch [data-lang="pt-BR"]').click()`);
+    await evaluate(
+      `new Promise((resolve,reject)=>{const end=Date.now()+5000;const check=()=>{if(document.documentElement.lang==='pt-BR')resolve(true);else if(Date.now()>end)reject(new Error('Portuguese mobile actions did not render'));else requestAnimationFrame(check)};check()})`,
+    );
     await evaluate(
       `new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>setTimeout(resolve,100))))`,
     );
@@ -1689,6 +1774,55 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       days: 7,
       touchTarget: true,
     });
+    const mobileActions = await evaluate(
+      `(()=>{const actions=document.querySelector('.prompt-submit-actions'),primary=document.getElementById('generateBtn'),secondary=document.getElementById('externalPromptBtn');const bounds=actions.getBoundingClientRect(),p=primary.getBoundingClientRect(),s=secondary.getBoundingClientRect();return {language:document.documentElement.lang,width:innerWidth,scrollWidth:document.documentElement.scrollWidth,containerWidth:bounds.width,primaryWidth:p.width,secondaryWidth:s.width,primaryInside:p.left>=bounds.left&&p.right<=bounds.right,secondaryInside:s.left>=bounds.left&&s.right<=bounds.right,secondaryBelowPrimary:s.top>p.top,primaryIcon:primary.querySelector('svg')?.getAttribute('data-lucide'),secondaryIcon:secondary.querySelector('svg')?.getAttribute('data-lucide')}})()`,
+    );
+    assert.deepEqual(mobileActions, {
+      language: 'pt-BR',
+      width: 390,
+      scrollWidth: 390,
+      containerWidth: mobileActions.containerWidth,
+      primaryWidth: mobileActions.primaryWidth,
+      secondaryWidth: mobileActions.secondaryWidth,
+      primaryInside: true,
+      secondaryInside: true,
+      secondaryBelowPrimary: true,
+      primaryIcon: 'calendar-plus',
+      secondaryIcon: 'sparkles',
+    });
+    assert.ok(mobileActions.primaryWidth < mobileActions.containerWidth);
+    assert.ok(mobileActions.secondaryWidth < mobileActions.containerWidth);
+    await evaluate(
+      `document.querySelector('.prompt-submit-actions').scrollIntoView({block:'center'})`,
+    );
+    writeFileSync(
+      path.join(tmpdir(), 'kinesis-weekly-actions-mobile-pt.png'),
+      Buffer.from(
+        (
+          await command('Page.captureScreenshot', {
+            format: 'png',
+            captureBeyondViewport: false,
+          })
+        ).data,
+        'base64',
+      ),
+    );
+    await evaluate(`document.querySelector('.lang-switch [data-lang="en-US"]').click()`);
+    await evaluate(
+      `new Promise((resolve,reject)=>{const end=Date.now()+5000;const check=()=>{if(document.documentElement.lang==='en-US')resolve(true);else if(Date.now()>end)reject(new Error('English mobile actions did not render'));else requestAnimationFrame(check)};check()})`,
+    );
+    assert.deepEqual(
+      await evaluate(
+        `(()=>({language:document.documentElement.lang,generate:document.querySelector('#generateBtn span').textContent.trim(),external:document.querySelector('#externalPromptBtn span').textContent.trim(),width:innerWidth,scrollWidth:document.documentElement.scrollWidth}))()`,
+      ),
+      {
+        language: 'en-US',
+        generate: 'Generate weekly proposal',
+        external: 'View external prompt',
+        width: 390,
+        scrollWidth: 390,
+      },
+    );
     assert.deepEqual(
       await evaluate(
         `(()=>{const item=document.querySelector('[data-nav-id="ai-coach"]');return {title:document.title,heading:document.querySelector('main h1').textContent.trim(),label:item.querySelector('.nav-label').textContent.trim(),ariaLabel:item.getAttribute('aria-label'),width:innerWidth,scrollWidth:document.documentElement.scrollWidth}})()`,
@@ -1786,6 +1920,18 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       '#weeklyProposalStatus',
       'Review the proposal before applying it.',
     );
+    assert.deepEqual(
+      await evaluate(
+        `(()=>({primaryIcon:document.querySelector('#generateBtn svg')?.getAttribute('data-lucide'),secondaryIcon:document.querySelector('#externalPromptBtn svg')?.getAttribute('data-lucide'),primaryLabel:document.querySelector('#generateBtn span').textContent.trim(),secondaryLabel:document.querySelector('#externalPromptBtn span').textContent.trim(),secondaryDisabled:document.querySelector('#externalPromptBtn').disabled}))()`,
+      ),
+      {
+        primaryIcon: 'calendar-plus',
+        secondaryIcon: 'sparkles',
+        primaryLabel: 'Generate weekly proposal',
+        secondaryLabel: 'View external prompt',
+        secondaryDisabled: false,
+      },
+    );
     const review = await evaluate(
       `(()=>({cards:document.querySelectorAll('.weekly-proposal-card').length,text:document.getElementById('weeklyProposalContent').textContent,applyHidden:document.getElementById('weeklyApply').hidden}))()`,
     );
@@ -1867,6 +2013,17 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     await evaluate(
       `new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{if(document.documentElement.lang==='pt-BR')resolve(true);else if(Date.now()>end)reject(new Error('Weekly proposal Portuguese rerender timed out'));else setTimeout(check,30)};check()})`,
     );
+    assert.deepEqual(
+      await evaluate(
+        `(()=>({primaryIcon:document.querySelector('#generateBtn svg')?.getAttribute('data-lucide'),secondaryIcon:document.querySelector('#externalPromptBtn svg')?.getAttribute('data-lucide'),primaryLabel:document.querySelector('#generateBtn span').textContent.trim(),secondaryLabel:document.querySelector('#externalPromptBtn span').textContent.trim()}))()`,
+      ),
+      {
+        primaryIcon: 'calendar-plus',
+        secondaryIcon: 'sparkles',
+        primaryLabel: 'Gerar proposta semanal',
+        secondaryLabel: 'Ver prompt externo',
+      },
+    );
     assert.equal(
       await evaluate(
         `document.querySelector('.weekly-proposal-card h3').textContent`,
@@ -1943,10 +2100,10 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     );
     assert.deepEqual(
       await evaluate(
-        `(()=>({externalPromptHidden:document.getElementById('externalPromptBtn').hidden,technicalPromptHidden:document.getElementById('resultSection').hidden,proposalVisible:!document.getElementById('weeklyProposalSection').hidden,width:innerWidth,scrollWidth:document.documentElement.scrollWidth}))()`,
+        `(()=>({externalPromptPresent:!!document.getElementById('externalPromptBtn'),technicalPromptHidden:document.getElementById('resultSection').hidden,proposalVisible:!document.getElementById('weeklyProposalSection').hidden,width:innerWidth,scrollWidth:document.documentElement.scrollWidth}))()`,
       ),
       {
-        externalPromptHidden: true,
+        externalPromptPresent: false,
         technicalPromptHidden: true,
         proposalVisible: true,
         width: 1280,
