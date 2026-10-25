@@ -255,17 +255,12 @@ PT/EN, desktop/mobile, user/admin, complete multiline details/notes/rationale,
 keyboard, focus, pending/recovery/error, exact review-to-calendar details and
 application. Mocks are not model-quality or real-provider validation.
 
-No paid OpenAI call was made for this branch. A controlled real evaluation,
-before it is run, needs the operator to explicitly authorize one call and
-provide a temporary evaluation window with: the current configured model and
-reasoning; `AI_ENABLED=true` and a runtime key; a synthetic or specifically
-approved test account with an active cycle, saved availability and no personal
-data; `AI_RETRIES=0`, one outstanding call, configured timeout and output cap;
-and a daily USD cap at least equal to the displayed reservation (while keeping
-the global cap within the operator's chosen budget). The evaluator should
-record reservation, provider-reported usage/cost, response validation, manual
-review of evidence/RPE/session durations, explicit application, reload and
-idempotent reapplication, then restore prior runtime settings. No real
-evaluation should be described as complete until those measurements and the
-owner's budget authorization are supplied. The local `.env`, production
-database, deployed container and live service were not changed by this work.
+A single controlled live evaluation was completed on 2026-10-25 with explicit
+authorization for one call and a maximum $1.00 reservation. Its effective
+runtime configuration, synthetic scenario, provider-reported usage, actual
+weather outcome, review, application, recovery and concrete limitations are
+recorded in [`ai-weekly-workouts-live-evaluation.md`](ai-weekly-workouts-live-evaluation.md).
+That record is one sample, not a general model-quality claim. All other AI
+tests remain provider simulations. The evaluation did not change the local
+`.env`, primary database, production database, deployed container or live
+service.
