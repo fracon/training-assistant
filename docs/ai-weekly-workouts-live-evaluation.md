@@ -188,3 +188,162 @@ The six historical lookups had successful geocoding for Fanzeres at 41.16754, -8
 The code now sends explicit date parameters without `forecast_days`, retains the local 16-date horizon guard and resolved timezone, and classifies bounded transport, HTTP, JSON, and validation failures without saving provider prose. It does not add retries or change the existing 8-second request timeout/concurrency. Synthetic regressions distinguish HTTP 400/503, DNS transport, malformed JSON, and valid/partial data. An authorized public Open-Meteo request using the corrected parameters was then parsed by the changed module: HTTP 200, `Europe/Lisbon`, 8/8 distinct hourly instants for `[00:00,08:00)`, window range 10–12.5 °C. No daily maximum was requested or used. The query uses only coordinates, date, hourly variables, timezone and time format. Official current documentation describes the 16-day limit, date interval parameters, Unix timestamps and timezone handling for DST ([Forecast API](https://open-meteo.com/en/docs)); the real 400 response independently established the parameters' mutual exclusion.
 
 The earlier successful synthetic-model sample and the later failed real execution are separate observations. This investigation did not repeat generation, apply the refused proposal, or change source records. After these code changes the model contract has only synthetic regression coverage; no real evaluation of the corrected code has occurred. A future paid model evaluation would be needed to observe the changed execution contract end to end, but it is not required to prove the corrected weather URL/parser path.
+
+## Final validation after offline contract corrections — 2026-10-25
+
+The final preflight and one authorized live request ran against code SHA
+`6bf6537a3ced67fa02594623d7ebdedcc7748ae9` on
+`feat/issue-64-weekly-workouts`. The isolated process used a separate SQLite
+file and a newly created synthetic account. Its cycle, eight dated completed
+sessions and feedback values, two active shoes, and availability were all
+synthetic. No account history or personal training data was copied. The private
+consistent backup of the primary SQLite file was not read for this scenario.
+The isolated process has since been stopped; private diagnostic artifacts
+remain outside Git.
+
+### Offline review and preflight
+
+Before authorizing the request, an offline schema/domain comparison found that
+the strict JSON schema accepted numeric values the materializer rejected,
+including repetitions, component durations/distances, pace values, RPE and
+recovery bounds. It also permitted empty required stage guidance and allowed
+weather strings up to 2,000 characters although the domain cap is 1,000. The
+adapter did not state all of these bounds. A new regression reproduced schema
+acceptance of those out-of-domain values before the correction. The schema and
+adapter instructions now match the existing field-level domain limits; no
+correct validation rule was removed. Combined materialized `details` length is
+still checked by the backend at 2,000 characters and is not expressible as a
+cross-field JSON Schema bound. Overlength output is rejected, never truncated
+or repaired.
+
+A second preflight found that the complete six-day evidence snapshot exceeded
+the effective 12,000-byte conservative context bound. The correction keeps the
+full query, coordinates, source binding, timestamps, hourly data and
+limitations in the protected execution snapshot and freshness hash, while
+sending a model projection with verified hourly values, coverage, source and
+limitations. The budget and outbound payload use the same projection; context
+is sent once. A synthetic regression covers the realistic six-day/eight-session
+case and fails when the projected context exceeds 12,000 bytes. The final
+preflight measured 10,363 bytes for the context bound, 22,389 payload bytes,
+23,413 conservative input tokens including the 1,024-token margin, and a
+31,605-token reserved total at the configured output cap. The route's persisted
+reservation for the actual request was 31,599 tokens / **$0.239915**; that
+execution value is authoritative for the request.
+
+The backend reported AI enabled and the key configured without revealing it.
+Effective values were `gpt-6.1-sol`, medium reasoning, `store:false`, no tools,
+8,192 output tokens, 120,000 ms timeout, zero retries, user/global concurrency
+1/1, daily calls 1/1, and daily USD ceilings $1/$1. The isolated database had
+zero prior executions and no pending work. Context and provider payload carried
+one context object, and the strict `weekly_workouts` schema was the one used by
+the local validator. The conservative preflight estimate was below the
+authorized $1 ceiling. The model/Responses structured-output contract was
+checked against official documentation; no provider ping or extra generation
+was made.
+
+### Real hourly forecast and model execution
+
+Before generation, the backend's `collectWeeklyWeather()` made the authorized
+Open-Meteo geocoding and forecast requests for the six available days; no
+OpenAI execution existed at that point. Fanzeres resolved to 41.16754,
+-8.52981, `Europe/Lisbon`. All six forecast records used that timezone and the
+local date/selected period binding. Forecast responses parsed successfully.
+The request made by the generation route collected fresh evidence again; the
+persisted execution contains the evidence actually used by its payload.
+
+All six persisted items were `verified`, each with the complete distinct hourly
+coverage for its half-open local window: Monday–Friday `before_08` 8/8 and
+Saturday `08_12` 4/4. The observed ranges/maxima were respectively 10–12.5 °C,
+11.6–12.5 °C, 13.2–14.6 °C, 11.7–12.8 °C, 12.3–13.5 °C and 11–19.1 °C.
+The Saturday window-specific maximum was 19.1 °C; no daily maximum substituted
+for the window. Each item retained source, lookup, exact query and availability
+binding in the owner-scoped snapshot. Sunday was unavailable by the user's
+saved schedule and did not request weather. These dates fell after the local
+DST transition, so the real sample does not independently exercise the
+ambiguous autumn transition. No second hourly provider is configured.
+
+One click on **Gerar proposta semanal** created one execution, one attempt and
+one Responses API request. The request completed in 48.974 seconds with valid
+`weekly-workouts-v3` output; no `invalidDomainResponse` occurred in this
+sample. Provider usage was 5,288 input tokens, 3,427 output tokens, 0 cached
+tokens and 326 reasoning tokens. The execution's persisted conservative
+reservation was **$0.239915**; using reported usage and the application's
+conservative rate table, the estimated charged cost is **$0.077845**. Neither
+figure is a confirmed invoice. No retry or second call occurred. The complete
+response is retained only in private test artifacts and is not reproduced in
+this document.
+
+This success does **not** identify or retroactively correct the earlier
+historical `invalidDomainResponse`: its `validation.code`, `validation.path`
+and rejected response were not preserved, so its cause remains unknown. The
+new response passing current validation is evidence for this single sample,
+not proof that every possible output or the missing historical response would
+pass. No response was changed to obtain acceptance.
+
+### Review, application and browser results
+
+The response proposed four sessions on 2026-10-26, 2026-10-28, 2026-10-30
+and 2026-10-31, all on available days and in their saved preferred periods.
+Backend validation returned no errors. Materialized totals were 20, 28, 18 and
+50 minutes, each within its 60/90-minute daily budget. The Wednesday progression
+had separate RPE 2 and RPE 3 main stages; all numeric RPE values were 1–3 on
+the Kinesis 1–5 scale. The sample used execution/effort guidance for each
+stage and no unsupported pace or HR targets. No pace estimate was rendered as
+a required pace target. The proposal referenced only the synthetic active
+cycle, dated synthetic sessions/feedback, available days, verified weather
+and owned active shoes. Notes and justifications were present in the complete
+preview. No interval or fartlek was generated, so those output shapes were not
+exercised by this model sample.
+
+The initial browser controller threw while handling the accepted POST response,
+after the backend had already created the one execution. It did not issue a
+second click. Consequently the real browser was **not reloaded during the
+provider's 48.974-second processing window**. The same completed execution was
+then recovered from the normal page after reload, and the existing simulated
+Chrome regression suite covers processing-state recovery and reload. This
+particular live run therefore validates reload recovery after completion, not
+an in-flight real-provider reload.
+
+The common synthetic user had no external-prompt control in the DOM. Chrome
+rendered all four review cards, complete details, notes and justifications.
+After review, the generation-language preference was restored (a deliberate UI
+language switch changes this freshness-bound preference); the visible Apply
+action became available and added four calendar rows. Every persisted field
+(date, period, type, workout, materialized details, HR/RPE fields, shoe,
+location, weather, notes and cycle association) was compared with the
+materialized preview and matched. No existing row or result was replaced. A
+repeat apply using the same response hash returned HTTP 200 and
+`alreadyApplied:true` with the original four additions; calendar count remained
+four and the AI execution/attempt/call count remained one. Reload recovered the
+proposal's applied state.
+
+Chrome inspected PT and EN at 1280×800 and 390×844. Four cards, detail blocks
+and notes remained present after reload and language changes; document width
+matched the 390-pixel viewport on mobile. Applying was performed on the normal
+page with focus on the Apply control. The follow-up PT/EN changes translated
+the interface while preserving the already-generated prose. The live user was
+regular, so this run did not use an administrator account; admin-only prompt
+and diagnostic ownership remain covered by the existing simulated authorization
+browser/API tests. No screenshot containing account information was retained.
+
+### Checks and remaining limits
+
+- The branch's serial coverage run included `npm test`: 1,293 tests passed,
+  0 failed; exit code 0. Statements, branches, functions and lines were each
+  100%. `git diff --check` passed. The complete suite used simulated providers;
+  the single live request and public Open-Meteo reads above are reported
+  separately.
+- External PT/EN prompt templates remain byte-identical; the deterministic
+  prompt-preservation tests passed in the same test run. Only the versioned
+  weekly adapter instructions/schema changed.
+- No new generation is required to reapply or reread this proposal. No
+  `.env`, primary database, production, deployment or Git-tracked private test
+  artifact was changed. The isolated application process was stopped after the
+  browser and persistence checks.
+- The historical refusal remains undiagnosed. The live request did not exercise
+  an in-flight reload, interval/fartlek output, DST ambiguity, a second weather
+  source, administrator UI, or every possible provider response. The run is
+  one synthetic sample, not a universal reliability or training-quality claim.
+
+**SHA actually executed:** `6bf6537a3ced67fa02594623d7ebdedcc7748ae9`
+**SHA containing this evidence:** pending documentation commit.
