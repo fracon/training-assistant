@@ -346,4 +346,3 @@ browser/API tests. No screenshot containing account information was retained.
   one synthetic sample, not a universal reliability or training-quality claim.
 
 **SHA actually executed:** `6bf6537a3ced67fa02594623d7ebdedcc7748ae9`
-**SHA containing this evidence:** pending documentation commit.
