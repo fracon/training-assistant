@@ -5,6 +5,8 @@ const { PERIOD_KEYS, DAY_KEYS } = require('../availability');
 const { convertCelsius, formatPaceFromMetric } = require('../public/shared/units.js');
 const { geocodeLocation } = require('../weather');
 const { incompatibleRpe } = require('./cycle-plan-rpe');
+const enLocale = require('../public/locales/en.json');
+const ptLocale = require('../public/locales/pt.json');
 const {
   normalizeDia,
   normalizeTrainingDetails,
@@ -540,7 +542,10 @@ function adaptPrompt(prompt, language) {
         ? 'Considere temperatura e condições meteorológicas somente conforme a evidência horária do Kinesis.'
         : 'Consider temperature and weather only from Kinesis hourly evidence.',
     );
-  return weather + guidance + output;
+  const delivery = pt
+    ? '\nEntrega: indique RPE Kinesis de 1 a 5 em cada etapa de corrida e recuperação. Não converta FC média/máxima observada em alvo ou zona. Coloque IDs somente em evidence; justification deve ser explicação natural sem identificadores técnicos.\n'
+    : '\nDelivery: state Kinesis RPE from 1 to 5 for every running stage and recovery. Do not convert observed average/maximum HR into a target or zone. Put IDs only in evidence; justification must be a natural-language explanation without technical identifiers.\n';
+  return weather + guidance + output + delivery;
 }
 function canonicalTimezone(timezone) {
   try {
@@ -1029,9 +1034,18 @@ function weatherValue(forecast, temperature = 'C', language = 'en-US') {
   const convert = (value) =>
     Number(convertCelsius(value, temperature).toFixed(1));
   const unit = temperature === 'F' ? '°F' : '°C';
-  if (language === 'pt-BR')
-    return `${forecast.source} (${forecast.sourceUrl}); ${forecast.date} ${forecast.timezone}; ${forecast.coverage.verifiedHours}/${forecast.coverage.expectedHours} horas locais; faixa ${convert(forecast.window.minC)}–${convert(forecast.window.maxC)} ${unit}, máxima da janela ${convert(forecast.window.maxC)} ${unit}; consultado ${forecast.lookedUpAt}.`;
-  return `${forecast.source} (${forecast.sourceUrl}); ${forecast.date} ${forecast.timezone}; ${forecast.coverage.verifiedHours}/${forecast.coverage.expectedHours} local hours; range ${convert(forecast.window.minC)}–${convert(forecast.window.maxC)} ${unit}, window high ${convert(forecast.window.maxC)} ${unit}; looked up ${forecast.lookedUpAt}.`;
+  const pt = language === 'pt-BR';
+  const locale = pt ? ptLocale : enLocale;
+  const codes = Array.isArray(forecast.hours)
+    ? [...new Set(forecast.hours.map((hour) => Array.isArray(hour) ? hour[3] : hour?.weatherCode).filter(Number.isInteger))].slice(0, 3)
+    : [];
+  const condition = codes.map((code) => locale.weather[String(code)] || locale.weather.unknown);
+  const range = `${convert(forecast.window.minC)}–${convert(forecast.window.maxC)} ${unit}`;
+  const high = `${convert(forecast.window.maxC)} ${unit}`;
+  const descriptions = condition.length ? ` · ${condition.join(', ')}` : '';
+  return pt
+    ? `${range} · máxima no período: ${high}${descriptions}`
+    : `${range} · period high: ${high}${descriptions}`;
 }
 
 function compactWeatherEvidence(evidence) {
@@ -1110,7 +1124,7 @@ function createWeeklyWorkoutAdapter(db) {
       schema,
     },
     instructions:
-      'Return only weekly-workouts-v3 JSON. Dates are ISO local calendar dates derived from weekStart and weekday, never row position. Emit only available weekdays, preserve exact location and selected period. Maintain coherent progression grounded in the active cycle, explicitly applied planning when present and real recent training. Consider current load, responses to quality sessions, subjective feedback, dated RPE, pain reports and owned shoe history from shared context. Define every session as ordered warmup/main/cooldown components with repetition and time/distance fields as the sole duration source, plus execution instruction and effort/breathing guidance per component. Bounds are repetitions 1–30, minutes 1–720, distance 50–100000 m, pace values 120–1800 seconds/km, recovery 0–30 minutes, and RPE 1–5. Recovery duration and guidance are required only for repeated main components. Keep weather within 1000 characters, notes/justification within 2000, and the complete materialized details for each session within 2000 characters. Include Kinesis RPE 1–5 when useful, optional evidence-supported HR/pace targets, and explicit duration/guidance for repeated recoveries. Use timed components if there is no evidence-based pace basis for estimating distance duration. Keep distance pace estimates separate from optional explicit pace targets; estimates never prescribe pace. On hills, prioritize effort/breathing over rigid pace. Do not put alternate durations/distances in guidance text. The backend derives all duration and import text fields from structured components. Use effort/respiration when HR/pace data are insufficient; never invent metrics or zones. Use only supplied weather records and the shared weatherLimitations; absent/unverified forecasts must be described as unavailable without inventing weather. Weather hour tuples are [UTC epoch seconds, local wall time with UTC offset, temperature Celsius, WMO code]. Acknowledge when no authorized independent second hourly source is configured; do not claim cross-source corroboration. Each session justification is proposal-specific and must cite selected source references. Distinguish recorded facts, user reports and planning; do not infer rest, recovery, illness, permanent limitations, races or missing history.',
+      'Return only weekly-workouts-v3 JSON. Dates are ISO local calendar dates derived from weekStart and weekday, never row position. Emit only available weekdays, preserve exact location and selected period. Maintain coherent progression grounded in the active cycle, explicitly applied planning when present and real recent training. Consider current load, responses to quality sessions, subjective feedback, dated RPE, pain reports and owned shoe history from shared context. Define every session as ordered warmup/main/cooldown components with repetition and time/distance fields as the sole duration source, plus execution instruction and effort/breathing guidance per component. Bounds are repetitions 1–30, minutes 1–720, distance 50–100000 m, pace values 120–1800 seconds/km, recovery 0–30 minutes, and RPE 1–5. Recovery duration and guidance are required only for repeated main components. Keep weather within 1000 characters, notes/justification within 2000, and the complete materialized details for each session within 2000 characters. Prescribe Kinesis RPE 1–5 for every running stage and recovery; use optional evidence-supported HR/pace targets, and explicit duration/guidance for repeated recoveries. Use timed components if there is no evidence-based pace basis for estimating distance duration. Keep distance pace estimates separate from optional explicit pace targets; estimates never prescribe pace. On hills, prioritize effort/breathing over rigid pace. Do not put alternate durations/distances in guidance text. The backend derives all duration and import text fields from structured components. Use effort/respiration when HR/pace data are insufficient; never invent metrics or zones. Use only supplied weather records and the shared weatherLimitations; absent/unverified forecasts must be described as unavailable without inventing weather. Weather hour tuples are [UTC epoch seconds, local wall time with UTC offset, temperature Celsius, WMO code]. Acknowledge when no authorized independent second hourly source is configured; do not claim cross-source corroboration. Each session justification is a proposal-specific natural-language explanation; put source identifiers only in evidence. Distinguish recorded facts, user reports and planning; do not infer rest, recovery, illness, permanent limitations, races or missing history.',
     prepare(context, evidence = {}) {
       const start = monday(evidence.weekStart || context.asOf);
       context.resource = { weekStart: start };

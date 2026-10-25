@@ -12,6 +12,7 @@ const {
   SUPPORTED_WEEK_STARTS,
   DEFAULT_WEEK_START,
   normalizeClientWeekStart,
+  readAppliedWeek,
   readStoredWeekStart,
   saveStoredWeekStart,
   syncStoredWeekStartFromUser,
@@ -25,6 +26,14 @@ const {
 } = require('../src/public/calendar.js');
 const en = require('../src/public/locales/en.json');
 const pt = require('../src/public/locales/pt.json');
+
+test('readAppliedWeek accepts only a real Monday and safely ignores other query values', () => {
+  assert.equal(readAppliedWeek('?week=2026-10-26&keep=1'), '2026-10-26');
+  assert.equal(readAppliedWeek('?week=2026-10-25'), null);
+  assert.equal(readAppliedWeek('?week=2026-02-30'), null);
+  assert.equal(readAppliedWeek('?week=2026-1-5'), null);
+  assert.equal(readAppliedWeek('?keep=1'), null);
+});
 
 function stubStorage(initial = {}) {
   const store = new Map(Object.entries(initial));

@@ -9,8 +9,11 @@ Current application version: **0.23.0** (active beta development).
 Phase 0 (#62) and the approved plan are integrated through PRs #66, #68 and
 #67; cycle planning (#63) is integrated through PR #69. This **0.23.0 beta**
 issue branch extends the weekly proposals (#64) adapter with per-component
-execution guidance. It is not integrated until this phase's PR merges. Result analysis
-(#65) remains future scope.
+execution guidance, stage-specific RPE/FC summaries, compact hourly-weather
+presentation, and a terminal applied state that links to the planned week.
+Applied proposals no longer remain in the review area after reload. It is not
+integrated until this phase's PR merges. Result analysis (#65) remains future
+scope.
 
 Saving an active cycle confirms its registration and opens **Cycle planning /
 Planejamento do ciclo** using the ID returned by the backend. **Generate plan /

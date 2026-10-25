@@ -1944,7 +1944,7 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     assert.match(review.text, /Sessão sem pressa · café ☕/);
     assert.equal(
       await evaluate(
-        `document.querySelector('.weekly-proposal-notes').textContent`,
+        `document.querySelector('.weekly-proposal-notes p').textContent`,
       ),
       expectedSessionNotes,
       'the complete long multiline note is available before applying',
@@ -1956,12 +1956,25 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       0,
       'notes are rendered as text rather than interpreted as markup',
     );
-    assert.match(review.text, /Only Open-Meteo is available/);
+    assert.doesNotMatch(review.text, /weather:monday:|open-meteo\.com|forecast.*hours/i);
+    assert.match(review.text, /RPE prescrito|Prescribed RPE/);
+    assert.match(review.text, /Main: 3\/5.*Warm-up: 2\/5.*Cool-down: 1\/5/);
+    assert.match(review.text, /FC alvo|Target HR/);
+    assert.match(review.text, /period high: .*°C/);
     assert.equal(review.applyHidden, false);
+    assert.equal(await evaluate(`getComputedStyle(document.getElementById('weeklyCalendarLink')).display`), 'none');
     const reviewedDetails = await evaluate(
       `document.querySelector('.weekly-proposal-details').textContent`,
     );
+    const reviewedWeather = await evaluate(`[...document.querySelectorAll('.weekly-proposal-meta>div')].find(x=>x.querySelector('dt')?.textContent==='Weather forecast')?.querySelector('dd')?.textContent`);
+    assert.match(reviewedWeather, /period high: .*°C/);
     assert.equal(simulatedProviderCalls, 1);
+    await command('Emulation.setDeviceMetricsOverride', {
+      width: 1280,
+      height: 800,
+      deviceScaleFactor: 1,
+      mobile: false,
+    });
     await evaluate(
       `document.getElementById('weeklyProposalSection').scrollIntoView({block:'start'})`,
     );
@@ -1977,9 +1990,10 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
         'base64',
       ),
     );
+    await evaluate(`(()=>{const original=window.fetch.bind(window);window.fetch=async(...args)=>{const response=await original(...args);const url=typeof args[0]==='string'?args[0]:args[0].url;const method=(args[1]?.method||'GET').toUpperCase();if(url.includes('/api/ai/workouts/')&&url.endsWith('/apply')&&method==='POST'){window.fetch=original;throw new TypeError('synthetic response lost after commit')}return response}})()`);
     await evaluate(`document.getElementById('weeklyApply').click()`);
     await waitForText(
-      '#weeklyProposalStatus',
+      '#weeklyAppliedStatus',
       'Added 1 workouts. 0 matching workouts were ignored.',
     );
     assert.equal(
@@ -1998,15 +2012,20 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
         .get('availability-browser@example.test').observacoes,
       expectedSessionNotes,
     );
-    assert.equal(
-      db
+    const savedDetails = db
         .prepare(
           'SELECT detalhes FROM trainings WHERE user_id=(SELECT id FROM users WHERE email=?)',
         )
-        .get('availability-browser@example.test').detalhes,
-      reviewedDetails,
-      'the exact multiline details reviewed in the proposal are saved to the calendar',
-    );
+        .get('availability-browser@example.test').detalhes;
+    const savedWeather = db.prepare('SELECT previsao FROM trainings WHERE user_id=(SELECT id FROM users WHERE email=?)').get('availability-browser@example.test').previsao;
+    assert.equal(savedWeather, reviewedWeather, 'the compact verified forecast is identical in preview and the calendar row');
+    for (const instruction of ['Run gently and loosen up.', 'Run continuously with relaxed form.', 'Ease down gradually.', 'RPE 2/5', 'RPE 3/5', 'RPE 1/5']) {
+      assert.ok(reviewedDetails.includes(instruction), `preview includes ${instruction}`);
+      assert.ok(savedDetails.includes(instruction), `calendar details preserve ${instruction}`);
+    }
+    assert.equal(await evaluate(`document.querySelectorAll('.weekly-proposal-card').length`), 0);
+    assert.equal(await evaluate(`document.activeElement.id`), 'weeklyAppliedStatus');
+    assert.match(await evaluate(`document.getElementById('weeklyCalendarLink').getAttribute('href')`), /calendar\.html\?week=2026-10-26/);
     await evaluate(
       `document.querySelector('.lang-switch [data-lang="pt-BR"]').click()`,
     );
@@ -2024,18 +2043,9 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
         secondaryLabel: 'Ver prompt externo',
       },
     );
-    assert.equal(
-      await evaluate(
-        `document.querySelector('.weekly-proposal-card h3').textContent`,
-      ),
-      'Segunda · 26/10/2026 · 12h–14h · 45 min',
-    );
-    assert.match(
-      await evaluate(
-        `document.getElementById('weeklyProposalContent').textContent`,
-      ),
-      /Somente Open-Meteo está disponível/,
-    );
+    assert.equal(await evaluate(`document.querySelectorAll('.weekly-proposal-card').length`), 0);
+    assert.equal(await evaluate(`document.getElementById('weeklyCalendarLink').textContent`), 'Ver no calendário');
+    assert.match(await evaluate(`document.getElementById('weeklyAppliedStatus').textContent`), /Adicionados 1 treinos/);
     writeFileSync(
       path.join(tmpdir(), 'kinesis-weekly-proposal-review-pt.png'),
       Buffer.from(
@@ -2049,6 +2059,7 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       ),
     );
     assert.equal(simulatedProviderCalls, 1);
+    assert.equal(await evaluate(`document.getElementById('generateBtn').disabled`), false);
     await command('Emulation.setDeviceMetricsOverride', {
       width: 1280,
       height: 800,
@@ -2095,7 +2106,7 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       `new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{if(!document.getElementById('saveAvailability').disabled)resolve(true);else if(Date.now()>end)reject(new Error('Regular-account availability did not load'));else setTimeout(check,25)};check()})`,
     );
     await waitForText(
-      '#weeklyProposalStatus',
+      '#weeklyAppliedStatus',
       'Adicionados 1 treinos. 0 treinos correspondentes foram ignorados.',
     );
     assert.deepEqual(
@@ -2110,12 +2121,7 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
         scrollWidth: 1280,
       },
     );
-    assert.equal(
-      await evaluate(
-        `document.querySelector('.weekly-proposal-card h3').textContent`,
-      ),
-      'Segunda · 26/10/2026 · 12h–14h · 45 min',
-    );
+    assert.equal(await evaluate(`document.querySelectorAll('.weekly-proposal-card').length`), 0);
     assert.equal(
       simulatedProviderCalls,
       1,

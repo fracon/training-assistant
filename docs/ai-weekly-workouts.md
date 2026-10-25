@@ -36,6 +36,15 @@ the user can retain the proposal for review but must generate a fresh one to
 apply against changed sources. Existing import behavior and the 12-column
 XLSX/XLS contract remain independent and unchanged.
 
+Once application succeeds, the proposal cards and Apply action are replaced by
+the persisted added/duplicate counts and a localized link to the applied week
+in Calendar. Reload recovers that terminal state without restoring a pending
+preview; recovery selects only the latest workout execution. If the apply
+response is lost, the page reads that same proposal before deciding success. A
+failed status read can be retried for free and never starts another generation.
+The response, full forecast evidence, and application record remain available
+in the protected execution/debug view.
+
 ## Structured contract and validation
 
 The delivery adapter is versioned independently of
@@ -50,12 +59,12 @@ object with `schemaVersion`, Monday `weekStart`, and sessions. The model
 supplies session kind and ordered warmup, main and cooldown components. Each
 component contains repetitions and one structured time or distance measure,
 execution `instruction` (required, up to 240 characters), effort/breathing
-`effort` (required, up to 160), optional numeric `rpe` (1–5), optional
+`effort` (required, up to 160), numeric `rpe` (1–5), optional
 `targetHr` (up to 80 characters, empty when unsupported), optional explicit
 `paceTargetSecondsPerKm`, and a separate `paceSecondsPerKm` estimate basis
 when the component uses distance. Repeated main components require structured
 `recoveryMinutes` (integer 0–30) and `recoveryGuidance` (up to 160 characters),
-with optional `recoveryRpe` (1–5). Single-repeat main components and
+with numeric `recoveryRpe` (1–5). Single-repeat main components and
 warmup/cooldown have no recovery fields. Warmup, each main block and cooldown are
 reviewable independently. Progressions/fartleks use multiple ordered main
 components to express changing effort. Pace/HR targets can be absent; the
@@ -66,7 +75,10 @@ paces, recoveries and both RPE fields. It also matches the location (200),
 weather (1,000), notes and justification (2,000) string limits. Nullable
 fields remain explicit; cross-field rules such as requiring recovery guidance
 only on repeated main components remain domain-validated and are stated in the
-adapter instructions.
+adapter instructions. The response schema keeps nullable placeholders for
+non-applicable fields, while the adapter explicitly asks for Kinesis RPE 1–5
+on every running stage and recovery. It also forbids converting observed
+average/maximum HR into a target or zone; measured values remain observations.
 
 Duration is calculated only from structured fields: timed component minutes ×
 repetitions, plus `(repetitions - 1) × recoveryMinutes`, warmup and cooldown.
@@ -78,7 +90,15 @@ independently. Use timed components if the context does not support a useful
 distance-duration estimate. The legacy global calendar `targetHr` and `rpe`
 columns are derived only when every component has the same non-empty FC target
 or the same non-null RPE (including recovery RPE for repeated components);
-varying stages are never collapsed into a contradictory global target.
+varying stages are never collapsed into a contradictory global target. The
+proposal and later training-result page derive a display-only labeled summary
+from the same persisted component details, preserving stage and recovery
+targets without averaging. If no numeric RPE exists, effort/breathing guidance
+remains visible. If no prescribed HR target exists, a localized effort/
+breathing fallback is shown; observed average or maximum HR is never promoted
+to a target. The preserved synthetic live sample had no numeric observed HR
+readings and no prescribed HR reference in its shared context, so its generated
+proposal correctly had no numeric target.
 
 The v3 adapter is intentionally incompatible with saved v1/v2 proposals;
 `configuration_json.adapterVersion` must match the registered version on review
@@ -199,10 +219,23 @@ hourly evidence as untrusted context under the shared safety instructions. To
 stay inside the existing context budget without dropping forecast evidence,
 verified samples are stored compactly as `[UTC epoch seconds, local HH:MM with
 UTC offset, temperature Celsius, WMO code]`; the top-level evidence retains the
-date and IANA timezone. The model receives the evidence; it
-cannot change app rules. The UI shows the source and coverage in the proposal.
-Calendar records receive the derived source/range summary in the existing
-weather field; the complete evidence remains with the execution.
+date and IANA timezone. The model receives the evidence; it cannot change app
+rules. Common UI uses a compact verified window range, labels the high as the
+maximum within that period, and includes verified WMO conditions when
+available. Partial and unavailable evidence stays explicit, never as a
+complete range. URLs, query timestamps, timezone internals and sample counts
+remain in the protected snapshot/debug data. Calendar records receive the same
+compact derived string in the existing weather field; complete evidence
+remains with the execution.
+
+Proposal cards separate warm-up, each main component, and cool-down, with
+duration, instruction, effort, RPE/FC targets, recovery, and secondary shoe/
+location information. Notes and proposal-only natural-language rationale are
+shown in full as safe text. Technical evidence IDs are not shown in the common
+UI; recognized identifiers are removed from rationale display only. The
+original response JSON and evidence list are unchanged for administrator
+diagnostics. Stored global RPE/FC column types and the 12-column import schema
+are unchanged.
 
 ## Schema and migrations
 

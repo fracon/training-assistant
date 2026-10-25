@@ -14,6 +14,15 @@ export const WEEK_START_STORAGE_KEY = 'training-assistant:first-day-of-week';
 export const SUPPORTED_WEEK_STARTS = ['Monday', 'Sunday'];
 export const DEFAULT_WEEK_START = 'Monday';
 
+export function readAppliedWeek(search = globalThis.location?.search || '') {
+  const value = new URLSearchParams(search).get('week') || '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(year, month - 1, day, 12);
+  if (Number.isNaN(date.getTime()) || date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day || date.getDay() !== 1) return null;
+  return value;
+}
+
 export function normalizeClientWeekStart(...candidates) {
   for (const candidate of candidates) {
     if (SUPPORTED_WEEK_STARTS.includes(candidate)) return candidate;
@@ -168,9 +177,11 @@ function setupCalendarPage() {
   const nextBtn = document.getElementById('nextMonthBtn');
 
   const now = new Date();
+  const appliedWeek = readAppliedWeek(window.location.search);
+  const displayedDate = appliedWeek ? new Date(`${appliedWeek}T12:00:00`) : now;
   const state = {
-    year: now.getFullYear(),
-    monthIndex: now.getMonth(),
+    year: displayedDate.getFullYear(),
+    monthIndex: displayedDate.getMonth(),
     firstDay: DEFAULT_WEEK_START,
     trainings: [],
   };
@@ -451,6 +462,12 @@ function setupCalendarPage() {
     getState: () => ({ ...state }),
     start(user) {
       if (!user) return null;
+      if (appliedWeek) {
+        const params = new URLSearchParams(window.location.search);
+        params.delete('week');
+        const query = params.toString();
+        window.history.replaceState(window.history.state, '', `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`);
+      }
       syncStoredWeekStartFromUser(user);
       state.firstDay = normalizeClientWeekStart(
         user.first_day_of_week,

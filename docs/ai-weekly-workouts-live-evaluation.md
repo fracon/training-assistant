@@ -346,3 +346,25 @@ browser/API tests. No screenshot containing account information was retained.
   one synthetic sample, not a universal reliability or training-quality claim.
 
 **SHA actually executed:** `6bf6537a3ced67fa02594623d7ebdedcc7748ae9`
+
+### Presentation follow-up (2026-10-25, no provider calls)
+
+The later RPE/FC, weather, rationale, card-layout and applied-state display
+changes were checked offline with the same privately preserved synthetic
+execution, in a cloned isolated SQLite database and Chrome. The source
+execution and its application record were left unchanged. Since it was already
+applied, the display-only browser run used the saved response with its
+application marker omitted from that browser response to inspect the pending
+card layout; it did not call Apply or write application/training data. The
+normal applied-state reload and lost-POST recovery were exercised separately by
+the simulated-provider Chrome regression test. The backend was started with AI
+disabled, so no OpenAI call was possible.
+
+The saved response showed stage RPE values of 1–3 and no numeric observed HR
+readings or prescribed HR range in its shared context. Chrome showed the
+stage-specific summary and localized effort/breathing fallback, compact
+verified-window weather, separated prescription phases, full notes and
+justifications, and no technical evidence references. PT/EN at 1280×800 and
+390×844 had no horizontal overflow. This verifies rendering of that saved
+sample only; it does not evaluate the changed adapter instructions or assert
+that future model output will include RPE or numeric HR targets.

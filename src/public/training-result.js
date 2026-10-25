@@ -23,6 +23,7 @@ import { fetchTraining, saveTrainingFeedback, saveManualTrainingResults, fetchSh
 import { KM_TO_MILES, convertDistanceInputValue, convertDistanceToKm, formatDistance, formatPaceFromMetric, formatTemperature } from './shared/units.js';
 import { createImportGuidance } from './shared/workout-import-guidance.js';
 import { createWorkoutCreationGuidance } from './shared/workout-creation-guidance.js';
+import { summarizePrescription } from './shared/weekly-prescription-display.js';
 
 export function selectableFeedbackShoes(shoes, selectedId = null) {
   const owned = Array.isArray(shoes) ? shoes : [];
@@ -678,6 +679,16 @@ async function initTrainingResult() {
   const renderLocalizedUi = () => {
     document.title = t('training.title');
     if (training) dateEl.textContent = formatDateLabel(training.dia, i18n.language);
+    if (training) {
+      const summary = summarizePrescription(training.detalhes, {
+        language: i18n.language,
+        fallbackRpe: training.rpe,
+        fallbackHr: training.fc_alvo,
+        hrFallback: t('aiCoach.weeklyNoHrReference'),
+      });
+      document.getElementById('plannedRpe').textContent = summary.rpe;
+      document.getElementById('plannedFcAlvo').textContent = summary.hr;
+    }
     if (!saveBtn.disabled) saveBtn.textContent = t('session.save');
     if (!generateBtn.disabled) generateLabel.textContent = t('session.generatePrompt');
     if (!copyPromptBtn.disabled) copyLabel.textContent = t('session.copyPrompt');

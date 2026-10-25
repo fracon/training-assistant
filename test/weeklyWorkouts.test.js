@@ -302,6 +302,9 @@ test('weekly adapter retains training guidance and replaces context duplication 
     assert.match(first, /paceSecondsPerKm/);
     assert.match(first, /paceTargetSecondsPerKm/);
     assert.match(first, /weekly-workouts-v3/);
+    assert.match(first, /RPE Kinesis de 1 a 5 em cada etapa|Kinesis RPE from 1 to 5 for every running stage/);
+    assert.match(first, /Não converta FC média\/máxima observada|Do not convert observed average\/maximum HR/);
+    assert.match(first, /IDs somente em evidence|IDs only in evidence/);
     assert.doesNotMatch(
       first,
       /\bRESEARCH\b|\bEXCEL\b|SPREADSHEET FORMAT|FORMATO DA PLANILHA/,
@@ -1479,8 +1482,25 @@ test('hourly weather rejects provider gaps and uses the half-open evening window
       'C',
       'en-US',
     ),
-    /window high 12 °C/,
+    /period high: 12 °C/,
   );
+});
+
+test('weekly weather presentation is compact, localized, and uses only verified window evidence', () => {
+  const verified = {
+    status: 'verified', source: 'Open-Meteo', sourceUrl: 'https://open-meteo.com',
+    date: '2026-10-26', timezone: 'Europe/Lisbon',
+    coverage: { verifiedHours: 4, expectedHours: 4 },
+    window: { minC: 10, maxC: 12.7 }, lookedUpAt: '2026-10-25T10:00:00Z',
+    hours: [[1, '2026-10-26T08:00+01:00', 10, 2], [2, '2026-10-26T09:00+01:00', 12.7, 2], [3, '2026-10-26T10:00+01:00', 11, 61]],
+  };
+  const pt = weekly.weatherValue(verified, 'C', 'pt-BR');
+  const en = weekly.weatherValue(verified, 'F', 'en-US');
+  assert.match(pt, /10–12\.7 °C · máxima no período: 12\.7 °C · Parcialmente nublado, Chuva leve/);
+  assert.match(en, /50–54\.9 °F · period high: 54\.9 °F · Partly cloudy, Light rain/);
+  assert.doesNotMatch(pt + en, /https?:|2026-10-26|Europe\/Lisbon|4\/4|looked up/i);
+  assert.match(weekly.weatherValue({ ...verified, hours: [{ weatherCode: 45 }, { weatherCode: 999 }, { weatherCode: 95 }, { weatherCode: 0 }] }, 'C', 'en-US'), /Foggy, Weather unknown, Thunderstorm/);
+  assert.equal(weekly.weatherValue({ status: 'partial', window: { minC: 8, maxC: 15 } }, 'C', 'pt-BR'), 'Previsão parcial; cobertura horária incompleta.');
 });
 
 test('Open-Meteo invalid request, HTTP, JSON and transport failures remain distinguishable', async () => {

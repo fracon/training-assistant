@@ -36,13 +36,8 @@ import {
   formatDate as formatLocalizedDate,
   parseLocalizedDate,
 } from './shared/date.js';
-import {
-  formatDistance,
-  distancePromptUnit,
-  temperaturePromptUnit,
-  convertCelsius,
-} from './shared/units.js';
 import { createDatePicker, readDatePickerValue } from './shared/datepicker.js';
+import { cleanWeeklyJustification, formatWeeklyWeather, summarizePrescription } from './shared/weekly-prescription-display.js';
 
 function normalizeTargetDate(value, language) {
   const text = String(value ?? '').trim();
@@ -230,6 +225,8 @@ function setupAiCoachPage(user) {
   const weeklyApply = document.getElementById('weeklyApply');
   const weeklyReadAgain = document.getElementById('weeklyReadAgain');
   const weeklyCancel = document.getElementById('weeklyCancel');
+  const weeklyAppliedStatus = document.getElementById('weeklyAppliedStatus');
+  const weeklyCalendarLink = document.getElementById('weeklyCalendarLink');
   const isAdmin = user?.role === 'admin';
   if (!isAdmin) externalPromptBtn.remove();
   else externalPromptBtn.hidden = false;
@@ -243,7 +240,7 @@ function setupAiCoachPage(user) {
   let currentProposal = null,
     actionPending = false;
 
-  function renderWeeklyProposal(proposal) {
+  function renderWeeklyProposal(proposal, { focusApplied = false } = {}) {
     if (!proposal) return;
     currentProposal = proposal;
     weeklySection.hidden = false;
@@ -272,6 +269,8 @@ function setupAiCoachPage(user) {
       lastWeeklyState = status;
     }
     weeklyError.hidden = true;
+    weeklyAppliedStatus.hidden = true;
+    weeklyCalendarLink.hidden = true;
     weeklyApply.hidden =
       state !== 'completed' || proposal.outdated || !response;
     weeklyApply.disabled = actionPending || Boolean(proposal.application);
@@ -279,9 +278,20 @@ function setupAiCoachPage(user) {
       proposal.application ? 'aiCoach.appliedWeekly' : 'aiCoach.applyWeekly',
     );
     if (proposal.application) {
-      weeklyStatus.textContent = t('aiCoach.weeklyApplied')
+      weeklyStatus.textContent = '';
+      lastWeeklyState = '';
+      weeklyAppliedStatus.textContent = t('aiCoach.weeklyApplied')
         .replace('{added}', String(proposal.application.added))
         .replace('{ignored}', String(proposal.application.ignored));
+      weeklyAppliedStatus.hidden = false;
+      weeklyCalendarLink.href = `/calendar.html?week=${encodeURIComponent(proposal.weekStart || proposal.application.weekStart || '')}`;
+      weeklyCalendarLink.hidden = false;
+      weeklyContent.append(weeklyAppliedStatus, weeklyCalendarLink);
+      weeklyApply.hidden = true;
+      weeklyReadAgain.hidden = true;
+      weeklyCancel.hidden = true;
+      if (focusApplied) weeklyAppliedStatus.focus({ preventScroll: true });
+      return;
     }
     weeklyCancel.hidden =
       !['queued', 'running'].includes(state) || actionPending;
@@ -310,88 +320,106 @@ function setupAiCoachPage(user) {
             `aiCoach.days.${DAY_LOCALE_KEYS[DAY_KEYS[DAY_DB_KEYS.indexOf(session.weekday)]]}`,
           ),
         )
+        .replace('{type}', session.workout || session.type || '')
         .replace('{date}', formatLocalizedDate(session.date, i18n.language))
         .replace('{period}', t(`aiCoach.periods.${session.period}`))
         .replace('{duration}', String(session.durationMinutes));
       article.append(heading);
-      const table = document.createElement('dl');
-      const evidenceLabels = session.evidence.map((source) => {
-        const type = source.split(':', 1)[0];
-        return (
-          t(`aiCoach.weeklyEvidenceTypes.${type}`) ||
-          t('aiCoach.weeklyEvidenceTypes.context')
-        );
+      const prescription = summarizePrescription(session.details, {
+        language: i18n.language,
+        fallbackRpe: session.rpe,
+        fallbackHr: session.targetHr,
+        hrFallback: t('aiCoach.weeklyNoHrReference'),
       });
-      const values = [
-        [t('aiCoach.typeLabel'), session.type],
-        [t('aiCoach.workout'), session.workout],
-        [t('aiCoach.detailsLabel'), session.details],
-        [t('aiCoach.targetHrLabel'), session.targetHr],
-        [
-          t('aiCoach.rpeLabel'),
-          session.rpe == null ? '—' : String(session.rpe),
-        ],
-        [t('aiCoach.shoeLabel'), session.shoeLabel || '—'],
-        [t('aiCoach.locationLabel'), session.location],
-        [t('aiCoach.weatherLabel'), session.weather],
-        [t('aiCoach.weeklyNotes'), session.notes],
-        [t('aiCoach.weeklyRationale'), session.justification],
-        [t('aiCoach.weeklyEvidence'), evidenceLabels.join(', ')],
-      ];
-      for (const [label, value] of values) {
+      const weatherEvidence = proposal.weatherEvidence?.find(
+        (item) => item.weekday === session.weekday,
+      );
+      const weather = weatherEvidence
+        ? formatWeeklyWeather(weatherEvidence, {
+            temperatureUnit: proposal.temperatureUnit,
+            language: i18n.language,
+            translate: t,
+          })
+        : session.weather;
+      const summary = document.createElement('dl');
+      summary.className = 'weekly-proposal-summary';
+      for (const [label, value] of [
+        [t('aiCoach.rpeLabel'), prescription.rpe],
+        [t('aiCoach.targetHrLabel'), prescription.hr],
+      ]) {
+        const group = document.createElement('div');
         const dt = document.createElement('dt');
         dt.textContent = label;
         const dd = document.createElement('dd');
-        if (label === t('aiCoach.weeklyNotes'))
-          dd.className = 'weekly-proposal-notes';
-        if (label === t('aiCoach.detailsLabel'))
-          dd.className = 'weekly-proposal-details';
-        dd.textContent = value || '—';
-        table.append(dt, dd);
+        dd.textContent = value;
+        group.append(dt, dd);
+        summary.append(group);
       }
-      article.append(table);
+      article.append(summary);
+      const phases = document.createElement('div');
+      phases.className = 'weekly-proposal-phases weekly-proposal-details';
+      for (const phase of prescription.phases) {
+        const block = document.createElement('section');
+        block.className = 'weekly-proposal-phase';
+        const title = document.createElement('h4');
+        title.textContent = t(`aiCoach.weeklyPhases.${phase.phase}`);
+        const duration = document.createElement('p');
+        duration.className = 'weekly-phase-duration';
+        duration.textContent = phase.duration;
+        const instruction = document.createElement('p');
+        instruction.textContent = `${t('aiCoach.weeklyExecution')}: ${phase.instruction}`;
+        const effort = document.createElement('p');
+        effort.className = 'weekly-phase-effort';
+        effort.textContent = `${t('aiCoach.weeklyEffort')}: ${phase.effort}`;
+        block.append(title, duration, instruction, effort);
+        if (phase.recovery) {
+          const recovery = document.createElement('p');
+          recovery.className = 'weekly-phase-recovery';
+          recovery.textContent = `${t('aiCoach.weeklyRecovery')}: ${phase.recovery}`;
+          block.append(recovery);
+        }
+        phases.append(block);
+      }
+      article.append(phases);
+      const metadata = document.createElement('dl');
+      metadata.className = 'weekly-proposal-meta';
+      const fields = [
+        [t('aiCoach.shoeLabel'), session.shoeLabel],
+        [t('aiCoach.locationLabel'), session.location],
+        [t('aiCoach.weatherLabel'), weather],
+      ];
+      for (const [label, value] of fields) {
+        if (!value) continue;
+        const group = document.createElement('div');
+        const dt = document.createElement('dt');
+        dt.textContent = label;
+        const dd = document.createElement('dd');
+        dd.textContent = value;
+        group.append(dt, dd);
+        metadata.append(group);
+      }
+      if (metadata.childElementCount) article.append(metadata);
+      for (const [label, value, className] of [
+        [t('aiCoach.weeklyNotes'), session.notes, 'weekly-proposal-notes'],
+        [
+          t('aiCoach.weeklyRationale'),
+          cleanWeeklyJustification(session.justification),
+          'weekly-proposal-rationale',
+        ],
+      ]) {
+        if (!value) continue;
+        const section = document.createElement('section');
+        section.className = `weekly-proposal-text ${className}`;
+        const title = document.createElement('h4');
+        title.textContent = label;
+        const text = document.createElement('p');
+        text.textContent = value;
+        section.append(title, text);
+        article.append(section);
+      }
       list.append(article);
     }
     weeklyContent.append(list);
-    if (proposal.weatherEvidence?.length) {
-      const heading = document.createElement('h3');
-      heading.textContent = t('aiCoach.weeklyForecast');
-      weeklyContent.append(heading);
-      for (const evidence of proposal.weatherEvidence) {
-        const p = document.createElement('p');
-        const unit = proposal.temperatureUnit === 'F' ? 'F' : 'C';
-        const low = convertCelsius(evidence.window?.minC, unit),
-          high = convertCelsius(evidence.window?.maxC, unit);
-        p.append(
-          document.createTextNode(
-            `${t(`aiCoach.days.${DAY_LOCALE_KEYS[DAY_KEYS[DAY_DB_KEYS.indexOf(evidence.weekday)]]}`)}: `,
-          ),
-        );
-        if (evidence.sourceUrl) {
-          const link = document.createElement('a');
-          link.href = evidence.sourceUrl;
-          link.target = '_blank';
-          link.rel = 'noopener noreferrer';
-          link.textContent = evidence.source || 'Open-Meteo';
-          p.append(link, document.createTextNode(' · '));
-        }
-        p.append(
-          document.createTextNode(
-            evidence.status === 'verified'
-              ? `${evidence.date} · ${evidence.timezone} · ${evidence.coverage.verifiedHours}/${evidence.coverage.expectedHours} · ${low}–${high} °${unit}`
-              : t(
-                  evidence.status === 'partial'
-                    ? 'aiCoach.forecastPartial'
-                    : 'aiCoach.forecastUnavailable',
-                ),
-          ),
-        );
-        p.append(
-          document.createTextNode(` · ${t('aiCoach.forecastSingleSource')}`),
-        );
-        weeklyContent.append(p);
-      }
-    }
   }
   function showWeeklyReadError() {
     weeklyError.hidden = false;
@@ -607,9 +635,21 @@ function setupAiCoachPage(user) {
         currentProposal.responseHash,
       );
       currentProposal.application = applied;
-      renderWeeklyProposal(currentProposal);
+      renderWeeklyProposal(currentProposal, { focusApplied: true });
       sessionStorage.removeItem('kinesis-weekly-request-key');
     } catch (error) {
+      // A lost POST response is resolved by reading this same persisted
+      // proposal. It never starts another generation or assumes failure.
+      let persisted = null;
+      try {
+        persisted = await fetchWeeklyProposal(activeExecutionId);
+      } catch {}
+      if (persisted?.application) {
+        currentProposal = { ...currentProposal, ...persisted };
+        renderWeeklyProposal(currentProposal, { focusApplied: true });
+        sessionStorage.removeItem('kinesis-weekly-request-key');
+        return;
+      }
       const stale = error.codes?.some(
         (code) => code.includes('Conflict') || code.includes('Outdated'),
       );
@@ -621,6 +661,10 @@ function setupAiCoachPage(user) {
       weeklyError.textContent = stale
         ? t('aiCoach.weeklyConflict')
         : t('aiCoach.weeklyApplyError');
+      if (!persisted) {
+        weeklyApply.hidden = true;
+        weeklyReadAgain.hidden = false;
+      }
     } finally {
       actionPending = false;
       weeklyApply.disabled = Boolean(currentProposal?.application);
@@ -630,7 +674,31 @@ function setupAiCoachPage(user) {
     if (actionPending) return;
     weeklyReadAgain.hidden = true;
     if (activeExecutionId) {
-      void refreshWeeklyExecution(activeExecutionId);
+      const applyingUnknown = Boolean(
+        currentProposal?.responseHash &&
+          !currentProposal?.application &&
+          weeklyApply.hidden,
+      );
+      if (applyingUnknown) {
+        actionPending = true;
+        try {
+          const proposal = await fetchWeeklyProposal(activeExecutionId);
+          currentProposal = proposal;
+          renderWeeklyProposal(proposal, { focusApplied: Boolean(proposal.application) });
+          if (proposal.application)
+            sessionStorage.removeItem('kinesis-weekly-request-key');
+          else {
+            weeklyApply.hidden = false;
+            weeklyError.hidden = false;
+            weeklyError.textContent = t('aiCoach.weeklyApplyError');
+          }
+        } catch {
+          showWeeklyReadError();
+        } finally {
+          actionPending = false;
+          weeklyApply.disabled = Boolean(currentProposal?.application);
+        }
+      } else void refreshWeeklyExecution(activeExecutionId);
       return;
     }
     const key = sessionStorage.getItem('kinesis-weekly-request-key');

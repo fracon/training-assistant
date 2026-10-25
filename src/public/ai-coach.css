@@ -598,6 +598,8 @@
 
 #weeklyProposalSection[hidden],
 #resultSection[hidden] { display: none; }
+#weeklyAppliedStatus[hidden],
+#weeklyCalendarLink[hidden] { display: none; }
 
 .weekly-proposal-list { display: grid; gap: 1rem; }
 .weekly-proposal-card {
@@ -607,17 +609,30 @@
   border-radius: 12px;
   background: var(--card);
 }
-.weekly-proposal-card h3 { margin: 0 0 0.75rem; font-size: 1rem; }
-.weekly-proposal-card dl { display: grid; grid-template-columns: minmax(7rem, 0.28fr) minmax(0, 1fr); gap: 0.45rem 0.8rem; margin: 0; }
-.weekly-proposal-card dt { color: var(--muted); font-size: 0.84rem; font-weight: 600; }
-.weekly-proposal-card dd { min-width: 0; margin: 0; overflow-wrap: anywhere; font-size: 0.9rem; }
-.weekly-proposal-card dd.weekly-proposal-notes { white-space: pre-wrap; }
-.weekly-proposal-card dd.weekly-proposal-details { white-space: pre-wrap; }
+.weekly-proposal-card h3 { margin: 0 0 0.75rem; font-size: 1rem; line-height: 1.4; }
+.weekly-proposal-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; margin: 0 0 1rem; }
+.weekly-proposal-summary > div { min-width: 0; padding: 0.7rem 0.8rem; border-radius: 10px; background: var(--bg); }
+.weekly-proposal-card dt { color: var(--muted); font-size: 0.82rem; font-weight: 600; }
+.weekly-proposal-card dd { min-width: 0; margin: 0.2rem 0 0; overflow-wrap: anywhere; font-size: 0.92rem; line-height: 1.5; }
+.weekly-proposal-phases { display: grid; gap: 0.65rem; }
+.weekly-proposal-phase { min-width: 0; padding: 0.8rem 0.9rem; border-left: 3px solid var(--line); background: var(--bg); border-radius: 0 10px 10px 0; }
+.weekly-proposal-phase h4, .weekly-proposal-text h4 { margin: 0 0 0.35rem; font-size: 0.9rem; }
+.weekly-proposal-phase p, .weekly-proposal-text p { margin: 0.3rem 0 0; overflow-wrap: anywhere; white-space: pre-wrap; line-height: 1.55; }
+.weekly-phase-duration { color: var(--muted); font-weight: 600; }
+.weekly-phase-effort { font-size: 0.9rem; }
+.weekly-phase-recovery { padding-top: 0.45rem; border-top: 1px solid var(--line); font-size: 0.9rem; }
+.weekly-proposal-meta { display: flex; flex-wrap: wrap; gap: 0.75rem 1.25rem; margin: 0.9rem 0 0; }
+.weekly-proposal-meta > div { min-width: 0; max-width: 100%; }
+.weekly-proposal-meta dd { color: var(--muted); font-size: 0.86rem; }
+.weekly-proposal-text { margin-top: 0.85rem; padding-top: 0.75rem; border-top: 1px solid var(--line); }
+.weekly-proposal-notes p { white-space: pre-wrap; }
+.weekly-applied-status { margin: 0.5rem 0; }
+.weekly-calendar-link { display: inline-flex; width: fit-content; margin-top: 0.35rem; text-decoration: none; }
 #weeklyProposalError { margin: 0.75rem 0; color: var(--danger); }
 #weeklyProposalContent > p { overflow-wrap: anywhere; }
 @media (max-width: 520px) {
-  .weekly-proposal-card dl { grid-template-columns: minmax(0, 1fr); gap: 0.2rem; }
-  .weekly-proposal-card dd { margin-bottom: 0.55rem; }
+  .weekly-proposal-summary { grid-template-columns: minmax(0, 1fr); gap: 0.45rem; }
+  .weekly-proposal-card { padding: 0.85rem; }
 }
 
 @media (max-width: 640px) {
