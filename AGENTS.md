@@ -8,8 +8,8 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.22.0` on the issue #64
-branch); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.23.0` on the issue #64
+follow-up branch); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
@@ -490,12 +490,16 @@ will find every issue.
 
 Weekly proposal generation and application reuse the existing AI execution,
 quota, reservation, Responses client, context, diagnostics and recovery system;
-do not add another job pipeline. The weekly-workouts-v2 delivery adapter is
+do not add another job pipeline. The weekly-workouts-v3 delivery adapter is
 versioned independently from byte-preserved PT/EN external prompts. It retains
 training guidance while sending shared athlete context only once. Structured
-warmup/main/cooldown components derive duration and persisted details; distance
-durations are estimated from the supplied pace and rounded up. Notes persisted
-to `observacoes` and proposal-only justifications appear in the complete
+warmup/main/cooldown components derive duration and persisted details; each
+component carries execution and effort guidance, optional evidence-backed
+targets, and explicit guidance for repeated recoveries. Distance pace used for
+duration estimation is separate from optional prescribed pace and is rounded
+up. Global FC/RPE fields are derived only when component targets agree. Free
+text is not parsed as another duration source. Notes persisted to `observacoes`
+and proposal-only justifications appear in the complete
 review. Open-Meteo hourly evidence is bound to an exact revisioned availability
 snapshot before reservation/dispatch and application. Forecast IANA timezone
 identity and distinct UTC hourly instants are checked through DST; the
@@ -504,9 +508,9 @@ instant, local time/offset, temperature and WMO code inside the existing
 context budget. Record and display that no authorized independent hourly
 source is configured; no daily maximum is substituted. Ambiguous, partial,
 incompatible-timezone, out-of-horizon and unavailable forecasts are explicit,
-with planning continuing without invented weather. v1 proposals cannot be
-reviewed/applied under the v2 contract; no historical calendar rows are
-rewritten. Application is an explicit owner-scoped transaction, rechecks
+with planning continuing without invented weather. v1/v2 proposals cannot be
+reviewed/applied under v3; their snapshots and historical calendar rows remain
+untouched. Application is an explicit owner-scoped transaction, rechecks
 freshness and ownership, preserves results and uses the calendar's existing
 deduplication.
 See [`docs/ai-weekly-workouts.md`](docs/ai-weekly-workouts.md).
@@ -517,7 +521,7 @@ See [`docs/ai-weekly-workouts.md`](docs/ai-weekly-workouts.md).
 - The idempotent `2026-09-structured-ai-coach-availability-v1` migration does not derive periods or duration from old free text. The earlier AI Coach availability form was transient and did not persist these values; missing structured records must remain unconfigured and be reviewed. On first use the frontend presents missing rows as unchecked/unavailable defaults, without clearing `needsReview`; explicit unavailable rows remain unavailable after persistence.
 - Initial availability defaults are presentation-only: they are never eligible for persistence or prompt generation until the authenticated GET has completed successfully. A failed load keeps save/generate blocked, preserves local edits, and may be retried; late responses from older load attempts must not replace a newer result.
 - Applying a weekday setup is an explicit one-time copy from Monday to Tuesday–Friday. It never changes weekends or links records.
-- The administrator-only external prompt continues to preserve its existing PT/EN wording and 12-column XLSX/XLS import contract. Its browser/research instructions apply only to that free prompt; the weekly paid adapter replaces conflicting Excel/research delivery instructions with backend-supplied hourly evidence and structured `weekly-workouts-v2` output. It derives duration/details from ordered timed/distance prescription components, previews persisted notes, binds forecasts to an exact revisioned availability snapshot, validates timezone identity and epoch-hour coverage through DST, and never substitutes a daily maximum. Unreliable weather remains explicitly unavailable and never blocks planning. No second provider or paid search is configured. RPE is explicitly the Kinesis 1–5 scale in both adapter and backend validation. Existing v1 proposals are incompatible with v2 and cannot be applied under the changed schema; old calendar data remains untouched.
+- The administrator-only external prompt continues to preserve its existing PT/EN wording and 12-column XLSX/XLS import contract. Its browser/research instructions apply only to that free prompt; the weekly paid adapter replaces conflicting Excel/research delivery instructions with backend-supplied hourly evidence and structured `weekly-workouts-v3` output. It derives duration/details from ordered timed/distance prescription components with per-stage execution/effort, optional targets and explicit repeated recovery guidance; pace estimates are distinct from targets, global FC/RPE are derived only when uniform, and free-text guidance is not parsed as a duration source. It previews persisted notes, binds forecasts to an exact revisioned availability snapshot, validates timezone identity and epoch-hour coverage through DST, and never substitutes a daily maximum. Unreliable weather remains explicitly unavailable and never blocks planning. No second provider or paid search is configured. RPE is explicitly the Kinesis 1–5 scale in both adapter and backend validation. Existing v1/v2 proposals are incompatible with v3 and cannot be applied under the changed schema; old snapshots/calendar data remain untouched.
 
 ## OpenAI foundation and future phases
 

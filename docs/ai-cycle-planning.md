@@ -3,8 +3,8 @@
 Status: cycle planning is integrated via merged PR #69. The original phase 1
 branch ran at beta **0.21.0** after phase 0 merged in PR #67 (`648d6a0`); the
 branch-only notes and evaluations below are retained as historical records.
-Weekly generation #64 is implemented separately on its dedicated 0.22.0 issue
-branch; see [weekly workouts](ai-weekly-workouts.md). Result analysis #65 remains
+Weekly generation #64 is implemented separately on its dedicated 0.23.0 issue
+follow-up branch; see [weekly workouts](ai-weekly-workouts.md). Result analysis #65 remains
 future scope.
 The [2026-10-24 final v3 evaluation](#end-to-end-final-v3-evaluation-2026-10-24)
 completed real generation, RPE validation, explicit application and reload recovery

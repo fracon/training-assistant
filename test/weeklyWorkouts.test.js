@@ -120,41 +120,53 @@ function availability(
   };
 }
 function session(overrides = {}) {
-  const { durationMinutes = 60, ...fields } = overrides;
+  const { durationMinutes = 60, targetHr: _targetHr, rpe: _rpe, ...fields } = overrides;
   const mainMinutes = Math.max(1, durationMinutes - 20);
+  const components = fields.prescription || [
+    {
+      phase: 'warmup',
+      repetitions: 1,
+      minutes: 10,
+      distanceMeters: null,
+      paceSecondsPerKm: null,
+      recoveryMinutes: null,
+    },
+    {
+      phase: 'main',
+      repetitions: 1,
+      minutes: mainMinutes,
+      distanceMeters: null,
+      paceSecondsPerKm: null,
+      recoveryMinutes: null,
+    },
+    {
+      phase: 'cooldown',
+      repetitions: 1,
+      minutes: 10,
+      distanceMeters: null,
+      paceSecondsPerKm: null,
+      recoveryMinutes: null,
+    },
+  ];
+  const prescription = components.map((component) => ({
+    instruction: 'Run relaxed with a smooth, controlled form.',
+    effort: 'Conversational effort with calm breathing.',
+    rpe: null,
+    targetHr: '',
+    paceTargetSecondsPerKm: null,
+    recoveryGuidance:
+      component.repetitions > 1 && component.recoveryMinutes !== null
+        ? 'Jog easily between repetitions.'
+        : null,
+    recoveryRpe: null,
+    ...component,
+  }));
   return {
     date: '2026-10-26',
     weekday: 'monday',
     period: '08_12',
     sessionKind: 'easy',
-    prescription: [
-      {
-        phase: 'warmup',
-        repetitions: 1,
-        minutes: 10,
-        distanceMeters: null,
-        paceSecondsPerKm: null,
-        recoveryMinutes: null,
-      },
-      {
-        phase: 'main',
-        repetitions: 1,
-        minutes: mainMinutes,
-        distanceMeters: null,
-        paceSecondsPerKm: null,
-        recoveryMinutes: null,
-      },
-      {
-        phase: 'cooldown',
-        repetitions: 1,
-        minutes: 10,
-        distanceMeters: null,
-        paceSecondsPerKm: null,
-        recoveryMinutes: null,
-      },
-    ],
-    targetHr: '120-140 bpm',
-    rpe: 3,
+    prescription,
     shoeId: null,
     location: 'Porto, Portugal',
     weather: 'Open-Meteo verified',
@@ -163,7 +175,13 @@ function session(overrides = {}) {
       'A progressão acompanha o plano aplicado e os treinos registados.',
     evidence: ['cycle:cycle'],
     ...fields,
+    prescription,
   };
+}
+function sessionStep(overrides, index = 1) {
+  const value = session();
+  value.prescription[index] = { ...value.prescription[index], ...overrides };
+  return value;
 }
 function proposal(sessions = [session()]) {
   return { schemaVersion: weekly.VERSION, weekStart: '2026-10-26', sessions };
@@ -190,6 +208,10 @@ test('weekly adapter retains training guidance and replaces context duplication 
     assert.doesNotMatch(first, /INTRO|MIDDLE/);
     assert.match(first, /TRAINING GUIDANCE/);
     assert.match(first, /structured|estruturada/i);
+    assert.match(first, /effort\/breathing|esforço\/respiração/i);
+    assert.match(first, /paceSecondsPerKm/);
+    assert.match(first, /paceTargetSecondsPerKm/);
+    assert.match(first, /weekly-workouts-v3/);
     assert.doesNotMatch(
       first,
       /\bRESEARCH\b|\bEXCEL\b|SPREADSHEET FORMAT|FORMATO DA PLANILHA/,
@@ -199,6 +221,23 @@ test('weekly adapter retains training guidance and replaces context duplication 
     () => weekly.adaptPrompt('wrong', 'en-US'),
     (error) =>
       error instanceof AiError && error.code === 'weeklyPromptAdapterMismatch',
+  );
+  const componentKeys = weekly.schema.properties.sessions.items.properties
+    .prescription.items.required;
+  for (const key of [
+    'instruction',
+    'effort',
+    'rpe',
+    'targetHr',
+    'paceTargetSecondsPerKm',
+    'recoveryGuidance',
+    'recoveryRpe',
+  ])
+    assert.ok(componentKeys.includes(key), `${key} is part of the component contract`);
+  assert.equal(
+    weekly.schema.properties.sessions.items.properties.rpe,
+    undefined,
+    'session RPE is derived only when component targets are uniform',
   );
 });
 
@@ -236,7 +275,7 @@ test('weekly proposal validates dates from weekday, one preferred period, cumula
     'duration',
   );
   assert.equal(
-    weekly.validateWeeklyProposal(proposal([session({ rpe: 6 })]), context)
+    weekly.validateWeeklyProposal(proposal([sessionStep({ rpe: 6 })]), context)
       .code,
     'rpe',
   );
@@ -263,7 +302,7 @@ test('weekly proposal validates dates from weekday, one preferred period, cumula
   );
   assert.equal(
     weekly.validateWeeklyProposal(
-      proposal([session({ targetHr: 'easy' })]),
+      proposal([sessionStep({ targetHr: 'easy' })]),
       context,
     ).code,
     'unit',
@@ -301,7 +340,7 @@ test('weekly proposal validates dates from weekday, one preferred period, cumula
   );
   assert.equal(
     weekly.validateWeeklyProposal(
-      proposal([session({ targetHr: 'RPE 8/10' })]),
+      proposal([sessionStep({ instruction: 'RPE 8/10' })]),
       context,
     ).code,
     'incompatible_rpe',
@@ -322,7 +361,7 @@ test('weekly proposal validates dates from weekday, one preferred period, cumula
     'session_date',
   );
   assert.equal(
-    weekly.validateWeeklyProposal(proposal([session({ rpe: 1.5 })]), context)
+    weekly.validateWeeklyProposal(proposal([sessionStep({ rpe: 1.5 })]), context)
       .code,
     'shape',
   );
@@ -391,8 +430,9 @@ test('weekly prescription counts repeated work, between-repeat recovery and dist
   const materialized = weekly.materializePrescription(value, 'en-US');
   assert.equal(materialized.value.durationMinutes, 32);
   assert.equal(materialized.value.durationEstimated, true);
-  assert.match(materialized.value.details, /4 × 400 m \(~2 min each/);
-  assert.match(materialized.value.details, /3 min recovery between repeats/);
+  assert.match(materialized.value.details, /4 × 400 m \(estimated 2 min per repetition/);
+  assert.match(materialized.value.details, /this is not a target/);
+  assert.match(materialized.value.details, /3 min; Jog easily between repetitions/);
   const noRecoveryBetweenFinalRep = {
     ...value,
     prescription: value.prescription.map((step) =>
@@ -400,8 +440,8 @@ test('weekly prescription counts repeated work, between-repeat recovery and dist
     ),
   };
   assert.equal(
-    weekly.materializePrescription(noRecoveryBetweenFinalRep).value.durationMinutes,
-    23,
+    weekly.materializePrescription(noRecoveryBetweenFinalRep).error,
+    'prescription_recovery',
   );
   const contradictoryUnits = {
     ...value,
@@ -420,11 +460,37 @@ test('weekly prescription localizes Portuguese labels and rejects invalid struct
       { phase: 'cooldown', repetitions: 1, minutes: 5, distanceMeters: null, paceSecondsPerKm: null, recoveryMinutes: null },
     ],
   });
+  distance.prescription = distance.prescription.map((step) => ({
+    ...step,
+    instruction:
+      step.phase === 'warmup'
+        ? 'Comece em trote leve e confortável.'
+        : step.phase === 'cooldown'
+          ? 'Reduza o ritmo gradualmente.'
+          : 'Corra cada repetição com técnica estável.',
+    effort:
+      step.phase === 'main'
+        ? 'Forte e controlado, com respiração ritmada.'
+        : 'Leve, mantendo respiração confortável.',
+    recoveryGuidance:
+      step.phase === 'main'
+        ? 'Trote muito leve até recuperar a respiração.'
+        : null,
+    targetHr: step.phase === 'main' ? '150-160 bpm' : '',
+    paceTargetSecondsPerKm: step.phase === 'main' ? 300 : null,
+  }));
   const portuguese = weekly.materializePrescription(distance, 'pt-BR');
   assert.match(portuguese.value.workout, /Corrida/);
   assert.match(portuguese.value.details, /Principal: 4 × 400 m/);
-  assert.match(portuguese.value.details, /3 min de recuperação entre as repetições/);
+  assert.match(portuguese.value.details, /Recuperação entre repetições: 3 min/);
   assert.match(portuguese.value.details, /Duração estimada/);
+  assert.match(portuguese.value.details, /estimativa de 2 min por repetição/);
+  assert.match(portuguese.value.details, /ritmo não é meta/);
+  assert.match(portuguese.value.details, /FC alvo: 150-160 bpm/);
+  assert.match(portuguese.value.details, /ritmo-alvo 5:00 min\/km/);
+  assert.doesNotMatch(portuguese.value.details, /min each at|recovery between repeats|Execution:|Effort:/);
+  assert.match(portuguese.value.details, /respiração ritmada/);
+  assert.match(portuguese.value.details, /Trote muito leve/);
   assert.match(
     weekly.materializePrescription(session(), 'pt-BR').value.details,
     /Duração calculada/,
@@ -448,7 +514,9 @@ test('weekly prescription localizes Portuguese labels and rejects invalid struct
       { phase: 'cooldown', repetitions: 1, minutes: 5, distanceMeters: null, paceSecondsPerKm: null, recoveryMinutes: null },
     ];
     steps[step.phase === 'warmup' ? 0 : 1] = step;
-    const result = weekly.materializePrescription({ ...distance, prescription: steps });
+    const result = weekly.materializePrescription(
+      session({ ...distance, prescription: steps }),
+    );
     assert.ok(result.error, JSON.stringify(step));
   }
   const tooLong = {
@@ -459,7 +527,178 @@ test('weekly prescription localizes Portuguese labels and rejects invalid struct
       { phase: 'cooldown', repetitions: 1, minutes: 241, distanceMeters: null, paceSecondsPerKm: null, recoveryMinutes: null },
     ],
   };
-  assert.equal(weekly.materializePrescription(tooLong).error, 'prescription_value');
+  assert.equal(
+    weekly.materializePrescription(session(tooLong)).error,
+    'prescription_value',
+  );
+  assert.equal(
+    weekly.materializePrescription(
+      session({
+        prescription: distance.prescription.map((step) =>
+          step.phase === 'warmup' ? { ...step, instruction: '' } : step,
+        ),
+      }),
+    ).error,
+    'prescription_guidance',
+  );
+  assert.equal(
+    weekly.materializePrescription(
+      session({
+        prescription: distance.prescription.map((step) =>
+          step.phase === 'main'
+            ? { ...step, paceTargetSecondsPerKm: 1 }
+            : step,
+        ),
+      }),
+    ).error,
+    'prescription_pace_target',
+  );
+  assert.equal(
+    weekly.materializePrescription(
+      session({
+        prescription: distance.prescription.map((step) =>
+          step.phase === 'warmup'
+            ? { ...step, recoveryGuidance: 'Rest' }
+            : step,
+        ),
+      }),
+    ).error,
+    'prescription_recovery',
+  );
+});
+
+test('weekly interval, progression and fartlek keep stage-specific execution and recovery guidance', () => {
+  const part = (phase, minutes, overrides = {}) => ({
+    phase,
+    repetitions: 1,
+    minutes,
+    distanceMeters: null,
+    paceSecondsPerKm: null,
+    recoveryMinutes: null,
+    ...overrides,
+  });
+  const interval = session({
+    sessionKind: 'intervals',
+    prescription: [
+      part('warmup', 8, {
+        instruction: 'Start with easy jogging and dynamic mobility.',
+        effort: 'Easy breathing, RPE 2.',
+        rpe: 2,
+      }),
+      part('main', 3, {
+        repetitions: 6,
+        recoveryMinutes: 2,
+        recoveryGuidance: 'Jog gently until breathing is controlled.',
+        recoveryRpe: 2,
+        instruction: 'Run each repetition strongly with relaxed form.',
+        effort: 'Hard but controlled, breathing deep; RPE 4.',
+        rpe: 4,
+      }),
+      part('cooldown', 5, {
+        instruction: 'Ease down and finish with relaxed jogging.',
+        effort: 'Very easy breathing.',
+        rpe: 1,
+      }),
+    ],
+  });
+  const intervalResult = weekly.materializePrescription(interval).value;
+  assert.equal(intervalResult.durationMinutes, 41);
+  assert.equal(intervalResult.rpe, null);
+  assert.equal(intervalResult.targetHr, '');
+  assert.match(intervalResult.details, /6 × 3 min/);
+  assert.match(intervalResult.details, /RPE 4\/5/);
+  assert.match(intervalResult.details, /2 min; Jog gently until breathing is controlled/);
+  assert.match(intervalResult.details, /RPE 2\/5/);
+  assert.match(intervalResult.details, /Start with easy jogging/);
+  assert.match(intervalResult.details, /Ease down and finish/);
+
+  const progression = session({
+    sessionKind: 'progression',
+    targetHr: '',
+    rpe: null,
+    prescription: [
+      part('warmup', 10, { instruction: 'Warm up with easy running.', effort: 'Conversational breathing.' }),
+      part('main', 8, { instruction: 'Settle into the first block.', effort: 'Easy aerobic effort.', rpe: 2 }),
+      part('main', 8, { instruction: 'Increase effort smoothly.', effort: 'Steady effort; breathing becomes purposeful.', rpe: 3 }),
+      part('main', 8, { instruction: 'Finish the final block strong and controlled.', effort: 'Comfortably hard; keep form relaxed.', rpe: 4 }),
+      part('cooldown', 5, { instruction: 'Jog easily to cool down.', effort: 'Easy breathing.' }),
+    ],
+  });
+  assert.equal(weekly.validateWeeklyProposal(proposal([progression]), validationContext()), null);
+  const progressionDetails = weekly.materializePrescription(progression).value.details;
+  assert.match(progressionDetails, /Settle into the first block/);
+  assert.match(progressionDetails, /Increase effort smoothly/);
+  assert.match(progressionDetails, /Finish the final block strong and controlled/);
+  assert.doesNotMatch(progressionDetails, /Target HR|target pace/);
+
+  const fartlek = session({
+    sessionKind: 'fartlek',
+    prescription: [
+      part('warmup', 8, { instruction: 'Start easy.', effort: 'Conversational breathing.' }),
+      part('main', 2, { repetitions: 5, recoveryMinutes: 2, recoveryGuidance: 'Float easily until breathing settles.', instruction: 'Alternate a playful strong surge with an easy float.', effort: 'Surges are controlled, never sprinting.', rpe: 4, recoveryRpe: 2 }),
+      part('cooldown', 5, { instruction: 'Finish with easy jogging.', effort: 'Relaxed breathing.' }),
+    ],
+  });
+  const fartlekDetails = weekly.materializePrescription(fartlek).value.details;
+  assert.match(fartlekDetails, /Alternate a playful strong surge/);
+  assert.match(fartlekDetails, /Float easily until breathing settles/);
+  assert.equal(weekly.materializePrescription(fartlek).value.durationMinutes, 31);
+});
+
+test('weekly component RPE stays on 1–5 and distance estimate never becomes a pace target', () => {
+  const distance = session({
+    prescription: [
+      { phase: 'warmup', repetitions: 1, minutes: 5, distanceMeters: null, paceSecondsPerKm: null, recoveryMinutes: null },
+      { phase: 'main', repetitions: 1, minutes: null, distanceMeters: 1000, paceSecondsPerKm: 360, recoveryMinutes: null },
+      { phase: 'cooldown', repetitions: 1, minutes: 5, distanceMeters: null, paceSecondsPerKm: null, recoveryMinutes: null },
+    ],
+  });
+  const estimate = weekly.materializePrescription(distance).value.details;
+  assert.match(estimate, /estimate.*6 min per repetition/);
+  assert.match(estimate, /this is not a target/);
+  assert.doesNotMatch(estimate, /target pace/);
+  const withTarget = session({
+    ...distance,
+    prescription: distance.prescription.map((step) =>
+      step.phase === 'main'
+        ? { ...step, paceTargetSecondsPerKm: 330 }
+        : step,
+    ),
+  });
+  assert.match(
+    weekly.materializePrescription(withTarget).value.details,
+    /target pace 5:30 min\/km/,
+  );
+  const uniform = session();
+  uniform.prescription = uniform.prescription.map((step) => ({
+    ...step,
+    rpe: 3,
+    targetHr: '120-140 bpm',
+  }));
+  const summary = weekly.materializePrescription(uniform).value;
+  assert.equal(summary.rpe, 3);
+  assert.equal(summary.targetHr, '120-140 bpm');
+  const context = validationContext();
+  for (const invalidStep of [
+    { ...distance.prescription[0], instruction: 'RPE 8/10 in the warmup.' },
+    {
+      ...distance.prescription[1],
+      repetitions: 2,
+      recoveryMinutes: 2,
+      recoveryGuidance: 'Recover at RPE 8/10.',
+    },
+    { ...distance.prescription[1], rpe: 6 },
+  ]) {
+    const steps = distance.prescription.map((step) => ({ ...step }));
+    steps[steps.findIndex((step) => step.phase === invalidStep.phase)] = invalidStep;
+    assert.notEqual(
+      weekly.validateWeeklyProposal(
+        proposal([session({ ...distance, prescription: steps })]),
+        context,
+      ),
+      null,
+    );
+  }
 });
 
 test('weekly validation covers every invariant failure and optional context branch', () => {
@@ -481,7 +720,7 @@ test('weekly validation covers every invariant failure and optional context bran
     [proposal([session({ sessionKind: 'unknown' })]), base, 'session_kind'],
     [proposal([session({ sessionKind: '' })]), base, 'session_kind'],
     [proposal([session({ justification: '' })]), base, 'required'],
-    [proposal([session({ targetHr: 'h'.repeat(81) })]), base, 'text_length'],
+    [proposal([sessionStep({ targetHr: '1'.repeat(81) })]), base, 'text_length'],
     [proposal([session({ weather: 'w'.repeat(1001) })]), base, 'text_length'],
     [proposal([session({ notes: 'n'.repeat(2001) })]), base, 'text_length'],
     [
@@ -489,10 +728,10 @@ test('weekly validation covers every invariant failure and optional context bran
       base,
       'text_length',
     ],
-    [proposal([session({ targetHr: 'easy' })]), base, 'unit'],
+    [proposal([sessionStep({ targetHr: 'easy' })]), base, 'unit'],
     [proposal([session({ type: 'RPE 8/10' })]), base, 'shape'],
     [proposal([session({ details: 'RPE 8/10' })]), base, 'shape'],
-    [proposal([session({ targetHr: 'RPE 8/10' })]), base, 'incompatible_rpe'],
+    [proposal([sessionStep({ instruction: 'RPE 8/10' })]), base, 'incompatible_rpe'],
     [proposal([session({ weather: 'RPE 8/10' })]), base, 'incompatible_rpe'],
     [proposal([session({ notes: 'RPE 8/10' })]), base, 'incompatible_rpe'],
     [
@@ -533,7 +772,7 @@ test('weekly validation covers every invariant failure and optional context bran
   );
   assert.equal(adapter.validate(proposal(), base), true);
   assert.equal(
-    adapter.diagnose(proposal([session({ rpe: 6 })]), base).code,
+    adapter.diagnose(proposal([sessionStep({ rpe: 6 })]), base).code,
     'rpe',
   );
 });
@@ -1234,8 +1473,10 @@ test('proposal application preserves existing results, deduplicates within the w
     rpe: null,
     shoeId: 'active-shoe',
     notes: '',
+    prescription: session().prescription.map((step) => ({ ...step, rpe: 3 })),
   });
   const firstMaterialized = weekly.materializePrescription(first).value;
+  const secondMaterialized = weekly.materializePrescription(second).value;
   const result = proposal([first, second, second, third]);
   db.prepare(
     "INSERT INTO shoes(id,user_id,brand,model) VALUES('active-shoe',1,'Sample','Daily')",
@@ -1332,7 +1573,7 @@ test('proposal application preserves existing results, deduplicates within the w
     'a failed concurrent deletion is rolled back with the transaction',
   );
   const invalidProposal = proposal([
-    session({ prescription: [{ phase: 'main', repetitions: 1 }] }),
+    { ...session(), prescription: [{ phase: 'main', repetitions: 1 }] },
   ]);
   expectCode(
     { expected_response_hash: hash(invalidProposal) },
@@ -1367,7 +1608,7 @@ test('proposal application preserves existing results, deduplicates within the w
     .prepare('SELECT configuration_json FROM ai_executions WHERE id=?')
     .get(id).configuration_json;
   db.prepare('UPDATE ai_executions SET configuration_json=? WHERE id=?').run(
-    JSON.stringify({ adapterVersion: 'weekly-workouts-v1' }),
+    JSON.stringify({ adapterVersion: 'weekly-workouts-v2' }),
     id,
   );
   expectCode(
@@ -1425,6 +1666,12 @@ test('proposal application preserves existing results, deduplicates within the w
   const applied = weekly.readWeeklyProposal(db, 1, id, service);
   assert.equal(applied.application.added, 2);
   assert.equal(applied.proposal.sessions[3].shoeLabel, 'Sample Daily');
+  assert.equal(
+    db.prepare("SELECT detalhes FROM trainings WHERE treino='Progression run'").get()
+      .detalhes,
+    secondMaterialized.details,
+    'application persists the exact materialized component text exposed by review',
+  );
   assert.equal(
     db
       .prepare(

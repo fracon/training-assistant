@@ -107,7 +107,7 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       simulatedProviderCalls++;
       const context = JSON.parse(payload.input[0].content[0].text).context;
       const value = {
-        schemaVersion: 'weekly-workouts-v2',
+        schemaVersion: 'weekly-workouts-v3',
         weekStart: context.resource.weekStart,
         sessions: [
           {
@@ -116,12 +116,10 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
             period: '12_14',
             sessionKind: 'easy',
             prescription: [
-              { phase: 'warmup', repetitions: 1, minutes: 5, distanceMeters: null, paceSecondsPerKm: null, recoveryMinutes: null },
-              { phase: 'main', repetitions: 1, minutes: 35, distanceMeters: null, paceSecondsPerKm: null, recoveryMinutes: null },
-              { phase: 'cooldown', repetitions: 1, minutes: 5, distanceMeters: null, paceSecondsPerKm: null, recoveryMinutes: null },
+              { phase: 'warmup', repetitions: 1, minutes: 5, distanceMeters: null, instruction: 'Run gently and loosen up.', effort: 'Conversational breathing.', rpe: 2, targetHr: '', paceTargetSecondsPerKm: null, paceSecondsPerKm: null, recoveryMinutes: null, recoveryGuidance: null, recoveryRpe: null },
+              { phase: 'main', repetitions: 1, minutes: 35, distanceMeters: null, instruction: 'Run continuously with relaxed form.', effort: 'Comfortable effort; speak in full sentences.', rpe: 3, targetHr: '', paceTargetSecondsPerKm: null, paceSecondsPerKm: null, recoveryMinutes: null, recoveryGuidance: null, recoveryRpe: null },
+              { phase: 'cooldown', repetitions: 1, minutes: 5, distanceMeters: null, instruction: 'Ease down gradually.', effort: 'Very easy breathing.', rpe: 1, targetHr: '', paceTargetSecondsPerKm: null, paceSecondsPerKm: null, recoveryMinutes: null, recoveryGuidance: null, recoveryRpe: null },
             ],
-            targetHr: '120-140 bpm',
-            rpe: 3,
             shoeId: null,
             location: 'Legacy Porto',
             weather: 'Use verified Kinesis forecast',
@@ -1793,6 +1791,8 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     );
     assert.equal(review.cards, 1);
     assert.match(review.text, /Easy run/);
+    assert.match(review.text, /Execution: Run continuously/);
+    assert.match(review.text, /Effort: Comfortable effort/);
     assert.match(review.text, /This follows the saved context/);
     assert.match(review.text, /<img src=x onerror="alert\(1\)">/);
     assert.match(review.text, /Sessão sem pressa · café ☕/);
@@ -1812,6 +1812,9 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     );
     assert.match(review.text, /Only Open-Meteo is available/);
     assert.equal(review.applyHidden, false);
+    const reviewedDetails = await evaluate(
+      `document.querySelector('.weekly-proposal-details').textContent`,
+    );
     assert.equal(simulatedProviderCalls, 1);
     await evaluate(
       `document.getElementById('weeklyProposalSection').scrollIntoView({block:'start'})`,
@@ -1848,6 +1851,15 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
         )
         .get('availability-browser@example.test').observacoes,
       expectedSessionNotes,
+    );
+    assert.equal(
+      db
+        .prepare(
+          'SELECT detalhes FROM trainings WHERE user_id=(SELECT id FROM users WHERE email=?)',
+        )
+        .get('availability-browser@example.test').detalhes,
+      reviewedDetails,
+      'the exact multiline details reviewed in the proposal are saved to the calendar',
     );
     await evaluate(
       `document.querySelector('.lang-switch [data-lang="pt-BR"]').click()`,
@@ -1951,6 +1963,9 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       simulatedProviderCalls,
       1,
       'reload recovers the same applied execution without replaying the provider',
+    );
+    await evaluate(
+      `document.getElementById('weeklyProposalSection').scrollIntoView({block:'start'})`,
     );
     writeFileSync(
       path.join(tmpdir(), 'kinesis-weekly-proposal-regular-pt.png'),

@@ -343,6 +343,8 @@ function setupAiCoachPage(user) {
         const dd = document.createElement('dd');
         if (label === t('aiCoach.weeklyNotes'))
           dd.className = 'weekly-proposal-notes';
+        if (label === t('aiCoach.detailsLabel'))
+          dd.className = 'weekly-proposal-details';
         dd.textContent = value || '—';
         table.append(dt, dd);
       }

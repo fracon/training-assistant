@@ -589,6 +589,7 @@
 .weekly-proposal-card dt { color: var(--muted); font-size: 0.84rem; font-weight: 600; }
 .weekly-proposal-card dd { min-width: 0; margin: 0; overflow-wrap: anywhere; font-size: 0.9rem; }
 .weekly-proposal-card dd.weekly-proposal-notes { white-space: pre-wrap; }
+.weekly-proposal-card dd.weekly-proposal-details { white-space: pre-wrap; }
 #weeklyProposalError { margin: 0.75rem 0; color: var(--danger); }
 #weeklyProposalContent > p { overflow-wrap: anywhere; }
 @media (max-width: 520px) {

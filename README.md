@@ -2,14 +2,14 @@
 
 A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, request and review weekly AI proposals, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized training-request prompts for use with an external AI.
 
-Current application version: **0.22.0** (active beta development).
+Current application version: **0.23.0** (active beta development).
 
 ## AI integration: cycle planning and weekly proposals
 
 Phase 0 (#62) and the approved plan are integrated through PRs #66, #68 and
-#67; cycle planning (#63) is integrated through PR #69. This **0.22.0 beta**
-issue branch implements weekly proposals (#64), reusing the persisted execution
-pipeline. It is not integrated until this phase's PR merges. Result analysis
+#67; cycle planning (#63) is integrated through PR #69. This **0.23.0 beta**
+issue branch extends the weekly proposals (#64) adapter with per-component
+execution guidance. It is not integrated until this phase's PR merges. Result analysis
 (#65) remains future scope.
 
 Saving an active cycle confirms its registration and opens **Cycle planning /
@@ -425,7 +425,7 @@ The footer fetches `/api/version` without caching, so it reflects the running ba
 
 #### Dynamic Training Prompt Generator
 
-The **Solicitar Treinos / Request Workouts** page (internal route and module `ai-coach`) retains the free external request prompt and adds an explicit weekly AI proposal action. Users save the existing availability controls, request a proposal, follow and recover the persisted execution, review each workout, full session notes and contextual justification, then explicitly apply it to the calendar. The v2 adapter derives duration and persisted details from structured timed/distance prescription components; estimated distance-based duration is labeled in the preview. Hourly forecast evidence is bound to an exact revisioned availability snapshot and verified against the resolved location timezone and actual UTC hourly instants. Common accounts receive the product flow; administrators retain the exact free external prompt and protected owner-scoped execution diagnostics. Application is transactional, rechecks current sources, skips the shared canonical `(date, workout, details)` deduplication signature and never replaces a calendar entry or result. Saved v1 proposals are incompatible with v2 and are not applied under the new contract. See the [weekly proposal contract](docs/ai-weekly-workouts.md).
+The **Solicitar Treinos / Request Workouts** page (internal route and module `ai-coach`) retains the free external request prompt and adds an explicit weekly AI proposal action. Users save the existing availability controls, request a proposal, follow and recover the persisted execution, review each workout, full session notes and contextual justification, then explicitly apply it to the calendar. The v3 adapter derives duration and persisted details from structured timed/distance prescription components, with stage-level instructions, effort/RPE, optional targets and recovery guidance; distance-based duration estimates are distinguished from pace targets. Hourly forecast evidence is bound to an exact revisioned availability snapshot and verified against the resolved location timezone and actual UTC hourly instants. Common accounts receive the product flow; administrators retain the exact free external prompt and protected owner-scoped execution diagnostics. Application is transactional, rechecks current sources, skips the shared canonical `(date, workout, details)` deduplication signature and never replaces a calendar entry or result. Saved v1/v2 proposals are incompatible with v3 and are not applied under the new contract. See the [weekly proposal contract](docs/ai-weekly-workouts.md).
 
 The preserved external briefing still resolves the current local cycle, availability, shoes and training context at request time and retains the 12-column XLSX/XLS import contract. Its PT/EN templates are byte-preserved; the paid weekly operation applies a separate versioned structured-output adapter to remove conflicting Excel/research delivery instructions.
 

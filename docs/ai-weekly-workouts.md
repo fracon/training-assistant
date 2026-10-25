@@ -12,7 +12,7 @@ availability controls, then offers an explicit paid weekly generation action.
 It uses the phase 0/#69 execution service, quotas, atomic reservations,
 Responses client, bounded 429-only retry, cancellation, diagnostics, context
 freshness and durable recovery. The operation is registered as
-`weekly-workouts-v2`; each proposal points to its execution. On reload, the page
+`weekly-workouts-v3`; each proposal points to its execution. On reload, the page
 reads the user's latest weekly execution and retrieves the same persisted
 proposal. Progress polling is bounded; a long-running or failed progress read
 ends loading and exposes a free manual reread. An uncertain start is
@@ -46,33 +46,69 @@ training guidance. The adapted prompt retains the source's planning guidance
 but omits its rendered cycle, availability, shoe and optional-context blocks;
 the versioned shared context is supplied once as structured data. This avoids
 duplicating personal context in the bounded model payload. It requires a JSON
-object with `schemaVersion`, Monday
-`weekStart`, and sessions. The model supplies session kind and ordered warmup,
-main and cooldown prescription components. Each component specifies
-repetitions and either minutes or distance in meters, with optional
-paceSecondsPerKm and recovery minutes between repetitions. The backend derives
-duration, workout/type labels and details from this prescription; no independent
-duration/details claim can contradict it. Distance-based duration is an
-estimate: supplied pace is applied to each distance repetition and rounded up
-to whole minutes; recovery and warmup/cooldown are included. The preview labels
-estimated duration and persists the same materialized details it displays.
-Notes (persisted as `observacoes`) and proposal-only justifications are shown
-in full before application. Notes are rendered as text with line breaks.
+object with `schemaVersion`, Monday `weekStart`, and sessions. The model
+supplies session kind and ordered warmup, main and cooldown components. Each
+component contains repetitions and one structured time or distance measure,
+execution `instruction` (required, up to 240 characters), effort/breathing
+`effort` (required, up to 160), optional numeric `rpe` (1–5), optional
+`targetHr` (up to 80 characters, empty when unsupported), optional explicit
+`paceTargetSecondsPerKm`, and a separate `paceSecondsPerKm` estimate basis
+when the component uses distance. Repeated main components require structured
+`recoveryMinutes` (integer 0–30) and `recoveryGuidance` (up to 160 characters),
+with optional `recoveryRpe` (1–5). Single-repeat main components and
+warmup/cooldown have no recovery fields. Warmup, each main block and cooldown are
+reviewable independently. Progressions/fartleks use multiple ordered main
+components to express changing effort. Pace/HR targets can be absent; the
+instruction should use supported effort and breathing cues instead of
+inventing metrics or zones.
+
+Duration is calculated only from structured fields: timed component minutes ×
+repetitions, plus `(repetitions - 1) × recoveryMinutes`, warmup and cooldown.
+Distance components estimate each repetition with `paceSecondsPerKm`, round
+each repetition upward to whole minutes, then add recoveries. That pace is a
+calculation basis, never an instruction to hold that pace. An optional explicit
+pace target has its own field, is displayed separately, and is validated
+independently. Use timed components if the context does not support a useful
+distance-duration estimate. The legacy global calendar `targetHr` and `rpe`
+columns are derived only when every component has the same non-empty FC target
+or the same non-null RPE (including recovery RPE for repeated components);
+varying stages are never collapsed into a contradictory global target.
+
+The v3 adapter is intentionally incompatible with saved v1/v2 proposals;
+`configuration_json.adapterVersion` must match the registered version on review
+and apply. This code/schema gate does not migrate the database: execution
+snapshots, prior application JSON and calendar rows remain unchanged. New
+execution payloads use only the v3 component contract.
+
+The backend derives duration, workout/type labels and the persisted 12-column
+`details` from this component contract; the model cannot supply a second
+duration/details field. The same multiline materialized details are shown in
+the preview and saved to the calendar. Free-text execution/effort/recovery
+guidance explains how to execute, but is not a duration source. It has bounded
+length and the existing explicit RPE-scale guard, but Kinesis does not claim to
+semantically parse every natural-language contradiction about duration or
+distance. The delivery prompt tells the model not to add alternate time or
+distance prescriptions to prose. Notes (persisted as `observacoes`) and
+proposal-only justifications stay separate and are shown in full before
+application; text is rendered safely with line breaks.
 
 Materialization yields the same 12 import fields (`date`, `weekday`, `period`,
 `type`, `workout`, `details`, `targetHr`, `rpe`, `shoeId`, `location`,
 `weather`, `notes`) plus proposal fields (`durationMinutes`, `justification`,
-`evidence`). Proposals from `weekly-workouts-v1` are explicitly incompatible
-with v2 review/application. Their execution snapshots and any saved application
-result remain intact, but the current proposal UI refuses to render old output
-under the v2 contract. No old calendar records are rewritten.
+`evidence`). `targetHr` and `rpe` are derived output fields, not independent
+session claims in the model input. Proposals from `weekly-workouts-v1` and
+`weekly-workouts-v2` are explicitly incompatible with v3 review/application.
+Their execution snapshots and any saved application result remain intact, but
+the current proposal UI refuses to render old output under the v3 contract. No
+old calendar details or records are rewritten.
 
 Dates are checked as Monday plus the declared weekday offset, independent of
 session order. Only saved available days and that day's unique preferred
 period are accepted. Derived duration includes warm-up/cool-down and
 between-repeat recovery; all sessions on a day are summed and bounded by saved
-available minutes. RPE is
-either null or an integer on the explicit Kinesis 1–5 scale. A shoe must be an
+available minutes. Component and recovery RPE are null or integers on the
+explicit Kinesis 1–5 scale; incompatible RPE references in component prose are
+refused by the bounded shared guard. A shoe must be an
 active shoe in the owner's current snapshot. Location must exactly match the
 saved string. Evidence identifiers must refer to captured context sources.
 Free text has field limits and the shared bounded RPE-scale guard rejects
@@ -160,8 +196,8 @@ Existing user/calendar rows are not rewritten or backfilled. The migration is
 idempotent and runs through the normal database initialization path.
 Migration `2026-10-weekly-availability-revision-v1` adds a revision defaulting
 to 1 while preserving legacy availability; repeated initialization is safe.
-Proposals are not rewritten; the adapter version gate refuses v1 responses for
-v2 review/application. Open a new
+Proposals are not rewritten; the adapter version gate refuses v1/v2 responses
+for v3 review/application. Open a new
 database and rerun initialization; also initialize a database with existing
 users, cycles, executions and trainings to verify that those records and
 ownership remain intact. Re-running an older migration is not a substitute for
@@ -200,13 +236,16 @@ prompt or technical diagnostics through the UI or API.
 
 Automated tests use local fixtures and simulated providers only. They verify
 adapter determinism, preserved external templates, weekday/date mapping,
-interleaved/multiple sessions, cumulative daily time, RPE, units, shoes,
-context evidence, hourly period boundaries, DST, high temperatures outside the
-window, partial coverage, ambiguity, horizon and outage, application conflicts,
-deduplication and idempotent replay. Existing import and AI pipeline suites
-remain required. Browser verification covers PT/EN, desktop/mobile, user/admin,
-keyboard, focus, pending/recovery/error and calendar application. Mocks are not
-model-quality or real-provider validation.
+interleaved/multiple sessions, cumulative daily time, timed/distance estimates,
+separate explicit pace targets, interval recovery, stage-specific progression
+and fartlek instructions, warmup/cooldown guidance, numeric and textual RPE,
+units, shoes, context evidence, hourly period boundaries, DST, high temperatures
+outside the window, partial coverage, ambiguity, horizon and outage, application
+conflicts, v1/v2 incompatibility, deduplication and idempotent replay. Existing
+import and AI pipeline suites remain required. Browser verification covers
+PT/EN, desktop/mobile, user/admin, complete multiline details/notes/rationale,
+keyboard, focus, pending/recovery/error, exact review-to-calendar details and
+application. Mocks are not model-quality or real-provider validation.
 
 No paid OpenAI call was made for this branch. A controlled real evaluation,
 before it is run, needs the operator to explicitly authorize one call and
