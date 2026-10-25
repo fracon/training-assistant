@@ -133,15 +133,23 @@ Weekly weather is a backend flow separate from the existing daily result
 autofill. It reuses the established Open-Meteo geocoding and location-context
 ambiguity rules, then requests `temperature_2m` and `weather_code` hourly data
 from Open-Meteo Forecast. Queries contain saved location-derived coordinates,
-the requested local calendar date, `forecast_days=16`, `timeformat=unixtime`,
-and the resolved geocoder timezone; no workout text or FIT data is included.
-Open-Meteo documents a 16-day maximum and UTC epoch timestamps for its hourly
-forecast ([Forecast API](https://open-meteo.com/en/docs)). The supported range
-is the current local date through 15 days ahead inclusive. No API key, paid
+the requested local calendar date as `start_date` and `end_date`,
+`timeformat=unixtime`, and the resolved geocoder timezone; no workout text or
+FIT data is included. Do not combine explicit dates with `forecast_days`:
+Open-Meteo rejects those parameters as mutually exclusive. The backend enforces
+the documented 16-date range locally (current local date through day +15).
+Hourly timestamps are UTC epoch seconds interpreted in the returned timezone
+([Forecast API](https://open-meteo.com/en/docs)). No API key, paid
 source, browser search or additional provider is used. There is no authorized
 second hourly source in this deployment; if
 Open-Meteo cannot provide trustworthy data the execution records that
 limitation and planning continues without a forecast claim.
+
+Transport and response failures retain only bounded categories and stage in
+the execution evidence: geocoding/forecast transport (DNS, TLS, connection,
+timeout), HTTP status class, JSON parsing, or hourly-data validation. Raw
+provider bodies/messages are not persisted. This metadata is diagnostic only;
+all unavailable weather remains unavailable and does not block generation.
 
 The verified preferred windows are local-time half-open intervals:
 `[00:00,08:00)`, `[08:00,12:00)`, `[12:00,14:00)`, `[14:00,18:00)`,

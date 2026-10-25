@@ -77,7 +77,7 @@
     "weeklyQueued": "Your request is queued.",
     "weeklyWaiting": "Waiting to retry after a provider rate limit…",
     "weeklyCompleted": "Review the proposal before applying it.",
-    "weeklyFailed": "The proposal could not be generated. Your saved availability and calendar are unchanged.",
+    "weeklyFailed": "This execution finished without a proposal. Reading again will show the same failure; it will not start another generation. Your saved availability and calendar are unchanged.",
     "weeklyUncertain": "The provider result is uncertain. No automatic replay was made; check the execution before requesting again.",
     "weeklyReadError": "Progress is temporarily unavailable. Try reading again; this does not start another generation.",
     "weeklyApplyError": "The proposal could not be applied. Review the current calendar and try applying again if it is still valid.",

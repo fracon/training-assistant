@@ -1172,7 +1172,8 @@ test('hourly forecast reports partial, ambiguity, invalid timezone, missing fiel
     },
     now,
   );
-  assert.equal(unavailable.reason, 'forecast_service_unavailable');
+  assert.equal(unavailable.reason, 'forecast_connection_error');
+  assert.deepEqual(unavailable.failure, { stage: 'forecast_transport', reason: 'forecast_connection_error' });
   assert.equal(unavailable.resolvedTimezone, 'Europe/Lisbon');
   assert.match(unavailable.url, /timezone=Europe%2FLisbon/);
   assert.match(weekly.weatherValue(partial, 'C', 'en-US'), /partial/i);
@@ -1242,7 +1243,8 @@ test('hourly weather rejects provider gaps and uses the half-open evening window
       url.includes('geocoding-api') ? forecastFetcher()(url) : { ok: false },
     now,
   );
-  assert.equal(refuse.reason, 'forecast_service_unavailable');
+  assert.equal(refuse.reason, 'forecast_http_error');
+  assert.equal(refuse.failure.httpStatus, undefined); // this fixture has no HTTP response
   const noTimezone = await weekly.readHourlyForecast(
     'Porto, Portugal',
     '2026-10-25',
@@ -1391,6 +1393,154 @@ test('hourly weather rejects provider gaps and uses the half-open evening window
   );
 });
 
+test('Open-Meteo invalid request, HTTP, JSON and transport failures remain distinguishable', async () => {
+  const now = new Date('2026-10-24T12:00:00Z');
+  const run = (forecast) =>
+    weekly.readHourlyForecast(
+      'Porto, Portugal',
+      '2026-10-25',
+      { weekday: 'sunday', period: '08_12' },
+      async (url) => {
+        if (url.includes('geocoding-api')) return forecastFetcher()(url);
+        return typeof forecast === 'function' ? forecast(url) : forecast;
+      },
+      now,
+    );
+  const badRequest = await run({
+    ok: false,
+    status: 400,
+    headers: new Headers({ 'content-type': 'application/json' }),
+    json: async () => ({ error: true }),
+  });
+  assert.equal(badRequest.reason, 'forecast_invalid_request');
+  assert.deepEqual(badRequest.failure, {
+    stage: 'forecast_http',
+    reason: 'forecast_invalid_request',
+    httpStatus: 400,
+    contentType: 'json',
+  });
+  const serverError = await run({
+    ok: false,
+    status: 503,
+    headers: new Headers({ 'content-type': 'text/plain' }),
+    json: async () => ({}),
+  });
+  assert.equal(serverError.reason, 'forecast_http_server_error');
+  assert.equal(serverError.failure.contentType, 'text');
+  const rateLimited = await run({
+    ok: false,
+    status: 429,
+    headers: new Headers({ 'content-type': 'application/octet-stream' }),
+    json: async () => ({}),
+  });
+  assert.equal(rateLimited.reason, 'forecast_rate_limited');
+  assert.equal(rateLimited.failure.contentType, 'other');
+  const genericHttp = await run({
+    ok: false,
+    status: 404,
+    headers: new Headers({ 'content-type': 'application/octet-stream' }),
+    json: async () => ({}),
+  });
+  assert.equal(genericHttp.reason, 'forecast_http_error');
+  const malformed = await run({
+    ok: true,
+    status: 200,
+    headers: new Headers({ 'content-type': 'application/json' }),
+    json: async () => {
+      throw Error('private provider body');
+    },
+  });
+  assert.equal(malformed.reason, 'forecast_invalid_json');
+  assert.equal(malformed.failure.stage, 'forecast_json');
+  const malformedWithoutStatus = await run({
+    ok: true,
+    headers: new Headers({ 'content-type': 'application/json' }),
+    json: async () => {
+      throw Error('private provider body');
+    },
+  });
+  assert.equal(malformedWithoutStatus.reason, 'forecast_invalid_json');
+  assert.equal(Object.hasOwn(malformedWithoutStatus.failure, 'httpStatus'), false);
+  const transport = await run(async () => {
+    const error = Error('private');
+    error.cause = { code: 'ENOTFOUND' };
+    throw error;
+  });
+  assert.equal(transport.reason, 'forecast_dns_error');
+  assert.equal(transport.failure.stage, 'forecast_transport');
+  const tls = await run(async () => {
+    const error = Error('private');
+    error.code = 'CERT_HAS_EXPIRED';
+    throw error;
+  });
+  assert.equal(tls.reason, 'forecast_tls_error');
+  const timeout = await run(async () => {
+    const error = Error('private');
+    error.name = 'TimeoutError';
+    throw error;
+  });
+  assert.equal(timeout.reason, 'forecast_timeout');
+  const abort = await run(async () => {
+    const error = Error('private');
+    error.name = 'AbortError';
+    throw error;
+  });
+  assert.equal(abort.reason, 'forecast_timeout');
+  const validation = await weekly.readHourlyForecast(
+    'Porto, Portugal',
+    '2026-10-25',
+    { weekday: 'sunday', period: 'invalid' },
+    forecastFetcher(),
+    now,
+  );
+  assert.equal(validation.reason, 'forecast_validation_error');
+  assert.deepEqual(validation.failure, {
+    stage: 'forecast_validation',
+    reason: 'forecast_validation_error',
+  });
+  const geocodingValidation = await weekly.readHourlyForecast(
+    'Porto, Portugal',
+    '2026-10-25',
+    { weekday: 'sunday', period: '08_12' },
+    async (url) =>
+      url.includes('geocoding-api')
+        ? {
+            ok: true,
+            json: async () => ({
+              results: new Proxy([], {
+                get(target, key, receiver) {
+                  if (key === 'filter')
+                    throw Error('private invalid provider value');
+                  return Reflect.get(target, key, receiver);
+                },
+              }),
+            }),
+          }
+        : forecastFetcher()(url),
+    now,
+  );
+  assert.equal(geocodingValidation.reason, 'geocoding_invalid_response');
+  assert.deepEqual(geocodingValidation.failure, {
+    stage: 'geocoding_validation',
+    reason: 'geocoding_invalid_response',
+  });
+  assert.doesNotMatch(
+    JSON.stringify([
+      badRequest,
+      serverError,
+      rateLimited,
+      genericHttp,
+      malformed,
+      malformedWithoutStatus,
+      transport,
+      tls,
+      timeout,
+      abort,
+    ]),
+    /private provider body|private/,
+  );
+});
+
 test('weekly Open-Meteo URL and Monday/date validation are bounded and canonical', () => {
   assert.equal(weekly.monday('2026-10-26'), '2026-10-26');
   assert.throws(
@@ -1400,7 +1550,9 @@ test('weekly Open-Meteo URL and Monday/date validation are bounded and canonical
   assert.equal(weekly.addIsoDays('2026-10-26', 6), '2026-11-01');
   const url = new URL(weekly.hourlyUrl(41.1, -8.6, '2026-10-26'));
   assert.equal(url.searchParams.get('hourly'), 'temperature_2m,weather_code');
-  assert.equal(url.searchParams.get('forecast_days'), '16');
+  assert.equal(url.searchParams.has('forecast_days'), false);
+  assert.equal(url.searchParams.get('start_date'), '2026-10-26');
+  assert.equal(url.searchParams.get('end_date'), '2026-10-26');
   assert.equal(url.searchParams.get('timeformat'), 'unixtime');
   assert.equal(url.searchParams.get('timezone'), 'auto');
   assert.equal(

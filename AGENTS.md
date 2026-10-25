@@ -503,9 +503,10 @@ and proposal-only justifications appear in the complete
 review. Open-Meteo hourly evidence is bound to an exact revisioned availability
 snapshot before reservation/dispatch and application. Forecast IANA timezone
 identity and distinct UTC hourly instants are checked through DST; the
-16-date horizon is explicit in the request. Compact hourly tuples retain
-instant, local time/offset, temperature and WMO code inside the existing
-context budget. Record and display that no authorized independent hourly
+16-date horizon is enforced locally, while Open-Meteo requests use
+`start_date`/`end_date` without mutually exclusive `forecast_days`. Compact
+hourly tuples retain instant, local time/offset, temperature and WMO code
+inside the existing context budget. Record and display that no authorized independent hourly
 source is configured; no daily maximum is substituted. Ambiguous, partial,
 incompatible-timezone, out-of-horizon and unavailable forecasts are explicit,
 with planning continuing without invented weather. v1/v2 proposals cannot be

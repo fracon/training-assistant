@@ -1241,6 +1241,8 @@ test('Request Workouts locale dictionaries retain translated page, form, prompt 
   assert.equal(enMessages.aiCoach.saveAvailability, 'Save weekly schedule');
   assert.equal(messages.aiCoach.availabilitySaved, 'Agenda semanal salva.');
   assert.equal(enMessages.aiCoach.availabilitySaved, 'Weekly schedule saved.');
+  assert.match(messages.aiCoach.weeklyFailed, /execução terminou.*ler novamente.*não inicia outra geração/i);
+  assert.match(enMessages.aiCoach.weeklyFailed, /execution finished.*reading again.*will not start another generation/i);
   assert.equal(typeof messages.aiCoach.availabilityLoading, 'string');
   assert.equal(typeof enMessages.aiCoach.availabilityLoading, 'string');
   assert.equal(typeof messages.aiCoach.availabilityRetry, 'string');

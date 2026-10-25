@@ -81,7 +81,8 @@ endpoints. The forecast endpoint was unavailable or returned invalid data for
 each requested window. The provider response contained no verifiable hourly
 samples/timezone, so every evidence item was explicitly `unavailable` with
 reason `forecast_service_unavailable`; **no temperature range or maximum was
-claimed**. The preview and saved calendar entries both said the hourly
+claimed**. Later replay established that this generic reason masked an HTTP
+400 caused by an invalid request (documented below). The preview and saved calendar entries both said the hourly
 forecast was unavailable and that no independent hourly source was configured.
 No second source, paid search, or additional weather provider was used.
 
@@ -166,6 +167,24 @@ its own debug record. No authorization check created an execution.
 
 This is one successful end-to-end sample, not a reliability or universal
 quality guarantee. It does not validate an interval/progression/fartlek
-generation or usable live weather. The Open-Meteo service failure left weather
-unavailable, as designed, while the synthetic proposal remained reviewable
-and applicable.
+generation or usable live weather. At the time, the application recorded a
+generic Open-Meteo service failure and left weather unavailable; the follow-up
+below identifies the actual cause as incompatible query parameters.
+
+## Follow-up investigation: failed real proposal and weather request — 2026-10-25
+
+The follow-up investigated the localhost code at `fd1646739d687c592cd3a7022587d554cd88c8f3` (branch `feat/issue-64-weekly-workouts`). The worktree and remote branch initially matched that SHA. A consistent SQLite backup was made before investigation; the original database was not modified. Protected diagnostics were read only from a private isolated copy. No provider generation call was made.
+
+### Failed real weekly execution
+
+The protected record identifies a failed `workouts` execution, adapter `weekly-workouts-v3`, schema `weekly_workouts`, model `gpt-6.1-sol`, medium reasoning, 8,192 output cap, 120,000 ms timeout, a configured retry allowance of 1, one actual attempt, HTTP 200 and provider status `completed`. Domain validation returned top-level `invalidDomainResponse`. The provider reported 5,645 input, 4,187 output, 0 cached and 191 reasoning tokens; elapsed time was 53.408 s. Reservation was 31,643 tokens / **$0.240135 reserved**. Known usage was 9,832 tokens with **$0.09103 estimated charged cost** according to the configured rate table. That is an estimate, not a billing statement. No retry or new request was made.
+
+The exact `validation.code` and `validation.path` **are not available**: the stored diagnostic has no validation object, and both `response_json` and proposal `responseHash` are null. The invalid generated response was not retained in protected storage, so its field and content cannot be reconstructed. This is a concrete limitation, not evidence that the model made an unsuitable recommendation. The confirmed software defect was that the diagnostics allowlist recognized cycle-planning validation names and paths only, so weekly domain validation details were stripped before persistence. The correction adds a closed weekly code vocabulary and bounded `$.sessions[index].field` paths; synthetic sanitizer and persistence regressions demonstrate the stored safe code/path. It does not retroactively diagnose or alter this historical execution.
+
+### Open-Meteo cause and correction
+
+The six historical lookups had successful geocoding for Fanzeres at 41.16754, -8.52981 in `Europe/Lisbon`; the location was not the cause. Replaying the recorded forecast URL from the same runtime environment returned HTTP 400, JSON content type, and a JSON parameter error: `forecast_days` cannot be combined with `start_date` and `end_date`. Thus this was an invalid request, not a DNS/TLS/network restriction, timeout, provider outage, JSON parse error, or locality ambiguity. The previous generic catch incorrectly mapped the 400 to `forecast_service_unavailable`.
+
+The code now sends explicit date parameters without `forecast_days`, retains the local 16-date horizon guard and resolved timezone, and classifies bounded transport, HTTP, JSON, and validation failures without saving provider prose. It does not add retries or change the existing 8-second request timeout/concurrency. Synthetic regressions distinguish HTTP 400/503, DNS transport, malformed JSON, and valid/partial data. An authorized public Open-Meteo request using the corrected parameters was then parsed by the changed module: HTTP 200, `Europe/Lisbon`, 8/8 distinct hourly instants for `[00:00,08:00)`, window range 10–12.5 °C. No daily maximum was requested or used. The query uses only coordinates, date, hourly variables, timezone and time format. Official current documentation describes the 16-day limit, date interval parameters, Unix timestamps and timezone handling for DST ([Forecast API](https://open-meteo.com/en/docs)); the real 400 response independently established the parameters' mutual exclusion.
+
+The earlier successful synthetic-model sample and the later failed real execution are separate observations. This investigation did not repeat generation, apply the refused proposal, or change source records. After these code changes the model contract has only synthetic regression coverage; no real evaluation of the corrected code has occurred. A future paid model evaluation would be needed to observe the changed execution contract end to end, but it is not required to prove the corrected weather URL/parser path.

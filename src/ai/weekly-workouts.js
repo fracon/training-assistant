@@ -556,7 +556,6 @@ function hourlyUrl(latitude, longitude, day, timezone = 'auto') {
     hourly: 'temperature_2m,weather_code',
     start_date: day,
     end_date: day,
-    forecast_days: '16',
     timeformat: 'unixtime',
     timezone,
   });
@@ -571,6 +570,7 @@ async function readHourlyForecast(
   sourceBinding = null,
 ) {
   let failureEvidence;
+  let stage = 'geocoding';
   const base = {
     weekday: period.weekday,
     location,
@@ -585,8 +585,7 @@ async function readHourlyForecast(
   };
   failureEvidence = base;
   try {
-    const boundedFetch = (url) =>
-      fetchImpl(url, { signal: AbortSignal.timeout(8000) });
+    const boundedFetch = (url) => weatherFetch(url, fetchImpl, 'geocoding');
     const geo = await geocodeLocation(location, boundedFetch);
     if (!geo)
       return {
@@ -659,7 +658,9 @@ async function readHourlyForecast(
       timezone: null,
       resolvedTimezone,
     };
+    stage = 'forecast_http';
     const payload = await hourlyJson(url, fetchImpl);
+    stage = 'forecast_validation';
     const evidence = {
       ...base,
       latitude: geo.latitude,
@@ -680,6 +681,10 @@ async function readHourlyForecast(
         ...evidence,
         status: 'unavailable',
         reason: 'timezone_or_hourly_data_missing',
+        failure: {
+          stage: 'forecast_validation',
+          reason: 'timezone_or_hourly_data_missing',
+        },
         limitations: weatherLimitations(
           'Source did not provide verifiable timezone and hourly values.',
         ),
@@ -690,6 +695,7 @@ async function readHourlyForecast(
         ...evidence,
         status: 'unavailable',
         reason: 'invalid_timezone',
+        failure: { stage: 'forecast_validation', reason: 'invalid_timezone' },
         limitations: weatherLimitations('Source timezone was invalid.'),
       };
     }
@@ -698,6 +704,7 @@ async function readHourlyForecast(
         ...evidence,
         status: 'unavailable',
         reason: 'timezone_mismatch',
+        failure: { stage: 'forecast_validation', reason: 'timezone_mismatch' },
         limitations: weatherLimitations(
           `Forecast timezone ${forecastTimezone} does not match resolved location timezone ${resolvedTimezone}.`,
         ),
@@ -714,6 +721,10 @@ async function readHourlyForecast(
         ...evidence,
         status: 'unavailable',
         reason: 'hourly_values_misaligned',
+        failure: {
+          stage: 'forecast_validation',
+          reason: 'hourly_values_misaligned',
+        },
         limitations: weatherLimitations(
           'Hourly timestamps and forecast values did not align.',
         ),
@@ -729,6 +740,10 @@ async function readHourlyForecast(
           ...evidence,
           status: 'unavailable',
           reason: 'hourly_timestamps_invalid',
+          failure: {
+            stage: 'forecast_validation',
+            reason: 'hourly_timestamps_invalid',
+          },
           limitations: weatherLimitations(
             'Hourly instants were duplicated, out of order or not UTC hour boundaries.',
           ),
@@ -767,6 +782,14 @@ async function readHourlyForecast(
       ...evidence,
       status: complete ? 'verified' : 'partial',
       reason: complete ? null : 'hourly_coverage_incomplete',
+      ...(!complete
+        ? {
+            failure: {
+              stage: 'forecast_validation',
+              reason: 'hourly_coverage_incomplete',
+            },
+          }
+        : {}),
       coverage: {
         verifiedHours: verified.length,
         expectedHours: expectedInstants.length,
@@ -786,11 +809,22 @@ async function readHourlyForecast(
             : 'Only distinct UTC hourly instants inside the preferred local-time window are counted.',
       ),
     };
-  } catch {
+  } catch (error) {
+    const failure =
+      error instanceof ForecastLookupError
+        ? error.failure
+        : {
+            stage: stage === 'geocoding' ? 'geocoding_validation' : stage,
+            reason:
+              stage === 'geocoding'
+                ? 'geocoding_invalid_response'
+                : 'forecast_validation_error',
+          };
     return {
       ...failureEvidence,
       status: 'unavailable',
-      reason: 'forecast_service_unavailable',
+      reason: failure.reason,
+      failure,
       lookupAttempted: true,
       limitations: weatherLimitations(
         'Open-Meteo could not be reached or returned invalid data.',
@@ -799,9 +833,90 @@ async function readHourlyForecast(
   }
 }
 async function hourlyJson(url, fetchImpl = globalThis.fetch) {
-  const response = await fetchImpl(url, { signal: AbortSignal.timeout(8000) });
-  if (!response.ok) throw new Error('Hourly forecast request failed');
+  const response = await weatherFetch(url, fetchImpl, 'forecast');
   return response.json();
+}
+
+class ForecastLookupError extends Error {
+  constructor(failure) {
+    super('Weather lookup failed');
+    this.failure = failure;
+  }
+}
+
+async function weatherFetch(url, fetchImpl, source) {
+  let response;
+  try {
+    response = await fetchImpl(url, { signal: AbortSignal.timeout(8000) });
+  } catch (error) {
+    throw new ForecastLookupError({
+      stage: `${source}_transport`,
+      reason: classifyWeatherTransport(error, source),
+    });
+  }
+  const contentType = weatherContentType(
+    response.headers?.get?.('content-type'),
+  );
+  if (!response.ok)
+    throw new ForecastLookupError({
+      stage: `${source}_http`,
+      reason: classifyWeatherHttp(response.status, source),
+      ...(Number.isInteger(response.status)
+        ? { httpStatus: response.status }
+        : {}),
+      contentType,
+    });
+  return {
+    ok: response.ok,
+    status: response.status,
+    headers: response.headers,
+    json: async () => {
+      try {
+        return await response.json();
+      } catch {
+        throw new ForecastLookupError({
+          stage: `${source}_json`,
+          reason: `${source}_invalid_json`,
+          ...(Number.isInteger(response.status)
+            ? { httpStatus: response.status }
+            : {}),
+          contentType,
+        });
+      }
+    },
+  };
+}
+
+function classifyWeatherHttp(status, source) {
+  if (status === 400) return `${source}_invalid_request`;
+  if (status === 429) return `${source}_rate_limited`;
+  if (status >= 500) return `${source}_http_server_error`;
+  return `${source}_http_error`;
+}
+
+function weatherContentType(value) {
+  if (typeof value !== 'string') return 'other';
+  if (value.toLowerCase().includes('json')) return 'json';
+  if (value.toLowerCase().startsWith('text/')) return 'text';
+  return 'other';
+}
+
+function classifyWeatherTransport(error, source = 'forecast') {
+  if (error?.name === 'TimeoutError' || error?.name === 'AbortError')
+    return `${source}_timeout`;
+  const code = error?.cause?.code || error?.code;
+  if (['ENOTFOUND', 'EAI_AGAIN'].includes(code))
+    return `${source}_dns_error`;
+  if (
+    [
+      'CERT_HAS_EXPIRED',
+      'DEPTH_ZERO_SELF_SIGNED_CERT',
+      'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+      'ERR_TLS_CERT_ALTNAME_INVALID',
+    ].includes(code)
+  )
+    return `${source}_tls_error`;
+  return `${source}_connection_error`;
 }
 
 function localBoundaryEpoch(day, hour, timeZone) {

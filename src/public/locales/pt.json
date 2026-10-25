@@ -77,7 +77,7 @@
     "weeklyQueued": "Sua solicitação está na fila.",
     "weeklyWaiting": "Aguardando a nova tentativa após limite do provedor…",
     "weeklyCompleted": "Revise a proposta antes de aplicá-la.",
-    "weeklyFailed": "Não foi possível gerar a proposta. A disponibilidade salva e o calendário foram preservados.",
+    "weeklyFailed": "Esta execução terminou sem gerar uma proposta. Ler novamente mostrará a mesma falha; isso não inicia outra geração. A disponibilidade salva e o calendário foram preservados.",
     "weeklyUncertain": "O resultado do provedor é incerto. Não houve repetição automática; consulte a execução antes de solicitar novamente.",
     "weeklyReadError": "O andamento está temporariamente indisponível. Tente ler novamente; isso não inicia outra geração.",
     "weeklyApplyError": "Não foi possível aplicar a proposta. Confira o calendário atual e tente aplicar novamente se ela continuar válida.",
