@@ -151,16 +151,26 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     },
     aiClient: async (payload) => {
       simulatedProviderCalls++;
+      if (simulatedProviderCalls === 1) await delay(38_000);
       const context = JSON.parse(payload.input[0].content[0].text).context;
+      if (simulatedProviderCalls === 2)
+        return {
+          value: null,
+          usage: { input: 10, output: 2, cached: 0 },
+          error: 'providerRejected',
+        };
       proposalWeekStart = context.resource.weekStart;
+      const sessions = [
+        makeSession(proposalWeekStart, 'monday'),
+        makeSession(addIsoDays(proposalWeekStart, 2), 'wednesday'),
+        makeSession(addIsoDays(proposalWeekStart, 4), 'friday'),
+      ];
+      if (simulatedProviderCalls >= 3)
+        sessions[0].justification = 'Current simulated request marker.';
       const value = {
         schemaVersion: 'weekly-workouts-v3',
         weekStart: proposalWeekStart,
-        sessions: [
-          makeSession(proposalWeekStart, 'monday'),
-          makeSession(addIsoDays(proposalWeekStart, 2), 'wednesday'),
-          makeSession(addIsoDays(proposalWeekStart, 4), 'friday'),
-        ],
+        sessions,
       };
       return {
         value,
@@ -264,7 +274,23 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     const command = (method, params = {}) =>
       new Promise((resolve, reject) => {
         const commandId = ++id;
-        pending.set(commandId, { resolve, reject });
+        const timeout = setTimeout(() => {
+          pending.delete(commandId);
+          const detail = method === 'Runtime.evaluate'
+            ? ` Expression: ${String(params.expression).slice(0, 180)}`
+            : '';
+          reject(new Error(`Timed out waiting for Chrome DevTools command ${method}.${detail}`));
+        }, 70000);
+        pending.set(commandId, {
+          resolve: (value) => {
+            clearTimeout(timeout);
+            resolve(value);
+          },
+          reject: (error) => {
+            clearTimeout(timeout);
+            reject(error);
+          },
+        });
         socket.send(JSON.stringify({ id: commandId, method, params }));
       });
     const waitForCdpEvent = (method, predicate = () => true) => {
@@ -312,9 +338,9 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
         );
       return result.result.value;
     };
-    const waitForText = (selector, expected) =>
+    const waitForText = (selector, expected, timeoutMs = 8000) =>
       evaluate(
-        `new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{const element=document.querySelector(${JSON.stringify(selector)});if(element?.textContent.trim()===${JSON.stringify(expected)}){resolve(true);return}if(Date.now()>end){reject(new Error('Timed out waiting for expected text '+JSON.stringify({selector,expected,actual:element?.textContent,visible:element&&!element.hidden})));return}setTimeout(check,30)};check()})`,
+        `new Promise((resolve,reject)=>{const end=Date.now()+${timeoutMs};const check=()=>{const element=document.querySelector(${JSON.stringify(selector)});if(element?.textContent.trim()===${JSON.stringify(expected)}){resolve(true);return}if(Date.now()>end){reject(new Error('Timed out waiting for expected text '+JSON.stringify({selector,expected,actual:element?.textContent,visible:element&&!element.hidden})));return}setTimeout(check,30)};check()})`,
       );
     const saveWithDelayedResponse = async (
       editExpression,
@@ -2006,12 +2032,26 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     const duplicateId = db.prepare(
       `INSERT INTO trainings(user_id,training_cycle_id,dia,periodo,tipo,treino,detalhes,fc_alvo,rpe,previsao,observacoes,location,completed,feedback_rpe,feedback_notas) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,1,3,?)`,
     ).run(1, cycleId, duplicate.date, duplicate.period, duplicate.type, duplicate.workout, duplicate.details, duplicate.targetHr, duplicate.rpe, duplicate.weather, duplicate.notes, duplicate.location, 'Resultado sintético preservado').lastInsertRowid;
+    await evaluate(`(()=>{const original=window.fetch.bind(window);window.__generationPosts=0;window.__executionReads=0;window.__transientPollFailureInjected=false;window.fetch=async(input,init={})=>{const url=typeof input==='string'?input:input.url;const method=(init.method||'GET').toUpperCase();if(method==='POST'&&url==='/api/ai/executions'){window.__generationPosts++;const response=await original(input,init);window.__latestGeneratedId=(await response.clone().json()).id;return response}if(method==='GET'&&/^\\/api\\/ai\\/executions\\/[^/]+$/.test(new URL(url,location.href).pathname)){window.__executionReads++;if(!window.__transientPollFailureInjected){window.__transientPollFailureInjected=true;throw new TypeError('synthetic transient progress read failure')}}return original(input,init)}})()`);
     await evaluate(`document.getElementById('generateBtn').click()`);
     await delay(1500);
+    await waitForText('#weeklyProposalError', 'Progress is temporarily unavailable. Kinesis will retry a temporary read failure automatically; you can also read the same execution. This does not start another generation.');
+    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+5000;const check=()=>{if(window.__executionReads>1)resolve(true);else if(Date.now()>end)reject(new Error('The automatic progress retry did not run'));else setTimeout(check,20)};check()})`);
+    await evaluate(`Object.defineProperty(document,'visibilityState',{configurable:true,value:'hidden'});document.dispatchEvent(new Event('visibilitychange'))`);
+    assert.equal(await evaluate(`document.visibilityState`), 'hidden');
+    await delay(200);
+    const readsBeforeVisibilityReturn = await evaluate(`window.__executionReads`);
+    await evaluate(`Object.defineProperty(document,'visibilityState',{configurable:true,value:'visible'});document.dispatchEvent(new Event('visibilitychange'))`);
+    assert.equal(await evaluate(`document.visibilityState`), 'visible');
+    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+5000;const check=()=>{if(window.__executionReads>${readsBeforeVisibilityReturn})resolve(true);else if(Date.now()>end)reject(new Error('Returning to the tab did not refresh the active execution'));else setTimeout(check,20)};check()})`);
     await waitForText(
       '#weeklyProposalStatus',
       'Review the proposal before applying it.',
+      55000,
     );
+    assert.ok(await evaluate(`window.__executionReads`) > 20, 'the long-running job is polled beyond the former 36-second limit');
+    assert.equal(await evaluate(`window.__generationPosts`), 1, 'polling never posts a second generation');
+    assert.equal(await evaluate(`performance.getEntriesByType('navigation').length`), 1, 'the proposal appears without reload or navigation');
     assert.deepEqual(
       await evaluate(
         `(()=>({primaryIcon:document.querySelector('#generateBtn svg')?.getAttribute('data-lucide'),secondaryIcon:document.querySelector('#externalPromptBtn svg')?.getAttribute('data-lucide'),primaryLabel:document.querySelector('#generateBtn span').textContent.trim(),secondaryLabel:document.querySelector('#externalPromptBtn span').textContent.trim(),secondaryDisabled:document.querySelector('#externalPromptBtn').disabled}))()`,
@@ -2295,6 +2335,31 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     );
     assert.equal(simulatedProviderCalls, 1);
     assert.equal(await evaluate(`document.getElementById('generateBtn').disabled`), false);
+
+    // A terminal failure remains attached to its execution. A free manual read
+    // can be in flight while the user explicitly starts a new request; its late
+    // response must not replace the newer execution's proposal.
+    await evaluate(`document.getElementById('generateBtn').click()`);
+    await waitForText('#weeklyProposalStatus', 'Esta execução terminou sem gerar uma proposta. Ler novamente mostrará a mesma falha; isso não inicia outra geração. A disponibilidade salva e o calendário foram preservados.', 12000);
+    assert.equal(simulatedProviderCalls, 2);
+    assert.equal(await evaluate(`window.__generationPosts`), 2);
+    const failedExecutionId = await evaluate(`window.__latestGeneratedId`);
+    await evaluate(`(()=>{const original=window.fetch.bind(window);window.__staleReadHeld=false;window.__releaseStaleRead=null;window.fetch=async(input,init={})=>{const url=typeof input==='string'?input:input.url;const path=new URL(url,location.href).pathname;if((init.method||'GET').toUpperCase()==='GET'&&path==='/api/ai/executions/${failedExecutionId}'&&!window.__staleReadHeld){const response=await original(input,init);window.__staleReadHeld=true;await new Promise(resolve=>window.__releaseStaleRead=resolve);return response}return original(input,init)}})()`);
+    await evaluate(`document.getElementById('weeklyReadAgain').click()`);
+    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+5000;const check=()=>{if(window.__staleReadHeld)resolve(true);else if(Date.now()>end)reject(new Error('The stale execution read was not held'));else setTimeout(check,20)};check()})`);
+    await evaluate(`document.getElementById('generateBtn').click()`);
+    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+12000;const check=()=>{if(window.__latestGeneratedId&&window.__latestGeneratedId!=='${failedExecutionId}')resolve(true);else if(Date.now()>end)reject(new Error('The next explicit generation was not submitted'));else setTimeout(check,20)};check()})`);
+    await evaluate(`window.__releaseStaleRead()`);
+    await waitForText('#weeklyProposalStatus', 'Revise a proposta antes de aplicá-la.', 12000);
+    assert.match(await evaluate(`document.getElementById('weeklyProposalContent').textContent`), /Current simulated request marker\./);
+    assert.doesNotMatch(await evaluate(`document.getElementById('weeklyProposalStatus').textContent`), /terminou sem gerar/);
+    assert.equal(await evaluate(`window.__generationPosts`), 3, 'the only additional POSTs follow two explicit user requests');
+    assert.equal(simulatedProviderCalls, 3, 'polling, rereading and stale-response recovery never replay the provider');
+    await evaluate(`document.getElementById('weeklyApply').click()`);
+    await waitForText('#weeklyApplyResultTitle', 'Treinos adicionados', 12000);
+    await evaluate(`document.getElementById('weeklyApplyResultOk').click()`);
+    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+5000;const check=()=>{if(document.getElementById('weeklyApplyResultModal').hidden)resolve(true);else if(Date.now()>end)reject(new Error('The second applied proposal result did not close'));else requestAnimationFrame(check)};check()})`);
+    assert.equal(await evaluate(`document.querySelectorAll('.weekly-proposal-card').length`), 0);
     await command('Emulation.setDeviceMetricsOverride', {
       width: 1280,
       height: 800,
@@ -2358,8 +2423,8 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     assert.equal(await evaluate(`document.querySelectorAll('.weekly-proposal-card').length`), 0);
     assert.equal(
       simulatedProviderCalls,
-      1,
-      'reload recovers the same applied execution without replaying the provider',
+      3,
+      'reload recovers the latest applied execution without replaying any provider call',
     );
     await evaluate(
       `document.getElementById('weeklyProposalSection').scrollIntoView({block:'start'})`,

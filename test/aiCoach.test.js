@@ -1266,7 +1266,9 @@ test('AI Coach runtime keeps language change, structured data and async prompt w
   assert.match(js, /language: i18n\.language/);
   assert.match(js, /fetchAiExecutions\(\)/);
   assert.match(js, /fetchWeeklyProposal\(/);
-  assert.match(js, /WEEKLY_MAX_POLLS = 20/);
+  assert.match(js, /WEEKLY_MAX_POLLS = 70/);
+  assert.match(js, /document\.addEventListener\('visibilitychange'/);
+  assert.match(js, /isTransientWeeklyReadError\(error\)/);
   assert.match(js, /weeklyStillRunning/);
   assert.match(js, /fetchAiCoachAvailability\(\)/);
   assert.match(js, /saveAiCoachAvailability\(days\)/);

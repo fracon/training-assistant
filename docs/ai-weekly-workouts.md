@@ -14,10 +14,15 @@ Responses client, bounded 429-only retry, cancellation, diagnostics, context
 freshness and durable recovery. The operation is registered as
 `weekly-workouts-v3`; each proposal points to its execution. On reload, the page
 reads the user's latest weekly execution and retrieves the same persisted
-proposal. Progress polling is bounded; a long-running or failed progress read
-ends loading and exposes a free manual reread. An uncertain start is
-resolved by its idempotency key and is never silently replayed as a new paid
-call. Administrators can still explicitly preview the exact preserved external
+proposal. In-page progress polling is bounded to 70 reads at 1.8-second
+intervals (about 126 seconds), covering the configured 120-second provider
+timeout. A transient network, rate-limit, or server read failure keeps that same
+execution under observation and offers a free manual reread; it never starts a
+generation. Returning to a visible tab triggers an immediate read of the same
+queued/running execution. Older responses are discarded when a newer execution
+or read attempt supersedes them. An uncertain start is resolved by its
+idempotency key and is never silently replayed as a new paid call.
+Administrators can still explicitly preview the exact preserved external
 prompt and inspect only their own current-role debug snapshots; ordinary users
 receive the product proposal UI without technical prompt/debug controls.
 

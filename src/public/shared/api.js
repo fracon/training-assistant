@@ -121,7 +121,7 @@ export async function fetchAiExecution(id) {
   if (!response.ok)
     throw Object.assign(
       new Error(payload.error || 'Could not read execution.'),
-      { codes: payload.errors },
+      { codes: payload.errors, status: response.status },
     );
   return payload;
 }
@@ -140,7 +140,7 @@ export async function fetchWeeklyProposal(id) {
   if (!response.ok)
     throw Object.assign(
       new Error(payload.error || 'Could not read proposal.'),
-      { codes: payload.errors },
+      { codes: payload.errors, status: response.status },
     );
   return payload;
 }

@@ -189,7 +189,7 @@ export function buildDayRowHtml(day, { dayLabel, messages = {}, state = {} }) {
 }
 
 const COPY_FEEDBACK_MS = 2000;
-const WEEKLY_MAX_POLLS = 20;
+const WEEKLY_MAX_POLLS = 70;
 
 function setupAiCoachPage(user) {
   const i18n = getShellI18n();
@@ -243,7 +243,11 @@ function setupAiCoachPage(user) {
   let activeExecutionId = null,
     readAttempt = 0,
     pollTimer = null,
+    weeklyPollCount = 0,
+    weeklyRefreshInFlight = false,
+    pendingWeeklyRefresh = null,
     lastWeeklyState = '',
+    lastExecutionState = '',
     weeklyHistoryState = 'loading',
     weeklyReadUnavailable = false;
   let currentProposal = null,
@@ -392,6 +396,7 @@ function setupAiCoachPage(user) {
     weeklyContent.replaceChildren();
     const response = proposal.proposal || proposal.response;
     const state = proposal.state;
+    lastExecutionState = state;
     weeklyApply.hidden = true;
     weeklyReadAgain.hidden = true;
     weeklyCancel.hidden = true;
@@ -405,6 +410,7 @@ function setupAiCoachPage(user) {
       weeklyStatus.textContent = '';
       weeklyStatus.hidden = true;
       lastWeeklyState = '';
+      lastExecutionState = '';
       return;
     }
     weeklySection.hidden = false;
@@ -613,8 +619,14 @@ function setupAiCoachPage(user) {
   async function refreshWeeklyExecution(
     id,
     token = ++readAttempt,
-    pollCount = 0,
+    pollCount = weeklyPollCount,
   ) {
+    if (weeklyRefreshInFlight) {
+      pendingWeeklyRefresh = { id, token, pollCount };
+      return;
+    }
+    weeklyRefreshInFlight = true;
+    weeklyPollCount = Math.max(weeklyPollCount, pollCount);
     try {
       const execution = await fetchAiExecution(id);
       if (token !== readAttempt || activeExecutionId !== id) return;
@@ -656,10 +668,47 @@ function setupAiCoachPage(user) {
         } else {
           weeklyReadUnavailable = true;
           showWeeklyReadError();
+          if (
+            isTransientWeeklyReadError(error) &&
+            pollCount < WEEKLY_MAX_POLLS
+          ) {
+            pollTimer = setTimeout(
+              () => void refreshWeeklyExecution(id, token, pollCount + 1),
+              1800,
+            );
+          }
         }
         updateValidation();
       }
+    } finally {
+      weeklyRefreshInFlight = false;
+      const pending = pendingWeeklyRefresh;
+      pendingWeeklyRefresh = null;
+      if (
+        pending &&
+        pending.id === activeExecutionId &&
+        pending.token === readAttempt
+      ) {
+        clearTimeout(pollTimer);
+        pollTimer = setTimeout(
+          () =>
+            void refreshWeeklyExecution(
+              pending.id,
+              pending.token,
+              pending.pollCount,
+            ),
+          0,
+        );
+      }
     }
+  }
+
+  function isTransientWeeklyReadError(error) {
+    return (
+      !Number.isInteger(error?.status) ||
+      error.status === 429 ||
+      error.status >= 500
+    );
   }
   async function recoverWeeklyExecution() {
     try {
@@ -668,6 +717,7 @@ function setupAiCoachPage(user) {
       const latest = executions.find((entry) => entry.purpose === 'workouts');
       if (latest) {
         activeExecutionId = latest.id;
+        weeklyPollCount = 0;
         void refreshWeeklyExecution(latest.id);
       }
       updateValidation();
@@ -718,6 +768,7 @@ function setupAiCoachPage(user) {
         const found = list.find((item) => item.idempotency_key === savedKey);
         if (found) {
           activeExecutionId = found.id;
+          weeklyPollCount = 0;
           sessionStorage.removeItem('kinesis-weekly-request-key');
           actionPending = false;
           generateBtn.disabled = false;
@@ -743,6 +794,7 @@ function setupAiCoachPage(user) {
         idempotency_key: idempotencyKey,
       });
       activeExecutionId = result.id;
+      weeklyPollCount = 0;
       sessionStorage.removeItem('kinesis-weekly-request-key');
       readAttempt += 1;
       weeklySection.hidden = false;
@@ -998,6 +1050,7 @@ function setupAiCoachPage(user) {
         return;
       }
       activeExecutionId = found.id;
+      weeklyPollCount = 0;
       sessionStorage.removeItem('kinesis-weekly-request-key');
       weeklyHistoryState = 'ready';
       updateValidation();
@@ -1032,6 +1085,25 @@ function setupAiCoachPage(user) {
       'click',
       () => void handleExternalPrompt(),
     );
+  document.addEventListener('visibilitychange', () => {
+    if (
+      document.visibilityState !== 'visible' ||
+      !activeExecutionId ||
+      !['queued', 'running'].includes(lastExecutionState) ||
+      actionPending ||
+      weeklyReadPending ||
+      applicationStatusUnknown
+    )
+      return;
+    clearTimeout(pollTimer);
+    pollTimer = null;
+    if (weeklyPollCount >= WEEKLY_MAX_POLLS) weeklyPollCount = 0;
+    void refreshWeeklyExecution(
+      activeExecutionId,
+      ++readAttempt,
+      weeklyPollCount,
+    );
+  });
   void recoverWeeklyExecution();
 
   targetDateInput.dataset.iso = dateInputValue(nextMonday());

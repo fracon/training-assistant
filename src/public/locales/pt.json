@@ -79,7 +79,7 @@
     "weeklyCompleted": "Revise a proposta antes de aplicá-la.",
     "weeklyFailed": "Esta execução terminou sem gerar uma proposta. Ler novamente mostrará a mesma falha; isso não inicia outra geração. A disponibilidade salva e o calendário foram preservados.",
     "weeklyUncertain": "O resultado do provedor é incerto. Não houve repetição automática; consulte a execução antes de solicitar novamente.",
-    "weeklyReadError": "O andamento está temporariamente indisponível. Tente ler novamente; isso não inicia outra geração.",
+    "weeklyReadError": "O andamento está temporariamente indisponível. O Kinesis repetirá a consulta automaticamente se a falha for temporária; você também pode ler a mesma execução. Isso não inicia outra geração.",
     "weeklyApplyError": "Não foi possível aplicar a proposta. Confira o calendário atual e tente aplicar novamente se ela continuar válida.",
     "weeklyApplySuccessTitle": "Treinos adicionados",
     "weeklyApplySuccessMessage": "Seus treinos foram adicionados ao calendário.",
