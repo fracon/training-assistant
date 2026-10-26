@@ -264,6 +264,12 @@ effort, RPE/FC targets and recovery. Transition phases use the component's
 soft blue treatment and main phases use its soft green treatment. A distinct
 proposal action footer is separated from the content by 24px. Notes and
 proposal-only natural-language rationale are shown in full as safe text.
+Within the proposal summary, the verified temperature range is the primary
+weather line, the high within the requested period is the next line, and each
+verified condition is listed separately. Number formatting follows the active
+locale and temperature unit, with a nonbreaking space before the unit; this is
+a display transformation of the protected evidence and does not rewrite the
+stored calendar forecast. Partial and unavailable states remain explicit.
 Technical evidence IDs are not shown in the common UI; recognized identifiers
 are removed from rationale display only. The
 original response JSON and evidence list are unchanged for administrator

@@ -135,7 +135,7 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
         if (forecastWeekday === 3 && parts.hour === '13') continue;
         time.push(instant / 1000);
         temperatures.push(12 + Number(parts.hour));
-        codes.push(2);
+        codes.push(parts.hour === '13' ? 61 : 2);
       }
       return {
         ok: true,
@@ -2051,7 +2051,7 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     assert.doesNotMatch(review.text, /weather:monday:|open-meteo\.com|forecast.*hours/i);
     assert.match(review.text, /RPE principal|Main RPE/);
     assert.match(review.text, /FC alvo|Target HR/);
-    assert.match(review.text, /period high: .*°C/);
+    assert.match(review.text, /Maximum during period: .*°C/);
     assert.equal(review.applyHidden, false);
     assert.equal(await evaluate(`document.getElementById('weeklyApplyResultModal').hidden`), true);
     const proposalPresentation = await evaluate(`(()=>{
@@ -2064,10 +2064,12 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
         shoe:card.querySelector('.weekly-summary-shoe dd').textContent,
         location:card.querySelector('.weekly-summary-location dd').textContent,
         weather:card.querySelector('.weekly-summary-weather dd').textContent,
+        weatherParts:[...card.querySelectorAll('.weekly-summary-weather dd > span')].map(item=>item.textContent),
         phaseTitles:[...card.querySelectorAll('.weekly-proposal-phase h4')].map(item=>item.textContent),
         phaseClasses:[...card.querySelectorAll('.weekly-proposal-phase')].map(item=>item.className),
         descriptionBeforeNotes:card.querySelector('.weekly-proposal-description').compareDocumentPosition(card.querySelector('.weekly-proposal-notes'))&Node.DOCUMENT_POSITION_FOLLOWING,
         summaryColumns:getComputedStyle(card.querySelector('.weekly-proposal-summary-primary')).gridTemplateColumns.split(' ').length,
+        contextColumns:getComputedStyle(card.querySelector('.weekly-proposal-summary-context')).gridTemplateColumns.split(' ').length,
       }));
       const content=document.getElementById('weeklyProposalContent');
       const actions=document.getElementById('weeklyProposalActions');
@@ -2079,19 +2081,21 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     assert.match(proposalPresentation.cards[0].hr, /By effort and breathing; no HR reference available/);
     assert.equal(proposalPresentation.cards[0].shoe, 'Kinesis Athletics Training shoe with an intentionally long product name for responsive layout checks');
     assert.equal(proposalPresentation.cards[0].location, 'São João da Madeira, Porto, Portugal');
-    assert.match(proposalPresentation.cards[0].weather, /period high: .*°C/);
+    assert.deepEqual(proposalPresentation.cards[0].weatherParts, ['24–25 °C', 'Maximum during period: 25 °C', 'Partly cloudy', 'Light rain']);
     assert.equal(proposalPresentation.cards[1].rpe, '3–4/5');
     assert.match(proposalPresentation.cards[1].hr, /Main: 145–155 bpm, 155–165 bpm/);
-    assert.match(proposalPresentation.cards[1].weather, /Forecast partial; hourly coverage incomplete/);
+    assert.match(proposalPresentation.cards[1].weather, /Partial hourly coverage; no complete-window claim/);
     assert.deepEqual(proposalPresentation.cards[1].phaseTitles, ['Warm-up', 'Main step 1', 'Main step 2', 'Cool-down']);
     assert.match(proposalPresentation.cards[1].phaseClasses[0], /phase--warmup/);
     assert.match(proposalPresentation.cards[1].phaseClasses[1], /phase--main/);
     assert.match(proposalPresentation.cards[1].phaseClasses.at(-1), /phase--cooldown/);
-    assert.match(proposalPresentation.cards[2].weather, /Forecast unavailable; no verified hourly data/);
+    assert.match(proposalPresentation.cards[2].weather, /Hourly forecast unavailable or partial/);
     assert.match(proposalPresentation.cards[2].rpe, /Comfortable effort/);
     assert.ok(proposalPresentation.cards.every((card) => card.descriptionBeforeNotes));
     assert.equal(proposalPresentation.width, 390);
     assert.equal(proposalPresentation.scrollWidth, 390);
+    assert.equal(proposalPresentation.cards[0].summaryColumns, 1);
+    assert.equal(proposalPresentation.cards[0].contextColumns, 1);
     assert.equal(proposalPresentation.footerMargin, '24px');
     assert.equal(proposalPresentation.contentToFooter, 24);
     assert.ok(proposalPresentation.buttonWidth < proposalPresentation.footerWidth);
@@ -2100,8 +2104,8 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     writeFileSync(path.join(tmpdir(), 'kinesis-weekly-proposal-mobile-en.png'), Buffer.from((await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false })).data, 'base64'));
     await evaluate(`document.querySelector('.lang-switch [data-lang="pt-BR"]').click()`);
     await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{if(document.documentElement.lang==='pt-BR')resolve(true);else if(Date.now()>end)reject(new Error('Portuguese proposal rerender timed out'));else setTimeout(check,20)};check()})`);
-    const ptMobileReview = await evaluate(`(()=>({width:innerWidth,scrollWidth:document.documentElement.scrollWidth,rpeLabel:document.querySelector('.weekly-summary-main-rpe dt').textContent,rpe:document.querySelector('.weekly-summary-main-rpe dd').textContent,hrLabel:document.querySelector('.weekly-summary-hr dt').textContent,description:document.querySelector('.weekly-proposal-description-title').textContent,phases:[...document.querySelectorAll('.weekly-proposal-phase h4')].slice(0,4).map(node=>node.textContent)}))()`);
-    assert.deepEqual(ptMobileReview, { width: 390, scrollWidth: 390, rpeLabel: 'RPE principal', rpe: '2/5', hrLabel: 'FC alvo', description: 'Descrição do treino', phases: ['Aquecimento', 'Principal', 'Desaquecimento', 'Aquecimento'] });
+    const ptMobileReview = await evaluate(`(()=>({width:innerWidth,scrollWidth:document.documentElement.scrollWidth,rpeLabel:document.querySelector('.weekly-summary-main-rpe dt').textContent,rpe:document.querySelector('.weekly-summary-main-rpe dd').textContent,hrLabel:document.querySelector('.weekly-summary-hr dt').textContent,weather:[...document.querySelector('.weekly-summary-weather dd').querySelectorAll('span')].map(node=>node.textContent),description:document.querySelector('.weekly-proposal-description-title').textContent,phases:[...document.querySelectorAll('.weekly-proposal-phase h4')].slice(0,4).map(node=>node.textContent)}))()`);
+    assert.deepEqual(ptMobileReview, { width: 390, scrollWidth: 390, rpeLabel: 'RPE principal', rpe: '2/5', hrLabel: 'FC alvo', weather: ['24–25 °C', 'Máxima no período: 25 °C', 'Parcialmente nublado', 'Chuva leve'], description: 'Descrição do treino', phases: ['Aquecimento', 'Principal', 'Desaquecimento', 'Aquecimento'] });
     await evaluate(`document.getElementById('weeklyProposalSection').scrollIntoView({block:'start'});new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`);
     writeFileSync(path.join(tmpdir(), 'kinesis-weekly-proposal-mobile-pt.png'), Buffer.from((await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false })).data, 'base64'));
     await evaluate(`document.querySelector('.lang-switch [data-lang="en-US"]').click()`);
@@ -2117,13 +2121,16 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       deviceScaleFactor: 1,
       mobile: false,
     });
+    await delay(350);
     await evaluate(
-      `document.getElementById('weeklyProposalSection').scrollIntoView({block:'start'});new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`,
+      `document.getElementById('weeklyProposalSection').scrollIntoView({block:'start'});new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{const card=document.querySelector('.weekly-proposal-card');if(card&&card.getBoundingClientRect().width>400)resolve(true);else if(Date.now()>end)reject(new Error('Proposal card did not become measurable after viewport resize'));else requestAnimationFrame(check)};check()})`,
     );
-    const desktopProposalGeometry = await evaluate(`(()=>({width:innerWidth,scrollWidth:document.documentElement.scrollWidth,summaryColumns:getComputedStyle(document.querySelector('.weekly-proposal-summary-primary')).gridTemplateColumns.split(' ').length,contextColumns:getComputedStyle(document.querySelector('.weekly-proposal-summary-context')).gridTemplateColumns.split(' ').length,footerMargin:getComputedStyle(document.getElementById('weeklyProposalActions')).marginTop,contentToFooter:Math.round(document.getElementById('weeklyProposalActions').getBoundingClientRect().top-document.getElementById('weeklyProposalContent').getBoundingClientRect().bottom),shoeWidth:document.querySelector('.weekly-summary-shoe').getBoundingClientRect().width,locationWidth:document.querySelector('.weekly-summary-location').getBoundingClientRect().width,weatherWidth:document.querySelector('.weekly-summary-weather').getBoundingClientRect().width}))()`);
-    assert.deepEqual(desktopProposalGeometry, { width: 1280, scrollWidth: 1280, summaryColumns: 2, contextColumns: 3, footerMargin: '24px', contentToFooter: 24, shoeWidth: desktopProposalGeometry.shoeWidth, locationWidth: desktopProposalGeometry.locationWidth, weatherWidth: desktopProposalGeometry.weatherWidth });
+    const desktopProposalGeometry = await evaluate(`(()=>({width:innerWidth,scrollWidth:document.documentElement.scrollWidth,summaryColumns:getComputedStyle(document.querySelector('.weekly-proposal-summary-primary')).gridTemplateColumns.split(' ').length,contextColumns:getComputedStyle(document.querySelector('.weekly-proposal-summary-context')).gridTemplateColumns.split(' ').length,footerMargin:getComputedStyle(document.getElementById('weeklyProposalActions')).marginTop,contentToFooter:Math.round(document.getElementById('weeklyProposalActions').getBoundingClientRect().top-document.getElementById('weeklyProposalContent').getBoundingClientRect().bottom),rpeWidth:document.querySelector('.weekly-summary-main-rpe').getBoundingClientRect().width,hrWidth:document.querySelector('.weekly-summary-hr').getBoundingClientRect().width,shoeWidth:document.querySelector('.weekly-summary-shoe').getBoundingClientRect().width,locationWidth:document.querySelector('.weekly-summary-location').getBoundingClientRect().width,weatherWidth:document.querySelector('.weekly-summary-weather').getBoundingClientRect().width}))()`);
+    assert.deepEqual(desktopProposalGeometry, { width: 1280, scrollWidth: 1280, summaryColumns: 2, contextColumns: 3, footerMargin: '24px', contentToFooter: 24, rpeWidth: desktopProposalGeometry.rpeWidth, hrWidth: desktopProposalGeometry.hrWidth, shoeWidth: desktopProposalGeometry.shoeWidth, locationWidth: desktopProposalGeometry.locationWidth, weatherWidth: desktopProposalGeometry.weatherWidth });
     assert.ok(desktopProposalGeometry.weatherWidth > desktopProposalGeometry.shoeWidth, JSON.stringify(desktopProposalGeometry));
     assert.ok(desktopProposalGeometry.weatherWidth > desktopProposalGeometry.locationWidth, JSON.stringify(desktopProposalGeometry));
+    assert.ok(desktopProposalGeometry.hrWidth > desktopProposalGeometry.rpeWidth * 2.5, JSON.stringify(desktopProposalGeometry));
+    assert.ok(desktopProposalGeometry.weatherWidth > desktopProposalGeometry.shoeWidth * 1.7, JSON.stringify(desktopProposalGeometry));
     writeFileSync(
       path.join(tmpdir(), 'kinesis-weekly-proposal-review.png'),
       Buffer.from(
@@ -2136,6 +2143,29 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
         'base64',
       ),
     );
+    await command('Emulation.setDeviceMetricsOverride', { width: 900, height: 800, deviceScaleFactor: 1, mobile: false });
+    await delay(350);
+    await evaluate(`document.getElementById('weeklyProposalSection').scrollIntoView({block:'start'});new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`);
+    const measureSummary = () => evaluate(`(()=>{const card=document.querySelector('.weekly-proposal-card'),primary=card.querySelector('.weekly-proposal-summary-primary'),context=card.querySelector('.weekly-proposal-summary-context'),weather=card.querySelector('.weekly-summary-weather'),style=getComputedStyle(card),primaryStyle=getComputedStyle(primary),contextStyle=getComputedStyle(context);return {width:innerWidth,scrollWidth:document.documentElement.scrollWidth,cardWidth:card.clientWidth,contentWidth:card.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight),primaryColumns:primaryStyle.gridTemplateColumns.split(' ').length,contextColumns:contextStyle.gridTemplateColumns.split(' ').length,weatherGridColumn:getComputedStyle(weather).gridColumn,collapsed:document.querySelector('.app-shell').classList.contains('collapsed')}})()`);
+    const expandedIntermediate = await measureSummary();
+    assert.equal(expandedIntermediate.width, 900);
+    assert.equal(expandedIntermediate.scrollWidth, 900);
+    assert.equal(expandedIntermediate.collapsed, false);
+    if (expandedIntermediate.contentWidth <= 560) {
+      assert.equal(expandedIntermediate.contextColumns, 2);
+      assert.equal(expandedIntermediate.weatherGridColumn, '1 / -1');
+    }
+    writeFileSync(path.join(tmpdir(), 'kinesis-weekly-proposal-intermediate-expanded.png'), Buffer.from((await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false })).data, 'base64'));
+    await evaluate(`document.getElementById('sidebarToggle').click();new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`);
+    await delay(350);
+    const collapsedIntermediate = await measureSummary();
+    assert.equal(collapsedIntermediate.collapsed, true);
+    assert.equal(collapsedIntermediate.scrollWidth, 900);
+    assert.ok(collapsedIntermediate.contentWidth > expandedIntermediate.contentWidth);
+    writeFileSync(path.join(tmpdir(), 'kinesis-weekly-proposal-intermediate-collapsed.png'), Buffer.from((await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false })).data, 'base64'));
+    await evaluate(`document.getElementById('sidebarToggle').click()`);
+    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false });
+    await evaluate(`document.getElementById('weeklyProposalSection').scrollIntoView({block:'start'});new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`);
     await evaluate(`document.querySelector('.lang-switch [data-lang="pt-BR"]').click()`);
     await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{if(document.documentElement.lang==='pt-BR')resolve(true);else if(Date.now()>end)reject(new Error('Desktop Portuguese proposal rerender timed out'));else setTimeout(check,20)};check()})`);
     const ptDesktopRpe = await evaluate(`(()=>({width:innerWidth,scrollWidth:document.documentElement.scrollWidth,label:document.querySelector('.weekly-summary-main-rpe dt').textContent,value:document.querySelector('.weekly-summary-main-rpe dd').textContent}))()`);
@@ -2218,7 +2248,8 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
         )
         .get('availability-browser@example.test', addIsoDays(proposalWeekStart, 2)).detalhes;
     const savedWeather = db.prepare('SELECT previsao FROM trainings WHERE user_id=(SELECT id FROM users WHERE email=?) AND dia=?').get('availability-browser@example.test', addIsoDays(proposalWeekStart, 2)).previsao;
-    assert.equal(savedWeather, reviewedWeather, 'the compact partial forecast is identical in preview and the calendar row');
+    assert.match(savedWeather, /partial/i, 'the persisted forecast retains its partial-coverage status');
+    assert.match(reviewedWeather, /partial hourly coverage/i, 'the panel presents the same partial status in localized display copy');
     for (const instruction of ['Start with easy jogging and relaxed strides.', 'Run each surge strong and controlled.', '4 × 3 min', 'RPE 3/5', 'RPE 4/5', 'RPE 2/5', 'Ease down with relaxed steps.', 'RPE 1/5']) {
       assert.ok(reviewedDetails.includes(instruction), `preview includes ${instruction}`);
       assert.ok(savedDetails.includes(instruction), `calendar details preserve ${instruction}`);

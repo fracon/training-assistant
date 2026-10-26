@@ -116,6 +116,7 @@
     "weeklyUnavailable": "AI generation is temporarily unavailable. Your availability and calendar are saved. Please try again later.",
     "forecastUnavailable": "Hourly forecast unavailable or partial.",
     "forecastPartial": "Partial hourly coverage; no complete-window claim.",
+    "forecastPeriodHigh": "Maximum during period: {temperature}",
     "targetHrLabel": "Target HR",
     "mainRpeLabel": "Main RPE",
     "shoeLabel": "Shoe",

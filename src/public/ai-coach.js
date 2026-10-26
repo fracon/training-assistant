@@ -37,7 +37,7 @@ import {
   parseLocalizedDate,
 } from './shared/date.js';
 import { createDatePicker, readDatePickerValue } from './shared/datepicker.js';
-import { cleanWeeklyJustification, summarizePrescription } from './shared/weekly-prescription-display.js';
+import { cleanWeeklyJustification, formatWeeklyWeatherSummary, summarizePrescription } from './shared/weekly-prescription-display.js';
 import { createDialogFocusTrap } from './shared/dialog-focus.js';
 
 function normalizeTargetDate(value, language) {
@@ -480,7 +480,14 @@ function setupAiCoachPage(user) {
         hrFallback: t('aiCoach.weeklyNoHrReference'),
         prescription: session.prescription,
       });
-      const weather = session.weather;
+      const weatherEvidence = proposal.weatherEvidence?.find(
+        (item) => item.weekday === session.weekday,
+      );
+      const weather = formatWeeklyWeatherSummary(weatherEvidence, {
+        temperatureUnit: proposal.temperatureUnit,
+        language: i18n.language,
+        translate: t,
+      });
       const summary = document.createElement('div');
       summary.className = 'weekly-proposal-summary';
       const primarySummary = document.createElement('dl');
@@ -492,7 +499,6 @@ function setupAiCoachPage(user) {
         [t('aiCoach.targetHrLabel'), prescription.hr, 'weekly-summary-hr', false],
         [t('aiCoach.shoeLabel'), session.shoeLabel || t('aiCoach.weeklyNoShoe'), 'weekly-summary-shoe', true],
         [t('aiCoach.locationLabel'), session.location || '—', 'weekly-summary-location', true],
-        [t('aiCoach.weatherLabel'), weather || '—', 'weekly-summary-weather', true],
       ]) {
         const group = document.createElement('div');
         group.className = className;
@@ -503,6 +509,31 @@ function setupAiCoachPage(user) {
         group.append(dt, dd);
         (context ? contextSummary : primarySummary).append(group);
       }
+      const weatherGroup = document.createElement('div');
+      weatherGroup.className = 'weekly-summary-weather';
+      const weatherLabel = document.createElement('dt');
+      weatherLabel.textContent = t('aiCoach.weatherLabel');
+      const weatherValue = document.createElement('dd');
+      if (weather.status) {
+        weatherValue.className = 'weekly-summary-weather-status';
+        weatherValue.textContent = weather.status;
+      } else {
+        const range = document.createElement('span');
+        range.className = 'weekly-summary-weather-range';
+        range.textContent = weather.range;
+        const high = document.createElement('span');
+        high.className = 'weekly-summary-weather-secondary';
+        high.textContent = weather.high;
+        weatherValue.append(range, high);
+        for (const condition of weather.conditions) {
+          const conditionLine = document.createElement('span');
+          conditionLine.className = 'weekly-summary-weather-secondary';
+          conditionLine.textContent = condition;
+          weatherValue.append(conditionLine);
+        }
+      }
+      weatherGroup.append(weatherLabel, weatherValue);
+      contextSummary.append(weatherGroup);
       summary.append(primarySummary, contextSummary);
       article.append(summary);
       const description = document.createElement('section');

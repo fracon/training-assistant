@@ -74,7 +74,7 @@ test('a proposal with no numerical RPE keeps its effort cue', async () => {
 });
 
 test('weekly weather display localizes verified window values and keeps partial/unavailable explicit', async () => {
-  const { formatWeeklyWeather } = await displayPromise;
+  const { formatWeeklyWeather, formatWeeklyWeatherSummary } = await displayPromise;
   const evidence = {
     status: 'verified', window: { minC: 10, maxC: 12.7 },
     hours: [[1, '08:00+01:00', 10, 2], [2, '09:00+01:00', 12.7, 2], [3, '10:00+01:00', 11, 61]],
@@ -84,6 +84,36 @@ test('weekly weather display localizes verified window values and keeps partial/
   assert.equal(formatWeeklyWeather(evidence, { temperatureUnit: 'F', language: 'en-US', translate: translate(en) }), '50–54.9 °F · period high: 54.9 °F · Partly cloudy, Light rain');
   assert.equal(formatWeeklyWeather({ status: 'partial' }, { language: 'pt-BR', translate: translate(pt) }), pt.aiCoach.forecastPartial);
   assert.equal(formatWeeklyWeather(null, { language: 'en-US', translate: translate(en) }), en.aiCoach.forecastUnavailable);
+  assert.deepEqual(
+    formatWeeklyWeatherSummary(evidence, { language: 'pt-BR', translate: translate(pt) }),
+    {
+      status: '',
+      range: '10–12,7 °C',
+      high: 'Máxima no período: 12,7 °C',
+      conditions: ['Parcialmente nublado', 'Chuva leve'],
+    },
+  );
+  assert.deepEqual(
+    formatWeeklyWeatherSummary(evidence, { temperatureUnit: 'F', language: 'en-US', translate: translate(en) }),
+    {
+      status: '',
+      range: '50–54.9 °F',
+      high: 'Maximum during period: 54.9 °F',
+      conditions: ['Partly cloudy', 'Light rain'],
+    },
+  );
+  assert.equal(
+    formatWeeklyWeatherSummary({ status: 'partial' }, { language: 'en-US', translate: translate(en) }).status,
+    en.aiCoach.forecastPartial,
+  );
+  assert.equal(
+    formatWeeklyWeatherSummary(null, { language: 'pt-BR', translate: translate(pt) }).status,
+    pt.aiCoach.forecastUnavailable,
+  );
+  assert.deepEqual(
+    formatWeeklyWeatherSummary({ ...evidence, hours: [[4, '11:00+01:00', 11, 999]] }, { language: 'en-US', translate: translate(en) }).conditions,
+    [en.weather.unknown],
+  );
 });
 
 test('weekly justification presentation removes only recognized technical references', async () => {

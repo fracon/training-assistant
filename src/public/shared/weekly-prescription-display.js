@@ -197,3 +197,53 @@ export function formatWeeklyWeather(
     ? `${range} · máxima no período: ${high}${extra}`
     : `${range} · period high: ${high}${extra}`;
 }
+
+export function formatWeeklyWeatherSummary(
+  evidence,
+  {
+    temperatureUnit = 'C',
+    language = 'en-US',
+    translate = (key) => key,
+  } = {},
+) {
+  const fallback = translate(
+    evidence?.status === 'partial'
+      ? 'aiCoach.forecastPartial'
+      : 'aiCoach.forecastUnavailable',
+  );
+  if (
+    !evidence ||
+    evidence.status !== 'verified' ||
+    !Number.isFinite(evidence.window?.minC) ||
+    !Number.isFinite(evidence.window?.maxC)
+  ) return { status: fallback, range: '', high: '', conditions: [] };
+
+  const unit = temperatureUnit === 'F' ? 'F' : 'C';
+  const number = new Intl.NumberFormat(language, { maximumFractionDigits: 1 });
+  const formatNumber = (value) => number.format(convertCelsius(value, unit));
+  const temperature = (value) => `${formatNumber(value)}\u00a0°${unit}`;
+  const codes = Array.isArray(evidence.hours)
+    ? unique(
+        evidence.hours
+          .map((hour) =>
+            Array.isArray(hour) ? hour[3] : hour?.weatherCode,
+          )
+          .filter(Number.isInteger),
+      ).slice(0, 3)
+    : [];
+  const conditions = codes.flatMap((code) => {
+    const key = `weather.${code}`;
+    const value = translate(key);
+    return [value && value !== key ? value : translate('weather.unknown')];
+  });
+  const highLabel = translate('aiCoach.forecastPeriodHigh').replace(
+    '{temperature}',
+    temperature(evidence.window.maxC),
+  );
+  return {
+    status: '',
+    range: `${formatNumber(evidence.window.minC)}–${formatNumber(evidence.window.maxC)}\u00a0°${unit}`,
+    high: highLabel,
+    conditions,
+  };
+}

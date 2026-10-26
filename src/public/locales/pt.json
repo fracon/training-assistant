@@ -116,6 +116,7 @@
     "weeklyUnavailable": "A geração por IA está temporariamente indisponível. Sua disponibilidade e o calendário foram preservados. Tente novamente mais tarde.",
     "forecastUnavailable": "Previsão horária indisponível ou parcial.",
     "forecastPartial": "Cobertura horária parcial; janela não está completa.",
+    "forecastPeriodHigh": "Máxima no período: {temperature}",
     "targetHrLabel": "FC alvo",
     "mainRpeLabel": "RPE principal",
     "shoeLabel": "Tênis",
