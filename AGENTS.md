@@ -8,8 +8,8 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.23.0` on the issue #64
-follow-up branch); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.24.0` on the issue #65
+branch); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
@@ -557,8 +557,9 @@ See [`docs/ai-weekly-workouts.md`](docs/ai-weekly-workouts.md).
 
 The approved [plan](docs/ai-integration-plan.md) is integrated in main through
 PRs #66/#68. Phase 0 (#62) is integrated through merged PR #67 (`648d6a0`).
-Phase 1 (#63) is integrated through merged PR #69. Phase 2 (#64) is implemented
-on its dedicated branch and awaits its PR; #65 remains future scope.
+Phase 1 (#63) is integrated through merged PR #69. Phase 2 (#64) is integrated
+through merged PR #70. Phase 3 (#65) is implemented on its dedicated branch
+and awaits its PR; see [docs/ai-workout-analysis.md](docs/ai-workout-analysis.md).
 Read the plan and [foundation contract](docs/ai-foundation.md) in full before
 changing this service. Update README, AGENTS, the plan and affected configuration,
 API/privacy documentation with delivered behavior and honest branch status.
@@ -725,6 +726,28 @@ never replace applied plans automatically. Keep unknown-acknowledgement generati
 keys per cycle across modal transitions; clear obsolete polling before switching
 cycles. Weekly generation stays in #64. Browser regressions also live in
 `cyclePlanningFlow.browser.test.js` (synthetic provider only).
+
+Contextual workout analysis (#65) reuses the shared AI execution, quota, client,
+worker, diagnostics, context and recovery pipeline. Its user action is explicit
+and runs only after the result is durably saved and reread; saving never calls
+AI. `workout-analysis-v1` validates owned completed results with realized RPE
+1–5, but does not require FIT or an active/applied cycle. Keep its private
+external prompt templates byte-identical to the exported PT/EN prompts; browser
+code must not bundle those templates. The owner-scoped analysis history stores
+versioned snapshots and structured evidence, while ordinary API/UI responses
+omit evidence identifiers. The shared execution GET remains a read and strips
+the analysis response. Only current admins can preview the external prompt, and
+admin status never bypasses ownership.
+
+Interpretation confirmation, correction and dismissal are version-checked,
+local operations. Only evidence-current, non-dismissed interpretations enter
+later contexts. Opening an older analysis must not revive a dismissed or
+superseded item. Keep analysis history and result data when a later analysis
+fails. Poll the same persisted execution until a backend terminal state; reads,
+reload, prompt preview and interpretation decisions never generate. See
+`docs/ai-workout-analysis.md` for schema, migration, freshness and privacy
+contracts. Browser regressions use a simulated provider and must not make paid
+OpenAI calls.
 
 `cycle-plan-adapter.js` v3 retains v2 adaptations of the three allowlisted delivery spans plus three
 explicit, owner-approved competition-conditional spans (equipment, nutrition,

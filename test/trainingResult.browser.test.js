@@ -13,6 +13,7 @@ const { buildServer } = require('../src/server');
 const { createDatabase } = require('../src/db/database');
 const { registerUser } = require('../src/auth/registration');
 const { SESSION_COOKIE_NAME, createSession } = require('../src/auth/sessions');
+const { readAiConfig } = require('../src/ai/config');
 
 const PASSWORD = 'rpe-browser-secret-1';
 const EN_REQUIRED = 'Select the realized RPE (1 to 5) to record and analyze this workout.';
@@ -67,10 +68,33 @@ test('the session page requires a realized RPE before saving, generating or uplo
   assert.ok(chrome, 'Chrome is required for the session browser verification.');
 
   const db = createDatabase({ filename: ':memory:' });
+  let providerCalls = 0;
   const app = await buildServer({
     db,
     sessionCookieSecure: false,
     parseFitFile: async () => fitSummary(),
+    aiConfig: readAiConfig({ AI_ENABLED: 'true', OPENAI_API_KEY: 'synthetic-browser-only', AI_RETRIES: '0' }),
+    aiClient: async (payload) => {
+      providerCalls += 1;
+      const request = JSON.parse(payload.input[0].content[0].text);
+      const saved = db.prepare('SELECT completed,feedback_rpe FROM trainings WHERE id=?').get(request.context.resource.source.id);
+      assert.equal(saved.completed, 1, 'canonical result persistence finished before the simulated provider was invoked');
+      assert.ok(saved.feedback_rpe >= 1 && saved.feedback_rpe <= 5);
+      const evidence = [`${request.context.resource.source.type}:${request.context.resource.source.id}`];
+      await delay(900);
+      return {
+        value: {
+          schemaVersion: 'workout-analysis-v1', language: request.context.preferences.language,
+          summary: { text: 'Synthetic analysis arrived while the session stayed open.', evidence },
+          comparison: { text: 'The saved result is compared with its planned session.', evidence },
+          contextualReading: [{ text: 'This synthetic case contains a saved manual result.', evidence }],
+          attention: [], recommendations: [{ text: 'Keep the next session unchanged unless later evidence suggests an adjustment.', evidence }],
+          classification: { value: 'adequate', evidence }, limitations: ['Synthetic provider; no real model was called.'],
+          reusableInterpretations: [{ kind: 'pattern', text: 'The synthetic report describes a controlled effort.', evidence }],
+        },
+        usage: { input: 700, output: 240, cached: 0 }, error: null,
+      };
+    },
   });
   const account = await registerUser(db, {
     email: 'rpe-runner@example.test',
@@ -78,16 +102,25 @@ test('the session page requires a realized RPE before saving, generating or uplo
     first_name: 'Rita',
     last_name: 'Rpe',
   });
-  const seedTraining = (overrides = {}) => {
+  const admin = await registerUser(db, {
+    email: 'analysis-admin@example.test', password: PASSWORD,
+    first_name: 'Ada', last_name: 'Admin',
+  });
+  db.prepare("UPDATE users SET role='admin' WHERE id=?").run(admin.id);
+  const otherUser = await registerUser(db, {
+    email: 'analysis-other@example.test', password: PASSWORD,
+    first_name: 'Owen', last_name: 'Other',
+  });
+  const seedTraining = (userId = account.id, overrides = {}) => {
     const result = db.prepare(
       `INSERT INTO trainings (user_id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes, feedback_rpe, feedback_notas, completed)
        VALUES (?, '2026-08-24', 'Manhã', 'Corrida', '6 × 1 km forte', 'Aquecer 15 min', '150-160 bpm', '4', 'Nimbus 26', NULL, NULL, ?, NULL, ?)`
-    ).run(account.id, overrides.feedback_rpe ?? null, overrides.completed ?? 0);
+    ).run(userId, overrides.feedback_rpe ?? null, overrides.completed ?? 0);
     return Number(result.lastInsertRowid);
   };
   const manualId = seedTraining();
   const fitId = seedTraining();
-  const legacyId = seedTraining({ completed: 1 });
+  const legacyId = seedTraining(account.id, { completed: 1 });
   db.prepare(
     "UPDATE trainings SET result_data_source = 'fit_upload', fit_duration = '01:00:00', fit_distance = 10, fit_summary_json = '{}' WHERE id = ?"
   ).run(legacyId);
@@ -97,6 +130,16 @@ test('the session page requires a realized RPE before saving, generating or uplo
 
   const baseUrl = await app.listen({ port: 0, host: '127.0.0.1' });
   const origin = new URL(baseUrl).origin;
+  const commonPreview = await app.inject({
+    method: 'POST', url: '/api/ai/admin/preview', payload: { purpose: 'analysis', resource_id: manualId },
+    headers: { cookie: `${SESSION_COOKIE_NAME}=${createSession(db, account.id).token}` },
+  });
+  assert.equal(commonPreview.statusCode, 403, 'external prompt preview is admin-only in the backend');
+  const crossOwnerAdminPreview = await app.inject({
+    method: 'POST', url: '/api/ai/admin/preview', payload: { purpose: 'analysis', resource_id: manualId },
+    headers: { cookie: `${SESSION_COOKIE_NAME}=${createSession(db, admin.id).token}` },
+  });
+  assert.equal(crossOwnerAdminPreview.statusCode, 404, 'admin prompt access still enforces training ownership');
   const debugPort = await freePort();
   const profile = mkdtempSync(path.join(tmpdir(), 'kinesis-rpe-chrome-'));
   const uploads = mkdtempSync(path.join(tmpdir(), 'kinesis-rpe-fit-'));
@@ -163,6 +206,13 @@ test('the session page requires a realized RPE before saving, generating or uplo
     const pressKey = async (key, code, keyCode) => {
       await command('Input.dispatchKeyEvent', { type: 'keyDown', key, code, windowsVirtualKeyCode: keyCode });
       await command('Input.dispatchKeyEvent', { type: 'keyUp', key, code, windowsVirtualKeyCode: keyCode });
+      await delay(60);
+    };
+    const pressShiftTab = async () => {
+      await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Shift', code: 'ShiftLeft', windowsVirtualKeyCode: 16 });
+      await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, modifiers: 8 });
+      await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, modifiers: 8 });
+      await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Shift', code: 'ShiftLeft', windowsVirtualKeyCode: 16 });
       await delay(60);
     };
     // Session writes only: the shell persists its own language preference
@@ -376,16 +426,16 @@ test('the session page requires a realized RPE before saving, generating or uplo
     assert.equal(translated.errorText, PT_REQUIRED, 'a visible error follows the language switch');
     assert.equal(translated.status, PT_REQUIRED);
     assert.equal(translated.firstName, '1 - Muito Fácil');
-    await clickUntil('#generateBtn', "document.getElementById('promptSection').hidden===true", 'the refused prompt');
+    await clickUntil('#generateBtn', "document.getElementById('feedbackRpeError').hidden===false", 'the refused analysis');
     const refusedPrompt = await evaluate(`(()=>({
       errorText:document.getElementById('feedbackRpeError').textContent,
-      promptHidden:document.getElementById('promptSection').hidden,
-      prompt:document.getElementById('promptOutput').value,
+      analysisHidden:document.getElementById('analysisSection').hidden,
+      technicalPrompt:!![...document.querySelectorAll('button')].find((button)=>button.textContent.includes('View external prompt')),
     }))()`);
-    assert.equal(refusedPrompt.errorText, PT_REQUIRED, 'the prompt action reports the same requirement');
-    assert.equal(refusedPrompt.promptHidden, true, 'no prompt is produced for an unreported effort');
-    assert.equal(refusedPrompt.prompt, '');
-    assert.deepEqual(writes(), [], 'generating a prompt wrote nothing');
+    assert.equal(refusedPrompt.errorText, PT_REQUIRED, 'the analysis action reports the same requirement');
+    assert.equal(refusedPrompt.analysisHidden, true, 'no analysis appears without a saved result and effort');
+    assert.equal(refusedPrompt.technicalPrompt, false, 'a common account does not receive the admin prompt control');
+    assert.deepEqual(writes(), [], 'an invalid analysis request made no result write or paid execution');
     await setLanguage('en-US');
 
     /* ── The keyboard answers the group and the result is recorded ── */
@@ -423,7 +473,7 @@ test('the session page requires a realized RPE before saving, generating or uplo
       fit_distance: 10.25,
     }, 'the reported effort is stored with the concluded result');
 
-    /* ── The prompt describes the same realized effort ── */
+    /* ── The explicit analysis uses the saved result and recovers on reload ── */
 
     await openSession(manualId);
     await waitFor(
@@ -445,18 +495,76 @@ test('the session page requires a realized RPE before saving, generating or uplo
     assert.equal(restored.source, 'manual');
     assert.equal(restored.errorHidden, true, 'a stored effort never opens with an error');
 
-    await clickUntil('#generateBtn', "document.getElementById('promptSection').hidden===false", 'the generated prompt');
+    await evaluate(`(()=>{
+      const original=window.fetch.bind(window);let failed=false;window.__analysisListReads=0;
+      window.fetch=(input,init)=>{
+        if(String(input).includes('/api/trainings/${manualId}/analyses')){
+          window.__analysisListReads++;
+          if(!failed){failed=true;return Promise.reject(new TypeError('synthetic read interruption'));}
+        }
+        return original(input,init);
+      };
+    })()`);
+    await clickUntil('#generateBtn', "document.getElementById('analysisSection').hidden===false", 'the analysis execution');
+    await waitFor("document.getElementById('analysisState').textContent.includes('progress')", 'the analysis running state');
+    assert.equal(providerCalls, 1, 'one simulated provider call started');
+    assert.equal(writes().filter(({ method, url }) => method === 'POST' && url.endsWith('/api/ai/executions')).length, 1, 'one explicit execution POST was sent');
+    await waitFor('window.__analysisListReads>=2', 'the free retry after a transient terminal analysis-list read failure');
+    await waitFor("document.getElementById('analysisContent').textContent.includes('Synthetic analysis arrived')", 'automatic analysis display after the failed first list read');
+    await command('Page.reload');
+    await waitFor("document.getElementById('analysisContent').textContent.includes('Synthetic analysis arrived')", 'the automatically recovered analysis');
     const generated = await evaluate(`(()=>({
-      prompt:document.getElementById('promptOutput').value,
-      unresolved:document.getElementById('promptOutput').value.includes('{{'),
+      analysis:document.getElementById('analysisContent').textContent,
+      url:location.pathname,
+      hidden:document.getElementById('analysisSection').hidden,
     }))()`);
-    assert.ok(generated.prompt.length > 0);
-    assert.equal(generated.unresolved, false);
+    assert.ok(generated.analysis.includes('Synthetic analysis arrived'));
+    assert.equal(generated.url, '/training-result.html', 'the completed result appears without navigation');
+    assert.equal(generated.analysis.includes('training:'), false, 'ordinary analysis text has no raw evidence references');
+    await evaluate("document.getElementById('analysisSection').scrollIntoView({block:'start'}); true");
+    const desktopShot = await command('Page.captureScreenshot', { format: 'png' });
+    writeFileSync('/tmp/issue65-analysis-desktop.png', Buffer.from(desktopShot.data, 'base64'));
+    await evaluate("document.querySelector('.analysis-interpretation button').click(); true");
+    await waitFor("document.querySelector('.analysis-interpretation h4').textContent==='Confirmed interpretation'", 'confirming the reusable interpretation');
+    await evaluate("document.querySelector('.analysis-interpretation button').click(); true");
+    await waitFor("document.getElementById('analysisCorrectionDialog').hidden===false", 'opening the accessible correction dialog');
+    assert.equal(await evaluate("document.activeElement.matches('[data-analysis-correction-close]')"), true, 'the correction dialog takes initial focus');
+    await evaluate(`(()=>{const field=document.getElementById('analysisCorrectionText');field.value='Synthetic correction confirmed in the browser.';field.dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('[data-analysis-correction-save]').click();return true})()`);
+    await waitFor("document.querySelector('.analysis-interpretation p').textContent==='Synthetic correction confirmed in the browser.'", 'saving the local interpretation correction');
+    await evaluate("document.querySelector('.analysis-interpretation button:last-child').click(); true");
+    await waitFor("document.querySelector('.analysis-interpretation h4').textContent==='Dismissed'", 'discarding the corrected interpretation');
+    await setLanguage('pt-BR');
+    assert.equal(await evaluate("document.querySelector('#analysisSection h2').textContent.includes('Análise')"), true, 'analysis labels rerender in Portuguese');
+    await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await evaluate("document.getElementById('analysisSection').scrollIntoView({block:'start'}); true");
+    await delay(250);
+    assert.equal(await evaluate('document.documentElement.scrollWidth>innerWidth'), false, 'the analysis has no mobile horizontal overflow');
+    const mobileShot = await command('Page.captureScreenshot', { format: 'png' });
+    writeFileSync('/tmp/issue65-analysis-mobile.png', Buffer.from(mobileShot.data, 'base64'));
+    await setLanguage('en-US');
+    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+    const ownerRead = await app.inject({
+      method: 'GET', url: `/api/trainings/${manualId}/analyses`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${createSession(db, account.id).token}` },
+    });
+    assert.equal(ownerRead.statusCode, 200);
+    assert.equal(ownerRead.json().latest.result.summary.text, 'Synthetic analysis arrived while the session stayed open.');
+    assert.equal('evidence' in ownerRead.json().latest.result.summary, false, 'ordinary analysis reads omit evidence identifiers');
+    for (const userId of [admin.id, otherUser.id]) {
+      const foreignRead = await app.inject({
+        method: 'GET', url: `/api/trainings/${manualId}/analyses`,
+        headers: { cookie: `${SESSION_COOKIE_NAME}=${createSession(db, userId).token}` },
+      });
+      assert.equal(foreignRead.statusCode, 404, 'neither a different user nor an admin can cross ownership');
+    }
+    assert.equal(generated.hidden, false);
+    assert.equal(providerCalls, 1, 'reload recovered the same execution without another provider call');
     assert.ok(
       writes().some(({ method, url }) => method === 'PATCH' && url.endsWith(`/api/trainings/${manualId}`)),
-      'the prompt is generated from the persisted session'
+      'feedback persistence precedes analysis generation'
     );
     assert.equal(row(manualId).completed, 1);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM workout_analysis_versions WHERE training_id=?').get(manualId).n, 1, 'the applied analysis history is persisted');
 
     /* ── A FIT upload waits for the same reported effort ── */
 
@@ -691,6 +799,38 @@ test('the session page requires a realized RPE before saving, generating or uplo
     assert.equal(row(legacyId).feedback_rpe, 5, 'the effort is recorded without touching the result');
     assert.equal(row(legacyId).result_data_source, 'fit_upload');
     assert.equal(row(legacyId).fit_distance, 10);
+
+    /* ── Admin prompt access stays free and owner-scoped ── */
+
+    const adminTrainingId = seedTraining(admin.id);
+    await command('Network.setCookie', {
+      name: SESSION_COOKIE_NAME, value: createSession(db, admin.id).token, url: origin,
+    });
+    await openSession(adminTrainingId);
+    await waitFor("[...document.querySelectorAll('button')].some((button)=>button.textContent.includes('View external prompt'))", 'the admin-only prompt action');
+    await clickUntil("[data-analysis-external-prompt='true']", "!!document.querySelector('.analysis-prompt-card textarea')?.value.includes('Analyze the running workout below')", 'the free admin prompt preview');
+    const adminPreview = await evaluate(`(()=>({
+      role:document.querySelector('[role=dialog][aria-modal=true]')!==null,
+      active:document.activeElement.getAttribute('aria-label'),
+      prompt:document.querySelector('.analysis-prompt-card textarea')?.value||'',
+      copy:document.querySelector('.analysis-prompt-card textarea')?.readOnly,
+    }))()`);
+    assert.equal(adminPreview.role, true, 'the external prompt opens in the shared accessible modal');
+    assert.equal(adminPreview.copy, true);
+    assert.ok(adminPreview.prompt.includes('INSTRUCTIONS FOR ANALYSIS'));
+    assert.equal(providerCalls, 1, 'viewing the prompt does not call the provider');
+    assert.equal(writes().filter(({ method, url }) => method === 'POST' && url.endsWith('/api/ai/executions')).length, 0);
+    await pressKey('Tab', 'Tab', 9);
+    await pressKey('Tab', 'Tab', 9);
+    await pressKey('Tab', 'Tab', 9);
+    assert.equal(await evaluate("document.activeElement.matches('.analysis-dialog-actions button:last-child')"), true, 'Shift+Tab wraps to the last modal action');
+    await pressKey('Tab', 'Tab', 9);
+    assert.equal(await evaluate("document.activeElement.matches('.analysis-prompt-card header button')"), true, 'Tab wraps to the first modal control');
+    await pressShiftTab();
+    assert.equal(await evaluate("document.activeElement.matches('.analysis-dialog-actions button:last-child')"), true, 'Shift+Tab wraps to the last modal control');
+    await pressKey('Escape', 'Escape', 27);
+    await waitFor("document.querySelector('.analysis-prompt-card')?.closest('[role=dialog]').hidden===true", 'the prompt modal closing with Escape');
+    assert.equal(await evaluate('document.activeElement===document.querySelector("[data-analysis-external-prompt=true]")'), true, 'focus returns to the prompt trigger');
   } finally {
     try {
       socket?.close();

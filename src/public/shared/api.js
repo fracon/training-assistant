@@ -132,6 +132,22 @@ export function startAiExecution(body) {
 export function cancelAiExecution(id) {
   return requestJson(`/api/ai/executions/${encodeURIComponent(id)}/cancel`, {});
 }
+export async function fetchWorkoutAnalyses(trainingId, { signal } = {}) {
+  const response = await fetch(`/api/trainings/${encodeURIComponent(trainingId)}/analyses`, {
+    headers: { accept: 'application/json' }, signal,
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw Object.assign(new Error(payload.error || 'Could not read workout analysis.'), { codes: payload.errors, status: response.status });
+  return payload;
+}
+export function updateAiInterpretation(id, action, expectedVersion, text) {
+  const body = { expected_version: expectedVersion };
+  if (action === 'correct') body.text = text;
+  return requestJson(`/api/ai/interpretations/${encodeURIComponent(id)}/${action}`, body);
+}
+export function previewAnalysisPrompt(trainingId) {
+  return requestJson('/api/ai/admin/preview', { purpose: 'analysis', resource_id: trainingId });
+}
 export async function fetchWeeklyProposal(id, { signal } = {}) {
   const response = await fetch(
     `/api/ai/workouts/${encodeURIComponent(id)}/proposal`,

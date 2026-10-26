@@ -279,21 +279,22 @@
           <button id="saveBtn" class="btn-secondary" type="button"
             data-i18n="session.save">Save and back to calendar</button>
           <button id="generateBtn" class="btn-primary" type="button">
-            <i data-lucide="sparkles" aria-hidden="true"></i>
-            <span data-i18n="session.generatePrompt">Generate analysis prompt</span>
+            <i data-lucide="activity" aria-hidden="true"></i>
+            <span data-i18n="session.analysis.analyze">Analyze workout</span>
           </button>
         </div>
-
-        <div class="prompt-section" id="promptSection" hidden>
-          <h3 data-i18n="session.promptHeading">Generated Prompt</h3>
-          <textarea id="promptOutput" class="input-control prompt-output" rows="16" readonly></textarea>
-          <div class="prompt-actions">
-            <button id="copyPromptBtn" class="btn-secondary btn-small" type="button">
-              <i data-lucide="copy" aria-hidden="true"></i>
-              <span data-i18n="session.copyPrompt">Copy to clipboard</span>
-            </button>
-          </div>
-        </div>
+      </section>
+      <section id="analysisSection" class="card workout-analysis" aria-labelledby="analysisTitle" aria-live="polite" hidden>
+        <header class="analysis-header">
+          <h2 id="analysisTitle" data-i18n="session.analysis.title">Workout analysis</h2>
+          <span id="analysisState" class="analysis-state" role="status"></span>
+        </header>
+        <p id="analysisNotice" class="analysis-notice" role="status" hidden></p>
+        <div id="analysisContent"></div>
+        <details id="analysisHistory" class="analysis-history" hidden>
+          <summary data-i18n="session.analysis.history">Previous analyses</summary>
+          <div id="analysisHistoryContent"></div>
+        </details>
       </section>
     </section>
   </main>
@@ -326,6 +327,22 @@
         <p data-import-help-manual-description></p>
         <button type="button" class="btn-secondary" data-import-help-manual>Enter results manually</button>
       </section>
+    </div>
+  </div>
+
+  <div id="analysisCorrectionDialog" class="import-help-dialog" role="dialog" aria-modal="true" aria-labelledby="analysisCorrectionTitle" aria-describedby="analysisCorrectionDescription" hidden>
+    <div class="import-help-card analysis-correction-card">
+      <header class="import-help-header">
+        <h2 id="analysisCorrectionTitle" data-i18n="session.analysis.correctTitle">Correct interpretation</h2>
+        <button class="btn-icon" type="button" data-analysis-correction-close data-i18n-aria-label="session.analysis.close"><i data-lucide="x" aria-hidden="true"></i></button>
+      </header>
+      <p id="analysisCorrectionDescription" data-i18n="session.analysis.correctDescription">Write the user-reported correction to keep for future context.</p>
+      <label class="field-label" for="analysisCorrectionText" data-i18n="session.analysis.correctionLabel">Your correction</label>
+      <textarea id="analysisCorrectionText" class="input-control" rows="5" maxlength="400"></textarea>
+      <div class="analysis-dialog-actions">
+        <button type="button" class="btn-secondary" data-analysis-correction-cancel data-i18n="session.analysis.cancel">Cancel</button>
+        <button type="button" class="btn-primary" data-analysis-correction-save data-i18n="session.analysis.saveCorrection">Save correction</button>
+      </div>
     </div>
   </div>
 

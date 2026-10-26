@@ -11,6 +11,8 @@ const { memoryOverview } = require('./overview');
 const { readAiConfig } = require('./config');
 const { createExecutionService } = require('./executions');
 const { createCyclePlanAdapter } = require('./cycle-plan-adapter');
+const { createWorkoutAnalysisAdapter } = require('./workout-analysis-adapter');
+const { readWorkoutAnalyses, changeInterpretation } = require('./workout-analysis');
 const { readCyclePlanning, applyCyclePlan } = require('./cycle-plans');
 const {
   createWeeklyWorkoutAdapter,
@@ -62,6 +64,7 @@ function registerAiRoutes(
   const operations = {
     cycle: createCyclePlanAdapter(db),
     workouts: createWeeklyWorkoutAdapter(db),
+    analysis: createWorkoutAnalysisAdapter(db),
     ...(providedOperations || {}),
   };
   const service = createExecutionService({ db, config, operations, client });
@@ -153,9 +156,11 @@ function registerAiRoutes(
   route('post', '/api/ai/workouts/:id/apply', (r) =>
     applyWeeklyProposal(db, r.user.id, r.params.id, r.body, service),
   );
-  route('get', '/api/ai/executions/:id', (r) =>
-    service.get(r.user.id, r.params.id),
-  );
+  route('get', '/api/ai/executions/:id', (r) => {
+    const execution = service.get(r.user.id, r.params.id);
+    if (execution.purpose === 'analysis') execution.response = null;
+    return execution;
+  });
   route('post', '/api/ai/executions/:id/cancel', (r) => {
     exactKeys(r.body || {}, []);
     return service.cancel(r.user.id, r.params.id);
@@ -166,6 +171,14 @@ function registerAiRoutes(
   route('post', '/api/ai/admin/preview', (r) =>
     service.preview(r.user.id, r.body),
   );
+  route('get', '/api/trainings/:id/analyses', (r) =>
+    readWorkoutAnalyses(db, r.user.id, r.params.id, config),
+  );
+  for (const [action, pathAction] of [['confirm', 'confirm'], ['correct', 'correct'], ['discard', 'discard']]) {
+    route('post', `/api/ai/interpretations/:id/${pathAction}`, (r) =>
+      changeInterpretation(db, r.user.id, r.params.id, action, r.body),
+    );
+  }
   route('get', '/api/ai/admin/usage', (r) => {
     if (r.user.role !== 'admin') throw new AiError('adminRequired', 403);
     return {

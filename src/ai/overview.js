@@ -21,6 +21,18 @@ function memoryOverview(db, userId, config, asOf) {
       includedInAggregates: row.includedInAggregates === true,
       href: `/training-result.html?id=${encodeURIComponent(row.source.id)}`,
     });
+    const currentInterpretations = new Set((context.interpretations || []).map((item) => item.source.id));
+    const interpretations = db.prepare(`SELECT i.id,i.training_id,i.kind,i.text,i.disposition,
+      i.correction_text,i.version,i.updated_at,t.dia FROM ai_interpretations i
+      JOIN trainings t ON t.id=i.training_id AND t.user_id=i.user_id
+      WHERE i.user_id=? ORDER BY i.updated_at DESC,i.id LIMIT 60`).all(userId)
+      .map((item) => ({
+        ...item,
+        current: currentInterpretations.has(item.id),
+        originalText: item.text,
+        text: item.disposition === 'corrected' ? item.correction_text : item.text,
+        href: `/training-result.html?id=${encodeURIComponent(item.training_id)}`,
+      }));
     return {
       asOf: context.asOf,
       profile,
@@ -51,6 +63,7 @@ function memoryOverview(db, userId, config, asOf) {
         href: `/calendar.html`,
       })),
       comparables: context.comparables.map(session),
+      interpretations,
       selectionLimited: context.omissions.length > 0,
     };
   })();

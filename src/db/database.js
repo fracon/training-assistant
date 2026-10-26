@@ -691,6 +691,7 @@ function migrateDatabase(db) {
   require('../ai/schema').migrateAiDiagnostics(db);
   require('../ai/schema').migrateWeeklyWorkouts(db);
   require('../ai/schema').migrateWeeklyAvailabilityRevision(db);
+  require('../ai/schema').migrateWorkoutAnalysis(db);
   require('../ai/cycle-plan-migration').migrateCyclePlans(db);
 }
 

@@ -2,18 +2,20 @@
 
 A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, request and review weekly AI proposals, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized training-request prompts for use with an external AI.
 
-Current application version: **0.23.0** (active beta development).
+Current application version: **0.24.0** (active beta development).
 
 ## AI integration: cycle planning and weekly proposals
 
 Phase 0 (#62) and the approved plan are integrated through PRs #66, #68 and
-#67; cycle planning (#63) is integrated through PR #69. This **0.23.0 beta**
-issue branch extends the weekly proposals (#64) adapter with per-component
+#67; cycle planning (#63) is integrated through PR #69. The **0.23.0 beta**
+release extends the weekly proposals (#64) adapter with per-component
 execution guidance, stage-specific RPE/FC summaries, compact hourly-weather
 presentation, and a dismissible localized result modal after application.
 Applied proposals no longer remain in the review area or reopen a result modal
-after reload. This phase is not integrated until its PR merges. Result
-analysis (#65) remains future scope.
+after reload. Weekly delivery is integrated through PR #70. Version **0.24.0**
+adds contextual workout analysis (#65), described in the
+[workout analysis contract](docs/ai-workout-analysis.md); it is implemented on
+its dedicated open PR and is not integrated until that PR merges.
 
 Saving an active cycle confirms its registration and opens **Cycle planning /
 Planejamento do ciclo** using the ID returned by the backend. **Generate plan /

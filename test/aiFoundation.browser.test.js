@@ -387,7 +387,7 @@ test('training memory Chrome PT/EN desktop/mobile, ownership, keyboard, loading,
     );
     assert.equal(
       await evaluate(`document.querySelectorAll('#memoryOverview section').length`),
-      6,
+      7,
     );
     for(const language of ['en-US','pt-BR']) {
       await evaluate(`document.querySelector(".lang-switch [data-lang='${language}']").click()`);

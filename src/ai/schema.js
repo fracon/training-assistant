@@ -114,9 +114,55 @@ function migrateWeeklyAvailabilityRevision(db) {
     db.prepare('INSERT INTO schema_migrations(name) VALUES(?)').run(marker);
   }).immediate();
 }
+function migrateWorkoutAnalysis(db) {
+  db.transaction(() => {
+    const marker = '2026-10-workout-analysis-v1';
+    if (db.prepare('SELECT 1 FROM schema_migrations WHERE name=?').get(marker))
+      return;
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS workout_analysis_versions (
+        id TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        training_id INTEGER NOT NULL REFERENCES trainings(id) ON DELETE CASCADE,
+        sequence INTEGER NOT NULL,
+        adapter_version TEXT NOT NULL,
+        context_json TEXT NOT NULL,
+        response_json TEXT,
+        state TEXT NOT NULL DEFAULT 'queued',
+        error_code TEXT,
+        language TEXT NOT NULL CHECK(language IN ('pt-BR','en-US')),
+        created_at TEXT NOT NULL,
+        UNIQUE(user_id, training_id, sequence)
+      );
+      CREATE INDEX IF NOT EXISTS workout_analysis_owner
+        ON workout_analysis_versions(user_id,training_id,sequence DESC);
+      CREATE TABLE IF NOT EXISTS ai_interpretations (
+        id TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        training_id INTEGER NOT NULL REFERENCES trainings(id) ON DELETE CASCADE,
+        analysis_id TEXT NOT NULL REFERENCES workout_analysis_versions(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL CHECK(kind IN ('pattern','recommendation','attention')),
+        text TEXT NOT NULL,
+        evidence_json TEXT NOT NULL,
+        evidence_key TEXT NOT NULL,
+        evidence_hash TEXT NOT NULL,
+        disposition TEXT NOT NULL CHECK(disposition IN ('pending','confirmed','corrected','dismissed','superseded')),
+        correction_text TEXT,
+        version INTEGER NOT NULL DEFAULT 1 CHECK(version > 0),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(user_id,kind,evidence_hash)
+      );
+      CREATE INDEX IF NOT EXISTS ai_interpretation_owner
+        ON ai_interpretations(user_id,disposition,updated_at DESC);
+    `);
+    db.prepare('INSERT INTO schema_migrations(name) VALUES(?)').run(marker);
+  }).immediate();
+}
 module.exports = {
   migrateAi,
   migrateAiDiagnostics,
   migrateWeeklyWorkouts,
   migrateWeeklyAvailabilityRevision,
+  migrateWorkoutAnalysis,
 };

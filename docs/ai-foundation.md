@@ -2,10 +2,10 @@
 
 Status: phase 0 is integrated through merged [PR #67](https://github.com/fracon/training-assistant/pull/67),
 merge `648d6a0`, following #66/#68. Cycle planning (#63) is integrated via
-merged PR #69. Weekly workout delivery (#64) is implemented on its dedicated
-issue branch and awaits that PR's merge; see [weekly workouts](ai-weekly-workouts.md).
-Analysis (#65) remains future scope. See [cycle planning](ai-cycle-planning.md)
-for phase 1.
+merged PR #69; weekly workout delivery (#64) via merged PR #70. Contextual
+workout analysis (#65) is implemented in its dedicated open PR; see
+[workout analysis](ai-workout-analysis.md). See [cycle planning](ai-cycle-planning.md)
+for phase 1 and [weekly workouts](ai-weekly-workouts.md) for phase 2.
 Cycle goals may be noncompetitive; the target date is a goal deadline, not a
 required race. See the [calendar and adapter contract](ai-cycle-planning.md#goal-deadlines-and-calendar-validation).
 Historical validation sections below record pre-merge phase 0 batches, not the
@@ -340,7 +340,7 @@ Plan-local assessments are excluded. v1/v2/v3/v4 execution snapshots remain
 immutable and are marked outdated under v5, without automatic paid regeneration.
 This corrects v4's unconditional inclusion of applied planning details. Weekly
 delivery is implemented separately with its own versioned output adapter;
-analysis remains unregistered.
+contextual workout analysis is implemented on the current issue #65 branch.
 
 ### Applied-planning RPE compatibility on the issue #63 branch
 
@@ -400,7 +400,8 @@ Existing manual prompt workflows remain available to all users until their
 individual replacement phases. Model responses render as text/data, never HTML.
 
 Phase 0 introduced no paid adapters. Merged PR #69 registers cycle planning;
-the issue #64 branch registers weekly workouts; analysis remains unregistered.
+PR #70 integrates weekly workouts; contextual workout analysis is implemented
+on the current issue #65 branch and remains open for review.
 Enabling AI alone sends no athlete context to OpenAI. Explicit cycle or weekly
 generation sends only selected structured context and the rendered prompt.
 They must version
@@ -423,7 +424,7 @@ are allowlisted, with no `user_id`, arbitrary model or arbitrary prompt option.
 | `PUT /api/ai/profile` | `{fields:{experience?},expected_version}`; strings <=2000 chars |
 | `GET /api/ai/memory/legacy` | Owner-only read-only archive `{fields,entries}`; excluded from new contexts |
 | `GET /api/ai/context?purpose=...&resource_id=...&as_of=...` | Administrator's own technical context only; ordinary users receive 403 and use the overview |
-| `POST /api/ai/executions` | `{purpose,resource_id?,target_date?,idempotency_key,optional_context?}` -> 202 and ID/state; cycle integrated via #69; weekly workouts on issue #64 branch; analysis unregistered |
+| `POST /api/ai/executions` | `{purpose,resource_id?,target_date?,idempotency_key,optional_context?}` -> 202 and ID/state; cycle integrated via #69; weekly workouts via #70; analysis implemented on issue #65 branch |
 | `GET /api/ai/workouts/:id/proposal` | Owner-scoped persisted weekly proposal, response version and hourly weather evidence |
 | `POST /api/ai/workouts/:id/apply` | `{expected_response_hash}`; transactionally revalidates freshness and applies only nonduplicate sessions |
 | `GET /api/ai/executions` | Latest 50 owned execution identifiers/states |
@@ -466,8 +467,9 @@ registered no product adapter; merged #69 added cycle planning and the issue
 #64 branch adds weekly calendar delivery. Append-only JSON instructions are
 not a substitute for adapting conflicting Excel/weather delivery instructions.
 The cycle application contract is in [cycle planning](ai-cycle-planning.md),
-and weekly application is specified in [weekly workouts](ai-weekly-workouts.md);
-result analysis remains future scope.
+weekly application is specified in [weekly workouts](ai-weekly-workouts.md), and
+contextual result analysis on the current issue #65 branch is specified in
+[workout analysis](ai-workout-analysis.md).
 
 An execution reserves per-user/global tokens, cost and maximum attempts inside
 one immediate transaction, then dispatches outside any database transaction.

@@ -49,10 +49,11 @@ failure from generation failure and provides a free read retry. These changes
 are integrated via PR #69; the real evaluation above predates them and is not
 their live-provider validation.
 
-Status: documentation integrated via PRs #66/#68; phase 0 integrated through
-merged PR #67 (`648d6a0`); phase 1 integrated via merged PR #69. Phase 2 is
-implemented on the issue #64 branch, pending its own PR/merge; phase 3 remains
-planned. The historical branch-only notes below describe the state before #69.
+Current status: documentation is integrated via PRs #66/#68; phase 0 through
+merged PR #67 (`648d6a0`); phase 1 through merged PR #69; and phase 2 through
+merged PR #70. Phase 3 (#65) is implemented on its dedicated open PR and is
+pending merge. Historical notes below retain the status that applied when they
+were written.
 Owner-approved direction: 2026-10-14; memory correction approved 2026-10-15 (#68).
 Baseline reviewed: main application version 0.19.6.
 
@@ -70,8 +71,8 @@ and documented by the implementing agent.
 | --- | --- | --- | --- |
 | 0: API foundation and training memory | [#62](https://github.com/fracon/training-assistant/issues/62) | Documentation plan/correction merged (#66/#68) | Integrated via [merged PR #67](https://github.com/fracon/training-assistant/pull/67) |
 | 1: Cycle planning | [#63](https://github.com/fracon/training-assistant/issues/63) | Phase 0 merged | Integrated via [merged PR #69](https://github.com/fracon/training-assistant/pull/69) |
-| 2: Weekly workout requests | [#64](https://github.com/fracon/training-assistant/issues/64) | Phase 1 merged | Implemented on this issue branch; pending PR/merge |
-| 3: Contextual workout analysis | [#65](https://github.com/fracon/training-assistant/issues/65) | Phase 2 merged | Planned |
+| 2: Weekly workout requests | [#64](https://github.com/fracon/training-assistant/issues/64) | Phase 1 merged | Integrated via [merged PR #70](https://github.com/fracon/training-assistant/pull/70) |
+| 3: Contextual workout analysis | [#65](https://github.com/fracon/training-assistant/issues/65) | Phase 2 merged | Implemented on this issue branch; pending PR/merge |
 
 Implement sequentially. Each agent must inspect local changes/worktrees, fetch
 the remote, safely fast-forward local main after prerequisite merges, and create
@@ -138,8 +139,8 @@ prompt/model/tool proxy. Render model responses safely.
 
 Phase 0 configuration is integrated; see the complete settings,
 defaults and bounds in [AI foundation](ai-foundation.md). Merged PR #69 registers
-cycle planning; this issue branch registers weekly workout delivery; contextual
-analysis remains unregistered until phase 3:
+cycle planning; PR #70 registers weekly workout delivery; the current issue #65
+branch registers contextual workout analysis as phase 3:
 
 - `OPENAI_API_KEY`: server-only secret injected into the running container.
 - `AI_ENABLED`: explicit feature switch.
@@ -211,7 +212,8 @@ cards, semantic availability/totals tables, visible dated feedback and expandabl
 planning details. Context loads on opening; load failures expose a retry action,
 not a persistent refresh control. The [presentation contract](ai-foundation.md#memory-presentation-on-the-pr-67-branch)
 defines the integrated phase 0 UI. Cycle generation is integrated via #69;
-weekly generation is implemented on the issue #64 branch; analysis remains future scope.
+weekly generation is integrated via #70; contextual workout analysis is
+implemented on the current issue #65 branch and remains open for review.
 
 ### Phase 0 boundary and correction
 
@@ -553,11 +555,12 @@ PR #69 also repairs older cycle-planning schemas missing the applied-plan
 fingerprint without replacing records; those legacy plans remain readable and
 are conservatively marked outdated.
 It does not reuse plan-local athlete assessments. The historical issue #63
-branch did not include weekly calendar or hourly forecast delivery. Phase 2 is
-implemented on the current issue #64 branch and is documented in
-[ai-weekly-workouts.md](ai-weekly-workouts.md); result analysis remains future.
+branch did not include weekly calendar or hourly forecast delivery. Phase 2 was
+implemented on the issue #64 branch and is documented in
+[ai-weekly-workouts.md](ai-weekly-workouts.md); phase 3 is implemented on this
+issue #65 branch and documented in [ai-workout-analysis.md](ai-workout-analysis.md).
 
-## Phase 2 implementation on the issue #64 branch
+## Phase 2 implementation (integrated via PR #70)
 
 Weekly proposals reuse the persisted execution and quota pipeline with a
 versioned `weekly-workouts-v3` adapter. External PT/EN prompt templates remain
@@ -567,7 +570,23 @@ output. Proposals are owner-scoped, recoverable, reviewed before explicit
 calendar application and applied transactionally with the existing
 date/name/details deduplication. Hourly Open-Meteo evidence is checked against
 the local time window, timezone/DST and coverage; partial/unavailable weather
-remains qualified. There is no second weather provider, paid web-search tool,
-real provider call, or phase #65 functionality in this implementation. See
+remains qualified. At the PR #70 implementation point, there was no second
+weather provider, paid web-search tool, real provider call, or phase #65
+functionality. See
 the [weekly delivery contract](ai-weekly-workouts.md) for APIs, migration,
 application conflicts, privacy, tests and real-evaluation requirements.
+
+## Phase 3 implementation on the issue #65 branch
+
+Contextual analysis reuses the persisted execution pipeline and is explicitly
+requested only after canonical result persistence. The adapter/schema, strict
+domain validation, result history, interpretation lifecycle and owner-scoped
+routes are described in the [workout analysis contract](ai-workout-analysis.md).
+The idempotent analysis migration preserves existing rows, and only current
+evidence-linked interpretations can enter cycle, weekly or analysis context.
+The external prompt templates remain byte-identical and are server-private;
+admin preview is free and checks current role plus ownership. Polling/recovery
+continue until backend terminal state and never create a second generation.
+Chrome E2E and CI use simulated providers only. This branch has not made a paid
+OpenAI call; a separate real-model quality evaluation needs its own approval and
+budget.
