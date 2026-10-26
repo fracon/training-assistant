@@ -2032,24 +2032,89 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     const duplicateId = db.prepare(
       `INSERT INTO trainings(user_id,training_cycle_id,dia,periodo,tipo,treino,detalhes,fc_alvo,rpe,previsao,observacoes,location,completed,feedback_rpe,feedback_notas) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,1,3,?)`,
     ).run(1, cycleId, duplicate.date, duplicate.period, duplicate.type, duplicate.workout, duplicate.details, duplicate.targetHr, duplicate.rpe, duplicate.weather, duplicate.notes, duplicate.location, 'Resultado sintético preservado').lastInsertRowid;
-    await evaluate(`(()=>{const original=window.fetch.bind(window);window.__generationPosts=0;window.__executionReads=0;window.__transientPollFailureInjected=false;window.fetch=async(input,init={})=>{const url=typeof input==='string'?input:input.url;const method=(init.method||'GET').toUpperCase();if(method==='POST'&&url==='/api/ai/executions'){window.__generationPosts++;const response=await original(input,init);window.__latestGeneratedId=(await response.clone().json()).id;return response}if(method==='GET'&&/^\\/api\\/ai\\/executions\\/[^/]+$/.test(new URL(url,location.href).pathname)){window.__executionReads++;if(!window.__transientPollFailureInjected){window.__transientPollFailureInjected=true;throw new TypeError('synthetic transient progress read failure')}}return original(input,init)}})()`);
+    await evaluate(`(()=>{
+      const originalFetch=window.fetch.bind(window);
+      const nativeSetTimeout=window.setTimeout.bind(window);
+      const nativeRandom=Math.random;
+      window.__generationPosts=0;
+      window.__executionReads=0;
+      window.__executionReadsInFlight=0;
+      window.__maxExecutionReadsInFlight=0;
+      window.__transientPollFailureInjected=false;
+      window.__transientServerFailureInjected=false;
+      window.__holdNextExecutionRead=false;
+      window.__heldExecutionRead=false;
+      window.__pollDelays=[];
+      window.__restorePollingTestShims=()=>{window.setTimeout=nativeSetTimeout;Math.random=nativeRandom};
+      window.setTimeout=(callback,delay=0,...args)=>{
+        if(delay>=900&&delay<=30000)window.__pollDelays.push(delay);
+        return nativeSetTimeout(callback,delay===1800?1:delay,...args);
+      };
+      Math.random=()=>0.9;
+      window.fetch=async(input,init={})=>{
+        const url=typeof input==='string'?input:input.url;
+        const method=(init.method||'GET').toUpperCase();
+        const pathname=new URL(url,location.href).pathname;
+        if(method==='POST'&&pathname==='/api/ai/executions'){
+          window.__generationPosts++;
+          const response=await originalFetch(input,init);
+          window.__latestGeneratedId=(await response.clone().json()).id;
+          return response;
+        }
+        if(method==='GET'&&/^\\/api\\/ai\\/executions\\/[^/]+$/.test(pathname)){
+          window.__executionReads++;
+          window.__executionReadsInFlight++;
+          window.__maxExecutionReadsInFlight=Math.max(window.__maxExecutionReadsInFlight,window.__executionReadsInFlight);
+          try{
+            if(!window.__transientPollFailureInjected){
+              window.__transientPollFailureInjected=true;
+              throw new TypeError('synthetic transient progress read failure');
+            }
+            if(!window.__transientServerFailureInjected){
+              window.__transientServerFailureInjected=true;
+              return new Response(JSON.stringify({error:'synthetic server failure'}),{status:503,headers:{'content-type':'application/json'}});
+            }
+            const response=await originalFetch(input,init);
+            if(window.__holdNextExecutionRead){
+              window.__holdNextExecutionRead=false;
+              window.__heldExecutionRead=true;
+              await new Promise((resolve,reject)=>{
+                if(init.signal?.aborted){reject(new DOMException('Aborted','AbortError'));return}
+                init.signal?.addEventListener('abort',()=>reject(new DOMException('Aborted','AbortError')),{once:true});
+                window.__releaseHeldExecutionRead=resolve;
+              });
+            }
+            return response;
+          }finally{window.__executionReadsInFlight--}
+        }
+        return originalFetch(input,init);
+      };
+    })()`);
     await evaluate(`document.getElementById('generateBtn').click()`);
     await delay(1500);
-    await waitForText('#weeklyProposalError', 'Progress is temporarily unavailable. Kinesis will retry a temporary read failure automatically; you can also read the same execution. This does not start another generation.');
-    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+5000;const check=()=>{if(window.__executionReads>1)resolve(true);else if(Date.now()>end)reject(new Error('The automatic progress retry did not run'));else setTimeout(check,20)};check()})`);
+    await waitForText('#weeklyProposalError', 'A temporary connection problem interrupted progress checking. Kinesis will keep checking this execution; this does not start another generation.');
+    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+12000;const check=()=>{if(window.__executionReads>2)resolve(true);else if(Date.now()>end)reject(new Error('Automatic retries did not continue after network and server read failures'));else setTimeout(check,20)};check()})`);
     await evaluate(`Object.defineProperty(document,'visibilityState',{configurable:true,value:'hidden'});document.dispatchEvent(new Event('visibilitychange'))`);
     assert.equal(await evaluate(`document.visibilityState`), 'hidden');
     await delay(200);
     const readsBeforeVisibilityReturn = await evaluate(`window.__executionReads`);
+    await evaluate(`window.__holdNextExecutionRead=true`);
     await evaluate(`Object.defineProperty(document,'visibilityState',{configurable:true,value:'visible'});document.dispatchEvent(new Event('visibilitychange'))`);
     assert.equal(await evaluate(`document.visibilityState`), 'visible');
-    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+5000;const check=()=>{if(window.__executionReads>${readsBeforeVisibilityReturn})resolve(true);else if(Date.now()>end)reject(new Error('Returning to the tab did not refresh the active execution'));else setTimeout(check,20)};check()})`);
+    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+5000;const check=()=>{if(window.__heldExecutionRead)resolve(true);else if(Date.now()>end)reject(new Error('Returning to the tab did not start an immediate execution read'));else setTimeout(check,20)};check()})`);
+    await evaluate(`document.dispatchEvent(new Event('visibilitychange'))`);
+    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+5000;const check=()=>{if(window.__executionReads>${readsBeforeVisibilityReturn+1})resolve(true);else if(Date.now()>end)reject(new Error('The serialized visibility refresh did not run after aborting the older read'));else setTimeout(check,20)};check()})`);
+    assert.equal(await evaluate(`window.__maxExecutionReadsInFlight`), 1, 'visibility refreshes never overlap execution reads');
     await waitForText(
       '#weeklyProposalStatus',
       'Review the proposal before applying it.',
       55000,
     );
-    assert.ok(await evaluate(`window.__executionReads`) > 20, 'the long-running job is polled beyond the former 36-second limit');
+    assert.ok(await evaluate(`window.__executionReads`) > 70, 'the long-running job continues beyond the former 70-read limit');
+    assert.ok((await evaluate(`window.__pollDelays`)).includes(2520), 'transient read errors use jittered backoff');
+    assert.ok((await evaluate(`window.__pollDelays`)).includes(5040), 'repeated server failures increase the bounded backoff');
+    assert.equal(await evaluate(`window.__maxExecutionReadsInFlight`), 1);
+    await evaluate(`window.__restorePollingTestShims()`);
     assert.equal(await evaluate(`window.__generationPosts`), 1, 'polling never posts a second generation');
     assert.equal(await evaluate(`performance.getEntriesByType('navigation').length`), 1, 'the proposal appears without reload or navigation');
     assert.deepEqual(
@@ -2360,6 +2425,61 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     await evaluate(`document.getElementById('weeklyApplyResultOk').click()`);
     await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+5000;const check=()=>{if(document.getElementById('weeklyApplyResultModal').hidden)resolve(true);else if(Date.now()>end)reject(new Error('The second applied proposal result did not close'));else requestAnimationFrame(check)};check()})`);
     assert.equal(await evaluate(`document.querySelectorAll('.weekly-proposal-card').length`), 0);
+    await evaluate(`(()=>{
+      const originalFetch=window.fetch.bind(window);
+      window.__retryWaitReads=0;
+      window.__retryWaitHeld=false;
+      window.__retryWaitAborted=false;
+      window.__definitiveReadCount=0;
+      window.__syntheticGenerationPosts=0;
+      window.fetch=async(input,init={})=>{
+        const url=typeof input==='string'?input:input.url;
+        const method=(init.method||'GET').toUpperCase();
+        const pathname=new URL(url,location.href).pathname;
+        if(method==='POST'&&pathname==='/api/ai/executions'){
+          window.__syntheticGenerationPosts++;
+          const id=window.__syntheticGenerationPosts===1?'retry-after-execution':'missing-weekly-execution';
+          return new Response(JSON.stringify({id,purpose:'workouts',state:'queued',error:null,outdated:false,response:null}),{status:202,headers:{'content-type':'application/json'}});
+        }
+        if(method==='GET'&&pathname==='/api/ai/executions/retry-after-execution'){
+          window.__retryWaitReads++;
+          if(window.__retryWaitReads===1){
+            window.__retryWaitHeld=true;
+            await new Promise((resolve,reject)=>{
+              init.signal?.addEventListener('abort',()=>{window.__retryWaitAborted=true;reject(new DOMException('Aborted','AbortError'))},{once:true});
+            });
+          }
+          const state=window.__retryWaitReads<3?'queued':'failed';
+          return new Response(JSON.stringify({id:'retry-after-execution',purpose:'workouts',state,error:state==='queued'?'providerRateLimited':'providerRejected',outdated:false,response:null,updatedAt:new Date(Date.now()+5000).toISOString()}),{status:200,headers:{'content-type':'application/json'}});
+        }
+        if(method==='GET'&&pathname==='/api/ai/workouts/retry-after-execution/proposal')
+          return new Response(JSON.stringify({state:'queued',proposal:null,response:null,application:null,outdated:false}),{status:200,headers:{'content-type':'application/json'}});
+        if(method==='GET'&&pathname==='/api/ai/executions/missing-weekly-execution'){
+          window.__definitiveReadCount++;
+          return new Response(JSON.stringify({error:'not found',errors:['executionNotFound']}),{status:404,headers:{'content-type':'application/json'}});
+        }
+        return originalFetch(input,init);
+      };
+    })()`);
+    await evaluate(`document.getElementById('generateBtn').click()`);
+    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+5000;const check=()=>{if(window.__retryWaitHeld)resolve(true);else if(Date.now()>end)reject(new Error('The backend-reported queued execution was not read'));else setTimeout(check,20)};check()})`);
+    await evaluate(`window.dispatchEvent(new Event('pagehide'))`);
+    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+5000;const check=()=>{if(window.__retryWaitAborted)resolve(true);else if(Date.now()>end)reject(new Error('Leaving the page did not abort the execution read'));else setTimeout(check,20)};check()})`);
+    await delay(2100);
+    assert.equal(await evaluate(`window.__retryWaitReads`), 1, 'a departed page does not keep polling');
+    await evaluate(`(()=>{const event=new Event('pageshow');Object.defineProperty(event,'persisted',{value:true});window.dispatchEvent(event)})()`);
+    await waitForText('#weeklyProposalStatus', 'Aguardando a nova tentativa após limite do provedor…', 5000);
+    await waitForText('#weeklyProposalStatus', 'Esta execução terminou sem gerar uma proposta. Ler novamente mostrará a mesma falha; isso não inicia outra geração. A disponibilidade salva e o calendário foram preservados.', 7000);
+    assert.equal(await evaluate(`window.__retryWaitReads`), 3, 'the queued provider retry is polled until its terminal result');
+    assert.equal(await evaluate(`window.__syntheticGenerationPosts`), 1);
+    assert.equal(simulatedProviderCalls, 3, 'the backend-reported Retry-After wait uses no new provider call from the browser');
+    await evaluate(`document.getElementById('generateBtn').click()`);
+    await waitForText('#weeklyProposalError', 'Esta solicitação não está mais disponível para sua conta. Abra Solicitar Treinos novamente para recuperar a execução salva mais recente.', 5000);
+    assert.equal(await evaluate(`window.__definitiveReadCount`), 1);
+    assert.equal(await evaluate(`document.getElementById('weeklyReadAgain').hidden`), true);
+    await delay(2100);
+    assert.equal(await evaluate(`window.__definitiveReadCount`), 1, 'a definitive 404 stops polling');
+    assert.equal(await evaluate(`window.__syntheticGenerationPosts`), 2, 'each new request is an explicit single POST');
     await command('Emulation.setDeviceMetricsOverride', {
       width: 1280,
       height: 800,

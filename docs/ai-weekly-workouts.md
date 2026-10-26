@@ -14,14 +14,23 @@ Responses client, bounded 429-only retry, cancellation, diagnostics, context
 freshness and durable recovery. The operation is registered as
 `weekly-workouts-v3`; each proposal points to its execution. On reload, the page
 reads the user's latest weekly execution and retrieves the same persisted
-proposal. In-page progress polling is bounded to 70 reads at 1.8-second
-intervals (about 126 seconds), covering the configured 120-second provider
-timeout. A transient network, rate-limit, or server read failure keeps that same
-execution under observation and offers a free manual reread; it never starts a
-generation. Returning to a visible tab triggers an immediate read of the same
-queued/running execution. Older responses are discarded when a newer execution
-or read attempt supersedes them. An uncertain start is resolved by its
-idempotency key and is never silently replayed as a new paid call.
+proposal. In-page progress polling follows the persisted execution state at the
+normal 1.8-second interval and continues for as long as the backend reports
+`queued` or `running`; the browser never treats a count or elapsed time as a
+generation failure. Backend `Retry-After` waits remain queued and are observed
+until the execution resumes or reaches a terminal state. Transient read errors
+use bounded exponential backoff with jitter, then return to the normal interval
+after a successful read. Authentication, authorization, missing-execution and
+other definitive read errors stop polling with localized guidance. Returning
+to a visible or restored page immediately reads the same execution. Reads are
+serialized and older responses are discarded when a newer execution or read
+attempt supersedes them. Page exit clears its timer, aborts its read and removes
+the visibility listener. The worker already bounds an active provider request
+with configured `AI_TIMEOUT_MS`; after restart, interrupted dispatched calls
+become uncertain while queued authorized retries resume at their persisted due
+time. No frontend timeout interrupts a valid wait. An uncertain start is
+resolved by its idempotency key and is never silently replayed as a new paid
+call.
 Administrators can still explicitly preview the exact preserved external
 prompt and inspect only their own current-role debug snapshots; ordinary users
 receive the product proposal UI without technical prompt/debug controls.

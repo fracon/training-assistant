@@ -189,7 +189,17 @@ export function buildDayRowHtml(day, { dayLabel, messages = {}, state = {} }) {
 }
 
 const COPY_FEEDBACK_MS = 2000;
-const WEEKLY_MAX_POLLS = 70;
+const WEEKLY_POLL_INTERVAL_MS = 1800;
+const WEEKLY_RETRY_MAX_MS = 30000;
+const WEEKLY_EXECUTION_STATES = new Set([
+  'queued',
+  'running',
+  'completed',
+  'failed',
+  'uncertain',
+  'cancelled',
+  'outdated',
+]);
 
 function setupAiCoachPage(user) {
   const i18n = getShellI18n();
@@ -243,9 +253,12 @@ function setupAiCoachPage(user) {
   let activeExecutionId = null,
     readAttempt = 0,
     pollTimer = null,
-    weeklyPollCount = 0,
+    weeklyReadFailureCount = 0,
     weeklyRefreshInFlight = false,
+    weeklyRefreshController = null,
+    weeklyRefreshRequest = null,
     pendingWeeklyRefresh = null,
+    weeklyPageActive = true,
     lastWeeklyState = '',
     lastExecutionState = '',
     weeklyHistoryState = 'loading',
@@ -609,29 +622,86 @@ function setupAiCoachPage(user) {
     }
     weeklyContent.append(list);
   }
-  function showWeeklyReadError() {
+  function showWeeklyReadError(messageKey = 'weeklyReadError') {
     weeklyError.hidden = false;
-    weeklyError.textContent = t('aiCoach.weeklyReadError');
+    weeklyError.textContent = t(`aiCoach.${messageKey}`);
     weeklyApply.hidden = true;
     weeklyReadAgain.hidden = false;
     syncWeeklyActions();
   }
+  function abortWeeklyRead() {
+    weeklyRefreshController?.abort();
+    pendingWeeklyRefresh = null;
+  }
+  function scheduleWeeklyRead(id, token, delay) {
+    clearTimeout(pollTimer);
+    pollTimer = setTimeout(() => {
+      pollTimer = null;
+      void refreshWeeklyExecution(id, token);
+    }, delay);
+  }
+  function weeklyReadBackoff() {
+    weeklyReadFailureCount += 1;
+    const exponent = Math.min(weeklyReadFailureCount - 1, 5);
+    const base = Math.min(
+      WEEKLY_RETRY_MAX_MS,
+      WEEKLY_POLL_INTERVAL_MS * 2 ** exponent,
+    );
+    return Math.min(
+      WEEKLY_RETRY_MAX_MS,
+      Math.max(900, Math.round(base * (0.5 + Math.random()))),
+    );
+  }
+  function showDefinitiveWeeklyReadError(error) {
+    const code = error.codes?.[0];
+    const status = error.status;
+    const message =
+      status === 401 || code === 'authenticationRequired'
+        ? t('aiCoach.weeklyReadAuthentication')
+        : status === 403 || status === 404 || code === 'executionNotFound'
+          ? t('aiCoach.weeklyReadUnavailable')
+          : t('aiCoach.weeklyReadDefinitiveError');
+    weeklyReadUnavailable = true;
+    lastExecutionState = 'read_failed';
+    weeklySection.hidden = false;
+    weeklyError.hidden = false;
+    weeklyError.textContent = message;
+    weeklyApply.hidden = true;
+    weeklyReadAgain.hidden = true;
+    weeklyCancel.hidden = true;
+    syncWeeklyActions();
+    updateValidation();
+  }
   async function refreshWeeklyExecution(
     id,
     token = ++readAttempt,
-    pollCount = weeklyPollCount,
   ) {
+    if (!weeklyPageActive) return;
     if (weeklyRefreshInFlight) {
-      pendingWeeklyRefresh = { id, token, pollCount };
+      pendingWeeklyRefresh = { id, token };
+      if (
+        weeklyRefreshRequest?.id !== id ||
+        weeklyRefreshRequest?.token !== token
+      )
+        weeklyRefreshController?.abort();
       return;
     }
     weeklyRefreshInFlight = true;
-    weeklyPollCount = Math.max(weeklyPollCount, pollCount);
+    const controller = new AbortController();
+    weeklyRefreshController = controller;
+    weeklyRefreshRequest = { id, token };
     try {
-      const execution = await fetchAiExecution(id);
+      const execution = await fetchAiExecution(id, {
+        signal: controller.signal,
+      });
       if (token !== readAttempt || activeExecutionId !== id) return;
-      const proposal = await fetchWeeklyProposal(id);
+      if (!WEEKLY_EXECUTION_STATES.has(execution.state))
+        throw new Error('Invalid execution state response.');
+      const proposal = await fetchWeeklyProposal(id, {
+        signal: controller.signal,
+      });
       if (token !== readAttempt || activeExecutionId !== id) return;
+      weeklyReadFailureCount = 0;
       weeklyReadUnavailable = false;
       proposal.state = execution.state;
       proposal.response = execution.response;
@@ -640,65 +710,50 @@ function setupAiCoachPage(user) {
       renderWeeklyProposal(proposal);
       updateValidation();
       if (['queued', 'running'].includes(execution.state)) {
-        if (pollCount >= WEEKLY_MAX_POLLS) {
-          weeklyReadUnavailable = true;
-          weeklyStatus.textContent = t('aiCoach.weeklyStillRunning');
-          weeklyReadAgain.hidden = false;
-          updateValidation();
-          return;
-        }
-        pollTimer = setTimeout(
-          () => void refreshWeeklyExecution(id, token, pollCount + 1),
-          1800,
-        );
+        scheduleWeeklyRead(id, token, WEEKLY_POLL_INTERVAL_MS);
       }
     } catch (error) {
-      if (token === readAttempt && activeExecutionId === id) {
+      if (
+        weeklyPageActive &&
+        token === readAttempt &&
+        activeExecutionId === id &&
+        error?.name !== 'AbortError'
+      ) {
         clearTimeout(pollTimer);
         pollTimer = null;
         weeklySection.hidden = false;
         weeklyCancel.hidden = true;
-        weeklyReadAgain.hidden = false;
         if (error.codes?.includes('weeklySchemaIncompatible')) {
           weeklyReadUnavailable = false;
+          lastExecutionState = 'read_failed';
           weeklyError.hidden = false;
           weeklyError.textContent = t('aiCoach.weeklySchemaIncompatible');
           weeklyReadAgain.hidden = true;
           syncWeeklyActions();
-        } else {
+        } else if (isTransientWeeklyReadError(error)) {
           weeklyReadUnavailable = true;
-          showWeeklyReadError();
-          if (
-            isTransientWeeklyReadError(error) &&
-            pollCount < WEEKLY_MAX_POLLS
-          ) {
-            pollTimer = setTimeout(
-              () => void refreshWeeklyExecution(id, token, pollCount + 1),
-              1800,
-            );
-          }
+          showWeeklyReadError('weeklyReadRetrying');
+          scheduleWeeklyRead(id, token, weeklyReadBackoff());
+        } else {
+          showDefinitiveWeeklyReadError(error);
         }
         updateValidation();
       }
     } finally {
+      if (weeklyRefreshController === controller) {
+        weeklyRefreshController = null;
+        weeklyRefreshRequest = null;
+      }
       weeklyRefreshInFlight = false;
       const pending = pendingWeeklyRefresh;
       pendingWeeklyRefresh = null;
       if (
+        weeklyPageActive &&
         pending &&
         pending.id === activeExecutionId &&
         pending.token === readAttempt
       ) {
-        clearTimeout(pollTimer);
-        pollTimer = setTimeout(
-          () =>
-            void refreshWeeklyExecution(
-              pending.id,
-              pending.token,
-              pending.pollCount,
-            ),
-          0,
-        );
+        scheduleWeeklyRead(pending.id, pending.token, 0);
       }
     }
   }
@@ -706,6 +761,7 @@ function setupAiCoachPage(user) {
   function isTransientWeeklyReadError(error) {
     return (
       !Number.isInteger(error?.status) ||
+      error.status === 408 ||
       error.status === 429 ||
       error.status >= 500
     );
@@ -717,7 +773,7 @@ function setupAiCoachPage(user) {
       const latest = executions.find((entry) => entry.purpose === 'workouts');
       if (latest) {
         activeExecutionId = latest.id;
-        weeklyPollCount = 0;
+        weeklyReadFailureCount = 0;
         void refreshWeeklyExecution(latest.id);
       }
       updateValidation();
@@ -767,8 +823,9 @@ function setupAiCoachPage(user) {
         const list = await fetchAiExecutions();
         const found = list.find((item) => item.idempotency_key === savedKey);
         if (found) {
+          abortWeeklyRead();
           activeExecutionId = found.id;
-          weeklyPollCount = 0;
+          weeklyReadFailureCount = 0;
           sessionStorage.removeItem('kinesis-weekly-request-key');
           actionPending = false;
           generateBtn.disabled = false;
@@ -793,8 +850,9 @@ function setupAiCoachPage(user) {
         optional_context: optionalContextInput.value,
         idempotency_key: idempotencyKey,
       });
+      abortWeeklyRead();
       activeExecutionId = result.id;
-      weeklyPollCount = 0;
+      weeklyReadFailureCount = 0;
       sessionStorage.removeItem('kinesis-weekly-request-key');
       readAttempt += 1;
       weeklySection.hidden = false;
@@ -893,6 +951,7 @@ function setupAiCoachPage(user) {
     actionPending = true;
     applicationStatusUnknown = true;
     readAttempt += 1;
+    abortWeeklyRead();
     clearTimeout(pollTimer);
     pollTimer = null;
     weeklyApply.disabled = true;
@@ -981,6 +1040,8 @@ function setupAiCoachPage(user) {
     weeklyReadPending = true;
     weeklyReadAgain.hidden = true;
     if (activeExecutionId) {
+      clearTimeout(pollTimer);
+      pollTimer = null;
       const applyingUnknown = applicationStatusUnknown;
       if (applyingUnknown) {
         actionPending = true;
@@ -1050,7 +1111,8 @@ function setupAiCoachPage(user) {
         return;
       }
       activeExecutionId = found.id;
-      weeklyPollCount = 0;
+      abortWeeklyRead();
+      weeklyReadFailureCount = 0;
       sessionStorage.removeItem('kinesis-weekly-request-key');
       weeklyHistoryState = 'ready';
       updateValidation();
@@ -1067,6 +1129,7 @@ function setupAiCoachPage(user) {
     if (!activeExecutionId || actionPending) return;
     actionPending = true;
     readAttempt += 1;
+    abortWeeklyRead();
     clearTimeout(pollTimer);
     pollTimer = null;
     weeklyCancel.disabled = true;
@@ -1085,25 +1148,44 @@ function setupAiCoachPage(user) {
       'click',
       () => void handleExternalPrompt(),
     );
-  document.addEventListener('visibilitychange', () => {
+  function handleWeeklyVisibilityChange() {
     if (
+      !weeklyPageActive ||
       document.visibilityState !== 'visible' ||
       !activeExecutionId ||
       !['queued', 'running'].includes(lastExecutionState) ||
       actionPending ||
-      weeklyReadPending ||
       applicationStatusUnknown
     )
       return;
     clearTimeout(pollTimer);
     pollTimer = null;
-    if (weeklyPollCount >= WEEKLY_MAX_POLLS) weeklyPollCount = 0;
-    void refreshWeeklyExecution(
-      activeExecutionId,
-      ++readAttempt,
-      weeklyPollCount,
+    void refreshWeeklyExecution(activeExecutionId, ++readAttempt);
+  }
+  function handleWeeklyPageHide() {
+    weeklyPageActive = false;
+    clearTimeout(pollTimer);
+    pollTimer = null;
+    abortWeeklyRead();
+    document.removeEventListener(
+      'visibilitychange',
+      handleWeeklyVisibilityChange,
     );
-  });
+  }
+  function handleWeeklyPageShow(event) {
+    weeklyPageActive = true;
+    document.addEventListener(
+      'visibilitychange',
+      handleWeeklyVisibilityChange,
+    );
+    if (event.persisted) handleWeeklyVisibilityChange();
+  }
+  document.addEventListener(
+    'visibilitychange',
+    handleWeeklyVisibilityChange,
+  );
+  window.addEventListener('pagehide', handleWeeklyPageHide);
+  window.addEventListener('pageshow', handleWeeklyPageShow);
   void recoverWeeklyExecution();
 
   targetDateInput.dataset.iso = dateInputValue(nextMonday());

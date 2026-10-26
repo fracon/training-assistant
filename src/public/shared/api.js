@@ -109,13 +109,14 @@ export async function fetchAiExecutions() {
   if (!response.ok)
     throw Object.assign(
       new Error(payload.error || 'Could not read executions.'),
-      { codes: payload.errors },
+      { codes: payload.errors, status: response.status },
     );
   return payload.executions || [];
 }
-export async function fetchAiExecution(id) {
+export async function fetchAiExecution(id, { signal } = {}) {
   const response = await fetch(`/api/ai/executions/${encodeURIComponent(id)}`, {
     headers: { accept: 'application/json' },
+    signal,
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok)
@@ -131,10 +132,10 @@ export function startAiExecution(body) {
 export function cancelAiExecution(id) {
   return requestJson(`/api/ai/executions/${encodeURIComponent(id)}/cancel`, {});
 }
-export async function fetchWeeklyProposal(id) {
+export async function fetchWeeklyProposal(id, { signal } = {}) {
   const response = await fetch(
     `/api/ai/workouts/${encodeURIComponent(id)}/proposal`,
-    { headers: { accept: 'application/json' } },
+    { headers: { accept: 'application/json' }, signal },
   );
   const payload = await response.json().catch(() => ({}));
   if (!response.ok)
