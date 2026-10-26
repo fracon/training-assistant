@@ -1,28 +1,33 @@
 # Kinesis
 
-A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized training-request prompts for use with an external AI.
+A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, request and review weekly AI proposals, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized training-request prompts for use with an external AI.
 
-Current application version: **0.21.0** (active beta development).
+Current application version: **0.23.0** (active beta development).
 
-## AI integration: cycle planning on this branch
+## AI integration: cycle planning and weekly proposals
 
-Phase 0 (#62) and the approved plan are integrated in main through PRs #66,
-#68 and **#67** (merge `648d6a0`). This **0.21.0 beta** branch implements #63:
-cycle planning, proposal review and explicit application. It is not integrated
-until this phase's PR merges. Weekly generation (#64) and result analysis (#65)
-remain future phases.
+Phase 0 (#62) and the approved plan are integrated through PRs #66, #68 and
+#67; cycle planning (#63) is integrated through PR #69. This **0.23.0 beta**
+issue branch extends the weekly proposals (#64) adapter with per-component
+execution guidance, stage-specific RPE/FC summaries, compact hourly-weather
+presentation, and a dismissible localized result modal after application.
+Applied proposals no longer remain in the review area or reopen a result modal
+after reload. This phase is not integrated until its PR merges. Result
+analysis (#65) remains future scope.
 
 Saving an active cycle confirms its registration and opens **Cycle planning /
 Planejamento do ciclo** using the ID returned by the backend. **Generate plan /
 Gerar planejamento** explicitly requests AI phases and rationale; **Not now /
 Agora não** closes the step and preserves the saved cycle. Weekly workouts are
-requested separately; integrated weekly generation (#64) remains future work.
+requested separately through Solicitar Treinos; that page can generate and
+review a weekly proposal before explicit calendar application.
 Reloading recovers processing/results. **Apply proposal**
 creates a planning version; generating again never silently replaces it. Manual
 cycle management works without AI. A race is optional: the target date is the deadline for a personal goal (for
 example, running 10 km) or a race. It must be a valid calendar date on or after
 the effective start, including today; generation uses the later of today and the saved start date. Only an active
-cycle can receive a new applied plan. No weekly calendar is generated.
+cycle can receive a new applied plan. Cycle planning itself does not write
+weekly calendar workouts; those use the separate Request Workouts flow below.
 
 After editing, the same step reads backend freshness: an outdated applied plan
 offers **Generate new plan / Gerar novo planejamento** or **Keep for now / Manter
@@ -140,9 +145,10 @@ unchanged. Weekly comparable context recognizes long-run labels in the imported
 workout name as well as the training type. Administrators have a separate section
 for their own free prompt
 preview and protected execution debug. Common users receive no technical payload.
-Only the cycle product adapter is registered on this branch. Configuring the key
-does not itself start a call: generation is explicit. The integrated execution
-service handles quotas, restart recovery, cancellation and uncertain outcomes.
+Cycle planning is integrated; this branch also registers the weekly workout
+adapter. Configuring the key does not itself start a call: every proposal is
+explicit. The shared execution service handles quotas, restart recovery,
+cancellation and uncertain outcomes.
 
 See [AI foundation](docs/ai-foundation.md) for runtime settings, ZimaOS setup,
 API/schema contracts, retention/privacy, source selection, migration and tests.
@@ -187,7 +193,7 @@ selection; unrelated feedback saves preserve it. Replacing it with an active
 shoe starts mileage accounting on the replacement without subtracting an
 unledgered historical distance from the retired shoe.
 
-Authenticated pages and APIs use server-side sessions. FIT decoding and workout metrics are processed locally by the Kinesis server. Explicit cycle-planning generation may send the bounded structured context and adapted prompt to OpenAI, as documented in [cycle-planning privacy](docs/ai-cycle-planning.md#runtime-configuration-provider-and-privacy); binaries, raw GPS and credentials are excluded. Optional weather lookup sends the planned location and date to Open-Meteo. If `UNSPLASH_ACCESS_KEY` (or its accepted legacy alias `UNSPLASH_API_KEY`) is configured, the Kinesis server asks Unsplash for a generic running image and registers the image download. The dashboard makes a daily quote request to ZenQuotes and falls back to bundled localized quotes. These integrations do not send FIT files, workout data, or user-entered training context; as with other network requests, providers may receive connection metadata such as the requesting IP address.
+Authenticated pages and APIs use server-side sessions. FIT decoding and workout metrics are processed locally by the Kinesis server. Explicit cycle-planning and weekly-proposal generation may send bounded structured context and adapted prompts to OpenAI, as documented in the [cycle-planning privacy contract](docs/ai-cycle-planning.md#runtime-configuration-provider-and-privacy) and [weekly proposal contract](docs/ai-weekly-workouts.md#privacy-and-configuration); binaries, raw GPS and credentials are excluded. Weekly generation also sends resolved coordinates, local dates and the location-derived IANA timezone to Open-Meteo for hourly forecasts; the exact saved location is used only for backend geocoding, and the existing optional result autofill remains a separate daily lookup. If `UNSPLASH_ACCESS_KEY` (or its accepted legacy alias `UNSPLASH_API_KEY`) is configured, the Kinesis server asks Unsplash for a generic running image and registers the image download. The dashboard makes a daily quote request to ZenQuotes and falls back to bundled localized quotes. FIT files and raw workout binaries are never sent. Providers may also receive ordinary connection metadata such as the requesting IP address.
 
 ## Why
 
@@ -422,7 +428,9 @@ The footer fetches `/api/version` without caching, so it reflects the running ba
 
 #### Dynamic Training Prompt Generator
 
-The **Solicitar Treinos / Request Workouts** page (internal route and module `ai-coach`) builds a weekly training request from the latest local application state when the user submits the form. It fetches the active cycle and injects its cycle name, goal, goal target date, current week/total weeks, and days remaining immediately after the prompt introduction. It also fetches the previous week's calendar entries and summarizes completed workouts as a count, total distance in kilometres, and total time in minutes. Missing values use the prompt's `-` fallback, while valid stored values are preserved and formatted for the selected language. The feature prepares a prompt for use with an external AI; it does not generate the training plan itself.
+The **Solicitar Treinos / Request Workouts** page (internal route and module `ai-coach`) retains the free external request prompt and adds an explicit weekly AI proposal action. Users save the existing availability controls, request a proposal, follow and recover the persisted execution, review each workout, full session notes and contextual justification, then explicitly apply it to the calendar. The v3 adapter derives duration and persisted details from structured timed/distance prescription components, with stage-level instructions, effort/RPE, optional targets and recovery guidance; distance-based duration estimates are distinguished from pace targets. Hourly forecast evidence is bound to an exact revisioned availability snapshot and verified against the resolved location timezone and actual UTC hourly instants. Common accounts receive the product flow; administrators retain the exact free external prompt in an accessible modal and protected owner-scoped execution diagnostics. Opening/copying is explicit, current-role guarded in the backend, and does not request a weekly AI generation. Proposal actions follow execution state; application success or error is communicated in a dismissible localized result modal. After success the review cards/actions close; dismissing the modal leaves no permanent result panel, and reload preserves the applied terminal state without reopening the modal or selecting an older proposal. Uncertain application responses are resolved by a free read of the same proposal before another Apply action is allowed. Application is transactional, rechecks current sources, skips the shared canonical `(date, workout, details)` deduplication signature and never replaces a calendar entry or result. Saved v1/v2 proposals are incompatible with v3 and are not applied under the new contract. See the [weekly proposal contract](docs/ai-weekly-workouts.md).
+
+The preserved external briefing still resolves the current local cycle, availability, shoes and training context at request time and retains the 12-column XLSX/XLS import contract. Its PT/EN templates are byte-preserved; the paid weekly operation applies a separate versioned structured-output adapter to remove conflicting Excel/research delivery instructions. The weekly schema now mirrors the backend's field-level bounds; combined materialized-details length remains a backend check. Full hourly query/source bindings stay in the protected execution snapshot while the model receives a bounded projection with verified samples and coverage. The controlled live evaluation and subsequent failure investigation (including a confirmed Open-Meteo query defect and unavailable historical model validation path) are recorded in [`docs/ai-weekly-workouts-live-evaluation.md`](docs/ai-weekly-workouts-live-evaluation.md); the synthetic sample and its limits remain distinct from the failed real execution.
 
 The generated briefing is fully localized: the Portuguese (`pt-BR`) and English (`en-US`) templates contain the same cycle and performance context fields, with localized labels and week wording. Context is resolved inside the generation action so it always reflects the currently active cycle, latest training data, and current i18n language.
 

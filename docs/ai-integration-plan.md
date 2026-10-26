@@ -39,19 +39,20 @@ values continue to override them. See the [evaluation record](ai-cycle-planning.
 for usage, budget and the RPE-scale limitation. No second call, live configuration
 change or phase #64/#65 implementation was needed.
 
-Current #69 branch follow-up aligns `AI_MAX_OUTPUT_TOKENS=8192` and
+Merged PR #69 aligns `AI_MAX_OUTPUT_TOKENS=8192` and
 `AI_TIMEOUT_MS=120000` defaults and adds bounded delayed recovery only for HTTP
 429. The retry waits for validated `Retry-After` (up to 60 seconds) or bounded
 jittered backoff, persists its due time for restart recovery, and revalidates
 cancellation, account, sources and reservation before dispatch. Other uncertain
 or invalid results are not replayed. The product UI distinguishes progress-read
 failure from generation failure and provides a free read retry. These changes
-are branch-only until merge; the real evaluation above predates them and is not
+are integrated via PR #69; the real evaluation above predates them and is not
 their live-provider validation.
 
 Status: documentation integrated via PRs #66/#68; phase 0 integrated through
-merged PR #67 (`648d6a0`). Phase 1 is implemented on the issue #63 branch,
-not integrated before its PR merges. Phases 2–3 remain planned.
+merged PR #67 (`648d6a0`); phase 1 integrated via merged PR #69. Phase 2 is
+implemented on the issue #64 branch, pending its own PR/merge; phase 3 remains
+planned. The historical branch-only notes below describe the state before #69.
 Owner-approved direction: 2026-10-14; memory correction approved 2026-10-15 (#68).
 Baseline reviewed: main application version 0.19.6.
 
@@ -68,8 +69,8 @@ and documented by the implementing agent.
 | Phase | Issue | Dependency | Status |
 | --- | --- | --- | --- |
 | 0: API foundation and training memory | [#62](https://github.com/fracon/training-assistant/issues/62) | Documentation plan/correction merged (#66/#68) | Integrated via [merged PR #67](https://github.com/fracon/training-assistant/pull/67) |
-| 1: Cycle planning | [#63](https://github.com/fracon/training-assistant/issues/63) | Phase 0 merged | Implemented on issue #63 branch; pending PR/merge |
-| 2: Weekly workout requests | [#64](https://github.com/fracon/training-assistant/issues/64) | Phase 1 merged | Planned |
+| 1: Cycle planning | [#63](https://github.com/fracon/training-assistant/issues/63) | Phase 0 merged | Integrated via [merged PR #69](https://github.com/fracon/training-assistant/pull/69) |
+| 2: Weekly workout requests | [#64](https://github.com/fracon/training-assistant/issues/64) | Phase 1 merged | Implemented on this issue branch; pending PR/merge |
 | 3: Contextual workout analysis | [#65](https://github.com/fracon/training-assistant/issues/65) | Phase 2 merged | Planned |
 
 Implement sequentially. Each agent must inspect local changes/worktrees, fetch
@@ -136,8 +137,9 @@ prompt/model/tool proxy. Render model responses safely.
 ## Runtime configuration and data boundary
 
 Phase 0 configuration is integrated; see the complete settings,
-defaults and bounds in [AI foundation](ai-foundation.md). The issue #63 branch registers only cycle planning; other paid product adapters
-remain unregistered until their individual phases:
+defaults and bounds in [AI foundation](ai-foundation.md). Merged PR #69 registers
+cycle planning; this issue branch registers weekly workout delivery; contextual
+analysis remains unregistered until phase 3:
 
 - `OPENAI_API_KEY`: server-only secret injected into the running container.
 - `AI_ENABLED`: explicit feature switch.
@@ -208,8 +210,8 @@ The integrated PR #67 implementation presents this bounded view with grouped goa
 cards, semantic availability/totals tables, visible dated feedback and expandable
 planning details. Context loads on opening; load failures expose a retry action,
 not a persistent refresh control. The [presentation contract](ai-foundation.md#memory-presentation-on-the-pr-67-branch)
-defines the integrated phase 0 UI. Cycle generation is implemented separately
-on the issue #63 branch; other generation and interpretation capabilities remain future scope.
+defines the integrated phase 0 UI. Cycle generation is integrated via #69;
+weekly generation is implemented on the issue #64 branch; analysis remains future scope.
 
 ### Phase 0 boundary and correction
 
@@ -524,7 +526,7 @@ Recheck provider-specific behavior when implementing:
 - [Pricing](https://developers.openai.com/api/docs/pricing)
 - [Data controls](https://developers.openai.com/api/docs/guides/your-data)
 
-## Phase 1 implementation on the issue #63 branch
+## Phase 1 implementation (integrated via PR #69)
 
 The [cycle planning contract](ai-cycle-planning.md) records the structured A–F
 schema, three allowlisted delivery transformations, durable proposals, explicit
@@ -540,17 +542,32 @@ product step, recovers persisted execution/proposal state and uses backend plan
 freshness. No-op saves preserve revisions; real edits/reversals invalidate as
 before. The original free cycle prompt is admin-only and explicitly requested;
 no save opens it. See the [presentation/access contract](ai-cycle-planning.md#presentation-and-free-prompt-access).
-The branch also presents planning status separately from active/inactive cycle
+PR #69 also presents planning status separately from active/inactive cycle
 state. `GET /api/cycles` includes an owner-scoped summary only; a current applied
 plan remains primary across failed updates, and the newest usable current proposal
 is selected deterministically without hiding an earlier valid proposal after a
 later failed attempt. Read errors do not become false “no plan” states. The card
-icon still opens the existing modal without generating. This status projection
-is branch-only with #69 and is not integrated into main before merge; details are
-in the [planning-status contract](ai-cycle-planning.md#per-cycle-planning-status-current-pr-branch).
-The branch also repairs older cycle-planning schemas missing the applied-plan
+icon still opens the existing modal without generating. Details are in the
+[planning-status contract](ai-cycle-planning.md#per-cycle-planning-status-current-pr-branch).
+PR #69 also repairs older cycle-planning schemas missing the applied-plan
 fingerprint without replacing records; those legacy plans remain readable and
 are conservatively marked outdated.
-It does not reuse plan-local athlete assessments. No weekly
-calendar, hourly research or result analysis operation is registered. Main still
-contains phase 0 only until this phase's PR is merged.
+It does not reuse plan-local athlete assessments. The historical issue #63
+branch did not include weekly calendar or hourly forecast delivery. Phase 2 is
+implemented on the current issue #64 branch and is documented in
+[ai-weekly-workouts.md](ai-weekly-workouts.md); result analysis remains future.
+
+## Phase 2 implementation on the issue #64 branch
+
+Weekly proposals reuse the persisted execution and quota pipeline with a
+versioned `weekly-workouts-v3` adapter. External PT/EN prompt templates remain
+unchanged; only the paid adapter replaces conflicting spreadsheet/research
+delivery requirements with backend-verified hourly evidence and structured
+output. Proposals are owner-scoped, recoverable, reviewed before explicit
+calendar application and applied transactionally with the existing
+date/name/details deduplication. Hourly Open-Meteo evidence is checked against
+the local time window, timezone/DST and coverage; partial/unavailable weather
+remains qualified. There is no second weather provider, paid web-search tool,
+real provider call, or phase #65 functionality in this implementation. See
+the [weekly delivery contract](ai-weekly-workouts.md) for APIs, migration,
+application conflicts, privacy, tests and real-evaluation requirements.

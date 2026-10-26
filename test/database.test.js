@@ -16,7 +16,10 @@ const {
 } = require('../src/db/database');
 const { buildServer } = require('../src/server');
 const { registerUser } = require('../src/auth/registration');
-const { buildLapsMarkdown, formatCadence } = require('../src/public/training-result.js');
+const {
+  buildLapsMarkdown,
+  formatCadence,
+} = require('../src/public/training-result.js');
 
 test('resolveDatabaseFile joins cwd with the data directory and file name', () => {
   const result = resolveDatabaseFile('/srv/app');
@@ -37,24 +40,60 @@ test('initializeDatabase applies pragmas and creates the schema', () => {
 
   const objects = db
     .prepare(
-      "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
     )
     .all()
     .map((row) => row.name);
-  assert.deepEqual(objects, ['admin_audit_log', 'ai_coach_availability', 'ai_executions', 'ai_global_usage', 'ai_memory', 'ai_profiles', 'ai_usage', 'cycle_plan_proposals', 'cycle_plan_versions', 'feedback', 'schema_migrations', 'sessions', 'shoes', 'training_cycles', 'training_shoe_mileage', 'trainings', 'users']);
+  assert.deepEqual(objects, [
+    'admin_audit_log',
+    'ai_coach_availability',
+    'ai_executions',
+    'ai_global_usage',
+    'ai_memory',
+    'ai_profiles',
+    'ai_usage',
+    'cycle_plan_proposals',
+    'cycle_plan_versions',
+    'feedback',
+    'schema_migrations',
+    'sessions',
+    'shoes',
+    'training_cycles',
+    'training_shoe_mileage',
+    'trainings',
+    'users',
+    'weekly_workout_proposals',
+  ]);
   assert.equal(
-    db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'workouts'").get(),
+    db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'workouts'",
+      )
+      .get(),
     undefined,
-    'new databases do not create the legacy workouts table'
+    'new databases do not create the legacy workouts table',
   );
-  const trainingColumns = db.pragma('table_info(trainings)').map((column) => column.name);
+  const trainingColumns = db
+    .pragma('table_info(trainings)')
+    .map((column) => column.name);
   assert.ok(trainingColumns.includes('result_data_source'));
   assert.ok(trainingColumns.includes('fit_calories'));
   assert.ok(trainingColumns.includes('feedback_shoe_id'));
-  assert.equal(db.prepare("SELECT role FROM users LIMIT 1").get(), undefined);
-  db.prepare("INSERT INTO users (email, password_hash) VALUES ('role-check@example.com', 'x')").run();
-  assert.equal(db.prepare('SELECT role FROM users WHERE email = ?').get('role-check@example.com').role, 'user');
-  assert.throws(() => db.prepare("UPDATE users SET role = 'owner' WHERE email = ?").run('role-check@example.com'));
+  assert.equal(db.prepare('SELECT role FROM users LIMIT 1').get(), undefined);
+  db.prepare(
+    "INSERT INTO users (email, password_hash) VALUES ('role-check@example.com', 'x')",
+  ).run();
+  assert.equal(
+    db
+      .prepare('SELECT role FROM users WHERE email = ?')
+      .get('role-check@example.com').role,
+    'user',
+  );
+  assert.throws(() =>
+    db
+      .prepare("UPDATE users SET role = 'owner' WHERE email = ?")
+      .run('role-check@example.com'),
+  );
 
   db.close();
 });
@@ -84,59 +123,141 @@ test('role migration assigns existing accounts user, preserves records, is repea
       VALUES (501, 41, '2026-09-21', 'Run', 'Easy run', 'Porto');
   `);
   initializeDatabase(db);
-  const existing = db.prepare('SELECT id, email, password_hash, first_name, preferred_lang, distance_unit, onboarding_status, onboarding_guide_hidden, role FROM users WHERE id = 41').get();
+  const existing = db
+    .prepare(
+      'SELECT id, email, password_hash, first_name, preferred_lang, distance_unit, onboarding_status, onboarding_guide_hidden, role FROM users WHERE id = 41',
+    )
+    .get();
   assert.deepEqual(existing, {
-    id: 41, email: 'old@example.com', password_hash: 'existing-hash', first_name: 'Old',
-    preferred_lang: 'pt-BR', distance_unit: 'mi', onboarding_status: 'active', onboarding_guide_hidden: 1, role: 'user',
+    id: 41,
+    email: 'old@example.com',
+    password_hash: 'existing-hash',
+    first_name: 'Old',
+    preferred_lang: 'pt-BR',
+    distance_unit: 'mi',
+    onboarding_status: 'active',
+    onboarding_guide_hidden: 1,
+    role: 'user',
   });
-  assert.equal(db.prepare('SELECT user_id FROM sessions WHERE id = ?').get('old-session').user_id, 41);
-  assert.deepEqual(db.prepare('SELECT id, treino, location FROM trainings WHERE id = 501').get(), {
-    id: 501, treino: 'Easy run', location: 'Porto',
-  });
-  assert.ok(db.prepare("SELECT 1 FROM schema_migrations WHERE name = '2026-09-structured-ai-coach-availability-v1'").get());
-  assert.ok(db.prepare('SELECT 1 FROM ai_coach_availability LIMIT 1').get() === undefined);
+  assert.equal(
+    db.prepare('SELECT user_id FROM sessions WHERE id = ?').get('old-session')
+      .user_id,
+    41,
+  );
+  assert.deepEqual(
+    db
+      .prepare('SELECT id, treino, location FROM trainings WHERE id = 501')
+      .get(),
+    {
+      id: 501,
+      treino: 'Easy run',
+      location: 'Porto',
+    },
+  );
+  assert.ok(
+    db
+      .prepare(
+        "SELECT 1 FROM schema_migrations WHERE name = '2026-09-structured-ai-coach-availability-v1'",
+      )
+      .get(),
+  );
+  assert.ok(
+    db.prepare('SELECT 1 FROM ai_coach_availability LIMIT 1').get() ===
+      undefined,
+  );
   db.prepare("UPDATE users SET role = 'admin' WHERE id = 41").run();
   migrateDatabase(db);
   migrateDatabase(db);
-  assert.equal(db.prepare('SELECT role FROM users WHERE id = 41').get().role, 'admin');
-  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE name = '2026-09-user-roles-v1'").get().count, 1);
+  assert.equal(
+    db.prepare('SELECT role FROM users WHERE id = 41').get().role,
+    'admin',
+  );
+  assert.equal(
+    db
+      .prepare(
+        "SELECT COUNT(*) AS count FROM schema_migrations WHERE name = '2026-09-user-roles-v1'",
+      )
+      .get().count,
+    1,
+  );
   db.close();
 });
 
 test('shoe mileage migration links unique labels without changing authoritative production totals', () => {
   const db = createDatabase({ filename: ':memory:' });
-  db.prepare("INSERT INTO users (email, password_hash) VALUES ('runner@test', 'x'), ('peer@test', 'x')").run();
-  db.prepare(`INSERT INTO shoes (id, user_id, brand, model, mileage, status) VALUES
+  db.prepare(
+    "INSERT INTO users (email, password_hash) VALUES ('runner@test', 'x'), ('peer@test', 'x')",
+  ).run();
+  db.prepare(
+    `INSERT INTO shoes (id, user_id, brand, model, mileage, status) VALUES
     ('unique', 1, 'Acme', 'Fast', 5, 'active'),
     ('dup1', 1, 'Acme', 'Same', 1, 'active'), ('dup2', 1, 'Acme', 'Same', 2, 'active'),
-    ('peer', 2, 'Acme', 'Fast', 30, 'active')`).run();
-  db.prepare(`INSERT INTO trainings
+    ('peer', 2, 'Acme', 'Fast', 30, 'active')`,
+  ).run();
+  db.prepare(
+    `INSERT INTO trainings
     (user_id, dia, tipo, feedback_shoe, completed, fit_distance, result_data_source)
     VALUES (1, '2026-01-01', 'Run', 'Acme Fast', 1, 10, 'manual'),
            (1, '2026-01-02', 'Run', 'Acme Same', 1, 8, 'manual'),
-           (1, '2026-01-03', 'Run', 'Acme Fast', 0, 6, 'manual')`).run();
-  db.prepare("DELETE FROM schema_migrations WHERE name = '2026-09-shoe-mileage-accounting-v1'").run();
+           (1, '2026-01-03', 'Run', 'Acme Fast', 0, 6, 'manual')`,
+  ).run();
+  db.prepare(
+    "DELETE FROM schema_migrations WHERE name = '2026-09-shoe-mileage-accounting-v1'",
+  ).run();
   migrateDatabase(db);
   migrateDatabase(db);
-  const rows = db.prepare('SELECT feedback_shoe_id FROM trainings ORDER BY id').all();
-  assert.deepEqual(rows, [{ feedback_shoe_id: 'unique' }, { feedback_shoe_id: null }, { feedback_shoe_id: 'unique' }]);
-  assert.deepEqual(db.prepare("SELECT mileage, base_mileage FROM shoes WHERE id = 'unique'").get(),
-    { mileage: 5, base_mileage: 5 });
-  assert.equal(db.prepare("SELECT mileage FROM shoes WHERE id = 'peer'").get().mileage, 30);
+  const rows = db
+    .prepare('SELECT feedback_shoe_id FROM trainings ORDER BY id')
+    .all();
+  assert.deepEqual(rows, [
+    { feedback_shoe_id: 'unique' },
+    { feedback_shoe_id: null },
+    { feedback_shoe_id: 'unique' },
+  ]);
+  assert.deepEqual(
+    db
+      .prepare("SELECT mileage, base_mileage FROM shoes WHERE id = 'unique'")
+      .get(),
+    { mileage: 5, base_mileage: 5 },
+  );
+  assert.equal(
+    db.prepare("SELECT mileage FROM shoes WHERE id = 'peer'").get().mileage,
+    30,
+  );
   assert.deepEqual(db.prepare('SELECT * FROM training_shoe_mileage').all(), []);
-  assert.ok(db.prepare("SELECT 1 FROM schema_migrations WHERE name = '2026-09-shoe-mileage-ledger-v2'").get());
+  assert.ok(
+    db
+      .prepare(
+        "SELECT 1 FROM schema_migrations WHERE name = '2026-09-shoe-mileage-ledger-v2'",
+      )
+      .get(),
+  );
   db.close();
 });
 
 test('migrateDatabase classifies existing FIT rows and leaves result-less rows as none', () => {
   const db = createDatabase({ filename: ':memory:' });
-  db.prepare("INSERT INTO users (email, password_hash) VALUES ('source@example.com', 'hash')").run();
-  db.prepare("INSERT INTO trainings (user_id, dia, tipo, fit_duration, fit_distance, fit_summary_json) VALUES (1, '2026-08-20', 'Run', '30:00', 5, '{\"laps\":[]}')").run();
-  db.prepare("INSERT INTO trainings (user_id, dia, tipo) VALUES (1, '2026-08-21', 'Run')").run();
-  db.prepare("INSERT INTO trainings (user_id, dia, tipo, result_data_source, fit_distance) VALUES (1, '2026-08-22', 'Run', 'manual', 8)").run();
-  db.prepare("UPDATE trainings SET result_data_source = 'none' WHERE id IN (1, 2)").run();
+  db.prepare(
+    "INSERT INTO users (email, password_hash) VALUES ('source@example.com', 'hash')",
+  ).run();
+  db.prepare(
+    "INSERT INTO trainings (user_id, dia, tipo, fit_duration, fit_distance, fit_summary_json) VALUES (1, '2026-08-20', 'Run', '30:00', 5, '{\"laps\":[]}')",
+  ).run();
+  db.prepare(
+    "INSERT INTO trainings (user_id, dia, tipo) VALUES (1, '2026-08-21', 'Run')",
+  ).run();
+  db.prepare(
+    "INSERT INTO trainings (user_id, dia, tipo, result_data_source, fit_distance) VALUES (1, '2026-08-22', 'Run', 'manual', 8)",
+  ).run();
+  db.prepare(
+    "UPDATE trainings SET result_data_source = 'none' WHERE id IN (1, 2)",
+  ).run();
   migrateDatabase(db);
-  const rows = db.prepare('SELECT result_data_source, fit_distance FROM trainings ORDER BY id').all();
+  const rows = db
+    .prepare(
+      'SELECT result_data_source, fit_distance FROM trainings ORDER BY id',
+    )
+    .all();
   assert.deepEqual(rows, [
     { result_data_source: 'fit_upload', fit_distance: 5 },
     { result_data_source: 'none', fit_distance: null },
@@ -148,17 +269,49 @@ test('migrateDatabase classifies existing FIT rows and leaves result-less rows a
 
 test('corrective FIT cadence migration repairs proven historical fields independently and is idempotent', () => {
   const db = createDatabase({ filename: ':memory:' });
-  db.prepare("INSERT INTO users (email, password_hash) VALUES ('cadence@example.test', 'hash')").run();
+  db.prepare(
+    "INSERT INTO users (email, password_hash) VALUES ('cadence@example.test', 'hash')",
+  ).run();
   const sourceTagged = JSON.stringify({
     activity: { sport: 'running' },
     laps: [
-      { avgCadenceSpm: 82, avgCadenceSource: 'avg_cadence_running', maxCadenceSpm: 88, maxCadenceSource: 'max_cadence_running' },
-      { avgCadenceSpm: 82, avgCadenceSource: 'avg_running_cadence', maxCadenceSpm: 90, maxCadenceSource: 'max_running_cadence' },
-      { avgCadenceSpm: 82, avgCadenceSource: 'avg_cadence_running', maxCadenceSpm: 90, maxCadenceSource: 'vendor_unknown' },
-      { avgCadenceSpm: null, avgCadenceSource: 'avg_cadence_running', maxCadenceSpm: null },
-      { avgCadenceSpm: 82, avgCadenceSource: 'vendor_unknown', maxCadenceSpm: 90, maxCadenceSource: 'max_cadence_running' },
+      {
+        avgCadenceSpm: 82,
+        avgCadenceSource: 'avg_cadence_running',
+        maxCadenceSpm: 88,
+        maxCadenceSource: 'max_cadence_running',
+      },
+      {
+        avgCadenceSpm: 82,
+        avgCadenceSource: 'avg_running_cadence',
+        maxCadenceSpm: 90,
+        maxCadenceSource: 'max_running_cadence',
+      },
+      {
+        avgCadenceSpm: 82,
+        avgCadenceSource: 'avg_cadence_running',
+        maxCadenceSpm: 90,
+        maxCadenceSource: 'vendor_unknown',
+      },
+      {
+        avgCadenceSpm: null,
+        avgCadenceSource: 'avg_cadence_running',
+        maxCadenceSpm: null,
+      },
+      {
+        avgCadenceSpm: 82,
+        avgCadenceSource: 'vendor_unknown',
+        maxCadenceSpm: 90,
+        maxCadenceSource: 'max_cadence_running',
+      },
       { avgCadenceSpm: 81, maxCadenceSpm: null },
-      { avgCadenceSpm: 80, avgCadenceSource: 'avg_cadence_running', avgCadenceUnit: 'vendor-unit', maxCadenceSpm: 90, maxCadenceSource: 'max_cadence_running' },
+      {
+        avgCadenceSpm: 80,
+        avgCadenceSource: 'avg_cadence_running',
+        avgCadenceUnit: 'vendor-unit',
+        maxCadenceSpm: 90,
+        maxCadenceSource: 'max_cadence_running',
+      },
       null,
       [],
     ],
@@ -170,83 +323,187 @@ test('corrective FIT cadence migration repairs proven historical fields independ
   });
   const fieldNormalized = JSON.stringify({
     activity: { sport: 'running' },
-    laps: [{
-      avgCadenceSpm: 164, avgCadenceUnit: 'two-foot-spm-v1',
-      maxCadenceSpm: 90, maxCadenceSource: 'max_running_cadence',
-    }],
+    laps: [
+      {
+        avgCadenceSpm: 164,
+        avgCadenceUnit: 'two-foot-spm-v1',
+        maxCadenceSpm: 90,
+        maxCadenceSource: 'max_running_cadence',
+      },
+    ],
   });
   const fieldNormalizedOnly = JSON.stringify({
     activity: { sport: 'running' },
     laps: [{ avgCadenceSpm: 164, avgCadenceUnit: 'two-foot-spm-v1' }],
   });
-  const nonRunning = JSON.stringify({ activity: { sport: 'cycling' }, laps: [{ avgCadenceSpm: 82, avgCadenceSource: 'avg_cadence_running' }] });
+  const nonRunning = JSON.stringify({
+    activity: { sport: 'cycling' },
+    laps: [{ avgCadenceSpm: 82, avgCadenceSource: 'avg_cadence_running' }],
+  });
   const malformed = '{not-json';
-  db.prepare(`INSERT INTO trainings (user_id, dia, tipo, result_data_source, fit_summary_json) VALUES
+  db.prepare(
+    `INSERT INTO trainings (user_id, dia, tipo, result_data_source, fit_summary_json) VALUES
     (1, '2026-09-01', 'Run', 'fit_upload', ?),
     (1, '2026-09-02', 'Ride', 'fit_upload', ?),
     (1, '2026-09-03', 'Run', 'fit_upload', ?),
     (1, '2026-09-04', 'Run', 'fit_upload', ?),
     (1, '2026-09-05', 'Run', 'fit_upload', ?),
-    (1, '2026-09-06', 'Run', 'fit_upload', ?)`)
-    .run(sourceTagged, nonRunning, malformed, alreadyNormalized, fieldNormalized, fieldNormalizedOnly);
+    (1, '2026-09-06', 'Run', 'fit_upload', ?)`,
+  ).run(
+    sourceTagged,
+    nonRunning,
+    malformed,
+    alreadyNormalized,
+    fieldNormalized,
+    fieldNormalizedOnly,
+  );
 
-  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE name = '2026-10-fit-cadence-two-foot-v1'").get().count, 1,
-    'models a database that already applied the original migration');
-  db.prepare("DELETE FROM schema_migrations WHERE name = '2026-10-fit-cadence-source-v2'").run();
+  assert.equal(
+    db
+      .prepare(
+        "SELECT COUNT(*) AS count FROM schema_migrations WHERE name = '2026-10-fit-cadence-two-foot-v1'",
+      )
+      .get().count,
+    1,
+    'models a database that already applied the original migration',
+  );
+  db.prepare(
+    "DELETE FROM schema_migrations WHERE name = '2026-10-fit-cadence-source-v2'",
+  ).run();
   migrateDatabase(db);
-  const rows = db.prepare('SELECT fit_summary_json FROM trainings ORDER BY id').all().map((row) => {
-    try { return JSON.parse(row.fit_summary_json); } catch { return row.fit_summary_json; }
-  });
+  const rows = db
+    .prepare('SELECT fit_summary_json FROM trainings ORDER BY id')
+    .all()
+    .map((row) => {
+      try {
+        return JSON.parse(row.fit_summary_json);
+      } catch {
+        return row.fit_summary_json;
+      }
+    });
   assert.deepEqual(rows[0].laps[0], {
-    avgCadenceSpm: 164, avgCadenceSource: 'avg_cadence_running', avgCadenceUnit: 'two-foot-spm-v1',
-    maxCadenceSpm: 176, maxCadenceSource: 'max_cadence_running', maxCadenceUnit: 'two-foot-spm-v1',
+    avgCadenceSpm: 164,
+    avgCadenceSource: 'avg_cadence_running',
+    avgCadenceUnit: 'two-foot-spm-v1',
+    maxCadenceSpm: 176,
+    maxCadenceSource: 'max_cadence_running',
+    maxCadenceUnit: 'two-foot-spm-v1',
   });
   assert.deepEqual(rows[0].laps[1], {
-    avgCadenceSpm: 164, avgCadenceSource: 'avg_running_cadence', avgCadenceUnit: 'two-foot-spm-v1',
-    maxCadenceSpm: 180, maxCadenceSource: 'max_running_cadence', maxCadenceUnit: 'two-foot-spm-v1',
+    avgCadenceSpm: 164,
+    avgCadenceSource: 'avg_running_cadence',
+    avgCadenceUnit: 'two-foot-spm-v1',
+    maxCadenceSpm: 180,
+    maxCadenceSource: 'max_running_cadence',
+    maxCadenceUnit: 'two-foot-spm-v1',
   });
-  assert.equal(Object.hasOwn(rows[0], 'cadenceNormalization'), false,
-    'mixed known and unknown values do not receive a misleading summary-wide marker');
-  assert.deepEqual(rows[0].laps[2], {
-    avgCadenceSpm: 164, avgCadenceSource: 'avg_cadence_running', avgCadenceUnit: 'two-foot-spm-v1',
-    maxCadenceSpm: 90, maxCadenceSource: 'vendor_unknown',
-  }, 'the known average is corrected while the unknown maximum stays unchanged');
+  assert.equal(
+    Object.hasOwn(rows[0], 'cadenceNormalization'),
+    false,
+    'mixed known and unknown values do not receive a misleading summary-wide marker',
+  );
+  assert.deepEqual(
+    rows[0].laps[2],
+    {
+      avgCadenceSpm: 164,
+      avgCadenceSource: 'avg_cadence_running',
+      avgCadenceUnit: 'two-foot-spm-v1',
+      maxCadenceSpm: 90,
+      maxCadenceSource: 'vendor_unknown',
+    },
+    'the known average is corrected while the unknown maximum stays unchanged',
+  );
   assert.equal(rows[0].laps[2].avgCadenceUnit, 'two-foot-spm-v1');
   assert.equal(rows[0].laps[3].avgCadenceSpm, null);
   assert.equal(rows[0].laps[3].maxCadenceSpm, null);
-  assert.deepEqual(rows[0].laps[4], {
-    avgCadenceSpm: 82, avgCadenceSource: 'vendor_unknown', maxCadenceSpm: 180,
-    maxCadenceSource: 'max_cadence_running', maxCadenceUnit: 'two-foot-spm-v1',
-  }, 'the known maximum converts independently while the unknown average remains raw');
-  assert.deepEqual(rows[0].laps[5], { avgCadenceSpm: 162, maxCadenceSpm: null, avgCadenceUnit: 'two-foot-spm-v1' },
-    'the historical no-metadata format is recognized as raw running cadence');
-  assert.deepEqual(rows[0].laps[6], {
-    avgCadenceSpm: 80, avgCadenceSource: 'avg_cadence_running', avgCadenceUnit: 'vendor-unit',
-    maxCadenceSpm: 180, maxCadenceSource: 'max_cadence_running', maxCadenceUnit: 'two-foot-spm-v1',
-  }, 'an explicit unknown unit is preserved while the other cadence field is normalized');
+  assert.deepEqual(
+    rows[0].laps[4],
+    {
+      avgCadenceSpm: 82,
+      avgCadenceSource: 'vendor_unknown',
+      maxCadenceSpm: 180,
+      maxCadenceSource: 'max_cadence_running',
+      maxCadenceUnit: 'two-foot-spm-v1',
+    },
+    'the known maximum converts independently while the unknown average remains raw',
+  );
+  assert.deepEqual(
+    rows[0].laps[5],
+    {
+      avgCadenceSpm: 162,
+      maxCadenceSpm: null,
+      avgCadenceUnit: 'two-foot-spm-v1',
+    },
+    'the historical no-metadata format is recognized as raw running cadence',
+  );
+  assert.deepEqual(
+    rows[0].laps[6],
+    {
+      avgCadenceSpm: 80,
+      avgCadenceSource: 'avg_cadence_running',
+      avgCadenceUnit: 'vendor-unit',
+      maxCadenceSpm: 180,
+      maxCadenceSource: 'max_cadence_running',
+      maxCadenceUnit: 'two-foot-spm-v1',
+    },
+    'an explicit unknown unit is preserved while the other cadence field is normalized',
+  );
   assert.equal(rows[0].laps[7], null);
   assert.deepEqual(rows[0].laps[8], []);
-  assert.equal(rows[1].laps[0].avgCadenceSpm, 82, 'a known source does not override non-running sport context');
+  assert.equal(
+    rows[1].laps[0].avgCadenceSpm,
+    82,
+    'a known source does not override non-running sport context',
+  );
   assert.equal(rows[2], malformed);
-  assert.equal(rows[3].laps[0].avgCadenceSpm, 164, 'the exact normalized marker prevents a second conversion');
-  assert.deepEqual(rows[4].laps[0], {
-    avgCadenceSpm: 164, avgCadenceUnit: 'two-foot-spm-v1',
-    maxCadenceSpm: 180, maxCadenceSource: 'max_running_cadence', maxCadenceUnit: 'two-foot-spm-v1',
-  }, 'field-level normalized values are not doubled when another metric is still raw');
+  assert.equal(
+    rows[3].laps[0].avgCadenceSpm,
+    164,
+    'the exact normalized marker prevents a second conversion',
+  );
+  assert.deepEqual(
+    rows[4].laps[0],
+    {
+      avgCadenceSpm: 164,
+      avgCadenceUnit: 'two-foot-spm-v1',
+      maxCadenceSpm: 180,
+      maxCadenceSource: 'max_running_cadence',
+      maxCadenceUnit: 'two-foot-spm-v1',
+    },
+    'field-level normalized values are not doubled when another metric is still raw',
+  );
   assert.equal(rows[5].cadenceNormalization, undefined);
-  assert.equal(rows[5].laps[0].avgCadenceSpm, 164,
-    'an already normalized field without other changes is left untouched');
+  assert.equal(
+    rows[5].laps[0].avgCadenceSpm,
+    164,
+    'an already normalized field without other changes is left untouched',
+  );
 
-  const first = db.prepare('SELECT fit_summary_json FROM trainings WHERE id = 1').get().fit_summary_json;
+  const first = db
+    .prepare('SELECT fit_summary_json FROM trainings WHERE id = 1')
+    .get().fit_summary_json;
   migrateDatabase(db);
-  assert.equal(db.prepare('SELECT fit_summary_json FROM trainings WHERE id = 1').get().fit_summary_json, first);
-  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE name = '2026-10-fit-cadence-source-v2'").get().count, 1);
+  assert.equal(
+    db.prepare('SELECT fit_summary_json FROM trainings WHERE id = 1').get()
+      .fit_summary_json,
+    first,
+  );
+  assert.equal(
+    db
+      .prepare(
+        "SELECT COUNT(*) AS count FROM schema_migrations WHERE name = '2026-10-fit-cadence-source-v2'",
+      )
+      .get().count,
+    1,
+  );
   db.close();
 });
 
 test('original FIT cadence migration converts the historical running summary without source metadata', () => {
   const db = createDatabase({ filename: ':memory:' });
-  db.prepare("INSERT INTO users (email, password_hash) VALUES ('cadence-legacy@example.test', 'hash')").run();
+  db.prepare(
+    "INSERT INTO users (email, password_hash) VALUES ('cadence-legacy@example.test', 'hash')",
+  ).run();
   const summary = {
     activity: { sport: 'running' },
     laps: [
@@ -255,41 +512,88 @@ test('original FIT cadence migration converts the historical running summary wit
       { avgCadenceSpm: null, maxCadenceSpm: 0 },
     ],
   };
-  db.prepare(`INSERT INTO trainings (user_id, dia, tipo, result_data_source, fit_summary_json)
+  db.prepare(
+    `INSERT INTO trainings (user_id, dia, tipo, result_data_source, fit_summary_json)
     VALUES (1, '2026-09-01', 'Run', 'fit_upload', ?),
       (1, '2026-09-02', 'Run', 'fit_upload', '{invalid-json'),
       (1, '2026-09-03', 'Run', 'fit_upload', ?),
       (1, '2026-09-04', 'Run', 'fit_upload', ?),
       (1, '2026-09-05', 'Run', 'fit_upload', ?),
-      (1, '2026-09-06', 'Run', 'fit_upload', ?)`)
-    .run(
-      JSON.stringify(summary),
-      JSON.stringify({ activity: { sport: 'running' }, laps: [{ avgCadenceSpm: 82, avgCadenceSource: 'avg_cadence_running' }] }),
-      JSON.stringify({ cadenceNormalization: 'two-foot-spm-v1', activity: { sport: 'running' }, laps: [{ avgCadenceSpm: 164 }] }),
-      JSON.stringify({ activity: { sport: 'cycling' }, laps: [{ avgCadenceSpm: 82 }] }),
-      JSON.stringify({ activity: { sport: 'running' }, laps: {} }),
-    );
-  db.prepare(`DELETE FROM schema_migrations
-    WHERE name IN ('2026-10-fit-cadence-two-foot-v1', '2026-10-fit-cadence-source-v2')`).run();
+      (1, '2026-09-06', 'Run', 'fit_upload', ?)`,
+  ).run(
+    JSON.stringify(summary),
+    JSON.stringify({
+      activity: { sport: 'running' },
+      laps: [{ avgCadenceSpm: 82, avgCadenceSource: 'avg_cadence_running' }],
+    }),
+    JSON.stringify({
+      cadenceNormalization: 'two-foot-spm-v1',
+      activity: { sport: 'running' },
+      laps: [{ avgCadenceSpm: 164 }],
+    }),
+    JSON.stringify({
+      activity: { sport: 'cycling' },
+      laps: [{ avgCadenceSpm: 82 }],
+    }),
+    JSON.stringify({ activity: { sport: 'running' }, laps: {} }),
+  );
+  db.prepare(
+    `DELETE FROM schema_migrations
+    WHERE name IN ('2026-10-fit-cadence-two-foot-v1', '2026-10-fit-cadence-source-v2')`,
+  ).run();
 
   migrateDatabase(db);
-  const persisted = JSON.parse(db.prepare('SELECT fit_summary_json FROM trainings WHERE id = 1').get().fit_summary_json);
+  const persisted = JSON.parse(
+    db.prepare('SELECT fit_summary_json FROM trainings WHERE id = 1').get()
+      .fit_summary_json,
+  );
   assert.equal(persisted.laps[0].avgCadenceSpm, 162);
   assert.equal(persisted.laps[0].maxCadenceSpm, 184);
   assert.equal(persisted.laps[1].avgCadenceSpm, null);
   assert.equal(persisted.laps[1].maxCadenceSpm, null);
   assert.equal(persisted.laps[2].maxCadenceSpm, 0);
   assert.equal(persisted.cadenceNormalization, 'two-foot-spm-v1');
-  assert.equal(db.prepare('SELECT fit_summary_json FROM trainings WHERE id = 2').get().fit_summary_json, '{invalid-json');
-  assert.equal(JSON.parse(db.prepare('SELECT fit_summary_json FROM trainings WHERE id = 3').get().fit_summary_json).laps[0].avgCadenceSpm, 164,
-    'source metadata is skipped by the original migration and handled by the corrective one');
-  assert.equal(JSON.parse(db.prepare('SELECT fit_summary_json FROM trainings WHERE id = 4').get().fit_summary_json).laps[0].avgCadenceSpm, 164,
-    'the summary-level marker prevents an old value from being converted again');
-  assert.equal(JSON.parse(db.prepare('SELECT fit_summary_json FROM trainings WHERE id = 5').get().fit_summary_json).laps[0].avgCadenceSpm, 82,
-    'non-running cadence is preserved');
-  assert.deepEqual(JSON.parse(db.prepare('SELECT fit_summary_json FROM trainings WHERE id = 6').get().fit_summary_json).laps, {});
+  assert.equal(
+    db.prepare('SELECT fit_summary_json FROM trainings WHERE id = 2').get()
+      .fit_summary_json,
+    '{invalid-json',
+  );
+  assert.equal(
+    JSON.parse(
+      db.prepare('SELECT fit_summary_json FROM trainings WHERE id = 3').get()
+        .fit_summary_json,
+    ).laps[0].avgCadenceSpm,
+    164,
+    'source metadata is skipped by the original migration and handled by the corrective one',
+  );
+  assert.equal(
+    JSON.parse(
+      db.prepare('SELECT fit_summary_json FROM trainings WHERE id = 4').get()
+        .fit_summary_json,
+    ).laps[0].avgCadenceSpm,
+    164,
+    'the summary-level marker prevents an old value from being converted again',
+  );
+  assert.equal(
+    JSON.parse(
+      db.prepare('SELECT fit_summary_json FROM trainings WHERE id = 5').get()
+        .fit_summary_json,
+    ).laps[0].avgCadenceSpm,
+    82,
+    'non-running cadence is preserved',
+  );
+  assert.deepEqual(
+    JSON.parse(
+      db.prepare('SELECT fit_summary_json FROM trainings WHERE id = 6').get()
+        .fit_summary_json,
+    ).laps,
+    {},
+  );
   migrateDatabase(db);
-  const repeated = JSON.parse(db.prepare('SELECT fit_summary_json FROM trainings WHERE id = 1').get().fit_summary_json);
+  const repeated = JSON.parse(
+    db.prepare('SELECT fit_summary_json FROM trainings WHERE id = 1').get()
+      .fit_summary_json,
+  );
   assert.deepEqual(repeated, persisted);
   db.close();
 });
@@ -297,36 +601,68 @@ test('original FIT cadence migration converts the historical running summary wit
 test('legacy parser summary is persisted, corrected by migration, and served to the result page', async () => {
   const db = createDatabase({ filename: ':memory:' });
   const user = await registerUser(db, {
-    email: 'legacy-cadence@example.test', password: 'cadence-secret-1', first_name: 'Legacy', last_name: 'Runner',
+    email: 'legacy-cadence@example.test',
+    password: 'cadence-secret-1',
+    first_name: 'Legacy',
+    last_name: 'Runner',
   });
   const legacyParserSummary = {
     activity: { sport: 'running' },
     totals: { durationSeconds: 60, distanceKm: 0.2, ascentMeters: 0 },
-    laps: [{
-      lap: 1, stepType: 'Run', durationLabel: '1:00', distanceLabel: '0.20', avgPaceLabel: '5:00',
-      avgCadenceSpm: 82, avgCadenceSource: 'avg_cadence_running',
-      maxCadenceSpm: 91, maxCadenceSource: 'max_cadence_running',
-    }],
+    laps: [
+      {
+        lap: 1,
+        stepType: 'Run',
+        durationLabel: '1:00',
+        distanceLabel: '0.20',
+        avgPaceLabel: '5:00',
+        avgCadenceSpm: 82,
+        avgCadenceSource: 'avg_cadence_running',
+        maxCadenceSpm: 91,
+        maxCadenceSource: 'max_cadence_running',
+      },
+    ],
   };
-  const trainingId = Number(db.prepare(`INSERT INTO trainings
+  const trainingId = Number(
+    db
+      .prepare(
+        `INSERT INTO trainings
     (user_id, dia, tipo, fit_duration, fit_distance, fit_elevation_gain, fit_summary_json, result_data_source)
-    VALUES (?, '2026-09-28', 'Corrida', '1:00', 0.2, 0, ?, 'fit_upload')`)
-    .run(user.id, JSON.stringify(legacyParserSummary)).lastInsertRowid);
-  db.prepare("DELETE FROM schema_migrations WHERE name = '2026-10-fit-cadence-source-v2'").run();
+    VALUES (?, '2026-09-28', 'Corrida', '1:00', 0.2, 0, ?, 'fit_upload')`,
+      )
+      .run(user.id, JSON.stringify(legacyParserSummary)).lastInsertRowid,
+  );
+  db.prepare(
+    "DELETE FROM schema_migrations WHERE name = '2026-10-fit-cadence-source-v2'",
+  ).run();
   migrateDatabase(db);
 
   const app = await buildServer({ db, sessionCookieSecure: false });
-  const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: 'legacy-cadence@example.test', password: 'cadence-secret-1' } });
+  const login = await app.inject({
+    method: 'POST',
+    url: '/api/auth/login',
+    payload: {
+      email: 'legacy-cadence@example.test',
+      password: 'cadence-secret-1',
+    },
+  });
   assert.equal(login.statusCode, 200);
   const cookie = [].concat(login.headers['set-cookie'] ?? [])[0].split(';')[0];
-  const response = await app.inject({ method: 'GET', url: `/api/trainings/${trainingId}`, headers: { cookie } });
+  const response = await app.inject({
+    method: 'GET',
+    url: `/api/trainings/${trainingId}`,
+    headers: { cookie },
+  });
   assert.equal(response.statusCode, 200);
   const summary = JSON.parse(response.json().training.fit_summary_json);
   assert.equal(summary.laps[0].avgCadenceSpm, 164);
   assert.equal(summary.laps[0].maxCadenceSpm, 182);
   assert.equal(summary.cadenceNormalization, 'two-foot-spm-v1');
   assert.equal(formatCadence(summary.laps[0].avgCadenceSpm), '164');
-  assert.match(buildLapsMarkdown(summary.laps), /\| 1 \| Run \| 0\.20 km \| 1:00 \| 5:00 min\/km \| - \| 164 \| - \|/);
+  assert.match(
+    buildLapsMarkdown(summary.laps),
+    /\| 1 \| Run \| 0\.20 km \| 1:00 \| 5:00 min\/km \| - \| 164 \| - \|/,
+  );
   await app.close();
   db.close();
 });
@@ -346,7 +682,7 @@ test('new users default to en-US preferred language', () => {
     .run('default-lang@example.com', 'hash');
   const explicit = db
     .prepare(
-      "INSERT INTO users (email, password_hash, preferred_lang) VALUES (?, ?, 'pt-BR')"
+      "INSERT INTO users (email, password_hash, preferred_lang) VALUES (?, ?, 'pt-BR')",
     )
     .run('pt-user@example.com', 'hash');
 
@@ -384,23 +720,27 @@ test('migrateDatabase adds preferred_lang to legacy users tables', () => {
   `);
   db.prepare('INSERT INTO users (email, password_hash) VALUES (?, ?)').run(
     'legacy@example.com',
-    'hash'
+    'hash',
   );
 
   migrateDatabase(db);
 
   const row = db
-    .prepare('SELECT email, preferred_lang, first_day_of_week FROM users WHERE email = ?')
+    .prepare(
+      'SELECT email, preferred_lang, first_day_of_week FROM users WHERE email = ?',
+    )
     .get('legacy@example.com');
   assert.equal(row.preferred_lang, 'en-US');
   assert.equal(row.first_day_of_week, 'Monday');
 
-  db.prepare("INSERT INTO users (email, password_hash) VALUES (?, ?)").run(
+  db.prepare('INSERT INTO users (email, password_hash) VALUES (?, ?)').run(
     'post-migration@example.com',
-    'hash'
+    'hash',
   );
   const defaulted = db
-    .prepare('SELECT preferred_lang, first_day_of_week FROM users WHERE email = ?')
+    .prepare(
+      'SELECT preferred_lang, first_day_of_week FROM users WHERE email = ?',
+    )
     .get('post-migration@example.com');
   assert.equal(defaulted.preferred_lang, 'en-US');
   assert.equal(defaulted.first_day_of_week, 'Monday');
@@ -429,7 +769,7 @@ test('migrateDatabase adds first_day_of_week to partially migrated tables', () =
     );
   `);
   db.prepare(
-    "INSERT INTO users (email, password_hash, preferred_lang, first_day_of_week) VALUES (?, ?, 'pt-BR', 'Sunday')"
+    "INSERT INTO users (email, password_hash, preferred_lang, first_day_of_week) VALUES (?, ?, 'pt-BR', 'Sunday')",
   ).run('partial@example.com', 'hash');
 
   assert.doesNotThrow(() => migrateDatabase(db));
@@ -439,15 +779,31 @@ test('migrateDatabase adds first_day_of_week to partially migrated tables', () =
   assert.ok(columns.includes('first_day_of_week'));
 
   const row = db
-    .prepare('SELECT preferred_lang, first_day_of_week, onboarding_status, onboarding_guide_hidden FROM users WHERE email = ?')
+    .prepare(
+      'SELECT preferred_lang, first_day_of_week, onboarding_status, onboarding_guide_hidden FROM users WHERE email = ?',
+    )
     .get('partial@example.com');
   assert.equal(row.preferred_lang, 'pt-BR');
-  assert.equal(row.first_day_of_week, 'Sunday', 'existing values are preserved');
-  assert.equal(row.onboarding_status, 'active', 'a representative pre-onboarding user table migrates to active');
-  assert.equal(row.onboarding_guide_hidden, 0, 'the new presentation preference gets a default without altering other user data');
+  assert.equal(
+    row.first_day_of_week,
+    'Sunday',
+    'existing values are preserved',
+  );
+  assert.equal(
+    row.onboarding_status,
+    'active',
+    'a representative pre-onboarding user table migrates to active',
+  );
+  assert.equal(
+    row.onboarding_guide_hidden,
+    0,
+    'the new presentation preference gets a default without altering other user data',
+  );
 
   const fresh = db
-    .prepare('INSERT INTO users (email, password_hash) VALUES (?, ?) RETURNING first_day_of_week')
+    .prepare(
+      'INSERT INTO users (email, password_hash) VALUES (?, ?) RETURNING first_day_of_week',
+    )
     .get('fresh@example.com', 'hash');
   assert.equal(fresh.first_day_of_week, 'Monday');
 
@@ -462,44 +818,87 @@ test('initializeDatabase is safe to run on already-migrated databases', () => {
 
 test('onboarding migration converts legacy accounts to active idempotently without changing their data', () => {
   const db = createDatabase({ filename: ':memory:' });
-  db.prepare("INSERT INTO users (email, password_hash) VALUES ('old-account@example.com', 'hash')").run();
-  db.prepare("UPDATE users SET onboarding_status = 'legacy', onboarding_guide_hidden = 1 WHERE email = 'old-account@example.com'").run();
-  db.prepare("INSERT INTO shoes (id, user_id, brand, model, mileage) VALUES ('old-shoe', 1, 'Acme', 'Runner', 27)").run();
-  db.prepare("INSERT INTO training_cycles (id, user_id, objective) VALUES ('old-cycle', 1, 'Race')").run();
-  db.prepare("INSERT INTO trainings (user_id, training_cycle_id, dia, tipo, fit_duration, fit_distance, result_data_source) VALUES (1, 'old-cycle', '2026-09-20', 'Run', '30:00', 5, 'manual')").run();
+  db.prepare(
+    "INSERT INTO users (email, password_hash) VALUES ('old-account@example.com', 'hash')",
+  ).run();
+  db.prepare(
+    "UPDATE users SET onboarding_status = 'legacy', onboarding_guide_hidden = 1 WHERE email = 'old-account@example.com'",
+  ).run();
+  db.prepare(
+    "INSERT INTO shoes (id, user_id, brand, model, mileage) VALUES ('old-shoe', 1, 'Acme', 'Runner', 27)",
+  ).run();
+  db.prepare(
+    "INSERT INTO training_cycles (id, user_id, objective) VALUES ('old-cycle', 1, 'Race')",
+  ).run();
+  db.prepare(
+    "INSERT INTO trainings (user_id, training_cycle_id, dia, tipo, fit_duration, fit_distance, result_data_source) VALUES (1, 'old-cycle', '2026-09-20', 'Run', '30:00', 5, 'manual')",
+  ).run();
 
   migrateDatabase(db);
   migrateDatabase(db);
 
-  assert.deepEqual(db.prepare("SELECT onboarding_status, onboarding_guide_hidden FROM users WHERE id = 1").get(), {
-    onboarding_status: 'active', onboarding_guide_hidden: 1,
+  assert.deepEqual(
+    db
+      .prepare(
+        'SELECT onboarding_status, onboarding_guide_hidden FROM users WHERE id = 1',
+      )
+      .get(),
+    {
+      onboarding_status: 'active',
+      onboarding_guide_hidden: 1,
+    },
+  );
+  assert.deepEqual(db.prepare('SELECT COUNT(*) AS count FROM shoes').get(), {
+    count: 1,
   });
-  assert.deepEqual(db.prepare('SELECT COUNT(*) AS count FROM shoes').get(), { count: 1 });
-  assert.deepEqual(db.prepare('SELECT COUNT(*) AS count FROM training_cycles').get(), { count: 1 });
-  assert.deepEqual(db.prepare('SELECT fit_duration, fit_distance, result_data_source FROM trainings').get(), {
-    fit_duration: '30:00', fit_distance: 5, result_data_source: 'manual',
-  });
+  assert.deepEqual(
+    db.prepare('SELECT COUNT(*) AS count FROM training_cycles').get(),
+    { count: 1 },
+  );
+  assert.deepEqual(
+    db
+      .prepare(
+        'SELECT fit_duration, fit_distance, result_data_source FROM trainings',
+      )
+      .get(),
+    {
+      fit_duration: '30:00',
+      fit_distance: 5,
+      result_data_source: 'manual',
+    },
+  );
   db.close();
 });
 
 test('database migration converts old decimal-minute FIT paces into idempotent mm:ss values', () => {
   const db = createDatabase({ filename: ':memory:' });
-  db.prepare("INSERT INTO users (email, password_hash) VALUES ('pace@example.com', 'hash')").run();
-  db.prepare(`INSERT INTO trainings (user_id, dia, tipo, result_data_source, fit_avg_pace)
+  db.prepare(
+    "INSERT INTO users (email, password_hash) VALUES ('pace@example.com', 'hash')",
+  ).run();
+  db.prepare(
+    `INSERT INTO trainings (user_id, dia, tipo, result_data_source, fit_avg_pace)
     VALUES (1, '2026-09-20', 'Run', 'fit_upload', '6.53'),
            (1, '2026-09-20', 'Run', 'fit_upload', '5.00'),
            (1, '2026-09-20', 'Run', 'manual', '6.53'),
            (1, '2026-09-20', 'Run', 'fit_upload', '6:32'),
-           (1, '2026-09-20', 'Run', 'none', '7.20')`).run();
+           (1, '2026-09-20', 'Run', 'none', '7.20')`,
+  ).run();
   migrateDatabase(db);
   migrateDatabase(db);
-  assert.deepEqual(db.prepare('SELECT result_data_source, fit_avg_pace FROM trainings ORDER BY id').all(), [
-    { result_data_source: 'fit_upload', fit_avg_pace: '6:32' },
-    { result_data_source: 'fit_upload', fit_avg_pace: '5:00' },
-    { result_data_source: 'manual', fit_avg_pace: '6.53' },
-    { result_data_source: 'fit_upload', fit_avg_pace: '6:32' },
-    { result_data_source: 'fit_upload', fit_avg_pace: '7:12' },
-  ]);
+  assert.deepEqual(
+    db
+      .prepare(
+        'SELECT result_data_source, fit_avg_pace FROM trainings ORDER BY id',
+      )
+      .all(),
+    [
+      { result_data_source: 'fit_upload', fit_avg_pace: '6:32' },
+      { result_data_source: 'fit_upload', fit_avg_pace: '5:00' },
+      { result_data_source: 'manual', fit_avg_pace: '6.53' },
+      { result_data_source: 'fit_upload', fit_avg_pace: '6:32' },
+      { result_data_source: 'fit_upload', fit_avg_pace: '7:12' },
+    ],
+  );
   db.close();
 });
 
@@ -507,24 +906,29 @@ test('in-memory database stores users and sessions via prepared statements', () 
   const db = createDatabase({ filename: ':memory:' });
 
   const insertUser = db.prepare(
-    'INSERT INTO users (email, password_hash) VALUES (?, ?)'
+    'INSERT INTO users (email, password_hash) VALUES (?, ?)',
   );
   const { lastInsertRowid: userId } = insertUser.run(
     'runner@example.com',
-    'argon2-hash'
+    'argon2-hash',
   );
 
   const user = db
-    .prepare('SELECT id, email, password_hash, created_at FROM users WHERE id = ?')
+    .prepare(
+      'SELECT id, email, password_hash, created_at FROM users WHERE id = ?',
+    )
     .get(userId);
   assert.equal(user.email, 'runner@example.com');
   assert.equal(user.password_hash, 'argon2-hash');
   assert.match(user.created_at, /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
 
-  assert.throws(() => insertUser.run('runner@example.com', 'other-hash'), /UNIQUE constraint failed: users\.email/);
+  assert.throws(
+    () => insertUser.run('runner@example.com', 'other-hash'),
+    /UNIQUE constraint failed: users\.email/,
+  );
 
   const insertSession = db.prepare(
-    'INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)'
+    'INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)',
   );
   insertSession.run('session-token', userId, '2026-12-31T23:59:59Z');
 
@@ -544,23 +948,25 @@ test('foreign keys are enforced and cascade on user delete', () => {
   assert.throws(
     () =>
       db
-        .prepare('INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)')
+        .prepare(
+          'INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)',
+        )
         .run('orphan-token', 99999, '2026-12-31T23:59:59Z'),
-    /FOREIGN KEY constraint failed/
+    /FOREIGN KEY constraint failed/,
   );
 
   const { lastInsertRowid: userId } = db
     .prepare('INSERT INTO users (email, password_hash) VALUES (?, ?)')
     .run('cascade@example.com', 'hash');
-  db.prepare('INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)').run(
-    'cascade-token',
-    userId,
-    '2026-12-31T23:59:59Z'
-  );
+  db.prepare(
+    'INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)',
+  ).run('cascade-token', userId, '2026-12-31T23:59:59Z');
 
   db.prepare('DELETE FROM users WHERE id = ?').run(userId);
 
-  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get('cascade-token');
+  const session = db
+    .prepare('SELECT * FROM sessions WHERE id = ?')
+    .get('cascade-token');
   assert.equal(session, undefined);
 
   db.close();
@@ -571,7 +977,7 @@ test('users store first and last names via prepared statements', () => {
 
   const { lastInsertRowid: userId } = db
     .prepare(
-      'INSERT INTO users (email, password_hash, first_name, last_name) VALUES (?, ?, ?, ?)'
+      'INSERT INTO users (email, password_hash, first_name, last_name) VALUES (?, ?, ?, ?)',
     )
     .run('rafael@example.com', 'argon2-hash', 'Rafael', 'Vilaça');
 
@@ -623,55 +1029,88 @@ test('migrateDatabase removes the obsolete workouts table from existing database
       day TEXT
     );
   `);
-  db.prepare('INSERT INTO users (id, email, password_hash) VALUES (?, ?, ?)').run(
-    1,
-    'legacy-workout@example.com',
-    'hash'
-  );
-  db.prepare('INSERT INTO sessions (id, user_id) VALUES (?, ?)').run('legacy-session', 1);
-  db.prepare('INSERT INTO training_cycles (id, user_id) VALUES (?, ?)').run('legacy-cycle', 1);
   db.prepare(
-    'INSERT INTO trainings (id, user_id, training_cycle_id, dia, tipo) VALUES (?, ?, ?, ?, ?)'
-  ).run(1, 1, 'legacy-cycle', '2026-08-24', 'Corrida');
-  db.prepare('INSERT INTO shoes (id, user_id, brand, model) VALUES (?, ?, ?, ?)').run(
-    'legacy-shoe',
+    'INSERT INTO users (id, email, password_hash) VALUES (?, ?, ?)',
+  ).run(1, 'legacy-workout@example.com', 'hash');
+  db.prepare('INSERT INTO sessions (id, user_id) VALUES (?, ?)').run(
+    'legacy-session',
     1,
-    'Asics',
-    'Novablast'
   );
+  db.prepare('INSERT INTO training_cycles (id, user_id) VALUES (?, ?)').run(
+    'legacy-cycle',
+    1,
+  );
+  db.prepare(
+    'INSERT INTO trainings (id, user_id, training_cycle_id, dia, tipo) VALUES (?, ?, ?, ?, ?)',
+  ).run(1, 1, 'legacy-cycle', '2026-08-24', 'Corrida');
+  db.prepare(
+    'INSERT INTO shoes (id, user_id, brand, model) VALUES (?, ?, ?, ?)',
+  ).run('legacy-shoe', 1, 'Asics', 'Novablast');
   db.prepare('INSERT INTO workouts (id, user_id, day) VALUES (?, ?, ?)').run(
     1,
     1,
-    '2026-08-24'
+    '2026-08-24',
   );
 
   migrateDatabase(db);
 
   const tables = db
-    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+    .prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name",
+    )
     .all()
     .map((row) => row.name);
   assert.deepEqual(
     tables,
-    ['admin_audit_log', 'ai_coach_availability', 'ai_executions', 'ai_global_usage', 'ai_memory', 'ai_profiles', 'ai_usage', 'cycle_plan_proposals', 'cycle_plan_versions', 'feedback', 'schema_migrations', 'sessions', 'shoes', 'training_cycles', 'training_shoe_mileage', 'trainings', 'users'],
-    'only the obsolete workouts table is removed'
+    [
+      'admin_audit_log',
+      'ai_coach_availability',
+      'ai_executions',
+      'ai_global_usage',
+      'ai_memory',
+      'ai_profiles',
+      'ai_usage',
+      'cycle_plan_proposals',
+      'cycle_plan_versions',
+      'feedback',
+      'schema_migrations',
+      'sessions',
+      'shoes',
+      'training_cycles',
+      'training_shoe_mileage',
+      'trainings',
+      'users',
+      'weekly_workout_proposals',
+    ],
+    'only the obsolete workouts table is removed',
   );
   assert.deepEqual(
     {
       users: db.prepare('SELECT COUNT(*) AS total FROM users').get().total,
-      sessions: db.prepare('SELECT COUNT(*) AS total FROM sessions').get().total,
-      training_cycles: db.prepare('SELECT COUNT(*) AS total FROM training_cycles').get().total,
-      trainings: db.prepare('SELECT COUNT(*) AS total FROM trainings').get().total,
+      sessions: db.prepare('SELECT COUNT(*) AS total FROM sessions').get()
+        .total,
+      training_cycles: db
+        .prepare('SELECT COUNT(*) AS total FROM training_cycles')
+        .get().total,
+      trainings: db.prepare('SELECT COUNT(*) AS total FROM trainings').get()
+        .total,
       shoes: db.prepare('SELECT COUNT(*) AS total FROM shoes').get().total,
     },
     { users: 1, sessions: 1, training_cycles: 1, trainings: 1, shoes: 1 },
-    'current tables and their unrelated data are retained'
+    'current tables and their unrelated data are retained',
   );
 
-  assert.doesNotThrow(() => migrateDatabase(db), 'the cleanup migration is idempotent');
+  assert.doesNotThrow(
+    () => migrateDatabase(db),
+    'the cleanup migration is idempotent',
+  );
   assert.equal(
-    db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'workouts'").get(),
-    undefined
+    db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'workouts'",
+      )
+      .get(),
+    undefined,
   );
 
   db.close();
@@ -685,26 +1124,26 @@ test('trainings enforce foreign keys, require dia/tipo and cascade on user delet
       db
         .prepare('INSERT INTO trainings (user_id, dia, tipo) VALUES (?, ?, ?)')
         .run(99999, '2026-08-23', 'Corrida'),
-    /FOREIGN KEY constraint failed/
+    /FOREIGN KEY constraint failed/,
   );
   assert.throws(
     () =>
       db
         .prepare('INSERT INTO trainings (user_id, dia, tipo) VALUES (?, ?, ?)')
         .run(null, '2026-08-23', 'Corrida'),
-    /NOT NULL constraint failed/
+    /NOT NULL constraint failed/,
   );
 
   const { lastInsertRowid: userId } = db
     .prepare('INSERT INTO users (email, password_hash) VALUES (?, ?)')
     .run('cascade-trainings@example.com', 'hash');
   db.prepare(
-    "INSERT INTO trainings (user_id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes) VALUES (?, ?, 'Manhã', 'Corrida', 'Longão', 'Zona 2', '150', '3', 'Adizero', '90 min', 'Leve')"
+    "INSERT INTO trainings (user_id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes) VALUES (?, ?, 'Manhã', 'Corrida', 'Longão', 'Zona 2', '150', '3', 'Adizero', '90 min', 'Leve')",
   ).run(userId, '2026-08-23');
 
   const stored = db
     .prepare(
-      'SELECT dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes FROM trainings WHERE user_id = ?'
+      'SELECT dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes FROM trainings WHERE user_id = ?',
     )
     .get(userId);
   assert.deepEqual(stored, {
@@ -739,7 +1178,7 @@ test('file-backed database is created in a nested directory with WAL mode and pe
 
     db.prepare('INSERT INTO users (email, password_hash) VALUES (?, ?)').run(
       'persisted@example.com',
-      'hash'
+      'hash',
     );
     db.close();
 
@@ -779,12 +1218,14 @@ test('migrateDatabase adds feedback columns to legacy trainings tables', () => {
     );
   `);
   db.prepare(
-    "INSERT INTO trainings (user_id, dia, tipo) VALUES (1, '2026-08-20', 'Corrida')"
+    "INSERT INTO trainings (user_id, dia, tipo) VALUES (1, '2026-08-20', 'Corrida')",
   ).run();
 
   migrateDatabase(db);
 
-  const columns = db.pragma('table_info(trainings)').map((column) => column.name);
+  const columns = db
+    .pragma('table_info(trainings)')
+    .map((column) => column.name);
   for (const name of [
     'feedback_rpe',
     'feedback_notas',
@@ -808,7 +1249,11 @@ test('migrateDatabase adds feedback columns to legacy trainings tables', () => {
   // The new migration wipes legacy rows before adding training_cycle_id.
   // Verify that the columns were added and the table is empty.
   const rowCount = db.prepare('SELECT count(*) AS count FROM trainings').get();
-  assert.equal(rowCount.count, 0, 'legacy rows wiped by training_cycle_id migration');
+  assert.equal(
+    rowCount.count,
+    0,
+    'legacy rows wiped by training_cycle_id migration',
+  );
 
   assert.doesNotThrow(() => migrateDatabase(db), 'migration is idempotent');
 
@@ -843,14 +1288,18 @@ test('migrateDatabase tops up partially migrated trainings tables', () => {
     );
   `);
   db.prepare(
-    "INSERT INTO trainings (user_id, dia, tipo) VALUES (1, '2026-08-21', 'Bike')"
+    "INSERT INTO trainings (user_id, dia, tipo) VALUES (1, '2026-08-21', 'Bike')",
   ).run();
 
   assert.doesNotThrow(() => migrateDatabase(db));
 
   // The new migration wipes legacy rows before adding training_cycle_id.
   const rowCount = db.prepare('SELECT count(*) AS count FROM trainings').get();
-  assert.equal(rowCount.count, 0, 'legacy rows wiped by training_cycle_id migration');
+  assert.equal(
+    rowCount.count,
+    0,
+    'legacy rows wiped by training_cycle_id migration',
+  );
 
   // Verify the columns are present.
   const columns = db.pragma('table_info(trainings)').map((c) => c.name);
@@ -906,12 +1355,18 @@ test('the activity migration adds is_active, keeps every account active and pres
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
-  db.prepare("INSERT INTO users (id, email, password_hash, role) VALUES (1, 'keep@example.com', 'hash-1', 'admin')").run();
-  db.prepare("INSERT INTO users (id, email, password_hash, role) VALUES (2, 'keep2@example.com', 'hash-2', 'user')").run();
-  db.prepare("INSERT INTO sessions (id, user_id) VALUES ('keep-session', 1)").run();
+  db.prepare(
+    "INSERT INTO users (id, email, password_hash, role) VALUES (1, 'keep@example.com', 'hash-1', 'admin')",
+  ).run();
+  db.prepare(
+    "INSERT INTO users (id, email, password_hash, role) VALUES (2, 'keep2@example.com', 'hash-2', 'user')",
+  ).run();
+  db.prepare(
+    "INSERT INTO sessions (id, user_id) VALUES ('keep-session', 1)",
+  ).run();
   db.prepare(
     `INSERT INTO admin_audit_log (id, actor_user_id, actor_email, target_user_id, target_email, action, details)
-     VALUES (7, 1, 'keep@example.com', 2, 'keep2@example.com', 'account_created', '{"role":"user"}')`
+     VALUES (7, 1, 'keep@example.com', 2, 'keep2@example.com', 'account_created', '{"role":"user"}')`,
   ).run();
 
   migrateDatabase(db);
@@ -920,66 +1375,181 @@ test('the activity migration adds is_active, keeps every account active and pres
   // The column exists, defaults to the active state and preserved every account
   // exactly as it was, including ids, hashes, roles and sessions.
   assert.deepEqual(
-    db.prepare('SELECT id, email, password_hash, role, is_active FROM users ORDER BY id').all(),
+    db
+      .prepare(
+        'SELECT id, email, password_hash, role, is_active FROM users ORDER BY id',
+      )
+      .all(),
     [
-      { id: 1, email: 'keep@example.com', password_hash: 'hash-1', role: 'admin', is_active: 1 },
-      { id: 2, email: 'keep2@example.com', password_hash: 'hash-2', role: 'user', is_active: 1 },
-    ]
+      {
+        id: 1,
+        email: 'keep@example.com',
+        password_hash: 'hash-1',
+        role: 'admin',
+        is_active: 1,
+      },
+      {
+        id: 2,
+        email: 'keep2@example.com',
+        password_hash: 'hash-2',
+        role: 'user',
+        is_active: 1,
+      },
+    ],
   );
-  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM sessions WHERE id = 'keep-session'").get().count, 1);
   assert.equal(
-    db.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE name = '2026-09-account-activity-v1'").get().count,
+    db
+      .prepare(
+        "SELECT COUNT(*) AS count FROM sessions WHERE id = 'keep-session'",
+      )
+      .get().count,
     1,
-    'the marker is written once, so a repeated migration rewrites nothing'
+  );
+  assert.equal(
+    db
+      .prepare(
+        "SELECT COUNT(*) AS count FROM schema_migrations WHERE name = '2026-09-account-activity-v1'",
+      )
+      .get().count,
+    1,
+    'the marker is written once, so a repeated migration rewrites nothing',
   );
 
   // The rebuilt audit table keeps the earlier rows and accepts the new action.
-  assert.deepEqual(db.prepare('SELECT * FROM admin_audit_log ORDER BY id').all(), [
-    {
-      id: 7, actor_user_id: 1, actor_email: 'keep@example.com', target_user_id: 2,
-      target_email: 'keep2@example.com', action: 'account_created', details: '{"role":"user"}',
-      created_at: db.prepare('SELECT created_at FROM admin_audit_log WHERE id = 7').get().created_at,
-    },
-  ]);
+  assert.deepEqual(
+    db.prepare('SELECT * FROM admin_audit_log ORDER BY id').all(),
+    [
+      {
+        id: 7,
+        actor_user_id: 1,
+        actor_email: 'keep@example.com',
+        target_user_id: 2,
+        target_email: 'keep2@example.com',
+        action: 'account_created',
+        details: '{"role":"user"}',
+        created_at: db
+          .prepare('SELECT created_at FROM admin_audit_log WHERE id = 7')
+          .get().created_at,
+      },
+    ],
+  );
   db.prepare(
     `INSERT INTO admin_audit_log (actor_user_id, actor_email, target_user_id, target_email, action, details)
-     VALUES (1, 'keep@example.com', 2, 'keep2@example.com', 'account_activity_changed', '{"from":"active","to":"inactive"}')`
+     VALUES (1, 'keep@example.com', 2, 'keep2@example.com', 'account_activity_changed', '{"from":"active","to":"inactive"}')`,
   ).run();
   assert.throws(
-    () => db.prepare(
-      `INSERT INTO admin_audit_log (actor_email, target_email, action) VALUES ('', '', 'account_suspended')`
-    ).run(),
-    /CHECK constraint failed/
+    () =>
+      db
+        .prepare(
+          `INSERT INTO admin_audit_log (actor_email, target_email, action) VALUES ('', '', 'account_suspended')`,
+        )
+        .run(),
+    /CHECK constraint failed/,
   );
 
   // The state is constrained to the two real values, and only the administration
   // domain writes the column.
   assert.throws(
     () => db.prepare('UPDATE users SET is_active = 2 WHERE id = 1').run(),
-    /CHECK constraint failed/
+    /CHECK constraint failed/,
   );
   db.prepare('UPDATE users SET is_active = 0 WHERE id = 2').run();
-  assert.equal(db.prepare('SELECT is_active FROM users WHERE id = 2').get().is_active, 0);
+  assert.equal(
+    db.prepare('SELECT is_active FROM users WHERE id = 2').get().is_active,
+    0,
+  );
+  db.close();
+});
+
+test('weekly workout migration upgrades an older database idempotently without changing user data', () => {
+  const db = createDatabase({ filename: ':memory:' });
+  db.prepare(
+    "INSERT INTO users(id,email,password_hash) VALUES(501,'weekly-migration@example.invalid','hash')",
+  ).run();
+  db.prepare(
+    "INSERT INTO training_cycles(id,user_id,objective,status) VALUES('weekly-cycle',501,'Existing goal','active')",
+  ).run();
+  db.prepare(
+    "INSERT INTO trainings(user_id,training_cycle_id,dia,tipo,treino,completed,feedback_rpe) VALUES(501,'weekly-cycle','2026-10-20','Run','Preserved training',1,3)",
+  ).run();
+  const before = {
+    user: db
+      .prepare('SELECT id,email,password_hash FROM users WHERE id=501')
+      .get(),
+    cycle: db
+      .prepare('SELECT * FROM training_cycles WHERE id=?')
+      .get('weekly-cycle'),
+    training: db.prepare('SELECT * FROM trainings WHERE user_id=501').get(),
+  };
+  db.exec('DROP TABLE weekly_workout_proposals');
+  db.prepare(
+    "DELETE FROM schema_migrations WHERE name='2026-10-weekly-workouts-v1'",
+  ).run();
+  migrateDatabase(db);
+  migrateDatabase(db);
+  assert.deepEqual(
+    db.prepare('SELECT id,email,password_hash FROM users WHERE id=501').get(),
+    before.user,
+  );
+  assert.deepEqual(
+    db.prepare('SELECT * FROM training_cycles WHERE id=?').get('weekly-cycle'),
+    before.cycle,
+  );
+  assert.deepEqual(
+    db.prepare('SELECT * FROM trainings WHERE user_id=501').get(),
+    before.training,
+  );
+  assert.equal(
+    db
+      .prepare(
+        "SELECT COUNT(*) AS n FROM schema_migrations WHERE name='2026-10-weekly-workouts-v1'",
+      )
+      .get().n,
+    1,
+  );
+  assert.ok(
+    db
+      .pragma('table_info(weekly_workout_proposals)')
+      .some((column) => column.name === 'application_json'),
+  );
   db.close();
 });
 
 test('a fresh database already carries the activity state and the audit action', () => {
   const db = createDatabase({ filename: ':memory:' });
-  const user = db.prepare('INSERT INTO users (email, password_hash) VALUES (?, ?)').run(
-    'fresh@example.com', 'hash'
+  const user = db
+    .prepare('INSERT INTO users (email, password_hash) VALUES (?, ?)')
+    .run('fresh@example.com', 'hash');
+  assert.equal(
+    db
+      .prepare('SELECT is_active FROM users WHERE id = ?')
+      .get(user.lastInsertRowid).is_active,
+    1,
   );
-  assert.equal(db.prepare('SELECT is_active FROM users WHERE id = ?').get(user.lastInsertRowid).is_active, 1);
   assert.ok(
-    db.prepare("SELECT 1 FROM schema_migrations WHERE name = '2026-09-account-activity-v1'").get(),
-    'the migration is recorded for a new database as well'
+    db
+      .prepare(
+        "SELECT 1 FROM schema_migrations WHERE name = '2026-09-account-activity-v1'",
+      )
+      .get(),
+    'the migration is recorded for a new database as well',
   );
   db.prepare(
     `INSERT INTO admin_audit_log (actor_user_id, actor_email, target_user_id, target_email, action)
-     VALUES (?, ?, ?, ?, 'account_activity_changed')`
-  ).run(user.lastInsertRowid, 'fresh@example.com', user.lastInsertRowid, 'fresh@example.com');
+     VALUES (?, ?, ?, ?, 'account_activity_changed')`,
+  ).run(
+    user.lastInsertRowid,
+    'fresh@example.com',
+    user.lastInsertRowid,
+    'fresh@example.com',
+  );
   assert.equal(
-    db.prepare("SELECT COUNT(*) AS count FROM admin_audit_log WHERE action = 'account_activity_changed'").get().count,
-    1
+    db
+      .prepare(
+        "SELECT COUNT(*) AS count FROM admin_audit_log WHERE action = 'account_activity_changed'",
+      )
+      .get().count,
+    1,
   );
   db.close();
 });

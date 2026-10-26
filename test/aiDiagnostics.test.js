@@ -38,6 +38,18 @@ test('closed diagnostic vocabulary rejects values, arbitrary paths, identifiers 
  const db=fixture();saveDiagnostic(db,'missing',1,{});db.close();
 });
 
+test('weekly domain diagnostics retain only allowlisted code and session path',()=>{
+ const {sanitizeDiagnostic}=require('../src/ai/diagnostics');
+ assert.deepEqual(sanitizeDiagnostic({validation:{code:'daily_budget',path:'$.sessions[2].prescription'}}),{validation:{code:'daily_budget',path:'$.sessions[2].prescription'}});
+ assert.deepEqual(sanitizeDiagnostic({validation:{code:'providerFailed',path:'$.sessions[2].private'}}),{});
+});
+
+test('weekly domain validation code and path persist in the protected execution diagnostic',async(t)=>{
+ const db=fixture();const operation={...createCyclePlanAdapter(db),validate:()=>false,diagnose:()=>({code:'daily_budget',path:'$.sessions[2].prescription'})};const {service}=setupService(db,async()=>({value:{},usage:{input:10,output:20,cached:0}}),{cycle:operation});t.after(async()=>{await service.stop();db.close();});
+ const row=service.enqueue(1,request);await complete(service,row.id);const diagnostic=service.get(1,row.id,true).diagnostics[0];
+ assert.deepEqual(diagnostic.validation,{code:'daily_budget',path:'$.sessions[2].prescription'});assert.equal(diagnostic.stage,'domain');
+});
+
 test('diagnostics migration preserves existing snapshots and is idempotent on marked and unmarked columns',async()=>{
  const {initializeDatabase}=require('../src/db/database');const {migrateAiDiagnostics}=require('../src/ai/schema');
  const db=fixture();const {service}=require('./fixtures/ai/cycle-planning.cjs').harness(db);

@@ -5,7 +5,8 @@ const assert = require('node:assert/strict');
 const { createDatabase, migrateDatabase } = require('../src/db/database');
 const {
   DAY_KEYS, PERIOD_KEYS, MAX_AVAILABLE_MINUTES, normalizeAvailabilityWeek,
-  getAvailabilityWeek, saveAvailabilityWeek,
+  getAvailabilityWeek, getAvailabilitySnapshot, availabilitySnapshotMatches,
+  saveAvailabilityWeek,
 } = require('../src/availability');
 
 function validWeek(overrides = {}) {
@@ -88,6 +89,37 @@ test('availability persistence is user scoped, canonical and idempotent', () => 
   db.close();
 });
 
+test('availability revisions detect changed and reverted sources without rewriting identical values', () => {
+  const db = createDatabase({ filename: ':memory:' });
+  db.prepare("INSERT INTO users (email, password_hash) VALUES ('revision@example.test', 'hash')").run();
+  const original = normalizeAvailabilityWeek(validWeek()).days;
+  saveAvailabilityWeek(db, 1, original);
+  const first = getAvailabilitySnapshot(db, 1);
+  assert.equal(availabilitySnapshotMatches(db, 1, first), true);
+  assert.equal(availabilitySnapshotMatches(db, 1, null), false);
+  assert.equal(availabilitySnapshotMatches(db, 2, first), false);
+  assert.equal(availabilitySnapshotMatches(db, 1, { userId: 1, rows: 'invalid' }), false);
+  const stale = { ...first, rows: first.rows.map((row) => ({ ...row })) };
+  stale.rows[0].revision++;
+  assert.equal(availabilitySnapshotMatches(db, 1, stale), false);
+  assert.equal(first.rows.find((row) => row.day_key === 'monday').revision, 1);
+  saveAvailabilityWeek(db, 1, original);
+  assert.deepEqual(getAvailabilitySnapshot(db, 1), first);
+  const changed = normalizeAvailabilityWeek(validWeek({
+    monday: { available_minutes: 45, available_periods: ['08_12'] },
+  })).days;
+  saveAvailabilityWeek(db, 1, changed);
+  assert.equal(
+    getAvailabilitySnapshot(db, 1).rows.find((row) => row.day_key === 'monday').revision,
+    2,
+  );
+  saveAvailabilityWeek(db, 1, original);
+  const reverted = getAvailabilitySnapshot(db, 1);
+  assert.equal(reverted.rows.find((row) => row.day_key === 'monday').revision, 3);
+  assert.notDeepEqual(reverted, first);
+  db.close();
+});
+
 test('legacy multiple periods remain readable but require explicit review and cannot be normalized', () => {
   const db = createDatabase({ filename: ':memory:' });
   db.prepare("INSERT INTO users (email, password_hash) VALUES ('legacy-periods@example.test', 'hash')").run();
@@ -137,6 +169,23 @@ test('availability migration on the role-migrated main database retains admins a
   assert.deepEqual(getAvailabilityWeek(db, 1).days.map((day) => day.can_train), Array(7).fill(null));
   assert.equal(db.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE name = '2026-09-user-roles-v1'").get().count, 1);
   assert.equal(db.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE name = '2026-09-structured-ai-coach-availability-v1'").get().count, 1);
+  db.close();
+});
+
+test('availability revision migration preserves legacy rows and is repeatable', () => {
+  const db = createDatabase({ filename: ':memory:' });
+  db.prepare("INSERT INTO users (email, password_hash) VALUES ('legacy-revision@example.test', 'hash')").run();
+  db.exec('ALTER TABLE ai_coach_availability DROP COLUMN revision');
+  db.prepare("DELETE FROM schema_migrations WHERE name='2026-10-weekly-availability-revision-v1'").run();
+  db.prepare(`INSERT INTO ai_coach_availability
+    (user_id,day_key,can_train,available_periods,available_minutes,location)
+    VALUES(1,'monday',1,'[\"08_12\"]',45,'Porto')`).run();
+  migrateDatabase(db);
+  migrateDatabase(db);
+  const row = db.prepare('SELECT * FROM ai_coach_availability WHERE user_id=1').get();
+  assert.equal(row.location, 'Porto');
+  assert.equal(row.available_minutes, 45);
+  assert.equal(row.revision, 1);
   db.close();
 });
 

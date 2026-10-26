@@ -1,9 +1,11 @@
 # AI foundation (phase 0, issue #62)
 
 Status: phase 0 is integrated through merged [PR #67](https://github.com/fracon/training-assistant/pull/67),
-merge `648d6a0`, following #66/#68. The issue #63 branch adds only the cycle
-product adapter and explicit planning application; see [cycle planning](ai-cycle-planning.md).
-That phase is not integrated until its own PR merges. #64/#65 remain future.
+merge `648d6a0`, following #66/#68. Cycle planning (#63) is integrated via
+merged PR #69. Weekly workout delivery (#64) is implemented on its dedicated
+issue branch and awaits that PR's merge; see [weekly workouts](ai-weekly-workouts.md).
+Analysis (#65) remains future scope. See [cycle planning](ai-cycle-planning.md)
+for phase 1.
 Cycle goals may be noncompetitive; the target date is a goal deadline, not a
 required race. See the [calendar and adapter contract](ai-cycle-planning.md#goal-deadlines-and-calendar-validation).
 Historical validation sections below record pre-merge phase 0 batches, not the
@@ -336,8 +338,9 @@ must not cause that refusal. See [cycle continuity](ai-cycle-planning.md#continu
 
 Plan-local assessments are excluded. v1/v2/v3/v4 execution snapshots remain
 immutable and are marked outdated under v5, without automatic paid regeneration.
-This corrects v4's unconditional inclusion of applied planning details. No
-weekly/analysis product adapter is registered.
+This corrects v4's unconditional inclusion of applied planning details. Weekly
+delivery is implemented separately with its own versioned output adapter;
+analysis remains unregistered.
 
 ### Applied-planning RPE compatibility on the issue #63 branch
 
@@ -396,10 +399,11 @@ their own** snapshots and generate/copy existing external prompts for free.
 Existing manual prompt workflows remain available to all users until their
 individual replacement phases. Model responses render as text/data, never HTML.
 
-Phase 0 introduced no paid adapters. The issue #63 branch registers only cycle
-planning; enabling AI alone sends no athlete context to OpenAI. Explicit cycle
-generation sends
-only selected structured context and the rendered prompt. They must version
+Phase 0 introduced no paid adapters. Merged PR #69 registers cycle planning;
+the issue #64 branch registers weekly workouts; analysis remains unregistered.
+Enabling AI alone sends no athlete context to OpenAI. Explicit cycle or weekly
+generation sends only selected structured context and the rendered prompt.
+They must version
 permitted delivery changes and validate the complete domain result. FIT/ZIP
 binaries, raw GPS tracks, account email/name, session tokens and API credentials
 are not selected. Free text can contain personal information entered by its
@@ -419,13 +423,23 @@ are allowlisted, with no `user_id`, arbitrary model or arbitrary prompt option.
 | `PUT /api/ai/profile` | `{fields:{experience?},expected_version}`; strings <=2000 chars |
 | `GET /api/ai/memory/legacy` | Owner-only read-only archive `{fields,entries}`; excluded from new contexts |
 | `GET /api/ai/context?purpose=...&resource_id=...&as_of=...` | Administrator's own technical context only; ordinary users receive 403 and use the overview |
-| `POST /api/ai/executions` | `{purpose,resource_id?,target_date?,idempotency_key}` -> 202 and ID/state; purposes cycle/workouts/analysis; cycle adapter on issue #63 branch; workouts/analysis unregistered |
+| `POST /api/ai/executions` | `{purpose,resource_id?,target_date?,idempotency_key,optional_context?}` -> 202 and ID/state; cycle integrated via #69; weekly workouts on issue #64 branch; analysis unregistered |
+| `GET /api/ai/workouts/:id/proposal` | Owner-scoped persisted weekly proposal, response version and hourly weather evidence |
+| `POST /api/ai/workouts/:id/apply` | `{expected_response_hash}`; transactionally revalidates freshness and applies only nonduplicate sessions |
 | `GET /api/ai/executions` | Latest 50 owned execution identifiers/states |
 | `GET /api/ai/executions/:id` | Owned state, validated product response and outdated flag |
 | `POST /api/ai/executions/:id/cancel` | Empty object; local cancellation, never a promise of no provider cost |
-| `POST /api/ai/admin/preview` | Admin-owned `{purpose,resource_id?,target_date?}` -> prompt/context/version; free and nonpersistent |
+| `POST /api/ai/admin/preview` | Admin-owned `{purpose,resource_id?,target_date?,optional_context?}` -> exact external prompt/context/version; free and nonpersistent |
 | `GET /api/ai/admin/executions/:id` | Admin-owned exact payload/context/configuration/usage/error |
 | `GET /api/ai/admin/usage` | Admin-owned usage and sanitized configuration availability |
+
+On the #64 branch, weekly availability GET responses also expose a per-day
+source revision. Migration `2026-10-weekly-availability-revision-v1` adds it
+idempotently to existing rows with default 1. A weekly request captures the
+owner's exact availability snapshot before weather lookup and verifies it
+again transactionally before reservation and dispatch; proposal freshness
+also includes those revisions. This supplements rather than replaces the
+existing owner-scoped availability contract.
 
 The existing authenticated `GET /api/cycles` also carries a minimal,
 owner-scoped `planningSummary` per cycle (`status`, `secondary`, `available`,
@@ -447,10 +461,13 @@ instructions, schema and context-aware validator). Trusted adapters may provide
 synchronous `prepare`, `onEnqueued`, `onCompleted` and `cleanup` hooks. Enqueue
 and completion hooks share the existing atomic write transactions; none may
 perform network I/O. Cleanup preserves accepted product artifacts while removing
-expired unapplied proposals. HTTP cannot register adapters. Phase 0 originally registered no product adapter; issue #63 adds only cycle planning: append-only JSON instructions are not a substitute
-for adapting conflicting Excel/weather delivery instructions in later phases.
-The cycle application contract is in [cycle planning](ai-cycle-planning.md);
-calendar/result application remains future scope.
+expired unapplied proposals. HTTP cannot register adapters. Phase 0 originally
+registered no product adapter; merged #69 added cycle planning and the issue
+#64 branch adds weekly calendar delivery. Append-only JSON instructions are
+not a substitute for adapting conflicting Excel/weather delivery instructions.
+The cycle application contract is in [cycle planning](ai-cycle-planning.md),
+and weekly application is specified in [weekly workouts](ai-weekly-workouts.md);
+result analysis remains future scope.
 
 An execution reserves per-user/global tokens, cost and maximum attempts inside
 one immediate transaction, then dispatches outside any database transaction.

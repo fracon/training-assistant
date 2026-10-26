@@ -6,13 +6,14 @@
   <link rel="icon" href="/assets/brand/favicon.png?v=5" type="image/png">
   <title data-i18n="aiCoach.pageTitle">Request Workouts - Kinesis</title>
   <link rel="stylesheet" href="shared/shell.css">
+  <link rel="stylesheet" href="shared/components.css">
   <link rel="stylesheet" href="ai-coach.css">
 </head>
 <body>
   <main id="appView">
     <section class="ai-coach-page">
       <header class="ai-coach-header">
-        <h1 data-i18n="aiCoach.title">Request Workouts</h1>
+        <h1 id="aiCoachTitle" tabindex="-1" data-i18n="aiCoach.title">Request Workouts</h1>
         <p class="ai-coach-subtitle" data-i18n="aiCoach.subtitle">Organize your goals and availability to prepare an AI training request.</p>
       </header>
 
@@ -46,25 +47,69 @@
             placeholder="Examples: travel, schedule changes, poor sleep, fatigue, pain/discomfort, work commitments, inability to run, shoe preference..."></textarea>
         </div>
 
-        <button type="submit" id="generateBtn" class="btn-primary">
-          <i data-lucide="sparkles"></i>
-          <span data-i18n="aiCoach.generate">Generate Prompt</span>
-        </button>
-      </form>
-
-      <section id="resultSection" class="result-section hidden" aria-live="polite">
-        <div class="result-header">
-          <h2 data-i18n="aiCoach.resultTitle">Generated prompt</h2>
-          <button type="button" id="copyBtn" class="copy-btn">
-            <span class="copy-icon"><i data-lucide="copy"></i></span>
-            <span id="copyLabel" data-i18n="aiCoach.copy">Copy to Clipboard</span>
+        <div class="form-actions prompt-submit-actions">
+          <button type="submit" id="generateBtn" class="btn-primary">
+            <i data-lucide="calendar-plus" aria-hidden="true"></i>
+            <span data-i18n="aiCoach.generate">Generate weekly proposal</span>
+          </button>
+          <button type="button" id="externalPromptBtn" class="btn-secondary" hidden>
+            <i data-lucide="sparkles" aria-hidden="true"></i>
+            <span data-i18n="aiCoach.externalPrompt">View external prompt</span>
           </button>
         </div>
-        <pre id="promptOutput" class="prompt-output" tabindex="0"></pre>
+        <p id="externalPromptError" class="external-prompt-error" role="alert" hidden></p>
+      </form>
+
+      <section id="weeklyProposalSection" class="result-section" hidden aria-labelledby="weeklyProposalTitle">
+        <div class="result-header"><h2 id="weeklyProposalTitle" data-i18n="aiCoach.weeklyProposalTitle">Weekly proposal</h2></div>
+        <p id="weeklyProposalStatus" role="status" aria-live="polite" hidden></p>
+        <div id="weeklyProposalError" role="alert" hidden></div>
+        <div id="weeklyProposalContent"></div>
+        <div id="weeklyProposalActions" class="form-actions weekly-proposal-actions" hidden>
+          <button type="button" id="weeklyApply" class="btn-primary" hidden data-i18n="aiCoach.applyWeekly">Apply to calendar</button>
+          <button type="button" id="weeklyReadAgain" class="btn-secondary" hidden data-i18n="aiCoach.readAgain">Try reading again</button>
+          <button type="button" id="weeklyCancel" class="btn-secondary" hidden data-i18n="aiCoach.cancelExecution">Cancel request</button>
+        </div>
       </section>
 
     </section>
   </main>
+
+  <div id="weeklyApplyResultModal" class="modal-backdrop hidden" hidden>
+    <section class="modal-card weekly-apply-result-card" role="dialog" aria-modal="true" aria-labelledby="weeklyApplyResultTitle" aria-describedby="weeklyApplyResultMessage">
+      <header class="modal-header">
+        <h2 id="weeklyApplyResultTitle"></h2>
+        <button type="button" id="weeklyApplyResultClose" class="modal-close" aria-label="Fechar" data-i18n-aria-label="aiCoach.closeApplyResult">
+          <i data-lucide="x" aria-hidden="true"></i>
+        </button>
+      </header>
+      <p id="weeklyApplyResultMessage" class="weekly-apply-result-message"></p>
+      <p id="weeklyApplyResultIgnored" class="weekly-apply-result-ignored" hidden></p>
+      <div class="confirm-actions">
+        <button type="button" id="weeklyApplyResultOk" class="btn btn-primary" data-i18n="aiCoach.ok">OK</button>
+      </div>
+    </section>
+  </div>
+
+  <div id="externalPromptModal" class="modal-backdrop hidden" hidden>
+    <section class="modal-card external-prompt-card" role="dialog" aria-modal="true" aria-labelledby="externalPromptTitle">
+      <header class="modal-header">
+        <h2 id="externalPromptTitle" data-i18n="aiCoach.resultTitle">External prompt</h2>
+        <button type="button" id="externalPromptClose" class="modal-close" aria-label="Close" data-i18n-aria-label="aiCoach.closePrompt">
+          <i data-lucide="x" aria-hidden="true"></i>
+        </button>
+      </header>
+      <pre id="promptOutput" class="prompt-output external-prompt-output" tabindex="0" aria-labelledby="externalPromptTitle"></pre>
+      <p id="promptCopyStatus" class="prompt-copy-status" role="status" aria-live="polite"></p>
+      <div class="form-actions external-prompt-actions">
+        <button type="button" id="closePromptBtn" class="btn-secondary" data-i18n="aiCoach.closePrompt">Close</button>
+        <button type="button" id="copyBtn" class="btn-primary">
+          <i id="copyIcon" data-lucide="copy" aria-hidden="true"></i>
+          <span id="copyLabel" data-i18n="aiCoach.copy">Copy prompt</span>
+        </button>
+      </div>
+    </section>
+  </div>
 
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="shared/shell.js" type="module"></script>

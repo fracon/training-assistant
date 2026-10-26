@@ -8,7 +8,8 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.21.0`); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.23.0` on the issue #64
+follow-up branch); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
@@ -200,7 +201,9 @@ onboarding record of the account is preserved.
   calendar scheduling, manual and FIT results, single-FIT ZIP upload, shoe
   rotation, and a per-training shoe-mileage ledger. FIT/ZIP parsing and workout
   data processing are local to the application. Optional weather lookup sends
-  the planned location/date to Open-Meteo. Optional Unsplash requests use a
+  the planned location/date to Open-Meteo; weekly proposal generation also
+  requests hourly forecast data for saved available-day locations/dates and
+  preferred periods. Optional Unsplash requests use a
   generic running-image query and register the download; the browser may make
   a daily quote request to ZenQuotes. These requests must not include workout
   or FIT data or user-entered training context (network services can still
@@ -283,7 +286,7 @@ onboarding record of the account is preserved.
   every other entered value. Arrow keys and Space must operate the group, the
   focus ring is drawn on the emoji label, and the RPE transitions respect
   `prefers-reduced-motion`.
-- The public page/menu label is “Solicitar Treinos” (PT) / “Request Workouts” (EN); onboarding access actions remain “Planejar com IA” / “Plan with AI”. The page prepares a request prompt for an external AI and does not itself generate a plan. Keep the `ai-coach` route, module, API/database names, and `aiCoach` locale namespace as stable technical identifiers. The presentation rename must not rewrite any weekly, macrocycle, or workout-feedback prompt templates, including their titles, examples, instructions, or “coach” wording; keep prompt copy separate from presentation strings if a translation key is shared.
+- The public page/menu label is “Solicitar Treinos” (PT) / “Request Workouts” (EN); onboarding access actions remain “Planejar com IA” / “Plan with AI”. The page retains its free external prompt for explicit administrator use and adds an explicit weekly AI proposal for all users through the shared persisted execution pipeline. Keep the `ai-coach` route, module, API/database names, and `aiCoach` locale namespace as stable technical identifiers. The presentation rename must not rewrite any weekly, macrocycle, or workout-feedback prompt templates, including their titles, examples, instructions, or “coach” wording; keep prompt copy separate from presentation strings if a translation key is shared.
 - The Training Result page also has a separate, informational “How to create a
   workout” guide. Its declarative catalog lives in
   `src/public/shared/workout-creation-guidance.js` and is rendered by
@@ -485,20 +488,77 @@ will find every issue.
 
 ## Solicitar Treinos weekly availability
 
-- `/api/ai-coach/availability` is authenticated and user-scoped. Store one record per weekday with `can_train`, canonical period IDs (`before_08`, `08_12`, `12_14`, `14_18`, `after_18`), `available_minutes` as whole minutes, and the exact `location` string.
+Weekly proposal generation and application reuse the existing AI execution,
+quota, reservation, Responses client, context, diagnostics and recovery system;
+do not add another job pipeline. The weekly-workouts-v3 delivery adapter is
+versioned independently from byte-preserved PT/EN external prompts. It retains
+training guidance while sending shared athlete context only once. Structured
+warmup/main/cooldown components derive duration and persisted details; each
+component carries execution and effort guidance, optional evidence-backed
+targets, and explicit guidance for repeated recoveries. Adapter instructions
+request Kinesis RPE 1–5 for each running stage and recovery, and forbid turning
+observed average/maximum heart rate into a target or zone. Distance pace used for
+duration estimation is separate from optional prescribed pace and is rounded
+up. Global FC/RPE fields are derived only when component targets agree; the
+proposal and training-result views derive labeled, stage-specific display
+summaries from persisted details without averaging or changing numeric column
+types. When no prescribed HR target exists, show the localized effort/breathing
+fallback and never infer a target from observed average/maximum HR. Free text
+is not parsed as another duration source. Notes persisted to `observacoes`
+and proposal-only natural-language justifications appear in the complete
+review; technical evidence IDs stay in protected diagnostics and are omitted
+from common cards. The exact free external prompt is admin-only, shown in a
+shared accessible modal with a bounded internal reading area and compact
+footer; ordinary accounts have neither its content nor controls after role
+resolution. Opening/copying remains a free preview and never starts weekly
+generation. Proposal controls are state-specific: cancel only for queued or
+running work, apply only for a current completed proposal, and a same-execution
+read after terminal/read failures. Verified weather displays only the compact temperature
+range, period maximum and available verified conditions; partial/unavailable
+coverage remains explicit. Full source/query evidence remains protected with
+the execution. After successful application, remove proposal cards and show the
+saved result in a dismissible shared modal; include ignored duplicates only
+when nonzero. Closing the modal returns focus to a stable visible control and
+leaves no permanent result panel. Reload preserves the applied terminal state
+without reopening the modal or selecting an older proposal. A lost apply
+response is resolved by a free read of the same proposal; until then, suppress
+Apply and never imply success or failure. Known application failures use the
+localized result modal and keep a still-usable proposal available. Never let an
+older poll restore applied cards/actions or open a duplicate result dialog.
+Open-Meteo hourly evidence is bound to an exact revisioned availability
+snapshot before reservation/dispatch and application. Forecast IANA timezone
+identity and distinct UTC hourly instants are checked through DST; the
+16-date horizon is enforced locally, while Open-Meteo requests use
+`start_date`/`end_date` without mutually exclusive `forecast_days`. Compact
+hourly tuples retain instant, local time/offset, temperature and WMO code
+inside the existing context budget. The execution snapshot retains the full
+forecast query and availability binding, while the provider receives a
+freshness-safe projection containing the source, coverage and verified hourly
+evidence; use the same projection for payload budgeting. Record and display
+that no authorized independent hourly source is configured; no daily maximum
+is substituted. Ambiguous, partial,
+incompatible-timezone, out-of-horizon and unavailable forecasts are explicit,
+with planning continuing without invented weather. v1/v2 proposals cannot be
+reviewed/applied under v3; their snapshots and historical calendar rows remain
+untouched. Application is an explicit owner-scoped transaction, rechecks
+freshness and ownership, preserves results and uses the calendar's existing
+deduplication.
+See [`docs/ai-weekly-workouts.md`](docs/ai-weekly-workouts.md).
+
+- `/api/ai-coach/availability` is authenticated and user-scoped. Store one record per weekday with `can_train`, canonical period IDs (`before_08`, `08_12`, `12_14`, `14_18`, `after_18`), `available_minutes` as whole minutes, the exact `location` string, and an internal monotonic `revision` used to bind weather lookups to source versions.
 - Each available day stores one preferred period. Legacy rows with multiple periods remain readable, are flagged for explicit review, and cannot be saved or used for prompt generation until one is selected. Clients of `PUT /api/ai-coach/availability` must send exactly one period for each available day; multiple periods are rejected as an incompatible contract change released in version `0.19.0`, with migration required for clients using the previous request shape. `available_minutes` is the maximum full session duration, including warm-up and cool-down, not a target and not the length of the period window. The maximum is 720 minutes per day.
 - Unavailable days canonicalize to no periods, null duration, and empty location. Available days require at least one known period, positive duration, and a location; validate in the backend as well as the UI.
 - The idempotent `2026-09-structured-ai-coach-availability-v1` migration does not derive periods or duration from old free text. The earlier AI Coach availability form was transient and did not persist these values; missing structured records must remain unconfigured and be reviewed. On first use the frontend presents missing rows as unchecked/unavailable defaults, without clearing `needsReview`; explicit unavailable rows remain unavailable after persistence.
 - Initial availability defaults are presentation-only: they are never eligible for persistence or prompt generation until the authenticated GET has completed successfully. A failed load keeps save/generate blocked, preserves local edits, and may be retried; late responses from older load attempts must not replace a newer result.
 - Applying a weekday setup is an explicit one-time copy from Monday to Tuesday–Friday. It never changes weekends or links records.
-- AI Coach prompts must state unavailable days and preserve the distinction between the one preferred period and the separate maximum session duration (including warm-up and cool-down), as well as each day's exact location and effective date. Render the week-start anchor day-first to match the spreadsheet's `DD/MM/YYYY` import format in both languages. Forecast research belongs to the external AI agent receiving the prompt: instruct it to research autonomously with available browsing tools, inspect forecast source content/data rather than search snippets alone, verify location/date/hourly coverage/source time zone, and use a second hourly source when the first is insufficient and access exists. Specify the canonical local half-open windows `00:00–08:00`, `08:00–12:00`, `12:00–14:00`, `14:00–18:00`, and `18:00–24:00`; apply `Europe/Lisbon` with date-appropriate DST only to mainland Portugal, never as a global default. Require the temperature range and highest verified temperature within the selected window, using the saved °C/°F preference; a daily maximum is not a substitute. Make partial coverage and location/date/hour/time-zone or tool/access/horizon failures explicit, require source and lookup timestamp in the response outside the workbook, and tell the agent not to ask the user to confirm forecast details or authorize research and not to interrupt workbook creation. Keep the 12-column spreadsheet/import schema unchanged; put verified or unavailable/partial status in its existing weather column. This prompt instruction adds no Kinesis forecast request, integration, control, confirmation, dependency, or external data transmission. Do not promise that an AI provider has internet access; the prompt must direct it to disclose unavailable tools/access. Do not contain “Rotina normal”/“Normal routine” defaults or invented conditions/times.
+- The administrator-only external prompt continues to preserve its existing PT/EN wording and 12-column XLSX/XLS import contract. Its browser/research instructions apply only to that free prompt; the weekly paid adapter replaces conflicting Excel/research delivery instructions with backend-supplied hourly evidence and structured `weekly-workouts-v3` output. It derives duration/details from ordered timed/distance prescription components with per-stage execution/effort, optional targets and explicit repeated recovery guidance; pace estimates are distinct from targets, global FC/RPE are derived only when uniform, and free-text guidance is not parsed as a duration source. It previews persisted notes, binds forecasts to an exact revisioned availability snapshot, validates timezone identity and epoch-hour coverage through DST, and never substitutes a daily maximum. Unreliable weather remains explicitly unavailable and never blocks planning. No second provider or paid search is configured. RPE is explicitly the Kinesis 1–5 scale in both adapter and backend validation. Existing v1/v2 proposals are incompatible with v3 and cannot be applied under the changed schema; old snapshots/calendar data remain untouched.
 
 ## OpenAI foundation and future phases
 
 The approved [plan](docs/ai-integration-plan.md) is integrated in main through
 PRs #66/#68. Phase 0 (#62) is integrated through merged PR #67 (`648d6a0`).
-Phase 1 (#63) is implemented on `feat/issue-63-cycle-planning`, pending its own
-PR/merge; #64 and #65 remain future phases.
+Phase 1 (#63) is integrated through merged PR #69. Phase 2 (#64) is implemented
+on its dedicated branch and awaits its PR; #65 remains future scope.
 Read the plan and [foundation contract](docs/ai-foundation.md) in full before
 changing this service. Update README, AGENTS, the plan and affected configuration,
 API/privacy documentation with delivered behavior and honest branch status.

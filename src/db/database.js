@@ -99,6 +99,7 @@ CREATE TABLE IF NOT EXISTS ai_coach_availability (
   available_periods TEXT NOT NULL DEFAULT '[]',
   available_minutes INTEGER,
   location TEXT NOT NULL DEFAULT '',
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
   PRIMARY KEY (user_id, day_key),
   CHECK ((can_train = 0 AND available_periods = '[]' AND available_minutes IS NULL AND location = '') OR
@@ -143,38 +144,54 @@ function resolveDatabaseFile(cwd) {
 function migrateDatabase(db) {
   const columns = db.pragma('table_info(users)');
   if (!columns.some((column) => column.name === 'role')) {
-    db.exec("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'admin'))");
+    db.exec(
+      "ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'admin'))",
+    );
   }
   if (!columns.some((column) => column.name === 'preferred_lang')) {
     db.exec(
-      "ALTER TABLE users ADD COLUMN preferred_lang TEXT NOT NULL DEFAULT 'en-US'"
+      "ALTER TABLE users ADD COLUMN preferred_lang TEXT NOT NULL DEFAULT 'en-US'",
     );
   }
   if (!columns.some((column) => column.name === 'first_day_of_week')) {
     db.exec(
-      "ALTER TABLE users ADD COLUMN first_day_of_week TEXT NOT NULL DEFAULT 'Monday'"
+      "ALTER TABLE users ADD COLUMN first_day_of_week TEXT NOT NULL DEFAULT 'Monday'",
     );
   }
   if (!columns.some((column) => column.name === 'distance_unit')) {
-    db.exec("ALTER TABLE users ADD COLUMN distance_unit TEXT NOT NULL DEFAULT 'km'");
+    db.exec(
+      "ALTER TABLE users ADD COLUMN distance_unit TEXT NOT NULL DEFAULT 'km'",
+    );
   }
   if (!columns.some((column) => column.name === 'temperature_unit')) {
-    db.exec("ALTER TABLE users ADD COLUMN temperature_unit TEXT NOT NULL DEFAULT 'C'");
+    db.exec(
+      "ALTER TABLE users ADD COLUMN temperature_unit TEXT NOT NULL DEFAULT 'C'",
+    );
   }
   if (!columns.some((column) => column.name === 'onboarding_status')) {
-    db.exec("ALTER TABLE users ADD COLUMN onboarding_status TEXT NOT NULL DEFAULT 'legacy'");
+    db.exec(
+      "ALTER TABLE users ADD COLUMN onboarding_status TEXT NOT NULL DEFAULT 'legacy'",
+    );
   }
   if (!columns.some((column) => column.name === 'onboarding_guide_hidden')) {
-    db.exec('ALTER TABLE users ADD COLUMN onboarding_guide_hidden INTEGER NOT NULL DEFAULT 0');
+    db.exec(
+      'ALTER TABLE users ADD COLUMN onboarding_guide_hidden INTEGER NOT NULL DEFAULT 0',
+    );
   }
   // Accounts present before the two-state onboarding model were assigned
   // `legacy`; treat them as active without changing their presentation choices.
-  db.prepare("UPDATE users SET onboarding_status = 'active' WHERE onboarding_status = 'legacy'").run();
+  db.prepare(
+    "UPDATE users SET onboarding_status = 'active' WHERE onboarding_status = 'legacy'",
+  ).run();
 
   const trainingColumns = db.pragma('table_info(trainings)');
-  const hasShoesTable = Boolean(db.prepare(
-    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'shoes'"
-  ).get());
+  const hasShoesTable = Boolean(
+    db
+      .prepare(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'shoes'",
+      )
+      .get(),
+  );
   if (!trainingColumns.some((column) => column.name === 'feedback_rpe')) {
     db.exec('ALTER TABLE trainings ADD COLUMN feedback_rpe INTEGER');
   }
@@ -183,17 +200,20 @@ function migrateDatabase(db) {
   }
   if (!trainingColumns.some((column) => column.name === 'completed')) {
     db.exec(
-      'ALTER TABLE trainings ADD COLUMN completed INTEGER NOT NULL DEFAULT 0'
+      'ALTER TABLE trainings ADD COLUMN completed INTEGER NOT NULL DEFAULT 0',
     );
   }
   if (!trainingColumns.some((column) => column.name === 'has_smartwatch')) {
     db.exec(
-      'ALTER TABLE trainings ADD COLUMN has_smartwatch INTEGER NOT NULL DEFAULT 1'
+      'ALTER TABLE trainings ADD COLUMN has_smartwatch INTEGER NOT NULL DEFAULT 1',
     );
   }
   for (const [name, type] of [
     ['feedback_shoe', 'TEXT'],
-    ['feedback_shoe_id', hasShoesTable ? 'TEXT REFERENCES shoes(id) ON DELETE SET NULL' : 'TEXT'],
+    [
+      'feedback_shoe_id',
+      hasShoesTable ? 'TEXT REFERENCES shoes(id) ON DELETE SET NULL' : 'TEXT',
+    ],
     ['feedback_hr_source', 'TEXT'],
     ['feedback_weather', 'TEXT'],
     ['feedback_terrain', 'TEXT'],
@@ -210,7 +230,7 @@ function migrateDatabase(db) {
     ['fit_elevation_gain', 'REAL'],
     ['fit_calories', 'INTEGER'],
     ['fit_summary_json', 'TEXT'],
-    ["result_data_source", "TEXT NOT NULL DEFAULT 'none'"],
+    ['result_data_source', "TEXT NOT NULL DEFAULT 'none'"],
   ]) {
     if (!trainingColumns.some((column) => column.name === name)) {
       db.exec(`ALTER TABLE trainings ADD COLUMN ${name} ${type}`);
@@ -230,9 +250,16 @@ function migrateDatabase(db) {
   )`);
   const roleMarker = '2026-09-user-roles-v1';
   const migrateRoles = db.transaction(() => {
-    if (db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(roleMarker)) return;
+    if (
+      db
+        .prepare('SELECT 1 FROM schema_migrations WHERE name = ?')
+        .get(roleMarker)
+    )
+      return;
     // Existing rows receive the column's user default; never infer or assign admins.
-    db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(roleMarker);
+    db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(
+      roleMarker,
+    );
   });
   migrateRoles();
   db.exec(`CREATE TABLE IF NOT EXISTS ai_coach_availability (
@@ -242,21 +269,43 @@ function migrateDatabase(db) {
     available_periods TEXT NOT NULL DEFAULT '[]',
     available_minutes INTEGER,
     location TEXT NOT NULL DEFAULT '',
+    revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (user_id, day_key),
     CHECK ((can_train = 0 AND available_periods = '[]' AND available_minutes IS NULL AND location = '') OR
       (can_train = 1 AND typeof(available_minutes) = 'integer' AND available_minutes BETWEEN 1 AND 720 AND TRIM(location) <> ''))
   )`);
-  db.prepare("INSERT OR IGNORE INTO schema_migrations (name) VALUES (?)").run('2026-09-structured-ai-coach-availability-v1');
-  if (hasShoesTable && !db.pragma('table_info(shoes)').some((column) => column.name === 'base_mileage')) {
-    db.exec('ALTER TABLE shoes ADD COLUMN base_mileage REAL NOT NULL DEFAULT 0.0');
+  db.prepare('INSERT OR IGNORE INTO schema_migrations (name) VALUES (?)').run(
+    '2026-09-structured-ai-coach-availability-v1',
+  );
+  if (
+    hasShoesTable &&
+    !db
+      .pragma('table_info(shoes)')
+      .some((column) => column.name === 'base_mileage')
+  ) {
+    db.exec(
+      'ALTER TABLE shoes ADD COLUMN base_mileage REAL NOT NULL DEFAULT 0.0',
+    );
   }
-  const shoeColumns = db.pragma('table_info(shoes)').map((column) => column.name);
-  const canRepairShoes = ['id', 'user_id', 'brand', 'model', 'mileage', 'base_mileage', 'updated_at']
-    .every((name) => shoeColumns.includes(name));
+  const shoeColumns = db
+    .pragma('table_info(shoes)')
+    .map((column) => column.name);
+  const canRepairShoes = [
+    'id',
+    'user_id',
+    'brand',
+    'model',
+    'mileage',
+    'base_mileage',
+    'updated_at',
+  ].every((name) => shoeColumns.includes(name));
   const repair = db.transaction(() => {
     const marker = '2026-09-shoe-mileage-accounting-v1';
-    if (db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(marker)) return;
+    if (
+      db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(marker)
+    )
+      return;
     db.exec(`
       UPDATE trainings
          SET feedback_shoe_id = (
@@ -281,7 +330,12 @@ function migrateDatabase(db) {
   // to that total and starting an empty ledger avoids inventing history.
   const ledgerMarker = '2026-09-shoe-mileage-ledger-v2';
   const initializeLedger = db.transaction(() => {
-    if (db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(ledgerMarker)) return;
+    if (
+      db
+        .prepare('SELECT 1 FROM schema_migrations WHERE name = ?')
+        .get(ledgerMarker)
+    )
+      return;
     if (hasShoesTable && trainingColumns.length > 0) {
       db.exec(`CREATE TABLE IF NOT EXISTS training_shoe_mileage (
         training_id INTEGER PRIMARY KEY REFERENCES trainings(id) ON DELETE CASCADE,
@@ -292,8 +346,11 @@ function migrateDatabase(db) {
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       )`);
     }
-    if (canRepairShoes) db.exec('UPDATE shoes SET base_mileage = MAX(0, mileage)');
-    db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(ledgerMarker);
+    if (canRepairShoes)
+      db.exec('UPDATE shoes SET base_mileage = MAX(0, mileage)');
+    db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(
+      ledgerMarker,
+    );
   });
   initializeLedger();
 
@@ -306,22 +363,29 @@ function migrateDatabase(db) {
        COALESCE(TRIM(fit_summary_json), '') <> '' OR fit_duration IS NOT NULL OR
        fit_distance IS NOT NULL OR fit_avg_pace IS NOT NULL OR fit_avg_hr IS NOT NULL OR
        fit_max_hr IS NOT NULL OR fit_elevation_gain IS NOT NULL
-     )`
+     )`,
   ).run();
 
   // FIT pace was briefly stored as decimal minutes (for example 6.53), while
   // the application contract is elapsed minutes:seconds (6:32). Convert only
   // recognized old FIT values; repeated initialization is naturally idempotent.
-  const oldFitPaces = db.prepare(
-    "SELECT id, fit_avg_pace FROM trainings WHERE result_data_source = 'fit_upload' AND fit_avg_pace IS NOT NULL"
-  ).all();
-  const updateFitPace = db.prepare('UPDATE trainings SET fit_avg_pace = ? WHERE id = ?');
+  const oldFitPaces = db
+    .prepare(
+      "SELECT id, fit_avg_pace FROM trainings WHERE result_data_source = 'fit_upload' AND fit_avg_pace IS NOT NULL",
+    )
+    .all();
+  const updateFitPace = db.prepare(
+    'UPDATE trainings SET fit_avg_pace = ? WHERE id = ?',
+  );
   for (const row of oldFitPaces) {
     const match = /^(\d+)\.(\d{2})$/.exec(String(row.fit_avg_pace));
     if (!match) continue;
     const minutes = Number(match[1]);
     const seconds = Math.round(Number(`0.${match[2]}`) * 60);
-    updateFitPace.run(`${minutes + Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`, row.id);
+    updateFitPace.run(
+      `${minutes + Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`,
+      row.id,
+    );
   }
 
   // The original migration covers FIT summaries in the no-source legacy shape.
@@ -329,11 +393,20 @@ function migrateDatabase(db) {
   // records that the first implementation left untouched.
   const cadenceMarker = '2026-10-fit-cadence-two-foot-v1';
   const normalizeLegacyCadence = db.transaction(() => {
-    if (db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(cadenceMarker)) return;
-    const rows = db.prepare(
-      "SELECT id, fit_summary_json FROM trainings WHERE result_data_source = 'fit_upload' AND fit_summary_json IS NOT NULL"
-    ).all();
-    const update = db.prepare('UPDATE trainings SET fit_summary_json = ? WHERE id = ?');
+    if (
+      db
+        .prepare('SELECT 1 FROM schema_migrations WHERE name = ?')
+        .get(cadenceMarker)
+    )
+      return;
+    const rows = db
+      .prepare(
+        "SELECT id, fit_summary_json FROM trainings WHERE result_data_source = 'fit_upload' AND fit_summary_json IS NOT NULL",
+      )
+      .all();
+    const update = db.prepare(
+      'UPDATE trainings SET fit_summary_json = ? WHERE id = ?',
+    );
     for (const row of rows) {
       let summary;
       try {
@@ -341,25 +414,44 @@ function migrateDatabase(db) {
       } catch {
         continue;
       }
-      if (summary?.cadenceNormalization || summary?.activity?.sport !== 'running' || !Array.isArray(summary.laps)) continue;
-      const cadenceLaps = summary.laps.filter((lap) =>
-        Number.isFinite(lap?.avgCadenceSpm) || Number.isFinite(lap?.maxCadenceSpm)
+      if (
+        summary?.cadenceNormalization ||
+        summary?.activity?.sport !== 'running' ||
+        !Array.isArray(summary.laps)
+      )
+        continue;
+      const cadenceLaps = summary.laps.filter(
+        (lap) =>
+          Number.isFinite(lap?.avgCadenceSpm) ||
+          Number.isFinite(lap?.maxCadenceSpm),
       );
-      if (cadenceLaps.length === 0 || cadenceLaps.some((lap) =>
-        lap.avgCadenceSource !== undefined || lap.maxCadenceSource !== undefined
-      )) continue;
+      if (
+        cadenceLaps.length === 0 ||
+        cadenceLaps.some(
+          (lap) =>
+            lap.avgCadenceSource !== undefined ||
+            lap.maxCadenceSource !== undefined,
+        )
+      )
+        continue;
       const normalized = {
         ...summary,
         cadenceNormalization: 'two-foot-spm-v1',
         laps: summary.laps.map((lap) => ({
           ...lap,
-          avgCadenceSpm: Number.isFinite(lap.avgCadenceSpm) ? Math.round(lap.avgCadenceSpm * 2) : lap.avgCadenceSpm,
-          maxCadenceSpm: Number.isFinite(lap.maxCadenceSpm) ? Math.round(lap.maxCadenceSpm * 2) : lap.maxCadenceSpm,
+          avgCadenceSpm: Number.isFinite(lap.avgCadenceSpm)
+            ? Math.round(lap.avgCadenceSpm * 2)
+            : lap.avgCadenceSpm,
+          maxCadenceSpm: Number.isFinite(lap.maxCadenceSpm)
+            ? Math.round(lap.maxCadenceSpm * 2)
+            : lap.maxCadenceSpm,
         })),
       };
       update.run(JSON.stringify(normalized), row.id);
     }
-    db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(cadenceMarker);
+    db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(
+      cadenceMarker,
+    );
   });
   normalizeLegacyCadence();
 
@@ -371,11 +463,20 @@ function migrateDatabase(db) {
   // retry without assigning the summary-wide marker prematurely.
   const cadenceSourceMarker = '2026-10-fit-cadence-source-v2';
   const normalizeSourceTaggedCadence = db.transaction(() => {
-    if (db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(cadenceSourceMarker)) return;
-    const rows = db.prepare(
-      "SELECT id, fit_summary_json FROM trainings WHERE result_data_source = 'fit_upload' AND fit_summary_json IS NOT NULL"
-    ).all();
-    const update = db.prepare('UPDATE trainings SET fit_summary_json = ? WHERE id = ?');
+    if (
+      db
+        .prepare('SELECT 1 FROM schema_migrations WHERE name = ?')
+        .get(cadenceSourceMarker)
+    )
+      return;
+    const rows = db
+      .prepare(
+        "SELECT id, fit_summary_json FROM trainings WHERE result_data_source = 'fit_upload' AND fit_summary_json IS NOT NULL",
+      )
+      .all();
+    const update = db.prepare(
+      'UPDATE trainings SET fit_summary_json = ? WHERE id = ?',
+    );
     const knownSources = {
       avgCadenceSpm: new Set(['avg_cadence_running', 'avg_running_cadence']),
       maxCadenceSpm: new Set(['max_cadence_running', 'max_running_cadence']),
@@ -387,7 +488,12 @@ function migrateDatabase(db) {
       } catch {
         continue;
       }
-      if (summary?.cadenceNormalization || summary?.activity?.sport !== 'running' || !Array.isArray(summary.laps)) continue;
+      if (
+        summary?.cadenceNormalization ||
+        summary?.activity?.sport !== 'running' ||
+        !Array.isArray(summary.laps)
+      )
+        continue;
 
       let changed = false;
       let hasNumericCadence = false;
@@ -399,13 +505,19 @@ function migrateDatabase(db) {
           const value = lap[valueField];
           if (!Number.isFinite(value)) continue;
           hasNumericCadence = true;
-          const unitField = valueField === 'avgCadenceSpm' ? 'avgCadenceUnit' : 'maxCadenceUnit';
+          const unitField =
+            valueField === 'avgCadenceSpm'
+              ? 'avgCadenceUnit'
+              : 'maxCadenceUnit';
           if (Object.hasOwn(lap, unitField)) {
             if (lap[unitField] === 'two-foot-spm-v1') continue;
             hasUnnormalizedCadence = true;
             continue;
           }
-          const sourceField = valueField === 'avgCadenceSpm' ? 'avgCadenceSource' : 'maxCadenceSource';
+          const sourceField =
+            valueField === 'avgCadenceSpm'
+              ? 'avgCadenceSource'
+              : 'maxCadenceSource';
           const hasSource = Object.hasOwn(lap, sourceField);
           if (hasSource && !sources.has(lap[sourceField])) {
             hasUnnormalizedCadence = true;
@@ -423,10 +535,13 @@ function migrateDatabase(db) {
       // conversion provenance for values we safely repaired.
       if (!changed) continue;
       const normalized = { ...summary, laps };
-      if (hasNumericCadence && !hasUnnormalizedCadence) normalized.cadenceNormalization = 'two-foot-spm-v1';
+      if (hasNumericCadence && !hasUnnormalizedCadence)
+        normalized.cadenceNormalization = 'two-foot-spm-v1';
       update.run(JSON.stringify(normalized), row.id);
     }
-    db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(cadenceSourceMarker);
+    db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(
+      cadenceSourceMarker,
+    );
   });
   normalizeSourceTaggedCadence();
 
@@ -434,7 +549,7 @@ function migrateDatabase(db) {
     .prepare(
       `SELECT name
        FROM sqlite_master
-       WHERE type = 'table' AND name = ?`
+       WHERE type = 'table' AND name = ?`,
     )
     .get('workouts');
   if (workoutsTable) {
@@ -442,10 +557,13 @@ function migrateDatabase(db) {
   }
 
   const trainingsColumns = db.pragma('table_info(trainings)');
-  if (trainingsColumns.length > 0 && !trainingsColumns.some((column) => column.name === 'training_cycle_id')) {
+  if (
+    trainingsColumns.length > 0 &&
+    !trainingsColumns.some((column) => column.name === 'training_cycle_id')
+  ) {
     db.exec('DELETE FROM trainings');
     db.exec(
-      "ALTER TABLE trainings ADD COLUMN training_cycle_id TEXT REFERENCES training_cycles(id) ON DELETE SET NULL"
+      'ALTER TABLE trainings ADD COLUMN training_cycle_id TEXT REFERENCES training_cycles(id) ON DELETE SET NULL',
     );
   }
 
@@ -456,7 +574,12 @@ function migrateDatabase(db) {
   // token or any training data.
   const auditMarker = '2026-09-admin-account-audit-v1';
   const initializeAdminAudit = db.transaction(() => {
-    if (db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(auditMarker)) return;
+    if (
+      db
+        .prepare('SELECT 1 FROM schema_migrations WHERE name = ?')
+        .get(auditMarker)
+    )
+      return;
     db.exec(`CREATE TABLE IF NOT EXISTS admin_audit_log (
       id INTEGER PRIMARY KEY,
       actor_user_id INTEGER,
@@ -470,13 +593,20 @@ function migrateDatabase(db) {
       details TEXT NOT NULL DEFAULT '{}',
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     )`);
-    db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(auditMarker);
+    db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(
+      auditMarker,
+    );
   });
   initializeAdminAudit();
 
   const feedbackMarker = '2026-09-feedback-v1';
   const initializeFeedback = db.transaction(() => {
-    if (db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(feedbackMarker)) return;
+    if (
+      db
+        .prepare('SELECT 1 FROM schema_migrations WHERE name = ?')
+        .get(feedbackMarker)
+    )
+      return;
     db.exec(`CREATE TABLE IF NOT EXISTS feedback (
       id INTEGER PRIMARY KEY,
       author_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
@@ -489,7 +619,9 @@ function migrateDatabase(db) {
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT
     )`);
-    db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(feedbackMarker);
+    db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(
+      feedbackMarker,
+    );
   });
   initializeFeedback();
 
@@ -507,12 +639,25 @@ function migrateDatabase(db) {
   // earlier trail survives.
   const activityMarker = '2026-09-account-activity-v1';
   const initializeAccountActivity = db.transaction(() => {
-    if (db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(activityMarker)) return;
-    if (!db.pragma('table_info(users)').some((column) => column.name === 'is_active')) {
-      db.exec('ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1))');
+    if (
+      db
+        .prepare('SELECT 1 FROM schema_migrations WHERE name = ?')
+        .get(activityMarker)
+    )
+      return;
+    if (
+      !db
+        .pragma('table_info(users)')
+        .some((column) => column.name === 'is_active')
+    ) {
+      db.exec(
+        'ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1))',
+      );
     }
     const auditSql = db
-      .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'admin_audit_log'")
+      .prepare(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'admin_audit_log'",
+      )
       .get().sql;
     if (!auditSql.includes('account_activity_changed')) {
       db.exec(`
@@ -537,11 +682,15 @@ function migrateDatabase(db) {
         ALTER TABLE admin_audit_log_activity RENAME TO admin_audit_log;
       `);
     }
-    db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(activityMarker);
+    db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(
+      activityMarker,
+    );
   });
   initializeAccountActivity();
   require('../ai/schema').migrateAi(db);
   require('../ai/schema').migrateAiDiagnostics(db);
+  require('../ai/schema').migrateWeeklyWorkouts(db);
+  require('../ai/schema').migrateWeeklyAvailabilityRevision(db);
   require('../ai/cycle-plan-migration').migrateCyclePlans(db);
 }
 
@@ -555,7 +704,9 @@ function initializeDatabase(db) {
 
 function createDatabase({ filename } = {}) {
   if (!filename) {
-    throw new TypeError('filename is required: pass a file path or ":memory:".');
+    throw new TypeError(
+      'filename is required: pass a file path or ":memory:".',
+    );
   }
   fs.mkdirSync(path.dirname(filename), { recursive: true });
   return initializeDatabase(new Database(filename));

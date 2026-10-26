@@ -45,7 +45,7 @@ function normalizeAvailabilityWeek(payload) {
 
 function getAvailabilityWeek(db, userId) {
   const rows = db.prepare(
-    'SELECT day_key, can_train, available_periods, available_minutes, location FROM ai_coach_availability WHERE user_id = ?'
+    'SELECT day_key, can_train, available_periods, available_minutes, location, revision FROM ai_coach_availability WHERE user_id = ?'
   ).all(userId);
   const byDay = new Map(rows.map((row) => [row.day_key, row]));
   const needsReview = rows.length !== DAY_KEYS.length || rows.some((row) => {
@@ -68,6 +68,7 @@ function getAvailabilityWeek(db, userId) {
         })(),
         available_minutes: row.available_minutes,
         location: row.location,
+        revision: row.revision,
       } : { day, can_train: null, available_periods: [], available_minutes: null, location: '' };
     }),
     needsReview,
@@ -77,14 +78,25 @@ function getAvailabilityWeek(db, userId) {
 function saveAvailabilityWeek(db, userId, days) {
   const save = db.transaction(() => {
     const upsert = db.prepare(`INSERT INTO ai_coach_availability
-      (user_id, day_key, can_train, available_periods, available_minutes, location, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+      (user_id, day_key, can_train, available_periods, available_minutes, location, revision, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 1, datetime('now'))
       ON CONFLICT(user_id, day_key) DO UPDATE SET
+        revision = ai_coach_availability.revision + CASE WHEN
+          ai_coach_availability.can_train != excluded.can_train OR
+          ai_coach_availability.available_periods != excluded.available_periods OR
+          ai_coach_availability.available_minutes IS NOT excluded.available_minutes OR
+          ai_coach_availability.location != excluded.location
+          THEN 1 ELSE 0 END,
         can_train = excluded.can_train,
         available_periods = excluded.available_periods,
         available_minutes = excluded.available_minutes,
         location = excluded.location,
-        updated_at = datetime('now')`);
+        updated_at = CASE WHEN
+          ai_coach_availability.can_train != excluded.can_train OR
+          ai_coach_availability.available_periods != excluded.available_periods OR
+          ai_coach_availability.available_minutes IS NOT excluded.available_minutes OR
+          ai_coach_availability.location != excluded.location
+          THEN datetime('now') ELSE ai_coach_availability.updated_at END`);
     for (const day of days) {
       upsert.run(userId, day.day, day.can_train ? 1 : 0, JSON.stringify(day.available_periods), day.available_minutes, day.location);
     }
@@ -93,4 +105,33 @@ function saveAvailabilityWeek(db, userId, days) {
   return getAvailabilityWeek(db, userId);
 }
 
-module.exports = { DAY_KEYS, PERIOD_KEYS, MAX_AVAILABLE_MINUTES, normalizeAvailabilityWeek, getAvailabilityWeek, saveAvailabilityWeek };
+function getAvailabilitySnapshot(db, userId) {
+  return {
+    userId,
+    rows: db
+      .prepare(
+        'SELECT day_key,can_train,available_periods,available_minutes,location,revision FROM ai_coach_availability WHERE user_id=? ORDER BY day_key',
+      )
+      .all(userId),
+  };
+}
+
+function availabilitySnapshotMatches(db, userId, snapshot) {
+  if (!snapshot || snapshot.userId !== userId || !Array.isArray(snapshot.rows))
+    return false;
+  return (
+    JSON.stringify(snapshot.rows) ===
+    JSON.stringify(getAvailabilitySnapshot(db, userId).rows)
+  );
+}
+
+module.exports = {
+  DAY_KEYS,
+  PERIOD_KEYS,
+  MAX_AVAILABLE_MINUTES,
+  normalizeAvailabilityWeek,
+  getAvailabilityWeek,
+  getAvailabilitySnapshot,
+  availabilitySnapshotMatches,
+  saveAvailabilityWeek,
+};

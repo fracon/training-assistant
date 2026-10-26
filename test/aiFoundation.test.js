@@ -19,6 +19,7 @@ const {
   duration,
 } = require('../src/ai/context');
 const { createExecutionService } = require('../src/ai/executions');
+const { getAvailabilitySnapshot } = require('../src/availability');
 const { renderPrompt } = require('../src/ai/prompt-service');
 const { createResponsesClient, buildPayload } = require('../src/ai/client');
 const baseline = require('./fixtures/ai/prompt-baseline.json');
@@ -81,8 +82,26 @@ function service(fixture, options = {}) {
     ...options,
   });
 }
-function archiveEntry(db, userId, body, id = 'legacy', now = '2026-01-01T00:00:00Z') {
-  db.prepare('INSERT INTO ai_memory(id,user_id,kind,authority,text,observed_on,state,source_json,updated_at) VALUES (?,?,?,?,?,?,?,?,?)').run(id,userId,body.kind,'user_report',body.text,body.observed_on,body.state,'{}',now);
+function archiveEntry(
+  db,
+  userId,
+  body,
+  id = 'legacy',
+  now = '2026-01-01T00:00:00Z',
+) {
+  db.prepare(
+    'INSERT INTO ai_memory(id,user_id,kind,authority,text,observed_on,state,source_json,updated_at) VALUES (?,?,?,?,?,?,?,?,?)',
+  ).run(
+    id,
+    userId,
+    body.kind,
+    'user_report',
+    body.text,
+    body.observed_on,
+    body.state,
+    '{}',
+    now,
+  );
 }
 function failure(fn, code) {
   assert.throws(fn, (e) => e instanceof AiError && e.code === code);
@@ -206,7 +225,10 @@ test('idempotent migration preserves data; account deletion removes private AI d
       .get().n,
     1,
   );
-  saveProfile(db, 1, { fields: { experience: 'Synthetic' }, expected_version: 0 });
+  saveProfile(db, 1, {
+    fields: { experience: 'Synthetic' },
+    expected_version: 0,
+  });
   archiveEntry(db, 1, {
     kind: 'restriction',
     text: 'Synthetic',
@@ -226,27 +248,69 @@ test('optional experience validates ownership, concurrency and preserves archive
   failure(() => activeOwner(db, 99), 'accountUnavailable');
   db.prepare('UPDATE users SET is_active=0 WHERE id=3').run();
   failure(() => activeOwner(db, 3), 'accountUnavailable');
-  for (const value of [null, [], { bad: 1 }]) failure(() => exactKeys(value, []), 'invalidFields');
-  for (const value of [null, '2026-02-30', 'bad']) failure(() => date(value), 'invalidDate');
-  failure(() => saveProfile(db, 1, { fields: { experience: 'x' }, expected_version: -1 }), 'invalidVersion');
-  for (const key of ['goals','preferences','restrictions','arbitrary']) failure(() => saveProfile(db,1,{fields:{[key]:'x'},expected_version:0}), 'invalidFields');
-  for (const value of [3, 'x'.repeat(2001)]) failure(() => saveProfile(db,1,{fields:{experience:value},expected_version:0}), 'invalidText');
-  const old = { goals: { value: 'Archived duplicate', authority:'user_report' }, restrictions:{value:'Old note'} };
-  db.prepare("INSERT INTO ai_profiles VALUES (?,?,1,'2026-01-01')").run(1, JSON.stringify(old));
-  archiveEntry(db,1,{kind:'restriction',text:'Old discomfort',observed_on:'2026-01-01',state:'current'});
-  const saved = saveProfile(db,1,{fields:{experience:' Synthetic experience '},expected_version:1},'2026-10-01T00:00:00Z');
-  assert.equal(saved.profile.fields.experience.value,'Synthetic experience');
-  assert.deepEqual(Object.keys(saved.profile.fields),['experience']);
-  failure(() => saveProfile(db,1,{fields:{experience:'changed'},expected_version:1}),'memoryConflict');
-  const archived = readLegacyMemory(db,1);
-  assert.deepEqual(archived.fields,old);
-  assert.equal(archived.entries[0].text,'Old discomfort');
-  assert.deepEqual(readLegacyMemory(db,2),{fields:{},entries:[]});
-  initializeDatabase(db); initializeDatabase(db);
-  assert.deepEqual(readLegacyMemory(db,1),archived);
-  saveProfile(db,1,{fields:{experience:''},expected_version:2});
-  assert.equal(readMemory(db,1).profile.fields.experience.value,'');
-  assert.deepEqual(readLegacyMemory(db,1),archived);
+  for (const value of [null, [], { bad: 1 }])
+    failure(() => exactKeys(value, []), 'invalidFields');
+  for (const value of [null, '2026-02-30', 'bad'])
+    failure(() => date(value), 'invalidDate');
+  failure(
+    () =>
+      saveProfile(db, 1, { fields: { experience: 'x' }, expected_version: -1 }),
+    'invalidVersion',
+  );
+  for (const key of ['goals', 'preferences', 'restrictions', 'arbitrary'])
+    failure(
+      () => saveProfile(db, 1, { fields: { [key]: 'x' }, expected_version: 0 }),
+      'invalidFields',
+    );
+  for (const value of [3, 'x'.repeat(2001)])
+    failure(
+      () =>
+        saveProfile(db, 1, {
+          fields: { experience: value },
+          expected_version: 0,
+        }),
+      'invalidText',
+    );
+  const old = {
+    goals: { value: 'Archived duplicate', authority: 'user_report' },
+    restrictions: { value: 'Old note' },
+  };
+  db.prepare("INSERT INTO ai_profiles VALUES (?,?,1,'2026-01-01')").run(
+    1,
+    JSON.stringify(old),
+  );
+  archiveEntry(db, 1, {
+    kind: 'restriction',
+    text: 'Old discomfort',
+    observed_on: '2026-01-01',
+    state: 'current',
+  });
+  const saved = saveProfile(
+    db,
+    1,
+    { fields: { experience: ' Synthetic experience ' }, expected_version: 1 },
+    '2026-10-01T00:00:00Z',
+  );
+  assert.equal(saved.profile.fields.experience.value, 'Synthetic experience');
+  assert.deepEqual(Object.keys(saved.profile.fields), ['experience']);
+  failure(
+    () =>
+      saveProfile(db, 1, {
+        fields: { experience: 'changed' },
+        expected_version: 1,
+      }),
+    'memoryConflict',
+  );
+  const archived = readLegacyMemory(db, 1);
+  assert.deepEqual(archived.fields, old);
+  assert.equal(archived.entries[0].text, 'Old discomfort');
+  assert.deepEqual(readLegacyMemory(db, 2), { fields: {}, entries: [] });
+  initializeDatabase(db);
+  initializeDatabase(db);
+  assert.deepEqual(readLegacyMemory(db, 1), archived);
+  saveProfile(db, 1, { fields: { experience: '' }, expected_version: 2 });
+  assert.equal(readMemory(db, 1).profile.fields.experience.value, '');
+  assert.deepEqual(readLegacyMemory(db, 1), archived);
   db.close();
 });
 test('context preserves temporal authority, canonical aggregates, gaps and comparable source references', () => {
@@ -260,7 +324,11 @@ test('context preserves temporal authority, canonical aggregates, gaps and compa
   const first = buildContext(db, 1, args);
   assert.equal(first.recent.length, 0);
   assert.equal(first.resource.source.id, '1');
-  assert.ok(first.gaps.includes('Optional prior running experience has not been supplied.'));
+  assert.ok(
+    first.gaps.includes(
+      'Optional prior running experience has not been supplied.',
+    ),
+  );
   assert.equal(first.resource.actual.fit_distance, 5);
   assert.equal(first.resource.report.authority, 'user_report');
   assert.equal(contextIsCurrent(db, 1, first, config), true);
@@ -340,6 +408,19 @@ test('context preserves temporal authority, canonical aggregates, gaps and compa
       .comparables[0].selectionReason,
     'previous_long_run',
   );
+  const weeklyContext = buildContext(db, 1, {
+    purpose: 'workouts',
+    asOf: '2026-10-26',
+    taskDate: '2026-10-26',
+    weather: 'malformed-provider-value',
+    taskNotes: 'No additional goals.',
+  });
+  assert.deepEqual(weeklyContext.weather, []);
+  assert.deepEqual(weeklyContext.taskNotes, {
+    authority: 'user_report',
+    text: 'No additional goals.',
+  });
+  assert.equal(contextIsCurrent(db, 1, weeklyContext, config), true);
   assert.equal(
     buildContext(db, 1, { ...args, purpose: 'cycle', resourceId: 'cycle' })
       .resource.objective,
@@ -366,7 +447,9 @@ test('context selection has explicit omissions and fails rather than truncating 
   const { db, config } = setup();
   config.limits.AI_CONTEXT_TOKENS = 5000;
   for (let i = 0; i < 25; i++)
-    db.prepare("INSERT INTO trainings(user_id,dia,tipo,detalhes) VALUES (1,'2026-10-12','Run',?)").run('Synthetic '.repeat(100));
+    db.prepare(
+      "INSERT INTO trainings(user_id,dia,tipo,detalhes) VALUES (1,'2026-10-12','Run',?)",
+    ).run('Synthetic '.repeat(100));
   const ctx = buildContext(db, 1, {
     purpose: 'cycle',
     asOf: '2026-10-14',
@@ -532,6 +615,15 @@ test('execution persistence, idempotency, private debug, usage reconciliation an
       .preview(1, { purpose: 'analysis', resource_id: 1 })
       .prompt.includes('Synthetic session'),
   );
+  failure(
+    () =>
+      s.preview(1, {
+        purpose: 'analysis',
+        resource_id: 1,
+        optional_context: 'x'.repeat(2001),
+      }),
+    'invalidText',
+  );
   assert.equal(
     s.preview(1, { purpose: 'cycle', resource_id: 'cycle' }).paid,
     false,
@@ -562,6 +654,15 @@ test('queue rejects disabled or unregistered phases, malformed requests and ever
   failure(
     () => s.enqueue(1, { ...body, purpose: 'arbitrary' }),
     'invalidPurpose',
+  );
+  failure(
+    () => s.enqueue(1, { ...body, optional_context: 'x'.repeat(2001) }),
+    'invalidText',
+  );
+  failure(() => s.enqueue(1, { ...body, optional_context: 42 }), 'invalidText');
+  failure(
+    () => s.enqueue(1, { ...body, optional_context: 'context' }),
+    'invalidFields',
   );
   fixture.config.enabled = false;
   failure(() => s.enqueue(1, body), 'aiUnavailable');
@@ -673,9 +774,9 @@ test('rate limit retry is bounded; uncertain outcomes and invalid responses are 
   ]) {
     const fixture = setup();
     let calls = 0;
-    let clock=Date.parse('2026-10-14T12:00:00.000Z');
-    let timerId=0;
-    const timers=new Map();
+    let clock = Date.parse('2026-10-14T12:00:00.000Z');
+    let timerId = 0;
+    const timers = new Map();
     const s = service(fixture, {
       operations: {
         analysis:
@@ -699,17 +800,24 @@ test('rate limit retry is bounded; uncertain outcomes and invalid responses are 
         if (code === 'unknown') throw Error('sensitive message');
         throw new AiError(code, 502);
       },
-      now:()=>new Date(clock).toISOString(),
-      random:()=>0,
-      setTimer:(fn,ms)=>{const id=++timerId;timers.set(id,{fn,ms});return id;},
-      clearTimer:id=>timers.delete(id),
+      now: () => new Date(clock).toISOString(),
+      random: () => 0,
+      setTimer: (fn, ms) => {
+        const id = ++timerId;
+        timers.set(id, { fn, ms });
+        return id;
+      },
+      clearTimer: (id) => timers.delete(id),
     });
     const row = s.enqueue(1, body);
-    if(code==='providerRateLimited') {
-      for(let i=0;i<100 && calls===0;i++)await delay(5);
-      assert.equal(calls,1);
-      const [id,timer]=[...timers.entries()][0];assert.ok(timer);timers.delete(id);
-      clock+=timer.ms;timer.fn();
+    if (code === 'providerRateLimited') {
+      for (let i = 0; i < 100 && calls === 0; i++) await delay(5);
+      assert.equal(calls, 1);
+      const [id, timer] = [...timers.entries()][0];
+      assert.ok(timer);
+      timers.delete(id);
+      clock += timer.ms;
+      timer.fn();
     }
     const result = await wait(s, 1, row.id);
     assert.equal(calls, code === 'providerRateLimited' ? 2 : 1);
@@ -863,7 +971,9 @@ test('context includes saved availability, shoes and unknown RPE without inventi
 test('context refuses a budget exhausted by omission metadata rather than dropping critical provenance', () => {
   const { db, config } = setup();
   for (let i = 0; i < 3; i++)
-    db.prepare("INSERT INTO trainings(user_id,dia,tipo,detalhes) VALUES (1,'2026-10-12','Run',?)").run('Synthetic '.repeat(200));
+    db.prepare(
+      "INSERT INTO trainings(user_id,dia,tipo,detalhes) VALUES (1,'2026-10-12','Run',?)",
+    ).run('Synthetic '.repeat(200));
   let refused = false;
   for (let budget = 1000; budget < 2500; budget += 10) {
     config.limits.AI_CONTEXT_TOKENS = budget;
@@ -903,8 +1013,9 @@ test('weekly executions have no resource ID, use stable idempotency and immutabl
     target_date: '2026-10-19',
     idempotency_key: 'synthetic-week',
   };
-  const queued = s.enqueue(1, request);
-  assert.equal(s.enqueue(1, request).id, queued.id);
+  const evidence = { availabilitySnapshot: getAvailabilitySnapshot(fixture.db, 1), weather: [] };
+  const queued = s.enqueue(1, request, evidence);
+  assert.equal(s.enqueue(1, request, evidence).id, queued.id);
   assert.equal(
     s.preview(1, { purpose: 'workouts', target_date: '2026-10-19' }).paid,
     false,
@@ -915,7 +1026,7 @@ test('weekly executions have no resource ID, use stable idempotency and immutabl
   const next = s.enqueue(1, {
     ...request,
     idempotency_key: 'synthetic-week-two',
-  });
+  }, evidence);
   delete operations.workouts;
   await s.dispatch(next.id);
   assert.equal(s.get(1, next.id).error, 'adapterUnavailable');
@@ -1071,7 +1182,14 @@ test('configuration rejects multiline credentials and redundant profile fields a
     }).errors.includes('OPENAI_API_KEY'),
   );
   const { db } = setup();
-  failure(() => saveProfile(db, 1, { fields: { restrictions: 'Legacy' }, expected_version: 0 }), 'invalidFields');
+  failure(
+    () =>
+      saveProfile(db, 1, {
+        fields: { restrictions: 'Legacy' },
+        expected_version: 0,
+      }),
+    'invalidFields',
+  );
   assert.equal(
     macro.translateDistance('en-US', 'custom synthetic distance'),
     'custom synthetic distance',
@@ -1195,7 +1313,10 @@ test('evaluation corpus yields different traceable evidence for the same session
     config: fixture.config,
   });
   assert.equal(context.events, undefined);
-  assert.equal(JSON.stringify(context).includes('Synthetic rest suggestion'), false);
+  assert.equal(
+    JSON.stringify(context).includes('Synthetic rest suggestion'),
+    false,
+  );
   assert.equal(context.resource.actual.completed, true);
   assert.equal(context.resource.actual.fit_distance, 5);
   assert.ok(corpus.rubric.authority);
@@ -1275,7 +1396,9 @@ test('provider timeout is uncertain and does not expose transport error text', a
   });
   await assert.rejects(
     call({ store: false }),
-    (error) => error.code === 'providerTimeout' && error.diagnostic.transportReason === 'timeout',
+    (error) =>
+      error.code === 'providerTimeout' &&
+      error.diagnostic.transportReason === 'timeout',
   );
 });
 
@@ -1389,7 +1512,7 @@ test('prompt-only source changes invalidate a weekly execution even when detaile
       purpose: 'workouts',
       target_date: '2026-10-19',
       idempotency_key: 'synthetic-omitted-prompt',
-    });
+    }, { availabilitySnapshot: getAvailabilitySnapshot(f.db, 1), weather: [] });
     const snapshot = s.get(1, row.id, true);
     assert.equal(snapshot.context.recent.length, 0);
     f.db.prepare('UPDATE trainings SET fit_distance=7 WHERE id=1').run();
@@ -1571,7 +1694,8 @@ test('cancellation prevents another SQLite connection from claiming a stale queu
 test('weekly comparables recognize imported long runs in workout names with owner, completion and date bounds', () => {
   const { db, config } = setup();
   try {
-    db.prepare(`INSERT INTO trainings(id,user_id,dia,tipo,treino,completed) VALUES
+    db.prepare(
+      `INSERT INTO trainings(id,user_id,dia,tipo,treino,completed) VALUES
       (10,1,'2026-09-25','Corrida','Longão',1),
       (11,1,'2026-09-24','Run','Long run',1),
       (12,1,'2026-09-23','Long run','Legacy type label',1),
@@ -1580,12 +1704,26 @@ test('weekly comparables recognize imported long runs in workout names with owne
       (15,1,'2026-09-27','Corrida','Longão incompleto',0),
       (16,1,'2026-10-13','Corrida','Longão recente',1),
       (17,1,'2026-10-16','Corrida','Longão futuro',1),
-      (18,1,'2026-09-28','Corrida','Rodagem leve',1)`).run();
-    const context = buildContext(db,1,{purpose:'workouts',asOf:'2026-10-14',config});
-    assert.deepEqual(context.comparables.map((r)=>r.source.id),['10','11','12']);
-    assert.ok(context.comparables.every((r)=>r.selectionReason==='previous_long_run'));
-    assert.ok(context.comparables.every((r)=>r.includedInAggregates));
-  } finally { db.close(); }
+      (18,1,'2026-09-28','Corrida','Rodagem leve',1)`,
+    ).run();
+    const context = buildContext(db, 1, {
+      purpose: 'workouts',
+      asOf: '2026-10-14',
+      config,
+    });
+    assert.deepEqual(
+      context.comparables.map((r) => r.source.id),
+      ['10', '11', '12'],
+    );
+    assert.ok(
+      context.comparables.every(
+        (r) => r.selectionReason === 'previous_long_run',
+      ),
+    );
+    assert.ok(context.comparables.every((r) => r.includedInAggregates));
+  } finally {
+    db.close();
+  }
 });
 
 test('429 retry and cancellation arbitrate atomically across two SQLite connections without stranded reservations', async () => {
@@ -1593,36 +1731,60 @@ test('429 retry and cancellation arbitrate atomically across two SQLite connecti
   const path = require('node:path');
   const os = require('node:os');
   for (const timing of ['before-read', 'after-read']) {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kinesis-ai-retry-cancel-'));
-    const db = createDatabase({filename:path.join(dir,'synthetic.sqlite')});
+    const dir = fs.mkdtempSync(
+      path.join(os.tmpdir(), 'kinesis-ai-retry-cancel-'),
+    );
+    const db = createDatabase({ filename: path.join(dir, 'synthetic.sqlite') });
     let other, s, otherService;
     let prepare;
     try {
-      db.prepare("INSERT INTO users(id,email,password_hash,role) VALUES (1,'synthetic@example.invalid','synthetic','admin')").run();
-      db.prepare("INSERT INTO trainings(id,user_id,dia,tipo,treino) VALUES (1,1,'2026-10-12','Run','Synthetic retry session')").run();
-      const config = readAiConfig({AI_ENABLED:'true',OPENAI_API_KEY:'synthetic-test-key'});
-      other = createDatabase({filename:path.join(dir,'synthetic.sqlite')});
+      db.prepare(
+        "INSERT INTO users(id,email,password_hash,role) VALUES (1,'synthetic@example.invalid','synthetic','admin')",
+      ).run();
+      db.prepare(
+        "INSERT INTO trainings(id,user_id,dia,tipo,treino) VALUES (1,1,'2026-10-12','Run','Synthetic retry session')",
+      ).run();
+      const config = readAiConfig({
+        AI_ENABLED: 'true',
+        OPENAI_API_KEY: 'synthetic-test-key',
+      });
+      other = createDatabase({ filename: path.join(dir, 'synthetic.sqlite') });
       other.pragma('busy_timeout=0');
-      otherService = service({db:other,config});
-      let execution, calls=0, attempted=false, blocked=false;
-      s=service({db,config},{client:async()=>{
-        calls++;
-        assert.equal(db.inTransaction,false);
-        if(timing==='before-read') otherService.cancel(1,execution.id);
-        throw new AiError('providerRateLimited',429);
-      }});
-      execution=s.enqueue(1,body);
-      prepare=db.prepare.bind(db);
-      db.prepare=(sql)=>{
-        const stmt=prepare(sql);
-        if(timing==='after-read' && sql==='SELECT state,settled FROM ai_executions WHERE id = ?') {
-          const get=stmt.get.bind(stmt);
-          stmt.get=(...args)=>{
-            const row=get(...args);
-            if(!attempted) {
-              attempted=true;
-              try {otherService.cancel(1,execution.id);}
-              catch(e) {if(!/SQLITE_BUSY|SQLITE_LOCKED/.test(e.code)) throw e; blocked=true;}
+      otherService = service({ db: other, config });
+      let execution,
+        calls = 0,
+        attempted = false,
+        blocked = false;
+      s = service(
+        { db, config },
+        {
+          client: async () => {
+            calls++;
+            assert.equal(db.inTransaction, false);
+            if (timing === 'before-read') otherService.cancel(1, execution.id);
+            throw new AiError('providerRateLimited', 429);
+          },
+        },
+      );
+      execution = s.enqueue(1, body);
+      prepare = db.prepare.bind(db);
+      db.prepare = (sql) => {
+        const stmt = prepare(sql);
+        if (
+          timing === 'after-read' &&
+          sql === 'SELECT state,settled FROM ai_executions WHERE id = ?'
+        ) {
+          const get = stmt.get.bind(stmt);
+          stmt.get = (...args) => {
+            const row = get(...args);
+            if (!attempted) {
+              attempted = true;
+              try {
+                otherService.cancel(1, execution.id);
+              } catch (e) {
+                if (!/SQLITE_BUSY|SQLITE_LOCKED/.test(e.code)) throw e;
+                blocked = true;
+              }
             }
             return row;
           };
@@ -1630,30 +1792,40 @@ test('429 retry and cancellation arbitrate atomically across two SQLite connecti
         return stmt;
       };
       await s.dispatch(execution.id);
-      db.prepare=prepare;
-      assert.equal(calls,1);
-      if(timing==='after-read') {
-        assert.equal(attempted,true);
+      db.prepare = prepare;
+      assert.equal(calls, 1);
+      if (timing === 'after-read') {
+        assert.equal(attempted, true);
         // If retry owns the lock, cancellation subsequently settles its queued retry.
-        if(blocked) otherService.cancel(1,execution.id);
+        if (blocked) otherService.cancel(1, execution.id);
       }
-      const row=db.prepare('SELECT state,settled,response_json FROM ai_executions WHERE id=?').get(execution.id);
-      assert.equal(row.state,'cancelled');
-      assert.equal(row.settled,1);
-      assert.equal(row.response_json,null);
-      assert.equal(s.usage(1)[0].tokens,0);
-      assert.equal(s.usage(1)[0].cost,0);
-      const global=db.prepare('SELECT tokens,cost,calls FROM ai_global_usage').get();
-      assert.equal(global.tokens,0);assert.equal(global.cost,0);assert.equal(global.calls,1);
+      const row = db
+        .prepare(
+          'SELECT state,settled,response_json FROM ai_executions WHERE id=?',
+        )
+        .get(execution.id);
+      assert.equal(row.state, 'cancelled');
+      assert.equal(row.settled, 1);
+      assert.equal(row.response_json, null);
+      assert.equal(s.usage(1)[0].tokens, 0);
+      assert.equal(s.usage(1)[0].cost, 0);
+      const global = db
+        .prepare('SELECT tokens,cost,calls FROM ai_global_usage')
+        .get();
+      assert.equal(global.tokens, 0);
+      assert.equal(global.cost, 0);
+      assert.equal(global.calls, 1);
       // The reservation and concurrency slot are available without a restart.
-      assert.ok(s.enqueue(1,{...body,idempotency_key:'next-after-cancel'}).id);
+      assert.ok(
+        s.enqueue(1, { ...body, idempotency_key: 'next-after-cancel' }).id,
+      );
     } finally {
-      if(prepare) db.prepare=prepare;
-      if(s) await s.stop();
-      if(otherService) await otherService.stop();
-      if(other?.open) other.close();
-      if(db.open) db.close();
-      fs.rmSync(dir,{recursive:true,force:true});
+      if (prepare) db.prepare = prepare;
+      if (s) await s.stop();
+      if (otherService) await otherService.stop();
+      if (other?.open) other.close();
+      if (db.open) db.close();
+      fs.rmSync(dir, { recursive: true, force: true });
     }
   }
 });
@@ -1662,11 +1834,35 @@ test('startup AI diagnostics explain readiness without exposing credentials or i
   const { aiStartupStatus } = require('../src/ai/config');
   for (const [env, status, enabled, keyConfigured] of [
     [{}, 'missing OPENAI_API_KEY', false, false],
-    [{AI_ENABLED:'true'}, 'missing OPENAI_API_KEY', false, false],
-    [{OPENAI_API_KEY:'synthetic-secret'}, 'disabled: set AI_ENABLED=true', false, true],
-    [{AI_ENABLED:'false',OPENAI_API_KEY:'synthetic-secret'}, 'disabled: set AI_ENABLED=true', false, true],
-    [{AI_ENABLED:'true',OPENAI_API_KEY:'synthetic-secret'}, 'ready (provider access not verified)', true, true],
-    [{AI_ENABLED:'true',OPENAI_API_KEY:'synthetic-secret',AI_MODEL_CYCLE:'invalid-model'}, 'invalid configuration', false, true],
+    [{ AI_ENABLED: 'true' }, 'missing OPENAI_API_KEY', false, false],
+    [
+      { OPENAI_API_KEY: 'synthetic-secret' },
+      'disabled: set AI_ENABLED=true',
+      false,
+      true,
+    ],
+    [
+      { AI_ENABLED: 'false', OPENAI_API_KEY: 'synthetic-secret' },
+      'disabled: set AI_ENABLED=true',
+      false,
+      true,
+    ],
+    [
+      { AI_ENABLED: 'true', OPENAI_API_KEY: 'synthetic-secret' },
+      'ready (provider access not verified)',
+      true,
+      true,
+    ],
+    [
+      {
+        AI_ENABLED: 'true',
+        OPENAI_API_KEY: 'synthetic-secret',
+        AI_MODEL_CYCLE: 'invalid-model',
+      },
+      'invalid configuration',
+      false,
+      true,
+    ],
   ]) {
     const diagnostic = aiStartupStatus(readAiConfig(env));
     assert.equal(diagnostic.status, status);
@@ -1680,7 +1876,9 @@ test('startup AI diagnostics explain readiness without exposing credentials or i
 test('runtime example provides the evaluated full-plan limits without enabling paid AI', () => {
   const { readFileSync } = require('node:fs');
   const { resolve } = require('node:path');
-  const env = require('dotenv').parse(readFileSync(resolve(__dirname, '../.env.example')));
+  const env = require('dotenv').parse(
+    readFileSync(resolve(__dirname, '../.env.example')),
+  );
   const config = readAiConfig(env);
   assert.deepEqual(config.errors, []);
   assert.equal(config.enabled, false);
@@ -1691,10 +1889,19 @@ test('runtime example provides the evaluated full-plan limits without enabling p
   // Runtime, Compose and the example agree while AI remains disabled by default.
   assert.equal(readAiConfig({}).limits.AI_MAX_OUTPUT_TOKENS, 8192);
   assert.equal(readAiConfig({}).limits.AI_TIMEOUT_MS, 120000);
-  const explicitLegacy=readAiConfig({AI_MAX_OUTPUT_TOKENS:'2048',AI_TIMEOUT_MS:'60000'});
-  assert.equal(explicitLegacy.limits.AI_MAX_OUTPUT_TOKENS,2048);
-  assert.equal(explicitLegacy.limits.AI_TIMEOUT_MS,60000);
-  const compose=readFileSync(resolve(__dirname,'../docker-compose.yml'),'utf8');
-  assert.match(compose,/AI_MAX_OUTPUT_TOKENS: \$\{AI_MAX_OUTPUT_TOKENS:-8192\}/);
-  assert.match(compose,/AI_TIMEOUT_MS: \$\{AI_TIMEOUT_MS:-120000\}/);
+  const explicitLegacy = readAiConfig({
+    AI_MAX_OUTPUT_TOKENS: '2048',
+    AI_TIMEOUT_MS: '60000',
+  });
+  assert.equal(explicitLegacy.limits.AI_MAX_OUTPUT_TOKENS, 2048);
+  assert.equal(explicitLegacy.limits.AI_TIMEOUT_MS, 60000);
+  const compose = readFileSync(
+    resolve(__dirname, '../docker-compose.yml'),
+    'utf8',
+  );
+  assert.match(
+    compose,
+    /AI_MAX_OUTPUT_TOKENS: \$\{AI_MAX_OUTPUT_TOKENS:-8192\}/,
+  );
+  assert.match(compose, /AI_TIMEOUT_MS: \$\{AI_TIMEOUT_MS:-120000\}/);
 });
