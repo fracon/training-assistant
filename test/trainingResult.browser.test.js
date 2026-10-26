@@ -80,6 +80,8 @@ test('the session page requires a realized RPE before saving, generating or uplo
       const saved = db.prepare('SELECT completed,feedback_rpe FROM trainings WHERE id=?').get(request.context.resource.source.id);
       assert.equal(saved.completed, 1, 'canonical result persistence finished before the simulated provider was invoked');
       assert.ok(saved.feedback_rpe >= 1 && saved.feedback_rpe <= 5);
+      if (request.context.resource.actual.result_data_source === 'fit_upload')
+        assert.ok(request.context.resource.actual.fitLaps.length > 0, 'the simulated provider receives bounded, decoded FIT lap evidence');
       const evidence = [`${request.context.resource.source.type}:${request.context.resource.source.id}`];
       await delay(900);
       return {
@@ -87,7 +89,7 @@ test('the session page requires a realized RPE before saving, generating or uplo
           schemaVersion: 'workout-analysis-v1', language: request.context.preferences.language,
           summary: { text: 'Synthetic analysis arrived while the session stayed open.', evidence },
           comparison: { text: 'The saved result is compared with its planned session.', evidence },
-          contextualReading: [{ text: 'This synthetic case contains a saved manual result.', evidence }],
+          contextualReading: [{ text: `This synthetic case contains a saved ${request.context.resource.actual.result_data_source === 'fit_upload' ? 'FIT' : 'manual'} result.`, evidence }],
           attention: [], recommendations: [{ text: 'Keep the next session unchanged unless later evidence suggests an adjustment.', evidence }],
           classification: { value: 'adequate', evidence }, limitations: ['Synthetic provider; no real model was called.'],
           reusableInterpretations: [{ kind: 'pattern', text: 'The synthetic report describes a controlled effort.', evidence }],
@@ -604,6 +606,9 @@ test('the session page requires a realized RPE before saving, generating or uplo
       result_data_source: 'fit_upload',
       fit_distance: 10,
     });
+    await clickUntil('#generateBtn', "document.getElementById('analysisContent').textContent.includes('Synthetic analysis arrived')", 'the explicit analysis of the persisted FIT result');
+    assert.equal(providerCalls, 2, 'FIT analysis adds exactly one simulated provider call');
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM workout_analysis_versions WHERE training_id=?').get(fitId).n, 1, 'the FIT analysis version is stored against its owned result');
     await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
     const desktopTable = await evaluate(`(()=>({
       header:document.querySelector('#fitLapsTable th:nth-child(7)').textContent.replace(/\\u00ad/g,'').replace(/\\s+/g,' ').trim(),
@@ -818,7 +823,7 @@ test('the session page requires a realized RPE before saving, generating or uplo
     assert.equal(adminPreview.role, true, 'the external prompt opens in the shared accessible modal');
     assert.equal(adminPreview.copy, true);
     assert.ok(adminPreview.prompt.includes('INSTRUCTIONS FOR ANALYSIS'));
-    assert.equal(providerCalls, 1, 'viewing the prompt does not call the provider');
+    assert.equal(providerCalls, 2, 'viewing the prompt does not call the provider');
     assert.equal(writes().filter(({ method, url }) => method === 'POST' && url.endsWith('/api/ai/executions')).length, 0);
     await pressKey('Tab', 'Tab', 9);
     await pressKey('Tab', 'Tab', 9);
