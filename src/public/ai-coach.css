@@ -616,8 +616,22 @@ body.external-prompt-open { overflow: hidden; }
 .weekly-apply-result-ignored { margin: 0; line-height: 1.55; }
 .weekly-apply-result-message { color: var(--ink); }
 .weekly-apply-result-ignored { margin-top: 0.6rem; color: var(--muted); font-size: 0.9rem; }
-.weekly-proposal-actions { flex-wrap: wrap; }
-.weekly-proposal-actions > button { white-space: nowrap; }
+.weekly-proposal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+  padding: 1rem 0.25rem 0.35rem;
+  border-top: 1px solid var(--line);
+}
+.weekly-proposal-actions > button {
+  width: auto;
+  max-width: 100%;
+  min-width: 0;
+  white-space: normal;
+}
 
 .weekly-proposal-list { display: grid; gap: 1rem; }
 .weekly-proposal-card {
@@ -628,26 +642,49 @@ body.external-prompt-open { overflow: hidden; }
   background: var(--card);
 }
 .weekly-proposal-card h3 { margin: 0 0 0.75rem; font-size: 1rem; line-height: 1.4; }
-.weekly-proposal-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; margin: 0 0 1rem; }
-.weekly-proposal-summary > div { min-width: 0; padding: 0.7rem 0.8rem; border-radius: 10px; background: var(--bg); }
+.weekly-proposal-card {
+  --weekly-phase-transition-surface: #edf2f7;
+  --weekly-phase-transition-edge: #718ba4;
+  --weekly-phase-main-surface: color-mix(in srgb, var(--accent) 12%, var(--card));
+  --weekly-phase-main-edge: var(--accent-deep);
+}
+.weekly-proposal-summary {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0 0 1rem;
+  padding: 0.9rem 1rem;
+  border-radius: 12px;
+  background: var(--bg);
+}
+.weekly-proposal-summary-primary,
+.weekly-proposal-summary-context { display: grid; min-width: 0; gap: 0.8rem 1rem; margin: 0; }
+.weekly-proposal-summary-primary { grid-template-columns: repeat(2, minmax(0, 1fr)); padding-bottom: 0.75rem; border-bottom: 1px solid var(--line); }
+.weekly-proposal-summary-context { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1.35fr) minmax(0, 1.8fr); }
+.weekly-proposal-summary-primary > div,
+.weekly-proposal-summary-context > div { min-width: 0; }
 .weekly-proposal-card dt { color: var(--muted); font-size: 0.82rem; font-weight: 600; }
-.weekly-proposal-card dd { min-width: 0; margin: 0.2rem 0 0; overflow-wrap: anywhere; font-size: 0.92rem; line-height: 1.5; }
+.weekly-proposal-card dd { min-width: 0; margin: 0.2rem 0 0; overflow-wrap: anywhere; color: var(--ink); font-size: 0.92rem; font-weight: 500; line-height: 1.5; }
+.weekly-proposal-description { min-width: 0; }
+.weekly-proposal-description-title { margin: 0 0 0.7rem; font-size: 0.95rem; }
 .weekly-proposal-phases { display: grid; gap: 0.65rem; }
-.weekly-proposal-phase { min-width: 0; padding: 0.8rem 0.9rem; border-left: 3px solid var(--line); background: var(--bg); border-radius: 0 10px 10px 0; }
-.weekly-proposal-phase h4, .weekly-proposal-text h4 { margin: 0 0 0.35rem; font-size: 0.9rem; }
+.weekly-proposal-phase { min-width: 0; padding: 0.8rem 0.9rem; border-left: 3px solid var(--weekly-phase-transition-edge); background: var(--weekly-phase-transition-surface); border-radius: 10px; }
+.weekly-proposal-phase--main { border-left-color: var(--weekly-phase-main-edge); background: var(--weekly-phase-main-surface); }
+.weekly-phase-heading { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 0.25rem 0.75rem; }
+.weekly-phase-heading .weekly-phase-duration { margin: 0; }
+.weekly-proposal-phase h4, .weekly-proposal-text h4 { margin: 0; font-size: 0.9rem; }
 .weekly-proposal-phase p, .weekly-proposal-text p { margin: 0.3rem 0 0; overflow-wrap: anywhere; white-space: pre-wrap; line-height: 1.55; }
-.weekly-phase-duration { color: var(--muted); font-weight: 600; }
+.weekly-phase-duration { color: var(--ink); font-weight: 600; }
 .weekly-phase-effort { font-size: 0.9rem; }
 .weekly-phase-recovery { padding-top: 0.45rem; border-top: 1px solid var(--line); font-size: 0.9rem; }
-.weekly-proposal-meta { display: flex; flex-wrap: wrap; gap: 0.75rem 1.25rem; margin: 0.9rem 0 0; }
-.weekly-proposal-meta > div { min-width: 0; max-width: 100%; }
-.weekly-proposal-meta dd { color: var(--muted); font-size: 0.86rem; }
 .weekly-proposal-text { margin-top: 0.85rem; padding-top: 0.75rem; border-top: 1px solid var(--line); }
 .weekly-proposal-notes p { white-space: pre-wrap; }
 #weeklyProposalError { margin: 0.75rem 0; color: var(--danger); }
 #weeklyProposalContent > p { overflow-wrap: anywhere; }
 @media (max-width: 520px) {
-  .weekly-proposal-summary { grid-template-columns: minmax(0, 1fr); gap: 0.45rem; }
+  .weekly-proposal-summary { gap: 0.7rem; padding: 0.8rem; }
+  .weekly-proposal-summary-primary { gap: 0.7rem; }
+  .weekly-proposal-summary-context { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.7rem; }
+  .weekly-summary-weather { grid-column: span 2; }
   .weekly-proposal-card { padding: 0.85rem; }
   .external-prompt-card { max-height: calc(100dvh - 1rem); padding: 1rem; }
   .external-prompt-card .modal-header { margin-bottom: 0.75rem; }

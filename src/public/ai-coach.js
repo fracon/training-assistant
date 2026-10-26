@@ -37,7 +37,7 @@ import {
   parseLocalizedDate,
 } from './shared/date.js';
 import { createDatePicker, readDatePickerValue } from './shared/datepicker.js';
-import { cleanWeeklyJustification, formatWeeklyWeather, summarizePrescription } from './shared/weekly-prescription-display.js';
+import { cleanWeeklyJustification, summarizePrescription } from './shared/weekly-prescription-display.js';
 import { createDialogFocusTrap } from './shared/dialog-focus.js';
 
 function normalizeTargetDate(value, language) {
@@ -478,48 +478,68 @@ function setupAiCoachPage(user) {
         fallbackRpe: session.rpe,
         fallbackHr: session.targetHr,
         hrFallback: t('aiCoach.weeklyNoHrReference'),
+        prescription: session.prescription,
       });
-      const weatherEvidence = proposal.weatherEvidence?.find(
-        (item) => item.weekday === session.weekday,
-      );
-      const weather = weatherEvidence
-        ? formatWeeklyWeather(weatherEvidence, {
-            temperatureUnit: proposal.temperatureUnit,
-            language: i18n.language,
-            translate: t,
-          })
-        : session.weather;
-      const summary = document.createElement('dl');
+      const weather = session.weather;
+      const summary = document.createElement('div');
       summary.className = 'weekly-proposal-summary';
-      for (const [label, value] of [
-        [t('aiCoach.rpeLabel'), prescription.rpe],
-        [t('aiCoach.targetHrLabel'), prescription.hr],
+      const primarySummary = document.createElement('dl');
+      primarySummary.className = 'weekly-proposal-summary-primary';
+      const contextSummary = document.createElement('dl');
+      contextSummary.className = 'weekly-proposal-summary-context';
+      for (const [label, value, className, context] of [
+        [t('aiCoach.mainRpeLabel'), prescription.rpe, 'weekly-summary-main-rpe', false],
+        [t('aiCoach.targetHrLabel'), prescription.hr, 'weekly-summary-hr', false],
+        [t('aiCoach.shoeLabel'), session.shoeLabel || t('aiCoach.weeklyNoShoe'), 'weekly-summary-shoe', true],
+        [t('aiCoach.locationLabel'), session.location || '—', 'weekly-summary-location', true],
+        [t('aiCoach.weatherLabel'), weather || '—', 'weekly-summary-weather', true],
       ]) {
         const group = document.createElement('div');
+        group.className = className;
         const dt = document.createElement('dt');
         dt.textContent = label;
         const dd = document.createElement('dd');
         dd.textContent = value;
         group.append(dt, dd);
-        summary.append(group);
+        (context ? contextSummary : primarySummary).append(group);
       }
+      summary.append(primarySummary, contextSummary);
       article.append(summary);
+      const description = document.createElement('section');
+      description.className = 'weekly-proposal-description';
+      const descriptionTitle = document.createElement('h4');
+      descriptionTitle.className = 'weekly-proposal-description-title';
+      descriptionTitle.textContent = t('aiCoach.weeklyWorkoutDescription');
+      description.append(descriptionTitle);
       const phases = document.createElement('div');
       phases.className = 'weekly-proposal-phases weekly-proposal-details';
+      const mainPhaseCount = prescription.phases.filter(
+        (phase) => phase.phase === 'main',
+      ).length;
+      let mainPhaseNumber = 0;
       for (const phase of prescription.phases) {
         const block = document.createElement('section');
-        block.className = 'weekly-proposal-phase';
+        block.className = `weekly-proposal-phase weekly-proposal-phase--${phase.phase}`;
+        const phaseHeading = document.createElement('div');
+        phaseHeading.className = 'weekly-phase-heading';
         const title = document.createElement('h4');
-        title.textContent = t(`aiCoach.weeklyPhases.${phase.phase}`);
+        if (phase.phase === 'main' && mainPhaseCount > 1) {
+          mainPhaseNumber += 1;
+          title.textContent = t('aiCoach.weeklyMainStep').replace(
+            '{number}',
+            String(mainPhaseNumber),
+          );
+        } else title.textContent = t(`aiCoach.weeklyPhases.${phase.phase}`);
         const duration = document.createElement('p');
         duration.className = 'weekly-phase-duration';
         duration.textContent = phase.duration;
+        phaseHeading.append(title, duration);
         const instruction = document.createElement('p');
         instruction.textContent = `${t('aiCoach.weeklyExecution')}: ${phase.instruction}`;
         const effort = document.createElement('p');
         effort.className = 'weekly-phase-effort';
         effort.textContent = `${t('aiCoach.weeklyEffort')}: ${phase.effort}`;
-        block.append(title, duration, instruction, effort);
+        block.append(phaseHeading, instruction, effort);
         if (phase.recovery) {
           const recovery = document.createElement('p');
           recovery.className = 'weekly-phase-recovery';
@@ -528,25 +548,8 @@ function setupAiCoachPage(user) {
         }
         phases.append(block);
       }
-      article.append(phases);
-      const metadata = document.createElement('dl');
-      metadata.className = 'weekly-proposal-meta';
-      const fields = [
-        [t('aiCoach.shoeLabel'), session.shoeLabel],
-        [t('aiCoach.locationLabel'), session.location],
-        [t('aiCoach.weatherLabel'), weather],
-      ];
-      for (const [label, value] of fields) {
-        if (!value) continue;
-        const group = document.createElement('div');
-        const dt = document.createElement('dt');
-        dt.textContent = label;
-        const dd = document.createElement('dd');
-        dd.textContent = value;
-        group.append(dt, dd);
-        metadata.append(group);
-      }
-      if (metadata.childElementCount) article.append(metadata);
+      description.append(phases);
+      article.append(description);
       for (const [label, value, className] of [
         [t('aiCoach.weeklyNotes'), session.notes, 'weekly-proposal-notes'],
         [

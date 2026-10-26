@@ -40,7 +40,6 @@ export function parseMaterializedPrescription(details = '') {
         duration: phaseMatch[2],
         instruction: '',
         effort: '',
-        rpe: null,
         targetHr: '',
         recovery: '',
       };
@@ -53,8 +52,6 @@ export function parseMaterializedPrescription(details = '') {
     const effort = line.match(/^(?:Esforço|Effort):\s*(.*)$/);
     if (effort) {
       current.effort = effort[1];
-      const rpe = effort[1].match(/(?:^|;\s*)RPE\s+([1-5])\/5\b/i);
-      current.rpe = rpe ? Number(rpe[1]) : null;
       const hr = effort[1].match(/(?:^|;\s*)(?:FC alvo|Target HR):\s*([^;]+)/i);
       current.targetHr = hr?.[1]?.trim() || '';
     }
@@ -73,69 +70,54 @@ export function summarizePrescription(
     fallbackRpe = null,
     fallbackHr = '',
     hrFallback = '',
+    prescription = null,
   } = {},
 ) {
   const pt = language === 'pt-BR';
   const phases = parseMaterializedPrescription(details);
-  const rpeParts = phases
-    .filter((phase) => phase.rpe !== null)
-    .map((phase) => [phase.phase, phase.rpe]);
-  const recoveryRpes = phases.flatMap((phase) => {
-    const match = phase.recovery.match(/(?:^|;\s*)RPE\s+([1-5])\/5\b/i);
-    return match ? [Number(match[1])] : [];
-  });
-  let rpe;
-  if (rpeParts.length || recoveryRpes.length) {
-    const grouped = new Map();
-    for (const [phase, value] of rpeParts) grouped.set(phase, [...(grouped.get(phase) || []), value]);
-    const warm = grouped.get('warmup') || [];
-    const cool = grouped.get('cooldown') || [];
-    const labels = pt
-      ? {
-          warmup: 'Aquecimento',
-          main: 'Principal',
-          cooldown: 'Desaquecimento',
-        }
-      : { warmup: 'Warm-up', main: 'Main', cooldown: 'Cool-down' };
-    const parts = [];
-    const valuesText = (values) => unique(values).map((value) => `${value}/5`).join(', ');
-    if (grouped.has('main')) parts.push(`${labels.main}: ${valuesText(grouped.get('main'))}`);
-    if (
-      warm.length &&
-      cool.length &&
-      unique(warm).join() === unique(cool).join()
-    ) {
-      parts.push(
-        `${pt ? 'Aquecimento e desaquecimento' : 'Warm-up and cool-down'}: ${valuesText(warm)}`,
-      );
-    } else {
-      if (warm.length) parts.push(`${labels.warmup}: ${valuesText(warm)}`);
-      if (cool.length) parts.push(`${labels.cooldown}: ${valuesText(cool)}`);
-    }
-    if (recoveryRpes.length)
-      parts.push(`${pt ? 'Recuperação' : 'Recovery'}: ${valuesText(recoveryRpes)}`);
-    rpe = parts.join(' · ');
-  } else if (fallbackRpe != null && fallbackRpe !== '') rpe = `${fallbackRpe}/5`;
-  else {
-    const effort = phases
-      .map((phase) =>
-        phase.effort
-          .replace(
-            /;\s*(?:RPE [1-5]\/5|(?:FC alvo|Target HR):[^;]+|(?:ritmo-alvo|target pace) [^;]+)/gi,
-            '',
-          )
-          .trim(),
-      )
-      .filter(Boolean);
-    rpe = unique(effort).join(' · ') || (pt ? 'Orientado por esforço e respiração.' : 'Guided by effort and breathing.');
-  }
+  const structuredSteps = Array.isArray(prescription) ? prescription : null;
+  const mainSteps = structuredSteps
+    ? structuredSteps.filter((step) => step?.phase === 'main')
+    : [];
+  const mainRpes = unique(
+    mainSteps
+      .map((step) => step.rpe)
+      .filter((value) => Number.isInteger(value) && value >= 1 && value <= 5),
+  ).sort((left, right) => left - right);
+  const effortFallback = structuredSteps
+    ? unique(
+        mainSteps
+          .map((step) => String(step?.effort ?? '').trim())
+          .filter(Boolean),
+      ).join(' · ')
+    : unique(
+        phases
+          .filter((phase) => phase.phase === 'main')
+          .map((phase) => phase.effort.trim())
+          .filter(Boolean),
+      ).join(' · ');
+  const rpe = mainRpes.length
+    ? mainRpes.length === 1
+      ? `${mainRpes[0]}/5`
+      : `${mainRpes[0]}–${mainRpes.at(-1)}/5`
+    : effortFallback ||
+      (structuredSteps
+        ? pt
+          ? 'Orientado por esforço e respiração.'
+          : 'Guided by effort and breathing.'
+        : fallbackRpe != null && fallbackRpe !== ''
+          ? `${fallbackRpe}/5`
+          : pt
+            ? 'Orientado por esforço e respiração.'
+            : 'Guided by effort and breathing.');
+
   const hrByPhase = new Map();
-  for (const phase of phases) {
-    if (!phase.targetHr) continue;
-    hrByPhase.set(phase.phase, [
-      ...(hrByPhase.get(phase.phase) || []),
-      phase.targetHr,
-    ]);
+  const targets = structuredSteps
+    ? structuredSteps.map((step) => [step.phase, step.targetHr])
+    : phases.map((phase) => [phase.phase, phase.targetHr]);
+  for (const [phase, target] of targets) {
+    if (!target?.trim()) continue;
+    hrByPhase.set(phase, [...(hrByPhase.get(phase) || []), target.trim()]);
   }
   const hrTargets = unique([...hrByPhase.values()].flat());
   const phaseLabels = pt

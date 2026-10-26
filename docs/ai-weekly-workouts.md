@@ -114,12 +114,15 @@ distance-duration estimate. The legacy global calendar `targetHr` and `rpe`
 columns are derived only when every component has the same non-empty FC target
 or the same non-null RPE (including recovery RPE for repeated components);
 varying stages are never collapsed into a contradictory global target. The
-proposal and later training-result page derive a display-only labeled summary
-from the same persisted component details, preserving stage and recovery
-targets without averaging. If no numeric RPE exists, effort/breathing guidance
-remains visible. If no prescribed HR target exists, a localized effort/
-breathing fallback is shown; observed average or maximum HR is never promoted
-to a target. The preserved synthetic live sample had no numeric observed HR
+proposal derives a display-only **Main RPE** summary from structured main
+components only: one value is shown directly and differing values are shown as
+their minimum-to-maximum range, never as an average. Warm-up, recovery and
+cool-down RPE stay with their own phase. The later training-result page keeps
+the stage-specific information materialized in the saved workout details. If
+no numeric main RPE exists, main-stage effort/breathing guidance remains
+visible. If no prescribed HR target exists, a localized effort/breathing
+fallback is shown; observed average or maximum HR is never promoted to a
+target. The preserved synthetic live sample had no numeric observed HR
 readings and no prescribed HR reference in its shared context, so its generated
 proposal correctly had no numeric target.
 
@@ -251,11 +254,18 @@ remain in the protected snapshot/debug data. Calendar records receive the same
 compact derived string in the existing weather field; complete evidence
 remains with the execution.
 
-Proposal cards separate warm-up, each main component, and cool-down, with
-duration, instruction, effort, RPE/FC targets, recovery, and secondary shoe/
-location information. Notes and proposal-only natural-language rationale are
-shown in full as safe text. Technical evidence IDs are not shown in the common
-UI; recognized identifiers are removed from rationale display only. The
+Proposal cards place Main RPE and FC target in the first row of one summary
+panel, followed by shoe, location and compact forecast. The forecast is the
+same compact derived value persisted to the calendar record; full hourly
+evidence remains in the protected execution snapshot. The panel precedes a
+single "Workout description" section that separates warm-up, each main
+component and cool-down in execution order, with duration, instruction,
+effort, RPE/FC targets and recovery. Transition phases use the component's
+soft blue treatment and main phases use its soft green treatment. A distinct
+proposal action footer is separated from the content by 24px. Notes and
+proposal-only natural-language rationale are shown in full as safe text.
+Technical evidence IDs are not shown in the common UI; recognized identifiers
+are removed from rationale display only. The
 original response JSON and evidence list are unchanged for administrator
 diagnostics. Stored global RPE/FC column types and the 12-column import schema
 are unchanged.

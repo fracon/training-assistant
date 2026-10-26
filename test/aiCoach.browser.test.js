@@ -31,6 +31,12 @@ async function freePort() {
   return port;
 }
 
+function addIsoDays(date, amount) {
+  const value = new Date(`${date}T00:00:00Z`);
+  value.setUTCDate(value.getUTCDate() + amount);
+  return value.toISOString().slice(0, 10);
+}
+
 test('authenticated AI Coach availability works in PT/EN on desktop/mobile with keyboard controls', async (t) => {
   const chrome = findChrome();
   assert.ok(chrome, 'Chrome is required for AI Coach browser verification.');
@@ -38,23 +44,35 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
   const expectedSessionNotes =
     '<img src=x onerror="alert(1)">\nSessão sem pressa · café ☕\n' +
     'Observação contextual longa. '.repeat(30);
-  const makeSession = (date, weekday) => ({
-    date,
-    weekday,
-    period: '12_14',
-    sessionKind: 'easy',
-    prescription: [
-      { phase: 'warmup', repetitions: 1, minutes: 5, distanceMeters: null, instruction: 'Run gently and loosen up.', effort: 'Conversational breathing.', rpe: 2, targetHr: '', paceTargetSecondsPerKm: null, paceSecondsPerKm: null, recoveryMinutes: null, recoveryGuidance: null, recoveryRpe: null },
-      { phase: 'main', repetitions: 1, minutes: 35, distanceMeters: null, instruction: 'Run continuously with relaxed form.', effort: 'Comfortable effort; speak in full sentences.', rpe: 3, targetHr: '', paceTargetSecondsPerKm: null, paceSecondsPerKm: null, recoveryMinutes: null, recoveryGuidance: null, recoveryRpe: null },
+  const makeSession = (date, weekday) => {
+    const simple = [
+      { phase: 'warmup', repetitions: 1, minutes: 5, distanceMeters: null, instruction: 'Run gently and loosen up.', effort: 'Conversational breathing.', rpe: 1, targetHr: '', paceTargetSecondsPerKm: null, paceSecondsPerKm: null, recoveryMinutes: null, recoveryGuidance: null, recoveryRpe: null },
+      { phase: 'main', repetitions: 1, minutes: 35, distanceMeters: null, instruction: 'Run continuously with relaxed form.', effort: 'Comfortable effort; speak in full sentences.', rpe: weekday === 'friday' ? null : 2, targetHr: '', paceTargetSecondsPerKm: null, paceSecondsPerKm: null, recoveryMinutes: null, recoveryGuidance: null, recoveryRpe: null },
       { phase: 'cooldown', repetitions: 1, minutes: 5, distanceMeters: null, instruction: 'Ease down gradually.', effort: 'Very easy breathing.', rpe: 1, targetHr: '', paceTargetSecondsPerKm: null, paceSecondsPerKm: null, recoveryMinutes: null, recoveryGuidance: null, recoveryRpe: null },
-    ],
-    shoeId: null,
-    location: 'Legacy Porto',
-    weather: 'Use verified Kinesis forecast',
-    notes: expectedSessionNotes,
-    justification: 'This follows the saved context and recorded training.',
-    evidence: [`weather:${weekday}:${date}`],
-  });
+    ];
+    const intervals = [
+      { phase: 'warmup', repetitions: 1, minutes: 8, distanceMeters: null, instruction: 'Start with easy jogging and relaxed strides.', effort: 'Conversational breathing.', rpe: 1, targetHr: '115–125 bpm', paceTargetSecondsPerKm: null, paceSecondsPerKm: null, recoveryMinutes: null, recoveryGuidance: null, recoveryRpe: null },
+      { phase: 'main', repetitions: 4, minutes: 3, distanceMeters: null, instruction: 'Run each surge strong and controlled.', effort: 'Firm effort with short phrases.', rpe: 3, targetHr: '145–155 bpm', paceTargetSecondsPerKm: null, paceSecondsPerKm: null, recoveryMinutes: 2, recoveryGuidance: 'Jog until breathing settles.', recoveryRpe: 2 },
+      { phase: 'main', repetitions: 2, minutes: 4, distanceMeters: null, instruction: 'Lift the effort smoothly and hold form.', effort: 'Hard but controlled; no sprinting.', rpe: 4, targetHr: '155–165 bpm', paceTargetSecondsPerKm: null, paceSecondsPerKm: null, recoveryMinutes: 2, recoveryGuidance: 'Float easily before the next block.', recoveryRpe: 2 },
+      { phase: 'cooldown', repetitions: 1, minutes: 7, distanceMeters: null, instruction: 'Ease down with relaxed steps.', effort: 'Very easy breathing.', rpe: 1, targetHr: '120–130 bpm', paceTargetSecondsPerKm: null, paceSecondsPerKm: null, recoveryMinutes: null, recoveryGuidance: null, recoveryRpe: null },
+    ];
+    return {
+      date,
+      weekday,
+      period: '12_14',
+      sessionKind: weekday === 'wednesday' ? 'intervals' : 'easy',
+      prescription: weekday === 'wednesday' ? intervals : simple,
+      shoeId: 'ui-shoe',
+      location: 'São João da Madeira, Porto, Portugal',
+      weather: 'Use verified Kinesis forecast',
+      notes: expectedSessionNotes,
+      justification: weekday === 'wednesday'
+        ? `This progression responds to the dated history and feedback. ${'Context reviewed. '.repeat(18)}`
+        : 'This follows the saved context and recorded training.',
+      evidence: [`weather:${weekday}:${date}`],
+    };
+  };
+  let proposalWeekStart = null;
   let simulatedProviderCalls = 0;
   const app = await buildServer({
     db,
@@ -86,6 +104,15 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
         };
       }
       const day = parsed.searchParams.get('start_date');
+      const forecastWeekday = new Date(`${day}T12:00:00Z`).getUTCDay();
+      if (forecastWeekday === 5) {
+        return {
+          ok: false,
+          status: 503,
+          headers: new Headers({ 'content-type': 'text/plain' }),
+          json: async () => ({}),
+        };
+      }
       const formatter = new Intl.DateTimeFormat('en-CA', {
         timeZone: 'Europe/Lisbon',
         year: 'numeric',
@@ -105,6 +132,7 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
             .map((part) => [part.type, part.value]),
         );
         if (`${parts.year}-${parts.month}-${parts.day}` !== day) continue;
+        if (forecastWeekday === 3 && parts.hour === '13') continue;
         time.push(instant / 1000);
         temperatures.push(12 + Number(parts.hour));
         codes.push(2);
@@ -124,12 +152,14 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     aiClient: async (payload) => {
       simulatedProviderCalls++;
       const context = JSON.parse(payload.input[0].content[0].text).context;
+      proposalWeekStart = context.resource.weekStart;
       const value = {
         schemaVersion: 'weekly-workouts-v3',
-        weekStart: context.resource.weekStart,
+        weekStart: proposalWeekStart,
         sessions: [
-          makeSession('2026-10-26', 'monday'),
-          makeSession('2026-10-28', 'wednesday'),
+          makeSession(proposalWeekStart, 'monday'),
+          makeSession(addIsoDays(proposalWeekStart, 2), 'wednesday'),
+          makeSession(addIsoDays(proposalWeekStart, 4), 'friday'),
         ],
       };
       return {
@@ -1965,10 +1995,12 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
         },
       ],
     );
-    await evaluate(`(()=>{const row=document.querySelector('[data-day="wednesday"]');const toggle=row.querySelector('[data-can-train]');if(!toggle.checked)toggle.click();row.querySelector('[data-period="12_14"]').click();const duration=row.querySelector('[data-duration]');duration.value='75';duration.dispatchEvent(new Event('input',{bubbles:true}));const location=row.querySelector('[data-location]');location.value='Legacy Porto';location.dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('saveAvailability').click()})()`);
+    await evaluate(`(()=>{for(const day of ['monday','wednesday','friday']){const row=document.querySelector('[data-day="'+day+'"]');const toggle=row.querySelector('[data-can-train]');if(!toggle.checked)toggle.click();const period=row.querySelector('[data-period="12_14"]');if(!period.checked)period.click();const duration=row.querySelector('[data-duration]');duration.value='75';duration.dispatchEvent(new Event('input',{bubbles:true}));const location=row.querySelector('[data-location]');location.value='São João da Madeira, Porto, Portugal';location.dispatchEvent(new Event('input',{bubbles:true}))}document.getElementById('saveAvailability').click()})()`);
     await waitForText('#availabilityStatus', 'Weekly schedule saved.');
+    db.prepare("INSERT INTO shoes(id,user_id,brand,model,status) VALUES('ui-shoe',1,?,'Training shoe with an intentionally long product name for responsive layout checks','active')").run('Kinesis Athletics');
+    proposalWeekStart = await evaluate(`document.getElementById('targetDate').value`);
     const duplicate = materializePrescription(
-      makeSession('2026-10-26', 'monday'),
+      makeSession(proposalWeekStart, 'monday'),
       'en-US',
     ).value;
     const duplicateId = db.prepare(
@@ -1995,7 +2027,7 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     const review = await evaluate(
       `(()=>({cards:document.querySelectorAll('.weekly-proposal-card').length,text:document.getElementById('weeklyProposalContent').textContent,applyHidden:document.getElementById('weeklyApply').hidden}))()`,
     );
-    assert.equal(review.cards, 2);
+    assert.equal(review.cards, 3);
     assert.match(review.text, /Easy run/);
     assert.match(review.text, /Execution: Run continuously/);
     assert.match(review.text, /Effort: Comfortable effort/);
@@ -2017,17 +2049,67 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       'notes are rendered as text rather than interpreted as markup',
     );
     assert.doesNotMatch(review.text, /weather:monday:|open-meteo\.com|forecast.*hours/i);
-    assert.match(review.text, /RPE prescrito|Prescribed RPE/);
-    assert.match(review.text, /Main: 3\/5.*Warm-up: 2\/5.*Cool-down: 1\/5/);
+    assert.match(review.text, /RPE principal|Main RPE/);
     assert.match(review.text, /FC alvo|Target HR/);
     assert.match(review.text, /period high: .*°C/);
     assert.equal(review.applyHidden, false);
     assert.equal(await evaluate(`document.getElementById('weeklyApplyResultModal').hidden`), true);
+    const proposalPresentation = await evaluate(`(()=>{
+      const cards=[...document.querySelectorAll('.weekly-proposal-card')];
+      const cardValues=cards.map(card=>({
+        heading:card.querySelector('h3').textContent,
+        rpeLabel:card.querySelector('.weekly-summary-main-rpe dt').textContent,
+        rpe:card.querySelector('.weekly-summary-main-rpe dd').textContent,
+        hr:card.querySelector('.weekly-summary-hr dd').textContent,
+        shoe:card.querySelector('.weekly-summary-shoe dd').textContent,
+        location:card.querySelector('.weekly-summary-location dd').textContent,
+        weather:card.querySelector('.weekly-summary-weather dd').textContent,
+        phaseTitles:[...card.querySelectorAll('.weekly-proposal-phase h4')].map(item=>item.textContent),
+        phaseClasses:[...card.querySelectorAll('.weekly-proposal-phase')].map(item=>item.className),
+        descriptionBeforeNotes:card.querySelector('.weekly-proposal-description').compareDocumentPosition(card.querySelector('.weekly-proposal-notes'))&Node.DOCUMENT_POSITION_FOLLOWING,
+        summaryColumns:getComputedStyle(card.querySelector('.weekly-proposal-summary-primary')).gridTemplateColumns.split(' ').length,
+      }));
+      const content=document.getElementById('weeklyProposalContent');
+      const actions=document.getElementById('weeklyProposalActions');
+      const button=document.getElementById('weeklyApply');
+      return {cards:cardValues,width:innerWidth,scrollWidth:document.documentElement.scrollWidth,contentToFooter:Math.round(actions.getBoundingClientRect().top-content.getBoundingClientRect().bottom),footerMargin:getComputedStyle(actions).marginTop,footerBottomPadding:getComputedStyle(actions).paddingBottom,buttonWidth:button.getBoundingClientRect().width,footerWidth:actions.getBoundingClientRect().width};
+    })()`);
+    assert.equal(proposalPresentation.cards[0].rpeLabel, 'Main RPE');
+    assert.equal(proposalPresentation.cards[0].rpe, '2/5');
+    assert.match(proposalPresentation.cards[0].hr, /By effort and breathing; no HR reference available/);
+    assert.equal(proposalPresentation.cards[0].shoe, 'Kinesis Athletics Training shoe with an intentionally long product name for responsive layout checks');
+    assert.equal(proposalPresentation.cards[0].location, 'São João da Madeira, Porto, Portugal');
+    assert.match(proposalPresentation.cards[0].weather, /period high: .*°C/);
+    assert.equal(proposalPresentation.cards[1].rpe, '3–4/5');
+    assert.match(proposalPresentation.cards[1].hr, /Main: 145–155 bpm, 155–165 bpm/);
+    assert.match(proposalPresentation.cards[1].weather, /Forecast partial; hourly coverage incomplete/);
+    assert.deepEqual(proposalPresentation.cards[1].phaseTitles, ['Warm-up', 'Main step 1', 'Main step 2', 'Cool-down']);
+    assert.match(proposalPresentation.cards[1].phaseClasses[0], /phase--warmup/);
+    assert.match(proposalPresentation.cards[1].phaseClasses[1], /phase--main/);
+    assert.match(proposalPresentation.cards[1].phaseClasses.at(-1), /phase--cooldown/);
+    assert.match(proposalPresentation.cards[2].weather, /Forecast unavailable; no verified hourly data/);
+    assert.match(proposalPresentation.cards[2].rpe, /Comfortable effort/);
+    assert.ok(proposalPresentation.cards.every((card) => card.descriptionBeforeNotes));
+    assert.equal(proposalPresentation.width, 390);
+    assert.equal(proposalPresentation.scrollWidth, 390);
+    assert.equal(proposalPresentation.footerMargin, '24px');
+    assert.equal(proposalPresentation.contentToFooter, 24);
+    assert.ok(proposalPresentation.buttonWidth < proposalPresentation.footerWidth);
+    assert.ok(proposalPresentation.footerBottomPadding !== '0px');
+    await evaluate(`document.getElementById('weeklyProposalSection').scrollIntoView({block:'start'});new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`);
+    writeFileSync(path.join(tmpdir(), 'kinesis-weekly-proposal-mobile-en.png'), Buffer.from((await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false })).data, 'base64'));
+    await evaluate(`document.querySelector('.lang-switch [data-lang="pt-BR"]').click()`);
+    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{if(document.documentElement.lang==='pt-BR')resolve(true);else if(Date.now()>end)reject(new Error('Portuguese proposal rerender timed out'));else setTimeout(check,20)};check()})`);
+    const ptMobileReview = await evaluate(`(()=>({width:innerWidth,scrollWidth:document.documentElement.scrollWidth,rpeLabel:document.querySelector('.weekly-summary-main-rpe dt').textContent,rpe:document.querySelector('.weekly-summary-main-rpe dd').textContent,hrLabel:document.querySelector('.weekly-summary-hr dt').textContent,description:document.querySelector('.weekly-proposal-description-title').textContent,phases:[...document.querySelectorAll('.weekly-proposal-phase h4')].slice(0,4).map(node=>node.textContent)}))()`);
+    assert.deepEqual(ptMobileReview, { width: 390, scrollWidth: 390, rpeLabel: 'RPE principal', rpe: '2/5', hrLabel: 'FC alvo', description: 'Descrição do treino', phases: ['Aquecimento', 'Principal', 'Desaquecimento', 'Aquecimento'] });
+    await evaluate(`document.getElementById('weeklyProposalSection').scrollIntoView({block:'start'});new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`);
+    writeFileSync(path.join(tmpdir(), 'kinesis-weekly-proposal-mobile-pt.png'), Buffer.from((await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false })).data, 'base64'));
+    await evaluate(`document.querySelector('.lang-switch [data-lang="en-US"]').click()`);
+    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{if(document.documentElement.lang==='en-US')resolve(true);else if(Date.now()>end)reject(new Error('English proposal rerender timed out'));else setTimeout(check,20)};check()})`);
     const reviewedDetails = await evaluate(
-      `document.querySelector('.weekly-proposal-details').textContent`,
+      `document.querySelectorAll('.weekly-proposal-details')[1].textContent`,
     );
-    const reviewedWeather = await evaluate(`[...document.querySelectorAll('.weekly-proposal-meta>div')].find(x=>x.querySelector('dt')?.textContent==='Weather forecast')?.querySelector('dd')?.textContent`);
-    assert.match(reviewedWeather, /period high: .*°C/);
+    const reviewedWeather = proposalPresentation.cards[1].weather;
     assert.equal(simulatedProviderCalls, 1);
     await command('Emulation.setDeviceMetricsOverride', {
       width: 1280,
@@ -2036,8 +2118,12 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       mobile: false,
     });
     await evaluate(
-      `document.getElementById('weeklyProposalSection').scrollIntoView({block:'start'})`,
+      `document.getElementById('weeklyProposalSection').scrollIntoView({block:'start'});new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))`,
     );
+    const desktopProposalGeometry = await evaluate(`(()=>({width:innerWidth,scrollWidth:document.documentElement.scrollWidth,summaryColumns:getComputedStyle(document.querySelector('.weekly-proposal-summary-primary')).gridTemplateColumns.split(' ').length,contextColumns:getComputedStyle(document.querySelector('.weekly-proposal-summary-context')).gridTemplateColumns.split(' ').length,footerMargin:getComputedStyle(document.getElementById('weeklyProposalActions')).marginTop,contentToFooter:Math.round(document.getElementById('weeklyProposalActions').getBoundingClientRect().top-document.getElementById('weeklyProposalContent').getBoundingClientRect().bottom),shoeWidth:document.querySelector('.weekly-summary-shoe').getBoundingClientRect().width,locationWidth:document.querySelector('.weekly-summary-location').getBoundingClientRect().width,weatherWidth:document.querySelector('.weekly-summary-weather').getBoundingClientRect().width}))()`);
+    assert.deepEqual(desktopProposalGeometry, { width: 1280, scrollWidth: 1280, summaryColumns: 2, contextColumns: 3, footerMargin: '24px', contentToFooter: 24, shoeWidth: desktopProposalGeometry.shoeWidth, locationWidth: desktopProposalGeometry.locationWidth, weatherWidth: desktopProposalGeometry.weatherWidth });
+    assert.ok(desktopProposalGeometry.weatherWidth > desktopProposalGeometry.shoeWidth, JSON.stringify(desktopProposalGeometry));
+    assert.ok(desktopProposalGeometry.weatherWidth > desktopProposalGeometry.locationWidth, JSON.stringify(desktopProposalGeometry));
     writeFileSync(
       path.join(tmpdir(), 'kinesis-weekly-proposal-review.png'),
       Buffer.from(
@@ -2050,13 +2136,21 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
         'base64',
       ),
     );
+    await evaluate(`document.querySelector('.lang-switch [data-lang="pt-BR"]').click()`);
+    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{if(document.documentElement.lang==='pt-BR')resolve(true);else if(Date.now()>end)reject(new Error('Desktop Portuguese proposal rerender timed out'));else setTimeout(check,20)};check()})`);
+    const ptDesktopRpe = await evaluate(`(()=>({width:innerWidth,scrollWidth:document.documentElement.scrollWidth,label:document.querySelector('.weekly-summary-main-rpe dt').textContent,value:document.querySelector('.weekly-summary-main-rpe dd').textContent}))()`);
+    assert.deepEqual(ptDesktopRpe, { width: 1280, scrollWidth: 1280, label: 'RPE principal', value: '2/5' });
+    await evaluate(`document.getElementById('weeklyProposalSection').scrollIntoView({block:'start'})`);
+    writeFileSync(path.join(tmpdir(), 'kinesis-weekly-proposal-desktop-pt.png'), Buffer.from((await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false })).data, 'base64'));
+    await evaluate(`document.querySelector('.lang-switch [data-lang="en-US"]').click()`);
+    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{if(document.documentElement.lang==='en-US')resolve(true);else if(Date.now()>end)reject(new Error('English desktop proposal rerender timed out'));else setTimeout(check,20)};check()})`);
     await evaluate(`(()=>{const original=window.fetch.bind(window);window.__applyRequests=0;window.__postWasLost=false;window.__failedAppliedRead=false;window.fetch=async(...args)=>{const url=typeof args[0]==='string'?args[0]:args[0].url;const method=(args[1]?.method||'GET').toUpperCase();if(url.includes('/api/ai/workouts/')&&url.endsWith('/apply')&&method==='POST'){window.__applyRequests++;if(window.__applyRequests===1)return new Response(JSON.stringify({error:'Synthetic refusal',errors:['weeklyProposalInvalid']}),{status:422,headers:{'content-type':'application/json'}});if(window.__applyRequests===2){await original(...args);window.__postWasLost=true;throw new TypeError('synthetic response lost after commit')}}if(method==='GET'&&url.includes('/api/ai/workouts/')&&url.endsWith('/proposal')&&window.__postWasLost&&!window.__failedAppliedRead){window.__failedAppliedRead=true;window.fetch=original;throw new TypeError('synthetic status read unavailable')}return original(...args)}})()`);
     await evaluate(`document.getElementById('weeklyApply').click();document.getElementById('weeklyApply').click()`);
     await waitForText('#weeklyApplyResultTitle', 'Could not add the workouts');
     assert.equal(await evaluate(`document.getElementById('weeklyApplyResultModal').hidden`), false);
     assert.match(await evaluate(`document.getElementById('weeklyApplyResultMessage').textContent`), /proposal|calendar/i);
     assert.doesNotMatch(await evaluate(`document.getElementById('weeklyApplyResultMessage').textContent`), /weeklyProposalInvalid|SQL|stack/i);
-    assert.equal(await evaluate(`document.querySelectorAll('.weekly-proposal-card').length`), 2);
+    assert.equal(await evaluate(`document.querySelectorAll('.weekly-proposal-card').length`), 3);
     assert.equal(await evaluate(`window.__applyRequests`), 1, 'a double click submits one application request');
     assert.equal(await evaluate(`document.activeElement.id`), 'weeklyApplyResultOk');
     await pressKey('Tab', 'Tab', 9, 1);
@@ -2103,7 +2197,7 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
           'SELECT COUNT(*) AS n FROM trainings WHERE user_id=(SELECT id FROM users WHERE email=?)',
         )
         .get('availability-browser@example.test').n,
-      2,
+      3,
     );
     assert.equal(
       db
@@ -2122,13 +2216,15 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
         .prepare(
           'SELECT detalhes FROM trainings WHERE user_id=(SELECT id FROM users WHERE email=?) AND dia=?',
         )
-        .get('availability-browser@example.test', '2026-10-28').detalhes;
-    const savedWeather = db.prepare('SELECT previsao FROM trainings WHERE user_id=(SELECT id FROM users WHERE email=?) AND dia=?').get('availability-browser@example.test', '2026-10-28').previsao;
-    assert.equal(savedWeather, reviewedWeather, 'the compact verified forecast is identical in preview and the calendar row');
-    for (const instruction of ['Run gently and loosen up.', 'Run continuously with relaxed form.', 'Ease down gradually.', 'RPE 2/5', 'RPE 3/5', 'RPE 1/5']) {
+        .get('availability-browser@example.test', addIsoDays(proposalWeekStart, 2)).detalhes;
+    const savedWeather = db.prepare('SELECT previsao FROM trainings WHERE user_id=(SELECT id FROM users WHERE email=?) AND dia=?').get('availability-browser@example.test', addIsoDays(proposalWeekStart, 2)).previsao;
+    assert.equal(savedWeather, reviewedWeather, 'the compact partial forecast is identical in preview and the calendar row');
+    for (const instruction of ['Start with easy jogging and relaxed strides.', 'Run each surge strong and controlled.', '4 × 3 min', 'RPE 3/5', 'RPE 4/5', 'RPE 2/5', 'Ease down with relaxed steps.', 'RPE 1/5']) {
       assert.ok(reviewedDetails.includes(instruction), `preview includes ${instruction}`);
       assert.ok(savedDetails.includes(instruction), `calendar details preserve ${instruction}`);
     }
+    assert.match(reviewedDetails, /Recovery: 2 min; Jog until breathing settles\.; RPE 2\/5/);
+    assert.match(review.text, /Context reviewed\./, 'long justification remains visible in the proposal review');
     assert.deepEqual(
       await evaluate(
         `(()=>({primaryIcon:document.querySelector('#generateBtn svg')?.getAttribute('data-lucide'),secondaryIcon:document.querySelector('#externalPromptBtn svg')?.getAttribute('data-lucide'),primaryLabel:document.querySelector('#generateBtn span').textContent.trim(),secondaryLabel:document.querySelector('#externalPromptBtn span').textContent.trim()}))()`,

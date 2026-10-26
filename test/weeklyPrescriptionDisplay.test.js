@@ -24,10 +24,21 @@ test('weekly prescription summary retains stage-specific and recovery RPE withou
     'Execução: Reduza gradualmente.',
     'Esforço: Muito leve; RPE 1/5',
   ].join('\n');
-  const summary = summarizePrescription(details, { language: 'pt-BR' });
-  assert.equal(summary.rpe, 'Principal: 3/5, 2/5 · Aquecimento e desaquecimento: 1/5 · Recuperação: 2/5');
+  const prescription = [
+    { phase: 'warmup', effort: 'Muito leve', rpe: 1, targetHr: '' },
+    { phase: 'main', effort: 'Forte controlado', rpe: 3, targetHr: '' },
+    { phase: 'main', effort: 'Moderado', rpe: 2, targetHr: '' },
+    { phase: 'cooldown', effort: 'Muito leve', rpe: 1, targetHr: '' },
+  ];
+  const summary = summarizePrescription(details, { language: 'pt-BR', prescription });
+  assert.equal(summary.rpe, '2–3/5');
+  assert.equal(
+    summarizePrescription(details.replace('RPE 2/5', 'RPE 5/5'), { language: 'pt-BR', prescription }).rpe,
+    '2–3/5',
+  );
   assert.equal(summary.phases.length, 4);
   assert.match(summary.phases[1].recovery, /RPE 2\/5/);
+  assert.deepEqual(summary.phases.map((phase) => phase.phase), ['warmup', 'main', 'main', 'cooldown']);
   assert.equal(summary.hr, 'Por esforço e respiração; sem referência de FC disponível.');
 });
 
@@ -38,16 +49,26 @@ test('weekly prescription summary preserves uniform and varying HR targets, with
     'Main set: 20 min', 'Execution: Steady.', 'Effort: Controlled; RPE 2/5; Target HR: 140–150 bpm',
     'Cool-down: 5 min', 'Execution: Ease down.', 'Effort: Easy; RPE 1/5; Target HR: 120–130 bpm',
   ].join('\n');
-  const summary = summarizePrescription(details, { language: 'en-US' });
+  const prescription = [
+    { phase: 'warmup', effort: 'Relaxed', rpe: 1, targetHr: '120–130 bpm' },
+    { phase: 'main', effort: 'Controlled', rpe: 2, targetHr: '140–150 bpm' },
+    { phase: 'cooldown', effort: 'Easy', rpe: 1, targetHr: '120–130 bpm' },
+  ];
+  const summary = summarizePrescription(details, { language: 'en-US', prescription });
   assert.equal(summary.hr, 'Warm-up: 120–130 bpm · Main: 140–150 bpm · Cool-down: 120–130 bpm');
-  assert.equal(summary.rpe, 'Main: 2/5 · Warm-up and cool-down: 1/5');
+  assert.equal(summary.rpe, '2/5');
+  assert.equal(pt.aiCoach.mainRpeLabel, 'RPE principal');
+  assert.equal(en.aiCoach.mainRpeLabel, 'Main RPE');
   assert.equal(summarizePrescription(details.replace(/; Target HR: [^\n]+/g, ''), { language: 'en-US' }).hr, 'By effort and breathing; no HR reference available.');
 });
 
 test('a proposal with no numerical RPE keeps its effort cue', async () => {
   const { summarizePrescription } = await displayPromise;
   const details = 'Principal: 20 min\nExecução: Mantenha a passada confortável.\nEsforço: Respiração controlada, conseguindo conversar.';
-  const summary = summarizePrescription(details, { language: 'pt-BR' });
+  const summary = summarizePrescription(details, {
+    language: 'pt-BR',
+    prescription: [{ phase: 'main', effort: 'Respiração controlada, conseguindo conversar.', rpe: null, targetHr: '' }],
+  });
   assert.equal(summary.rpe, 'Respiração controlada, conseguindo conversar.');
   assert.notEqual(summary.rpe, '—');
 });
