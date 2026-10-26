@@ -69,6 +69,7 @@ test('the session page requires a realized RPE before saving, generating or uplo
 
   const db = createDatabase({ filename: ':memory:' });
   let providerCalls = 0;
+  let invalidNextProviderResponse = false;
   const app = await buildServer({
     db,
     sessionCookieSecure: false,
@@ -84,8 +85,7 @@ test('the session page requires a realized RPE before saving, generating or uplo
         assert.ok(request.context.resource.actual.fitLaps.length > 0, 'the simulated provider receives bounded, decoded FIT lap evidence');
       const evidence = [`${request.context.resource.source.type}:${request.context.resource.source.id}`];
       await delay(900);
-      return {
-        value: {
+      const value = {
           schemaVersion: 'workout-analysis-v1', language: request.context.preferences.language,
           summary: { text: 'Synthetic analysis arrived while the session stayed open.', evidence },
           comparison: { text: 'The saved result is compared with its planned session.', evidence },
@@ -93,7 +93,13 @@ test('the session page requires a realized RPE before saving, generating or uplo
           attention: [], recommendations: [{ text: 'Keep the next session unchanged unless later evidence suggests an adjustment.', evidence }],
           classification: { value: 'adequate', evidence }, limitations: ['Synthetic provider; no real model was called.'],
           reusableInterpretations: [{ kind: 'pattern', text: 'The synthetic report describes a controlled effort.', evidence }],
-        },
+        };
+      if (invalidNextProviderResponse) {
+        invalidNextProviderResponse = false;
+        value.summary.text = 'RPE 8/10';
+      }
+      return {
+        value,
         usage: { input: 700, output: 240, cached: 0 }, error: null,
       };
     },
@@ -523,16 +529,52 @@ test('the session page requires a realized RPE before saving, generating or uplo
     assert.ok(generated.analysis.includes('Synthetic analysis arrived'));
     assert.equal(generated.url, '/training-result.html', 'the completed result appears without navigation');
     assert.equal(generated.analysis.includes('training:'), false, 'ordinary analysis text has no raw evidence references');
+    assert.equal(await evaluate("document.querySelector('.analysis-header button')?.hidden"), true, 'the free read-again control disappears after recovery succeeds');
+    assert.equal(await evaluate("getComputedStyle(document.querySelector('.analysis-header button')).display"), 'none', 'the recovered action is also absent in computed browser layout');
     await evaluate("document.getElementById('analysisSection').scrollIntoView({block:'start'}); true");
     const desktopShot = await command('Page.captureScreenshot', { format: 'png' });
     writeFileSync('/tmp/issue65-analysis-desktop.png', Buffer.from(desktopShot.data, 'base64'));
-    await evaluate("document.querySelector('.analysis-interpretation button').click(); true");
+    await evaluate("(()=>{const trigger=document.querySelector('.analysis-interpretation button');trigger.focus();trigger.click();return true})()");
     await waitFor("document.querySelector('.analysis-interpretation h4').textContent==='Confirmed interpretation'", 'confirming the reusable interpretation');
-    await evaluate("document.querySelector('.analysis-interpretation button').click(); true");
+    await delay(150);
+    await evaluate("(()=>{const trigger=document.querySelector('.analysis-interpretation button');trigger.focus();trigger.click();return true})()");
     await waitFor("document.getElementById('analysisCorrectionDialog').hidden===false", 'opening the accessible correction dialog');
     assert.equal(await evaluate("document.activeElement.matches('[data-analysis-correction-close]')"), true, 'the correction dialog takes initial focus');
-    await evaluate(`(()=>{const field=document.getElementById('analysisCorrectionText');field.value='Synthetic correction confirmed in the browser.';field.dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('[data-analysis-correction-save]').click();return true})()`);
+    await pressShiftTab();
+    assert.equal(await evaluate("document.activeElement.matches('[data-analysis-correction-save]')"), true, 'Shift+Tab wraps to the final correction action');
+    await pressKey('Tab', 'Tab', 9);
+    assert.equal(await evaluate("document.activeElement.matches('[data-analysis-correction-close]')"), true, 'Tab wraps to the first correction control');
+    await pressKey('Escape', 'Escape', 27);
+    await waitFor("document.getElementById('analysisCorrectionDialog').hidden", 'closing the correction dialog with Escape');
+    assert.equal(await evaluate("document.activeElement.dataset.interpretationAction?.endsWith(':correct')"), true, 'Escape restores focus to the correction trigger');
+    await evaluate("document.querySelector('[data-interpretation-action$=\":correct\"]').click(); true");
+    await waitFor("document.getElementById('analysisCorrectionDialog').hidden===false", 'reopening the correction dialog');
+    assert.equal(await evaluate("document.activeElement.matches('[data-analysis-correction-close]')"), true, 'reopened correction dialog restores initial focus');
+    await evaluate(`(()=>{const field=document.getElementById('analysisCorrectionText');field.value='Synthetic correction confirmed in the browser.';field.dispatchEvent(new Event('input',{bubbles:true}));return true})()`);
+    // A held network mutation rejects after the user tries to click twice.
+    await evaluate(`(()=>{const original=window.fetch.bind(window);window.__originalFetch=original;window.__correctionCalls=0;window.__rejectCorrection=null;window.__failAnalysisRefresh=false;window.fetch=(input,init)=>{if(window.__failAnalysisRefresh&&String(input).includes('/api/trainings/${manualId}/analyses')){window.__failAnalysisRefresh=false;return Promise.reject(new TypeError('refresh unavailable'))}if(String(input).includes('/api/ai/interpretations/')&&String(input).endsWith('/correct')){window.__correctionCalls++;if(window.__correctionCalls===1)return new Promise((_,reject)=>window.__rejectCorrection=()=>reject(new TypeError('offline')));if(window.__correctionCalls===2)return Promise.resolve(new Response(JSON.stringify({error:'interpretationConflict',errors:['interpretationConflict']}),{status:409,headers:{'content-type':'application/json'}}));}return original(input,init).then(async response=>{if(String(input).includes('/api/ai/interpretations/')&&String(input).endsWith('/correct'))window.__lastMutation=await response.clone().json();return response})}})()`);
+    await evaluate("document.querySelector('[data-analysis-correction-save]').click(); true");
+    await waitFor('window.__rejectCorrection!==null', 'the held interpretation mutation');
+    const duplicateState = await evaluate(`(()=>{document.querySelector('[data-analysis-correction-save]').click();return {disabled:document.querySelector('[data-analysis-correction-save]').disabled,calls:window.__correctionCalls}})()`);
+    assert.equal(duplicateState.disabled, true, 'the correction submit is disabled while the write is pending');
+    assert.equal(duplicateState.calls, 1, 'a double click sends only one mutation');
+    await evaluate('window.__rejectCorrection(); true');
+    await waitFor("document.getElementById('analysisCorrectionError').hidden===false", 'the localized network error inside the open correction dialog');
+    const networkFailure = await evaluate(`(()=>({open:!document.getElementById('analysisCorrectionDialog').hidden,text:document.getElementById('analysisCorrectionText').value,error:document.getElementById('analysisCorrectionError').textContent}))()`);
+    assert.equal(networkFailure.open, true, 'a failed correction does not close the dialog');
+    assert.equal(networkFailure.text, 'Synthetic correction confirmed in the browser.', 'typed correction survives a network failure');
+    assert.match(networkFailure.error, /Could not save/);
+    await evaluate("document.querySelector('[data-analysis-correction-save]').click(); true");
+    await waitFor("document.getElementById('analysisCorrectionError').textContent.includes('changed in another action')", 'a localized interpretation version conflict');
+    assert.equal(await evaluate("document.getElementById('analysisCorrectionText').value"), 'Synthetic correction confirmed in the browser.');
+    await evaluate(`(()=>{window.__failAnalysisRefresh=true;const field=document.getElementById('analysisCorrectionText');field.value='Synthetic correction confirmed in the browser.';document.querySelector('[data-analysis-correction-save]').click();return true})()`);
     await waitFor("document.querySelector('.analysis-interpretation p').textContent==='Synthetic correction confirmed in the browser.'", 'saving the local interpretation correction');
+    assert.equal(await evaluate("document.getElementById('analysisCorrectionDialog').hidden"), true, 'the dialog closes after the mutation response confirms success');
+    assert.equal(await evaluate("document.activeElement.dataset.interpretationAction?.endsWith(':correct')"), true, 'focus returns to the equivalent control on the updated item');
+    await waitFor("document.getElementById('analysisNotice').textContent.includes('Could not read')", 'a refresh error distinct from the confirmed correction');
+    assert.equal(await evaluate("document.querySelector('.analysis-interpretation p').textContent"), 'Synthetic correction confirmed in the browser.', 'the confirmed correction remains visible despite a failed list refresh');
+    await command('Page.reload');
+    await waitFor("document.querySelector('.analysis-interpretation p').textContent==='Synthetic correction confirmed in the browser.'", 'recovery of the persisted correction after reload');
     await evaluate("document.querySelector('.analysis-interpretation button:last-child').click(); true");
     await waitFor("document.querySelector('.analysis-interpretation h4').textContent==='Dismissed'", 'discarding the corrected interpretation');
     await setLanguage('pt-BR');
@@ -567,6 +609,27 @@ test('the session page requires a realized RPE before saving, generating or uplo
     );
     assert.equal(row(manualId).completed, 1);
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM workout_analysis_versions WHERE training_id=?').get(manualId).n, 1, 'the applied analysis history is persisted');
+
+    /* ── Memory keeps drafts on mutation failure and separates saved success from refresh ── */
+
+    const latestAnalysisId = db.prepare('SELECT id FROM workout_analysis_versions WHERE training_id=? ORDER BY sequence DESC LIMIT 1').get(manualId).id;
+    const memoryItemId = 'browser-memory-interpretation';
+    db.prepare(`INSERT INTO ai_interpretations
+      (id,user_id,training_id,analysis_id,kind,text,evidence_json,evidence_key,evidence_hash,content_hash,disposition,created_at,updated_at)
+      VALUES (?,?,?,?,'pattern','Synthetic memory item','[]','[]','browser-memory-evidence','browser-memory-content','pending','2026-10-26T12:00:00Z','2026-10-26T12:00:00Z')`)
+      .run(memoryItemId, account.id, manualId, latestAnalysisId);
+    await command('Page.navigate', { url: `${baseUrl}/training-memory.html` });
+    await waitFor(`document.querySelector('[data-memory-item="${memoryItemId}"]')`, 'the synthetic interpretation on Training Memory');
+    await evaluate(`(()=>{const original=window.fetch.bind(window);window.__memoryFetch=original;let fail=true;window.__failMemoryRead=false;window.fetch=(input,init)=>{if(window.__failMemoryRead&&String(input)==='/api/ai/memory'){window.__failMemoryRead=false;return Promise.reject(new TypeError('refresh unavailable'))}if(fail&&String(input).includes('/api/ai/interpretations/${memoryItemId}/correct')){fail=false;return Promise.reject(new TypeError('offline'))}return original(input,init)}})()`);
+    await evaluate(`(()=>{const article=document.querySelector('[data-memory-item="${memoryItemId}"]');article.querySelector('summary').click();const field=article.querySelector('textarea');field.value='Memory correction remains editable.';field.dispatchEvent(new Event('input',{bubbles:true}));article.querySelector('[data-memory-action$="save-correction"]').click();return true})()`);
+    await waitFor("!document.getElementById('memoryError').classList.contains('hidden')", 'the memory mutation error');
+    assert.equal(await evaluate(`document.querySelector('[data-memory-item="${memoryItemId}"] textarea').value`), 'Memory correction remains editable.', 'memory correction remains in the editor after a failed write');
+    await evaluate(`(()=>{window.__failMemoryRead=true;const save=document.querySelector('[data-memory-item="${memoryItemId}"] [data-memory-action$="save-correction"]');save.focus();save.click();return true})()`);
+    await waitFor(`document.querySelector('[data-memory-item="${memoryItemId}"]').textContent.includes('Corrected')`, 'the saved correction in Training Memory');
+    await waitFor("document.getElementById('memoryError').textContent.includes('decision was saved')", 'the memory refresh warning that preserves confirmed success');
+    assert.equal(await evaluate("document.activeElement.dataset.memoryAction"), `${memoryItemId}:save-correction`, 'the successful memory rerender restores the equivalent correction control');
+    await evaluate("document.getElementById('reloadMemory').click(); true");
+    await waitFor("document.getElementById('memoryError').classList.contains('hidden')", 'the free memory refresh');
 
     /* ── A FIT upload waits for the same reported effort ── */
 
@@ -807,7 +870,8 @@ test('the session page requires a realized RPE before saving, generating or uplo
 
     /* ── Admin prompt access stays free and owner-scoped ── */
 
-    const adminTrainingId = seedTraining(admin.id);
+    const adminTrainingId = seedTraining(admin.id, { completed: 1, feedback_rpe: 3 });
+    db.prepare("UPDATE trainings SET result_data_source='manual',fit_distance=5,fit_duration='30:00',fit_avg_pace='6:00' WHERE id=?").run(adminTrainingId);
     await command('Network.setCookie', {
       name: SESSION_COOKIE_NAME, value: createSession(db, admin.id).token, url: origin,
     });
@@ -836,6 +900,28 @@ test('the session page requires a realized RPE before saving, generating or uplo
     await pressKey('Escape', 'Escape', 27);
     await waitFor("document.querySelector('.analysis-prompt-card')?.closest('[role=dialog]').hidden===true", 'the prompt modal closing with Escape');
     assert.equal(await evaluate('document.activeElement===document.querySelector("[data-analysis-external-prompt=true]")'), true, 'focus returns to the prompt trigger');
+
+    /* ── A lost POST response recovers the same terminal execution, including failure ── */
+
+    await openSession(adminTrainingId);
+    await evaluate(`(()=>{const original=window.fetch.bind(window);window.__analysisOriginalFetch=original;window.__lostAnalysisPosts=0;window.fetch=(input,init)=>{if(String(input)==='/api/ai/executions'&&init?.method==='POST'){window.__lostAnalysisPosts++;return original(input,init).then(response=>new Promise((_,reject)=>setTimeout(()=>reject(new TypeError('response lost after acceptance')),1400)))}return original(input,init)}})()`);
+    invalidNextProviderResponse = true;
+    await evaluate("document.getElementById('generateBtn').click(); true");
+    await waitFor("document.getElementById('analysisNotice').textContent.includes('did not meet the required response rules')", 'terminal analysis failure recovered after its POST response was lost');
+    assert.equal(await evaluate('window.__lostAnalysisPosts'), 1, 'only the explicit generation POST was sent');
+    assert.equal(providerCalls, 3, 'the failed terminal execution represents one simulated provider call');
+    assert.equal(db.prepare('SELECT state FROM workout_analysis_versions WHERE training_id=?').get(adminTrainingId).state, 'failed');
+    await command('Page.reload');
+    await waitFor("document.getElementById('analysisNotice').textContent.includes('did not meet the required response rules')", 'the terminal failure after reload');
+    assert.equal(providerCalls, 3, 'reload reads the saved failed execution without replaying the provider');
+    await evaluate(`(()=>{const original=window.fetch.bind(window);window.__analysisOriginalFetch=original;window.__lostAnalysisPosts=0;window.fetch=(input,init)=>{if(String(input)==='/api/ai/executions'&&init?.method==='POST'){window.__lostAnalysisPosts++;return original(input,init).then(response=>new Promise((_,reject)=>setTimeout(()=>reject(new TypeError('response lost after acceptance')),1400)))}return original(input,init)}})()`);
+    await evaluate("document.getElementById('generateBtn').click(); true");
+    await waitFor("document.getElementById('analysisContent').textContent.includes('Synthetic analysis arrived while the session stayed open.')", 'a successful terminal execution after an explicit new request');
+    assert.equal(await evaluate('window.__lostAnalysisPosts'), 1, 'the second explicit run sends one POST');
+    assert.equal(providerCalls, 4, 'the second explicit action invokes one additional simulated provider call');
+    await command('Page.reload');
+    await waitFor("document.getElementById('analysisContent').textContent.includes('Synthetic analysis arrived while the session stayed open.')", 'the successful terminal result after reload');
+    assert.equal(providerCalls, 4, 'successful reload recovery is read-only');
   } finally {
     try {
       socket?.close();

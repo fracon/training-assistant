@@ -1,6 +1,7 @@
 'use strict';
 
 const { AiError } = require('./memory');
+const { incompatibleRpe } = require('./cycle-plan-rpe');
 
 const evidence = { type: 'string', minLength: 1, maxLength: 180 };
 const claim = {
@@ -58,18 +59,10 @@ const schema = {
 };
 
 const TECHNICAL = /(?:\b[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b|\b(?:training|cycle|shoe|availability|profile|preferences|cycle_plan|interpretation):[^\s,;]+)/i;
-const INVALID_RPE = /\bRPE\s*(?:of\s*|de\s*)?(\d+)(?:\s*\/\s*(\d+))?/gi;
 function exactObject(value, keys) {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value) &&
     Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key)));
 }
-function hasInvalidRpe(text) {
-  for (const match of String(text).matchAll(INVALID_RPE)) {
-    if (Number(match[1]) < 1 || Number(match[1]) > 5 || (match[2] && Number(match[2]) !== 5)) return true;
-  }
-  return false;
-}
-
 function diagnoseAnalysis(value, context) {
   if (!exactObject(value, ['schemaVersion','language','summary','comparison','contextualReading','attention','recommendations','classification','limitations','reusableInterpretations']))
     return { code: 'shape_type', path: '$' };
@@ -79,7 +72,7 @@ function diagnoseAnalysis(value, context) {
     if (!item || typeof item.text !== 'string' || item.text.trim() === '' || item.text.length > 800)
       return { code: 'analysis_text', path: `${path}.text` };
     if (TECHNICAL.test(item.text)) return { code: 'analysis_technical_reference', path: `${path}.text` };
-    if (hasInvalidRpe(item.text)) return { code: 'analysis_rpe_scale', path: `${path}.text` };
+    if (incompatibleRpe(item.text)) return { code: 'analysis_rpe_scale', path: `${path}.text` };
     if (!Array.isArray(item.evidence) || item.evidence.length > 8)
       return { code: 'analysis_evidence', path: `${path}.evidence` };
     for (let i = 0; i < item.evidence.length; i++) {
@@ -105,15 +98,20 @@ function diagnoseAnalysis(value, context) {
     return { code: 'analysis_classification', path: '$.classification.value' };
   if (!Array.isArray(value.classification.evidence) || value.classification.evidence.length > 8 || value.classification.evidence.some((ref) => !allowed.has(ref)))
     return { code: 'analysis_evidence', path: '$.classification.evidence' };
-  if (!Array.isArray(value.limitations) || value.limitations.length > 6 || value.limitations.some((text) => typeof text !== 'string' || text.length > 400 || TECHNICAL.test(text) || hasInvalidRpe(text)))
-    return { code: 'analysis_shape', path: '$.limitations' };
+  if (!Array.isArray(value.limitations) || value.limitations.length > 6) return { code: 'analysis_shape', path: '$.limitations' };
+  for (let i = 0; i < value.limitations.length; i++) {
+    const text = value.limitations[i];
+    if (typeof text !== 'string' || text.length > 400 || TECHNICAL.test(text)) return { code: 'analysis_shape', path: `$.limitations[${i}]` };
+    if (incompatibleRpe(text)) return { code: 'analysis_rpe_scale', path: `$.limitations[${i}]` };
+  }
   if (!Array.isArray(value.reusableInterpretations) || value.reusableInterpretations.length > 5)
     return { code: 'analysis_shape', path: '$.reusableInterpretations' };
   for (let i = 0; i < value.reusableInterpretations.length; i++) {
     const item = value.reusableInterpretations[i];
     if (!exactObject(item, ['kind','text','evidence'])) return { code: 'analysis_shape', path: `$.reusableInterpretations[${i}]` };
     if (!['pattern', 'recommendation', 'attention'].includes(item?.kind)) return { code: 'analysis_interpretation', path: `$.reusableInterpretations[${i}].kind` };
-    if (typeof item.text !== 'string' || !item.text.trim() || item.text.length > 400 || TECHNICAL.test(item.text) || hasInvalidRpe(item.text)) return { code: 'analysis_text', path: `$.reusableInterpretations[${i}].text` };
+    if (typeof item.text !== 'string' || !item.text.trim() || item.text.length > 400 || TECHNICAL.test(item.text)) return { code: 'analysis_text', path: `$.reusableInterpretations[${i}].text` };
+    if (incompatibleRpe(item.text)) return { code: 'analysis_rpe_scale', path: `$.reusableInterpretations[${i}].text` };
     if (!Array.isArray(item.evidence) || !item.evidence.length || item.evidence.length > 5 || item.evidence.some((ref) => !allowed.has(ref))) return { code: 'analysis_evidence', path: `$.reusableInterpretations[${i}].evidence` };
   }
   return null;

@@ -182,12 +182,14 @@ test('changePassword PUTs the payload and attaches server error codes', async ()
 test('requestJson leaves no codes when the server reports none', async () => {
   stubFetchOnce(async () => ({
     ok: false,
+    status: 429,
     json: async () => ({ error: 'Generic failure.' }),
   }));
 
   await assert.rejects(changePassword({}), (error) => {
     assert.equal(error.message, 'Generic failure.');
     assert.equal(error.codes, undefined);
+    assert.equal(error.status, 429, 'known HTTP refusals retain their status for free recovery UX');
     return true;
   });
 });

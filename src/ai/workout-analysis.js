@@ -2,6 +2,19 @@
 
 const { AiError, activeOwner, exactKeys, hash } = require('./memory');
 const { contextIsCurrent } = require('./context');
+const { incompatibleRpe } = require('./cycle-plan-rpe');
+
+function presentInterpretation(row) {
+  return {
+    id: row.id,
+    kind: row.kind,
+    text: row.text,
+    disposition: row.disposition,
+    correction: row.correction_text ?? null,
+    version: row.version,
+    updatedAt: row.updated_at,
+  };
+}
 
 function readWorkoutAnalyses(db, userId, trainingId, config) {
   activeOwner(db, userId);
@@ -33,15 +46,8 @@ function readWorkoutAnalyses(db, userId, trainingId, config) {
         classification: { value: response.classification.value },
         limitations: response.limitations,
       } : null,
-      interpretations: items.map((item) => ({
-        id: item.id,
-        kind: item.kind,
-        text: item.text,
-        disposition: item.disposition,
-        correction: item.correction_text,
-        version: item.version,
-        updatedAt: item.updated_at,
-      })),
+      interpretations: items.map(presentInterpretation),
+      errorCode: publicAnalysisError(row.error_code),
     };
   });
   return {
@@ -51,27 +57,46 @@ function readWorkoutAnalyses(db, userId, trainingId, config) {
   };
 }
 
+const PUBLIC_ANALYSIS_ERRORS = new Set([
+  'aiUnavailable', 'accountUnavailable', 'executionLimit', 'usageLimit',
+  'providerRateLimited', 'providerRejected', 'providerOutcomeUncertain', 'providerTimeout', 'providerOutputLimit',
+  'providerIncomplete', 'providerInvalidResponse', 'providerRefused',
+  'providerContentFiltered', 'providerFailed', 'sourceChanged',
+  'contextTooLarge', 'criticalContextTooLarge', 'inputTooLarge',
+  'analysisRequiresCompletedResult', 'adapterUnavailable', 'reservationExpired',
+  'restartOutcomeUncertain', 'resultPersistenceFailed',
+]);
+function publicAnalysisError(code) {
+  if (code === 'invalidDomainResponse') return 'invalidDomainResponse';
+  return PUBLIC_ANALYSIS_ERRORS.has(code) ? code : null;
+}
+
 function changeInterpretation(db, userId, id, action, body, now = () => new Date().toISOString()) {
+  if (!['confirm', 'correct', 'discard'].includes(action)) throw new AiError('invalidFields');
   exactKeys(body, action === 'correct' ? ['expected_version', 'text'] : ['expected_version']);
   if (!Number.isSafeInteger(body.expected_version) || body.expected_version < 1)
     throw new AiError('invalidVersion');
   if (action === 'correct' && (typeof body.text !== 'string' || body.text.trim().length < 1 || body.text.trim().length > 400))
     throw new AiError('invalidText');
+  if (action === 'correct' && incompatibleRpe(body.text))
+    throw new AiError('incompatibleRpeScale');
   return db.transaction(() => {
     activeOwner(db, userId);
     const row = db.prepare('SELECT * FROM ai_interpretations WHERE id=? AND user_id=?').get(id, userId);
     if (!row) throw new AiError('resourceNotFound', 404);
     if (row.version !== body.expected_version) throw new AiError('interpretationConflict', 409);
     if (row.disposition === 'dismissed' || row.disposition === 'superseded')
-      throw new AiError('interpretationUnavailable', 409);
+      throw new AiError('interpretationConflict', 409);
+    if (action === 'confirm' && row.disposition !== 'pending')
+      throw new AiError('interpretationConflict', 409);
     const disposition = action === 'confirm' ? 'confirmed' : action === 'correct' ? 'corrected' : 'dismissed';
     const correction = action === 'correct' ? body.text.trim() : row.correction_text;
     db.prepare(`UPDATE ai_interpretations SET disposition=?,correction_text=?,version=version+1,updated_at=?
       WHERE id=? AND user_id=? AND version=?`).run(disposition, correction, now(), id, userId, body.expected_version);
-    const updated = db.prepare(`SELECT id,kind,text,evidence_json,disposition,correction_text,version,updated_at
+    const updated = db.prepare(`SELECT id,kind,text,disposition,correction_text,version,updated_at
       FROM ai_interpretations WHERE id=? AND user_id=?`).get(id, userId);
-    return { interpretation: { ...updated, evidence: JSON.parse(updated.evidence_json).map(({ type, id: sourceId }) => `${type}:${sourceId}`) } };
+    return { interpretation: presentInterpretation(updated) };
   }).immediate();
 }
 
-module.exports = { readWorkoutAnalyses, changeInterpretation };
+module.exports = { readWorkoutAnalyses, changeInterpretation, presentInterpretation };

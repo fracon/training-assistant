@@ -392,6 +392,7 @@ body {
 .workout-analysis { display: flex; flex-direction: column; gap: 16px; }
 .analysis-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .analysis-header h2 { margin: 0; font-size: 1.2rem; }
+#analysisReadAgain[hidden] { display: none; }
 .analysis-state { color: var(--accent-deep); font-weight: 600; }
 .analysis-notice { margin: 0; color: var(--danger, #9b3e36); line-height: 1.5; }
 .analysis-version { display: flex; flex-direction: column; gap: 16px; }

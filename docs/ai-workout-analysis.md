@@ -18,7 +18,8 @@ result, feedback, calendar entry, or shoe mileage.
 
 The page uses the existing persisted `ai_executions`, client, worker, reservation,
 quotas, retries, cancellation/recovery and protected diagnostics. The
-`workout-analysis-v1` adapter and strict response schema validate the response
+`workout-analysis-v2` delivery adapter and strict `workout-analysis-v1`
+response schema validate the response
 before it is stored. It distinguishes planned values, recorded facts, user
 reports, prior interpretations, evidence, recommendations and limitations.
 RPE is the explicit 1–5 scale; observed heart rate is never converted into a
@@ -43,7 +44,13 @@ superseded.
 
 - `GET /api/trainings/:id/analyses` returns only the authenticated owner's
   analyses for that training, current freshness, presentation text, and the
-  persisted interpretation states. Missing or foreign sessions return 404.
+  persisted interpretation states. Interpretation reads and all three mutation
+  responses use the same explicit projection (`id`, `kind`, `text`,
+  `disposition`, nullable `correction`, `version`, and `updatedAt`). They never
+  spread database rows or expose evidence JSON, hashes, or internal references.
+  A terminal analysis version may include one allowlisted public `errorCode`;
+  provider messages, validation paths and execution diagnostics remain in the
+  owner-scoped admin debug response. Missing or foreign sessions return 404.
 - `POST /api/ai/executions` with `purpose: analysis`, the session ID as
   `resource_id`, and an idempotency key creates/reuses the standard execution.
   A second active execution for the same owner and training reuses the existing
@@ -53,8 +60,11 @@ superseded.
   debug remains separately owner-scoped.
 - `POST /api/ai/interpretations/:id/{confirm,correct,discard}` applies an
   optimistic `expected_version`. Correction accepts bounded user text. Discarded
-  and superseded items cannot be revived by an old analysis. These actions are
-  local writes and do not call a provider.
+  and superseded items cannot be revived by an old analysis. `confirm` is only
+  valid from `pending`; correcting a `corrected` item cannot be undone by
+  confirming its original model text. Corrections remain the authoritative
+  future-context text. Version conflicts and invalid transitions return 409.
+  These actions are local writes and do not call a provider.
 - `POST /api/ai/admin/preview` can return the external analysis prompt only to
   an administrator whose current database role is `admin`, for a training the
   admin owns. Preview is free and the prompt action is created only in the admin
@@ -74,28 +84,51 @@ fingerprint; incompatible RPE guidance is excluded by the established cycle-plan
 contract. Interpretations enter later cycle/week/analysis contexts only while
 all recorded evidence source versions are still selected and current.
 
-`training-analysis-context-v1` and `workout-analysis-v1` version the analysis
-policy and delivery. Analysis versions store the execution ID, owner, training,
+`training-analysis-context-v1`, the `workout-analysis-v2` delivery adapter,
+and the structured `workout-analysis-v1` response version the analysis policy
+and delivery. RPE text validation reuses the shared bounded Kinesis scale guard:
+only values explicitly associated with an RPE/effort-scale label are checked;
+the guard accepts the 1–5 scale and rejects incompatible numerators or
+denominators across supported PT/EN forms. It does not rewrite prose, infer
+scale from unrelated numbers, or claim to interpret all natural language.
+Analysis versions store the execution ID, owner, training,
 context snapshot, adapter version, sequence, language, response, terminal state
 and safe error code. The response keeps structured evidence in protected
 storage; ordinary presentation suppresses IDs. Historical context snapshots
 are never silently reinterpreted under a newer adapter. A new explicit analysis
 creates a new sequence and retains prior versions.
 
-Reusable interpretation records have a source-linked evidence fingerprint,
-version, disposition (`pending`, `confirmed`, `corrected`, `dismissed`, or
-`superseded`) and timestamps. A new analysis with the same evidence can reuse an
-identical interpretation; a different interpretation for that evidence
-supersedes an earlier pending/confirmed item. User corrections are stored
-separately from model text. This is the minimum decision workflow, not general
-memory CRUD. Dismissal is durable and never silently becomes current again.
+Reusable interpretation records have separate source-version evidence and
+exact-content fingerprints, version, disposition (`pending`, `confirmed`,
+`corrected`, `dismissed`, or `superseded`) and timestamps. Content identity is
+the exact `(kind, text)` string paired with the evidence-version identity; no
+semantic equivalence between different prose is claimed. Distinct texts with
+the same kind and evidence from one response remain separate. An exact later
+repeat is ignored without reactivating or changing its existing disposition.
+When a later analysis inserts a different item for the same kind and underlying
+evidence, earlier `pending`/`confirmed` items from other analyses are explicitly
+marked `superseded` and linked through replacement history. Siblings from the
+same response never replace one another; `corrected` and `dismissed` decisions
+are preserved. The link keeps a protected snapshot of the replaced item so the
+new analysis's freshness check can reproduce its input exactly; later contexts
+select only the effective current items. User corrections are stored separately
+from model text. This is the minimum decision workflow, not general memory CRUD.
+Dismissal is durable and never silently becomes current again.
 
 ## Persistence and migration
 
 Idempotent migration `2026-10-workout-analysis-v1` adds
-`workout_analysis_versions` and `ai_interpretations`, with owner/training and
-analysis foreign keys, uniqueness for per-training sequence and evidence
-identity, and indexes for bounded owner reads. It preserves all existing
+`workout_analysis_versions` and the initial `ai_interpretations` table.
+Incremental migration `2026-10-workout-interpretation-identity-v2` rebuilds that
+table with exact-content identity and adds owner-scoped
+`ai_interpretation_replacements` history. It preserves existing IDs, original
+text, correction text, evidence snapshots, dispositions, versions, timestamps,
+and analysis links while deriving content hashes for existing rows. Both
+migrations are safe to rerun and the v2 migration upgrades databases that
+already ran v1; it does not rewrite historical workout or analysis responses.
+The tables keep owner/training and analysis foreign keys, uniqueness for
+per-training sequence and interpretation identity, and indexes for bounded
+owner reads. It preserves all existing
 training, result, cycle, AI execution and legacy `ai_memory` records. The
 legacy `ai_memory` archive remains readable only through its existing admin
 contract and is not enabled as current context. Re-running initialization does
@@ -105,6 +138,16 @@ Analysis completion hooks run inside the existing execution settlement
 transaction. Invalid output does not persist a partial analysis or any
 interpretations. Source freshness, active account and ownership are rechecked by
 the shared execution lifecycle. Analysis reads and decisions are account scoped.
+RPE rejection records only the allowlisted diagnostic code and JSON path for
+administrator debugging; no failed response or interpretation is partially
+persisted.
+
+When a generation POST is rejected before an execution is created, the page
+shows its known localized reason. If the POST response is lost, the same stored
+idempotency key is reconciled against execution history, including already
+terminal executions; terminal analysis results/errors are loaded immediately.
+If reconciliation itself cannot be read, generation stays blocked until a free
+read clarifies the outcome. No recovery read starts or replays a provider call.
 
 ## Privacy, cost, and errors
 

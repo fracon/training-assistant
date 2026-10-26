@@ -11,7 +11,7 @@ const { schema, diagnoseAnalysis, validateAnalysis, requireAnalysisSourcesCurren
 const { createExecutionService } = require('../src/ai/executions');
 const { readWorkoutAnalyses, changeInterpretation } = require('../src/ai/workout-analysis');
 const { memoryOverview } = require('../src/ai/overview');
-const { migrateWorkoutAnalysis } = require('../src/ai/schema');
+const { migrateWorkoutAnalysis, migrateWorkoutInterpretationIdentity } = require('../src/ai/schema');
 const { renderPrompt } = require('../src/ai/prompt-service');
 const { readFileSync } = require('node:fs');
 const { setTimeout: delay } = require('node:timers/promises');
@@ -83,6 +83,17 @@ test('analysis response contract rejects unsupported fields, technical reference
   assert.equal(diagnoseAnalysis({ ...good, language: 'fr' }, context).path, '$.language');
   assert.equal(diagnoseAnalysis({ ...good, summary: { ...good.summary, text: 'RPE 8/10', evidence: good.summary.evidence } }, context).code, 'analysis_rpe_scale');
   assert.equal(diagnoseAnalysis({ ...good, summary: { ...good.summary, text: 'RPE 4/10', evidence: good.summary.evidence } }, context).code, 'analysis_rpe_scale');
+  for (const text of ['RPE: 8/10', 'RPE 3–4/10', 'RPE 8/10', 'Esforço percebido 4/10', 'Perceived effort: 2-3/10']) {
+    const diagnostic = diagnoseAnalysis({ ...good, summary: { ...good.summary, text, evidence: good.summary.evidence } }, context);
+    assert.equal(diagnostic.code, 'analysis_rpe_scale', `${text} must use Kinesis 1–5 scale`);
+    assert.equal(diagnostic.path, '$.summary.text');
+  }
+  for (const text of ['RPE: 1–5', 'RPE 3–4/5', 'RPE 2/5', '5 km in 30 min']) {
+    assert.equal(diagnoseAnalysis({ ...good, summary: { ...good.summary, text, evidence: good.summary.evidence } }, context), null, `${text} remains valid`);
+  }
+  assert.equal(diagnoseAnalysis({ ...good, limitations: ['RPE 8/10'] }, context).path, '$.limitations[0]');
+  assert.equal(diagnoseAnalysis({ ...good, limitations: Array(7).fill('Limitação informada') }, context).path, '$.limitations');
+  assert.equal(diagnoseAnalysis({ ...good, reusableInterpretations: [{ ...good.reusableInterpretations[0], text: 'RPE 3–4/10' }] }, context).path, '$.reusableInterpretations[0].text');
   assert.equal(diagnoseAnalysis({ ...good, summary: { text: 'Conta training:999 para ver', evidence: refs(context) } }, context).code, 'analysis_technical_reference');
   assert.equal(diagnoseAnalysis({ ...good, summary: { text: 'Uma conclusão', evidence: ['training:999'] } }, context).path, '$.summary.evidence[0]');
   assert.equal(diagnoseAnalysis({ ...good, summary: { text: 'Uma conclusão', evidence: 'training:101' } }, context).path, '$.summary.evidence');
@@ -166,7 +177,11 @@ test('analysis execution persists after canonical save, validates before storing
       providerCalls += 1;
       const input = JSON.parse(payload.input[0].content[0].text);
       assert.equal(input.context.resource.report.feedback_rpe, 3, 'provider sees the persisted canonical feedback');
-      if (invalidNext) return { value: result(input.context, 'RPE 8/10'), usage: { input: 500, output: 100, cached: 0 }, error: null };
+      if (invalidNext) {
+        const invalid = result(input.context);
+        invalid.reusableInterpretations[0].text = 'RPE 3–4/10';
+        return { value: invalid, usage: { input: 500, output: 100, cached: 0 }, error: null };
+      }
       return { value: result(input.context), usage: { input: 700, output: 240, cached: 0 }, error: null };
     },
   });
@@ -191,6 +206,7 @@ test('analysis execution persists after canonical save, validates before storing
   const weekContext = buildContext(f.db, 1, { purpose: 'workouts', taskDate: '2026-10-26', asOf: '2026-10-26', config: f.config });
   assert.equal(weekContext.interpretations[0].authority, 'ai_interpretation', 'current interpretations continue into weekly context');
   const item = recovered.latest.interpretations[0];
+  for (const key of ['evidence_json', 'evidence', 'evidence_key', 'evidence_hash', 'content_hash']) assert.equal(Object.hasOwn(item, key), false, `read projection excludes ${key}`);
   const originalEvidence = f.db.prepare('SELECT evidence_json FROM ai_interpretations WHERE id=?').get(item.id).evidence_json;
   f.db.prepare('UPDATE ai_interpretations SET evidence_json=? WHERE id=?').run(JSON.stringify([{ type: 'training', id: '999', version: 'stale' }]), item.id);
   assert.equal(buildContext(f.db, 1, { purpose: 'cycle', resourceId: 'cycle-a', asOf: '2026-10-26', config: f.config }).interpretations?.length || 0, 0, 'an interpretation whose source version is stale is omitted');
@@ -199,9 +215,13 @@ test('analysis execution persists after canonical save, validates before storing
   f.db.prepare("UPDATE ai_interpretations SET disposition='pending',correction_text=NULL WHERE id=?").run(item.id);
   const confirmed = changeInterpretation(f.db, 1, item.id, 'confirm', { expected_version: item.version }, () => '2026-10-26T13:00:00.000Z');
   assert.equal(confirmed.interpretation.disposition, 'confirmed');
+  assert.equal(Object.hasOwn(confirmed.interpretation, 'evidence_json'), false);
+  assert.equal(confirmed.interpretation.correction, null);
   assert.equal(buildContext(f.db, 1, { purpose: 'cycle', resourceId: 'cycle-a', asOf: '2026-10-26', config: f.config }).interpretations[0].disposition, 'confirmed');
   assert.throws(() => changeInterpretation(f.db, 1, item.id, 'discard', { expected_version: item.version }), (e) => e.code === 'interpretationConflict');
   const corrected = changeInterpretation(f.db, 1, item.id, 'correct', { expected_version: confirmed.interpretation.version, text: 'A pessoa relata esforço estável.' }, () => '2026-10-26T14:00:00.000Z');
+  assert.throws(() => changeInterpretation(f.db, 1, item.id, 'confirm', { expected_version: corrected.interpretation.version }), (e) => e.code === 'interpretationConflict', 'a correction cannot be confirmed back to the original model text');
+  assert.equal(buildContext(f.db, 1, { purpose: 'cycle', resourceId: 'cycle-a', asOf: '2026-10-26', config: f.config }).interpretations[0].text, 'A pessoa relata esforço estável.');
   const correctedContext = buildContext(f.db, 1, { purpose: 'cycle', resourceId: 'cycle-a', asOf: '2026-10-26', config: f.config }).interpretations[0];
   assert.equal(correctedContext.authority, 'user_report');
   assert.equal(correctedContext.text, 'A pessoa relata esforço estável.');
@@ -219,10 +239,11 @@ test('analysis execution persists after canonical save, validates before storing
   assert.equal(readWorkoutAnalyses(f.db, 1, '101', f.config).latest.id, queued.id, 'a failed newer analysis preserves the previous result');
   assert.throws(() => readWorkoutAnalyses(f.db, 2, '101', f.config), (error) => error.code === 'resourceNotFound');
   assert.throws(() => changeInterpretation(f.db, 2, item.id, 'confirm', { expected_version: item.version }), (e) => e.code === 'resourceNotFound');
+  assert.throws(() => changeInterpretation(f.db, 1, item.id, 'restore', { expected_version: item.version }), (e) => e.code === 'invalidFields');
   assert.throws(() => changeInterpretation(f.db, 1, item.id, 'confirm', { expected_version: 0 }), (e) => e.code === 'invalidVersion');
   assert.throws(() => changeInterpretation(f.db, 1, item.id, 'correct', { expected_version: item.version, text: '  ' }), (e) => e.code === 'invalidText');
   const dismissedVersion = f.db.prepare('SELECT version FROM ai_interpretations WHERE id=?').get(item.id).version;
-  assert.throws(() => changeInterpretation(f.db, 1, item.id, 'confirm', { expected_version: dismissedVersion }), (e) => e.code === 'interpretationUnavailable', 'dismissed interpretations cannot be resurrected');
+  assert.throws(() => changeInterpretation(f.db, 1, item.id, 'confirm', { expected_version: dismissedVersion }), (e) => e.code === 'interpretationConflict', 'dismissed interpretations cannot be resurrected');
   f.db.prepare('UPDATE trainings SET feedback_notas=? WHERE id=101').run('Updated source');
   assert.equal(readWorkoutAnalyses(f.db, 1, '101', f.config).latest.outdated, true);
   assert.equal(providerCalls, 2, 'reads and disposition changes never call the model');
@@ -280,13 +301,13 @@ test('context reports reusable interpretations omitted at the optional evidence 
   const base = buildContext(f.db, 1, { purpose: 'cycle', resourceId: 'cycle-a', asOf: '2026-10-26', config: f.config });
   const evidence = JSON.stringify([{ type: 'training', id: '101', version: base.sources.find((ref) => ref.type === 'training' && ref.id === '101').version }]);
   const insert = f.db.prepare(`INSERT INTO ai_interpretations
-    (id,user_id,training_id,analysis_id,kind,text,evidence_json,evidence_key,evidence_hash,disposition,created_at,updated_at)
-    VALUES (?,?,?,?,?,?,?,?,?,'pending',?,?)`);
+    (id,user_id,training_id,analysis_id,kind,text,evidence_json,evidence_key,evidence_hash,content_hash,disposition,created_at,updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,'pending',?,?)`);
   for (let index = 0; index < 24; index += 1) {
     const text = `Synthetic recurring interpretation ${index}: ` + 'steady effort '.repeat(24);
     const id = `interpretation-${index}`;
     const hash = `evidence-${index}`;
-    insert.run(id, 1, 101, 'prior-analysis', 'pattern', text, evidence, evidence, hash, `2026-10-26T00:${String(index).padStart(2, '0')}:00.000Z`, `2026-10-26T00:${String(index).padStart(2, '0')}:00.000Z`);
+    insert.run(id, 1, 101, 'prior-analysis', 'pattern', text, evidence, evidence, hash, `content-${index}`, `2026-10-26T00:${String(index).padStart(2, '0')}:00.000Z`, `2026-10-26T00:${String(index).padStart(2, '0')}:00.000Z`);
   }
   let omitted = false;
   for (let budget = 1500; budget <= 12000 && !omitted; budget += 100) {
@@ -310,7 +331,9 @@ test('invalid model output retains sanitized validation diagnostics and does not
     now: () => '2026-10-26T12:00:00.000Z',
     client: async (payload) => {
       const context = JSON.parse(payload.input[0].content[0].text).context;
-      return { value: result(context, 'RPE 8/10'), usage: { input: 100, output: 40, cached: 0 }, error: null };
+      const value = result(context);
+      value.reusableInterpretations[0].text = 'RPE 3–4/10';
+      return { value, usage: { input: 100, output: 40, cached: 0 }, error: null };
     },
   });
   const queued = service.enqueue(1, { purpose: 'analysis', resource_id: '101', idempotency_key: 'analysis-invalid-01' });
@@ -320,7 +343,7 @@ test('invalid model output retains sanitized validation diagnostics and does not
   assert.equal(f.db.prepare('SELECT response_json FROM workout_analysis_versions WHERE id=?').get(queued.id).response_json, null);
   const diagnostic = JSON.parse(f.db.prepare('SELECT diagnostics_json FROM ai_executions WHERE id=?').get(queued.id).diagnostics_json).at(-1);
   assert.equal(diagnostic.validation.code, 'analysis_rpe_scale');
-  assert.equal(diagnostic.validation.path, '$.summary.text');
+  assert.equal(diagnostic.validation.path, '$.reusableInterpretations[0].text');
   const debug = service.get(1, queued.id);
   assert.equal(debug.response, null);
   assert.equal(readWorkoutAnalyses(f.db, 1, '101', f.config).latest, null);
@@ -328,15 +351,132 @@ test('invalid model output retains sanitized validation diagnostics and does not
   f.db.close();
 });
 
+test('interpretation identity retains sibling conclusions, exact repeats, replacement history, and the freshness snapshot', async () => {
+  const f = fixture();
+  let call = 0;
+  const outputs = [
+    [
+      { kind: 'pattern', text: 'A conclusão inicial descreve estabilidade.', evidence: ['training:101'] },
+      { kind: 'pattern', text: 'Outra leitura da mesma sessão aponta variação.', evidence: ['training:101'] },
+      { kind: 'pattern', text: 'Uma terceira leitura ainda é distinta.', evidence: ['training:101'] },
+    ],
+    [{ kind: 'pattern', text: 'A análise revisada identifica variação maior.', evidence: ['training:101'] }],
+    [{ kind: 'pattern', text: 'A análise revisada identifica variação maior.', evidence: ['training:101'] }],
+    [{ kind: 'pattern', text: 'Uma nova revisão descreve progresso consistente.', evidence: ['training:101'] }],
+  ];
+  const service = createExecutionService({
+    db: f.db, config: f.config, operations: { analysis: createWorkoutAnalysisAdapter(f.db) },
+    now: () => '2026-10-26T12:00:00.000Z',
+    client: async (payload) => {
+      const context = JSON.parse(payload.input[0].content[0].text).context;
+      const value = result(context);
+      value.reusableInterpretations = outputs[call++];
+      return { value, usage: { input: 500, output: 150, cached: 0 }, error: null };
+    },
+  });
+  const run = async (key) => {
+    const queued = service.enqueue(1, { purpose: 'analysis', resource_id: '101', idempotency_key: key });
+    return { queued, done: await waitFor(service, queued.id) };
+  };
+  const first = await run('identity-first-01');
+  assert.equal(first.done.state, 'completed');
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM ai_interpretations').get().n, 3, 'same evidence does not collapse distinct texts from one answer');
+  const originals = f.db.prepare("SELECT * FROM ai_interpretations WHERE analysis_id=? ORDER BY id").all(first.queued.id);
+  changeInterpretation(f.db, 1, originals[1].id, 'correct', { expected_version: 1, text: 'Relato corrigido pelo usuário.' });
+  changeInterpretation(f.db, 1, originals[2].id, 'discard', { expected_version: 1 });
+  const second = await run('identity-second-02');
+  assert.equal(second.done.state, 'completed');
+  const revised = f.db.prepare('SELECT * FROM ai_interpretations WHERE analysis_id=?').get(second.queued.id);
+  assert.ok(revised);
+  assert.equal(f.db.prepare('SELECT disposition FROM ai_interpretations WHERE id=?').get(originals[0].id).disposition, 'superseded');
+  const supersededVersion = f.db.prepare('SELECT version FROM ai_interpretations WHERE id=?').get(originals[0].id).version;
+  assert.throws(() => changeInterpretation(f.db, 1, originals[0].id, 'confirm', { expected_version: supersededVersion }), (error) => error.code === 'interpretationConflict');
+  assert.equal(f.db.prepare('SELECT disposition FROM ai_interpretations WHERE id=?').get(originals[1].id).disposition, 'corrected');
+  assert.equal(f.db.prepare('SELECT disposition FROM ai_interpretations WHERE id=?').get(originals[2].id).disposition, 'dismissed');
+  assert.equal(readWorkoutAnalyses(f.db, 1, '101', f.config).latest.outdated, false, 'the replacement output does not stale itself after replacing consumed context');
+  f.db.prepare("UPDATE ai_interpretations SET disposition='confirmed',version=version+1 WHERE id=?").run(revised.id);
+  const third = await run('identity-third-03');
+  assert.equal(third.done.state, 'completed');
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM ai_interpretations').get().n, 4, 'an exact later repeat is not duplicated');
+  assert.equal(f.db.prepare('SELECT disposition FROM ai_interpretations WHERE id=?').get(revised.id).disposition, 'confirmed', 'an exact repeat does not reactivate or reset a user decision');
+  const fourth = await run('identity-fourth-04');
+  assert.equal(fourth.done.state, 'completed');
+  assert.equal(f.db.prepare('SELECT disposition FROM ai_interpretations WHERE id=?').get(revised.id).disposition, 'superseded');
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM ai_interpretation_replacements').get().n, 2);
+  assert.equal(readWorkoutAnalyses(f.db, 1, '101', f.config).latest.outdated, false);
+  const context = buildContext(f.db, 1, { purpose: 'cycle', resourceId: 'cycle-a', asOf: '2026-10-26', config: f.config });
+  assert.ok(context.interpretations.some((item) => item.text === 'Relato corrigido pelo usuário.'));
+  assert.ok(context.interpretations.some((item) => item.text === 'Uma nova revisão descreve progresso consistente.'));
+  assert.equal(context.interpretations.some((item) => item.text === 'Uma terceira leitura ainda é distinta.'), false);
+  assert.equal(providerCallCount(), 4);
+  await service.stop();
+  f.db.close();
+  function providerCallCount() { return call; }
+});
+
 test('analysis history migration is idempotent and preserves an existing pre-analysis training and legacy memory archive', () => {
   const { db } = fixture();
   db.prepare("INSERT INTO ai_memory(id,user_id,kind,authority,text,observed_on,state,source_json,updated_at) VALUES ('legacy-ai',1,'interpretation','ai_interpretation','archived','2026-01-01','unconfirmed','{}','2026-01-01')").run();
   db.prepare("DELETE FROM schema_migrations WHERE name='2026-10-workout-analysis-v1'").run();
+  db.prepare("DELETE FROM schema_migrations WHERE name='2026-10-workout-interpretation-identity-v2'").run();
+  db.exec('DROP TABLE ai_interpretation_replacements;');
   db.exec('DROP TABLE ai_interpretations; DROP TABLE workout_analysis_versions;');
   migrateWorkoutAnalysis(db);
+  migrateWorkoutInterpretationIdentity(db);
   migrateWorkoutAnalysis(db);
+  migrateWorkoutInterpretationIdentity(db);
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM trainings WHERE id=101').get().n, 1);
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM ai_memory WHERE id='legacy-ai'").get().n, 1);
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM schema_migrations WHERE name='2026-10-workout-analysis-v1'").get().n, 1);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM schema_migrations WHERE name='2026-10-workout-interpretation-identity-v2'").get().n, 1);
+  db.close();
+});
+
+test('interpretation identity migration upgrades an already deployed v1 table without losing history', () => {
+  const { db } = fixture();
+  db.prepare(`INSERT INTO workout_analysis_versions(id,user_id,training_id,sequence,adapter_version,context_json,state,language,created_at)
+    VALUES ('v1-existing',1,101,1,'workout-analysis-v1','{}','completed','en-US','2026-10-25T10:00:00.000Z')`).run();
+  db.prepare(`INSERT INTO ai_interpretations
+    (id,user_id,training_id,analysis_id,kind,text,evidence_json,evidence_key,evidence_hash,content_hash,disposition,correction_text,version,created_at,updated_at)
+    VALUES ('v1-item',1,101,'v1-existing','pattern','preserved text','[]','[]','old-evidence','existing-content-hash','corrected','saved user correction',4,'2026-10-25T10:00:00.000Z','2026-10-26T10:00:00.000Z')`).run();
+  // Recreate the exact v1 table shape and marker: this models a database that
+  // already ran the PR's first analysis migration before receiving this patch.
+  db.exec(`DROP TABLE ai_interpretation_replacements;
+    ALTER TABLE ai_interpretations RENAME TO ai_interpretations_v2_test;
+    CREATE TABLE ai_interpretations (
+      id TEXT PRIMARY KEY,user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      training_id INTEGER NOT NULL REFERENCES trainings(id) ON DELETE CASCADE,
+      analysis_id TEXT NOT NULL REFERENCES workout_analysis_versions(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL CHECK(kind IN ('pattern','recommendation','attention')),
+      text TEXT NOT NULL,evidence_json TEXT NOT NULL,evidence_key TEXT NOT NULL,evidence_hash TEXT NOT NULL,
+      disposition TEXT NOT NULL CHECK(disposition IN ('pending','confirmed','corrected','dismissed','superseded')),
+      correction_text TEXT,version INTEGER NOT NULL DEFAULT 1 CHECK(version>0),created_at TEXT NOT NULL,updated_at TEXT NOT NULL,
+      UNIQUE(user_id,kind,evidence_hash));
+    INSERT INTO ai_interpretations(id,user_id,training_id,analysis_id,kind,text,evidence_json,evidence_key,evidence_hash,disposition,correction_text,version,created_at,updated_at)
+      SELECT id,user_id,training_id,analysis_id,kind,text,evidence_json,evidence_key,evidence_hash,disposition,correction_text,version,created_at,updated_at FROM ai_interpretations_v2_test;
+    DROP TABLE ai_interpretations_v2_test;
+    DELETE FROM schema_migrations WHERE name='2026-10-workout-interpretation-identity-v2';`);
+  migrateWorkoutInterpretationIdentity(db);
+  migrateWorkoutInterpretationIdentity(db);
+  const saved = db.prepare('SELECT * FROM ai_interpretations WHERE id=?').get('v1-item');
+  assert.equal(saved.text, 'preserved text');
+  assert.equal(saved.correction_text, 'saved user correction');
+  assert.equal(saved.disposition, 'corrected');
+  assert.equal(saved.version, 4);
+  assert.match(saved.content_hash, /^[a-f0-9]{64}$/);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM ai_interpretation_replacements').get().n, 0);
+  db.close();
+});
+
+test('interpretation identity migration is safe when its table exists without the marker and refuses a missing v1 table', () => {
+  const { db } = fixture();
+  db.prepare("DELETE FROM schema_migrations WHERE name='2026-10-workout-interpretation-identity-v2'").run();
+  db.exec('DROP TABLE ai_interpretation_replacements;');
+  migrateWorkoutInterpretationIdentity(db);
+  assert.ok(db.pragma('table_info(ai_interpretations)').some((column) => column.name === 'content_hash'));
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM schema_migrations WHERE name='2026-10-workout-interpretation-identity-v2'").get().n, 1);
+  db.exec('DROP TABLE ai_interpretation_replacements; DROP TABLE ai_interpretations;');
+  db.prepare("DELETE FROM schema_migrations WHERE name='2026-10-workout-interpretation-identity-v2'").run();
+  assert.throws(() => migrateWorkoutInterpretationIdentity(db), /workout-analysis-v1 must be installed first/);
   db.close();
 });

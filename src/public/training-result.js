@@ -398,12 +398,15 @@ async function initTrainingResult() {
   const analysisHistory = document.getElementById('analysisHistory');
   const analysisHistoryContent = document.getElementById('analysisHistoryContent');
   const analysisReadAgain = document.createElement('button');
+  analysisReadAgain.id = 'analysisReadAgain';
   analysisReadAgain.type = 'button';
   analysisReadAgain.className = 'btn-secondary btn-small';
   analysisReadAgain.hidden = true;
   analysisSection.querySelector('.analysis-header').append(analysisReadAgain);
   const correctionDialog = document.getElementById('analysisCorrectionDialog');
   const correctionText = document.getElementById('analysisCorrectionText');
+  const correctionError = document.getElementById('analysisCorrectionError');
+  const correctionSave = correctionDialog.querySelector('[data-analysis-correction-save]');
   const correctionTrap = createDialogFocusTrap(correctionDialog, () => closeCorrectionDialog());
   const deleteTrainingBtn = document.getElementById('deleteTrainingBtn');
   const fitDataSection = document.getElementById('fitDataSection');
@@ -438,8 +441,12 @@ async function initTrainingResult() {
   let analysisReadFailureCount = 0;
   let analysisPageActive = true;
   let analysisStartPending = false;
+  let analysisOutcomeUncertain = false;
+  let activeAnalysisRequestKey = null;
   let correctionTarget = null;
   let correctionReturnFocus = null;
+  let correctionDialogRevision = 0;
+  let correctionMutationPending = false;
   let manualDistanceInputUnit = 'km';
   let rpeErrorKey = null;
   const t = (key) => translate(i18n ? i18n.messages : {}, key);
@@ -456,6 +463,10 @@ async function initTrainingResult() {
     },
   });
   const analysisKey = (key) => t(`session.analysis.${key}`);
+  const interpretationErrorKey = (error) => error?.status === 409
+    ? 'interpretationConflict'
+    : error?.codes?.includes('incompatibleRpeScale')
+      ? 'errors.incompatibleRpeScale' : 'interpretationSaveError';
   const clearAnalysisTimer = () => { clearTimeout(analysisReadTimer); analysisReadTimer = null; };
   const analysisStorageKey = () => `kinesis:analysis-request:${currentTrainingId}`;
   const renderInterpretations = (parent, items) => {
@@ -468,6 +479,8 @@ async function initTrainingResult() {
     for (const item of items) {
       const card = document.createElement('article');
       card.className = 'analysis-interpretation';
+      card.dataset.interpretationId = item.id;
+      card.tabIndex = -1;
       const title = document.createElement('h4');
       title.textContent = analysisKey(`dispositions.${item.disposition}`);
       const text = document.createElement('p');
@@ -481,6 +494,7 @@ async function initTrainingResult() {
           confirm.className = 'btn-secondary btn-small';
           confirm.type = 'button';
           confirm.textContent = analysisKey('confirm');
+          confirm.dataset.interpretationAction = `${item.id}:correct`;
           confirm.addEventListener('click', () => void mutateInterpretation(item, 'confirm'));
           actions.append(confirm);
         }
@@ -488,11 +502,13 @@ async function initTrainingResult() {
         correct.className = 'btn-secondary btn-small';
         correct.type = 'button';
         correct.textContent = analysisKey('correct');
+        correct.dataset.interpretationAction = `${item.id}:correct`;
         correct.addEventListener('click', () => openCorrectionDialog(item, correct));
         const discard = document.createElement('button');
         discard.className = 'btn-secondary btn-small';
         discard.type = 'button';
         discard.textContent = analysisKey('discard');
+        discard.dataset.interpretationAction = `${item.id}:discard`;
         discard.addEventListener('click', () => void mutateInterpretation(item, 'discard'));
         actions.append(correct, discard);
         card.append(actions);
@@ -519,7 +535,7 @@ async function initTrainingResult() {
     const last = data?.analyses?.[0] || null;
     const latest = data?.latest || null;
     analysisSection.hidden = !(data?.analyses?.length || data?.active || activeAnalysisId || analysisStartPending || analysisNotice.textContent);
-    generateBtn.disabled = Boolean(activeAnalysisId || analysisStartPending);
+    generateBtn.disabled = Boolean(activeAnalysisId || analysisStartPending || analysisOutcomeUncertain);
     analysisContent.replaceChildren();
     analysisHistoryContent.replaceChildren();
     analysisHistory.hidden = !data?.analyses?.some((item) => item.result && item.id !== latest?.id);
@@ -527,9 +543,9 @@ async function initTrainingResult() {
       analysisState.textContent = analysisKey('running');
     } else if (last && last.state !== 'completed') {
       analysisState.textContent = analysisKey(`states.${last.state}`) || analysisKey('states.failed');
-      if (last.state === 'failed' || last.state === 'uncertain' || last.state === 'cancelled' || last.state === 'outdated') {
+      if (!analysisNotice.dataset.key && (last.state === 'failed' || last.state === 'uncertain' || last.state === 'cancelled' || last.state === 'outdated')) {
         analysisNotice.hidden = false;
-        analysisNotice.dataset.key = `errors.${last.state}`;
+        analysisNotice.dataset.key = `errors.${last.errorCode || last.state}`;
         analysisNotice.textContent = analysisKey(analysisNotice.dataset.key);
       }
     } else {
@@ -591,12 +607,15 @@ async function initTrainingResult() {
       activeAnalysisId = null;
       analysisData = data;
       analysisReadFailureCount = 0;
+      analysisOutcomeUncertain = false;
+      activeAnalysisRequestKey = null;
       try { sessionStorage.removeItem(analysisStorageKey()); } catch { /* storage unavailable */ }
       setAnalysisNotice('', false);
     } catch (error) {
       if (error?.name === 'AbortError' || token !== analysisReadToken || activeAnalysisId !== id) return;
       if (definitiveAnalysisReadError(error)) {
         activeAnalysisId = null;
+        analysisOutcomeUncertain = true;
         setAnalysisNotice('readUnavailable', true);
       } else {
         setAnalysisNotice('connectionRetrying', false);
@@ -620,53 +639,112 @@ async function initTrainingResult() {
       activeAnalysisId = analysisData.active?.id ?? null;
       renderAnalysis();
       if (analysisData.active) {
+        analysisOutcomeUncertain = false;
         void refreshAnalysisExecution(activeAnalysisId, token);
-        return;
+        return true;
       }
-      const pendingKey = (() => { try { return sessionStorage.getItem(analysisStorageKey()); } catch { return null; } })();
+      const pendingKey = activeAnalysisRequestKey || (() => { try { return sessionStorage.getItem(analysisStorageKey()); } catch { return null; } })();
       if (pendingKey) {
+        activeAnalysisRequestKey = pendingKey;
+        analysisOutcomeUncertain = true;
+        renderAnalysis();
         const executions = await fetchAiExecutions();
         if (token !== analysisReadToken) return;
         const match = executions.find((item) => item.purpose === 'analysis' && String(item.resource_id) === String(currentTrainingId) && item.idempotency_key === pendingKey);
-        if (match && ['queued', 'running'].includes(match.state)) {
+        if (match) {
           activeAnalysisId = match.id;
+          analysisOutcomeUncertain = false;
+          setAnalysisNotice('', false);
           void refreshAnalysisExecution(match.id, token);
         } else if (!match) setAnalysisNotice('outcomeUnknown', true);
-        else { try { sessionStorage.removeItem(analysisStorageKey()); } catch { /* storage unavailable */ } }
+        renderAnalysis();
       }
+      return true;
     } catch {
       if (token === analysisReadToken) setAnalysisNotice('readUnavailable', true);
+      return false;
     }
   }
-  async function mutateInterpretation(item, action, text) {
+  async function mutateInterpretation(item, action, text, trigger = document.activeElement) {
     try {
-      await updateAiInterpretation(item.id, action, item.version, text);
-      await loadAnalysisState();
+      const saved = await updateAiInterpretation(item.id, action, item.version, text);
+      const versions = [...(analysisData?.analyses || []), ...(analysisData?.latest ? [analysisData.latest] : [])];
+      for (const version of versions) {
+        const current = version.interpretations?.find((entry) => entry.id === item.id);
+        if (current) Object.assign(current, saved.interpretation);
+      }
+      renderAnalysis();
+      const refreshed = await loadAnalysisState();
+      if (trigger?.isConnected === false && document.activeElement === document.body) {
+        const equivalent = analysisContent.querySelector(`[data-interpretation-action="${item.id}:${action === 'confirm' ? 'correct' : action}"]`);
+        const card = analysisContent.querySelector(`[data-interpretation-id="${item.id}"]`);
+        (equivalent || card)?.focus();
+      }
+      return { saved: true, refreshed };
     } catch (error) {
-      setAnalysisNotice(error?.status === 409 ? 'interpretationConflict' : 'interpretationSaveError', true);
+      setAnalysisNotice(interpretationErrorKey(error), true);
+      return { saved: false, error };
     }
   }
-  function closeCorrectionDialog() {
+  function closeCorrectionDialog({ restore = true } = {}) {
+    correctionDialogRevision += 1;
     correctionTrap.deactivate();
     correctionDialog.hidden = true;
-    if (correctionReturnFocus?.isConnected) correctionReturnFocus.focus();
+    if (restore && correctionReturnFocus?.isConnected) correctionReturnFocus.focus();
     correctionTarget = null;
+    correctionError.hidden = true;
+    correctionError.textContent = '';
+    correctionText.removeAttribute('aria-invalid');
+    correctionText.removeAttribute('aria-describedby');
   }
   function openCorrectionDialog(item, trigger) {
+    correctionDialogRevision += 1;
     correctionTarget = item;
     correctionReturnFocus = trigger;
     correctionText.value = item.correction || '';
+    correctionError.hidden = true;
+    correctionError.textContent = '';
+    correctionText.removeAttribute('aria-invalid');
+    correctionText.removeAttribute('aria-describedby');
+    correctionSave.disabled = correctionMutationPending;
     correctionDialog.hidden = false;
     correctionTrap.activate();
     correctionDialog.querySelector('[data-analysis-correction-close]').focus();
     refreshIcons();
   }
   correctionDialog.querySelectorAll('[data-analysis-correction-close],[data-analysis-correction-cancel]').forEach((button) => button.addEventListener('click', closeCorrectionDialog));
-  correctionDialog.querySelector('[data-analysis-correction-save]').addEventListener('click', async () => {
-    if (!correctionTarget || !correctionText.value.trim()) return;
+  correctionSave.addEventListener('click', async () => {
+    if (!correctionTarget || !correctionText.value.trim() || correctionMutationPending) return;
     const item = correctionTarget;
-    await mutateInterpretation(item, 'correct', correctionText.value.trim());
-    closeCorrectionDialog();
+    const revision = correctionDialogRevision;
+    correctionMutationPending = true;
+    correctionSave.disabled = true;
+    correctionError.hidden = true;
+    const result = await mutateInterpretation(item, 'correct', correctionText.value.trim(), correctionReturnFocus);
+    correctionMutationPending = false;
+    if (correctionDialog.hidden) return;
+    if (revision !== correctionDialogRevision || correctionTarget?.id !== item.id) {
+      correctionSave.disabled = false;
+      return;
+    }
+    correctionSave.disabled = false;
+    if (!result.saved) {
+      correctionError.textContent = analysisKey(interpretationErrorKey(result.error));
+      correctionError.hidden = false;
+      correctionText.setAttribute('aria-invalid', 'true');
+      correctionText.setAttribute('aria-describedby', 'analysisCorrectionError');
+      return;
+    }
+    correctionDialog.hidden = true;
+    correctionTrap.deactivate();
+    correctionTarget = null;
+    correctionError.hidden = true;
+    correctionError.textContent = '';
+    correctionText.removeAttribute('aria-invalid');
+    correctionText.removeAttribute('aria-describedby');
+    const equivalent = analysisContent.querySelector(`[data-interpretation-action="${item.id}:correct"]`);
+    const card = analysisContent.querySelector(`[data-interpretation-id="${item.id}"]`);
+    (equivalent || card || generateBtn).focus();
   });
   analysisReadAgain.addEventListener('click', () => {
     if (activeAnalysisId) void refreshAnalysisExecution(activeAnalysisId, ++analysisReadToken);
@@ -1116,6 +1194,8 @@ async function initTrainingResult() {
   }
 
   currentTrainingId = id;
+  try { activeAnalysisRequestKey = sessionStorage.getItem(analysisStorageKey()); } catch { activeAnalysisRequestKey = null; }
+  analysisOutcomeUncertain = Boolean(activeAnalysisRequestKey);
   void loadAnalysisState();
 
   const onAnalysisVisibility = () => {
@@ -1366,8 +1446,9 @@ async function initTrainingResult() {
       applyCanonicalTraining(training);
       currentTrainingId = training.id;
       let requestKey = null;
-      try { requestKey = sessionStorage.getItem(analysisStorageKey()); } catch { /* storage unavailable */ }
+      try { requestKey = activeAnalysisRequestKey || sessionStorage.getItem(analysisStorageKey()); } catch { /* storage unavailable */ }
       requestKey ||= crypto.randomUUID();
+      activeAnalysisRequestKey = requestKey;
       try { sessionStorage.setItem(analysisStorageKey(), requestKey); } catch { /* recovery can still use the response id */ }
       const execution = await startAiExecution({
         purpose: 'analysis', resource_id: String(training.id), idempotency_key: requestKey,
@@ -1380,22 +1461,38 @@ async function initTrainingResult() {
       void refreshAnalysisExecution(execution.id, analysisReadToken);
     } catch (error) {
       let matched = null;
+      let requestKey = activeAnalysisRequestKey;
+      if (!requestKey) try { requestKey = sessionStorage.getItem(analysisStorageKey()); } catch { /* storage unavailable */ }
       try {
         const executions = await fetchAiExecutions();
-        let requestKey = null;
-        try { requestKey = sessionStorage.getItem(analysisStorageKey()); } catch { /* storage unavailable */ }
         matched = executions.find((item) => item.purpose === 'analysis' && String(item.resource_id) === String(currentTrainingId) && item.idempotency_key === requestKey);
       } catch { /* uncertain response is preserved and never replayed automatically */ }
-      if (matched && ['queued', 'running'].includes(matched.state)) {
+      if (matched) {
         activeAnalysisId = matched.id;
+        analysisOutcomeUncertain = false;
         analysisReadToken += 1;
+        setAnalysisNotice('', false);
         void refreshAnalysisExecution(matched.id, analysisReadToken);
       } else {
-        setAnalysisNotice(error?.status === 409 ? 'analysisConflict' : 'outcomeUnknown', true);
+        const code = error?.codes?.find((value) => [
+          'aiUnavailable', 'accountUnavailable', 'executionLimit', 'usageLimit',
+          'analysisRequiresCompletedResult', 'contextTooLarge', 'criticalContextTooLarge',
+          'inputTooLarge', 'resourceNotFound', 'invalidFields',
+        ].includes(value));
+        if (code) {
+          analysisOutcomeUncertain = false;
+          activeAnalysisRequestKey = null;
+          try { sessionStorage.removeItem(analysisStorageKey()); } catch { /* storage unavailable */ }
+          const translated = analysisKey(`errors.${code}`);
+          setAnalysisNotice(translated === `session.analysis.errors.${code}` ? 'knownStartFailure' : `errors.${code}`, false);
+        } else {
+          analysisOutcomeUncertain = true;
+          setAnalysisNotice('outcomeUnknown', true);
+        }
       }
     } finally {
       analysisStartPending = false;
-      generateBtn.disabled = Boolean(activeAnalysisId);
+      generateBtn.disabled = Boolean(activeAnalysisId || analysisOutcomeUncertain);
       saveBtn.disabled = false;
       generateLabel.textContent = analysisKey('analyze');
     }

@@ -1638,6 +1638,7 @@ test('session locale namespace stays in parity across en-US and pt-BR', () => {
   assert.deepEqual(Object.keys(en.session.analysis).sort(), Object.keys(pt.session.analysis).sort());
   for (const key of Object.keys(en.session.analysis))
     assert.equal(typeof en.session.analysis[key], typeof pt.session.analysis[key], `analysis.${key} locale type`);
+  assert.deepEqual(Object.keys(en.session.analysis.errors).sort(), Object.keys(pt.session.analysis.errors).sort(), 'every analysis failure code has PT and EN copy');
 
   assert.notEqual(en.session.save, pt.session.save);
   assert.notEqual(en.session.smartwatchYes, pt.session.smartwatchYes);
@@ -1787,6 +1788,7 @@ test('training-result.css keeps the earthy premium aesthetic for the session vie
   assert.match(css, /\.planned-grid \{[^}]*display:\s*grid/);
   assert.match(css, /\.status\[data-tone='error'\] \{[^}]*color:\s*var\(--danger\)/);
   assert.match(css, /font-family: 'DM Sans', system-ui, -apple-system, sans-serif;/);
+  assert.match(css, /#analysisReadAgain\[hidden\]\s*\{\s*display:\s*none;/, 'the read-again action is visually absent after execution recovery');
 
   assert.match(css, /\.feedback-grid \{[^}]*display:\s*grid/);
   assert.match(css, /\.feedback-grid \{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/);

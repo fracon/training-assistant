@@ -619,7 +619,20 @@ function buildContext(
   const interpretationRows = db.prepare(`SELECT * FROM ai_interpretations
     WHERE user_id=? AND disposition IN ('pending','confirmed','corrected')
       AND (? IS NULL OR analysis_id<>?)
-    ORDER BY updated_at DESC,id LIMIT 24`).all(userId, freshnessExecutionId, freshnessExecutionId);
+    ORDER BY updated_at DESC,id`).all(userId, freshnessExecutionId, freshnessExecutionId);
+  // A newly completed analysis may explicitly supersede an interpretation it
+  // consumed as input. Rehydrate that exact pre-replacement snapshot only when
+  // checking this analysis's freshness; other/future contexts see the new
+  // disposition and never resurrect the old item.
+  if (freshnessExecutionId) {
+    const known = new Set(interpretationRows.map((item) => item.id));
+    const replaced = db.prepare(`SELECT replaced_snapshot_json FROM ai_interpretation_replacements
+      WHERE user_id=? AND replacement_analysis_id=? ORDER BY id`).all(userId, freshnessExecutionId);
+    for (const item of replaced.map((row) => JSON.parse(row.replaced_snapshot_json)))
+      if (!known.has(item.id)) { interpretationRows.push(item); known.add(item.id); }
+  }
+  interpretationRows.sort((a, b) => b.updated_at.localeCompare(a.updated_at) || a.id.localeCompare(b.id));
+  interpretationRows.length = Math.min(24, interpretationRows.length);
   for (const item of interpretationRows) {
     const evidence = JSON.parse(item.evidence_json);
     const fresh = evidence.every((ref) => references.some((current) =>

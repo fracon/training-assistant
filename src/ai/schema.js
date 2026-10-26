@@ -1,4 +1,5 @@
 'use strict';
+const { createHash } = require('node:crypto');
 
 function migrateAi(db) {
   db.transaction(() => {
@@ -159,10 +160,63 @@ function migrateWorkoutAnalysis(db) {
     db.prepare('INSERT INTO schema_migrations(name) VALUES(?)').run(marker);
   }).immediate();
 }
+function migrateWorkoutInterpretationIdentity(db) {
+  db.transaction(() => {
+    const marker = '2026-10-workout-interpretation-identity-v2';
+    if (db.prepare('SELECT 1 FROM schema_migrations WHERE name=?').get(marker)) return;
+    const columns = db.pragma('table_info(ai_interpretations)');
+    if (!columns.length) throw new Error('workout-analysis-v1 must be installed first');
+    if (!columns.some((column) => column.name === 'content_hash')) {
+      const rows = db.prepare('SELECT * FROM ai_interpretations ORDER BY id').all();
+      db.exec(`CREATE TABLE ai_interpretations_v2 (
+        id TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        training_id INTEGER NOT NULL REFERENCES trainings(id) ON DELETE CASCADE,
+        analysis_id TEXT NOT NULL REFERENCES workout_analysis_versions(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL CHECK(kind IN ('pattern','recommendation','attention')),
+        text TEXT NOT NULL,
+        evidence_json TEXT NOT NULL,
+        evidence_key TEXT NOT NULL,
+        evidence_hash TEXT NOT NULL,
+        content_hash TEXT NOT NULL,
+        disposition TEXT NOT NULL CHECK(disposition IN ('pending','confirmed','corrected','dismissed','superseded')),
+        correction_text TEXT,
+        version INTEGER NOT NULL DEFAULT 1 CHECK(version > 0),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(user_id,kind,evidence_hash,content_hash)
+      )`);
+      const insert = db.prepare(`INSERT INTO ai_interpretations_v2
+        (id,user_id,training_id,analysis_id,kind,text,evidence_json,evidence_key,evidence_hash,content_hash,disposition,correction_text,version,created_at,updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+      for (const row of rows) {
+        const contentHash = createHash('sha256').update(JSON.stringify({ kind: row.kind, text: row.text })).digest('hex');
+        insert.run(row.id,row.user_id,row.training_id,row.analysis_id,row.kind,row.text,row.evidence_json,row.evidence_key,row.evidence_hash,contentHash,row.disposition,row.correction_text,row.version,row.created_at,row.updated_at);
+      }
+      db.exec('DROP TABLE ai_interpretations; ALTER TABLE ai_interpretations_v2 RENAME TO ai_interpretations;');
+    }
+    db.exec(`CREATE INDEX IF NOT EXISTS ai_interpretation_owner
+      ON ai_interpretations(user_id,disposition,updated_at DESC);
+      CREATE TABLE IF NOT EXISTS ai_interpretation_replacements (
+        id INTEGER PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        replaced_interpretation_id TEXT NOT NULL REFERENCES ai_interpretations(id) ON DELETE CASCADE,
+        replacement_interpretation_id TEXT NOT NULL REFERENCES ai_interpretations(id) ON DELETE CASCADE,
+        replacement_analysis_id TEXT NOT NULL REFERENCES workout_analysis_versions(id) ON DELETE CASCADE,
+        replaced_snapshot_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE(replaced_interpretation_id,replacement_interpretation_id)
+      );
+      CREATE INDEX IF NOT EXISTS ai_interpretation_replacement_owner
+        ON ai_interpretation_replacements(user_id,replacement_analysis_id);`);
+    db.prepare('INSERT INTO schema_migrations(name) VALUES(?)').run(marker);
+  }).immediate();
+}
 module.exports = {
   migrateAi,
   migrateAiDiagnostics,
   migrateWeeklyWorkouts,
   migrateWeeklyAvailabilityRevision,
   migrateWorkoutAnalysis,
+  migrateWorkoutInterpretationIdentity,
 };

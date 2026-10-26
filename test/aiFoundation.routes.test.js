@@ -254,6 +254,66 @@ test('HTTP asynchronous contract survives polling/reload with mock-only register
   assert.doesNotMatch(diagnosticLogs[0], /no such table|SELECT |DROP TABLE|planner@example|synthetic-test-key/i);
 });
 
+test('interpretation read and confirm/correct/discard responses expose one owner-scoped product projection', async (t) => {
+  const { app, db, cookies } = await fixture(t);
+  const send = (method, url, payload, user) => app.inject({ method, url, payload, headers: { cookie: cookies[user] } });
+  const create = db.prepare(`INSERT INTO trainings(id,user_id,dia,tipo,treino,completed,feedback_rpe)
+    VALUES (?,?, '2026-10-20','Run','Synthetic',1,3)`);
+  const addVersion = db.prepare(`INSERT INTO workout_analysis_versions
+    (id,user_id,training_id,sequence,adapter_version,context_json,state,language,created_at)
+    VALUES (?,?,?,1,'workout-analysis-v2','{}','completed','en-US','2026-10-26T10:00:00Z')`);
+  const addItem = db.prepare(`INSERT INTO ai_interpretations
+    (id,user_id,training_id,analysis_id,kind,text,evidence_json,evidence_key,evidence_hash,content_hash,disposition,created_at,updated_at)
+    VALUES (?,?,?,?,?,?,?, ?,?,?,'pending','2026-10-26T10:00:00Z','2026-10-26T10:00:00Z')`);
+  const ids = {};
+  for (const userId of [1, 2]) {
+    const trainingId = 900 + userId;
+    create.run(trainingId, userId);
+    const analysisId = `analysis-${userId}`;
+    addVersion.run(analysisId, userId, trainingId);
+    for (const [index, action] of ['confirm', 'correct', 'discard'].entries()) {
+      const id = `interp-${userId}-${action}`;
+      ids[`${userId}:${action}`] = { id, trainingId };
+      addItem.run(id, userId, trainingId, analysisId, ['pattern','recommendation','attention'][index], 'Synthetic interpretation', '[{"type":"training","id":"1","version":"private"}]', '[{"type":"training","id":"1"}]', `evidence-${userId}-${index}`, `content-${userId}-${index}`);
+    }
+  }
+  const allowed = ['correction', 'disposition', 'id', 'kind', 'text', 'updatedAt', 'version'];
+  const read = await send('GET', `/api/trainings/${ids['2:confirm'].trainingId}/analyses`, undefined, 2);
+  assert.deepEqual(Object.keys(read.json().analyses[0].interpretations[0]).sort(), allowed);
+  assert.equal(JSON.stringify(read.json()).includes('evidence_json'), false);
+  for (const userId of [1, 2]) {
+    for (const action of ['confirm', 'correct', 'discard']) {
+      const { id, trainingId } = ids[`${userId}:${action}`];
+      const payload = action === 'correct' ? { expected_version: 1, text: 'A user correction.' } : { expected_version: 1 };
+      if (action === 'correct') {
+        const incompatible = await send('POST', `/api/ai/interpretations/${id}/correct`, { expected_version: 1, text: 'RPE 8/10 was prescribed.' }, userId);
+        assert.equal(incompatible.statusCode, 400);
+        assert.deepEqual(incompatible.json().errors, ['incompatibleRpeScale']);
+        assert.equal(db.prepare('SELECT disposition,version FROM ai_interpretations WHERE id=?').get(id).version, 1, 'an invalid correction writes nothing');
+      }
+      const response = await send('POST', `/api/ai/interpretations/${id}/${action}`, payload, userId);
+      assert.equal(response.statusCode, 200);
+      assert.deepEqual(Object.keys(response.json().interpretation).sort(), allowed);
+      assert.equal(response.json().interpretation.correction, action === 'correct' ? 'A user correction.' : null);
+      const stranger = await send('POST', `/api/ai/interpretations/${id}/${action}`, payload, userId === 1 ? 2 : 3);
+      assert.equal(stranger.statusCode, 404, 'neither a regular user nor an admin may mutate another account\'s item');
+      const ownerRead = await send('GET', `/api/trainings/${trainingId}/analyses`, undefined, userId);
+      assert.deepEqual(Object.keys(ownerRead.json().analyses[0].interpretations[0]).sort(), allowed);
+    }
+  }
+  const adminCannotReadOther = await send('GET', `/api/trainings/${ids['2:confirm'].trainingId}/analyses`, undefined, 1);
+  assert.equal(adminCannotReadOther.statusCode, 404);
+  db.prepare("UPDATE workout_analysis_versions SET error_code='invalidDomainResponse' WHERE id='analysis-2'").run();
+  const safeFailure = await send('GET', `/api/trainings/${ids['2:confirm'].trainingId}/analyses`, undefined, 2);
+  assert.equal(safeFailure.json().analyses[0].errorCode, 'invalidDomainResponse');
+  db.prepare("UPDATE workout_analysis_versions SET error_code='providerTimeout' WHERE id='analysis-2'").run();
+  const publicFailure = await send('GET', `/api/trainings/${ids['2:confirm'].trainingId}/analyses`, undefined, 2);
+  assert.equal(publicFailure.json().analyses[0].errorCode, 'providerTimeout', 'a known product-safe execution code is available for recovery copy');
+  db.prepare("UPDATE workout_analysis_versions SET error_code='unlisted-internal-diagnostic' WHERE id='analysis-2'").run();
+  const sanitizedFailure = await send('GET', `/api/trainings/${ids['2:confirm'].trainingId}/analyses`, undefined, 2);
+  assert.equal(sanitizedFailure.json().analyses[0].errorCode, null, 'internal diagnostic values are not copied to the product API');
+});
+
 test('invalid AI settings disable paid work without breaking startup, memory or cleanup', async (t) => {
   const config = readAiConfig({
     AI_ENABLED: 'true',

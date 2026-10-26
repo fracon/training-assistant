@@ -17,6 +17,7 @@ export async function requestJson(url, body, method = 'POST') {
     const error = new Error(
       payload.error || 'Something went wrong. Please try again.',
     );
+    error.status = response.status;
     if (Array.isArray(payload.errors) && payload.errors.length > 0) {
       error.codes = payload.errors;
     }
