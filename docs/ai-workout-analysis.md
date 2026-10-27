@@ -68,7 +68,10 @@ superseded.
 - `POST /api/ai/admin/preview` can return the external analysis prompt only to
   an administrator whose current database role is `admin`, for a training the
   admin owns. Preview is free and the prompt action is created only in the admin
-  DOM. A role does not bypass training ownership.
+  DOM. In the Training Result page, that action first saves pending result and
+  feedback fields through the existing result APIs, then reads the prompt from
+  the canonical stored training. Opening/copying remains free and never creates
+  an AI execution. A role does not bypass training ownership.
 
 The product response omits raw evidence identifiers. The admin prompt/debug
 modal is separate from ordinary analysis text and uses the shared focus trap.
@@ -78,6 +81,9 @@ modal is separate from ordinary analysis text and uses the shared focus trap.
 The context builder reuses the shared cycle, planning, history, feedback,
 availability, shoe and preference selection policy. For analysis it adds the
 selected owned session, canonical result, reported feedback and bounded FIT laps.
+Feedback edited on the result page is persisted on the owned training row; its
+date and user-report fields are then selected into analysis and later shared
+contexts from that canonical row. It does not require a separate AI-memory write.
 An associated cycle can be included even when it is no longer active. No applied
 AI planning is required. Existing planning is marked stale using its original
 fingerprint; incompatible RPE guidance is excluded by the established cycle-plan

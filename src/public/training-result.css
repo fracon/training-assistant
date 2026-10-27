@@ -390,6 +390,7 @@ body {
 @media (prefers-reduced-motion: reduce) { .import-help-card, .import-help-dialog { scroll-behavior: auto; transition: none; } }
 
 .workout-analysis { display: flex; flex-direction: column; gap: 16px; }
+.workout-analysis[hidden] { display: none; }
 .analysis-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .analysis-header h2 { margin: 0; font-size: 1.2rem; }
 #analysisReadAgain[hidden] { display: none; }
@@ -630,8 +631,11 @@ select.input-control {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
-  margin-top: 20px;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-top: 1rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--line);
 }
 
 .btn-primary,
@@ -664,6 +668,16 @@ select.input-control {
 .form-actions .btn-secondary {
   white-space: normal;
   text-align: center;
+  box-sizing: border-box;
+  min-height: 44px;
+  padding: 9px 18px;
+  line-height: 1.2;
+}
+
+.form-actions > button svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
 }
 
 .btn-secondary svg {

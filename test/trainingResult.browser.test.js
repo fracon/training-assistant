@@ -78,9 +78,12 @@ test('the session page requires a realized RPE before saving, generating or uplo
     aiClient: async (payload) => {
       providerCalls += 1;
       const request = JSON.parse(payload.input[0].content[0].text);
-      const saved = db.prepare('SELECT completed,feedback_rpe FROM trainings WHERE id=?').get(request.context.resource.source.id);
+      const saved = db.prepare('SELECT completed,feedback_rpe,feedback_notas FROM trainings WHERE id=?').get(request.context.resource.source.id);
       assert.equal(saved.completed, 1, 'canonical result persistence finished before the simulated provider was invoked');
       assert.ok(saved.feedback_rpe >= 1 && saved.feedback_rpe <= 5);
+      assert.equal(request.context.resource.report.authority, 'user_report');
+      assert.equal(request.context.resource.report.feedback_rpe, saved.feedback_rpe, 'the analysis context reads the persisted realized effort');
+      assert.equal(request.context.resource.report.feedback_notas, saved.feedback_notas, 'the analysis context reads the persisted feedback notes');
       if (request.context.resource.actual.result_data_source === 'fit_upload')
         assert.ok(request.context.resource.actual.fitLaps.length > 0, 'the simulated provider receives bounded, decoded FIT lap evidence');
       const evidence = [`${request.context.resource.source.type}:${request.context.resource.source.id}`];
@@ -264,11 +267,11 @@ test('the session page requires a realized RPE before saving, generating or uplo
     const openSession = async (trainingId) => {
       requests.length = 0;
       await command('Page.navigate', { url: `${baseUrl}/training-result.html?id=${trainingId}` });
-      await setLanguage('en-US');
       await waitFor(
         "document.getElementById('sessionDate').textContent.trim() !== '-'",
         `session ${trainingId} loaded`
       );
+      await setLanguage('en-US');
       await delay(300);
     };
     // The page attaches its listeners once the session is loaded, so an
@@ -327,6 +330,11 @@ test('the session page requires a realized RPE before saving, generating or uplo
     /* ── The group is required, named, and silent until it is answered ── */
 
     await openSession(manualId);
+    assert.equal(
+      await evaluate(`(()=>{const section=document.getElementById('analysisSection');return section.hidden && getComputedStyle(section).display==='none'})()`),
+      true,
+      'an empty analysis section is absent from the initial browser layout'
+    );
     const initial = await evaluate(`(()=>{
       const group=document.getElementById('feedbackRpe');
       const error=document.getElementById('feedbackRpeError');
@@ -877,7 +885,47 @@ test('the session page requires a realized RPE before saving, generating or uplo
     });
     await openSession(adminTrainingId);
     await waitFor("[...document.querySelectorAll('button')].some((button)=>button.textContent.includes('View external prompt'))", 'the admin-only prompt action');
-    await clickUntil("[data-analysis-external-prompt='true']", "!!document.querySelector('.analysis-prompt-card textarea')?.value.includes('Analyze the running workout below')", 'the free admin prompt preview');
+    await setLanguage('pt-BR');
+    assert.deepEqual(
+      await evaluate(`(()=>({prompt:document.querySelector('[data-analysis-external-prompt=true] span').textContent,analyze:document.querySelector('#generateBtn span').textContent}))()`),
+      { prompt: 'Ver prompt externo', analyze: 'Analisar treino' },
+      'admin actions retain localized product labels in Portuguese'
+    );
+    await waitFor("document.querySelectorAll('.form-actions button svg').length===2", 'the Lucide icons in the action footer');
+    await evaluate(`(()=>{
+      document.getElementById('rpe-4').click();
+      const notes=document.getElementById('feedbackNotas');
+      notes.value='Saved before external prompt preview.';
+      notes.dispatchEvent(new Event('input',{bubbles:true}));
+      const buttons=[...document.querySelectorAll('.form-actions button')];
+      window.__actionButtonHeights=buttons.map(button=>Math.round(button.getBoundingClientRect().height));
+      window.__actionButtonRects=buttons.map(button=>{const rect=button.getBoundingClientRect();return {x:Math.round(rect.x),y:Math.round(rect.y),right:Math.round(rect.right)}});
+      const footer=buttons[0].parentElement.getBoundingClientRect();
+      window.__actionFooterRect={left:Math.round(footer.left),right:Math.round(footer.right)};
+      return true;
+    })()`);
+    await clickUntil("[data-analysis-external-prompt='true']", "!!document.querySelector('.analysis-prompt-card textarea')?.value.includes('Saved before external prompt preview.')", 'the free admin prompt preview after saving feedback');
+    assert.equal(row(adminTrainingId).feedback_rpe, 4, 'the external prompt action saves the current RPE first');
+    assert.equal(row(adminTrainingId).feedback_notas, 'Saved before external prompt preview.', 'the external prompt action saves current notes first');
+    const memoryRead = await app.inject({
+      method: 'GET', url: '/api/ai/memory',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${createSession(db, admin.id).token}` },
+    });
+    assert.equal(memoryRead.statusCode, 200);
+    const memory = memoryRead.json();
+    const rememberedSession = [...memory.recent, ...memory.comparables]
+      .find((item) => item.href.endsWith(`id=${adminTrainingId}`));
+    assert.equal(rememberedSession.report.feedback_rpe, 4, 'the training memory reads the newly saved RPE from its canonical row');
+    assert.equal(rememberedSession.report.feedback_notas, 'Saved before external prompt preview.', 'the training memory reads the newly saved dated report');
+    const promptWriteOrder = writes().map(({ method, url }) => `${method} ${new URL(url).pathname}`);
+    assert.deepEqual(promptWriteOrder, [
+      `PATCH /api/trainings/${adminTrainingId}`,
+      'POST /api/ai/admin/preview',
+    ], 'feedback persistence completes before the free prompt preview is requested');
+    assert.equal(await evaluate('new Set(window.__actionButtonHeights).size'), 1, 'all three footer actions use the same button height');
+    assert.equal(await evaluate('new Set(window.__actionButtonRects.map(rect=>rect.y)).size'), 2, 'the footer wraps actions naturally when the available content width cannot fit all three');
+    assert.equal(await evaluate('window.__actionButtonRects[1].right===window.__actionButtonRects[2].right'), true, 'the wrapped primary action aligns with the right edge of the secondary action row');
+    assert.equal(await evaluate('window.__actionButtonRects.every(rect=>rect.x>=window.__actionFooterRect.left&&rect.right<=window.__actionFooterRect.right)'), true, 'the action group stays inside the footer and card width');
     const adminPreview = await evaluate(`(()=>({
       role:document.querySelector('[role=dialog][aria-modal=true]')!==null,
       active:document.activeElement.getAttribute('aria-label'),
@@ -886,9 +934,12 @@ test('the session page requires a realized RPE before saving, generating or uplo
     }))()`);
     assert.equal(adminPreview.role, true, 'the external prompt opens in the shared accessible modal');
     assert.equal(adminPreview.copy, true);
-    assert.ok(adminPreview.prompt.includes('INSTRUCTIONS FOR ANALYSIS'));
+    assert.ok(adminPreview.prompt.includes('INSTRUÇÕES PARA A ANÁLISE'));
     assert.equal(providerCalls, 2, 'viewing the prompt does not call the provider');
     assert.equal(writes().filter(({ method, url }) => method === 'POST' && url.endsWith('/api/ai/executions')).length, 0);
+    await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    assert.equal(await evaluate('document.documentElement.scrollWidth>innerWidth'), false, 'the admin action footer has no horizontal overflow at mobile width');
+    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
     await pressKey('Tab', 'Tab', 9);
     await pressKey('Tab', 'Tab', 9);
     await pressKey('Tab', 'Tab', 9);
@@ -900,6 +951,12 @@ test('the session page requires a realized RPE before saving, generating or uplo
     await pressKey('Escape', 'Escape', 27);
     await waitFor("document.querySelector('.analysis-prompt-card')?.closest('[role=dialog]').hidden===true", 'the prompt modal closing with Escape');
     assert.equal(await evaluate('document.activeElement===document.querySelector("[data-analysis-external-prompt=true]")'), true, 'focus returns to the prompt trigger');
+    await setLanguage('en-US');
+    assert.deepEqual(
+      await evaluate(`(()=>({prompt:document.querySelector('[data-analysis-external-prompt=true] span').textContent,analyze:document.querySelector('#generateBtn span').textContent}))()`),
+      { prompt: 'View external prompt', analyze: 'Analyze workout' },
+      'admin actions rerender in English after the Portuguese preview'
+    );
 
     /* ── A lost POST response recovers the same terminal execution, including failure ── */
 

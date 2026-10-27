@@ -1333,6 +1333,8 @@ test('training-result.js wires explicit persisted analysis, protected prompt pre
   assert.match(js, /training = await fetchTraining\(id\);\s*if \(!training\) throw new Error\('saved-session-unavailable'\);/);
   assert.match(js, /previewAnalysisPrompt\(currentTrainingId\)/);
   assert.match(js, /sessionUser\?\.role === 'admin'/, 'the prompt control is only constructed for the current administrator');
+  assert.match(js, /externalPromptButton\.addEventListener\('click', async \(\) => \{[\s\S]*?const rpe = requireFeedbackRpe\(\);[\s\S]*?const saved = await persistCurrentState\(rpe\);[\s\S]*?previewAnalysisPrompt\(currentTrainingId\)/, 'the owner-admin prompt action persists the complete feedback before reading the prompt');
+  assert.match(js, /externalPromptButton\.className = 'btn-secondary'/, 'the prompt action uses the shared full-size secondary button');
   assert.match(js, /createDialogFocusTrap\(externalPromptDialog/);
   assert.match(js, /fetchWorkoutAnalyses\(currentTrainingId/);
   assert.match(js, /setTimeout\(\(\) => \{[\s\S]*refreshAnalysisExecution/);
@@ -1343,7 +1345,7 @@ test('training-result.js wires explicit persisted analysis, protected prompt pre
   assert.ok(!readFileSync(join(publicDir, 'training-result.css'), 'utf8').includes('.manual-results-field .btn-primary'), 'the retired intermediate-button CSS is removed');
   assert.match(js, /persistManualResultsIfNeeded\(\{/);
   assert.match(js, /persistCurrentTrainingState\(\{/);
-  assert.equal((js.match(/persistCurrentState\(rpe\);/g) || []).length, 2, 'both terminal actions share one persistence flow');
+  assert.equal((js.match(/persistCurrentState\(rpe\);/g) || []).length, 3, 'save, analysis and admin prompt actions share one persistence flow');
   assert.ok(js.indexOf('persistManual: () => persistManualResults(rpe)') < js.indexOf('saveFeedback: \(payload\) => saveTrainingFeedback'), 'manual result precedes feedback');
   assert.ok(js.lastIndexOf('const result = await persistCurrentState(rpe);') < js.lastIndexOf('startAiExecution('), 'paid analysis begins only after complete persistence');
   assert.match(js, /generateBtn\.disabled = true;\s*\n\s*saveBtn\.disabled = true;/);
@@ -1789,6 +1791,7 @@ test('training-result.css keeps the earthy premium aesthetic for the session vie
   assert.match(css, /\.status\[data-tone='error'\] \{[^}]*color:\s*var\(--danger\)/);
   assert.match(css, /font-family: 'DM Sans', system-ui, -apple-system, sans-serif;/);
   assert.match(css, /#analysisReadAgain\[hidden\]\s*\{\s*display:\s*none;/, 'the read-again action is visually absent after execution recovery');
+  assert.match(css, /\.workout-analysis\[hidden\]\s*\{\s*display:\s*none;/, 'the empty analysis section remains absent despite its flex layout');
 
   assert.match(css, /\.feedback-grid \{[^}]*display:\s*grid/);
   assert.match(css, /\.feedback-grid \{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/);
@@ -1829,6 +1832,10 @@ test('training-result.css keeps the earthy premium aesthetic for the session vie
   assert.match(css, /\.dropzone-text-secondary \{[^}]*margin-top:\s*0\.25rem/);
   assert.match(css, /\.pain-field\[hidden\] \{[^}]*display:\s*none/, 'the pain description hides until pain is reported');
   assert.match(css, /\.form-actions \{[^}]*display:\s*flex/);
+  assert.match(css, /\.form-actions \{[^}]*justify-content:\s*flex-end/);
+  assert.match(css, /\.form-actions \{[^}]*border-top:\s*1px solid var\(--line\)/, 'the actions follow the shared form footer divider and spacing');
+  assert.match(css, /\.form-actions \.btn-primary,[\s\S]*padding:\s*9px 18px/, 'result actions use the compact padding of the existing shoe form footer');
+  assert.match(css, /\.form-actions > button svg \{[^}]*width:\s*16px[\s\S]*height:\s*16px/, 'primary and secondary action icons share the established size');
   assert.match(css, /\.form-actions \.btn-primary,[\s\S]*white-space:\s*normal/);
   assert.match(css, /\.btn-secondary \{[^}]*border:\s*1px solid var\(--accent-deep\)/);
   assert.match(css, /\.btn-secondary svg \{[^}]*width:\s*16px/);

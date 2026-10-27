@@ -344,13 +344,15 @@ sessions with no result, manual results, or FIT/ZIP results; result provenance
 is never inferred from visible form fields.
 
 The FIT result is persisted as soon as the upload to `/api/trainings/:id/fit`
-completes. The final result-page actions then persist the manual result when
-needed and save the complete feedback before continuing: **Save and back to
-calendar** returns to the Calendar after saving; **Save and Generate Analysis
-Prompt** generates the prompt only after that feedback save, using the
-canonical training state returned by the backend, including backend-calculated
-pace and current provenance. The screen avoids reposting an unchanged manual
-result by comparing canonical metric values.
+completes. Result-page actions persist the manual result when needed and save
+the complete feedback before continuing: **Save and back to calendar** returns
+to the Calendar; **Analyze workout** requests contextual analysis only after
+the canonical result and feedback have been saved and reread. For a session an
+administrator owns, **View external prompt** also saves pending result and
+feedback fields before reading the free prompt preview. That preview does not
+call an AI provider. Both actions use the canonical training state, including
+backend-calculated pace and current provenance. The screen avoids reposting an
+unchanged manual result by comparing canonical metric values.
 
 ### Realized RPE is required to finish a result
 
@@ -358,8 +360,8 @@ Perceived effort (`feedback_rpe`, RPE 1–5) is the one mandatory answer of the
 result feedback: without it there is no realized effort to compare with the
 planned session, to record in the mileage ledger view, or to analyze in the
 coaching prompt. The result page therefore requires one selection from the
-1–5 emoji group before **Save and back to calendar**, **Save and Generate
-Analysis Prompt**, or **Import FIT or ZIP file** proceeds. Each action stops
+1–5 emoji group before **Save and back to calendar**, **Analyze workout**,
+administrator **View external prompt**, or **Import FIT or ZIP file** proceeds. Each action stops
 first, marks the group invalid, announces a localized error, moves focus to
 the first option, keeps every other entered value, and sends no request, opens
 no confirmation dialog, and starts no navigation. The group is a native radio
@@ -801,10 +803,10 @@ read the collection.
 
 1. Open **Sign In**. Create an account through **Register** (first name, last name, email, and password of at least 8 characters) or sign in to an existing account.
 2. A new account is offered the optional PT/EN welcome carousel. Use its actions to register shoes, create a cycle, then prepare workouts with Planejar com IA / Plan with AI or import an Excel plan. You may skip it and use the application freely; the dashboard checklist tracks data actually saved.
-3. Open the **Calendar**, choose a planned training, and enter conditions, shoes, perceived effort (RPE 1–5), and feedback on its result page. A realized RPE from 1 to 5 is required to save, generate the analysis prompt, or upload a result; the other feedback is optional.
+3. Open the **Calendar**, choose a planned training, and enter conditions, shoes, perceived effort (RPE 1–5), and feedback on its result page. A realized RPE from 1 to 5 is required to save a completed result, request analysis, preview an administrator prompt, or upload a result; the other feedback is optional.
 4. Choose **Import FIT or ZIP file** for activity data, or **Enter data manually** for aggregate distance and duration (with optional heart rate, elevation, and calories). A FIT/ZIP upload is persisted when its upload request succeeds.
-5. **Save and back to calendar** saves any pending manual result and complete feedback, then returns to the calendar. **Save and Generate Analysis Prompt** saves those data first, then generates the prompt from the canonical training state returned by the backend.
-6. Copy the generated prompt to your chosen AI assistant. This external analysis-prompt workflow does not call an LLM; explicit cycle-planning generation is a separate opt-in action.
+5. **Save and back to calendar** saves any pending manual result and complete feedback, then returns to the calendar. **Analyze workout** is a separate explicit AI action after that persistence succeeds.
+6. An administrator can select **View external prompt** for an owned session. The page saves pending result and feedback fields, then reads the free prompt from the canonical saved training. Copying this prompt does not call an LLM; regular users do not receive this technical control.
 7. Use **Logout** in the top bar to end the server-side session.
 
 An administrator uses **Users** in the sidebar's **Administration** group to

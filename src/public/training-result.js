@@ -1035,10 +1035,11 @@ async function initTrainingResult() {
   let externalPromptTrap = null;
   let externalPromptReturnFocus = null;
   let externalPromptText = '';
+  let externalPromptPending = false;
   if (sessionUser?.role === 'admin') {
     externalPromptButton = document.createElement('button');
     externalPromptButton.type = 'button';
-    externalPromptButton.className = 'btn-secondary btn-small';
+    externalPromptButton.className = 'btn-secondary';
     externalPromptButton.dataset.analysisExternalPrompt = 'true';
     const promptIcon = document.createElement('i');
     promptIcon.dataset.lucide = 'file-text';
@@ -1099,19 +1100,39 @@ async function initTrainingResult() {
     promptClose.addEventListener('click', closeExternalPrompt);
     promptDone.addEventListener('click', closeExternalPrompt);
     externalPromptButton.addEventListener('click', async () => {
-      externalPromptReturnFocus = externalPromptButton;
-      externalPromptDialog.hidden = false;
-      externalPromptTrap.activate();
-      promptClose.focus();
-      promptArea.value = '';
-      promptStatus.textContent = t('session.analysis.loadingPrompt');
+      if (externalPromptPending) return;
+      const rpe = requireFeedbackRpe();
+      if (rpe === null) return;
+      externalPromptPending = true;
+      externalPromptButton.disabled = true;
+      saveBtn.disabled = true;
+      generateBtn.disabled = true;
+      promptLabel.textContent = analysisKey('saving');
       try {
+        const saved = await persistCurrentState(rpe);
+        if (saved.status !== 'saved') {
+          reportPersistenceFailure(saved);
+          return;
+        }
+        externalPromptReturnFocus = externalPromptButton;
+        externalPromptDialog.hidden = false;
+        externalPromptTrap.activate();
+        promptClose.focus();
+        promptArea.value = '';
+        promptStatus.textContent = t('session.analysis.loadingPrompt');
         const result = await previewAnalysisPrompt(currentTrainingId);
         externalPromptText = result.prompt;
         promptArea.value = externalPromptText;
         promptStatus.textContent = '';
       } catch {
-        promptStatus.textContent = t('session.analysis.promptUnavailable');
+        if (externalPromptDialog.hidden) setStatus(t('session.analysis.promptUnavailable'), 'error');
+        else promptStatus.textContent = t('session.analysis.promptUnavailable');
+      } finally {
+        externalPromptPending = false;
+        externalPromptButton.disabled = false;
+        saveBtn.disabled = false;
+        renderAnalysis();
+        promptLabel.textContent = analysisKey('externalPrompt');
       }
     });
     promptCopy.addEventListener('click', async () => {
@@ -1151,7 +1172,7 @@ async function initTrainingResult() {
     if (!saveBtn.disabled) saveBtn.textContent = t('session.save');
     if (!generateBtn.disabled) generateLabel.textContent = analysisKey('analyze');
     if (externalPromptButton) {
-      externalPromptButton.querySelector('span').textContent = analysisKey('externalPrompt');
+      if (!externalPromptPending) externalPromptButton.querySelector('span').textContent = analysisKey('externalPrompt');
       externalPromptDialog.querySelector('h2').textContent = analysisKey('externalPrompt');
       externalPromptDialog.querySelector('textarea').setAttribute('aria-label', analysisKey('externalPrompt'));
       externalPromptDialog.querySelector('.analysis-dialog-actions button:first-child').textContent = t('common.close');
