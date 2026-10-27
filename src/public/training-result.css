@@ -16,6 +16,8 @@ body {
   gap: 20px;
 }
 
+.feedback-card { container: session-feedback / inline-size; }
+
 .session-header h1 {
   margin: 0;
   font-size: 1.6rem;
@@ -628,14 +630,23 @@ select.input-control {
 }
 
 .form-actions {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
   align-items: center;
-  justify-content: flex-end;
-  gap: 0.6rem;
+  gap: 16px;
   margin-top: 1rem;
   padding-top: 0.9rem;
   border-top: 1px solid var(--line);
+}
+
+.form-actions-save { min-width: 0; }
+.form-actions-save button { max-width: 100%; }
+.form-actions-analysis {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .btn-primary,
@@ -666,19 +677,22 @@ select.input-control {
 
 .form-actions .btn-primary,
 .form-actions .btn-secondary {
-  white-space: normal;
   text-align: center;
   box-sizing: border-box;
+  height: 44px;
   min-height: 44px;
-  padding: 9px 18px;
+  padding: 9px 12px;
   line-height: 1.2;
+  white-space: nowrap;
 }
 
-.form-actions > button svg {
+.form-actions button svg {
   width: 16px;
   height: 16px;
   flex: 0 0 16px;
 }
+
+.form-actions-analysis > button { min-height: 44px; }
 
 .btn-secondary svg {
   width: 16px;
@@ -711,6 +725,13 @@ select.input-control {
 .btn-secondary:disabled {
   opacity: 0.65;
   cursor: not-allowed;
+}
+
+@container session-feedback (max-width: 620px) {
+  .form-actions { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .form-actions-save button { width: 100%; }
+  .form-actions-analysis { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .form-actions-analysis > button { width: 100%; }
 }
 
 .fit-data-section[hidden] {

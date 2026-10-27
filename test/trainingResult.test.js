@@ -1334,7 +1334,12 @@ test('training-result.js wires explicit persisted analysis, protected prompt pre
   assert.match(js, /previewAnalysisPrompt\(currentTrainingId\)/);
   assert.match(js, /sessionUser\?\.role === 'admin'/, 'the prompt control is only constructed for the current administrator');
   assert.match(js, /externalPromptButton\.addEventListener\('click', async \(\) => \{[\s\S]*?const rpe = requireFeedbackRpe\(\);[\s\S]*?const saved = await persistCurrentState\(rpe\);[\s\S]*?previewAnalysisPrompt\(currentTrainingId\)/, 'the owner-admin prompt action persists the complete feedback before reading the prompt');
-  assert.match(js, /externalPromptButton\.className = 'btn-secondary'/, 'the prompt action uses the shared full-size secondary button');
+  assert.match(js, /externalPromptButton\.className = 'btn-secondary btn-small'/, 'the admin prompt is a compact shared secondary action');
+  assert.match(js, /const analysisActions = document\.getElementById\('analysisActions'\)/, 'analysis actions have a dedicated layout group');
+  assert.match(js, /analysisSection\.hidden = !\([\s\S]*?analysisNotice\.dataset\.key\)/, 'only explicit analysis state, never stale notice text, reveals the section');
+  assert.match(js, /if \(analysisData\.active\)[\s\S]*?void refreshAnalysisExecution\(activeAnalysisId, token\)/, 'execution status polling starts only for an active persisted execution');
+  assert.match(js, /setAnalysisNotice\('recoveryUnavailable', true\)/, 'failure to verify a stored idempotency key is distinct from execution polling failure');
+  assert.match(js, /setAnalysisNotice\('analysisUnavailable', true\)/, 'failure to load saved analyses is not presented as a progress-read failure');
   assert.match(js, /createDialogFocusTrap\(externalPromptDialog/);
   assert.match(js, /fetchWorkoutAnalyses\(currentTrainingId/);
   assert.match(js, /setTimeout\(\(\) => \{[\s\S]*refreshAnalysisExecution/);
@@ -1831,12 +1836,14 @@ test('training-result.css keeps the earthy premium aesthetic for the session vie
   assert.match(css, /\.dropzone-text-secondary \{[^}]*opacity:\s*0\.7/, 'the subtitle stays muted');
   assert.match(css, /\.dropzone-text-secondary \{[^}]*margin-top:\s*0\.25rem/);
   assert.match(css, /\.pain-field\[hidden\] \{[^}]*display:\s*none/, 'the pain description hides until pain is reported');
-  assert.match(css, /\.form-actions \{[^}]*display:\s*flex/);
-  assert.match(css, /\.form-actions \{[^}]*justify-content:\s*flex-end/);
+  assert.match(css, /\.form-actions \{[^}]*display:\s*grid/);
+  assert.match(css, /\.form-actions \{[^}]*grid-template-columns:\s*max-content minmax\(0, 1fr\)/);
   assert.match(css, /\.form-actions \{[^}]*border-top:\s*1px solid var\(--line\)/, 'the actions follow the shared form footer divider and spacing');
-  assert.match(css, /\.form-actions \.btn-primary,[\s\S]*padding:\s*9px 18px/, 'result actions use the compact padding of the existing shoe form footer');
-  assert.match(css, /\.form-actions > button svg \{[^}]*width:\s*16px[\s\S]*height:\s*16px/, 'primary and secondary action icons share the established size');
-  assert.match(css, /\.form-actions \.btn-primary,[\s\S]*white-space:\s*normal/);
+  assert.match(css, /\.form-actions \.btn-primary,[\s\S]*padding:\s*9px 12px/, 'result actions use compact padding to keep the save, analysis and admin actions together');
+  assert.match(css, /\.form-actions \.btn-primary,[\s\S]*height:\s*44px/, 'result actions have consistent compact height');
+  assert.match(css, /\.form-actions button svg \{[^}]*width:\s*16px[\s\S]*height:\s*16px/, 'primary and secondary action icons share the established size');
+  assert.match(css, /@container session-feedback \(max-width:\s*620px\)/, 'the action group stacks according to the available card width');
+  assert.match(css, /\.form-actions \.btn-primary,[\s\S]*white-space:\s*nowrap/);
   assert.match(css, /\.btn-secondary \{[^}]*border:\s*1px solid var\(--accent-deep\)/);
   assert.match(css, /\.btn-secondary svg \{[^}]*width:\s*16px/);
   assert.match(

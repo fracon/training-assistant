@@ -694,7 +694,10 @@
         "incompatibleRpeScale": "Use somente a escala Kinesis de RPE de 1 a 5 na correção da interpretação."
       },
       "readUnavailable": "Não foi possível consultar o andamento. Tente ler novamente; nenhuma nova análise será iniciada.",
+      "analysisUnavailable": "Não foi possível carregar as análises salvas. Tente consultar novamente; nenhum treino será gerado.",
+      "recoveryUnavailable": "Não foi possível verificar a solicitação anterior. Uma análise já salva continua disponível; tente consultar novamente. Nenhuma nova análise será iniciada.",
       "connectionRetrying": "Problema temporário de conexão. Continuando a consultar esta execução…",
+      "recovering": "Verificando a solicitação anterior…",
       "outcomeUnknown": "O início da análise teve uma resposta incerta. Consulte novamente; uma nova tentativa usará a mesma chave e não duplicará a execução.",
       "analysisConflict": "Não foi possível iniciar uma nova análise enquanto outra execução deste treino ainda está ativa.",
       "interpretationConflict": "Esta interpretação foi atualizada em outra ação. A lista foi atualizada; revise antes de tentar novamente.",

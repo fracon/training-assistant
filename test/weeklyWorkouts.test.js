@@ -12,6 +12,14 @@ const { DAY_KEYS } = require('../src/availability');
 const { saveAvailabilityWeek } = require('../src/availability');
 const { trainingSignature } = require('../src/trainingImport');
 
+function nextForecastMonday(now = new Date()) {
+  const date = new Date(now);
+  date.setUTCHours(12, 0, 0, 0);
+  const days = (8 - date.getUTCDay()) % 7 || 7;
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
 test('weekly structured schema exposes the same numeric bounds as domain validation', () => {
   const step = weekly.schema.properties.sessions.items.properties.prescription.items;
   const integerBounds = (field) => {
@@ -1013,11 +1021,12 @@ test('weekly weather collector uses its default clock only after a valid availab
       (user_id,day_key,can_train,available_periods,available_minutes,location)
       VALUES(1,'monday',1,'[\"08_12\"]',120,'Porto, Portugal')`,
   ).run();
+  const weekStart = nextForecastMonday();
   const evidence = await weekly.collectWeeklyWeather(
     db,
     1,
-    '2026-10-26',
-    forecastFetcher({ day: '2026-10-26' }),
+    weekStart,
+    forecastFetcher({ day: weekStart }),
   );
   assert.equal(evidence[0].status, 'verified');
   assert.ok(Number.isFinite(Date.parse(evidence[0].lookedUpAt)));
@@ -1980,6 +1989,7 @@ test('proposal application preserves existing results, deduplicates within the w
 
 test('authenticated weekly execution recovers the same owner proposal and applies it without provider replay', async (t) => {
   const db = createDatabase({ filename: ':memory:' });
+  const weekStart = nextForecastMonday();
   const calls = [];
   let holdForecast = false;
   let markForecastRequested;
@@ -2066,7 +2076,8 @@ test('authenticated weekly execution recovers the same owner proposal and applie
       );
       const source = context.sources.find((item) => item.type === 'cycle');
       return {
-        value: proposal([
+        value: {
+          ...proposal([
           session({
             date: weekly.addIsoDays(context.resource.weekStart, 0),
             location: row.location,
@@ -2074,7 +2085,9 @@ test('authenticated weekly execution recovers the same owner proposal and applie
             durationMinutes: 45,
             evidence: [`${source.type}:${source.id}`],
           }),
-        ]),
+          ]),
+          weekStart: context.resource.weekStart,
+        },
         usage: { input: 5, output: 5, cached: 0 },
         error: null,
       };
@@ -2130,7 +2143,7 @@ test('authenticated weekly execution recovers the same owner proposal and applie
     headers: { cookie },
     payload: {
       purpose: 'workouts',
-      target_date: '2026-10-26',
+      target_date: weekStart,
       idempotency_key: 'weekly-route-001',
     },
   });
@@ -2147,7 +2160,8 @@ test('authenticated weekly execution recovers the same owner proposal and applie
     if (!['queued', 'running'].includes(execution.state)) break;
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
-  assert.equal(execution.state, 'completed');
+  const executionDiagnostic = db.prepare('SELECT diagnostics_json FROM ai_executions WHERE id=?').get(executionId);
+  assert.equal(execution.state, 'completed', JSON.stringify({ execution, diagnostics: JSON.parse(executionDiagnostic.diagnostics_json) }));
   assert.equal(calls.length, 1);
   const read = await app.inject({
     method: 'GET',
@@ -2155,7 +2169,7 @@ test('authenticated weekly execution recovers the same owner proposal and applie
     headers: { cookie },
   });
   assert.equal(read.statusCode, 200);
-  assert.equal(read.json().proposal.sessions[0].date, '2026-10-26');
+  assert.equal(read.json().proposal.sessions[0].date, weekStart);
   assert.equal(read.json().weatherEvidence[0].status, 'verified');
   const sentContext = JSON.parse(
     calls[0].input[0].content[0].text,
@@ -2169,7 +2183,7 @@ test('authenticated weekly execution recovers the same owner proposal and applie
   assert.deepEqual(storedContext.weather[0].sourceBinding, {
     userId: owner,
     weekday: 'monday',
-    date: '2026-10-26',
+    date: weekStart,
     period: '08_12',
     location: 'Porto, Portugal',
     availabilityRevision: 1,
@@ -2206,7 +2220,7 @@ test('authenticated weekly execution recovers the same owner proposal and applie
       headers: { cookie },
       payload: {
         purpose: 'workouts',
-        target_date: '2026-10-26',
+        target_date: weekStart,
         idempotency_key: key,
       },
     });
@@ -2284,6 +2298,7 @@ test('authenticated weekly execution recovers the same owner proposal and applie
 });
 
 test('weekly forecast revalidates an owner deactivated or deleted while weather is pending', async () => {
+  const weekStart = nextForecastMonday();
   for (const state of ['deactivate', 'delete']) {
     const db = createDatabase({ filename: ':memory:' });
     let signalForecast;
@@ -2295,7 +2310,7 @@ test('weekly forecast revalidates an owner deactivated or deleted while weather 
       releaseForecast = resolve;
     });
     let providerCalls = 0;
-    const fetcher = forecastFetcher({ day: '2026-10-26' });
+    const fetcher = forecastFetcher({ day: weekStart });
     const app = await buildServer({
       db,
       sessionCookieSecure: false,
@@ -2358,7 +2373,7 @@ test('weekly forecast revalidates an owner deactivated or deleted while weather 
         headers: { cookie },
         payload: {
           purpose: 'workouts',
-          target_date: '2026-10-26',
+          target_date: weekStart,
           idempotency_key: `pending-${state}-forecast`,
         },
       });

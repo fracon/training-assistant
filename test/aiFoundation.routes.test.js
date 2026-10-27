@@ -180,6 +180,15 @@ test('HTTP asynchronous contract survives polling/reload with mock-only register
   });
   assert.equal(created.statusCode, 202);
   const id = created.json().id;
+  const recoveredByKey = await send('GET', '/api/ai/executions?idempotency_key=synthetic-cycle');
+  assert.deepEqual(recoveredByKey.json().executions.map((item) => item.id), [id],
+    'exact owner-scoped recovery finds an execution by its idempotency key');
+  assert.deepEqual((await send('GET', '/api/ai/executions?idempotency_key=synthetic-cycle', undefined, 2)).json().executions, [],
+    'an exact-key lookup never exposes another owner execution');
+  assert.deepEqual((await send('GET', '/api/ai/executions?idempotency_key=missing-key')).json().executions, [],
+    'a key with no accepted request returns an empty recovery result');
+  assert.equal((await send('GET', '/api/ai/executions?idempotency_key=x')).statusCode, 400);
+  assert.equal((await send('GET', '/api/ai/executions?unexpected=true')).statusCode, 400);
   assert.ok(
     ['queued', 'running'].includes(
       (await send('GET', `/api/ai/executions/${id}`)).json().state,

@@ -76,6 +76,19 @@ superseded.
 The product response omits raw evidence identifiers. The admin prompt/debug
 modal is separate from ordinary analysis text and uses the shared focus trap.
 
+The result page reads persisted analyses once when the owned training opens.
+It polls an execution only when that read returns a queued/running execution or
+when a stored idempotency key needs recovery. Recovery performs an exact,
+owner-scoped lookup by that key, including terminal executions and records
+outside the ordinary recent-execution list. Feedback alone never starts a
+status poll. A key with no matching execution is cleared after the exact lookup
+returns successfully; no generation is started by that recovery. Failures to
+load analysis history, verify a stored request, and read a known execution
+have distinct localized states. A read failure never replaces an already
+displayed analysis. Switching tabs only resumes an actual
+execution or unresolved stored request; the page removes its timer and aborts
+its in-flight status read when it is left.
+
 ## Context, freshness, and interpretations
 
 The context builder reuses the shared cycle, planning, history, feedback,
@@ -83,7 +96,13 @@ availability, shoe and preference selection policy. For analysis it adds the
 selected owned session, canonical result, reported feedback and bounded FIT laps.
 Feedback edited on the result page is persisted on the owned training row; its
 date and user-report fields are then selected into analysis and later shared
-contexts from that canonical row. It does not require a separate AI-memory write.
+contexts from that canonical row. `GET /api/ai/memory` and future cycle, weekly,
+and analysis contexts derive their dated report from the same canonical row at
+read time. There is no parallel feedback entry in `ai_memory` to update, so a
+successful result-feedback write is immediately reflected in those derived
+views without a duplicate write or a stale materialized copy. Tests verify the
+saved RPE and notes through both the memory overview API and the next shared
+context. The separate prior-experience editor still uses versioned `ai_profiles`.
 An associated cycle can be included even when it is no longer active. No applied
 AI planning is required. Existing planning is marked stale using its original
 fingerprint; incompatible RPE guidance is excluded by the established cycle-plan

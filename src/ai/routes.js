@@ -111,9 +111,14 @@ function registerAiRoutes(
       config,
     });
   });
-  route('get', '/api/ai/executions', (r) => ({
-    executions: service.list(r.user.id),
-  }));
+  route('get', '/api/ai/executions', (r) => {
+    exactKeys(r.query, ['idempotency_key']);
+    if (r.query.idempotency_key !== undefined) {
+      const match = service.findByIdempotencyKey(r.user.id, r.query.idempotency_key);
+      return { executions: match ? [match] : [] };
+    }
+    return { executions: service.list(r.user.id) };
+  });
   route('post', '/api/ai/executions', async (r, reply) => {
     let evidence = {};
     if (r.body?.purpose === 'workouts') {

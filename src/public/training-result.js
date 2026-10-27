@@ -392,6 +392,7 @@ async function initTrainingResult() {
   const generateBtn = document.getElementById('generateBtn');
   const generateLabel = generateBtn.querySelector('span');
   const analysisSection = document.getElementById('analysisSection');
+  const analysisActions = document.getElementById('analysisActions');
   const analysisState = document.getElementById('analysisState');
   const analysisNotice = document.getElementById('analysisNotice');
   const analysisContent = document.getElementById('analysisContent');
@@ -534,13 +535,15 @@ async function initTrainingResult() {
     const data = analysisData;
     const last = data?.analyses?.[0] || null;
     const latest = data?.latest || null;
-    analysisSection.hidden = !(data?.analyses?.length || data?.active || activeAnalysisId || analysisStartPending || analysisNotice.textContent);
+    analysisSection.hidden = !(data?.analyses?.length || data?.active || activeAnalysisId || analysisStartPending || analysisOutcomeUncertain || analysisNotice.dataset.key);
     generateBtn.disabled = Boolean(activeAnalysisId || analysisStartPending || analysisOutcomeUncertain);
     analysisContent.replaceChildren();
     analysisHistoryContent.replaceChildren();
     analysisHistory.hidden = !data?.analyses?.some((item) => item.result && item.id !== latest?.id);
     if (data?.active || activeAnalysisId) {
       analysisState.textContent = analysisKey('running');
+    } else if (analysisOutcomeUncertain) {
+      analysisState.textContent = analysisKey('recovering');
     } else if (last && last.state !== 'completed') {
       analysisState.textContent = analysisKey(`states.${last.state}`) || analysisKey('states.failed');
       if (!analysisNotice.dataset.key && (last.state === 'failed' || last.state === 'uncertain' || last.state === 'cancelled' || last.state === 'outdated')) {
@@ -633,13 +636,16 @@ async function initTrainingResult() {
   }
   async function loadAnalysisState() {
     const token = ++analysisReadToken;
+    clearAnalysisTimer();
     try {
-      analysisData = await fetchWorkoutAnalyses(currentTrainingId);
+      const loaded = await fetchWorkoutAnalyses(currentTrainingId);
       if (token !== analysisReadToken) return;
+      analysisData = loaded;
       activeAnalysisId = analysisData.active?.id ?? null;
+      analysisOutcomeUncertain = false;
+      setAnalysisNotice('', false);
       renderAnalysis();
       if (analysisData.active) {
-        analysisOutcomeUncertain = false;
         void refreshAnalysisExecution(activeAnalysisId, token);
         return true;
       }
@@ -648,7 +654,13 @@ async function initTrainingResult() {
         activeAnalysisRequestKey = pendingKey;
         analysisOutcomeUncertain = true;
         renderAnalysis();
-        const executions = await fetchAiExecutions();
+        let executions;
+        try {
+          executions = await fetchAiExecutions(pendingKey);
+        } catch {
+          if (token === analysisReadToken) setAnalysisNotice('recoveryUnavailable', true);
+          return false;
+        }
         if (token !== analysisReadToken) return;
         const match = executions.find((item) => item.purpose === 'analysis' && String(item.resource_id) === String(currentTrainingId) && item.idempotency_key === pendingKey);
         if (match) {
@@ -656,12 +668,17 @@ async function initTrainingResult() {
           analysisOutcomeUncertain = false;
           setAnalysisNotice('', false);
           void refreshAnalysisExecution(match.id, token);
-        } else if (!match) setAnalysisNotice('outcomeUnknown', true);
+        } else {
+          activeAnalysisRequestKey = null;
+          analysisOutcomeUncertain = false;
+          try { sessionStorage.removeItem(analysisStorageKey()); } catch { /* storage unavailable */ }
+          setAnalysisNotice('', false);
+        }
         renderAnalysis();
       }
       return true;
     } catch {
-      if (token === analysisReadToken) setAnalysisNotice('readUnavailable', true);
+      if (token === analysisReadToken) setAnalysisNotice('analysisUnavailable', true);
       return false;
     }
   }
@@ -1039,7 +1056,7 @@ async function initTrainingResult() {
   if (sessionUser?.role === 'admin') {
     externalPromptButton = document.createElement('button');
     externalPromptButton.type = 'button';
-    externalPromptButton.className = 'btn-secondary';
+    externalPromptButton.className = 'btn-secondary btn-small';
     externalPromptButton.dataset.analysisExternalPrompt = 'true';
     const promptIcon = document.createElement('i');
     promptIcon.dataset.lucide = 'file-text';
@@ -1047,7 +1064,7 @@ async function initTrainingResult() {
     const promptLabel = document.createElement('span');
     promptLabel.textContent = t('session.analysis.externalPrompt');
     externalPromptButton.append(promptIcon, promptLabel);
-    generateBtn.parentElement.insertBefore(externalPromptButton, generateBtn);
+    analysisActions.append(externalPromptButton);
     externalPromptDialog = document.createElement('div');
     externalPromptDialog.className = 'import-help-dialog';
     externalPromptDialog.setAttribute('role', 'dialog');
@@ -1227,7 +1244,7 @@ async function initTrainingResult() {
     if (activeAnalysisId) {
       clearAnalysisTimer();
       void refreshAnalysisExecution(activeAnalysisId, ++analysisReadToken);
-    } else {
+    } else if (!analysisStartPending && activeAnalysisRequestKey) {
       void loadAnalysisState();
     }
   };

@@ -102,8 +102,11 @@ export async function saveAiCoachAvailability(days) {
   return payload.availability;
 }
 
-export async function fetchAiExecutions() {
-  const response = await fetch('/api/ai/executions', {
+export async function fetchAiExecutions(idempotencyKey = null) {
+  const url = idempotencyKey
+    ? `/api/ai/executions?idempotency_key=${encodeURIComponent(idempotencyKey)}`
+    : '/api/ai/executions';
+  const response = await fetch(url, {
     headers: { accept: 'application/json' },
   });
   const payload = await response.json().catch(() => ({}));

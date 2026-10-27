@@ -113,6 +113,13 @@ function createExecutionService({
       )
       .all(userId);
   }
+  function findByIdempotencyKey(userId, key) {
+    activeOwner(db, userId);
+    if (typeof key !== 'string' || !/^[\w-]{8,100}$/.test(key))
+      throw new AiError('invalidIdempotencyKey');
+    return db.prepare(`SELECT id,idempotency_key,purpose,resource_id,state,created_at,updated_at
+      FROM ai_executions WHERE user_id=? AND idempotency_key=?`).get(userId, key) || null;
+  }
   function preview(userId, body) {
     exactKeys(body, [
       'purpose',
@@ -769,6 +776,7 @@ function createExecutionService({
     enqueue,
     get,
     list,
+    findByIdempotencyKey,
     preview,
     cancel,
     recover,

@@ -131,6 +131,7 @@ test('the session page requires a realized RPE before saving, generating or uplo
   };
   const manualId = seedTraining();
   const fitId = seedTraining();
+  const feedbackId = seedTraining(account.id, { feedback_rpe: 4 });
   const legacyId = seedTraining(account.id, { completed: 1 });
   db.prepare(
     "UPDATE trainings SET result_data_source = 'fit_upload', fit_duration = '01:00:00', fit_distance = 10, fit_summary_json = '{}' WHERE id = ?"
@@ -335,6 +336,27 @@ test('the session page requires a realized RPE before saving, generating or uplo
       true,
       'an empty analysis section is absent from the initial browser layout'
     );
+    assert.equal(requests.some(({ method, url }) => method === 'GET' && new URL(url).pathname.startsWith('/api/ai/executions')), false,
+      'a session without an analysis request does not query execution progress');
+    await openSession(feedbackId);
+    assert.equal(await evaluate("document.getElementById('analysisSection').hidden"), true,
+      'saved feedback by itself does not reveal an analysis section');
+    assert.equal(requests.some(({ method, url }) => method === 'GET' && new URL(url).pathname.startsWith('/api/ai/executions')), false,
+      'saved feedback by itself does not query execution progress');
+    await evaluate(`sessionStorage.setItem('kinesis:analysis-request:${feedbackId}', 'stale-synthetic-request-key')`);
+    await command('Page.reload');
+    await waitFor(`sessionStorage.getItem('kinesis:analysis-request:${feedbackId}')===null`, 'clearing a stale request key after the owner-scoped execution list confirms no accepted request');
+    assert.equal(await evaluate("document.getElementById('analysisSection').hidden"), true,
+      'a stale key with no accepted execution does not leave an empty error panel');
+    assert.equal(requests.filter(({ method, url }) => method === 'GET' && new URL(url).pathname === '/api/ai/executions').length, 1,
+      'recovery performs one exact lookup for a stored idempotency key');
+    assert.equal(new URL(requests.find(({ method, url }) => method === 'GET' && new URL(url).pathname === '/api/ai/executions').url).searchParams.get('idempotency_key'), 'stale-synthetic-request-key',
+      'recovery checks the exact stored key instead of scanning a capped recent list');
+    assert.equal(requests.some(({ method, url }) => method === 'GET' && /\/api\/ai\/executions\/[^/]+$/.test(new URL(url).pathname)), false,
+      'recovery without a matching execution never polls a nonexistent execution');
+    assert.equal(writes().some(({ method, url }) => method === 'POST' && url.endsWith('/api/ai/executions')), false,
+      'opening and recovering the session never starts generation');
+    await openSession(manualId);
     const initial = await evaluate(`(()=>{
       const group=document.getElementById('feedbackRpe');
       const error=document.getElementById('feedbackRpeError');
@@ -527,8 +549,12 @@ test('the session page requires a realized RPE before saving, generating or uplo
     assert.equal(writes().filter(({ method, url }) => method === 'POST' && url.endsWith('/api/ai/executions')).length, 1, 'one explicit execution POST was sent');
     await waitFor('window.__analysisListReads>=2', 'the free retry after a transient terminal analysis-list read failure');
     await waitFor("document.getElementById('analysisContent').textContent.includes('Synthetic analysis arrived')", 'automatic analysis display after the failed first list read');
+    const generationWrites = writes();
+    requests.length = 0;
     await command('Page.reload');
     await waitFor("document.getElementById('analysisContent').textContent.includes('Synthetic analysis arrived')", 'the automatically recovered analysis');
+    assert.equal(requests.some(({ method, url }) => method === 'GET' && new URL(url).pathname.startsWith('/api/ai/executions')), false,
+      'reopening a persisted completed analysis does not poll an execution');
     const generated = await evaluate(`(()=>({
       analysis:document.getElementById('analysisContent').textContent,
       url:location.pathname,
@@ -579,7 +605,7 @@ test('the session page requires a realized RPE before saving, generating or uplo
     await waitFor("document.querySelector('.analysis-interpretation p').textContent==='Synthetic correction confirmed in the browser.'", 'saving the local interpretation correction');
     assert.equal(await evaluate("document.getElementById('analysisCorrectionDialog').hidden"), true, 'the dialog closes after the mutation response confirms success');
     assert.equal(await evaluate("document.activeElement.dataset.interpretationAction?.endsWith(':correct')"), true, 'focus returns to the equivalent control on the updated item');
-    await waitFor("document.getElementById('analysisNotice').textContent.includes('Could not read')", 'a refresh error distinct from the confirmed correction');
+    await waitFor("document.getElementById('analysisNotice').textContent.includes('Could not load saved analyses')", 'a refresh error distinct from the confirmed correction');
     assert.equal(await evaluate("document.querySelector('.analysis-interpretation p').textContent"), 'Synthetic correction confirmed in the browser.', 'the confirmed correction remains visible despite a failed list refresh');
     await command('Page.reload');
     await waitFor("document.querySelector('.analysis-interpretation p').textContent==='Synthetic correction confirmed in the browser.'", 'recovery of the persisted correction after reload');
@@ -612,7 +638,7 @@ test('the session page requires a realized RPE before saving, generating or uplo
     assert.equal(generated.hidden, false);
     assert.equal(providerCalls, 1, 'reload recovered the same execution without another provider call');
     assert.ok(
-      writes().some(({ method, url }) => method === 'PATCH' && url.endsWith(`/api/trainings/${manualId}`)),
+      generationWrites.some(({ method, url }) => method === 'PATCH' && url.endsWith(`/api/trainings/${manualId}`)),
       'feedback persistence precedes analysis generation'
     );
     assert.equal(row(manualId).completed, 1);
@@ -900,10 +926,29 @@ test('the session page requires a realized RPE before saving, generating or uplo
       const buttons=[...document.querySelectorAll('.form-actions button')];
       window.__actionButtonHeights=buttons.map(button=>Math.round(button.getBoundingClientRect().height));
       window.__actionButtonRects=buttons.map(button=>{const rect=button.getBoundingClientRect();return {x:Math.round(rect.x),y:Math.round(rect.y),right:Math.round(rect.right)}});
-      const footer=buttons[0].parentElement.getBoundingClientRect();
+      const footer=document.querySelector('.form-actions').getBoundingClientRect();
       window.__actionFooterRect={left:Math.round(footer.left),right:Math.round(footer.right)};
+      window.__actionContainerWidth=document.querySelector('.feedback-card').clientWidth;
       return true;
     })()`);
+    await evaluate("document.querySelector('.form-actions').scrollIntoView({block:'center'}); true");
+    await delay(120);
+    const actionDesktop = await command('Page.captureScreenshot', { format: 'png' });
+    writeFileSync('/tmp/kinesis-session-actions-desktop.png', Buffer.from(actionDesktop.data, 'base64'));
+    await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    assert.equal(await evaluate('document.documentElement.scrollWidth>innerWidth'), false, 'the admin action footer has no horizontal overflow at mobile width');
+    await evaluate("document.querySelector('.form-actions').scrollIntoView({block:'center'}); true");
+    await delay(100);
+    const mobileActionLayout = await evaluate(`(()=>({
+      rows:new Set([...document.querySelectorAll('.form-actions button')].map(button=>Math.round(button.getBoundingClientRect().y))).size,
+      widths:[...document.querySelectorAll('.form-actions button')].map(button=>Math.round(button.getBoundingClientRect().width)),
+      overflow:document.documentElement.scrollWidth>innerWidth,
+    }))()`);
+    assert.equal(mobileActionLayout.rows, 3, 'mobile actions use an intentional single-column layout');
+    assert.equal(new Set(mobileActionLayout.widths).size, 1, 'mobile action buttons share one aligned width');
+    const actionMobile = await command('Page.captureScreenshot', { format: 'png' });
+    writeFileSync('/tmp/kinesis-session-actions-mobile.png', Buffer.from(actionMobile.data, 'base64'));
+    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
     await clickUntil("[data-analysis-external-prompt='true']", "!!document.querySelector('.analysis-prompt-card textarea')?.value.includes('Saved before external prompt preview.')", 'the free admin prompt preview after saving feedback');
     assert.equal(row(adminTrainingId).feedback_rpe, 4, 'the external prompt action saves the current RPE first');
     assert.equal(row(adminTrainingId).feedback_notas, 'Saved before external prompt preview.', 'the external prompt action saves current notes first');
@@ -922,10 +967,16 @@ test('the session page requires a realized RPE before saving, generating or uplo
       `PATCH /api/trainings/${adminTrainingId}`,
       'POST /api/ai/admin/preview',
     ], 'feedback persistence completes before the free prompt preview is requested');
-    assert.equal(await evaluate('new Set(window.__actionButtonHeights).size'), 1, 'all three footer actions use the same button height');
-    assert.equal(await evaluate('new Set(window.__actionButtonRects.map(rect=>rect.y)).size'), 2, 'the footer wraps actions naturally when the available content width cannot fit all three');
-    assert.equal(await evaluate('window.__actionButtonRects[1].right===window.__actionButtonRects[2].right'), true, 'the wrapped primary action aligns with the right edge of the secondary action row');
+    assert.equal(await evaluate('new Set(window.__actionButtonHeights).size'), 1,
+      `all three footer actions use the same button height (observed: ${JSON.stringify(await evaluate('window.__actionButtonHeights'))})`);
+    const desktopActionRows = await evaluate('new Set(window.__actionButtonRects.map(rect=>rect.y)).size');
+    const actionContainerWidth = await evaluate('window.__actionContainerWidth');
+    assert.equal(desktopActionRows, actionContainerWidth <= 620 ? 3 : 1,
+      'the desktop action group stays on one row when it fits and stacks deliberately by card width otherwise');
     assert.equal(await evaluate('window.__actionButtonRects.every(rect=>rect.x>=window.__actionFooterRect.left&&rect.right<=window.__actionFooterRect.right)'), true, 'the action group stays inside the footer and card width');
+    if (actionContainerWidth > 620)
+      assert.equal(await evaluate('window.__actionButtonRects[1].y===window.__actionButtonRects[2].y && window.__actionButtonRects[1].x<window.__actionButtonRects[2].x'), true,
+        'the primary analysis action and compact admin prompt stay grouped beside the stable save action');
     const adminPreview = await evaluate(`(()=>({
       role:document.querySelector('[role=dialog][aria-modal=true]')!==null,
       active:document.activeElement.getAttribute('aria-label'),
@@ -937,9 +988,6 @@ test('the session page requires a realized RPE before saving, generating or uplo
     assert.ok(adminPreview.prompt.includes('INSTRUÇÕES PARA A ANÁLISE'));
     assert.equal(providerCalls, 2, 'viewing the prompt does not call the provider');
     assert.equal(writes().filter(({ method, url }) => method === 'POST' && url.endsWith('/api/ai/executions')).length, 0);
-    await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
-    assert.equal(await evaluate('document.documentElement.scrollWidth>innerWidth'), false, 'the admin action footer has no horizontal overflow at mobile width');
-    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
     await pressKey('Tab', 'Tab', 9);
     await pressKey('Tab', 'Tab', 9);
     await pressKey('Tab', 'Tab', 9);
