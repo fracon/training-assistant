@@ -1398,13 +1398,15 @@
     },
     "interpretationIncluded": "Fontes atuais: selecionada para contextos futuros.",
     "interpretationNotSelected": "Não selecionada atualmente: as fontes podem ter mudado ou o item não coube no contexto.",
+    "interpretationSelectionUnverified": "Salvo. A seleção para o contexto será verificada ao atualizar a memória.",
     "interpretationConfirm": "Confirmar",
     "interpretationCorrect": "Corrigir",
     "interpretationDiscard": "Descartar",
     "interpretationCorrectionLabel": "Correção como relato do usuário",
     "interpretationSaveCorrection": "Salvar correção",
     "interpretationSaved": "Interpretação atualizada.",
-    "interpretationOriginal": "Interpretação original"
+    "interpretationOriginal": "Interpretação original",
+    "interpretationCorrectionLabel": "Sua correção"
   },
   "cyclePlanning": {
     "admin": "Detalhes administrativos",

@@ -50,6 +50,10 @@ function logUnexpectedError(error, request) {
   // account identifiers or credentials. Stack frames retain code locations.
   console.error(`[Kinesis] ${JSON.stringify(diagnostic)}`);
 }
+function projectPublicExecution(execution) {
+  if (execution?.purpose !== 'analysis') return execution;
+  return { ...execution, response: null };
+}
 function registerAiRoutes(
   app,
   {
@@ -153,7 +157,7 @@ function registerAiRoutes(
         availabilitySnapshot,
       };
     }
-    return reply.code(202).send(service.enqueue(r.user.id, r.body, evidence));
+    return reply.code(202).send(projectPublicExecution(service.enqueue(r.user.id, r.body, evidence)));
   });
   route('get', '/api/ai/workouts/:id/proposal', (r) =>
     readWeeklyProposal(db, r.user.id, r.params.id, service),
@@ -162,13 +166,11 @@ function registerAiRoutes(
     applyWeeklyProposal(db, r.user.id, r.params.id, r.body, service),
   );
   route('get', '/api/ai/executions/:id', (r) => {
-    const execution = service.get(r.user.id, r.params.id);
-    if (execution.purpose === 'analysis') execution.response = null;
-    return execution;
+    return projectPublicExecution(service.get(r.user.id, r.params.id));
   });
   route('post', '/api/ai/executions/:id/cancel', (r) => {
     exactKeys(r.body || {}, []);
-    return service.cancel(r.user.id, r.params.id);
+    return projectPublicExecution(service.cancel(r.user.id, r.params.id));
   });
   route('get', '/api/ai/admin/executions/:id', (r) =>
     service.get(r.user.id, r.params.id, true),

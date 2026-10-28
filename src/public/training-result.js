@@ -1103,7 +1103,7 @@ async function initTrainingResult() {
     formActions.classList.add('has-admin-prompt');
     formActions.insertBefore(externalPromptButton, generateBtn);
     externalPromptDialog = document.createElement('div');
-    externalPromptDialog.className = 'import-help-dialog';
+    externalPromptDialog.className = 'import-help-dialog analysis-prompt-dialog';
     externalPromptDialog.setAttribute('role', 'dialog');
     externalPromptDialog.setAttribute('aria-modal', 'true');
     externalPromptDialog.setAttribute('aria-labelledby', 'analysisExternalPromptTitle');
@@ -1118,7 +1118,7 @@ async function initTrainingResult() {
     const promptClose = document.createElement('button');
     promptClose.type = 'button';
     promptClose.className = 'btn-icon';
-    promptClose.setAttribute('aria-label', t('session.analysis.close'));
+    promptClose.setAttribute('aria-label', analysisKey('close'));
     const promptCloseIcon = document.createElement('i');
     promptCloseIcon.dataset.lucide = 'x';
     promptCloseIcon.setAttribute('aria-hidden', 'true');
@@ -1132,15 +1132,15 @@ async function initTrainingResult() {
     promptArea.readOnly = true;
     promptArea.setAttribute('aria-label', t('session.analysis.externalPrompt'));
     const promptActions = document.createElement('footer');
-    promptActions.className = 'analysis-dialog-actions';
+    promptActions.className = 'analysis-dialog-actions confirm-actions';
     const promptCopy = document.createElement('button');
     promptCopy.type = 'button';
-    promptCopy.className = 'btn-primary';
+    promptCopy.className = 'btn btn-primary';
     promptCopy.textContent = t('session.analysis.copyPrompt');
     const promptDone = document.createElement('button');
     promptDone.type = 'button';
-    promptDone.className = 'btn-secondary';
-    promptDone.textContent = t('common.close');
+    promptDone.className = 'btn btn-secondary';
+    promptDone.textContent = analysisKey('close');
     promptActions.append(promptDone, promptCopy);
     promptCard.append(promptHeader, promptStatus, promptArea, promptActions);
     externalPromptDialog.append(promptCard);
@@ -1191,7 +1191,8 @@ async function initTrainingResult() {
     });
     promptCopy.addEventListener('click', async () => {
       const copied = await copyAnalysisPrompt(externalPromptText);
-      promptStatus.textContent = t(copied ? 'session.analysis.promptCopied' : 'session.analysis.promptCopyFailed');
+      promptStatus.dataset.key = copied ? 'promptCopied' : 'promptCopyFailed';
+      promptStatus.textContent = analysisKey(promptStatus.dataset.key);
     });
   }
   const importGuidance = createImportGuidance({
@@ -1231,8 +1232,11 @@ async function initTrainingResult() {
       if (!externalPromptPending) externalPromptButton.querySelector('span').textContent = analysisKey('externalPrompt');
       externalPromptDialog.querySelector('h2').textContent = analysisKey('externalPrompt');
       externalPromptDialog.querySelector('textarea').setAttribute('aria-label', analysisKey('externalPrompt'));
-      externalPromptDialog.querySelector('.analysis-dialog-actions button:first-child').textContent = t('common.close');
+      externalPromptDialog.querySelector('.analysis-dialog-actions button:first-child').textContent = analysisKey('close');
+      externalPromptDialog.querySelector('.analysis-prompt-card header button').setAttribute('aria-label', analysisKey('close'));
       externalPromptDialog.querySelector('.analysis-dialog-actions button:last-child').textContent = analysisKey('copyPrompt');
+      if (externalPromptDialog.querySelector('.analysis-notice').dataset.key)
+        externalPromptDialog.querySelector('.analysis-notice').textContent = analysisKey(externalPromptDialog.querySelector('.analysis-notice').dataset.key);
     }
     if (analysisNotice.dataset.key) analysisNotice.textContent = analysisKey(analysisNotice.dataset.key);
     renderAnalysis();

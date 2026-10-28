@@ -54,10 +54,12 @@ superseded.
 - `POST /api/ai/executions` with `purpose: analysis`, the session ID as
   `resource_id`, and an idempotency key creates/reuses the standard execution.
   A second active execution for the same owner and training reuses the existing
-  one.
-- `GET /api/ai/executions/:id` is a free read and never exposes the raw analysis
-  response through the generic execution endpoint. Protected administrator
-  debug remains separately owner-scoped.
+  one. Every public execution response for this purpose (creation, idempotent
+  reuse, read, and cancellation, including terminal executions) removes the raw
+  response and internal evidence. The allowlisted analysis presentation remains
+  available through `GET /api/trainings/:id/analyses`; protected administrator
+  debug remains separately owner-scoped. This projection is specific to workout
+  analysis and does not change cycle or weekly-workout execution responses.
 - `POST /api/ai/interpretations/:id/{confirm,correct,discard}` applies an
   optimistic `expected_version`. Correction accepts bounded user text. Discarded
   and superseded items cannot be revived by an old analysis. `confirm` is only
@@ -75,6 +77,10 @@ superseded.
 
 The product response omits raw evidence identifiers. The admin prompt/debug
 modal is separate from ordinary analysis text and uses the shared focus trap.
+Its external prompt opens in that modal, keeps the complete prompt in an
+internally scrollable reading area, and uses localized shared footer actions.
+Changing language while it remains open updates its controls and copy feedback;
+the prompt prose itself remains the external template's original language.
 
 The result page reads persisted analyses from the owner-scoped
 `GET /api/trainings/:id/analyses` endpoint when the owned training opens. This
@@ -147,6 +153,11 @@ new analysis's freshness check can reproduce its input exactly; later contexts
 select only the effective current items. User corrections are stored separately
 from model text. This is the minimum decision workflow, not general memory CRUD.
 Dismissal is durable and never silently becomes current again.
+After a local interpretation mutation, Training Memory preserves the API's
+original and correction fields while it refreshes context membership. Until a
+successful overview read confirms that membership, the UI labels it unverified
+instead of optimistically claiming that the item is selected. A failed refresh
+does not erase the saved decision or its correction history.
 
 ## Persistence and migration
 

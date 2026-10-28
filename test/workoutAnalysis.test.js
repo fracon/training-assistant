@@ -353,7 +353,8 @@ test('invalid model output retains sanitized validation diagnostics and does not
 
 test('interpretation identity retains sibling conclusions, exact repeats, replacement history, and the freshness snapshot', async () => {
   const f = fixture();
-  let call = 0;
+  let providerCalls = 0;
+  let clock = Date.parse('2026-10-26T12:00:00.000Z');
   const outputs = [
     [
       { kind: 'pattern', text: 'A conclusão inicial descreve estabilidade.', evidence: ['training:101'] },
@@ -366,11 +367,11 @@ test('interpretation identity retains sibling conclusions, exact repeats, replac
   ];
   const service = createExecutionService({
     db: f.db, config: f.config, operations: { analysis: createWorkoutAnalysisAdapter(f.db) },
-    now: () => '2026-10-26T12:00:00.000Z',
+    now: () => new Date(++clock).toISOString(),
     client: async (payload) => {
       const context = JSON.parse(payload.input[0].content[0].text).context;
       const value = result(context);
-      value.reusableInterpretations = outputs[call++];
+      value.reusableInterpretations = outputs[providerCalls++];
       return { value, usage: { input: 500, output: 150, cached: 0 }, error: null };
     },
   });
@@ -408,10 +409,98 @@ test('interpretation identity retains sibling conclusions, exact repeats, replac
   assert.ok(context.interpretations.some((item) => item.text === 'Relato corrigido pelo usuário.'));
   assert.ok(context.interpretations.some((item) => item.text === 'Uma nova revisão descreve progresso consistente.'));
   assert.equal(context.interpretations.some((item) => item.text === 'Uma terceira leitura ainda é distinta.'), false);
-  assert.equal(providerCallCount(), 4);
+  assert.equal(providerCalls, 4);
   await service.stop();
   f.db.close();
-  function providerCallCount() { return call; }
+});
+
+for (const reaffirmationFirst of [true, false])
+test(`a repeated active interpretation is preserved before replacement as one response set (${reaffirmationFirst ? 'A then C' : 'C then A'})`, async () => {
+  const f = fixture();
+  const a = { kind: 'pattern', text: 'A: consistent documented effort.', evidence: ['training:101'] };
+  const b = { kind: 'pattern', text: 'B: an earlier distinct conclusion.', evidence: ['training:101'] };
+  const c = { kind: 'pattern', text: 'C: a new distinct conclusion.', evidence: ['training:101'] };
+  let providerCalls = 0;
+  let clock = Date.parse('2026-10-26T12:00:00.000Z');
+  const outputs = [[a, b], reaffirmationFirst ? [a, c] : [c, a]];
+  const service = createExecutionService({
+    db: f.db, config: f.config, operations: { analysis: createWorkoutAnalysisAdapter(f.db) },
+    now: () => new Date(++clock).toISOString(),
+    client: async (payload) => {
+      const context = JSON.parse(payload.input[0].content[0].text).context;
+      const value = result(context);
+      value.reusableInterpretations = outputs[providerCalls++];
+      return { value, usage: { input: 100, output: 50, cached: 0 }, error: null };
+    },
+  });
+  const run = async (key) => {
+    const queued = service.enqueue(1, { purpose: 'analysis', resource_id: '101', idempotency_key: key });
+    return { queued, done: await waitFor(service, queued.id) };
+  };
+  const first = await run('set-reaffirm-first-01');
+  const initial = new Map(f.db.prepare('SELECT id,text FROM ai_interpretations WHERE analysis_id=?').all(first.queued.id).map((row) => [row.text, row.id]));
+  const interpretationA = f.db.prepare('SELECT * FROM ai_interpretations WHERE id=?').get(initial.get(a.text));
+  changeInterpretation(f.db, 1, interpretationA.id, 'confirm', { expected_version: interpretationA.version });
+  const second = await run('set-reaffirm-second-02');
+  const final = new Map(f.db.prepare('SELECT id,text,disposition FROM ai_interpretations WHERE user_id=1').all().map((row) => [row.text, row]));
+  assert.equal(final.get(a.text).disposition, 'confirmed', 'the repeated item keeps its existing user decision');
+  assert.equal(final.get(b.text).disposition, 'superseded', 'only the conclusion omitted from the complete new set is replaced');
+  assert.equal(final.get(c.text).disposition, 'pending');
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM ai_interpretations WHERE user_id=1').get().n, 3, 'the repeated item is not duplicated');
+  const replacement = f.db.prepare(`SELECT replaced_interpretation_id,replacement_interpretation_id,replacement_analysis_id
+    FROM ai_interpretation_replacements WHERE user_id=1`).get();
+  assert.deepEqual(replacement, {
+    replaced_interpretation_id: initial.get(b.text),
+    replacement_interpretation_id: final.get(c.text).id,
+    replacement_analysis_id: second.queued.id,
+  });
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM ai_interpretation_replacements WHERE replaced_interpretation_id=?').get(initial.get(a.text)).n, 0,
+    'a reaffirmed interpretation receives no replacement link');
+  assert.equal(readWorkoutAnalyses(f.db, 1, '101', f.config).latest.outdated, false, 'set-level replacement does not stale its own analysis');
+  const context = buildContext(f.db, 1, { purpose: 'cycle', resourceId: 'cycle-a', asOf: '2026-10-26', config: f.config });
+  const selected = new Set((context.interpretations || []).map((item) => item.text));
+  assert.equal(selected.has(a.text), true, 'the affirmed conclusion remains selected in future context');
+  assert.equal(selected.has(c.text), true, 'the new conclusion is selected in future context');
+  assert.equal(selected.has(b.text), false, 'the replaced conclusion is not selected in future context');
+  await service.stop();
+  f.db.close();
+});
+
+test('an exact repeated response keeps corrected, dismissed, and superseded interpretations unchanged', async () => {
+  const f = fixture();
+  const items = [
+    { kind: 'pattern', text: 'A: stable pattern.', evidence: ['training:101'] },
+    { kind: 'pattern', text: 'B: varied pattern.', evidence: ['training:101'] },
+    { kind: 'pattern', text: 'C: third pattern.', evidence: ['training:101'] },
+  ];
+  let providerCalls = 0;
+  let clock = Date.parse('2026-10-26T13:00:00.000Z');
+  const service = createExecutionService({
+    db: f.db, config: f.config, operations: { analysis: createWorkoutAnalysisAdapter(f.db) },
+    now: () => new Date(++clock).toISOString(),
+    client: async (payload) => {
+      const context = JSON.parse(payload.input[0].content[0].text).context;
+      const value = result(context); value.reusableInterpretations = items; providerCalls += 1;
+      return { value, usage: { input: 100, output: 50, cached: 0 }, error: null };
+    },
+  });
+  const run = async (key) => { const row = service.enqueue(1, { purpose: 'analysis', resource_id: '101', idempotency_key: key }); return waitFor(service, row.id); };
+  const first = await run('same-response-first-01');
+  const rows = f.db.prepare('SELECT * FROM ai_interpretations WHERE analysis_id=? ORDER BY text').all(first.id);
+  changeInterpretation(f.db, 1, rows[0].id, 'correct', { expected_version: rows[0].version, text: 'User corrected A.' });
+  changeInterpretation(f.db, 1, rows[1].id, 'discard', { expected_version: rows[1].version });
+  f.db.prepare("UPDATE ai_interpretations SET disposition='superseded' WHERE id=?").run(rows[2].id);
+  const second = await run('same-response-second-02');
+  assert.equal(second.state, 'completed');
+  const after = f.db.prepare('SELECT * FROM ai_interpretations WHERE id IN (?,?,?) ORDER BY id').all(...rows.map((item) => item.id));
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM ai_interpretations WHERE user_id=1').get().n, 3);
+  assert.deepEqual(new Map(after.map((item) => [item.id, item.disposition])), new Map([
+    [rows[0].id, 'corrected'], [rows[1].id, 'dismissed'], [rows[2].id, 'superseded'],
+  ]));
+  assert.equal(after.find((item) => item.id === rows[0].id).correction_text, 'User corrected A.');
+  assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM ai_interpretation_replacements WHERE replacement_analysis_id=?').get(second.id).n, 0,
+    'an exact repeat does not create replacement history or reactivate a prior decision');
+  await service.stop(); f.db.close();
 });
 
 test('analysis history migration is idempotent and preserves an existing pre-analysis training and legacy memory archive', () => {

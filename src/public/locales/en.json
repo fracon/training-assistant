@@ -1398,13 +1398,15 @@
     },
     "interpretationIncluded": "Sources are current: selected for future contexts.",
     "interpretationNotSelected": "Not selected currently: sources may have changed or the item did not fit the context budget.",
+    "interpretationSelectionUnverified": "Saved. Context selection will be checked when the memory refreshes.",
     "interpretationConfirm": "Confirm",
     "interpretationCorrect": "Correct",
     "interpretationDiscard": "Discard",
     "interpretationCorrectionLabel": "Correction as a user report",
     "interpretationSaveCorrection": "Save correction",
     "interpretationSaved": "Interpretation updated.",
-    "interpretationOriginal": "Original interpretation"
+    "interpretationOriginal": "Original interpretation",
+    "interpretationCorrectionLabel": "Your correction"
   },
   "cyclePlanning": {
     "admin": "Administrator details",

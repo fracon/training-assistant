@@ -35,6 +35,7 @@ function createWorkoutAnalysisAdapter(db) {
       const trainingId = row.resource_id;
       db.prepare('UPDATE workout_analysis_versions SET response_json=? WHERE id=? AND user_id=?').run(JSON.stringify(value), row.id, row.user_id);
       const context = JSON.parse(row.context_json);
+      const prepared = [];
       for (const item of value.reusableInterpretations) {
         const refs = [...new Set(item.evidence)].sort().map((ref) => {
           const [type, ...parts] = ref.split(':');
@@ -51,17 +52,44 @@ function createWorkoutAnalysisAdapter(db) {
           (id,user_id,training_id,analysis_id,kind,text,evidence_json,evidence_key,evidence_hash,content_hash,disposition,created_at,updated_at)
           VALUES (?,?,?,?,?,?,?,?,?,?,'pending',?,?)`)
           .run(interpretationId, row.user_id, trainingId, row.id, item.kind, item.text, evidenceJson, evidenceKey, evidenceHash, contentHash, row.created_at, row.created_at);
-        // Exact source-version + content repeats are historical duplicates. Do
-        // not reactivate them or disturb prior user decisions.
-        if (!inserted.changes) continue;
+        const existing = inserted.changes ? null : db.prepare(`SELECT id,disposition,analysis_id FROM ai_interpretations
+          WHERE user_id=? AND kind=? AND evidence_hash=? AND content_hash=?`)
+          .get(row.user_id, item.kind, evidenceHash, contentHash);
+        prepared.push({
+          id: inserted.changes ? interpretationId : existing?.id,
+          kind: item.kind,
+          evidenceKey,
+          evidenceHash,
+          contentHash,
+          inserted: Boolean(inserted.changes),
+          reaffirmed: existing?.analysis_id !== row.id && ['pending', 'confirmed'].includes(existing?.disposition),
+        });
+      }
+
+      // Compare the full response as a set before retiring prior conclusions.
+      // An exact pending/confirmed item repeated in this response is reaffirmed,
+      // independent of whether it appeared before or after a new conclusion.
+      const reaffirmedIds = new Set(prepared.filter((item) => item.reaffirmed).map((item) => item.id));
+      const groups = new Map();
+      for (const item of prepared.filter((candidate) => candidate.inserted)) {
+        const key = JSON.stringify([item.kind, item.evidenceKey]);
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(item);
+      }
+      for (const replacements of groups.values()) {
+        replacements.sort((a, b) => a.contentHash.localeCompare(b.contentHash));
+        const { kind, evidenceKey } = replacements[0];
         const priorItems = db.prepare(`SELECT * FROM ai_interpretations
           WHERE user_id=? AND kind=? AND evidence_key=? AND analysis_id<>?
             AND disposition IN ('pending','confirmed') ORDER BY created_at,id`)
-          .all(row.user_id, item.kind, evidenceKey, row.id);
+          .all(row.user_id, kind, evidenceKey, row.id)
+          .filter((prior) => !reaffirmedIds.has(prior.id));
         for (const prior of priorItems) {
-          db.prepare(`INSERT OR IGNORE INTO ai_interpretation_replacements
-            (user_id,replaced_interpretation_id,replacement_interpretation_id,replacement_analysis_id,replaced_snapshot_json,created_at)
-            VALUES (?,?,?,?,?,?)`).run(row.user_id, prior.id, interpretationId, row.id, JSON.stringify(prior), row.created_at);
+          for (const replacement of replacements) {
+            db.prepare(`INSERT OR IGNORE INTO ai_interpretation_replacements
+              (user_id,replaced_interpretation_id,replacement_interpretation_id,replacement_analysis_id,replaced_snapshot_json,created_at)
+              VALUES (?,?,?,?,?,?)`).run(row.user_id, prior.id, replacement.id, row.id, JSON.stringify(prior), row.created_at);
+          }
           db.prepare(`UPDATE ai_interpretations SET disposition='superseded',version=version+1,updated_at=?
             WHERE id=? AND user_id=? AND disposition IN ('pending','confirmed')`)
             .run(row.created_at, prior.id, row.user_id);

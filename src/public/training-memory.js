@@ -39,6 +39,8 @@ async function initMemory() {
     $('profileForm').querySelector('[type=submit]').disabled = !loaded || busy;
     $('reloadMemory').disabled = busy;
     $('refreshMemoryVersion').disabled = busy;
+    for (const action of document.querySelectorAll('[data-memory-action]'))
+      action.disabled = busy;
     if (user.role === 'admin')
       $('previewForm').querySelector('[type=submit]').disabled =
         !resources || busy;
@@ -214,12 +216,16 @@ async function initMemory() {
       article.dataset.memoryItem = item.id;
       article.tabIndex = -1;
       article.append(node('h3', '', `${t(`interpretationKinds.${item.kind}`)} · ${date(item.dia)}`));
-      if (item.disposition === 'corrected') paragraph(article, `${t('interpretationOriginal')}: ${item.originalText}`);
-      paragraph(article, item.text, false);
+      if (item.correction_text) {
+        paragraph(article, `${t('interpretationOriginal')}: ${item.originalText}`);
+        paragraph(article, `${t('interpretationCorrectionLabel')}: ${item.correction_text}`);
+      } else paragraph(article, item.text, false);
       paragraph(article, t(`interpretationStates.${item.disposition}`), true);
-      paragraph(article, item.current ? t('interpretationIncluded') : t('interpretationNotSelected'), true);
+      paragraph(article, item.current === true
+        ? t('interpretationIncluded')
+        : item.current === false ? t('interpretationNotSelected') : t('interpretationSelectionUnverified'), true);
       link(article, item.href, t('openSession'), `interpretation:${item.href}`);
-      const call = async (action, textValue) => {
+      const call = async (action, textValue, focusAction = action === 'confirm' ? 'correct' : action) => {
         if (busy) return;
         const interpretationId = item.id;
         busy = true; controls();
@@ -231,16 +237,17 @@ async function initMemory() {
             ...entry,
             disposition: saved.interpretation.disposition,
             correction_text: saved.interpretation.correction,
+            originalText: saved.interpretation.text,
             version: saved.interpretation.version,
             updated_at: saved.interpretation.updatedAt,
-            current: saved.interpretation.disposition !== 'dismissed' && saved.interpretation.disposition !== 'superseded',
-            text: saved.interpretation.disposition === 'corrected' ? saved.interpretation.correction : saved.interpretation.originalText,
+            current: saved.interpretation.disposition === 'dismissed' ? false : null,
+            text: saved.interpretation.disposition === 'corrected' ? saved.interpretation.correction : saved.interpretation.text,
           } : entry);
           loaded = true; clearError();
           renderOverview();
           if (document.activeElement === document.body) {
             const equivalent = [...root.querySelectorAll('[data-memory-action]')]
-              .find((control) => control.dataset.memoryAction === `${interpretationId}:${action === 'confirm' ? 'correct' : action}`);
+              .find((control) => control.dataset.memoryAction === `${interpretationId}:${focusAction}`);
             (equivalent || root.querySelector(`[data-memory-item="${CSS.escape(interpretationId)}"]`))?.focus();
           }
           showShellToast(i18n.messages, 'memory.interpretationSaved');
@@ -249,7 +256,14 @@ async function initMemory() {
             loaded = true; clearError(); renderOverview();
           } catch { error({ codes: ['memoryReadFailed'] }, false, true); }
         } catch (e) { error(e, false); }
-        finally { busy = false; controls(); }
+        finally {
+          busy = false; controls();
+          if (document.activeElement === document.body || !document.activeElement?.isConnected) {
+            const equivalent = [...root.querySelectorAll('[data-memory-action]')]
+              .find((control) => control.dataset.memoryAction === `${interpretationId}:${focusAction}`);
+            (equivalent || root.querySelector(`[data-memory-item="${CSS.escape(interpretationId)}"]`))?.focus();
+          }
+        }
       };
       if (['pending', 'confirmed', 'corrected'].includes(item.disposition)) {
         const actions = node('div', 'memory-interpretation-actions');
@@ -275,7 +289,7 @@ async function initMemory() {
         textarea.setAttribute('aria-label', t('interpretationCorrectionLabel'));
         const save = node('button', 'btn-primary btn-small', t('interpretationSaveCorrection')); save.type = 'button';
         save.dataset.memoryAction = `${item.id}:save-correction`;
-        save.addEventListener('click', () => void call('correct', textarea.value.trim()));
+        save.addEventListener('click', () => void call('correct', textarea.value.trim(), 'save-correction'));
         editor.append(summary, textarea, save); article.append(editor);
       }
       interpretationCard.append(article);

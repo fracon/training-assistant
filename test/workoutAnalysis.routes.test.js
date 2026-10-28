@@ -75,3 +75,78 @@ test('analysis history HTTP reads an old persisted analysis after process restar
   assert.equal(afterRestart.json().latest.result.summary.text, 'Resumo sintético persistido.', 'the stored response is recovered from the same SQLite file after a fresh server/database initialization');
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM workout_analysis_versions WHERE id=?').get('legacy-analysis-27').count, 1, 'recovery does not rewrite or duplicate history');
 });
+
+test('public analysis execution routes redact provider responses consistently and keep debug owner-scoped', async (t) => {
+  const db = createDatabase({ filename: ':memory:' });
+  db.prepare("INSERT INTO users(id,email,password_hash,role) VALUES (1,'public-owner@example.invalid','synthetic','user'),(2,'public-admin@example.invalid','synthetic','admin'),(3,'public-other@example.invalid','synthetic','user')").run();
+  db.prepare(`INSERT INTO trainings(id,user_id,dia,tipo,treino,result_data_source,fit_distance,fit_duration,fit_avg_pace,feedback_rpe,completed)
+    VALUES (101,1,'2026-10-27','Run','Synthetic result','manual',5,'30:00','6:00',3,1),
+           (202,2,'2026-10-27','Run','Synthetic admin result','manual',5,'30:00','6:00',4,1)`).run();
+  const config = readAiConfig({ AI_ENABLED: 'true', OPENAI_API_KEY: 'synthetic-only', AI_RETRIES: '0' });
+  let providerCalls = 0;
+  const app = await buildServer({
+    db,
+    aiConfig: config,
+    sessionCookieSecure: false,
+    aiClient: async (payload) => {
+      providerCalls += 1;
+      const context = JSON.parse(payload.input[0].content[0].text).context;
+      const evidence = [`${context.resource.source.type}:${context.resource.source.id}`];
+      return {
+        value: {
+          schemaVersion: 'workout-analysis-v1', language: context.preferences.language,
+          summary: { text: 'Synthetic finding.', evidence },
+          comparison: { text: 'Synthetic comparison.', evidence },
+          contextualReading: [{ text: 'Synthetic contextual reading.', evidence }],
+          attention: [], recommendations: [],
+          classification: { value: 'adequate', evidence },
+          limitations: ['Synthetic provider fixture.'],
+          reusableInterpretations: [{ kind: 'pattern', text: 'Synthetic interpretation.', evidence }],
+        },
+        usage: { input: 20, output: 10, cached: 0 }, error: null,
+      };
+    },
+  });
+  const cookie = (id) => `${SESSION_COOKIE_NAME}=${createSession(db, id).token}`;
+  const headers = (id) => ({ cookie: cookie(id) });
+  const keyFor = (id) => `public-analysis-${id}-key`;
+  const start = async (userId, resourceId) => {
+    const body = { purpose: 'analysis', resource_id: String(resourceId), idempotency_key: keyFor(userId) };
+    const response = await app.inject({ method: 'POST', url: '/api/ai/executions', headers: headers(userId), payload: body });
+    assert.equal(response.statusCode, 202);
+    return { body, id: response.json().id };
+  };
+  const waitForCompletion = async (userId, id) => {
+    for (let attempt = 0; attempt < 150; attempt += 1) {
+      const response = await app.inject({ method: 'GET', url: `/api/ai/executions/${id}`, headers: headers(userId) });
+      if (response.json().state === 'completed') return response;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    throw new Error('synthetic analysis execution did not complete');
+  };
+  t.after(async () => { await app.close(); db.close(); });
+
+  for (const [userId, resourceId] of [[1, 101], [2, 202]]) {
+    const first = await start(userId, resourceId);
+    const completedRead = await waitForCompletion(userId, first.id);
+    assert.equal(completedRead.json().response, null, 'polling never exposes analysis evidence');
+    const repeated = await app.inject({ method: 'POST', url: '/api/ai/executions', headers: headers(userId), payload: first.body });
+    assert.equal(repeated.statusCode, 202);
+    assert.equal(repeated.json().id, first.id);
+    assert.equal(repeated.json().response, null, 'idempotent replay uses the same public projection');
+    const cancelled = await app.inject({ method: 'POST', url: `/api/ai/executions/${first.id}/cancel`, headers: headers(userId), payload: {} });
+    assert.equal(cancelled.statusCode, 200);
+    assert.equal(cancelled.json().state, 'completed');
+    assert.equal(cancelled.json().response, null, 'terminal cancellation also uses the public projection');
+    assert.equal(providerCalls, userId, 'replay and terminal cancellation make no additional provider call');
+
+    const adminDebug = await app.inject({ method: 'GET', url: `/api/ai/admin/executions/${first.id}`, headers: headers(userId) });
+    if (userId === 1) assert.equal(adminDebug.statusCode, 403, 'a regular owner cannot read administrative diagnostics');
+    else {
+      assert.equal(adminDebug.statusCode, 200);
+      assert.ok(adminDebug.json().response.summary.evidence.length, 'authorized owner-admin debug retains exact evidence');
+    }
+    const crossOwner = await app.inject({ method: 'GET', url: `/api/ai/executions/${first.id}`, headers: headers(userId === 1 ? 2 : 1) });
+    assert.equal(crossOwner.statusCode, 404, 'analysis execution access remains owner-scoped, including admins');
+  }
+});
