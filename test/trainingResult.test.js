@@ -1338,7 +1338,9 @@ test('training-result.js wires explicit persisted analysis, protected prompt pre
   assert.match(js, /externalPromptButton\.addEventListener\('click', async \(\) => \{[\s\S]*?const rpe = requireFeedbackRpe\(\);[\s\S]*?const saved = await persistCurrentState\(rpe\);[\s\S]*?previewAnalysisPrompt\(currentTrainingId\)/, 'the owner-admin prompt action persists the complete feedback before reading the prompt');
   assert.match(js, /externalPromptButton\.className = 'btn-secondary'/, 'the admin prompt uses the same shared secondary variant as the weekly prompt');
   assert.match(js, /promptIcon\.dataset\.lucide = 'sparkles'/, 'the session and weekly prompt actions share the sparkles icon reference');
-  assert.match(js, /const analysisActions = document\.getElementById\('analysisActions'\)/, 'analysis actions have a dedicated layout group');
+  assert.match(js, /const formActions = document\.querySelector\('\.feedback-card > \.form-actions'\)/, 'session actions share one layout group');
+  assert.match(js, /formActions\.classList\.add\('has-admin-prompt'\)/, 'only the admin action layout opts into the wider three-button threshold');
+  assert.match(js, /formActions\.insertBefore\(externalPromptButton, generateBtn\)/, 'the admin prompt is inserted between save and analysis in DOM and tab order');
   assert.match(js, /analysisSection\.hidden = !\([\s\S]*?analysisNotice\.dataset\.key\)/, 'only explicit analysis state, never stale notice text, reveals the section');
   assert.match(js, /if \(analysisData\.active\)[\s\S]*?void refreshAnalysisExecution\(activeAnalysisId, token\)/, 'execution status polling starts only for an active persisted execution');
   assert.match(js, /setAnalysisNotice\('recoveryUnavailable', true\)/, 'failure to verify a stored idempotency key is distinct from execution polling failure');
@@ -1847,7 +1849,7 @@ test('training-result.css keeps the earthy premium aesthetic for the session vie
   assert.match(css, /\.dropzone-text-secondary \{[^}]*margin-top:\s*0\.25rem/);
   assert.match(css, /\.pain-field\[hidden\] \{[^}]*display:\s*none/, 'the pain description hides until pain is reported');
   assert.match(css, /\.form-actions \{[^}]*display:\s*flex/);
-  assert.match(css, /\.form-actions \{[^}]*justify-content:\s*space-between/);
+  assert.match(css, /\.form-actions \{[^}]*gap:\s*16px/);
   assert.match(css, /\.form-actions \{[^}]*border-top:\s*1px solid var\(--line\)/, 'the actions follow the shared form footer divider and spacing');
   assert.match(css, /\.form-actions \.btn-session-save \{[^}]*min-height:\s*44px[\s\S]*padding:\s*9px 18px[\s\S]*border-color:\s*var\(--accent-deep\)[\s\S]*color:\s*var\(--accent-deep\)/, 'only the session save action restores its historic green outlined variant and geometry');
   assert.match(css, /\.form-actions #generateBtn \{[^}]*min-height:\s*44px[\s\S]*padding:\s*9px 10px/, 'the analysis button only adjusts dimensions to match save');
@@ -1855,8 +1857,9 @@ test('training-result.css keeps the earthy premium aesthetic for the session vie
   assert.doesNotMatch(css, /(?:^|\n)\.btn-(?:primary|secondary)\s*\{/, 'the result page does not define a second button treatment');
   assert.match(css, /\.form-actions button svg \{[^}]*width:\s*16px[\s\S]*height:\s*16px/, 'primary and secondary action icons share the established size');
   assert.match(css, /@container session-feedback \(max-width:\s*620px\)/, 'the action group stacks according to the available card width');
+  assert.match(css, /@container session-feedback \(max-width:\s*696px\)[\s\S]*?\.form-actions\.has-admin-prompt \{[^}]*flex-direction:\s*column[^}]*align-items:\s*flex-start/, 'admin actions stack together without stretching their intrinsic button widths until all labels fit');
   assert.match(css, /\.analysis-load-warning\[hidden\] \{[^}]*display:\s*none/, 'history errors stay outside the analysis content and hidden after success');
-  assert.match(css, /\.form-actions > div > button \{\s*white-space:\s*nowrap/);
+  assert.match(css, /\.form-actions button \{\s*white-space:\s*nowrap/);
   assert.match(sharedComponents, /\.btn-secondary \{[^}]*border-radius:\s*999px[\s\S]*padding:\s*9px 18px/, 'secondary actions use the shared pill geometry');
   assert.match(sharedComponents, /\.btn-secondary:hover:not\(:disabled\)/, 'secondary actions use the shared hover state');
   assert.match(sharedComponents, /\.btn-secondary:disabled/, 'secondary actions use the shared disabled state');

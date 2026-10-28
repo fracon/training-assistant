@@ -392,7 +392,7 @@ async function initTrainingResult() {
   const generateBtn = document.getElementById('generateBtn');
   const generateLabel = generateBtn.querySelector('span');
   const analysisSection = document.getElementById('analysisSection');
-  const analysisActions = document.getElementById('analysisActions');
+  const formActions = document.querySelector('.feedback-card > .form-actions');
   const analysisLoadWarning = document.getElementById('analysisLoadWarning');
   const analysisLoadMessage = document.getElementById('analysisLoadMessage');
   const analysisLoadAgain = document.getElementById('analysisLoadAgain');
@@ -1100,7 +1100,8 @@ async function initTrainingResult() {
     const promptLabel = document.createElement('span');
     promptLabel.textContent = t('session.analysis.externalPrompt');
     externalPromptButton.append(promptIcon, promptLabel);
-    analysisActions.append(externalPromptButton);
+    formActions.classList.add('has-admin-prompt');
+    formActions.insertBefore(externalPromptButton, generateBtn);
     externalPromptDialog = document.createElement('div');
     externalPromptDialog.className = 'import-help-dialog';
     externalPromptDialog.setAttribute('role', 'dialog');

@@ -639,8 +639,7 @@ select.input-control {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 0;
+  gap: 16px;
   margin-top: 1rem;
   padding-top: 0.9rem;
   border-top: 1px solid var(--line);
@@ -648,14 +647,6 @@ select.input-control {
 
 .form-actions-save { min-width: 0; flex: 0 0 auto; }
 .form-actions-save button { max-width: 100%; }
-.form-actions-analysis {
-  display: flex;
-  min-width: 0;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 4px;
-}
 
 .form-actions .btn-session-save {
   min-height: 44px;
@@ -677,7 +668,7 @@ select.input-control {
   color: var(--accent-deep);
 }
 
-.form-actions > div > button { white-space: nowrap; }
+.form-actions button { white-space: nowrap; }
 
 .form-actions button svg {
   width: 16px;
@@ -685,11 +676,15 @@ select.input-control {
   flex: 0 0 16px;
 }
 
+@container session-feedback (max-width: 696px) {
+  .form-actions.has-admin-prompt { flex-direction: column; align-items: flex-start; gap: 16px; }
+}
+
 @container session-feedback (max-width: 620px) {
-  .form-actions { flex-direction: column; align-items: stretch; gap: 10px; }
+  .form-actions { flex-direction: column; align-items: stretch; gap: 16px; }
+  .form-actions-save { width: 100%; }
   .form-actions-save button { width: 100%; }
-  .form-actions-analysis { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
-  .form-actions-analysis > button { width: 100%; }
+  .form-actions > button { width: 100%; }
 }
 
 .fit-data-section[hidden] {
