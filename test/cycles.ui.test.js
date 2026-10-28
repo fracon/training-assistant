@@ -47,9 +47,8 @@ test('cycles.html wires the shell, lucide and the full page', () => {
   assert.match(html, /id="cycleCancelBtn"/);
   assert.match(html, /id="cycleModalCloseBtn"/);
   assert.match(html, /id="promptModal"/);
-  assert.match(html, /id="promptCloseBtn"/);
-  assert.match(html, /id="promptCopyBtn"/);
-  assert.match(html, /id="promptOutput"/);
+  assert.match(html, /href="shared\/external-prompt-modal\.css"/);
+  assert.doesNotMatch(html, /promptCloseBtn|promptCopyBtn|promptOutput/);
   assert.match(html, /id="toast"/);
 });
 
@@ -208,13 +207,16 @@ test('theme.css toast-error variant uses danger color', () => {
   assert.match(theme, /\.toast\.toast-error \.toast-icon \{[^}]*color:\s*var\(--danger\)/);
 });
 
-test('cycles.css prompt modal uses shared modal-backdrop pattern', () => {
-  const css = readFileSync(join(publicDir, 'cycles.css'), 'utf8');
-  assert.match(css, /\.prompt-modal-card \{/);
-  assert.match(css, /\.prompt-output \{/);
-  assert.match(css, /\.prompt-output \{[^}]*white-space:\s*pre-wrap/);
-  assert.match(css, /\.prompt-output \{[^}]*background:\s*var\(--bg\)/);
-  assert.match(css, /\.prompt-modal-actions \{/);
+test('external prompt dialogs use the shared approved prompt component and textarea layout', () => {
+  const css = readFileSync(join(publicDir, 'shared', 'external-prompt-modal.css'), 'utf8');
+  const html = readFileSync(join(publicDir, 'cycles.html'), 'utf8');
+  const coachHtml = readFileSync(join(publicDir, 'ai-coach.html'), 'utf8');
+  const resultHtml = readFileSync(join(publicDir, 'training-result.html'), 'utf8');
+  assert.match(css, /\.external-prompt-card \{[^}]*width:\s*min\(900px, 100%\)[^}]*padding:\s*24px/s);
+  assert.match(css, /\.external-prompt-text \{[^}]*height:\s*min\(60dvh, 620px, calc\(100dvh - 320px\)\)[^}]*overflow:\s*auto/s);
+  assert.match(css, /\.external-prompt-actions \{[^}]*border:\s*0/s);
+  assert.match(css, /\.external-prompt-card \.modal-close \{[^}]*width:\s*40px[^}]*height:\s*40px/s);
+  for (const page of [html, coachHtml, resultHtml]) assert.match(page, /href="shared\/external-prompt-modal\.css"/);
 });
 
 test('cycles.css add-cycle-wrapper tooltip shows only when button is disabled AND hovered', () => {
@@ -398,11 +400,13 @@ test('cycles.js handles prompt modal open and copy actions', () => {
   assert.match(js, /showPromptModal/);
   assert.match(js, /hidePromptModal/);
   assert.match(js, /handleCopyPrompt/);
+  assert.match(js, /createExternalPromptModal/);
+  assert.match(js, /createDialogFocusTrap\(promptModal\.dialog, hidePromptModal\)/);
   assert.match(js, /promptCloseBtn/);
   assert.match(js, /promptCopyBtn/);
   assert.match(js, /navigator\.clipboard\.writeText/);
   assert.match(js, /cycles\.errors\.clipboard/);
-  assert.match(js, /selectNodeContents/);
+  assert.match(js, /promptModal\.output\.select\(\)/);
 });
 
 test('cycles.js prompt catch logs the error before showing toast', () => {
@@ -608,5 +612,5 @@ test('cycle prompt rendering and delegated debug require admin; saves open produ
   assert.doesNotMatch(save, /\/prompt|showPromptModal/);
   assert.match(save, /planning\.open\(saved.id, button, \{ saved: mode \}\)/);
   assert.match(js, /action === 'prompt' && user\?\.role === 'admin'/);
-  assert.match(js, /document.getElementById\('promptModal'\).remove\(\)/);
+  assert.match(js, /promptRoot\.remove\(\)/);
 });

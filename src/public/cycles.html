@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="shared/shell.css">
   <link rel="stylesheet" href="shared/components.css">
   <link rel="stylesheet" href="cycles.css">
+  <link rel="stylesheet" href="shared/external-prompt-modal.css">
 </head>
 <body>
   <main id="appView">
@@ -106,23 +107,7 @@
     </div>
   </div>
 
-  <div id="promptModal" class="modal-backdrop hidden">
-    <div class="modal-card prompt-modal-card" role="dialog" aria-modal="true">
-      <header class="modal-header">
-        <h2 data-i18n="cycles.promptTitle">Macrocycle prompt</h2>
-        <button type="button" id="promptCloseBtn" class="modal-close" aria-label="Close">
-          <i data-lucide="x"></i>
-        </button>
-      </header>
-      <pre id="promptOutput" class="prompt-output"></pre>
-      <div class="prompt-modal-actions">
-        <button id="promptCopyBtn" class="btn-secondary" type="button">
-          <i data-lucide="copy"></i>
-          <span data-i18n="cycles.copyPrompt">Copy to Clipboard</span>
-        </button>
-      </div>
-    </div>
-  </div>
+  <div id="promptModal" hidden></div>
 
   <div id="cyclePlanningModal" class="modal-backdrop cycle-planning-modal" hidden>
     <div class="modal-card cycle-planning-card" role="dialog" aria-modal="true" aria-labelledby="cyclePlanningHeading" aria-describedby="cyclePlanningHint">

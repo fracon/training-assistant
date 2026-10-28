@@ -1,0 +1,130 @@
+.external-prompt-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: clamp(8px, 2vh, 20px);
+  background: rgba(45, 42, 36, 0.48);
+}
+
+.external-prompt-backdrop[hidden] { display: none; }
+
+.external-prompt-card {
+  box-sizing: border-box;
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  gap: 16px;
+  width: min(900px, 100%);
+  height: auto;
+  min-height: 0;
+  max-height: min(90dvh, calc(100dvh - 40px));
+  overflow: hidden;
+  scrollbar-gutter: auto;
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: 0 18px 50px rgba(45, 42, 36, 0.24);
+}
+
+.external-prompt-header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.external-prompt-header h2 {
+  min-width: 0;
+  margin: 0;
+  font-size: 1.25rem;
+  overflow-wrap: anywhere;
+}
+
+.external-prompt-card .modal-close {
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+}
+
+.external-prompt-card .modal-close svg { width: 20px; height: 20px; }
+.external-prompt-card .modal-close:focus-visible { outline: 2px solid var(--accent-deep); outline-offset: 2px; }
+
+.external-prompt-status {
+  flex: 0 0 auto;
+  min-height: 1.4em;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.external-prompt-status:empty { display: none; }
+
+.external-prompt-text {
+  box-sizing: border-box;
+  flex: 0 1 auto;
+  width: 100%;
+  min-width: 0;
+  min-height: clamp(96px, min(15lh, calc(100dvh - 320px)), 620px);
+  height: min(60dvh, 620px, calc(100dvh - 320px));
+  max-height: min(60dvh, 620px, calc(100dvh - 320px));
+  resize: none;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+  line-height: 1.55;
+  user-select: text;
+}
+
+.external-prompt-actions {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: center;
+  gap: 12px;
+  width: max-content;
+  max-width: 100%;
+  margin: 0 0 0 auto;
+  padding: 0;
+  border: 0;
+}
+
+.external-prompt-actions .btn {
+  width: 100%;
+  min-width: 0;
+  white-space: normal;
+}
+
+@media (max-width: 600px) {
+  .external-prompt-backdrop {
+    align-items: end;
+    padding: 8px;
+  }
+
+  .external-prompt-card {
+    max-height: calc(100dvh - 16px);
+    padding: 24px;
+    border-radius: 18px 18px 0 0;
+  }
+
+  .external-prompt-actions {
+    width: 100%;
+    margin-right: 0;
+  }
+
+  .external-prompt-text {
+    height: min(60dvh, calc(100dvh - 320px));
+    max-height: min(60dvh, calc(100dvh - 320px));
+    min-height: clamp(96px, min(15lh, calc(100dvh - 320px)), 620px);
+  }
+}

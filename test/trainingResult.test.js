@@ -1173,6 +1173,8 @@ test('training-result.js wires explicit persisted analysis, protected prompt pre
   const markup = readFileSync(join(publicDir, 'training-result.html'), 'utf8');
   const sharedApi = readFileSync(join(publicDir, 'shared/api.js'), 'utf8');
   const sharedComponents = readFileSync(join(publicDir, 'shared/components.css'), 'utf8');
+  const sharedPromptModal = readFileSync(join(publicDir, 'shared/external-prompt-modal.js'), 'utf8');
+  const sharedPromptStyles = readFileSync(join(publicDir, 'shared/external-prompt-modal.css'), 'utf8');
 
   assert.match(js, /import \{ initShell, getShellI18n, getUserPreferences, showConfirm, showShellToast, refreshIcons \} from '\.\/shared\/shell\.js';/);
   assert.match(js, /saveManualTrainingResults/);
@@ -1352,6 +1354,11 @@ test('training-result.js wires explicit persisted analysis, protected prompt pre
   assert.match(markup, /id="analysisLoadWarning"[^>]*role="alert"[^>]*hidden/, 'unknown history failures have a separate initially hidden alert outside the analysis section');
   assert.match(markup, /shared\/components\.css/, 'the result page loads the same shared button components as Request Workouts');
   assert.match(js, /createDialogFocusTrap\(externalPromptDialog/);
+  assert.match(js, /createExternalPromptModal\(/, 'the result prompt uses the shared external prompt component');
+  assert.match(markup, /href="shared\/external-prompt-modal\.css"/);
+  assert.match(sharedPromptModal, /element\('textarea', 'external-prompt-text'\)/);
+  assert.match(sharedPromptModal, /closeActionId[\s\S]*copyButtonId/);
+  assert.match(sharedPromptStyles, /\.external-prompt-actions[\s\S]*?border:\s*0/);
   assert.match(js, /fetchWorkoutAnalyses\(currentTrainingId/);
   assert.match(js, /setTimeout\(\(\) => \{[\s\S]*refreshAnalysisExecution/);
   assert.match(js, /analysisReadController\?\.abort\(\)/);

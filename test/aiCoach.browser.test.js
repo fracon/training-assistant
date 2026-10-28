@@ -1544,7 +1544,7 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     assert.equal(mobilePromptDialog.copy, 'Copiar prompt');
     assert.equal(mobilePromptDialog.width, 390);
     assert.equal(mobilePromptDialog.scrollWidth, 390);
-    assert.ok(mobilePromptDialog.cardWidth <= 358);
+    assert.equal(mobilePromptDialog.cardWidth, 374, 'the external prompt uses the shared modal width');
     assert.ok(mobilePromptDialog.cardHeight <= mobilePromptDialog.viewportHeight - 16);
     assert.equal(mobilePromptDialog.bodyScrollable, true);
     assert.equal(mobilePromptDialog.overflowX, false);

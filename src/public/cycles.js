@@ -3,6 +3,7 @@ import { translate } from './shared/i18n.js';
 import { formatDate as formatLocalizedDate, formatDateInput, parseLocalizedDate } from './shared/date.js';
 import { createDatePicker, readDatePickerValue } from './shared/datepicker.js';
 import { createDialogFocusTrap } from './shared/dialog-focus.js';
+import { createExternalPromptModal } from './shared/external-prompt-modal.js';
 import { createCyclePlanning } from './shared/cycle-planning.js';
 import { showConfirm } from './shared/confirm-modal.js';
 import {
@@ -29,6 +30,10 @@ function translateDistance(messages, distance) {
   const translated = t(messages, key);
   return (translated !== key && translated) ? translated : distance;
 }
+let promptModal = null;
+let promptFocusTrap = null;
+let promptOrigin = null;
+let promptCopyTimer = null;
 function planningActionKey(summary) {
   const status=summary?.status;
   if (status==='none' && summary.canGenerate===false) return null;
@@ -212,16 +217,27 @@ function showFormError(messageKey, messages) {
   errorEl.classList.remove('hidden');
 }
 
-function showPromptModal(text, messages) {
-  const modal = document.getElementById('promptModal');
-  const output = document.getElementById('promptOutput');
-  output.textContent = text;
-  modal.classList.remove('hidden');
+function showPromptModal(text, trigger) {
+  if (!promptModal || !text) return;
+  promptOrigin = trigger;
+  promptModal.setPrompt(text);
+  promptModal.setStatus('');
+  promptModal.dialog.hidden = false;
+  promptFocusTrap.activate();
+  promptModal.closeButton.focus();
   refreshIcons();
 }
 
 function hidePromptModal() {
-  document.getElementById('promptModal').classList.add('hidden');
+  if (!promptModal || promptModal.dialog.hidden) return;
+  promptModal.dialog.hidden = true;
+  promptFocusTrap.deactivate();
+  clearTimeout(promptCopyTimer);
+  promptCopyTimer = null;
+  promptModal.setStatus('');
+  const origin = promptOrigin;
+  promptOrigin = null;
+  if (origin?.isConnected && !origin.disabled) origin.focus();
 }
 
 function showToast(messages, messageKey, duration = 2500, type = 'success') {
@@ -379,7 +395,7 @@ async function handleAction(action, id, cycles, messages, language = 'en-US', us
     try {
       const lng = (getShellI18n().language === 'pt-BR') ? 'pt' : 'en';
       const result = await requestJson(`/api/cycles/${id}/prompt?lng=${lng}`, null, 'GET');
-      if (result.prompt) showPromptModal(result.prompt, messages);
+      if (result.prompt) showPromptModal(result.prompt, button);
     } catch (error) {
       console.error('Prompt generation failed:', error);
       showToast(messages, 'cycles.errors.prompt', 2500, 'error');
@@ -388,19 +404,17 @@ async function handleAction(action, id, cycles, messages, language = 'en-US', us
 }
 
 async function handleCopyPrompt(messages) {
-  const output = document.getElementById('promptOutput');
+  if (!promptModal) return;
+  const text = promptModal.output.value;
   try {
-    await navigator.clipboard.writeText(output.textContent);
-    const btn = document.getElementById('promptCopyBtn');
-    const span = btn.querySelector('span');
-    span.textContent = t(messages, 'aiCoach.copied');
-    setTimeout(() => { span.textContent = t(messages, 'cycles.copyPrompt'); }, 2000);
+    await navigator.clipboard.writeText(text);
+    promptModal.setStatus(t(messages, 'aiCoach.promptCopied'));
+    clearTimeout(promptCopyTimer);
+    promptCopyTimer = setTimeout(() => {
+      if (!promptModal.dialog.hidden) promptModal.setStatus('');
+    }, 2000);
   } catch {
-    const range = document.createRange();
-    range.selectNodeContents(output);
-    const selection = window.getSelection();
-    selection.removeAllRanges();
-    selection.addRange(range);
+    promptModal.output.select();
     showToast(messages, 'cycles.errors.clipboard', 2500, 'error');
   }
 }
@@ -410,6 +424,23 @@ export async function initCyclesPage() {
   if (!user) return null;
 
   const i18n = getShellI18n();
+  const promptRoot = document.getElementById('promptModal');
+  if (user.role === 'admin') {
+    promptModal = createExternalPromptModal({
+      root: promptRoot,
+      id: 'promptModal',
+      titleId: 'cyclePromptTitle',
+      title: t(i18n.messages, 'cycles.promptTitle'),
+      closeLabel: t(i18n.messages, 'session.analysis.close'),
+      copyLabel: t(i18n.messages, 'session.analysis.copyPrompt'),
+      closeButtonId: 'promptCloseBtn',
+      closeActionId: 'promptCloseAction',
+      copyButtonId: 'promptCopyBtn',
+      outputId: 'promptOutput',
+      statusId: 'promptCopyStatus',
+    });
+    promptFocusTrap = createDialogFocusTrap(promptModal.dialog, hidePromptModal);
+  }
   const cycles = [];
   let listRevision = 0, activeRead = 0, summaryEpoch = 0, summaryRead = 0, summaryTimer = null;
   const pendingSummaryCycles = new Set();
@@ -512,12 +543,13 @@ export async function initCyclesPage() {
 
   if (user.role === 'admin') {
     document.getElementById('promptCloseBtn').addEventListener('click', hidePromptModal);
+    document.getElementById('promptCloseAction').addEventListener('click', hidePromptModal);
     document.getElementById('promptCopyBtn').addEventListener('click', () => handleCopyPrompt(i18n.messages));
     document.getElementById('promptModal').addEventListener('click', (e) => {
-      if (e.target.classList.contains('modal-backdrop')) hidePromptModal();
+      if (e.target === promptModal.dialog) hidePromptModal();
     });
   } else {
-    document.getElementById('promptModal').remove();
+    promptRoot.remove();
   }
 
   document.addEventListener('app:languagechange', () => {
@@ -543,12 +575,14 @@ export async function initCyclesPage() {
       cancelBtn.textContent = translate(msgs, 'cycles.cancelForm');
     }
 
-    const promptModal = document.getElementById('promptModal');
-    if (promptModal && !promptModal.classList.contains('hidden')) {
-      const promptTitle = promptModal.querySelector('[data-i18n="cycles.promptTitle"]');
-      const copyLabel = document.querySelector('#promptCopyBtn span');
-      if (promptTitle) promptTitle.textContent = translate(msgs, 'cycles.promptTitle');
-      if (copyLabel) copyLabel.textContent = translate(msgs, 'cycles.copyPrompt');
+    if (promptModal) {
+      promptModal.setLabels({
+        title: translate(msgs, 'cycles.promptTitle'),
+        close: translate(msgs, 'session.analysis.close'),
+        copy: translate(msgs, 'session.analysis.copyPrompt'),
+      });
+      if (!promptModal.dialog.hidden && promptModal.status.textContent)
+        promptModal.setStatus(translate(msgs, 'aiCoach.promptCopied'));
     }
   });
 

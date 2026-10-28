@@ -39,6 +39,7 @@ import {
 import { createDatePicker, readDatePickerValue } from './shared/datepicker.js';
 import { cleanWeeklyJustification, formatWeeklyWeatherSummary, summarizePrescription } from './shared/weekly-prescription-display.js';
 import { createDialogFocusTrap } from './shared/dialog-focus.js';
+import { createExternalPromptModal } from './shared/external-prompt-modal.js';
 
 function normalizeTargetDate(value, language) {
   const text = String(value ?? '').trim();
@@ -222,15 +223,31 @@ function setupAiCoachPage(user) {
   const availabilityError = document.getElementById('availabilityError');
   const availabilityRetry = document.getElementById('availabilityRetry');
   const availabilityReview = document.getElementById('availabilityReview');
-  const promptOutput = document.getElementById('promptOutput');
-  const promptModal = document.getElementById('externalPromptModal');
-  const promptClose = document.getElementById('externalPromptClose');
-  const promptCloseAction = document.getElementById('closePromptBtn');
-  const promptCopyStatus = document.getElementById('promptCopyStatus');
-  const copyBtn = document.getElementById('copyBtn');
-  const copyIcon = document.getElementById('copyIcon');
   const generateBtn = document.getElementById('generateBtn');
   const externalPromptBtn = document.getElementById('externalPromptBtn');
+  const isAdmin = user?.role === 'admin';
+  let promptComponent = null;
+  if (isAdmin) {
+    promptComponent = createExternalPromptModal({
+      id: 'externalPromptModal',
+      titleId: 'externalPromptTitle',
+      title: t('aiCoach.resultTitle'),
+      closeLabel: t('aiCoach.closePrompt'),
+      copyLabel: t('aiCoach.copy'),
+      closeButtonId: 'externalPromptClose',
+      closeActionId: 'closePromptBtn',
+      copyButtonId: 'copyBtn',
+      outputId: 'promptOutput',
+      statusId: 'promptCopyStatus',
+    });
+    externalPromptBtn.hidden = false;
+  } else externalPromptBtn.remove();
+  const promptModal = promptComponent?.dialog || null;
+  const promptOutput = promptComponent?.output || null;
+  const promptClose = promptComponent?.closeButton || null;
+  const promptCloseAction = promptComponent?.closeAction || null;
+  const promptCopyStatus = promptComponent?.status || null;
+  const copyBtn = promptComponent?.copyAction || null;
   const weeklySection = document.getElementById('weeklyProposalSection');
   const weeklyStatus = document.getElementById('weeklyProposalStatus');
   const weeklyError = document.getElementById('weeklyProposalError');
@@ -245,11 +262,6 @@ function setupAiCoachPage(user) {
   const applyResultIgnored = document.getElementById('weeklyApplyResultIgnored');
   const applyResultClose = document.getElementById('weeklyApplyResultClose');
   const applyResultOk = document.getElementById('weeklyApplyResultOk');
-  const isAdmin = user?.role === 'admin';
-  if (!isAdmin) {
-    externalPromptBtn.remove();
-    promptModal.remove();
-  } else externalPromptBtn.hidden = false;
   let activeExecutionId = null,
     readAttempt = 0,
     pollTimer = null,
@@ -271,6 +283,7 @@ function setupAiCoachPage(user) {
     weeklyReadPending = false,
     promptOrigin = null,
     promptCopiedTimer = null,
+    promptCopyStatusKey = '',
     applyResult = null,
     applyResultReturnFocus = null;
   const promptFocusTrap = isAdmin
@@ -354,14 +367,12 @@ function setupAiCoachPage(user) {
   function closeExternalPrompt() {
     if (!isAdmin || promptModal.hidden) return;
     promptModal.hidden = true;
-    promptModal.classList.add('hidden');
     document.body.classList.remove('external-prompt-open');
     promptFocusTrap.deactivate();
     clearTimeout(promptCopiedTimer);
     promptCopiedTimer = null;
     promptCopyStatus.textContent = '';
-    copyIcon.setAttribute('data-lucide', 'copy');
-    refreshIcons();
+    promptCopyStatusKey = '';
     const origin = promptOrigin;
     promptOrigin = null;
     if (origin?.isConnected && !origin.hidden && !origin.disabled) origin.focus();
@@ -372,11 +383,15 @@ function setupAiCoachPage(user) {
     const promptError = document.getElementById('externalPromptError');
     promptError.hidden = true;
     promptError.textContent = '';
-    promptOutput.textContent = prompt;
-    promptOutput.scrollTop = 0;
+    promptComponent.setLabels({
+      title: t('aiCoach.resultTitle'),
+      close: t('aiCoach.closePrompt'),
+      copy: t('aiCoach.copy'),
+    });
+    promptComponent.setPrompt(prompt);
     promptCopyStatus.textContent = '';
+    promptCopyStatusKey = '';
     promptModal.hidden = false;
-    promptModal.classList.remove('hidden');
     document.body.classList.add('external-prompt-open');
     promptOrigin = externalPromptBtn;
     promptFocusTrap.activate();
@@ -1880,6 +1895,15 @@ function setupAiCoachPage(user) {
     availabilityRetry.textContent =
       availabilityLoadState === 'error' ? t('aiCoach.availabilityRetry') : '';
     if (availabilityStatusKey) setAvailabilityStatus(availabilityStatusKey);
+    if (promptComponent) {
+      promptComponent.setLabels({
+        title: t('aiCoach.resultTitle'),
+        close: t('aiCoach.closePrompt'),
+        copy: t('aiCoach.copy'),
+      });
+      if (!promptModal.hidden && promptCopyStatusKey)
+        promptComponent.setStatus(t(promptCopyStatusKey));
+    }
     const targetIso = readTargetDateIso(
       targetDateInput,
       targetDatePicker,
@@ -1896,19 +1920,17 @@ function setupAiCoachPage(user) {
   saveAvailabilityLabel.textContent = t('aiCoach.saveAvailability');
 
   async function handleCopy() {
-    const copied = await copyPromptText(promptOutput.textContent);
+    const copied = await copyPromptText(promptOutput.value);
     if (promptModal.hidden) return;
-    promptCopyStatus.textContent = copied
-      ? t('aiCoach.promptCopied')
-      : t('aiCoach.promptCopyFailed');
-    copyIcon.setAttribute('data-lucide', copied ? 'check' : 'copy');
-    refreshIcons();
+    promptCopyStatusKey = copied ? 'aiCoach.promptCopied' : 'aiCoach.promptCopyFailed';
+    promptComponent.setStatus(t(promptCopyStatusKey));
     clearTimeout(promptCopiedTimer);
     if (copied)
       promptCopiedTimer = setTimeout(() => {
-        if (!promptModal.hidden) promptCopyStatus.textContent = '';
-        copyIcon.setAttribute('data-lucide', 'copy');
-        refreshIcons();
+        if (!promptModal.hidden) {
+          promptComponent.setStatus('');
+          promptCopyStatusKey = '';
+        }
       }, COPY_FEEDBACK_MS);
   }
 

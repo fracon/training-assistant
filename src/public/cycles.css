@@ -472,16 +472,6 @@
   display: none;
 }
 
-/* ── Prompt modal ── */
-
-.prompt-modal-card {
-  max-width: 800px;
-  max-height: 80vh;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
 .prompt-output {
   flex: 1;
   overflow-y: auto;
@@ -496,13 +486,6 @@
   margin: 0;
   border-radius: 0;
   border: none;
-}
-
-.prompt-modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  padding: 0.75rem 1.5rem;
-  border-top: 1px solid var(--line);
 }
 
 /* ── Responsive ── */

@@ -142,10 +142,10 @@ test('Chrome cycle planning PT/EN desktop/mobile: recovered generation, proposal
    }
    if(account===0) {
     const paidBefore=calls;await evaluate("document.querySelector('[data-action=prompt]').click()");
-    await wait("!document.getElementById('promptModal').classList.contains('hidden')");
+    await wait("!document.getElementById('promptModal').hidden");
     await command('Browser.grantPermissions',{origin,permissions:['clipboardReadWrite','clipboardSanitizedWrite']});
     await evaluate("document.getElementById('promptCopyBtn').click()");await delay(100);
-    assert.equal(await evaluate('navigator.clipboard.readText()'),await evaluate("document.getElementById('promptOutput').textContent"));
+    assert.equal(await evaluate('navigator.clipboard.readText()'),await evaluate("document.getElementById('promptOutput').value"));
     assert.equal(calls,paidBefore);await evaluate("document.getElementById('promptCloseBtn').click()");
    }
   }

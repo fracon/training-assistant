@@ -15,6 +15,7 @@ import { translate } from './shared/i18n.js';
 import { formatDate as formatLocalizedDate, formatWeekday } from './shared/date.js';
 import { fetchTraining, saveTrainingFeedback, saveManualTrainingResults, fetchShoes, deleteTraining, fetchWeather, startAiExecution, fetchAiExecution, fetchAiExecutions, fetchWorkoutAnalyses, updateAiInterpretation, previewAnalysisPrompt } from './shared/api.js';
 import { createDialogFocusTrap } from './shared/dialog-focus.js';
+import { createExternalPromptModal } from './shared/external-prompt-modal.js';
 import { KM_TO_MILES, convertDistanceInputValue, convertDistanceToKm, formatDistance, formatPaceFromMetric, formatTemperature } from './shared/units.js';
 import { createImportGuidance } from './shared/workout-import-guidance.js';
 import { createWorkoutCreationGuidance } from './shared/workout-creation-guidance.js';
@@ -1085,9 +1086,11 @@ async function initTrainingResult() {
   i18n = getShellI18n();
   let externalPromptButton = null;
   let externalPromptDialog = null;
+  let externalPromptComponent = null;
   let externalPromptTrap = null;
   let externalPromptReturnFocus = null;
   let externalPromptText = '';
+  let externalPromptStatusKey = '';
   let externalPromptPending = false;
   if (sessionUser?.role === 'admin') {
     externalPromptButton = document.createElement('button');
@@ -1102,49 +1105,22 @@ async function initTrainingResult() {
     externalPromptButton.append(promptIcon, promptLabel);
     formActions.classList.add('has-admin-prompt');
     formActions.insertBefore(externalPromptButton, generateBtn);
-    externalPromptDialog = document.createElement('div');
-    externalPromptDialog.className = 'import-help-dialog analysis-prompt-dialog';
-    externalPromptDialog.setAttribute('role', 'dialog');
-    externalPromptDialog.setAttribute('aria-modal', 'true');
-    externalPromptDialog.setAttribute('aria-labelledby', 'analysisExternalPromptTitle');
-    externalPromptDialog.hidden = true;
-    const promptCard = document.createElement('div');
-    promptCard.className = 'import-help-card analysis-prompt-card';
-    const promptHeader = document.createElement('header');
-    promptHeader.className = 'import-help-header';
-    const promptTitle = document.createElement('h2');
-    promptTitle.id = 'analysisExternalPromptTitle';
-    promptTitle.textContent = t('session.analysis.externalPrompt');
-    const promptClose = document.createElement('button');
-    promptClose.type = 'button';
-    promptClose.className = 'modal-close';
-    promptClose.setAttribute('aria-label', analysisKey('close'));
-    const promptCloseIcon = document.createElement('i');
-    promptCloseIcon.dataset.lucide = 'x';
-    promptCloseIcon.setAttribute('aria-hidden', 'true');
-    promptClose.append(promptCloseIcon);
-    promptHeader.append(promptTitle, promptClose);
-    const promptStatus = document.createElement('p');
-    promptStatus.className = 'analysis-notice';
-    promptStatus.setAttribute('role', 'status');
-    const promptArea = document.createElement('textarea');
-    promptArea.className = 'input-control analysis-prompt-text';
-    promptArea.readOnly = true;
-    promptArea.setAttribute('aria-label', t('session.analysis.externalPrompt'));
-    const promptActions = document.createElement('footer');
-    promptActions.className = 'analysis-dialog-actions confirm-actions';
-    const promptCopy = document.createElement('button');
-    promptCopy.type = 'button';
-    promptCopy.className = 'btn btn-primary';
-    promptCopy.textContent = t('session.analysis.copyPrompt');
-    const promptDone = document.createElement('button');
-    promptDone.type = 'button';
-    promptDone.className = 'btn btn-secondary';
-    promptDone.textContent = analysisKey('close');
-    promptActions.append(promptDone, promptCopy);
-    promptCard.append(promptHeader, promptStatus, promptArea, promptActions);
-    externalPromptDialog.append(promptCard);
-    document.body.append(externalPromptDialog);
+    const promptModal = createExternalPromptModal({
+      id: 'analysisExternalPromptDialog',
+      titleId: 'analysisExternalPromptTitle',
+      title: t('session.analysis.externalPrompt'),
+      closeLabel: analysisKey('close'),
+      copyLabel: analysisKey('copyPrompt'),
+      closeButtonId: 'analysisExternalPromptClose',
+      closeActionId: 'analysisExternalPromptDone',
+      copyButtonId: 'analysisExternalPromptCopy',
+      statusId: 'analysisExternalPromptStatus',
+    });
+    externalPromptComponent = promptModal;
+    externalPromptDialog = promptModal.dialog;
+    const promptClose = promptModal.closeButton;
+    const promptDone = promptModal.closeAction;
+    const promptCopy = promptModal.copyAction;
     const closeExternalPrompt = () => {
       externalPromptTrap.deactivate();
       externalPromptDialog.hidden = true;
@@ -1172,15 +1148,20 @@ async function initTrainingResult() {
         externalPromptDialog.hidden = false;
         externalPromptTrap.activate();
         promptClose.focus();
-        promptArea.value = '';
-        promptStatus.textContent = t('session.analysis.loadingPrompt');
+        promptModal.setPrompt('');
+        externalPromptStatusKey = 'loadingPrompt';
+        promptModal.setStatus(t(`session.analysis.${externalPromptStatusKey}`));
         const result = await previewAnalysisPrompt(currentTrainingId);
         externalPromptText = result.prompt;
-        promptArea.value = externalPromptText;
-        promptStatus.textContent = '';
+        promptModal.setPrompt(externalPromptText);
+        externalPromptStatusKey = '';
+        promptModal.setStatus('');
       } catch {
         if (externalPromptDialog.hidden) setStatus(t('session.analysis.promptUnavailable'), 'error');
-        else promptStatus.textContent = t('session.analysis.promptUnavailable');
+        else {
+          externalPromptStatusKey = 'promptUnavailable';
+          promptModal.setStatus(t(`session.analysis.${externalPromptStatusKey}`));
+        }
       } finally {
         externalPromptPending = false;
         externalPromptButton.disabled = false;
@@ -1191,8 +1172,8 @@ async function initTrainingResult() {
     });
     promptCopy.addEventListener('click', async () => {
       const copied = await copyAnalysisPrompt(externalPromptText);
-      promptStatus.dataset.key = copied ? 'promptCopied' : 'promptCopyFailed';
-      promptStatus.textContent = analysisKey(promptStatus.dataset.key);
+      externalPromptStatusKey = copied ? 'promptCopied' : 'promptCopyFailed';
+      promptModal.setStatus(analysisKey(externalPromptStatusKey));
     });
   }
   const importGuidance = createImportGuidance({
@@ -1230,13 +1211,13 @@ async function initTrainingResult() {
     analysisLoadAgain.textContent = analysisKey('readAgain');
     if (externalPromptButton) {
       if (!externalPromptPending) externalPromptButton.querySelector('span').textContent = analysisKey('externalPrompt');
-      externalPromptDialog.querySelector('h2').textContent = analysisKey('externalPrompt');
-      externalPromptDialog.querySelector('textarea').setAttribute('aria-label', analysisKey('externalPrompt'));
-      externalPromptDialog.querySelector('.analysis-dialog-actions button:first-child').textContent = analysisKey('close');
-      externalPromptDialog.querySelector('.analysis-prompt-card header button').setAttribute('aria-label', analysisKey('close'));
-      externalPromptDialog.querySelector('.analysis-dialog-actions button:last-child').textContent = analysisKey('copyPrompt');
-      if (externalPromptDialog.querySelector('.analysis-notice').dataset.key)
-        externalPromptDialog.querySelector('.analysis-notice').textContent = analysisKey(externalPromptDialog.querySelector('.analysis-notice').dataset.key);
+      externalPromptComponent?.setLabels({
+        title: analysisKey('externalPrompt'),
+        close: analysisKey('close'),
+        copy: analysisKey('copyPrompt'),
+      });
+      if (externalPromptStatusKey)
+        externalPromptComponent?.setStatus(analysisKey(externalPromptStatusKey));
     }
     if (analysisNotice.dataset.key) analysisNotice.textContent = analysisKey(analysisNotice.dataset.key);
     renderAnalysis();
