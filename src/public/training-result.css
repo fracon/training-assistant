@@ -420,14 +420,17 @@ body {
 .analysis-interpretation h4 { margin: 0; font-size: .9rem; }
 .analysis-item-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
 .analysis-prompt-dialog { padding: clamp(8px, 2vh, 20px); }
-.analysis-prompt-card { display: flex; flex: 0 0 auto; flex-direction: column; gap: 16px; width: min(900px, 100%); height: min(90dvh, 860px); min-height: min(640px, calc(100dvh - 32px)); max-height: calc(100dvh - 32px); overflow: hidden; }
+.analysis-prompt-card { box-sizing: border-box; display: flex; flex: 0 1 auto; flex-direction: column; gap: 16px; width: min(900px, 100%); height: auto; min-height: 0; max-height: min(90dvh, calc(100dvh - 40px)); overflow: hidden; overflow-y: hidden; scrollbar-gutter: auto; padding: 24px; }
 .analysis-prompt-card > .import-help-header,
 .analysis-prompt-card > .analysis-dialog-actions { flex: 0 0 auto; }
+.analysis-prompt-card .modal-close { flex: 0 0 40px; width: 40px; height: 40px; }
+.analysis-prompt-card .modal-close svg { width: 20px; height: 20px; }
+.analysis-prompt-card .modal-close:focus-visible { outline: 2px solid var(--accent-deep); outline-offset: 2px; }
 .analysis-prompt-card .analysis-notice { flex: 0 0 auto; min-height: 1.4em; }
 .analysis-prompt-card .analysis-notice:empty { display: none; }
-.analysis-prompt-card > .analysis-dialog-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: max-content; max-width: 100%; margin-left: auto; align-items: center; }
+.analysis-prompt-card > .analysis-dialog-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: max-content; max-width: 100%; margin: 0 0 0 auto; padding: 0; border: 0; gap: 12px; align-items: center; }
 .analysis-prompt-card .analysis-dialog-actions .btn { width: 100%; min-width: 0; white-space: normal; }
-.analysis-prompt-text { flex: 1 1 60vh; width: 100%; min-width: 0; min-height: clamp(96px, min(15lh, calc(100dvh - 320px)), 540px); height: 60vh; max-height: min(60vh, 620px); resize: vertical; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-family: inherit; line-height: 1.55; }
+.analysis-prompt-text { box-sizing: border-box; flex: 0 1 auto; width: 100%; min-width: 0; min-height: clamp(96px, min(15lh, calc(100dvh - 320px)), 620px); height: min(60dvh, 620px, calc(100dvh - 320px)); max-height: min(60dvh, 620px, calc(100dvh - 320px)); resize: none; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-family: inherit; line-height: 1.55; }
 .analysis-correction-card { display: flex; flex-direction: column; gap: 14px; }
 .analysis-correction-card p { margin: 0; }
 .analysis-correction-card .field-label { margin-bottom: -8px; }
@@ -437,9 +440,10 @@ body {
   .analysis-header { align-items: flex-start; }
   .analysis-header #analysisReadAgain { width: auto; }
   .analysis-item-actions { justify-content: flex-start; }
-  .analysis-prompt-card { height: min(90dvh, calc(100dvh - 16px)); min-height: min(420px, calc(100dvh - 16px)); max-height: calc(100dvh - 16px); }
-  .analysis-prompt-card > .analysis-dialog-actions { width: 100%; margin-left: 0; }
-  .analysis-prompt-text { flex-basis: 60dvh; height: 60dvh; min-height: clamp(96px, min(15lh, calc(100dvh - 320px)), 540px); max-height: calc(100dvh - 320px); }
+  .analysis-prompt-dialog { padding: 8px; }
+  .analysis-prompt-card { max-height: calc(100dvh - 16px); padding: 24px; border-radius: 18px 18px 0 0; }
+  .analysis-prompt-card > .analysis-dialog-actions { width: 100%; margin-right: 0; }
+  .analysis-prompt-text { height: min(60dvh, calc(100dvh - 320px)); max-height: min(60dvh, calc(100dvh - 320px)); min-height: clamp(96px, min(15lh, calc(100dvh - 320px)), 620px); }
 }
 
 .file-dropzone:hover {

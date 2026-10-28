@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { existsSync, mkdtempSync, rmSync, writeFileSync } = require('node:fs');
+const { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
@@ -1044,7 +1044,7 @@ test('the session page requires a realized RPE before saving, generating or uplo
     assert.ok(adminPreview.prompt.includes('INSTRUÇÕES PARA A ANÁLISE'));
     assert.equal(providerCalls, 2, 'viewing the prompt does not call the provider');
     assert.equal(writes().filter(({ method, url }) => method === 'POST' && url.endsWith('/api/ai/executions')).length, 0);
-    const portuguesePromptMetrics = await evaluate(`(()=>{const dialog=document.querySelector('.analysis-prompt-dialog'),card=dialog.querySelector('.analysis-prompt-card'),area=card.querySelector('textarea'),buttons=[...card.querySelectorAll('.analysis-dialog-actions button')],rects=buttons.map(button=>button.getBoundingClientRect()),style=getComputedStyle(area);return {close:buttons[0].textContent.trim(),closeName:card.querySelector('header button').getAttribute('aria-label'),keyLeak:card.textContent.includes('common.close'),width:card.getBoundingClientRect().width,height:card.getBoundingClientRect().height,areaWidth:area.getBoundingClientRect().width,areaHeight:area.getBoundingClientRect().height,lineHeight:parseFloat(style.lineHeight),buttonWidths:rects.map(rect=>rect.width),buttonHeights:rects.map(rect=>rect.height),buttonSizes:buttons.map(button=>({fontSize:getComputedStyle(button).fontSize,padding:getComputedStyle(button).padding}))}})()`);
+    const portuguesePromptMetrics = await evaluate(`(()=>{const dialog=document.querySelector('.analysis-prompt-dialog'),card=dialog.querySelector('.analysis-prompt-card'),area=card.querySelector('textarea'),footer=card.querySelector('.analysis-dialog-actions'),buttons=[...footer.querySelectorAll('button')],rects=buttons.map(button=>button.getBoundingClientRect()),cardRect=card.getBoundingClientRect(),areaRect=area.getBoundingClientRect(),footerRect=footer.getBoundingClientRect(),close=card.querySelector('header button'),closeRect=close.getBoundingClientRect(),icon=close.querySelector('svg'),iconRect=icon.getBoundingClientRect(),style=getComputedStyle(area),footerStyle=getComputedStyle(footer),fontSize=parseFloat(style.fontSize),lineHeight=parseFloat(style.lineHeight)||fontSize*1.55;return {close:buttons[0].textContent.trim(),closeName:close.getAttribute('aria-label'),keyLeak:card.textContent.includes('common.close'),width:cardRect.width,height:cardRect.height,cardBottomGap:cardRect.bottom-footerRect.bottom,areaWidth:areaRect.width,areaHeight:areaRect.height,areaToFooter:footerRect.top-areaRect.bottom,lineHeight,areaScrollHeight:area.scrollHeight,cardScrollHeight:card.scrollHeight,cardClientHeight:card.clientHeight,buttonWidths:rects.map(rect=>rect.width),buttonHeights:rects.map(rect=>rect.height),footerBorderTop:footerStyle.borderTopWidth,footerPaddingTop:footerStyle.paddingTop,footerMarginTop:footerStyle.marginTop,closeWidth:closeRect.width,closeHeight:closeRect.height,iconWidth:iconRect.width,iconHeight:iconRect.height,buttonSizes:buttons.map(button=>({fontSize:getComputedStyle(button).fontSize,padding:getComputedStyle(button).padding}))}})()`);
     assert.equal(portuguesePromptMetrics.close, 'Fechar');
     assert.equal(portuguesePromptMetrics.closeName, 'Fechar');
     assert.equal(portuguesePromptMetrics.keyLeak, false, 'the prompt modal never displays an untranslated key');
@@ -1054,6 +1054,19 @@ test('the session page requires a realized RPE before saving, generating or uplo
     assert.equal(portuguesePromptMetrics.buttonWidths[0], portuguesePromptMetrics.buttonWidths[1], 'modal actions share equal widths');
     assert.equal(portuguesePromptMetrics.buttonHeights[0], portuguesePromptMetrics.buttonHeights[1], 'modal actions share equal heights');
     assert.equal(portuguesePromptMetrics.buttonSizes[0].fontSize, portuguesePromptMetrics.buttonSizes[1].fontSize);
+    assert.equal(portuguesePromptMetrics.areaToFooter, 16, 'textarea and footer have one consistent 16px gap');
+    assert.ok(portuguesePromptMetrics.cardBottomGap >= 24 && portuguesePromptMetrics.cardBottomGap <= 25,
+      `the footer has 24px of bottom inset, including the card border: ${JSON.stringify(portuguesePromptMetrics)}`);
+    assert.equal(portuguesePromptMetrics.footerBorderTop, '0px', 'the prompt footer has no inherited divider');
+    assert.equal(portuguesePromptMetrics.footerPaddingTop, '0px');
+    assert.equal(portuguesePromptMetrics.footerMarginTop, '0px');
+    assert.ok(portuguesePromptMetrics.closeWidth >= 40 && portuguesePromptMetrics.closeHeight >= 40,
+      `the close control has a 40px minimum hit area: ${JSON.stringify(portuguesePromptMetrics)}`);
+    assert.ok(portuguesePromptMetrics.iconWidth >= 20 && portuguesePromptMetrics.iconHeight >= 20,
+      `the rendered Lucide X measures at least 20px: ${JSON.stringify(portuguesePromptMetrics)}`);
+    assert.ok(portuguesePromptMetrics.cardScrollHeight <= portuguesePromptMetrics.cardClientHeight,
+      'the prompt card does not introduce a second scroll region');
+    writeFileSync('/tmp/kinesis-analysis-prompt-metrics.json', JSON.stringify({ desktopPt: portuguesePromptMetrics }, null, 2));
     writeFileSync('/tmp/kinesis-analysis-prompt-desktop-pt.png', Buffer.from((await command('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
     await evaluate(`Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async(text)=>{window.__copiedAnalysisPrompt=text}}});document.querySelector('.analysis-prompt-card .analysis-dialog-actions button:last-child').click();true`);
     await waitFor("document.querySelector('.analysis-prompt-card .analysis-notice').textContent.length>0", 'copy feedback in the prompt modal');
@@ -1073,10 +1086,13 @@ test('the session page requires a realized RPE before saving, generating or uplo
     await pressShiftTab();
     assert.equal(await evaluate("document.activeElement.matches('.analysis-dialog-actions button:last-child')"), true, 'Shift+Tab wraps to the last modal control');
     await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 480, deviceScaleFactor: 1, mobile: false });
-    const shortPrompt = await evaluate(`(()=>{const card=document.querySelector('.analysis-prompt-card'),area=card.querySelector('textarea'),footer=card.querySelector('.analysis-dialog-actions'),cardRect=card.getBoundingClientRect(),footerRect=footer.getBoundingClientRect();return {cardBottom:cardRect.bottom,viewport:innerHeight,areaHeight:area.getBoundingClientRect().height,areaScrollable:area.scrollHeight>area.clientHeight,footerBottom:footerRect.bottom,withinCard:footerRect.bottom<=cardRect.bottom}})()`);
+    const shortPrompt = await evaluate(`(()=>{const card=document.querySelector('.analysis-prompt-card'),area=card.querySelector('textarea'),footer=card.querySelector('.analysis-dialog-actions'),cardRect=card.getBoundingClientRect(),areaRect=area.getBoundingClientRect(),footerRect=footer.getBoundingClientRect();return {cardBottom:cardRect.bottom,viewport:innerHeight,areaHeight:areaRect.height,areaToFooter:footerRect.top-areaRect.bottom,bottomGap:cardRect.bottom-footerRect.bottom,areaScrollable:area.scrollHeight>area.clientHeight,footerBottom:footerRect.bottom,withinCard:footerRect.bottom<=cardRect.bottom}})()`);
     assert.ok(shortPrompt.cardBottom <= shortPrompt.viewport, `short desktop viewport keeps the dialog inside the viewport: ${JSON.stringify(shortPrompt)}`);
     assert.ok(shortPrompt.areaHeight >= 96, `short viewport retains a usable scrolling text area: ${JSON.stringify(shortPrompt)}`);
     assert.equal(shortPrompt.withinCard, true, 'modal footer remains visible inside its card');
+    assert.equal(shortPrompt.areaScrollable, true, 'long prompt content scrolls inside the textarea on a short viewport');
+    assert.ok(shortPrompt.bottomGap >= 24 && shortPrompt.bottomGap <= 25, 'short viewport retains the bottom inset');
+    writeFileSync('/tmp/kinesis-analysis-prompt-short-en.png', Buffer.from((await command('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
     await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
     await pressKey('Escape', 'Escape', 27);
     await waitFor("document.querySelector('.analysis-prompt-card')?.closest('[role=dialog]').hidden===true", 'the prompt modal closing with Escape');
@@ -1084,12 +1100,20 @@ test('the session page requires a realized RPE before saving, generating or uplo
     await setLanguage('pt-BR');
     await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
     await clickUntil("[data-analysis-external-prompt='true']", "!!document.querySelector('.analysis-prompt-card textarea')?.value.includes('INSTRUÇÕES PARA A ANÁLISE')", 'reopening the translated prompt on mobile');
-    const mobilePrompt = await evaluate(`(()=>{const card=document.querySelector('.analysis-prompt-card'),area=card.querySelector('textarea'),buttons=[...card.querySelectorAll('.analysis-dialog-actions button')],rects=buttons.map(button=>button.getBoundingClientRect());return {width:innerWidth,scrollWidth:document.documentElement.scrollWidth,cardWidth:card.getBoundingClientRect().width,cardHeight:card.getBoundingClientRect().height,areaHeight:area.getBoundingClientRect().height,buttonWidths:rects.map(rect=>rect.width),buttonHeights:rects.map(rect=>rect.height),footerBottom:card.querySelector('.analysis-dialog-actions').getBoundingClientRect().bottom,viewport:innerHeight,close:buttons[0].textContent.trim()}})()`);
+    const mobilePrompt = await evaluate(`(()=>{const card=document.querySelector('.analysis-prompt-card'),area=card.querySelector('textarea'),footer=card.querySelector('.analysis-dialog-actions'),buttons=[...footer.querySelectorAll('button')],rects=buttons.map(button=>button.getBoundingClientRect()),cardRect=card.getBoundingClientRect(),areaRect=area.getBoundingClientRect(),footerRect=footer.getBoundingClientRect(),close=card.querySelector('header button');return {width:innerWidth,scrollWidth:document.documentElement.scrollWidth,cardWidth:cardRect.width,cardHeight:cardRect.height,cardBottomGap:cardRect.bottom-footerRect.bottom,areaHeight:areaRect.height,areaToFooter:footerRect.top-areaRect.bottom,buttonWidths:rects.map(rect=>rect.width),buttonHeights:rects.map(rect=>rect.height),closeWidth:close.getBoundingClientRect().width,closeHeight:close.getBoundingClientRect().height,iconWidth:close.querySelector('svg').getBoundingClientRect().width,iconHeight:close.querySelector('svg').getBoundingClientRect().height,footerBottom:footerRect.bottom,viewport:innerHeight,close:buttons[0].textContent.trim()}})()`);
     assert.equal(mobilePrompt.scrollWidth, mobilePrompt.width, 'mobile prompt dialog has no horizontal overflow');
     assert.ok(mobilePrompt.areaHeight >= 200, `mobile prompt keeps a substantial reading area: ${JSON.stringify(mobilePrompt)}`);
     assert.deepEqual(mobilePrompt.buttonWidths[0], mobilePrompt.buttonWidths[1], 'mobile modal actions remain equal width');
     assert.deepEqual(mobilePrompt.buttonHeights[0], mobilePrompt.buttonHeights[1], 'mobile modal actions remain equal height');
     assert.ok(mobilePrompt.footerBottom <= mobilePrompt.viewport, 'mobile footer remains inside the viewport');
+    assert.equal(mobilePrompt.areaToFooter, 16, 'mobile textarea and footer retain the 16px gap');
+    assert.ok(mobilePrompt.cardBottomGap >= 24 && mobilePrompt.cardBottomGap <= 25, 'mobile footer retains the 24px bottom inset');
+    assert.ok(mobilePrompt.closeWidth >= 40 && mobilePrompt.closeHeight >= 40);
+    assert.ok(mobilePrompt.iconWidth >= 20 && mobilePrompt.iconHeight >= 20);
+    const promptMetrics = JSON.parse(readFileSync('/tmp/kinesis-analysis-prompt-metrics.json', 'utf8'));
+    promptMetrics.shortDesktop = shortPrompt;
+    promptMetrics.mobilePt = mobilePrompt;
+    writeFileSync('/tmp/kinesis-analysis-prompt-metrics.json', JSON.stringify(promptMetrics, null, 2));
     assert.equal(mobilePrompt.close, 'Fechar');
     writeFileSync('/tmp/kinesis-analysis-prompt-mobile-pt.png', Buffer.from((await command('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
     await evaluate("document.querySelector('.analysis-prompt-card header button').click(); true");

@@ -1117,7 +1117,7 @@ async function initTrainingResult() {
     promptTitle.textContent = t('session.analysis.externalPrompt');
     const promptClose = document.createElement('button');
     promptClose.type = 'button';
-    promptClose.className = 'btn-icon';
+    promptClose.className = 'modal-close';
     promptClose.setAttribute('aria-label', analysisKey('close'));
     const promptCloseIcon = document.createElement('i');
     promptCloseIcon.dataset.lucide = 'x';
