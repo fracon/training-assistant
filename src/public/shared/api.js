@@ -138,7 +138,7 @@ export function cancelAiExecution(id) {
 }
 export async function fetchWorkoutAnalyses(trainingId, { signal } = {}) {
   const response = await fetch(`/api/trainings/${encodeURIComponent(trainingId)}/analyses`, {
-    headers: { accept: 'application/json' }, signal,
+    headers: { accept: 'application/json' }, signal, cache: 'no-store',
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw Object.assign(new Error(payload.error || 'Could not read workout analysis.'), { codes: payload.errors, status: response.status });

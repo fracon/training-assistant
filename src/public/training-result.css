@@ -393,6 +393,10 @@ body {
 
 .workout-analysis { display: flex; flex-direction: column; gap: 16px; }
 .workout-analysis[hidden] { display: none; }
+.analysis-load-warning { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+.analysis-load-warning[hidden] { display: none; }
+.analysis-load-warning p { margin: 0; color: var(--danger, #9b3e36); line-height: 1.5; }
+.analysis-load-warning button { flex: 0 0 auto; }
 .analysis-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .analysis-header h2 { margin: 0; font-size: 1.2rem; }
 #analysisReadAgain[hidden] { display: none; }
@@ -422,6 +426,8 @@ body {
 .analysis-correction-card p { margin: 0; }
 .analysis-correction-card .field-label { margin-bottom: -8px; }
 @media (max-width: 600px) {
+  .analysis-load-warning { align-items: flex-start; flex-direction: column; }
+  .analysis-load-warning button { width: auto; }
   .analysis-header { align-items: flex-start; }
   .analysis-header #analysisReadAgain { width: auto; }
   .analysis-item-actions, .analysis-dialog-actions { justify-content: flex-start; }

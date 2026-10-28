@@ -338,11 +338,37 @@ test('the session page requires a realized RPE before saving, generating or uplo
     );
     assert.equal(requests.some(({ method, url }) => method === 'GET' && new URL(url).pathname.startsWith('/api/ai/executions')), false,
       'a session without an analysis request does not query execution progress');
+    const failFirstHistoryRead = await command('Page.addScriptToEvaluateOnNewDocument', {
+      source: `(()=>{const original=window.fetch.bind(window);window.fetch=(input,init)=>{const url=new URL(String(input),location.href);if(url.pathname==='/api/trainings/${feedbackId}/analyses'&&!sessionStorage.getItem('synthetic-analysis-read-failed')){sessionStorage.setItem('synthetic-analysis-read-failed','1');return Promise.reject(new TypeError('synthetic history read failure'))}return original(input,init)}})()`,
+    });
     await openSession(feedbackId);
     assert.equal(await evaluate("document.getElementById('analysisSection').hidden"), true,
       'saved feedback by itself does not reveal an analysis section');
     assert.equal(requests.some(({ method, url }) => method === 'GET' && new URL(url).pathname.startsWith('/api/ai/executions')), false,
       'saved feedback by itself does not query execution progress');
+    await waitFor("document.getElementById('analysisLoadWarning').hidden===false", 'the initial history read failure outside the analysis section');
+    assert.equal(await evaluate("document.getElementById('analysisLoadMessage').textContent.includes('Could not load saved analyses')"), true);
+    assert.equal(await evaluate("document.getElementById('analysisSection').hidden"), true, 'unknown history does not create an empty analysis section');
+    assert.equal(requests.some(({ method, url }) => method === 'GET' && new URL(url).pathname.startsWith('/api/ai/executions')), false, 'a failed history read does not start execution polling');
+    await evaluate("document.getElementById('analysisLoadWarning').scrollIntoView({block:'center'}); true");
+    await delay(100);
+    const loadWarningShot = await command('Page.captureScreenshot', { format: 'png' });
+    writeFileSync('/tmp/issue65-analysis-load-warning.png', Buffer.from(loadWarningShot.data, 'base64'));
+    await setLanguage('pt-BR');
+    assert.equal(await evaluate("document.getElementById('analysisLoadMessage').textContent.includes('Não foi possível carregar')"), true, 'the independent read warning is localized in Portuguese');
+    await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await evaluate("document.getElementById('analysisLoadWarning').scrollIntoView({block:'center'}); true");
+    await delay(100);
+    assert.equal(await evaluate('document.documentElement.scrollWidth>innerWidth'), false, 'the contextual history warning has no mobile overflow');
+    const mobileLoadWarningShot = await command('Page.captureScreenshot', { format: 'png' });
+    writeFileSync('/tmp/issue65-analysis-load-warning-mobile.png', Buffer.from(mobileLoadWarningShot.data, 'base64'));
+    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+    await setLanguage('en-US');
+    await evaluate("document.getElementById('analysisLoadAgain').click(); true");
+    await waitFor("document.getElementById('analysisLoadWarning').hidden", 'the free read retry resolving to an empty history');
+    assert.equal(await evaluate("document.getElementById('analysisSection').hidden"), true, 'a successful empty read stays absent after recovery');
+    assert.equal(writes().some(({ method, url }) => method === 'POST' && url.endsWith('/api/ai/executions')), false, 'retrying history is read-only and does not enqueue generation');
+    await command('Page.removeScriptToEvaluateOnNewDocument', { identifier: failFirstHistoryRead.identifier });
     await evaluate(`sessionStorage.setItem('kinesis:analysis-request:${feedbackId}', 'stale-synthetic-request-key')`);
     await command('Page.reload');
     await waitFor(`sessionStorage.getItem('kinesis:analysis-request:${feedbackId}')===null`, 'clearing a stale request key after the owner-scoped execution list confirms no accepted request');
@@ -605,7 +631,8 @@ test('the session page requires a realized RPE before saving, generating or uplo
     await waitFor("document.querySelector('.analysis-interpretation p').textContent==='Synthetic correction confirmed in the browser.'", 'saving the local interpretation correction');
     assert.equal(await evaluate("document.getElementById('analysisCorrectionDialog').hidden"), true, 'the dialog closes after the mutation response confirms success');
     assert.equal(await evaluate("document.activeElement.dataset.interpretationAction?.endsWith(':correct')"), true, 'focus returns to the equivalent control on the updated item');
-    await waitFor("document.getElementById('analysisNotice').textContent.includes('Could not load saved analyses')", 'a refresh error distinct from the confirmed correction');
+    await waitFor("document.getElementById('analysisLoadMessage').textContent.includes('Could not load saved analyses')", 'a refresh error distinct from the confirmed correction');
+    assert.equal(await evaluate("document.getElementById('analysisLoadWarning').hidden"), false, 'a history refresh problem is shown separately from the still-visible analysis');
     assert.equal(await evaluate("document.querySelector('.analysis-interpretation p').textContent"), 'Synthetic correction confirmed in the browser.', 'the confirmed correction remains visible despite a failed list refresh');
     await command('Page.reload');
     await waitFor("document.querySelector('.analysis-interpretation p').textContent==='Synthetic correction confirmed in the browser.'", 'recovery of the persisted correction after reload');

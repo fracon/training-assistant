@@ -695,6 +695,7 @@
       },
       "readUnavailable": "Could not read the execution. Try reading again; this will not start another analysis.",
       "analysisUnavailable": "Could not load saved analyses. Try reading again; no workout will be generated.",
+      "analysisDisplayUnavailable": "The saved analysis was retrieved but could not be displayed. Try reading again; no workout will be generated.",
       "recoveryUnavailable": "Could not verify the previous request. Any saved analysis remains available; try reading again. This will not start another analysis.",
       "connectionRetrying": "Temporary connection problem. Continuing to read this execution…",
       "recovering": "Checking the previous request…",

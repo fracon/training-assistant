@@ -393,6 +393,9 @@ async function initTrainingResult() {
   const generateLabel = generateBtn.querySelector('span');
   const analysisSection = document.getElementById('analysisSection');
   const analysisActions = document.getElementById('analysisActions');
+  const analysisLoadWarning = document.getElementById('analysisLoadWarning');
+  const analysisLoadMessage = document.getElementById('analysisLoadMessage');
+  const analysisLoadAgain = document.getElementById('analysisLoadAgain');
   const analysisState = document.getElementById('analysisState');
   const analysisNotice = document.getElementById('analysisNotice');
   const analysisContent = document.getElementById('analysisContent');
@@ -441,6 +444,7 @@ async function initTrainingResult() {
   let analysisPendingRefresh = null;
   let analysisReadFailureCount = 0;
   let analysisPageActive = true;
+  let analysisLoadErrorKey = 'analysisUnavailable';
   let analysisStartPending = false;
   let analysisOutcomeUncertain = false;
   let activeAnalysisRequestKey = null;
@@ -637,50 +641,74 @@ async function initTrainingResult() {
   async function loadAnalysisState() {
     const token = ++analysisReadToken;
     clearAnalysisTimer();
+    let loaded;
     try {
-      const loaded = await fetchWorkoutAnalyses(currentTrainingId);
-      if (token !== analysisReadToken) return;
-      analysisData = loaded;
-      activeAnalysisId = analysisData.active?.id ?? null;
-      analysisOutcomeUncertain = false;
-      setAnalysisNotice('', false);
-      renderAnalysis();
-      if (analysisData.active) {
-        void refreshAnalysisExecution(activeAnalysisId, token);
-        return true;
-      }
-      const pendingKey = activeAnalysisRequestKey || (() => { try { return sessionStorage.getItem(analysisStorageKey()); } catch { return null; } })();
-      if (pendingKey) {
-        activeAnalysisRequestKey = pendingKey;
-        analysisOutcomeUncertain = true;
-        renderAnalysis();
-        let executions;
-        try {
-          executions = await fetchAiExecutions(pendingKey);
-        } catch {
-          if (token === analysisReadToken) setAnalysisNotice('recoveryUnavailable', true);
-          return false;
-        }
-        if (token !== analysisReadToken) return;
-        const match = executions.find((item) => item.purpose === 'analysis' && String(item.resource_id) === String(currentTrainingId) && item.idempotency_key === pendingKey);
-        if (match) {
-          activeAnalysisId = match.id;
-          analysisOutcomeUncertain = false;
-          setAnalysisNotice('', false);
-          void refreshAnalysisExecution(match.id, token);
-        } else {
-          activeAnalysisRequestKey = null;
-          analysisOutcomeUncertain = false;
-          try { sessionStorage.removeItem(analysisStorageKey()); } catch { /* storage unavailable */ }
-          setAnalysisNotice('', false);
-        }
-        renderAnalysis();
-      }
-      return true;
+      loaded = await fetchWorkoutAnalyses(currentTrainingId);
     } catch {
-      if (token === analysisReadToken) setAnalysisNotice('analysisUnavailable', true);
+      if (token !== analysisReadToken) return false;
+      analysisLoadErrorKey = 'analysisUnavailable';
+      analysisLoadMessage.textContent = analysisKey(analysisLoadErrorKey);
+      analysisLoadWarning.hidden = false;
+      analysisLoadAgain.disabled = false;
+      if (!analysisData?.analyses?.length && !analysisData?.active) analysisSection.hidden = true;
       return false;
     }
+    if (token !== analysisReadToken) return false;
+    if (!loaded || !Array.isArray(loaded.analyses)) {
+      analysisLoadErrorKey = 'analysisUnavailable';
+      analysisLoadMessage.textContent = analysisKey(analysisLoadErrorKey);
+      analysisLoadWarning.hidden = false;
+      analysisLoadAgain.disabled = false;
+      if (!analysisData?.analyses?.length && !analysisData?.active) analysisSection.hidden = true;
+      return false;
+    }
+    analysisData = loaded;
+    activeAnalysisId = analysisData.active?.id ?? null;
+    analysisOutcomeUncertain = false;
+    analysisLoadWarning.hidden = true;
+    analysisLoadErrorKey = 'analysisUnavailable';
+    analysisLoadAgain.disabled = false;
+    try {
+      setAnalysisNotice('', false);
+      renderAnalysis();
+    } catch {
+      analysisLoadErrorKey = 'analysisDisplayUnavailable';
+      analysisLoadMessage.textContent = analysisKey(analysisLoadErrorKey);
+      analysisLoadWarning.hidden = false;
+      return false;
+    }
+    if (analysisData.active) {
+      void refreshAnalysisExecution(activeAnalysisId, token);
+      return true;
+    }
+    const pendingKey = activeAnalysisRequestKey || (() => { try { return sessionStorage.getItem(analysisStorageKey()); } catch { return null; } })();
+    if (pendingKey) {
+      activeAnalysisRequestKey = pendingKey;
+      analysisOutcomeUncertain = true;
+      renderAnalysis();
+      let executions;
+      try {
+        executions = await fetchAiExecutions(pendingKey);
+      } catch {
+        if (token === analysisReadToken) setAnalysisNotice('recoveryUnavailable', true);
+        return false;
+      }
+      if (token !== analysisReadToken) return false;
+      const match = executions.find((item) => item.purpose === 'analysis' && String(item.resource_id) === String(currentTrainingId) && item.idempotency_key === pendingKey);
+      if (match) {
+        activeAnalysisId = match.id;
+        analysisOutcomeUncertain = false;
+        setAnalysisNotice('', false);
+        void refreshAnalysisExecution(match.id, token);
+      } else {
+        activeAnalysisRequestKey = null;
+        analysisOutcomeUncertain = false;
+        try { sessionStorage.removeItem(analysisStorageKey()); } catch { /* storage unavailable */ }
+        setAnalysisNotice('', false);
+      }
+      renderAnalysis();
+    }
+    return true;
   }
   async function mutateInterpretation(item, action, text, trigger = document.activeElement) {
     try {
@@ -766,6 +794,14 @@ async function initTrainingResult() {
   analysisReadAgain.addEventListener('click', () => {
     if (activeAnalysisId) void refreshAnalysisExecution(activeAnalysisId, ++analysisReadToken);
     else void loadAnalysisState();
+  });
+  analysisLoadAgain.addEventListener('click', async () => {
+    if (analysisLoadAgain.disabled) return;
+    analysisLoadAgain.disabled = true;
+    const shouldRestoreFocus = document.activeElement === analysisLoadAgain;
+    const loaded = await loadAnalysisState();
+    if (shouldRestoreFocus && loaded && analysisLoadWarning.hidden && document.activeElement === document.body)
+      (analysisData?.latest ? document.getElementById('analysisTitle') : generateBtn).focus({ preventScroll: true });
   });
 
   const applyTooltips = () => {
@@ -1188,6 +1224,8 @@ async function initTrainingResult() {
     }
     if (!saveBtn.disabled) saveBtn.textContent = t('session.save');
     if (!generateBtn.disabled) generateLabel.textContent = analysisKey('analyze');
+    analysisLoadMessage.textContent = analysisKey(analysisLoadErrorKey);
+    analysisLoadAgain.textContent = analysisKey('readAgain');
     if (externalPromptButton) {
       if (!externalPromptPending) externalPromptButton.querySelector('span').textContent = analysisKey('externalPrompt');
       externalPromptDialog.querySelector('h2').textContent = analysisKey('externalPrompt');

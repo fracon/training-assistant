@@ -76,7 +76,13 @@ superseded.
 The product response omits raw evidence identifiers. The admin prompt/debug
 modal is separate from ordinary analysis text and uses the shared focus trap.
 
-The result page reads persisted analyses once when the owned training opens.
+The result page reads persisted analyses from the owner-scoped
+`GET /api/trainings/:id/analyses` endpoint when the owned training opens. This
+response is marked `Cache-Control: no-store`, and the browser request bypasses
+HTTP caches: an earlier empty response cannot stand in for history written by
+a later execution. A successful empty response means no analysis is available;
+feedback alone does not change that result.
+
 It polls an execution only when that read returns a queued/running execution or
 when a stored idempotency key needs recovery. Recovery performs an exact,
 owner-scoped lookup by that key, including terminal executions and records
@@ -84,8 +90,10 @@ outside the ordinary recent-execution list. Feedback alone never starts a
 status poll. A key with no matching execution is cleared after the exact lookup
 returns successfully; no generation is started by that recovery. Failures to
 load analysis history, verify a stored request, and read a known execution
-have distinct localized states. A read failure never replaces an already
-displayed analysis. Switching tabs only resumes an actual
+have distinct localized states. If the initial history read fails while its
+contents are unknown, a contextual retry warning appears outside the analysis
+section. A successful empty read leaves that section absent. A read failure
+never replaces an already displayed analysis. Switching tabs only resumes an actual
 execution or unresolved stored request; the page removes its timer and aborts
 its in-flight status read when it is left.
 

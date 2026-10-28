@@ -176,9 +176,10 @@ function registerAiRoutes(
   route('post', '/api/ai/admin/preview', (r) =>
     service.preview(r.user.id, r.body),
   );
-  route('get', '/api/trainings/:id/analyses', (r) =>
-    readWorkoutAnalyses(db, r.user.id, r.params.id, config),
-  );
+  route('get', '/api/trainings/:id/analyses', (r, reply) => {
+    reply.header('Cache-Control', 'no-store');
+    return readWorkoutAnalyses(db, r.user.id, r.params.id, config);
+  });
   for (const [action, pathAction] of [['confirm', 'confirm'], ['correct', 'correct'], ['discard', 'discard']]) {
     route('post', `/api/ai/interpretations/:id/${pathAction}`, (r) =>
       changeInterpretation(db, r.user.id, r.params.id, action, r.body),

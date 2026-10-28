@@ -695,6 +695,7 @@
       },
       "readUnavailable": "Não foi possível consultar o andamento. Tente ler novamente; nenhuma nova análise será iniciada.",
       "analysisUnavailable": "Não foi possível carregar as análises salvas. Tente consultar novamente; nenhum treino será gerado.",
+      "analysisDisplayUnavailable": "A análise salva foi recuperada, mas não pôde ser exibida. Tente consultar novamente; nenhum treino será gerado.",
       "recoveryUnavailable": "Não foi possível verificar a solicitação anterior. Uma análise já salva continua disponível; tente consultar novamente. Nenhuma nova análise será iniciada.",
       "connectionRetrying": "Problema temporário de conexão. Continuando a consultar esta execução…",
       "recovering": "Verificando a solicitação anterior…",

@@ -1171,6 +1171,7 @@ test('training-result.html ships the planned location field and weather spinner'
 test('training-result.js wires explicit persisted analysis, protected prompt preview, recovery and i18n refreshes', () => {
   const js = readFileSync(join(publicDir, 'training-result.js'), 'utf8') + readFileSync(join(publicDir, 'shared/analysis-prompts.js'), 'utf8');
   const markup = readFileSync(join(publicDir, 'training-result.html'), 'utf8');
+  const sharedApi = readFileSync(join(publicDir, 'shared/api.js'), 'utf8');
 
   assert.match(js, /import \{ initShell, getShellI18n, getUserPreferences, showConfirm, showShellToast, refreshIcons \} from '\.\/shared\/shell\.js';/);
   assert.match(js, /saveManualTrainingResults/);
@@ -1339,7 +1340,12 @@ test('training-result.js wires explicit persisted analysis, protected prompt pre
   assert.match(js, /analysisSection\.hidden = !\([\s\S]*?analysisNotice\.dataset\.key\)/, 'only explicit analysis state, never stale notice text, reveals the section');
   assert.match(js, /if \(analysisData\.active\)[\s\S]*?void refreshAnalysisExecution\(activeAnalysisId, token\)/, 'execution status polling starts only for an active persisted execution');
   assert.match(js, /setAnalysisNotice\('recoveryUnavailable', true\)/, 'failure to verify a stored idempotency key is distinct from execution polling failure');
-  assert.match(js, /setAnalysisNotice\('analysisUnavailable', true\)/, 'failure to load saved analyses is not presented as a progress-read failure');
+  assert.match(js, /analysisLoadWarning\.hidden = false/, 'unknown history failures use a separate contextual warning');
+  assert.match(js, /analysisSection\.hidden = true/, 'an empty or unknown history failure cannot reveal an empty analysis section');
+  assert.match(js, /analysisLoadAgain\.addEventListener\('click', async \(\) => \{[\s\S]*loadAnalysisState\(\)/, 'history retry only repeats the free history read');
+  assert.match(js, /analysisData = loaded;[\s\S]*renderAnalysis\(\)/, 'a successful historical read feeds the persisted result into the view renderer');
+  assert.match(sharedApi, /export async function fetchWorkoutAnalyses[\s\S]*?cache:\s*'no-store'/, 'analysis history reads bypass stale browser HTTP cache entries');
+  assert.match(markup, /id="analysisLoadWarning"[^>]*role="alert"[^>]*hidden/, 'unknown history failures have a separate initially hidden alert outside the analysis section');
   assert.match(js, /createDialogFocusTrap\(externalPromptDialog/);
   assert.match(js, /fetchWorkoutAnalyses\(currentTrainingId/);
   assert.match(js, /setTimeout\(\(\) => \{[\s\S]*refreshAnalysisExecution/);
@@ -1843,6 +1849,7 @@ test('training-result.css keeps the earthy premium aesthetic for the session vie
   assert.match(css, /\.form-actions \.btn-primary,[\s\S]*height:\s*44px/, 'result actions have consistent compact height');
   assert.match(css, /\.form-actions button svg \{[^}]*width:\s*16px[\s\S]*height:\s*16px/, 'primary and secondary action icons share the established size');
   assert.match(css, /@container session-feedback \(max-width:\s*620px\)/, 'the action group stacks according to the available card width');
+  assert.match(css, /\.analysis-load-warning\[hidden\] \{[^}]*display:\s*none/, 'history errors stay outside the analysis content and hidden after success');
   assert.match(css, /\.form-actions \.btn-primary,[\s\S]*white-space:\s*nowrap/);
   assert.match(css, /\.btn-secondary \{[^}]*border:\s*1px solid var\(--accent-deep\)/);
   assert.match(css, /\.btn-secondary svg \{[^}]*width:\s*16px/);
