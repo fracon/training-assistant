@@ -944,13 +944,13 @@ test('the session page requires a realized RPE before saving, generating or uplo
       { prompt: 'Ver prompt externo', analyze: 'Analisar treino' },
       'admin actions retain localized product labels in Portuguese'
     );
-    await waitFor("document.querySelectorAll('.form-actions button svg').length===2", 'the Lucide icons in the action footer');
+    await waitFor("document.querySelectorAll('.feedback-card > .form-actions button svg').length===2", 'the Lucide icons in the action footer');
     await evaluate(`(()=>{
       document.getElementById('rpe-4').click();
       const notes=document.getElementById('feedbackNotas');
       notes.value='Saved before external prompt preview.';
       notes.dispatchEvent(new Event('input',{bubbles:true}));
-      const buttons=[...document.querySelectorAll('.form-actions button')];
+      const buttons=[...document.querySelectorAll('.feedback-card > .form-actions button')];
       window.__actionButtonHeights=buttons.map(button=>Math.round(button.getBoundingClientRect().height));
       window.__actionButtonRects=buttons.map(button=>{const rect=button.getBoundingClientRect();return {x:Math.round(rect.x),y:Math.round(rect.y),right:Math.round(rect.right)}});
       const footer=document.querySelector('.form-actions').getBoundingClientRect();
@@ -967,8 +967,8 @@ test('the session page requires a realized RPE before saving, generating or uplo
     await evaluate("document.querySelector('.form-actions').scrollIntoView({block:'center'}); true");
     await delay(100);
     const mobileActionLayout = await evaluate(`(()=>({
-      rows:new Set([...document.querySelectorAll('.form-actions button')].map(button=>Math.round(button.getBoundingClientRect().y))).size,
-      widths:[...document.querySelectorAll('.form-actions button')].map(button=>Math.round(button.getBoundingClientRect().width)),
+      rows:new Set([...document.querySelectorAll('.feedback-card > .form-actions button')].map(button=>Math.round(button.getBoundingClientRect().y))).size,
+      widths:[...document.querySelectorAll('.feedback-card > .form-actions button')].map(button=>Math.round(button.getBoundingClientRect().width)),
       overflow:document.documentElement.scrollWidth>innerWidth,
     }))()`);
     assert.equal(mobileActionLayout.rows, 3, 'mobile actions use an intentional single-column layout');
@@ -994,16 +994,16 @@ test('the session page requires a realized RPE before saving, generating or uplo
       `PATCH /api/trainings/${adminTrainingId}`,
       'POST /api/ai/admin/preview',
     ], 'feedback persistence completes before the free prompt preview is requested');
-    assert.equal(await evaluate('new Set(window.__actionButtonHeights).size'), 1,
-      `all three footer actions use the same button height (observed: ${JSON.stringify(await evaluate('window.__actionButtonHeights'))})`);
-    const desktopActionRows = await evaluate('new Set(window.__actionButtonRects.map(rect=>rect.y)).size');
+    assert.equal(await evaluate('window.__actionButtonHeights[0]===window.__actionButtonHeights[2]'), true,
+      `save and prompt share the secondary button height (observed: ${JSON.stringify(await evaluate('window.__actionButtonHeights'))})`);
+    const desktopActionRows = await evaluate('(()=>{const ys=window.__actionButtonRects.map(rect=>rect.y).sort((a,b)=>a-b);return ys.reduce((rows,y,index)=>index===0||y-ys[index-1]>2?rows+1:rows,0)})()');
     const actionContainerWidth = await evaluate('window.__actionContainerWidth');
-    assert.equal(desktopActionRows, actionContainerWidth <= 620 ? 3 : 1,
-      'the desktop action group stays on one row when it fits and stacks deliberately by card width otherwise');
+    assert.equal(desktopActionRows, actionContainerWidth <= 620 ? 3 : actionContainerWidth <= 680 ? 2 : 1,
+      'the desktop action group stays on one row when it fits and moves the analysis pair together when card width is constrained');
     assert.equal(await evaluate('window.__actionButtonRects.every(rect=>rect.x>=window.__actionFooterRect.left&&rect.right<=window.__actionFooterRect.right)'), true, 'the action group stays inside the footer and card width');
     if (actionContainerWidth > 620)
-      assert.equal(await evaluate('window.__actionButtonRects[1].y===window.__actionButtonRects[2].y && window.__actionButtonRects[1].x<window.__actionButtonRects[2].x'), true,
-        'the primary analysis action and compact admin prompt stay grouped beside the stable save action');
+      assert.equal(await evaluate('Math.abs(window.__actionButtonRects[1].y-window.__actionButtonRects[2].y)<=2 && window.__actionButtonRects[1].x<window.__actionButtonRects[2].x'), true,
+        'the primary analysis action and shared admin prompt stay grouped beside the stable save action');
     const adminPreview = await evaluate(`(()=>({
       role:document.querySelector('[role=dialog][aria-modal=true]')!==null,
       active:document.activeElement.getAttribute('aria-label'),
@@ -1033,6 +1033,22 @@ test('the session page requires a realized RPE before saving, generating or uplo
       'admin actions rerender in English after the Portuguese preview'
     );
 
+    /* ── Session actions use the exact shared Request Workouts button variants ── */
+
+    const sessionButtonMetrics = await evaluate(`(()=>Object.fromEntries([...document.querySelectorAll('.feedback-card > .form-actions button')].map((button,index)=>{const style=getComputedStyle(button);const icon=button.querySelector('svg'),iconStyle=icon?getComputedStyle(icon):null;return [["save","analyze","prompt"][index],{height:style.height,padding:style.padding,borderRadius:style.borderRadius,fontFamily:style.fontFamily,fontSize:style.fontSize,fontWeight:style.fontWeight,color:style.color,backgroundColor:style.backgroundColor,border:style.border,boxShadow:style.boxShadow,gap:style.gap,transition:style.transition,icon:icon?.getAttribute('data-lucide'),iconSize:iconStyle?iconStyle.width+' '+iconStyle.height:null}]})))()`);
+    assert.equal(sessionButtonMetrics.prompt.icon, 'sparkles', 'the session prompt renders the same Lucide icon as Request Workouts');
+    const { icon: promptActionIcon, iconSize: promptIconSize, ...promptSecondaryStyles } = sessionButtonMetrics.prompt;
+    const { icon: saveActionIcon, iconSize: saveIconSize, ...saveSecondaryStyles } = sessionButtonMetrics.save;
+    assert.deepEqual(saveSecondaryStyles, promptSecondaryStyles, 'save and prompt share the exact secondary variant');
+    await evaluate("document.querySelector('.form-actions').scrollIntoView({block:'center'}); true");
+    await delay(100);
+    writeFileSync('/tmp/kinesis-session-actions-desktop-en.png', Buffer.from((await command('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+    await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await evaluate("document.querySelector('.form-actions').scrollIntoView({block:'center'}); true");
+    await delay(100);
+    writeFileSync('/tmp/kinesis-session-actions-mobile-en.png', Buffer.from((await command('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+
     /* ── A lost POST response recovers the same terminal execution, including failure ── */
 
     await openSession(adminTrainingId);
@@ -1054,6 +1070,36 @@ test('the session page requires a realized RPE before saving, generating or uplo
     await command('Page.reload');
     await waitFor("document.getElementById('analysisContent').textContent.includes('Synthetic analysis arrived while the session stayed open.')", 'the successful terminal result after reload');
     assert.equal(providerCalls, 4, 'successful reload recovery is read-only');
+
+    await command('Page.navigate', { url: `${origin}/ai-coach.html` });
+    await waitFor("document.getElementById('generateBtn')&&document.getElementById('externalPromptBtn')&&!document.getElementById('externalPromptBtn').hidden", 'the admin Request Workouts action pair');
+    const weeklyButtonMetrics = await evaluate(`(()=>{const read=(id)=>{const button=document.getElementById(id),style=getComputedStyle(button),icon=button.querySelector('svg'),iconStyle=icon?getComputedStyle(icon):null;return {height:style.height,padding:style.padding,borderRadius:style.borderRadius,fontFamily:style.fontFamily,fontSize:style.fontSize,fontWeight:style.fontWeight,color:style.color,backgroundColor:style.backgroundColor,border:style.border,boxShadow:style.boxShadow,gap:style.gap,transition:style.transition,icon:icon?.getAttribute('data-lucide'),iconSize:iconStyle?iconStyle.width+' '+iconStyle.height:null}};return {primary:read('generateBtn'),secondary:read('externalPromptBtn')}})()`);
+    const { icon: analyzeIcon, ...analyzeStyles } = sessionButtonMetrics.analyze;
+    const { icon: weeklyPrimaryIcon, ...weeklyPrimaryStyles } = weeklyButtonMetrics.primary;
+    assert.deepEqual(analyzeStyles, weeklyPrimaryStyles, 'Analyze workout matches Generate weekly proposal computed button styles and icon dimensions');
+    assert.equal(analyzeIcon, 'activity', 'the analysis action keeps its analysis-specific Lucide icon');
+    assert.equal(weeklyPrimaryIcon, 'calendar-plus', 'the weekly action keeps its calendar-plus Lucide icon');
+    assert.deepEqual(sessionButtonMetrics.prompt, weeklyButtonMetrics.secondary, 'both external prompt actions match in computed styles and rendered Lucide icon');
+    await evaluate("document.querySelector('.lang-switch [data-lang=\"pt-BR\"]').click()");
+    await waitFor("document.documentElement.lang==='pt-BR'", 'Portuguese Request Workouts actions');
+    await evaluate("document.querySelector('.prompt-submit-actions').scrollIntoView({block:'center'}); true");
+    await delay(100);
+    writeFileSync('/tmp/kinesis-request-workouts-actions-desktop-pt.png', Buffer.from((await command('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+    await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await evaluate("document.querySelector('.prompt-submit-actions').scrollIntoView({block:'center'}); true");
+    await delay(100);
+    assert.equal(await evaluate('document.documentElement.scrollWidth>innerWidth'), false, 'weekly actions have no mobile overflow');
+    writeFileSync('/tmp/kinesis-request-workouts-actions-mobile-pt.png', Buffer.from((await command('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+    await evaluate("document.querySelector('.lang-switch [data-lang=\"en-US\"]').click()");
+    await waitFor("document.documentElement.lang==='en-US'", 'English Request Workouts actions');
+    await evaluate("document.querySelector('.prompt-submit-actions').scrollIntoView({block:'center'}); true");
+    await delay(100);
+    writeFileSync('/tmp/kinesis-request-workouts-actions-desktop-en.png', Buffer.from((await command('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+    await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await evaluate("document.querySelector('.prompt-submit-actions').scrollIntoView({block:'center'}); true");
+    await delay(100);
+    writeFileSync('/tmp/kinesis-request-workouts-actions-mobile-en.png', Buffer.from((await command('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
   } finally {
     try {
       socket?.close();

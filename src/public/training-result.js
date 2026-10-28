@@ -1092,10 +1092,10 @@ async function initTrainingResult() {
   if (sessionUser?.role === 'admin') {
     externalPromptButton = document.createElement('button');
     externalPromptButton.type = 'button';
-    externalPromptButton.className = 'btn-secondary btn-small';
+    externalPromptButton.className = 'btn-secondary';
     externalPromptButton.dataset.analysisExternalPrompt = 'true';
     const promptIcon = document.createElement('i');
-    promptIcon.dataset.lucide = 'file-text';
+    promptIcon.dataset.lucide = 'sparkles';
     promptIcon.setAttribute('aria-hidden', 'true');
     const promptLabel = document.createElement('span');
     promptLabel.textContent = t('session.analysis.externalPrompt');

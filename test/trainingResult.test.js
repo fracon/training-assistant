@@ -1172,6 +1172,7 @@ test('training-result.js wires explicit persisted analysis, protected prompt pre
   const js = readFileSync(join(publicDir, 'training-result.js'), 'utf8') + readFileSync(join(publicDir, 'shared/analysis-prompts.js'), 'utf8');
   const markup = readFileSync(join(publicDir, 'training-result.html'), 'utf8');
   const sharedApi = readFileSync(join(publicDir, 'shared/api.js'), 'utf8');
+  const sharedComponents = readFileSync(join(publicDir, 'shared/components.css'), 'utf8');
 
   assert.match(js, /import \{ initShell, getShellI18n, getUserPreferences, showConfirm, showShellToast, refreshIcons \} from '\.\/shared\/shell\.js';/);
   assert.match(js, /saveManualTrainingResults/);
@@ -1335,7 +1336,8 @@ test('training-result.js wires explicit persisted analysis, protected prompt pre
   assert.match(js, /previewAnalysisPrompt\(currentTrainingId\)/);
   assert.match(js, /sessionUser\?\.role === 'admin'/, 'the prompt control is only constructed for the current administrator');
   assert.match(js, /externalPromptButton\.addEventListener\('click', async \(\) => \{[\s\S]*?const rpe = requireFeedbackRpe\(\);[\s\S]*?const saved = await persistCurrentState\(rpe\);[\s\S]*?previewAnalysisPrompt\(currentTrainingId\)/, 'the owner-admin prompt action persists the complete feedback before reading the prompt');
-  assert.match(js, /externalPromptButton\.className = 'btn-secondary btn-small'/, 'the admin prompt is a compact shared secondary action');
+  assert.match(js, /externalPromptButton\.className = 'btn-secondary'/, 'the admin prompt uses the same shared secondary variant as the weekly prompt');
+  assert.match(js, /promptIcon\.dataset\.lucide = 'sparkles'/, 'the session and weekly prompt actions share the sparkles icon reference');
   assert.match(js, /const analysisActions = document\.getElementById\('analysisActions'\)/, 'analysis actions have a dedicated layout group');
   assert.match(js, /analysisSection\.hidden = !\([\s\S]*?analysisNotice\.dataset\.key\)/, 'only explicit analysis state, never stale notice text, reveals the section');
   assert.match(js, /if \(analysisData\.active\)[\s\S]*?void refreshAnalysisExecution\(activeAnalysisId, token\)/, 'execution status polling starts only for an active persisted execution');
@@ -1346,6 +1348,7 @@ test('training-result.js wires explicit persisted analysis, protected prompt pre
   assert.match(js, /analysisData = loaded;[\s\S]*renderAnalysis\(\)/, 'a successful historical read feeds the persisted result into the view renderer');
   assert.match(sharedApi, /export async function fetchWorkoutAnalyses[\s\S]*?cache:\s*'no-store'/, 'analysis history reads bypass stale browser HTTP cache entries');
   assert.match(markup, /id="analysisLoadWarning"[^>]*role="alert"[^>]*hidden/, 'unknown history failures have a separate initially hidden alert outside the analysis section');
+  assert.match(markup, /shared\/components\.css/, 'the result page loads the same shared button components as Request Workouts');
   assert.match(js, /createDialogFocusTrap\(externalPromptDialog/);
   assert.match(js, /fetchWorkoutAnalyses\(currentTrainingId/);
   assert.match(js, /setTimeout\(\(\) => \{[\s\S]*refreshAnalysisExecution/);
@@ -1796,6 +1799,7 @@ test('fit upload error codes resolve through the real localized dictionaries wit
 
 test('training-result.css keeps the earthy premium aesthetic for the session view', () => {
   const css = readFileSync(join(publicDir, 'training-result.css'), 'utf8');
+  const sharedComponents = readFileSync(join(publicDir, 'shared/components.css'), 'utf8');
 
   assert.match(css, /@import url\('\.\/shared\/theme\.css'\);/);
   assert.match(css, /\.planned-grid \{[^}]*display:\s*grid/);
@@ -1845,36 +1849,16 @@ test('training-result.css keeps the earthy premium aesthetic for the session vie
   assert.match(css, /\.form-actions \{[^}]*display:\s*grid/);
   assert.match(css, /\.form-actions \{[^}]*grid-template-columns:\s*max-content minmax\(0, 1fr\)/);
   assert.match(css, /\.form-actions \{[^}]*border-top:\s*1px solid var\(--line\)/, 'the actions follow the shared form footer divider and spacing');
-  assert.match(css, /\.form-actions \.btn-primary,[\s\S]*padding:\s*9px 12px/, 'result actions use compact padding to keep the save, analysis and admin actions together');
-  assert.match(css, /\.form-actions \.btn-primary,[\s\S]*height:\s*44px/, 'result actions have consistent compact height');
+  assert.doesNotMatch(css, /\.form-actions \.btn-(?:primary|secondary)[^{]*\{[^}]*padding:/, 'result actions inherit the shared button padding without local overrides');
+  assert.doesNotMatch(css, /\.form-actions \.btn-(?:primary|secondary)\s*\{/, 'the result page does not override shared button geometry');
+  assert.doesNotMatch(css, /(?:^|\n)\.btn-(?:primary|secondary)\s*\{/, 'the result page does not define a second button treatment');
   assert.match(css, /\.form-actions button svg \{[^}]*width:\s*16px[\s\S]*height:\s*16px/, 'primary and secondary action icons share the established size');
   assert.match(css, /@container session-feedback \(max-width:\s*620px\)/, 'the action group stacks according to the available card width');
   assert.match(css, /\.analysis-load-warning\[hidden\] \{[^}]*display:\s*none/, 'history errors stay outside the analysis content and hidden after success');
-  assert.match(css, /\.form-actions \.btn-primary,[\s\S]*white-space:\s*nowrap/);
-  assert.match(css, /\.btn-secondary \{[^}]*border:\s*1px solid var\(--accent-deep\)/);
-  assert.match(css, /\.btn-secondary svg \{[^}]*width:\s*16px/);
-  assert.match(
-    css,
-    /\.btn-primary,\s*\n\s*\.btn-secondary \{[^}]*transition:\s*all 0\.2s ease/,
-    'both buttons share one smooth animation curve'
-  );
-  assert.match(
-    css,
-    /\.btn-primary,\s*\n\s*\.btn-secondary \{[^}]*display:\s*inline-flex;\s*\n\s*align-items:\s*center;\s*\n\s*justify-content:\s*center/,
-    'both buttons center their icon and label with strict flex'
-  );
-  assert.match(
-    css,
-    /\.btn-primary:hover:not\(:disabled\),\s*\n\s*\.btn-secondary:hover:not\(:disabled\) \{[^}]*transform:\s*translateY\(-2px\)/,
-    'the hover motion is identical for both styles'
-  );
-  assert.match(
-    css,
-    /\.btn-secondary:hover:not\(:disabled\) \{[^}]*background-color:\s*rgba\(111,\s*144,\s*112,\s*0\.08\)/,
-    'the outline button dims subtly instead of filling solid'
-  );
-  assert.ok(!css.includes('#3d5a43'), 'the old solid-fill outline hover is gone');
-  assert.match(css, /\.btn-secondary \{[^}]*background:\s*transparent/, 'the outline stays surface-colored');
+  assert.match(css, /@container session-feedback \(max-width:\s*680px\)[\s\S]*\.form-actions-analysis > button \{[^}]*white-space:\s*nowrap/, 'the action pair moves together and keeps labels intact when the card is constrained');
+  assert.match(sharedComponents, /\.btn-secondary \{[^}]*border-radius:\s*999px[\s\S]*padding:\s*9px 18px/, 'secondary actions use the shared pill geometry');
+  assert.match(sharedComponents, /\.btn-secondary:hover:not\(:disabled\)/, 'secondary actions use the shared hover state');
+  assert.match(sharedComponents, /\.btn-secondary:disabled/, 'secondary actions use the shared disabled state');
   assert.match(css, /\.input-control:focus \{[^}]*border-color:\s*var\(--accent\)/);
   assert.match(
     css,

@@ -655,82 +655,17 @@ select.input-control {
   gap: 8px;
 }
 
-.btn-primary,
-.btn-secondary {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border-radius: 999px;
-  font: inherit;
-  font-weight: 600;
-  padding: 11px 22px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.btn-primary {
-  border: none;
-  background: var(--accent-deep);
-  color: #ffffff;
-}
-
-.btn-secondary {
-  border: 1px solid var(--accent-deep);
-  background: transparent;
-  color: var(--accent-deep);
-}
-
-.form-actions .btn-primary,
-.form-actions .btn-secondary {
-  text-align: center;
-  box-sizing: border-box;
-  height: 44px;
-  min-height: 44px;
-  padding: 9px 12px;
-  line-height: 1.2;
-  white-space: nowrap;
-}
-
 .form-actions button svg {
   width: 16px;
   height: 16px;
   flex: 0 0 16px;
 }
 
-.form-actions-analysis > button { min-height: 44px; }
-
-.btn-secondary svg {
-  width: 16px;
-  height: 16px;
-}
-
-/* One shared physical motion for every button; only the surface treatment
-   differs. The outline button keeps its transparent/surface look on hover -
-   never a solid fill or white text. */
-.btn-primary:hover:not(:disabled),
-.btn-secondary:hover:not(:disabled) {
-  transform: translateY(-2px);
-}
-
-.btn-primary:hover:not(:disabled) {
-  background: #405c46;
-}
-
-.btn-secondary:hover:not(:disabled) {
-  background-color: rgba(111, 144, 112, 0.08);
-  box-shadow: 0 6px 14px rgba(60, 53, 42, 0.12);
-}
-
-.btn-primary:active:not(:disabled),
-.btn-secondary:active:not(:disabled) {
-  transform: scale(0.98);
-}
-
-.btn-primary:disabled,
-.btn-secondary:disabled {
-  opacity: 0.65;
-  cursor: not-allowed;
+@container session-feedback (max-width: 680px) {
+  .form-actions { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .form-actions-save button { width: auto; }
+  .form-actions-analysis { justify-content: flex-end; flex-wrap: nowrap; }
+  .form-actions-analysis > button { flex: 0 0 auto; white-space: nowrap; }
 }
 
 @container session-feedback (max-width: 620px) {
