@@ -636,24 +636,48 @@ select.input-control {
 }
 
 .form-actions {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 16px;
+  justify-content: space-between;
+  gap: 0;
   margin-top: 1rem;
   padding-top: 0.9rem;
   border-top: 1px solid var(--line);
 }
 
-.form-actions-save { min-width: 0; }
+.form-actions-save { min-width: 0; flex: 0 0 auto; }
 .form-actions-save button { max-width: 100%; }
 .form-actions-analysis {
   display: flex;
   min-width: 0;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 4px;
 }
+
+.form-actions .btn-session-save {
+  min-height: 44px;
+  padding: 9px 18px;
+  border-color: var(--accent-deep);
+  background: transparent;
+  color: var(--accent-deep);
+  font-size: 1rem;
+}
+
+.form-actions #generateBtn {
+  min-height: 44px;
+  padding: 9px 10px;
+}
+
+.form-actions .btn-session-save:hover:not(:disabled) {
+  border-color: var(--accent-deep);
+  background-color: rgba(111, 144, 112, 0.08);
+  color: var(--accent-deep);
+}
+
+.form-actions > div > button { white-space: nowrap; }
 
 .form-actions button svg {
   width: 16px;
@@ -661,15 +685,8 @@ select.input-control {
   flex: 0 0 16px;
 }
 
-@container session-feedback (max-width: 680px) {
-  .form-actions { grid-template-columns: minmax(0, 1fr); gap: 12px; }
-  .form-actions-save button { width: auto; }
-  .form-actions-analysis { justify-content: flex-end; flex-wrap: nowrap; }
-  .form-actions-analysis > button { flex: 0 0 auto; white-space: nowrap; }
-}
-
 @container session-feedback (max-width: 620px) {
-  .form-actions { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .form-actions { flex-direction: column; align-items: stretch; gap: 10px; }
   .form-actions-save button { width: 100%; }
   .form-actions-analysis { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .form-actions-analysis > button { width: 100%; }

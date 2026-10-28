@@ -344,6 +344,18 @@ test('the session page requires a realized RPE before saving, generating or uplo
     await openSession(feedbackId);
     assert.equal(await evaluate("document.getElementById('analysisSection').hidden"), true,
       'saved feedback by itself does not reveal an analysis section');
+    const regularActionLayout = await evaluate(`(()=>{const buttons=[...document.querySelectorAll('.feedback-card > .form-actions button')],rects=buttons.map(button=>button.getBoundingClientRect());return {count:buttons.length,sameRow:rects.length===2&&Math.abs(rects[0].top-rects[1].top)<=2,saveColor:getComputedStyle(buttons[0]).color,analyzeBackground:getComputedStyle(buttons[1]).backgroundColor}})()`);
+    assert.equal(regularActionLayout.count, 2, 'a regular user sees only save and analysis actions');
+    assert.equal(regularActionLayout.sameRow, true, 'regular-user desktop actions align on one row');
+    await command('Emulation.setDeviceMetricsOverride', { width: 697, height: 844, deviceScaleFactor: 1, mobile: false });
+    const regularNarrowActions = await evaluate(`(()=>{const card=document.querySelector('.feedback-card'),buttons=[...card.querySelectorAll(':scope > .form-actions button')],rects=buttons.map(button=>button.getBoundingClientRect());return {cardWidth:card.clientWidth,viewport:innerWidth,overflow:document.documentElement.scrollWidth>innerWidth,sameRow:rects.length===2&&Math.abs(rects[0].top-rects[1].top)<=2,saveWidth:rects[0]?.width,analyzeWidth:rects[1]?.width}})()`);
+    assert.equal(regularNarrowActions.overflow, false, 'narrow desktop has no horizontal overflow');
+    assert.equal(regularNarrowActions.sameRow, false, `the full app viewport leaves insufficient room beside its sidebar: ${JSON.stringify(regularNarrowActions)}`);
+    assert.ok(regularNarrowActions.cardWidth < 620, 'the 697px app viewport has insufficient card space for both labels on one line');
+    await evaluate("document.querySelector('.form-actions').scrollIntoView({block:'center'}); true");
+    await delay(80);
+    writeFileSync('/tmp/kinesis-session-actions-desktop-697-user.png', Buffer.from((await command('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
     assert.equal(requests.some(({ method, url }) => method === 'GET' && new URL(url).pathname.startsWith('/api/ai/executions')), false,
       'saved feedback by itself does not query execution progress');
     await waitFor("document.getElementById('analysisLoadWarning').hidden===false", 'the initial history read failure outside the analysis section');
@@ -952,7 +964,7 @@ test('the session page requires a realized RPE before saving, generating or uplo
       notes.dispatchEvent(new Event('input',{bubbles:true}));
       const buttons=[...document.querySelectorAll('.feedback-card > .form-actions button')];
       window.__actionButtonHeights=buttons.map(button=>Math.round(button.getBoundingClientRect().height));
-      window.__actionButtonRects=buttons.map(button=>{const rect=button.getBoundingClientRect();return {x:Math.round(rect.x),y:Math.round(rect.y),right:Math.round(rect.right)}});
+      window.__actionButtonRects=buttons.map(button=>{const rect=button.getBoundingClientRect();return {x:Math.round(rect.x),y:Math.round(rect.y),centerY:Math.round(rect.top+rect.height/2),right:Math.round(rect.right)}});
       const footer=document.querySelector('.form-actions').getBoundingClientRect();
       window.__actionFooterRect={left:Math.round(footer.left),right:Math.round(footer.right)};
       window.__actionContainerWidth=document.querySelector('.feedback-card').clientWidth;
@@ -962,6 +974,8 @@ test('the session page requires a realized RPE before saving, generating or uplo
     await delay(120);
     const actionDesktop = await command('Page.captureScreenshot', { format: 'png' });
     writeFileSync('/tmp/kinesis-session-actions-desktop.png', Buffer.from(actionDesktop.data, 'base64'));
+    const actionContent697 = await command('Page.captureScreenshot', { format: 'png', clip: { x: 308, y: 650, width: 697, height: 170, scale: 1 } });
+    writeFileSync('/tmp/kinesis-session-actions-content-697.png', Buffer.from(actionContent697.data, 'base64'));
     await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
     assert.equal(await evaluate('document.documentElement.scrollWidth>innerWidth'), false, 'the admin action footer has no horizontal overflow at mobile width');
     await evaluate("document.querySelector('.form-actions').scrollIntoView({block:'center'}); true");
@@ -994,16 +1008,16 @@ test('the session page requires a realized RPE before saving, generating or uplo
       `PATCH /api/trainings/${adminTrainingId}`,
       'POST /api/ai/admin/preview',
     ], 'feedback persistence completes before the free prompt preview is requested');
-    assert.equal(await evaluate('window.__actionButtonHeights[0]===window.__actionButtonHeights[2]'), true,
-      `save and prompt share the secondary button height (observed: ${JSON.stringify(await evaluate('window.__actionButtonHeights'))})`);
-    const desktopActionRows = await evaluate('(()=>{const ys=window.__actionButtonRects.map(rect=>rect.y).sort((a,b)=>a-b);return ys.reduce((rows,y,index)=>index===0||y-ys[index-1]>2?rows+1:rows,0)})()');
+    assert.equal(await evaluate('window.__actionButtonHeights[0]===window.__actionButtonHeights[1]'), true,
+      `save and analysis share the primary action height (observed: ${JSON.stringify(await evaluate('window.__actionButtonHeights'))})`);
+    const desktopActionRows = await evaluate('(()=>{const ys=window.__actionButtonRects.map(rect=>rect.centerY).sort((a,b)=>a-b);return ys.reduce((rows,y,index)=>index===0||y-ys[index-1]>2?rows+1:rows,0)})()');
     const actionContainerWidth = await evaluate('window.__actionContainerWidth');
-    assert.equal(desktopActionRows, actionContainerWidth <= 620 ? 3 : actionContainerWidth <= 680 ? 2 : 1,
-      'the desktop action group stays on one row when it fits and moves the analysis pair together when card width is constrained');
+    assert.equal(desktopActionRows, actionContainerWidth <= 620 ? 3 : 1,
+      'all desktop actions stay on one row when the content width accommodates their labels');
     assert.equal(await evaluate('window.__actionButtonRects.every(rect=>rect.x>=window.__actionFooterRect.left&&rect.right<=window.__actionFooterRect.right)'), true, 'the action group stays inside the footer and card width');
     if (actionContainerWidth > 620)
-      assert.equal(await evaluate('Math.abs(window.__actionButtonRects[1].y-window.__actionButtonRects[2].y)<=2 && window.__actionButtonRects[1].x<window.__actionButtonRects[2].x'), true,
-        'the primary analysis action and shared admin prompt stay grouped beside the stable save action');
+      assert.equal(await evaluate('Math.abs(window.__actionButtonRects[0].centerY-window.__actionButtonRects[1].centerY)<=2 && Math.abs(window.__actionButtonRects[1].centerY-window.__actionButtonRects[2].centerY)<=2 && window.__actionButtonRects[0].x<window.__actionButtonRects[1].x && window.__actionButtonRects[1].x<window.__actionButtonRects[2].x'), true,
+        'save, analysis and the shared admin prompt stay in one aligned desktop row');
     const adminPreview = await evaluate(`(()=>({
       role:document.querySelector('[role=dialog][aria-modal=true]')!==null,
       active:document.activeElement.getAttribute('aria-label'),
@@ -1027,6 +1041,8 @@ test('the session page requires a realized RPE before saving, generating or uplo
     await waitFor("document.querySelector('.analysis-prompt-card')?.closest('[role=dialog]').hidden===true", 'the prompt modal closing with Escape');
     assert.equal(await evaluate('document.activeElement===document.querySelector("[data-analysis-external-prompt=true]")'), true, 'focus returns to the prompt trigger');
     await setLanguage('en-US');
+    const englishActionRow = await evaluate(`(()=>{const buttons=[...document.querySelectorAll('.feedback-card > .form-actions button')],rects=buttons.map(button=>button.getBoundingClientRect()),center=rects[0]?.top+(rects[0]?.height||0)/2;return {sameRow:rects.length===3&&rects.every(rect=>Math.abs(rect.top+rect.height/2-center)<=2),widths:rects.map(rect=>Math.round(rect.width)),container:document.querySelector('.feedback-card').clientWidth}})()`);
+    assert.equal(englishActionRow.sameRow, true, `English actions fit on one desktop row: ${JSON.stringify(englishActionRow)}`);
     assert.deepEqual(
       await evaluate(`(()=>({prompt:document.querySelector('[data-analysis-external-prompt=true] span').textContent,analyze:document.querySelector('#generateBtn span').textContent}))()`),
       { prompt: 'View external prompt', analyze: 'Analyze workout' },
@@ -1037,12 +1053,16 @@ test('the session page requires a realized RPE before saving, generating or uplo
 
     const sessionButtonMetrics = await evaluate(`(()=>Object.fromEntries([...document.querySelectorAll('.feedback-card > .form-actions button')].map((button,index)=>{const style=getComputedStyle(button);const icon=button.querySelector('svg'),iconStyle=icon?getComputedStyle(icon):null;return [["save","analyze","prompt"][index],{height:style.height,padding:style.padding,borderRadius:style.borderRadius,fontFamily:style.fontFamily,fontSize:style.fontSize,fontWeight:style.fontWeight,color:style.color,backgroundColor:style.backgroundColor,border:style.border,boxShadow:style.boxShadow,gap:style.gap,transition:style.transition,icon:icon?.getAttribute('data-lucide'),iconSize:iconStyle?iconStyle.width+' '+iconStyle.height:null}]})))()`);
     assert.equal(sessionButtonMetrics.prompt.icon, 'sparkles', 'the session prompt renders the same Lucide icon as Request Workouts');
-    const { icon: promptActionIcon, iconSize: promptIconSize, ...promptSecondaryStyles } = sessionButtonMetrics.prompt;
-    const { icon: saveActionIcon, iconSize: saveIconSize, ...saveSecondaryStyles } = sessionButtonMetrics.save;
-    assert.deepEqual(saveSecondaryStyles, promptSecondaryStyles, 'save and prompt share the exact secondary variant');
+    assert.equal(sessionButtonMetrics.save.color, 'rgb(76, 110, 81)', 'save restores the historic green text');
+    assert.match(sessionButtonMetrics.save.border, /rgb\(76, 110, 81\)/, 'save restores the historic green outline');
+    assert.equal(sessionButtonMetrics.save.backgroundColor, 'rgba(0, 0, 0, 0)', 'save keeps a transparent background');
+    assert.equal(sessionButtonMetrics.save.height, sessionButtonMetrics.analyze.height, 'save and analysis have the same rendered height');
+    assert.equal(sessionButtonMetrics.save.padding.split(' ')[0], sessionButtonMetrics.analyze.padding.split(' ')[0], 'save and analysis use matching vertical padding');
+    assert.equal(sessionButtonMetrics.save.fontSize, sessionButtonMetrics.analyze.fontSize, 'save and analysis use compatible typography');
     await evaluate("document.querySelector('.form-actions').scrollIntoView({block:'center'}); true");
     await delay(100);
     writeFileSync('/tmp/kinesis-session-actions-desktop-en.png', Buffer.from((await command('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+    writeFileSync('/tmp/kinesis-session-actions-content-697-en.png', Buffer.from((await command('Page.captureScreenshot', { format: 'png', clip: { x: 308, y: 650, width: 697, height: 170, scale: 1 } })).data, 'base64'));
     await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
     await evaluate("document.querySelector('.form-actions').scrollIntoView({block:'center'}); true");
     await delay(100);
@@ -1074,9 +1094,12 @@ test('the session page requires a realized RPE before saving, generating or uplo
     await command('Page.navigate', { url: `${origin}/ai-coach.html` });
     await waitFor("document.getElementById('generateBtn')&&document.getElementById('externalPromptBtn')&&!document.getElementById('externalPromptBtn').hidden", 'the admin Request Workouts action pair');
     const weeklyButtonMetrics = await evaluate(`(()=>{const read=(id)=>{const button=document.getElementById(id),style=getComputedStyle(button),icon=button.querySelector('svg'),iconStyle=icon?getComputedStyle(icon):null;return {height:style.height,padding:style.padding,borderRadius:style.borderRadius,fontFamily:style.fontFamily,fontSize:style.fontSize,fontWeight:style.fontWeight,color:style.color,backgroundColor:style.backgroundColor,border:style.border,boxShadow:style.boxShadow,gap:style.gap,transition:style.transition,icon:icon?.getAttribute('data-lucide'),iconSize:iconStyle?iconStyle.width+' '+iconStyle.height:null}};return {primary:read('generateBtn'),secondary:read('externalPromptBtn')}})()`);
-    const { icon: analyzeIcon, ...analyzeStyles } = sessionButtonMetrics.analyze;
-    const { icon: weeklyPrimaryIcon, ...weeklyPrimaryStyles } = weeklyButtonMetrics.primary;
-    assert.deepEqual(analyzeStyles, weeklyPrimaryStyles, 'Analyze workout matches Generate weekly proposal computed button styles and icon dimensions');
+    const { icon: analyzeIcon, height: analyzeHeight, padding: analyzePadding, ...analyzeStyles } = sessionButtonMetrics.analyze;
+    const { icon: weeklyPrimaryIcon, height: weeklyHeight, padding: weeklyPadding, ...weeklyPrimaryStyles } = weeklyButtonMetrics.primary;
+    assert.deepEqual(analyzeStyles, weeklyPrimaryStyles, 'Analyze workout preserves the weekly primary colors, type, radius, shadow, transition and icon dimensions');
+    assert.equal(analyzeHeight, sessionButtonMetrics.save.height, 'analysis is dimensioned to match save');
+    assert.equal(analyzePadding.split(' ')[0], sessionButtonMetrics.save.padding.split(' ')[0], 'analysis and save use matching vertical padding');
+    assert.equal(analyzePadding, '9px 10px', 'analysis uses only the compact horizontal adjustment needed for long desktop labels');
     assert.equal(analyzeIcon, 'activity', 'the analysis action keeps its analysis-specific Lucide icon');
     assert.equal(weeklyPrimaryIcon, 'calendar-plus', 'the weekly action keeps its calendar-plus Lucide icon');
     assert.deepEqual(sessionButtonMetrics.prompt, weeklyButtonMetrics.secondary, 'both external prompt actions match in computed styles and rendered Lucide icon');

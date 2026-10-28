@@ -1119,7 +1119,7 @@ test('training-result.html ships the expanded feedback grid and generator button
   assert.equal(pt.session.analysis.analyze, 'Analisar treino');
   assert.match(html, /id="analysisSection"[^>]*aria-live="polite"[^>]*hidden/);
   assert.doesNotMatch(html, /promptSection|promptOutput/);
-  assert.match(html, /<button id="saveBtn" class="btn-secondary" type="button"/);
+  assert.match(html, /<button id="saveBtn" class="btn-secondary btn-session-save" type="button"/);
 
   assert.match(html, /<select id="feedbackShoe" class="input-control">/, 'shoe is a select dropdown, not free text');
   assert.ok(
@@ -1846,16 +1846,17 @@ test('training-result.css keeps the earthy premium aesthetic for the session vie
   assert.match(css, /\.dropzone-text-secondary \{[^}]*opacity:\s*0\.7/, 'the subtitle stays muted');
   assert.match(css, /\.dropzone-text-secondary \{[^}]*margin-top:\s*0\.25rem/);
   assert.match(css, /\.pain-field\[hidden\] \{[^}]*display:\s*none/, 'the pain description hides until pain is reported');
-  assert.match(css, /\.form-actions \{[^}]*display:\s*grid/);
-  assert.match(css, /\.form-actions \{[^}]*grid-template-columns:\s*max-content minmax\(0, 1fr\)/);
+  assert.match(css, /\.form-actions \{[^}]*display:\s*flex/);
+  assert.match(css, /\.form-actions \{[^}]*justify-content:\s*space-between/);
   assert.match(css, /\.form-actions \{[^}]*border-top:\s*1px solid var\(--line\)/, 'the actions follow the shared form footer divider and spacing');
-  assert.doesNotMatch(css, /\.form-actions \.btn-(?:primary|secondary)[^{]*\{[^}]*padding:/, 'result actions inherit the shared button padding without local overrides');
+  assert.match(css, /\.form-actions \.btn-session-save \{[^}]*min-height:\s*44px[\s\S]*padding:\s*9px 18px[\s\S]*border-color:\s*var\(--accent-deep\)[\s\S]*color:\s*var\(--accent-deep\)/, 'only the session save action restores its historic green outlined variant and geometry');
+  assert.match(css, /\.form-actions #generateBtn \{[^}]*min-height:\s*44px[\s\S]*padding:\s*9px 10px/, 'the analysis button only adjusts dimensions to match save');
   assert.doesNotMatch(css, /\.form-actions \.btn-(?:primary|secondary)\s*\{/, 'the result page does not override shared button geometry');
   assert.doesNotMatch(css, /(?:^|\n)\.btn-(?:primary|secondary)\s*\{/, 'the result page does not define a second button treatment');
   assert.match(css, /\.form-actions button svg \{[^}]*width:\s*16px[\s\S]*height:\s*16px/, 'primary and secondary action icons share the established size');
   assert.match(css, /@container session-feedback \(max-width:\s*620px\)/, 'the action group stacks according to the available card width');
   assert.match(css, /\.analysis-load-warning\[hidden\] \{[^}]*display:\s*none/, 'history errors stay outside the analysis content and hidden after success');
-  assert.match(css, /@container session-feedback \(max-width:\s*680px\)[\s\S]*\.form-actions-analysis > button \{[^}]*white-space:\s*nowrap/, 'the action pair moves together and keeps labels intact when the card is constrained');
+  assert.match(css, /\.form-actions > div > button \{\s*white-space:\s*nowrap/);
   assert.match(sharedComponents, /\.btn-secondary \{[^}]*border-radius:\s*999px[\s\S]*padding:\s*9px 18px/, 'secondary actions use the shared pill geometry');
   assert.match(sharedComponents, /\.btn-secondary:hover:not\(:disabled\)/, 'secondary actions use the shared hover state');
   assert.match(sharedComponents, /\.btn-secondary:disabled/, 'secondary actions use the shared disabled state');
