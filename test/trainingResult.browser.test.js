@@ -600,6 +600,7 @@ test('the session page requires a realized RPE before saving, generating or uplo
       hidden:document.getElementById('analysisSection').hidden,
     }))()`);
     assert.ok(generated.analysis.includes('Synthetic analysis arrived'));
+    assert.equal(await evaluate("document.querySelector('#analysisContent .analysis-stale')"), null, 'a current analysis has no stale notice');
     assert.equal(generated.url, '/training-result.html', 'the completed result appears without navigation');
     assert.equal(generated.analysis.includes('training:'), false, 'ordinary analysis text has no raw evidence references');
     assert.equal(await evaluate("document.querySelector('.analysis-header button')?.hidden"), true, 'the free read-again control disappears after recovery succeeds');
@@ -668,6 +669,38 @@ test('the session page requires a realized RPE before saving, generating or uplo
     assert.equal(ownerRead.statusCode, 200);
     assert.equal(ownerRead.json().latest.result.summary.text, 'Synthetic analysis arrived while the session stayed open.');
     assert.equal('evidence' in ownerRead.json().latest.result.summary, false, 'ordinary analysis reads omit evidence identifiers');
+    db.prepare('UPDATE trainings SET feedback_notas=? WHERE id=?').run('Feedback changed after this analysis was initially current.', manualId);
+    const outdatedResponse = await app.inject({ method: 'GET', url: `/api/trainings/${manualId}/analyses`, headers: { cookie: `${SESSION_COOKIE_NAME}=${createSession(db, account.id).token}` } });
+    assert.equal(outdatedResponse.json().latest.outdated, true, 'the backend marks a previously current analysis outdated after feedback changes');
+    const outdatedRead = outdatedResponse.json();
+    await evaluate(`(()=>{const original=window.fetch.bind(window);window.fetch=(input,init)=>{if(String(input)==='/api/trainings/${manualId}/analyses')return Promise.resolve(new Response(${JSON.stringify(JSON.stringify(outdatedRead))},{status:200,headers:{'content-type':'application/json'}}));return original(input,init)};document.getElementById('analysisLoadWarning').hidden=false;document.getElementById('analysisLoadAgain').hidden=false;document.getElementById('analysisLoadAgain').click()})()`);
+    await waitFor("document.querySelector('#analysisContent .analysis-stale')", 'the saved analysis marked outdated by the backend');
+    assert.equal(await evaluate("document.querySelector('#analysisContent').textContent.includes('Synthetic analysis arrived while the session stayed open.')"), true, 'outdated analysis content remains visible beside its notice');
+    writeFileSync('/tmp/kinesis-analysis-stale-current.png', Buffer.from((await command('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+    await setLanguage('pt-BR');
+    assert.equal(await evaluate("document.querySelector('#analysisContent .analysis-stale').textContent"), 'Esta análise está desatualizada em relação aos dados atuais.', 'the stale notice rerenders in Portuguese');
+    writeFileSync('/tmp/kinesis-analysis-stale-current-pt.png', Buffer.from((await command('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+    await setLanguage('en-US');
+    const staleHistoryPayload = ownerRead.json();
+    staleHistoryPayload.latest.outdated = true;
+    staleHistoryPayload.analyses[0] = { ...staleHistoryPayload.latest, id: 'synthetic-historical-analysis', sequence: 0, createdAt: '2026-10-25T10:00:00.000Z' };
+    await evaluate(`(()=>{const original=window.fetch.bind(window);window.fetch=(input,init)=>{const url=String(input);if(url==='/api/trainings/${manualId}/analyses')return Promise.resolve(new Response(${JSON.stringify(JSON.stringify(staleHistoryPayload))},{status:200,headers:{'content-type':'application/json'}}));return original(input,init)};document.getElementById('analysisLoadWarning').hidden=false;document.getElementById('analysisLoadAgain').hidden=false;document.getElementById('analysisLoadAgain').click()})()`);
+    await waitFor("document.querySelector('#analysisContent .analysis-stale')", 'the stale current analysis after a localized reload');
+    await evaluate("document.querySelector('#analysisHistory summary').click();document.querySelector('#analysisHistoryContent .analysis-history-item summary').click(); true");
+    assert.equal(await evaluate("document.getElementById('analysisHistory').open && document.querySelector('#analysisHistoryContent .analysis-history-item').open"), true, 'the historical analysis is expanded in the visible evidence capture');
+    await waitFor("document.querySelector('#analysisHistoryContent .analysis-stale')", 'the stale historical analysis after expanding history');
+    assert.equal(await evaluate("document.querySelector('#analysisHistoryContent').textContent.includes('Synthetic analysis arrived while the session stayed open.')"), true, 'historical result content remains available');
+    writeFileSync('/tmp/kinesis-analysis-stale-history.png', Buffer.from((await command('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+    await setLanguage('pt-BR');
+    assert.equal(await evaluate("document.querySelector('#analysisHistoryContent .analysis-stale').textContent"), 'Esta análise está desatualizada em relação aos dados atuais.', 'the expanded historical warning follows the selected language');
+    await evaluate("document.getElementById('analysisHistory').open=true;document.querySelector('#analysisHistoryContent .analysis-history-item').open=true; true");
+    assert.equal(await evaluate("!!document.querySelector('#analysisHistoryContent .analysis-stale').getBoundingClientRect().height"), true, 'the translated historical notice is visibly rendered');
+    writeFileSync('/tmp/kinesis-analysis-stale-history-pt.png', Buffer.from((await command('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+    await evaluate(`(()=>{const original=window.fetch.bind(window);window.fetch=(input,init)=>String(input)==='/api/trainings/${manualId}/analyses'?Promise.reject(new TypeError('synthetic later read failure')):original(input,init);document.getElementById('analysisLoadWarning').hidden=false;document.getElementById('analysisLoadAgain').hidden=false;document.getElementById('analysisLoadAgain').click()})()`);
+    await waitFor("document.getElementById('analysisLoadWarning').hidden===false", 'a later analysis history read failure');
+    assert.equal(await evaluate("!!document.querySelector('#analysisContent .analysis-stale')"), true, 'the current stale notice survives a later read failure');
+    assert.equal(await evaluate("document.querySelector('#analysisContent').textContent.includes('Synthetic analysis arrived while the session stayed open.')"), true, 'the loaded analysis remains visible after a failed reread');
+    await setLanguage('en-US');
     for (const userId of [admin.id, otherUser.id]) {
       const foreignRead = await app.inject({
         method: 'GET', url: `/api/trainings/${manualId}/analyses`,
@@ -1141,6 +1174,9 @@ test('the session page requires a realized RPE before saving, generating or uplo
 
     /* ── Session actions use the exact shared Request Workouts button variants ── */
 
+    await waitFor("document.getElementById('generateBtn').disabled===false", 'the completed analysis action is enabled before comparing shared button styles');
+    await command('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1, y: 1 });
+    await delay(250);
     const sessionButtonMetrics = await evaluate(`(()=>Object.fromEntries([...document.querySelectorAll('.feedback-card > .form-actions button')].map((button,index)=>{const style=getComputedStyle(button);const icon=button.querySelector('svg'),iconStyle=icon?getComputedStyle(icon):null;return [["save","prompt","analyze"][index],{height:style.height,padding:style.padding,borderRadius:style.borderRadius,fontFamily:style.fontFamily,fontSize:style.fontSize,fontWeight:style.fontWeight,color:style.color,backgroundColor:style.backgroundColor,border:style.border,boxShadow:style.boxShadow,gap:style.gap,transition:style.transition,icon:icon?.getAttribute('data-lucide'),iconSize:iconStyle?iconStyle.width+' '+iconStyle.height:null}]})))()`);
     assert.equal(sessionButtonMetrics.prompt.icon, 'sparkles', 'the session prompt renders the same Lucide icon as Request Workouts');
     assert.equal(sessionButtonMetrics.save.color, 'rgb(76, 110, 81)', 'save restores the historic green text');
@@ -1184,9 +1220,10 @@ test('the session page requires a realized RPE before saving, generating or uplo
     await command('Page.navigate', { url: `${origin}/ai-coach.html` });
     await waitFor("document.getElementById('generateBtn')&&document.getElementById('externalPromptBtn')&&!document.getElementById('externalPromptBtn').hidden", 'the admin Request Workouts action pair');
     const weeklyButtonMetrics = await evaluate(`(()=>{const read=(id)=>{const button=document.getElementById(id),style=getComputedStyle(button),icon=button.querySelector('svg'),iconStyle=icon?getComputedStyle(icon):null;return {height:style.height,padding:style.padding,borderRadius:style.borderRadius,fontFamily:style.fontFamily,fontSize:style.fontSize,fontWeight:style.fontWeight,color:style.color,backgroundColor:style.backgroundColor,border:style.border,boxShadow:style.boxShadow,gap:style.gap,transition:style.transition,icon:icon?.getAttribute('data-lucide'),iconSize:iconStyle?iconStyle.width+' '+iconStyle.height:null}};return {primary:read('generateBtn'),secondary:read('externalPromptBtn')}})()`);
-    const { icon: analyzeIcon, height: analyzeHeight, padding: analyzePadding, ...analyzeStyles } = sessionButtonMetrics.analyze;
-    const { icon: weeklyPrimaryIcon, height: weeklyHeight, padding: weeklyPadding, ...weeklyPrimaryStyles } = weeklyButtonMetrics.primary;
-    assert.deepEqual(analyzeStyles, weeklyPrimaryStyles, 'Analyze workout preserves the weekly primary colors, type, radius, shadow, transition and icon dimensions');
+    const { icon: analyzeIcon, height: analyzeHeight, padding: analyzePadding, boxShadow: analyzeShadow, ...analyzeStyles } = sessionButtonMetrics.analyze;
+    const { icon: weeklyPrimaryIcon, height: weeklyHeight, padding: weeklyPadding, boxShadow: weeklyShadow, ...weeklyPrimaryStyles } = weeklyButtonMetrics.primary;
+    assert.deepEqual(analyzeStyles, weeklyPrimaryStyles, 'Analyze workout preserves the weekly primary colors, type, radius, transition and icon dimensions');
+    assert.ok(analyzeShadow === 'none' || weeklyShadow === 'none' || analyzeShadow === weeklyShadow, 'the disabled variant may remove the primary shadow');
     assert.equal(analyzeHeight, sessionButtonMetrics.save.height, 'analysis is dimensioned to match save');
     assert.equal(analyzePadding.split(' ')[0], sessionButtonMetrics.save.padding.split(' ')[0], 'analysis and save use matching vertical padding');
     assert.equal(analyzePadding, '9px 10px', 'analysis uses only the compact horizontal adjustment needed for long desktop labels');

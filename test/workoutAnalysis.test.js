@@ -251,6 +251,49 @@ test('analysis execution persists after canonical save, validates before storing
   f.db.close();
 });
 
+test('persisted interpretation dependencies enter later cycle, week and analysis contexts in exact-version order', async () => {
+  const f = fixture();
+  let calls = 0;
+  const service = createExecutionService({
+    db: f.db, config: f.config,
+    operations: { analysis: createWorkoutAnalysisAdapter(f.db, () => '2026-10-26T12:00:00.000Z') },
+    client: async (payload) => {
+      const context = JSON.parse(payload.input[0].content[0].text).context;
+      calls += 1;
+      const output = result(context, `Synthetic analysis ${calls}.`);
+      if (calls === 1) output.reusableInterpretations[0].text = 'A supported by the training.';
+      else {
+        const prior = context.interpretations.find((item) => item.text === 'A supported by the training.');
+        assert.ok(prior, 'the second simulated provider request receives A in its context');
+        output.reusableInterpretations[0] = {
+          kind: 'recommendation', text: 'B supported by A.', evidence: [`interpretation:${prior.source.id}`],
+        };
+      }
+      return { value: output, usage: { input: 400, output: 100, cached: 0 }, error: null };
+    },
+  });
+  const first = service.enqueue(1, { purpose: 'analysis', resource_id: '101', idempotency_key: 'dependency-analysis-a' });
+  assert.equal((await waitFor(service, first.id)).state, 'completed');
+  const a = f.db.prepare("SELECT id FROM ai_interpretations WHERE disposition='pending' ORDER BY created_at,id LIMIT 1").get();
+  assert.ok(a);
+  const second = service.enqueue(1, { purpose: 'analysis', resource_id: '101', idempotency_key: 'dependency-analysis-b' });
+  assert.equal((await waitFor(service, second.id)).state, 'completed');
+  assert.equal(calls, 2);
+  for (const options of [
+    { purpose: 'cycle', resourceId: 'cycle-a' },
+    { purpose: 'workouts', taskDate: '2026-10-26' },
+    { purpose: 'analysis', resourceId: 101 },
+  ]) {
+    const context = buildContext(f.db, 1, { ...options, asOf: '2026-10-26', config: f.config });
+    assert.deepEqual(context.interpretations.map((item) => item.text), ['A supported by the training.', 'B supported by A.']);
+  }
+  const memory = memoryOverview(f.db, 1, f.config, '2026-10-26');
+  assert.deepEqual(new Set(memory.interpretations.filter((item) => item.current).map((item) => item.text)), new Set(['A supported by the training.', 'B supported by A.']));
+  assert.equal(readWorkoutAnalyses(f.db, 1, '101', f.config).latest.outdated, false, 'persisting B does not stale the analysis that consumed A');
+  await service.stop();
+  f.db.close();
+});
+
 test('analysis execution cancels a queued record locally and reuses one active run per owned session', async () => {
   const f = fixture();
   let providerCalls = 0;

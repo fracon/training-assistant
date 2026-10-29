@@ -1377,7 +1377,8 @@ test('training-result.js wires explicit persisted analysis, protected prompt pre
   assert.match(js, /renderManualDistanceUnit\(\{ convertExisting: true \}\)/);
   assert.match(js, /confirm_replace_fit = true/);
   assert.match(js, /confirm_replace_manual/);
-  assert.match(js, /renderWorkoutAnalysis\(card, version\.result, analysisLabels\(\)\)/);
+  assert.match(js, /renderWorkoutAnalysis\(content, version\.result, analysisLabels\(\)\)/);
+  assert.match(js, /content\.className = 'analysis-version-content'/, 'analysis cleanup is confined to its content container so version notices survive');
   assert.match(js, /text\.textContent = claim\.text/);
 
   assert.match(js, /addEventListener\('app:languagechange'/);

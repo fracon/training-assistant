@@ -532,7 +532,10 @@ async function initTrainingResult() {
       stale.textContent = analysisKey('outdated');
       card.append(stale);
     }
-    renderWorkoutAnalysis(card, version.result, analysisLabels());
+    const content = document.createElement('div');
+    content.className = 'analysis-version-content';
+    renderWorkoutAnalysis(content, version.result, analysisLabels());
+    card.append(content);
     renderInterpretations(card, version.interpretations);
     parent.append(card);
   };

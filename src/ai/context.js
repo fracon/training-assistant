@@ -633,27 +633,76 @@ function buildContext(
   }
   interpretationRows.sort((a, b) => b.updated_at.localeCompare(a.updated_at) || a.id.localeCompare(b.id));
   interpretationRows.length = Math.min(24, interpretationRows.length);
-  for (const item of interpretationRows) {
-    const evidence = JSON.parse(item.evidence_json);
-    const fresh = evidence.every((ref) => references.some((current) =>
-      current.type === ref.type && current.id === ref.id && current.version === ref.version));
-    if (!fresh) continue;
-    const text = item.disposition === 'corrected' ? item.correction_text : item.text;
-    if (!text) continue;
-    const view = {
-      source: { type: 'interpretation', id: item.id, version: hash(item) },
-      kind: item.kind,
-      authority: item.disposition === 'corrected' ? 'user_report' : 'ai_interpretation',
-      disposition: item.disposition,
-      statusMeaning: item.disposition === 'pending' ? 'unconfirmed_hypothesis' : item.disposition,
-      text,
-      evidence,
-      observedOn: item.updated_at.slice(0, 10),
-    };
-    if (!Object.hasOwn(context, 'interpretations')) context.interpretations = [];
-    if (!trySelect('interpretations', view, [view.source]))
-      context.omissions.push({ type: 'interpretation', reason: 'context_budget' });
+  const interpretationById = new Map(interpretationRows.map((item) => [item.id, item]));
+  const pendingInterpretations = [...interpretationRows];
+  const selectedInterpretationVersions = new Map();
+  const budgetOmitted = new Set();
+  // Resolve at most one item per candidate per pass. A child can wait for any
+  // exact, owner-scoped candidate dependency regardless of updated_at order;
+  // the fixed candidate cap and pass bound also make cycles terminate safely.
+  for (let pass = 0; pass < interpretationRows.length && pendingInterpretations.length; pass += 1) {
+    let selectedInPass = false;
+    for (let index = 0; index < pendingInterpretations.length;) {
+      const item = pendingInterpretations[index];
+      const evidence = JSON.parse(item.evidence_json);
+      const ready = evidence.every((ref) => {
+        if (ref.type === 'interpretation')
+          return selectedInterpretationVersions.get(ref.id) === ref.version;
+        return references.some((current) => current.type === ref.type && current.id === ref.id && current.version === ref.version);
+      });
+      if (!ready) {
+        const waiting = evidence.some((ref) => {
+          if (ref.type !== 'interpretation' || selectedInterpretationVersions.has(ref.id)) return false;
+          const dependency = interpretationById.get(ref.id);
+          return Boolean(dependency && hash(dependency) === ref.version && pendingInterpretations.includes(dependency));
+        });
+        if (waiting) { index += 1; continue; }
+        pendingInterpretations.splice(index, 1);
+        continue;
+      }
+      const text = item.disposition === 'corrected' ? item.correction_text : item.text;
+      if (!text) { pendingInterpretations.splice(index, 1); continue; }
+      const view = {
+        source: { type: 'interpretation', id: item.id, version: hash(item) },
+        kind: item.kind,
+        authority: item.disposition === 'corrected' ? 'user_report' : 'ai_interpretation',
+        disposition: item.disposition,
+        statusMeaning: item.disposition === 'pending' ? 'unconfirmed_hypothesis' : item.disposition,
+        text,
+        evidence,
+        observedOn: item.updated_at.slice(0, 10),
+      };
+      if (!Object.hasOwn(context, 'interpretations')) context.interpretations = [];
+      if (!trySelect('interpretations', view, [view.source])) {
+        context.omissions.push({ type: 'interpretation', reason: 'context_budget' });
+        budgetOmitted.add(item.id);
+      } else {
+        selectedInPass = true;
+        selectedInterpretationVersions.set(item.id, view.source.version);
+      }
+      pendingInterpretations.splice(index, 1);
+    }
+    if (!selectedInPass) break;
   }
+  // Items blocked only because a valid dependency did not fit the budget get
+  // the same explicit omission as that dependency. Cycles and stale/absent
+  // sources remain quietly excluded, as before.
+  const reportedBudgetOmissions = new Set(budgetOmitted);
+  for (let pass = 0; pass <= pendingInterpretations.length; pass += 1) {
+    let propagated = false;
+    for (const item of pendingInterpretations) {
+      if (reportedBudgetOmissions.has(item.id)) continue;
+      const evidence = JSON.parse(item.evidence_json);
+      if (evidence.some((ref) => ref.type === 'interpretation' && budgetOmitted.has(ref.id))) {
+        context.omissions.push({ type: 'interpretation', reason: 'context_budget' });
+        budgetOmitted.add(item.id);
+        reportedBudgetOmissions.add(item.id);
+        propagated = true;
+      }
+    }
+    if (!propagated) break;
+  }
+
   const olderCount = db
     .prepare(
       'SELECT COUNT(*) AS n FROM trainings WHERE user_id = ? AND dia < ?',
