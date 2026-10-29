@@ -501,34 +501,141 @@
   }
 }
 
-/* Product planning reuses the CRUD card/header/footer, not prompt-output layout. */
+/* The planning dialog shares the approved prompt modal's size, spacing and
+   stable header/footer while keeping its structured plan in a scroll region. */
 .cycle-planning-modal[hidden], .cycle-planning-modal [hidden] { display: none !important; }
+.cycle-planning-modal {
+  width: 100vw;
+  height: 100dvh;
+  padding: clamp(8px, 2vh, 20px);
+  background: rgba(45, 42, 36, 0.48);
+  backdrop-filter: blur(4px);
+}
 .cycle-planning-card {
-  max-width: 800px;
+  box-sizing: border-box;
   display: flex;
+  flex: 0 1 auto;
   flex-direction: column;
-  overflow: hidden;
-}
-.cycle-planning-card .modal-header { gap: 1rem; flex-shrink: 0; }
-.cycle-planning-card .modal-header h2 { min-width: 0; overflow-wrap: anywhere; }
-.cycle-planning-card .modal-close { flex-shrink: 0; }
-.cycle-planning-body {
+  gap: 16px;
+  width: min(900px, 100%);
+  max-width: 900px;
+  height: auto;
   min-height: 0;
-  overflow-y: auto;
-  overflow-wrap: anywhere;
-  display: grid;
-  gap: 1rem;
+  max-height: min(90dvh, calc(100dvh - 40px));
+  overflow: hidden;
+  scrollbar-gutter: auto;
+  padding: 24px;
+  border-radius: 18px;
 }
-.cycle-planning-content, .cycle-plan-section, .cycle-plan-phase { display: grid; gap: .6rem; min-width: 0; }
+.cycle-planning-card .modal-header {
+  flex: 0 0 auto;
+  gap: 12px;
+  margin: 0;
+}
+.cycle-planning-card .modal-header h2 { min-width: 0; overflow-wrap: anywhere; font-size: 1.25rem; }
+.cycle-planning-card .modal-close {
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  border: 0;
+}
+.cycle-planning-card .modal-close svg { width: 20px; height: 20px; }
+.cycle-planning-card .modal-close:focus-visible { outline: 2px solid var(--accent-deep); outline-offset: 2px; }
+.cycle-planning-body {
+  display: grid;
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: 1rem;
+  overflow: auto;
+  overscroll-behavior: contain;
+  overflow-wrap: anywhere;
+  scroll-padding-block: 1rem;
+}
+.cycle-planning-body .field-hint,
+.cycle-planning-body > .form-error {
+  color: var(--ink);
+  font-size: 1rem;
+  line-height: 1.55;
+  opacity: 1;
+}
+.cycle-planning-body :focus-visible,
+#cyclePlanningError:focus {
+  outline: 2px solid var(--accent-deep);
+  outline-offset: 2px;
+  scroll-margin-block: 1rem;
+}
+.cycle-planning-state {
+  justify-self: start;
+  max-width: 100%;
+  margin: 0;
+  padding: .4rem .75rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--ink);
+  font-size: .95rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.cycle-planning-state[data-state="applied"] { border-color: rgba(85, 121, 79, .35); background: rgba(85, 121, 79, .12); color: var(--ok); }
+.cycle-planning-state[data-state="proposal"] { border-color: rgba(76, 110, 81, .4); background: rgba(111, 144, 112, .12); color: var(--accent-deep); }
+.cycle-planning-state[data-state="review"] { border-color: var(--line-strong); background: rgba(139, 129, 114, .16); color: var(--ink); }
+.cycle-planning-state[data-state="processing"] { border-color: var(--line-strong); background: var(--bg); color: var(--ink); }
+.cycle-planning-state[data-state="failed"] { border-color: rgba(165, 73, 47, .4); background: #f9ece6; color: var(--danger); }
+.cycle-planning-content, .cycle-plan-section, .cycle-plan-phase { display: grid; gap: .9rem; min-width: 0; }
+.cycle-planning-content { align-content: start; }
 .cycle-plan-section, .cycle-plan-phase { padding-top: 1rem; border-top: 1px solid var(--line); }
-.cycle-planning-body :is(p, h3, h4, ul) { margin: 0; }
+.cycle-planning-body :is(p, h3, h4, h5, ul) { margin: 0; }
 .cycle-planning-body ul { padding-left: 1.1rem; }
-.cycle-plan-section :is(p, li) { line-height: 1.55; white-space: pre-wrap; }
-.cycle-plan-section .cycle-card-header { margin: 0; gap: .6rem; flex-wrap: wrap; }
-.cycle-planning-card .form-actions { flex-shrink: 0; flex-wrap: wrap; }
+.cycle-plan-section :is(p, li) { font-size: 1rem; line-height: 1.55; white-space: pre-wrap; }
+.cycle-plan-section h4 { font-size: 1rem; line-height: 1.45; font-weight: 700; }
+.cycle-plan-detail { display: grid; gap: .25rem; min-width: 0; }
+.cycle-plan-phase h5 { font-size: 1rem; line-height: 1.45; }
+.cycle-plan-list { display: grid; gap: .45rem; }
+.cycle-plan-section .cycle-card-header { margin: 0; gap: .6rem; flex-wrap: wrap; align-items: center; }
+.cycle-planning-card .form-actions {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: repeat(2, minmax(170px, 1fr));
+  align-items: stretch;
+  gap: 12px;
+  width: max-content;
+  max-width: 100%;
+  margin: 0 0 0 auto;
+  padding: 16px 0 0;
+  border-top: 1px solid var(--line);
+}
+.cycle-planning-card .form-actions[data-action-count="1"] { grid-template-columns: minmax(170px, 1fr); }
+.cycle-planning-card .form-actions[data-action-count="3"] { grid-template-columns: repeat(3, minmax(120px, 1fr)); }
+.cycle-planning-card .form-actions .btn {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: .625rem 1rem;
+  line-height: 1.2;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.cycle-planning-card .form-actions .btn:disabled { cursor: wait; opacity: .55; transform: none; box-shadow: none; }
+.cycle-planning-card .form-actions .btn-secondary:disabled { cursor: not-allowed; opacity: .6; }
 .cycle-planning-card .form-actions button { max-width: 100%; }
 #cyclePlanningAdmin .btn-secondary { justify-self: start; }
 #cyclePlanningDebugOutput { padding: .75rem; overflow-wrap: anywhere; }
+
+@media (max-width: 600px) {
+  .cycle-planning-modal { align-items: end; padding: 8px; }
+  .cycle-planning-card {
+    width: 100%;
+    max-height: calc(100dvh - 16px);
+    padding: 24px;
+    border-radius: 18px 18px 0 0;
+  }
+  .cycle-planning-card .form-actions {
+    grid-template-columns: minmax(0, 1fr);
+    width: 100%;
+    margin-right: 0;
+  }
+  .cycle-planning-card .form-actions[data-action-count="3"] { grid-template-columns: minmax(0, 1fr); }
+}
 @media (prefers-reduced-motion: reduce) {
   .cycle-planning-card, .cycle-planning-modal button, .cycle-card-actions .custom-tooltip { animation: none; transition: none; }
 }

@@ -595,13 +595,17 @@ test('cycle planning action is a localized decorative icon with the existing cus
   assert.equal(pt.cyclePlanning.cardStatus.secondary.updateFailed, 'A atualização não foi concluída.');
 });
 
-test('planning modal reuses CRUD header/close/footer with a separate scrolling product body', () => {
+test('planning modal keeps a stable header and structured scroll body with shared actions', () => {
   const html = readFileSync(join(publicDir, 'cycles.html'), 'utf8').split('id="cyclePlanningModal"')[1].split('id="toast"')[0];
   assert.match(html, /class="modal-card cycle-planning-card"/);
+  assert.match(html, /<header class="modal-header">[\s\S]*?id="cyclePlanningHeading"/);
   assert.match(html, /id="cyclePlanningClose"[\s\S]*?data-lucide="x" aria-hidden="true"/);
   assert.doesNotMatch(html, /×|prompt-modal-card|prompt-modal-actions/);
   assert.match(html, /class="cycle-planning-body"/);
-  assert.match(html, /<footer class="form-actions">[\s\S]*id="cyclePlanningApply"/);
+  assert.match(html, /id="cyclePlanningStatus" class="cycle-planning-state"/);
+  assert.match(html, /id="cyclePlanningActions" class="form-actions confirm-actions"[\s\S]*id="cyclePlanningApply"/);
+  assert.match(html, /id="cyclePlanningLater" type="button" class="btn btn-secondary"/);
+  assert.match(html, /id="cyclePlanningGenerate" type="button" class="btn btn-primary"/);
   assert.ok(html.indexOf('id="cyclePlanningAdmin"') < html.indexOf('<footer'));
 });
 

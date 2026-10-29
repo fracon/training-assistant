@@ -36,20 +36,24 @@ export function createCyclePlanning({ i18n, user, onSummaryChange = () => {}, on
     const header=el('header',null,'cycle-card-header');header.append(el('h3',heading));
     if(version!==null)header.append(el('span',`${t('version')} ${version}`,'cycle-status status-active'));
     section.append(header);
-    const pair=(label,value)=>{const p=el('p');p.append(el('strong',`${label}: `),document.createTextNode(value));section.append(p);};
+    const pair=(label,value,className='cycle-plan-detail')=>{
+      const detail=el('div',null,className);
+      detail.append(el('h4',`${label}:`),el('p',value));
+      section.append(detail);
+    };
     pair(t('period'),`${formatDate(plan.start,i18n.language)} → ${formatDate(plan.end,i18n.language)}`);
     for(const field of ['assessment','continuity','feasibility']) pair(t(field),plan[field]);
     pair(t('confidence'),t(`confidenceValues.${plan.confidence}`));
     section.append(el('h4',t('architecture')));
     for(const phase of plan.phases) {
-      const article=el('article',null,'cycle-plan-phase');article.append(el('h4',`${phase.name} · ${formatDate(phase.start,i18n.language)} → ${formatDate(phase.end,i18n.language)}`));
+      const article=el('article',null,'cycle-plan-phase');article.append(el('h5',`${phase.name} · ${formatDate(phase.start,i18n.language)} → ${formatDate(phase.end,i18n.language)}`));
       for(const field of ['objective','volume','longRuns','quality','intensity','easyRuns','strength','risks','advanceCriteria','rationale']) {
-        const p=el('p');p.append(el('strong',`${t(field)}: `),document.createTextNode(phase[field]));article.append(p);
+        const detail=el('div',null,'cycle-plan-detail');detail.append(el('h4',`${t(field)}:`),el('p',phase[field]));article.append(detail);
       }
       section.append(article);
     }
     for(const field of ['indicators','uncertainties','assumptions','questions']) if(plan[field].length) {
-      section.append(el('h4',t(field)));const list=el('ul');for(const value of plan[field])list.append(el('li',value));section.append(list);
+      const group=el('div',null,'cycle-plan-list');group.append(el('h4',t(field)));const list=el('ul');for(const value of plan[field])list.append(el('li',value));group.append(list);section.append(group);
     }
     section.append(el('h4',t('adaptations')));
     for(const [field,value] of Object.entries(plan.adaptations)) pair(t(field),value);
@@ -61,10 +65,10 @@ export function createCyclePlanning({ i18n, user, onSummaryChange = () => {}, on
       (state?.applied?.outdated ? 'editedOutdatedHint' : current ? 'editedCurrentHint' : 'editedHint') : 'hint';
     document.getElementById('cyclePlanningHint').textContent=t(hint);
     later.textContent=t(state?.applied?.outdated ? 'keep' : current || state?.available===false || state?.canGenerate===false ? 'done' : 'notNow');
-    later.className='btn-secondary';
-    retry.hidden=!readFailed;retry.disabled=busy;retry.className='btn-primary';retry.textContent=t('retryLoad');
+    later.className='btn btn-secondary';
+    retry.hidden=!readFailed;retry.disabled=busy;retry.className='btn btn-primary';retry.textContent=t('retryLoad');
     generate.hidden=!state || readFailed;
-    if(!state){status.textContent=t(readFailed && !busy?'loadFailed':'loading');generate.textContent=t('generate');return;}
+    if(!state){status.textContent=t(readFailed && !busy?'loadFailed':'loading');status.dataset.state=readFailed?'failed':'processing';generate.textContent=t('generate');document.getElementById('cyclePlanningActions').dataset.actionCount=String([...document.querySelectorAll('#cyclePlanningActions button')].filter((button)=>!button.hidden).length);return;}
     const latest=latestProposal();const proposal=selectedProposal();const execution=proposal?.execution;
     const runningProposal=pendingProposal();const running=Boolean(runningProposal);
     const candidate=execution?.state==='completed' && !proposal.applied;
@@ -72,17 +76,19 @@ export function createCyclePlanning({ i18n, user, onSummaryChange = () => {}, on
     const ready=candidate && state.selectedProposalId===proposal.id && !proposal.compatibilityError && !execution.outdated && !conflict && state.canGenerate;
     generate.textContent=t(state.proposals.length?'regenerate':'generate');
     generate.hidden=readFailed || !state.available || !state.canGenerate || Boolean(running) || Boolean(saved && current && !ready);
-    generate.className=ready?'btn-secondary':'btn-primary';
+    generate.className=ready?'btn btn-secondary':'btn btn-primary';
     generate.disabled=readFailed || busy || !state.available || !state.canGenerate || running;
     apply.hidden=!ready || readFailed;apply.disabled=readFailed || busy;
-    later.className=!readFailed && (!state.available || !state.canGenerate || (saved && current && !ready)) && !ready ? 'btn-primary' : 'btn-secondary';
+    later.className=!readFailed && (!state.available || !state.canGenerate || (saved && current && !ready)) && !ready ? 'btn btn-primary' : 'btn btn-secondary';
     if(running)later.textContent=t('close');
     cancel.hidden=!running;cancel.disabled=busy;
     debug.hidden=user.role!=='admin' || !execution;
     document.getElementById('cyclePlanningAdmin').hidden=debug.hidden;
     const statusProposal=runningProposal || proposal || latest;
     const statusExecution=statusProposal?.execution;
-    const statusMessage=readFailed?t(busy?'loading':errorCode==='progressLoadError'?'progressLoadFailed':'loadFailed'):busy?t('loading'):!state.available?t('unavailable'):!state.canGenerate?t('inactiveCycle'):state.applied?t(state.applied.compatibilityError?'appliedNeedsReview':state.applied.outdated?'appliedNeedsReview':'applied'):proposal?.compatibilityError?t('proposalIncompatible'):candidate && (execution.outdated || conflict)?t('proposalOutdated'):statusExecution?.error==='providerRateLimited' && running?t('retryWaiting'):statusExecution?.state==='queued'?(statusExecution?.error==='providerRateLimited'?t('retryWaiting'):t('states.queued')):statusExecution?.state==='running'?t('states.running'):statusExecution?t(`states.${statusExecution.state}`):t(saved?'readyToPlan':'manualIndependent');
+    const statusMessage=readFailed?t(busy?'loading':errorCode==='progressLoadError'?'progressLoadFailed':'loadFailed'):errorCode?error.textContent:busy?t('loading'):!state.available?t('unavailable'):!state.canGenerate?t('inactiveCycle'):state.applied?t(state.applied.compatibilityError?'appliedNeedsReview':state.applied.outdated?'appliedNeedsReview':'applied'):proposal?.compatibilityError?t('proposalIncompatible'):candidate && (execution.outdated || conflict)?t('proposalOutdated'):statusExecution?.error==='providerRateLimited' && running?t('retryWaiting'):statusExecution?.state==='queued'?(statusExecution?.error==='providerRateLimited'?t('retryWaiting'):t('states.queued')):statusExecution?.state==='running'?t('states.running'):statusExecution?t(`states.${statusExecution.state}`):t(saved?'readyToPlan':'manualIndependent');
+    const statusKind=readFailed || errorCode?'failed':busy || running?'processing':state.applied?(state.applied.compatibilityError || state.applied.outdated?'review':'applied'):proposal?.compatibilityError || (candidate && (execution.outdated || conflict))?'review':candidate?'proposal':statusExecution?.state==='failed' || statusExecution?.state==='uncertain'?'failed':'information';
+    status.dataset.state=statusKind;
     // Avoid rewriting the polite live region on every polling response.
     if(status.textContent!==statusMessage)status.textContent=statusMessage;
     content.replaceChildren();
@@ -113,6 +119,8 @@ export function createCyclePlanning({ i18n, user, onSummaryChange = () => {}, on
         error.hidden=false;
       }
     }
+    const footer=document.getElementById('cyclePlanningActions');
+    footer.dataset.actionCount=String([...footer.querySelectorAll('button')].filter((button)=>!button.hidden).length);
   }
   async function refresh(token=generation) {
     if(token!==generation || modal.hidden)return;
@@ -178,7 +186,7 @@ export function createCyclePlanning({ i18n, user, onSummaryChange = () => {}, on
     cycleId=id;trigger=button;generation++;state=null;busy=false;errorCode=null;saved=options.saved || null;readFailed=false;
     onOpen(id);
     document.getElementById('cyclePlanningAdmin').hidden=true;
-    generate.textContent=t('generate');generate.className='btn-primary';
+    generate.textContent=t('generate');generate.className='btn btn-primary';
     error.hidden=true;content.replaceChildren();generate.hidden=false;generate.disabled=true;apply.hidden=true;cancel.hidden=true;debug.hidden=true;
     document.getElementById('cyclePlanningDebugDetails').hidden=true;
     document.getElementById('cyclePlanningDebugOutput').textContent='';
