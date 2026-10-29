@@ -28,7 +28,7 @@ test('Chrome saved-cycle flow: explicit generation, defer, no-op edits, stale pl
  for(const account of [0,1])for(const language of ['en-US','pt-BR'])for(const width of [1280,768,390]){
   const userId=account+1;const before=calls;const requestsBefore=saveRequests;
   await command('Network.setCookie',{name:SESSION_COOKIE_NAME,value:tokens[account],url:origin,httpOnly:true});
-  await command('Emulation.setDeviceMetricsOverride',{width,height:900,deviceScaleFactor:1,mobile:width===390});
+  await command('Emulation.setDeviceMetricsOverride',{width,height:width===390?844:900,deviceScaleFactor:1,mobile:width===390});
   await command('Page.navigate',{url:origin+'/cycles.html'});await wait("!!document.querySelector('.lang-switch') && !document.getElementById('addCycleBtn').disabled");
   // The shell mounts before page listeners; wait for its final title/empty state.
   await wait("!document.getElementById('cycleEmpty').classList.contains('hidden')");
@@ -84,6 +84,7 @@ test('Chrome saved-cycle flow: explicit generation, defer, no-op edits, stale pl
   await click('cyclePlanningLater');
   await edit('Changed canonical goal');await wait("document.getElementById('cyclePlanningLater').textContent==='"+(language==='pt-BR'?'Manter por enquanto':'Keep for now')+"'");
   assert.equal(await evaluate("document.getElementById('cyclePlanningGenerate').textContent"),language==='pt-BR'?'Gerar novo planejamento':'Generate new plan');
+  if(visualSample)await delay(3200); // Let the successful-save toast clear before reviewing the modal capture.
   await capture(`edited-outdated-${account}-${language}-${width}`);
   const applied=db.prepare('SELECT * FROM cycle_plan_versions WHERE cycle_id=?').get(cycle.id);
   await click('cyclePlanningLater');assert.equal(calls,before+1);

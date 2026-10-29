@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="shared/shell.css">
   <link rel="stylesheet" href="shared/components.css">
   <link rel="stylesheet" href="ai-coach.css">
+  <link rel="stylesheet" href="shared/external-prompt-modal.css">
 </head>
 <body>
   <main id="appView">
@@ -87,26 +88,6 @@
       <p id="weeklyApplyResultIgnored" class="weekly-apply-result-ignored" hidden></p>
       <div class="confirm-actions">
         <button type="button" id="weeklyApplyResultOk" class="btn btn-primary" data-i18n="aiCoach.ok">OK</button>
-      </div>
-    </section>
-  </div>
-
-  <div id="externalPromptModal" class="modal-backdrop hidden" hidden>
-    <section class="modal-card external-prompt-card" role="dialog" aria-modal="true" aria-labelledby="externalPromptTitle">
-      <header class="modal-header">
-        <h2 id="externalPromptTitle" data-i18n="aiCoach.resultTitle">External prompt</h2>
-        <button type="button" id="externalPromptClose" class="modal-close" aria-label="Close" data-i18n-aria-label="aiCoach.closePrompt">
-          <i data-lucide="x" aria-hidden="true"></i>
-        </button>
-      </header>
-      <pre id="promptOutput" class="prompt-output external-prompt-output" tabindex="0" aria-labelledby="externalPromptTitle"></pre>
-      <p id="promptCopyStatus" class="prompt-copy-status" role="status" aria-live="polite"></p>
-      <div class="form-actions external-prompt-actions">
-        <button type="button" id="closePromptBtn" class="btn-secondary" data-i18n="aiCoach.closePrompt">Close</button>
-        <button type="button" id="copyBtn" class="btn-primary">
-          <i id="copyIcon" data-lucide="copy" aria-hidden="true"></i>
-          <span id="copyLabel" data-i18n="aiCoach.copy">Copy prompt</span>
-        </button>
       </div>
     </section>
   </div>

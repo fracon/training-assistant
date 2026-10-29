@@ -35,6 +35,15 @@ test('training memory Chrome PT/EN desktop/mobile, ownership, keyboard, loading,
   ).run();
   db.prepare("UPDATE training_cycles SET status='active',primary_goal='Synthetic goal',target_date='2026-12-01',start_date='2026-09-01' WHERE id='cycle'").run();
   db.prepare("INSERT INTO trainings(user_id,dia,tipo,treino,completed,feedback_rpe,feedback_pain,feedback_has_pain,fit_distance,fit_duration,result_data_source) VALUES (1,date('now'),'Run','Synthetic recent run',1,3,'Synthetic dated discomfort','yes',5,'30:00','manual'),(1,date('now','-30 days'),'Run','Synthetic older run',1,4,NULL,NULL,10,'1:00:00','manual'),(1,date('now','+2 days'),'Run','Synthetic planned run',0,NULL,NULL,NULL,NULL,NULL,'none')").run();
+  const memoryTrainingId = db.prepare("SELECT id FROM trainings WHERE user_id=1 AND treino='Synthetic recent run'").get().id;
+  const memoryNow = new Date().toISOString();
+  db.prepare("INSERT INTO workout_analysis_versions(id,user_id,training_id,sequence,adapter_version,context_json,response_json,state,language,created_at) VALUES ('memory-analysis',1,?,1,'test-v1','{}','{}','completed','en-US',?)").run(memoryTrainingId,memoryNow);
+  const insertMemoryInterpretation = db.prepare(`INSERT INTO ai_interpretations
+    (id,user_id,training_id,analysis_id,kind,text,evidence_json,evidence_key,evidence_hash,content_hash,disposition,correction_text,version,created_at,updated_at)
+    VALUES (?,1,?,'memory-analysis','pattern',?,'[]','[]',?,?,?, ?,1,?,?)`);
+  insertMemoryInterpretation.run('memory-confirm',memoryTrainingId,'Synthetic confirmation text','evidence-confirm','content-confirm','pending',null,memoryNow,memoryNow);
+  insertMemoryInterpretation.run('memory-dismiss-corrected',memoryTrainingId,'Synthetic original to retain','evidence-dismiss','content-dismiss','corrected','Synthetic saved correction to retain',memoryNow,memoryNow);
+  insertMemoryInterpretation.run('memory-correct',memoryTrainingId,'Synthetic original for correction','evidence-correct','content-correct','pending',null,memoryNow,memoryNow);
   db.prepare("INSERT INTO ai_coach_availability(user_id,day_key,can_train,available_periods,available_minutes,location) VALUES (1,'monday',1,?,60,'Synthetic locality')").run(JSON.stringify(['before_08']));
   for (const day of ['tuesday','wednesday','thursday','friday','saturday','sunday'])
     db.prepare("INSERT INTO ai_coach_availability(user_id,day_key,can_train,available_periods,available_minutes,location) VALUES (1,?,1,?,60,'Synthetic locality')").run(day,JSON.stringify(['before_08']));
@@ -314,6 +323,35 @@ test('training memory Chrome PT/EN desktop/mobile, ownership, keyboard, loading,
     db.prepare("UPDATE training_cycles SET primary_goal='Synthetic corrected goal' WHERE id='cycle'").run();
     await reopenMemory();
     await waitFor("document.getElementById('memoryOverview').textContent.includes('Synthetic corrected goal')");
+    await evaluate(`(()=>{const original=window.fetch.bind(window);window.__failMemoryGet=false;window.__memoryGetCalls=0;window.fetch=(input,init)=>{if(String(input)==='/api/ai/memory'&&(!init?.method||init.method==='GET'))window.__memoryGetCalls++;if(window.__failMemoryGet&&String(input)==='/api/ai/memory'&&(!init?.method||init.method==='GET')){window.__failMemoryGet=false;return Promise.reject(new TypeError('synthetic memory refresh failure'))}return original(input,init)}})()`);
+    assert.equal(await evaluate("!!document.querySelector('[data-memory-action=\"memory-confirm:confirm\"]')"),true,'the pending synthetic interpretation exposes its confirm action');
+    assert.equal(await evaluate("document.querySelector('[data-memory-action=\"memory-confirm:confirm\"]').disabled"),false,'memory actions are ready after the persisted overview loads');
+    await evaluate("window.__failMemoryGet=true;document.querySelector('[data-memory-action=\"memory-confirm:confirm\"]').click()");
+    await waitFor('window.__memoryGetCalls===1');
+    await waitFor("document.getElementById('memoryError').textContent.length>0");
+    assert.equal(db.prepare("SELECT disposition FROM ai_interpretations WHERE id='memory-confirm'").get().disposition,'confirmed','confirmation is persisted before the simulated follow-up read failure');
+    assert.equal(await evaluate("document.querySelector('[data-memory-item=\"memory-confirm\"]').textContent.includes('Synthetic confirmation text')"),true,'confirmation preserves the API text field when the subsequent memory GET fails');
+    assert.equal(await evaluate("document.querySelector('[data-memory-item=\"memory-confirm\"]').textContent.includes('undefined')"),false);
+    assert.equal(await evaluate("(()=>{const text=document.querySelector('[data-memory-item=\"memory-confirm\"]').textContent;return text.includes('will be checked when the memory refreshes')||text.includes('será verificada ao atualizar a memória')})()"),true,'unverified context membership is not optimistically shown as included');
+    await evaluate("document.getElementById('reloadMemory').click()");
+    await waitFor("document.getElementById('memoryError').classList.contains('hidden')");
+    await waitFor("document.getElementById('profileForm').querySelector('[type=submit]').disabled===false");
+    await evaluate("window.__failMemoryGet=true;document.querySelector('[data-memory-action=\"memory-dismiss-corrected:discard\"]').click()");
+    await waitFor('window.__memoryGetCalls===3');
+    await waitFor("document.getElementById('memoryError').textContent.length>0");
+    assert.equal(db.prepare("SELECT disposition FROM ai_interpretations WHERE id='memory-dismiss-corrected'").get().disposition,'dismissed');
+    assert.equal(await evaluate("(()=>{const text=document.querySelector('[data-memory-item=\"memory-dismiss-corrected\"]').textContent;return text.includes('Synthetic original to retain')&&text.includes('Synthetic saved correction to retain')&&!text.includes('undefined')})()"),true,'discarding a corrected item preserves its original and correction history');
+    await evaluate("document.getElementById('reloadMemory').click()");
+    await waitFor("document.getElementById('memoryError').classList.contains('hidden')");
+    await waitFor("document.getElementById('profileForm').querySelector('[type=submit]').disabled===false");
+    await evaluate("document.querySelector('[data-memory-action=\"memory-correct:correct\"]').click();document.querySelector('[data-memory-item=\"memory-correct\"] textarea').value='Synthetic correction kept after refresh failure';window.__failMemoryGet=true;document.querySelector('[data-memory-action=\"memory-correct:save-correction\"]').click()");
+    await waitFor('window.__memoryGetCalls===5');
+    await waitFor("document.getElementById('memoryError').textContent.length>0");
+    assert.equal(db.prepare("SELECT correction_text FROM ai_interpretations WHERE id='memory-correct'").get().correction_text,'Synthetic correction kept after refresh failure','correction persists before its follow-up read');
+    assert.equal(await evaluate("(()=>{const text=document.querySelector('[data-memory-item=\"memory-correct\"]').textContent;return text.includes('Synthetic original for correction')&&text.includes('Synthetic correction kept after refresh failure')&&!text.includes('undefined')})()"),true,'the successful correction and original remain visible when the refresh fails');
+    await evaluate("document.getElementById('reloadMemory').click()");
+    await waitFor("document.getElementById('memoryError').classList.contains('hidden')");
+    await waitFor("document.getElementById('profileForm').querySelector('[type=submit]').disabled===false");
     // Per-source dates remain visible when different; legacy periods stay explicit.
     assert.equal(await evaluate("document.querySelectorAll('.memory-row-note').length"),0);
     db.prepare("UPDATE ai_coach_availability SET updated_at='2026-01-01',available_periods=? WHERE user_id=1 AND day_key='monday'").run(JSON.stringify(['before_08','08_12']));
@@ -387,7 +425,7 @@ test('training memory Chrome PT/EN desktop/mobile, ownership, keyboard, loading,
     );
     assert.equal(
       await evaluate(`document.querySelectorAll('#memoryOverview section').length`),
-      6,
+      7,
     );
     for(const language of ['en-US','pt-BR']) {
       await evaluate(`document.querySelector(".lang-switch [data-lang='${language}']").click()`);

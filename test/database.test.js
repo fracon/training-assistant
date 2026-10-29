@@ -49,6 +49,8 @@ test('initializeDatabase applies pragmas and creates the schema', () => {
     'ai_coach_availability',
     'ai_executions',
     'ai_global_usage',
+    'ai_interpretation_replacements',
+    'ai_interpretations',
     'ai_memory',
     'ai_profiles',
     'ai_usage',
@@ -63,6 +65,7 @@ test('initializeDatabase applies pragmas and creates the schema', () => {
     'trainings',
     'users',
     'weekly_workout_proposals',
+    'workout_analysis_versions',
   ]);
   assert.equal(
     db
@@ -1067,6 +1070,8 @@ test('migrateDatabase removes the obsolete workouts table from existing database
       'ai_coach_availability',
       'ai_executions',
       'ai_global_usage',
+      'ai_interpretation_replacements',
+      'ai_interpretations',
       'ai_memory',
       'ai_profiles',
       'ai_usage',
@@ -1081,6 +1086,7 @@ test('migrateDatabase removes the obsolete workouts table from existing database
       'trainings',
       'users',
       'weekly_workout_proposals',
+      'workout_analysis_versions',
     ],
     'only the obsolete workouts table is removed',
   );

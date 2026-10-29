@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { existsSync, mkdtempSync, rmSync, writeFileSync } = require('node:fs');
+const { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
@@ -13,6 +13,7 @@ const { buildServer } = require('../src/server');
 const { createDatabase } = require('../src/db/database');
 const { registerUser } = require('../src/auth/registration');
 const { SESSION_COOKIE_NAME, createSession } = require('../src/auth/sessions');
+const { readAiConfig } = require('../src/ai/config');
 
 const PASSWORD = 'rpe-browser-secret-1';
 const EN_REQUIRED = 'Select the realized RPE (1 to 5) to record and analyze this workout.';
@@ -67,10 +68,44 @@ test('the session page requires a realized RPE before saving, generating or uplo
   assert.ok(chrome, 'Chrome is required for the session browser verification.');
 
   const db = createDatabase({ filename: ':memory:' });
+  let providerCalls = 0;
+  let invalidNextProviderResponse = false;
   const app = await buildServer({
     db,
     sessionCookieSecure: false,
     parseFitFile: async () => fitSummary(),
+    aiConfig: readAiConfig({ AI_ENABLED: 'true', OPENAI_API_KEY: 'synthetic-browser-only', AI_RETRIES: '0' }),
+    aiClient: async (payload) => {
+      providerCalls += 1;
+      const request = JSON.parse(payload.input[0].content[0].text);
+      const saved = db.prepare('SELECT completed,feedback_rpe,feedback_notas FROM trainings WHERE id=?').get(request.context.resource.source.id);
+      assert.equal(saved.completed, 1, 'canonical result persistence finished before the simulated provider was invoked');
+      assert.ok(saved.feedback_rpe >= 1 && saved.feedback_rpe <= 5);
+      assert.equal(request.context.resource.report.authority, 'user_report');
+      assert.equal(request.context.resource.report.feedback_rpe, saved.feedback_rpe, 'the analysis context reads the persisted realized effort');
+      assert.equal(request.context.resource.report.feedback_notas, saved.feedback_notas, 'the analysis context reads the persisted feedback notes');
+      if (request.context.resource.actual.result_data_source === 'fit_upload')
+        assert.ok(request.context.resource.actual.fitLaps.length > 0, 'the simulated provider receives bounded, decoded FIT lap evidence');
+      const evidence = [`${request.context.resource.source.type}:${request.context.resource.source.id}`];
+      await delay(900);
+      const value = {
+          schemaVersion: 'workout-analysis-v1', language: request.context.preferences.language,
+          summary: { text: 'Synthetic analysis arrived while the session stayed open.', evidence },
+          comparison: { text: 'The saved result is compared with its planned session.', evidence },
+          contextualReading: [{ text: `This synthetic case contains a saved ${request.context.resource.actual.result_data_source === 'fit_upload' ? 'FIT' : 'manual'} result.`, evidence }],
+          attention: [], recommendations: [{ text: 'Keep the next session unchanged unless later evidence suggests an adjustment.', evidence }],
+          classification: { value: 'adequate', evidence }, limitations: ['Synthetic provider; no real model was called.'],
+          reusableInterpretations: [{ kind: 'pattern', text: 'The synthetic report describes a controlled effort.', evidence }],
+        };
+      if (invalidNextProviderResponse) {
+        invalidNextProviderResponse = false;
+        value.summary.text = 'RPE 8/10';
+      }
+      return {
+        value,
+        usage: { input: 700, output: 240, cached: 0 }, error: null,
+      };
+    },
   });
   const account = await registerUser(db, {
     email: 'rpe-runner@example.test',
@@ -78,16 +113,26 @@ test('the session page requires a realized RPE before saving, generating or uplo
     first_name: 'Rita',
     last_name: 'Rpe',
   });
-  const seedTraining = (overrides = {}) => {
+  const admin = await registerUser(db, {
+    email: 'analysis-admin@example.test', password: PASSWORD,
+    first_name: 'Ada', last_name: 'Admin',
+  });
+  db.prepare("UPDATE users SET role='admin' WHERE id=?").run(admin.id);
+  const otherUser = await registerUser(db, {
+    email: 'analysis-other@example.test', password: PASSWORD,
+    first_name: 'Owen', last_name: 'Other',
+  });
+  const seedTraining = (userId = account.id, overrides = {}) => {
     const result = db.prepare(
       `INSERT INTO trainings (user_id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes, feedback_rpe, feedback_notas, completed)
        VALUES (?, '2026-08-24', 'Manhã', 'Corrida', '6 × 1 km forte', 'Aquecer 15 min', '150-160 bpm', '4', 'Nimbus 26', NULL, NULL, ?, NULL, ?)`
-    ).run(account.id, overrides.feedback_rpe ?? null, overrides.completed ?? 0);
+    ).run(userId, overrides.feedback_rpe ?? null, overrides.completed ?? 0);
     return Number(result.lastInsertRowid);
   };
   const manualId = seedTraining();
   const fitId = seedTraining();
-  const legacyId = seedTraining({ completed: 1 });
+  const feedbackId = seedTraining(account.id, { feedback_rpe: 4 });
+  const legacyId = seedTraining(account.id, { completed: 1 });
   db.prepare(
     "UPDATE trainings SET result_data_source = 'fit_upload', fit_duration = '01:00:00', fit_distance = 10, fit_summary_json = '{}' WHERE id = ?"
   ).run(legacyId);
@@ -97,6 +142,16 @@ test('the session page requires a realized RPE before saving, generating or uplo
 
   const baseUrl = await app.listen({ port: 0, host: '127.0.0.1' });
   const origin = new URL(baseUrl).origin;
+  const commonPreview = await app.inject({
+    method: 'POST', url: '/api/ai/admin/preview', payload: { purpose: 'analysis', resource_id: manualId },
+    headers: { cookie: `${SESSION_COOKIE_NAME}=${createSession(db, account.id).token}` },
+  });
+  assert.equal(commonPreview.statusCode, 403, 'external prompt preview is admin-only in the backend');
+  const crossOwnerAdminPreview = await app.inject({
+    method: 'POST', url: '/api/ai/admin/preview', payload: { purpose: 'analysis', resource_id: manualId },
+    headers: { cookie: `${SESSION_COOKIE_NAME}=${createSession(db, admin.id).token}` },
+  });
+  assert.equal(crossOwnerAdminPreview.statusCode, 404, 'admin prompt access still enforces training ownership');
   const debugPort = await freePort();
   const profile = mkdtempSync(path.join(tmpdir(), 'kinesis-rpe-chrome-'));
   const uploads = mkdtempSync(path.join(tmpdir(), 'kinesis-rpe-fit-'));
@@ -165,6 +220,13 @@ test('the session page requires a realized RPE before saving, generating or uplo
       await command('Input.dispatchKeyEvent', { type: 'keyUp', key, code, windowsVirtualKeyCode: keyCode });
       await delay(60);
     };
+    const pressShiftTab = async () => {
+      await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Shift', code: 'ShiftLeft', windowsVirtualKeyCode: 16 });
+      await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, modifiers: 8 });
+      await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, modifiers: 8 });
+      await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Shift', code: 'ShiftLeft', windowsVirtualKeyCode: 16 });
+      await delay(60);
+    };
     // Session writes only: the shell persists its own language preference
     // whenever the test switches languages.
     const writes = () => requests.filter(
@@ -206,11 +268,11 @@ test('the session page requires a realized RPE before saving, generating or uplo
     const openSession = async (trainingId) => {
       requests.length = 0;
       await command('Page.navigate', { url: `${baseUrl}/training-result.html?id=${trainingId}` });
-      await setLanguage('en-US');
       await waitFor(
         "document.getElementById('sessionDate').textContent.trim() !== '-'",
         `session ${trainingId} loaded`
       );
+      await setLanguage('en-US');
       await delay(300);
     };
     // The page attaches its listeners once the session is loaded, so an
@@ -268,6 +330,71 @@ test('the session page requires a realized RPE before saving, generating or uplo
 
     /* ── The group is required, named, and silent until it is answered ── */
 
+    await openSession(manualId);
+    assert.equal(
+      await evaluate(`(()=>{const section=document.getElementById('analysisSection');return section.hidden && getComputedStyle(section).display==='none'})()`),
+      true,
+      'an empty analysis section is absent from the initial browser layout'
+    );
+    assert.equal(requests.some(({ method, url }) => method === 'GET' && new URL(url).pathname.startsWith('/api/ai/executions')), false,
+      'a session without an analysis request does not query execution progress');
+    const failFirstHistoryRead = await command('Page.addScriptToEvaluateOnNewDocument', {
+      source: `(()=>{const original=window.fetch.bind(window);window.fetch=(input,init)=>{const url=new URL(String(input),location.href);if(url.pathname==='/api/trainings/${feedbackId}/analyses'&&!sessionStorage.getItem('synthetic-analysis-read-failed')){sessionStorage.setItem('synthetic-analysis-read-failed','1');return Promise.reject(new TypeError('synthetic history read failure'))}return original(input,init)}})()`,
+    });
+    await openSession(feedbackId);
+    assert.equal(await evaluate("document.getElementById('analysisSection').hidden"), true,
+      'saved feedback by itself does not reveal an analysis section');
+    const regularActionLayout = await evaluate(`(()=>{const buttons=[...document.querySelectorAll('.feedback-card > .form-actions button')],rects=buttons.map(button=>button.getBoundingClientRect());return {count:buttons.length,sameRow:rects.length===2&&Math.abs(rects[0].top-rects[1].top)<=2,gap:rects[1]?.left-rects[0]?.right,saveColor:getComputedStyle(buttons[0]).color,analyzeBackground:getComputedStyle(buttons[1]).backgroundColor}})()`);
+    assert.equal(regularActionLayout.count, 2, 'a regular user sees only save and analysis actions');
+    assert.equal(regularActionLayout.sameRow, true, 'regular-user desktop actions align on one row');
+    assert.equal(regularActionLayout.gap, 16, 'regular-user desktop actions have a rendered 16px gap');
+    await command('Emulation.setDeviceMetricsOverride', { width: 697, height: 844, deviceScaleFactor: 1, mobile: false });
+    const regularNarrowActions = await evaluate(`(()=>{const card=document.querySelector('.feedback-card'),buttons=[...card.querySelectorAll(':scope > .form-actions button')],rects=buttons.map(button=>button.getBoundingClientRect());return {cardWidth:card.clientWidth,viewport:innerWidth,overflow:document.documentElement.scrollWidth>innerWidth,sameRow:rects.length===2&&Math.abs(rects[0].top-rects[1].top)<=2,saveWidth:rects[0]?.width,analyzeWidth:rects[1]?.width}})()`);
+    assert.equal(regularNarrowActions.overflow, false, 'narrow desktop has no horizontal overflow');
+    assert.equal(regularNarrowActions.sameRow, false, `the full app viewport leaves insufficient room beside its sidebar: ${JSON.stringify(regularNarrowActions)}`);
+    assert.ok(regularNarrowActions.cardWidth < 620, 'the 697px app viewport has insufficient card space for both labels on one line');
+    await evaluate("document.querySelector('.form-actions').scrollIntoView({block:'center'}); true");
+    await delay(80);
+    writeFileSync('/tmp/kinesis-session-actions-desktop-697-user.png', Buffer.from((await command('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+    assert.equal(requests.some(({ method, url }) => method === 'GET' && new URL(url).pathname.startsWith('/api/ai/executions')), false,
+      'saved feedback by itself does not query execution progress');
+    await waitFor("document.getElementById('analysisLoadWarning').hidden===false", 'the initial history read failure outside the analysis section');
+    assert.equal(await evaluate("document.getElementById('analysisLoadMessage').textContent.includes('Could not load saved analyses')"), true);
+    assert.equal(await evaluate("document.getElementById('analysisSection').hidden"), true, 'unknown history does not create an empty analysis section');
+    assert.equal(requests.some(({ method, url }) => method === 'GET' && new URL(url).pathname.startsWith('/api/ai/executions')), false, 'a failed history read does not start execution polling');
+    await evaluate("document.getElementById('analysisLoadWarning').scrollIntoView({block:'center'}); true");
+    await delay(100);
+    const loadWarningShot = await command('Page.captureScreenshot', { format: 'png' });
+    writeFileSync('/tmp/issue65-analysis-load-warning.png', Buffer.from(loadWarningShot.data, 'base64'));
+    await setLanguage('pt-BR');
+    assert.equal(await evaluate("document.getElementById('analysisLoadMessage').textContent.includes('Não foi possível carregar')"), true, 'the independent read warning is localized in Portuguese');
+    await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await evaluate("document.getElementById('analysisLoadWarning').scrollIntoView({block:'center'}); true");
+    await delay(100);
+    assert.equal(await evaluate('document.documentElement.scrollWidth>innerWidth'), false, 'the contextual history warning has no mobile overflow');
+    const mobileLoadWarningShot = await command('Page.captureScreenshot', { format: 'png' });
+    writeFileSync('/tmp/issue65-analysis-load-warning-mobile.png', Buffer.from(mobileLoadWarningShot.data, 'base64'));
+    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+    await setLanguage('en-US');
+    await evaluate("document.getElementById('analysisLoadAgain').click(); true");
+    await waitFor("document.getElementById('analysisLoadWarning').hidden", 'the free read retry resolving to an empty history');
+    assert.equal(await evaluate("document.getElementById('analysisSection').hidden"), true, 'a successful empty read stays absent after recovery');
+    assert.equal(writes().some(({ method, url }) => method === 'POST' && url.endsWith('/api/ai/executions')), false, 'retrying history is read-only and does not enqueue generation');
+    await command('Page.removeScriptToEvaluateOnNewDocument', { identifier: failFirstHistoryRead.identifier });
+    await evaluate(`sessionStorage.setItem('kinesis:analysis-request:${feedbackId}', 'stale-synthetic-request-key')`);
+    await command('Page.reload');
+    await waitFor(`sessionStorage.getItem('kinesis:analysis-request:${feedbackId}')===null`, 'clearing a stale request key after the owner-scoped execution list confirms no accepted request');
+    assert.equal(await evaluate("document.getElementById('analysisSection').hidden"), true,
+      'a stale key with no accepted execution does not leave an empty error panel');
+    assert.equal(requests.filter(({ method, url }) => method === 'GET' && new URL(url).pathname === '/api/ai/executions').length, 1,
+      'recovery performs one exact lookup for a stored idempotency key');
+    assert.equal(new URL(requests.find(({ method, url }) => method === 'GET' && new URL(url).pathname === '/api/ai/executions').url).searchParams.get('idempotency_key'), 'stale-synthetic-request-key',
+      'recovery checks the exact stored key instead of scanning a capped recent list');
+    assert.equal(requests.some(({ method, url }) => method === 'GET' && /\/api\/ai\/executions\/[^/]+$/.test(new URL(url).pathname)), false,
+      'recovery without a matching execution never polls a nonexistent execution');
+    assert.equal(writes().some(({ method, url }) => method === 'POST' && url.endsWith('/api/ai/executions')), false,
+      'opening and recovering the session never starts generation');
     await openSession(manualId);
     const initial = await evaluate(`(()=>{
       const group=document.getElementById('feedbackRpe');
@@ -376,16 +503,16 @@ test('the session page requires a realized RPE before saving, generating or uplo
     assert.equal(translated.errorText, PT_REQUIRED, 'a visible error follows the language switch');
     assert.equal(translated.status, PT_REQUIRED);
     assert.equal(translated.firstName, '1 - Muito Fácil');
-    await clickUntil('#generateBtn', "document.getElementById('promptSection').hidden===true", 'the refused prompt');
+    await clickUntil('#generateBtn', "document.getElementById('feedbackRpeError').hidden===false", 'the refused analysis');
     const refusedPrompt = await evaluate(`(()=>({
       errorText:document.getElementById('feedbackRpeError').textContent,
-      promptHidden:document.getElementById('promptSection').hidden,
-      prompt:document.getElementById('promptOutput').value,
+      analysisHidden:document.getElementById('analysisSection').hidden,
+      technicalPrompt:!![...document.querySelectorAll('button')].find((button)=>button.textContent.includes('View external prompt')),
     }))()`);
-    assert.equal(refusedPrompt.errorText, PT_REQUIRED, 'the prompt action reports the same requirement');
-    assert.equal(refusedPrompt.promptHidden, true, 'no prompt is produced for an unreported effort');
-    assert.equal(refusedPrompt.prompt, '');
-    assert.deepEqual(writes(), [], 'generating a prompt wrote nothing');
+    assert.equal(refusedPrompt.errorText, PT_REQUIRED, 'the analysis action reports the same requirement');
+    assert.equal(refusedPrompt.analysisHidden, true, 'no analysis appears without a saved result and effort');
+    assert.equal(refusedPrompt.technicalPrompt, false, 'a common account does not receive the admin prompt control');
+    assert.deepEqual(writes(), [], 'an invalid analysis request made no result write or paid execution');
     await setLanguage('en-US');
 
     /* ── The keyboard answers the group and the result is recorded ── */
@@ -423,7 +550,7 @@ test('the session page requires a realized RPE before saving, generating or uplo
       fit_distance: 10.25,
     }, 'the reported effort is stored with the concluded result');
 
-    /* ── The prompt describes the same realized effort ── */
+    /* ── The explicit analysis uses the saved result and recovers on reload ── */
 
     await openSession(manualId);
     await waitFor(
@@ -445,18 +572,171 @@ test('the session page requires a realized RPE before saving, generating or uplo
     assert.equal(restored.source, 'manual');
     assert.equal(restored.errorHidden, true, 'a stored effort never opens with an error');
 
-    await clickUntil('#generateBtn', "document.getElementById('promptSection').hidden===false", 'the generated prompt');
+    await evaluate(`(()=>{
+      const original=window.fetch.bind(window);let failed=false;window.__analysisListReads=0;
+      window.fetch=(input,init)=>{
+        if(String(input).includes('/api/trainings/${manualId}/analyses')){
+          window.__analysisListReads++;
+          if(!failed){failed=true;return Promise.reject(new TypeError('synthetic read interruption'));}
+        }
+        return original(input,init);
+      };
+    })()`);
+    await clickUntil('#generateBtn', "document.getElementById('analysisSection').hidden===false", 'the analysis execution');
+    await waitFor("document.getElementById('analysisState').textContent.includes('progress')", 'the analysis running state');
+    assert.equal(providerCalls, 1, 'one simulated provider call started');
+    assert.equal(writes().filter(({ method, url }) => method === 'POST' && url.endsWith('/api/ai/executions')).length, 1, 'one explicit execution POST was sent');
+    await waitFor('window.__analysisListReads>=2', 'the free retry after a transient terminal analysis-list read failure');
+    await waitFor("document.getElementById('analysisContent').textContent.includes('Synthetic analysis arrived')", 'automatic analysis display after the failed first list read');
+    const generationWrites = writes();
+    requests.length = 0;
+    await command('Page.reload');
+    await waitFor("document.getElementById('analysisContent').textContent.includes('Synthetic analysis arrived')", 'the automatically recovered analysis');
+    assert.equal(requests.some(({ method, url }) => method === 'GET' && new URL(url).pathname.startsWith('/api/ai/executions')), false,
+      'reopening a persisted completed analysis does not poll an execution');
     const generated = await evaluate(`(()=>({
-      prompt:document.getElementById('promptOutput').value,
-      unresolved:document.getElementById('promptOutput').value.includes('{{'),
+      analysis:document.getElementById('analysisContent').textContent,
+      url:location.pathname,
+      hidden:document.getElementById('analysisSection').hidden,
     }))()`);
-    assert.ok(generated.prompt.length > 0);
-    assert.equal(generated.unresolved, false);
+    assert.ok(generated.analysis.includes('Synthetic analysis arrived'));
+    assert.equal(await evaluate("document.querySelector('#analysisContent .analysis-stale')"), null, 'a current analysis has no stale notice');
+    assert.equal(generated.url, '/training-result.html', 'the completed result appears without navigation');
+    assert.equal(generated.analysis.includes('training:'), false, 'ordinary analysis text has no raw evidence references');
+    assert.equal(await evaluate("document.querySelector('.analysis-header button')?.hidden"), true, 'the free read-again control disappears after recovery succeeds');
+    assert.equal(await evaluate("getComputedStyle(document.querySelector('.analysis-header button')).display"), 'none', 'the recovered action is also absent in computed browser layout');
+    await evaluate("document.getElementById('analysisSection').scrollIntoView({block:'start'}); true");
+    const desktopShot = await command('Page.captureScreenshot', { format: 'png' });
+    writeFileSync('/tmp/issue65-analysis-desktop.png', Buffer.from(desktopShot.data, 'base64'));
+    await evaluate("(()=>{const trigger=document.querySelector('.analysis-interpretation button');trigger.focus();trigger.click();return true})()");
+    await waitFor("document.querySelector('.analysis-interpretation h4').textContent==='Confirmed interpretation'", 'confirming the reusable interpretation');
+    await delay(150);
+    await evaluate("(()=>{const trigger=document.querySelector('.analysis-interpretation button');trigger.focus();trigger.click();return true})()");
+    await waitFor("document.getElementById('analysisCorrectionDialog').hidden===false", 'opening the accessible correction dialog');
+    assert.equal(await evaluate("document.activeElement.matches('[data-analysis-correction-close]')"), true, 'the correction dialog takes initial focus');
+    await pressShiftTab();
+    assert.equal(await evaluate("document.activeElement.matches('[data-analysis-correction-save]')"), true, 'Shift+Tab wraps to the final correction action');
+    await pressKey('Tab', 'Tab', 9);
+    assert.equal(await evaluate("document.activeElement.matches('[data-analysis-correction-close]')"), true, 'Tab wraps to the first correction control');
+    await pressKey('Escape', 'Escape', 27);
+    await waitFor("document.getElementById('analysisCorrectionDialog').hidden", 'closing the correction dialog with Escape');
+    assert.equal(await evaluate("document.activeElement.dataset.interpretationAction?.endsWith(':correct')"), true, 'Escape restores focus to the correction trigger');
+    await evaluate("document.querySelector('[data-interpretation-action$=\":correct\"]').click(); true");
+    await waitFor("document.getElementById('analysisCorrectionDialog').hidden===false", 'reopening the correction dialog');
+    assert.equal(await evaluate("document.activeElement.matches('[data-analysis-correction-close]')"), true, 'reopened correction dialog restores initial focus');
+    await evaluate(`(()=>{const field=document.getElementById('analysisCorrectionText');field.value='Synthetic correction confirmed in the browser.';field.dispatchEvent(new Event('input',{bubbles:true}));return true})()`);
+    // A held network mutation rejects after the user tries to click twice.
+    await evaluate(`(()=>{const original=window.fetch.bind(window);window.__originalFetch=original;window.__correctionCalls=0;window.__rejectCorrection=null;window.__failAnalysisRefresh=false;window.fetch=(input,init)=>{if(window.__failAnalysisRefresh&&String(input).includes('/api/trainings/${manualId}/analyses')){window.__failAnalysisRefresh=false;return Promise.reject(new TypeError('refresh unavailable'))}if(String(input).includes('/api/ai/interpretations/')&&String(input).endsWith('/correct')){window.__correctionCalls++;if(window.__correctionCalls===1)return new Promise((_,reject)=>window.__rejectCorrection=()=>reject(new TypeError('offline')));if(window.__correctionCalls===2)return Promise.resolve(new Response(JSON.stringify({error:'interpretationConflict',errors:['interpretationConflict']}),{status:409,headers:{'content-type':'application/json'}}));}return original(input,init).then(async response=>{if(String(input).includes('/api/ai/interpretations/')&&String(input).endsWith('/correct'))window.__lastMutation=await response.clone().json();return response})}})()`);
+    await evaluate("document.querySelector('[data-analysis-correction-save]').click(); true");
+    await waitFor('window.__rejectCorrection!==null', 'the held interpretation mutation');
+    const duplicateState = await evaluate(`(()=>{document.querySelector('[data-analysis-correction-save]').click();return {disabled:document.querySelector('[data-analysis-correction-save]').disabled,calls:window.__correctionCalls}})()`);
+    assert.equal(duplicateState.disabled, true, 'the correction submit is disabled while the write is pending');
+    assert.equal(duplicateState.calls, 1, 'a double click sends only one mutation');
+    await evaluate('window.__rejectCorrection(); true');
+    await waitFor("document.getElementById('analysisCorrectionError').hidden===false", 'the localized network error inside the open correction dialog');
+    const networkFailure = await evaluate(`(()=>({open:!document.getElementById('analysisCorrectionDialog').hidden,text:document.getElementById('analysisCorrectionText').value,error:document.getElementById('analysisCorrectionError').textContent}))()`);
+    assert.equal(networkFailure.open, true, 'a failed correction does not close the dialog');
+    assert.equal(networkFailure.text, 'Synthetic correction confirmed in the browser.', 'typed correction survives a network failure');
+    assert.match(networkFailure.error, /Could not save/);
+    await evaluate("document.querySelector('[data-analysis-correction-save]').click(); true");
+    await waitFor("document.getElementById('analysisCorrectionError').textContent.includes('changed in another action')", 'a localized interpretation version conflict');
+    assert.equal(await evaluate("document.getElementById('analysisCorrectionText').value"), 'Synthetic correction confirmed in the browser.');
+    await evaluate(`(()=>{window.__failAnalysisRefresh=true;const field=document.getElementById('analysisCorrectionText');field.value='Synthetic correction confirmed in the browser.';document.querySelector('[data-analysis-correction-save]').click();return true})()`);
+    await waitFor("document.querySelector('.analysis-interpretation p').textContent==='Synthetic correction confirmed in the browser.'", 'saving the local interpretation correction');
+    assert.equal(await evaluate("document.getElementById('analysisCorrectionDialog').hidden"), true, 'the dialog closes after the mutation response confirms success');
+    assert.equal(await evaluate("document.activeElement.dataset.interpretationAction?.endsWith(':correct')"), true, 'focus returns to the equivalent control on the updated item');
+    await waitFor("document.getElementById('analysisLoadMessage').textContent.includes('Could not load saved analyses')", 'a refresh error distinct from the confirmed correction');
+    assert.equal(await evaluate("document.getElementById('analysisLoadWarning').hidden"), false, 'a history refresh problem is shown separately from the still-visible analysis');
+    assert.equal(await evaluate("document.querySelector('.analysis-interpretation p').textContent"), 'Synthetic correction confirmed in the browser.', 'the confirmed correction remains visible despite a failed list refresh');
+    await command('Page.reload');
+    await waitFor("document.querySelector('.analysis-interpretation p').textContent==='Synthetic correction confirmed in the browser.'", 'recovery of the persisted correction after reload');
+    await evaluate("document.querySelector('.analysis-interpretation button:last-child').click(); true");
+    await waitFor("document.querySelector('.analysis-interpretation h4').textContent==='Dismissed'", 'discarding the corrected interpretation');
+    await setLanguage('pt-BR');
+    assert.equal(await evaluate("document.querySelector('#analysisSection h2').textContent.includes('Análise')"), true, 'analysis labels rerender in Portuguese');
+    await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await evaluate("document.getElementById('analysisSection').scrollIntoView({block:'start'}); true");
+    await delay(250);
+    assert.equal(await evaluate('document.documentElement.scrollWidth>innerWidth'), false, 'the analysis has no mobile horizontal overflow');
+    const mobileShot = await command('Page.captureScreenshot', { format: 'png' });
+    writeFileSync('/tmp/issue65-analysis-mobile.png', Buffer.from(mobileShot.data, 'base64'));
+    await setLanguage('en-US');
+    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+    const ownerRead = await app.inject({
+      method: 'GET', url: `/api/trainings/${manualId}/analyses`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${createSession(db, account.id).token}` },
+    });
+    assert.equal(ownerRead.statusCode, 200);
+    assert.equal(ownerRead.json().latest.result.summary.text, 'Synthetic analysis arrived while the session stayed open.');
+    assert.equal('evidence' in ownerRead.json().latest.result.summary, false, 'ordinary analysis reads omit evidence identifiers');
+    db.prepare('UPDATE trainings SET feedback_notas=? WHERE id=?').run('Feedback changed after this analysis was initially current.', manualId);
+    const outdatedResponse = await app.inject({ method: 'GET', url: `/api/trainings/${manualId}/analyses`, headers: { cookie: `${SESSION_COOKIE_NAME}=${createSession(db, account.id).token}` } });
+    assert.equal(outdatedResponse.json().latest.outdated, true, 'the backend marks a previously current analysis outdated after feedback changes');
+    const outdatedRead = outdatedResponse.json();
+    await evaluate(`(()=>{const original=window.fetch.bind(window);window.fetch=(input,init)=>{if(String(input)==='/api/trainings/${manualId}/analyses')return Promise.resolve(new Response(${JSON.stringify(JSON.stringify(outdatedRead))},{status:200,headers:{'content-type':'application/json'}}));return original(input,init)};document.getElementById('analysisLoadWarning').hidden=false;document.getElementById('analysisLoadAgain').hidden=false;document.getElementById('analysisLoadAgain').click()})()`);
+    await waitFor("document.querySelector('#analysisContent .analysis-stale')", 'the saved analysis marked outdated by the backend');
+    assert.equal(await evaluate("document.querySelector('#analysisContent').textContent.includes('Synthetic analysis arrived while the session stayed open.')"), true, 'outdated analysis content remains visible beside its notice');
+    writeFileSync('/tmp/kinesis-analysis-stale-current.png', Buffer.from((await command('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+    await setLanguage('pt-BR');
+    assert.equal(await evaluate("document.querySelector('#analysisContent .analysis-stale').textContent"), 'Esta análise está desatualizada em relação aos dados atuais.', 'the stale notice rerenders in Portuguese');
+    writeFileSync('/tmp/kinesis-analysis-stale-current-pt.png', Buffer.from((await command('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+    await setLanguage('en-US');
+    const staleHistoryPayload = ownerRead.json();
+    staleHistoryPayload.latest.outdated = true;
+    staleHistoryPayload.analyses[0] = { ...staleHistoryPayload.latest, id: 'synthetic-historical-analysis', sequence: 0, createdAt: '2026-10-25T10:00:00.000Z' };
+    await evaluate(`(()=>{const original=window.fetch.bind(window);window.fetch=(input,init)=>{const url=String(input);if(url==='/api/trainings/${manualId}/analyses')return Promise.resolve(new Response(${JSON.stringify(JSON.stringify(staleHistoryPayload))},{status:200,headers:{'content-type':'application/json'}}));return original(input,init)};document.getElementById('analysisLoadWarning').hidden=false;document.getElementById('analysisLoadAgain').hidden=false;document.getElementById('analysisLoadAgain').click()})()`);
+    await waitFor("document.querySelector('#analysisContent .analysis-stale')", 'the stale current analysis after a localized reload');
+    await evaluate("document.querySelector('#analysisHistory summary').click();document.querySelector('#analysisHistoryContent .analysis-history-item summary').click(); true");
+    assert.equal(await evaluate("document.getElementById('analysisHistory').open && document.querySelector('#analysisHistoryContent .analysis-history-item').open"), true, 'the historical analysis is expanded in the visible evidence capture');
+    await waitFor("document.querySelector('#analysisHistoryContent .analysis-stale')", 'the stale historical analysis after expanding history');
+    assert.equal(await evaluate("document.querySelector('#analysisHistoryContent').textContent.includes('Synthetic analysis arrived while the session stayed open.')"), true, 'historical result content remains available');
+    writeFileSync('/tmp/kinesis-analysis-stale-history.png', Buffer.from((await command('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+    await setLanguage('pt-BR');
+    assert.equal(await evaluate("document.querySelector('#analysisHistoryContent .analysis-stale').textContent"), 'Esta análise está desatualizada em relação aos dados atuais.', 'the expanded historical warning follows the selected language');
+    await evaluate("document.getElementById('analysisHistory').open=true;document.querySelector('#analysisHistoryContent .analysis-history-item').open=true; true");
+    assert.equal(await evaluate("!!document.querySelector('#analysisHistoryContent .analysis-stale').getBoundingClientRect().height"), true, 'the translated historical notice is visibly rendered');
+    writeFileSync('/tmp/kinesis-analysis-stale-history-pt.png', Buffer.from((await command('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+    await evaluate(`(()=>{const original=window.fetch.bind(window);window.fetch=(input,init)=>String(input)==='/api/trainings/${manualId}/analyses'?Promise.reject(new TypeError('synthetic later read failure')):original(input,init);document.getElementById('analysisLoadWarning').hidden=false;document.getElementById('analysisLoadAgain').hidden=false;document.getElementById('analysisLoadAgain').click()})()`);
+    await waitFor("document.getElementById('analysisLoadWarning').hidden===false", 'a later analysis history read failure');
+    assert.equal(await evaluate("!!document.querySelector('#analysisContent .analysis-stale')"), true, 'the current stale notice survives a later read failure');
+    assert.equal(await evaluate("document.querySelector('#analysisContent').textContent.includes('Synthetic analysis arrived while the session stayed open.')"), true, 'the loaded analysis remains visible after a failed reread');
+    await setLanguage('en-US');
+    for (const userId of [admin.id, otherUser.id]) {
+      const foreignRead = await app.inject({
+        method: 'GET', url: `/api/trainings/${manualId}/analyses`,
+        headers: { cookie: `${SESSION_COOKIE_NAME}=${createSession(db, userId).token}` },
+      });
+      assert.equal(foreignRead.statusCode, 404, 'neither a different user nor an admin can cross ownership');
+    }
+    assert.equal(generated.hidden, false);
+    assert.equal(providerCalls, 1, 'reload recovered the same execution without another provider call');
     assert.ok(
-      writes().some(({ method, url }) => method === 'PATCH' && url.endsWith(`/api/trainings/${manualId}`)),
-      'the prompt is generated from the persisted session'
+      generationWrites.some(({ method, url }) => method === 'PATCH' && url.endsWith(`/api/trainings/${manualId}`)),
+      'feedback persistence precedes analysis generation'
     );
     assert.equal(row(manualId).completed, 1);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM workout_analysis_versions WHERE training_id=?').get(manualId).n, 1, 'the applied analysis history is persisted');
+
+    /* ── Memory keeps drafts on mutation failure and separates saved success from refresh ── */
+
+    const latestAnalysisId = db.prepare('SELECT id FROM workout_analysis_versions WHERE training_id=? ORDER BY sequence DESC LIMIT 1').get(manualId).id;
+    const memoryItemId = 'browser-memory-interpretation';
+    db.prepare(`INSERT INTO ai_interpretations
+      (id,user_id,training_id,analysis_id,kind,text,evidence_json,evidence_key,evidence_hash,content_hash,disposition,created_at,updated_at)
+      VALUES (?,?,?,?,'pattern','Synthetic memory item','[]','[]','browser-memory-evidence','browser-memory-content','pending','2026-10-26T12:00:00Z','2026-10-26T12:00:00Z')`)
+      .run(memoryItemId, account.id, manualId, latestAnalysisId);
+    await command('Page.navigate', { url: `${baseUrl}/training-memory.html` });
+    await waitFor(`document.querySelector('[data-memory-item="${memoryItemId}"]')`, 'the synthetic interpretation on Training Memory');
+    await evaluate(`(()=>{const original=window.fetch.bind(window);window.__memoryFetch=original;let fail=true;window.__failMemoryRead=false;window.fetch=(input,init)=>{if(window.__failMemoryRead&&String(input)==='/api/ai/memory'){window.__failMemoryRead=false;return Promise.reject(new TypeError('refresh unavailable'))}if(fail&&String(input).includes('/api/ai/interpretations/${memoryItemId}/correct')){fail=false;return Promise.reject(new TypeError('offline'))}return original(input,init)}})()`);
+    await evaluate(`(()=>{const article=document.querySelector('[data-memory-item="${memoryItemId}"]');article.querySelector('summary').click();const field=article.querySelector('textarea');field.value='Memory correction remains editable.';field.dispatchEvent(new Event('input',{bubbles:true}));article.querySelector('[data-memory-action$="save-correction"]').click();return true})()`);
+    await waitFor("!document.getElementById('memoryError').classList.contains('hidden')", 'the memory mutation error');
+    assert.equal(await evaluate(`document.querySelector('[data-memory-item="${memoryItemId}"] textarea').value`), 'Memory correction remains editable.', 'memory correction remains in the editor after a failed write');
+    await evaluate(`(()=>{window.__failMemoryRead=true;const save=document.querySelector('[data-memory-item="${memoryItemId}"] [data-memory-action$="save-correction"]');save.focus();save.click();return true})()`);
+    await waitFor(`document.querySelector('[data-memory-item="${memoryItemId}"]').textContent.includes('Corrected')`, 'the saved correction in Training Memory');
+    await waitFor("document.getElementById('memoryError').textContent.includes('decision was saved')", 'the memory refresh warning that preserves confirmed success');
+    assert.equal(await evaluate("document.activeElement.dataset.memoryAction"), `${memoryItemId}:save-correction`, 'the successful memory rerender restores the equivalent correction control');
+    await evaluate("document.getElementById('reloadMemory').click(); true");
+    await waitFor("document.getElementById('memoryError').classList.contains('hidden')", 'the free memory refresh');
 
     /* ── A FIT upload waits for the same reported effort ── */
 
@@ -496,6 +776,9 @@ test('the session page requires a realized RPE before saving, generating or uplo
       result_data_source: 'fit_upload',
       fit_distance: 10,
     });
+    await clickUntil('#generateBtn', "document.getElementById('analysisContent').textContent.includes('Synthetic analysis arrived')", 'the explicit analysis of the persisted FIT result');
+    assert.equal(providerCalls, 2, 'FIT analysis adds exactly one simulated provider call');
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM workout_analysis_versions WHERE training_id=?').get(fitId).n, 1, 'the FIT analysis version is stored against its owned result');
     await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
     const desktopTable = await evaluate(`(()=>({
       header:document.querySelector('#fitLapsTable th:nth-child(7)').textContent.replace(/\\u00ad/g,'').replace(/\\s+/g,' ').trim(),
@@ -691,6 +974,282 @@ test('the session page requires a realized RPE before saving, generating or uplo
     assert.equal(row(legacyId).feedback_rpe, 5, 'the effort is recorded without touching the result');
     assert.equal(row(legacyId).result_data_source, 'fit_upload');
     assert.equal(row(legacyId).fit_distance, 10);
+
+    /* ── Admin prompt access stays free and owner-scoped ── */
+
+    const adminTrainingId = seedTraining(admin.id, { completed: 1, feedback_rpe: 3 });
+    db.prepare("UPDATE trainings SET result_data_source='manual',fit_distance=5,fit_duration='30:00',fit_avg_pace='6:00' WHERE id=?").run(adminTrainingId);
+    await command('Network.setCookie', {
+      name: SESSION_COOKIE_NAME, value: createSession(db, admin.id).token, url: origin,
+    });
+    await openSession(adminTrainingId);
+    await waitFor("[...document.querySelectorAll('button')].some((button)=>button.textContent.includes('View external prompt'))", 'the admin-only prompt action');
+    await setLanguage('pt-BR');
+    assert.deepEqual(
+      await evaluate(`(()=>({prompt:document.querySelector('[data-analysis-external-prompt=true] span').textContent,analyze:document.querySelector('#generateBtn span').textContent}))()`),
+      { prompt: 'Ver prompt externo', analyze: 'Analisar treino' },
+      'admin actions retain localized product labels in Portuguese'
+    );
+    await waitFor("document.querySelectorAll('.feedback-card > .form-actions button svg').length===2", 'the Lucide icons in the action footer');
+    await evaluate(`(()=>{
+      document.getElementById('rpe-4').click();
+      const notes=document.getElementById('feedbackNotas');
+      notes.value='Saved before external prompt preview.';
+      notes.dispatchEvent(new Event('input',{bubbles:true}));
+      const buttons=[...document.querySelectorAll('.feedback-card > .form-actions button')];
+      window.__actionButtonHeights=buttons.map(button=>Math.round(button.getBoundingClientRect().height));
+      window.__actionButtonRects=buttons.map(button=>{const rect=button.getBoundingClientRect();return {x:Math.round(rect.x),y:Math.round(rect.y),bottom:Math.round(rect.bottom),centerY:Math.round(rect.top+rect.height/2),right:Math.round(rect.right),label:button.textContent.trim()}});
+      const footer=document.querySelector('.form-actions').getBoundingClientRect();
+      window.__actionFooterRect={left:Math.round(footer.left),right:Math.round(footer.right)};
+      window.__actionContainerWidth=document.querySelector('.feedback-card').clientWidth;
+      return true;
+    })()`);
+    await evaluate("document.querySelector('.form-actions').scrollIntoView({block:'center'}); true");
+    await delay(120);
+    const actionDesktop = await command('Page.captureScreenshot', { format: 'png' });
+    writeFileSync('/tmp/kinesis-session-actions-desktop.png', Buffer.from(actionDesktop.data, 'base64'));
+    const actionContent697 = await command('Page.captureScreenshot', { format: 'png', clip: { x: 308, y: 650, width: 697, height: 170, scale: 1 } });
+    writeFileSync('/tmp/kinesis-session-actions-content-697.png', Buffer.from(actionContent697.data, 'base64'));
+    await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    assert.equal(await evaluate('document.documentElement.scrollWidth>innerWidth'), false, 'the admin action footer has no horizontal overflow at mobile width');
+    await evaluate("document.querySelector('.form-actions').scrollIntoView({block:'center'}); true");
+    await delay(100);
+    const mobileActionLayout = await evaluate(`(()=>({
+      rows:new Set([...document.querySelectorAll('.feedback-card > .form-actions button')].map(button=>Math.round(button.getBoundingClientRect().y))).size,
+      widths:[...document.querySelectorAll('.feedback-card > .form-actions button')].map(button=>Math.round(button.getBoundingClientRect().width)),
+      overflow:document.documentElement.scrollWidth>innerWidth,
+    }))()`);
+    assert.equal(mobileActionLayout.rows, 3, 'mobile actions use an intentional single-column layout');
+    assert.equal(new Set(mobileActionLayout.widths).size, 1, 'mobile action buttons share one aligned width');
+    const actionMobile = await command('Page.captureScreenshot', { format: 'png' });
+    writeFileSync('/tmp/kinesis-session-actions-mobile.png', Buffer.from(actionMobile.data, 'base64'));
+    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+    await clickUntil("[data-analysis-external-prompt='true']", "!!document.querySelector('.external-prompt-card textarea')?.value.includes('Saved before external prompt preview.')", 'the free admin prompt preview after saving feedback');
+    assert.equal(row(adminTrainingId).feedback_rpe, 4, 'the external prompt action saves the current RPE first');
+    assert.equal(row(adminTrainingId).feedback_notas, 'Saved before external prompt preview.', 'the external prompt action saves current notes first');
+    const memoryRead = await app.inject({
+      method: 'GET', url: '/api/ai/memory',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${createSession(db, admin.id).token}` },
+    });
+    assert.equal(memoryRead.statusCode, 200);
+    const memory = memoryRead.json();
+    const rememberedSession = [...memory.recent, ...memory.comparables]
+      .find((item) => item.href.endsWith(`id=${adminTrainingId}`));
+    assert.equal(rememberedSession.report.feedback_rpe, 4, 'the training memory reads the newly saved RPE from its canonical row');
+    assert.equal(rememberedSession.report.feedback_notas, 'Saved before external prompt preview.', 'the training memory reads the newly saved dated report');
+    const promptWriteOrder = writes().map(({ method, url }) => `${method} ${new URL(url).pathname}`);
+    assert.deepEqual(promptWriteOrder, [
+      `PATCH /api/trainings/${adminTrainingId}`,
+      'POST /api/ai/admin/preview',
+    ], 'feedback persistence completes before the free prompt preview is requested');
+    assert.deepEqual(await evaluate('window.__actionButtonRects.map(({label})=>label)'), [
+      'Salvar e voltar ao calendário', 'Ver prompt externo', 'Analisar treino',
+    ], 'the admin action DOM and keyboard order is save, prompt, then analysis');
+    assert.equal(await evaluate('window.__actionButtonHeights[0]===window.__actionButtonHeights[2]'), true,
+      `save and analysis share the primary action height (observed: ${JSON.stringify(await evaluate('window.__actionButtonHeights'))})`);
+    assert.equal(await evaluate("getComputedStyle(document.querySelector('.form-actions')).columnGap"), '16px',
+      'all adjacent actions use the same 16px gap');
+    assert.equal(await evaluate(`(()=>{const [a,b]=window.__actionButtonRects;return Math.abs(a.centerY-b.centerY)<=2?b.x-a.right:b.y-a.bottom})()`), 16,
+      'the first adjacent admin actions render with a 16px gap, regardless of row wrapping');
+    assert.equal(await evaluate(`(()=>{const [,a,b]=window.__actionButtonRects;return Math.abs(a.centerY-b.centerY)<=2?b.x-a.right:b.y-a.bottom})()`), 16,
+      'the second adjacent admin actions render with a 16px gap, regardless of row wrapping');
+    const desktopActionRows = await evaluate('(()=>{const ys=window.__actionButtonRects.map(rect=>rect.centerY).sort((a,b)=>a-b);return ys.reduce((rows,y,index)=>index===0||y-ys[index-1]>2?rows+1:rows,0)})()');
+    const actionContainerWidth = await evaluate('window.__actionContainerWidth');
+    const actionLayout = await evaluate(`(()=>{const buttons=[...document.querySelectorAll('.feedback-card > .form-actions button')],footer=document.querySelector('.form-actions'),style=getComputedStyle(footer);return {footerWidth:footer.clientWidth,widths:buttons.map(button=>button.getBoundingClientRect().width),gap:style.columnGap,direction:style.flexDirection,alignItems:style.alignItems,rows:new Set(buttons.map(button=>Math.round(button.getBoundingClientRect().y))).size}})()`);
+    const requiredActionWidth = actionLayout.widths.reduce((sum, width) => sum + width, 0) + 32;
+    const hasAdminPrompt = await evaluate("document.querySelector('.form-actions').classList.contains('has-admin-prompt')");
+    const expectedDesktopRows = actionContainerWidth <= (hasAdminPrompt ? 696 : 620)
+      ? 3 : requiredActionWidth <= actionLayout.footerWidth ? 1 : 2;
+    assert.equal(desktopActionRows, expectedDesktopRows,
+      `all desktop actions stay on one row when the content width accommodates their labels: ${JSON.stringify({ actionContainerWidth, actionLayout })}`);
+    assert.equal(await evaluate('window.__actionButtonRects.every(rect=>rect.x>=window.__actionFooterRect.left&&rect.right<=window.__actionFooterRect.right)'), true, 'the action group stays inside the footer and card width');
+    if (actionContainerWidth > 620 && expectedDesktopRows === 1)
+      assert.equal(await evaluate('Math.abs(window.__actionButtonRects[0].centerY-window.__actionButtonRects[1].centerY)<=2 && Math.abs(window.__actionButtonRects[1].centerY-window.__actionButtonRects[2].centerY)<=2 && window.__actionButtonRects[0].x<window.__actionButtonRects[1].x && window.__actionButtonRects[1].x<window.__actionButtonRects[2].x && window.__actionButtonRects[1].x-window.__actionButtonRects[0].right===16 && window.__actionButtonRects[2].x-window.__actionButtonRects[1].right===16'), true,
+        'save, prompt and analysis stay in one aligned desktop row with a uniform 16px gap');
+    const adminPreview = await evaluate(`(()=>({
+      role:document.querySelector('[role=dialog][aria-modal=true]')!==null,
+      active:document.activeElement.getAttribute('aria-label'),
+      prompt:document.querySelector('.external-prompt-card textarea')?.value||'',
+      copy:document.querySelector('.external-prompt-card textarea')?.readOnly,
+    }))()`);
+    assert.equal(adminPreview.role, true, 'the external prompt opens in the shared accessible modal');
+    assert.equal(adminPreview.copy, true);
+    assert.ok(adminPreview.prompt.includes('INSTRUÇÕES PARA A ANÁLISE'));
+    assert.equal(await evaluate("document.querySelector('.external-prompt-actions button:last-child').querySelector('svg, i')===null"), true,
+      'the shared prompt action follows the approved text-only copy button');
+    assert.equal(providerCalls, 2, 'viewing the prompt does not call the provider');
+    assert.equal(writes().filter(({ method, url }) => method === 'POST' && url.endsWith('/api/ai/executions')).length, 0);
+    const portuguesePromptMetrics = await evaluate(`(()=>{const dialog=document.querySelector('.external-prompt-backdrop'),card=dialog.querySelector('.external-prompt-card'),area=card.querySelector('textarea'),footer=card.querySelector('.external-prompt-actions'),buttons=[...footer.querySelectorAll('button')],rects=buttons.map(button=>button.getBoundingClientRect()),cardRect=card.getBoundingClientRect(),areaRect=area.getBoundingClientRect(),footerRect=footer.getBoundingClientRect(),close=card.querySelector('header button'),closeRect=close.getBoundingClientRect(),icon=close.querySelector('svg'),iconRect=icon.getBoundingClientRect(),style=getComputedStyle(area),footerStyle=getComputedStyle(footer),fontSize=parseFloat(style.fontSize),lineHeight=parseFloat(style.lineHeight)||fontSize*1.55;return {close:buttons[0].textContent.trim(),closeName:close.getAttribute('aria-label'),keyLeak:card.textContent.includes('common.close'),width:cardRect.width,height:cardRect.height,cardBottomGap:cardRect.bottom-footerRect.bottom,areaWidth:areaRect.width,areaHeight:areaRect.height,areaToFooter:footerRect.top-areaRect.bottom,lineHeight,areaScrollHeight:area.scrollHeight,cardScrollHeight:card.scrollHeight,cardClientHeight:card.clientHeight,buttonWidths:rects.map(rect=>rect.width),buttonHeights:rects.map(rect=>rect.height),footerBorderTop:footerStyle.borderTopWidth,footerPaddingTop:footerStyle.paddingTop,footerMarginTop:footerStyle.marginTop,closeWidth:closeRect.width,closeHeight:closeRect.height,iconWidth:iconRect.width,iconHeight:iconRect.height,buttonSizes:buttons.map(button=>({fontSize:getComputedStyle(button).fontSize,padding:getComputedStyle(button).padding}))}})()`);
+    assert.equal(portuguesePromptMetrics.close, 'Fechar');
+    assert.equal(portuguesePromptMetrics.closeName, 'Fechar');
+    assert.equal(portuguesePromptMetrics.keyLeak, false, 'the prompt modal never displays an untranslated key');
+    assert.ok(portuguesePromptMetrics.width >= 800, `prompt modal provides a comfortable desktop reading width: ${JSON.stringify(portuguesePromptMetrics)}`);
+    assert.ok(portuguesePromptMetrics.areaHeight >= 15 * portuguesePromptMetrics.lineHeight,
+      `the desktop prompt exposes at least 15 readable lines: ${JSON.stringify(portuguesePromptMetrics)}`);
+    assert.equal(portuguesePromptMetrics.buttonWidths[0], portuguesePromptMetrics.buttonWidths[1], 'modal actions share equal widths');
+    assert.equal(portuguesePromptMetrics.buttonHeights[0], portuguesePromptMetrics.buttonHeights[1], 'modal actions share equal heights');
+    assert.equal(portuguesePromptMetrics.buttonSizes[0].fontSize, portuguesePromptMetrics.buttonSizes[1].fontSize);
+    assert.equal(portuguesePromptMetrics.areaToFooter, 16, 'textarea and footer have one consistent 16px gap');
+    assert.ok(portuguesePromptMetrics.cardBottomGap >= 24 && portuguesePromptMetrics.cardBottomGap <= 25,
+      `the footer has 24px of bottom inset, including the card border: ${JSON.stringify(portuguesePromptMetrics)}`);
+    assert.equal(portuguesePromptMetrics.footerBorderTop, '0px', 'the prompt footer has no inherited divider');
+    assert.equal(portuguesePromptMetrics.footerPaddingTop, '0px');
+    assert.equal(portuguesePromptMetrics.footerMarginTop, '0px');
+    assert.ok(portuguesePromptMetrics.closeWidth >= 40 && portuguesePromptMetrics.closeHeight >= 40,
+      `the close control has a 40px minimum hit area: ${JSON.stringify(portuguesePromptMetrics)}`);
+    assert.ok(portuguesePromptMetrics.iconWidth >= 20 && portuguesePromptMetrics.iconHeight >= 20,
+      `the rendered Lucide X measures at least 20px: ${JSON.stringify(portuguesePromptMetrics)}`);
+    assert.ok(portuguesePromptMetrics.cardScrollHeight <= portuguesePromptMetrics.cardClientHeight,
+      'the prompt card does not introduce a second scroll region');
+    writeFileSync('/tmp/kinesis-analysis-prompt-metrics.json', JSON.stringify({ desktopPt: portuguesePromptMetrics }, null, 2));
+    writeFileSync('/tmp/kinesis-analysis-prompt-desktop-pt.png', Buffer.from((await command('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+    await evaluate(`Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async(text)=>{window.__copiedAnalysisPrompt=text}}});document.querySelector('.external-prompt-card .external-prompt-actions button:last-child').click();true`);
+    await waitFor("document.querySelector('.external-prompt-card .external-prompt-status').textContent.length>0", 'copy feedback in the prompt modal');
+    assert.equal(await evaluate('window.__copiedAnalysisPrompt===document.querySelector(".external-prompt-text").value'), true, 'copy preserves the complete prompt text');
+    assert.equal(await evaluate("document.querySelector('.external-prompt-card .external-prompt-status').textContent"), 'Prompt copiado.', 'copy success feedback is localized');
+    await setLanguage('en-US');
+    assert.deepEqual(await evaluate(`(()=>({close:document.querySelector('.external-prompt-card .external-prompt-actions button:first-child').textContent.trim(),closeName:document.querySelector('.external-prompt-card header button').getAttribute('aria-label'),copy:document.querySelector('.external-prompt-card .external-prompt-actions button:last-child').textContent.trim(),keyLeak:document.querySelector('.external-prompt-card').textContent.includes('common.close')}))()`),
+      { close: 'Close', closeName: 'Close', copy: 'Copy prompt', keyLeak: false }, 'open prompt controls and accessible close name rerender in English');
+    assert.equal(await evaluate("document.querySelector('.external-prompt-card .external-prompt-status').textContent"), 'Prompt copied.', 'copy feedback follows the selected interface language');
+    writeFileSync('/tmp/kinesis-analysis-prompt-desktop-en.png', Buffer.from((await command('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+    await pressKey('Tab', 'Tab', 9);
+    await pressKey('Tab', 'Tab', 9);
+    await pressKey('Tab', 'Tab', 9);
+    assert.equal(await evaluate("document.activeElement.matches('.external-prompt-actions button:last-child')"), true, 'Shift+Tab wraps to the last modal action');
+    await pressKey('Tab', 'Tab', 9);
+    assert.equal(await evaluate("document.activeElement.matches('.external-prompt-card header button')"), true, 'Tab wraps to the first modal control');
+    await pressShiftTab();
+    assert.equal(await evaluate("document.activeElement.matches('.external-prompt-actions button:last-child')"), true, 'Shift+Tab wraps to the last modal control');
+    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 480, deviceScaleFactor: 1, mobile: false });
+    const shortPrompt = await evaluate(`(()=>{const card=document.querySelector('.external-prompt-card'),area=card.querySelector('textarea'),footer=card.querySelector('.external-prompt-actions'),cardRect=card.getBoundingClientRect(),areaRect=area.getBoundingClientRect(),footerRect=footer.getBoundingClientRect();return {cardBottom:cardRect.bottom,viewport:innerHeight,areaHeight:areaRect.height,areaToFooter:footerRect.top-areaRect.bottom,bottomGap:cardRect.bottom-footerRect.bottom,areaScrollable:area.scrollHeight>area.clientHeight,footerBottom:footerRect.bottom,withinCard:footerRect.bottom<=cardRect.bottom}})()`);
+    assert.ok(shortPrompt.cardBottom <= shortPrompt.viewport, `short desktop viewport keeps the dialog inside the viewport: ${JSON.stringify(shortPrompt)}`);
+    assert.ok(shortPrompt.areaHeight >= 96, `short viewport retains a usable scrolling text area: ${JSON.stringify(shortPrompt)}`);
+    assert.equal(shortPrompt.withinCard, true, 'modal footer remains visible inside its card');
+    assert.equal(shortPrompt.areaScrollable, true, 'long prompt content scrolls inside the textarea on a short viewport');
+    assert.ok(shortPrompt.bottomGap >= 24 && shortPrompt.bottomGap <= 25, 'short viewport retains the bottom inset');
+    writeFileSync('/tmp/kinesis-analysis-prompt-short-en.png', Buffer.from((await command('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+    await pressKey('Escape', 'Escape', 27);
+    await waitFor("document.querySelector('.external-prompt-card')?.closest('[role=dialog]').hidden===true", 'the prompt modal closing with Escape');
+    assert.equal(await evaluate('document.activeElement===document.querySelector("[data-analysis-external-prompt=true]")'), true, 'focus returns to the prompt trigger');
+    await setLanguage('pt-BR');
+    await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await clickUntil("[data-analysis-external-prompt='true']", "!!document.querySelector('.external-prompt-card textarea')?.value.includes('INSTRUÇÕES PARA A ANÁLISE')", 'reopening the translated prompt on mobile');
+    const mobilePrompt = await evaluate(`(()=>{const card=document.querySelector('.external-prompt-card'),area=card.querySelector('textarea'),footer=card.querySelector('.external-prompt-actions'),buttons=[...footer.querySelectorAll('button')],rects=buttons.map(button=>button.getBoundingClientRect()),cardRect=card.getBoundingClientRect(),areaRect=area.getBoundingClientRect(),footerRect=footer.getBoundingClientRect(),close=card.querySelector('header button');return {width:innerWidth,scrollWidth:document.documentElement.scrollWidth,cardWidth:cardRect.width,cardHeight:cardRect.height,cardBottomGap:cardRect.bottom-footerRect.bottom,areaHeight:areaRect.height,areaToFooter:footerRect.top-areaRect.bottom,buttonWidths:rects.map(rect=>rect.width),buttonHeights:rects.map(rect=>rect.height),closeWidth:close.getBoundingClientRect().width,closeHeight:close.getBoundingClientRect().height,iconWidth:close.querySelector('svg').getBoundingClientRect().width,iconHeight:close.querySelector('svg').getBoundingClientRect().height,footerBottom:footerRect.bottom,viewport:innerHeight,close:buttons[0].textContent.trim()}})()`);
+    assert.equal(mobilePrompt.scrollWidth, mobilePrompt.width, 'mobile prompt dialog has no horizontal overflow');
+    assert.ok(mobilePrompt.areaHeight >= 200, `mobile prompt keeps a substantial reading area: ${JSON.stringify(mobilePrompt)}`);
+    assert.deepEqual(mobilePrompt.buttonWidths[0], mobilePrompt.buttonWidths[1], 'mobile modal actions remain equal width');
+    assert.deepEqual(mobilePrompt.buttonHeights[0], mobilePrompt.buttonHeights[1], 'mobile modal actions remain equal height');
+    assert.ok(mobilePrompt.footerBottom <= mobilePrompt.viewport, 'mobile footer remains inside the viewport');
+    assert.equal(mobilePrompt.areaToFooter, 16, 'mobile textarea and footer retain the 16px gap');
+    assert.ok(mobilePrompt.cardBottomGap >= 24 && mobilePrompt.cardBottomGap <= 25, 'mobile footer retains the 24px bottom inset');
+    assert.ok(mobilePrompt.closeWidth >= 40 && mobilePrompt.closeHeight >= 40);
+    assert.ok(mobilePrompt.iconWidth >= 20 && mobilePrompt.iconHeight >= 20);
+    const promptMetrics = JSON.parse(readFileSync('/tmp/kinesis-analysis-prompt-metrics.json', 'utf8'));
+    promptMetrics.shortDesktop = shortPrompt;
+    promptMetrics.mobilePt = mobilePrompt;
+    writeFileSync('/tmp/kinesis-analysis-prompt-metrics.json', JSON.stringify(promptMetrics, null, 2));
+    assert.equal(mobilePrompt.close, 'Fechar');
+    writeFileSync('/tmp/kinesis-analysis-prompt-mobile-pt.png', Buffer.from((await command('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+    await evaluate("document.querySelector('.external-prompt-card header button').click(); true");
+    await waitFor("document.querySelector('.external-prompt-backdrop').hidden", 'closing the prompt using its X button');
+    assert.equal(await evaluate('document.activeElement===document.querySelector("[data-analysis-external-prompt=true]")'), true, 'closing with X restores focus to the opening control');
+    await setLanguage('en-US');
+    await clickUntil("[data-analysis-external-prompt='true']", "!!document.querySelector('.external-prompt-card textarea')?.value.includes('INSTRUCTIONS FOR ANALYSIS')", 'reopening the translated prompt on mobile');
+    assert.equal(await evaluate("document.querySelector('.external-prompt-card .external-prompt-actions button:first-child').textContent.trim()"), 'Close');
+    writeFileSync('/tmp/kinesis-analysis-prompt-mobile-en.png', Buffer.from((await command('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+    await evaluate("document.querySelector('.external-prompt-card .external-prompt-actions button:first-child').click(); true");
+    await waitFor("document.querySelector('.external-prompt-backdrop').hidden", 'closing the mobile prompt through its localized footer action');
+    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+    await setLanguage('en-US');
+    const englishActionRow = await evaluate(`(()=>{const buttons=[...document.querySelectorAll('.feedback-card > .form-actions button')],rects=buttons.map(button=>button.getBoundingClientRect()),center=rects[0]?.top+(rects[0]?.height||0)/2,footer=document.querySelector('.form-actions');return {sameRow:rects.length===3&&rects.every(rect=>Math.abs(rect.top+rect.height/2-center)<=2),widths:rects.map(rect=>Math.round(rect.width)),footerWidth:footer.clientWidth,gap:getComputedStyle(footer).columnGap}})()`);
+    const englishFits = englishActionRow.widths.reduce((sum, width) => sum + width, 0) + 32 <= englishActionRow.footerWidth;
+    assert.equal(englishActionRow.sameRow, englishFits,
+      `English actions share a row exactly when their labels fit the available footer width: ${JSON.stringify(englishActionRow)}`);
+    assert.deepEqual(
+      await evaluate(`(()=>({prompt:document.querySelector('[data-analysis-external-prompt=true] span').textContent,analyze:document.querySelector('#generateBtn span').textContent}))()`),
+      { prompt: 'View external prompt', analyze: 'Analyze workout' },
+      'admin actions rerender in English after the Portuguese preview'
+    );
+
+    /* ── Session actions use the exact shared Request Workouts button variants ── */
+
+    await waitFor("document.getElementById('generateBtn').disabled===false", 'the completed analysis action is enabled before comparing shared button styles');
+    await command('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1, y: 1 });
+    await delay(250);
+    const sessionButtonMetrics = await evaluate(`(()=>Object.fromEntries([...document.querySelectorAll('.feedback-card > .form-actions button')].map((button,index)=>{const style=getComputedStyle(button);const icon=button.querySelector('svg'),iconStyle=icon?getComputedStyle(icon):null;return [["save","prompt","analyze"][index],{height:style.height,padding:style.padding,borderRadius:style.borderRadius,fontFamily:style.fontFamily,fontSize:style.fontSize,fontWeight:style.fontWeight,color:style.color,backgroundColor:style.backgroundColor,border:style.border,boxShadow:style.boxShadow,gap:style.gap,transition:style.transition,icon:icon?.getAttribute('data-lucide'),iconSize:iconStyle?iconStyle.width+' '+iconStyle.height:null}]})))()`);
+    assert.equal(sessionButtonMetrics.prompt.icon, 'sparkles', 'the session prompt renders the same Lucide icon as Request Workouts');
+    assert.equal(sessionButtonMetrics.save.color, 'rgb(76, 110, 81)', 'save restores the historic green text');
+    assert.match(sessionButtonMetrics.save.border, /rgb\(76, 110, 81\)/, 'save restores the historic green outline');
+    assert.equal(sessionButtonMetrics.save.backgroundColor, 'rgba(0, 0, 0, 0)', 'save keeps a transparent background');
+    assert.equal(sessionButtonMetrics.save.height, sessionButtonMetrics.analyze.height, 'save and analysis have the same rendered height');
+    assert.equal(sessionButtonMetrics.save.padding.split(' ')[0], sessionButtonMetrics.analyze.padding.split(' ')[0], 'save and analysis use matching vertical padding');
+    assert.equal(sessionButtonMetrics.save.fontSize, sessionButtonMetrics.analyze.fontSize, 'save and analysis use compatible typography');
+    await evaluate("document.querySelector('.form-actions').scrollIntoView({block:'center'}); true");
+    await delay(100);
+    writeFileSync('/tmp/kinesis-session-actions-desktop-en.png', Buffer.from((await command('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+    writeFileSync('/tmp/kinesis-session-actions-content-697-en.png', Buffer.from((await command('Page.captureScreenshot', { format: 'png', clip: { x: 308, y: 650, width: 697, height: 170, scale: 1 } })).data, 'base64'));
+    await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await evaluate("document.querySelector('.form-actions').scrollIntoView({block:'center'}); true");
+    await delay(100);
+    writeFileSync('/tmp/kinesis-session-actions-mobile-en.png', Buffer.from((await command('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+
+    /* ── A lost POST response recovers the same terminal execution, including failure ── */
+
+    await openSession(adminTrainingId);
+    await evaluate(`(()=>{const original=window.fetch.bind(window);window.__analysisOriginalFetch=original;window.__lostAnalysisPosts=0;window.fetch=(input,init)=>{if(String(input)==='/api/ai/executions'&&init?.method==='POST'){window.__lostAnalysisPosts++;return original(input,init).then(response=>new Promise((_,reject)=>setTimeout(()=>reject(new TypeError('response lost after acceptance')),1400)))}return original(input,init)}})()`);
+    invalidNextProviderResponse = true;
+    await evaluate("document.getElementById('generateBtn').click(); true");
+    await waitFor("document.getElementById('analysisNotice').textContent.includes('did not meet the required response rules')", 'terminal analysis failure recovered after its POST response was lost');
+    assert.equal(await evaluate('window.__lostAnalysisPosts'), 1, 'only the explicit generation POST was sent');
+    assert.equal(providerCalls, 3, 'the failed terminal execution represents one simulated provider call');
+    assert.equal(db.prepare('SELECT state FROM workout_analysis_versions WHERE training_id=?').get(adminTrainingId).state, 'failed');
+    await command('Page.reload');
+    await waitFor("document.getElementById('analysisNotice').textContent.includes('did not meet the required response rules')", 'the terminal failure after reload');
+    assert.equal(providerCalls, 3, 'reload reads the saved failed execution without replaying the provider');
+    await evaluate(`(()=>{const original=window.fetch.bind(window);window.__analysisOriginalFetch=original;window.__lostAnalysisPosts=0;window.fetch=(input,init)=>{if(String(input)==='/api/ai/executions'&&init?.method==='POST'){window.__lostAnalysisPosts++;return original(input,init).then(response=>new Promise((_,reject)=>setTimeout(()=>reject(new TypeError('response lost after acceptance')),1400)))}return original(input,init)}})()`);
+    await evaluate("document.getElementById('generateBtn').click(); true");
+    await waitFor("document.getElementById('analysisContent').textContent.includes('Synthetic analysis arrived while the session stayed open.')", 'a successful terminal execution after an explicit new request');
+    assert.equal(await evaluate('window.__lostAnalysisPosts'), 1, 'the second explicit run sends one POST');
+    assert.equal(providerCalls, 4, 'the second explicit action invokes one additional simulated provider call');
+    await command('Page.reload');
+    await waitFor("document.getElementById('analysisContent').textContent.includes('Synthetic analysis arrived while the session stayed open.')", 'the successful terminal result after reload');
+    assert.equal(providerCalls, 4, 'successful reload recovery is read-only');
+
+    await command('Page.navigate', { url: `${origin}/ai-coach.html` });
+    await waitFor("document.getElementById('generateBtn')&&document.getElementById('externalPromptBtn')&&!document.getElementById('externalPromptBtn').hidden", 'the admin Request Workouts action pair');
+    const weeklyButtonMetrics = await evaluate(`(()=>{const read=(id)=>{const button=document.getElementById(id),style=getComputedStyle(button),icon=button.querySelector('svg'),iconStyle=icon?getComputedStyle(icon):null;return {height:style.height,padding:style.padding,borderRadius:style.borderRadius,fontFamily:style.fontFamily,fontSize:style.fontSize,fontWeight:style.fontWeight,color:style.color,backgroundColor:style.backgroundColor,border:style.border,boxShadow:style.boxShadow,gap:style.gap,transition:style.transition,icon:icon?.getAttribute('data-lucide'),iconSize:iconStyle?iconStyle.width+' '+iconStyle.height:null}};return {primary:read('generateBtn'),secondary:read('externalPromptBtn')}})()`);
+    const { icon: analyzeIcon, height: analyzeHeight, padding: analyzePadding, boxShadow: analyzeShadow, ...analyzeStyles } = sessionButtonMetrics.analyze;
+    const { icon: weeklyPrimaryIcon, height: weeklyHeight, padding: weeklyPadding, boxShadow: weeklyShadow, ...weeklyPrimaryStyles } = weeklyButtonMetrics.primary;
+    assert.deepEqual(analyzeStyles, weeklyPrimaryStyles, 'Analyze workout preserves the weekly primary colors, type, radius, transition and icon dimensions');
+    assert.ok(analyzeShadow === 'none' || weeklyShadow === 'none' || analyzeShadow === weeklyShadow, 'the disabled variant may remove the primary shadow');
+    assert.equal(analyzeHeight, sessionButtonMetrics.save.height, 'analysis is dimensioned to match save');
+    assert.equal(analyzePadding.split(' ')[0], sessionButtonMetrics.save.padding.split(' ')[0], 'analysis and save use matching vertical padding');
+    assert.equal(analyzePadding, '9px 10px', 'analysis uses only the compact horizontal adjustment needed for long desktop labels');
+    assert.equal(analyzeIcon, 'activity', 'the analysis action keeps its analysis-specific Lucide icon');
+    assert.equal(weeklyPrimaryIcon, 'calendar-plus', 'the weekly action keeps its calendar-plus Lucide icon');
+    assert.deepEqual(sessionButtonMetrics.prompt, weeklyButtonMetrics.secondary, 'both external prompt actions match in computed styles and rendered Lucide icon');
+    await evaluate("document.querySelector('.lang-switch [data-lang=\"pt-BR\"]').click()");
+    await waitFor("document.documentElement.lang==='pt-BR'", 'Portuguese Request Workouts actions');
+    await evaluate("document.querySelector('.prompt-submit-actions').scrollIntoView({block:'center'}); true");
+    await delay(100);
+    writeFileSync('/tmp/kinesis-request-workouts-actions-desktop-pt.png', Buffer.from((await command('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+    await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await evaluate("document.querySelector('.prompt-submit-actions').scrollIntoView({block:'center'}); true");
+    await delay(100);
+    assert.equal(await evaluate('document.documentElement.scrollWidth>innerWidth'), false, 'weekly actions have no mobile overflow');
+    writeFileSync('/tmp/kinesis-request-workouts-actions-mobile-pt.png', Buffer.from((await command('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+    await evaluate("document.querySelector('.lang-switch [data-lang=\"en-US\"]').click()");
+    await waitFor("document.documentElement.lang==='en-US'", 'English Request Workouts actions');
+    await evaluate("document.querySelector('.prompt-submit-actions').scrollIntoView({block:'center'}); true");
+    await delay(100);
+    writeFileSync('/tmp/kinesis-request-workouts-actions-desktop-en.png', Buffer.from((await command('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+    await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await evaluate("document.querySelector('.prompt-submit-actions').scrollIntoView({block:'center'}); true");
+    await delay(100);
+    writeFileSync('/tmp/kinesis-request-workouts-actions-mobile-en.png', Buffer.from((await command('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
   } finally {
     try {
       socket?.close();

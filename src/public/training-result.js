@@ -6,24 +6,24 @@ import {
   ENERGY_LABEL_KEYS,
   formatDateLabel,
   resolveResultSource,
-  templateFor,
-  buildAnalysisPrompt,
-  painPromptText,
-  buildCanonicalPromptForm,
-  collectPromptValues,
   formatCadence,
   splitPaceLabel,
   formatLapType,
 } from './shared/analysis-prompts.js';
-export * from './shared/analysis-prompts.js';
 import { initShell, getShellI18n, getUserPreferences, showConfirm, showShellToast, refreshIcons } from './shared/shell.js';
 import { translate } from './shared/i18n.js';
 import { formatDate as formatLocalizedDate, formatWeekday } from './shared/date.js';
-import { fetchTraining, saveTrainingFeedback, saveManualTrainingResults, fetchShoes, deleteTraining, fetchWeather } from './shared/api.js';
+import { fetchTraining, saveTrainingFeedback, saveManualTrainingResults, fetchShoes, deleteTraining, fetchWeather, startAiExecution, fetchAiExecution, fetchAiExecutions, fetchWorkoutAnalyses, updateAiInterpretation, previewAnalysisPrompt } from './shared/api.js';
+import { createDialogFocusTrap } from './shared/dialog-focus.js';
+import { createExternalPromptModal } from './shared/external-prompt-modal.js';
 import { KM_TO_MILES, convertDistanceInputValue, convertDistanceToKm, formatDistance, formatPaceFromMetric, formatTemperature } from './shared/units.js';
 import { createImportGuidance } from './shared/workout-import-guidance.js';
 import { createWorkoutCreationGuidance } from './shared/workout-creation-guidance.js';
 import { summarizePrescription } from './shared/weekly-prescription-display.js';
+
+export { HR_SOURCE_LABEL_KEYS, TERRAIN_LABEL_KEYS, BREATHING_LABEL_KEYS,
+  MUSCLE_LABEL_KEYS, ENERGY_LABEL_KEYS, formatDateLabel, resolveResultSource,
+  weekdayLabel, formatCadence, splitPaceLabel, formatLapType, buildLapsMarkdown } from './shared/analysis-prompts.js';
 
 export function selectableFeedbackShoes(shoes, selectedId = null) {
   const owned = Array.isArray(shoes) ? shoes : [];
@@ -284,6 +284,49 @@ export async function copyAnalysisPrompt(text, clipboard = globalThis.navigator?
   }
 }
 
+const ANALYSIS_POLL_MS = 1800;
+const ANALYSIS_RETRY_MAX_MS = 30000;
+const ANALYSIS_TERMINAL = new Set(['completed', 'failed', 'uncertain', 'cancelled', 'outdated']);
+function appendAnalysisClaim(parent, heading, claim) {
+  const section = document.createElement('section');
+  section.className = 'analysis-copy-section';
+  const title = document.createElement('h3');
+  title.textContent = heading;
+  const text = document.createElement('p');
+  text.textContent = claim.text;
+  section.append(title, text);
+  parent.append(section);
+}
+function appendAnalysisList(parent, heading, items) {
+  if (!items?.length) return;
+  const section = document.createElement('section');
+  section.className = 'analysis-copy-section';
+  const title = document.createElement('h3');
+  title.textContent = heading;
+  const list = document.createElement('ul');
+  for (const item of items) {
+    const line = document.createElement('li');
+    line.textContent = item.text;
+    list.append(line);
+  }
+  section.append(title, list);
+  parent.append(section);
+}
+export function renderWorkoutAnalysis(parent, result, labels) {
+  parent.replaceChildren();
+  if (!result) return;
+  appendAnalysisClaim(parent, labels.summary, result.summary);
+  const classification = document.createElement('p');
+  classification.className = 'analysis-classification';
+  classification.textContent = `${labels.classification}: ${labels.classifications[result.classification.value] || labels.classifications.insufficient_data}`;
+  parent.append(classification);
+  appendAnalysisClaim(parent, labels.comparison, result.comparison);
+  appendAnalysisList(parent, labels.contextualReading, result.contextualReading);
+  appendAnalysisList(parent, labels.attention, result.attention);
+  appendAnalysisList(parent, labels.recommendations, result.recommendations);
+  appendAnalysisList(parent, labels.limitations, result.limitations.map((text) => ({ text })));
+}
+
 const PLANNED_FIELDS = [
   ['tipo', 'plannedTipo'],
   ['treino', 'plannedTreino'],
@@ -349,10 +392,27 @@ async function initTrainingResult() {
   const painInput = document.getElementById('feedbackPain');
   const generateBtn = document.getElementById('generateBtn');
   const generateLabel = generateBtn.querySelector('span');
-  const promptSection = document.getElementById('promptSection');
-  const promptOutput = document.getElementById('promptOutput');
-  const copyPromptBtn = document.getElementById('copyPromptBtn');
-  const copyLabel = copyPromptBtn.querySelector('span');
+  const analysisSection = document.getElementById('analysisSection');
+  const formActions = document.querySelector('.feedback-card > .form-actions');
+  const analysisLoadWarning = document.getElementById('analysisLoadWarning');
+  const analysisLoadMessage = document.getElementById('analysisLoadMessage');
+  const analysisLoadAgain = document.getElementById('analysisLoadAgain');
+  const analysisState = document.getElementById('analysisState');
+  const analysisNotice = document.getElementById('analysisNotice');
+  const analysisContent = document.getElementById('analysisContent');
+  const analysisHistory = document.getElementById('analysisHistory');
+  const analysisHistoryContent = document.getElementById('analysisHistoryContent');
+  const analysisReadAgain = document.createElement('button');
+  analysisReadAgain.id = 'analysisReadAgain';
+  analysisReadAgain.type = 'button';
+  analysisReadAgain.className = 'btn-secondary btn-small';
+  analysisReadAgain.hidden = true;
+  analysisSection.querySelector('.analysis-header').append(analysisReadAgain);
+  const correctionDialog = document.getElementById('analysisCorrectionDialog');
+  const correctionText = document.getElementById('analysisCorrectionText');
+  const correctionError = document.getElementById('analysisCorrectionError');
+  const correctionSave = correctionDialog.querySelector('[data-analysis-correction-save]');
+  const correctionTrap = createDialogFocusTrap(correctionDialog, () => closeCorrectionDialog());
   const deleteTrainingBtn = document.getElementById('deleteTrainingBtn');
   const fitDataSection = document.getElementById('fitDataSection');
   const fitLapsSection = document.getElementById('fitLapsSection');
@@ -372,14 +432,381 @@ async function initTrainingResult() {
   };
 
   let i18n = null;
-  let copiedTimer = null;
   let fitData = null;
   let currentTrainingId = null;
   let training = null;
-  let promptText = '';
+  let adminPrompt = null;
+  let analysisData = null;
+  let activeAnalysisId = null;
+  let analysisReadToken = 0;
+  let analysisReadTimer = null;
+  let analysisReadController = null;
+  let analysisReadInFlight = false;
+  let analysisPendingRefresh = null;
+  let analysisReadFailureCount = 0;
+  let analysisPageActive = true;
+  let analysisLoadErrorKey = 'analysisUnavailable';
+  let analysisStartPending = false;
+  let analysisOutcomeUncertain = false;
+  let activeAnalysisRequestKey = null;
+  let correctionTarget = null;
+  let correctionReturnFocus = null;
+  let correctionDialogRevision = 0;
+  let correctionMutationPending = false;
   let manualDistanceInputUnit = 'km';
   let rpeErrorKey = null;
   const t = (key) => translate(i18n ? i18n.messages : {}, key);
+  const analysisLabels = () => ({
+    summary: t('session.analysis.summary'), comparison: t('session.analysis.comparison'),
+    contextualReading: t('session.analysis.contextualReading'), attention: t('session.analysis.attention'),
+    recommendations: t('session.analysis.recommendations'), limitations: t('session.analysis.limitations'),
+    classification: t('session.analysis.classification'),
+    classifications: {
+      below_expectations: t('session.analysis.classifications.below'),
+      adequate: t('session.analysis.classifications.adequate'), good: t('session.analysis.classifications.good'),
+      very_good: t('session.analysis.classifications.veryGood'), excellent: t('session.analysis.classifications.excellent'),
+      insufficient_data: t('session.analysis.classifications.insufficient'),
+    },
+  });
+  const analysisKey = (key) => t(`session.analysis.${key}`);
+  const interpretationErrorKey = (error) => error?.status === 409
+    ? 'interpretationConflict'
+    : error?.codes?.includes('incompatibleRpeScale')
+      ? 'errors.incompatibleRpeScale' : 'interpretationSaveError';
+  const clearAnalysisTimer = () => { clearTimeout(analysisReadTimer); analysisReadTimer = null; };
+  const analysisStorageKey = () => `kinesis:analysis-request:${currentTrainingId}`;
+  const renderInterpretations = (parent, items) => {
+    if (!items?.length) return;
+    const section = document.createElement('section');
+    section.className = 'analysis-interpretations';
+    const heading = document.createElement('h3');
+    heading.textContent = analysisKey('interpretations');
+    section.append(heading);
+    for (const item of items) {
+      const card = document.createElement('article');
+      card.className = 'analysis-interpretation';
+      card.dataset.interpretationId = item.id;
+      card.tabIndex = -1;
+      const title = document.createElement('h4');
+      title.textContent = analysisKey(`dispositions.${item.disposition}`);
+      const text = document.createElement('p');
+      text.textContent = item.correction || item.text;
+      card.append(title, text);
+      if (['pending', 'confirmed', 'corrected'].includes(item.disposition)) {
+        const actions = document.createElement('div');
+        actions.className = 'analysis-item-actions';
+        if (item.disposition === 'pending') {
+          const confirm = document.createElement('button');
+          confirm.className = 'btn-secondary btn-small';
+          confirm.type = 'button';
+          confirm.textContent = analysisKey('confirm');
+          confirm.dataset.interpretationAction = `${item.id}:correct`;
+          confirm.addEventListener('click', () => void mutateInterpretation(item, 'confirm'));
+          actions.append(confirm);
+        }
+        const correct = document.createElement('button');
+        correct.className = 'btn-secondary btn-small';
+        correct.type = 'button';
+        correct.textContent = analysisKey('correct');
+        correct.dataset.interpretationAction = `${item.id}:correct`;
+        correct.addEventListener('click', () => openCorrectionDialog(item, correct));
+        const discard = document.createElement('button');
+        discard.className = 'btn-secondary btn-small';
+        discard.type = 'button';
+        discard.textContent = analysisKey('discard');
+        discard.dataset.interpretationAction = `${item.id}:discard`;
+        discard.addEventListener('click', () => void mutateInterpretation(item, 'discard'));
+        actions.append(correct, discard);
+        card.append(actions);
+      }
+      section.append(card);
+    }
+    parent.append(section);
+  };
+  const renderAnalysisVersion = (parent, version) => {
+    const card = document.createElement('article');
+    card.className = 'analysis-version';
+    if (version.outdated) {
+      const stale = document.createElement('p');
+      stale.className = 'analysis-stale';
+      stale.textContent = analysisKey('outdated');
+      card.append(stale);
+    }
+    const content = document.createElement('div');
+    content.className = 'analysis-version-content';
+    renderWorkoutAnalysis(content, version.result, analysisLabels());
+    card.append(content);
+    renderInterpretations(card, version.interpretations);
+    parent.append(card);
+  };
+  const renderAnalysis = () => {
+    const data = analysisData;
+    const last = data?.analyses?.[0] || null;
+    const latest = data?.latest || null;
+    analysisSection.hidden = !(data?.analyses?.length || data?.active || activeAnalysisId || analysisStartPending || analysisOutcomeUncertain || analysisNotice.dataset.key);
+    generateBtn.disabled = Boolean(activeAnalysisId || analysisStartPending || analysisOutcomeUncertain);
+    analysisContent.replaceChildren();
+    analysisHistoryContent.replaceChildren();
+    analysisHistory.hidden = !data?.analyses?.some((item) => item.result && item.id !== latest?.id);
+    if (data?.active || activeAnalysisId) {
+      analysisState.textContent = analysisKey('running');
+    } else if (analysisOutcomeUncertain) {
+      analysisState.textContent = analysisKey('recovering');
+    } else if (last && last.state !== 'completed') {
+      analysisState.textContent = analysisKey(`states.${last.state}`) || analysisKey('states.failed');
+      if (!analysisNotice.dataset.key && (last.state === 'failed' || last.state === 'uncertain' || last.state === 'cancelled' || last.state === 'outdated')) {
+        analysisNotice.hidden = false;
+        analysisNotice.dataset.key = `errors.${last.errorCode || last.state}`;
+        analysisNotice.textContent = analysisKey(analysisNotice.dataset.key);
+      }
+    } else {
+      analysisState.textContent = '';
+    }
+    if (latest) renderAnalysisVersion(analysisContent, latest);
+    for (const old of data?.analyses?.filter((item) => item.result && item.id !== latest?.id) || []) {
+      const details = document.createElement('details');
+      details.className = 'analysis-history-item';
+      const summary = document.createElement('summary');
+      summary.textContent = `${analysisKey('version')} ${old.sequence} · ${formatLocalizedDate(old.createdAt.slice(0, 10), i18n.language)}`;
+      details.append(summary);
+      renderAnalysisVersion(details, old);
+      analysisHistoryContent.append(details);
+    }
+    analysisReadAgain.hidden = !(analysisNotice.dataset.retry === 'true');
+    analysisReadAgain.textContent = analysisKey('readAgain');
+  };
+  const setAnalysisNotice = (key, retry = false) => {
+    analysisNotice.hidden = !key;
+    analysisNotice.dataset.key = key || '';
+    analysisNotice.textContent = key ? analysisKey(key) : '';
+    analysisNotice.dataset.retry = retry ? 'true' : 'false';
+    renderAnalysis();
+  };
+  const definitiveAnalysisReadError = (error) => [401, 403, 404].includes(error?.status) ||
+    error?.codes?.some((code) => ['authenticationRequired', 'executionNotFound', 'resourceNotFound'].includes(code));
+  const analysisBackoff = () => {
+    analysisReadFailureCount += 1;
+    const base = Math.min(ANALYSIS_RETRY_MAX_MS, ANALYSIS_POLL_MS * 2 ** Math.min(analysisReadFailureCount - 1, 5));
+    return Math.round(Math.min(ANALYSIS_RETRY_MAX_MS, Math.max(900, base * (0.5 + Math.random()))));
+  };
+  const scheduleAnalysisRead = (id, token, delay) => {
+    clearAnalysisTimer();
+    analysisReadTimer = setTimeout(() => {
+      analysisReadTimer = null;
+      void refreshAnalysisExecution(id, token);
+    }, delay);
+  };
+  async function refreshAnalysisExecution(id, token = analysisReadToken) {
+    if (!analysisPageActive || token !== analysisReadToken || activeAnalysisId !== id) return;
+    if (analysisReadInFlight) { analysisPendingRefresh = { id, token }; return; }
+    analysisReadInFlight = true;
+    const controller = new AbortController();
+    analysisReadController = controller;
+    try {
+      const execution = await fetchAiExecution(id, { signal: controller.signal });
+      if (token !== analysisReadToken || activeAnalysisId !== id) return;
+      if (!['queued', 'running', ...ANALYSIS_TERMINAL].includes(execution.state)) throw new Error('invalid-state');
+      if (execution.state === 'queued' || execution.state === 'running') {
+        analysisReadFailureCount = 0;
+        setAnalysisNotice('', false);
+        scheduleAnalysisRead(id, token, ANALYSIS_POLL_MS);
+        return;
+      }
+      clearAnalysisTimer();
+      const data = await fetchWorkoutAnalyses(currentTrainingId, { signal: controller.signal });
+      if (token !== analysisReadToken || activeAnalysisId !== id) return;
+      activeAnalysisId = null;
+      analysisData = data;
+      analysisReadFailureCount = 0;
+      analysisOutcomeUncertain = false;
+      activeAnalysisRequestKey = null;
+      try { sessionStorage.removeItem(analysisStorageKey()); } catch { /* storage unavailable */ }
+      setAnalysisNotice('', false);
+    } catch (error) {
+      if (error?.name === 'AbortError' || token !== analysisReadToken || activeAnalysisId !== id) return;
+      if (definitiveAnalysisReadError(error)) {
+        activeAnalysisId = null;
+        analysisOutcomeUncertain = true;
+        setAnalysisNotice('readUnavailable', true);
+      } else {
+        setAnalysisNotice('connectionRetrying', false);
+        scheduleAnalysisRead(id, token, analysisBackoff());
+      }
+    } finally {
+      if (analysisReadController === controller) analysisReadController = null;
+      analysisReadInFlight = false;
+      if (analysisPendingRefresh) {
+        const next = analysisPendingRefresh;
+        analysisPendingRefresh = null;
+        queueMicrotask(() => void refreshAnalysisExecution(next.id, next.token));
+      }
+    }
+  }
+  async function loadAnalysisState() {
+    const token = ++analysisReadToken;
+    clearAnalysisTimer();
+    let loaded;
+    try {
+      loaded = await fetchWorkoutAnalyses(currentTrainingId);
+    } catch {
+      if (token !== analysisReadToken) return false;
+      analysisLoadErrorKey = 'analysisUnavailable';
+      analysisLoadMessage.textContent = analysisKey(analysisLoadErrorKey);
+      analysisLoadWarning.hidden = false;
+      analysisLoadAgain.disabled = false;
+      if (!analysisData?.analyses?.length && !analysisData?.active) analysisSection.hidden = true;
+      return false;
+    }
+    if (token !== analysisReadToken) return false;
+    if (!loaded || !Array.isArray(loaded.analyses)) {
+      analysisLoadErrorKey = 'analysisUnavailable';
+      analysisLoadMessage.textContent = analysisKey(analysisLoadErrorKey);
+      analysisLoadWarning.hidden = false;
+      analysisLoadAgain.disabled = false;
+      if (!analysisData?.analyses?.length && !analysisData?.active) analysisSection.hidden = true;
+      return false;
+    }
+    analysisData = loaded;
+    activeAnalysisId = analysisData.active?.id ?? null;
+    analysisOutcomeUncertain = false;
+    analysisLoadWarning.hidden = true;
+    analysisLoadErrorKey = 'analysisUnavailable';
+    analysisLoadAgain.disabled = false;
+    try {
+      setAnalysisNotice('', false);
+      renderAnalysis();
+    } catch {
+      analysisLoadErrorKey = 'analysisDisplayUnavailable';
+      analysisLoadMessage.textContent = analysisKey(analysisLoadErrorKey);
+      analysisLoadWarning.hidden = false;
+      return false;
+    }
+    if (analysisData.active) {
+      void refreshAnalysisExecution(activeAnalysisId, token);
+      return true;
+    }
+    const pendingKey = activeAnalysisRequestKey || (() => { try { return sessionStorage.getItem(analysisStorageKey()); } catch { return null; } })();
+    if (pendingKey) {
+      activeAnalysisRequestKey = pendingKey;
+      analysisOutcomeUncertain = true;
+      renderAnalysis();
+      let executions;
+      try {
+        executions = await fetchAiExecutions(pendingKey);
+      } catch {
+        if (token === analysisReadToken) setAnalysisNotice('recoveryUnavailable', true);
+        return false;
+      }
+      if (token !== analysisReadToken) return false;
+      const match = executions.find((item) => item.purpose === 'analysis' && String(item.resource_id) === String(currentTrainingId) && item.idempotency_key === pendingKey);
+      if (match) {
+        activeAnalysisId = match.id;
+        analysisOutcomeUncertain = false;
+        setAnalysisNotice('', false);
+        void refreshAnalysisExecution(match.id, token);
+      } else {
+        activeAnalysisRequestKey = null;
+        analysisOutcomeUncertain = false;
+        try { sessionStorage.removeItem(analysisStorageKey()); } catch { /* storage unavailable */ }
+        setAnalysisNotice('', false);
+      }
+      renderAnalysis();
+    }
+    return true;
+  }
+  async function mutateInterpretation(item, action, text, trigger = document.activeElement) {
+    try {
+      const saved = await updateAiInterpretation(item.id, action, item.version, text);
+      const versions = [...(analysisData?.analyses || []), ...(analysisData?.latest ? [analysisData.latest] : [])];
+      for (const version of versions) {
+        const current = version.interpretations?.find((entry) => entry.id === item.id);
+        if (current) Object.assign(current, saved.interpretation);
+      }
+      renderAnalysis();
+      const refreshed = await loadAnalysisState();
+      if (trigger?.isConnected === false && document.activeElement === document.body) {
+        const equivalent = analysisContent.querySelector(`[data-interpretation-action="${item.id}:${action === 'confirm' ? 'correct' : action}"]`);
+        const card = analysisContent.querySelector(`[data-interpretation-id="${item.id}"]`);
+        (equivalent || card)?.focus();
+      }
+      return { saved: true, refreshed };
+    } catch (error) {
+      setAnalysisNotice(interpretationErrorKey(error), true);
+      return { saved: false, error };
+    }
+  }
+  function closeCorrectionDialog({ restore = true } = {}) {
+    correctionDialogRevision += 1;
+    correctionTrap.deactivate();
+    correctionDialog.hidden = true;
+    if (restore && correctionReturnFocus?.isConnected) correctionReturnFocus.focus();
+    correctionTarget = null;
+    correctionError.hidden = true;
+    correctionError.textContent = '';
+    correctionText.removeAttribute('aria-invalid');
+    correctionText.removeAttribute('aria-describedby');
+  }
+  function openCorrectionDialog(item, trigger) {
+    correctionDialogRevision += 1;
+    correctionTarget = item;
+    correctionReturnFocus = trigger;
+    correctionText.value = item.correction || '';
+    correctionError.hidden = true;
+    correctionError.textContent = '';
+    correctionText.removeAttribute('aria-invalid');
+    correctionText.removeAttribute('aria-describedby');
+    correctionSave.disabled = correctionMutationPending;
+    correctionDialog.hidden = false;
+    correctionTrap.activate();
+    correctionDialog.querySelector('[data-analysis-correction-close]').focus();
+    refreshIcons();
+  }
+  correctionDialog.querySelectorAll('[data-analysis-correction-close],[data-analysis-correction-cancel]').forEach((button) => button.addEventListener('click', closeCorrectionDialog));
+  correctionSave.addEventListener('click', async () => {
+    if (!correctionTarget || !correctionText.value.trim() || correctionMutationPending) return;
+    const item = correctionTarget;
+    const revision = correctionDialogRevision;
+    correctionMutationPending = true;
+    correctionSave.disabled = true;
+    correctionError.hidden = true;
+    const result = await mutateInterpretation(item, 'correct', correctionText.value.trim(), correctionReturnFocus);
+    correctionMutationPending = false;
+    if (correctionDialog.hidden) return;
+    if (revision !== correctionDialogRevision || correctionTarget?.id !== item.id) {
+      correctionSave.disabled = false;
+      return;
+    }
+    correctionSave.disabled = false;
+    if (!result.saved) {
+      correctionError.textContent = analysisKey(interpretationErrorKey(result.error));
+      correctionError.hidden = false;
+      correctionText.setAttribute('aria-invalid', 'true');
+      correctionText.setAttribute('aria-describedby', 'analysisCorrectionError');
+      return;
+    }
+    correctionDialog.hidden = true;
+    correctionTrap.deactivate();
+    correctionTarget = null;
+    correctionError.hidden = true;
+    correctionError.textContent = '';
+    correctionText.removeAttribute('aria-invalid');
+    correctionText.removeAttribute('aria-describedby');
+    const equivalent = analysisContent.querySelector(`[data-interpretation-action="${item.id}:correct"]`);
+    const card = analysisContent.querySelector(`[data-interpretation-id="${item.id}"]`);
+    (equivalent || card || generateBtn).focus();
+  });
+  analysisReadAgain.addEventListener('click', () => {
+    if (activeAnalysisId) void refreshAnalysisExecution(activeAnalysisId, ++analysisReadToken);
+    else void loadAnalysisState();
+  });
+  analysisLoadAgain.addEventListener('click', async () => {
+    if (analysisLoadAgain.disabled) return;
+    analysisLoadAgain.disabled = true;
+    const shouldRestoreFocus = document.activeElement === analysisLoadAgain;
+    const loaded = await loadAnalysisState();
+    if (shouldRestoreFocus && loaded && analysisLoadWarning.hidden && document.activeElement === document.body)
+      (analysisData?.latest ? document.getElementById('analysisTitle') : generateBtn).focus({ preventScroll: true });
+  });
 
   const applyTooltips = () => {
     rpeSelector.querySelectorAll('[data-i18n]').forEach((el) => {
@@ -658,8 +1085,100 @@ async function initTrainingResult() {
     return;
   }
 
-  await initShell();
+  const sessionUser = await initShell();
   i18n = getShellI18n();
+  let externalPromptButton = null;
+  let externalPromptDialog = null;
+  let externalPromptComponent = null;
+  let externalPromptTrap = null;
+  let externalPromptReturnFocus = null;
+  let externalPromptText = '';
+  let externalPromptStatusKey = '';
+  let externalPromptPending = false;
+  if (sessionUser?.role === 'admin') {
+    externalPromptButton = document.createElement('button');
+    externalPromptButton.type = 'button';
+    externalPromptButton.className = 'btn-secondary';
+    externalPromptButton.dataset.analysisExternalPrompt = 'true';
+    const promptIcon = document.createElement('i');
+    promptIcon.dataset.lucide = 'sparkles';
+    promptIcon.setAttribute('aria-hidden', 'true');
+    const promptLabel = document.createElement('span');
+    promptLabel.textContent = t('session.analysis.externalPrompt');
+    externalPromptButton.append(promptIcon, promptLabel);
+    formActions.classList.add('has-admin-prompt');
+    formActions.insertBefore(externalPromptButton, generateBtn);
+    const promptModal = createExternalPromptModal({
+      id: 'analysisExternalPromptDialog',
+      titleId: 'analysisExternalPromptTitle',
+      title: t('session.analysis.externalPrompt'),
+      closeLabel: analysisKey('close'),
+      copyLabel: analysisKey('copyPrompt'),
+      closeButtonId: 'analysisExternalPromptClose',
+      closeActionId: 'analysisExternalPromptDone',
+      copyButtonId: 'analysisExternalPromptCopy',
+      statusId: 'analysisExternalPromptStatus',
+    });
+    externalPromptComponent = promptModal;
+    externalPromptDialog = promptModal.dialog;
+    const promptClose = promptModal.closeButton;
+    const promptDone = promptModal.closeAction;
+    const promptCopy = promptModal.copyAction;
+    const closeExternalPrompt = () => {
+      externalPromptTrap.deactivate();
+      externalPromptDialog.hidden = true;
+      if (externalPromptReturnFocus?.isConnected) externalPromptReturnFocus.focus();
+    };
+    externalPromptTrap = createDialogFocusTrap(externalPromptDialog, closeExternalPrompt);
+    promptClose.addEventListener('click', closeExternalPrompt);
+    promptDone.addEventListener('click', closeExternalPrompt);
+    externalPromptButton.addEventListener('click', async () => {
+      if (externalPromptPending) return;
+      const rpe = requireFeedbackRpe();
+      if (rpe === null) return;
+      externalPromptPending = true;
+      externalPromptButton.disabled = true;
+      saveBtn.disabled = true;
+      generateBtn.disabled = true;
+      promptLabel.textContent = analysisKey('saving');
+      try {
+        const saved = await persistCurrentState(rpe);
+        if (saved.status !== 'saved') {
+          reportPersistenceFailure(saved);
+          return;
+        }
+        externalPromptReturnFocus = externalPromptButton;
+        externalPromptDialog.hidden = false;
+        externalPromptTrap.activate();
+        promptClose.focus();
+        promptModal.setPrompt('');
+        externalPromptStatusKey = 'loadingPrompt';
+        promptModal.setStatus(t(`session.analysis.${externalPromptStatusKey}`));
+        const result = await previewAnalysisPrompt(currentTrainingId);
+        externalPromptText = result.prompt;
+        promptModal.setPrompt(externalPromptText);
+        externalPromptStatusKey = '';
+        promptModal.setStatus('');
+      } catch {
+        if (externalPromptDialog.hidden) setStatus(t('session.analysis.promptUnavailable'), 'error');
+        else {
+          externalPromptStatusKey = 'promptUnavailable';
+          promptModal.setStatus(t(`session.analysis.${externalPromptStatusKey}`));
+        }
+      } finally {
+        externalPromptPending = false;
+        externalPromptButton.disabled = false;
+        saveBtn.disabled = false;
+        renderAnalysis();
+        promptLabel.textContent = analysisKey('externalPrompt');
+      }
+    });
+    promptCopy.addEventListener('click', async () => {
+      const copied = await copyAnalysisPrompt(externalPromptText);
+      externalPromptStatusKey = copied ? 'promptCopied' : 'promptCopyFailed';
+      promptModal.setStatus(analysisKey(externalPromptStatusKey));
+    });
+  }
   const importGuidance = createImportGuidance({
     trigger: importHelpBtn,
     dialog: importHelpDialog,
@@ -690,8 +1209,21 @@ async function initTrainingResult() {
       document.getElementById('plannedFcAlvo').textContent = summary.hr;
     }
     if (!saveBtn.disabled) saveBtn.textContent = t('session.save');
-    if (!generateBtn.disabled) generateLabel.textContent = t('session.generatePrompt');
-    if (!copyPromptBtn.disabled) copyLabel.textContent = t('session.copyPrompt');
+    if (!generateBtn.disabled) generateLabel.textContent = analysisKey('analyze');
+    analysisLoadMessage.textContent = analysisKey(analysisLoadErrorKey);
+    analysisLoadAgain.textContent = analysisKey('readAgain');
+    if (externalPromptButton) {
+      if (!externalPromptPending) externalPromptButton.querySelector('span').textContent = analysisKey('externalPrompt');
+      externalPromptComponent?.setLabels({
+        title: analysisKey('externalPrompt'),
+        close: analysisKey('close'),
+        copy: analysisKey('copyPrompt'),
+      });
+      if (externalPromptStatusKey)
+        externalPromptComponent?.setStatus(analysisKey(externalPromptStatusKey));
+    }
+    if (analysisNotice.dataset.key) analysisNotice.textContent = analysisKey(analysisNotice.dataset.key);
+    renderAnalysis();
     renderFitDropzoneState();
     renderWeatherAutofill();
     renderFitData();
@@ -727,6 +1259,38 @@ async function initTrainingResult() {
   }
 
   currentTrainingId = id;
+  try { activeAnalysisRequestKey = sessionStorage.getItem(analysisStorageKey()); } catch { activeAnalysisRequestKey = null; }
+  analysisOutcomeUncertain = Boolean(activeAnalysisRequestKey);
+  void loadAnalysisState();
+
+  const onAnalysisVisibility = () => {
+    if (document.visibilityState === 'hidden') {
+      clearAnalysisTimer();
+      return;
+    }
+    if (activeAnalysisId) {
+      clearAnalysisTimer();
+      void refreshAnalysisExecution(activeAnalysisId, ++analysisReadToken);
+    } else if (!analysisStartPending && activeAnalysisRequestKey) {
+      void loadAnalysisState();
+    }
+  };
+  const onAnalysisPageHide = () => {
+    analysisPageActive = false;
+    clearAnalysisTimer();
+    analysisReadToken += 1;
+    analysisPendingRefresh = null;
+    analysisReadController?.abort();
+    document.removeEventListener('visibilitychange', onAnalysisVisibility);
+  };
+  const onAnalysisPageShow = (event) => {
+    analysisPageActive = true;
+    document.addEventListener('visibilitychange', onAnalysisVisibility);
+    if (event.persisted) onAnalysisVisibility();
+  };
+  document.addEventListener('visibilitychange', onAnalysisVisibility);
+  window.addEventListener('pagehide', onAnalysisPageHide);
+  window.addEventListener('pageshow', onAnalysisPageShow);
 
   await loadShoes();
 
@@ -829,7 +1393,6 @@ async function initTrainingResult() {
       breathing_label: breathingKey ? t(breathingKey) : '',
       muscle_label: muscleKey ? t(muscleKey) : '',
       energy_label: energyKey ? t(energyKey) : '',
-      pain_description: painPromptText(hasPainValue, painInput.value, t),
       language: i18n.language,
       fitAttached: Boolean(fitFileInput.files && fitFileInput.files.length > 0),
     };
@@ -929,49 +1492,75 @@ async function initTrainingResult() {
   });
 
   generateBtn.addEventListener('click', async () => {
-    // The prompt describes a realized effort, so it is only produced after the
-    // same required RPE the save action enforces.
+    if (analysisStartPending || activeAnalysisId) return;
     const rpe = requireFeedbackRpe();
     if (rpe === null) return;
+    analysisStartPending = true;
     generateBtn.disabled = true;
     saveBtn.disabled = true;
-    generateLabel.textContent = t('session.generatingPrompt');
+    generateLabel.textContent = analysisKey('saving');
+    setAnalysisNotice('', false);
     try {
       const result = await persistCurrentState(rpe);
       if (result.status === 'invalid' || result.status === 'cancelled' || result.status === 'error') {
         reportPersistenceFailure(result);
         return;
       }
-      promptText = buildAnalysisPrompt(
-        templateFor(i18n.language),
-        collectPromptValues({
-          training,
-          form: buildCanonicalPromptForm(training, {
-            language: i18n.language,
-            messages: i18n.messages,
-            fitAttached: Boolean(fitFileInput.files && fitFileInput.files.length > 0),
-          }),
-          fitData,
-          preferences: getUserPreferences(),
-          messages: i18n.messages,
-        })
-      );
-      promptOutput.value = promptText;
-      promptSection.hidden = false;
+      training = await fetchTraining(id);
+      if (!training) throw new Error('saved-session-unavailable');
+      applyCanonicalTraining(training);
+      currentTrainingId = training.id;
+      let requestKey = null;
+      try { requestKey = activeAnalysisRequestKey || sessionStorage.getItem(analysisStorageKey()); } catch { /* storage unavailable */ }
+      requestKey ||= crypto.randomUUID();
+      activeAnalysisRequestKey = requestKey;
+      try { sessionStorage.setItem(analysisStorageKey(), requestKey); } catch { /* recovery can still use the response id */ }
+      const execution = await startAiExecution({
+        purpose: 'analysis', resource_id: String(training.id), idempotency_key: requestKey,
+      });
+      activeAnalysisId = execution.id;
+      analysisReadToken += 1;
+      analysisSection.hidden = false;
+      analysisState.textContent = analysisKey('running');
+      analysisNotice.hidden = true;
+      void refreshAnalysisExecution(execution.id, analysisReadToken);
+    } catch (error) {
+      let matched = null;
+      let requestKey = activeAnalysisRequestKey;
+      if (!requestKey) try { requestKey = sessionStorage.getItem(analysisStorageKey()); } catch { /* storage unavailable */ }
+      try {
+        const executions = await fetchAiExecutions();
+        matched = executions.find((item) => item.purpose === 'analysis' && String(item.resource_id) === String(currentTrainingId) && item.idempotency_key === requestKey);
+      } catch { /* uncertain response is preserved and never replayed automatically */ }
+      if (matched) {
+        activeAnalysisId = matched.id;
+        analysisOutcomeUncertain = false;
+        analysisReadToken += 1;
+        setAnalysisNotice('', false);
+        void refreshAnalysisExecution(matched.id, analysisReadToken);
+      } else {
+        const code = error?.codes?.find((value) => [
+          'aiUnavailable', 'accountUnavailable', 'executionLimit', 'usageLimit',
+          'analysisRequiresCompletedResult', 'contextTooLarge', 'criticalContextTooLarge',
+          'inputTooLarge', 'resourceNotFound', 'invalidFields',
+        ].includes(value));
+        if (code) {
+          analysisOutcomeUncertain = false;
+          activeAnalysisRequestKey = null;
+          try { sessionStorage.removeItem(analysisStorageKey()); } catch { /* storage unavailable */ }
+          const translated = analysisKey(`errors.${code}`);
+          setAnalysisNotice(translated === `session.analysis.errors.${code}` ? 'knownStartFailure' : `errors.${code}`, false);
+        } else {
+          analysisOutcomeUncertain = true;
+          setAnalysisNotice('outcomeUnknown', true);
+        }
+      }
     } finally {
-      generateBtn.disabled = false;
+      analysisStartPending = false;
+      generateBtn.disabled = Boolean(activeAnalysisId || analysisOutcomeUncertain);
       saveBtn.disabled = false;
-      generateLabel.textContent = t('session.generatePrompt');
+      generateLabel.textContent = analysisKey('analyze');
     }
-  });
-
-  copyPromptBtn.addEventListener('click', async () => {
-    const copied = await copyAnalysisPrompt(promptText);
-    copyLabel.textContent = copied ? t('session.copied') : t('session.copyPrompt');
-    clearTimeout(copiedTimer);
-    copiedTimer = setTimeout(() => {
-      copyLabel.textContent = t('session.copyPrompt');
-    }, 2000);
   });
 
   deleteTrainingBtn.addEventListener('click', () => {

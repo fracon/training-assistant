@@ -4,6 +4,7 @@ const { AiError, hash, readMemory, activeOwner, date } = require('./memory');
 const { readAiConfig } = require('./config');
 const { rpeIssue } = require('./cycle-plan-schema');
 const POLICY_VERSION = 'training-context-v5';
+const ANALYSIS_POLICY_VERSION = 'training-analysis-context-v1';
 const TRAINING_COLUMNS = `id, dia, tipo, treino, detalhes, fc_alvo, rpe, completed, training_cycle_id,
   fit_distance, fit_duration, fit_avg_pace, fit_avg_hr, fit_max_hr, fit_elevation_gain, fit_calories,
   result_data_source, tenis, periodo, location, previsao, observacoes, feedback_shoe, feedback_shoe_id, has_smartwatch, fit_summary_json, feedback_rpe, feedback_notas, feedback_weather, feedback_terrain,
@@ -12,6 +13,11 @@ function dayOffset(day, days) {
   return new Date(Date.parse(day) + days * 86400000).toISOString().slice(0, 10);
 }
 function projectContextForModel(context) {
+  if (context?.purpose === 'analysis') {
+    const result = { ...context };
+    delete result._freshnessExecutionId;
+    return result;
+  }
   if (!context || context.purpose !== 'workouts') return context;
   const result = { ...context };
   delete result.hash;
@@ -47,9 +53,7 @@ function projectContextForModel(context) {
 // Workouts retain the complete evidence in the execution snapshot, while the
 // budget uses the smaller model projection that omits owner/query bindings.
 function tokenBound(value) {
-  const bounded = value?.purpose === 'workouts'
-    ? projectContextForModel(value)
-    : value;
+  const bounded = projectContextForModel(value);
   return Buffer.byteLength(JSON.stringify(bounded), 'utf8');
 }
 function duration(value) {
@@ -138,6 +142,7 @@ function buildContext(
     taskDate = null,
     weather = [],
     taskNotes = '',
+    freshnessExecutionId = null,
   },
 ) {
   if (!['cycle', 'workouts', 'analysis'].includes(purpose))
@@ -226,7 +231,7 @@ function buildContext(
       references.push(ref);
   };
   const context = {
-    policyVersion: POLICY_VERSION,
+    policyVersion: purpose === 'analysis' ? ANALYSIS_POLICY_VERSION : POLICY_VERSION,
     purpose,
     asOf,
     units: { distance: 'km', temperature: 'C', duration: 'seconds' },
@@ -258,6 +263,8 @@ function buildContext(
     totalsPolicy:
       'Detailed and aggregated periods are disjoint. Requested and comparable sessions are references, never additional totals; includedInAggregates identifies overlap. Each detailed session appears once.',
   };
+  if (purpose === 'analysis' && freshnessExecutionId)
+    context._freshnessExecutionId = freshnessExecutionId;
   if (purpose === 'workouts') {
     context.resource = { weekStart: date(taskDate || asOf) };
     context.weather = Array.isArray(weather) ? weather : [];
@@ -299,9 +306,30 @@ function buildContext(
     if (purpose === 'analysis')
       context.resource.includedInAggregates =
         resource.dia >= aggregateFrom && resource.dia < detailedFrom;
+    if (purpose === 'analysis' && resource.result_data_source === 'fit_upload') {
+      try {
+        const laps = JSON.parse(resource.fit_summary_json || '{}').laps;
+        if (Array.isArray(laps)) context.resource.actual.fitLaps = laps.slice(0, 200).map((lap) => ({
+          lap: lap.lap, stepType: lap.stepType, duration: lap.duration,
+          distanceKm: lap.distanceKm, avgPaceSecondsPerKm: lap.avgPaceSecondsPerKm,
+          avgHeartRate: lap.avgHeartRate, maxHeartRate: lap.maxHeartRate,
+          ascentMeters: lap.ascentMeters, avgCadenceSpm: lap.avgCadenceSpm,
+          maxCadenceSpm: lap.maxCadenceSpm,
+        }));
+      } catch {
+        context.resource.actual.fitLaps = [];
+      }
+    }
     addReference(
       source(purpose === 'analysis' ? 'training' : 'cycle', resource),
     );
+  }
+  if (purpose === 'analysis' && resource?.training_cycle_id) {
+    const associated = db.prepare('SELECT * FROM training_cycles WHERE id=? AND user_id=?').get(resource.training_cycle_id, userId);
+    if (associated) {
+      context.associatedCycle = { ...associated, user_id: undefined, authority: 'associated_record' };
+      addReference(source('cycle', associated));
+    }
   }
   if (!cycle)
     context.gaps.push('No active cycle or applied AI planning version.');
@@ -316,17 +344,18 @@ function buildContext(
       'Optional prior running experience has not been supplied.',
     );
   let appliedDetails = null;
-  if (purpose !== 'cycle' && cycle) {
+  const planningCycle = purpose === 'analysis' ? (context.associatedCycle || cycle) : cycle;
+  if (purpose !== 'cycle' && planningCycle) {
     const applied = db
       .prepare(
         'SELECT * FROM cycle_plan_versions WHERE user_id=? AND cycle_id=? ORDER BY version DESC LIMIT 1',
       )
-      .get(userId, cycle.id);
+      .get(userId, planningCycle.id);
     if (applied) {
       const plan = JSON.parse(applied.plan_json);
       context.appliedPlan = {
         authority: 'applied_planning',
-        cycleId: cycle.id,
+        cycleId: planningCycle.id,
         version: applied.version,
         executionId: applied.id,
         appliedAt: applied.applied_at,
@@ -584,6 +613,96 @@ function buildContext(
     )
     .all(userId))
     select('shoes', row, [source('shoe', row)]);
+  // Only current, owner-scoped dispositions enter a context. An interpretation
+  // whose evidence source is no longer selected at its captured version stays
+  // in its history but is not made current again by opening an older analysis.
+  const interpretationRows = db.prepare(`SELECT * FROM ai_interpretations
+    WHERE user_id=? AND disposition IN ('pending','confirmed','corrected')
+      AND (? IS NULL OR analysis_id<>?)
+    ORDER BY updated_at DESC,id`).all(userId, freshnessExecutionId, freshnessExecutionId);
+  // A newly completed analysis may explicitly supersede an interpretation it
+  // consumed as input. Rehydrate that exact pre-replacement snapshot only when
+  // checking this analysis's freshness; other/future contexts see the new
+  // disposition and never resurrect the old item.
+  if (freshnessExecutionId) {
+    const known = new Set(interpretationRows.map((item) => item.id));
+    const replaced = db.prepare(`SELECT replaced_snapshot_json FROM ai_interpretation_replacements
+      WHERE user_id=? AND replacement_analysis_id=? ORDER BY id`).all(userId, freshnessExecutionId);
+    for (const item of replaced.map((row) => JSON.parse(row.replaced_snapshot_json)))
+      if (!known.has(item.id)) { interpretationRows.push(item); known.add(item.id); }
+  }
+  interpretationRows.sort((a, b) => b.updated_at.localeCompare(a.updated_at) || a.id.localeCompare(b.id));
+  interpretationRows.length = Math.min(24, interpretationRows.length);
+  const interpretationById = new Map(interpretationRows.map((item) => [item.id, item]));
+  const pendingInterpretations = [...interpretationRows];
+  const selectedInterpretationVersions = new Map();
+  const budgetOmitted = new Set();
+  // Resolve at most one item per candidate per pass. A child can wait for any
+  // exact, owner-scoped candidate dependency regardless of updated_at order;
+  // the fixed candidate cap and pass bound also make cycles terminate safely.
+  for (let pass = 0; pass < interpretationRows.length && pendingInterpretations.length; pass += 1) {
+    let selectedInPass = false;
+    for (let index = 0; index < pendingInterpretations.length;) {
+      const item = pendingInterpretations[index];
+      const evidence = JSON.parse(item.evidence_json);
+      const ready = evidence.every((ref) => {
+        if (ref.type === 'interpretation')
+          return selectedInterpretationVersions.get(ref.id) === ref.version;
+        return references.some((current) => current.type === ref.type && current.id === ref.id && current.version === ref.version);
+      });
+      if (!ready) {
+        const waiting = evidence.some((ref) => {
+          if (ref.type !== 'interpretation' || selectedInterpretationVersions.has(ref.id)) return false;
+          const dependency = interpretationById.get(ref.id);
+          return Boolean(dependency && hash(dependency) === ref.version && pendingInterpretations.includes(dependency));
+        });
+        if (waiting) { index += 1; continue; }
+        pendingInterpretations.splice(index, 1);
+        continue;
+      }
+      const text = item.disposition === 'corrected' ? item.correction_text : item.text;
+      if (!text) { pendingInterpretations.splice(index, 1); continue; }
+      const view = {
+        source: { type: 'interpretation', id: item.id, version: hash(item) },
+        kind: item.kind,
+        authority: item.disposition === 'corrected' ? 'user_report' : 'ai_interpretation',
+        disposition: item.disposition,
+        statusMeaning: item.disposition === 'pending' ? 'unconfirmed_hypothesis' : item.disposition,
+        text,
+        evidence,
+        observedOn: item.updated_at.slice(0, 10),
+      };
+      if (!Object.hasOwn(context, 'interpretations')) context.interpretations = [];
+      if (!trySelect('interpretations', view, [view.source])) {
+        context.omissions.push({ type: 'interpretation', reason: 'context_budget' });
+        budgetOmitted.add(item.id);
+      } else {
+        selectedInPass = true;
+        selectedInterpretationVersions.set(item.id, view.source.version);
+      }
+      pendingInterpretations.splice(index, 1);
+    }
+    if (!selectedInPass) break;
+  }
+  // Items blocked only because a valid dependency did not fit the budget get
+  // the same explicit omission as that dependency. Cycles and stale/absent
+  // sources remain quietly excluded, as before.
+  const reportedBudgetOmissions = new Set(budgetOmitted);
+  for (let pass = 0; pass <= pendingInterpretations.length; pass += 1) {
+    let propagated = false;
+    for (const item of pendingInterpretations) {
+      if (reportedBudgetOmissions.has(item.id)) continue;
+      const evidence = JSON.parse(item.evidence_json);
+      if (evidence.some((ref) => ref.type === 'interpretation' && budgetOmitted.has(ref.id))) {
+        context.omissions.push({ type: 'interpretation', reason: 'context_budget' });
+        budgetOmitted.add(item.id);
+        reportedBudgetOmissions.add(item.id);
+        propagated = true;
+      }
+    }
+    if (!propagated) break;
+  }
+
   const olderCount = db
     .prepare(
       'SELECT COUNT(*) AS n FROM trainings WHERE user_id = ? AND dia < ?',
@@ -607,7 +726,8 @@ function buildContext(
 }
 function contextIsCurrent(db, userId, context, config) {
   try {
-    if (context.policyVersion !== POLICY_VERSION) return false;
+    const expectedPolicy = context.purpose === 'analysis' ? ANALYSIS_POLICY_VERSION : POLICY_VERSION;
+    if (context.policyVersion !== expectedPolicy) return false;
     return (
       buildContext(db, userId, {
         purpose: context.purpose,
@@ -618,6 +738,7 @@ function contextIsCurrent(db, userId, context, config) {
         taskDate: context.resource?.weekStart,
         weather: context.weather || [],
         taskNotes: context.taskNotes?.text || '',
+        freshnessExecutionId: context._freshnessExecutionId || null,
       }).hash === context.hash
     );
   } catch (error) {
@@ -627,6 +748,7 @@ function contextIsCurrent(db, userId, context, config) {
 }
 module.exports = {
   POLICY_VERSION,
+  ANALYSIS_POLICY_VERSION,
   TRAINING_COLUMNS,
   buildContext,
   contextIsCurrent,

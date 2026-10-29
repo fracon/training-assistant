@@ -109,9 +109,16 @@ function createExecutionService({
     activeOwner(db, userId);
     return db
       .prepare(
-        'SELECT id,idempotency_key,purpose,state,created_at,updated_at FROM ai_executions WHERE user_id = ? ORDER BY created_at DESC,id LIMIT 50',
+        'SELECT id,idempotency_key,purpose,resource_id,state,created_at,updated_at FROM ai_executions WHERE user_id = ? ORDER BY created_at DESC,id LIMIT 50',
       )
       .all(userId);
+  }
+  function findByIdempotencyKey(userId, key) {
+    activeOwner(db, userId);
+    if (typeof key !== 'string' || !/^[\w-]{8,100}$/.test(key))
+      throw new AiError('invalidIdempotencyKey');
+    return db.prepare(`SELECT id,idempotency_key,purpose,resource_id,state,created_at,updated_at
+      FROM ai_executions WHERE user_id=? AND idempotency_key=?`).get(userId, key) || null;
   }
   function preview(userId, body) {
     exactKeys(body, [
@@ -217,6 +224,8 @@ function createExecutionService({
       throw new AiError('invalidFields');
     if (body.purpose === 'workouts' && body.resource_id != null)
       throw new AiError('invalidFields');
+    if (body.purpose === 'analysis' && !/^[1-9]\d*$/.test(String(body.resource_id ?? '')))
+      throw new AiError('invalidFields', 409);
     return db
       .transaction(() => {
         activeOwner(db, userId);
@@ -236,6 +245,13 @@ function createExecutionService({
             throw new AiError('idempotencyConflict', 409);
           return get(userId, prior.id);
         }
+        if (body.purpose === 'analysis') {
+          const activeAnalysis = db.prepare(`SELECT id FROM ai_executions
+            WHERE user_id=? AND purpose='analysis' AND resource_id=? AND state IN ('queued','running')
+            ORDER BY created_at DESC,id LIMIT 1`).get(userId, String(body.resource_id));
+          if (activeAnalysis) return get(userId, activeAnalysis.id);
+        }
+        const id = randomUUID();
         if (
           body.purpose === 'workouts' &&
           !availabilitySnapshotMatches(
@@ -255,6 +271,7 @@ function createExecutionService({
           taskDate: body.target_date ?? null,
           weather: trustedEvidence.weather || [],
           taskNotes: body.optional_context || '',
+          freshnessExecutionId: body.purpose === 'analysis' ? id : null,
         });
         operation.prepare?.(context, {
           ...trustedEvidence,
@@ -285,7 +302,6 @@ function createExecutionService({
           1e6;
         const at = now();
         reserve(userId, reservedTokens, reservedCost, at);
-        const id = randomUUID();
         const configuration = {
           model,
           reasoning: 'medium',
@@ -400,6 +416,7 @@ function createExecutionService({
       const cancelled = current.state === 'cancelled';
       if (!cancelled && state === 'completed')
         operations[row.purpose].onCompleted?.(row, value);
+      operations[row.purpose]?.onSettled?.(row, cancelled ? 'cancelled' : state, error);
       db.prepare(
         'UPDATE ai_global_usage SET tokens=tokens+?,cost=cost+?,calls=calls+? WHERE day = ?',
       ).run(
@@ -759,6 +776,7 @@ function createExecutionService({
     enqueue,
     get,
     list,
+    findByIdempotencyKey,
     preview,
     cancel,
     recover,

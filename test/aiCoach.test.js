@@ -1405,21 +1405,20 @@ test('Request Workouts keeps the admin prompt in an accessible dialog with share
     readFileSync(join(publicDir, 'ai-coach.css'), 'utf8'),
     /\.prompt-submit-actions\s*\{[\s\S]*?flex-wrap:\s*wrap[\s\S]*?gap:/,
   );
-  assert.match(html, /id="externalPromptModal" class="modal-backdrop hidden" hidden/);
-  assert.match(html, /role="dialog" aria-modal="true" aria-labelledby="externalPromptTitle"/);
-  assert.match(html, /id="externalPromptClose" class="modal-close"/);
+  assert.match(html, /href="shared\/external-prompt-modal\.css"/);
+  assert.doesNotMatch(html, /id="externalPromptModal"|id="externalPromptClose"|id="promptOutput"/);
   assert.match(html, /id="weeklyApplyResultModal" class="modal-backdrop hidden" hidden/);
   assert.match(html, /aria-labelledby="weeklyApplyResultTitle" aria-describedby="weeklyApplyResultMessage"/);
   assert.match(html, /id="weeklyApplyResultClose" class="modal-close"[\s\S]*?data-lucide="x" aria-hidden="true"/);
   assert.match(html, /class="confirm-actions"[\s\S]*?id="weeklyApplyResultOk" class="btn btn-primary"/);
   assert.doesNotMatch(html, /id="weeklyAppliedConfirmation"|id="weeklyAppliedStatus"|id="weeklyCalendarLink"/);
-  assert.match(html, /id="promptOutput" class="prompt-output external-prompt-output"/);
-  assert.match(html, /class="form-actions external-prompt-actions"[\s\S]*?id="closePromptBtn" class="btn-secondary"[\s\S]*?id="copyBtn" class="btn-primary"/);
   assert.doesNotMatch(html, /id="resultSection"/);
   assert.match(readFileSync(join(publicDir, 'ai-coach.js'), 'utf8'), /createDialogFocusTrap\(promptModal, closeExternalPrompt\)/);
+  assert.match(readFileSync(join(publicDir, 'ai-coach.js'), 'utf8'), /createExternalPromptModal\(/);
+  const promptCss = readFileSync(join(publicDir, 'shared', 'external-prompt-modal.css'), 'utf8');
   const css = readFileSync(join(publicDir, 'ai-coach.css'), 'utf8');
-  assert.match(css, /\.external-prompt-card\s*\{[\s\S]*?max-height:\s*calc\(100dvh - 2rem\)[\s\S]*?overflow:\s*hidden/);
-  assert.match(css, /\.external-prompt-output\s*\{[\s\S]*?overflow:\s*auto[\s\S]*?user-select:\s*text/);
+  assert.match(promptCss, /\.external-prompt-card\s*\{[\s\S]*?max-height:\s*min\(90dvh, calc\(100dvh - 40px\)\)[\s\S]*?overflow:\s*hidden/);
+  assert.match(promptCss, /\.external-prompt-text\s*\{[\s\S]*?overflow:\s*auto[\s\S]*?user-select:\s*text/);
   assert.match(css, /#weeklyCancel\[hidden\][\s\S]*?display:\s*none/);
   assert.match(css, /#weeklyApplyResultModal\[hidden\][\s\S]*?display:\s*none/);
   const js = readFileSync(join(publicDir, 'ai-coach.js'), 'utf8');
@@ -1491,8 +1490,8 @@ test('HTML retains date picker, context, prompt, copy and accessibility contract
   );
   assert.match(html, /id="promptForm"/);
   assert.match(html, /id="optionalContext"/);
-  assert.match(html, /id="promptOutput"/);
-  assert.match(html, /id="copyBtn"/);
+  assert.match(js, /id: 'externalPromptModal'[\s\S]*?copyButtonId: 'copyBtn'[\s\S]*?outputId: 'promptOutput'/);
+  assert.match(js, /createExternalPromptModal\(/);
   assert.match(html, /aria-live="polite"/);
 });
 

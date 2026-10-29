@@ -1,7 +1,7 @@
 'use strict';
 
 const weekly = require('../public/shared/workout-prompts.js');
-const analysis = require('../public/shared/analysis-prompts.js');
+const analysis = require('./external-analysis-prompt.js');
 const { buildMacrocyclePrompt } = require('./prompts');
 const { AiError, activeOwner, hash, date } = require('./memory');
 const { TRAINING_COLUMNS } = require('./context');

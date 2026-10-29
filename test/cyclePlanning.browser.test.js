@@ -45,7 +45,7 @@ test('Chrome cycle planning PT/EN desktop/mobile: recovered generation, proposal
    await command('Network.setCookie',{name:SESSION_COOKIE_NAME,value:tokens[account],url:origin,httpOnly:true});
    await command('Page.navigate',{url:origin+'/cycles.html'});await wait("!!document.querySelector('[data-action=planning]')");
    for(const language of ['en-US','pt-BR'])for(const width of [1280,768,390]){
-    await command('Emulation.setDeviceMetricsOverride',{width,height:900,deviceScaleFactor:1,mobile:width===390});await delay(350);
+    await command('Emulation.setDeviceMetricsOverride',{width,height:width===390?844:900,deviceScaleFactor:1,mobile:width===390});await delay(350);
     await evaluate(`document.querySelector('.lang-switch [data-lang="${language}"]').click()`);
     const hasAppliedPlan=Boolean(db.prepare('SELECT 1 FROM cycle_plan_versions WHERE user_id=? AND cycle_id=?').get(account+1,account===0?'cycle':'private'));
     const planningAction=hasAppliedPlan?(language==='pt-BR'?'Ver planejamento':'View plan'):(language==='pt-BR'?'Gerar planejamento':'Generate plan');
@@ -98,21 +98,24 @@ test('Chrome cycle planning PT/EN desktop/mobile: recovered generation, proposal
     assert.equal(await evaluate("document.getElementById('cyclePlanningClose').getAttribute('aria-label')"),language==='pt-BR'?'Fechar':'Close');
     assert.equal(await evaluate("document.getElementById('cyclePlanningHeading').textContent"),modalTitle);
     assert.equal(await evaluate("!!document.getElementById('appView').closest('[inert]')"),true);
-    const planningClose=await controlStyle('#cyclePlanningClose');referenceClose=planningClose;
+    const planningClose=await controlStyle('#cyclePlanningClose');
     await evaluate("document.getElementById('cycleModal').classList.remove('hidden')");
-    assert.deepEqual(planningClose,await controlStyle('#cycleModalCloseBtn'));
-    assert.equal(await evaluate("getComputedStyle(document.querySelector('.cycle-planning-card')).padding"),await evaluate("getComputedStyle(document.querySelector('#cycleModal .modal-card')).padding"));
+    referenceClose=await controlStyle('#cycleModalCloseBtn');
+    assert.equal(planningClose.width,40);assert.equal(planningClose.height,40);assert.equal(planningClose.borderRadius,'8px');
+    assert.equal(await evaluate("getComputedStyle(document.querySelector('.cycle-planning-card')).padding"),'24px');
     await evaluate("document.getElementById('cycleModal').classList.add('hidden')");
     await command('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});
     assert.equal(await evaluate("getComputedStyle(document.querySelector('.cycle-planning-card')).animationName"),'none');
     assert.equal(await evaluate("getComputedStyle(document.getElementById('cyclePlanningClose')).transitionDuration"),'0s');
     await command('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'no-preference'}]});
-    const layout=await evaluate("(()=>{const card=document.querySelector('.cycle-planning-card'),body=card.querySelector('.cycle-planning-body'),footer=card.querySelector('footer'),close=document.getElementById('cyclePlanningClose'),title=document.getElementById('cyclePlanningHeading'),b=body.getBoundingClientRect(),f=footer.getBoundingClientRect(),c=close.getBoundingClientRect(),h=title.getBoundingClientRect();return {padding:getComputedStyle(card).padding,aligned:Math.abs(b.left-f.left)<1 && Math.abs(b.right-f.right)<1,overlap:h.right>c.left,footerVisible:f.bottom<=card.getBoundingClientRect().bottom,close:[Math.round(c.width),Math.round(c.height)]};})()");
-    assert.equal(layout.aligned,true);assert.equal(layout.overlap,false);assert.equal(layout.footerVisible,true);assert.deepEqual(layout.close,[30,30]);
+    const layout=await evaluate("(()=>{const card=document.querySelector('.cycle-planning-card'),body=card.querySelector('.cycle-planning-body'),footer=card.querySelector('footer'),close=document.getElementById('cyclePlanningClose'),title=document.getElementById('cyclePlanningHeading'),hint=document.getElementById('cyclePlanningHint'),b=body.getBoundingClientRect(),f=footer.getBoundingClientRect(),c=close.getBoundingClientRect(),h=title.getBoundingClientRect(),hs=getComputedStyle(hint),actions=[...footer.querySelectorAll('button')].filter(button=>!button.hidden).map(button=>{const r=button.getBoundingClientRect();return {width:r.width,height:r.height};});return {padding:getComputedStyle(card).padding,rightAligned:Math.abs(b.right-f.right)<1,overlap:h.right>c.left,footerVisible:f.bottom<=card.getBoundingClientRect().bottom,close:[Math.round(c.width),Math.round(c.height)],hintSize:parseFloat(hs.fontSize),hintLineHeight:parseFloat(hs.lineHeight),hintOpacity:hs.opacity,actionCount:actions.length,actionWidths:actions.map(action=>action.width),actionHeights:actions.map(action=>action.height)};})()");
+    assert.equal(layout.padding,'24px');assert.equal(layout.rightAligned,true);assert.equal(layout.overlap,false);assert.equal(layout.footerVisible,true);assert.deepEqual(layout.close,[40,40]);
+    assert.ok(layout.hintSize>=15);assert.ok(layout.hintLineHeight/layout.hintSize>=1.45 && layout.hintLineHeight/layout.hintSize<=1.6);assert.equal(layout.hintOpacity,'1');
+    assert.equal(layout.actionCount,2);assert.ok(Math.abs(layout.actionWidths[0]-layout.actionWidths[1])<1);assert.ok(Math.abs(layout.actionHeights[0]-layout.actionHeights[1])<1);
     if(process.env.KINESIS_TEST_LUCIDE_FILE) {
      assert.equal(await evaluate("!!lucide.icons.CalendarRange"),true);
      assert.equal(await evaluate("document.querySelector('[data-action=planning] svg').getAttribute('aria-hidden')"),'true');
-     assert.deepEqual(await evaluate("(()=>{const r=document.querySelector('#cyclePlanningClose svg').getBoundingClientRect();return [Math.round(r.width),Math.round(r.height)];})()"),[18,18]);
+     assert.deepEqual(await evaluate("(()=>{const r=document.querySelector('#cyclePlanningClose svg').getBoundingClientRect();return [Math.round(r.width),Math.round(r.height)];})()"),[20,20]);
     }
     await capture(`initial-${account}-${language}-${width}`);
     const before=calls;await evaluate("document.getElementById('cyclePlanningGenerate').click();document.getElementById('cyclePlanningGenerate').click()");
@@ -125,12 +128,22 @@ test('Chrome cycle planning PT/EN desktop/mobile: recovered generation, proposal
     assert.equal(calls,before+1);release();release=null;
     await wait("!document.getElementById('cyclePlanningApply').hidden && !document.getElementById('cyclePlanningApply').disabled");
     assert.ok((await evaluate("document.getElementById('cyclePlanningContent').textContent")).includes('Synthetic planning recommendation'));
+    const proposalActions=await evaluate("[...document.querySelectorAll('#cyclePlanningActions button')].filter(button=>!button.hidden).map(button=>{const r=button.getBoundingClientRect();return {width:r.width,height:r.height};})");
+    assert.equal(proposalActions.length,3);assert.ok(proposalActions.every((item)=>Math.abs(item.width-proposalActions[0].width)<1 && Math.abs(item.height-proposalActions[0].height)<1));
     assert.equal(await evaluate("document.getElementById('cyclePlanningDebug').hidden"),account!==0);
     assert.equal(await evaluate("document.querySelector('#cyclePlanningModal .modal-card').scrollWidth>document.querySelector('#cyclePlanningModal .modal-card').clientWidth"),false);
     assert.equal(await evaluate("(()=>{const c=document.querySelector('#cyclePlanningModal .cycle-planning-body');return c.scrollHeight>c.clientHeight && getComputedStyle(c).overflowY==='auto';})()"),true);
+    assert.equal(await evaluate("document.querySelector('#cyclePlanningContent .cycle-plan-detail > h4')?.nextElementSibling?.tagName"),'P');
     await evaluate("document.getElementById('cyclePlanningClose').focus()");await key('Tab','Tab',9,8);
     assert.equal(await evaluate('document.activeElement.id'),'cyclePlanningApply');await key('Tab','Tab',9);
     const proposal=await command('Page.captureScreenshot' ,{format:'png'});writeFileSync(`/tmp/kinesis-cycle-proposal-${account}-${language}-${width}.png`,Buffer.from(proposal.data,'base64'));
+    if(account===0 && language==='pt-BR' && width===1280) {
+     await command('Emulation.setDeviceMetricsOverride',{width:1280,height:520,deviceScaleFactor:1,mobile:false});await delay(200);
+     const shortViewport=await evaluate("(()=>{const card=document.querySelector('.cycle-planning-card'),body=card.querySelector('.cycle-planning-body'),footer=card.querySelector('footer'),close=document.getElementById('cyclePlanningClose').getBoundingClientRect(),f=footer.getBoundingClientRect(),c=card.getBoundingClientRect();return {cardWithin:c.bottom<=innerHeight,closeVisible:close.top>=0&&close.bottom<=innerHeight,footerVisible:f.bottom<=innerHeight,bodyScroll:body.scrollHeight>body.clientHeight,cardDoesNotScroll:card.scrollHeight<=card.clientHeight+1};})()");
+     assert.deepEqual(shortViewport,{cardWithin:true,closeVisible:true,footerVisible:true,bodyScroll:true,cardDoesNotScroll:true});
+     await capture('low-height-pt');
+     await command('Emulation.setDeviceMetricsOverride',{width:1280,height:900,deviceScaleFactor:1,mobile:false});
+    }
     await evaluate("document.getElementById('cyclePlanningApply').click()");await wait("document.getElementById('cyclePlanningApply').hidden && !document.getElementById('cyclePlanningGenerate').disabled");
     assert.ok((await evaluate("document.getElementById('cyclePlanningContent').textContent")).includes(language==='pt-BR'?'Planejamento aplicado':'Applied planning'));
     await evaluate("document.querySelector('.cycle-planning-body').scrollTop=0");await capture(`applied-plan-${account}-${language}-${width}`);
@@ -142,10 +155,10 @@ test('Chrome cycle planning PT/EN desktop/mobile: recovered generation, proposal
    }
    if(account===0) {
     const paidBefore=calls;await evaluate("document.querySelector('[data-action=prompt]').click()");
-    await wait("!document.getElementById('promptModal').classList.contains('hidden')");
+    await wait("!document.getElementById('promptModal').hidden");
     await command('Browser.grantPermissions',{origin,permissions:['clipboardReadWrite','clipboardSanitizedWrite']});
     await evaluate("document.getElementById('promptCopyBtn').click()");await delay(100);
-    assert.equal(await evaluate('navigator.clipboard.readText()'),await evaluate("document.getElementById('promptOutput').textContent"));
+    assert.equal(await evaluate('navigator.clipboard.readText()'),await evaluate("document.getElementById('promptOutput').value"));
     assert.equal(calls,paidBefore);await evaluate("document.getElementById('promptCloseBtn').click()");
    }
   }

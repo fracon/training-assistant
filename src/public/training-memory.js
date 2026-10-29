@@ -39,6 +39,8 @@ async function initMemory() {
     $('profileForm').querySelector('[type=submit]').disabled = !loaded || busy;
     $('reloadMemory').disabled = busy;
     $('refreshMemoryVersion').disabled = busy;
+    for (const action of document.querySelectorAll('[data-memory-action]'))
+      action.disabled = busy;
     if (user.role === 'admin')
       $('previewForm').querySelector('[type=submit]').disabled =
         !resources || busy;
@@ -70,6 +72,9 @@ async function initMemory() {
   function renderOverview() {
     const root = $('memoryOverview');
     const focusedKey = root.contains(document.activeElement) ? document.activeElement.dataset.memoryLink : null;
+    const focusedAction = root.contains(document.activeElement) ? document.activeElement.dataset.memoryAction : null;
+    const focusedInterpretationId = root.contains(document.activeElement)
+      ? document.activeElement.closest('[data-memory-item]')?.dataset.memoryItem : null;
     const opened = new Set([...root.querySelectorAll('details[open]')].map((element) => element.dataset.memoryDisclosure));
     root.replaceChildren();
     const date = (value) => value ? formatDate(value.slice(0, 10), i18n.language) : t('unknown');
@@ -91,8 +96,10 @@ async function initMemory() {
       const h = node('h2', '', t(key)); h.id = `memory-${key}`;
       card.setAttribute('aria-labelledby', h.id);
       header.append(h);
-      const action = key === 'cycle' ? 'editCycle' : key === 'availability' ? 'editAvailability' : 'openCalendar';
-      link(header, href, t(action), key);
+      if (key !== 'interpretations') {
+        const action = key === 'cycle' ? 'editCycle' : key === 'availability' ? 'editAvailability' : 'openCalendar';
+        link(header, href, t(action), key);
+      }
       card.append(header); paragraph(card, t(origin), true);
       parent.append(card); return card;
     };
@@ -202,6 +209,91 @@ async function initMemory() {
       }
       paragraph(weekly, t('totalsHint'), true);
     }
+    const interpretationCard = section('interpretations', 'interpretationsOrigin', '/calendar.html');
+    if (!memory.interpretations?.length) paragraph(interpretationCard, t('interpretationsEmpty'));
+    for (const item of memory.interpretations || []) {
+      const article = node('article', 'memory-session memory-interpretation');
+      article.dataset.memoryItem = item.id;
+      article.tabIndex = -1;
+      article.append(node('h3', '', `${t(`interpretationKinds.${item.kind}`)} · ${date(item.dia)}`));
+      if (item.correction_text) {
+        paragraph(article, `${t('interpretationOriginal')}: ${item.originalText}`);
+        paragraph(article, `${t('interpretationCorrectionLabel')}: ${item.correction_text}`);
+      } else paragraph(article, item.text, false);
+      paragraph(article, t(`interpretationStates.${item.disposition}`), true);
+      paragraph(article, item.current === true
+        ? t('interpretationIncluded')
+        : item.current === false ? t('interpretationNotSelected') : t('interpretationSelectionUnverified'), true);
+      link(article, item.href, t('openSession'), `interpretation:${item.href}`);
+      const call = async (action, textValue, focusAction = action === 'confirm' ? 'correct' : action) => {
+        if (busy) return;
+        const interpretationId = item.id;
+        busy = true; controls();
+        try {
+          const body = { expected_version: item.version };
+          if (action === 'correct') body.text = textValue;
+          const saved = await requestJson(`/api/ai/interpretations/${encodeURIComponent(item.id)}/${action}`, body);
+          memory.interpretations = memory.interpretations.map((entry) => entry.id === item.id ? {
+            ...entry,
+            disposition: saved.interpretation.disposition,
+            correction_text: saved.interpretation.correction,
+            originalText: saved.interpretation.text,
+            version: saved.interpretation.version,
+            updated_at: saved.interpretation.updatedAt,
+            current: saved.interpretation.disposition === 'dismissed' ? false : null,
+            text: saved.interpretation.disposition === 'corrected' ? saved.interpretation.correction : saved.interpretation.text,
+          } : entry);
+          loaded = true; clearError();
+          renderOverview();
+          if (document.activeElement === document.body) {
+            const equivalent = [...root.querySelectorAll('[data-memory-action]')]
+              .find((control) => control.dataset.memoryAction === `${interpretationId}:${focusAction}`);
+            (equivalent || root.querySelector(`[data-memory-item="${CSS.escape(interpretationId)}"]`))?.focus();
+          }
+          showShellToast(i18n.messages, 'memory.interpretationSaved');
+          try {
+            memory = await requestJson('/api/ai/memory', undefined, 'GET');
+            loaded = true; clearError(); renderOverview();
+          } catch { error({ codes: ['memoryReadFailed'] }, false, true); }
+        } catch (e) { error(e, false); }
+        finally {
+          busy = false; controls();
+          if (document.activeElement === document.body || !document.activeElement?.isConnected) {
+            const equivalent = [...root.querySelectorAll('[data-memory-action]')]
+              .find((control) => control.dataset.memoryAction === `${interpretationId}:${focusAction}`);
+            (equivalent || root.querySelector(`[data-memory-item="${CSS.escape(interpretationId)}"]`))?.focus();
+          }
+        }
+      };
+      if (['pending', 'confirmed', 'corrected'].includes(item.disposition)) {
+        const actions = node('div', 'memory-interpretation-actions');
+        const button = (label, action) => {
+          const control = node('button', 'btn-secondary btn-small', label);
+          control.type = 'button';
+          control.dataset.memoryAction = `${item.id}:${action}`;
+          control.disabled = busy;
+          control.addEventListener('click', () => {
+            if (action === 'correct') { editor.open = true; textarea.focus(); }
+            else void call(action);
+          });
+          return control;
+        };
+        if (item.disposition === 'pending') actions.append(button(t('interpretationConfirm'), 'confirm'));
+        actions.append(button(t('interpretationCorrect'), 'correct'), button(t('interpretationDiscard'), 'discard'));
+        article.append(actions);
+        const editor = node('details', 'memory-interpretation-editor');
+        editor.dataset.memoryDisclosure = `interpretation:${item.id}`;
+        editor.open = opened.has(editor.dataset.memoryDisclosure);
+        const summary = node('summary', '', t('interpretationCorrect'));
+        const textarea = node('textarea', 'input-control'); textarea.maxLength = 400; textarea.rows = 3; textarea.value = item.disposition === 'corrected' ? item.correction_text || '' : '';
+        textarea.setAttribute('aria-label', t('interpretationCorrectionLabel'));
+        const save = node('button', 'btn-primary btn-small', t('interpretationSaveCorrection')); save.type = 'button';
+        save.dataset.memoryAction = `${item.id}:save-correction`;
+        save.addEventListener('click', () => void call('correct', textarea.value.trim(), 'save-correction'));
+        editor.append(summary, textarea, save); article.append(editor);
+      }
+      interpretationCard.append(article);
+    }
     $('selectionNotice').hidden = !memory.selectionLimited;
     $('legacyNotice').hidden = !memory.legacyAvailable;
     const updated = memory.profile.fields.experience?.updatedAt;
@@ -210,6 +302,11 @@ async function initMemory() {
       : t('profileEmpty');
     $('memoryStatus').textContent = `${t('asOf')}: ${date(memory.asOf)}`;
     if (focusedKey) [...root.querySelectorAll('[data-memory-link]')].find((a) => a.dataset.memoryLink === focusedKey)?.focus();
+    if (focusedAction) {
+      const equivalent = [...root.querySelectorAll('[data-memory-action]')].find((a) => a.dataset.memoryAction === focusedAction);
+      if (equivalent) equivalent.focus();
+      else if (focusedInterpretationId) root.querySelector(`[data-memory-item="${CSS.escape(focusedInterpretationId)}"]`)?.focus();
+    }
     controls();
   }
   async function mutate(action) {

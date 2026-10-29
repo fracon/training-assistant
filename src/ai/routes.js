@@ -11,6 +11,8 @@ const { memoryOverview } = require('./overview');
 const { readAiConfig } = require('./config');
 const { createExecutionService } = require('./executions');
 const { createCyclePlanAdapter } = require('./cycle-plan-adapter');
+const { createWorkoutAnalysisAdapter } = require('./workout-analysis-adapter');
+const { readWorkoutAnalyses, changeInterpretation } = require('./workout-analysis');
 const { readCyclePlanning, applyCyclePlan } = require('./cycle-plans');
 const {
   createWeeklyWorkoutAdapter,
@@ -48,6 +50,10 @@ function logUnexpectedError(error, request) {
   // account identifiers or credentials. Stack frames retain code locations.
   console.error(`[Kinesis] ${JSON.stringify(diagnostic)}`);
 }
+function projectPublicExecution(execution) {
+  if (execution?.purpose !== 'analysis') return execution;
+  return { ...execution, response: null };
+}
 function registerAiRoutes(
   app,
   {
@@ -62,6 +68,7 @@ function registerAiRoutes(
   const operations = {
     cycle: createCyclePlanAdapter(db),
     workouts: createWeeklyWorkoutAdapter(db),
+    analysis: createWorkoutAnalysisAdapter(db),
     ...(providedOperations || {}),
   };
   const service = createExecutionService({ db, config, operations, client });
@@ -108,9 +115,14 @@ function registerAiRoutes(
       config,
     });
   });
-  route('get', '/api/ai/executions', (r) => ({
-    executions: service.list(r.user.id),
-  }));
+  route('get', '/api/ai/executions', (r) => {
+    exactKeys(r.query, ['idempotency_key']);
+    if (r.query.idempotency_key !== undefined) {
+      const match = service.findByIdempotencyKey(r.user.id, r.query.idempotency_key);
+      return { executions: match ? [match] : [] };
+    }
+    return { executions: service.list(r.user.id) };
+  });
   route('post', '/api/ai/executions', async (r, reply) => {
     let evidence = {};
     if (r.body?.purpose === 'workouts') {
@@ -145,7 +157,7 @@ function registerAiRoutes(
         availabilitySnapshot,
       };
     }
-    return reply.code(202).send(service.enqueue(r.user.id, r.body, evidence));
+    return reply.code(202).send(projectPublicExecution(service.enqueue(r.user.id, r.body, evidence)));
   });
   route('get', '/api/ai/workouts/:id/proposal', (r) =>
     readWeeklyProposal(db, r.user.id, r.params.id, service),
@@ -153,12 +165,12 @@ function registerAiRoutes(
   route('post', '/api/ai/workouts/:id/apply', (r) =>
     applyWeeklyProposal(db, r.user.id, r.params.id, r.body, service),
   );
-  route('get', '/api/ai/executions/:id', (r) =>
-    service.get(r.user.id, r.params.id),
-  );
+  route('get', '/api/ai/executions/:id', (r) => {
+    return projectPublicExecution(service.get(r.user.id, r.params.id));
+  });
   route('post', '/api/ai/executions/:id/cancel', (r) => {
     exactKeys(r.body || {}, []);
-    return service.cancel(r.user.id, r.params.id);
+    return projectPublicExecution(service.cancel(r.user.id, r.params.id));
   });
   route('get', '/api/ai/admin/executions/:id', (r) =>
     service.get(r.user.id, r.params.id, true),
@@ -166,6 +178,15 @@ function registerAiRoutes(
   route('post', '/api/ai/admin/preview', (r) =>
     service.preview(r.user.id, r.body),
   );
+  route('get', '/api/trainings/:id/analyses', (r, reply) => {
+    reply.header('Cache-Control', 'no-store');
+    return readWorkoutAnalyses(db, r.user.id, r.params.id, config);
+  });
+  for (const [action, pathAction] of [['confirm', 'confirm'], ['correct', 'correct'], ['discard', 'discard']]) {
+    route('post', `/api/ai/interpretations/:id/${pathAction}`, (r) =>
+      changeInterpretation(db, r.user.id, r.params.id, action, r.body),
+    );
+  }
   route('get', '/api/ai/admin/usage', (r) => {
     if (r.user.role !== 'admin') throw new AiError('adminRequired', 403);
     return {

@@ -23,7 +23,13 @@
     "periodsLabel": "Período preferencial",
     "legacyPeriodsLabel": "Períodos anteriores salvos",
     "legacyPeriodsHint": "Estas opções foram salvas anteriormente. Escolha um único período preferencial para substituí-las.",
-    "periods": { "before_08": "Antes das 08h", "08_12": "08h–12h", "12_14": "12h–14h", "14_18": "14h–18h", "after_18": "Após as 18h" },
+    "periods": {
+      "before_08": "Antes das 08h",
+      "08_12": "08h–12h",
+      "12_14": "12h–14h",
+      "14_18": "14h–18h",
+      "after_18": "Após as 18h"
+    },
     "durationLabel": "Duração máxima da sessão",
     "durationPromptLabel": "Tempo máximo disponível para a sessão",
     "minutes": "minutos",
@@ -103,7 +109,11 @@
     "weeklyWorkoutDescription": "Descrição do treino",
     "weeklyMainStep": "Etapa principal {number}",
     "weeklyNoShoe": "Nenhum tênis selecionado",
-    "weeklyPhases": { "warmup": "Aquecimento", "main": "Principal", "cooldown": "Desaquecimento" },
+    "weeklyPhases": {
+      "warmup": "Aquecimento",
+      "main": "Principal",
+      "cooldown": "Desaquecimento"
+    },
     "weeklyNoHrReference": "Por esforço e respiração; sem referência de FC disponível.",
     "weeklyConflict": "As fontes da proposta mudaram. Revise disponibilidade, ciclo, tênis e calendário e gere uma nova proposta.",
     "weeklyCancelDone": "A solicitação local foi cancelada. A cobrança do provedor pode já ter ocorrido.",
@@ -123,7 +133,6 @@
     "targetHrLabel": "FC alvo",
     "mainRpeLabel": "RPE principal",
     "shoeLabel": "Tênis",
-    "availabilityEditedDuringSave": "A disponibilidade mudou durante o salvamento. Salve novamente antes de gerar a proposta.",
     "resultTitle": "Prompt externo",
     "copy": "Copiar prompt",
     "copied": "Copiado!",
@@ -168,12 +177,36 @@
       "error": "Não foi possível remarcar o treino. Tente novamente."
     },
     "months": [
-      "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
-      "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+      "Janeiro",
+      "Fevereiro",
+      "Março",
+      "Abril",
+      "Maio",
+      "Junho",
+      "Julho",
+      "Agosto",
+      "Setembro",
+      "Outubro",
+      "Novembro",
+      "Dezembro"
     ],
-    "weekdaysShort": ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"],
+    "weekdaysShort": [
+      "Seg",
+      "Ter",
+      "Qua",
+      "Qui",
+      "Sex",
+      "Sáb",
+      "Dom"
+    ],
     "weekdaysLong": [
-      "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado", "Domingo"
+      "Segunda-feira",
+      "Terça-feira",
+      "Quarta-feira",
+      "Quinta-feira",
+      "Sexta-feira",
+      "Sábado",
+      "Domingo"
     ]
   },
   "shell": {
@@ -184,8 +217,8 @@
       "workouts": "Treinos",
       "shoes": "Rotação de Tênis",
       "administration": "Administração",
-      "users": "Usuários"
-      ,"feedback": "Feedbacks"
+      "users": "Usuários",
+      "feedback": "Feedbacks"
     },
     "soon": "Em breve",
     "noCycle": "Nenhum ciclo ativo",
@@ -253,11 +286,20 @@
   "preferences": {
     "title": "Preferências",
     "firstDayLabel": "Primeiro dia da semana",
-    "firstDay": { "monday": "Segunda-feira", "sunday": "Domingo" },
+    "firstDay": {
+      "monday": "Segunda-feira",
+      "sunday": "Domingo"
+    },
     "distanceLabel": "Unidade de distância",
-    "distance": { "km": "Quilómetros (km)", "mi": "Milhas (mi)" },
+    "distance": {
+      "km": "Quilómetros (km)",
+      "mi": "Milhas (mi)"
+    },
     "temperatureLabel": "Unidade de temperatura",
-    "temperature": { "celsius": "Celsius (°C)", "fahrenheit": "Fahrenheit (°F)" },
+    "temperature": {
+      "celsius": "Celsius (°C)",
+      "fahrenheit": "Fahrenheit (°F)"
+    },
     "save": "Guardar preferências",
     "saving": "A guardar…",
     "saved": "Preferências guardadas com sucesso.",
@@ -370,15 +412,53 @@
         "unsupported": "Formato ainda não suportado",
         "unverified": "Método de exportação não confirmado"
       },
-      "formats": { "fit": ".FIT", "zip-fit": ".ZIP contendo um .FIT", "gpx": ".GPX", "xml": ".XML" },
+      "formats": {
+        "fit": ".FIT",
+        "zip-fit": ".ZIP contendo um .FIT",
+        "gpx": ".GPX",
+        "xml": ".XML"
+      },
       "providers": {
-        "garmin": { "step1": "Abra o Garmin Connect na web.", "step2": "Abra a atividade na lista de atividades.", "step3": "Abra o menu de opções da atividade.", "step4": "Escolha Export Original (o arquivo original pode ser entregue em um ZIP).", "step5": "Mantenha o FIT ou envie o ZIP diretamente ao Kinesis.", "step6": "Envie-o pela área de FIT ou ZIP." },
-        "coros": { "step1": "Abra o aplicativo COROS e localize o treino na página de treinos.", "step2": "Abra os detalhes do treino.", "step3": "Abra o menu de opções no canto superior direito e selecione Export Data (Exportar dados).", "step4": "Escolha FIT como formato de exportação.", "step5": "Salve ou compartilhe o arquivo exportado pelo celular.", "step6": "Volte ao Kinesis e envie o arquivo FIT." },
-        "polar": { "step1": "Abra o Polar Flow na web e acesse Diário.", "step2": "Abra a sessão de treino.", "step3": "Use Exportar e escolha FIT ou a opção de pacote ZIP.", "step4": "Se usar ZIP, confirme que ele contém exatamente uma atividade FIT.", "step5": "Envie o FIT ou ZIP ao Kinesis." },
-        "amazfit-zepp": { "unverified": "Não foi confirmado um caminho oficial atual do Zepp para exportar atividades em FIT. Consulte o suporte do seu modelo e use a entrada manual quando não houver arquivo compatível." },
-        "huawei": { "step1": "O suporte da Huawei documenta a exportação de arquivos de rota pelo Huawei Health.", "step2": "Essas rotas não são arquivos FIT aceitos pelo Kinesis. Use a entrada manual para os totais do treino." },
-        "apple": { "step1": "O Apple Saúde pode exportar todos os dados de saúde e fitness em XML.", "step2": "Essa exportação é um arquivo completo de saúde, não uma atividade FIT.", "step3": "O Kinesis ainda não aceita esse XML; use a entrada manual para os totais." },
-        "samsung": { "step1": "A Samsung documenta a importação e exportação de rotas GPX para dispositivos compatíveis.", "step2": "Rotas GPX não são arquivos FIT de atividade aceitos pelo Kinesis.", "step3": "Use a entrada manual para os totais do treino." }
+        "garmin": {
+          "step1": "Abra o Garmin Connect na web.",
+          "step2": "Abra a atividade na lista de atividades.",
+          "step3": "Abra o menu de opções da atividade.",
+          "step4": "Escolha Export Original (o arquivo original pode ser entregue em um ZIP).",
+          "step5": "Mantenha o FIT ou envie o ZIP diretamente ao Kinesis.",
+          "step6": "Envie-o pela área de FIT ou ZIP."
+        },
+        "coros": {
+          "step1": "Abra o aplicativo COROS e localize o treino na página de treinos.",
+          "step2": "Abra os detalhes do treino.",
+          "step3": "Abra o menu de opções no canto superior direito e selecione Export Data (Exportar dados).",
+          "step4": "Escolha FIT como formato de exportação.",
+          "step5": "Salve ou compartilhe o arquivo exportado pelo celular.",
+          "step6": "Volte ao Kinesis e envie o arquivo FIT."
+        },
+        "polar": {
+          "step1": "Abra o Polar Flow na web e acesse Diário.",
+          "step2": "Abra a sessão de treino.",
+          "step3": "Use Exportar e escolha FIT ou a opção de pacote ZIP.",
+          "step4": "Se usar ZIP, confirme que ele contém exatamente uma atividade FIT.",
+          "step5": "Envie o FIT ou ZIP ao Kinesis."
+        },
+        "amazfit-zepp": {
+          "unverified": "Não foi confirmado um caminho oficial atual do Zepp para exportar atividades em FIT. Consulte o suporte do seu modelo e use a entrada manual quando não houver arquivo compatível."
+        },
+        "huawei": {
+          "step1": "O suporte da Huawei documenta a exportação de arquivos de rota pelo Huawei Health.",
+          "step2": "Essas rotas não são arquivos FIT aceitos pelo Kinesis. Use a entrada manual para os totais do treino."
+        },
+        "apple": {
+          "step1": "O Apple Saúde pode exportar todos os dados de saúde e fitness em XML.",
+          "step2": "Essa exportação é um arquivo completo de saúde, não uma atividade FIT.",
+          "step3": "O Kinesis ainda não aceita esse XML; use a entrada manual para os totais."
+        },
+        "samsung": {
+          "step1": "A Samsung documenta a importação e exportação de rotas GPX para dispositivos compatíveis.",
+          "step2": "Rotas GPX não são arquivos FIT de atividade aceitos pelo Kinesis.",
+          "step3": "Use a entrada manual para os totais do treino."
+        }
       },
       "renameWarning": "Renomear um arquivo GPX, TCX, XML, CSV ou JSON para .FIT não converte seu conteúdo nem o torna compatível.",
       "privacy": "O Kinesis nunca solicita credenciais do fabricante nem acessa sua conta do relógio."
@@ -494,20 +574,20 @@
     "fitLapAscent": "Subida",
     "fitLapAscentUnit": "(m)",
     "fitLapAscentAccessible": "Subida (m)",
-    "fitLapTypes": { "run": "Corrida", "warmup": "Aquecimento", "cooldown": "Desaquecimento", "rest": "Descanso" },
+    "fitLapTypes": {
+      "run": "Corrida",
+      "warmup": "Aquecimento",
+      "cooldown": "Desaquecimento",
+      "rest": "Descanso"
+    },
     "fieldWeather": "Temperatura e clima",
     "weatherPlaceholder": "ex.: 22°C, nublado, vento leve",
     "fieldTerrain": "Terreno/percurso",
     "fieldBreathing": "Respiração",
     "fieldMuscle": "Sensação muscular",
     "fieldEnergy": "Energia ao terminar",
-    "generatePrompt": "Salvar e Gerar Prompt de Análise",
-    "promptHeading": "Prompt Gerado",
-    "copyPrompt": "Copiar para a área de transferência",
-    "copied": "Copiado!",
     "save": "Salvar e voltar ao calendário",
     "saving": "Salvando…",
-    "generatingPrompt": "Gerando prompt…",
     "deleteTooltip": "Excluir treino",
     "deleteAriaLabel": "Excluir treino",
     "deleteConfirmTitle": "Excluir treino",
@@ -520,19 +600,118 @@
       "rpe": "O RPE realizado deve ser um número inteiro entre 1 e 5.",
       "rpeRequired": "Selecione o RPE realizado (1 a 5) para registrar e analisar o treino.",
       "save": "Não conseguimos salvar seu feedback. Tente novamente.",
-    "fitUpload": "Não foi possível enviar o arquivo FIT. Tente novamente.",
-    "manualValidation": "Informe uma distância e duração válidas antes de salvar.",
-    "manualSave": "Não foi possível salvar os dados manuais. Tente novamente.",
-    "fitInvalidFile": "O arquivo enviado é inválido.",
-    "fitInvalidZip": "O arquivo ZIP é inválido ou está corrompido.",
-    "fitMissingInZip": "O arquivo ZIP não contém um arquivo FIT.",
-    "fitMultipleInZip": "O arquivo ZIP contém mais de um arquivo FIT.",
-    "fitEncryptedZip": "Arquivos ZIP criptografados não são suportados.",
-    "fitUnsafeZip": "O arquivo ZIP contém uma entrada insegura.",
-    "fitTooManyEntries": "O arquivo ZIP contém entradas demais.",
-    "fitTooLarge": "O arquivo FIT excede o tamanho permitido.",
-    "fitZipTooLarge": "O conteúdo descomprimido do ZIP excede o tamanho permitido.",
-    "fitUnsupportedType": "Envie um arquivo .FIT ou .ZIP."
+      "fitUpload": "Não foi possível enviar o arquivo FIT. Tente novamente.",
+      "manualValidation": "Informe uma distância e duração válidas antes de salvar.",
+      "manualSave": "Não foi possível salvar os dados manuais. Tente novamente.",
+      "fitInvalidFile": "O arquivo enviado é inválido.",
+      "fitInvalidZip": "O arquivo ZIP é inválido ou está corrompido.",
+      "fitMissingInZip": "O arquivo ZIP não contém um arquivo FIT.",
+      "fitMultipleInZip": "O arquivo ZIP contém mais de um arquivo FIT.",
+      "fitEncryptedZip": "Arquivos ZIP criptografados não são suportados.",
+      "fitUnsafeZip": "O arquivo ZIP contém uma entrada insegura.",
+      "fitTooManyEntries": "O arquivo ZIP contém entradas demais.",
+      "fitTooLarge": "O arquivo FIT excede o tamanho permitido.",
+      "fitZipTooLarge": "O conteúdo descomprimido do ZIP excede o tamanho permitido.",
+      "fitUnsupportedType": "Envie um arquivo .FIT ou .ZIP."
+    },
+    "analysis": {
+      "analyze": "Analisar treino",
+      "saving": "Salvando dados…",
+      "title": "Análise do treino",
+      "externalPrompt": "Ver prompt externo",
+      "copyPrompt": "Copiar prompt",
+      "loadingPrompt": "Carregando prompt…",
+      "promptUnavailable": "Não foi possível carregar o prompt. Tente novamente.",
+      "promptCopied": "Prompt copiado.",
+      "promptCopyFailed": "Não foi possível copiar. O prompt continua disponível para seleção.",
+      "close": "Fechar",
+      "running": "Análise em andamento…",
+      "readAgain": "Consultar novamente",
+      "summary": "Síntese",
+      "classification": "Classificação",
+      "classifications": {
+        "below": "Abaixo do esperado",
+        "adequate": "Adequado",
+        "good": "Bom",
+        "veryGood": "Muito bom",
+        "excellent": "Excelente",
+        "insufficient": "Dados insuficientes"
+      },
+      "comparison": "Planejado e realizado",
+      "contextualReading": "Leitura contextual e evolução",
+      "attention": "Pontos de atenção",
+      "recommendations": "Recomendações",
+      "limitations": "Limitações dos dados",
+      "interpretations": "Interpretações para contexto futuro",
+      "confirm": "Confirmar",
+      "correct": "Corrigir",
+      "discard": "Descartar",
+      "correctTitle": "Corrigir interpretação",
+      "correctDescription": "Registre sua correção como relato do usuário para os próximos contextos.",
+      "correctionLabel": "Sua correção",
+      "saveCorrection": "Salvar correção",
+      "cancel": "Cancelar",
+      "version": "Versão",
+      "outdated": "Esta análise está desatualizada em relação aos dados atuais.",
+      "states": {
+        "queued": "Na fila",
+        "running": "Em andamento",
+        "failed": "Falhou",
+        "uncertain": "Resultado incerto",
+        "cancelled": "Cancelada",
+        "outdated": "Desatualizada",
+        "completed": "Concluída"
+      },
+      "errors": {
+        "failed": "Os dados foram salvos, mas a análise não foi concluída. Você pode solicitar outra análise explicitamente.",
+        "uncertain": "A chamada terminou sem confirmação do resultado. Consulte novamente para recuperar a mesma execução.",
+        "cancelled": "A análise foi cancelada. Os dados do treino continuam salvos.",
+        "outdated": "As fontes mudaram durante a análise. Os dados estão salvos; revise o treino antes de solicitar outra análise.",
+        "aiUnavailable": "Os dados do treino foram salvos, mas a análise está temporariamente indisponível e não foi iniciada.",
+        "accountUnavailable": "Os dados do treino foram salvos, mas esta conta não pode mais iniciar uma análise.",
+        "usageLimit": "Os dados do treino foram salvos, mas o limite de uso de IA configurado foi atingido. Tente novamente mais tarde.",
+        "executionLimit": "Os dados do treino foram salvos, mas outra análise já está em andamento. Consulte essa execução novamente.",
+        "providerRateLimited": "Os dados do treino foram salvos, mas o provedor de análise está temporariamente ocupado. Nenhuma nova solicitação foi iniciada; tente mais tarde.",
+        "providerRejected": "Os dados do treino foram salvos, mas o provedor recusou a solicitação de análise. Tente novamente mais tarde.",
+        "providerOutcomeUncertain": "Os dados do treino foram salvos, mas o resultado no provedor é incerto. Consulte esta execução antes de solicitar outra análise.",
+        "providerTimeout": "Os dados do treino foram salvos, mas a análise excedeu o tempo limite. Consulte esta execução antes de solicitar outra.",
+        "providerOutputLimit": "Os dados do treino foram salvos, mas a resposta da análise excedeu o limite de saída e não pôde ser usada.",
+        "providerIncomplete": "Os dados do treino foram salvos, mas a resposta da análise estava incompleta e não pôde ser usada.",
+        "providerInvalidResponse": "Os dados do treino foram salvos, mas a resposta da análise não pôde ser validada.",
+        "providerRefused": "Os dados do treino foram salvos, mas o provedor não retornou uma análise.",
+        "providerContentFiltered": "Os dados do treino foram salvos, mas a resposta da análise não pôde ser usada.",
+        "providerFailed": "Os dados do treino foram salvos, mas não foi possível concluir a análise.",
+        "invalidDomainResponse": "Os dados do treino foram salvos, mas a análise não atendeu às regras de resposta exigidas.",
+        "sourceChanged": "Os dados do treino foram salvos, mas as fontes mudaram durante a análise. Revise o treino antes de solicitar outra análise.",
+        "contextTooLarge": "Os dados do treino foram salvos, mas o contexto selecionado excede o limite configurado.",
+        "criticalContextTooLarge": "Os dados do treino foram salvos, mas o contexto obrigatório excede o limite configurado.",
+        "inputTooLarge": "Os dados do treino foram salvos, mas a solicitação de análise excede o limite configurado.",
+        "analysisRequiresCompletedResult": "Salve o resultado do treino e escolha um esforço realizado de 1 a 5 antes de analisar.",
+        "adapterUnavailable": "Os dados do treino foram salvos, mas esta versão da análise está temporariamente indisponível.",
+        "reservationExpired": "Os dados do treino foram salvos, mas a análise na fila expirou antes de iniciar. Confira a execução antes de solicitar outra.",
+        "restartOutcomeUncertain": "Os dados do treino foram salvos, mas o servidor reiniciou antes de confirmar o resultado da análise. Consulte esta execução antes de solicitar outra.",
+        "resultPersistenceFailed": "Os dados do treino foram salvos, mas não foi possível armazenar o resultado da análise. Confira a execução antes de tentar novamente.",
+        "incompatibleRpeScale": "Use somente a escala Kinesis de RPE de 1 a 5 na correção da interpretação."
+      },
+      "readUnavailable": "Não foi possível consultar o andamento. Tente ler novamente; nenhuma nova análise será iniciada.",
+      "analysisUnavailable": "Não foi possível carregar as análises salvas. Tente consultar novamente; nenhum treino será gerado.",
+      "analysisDisplayUnavailable": "A análise salva foi recuperada, mas não pôde ser exibida. Tente consultar novamente; nenhum treino será gerado.",
+      "recoveryUnavailable": "Não foi possível verificar a solicitação anterior. Uma análise já salva continua disponível; tente consultar novamente. Nenhuma nova análise será iniciada.",
+      "connectionRetrying": "Problema temporário de conexão. Continuando a consultar esta execução…",
+      "recovering": "Verificando a solicitação anterior…",
+      "outcomeUnknown": "O início da análise teve uma resposta incerta. Consulte novamente; uma nova tentativa usará a mesma chave e não duplicará a execução.",
+      "analysisConflict": "Não foi possível iniciar uma nova análise enquanto outra execução deste treino ainda está ativa.",
+      "interpretationConflict": "Esta interpretação foi atualizada em outra ação. A lista foi atualizada; revise antes de tentar novamente.",
+      "interpretationSaveError": "Não foi possível salvar a decisão. Tente novamente.",
+      "incompatibleRpeScale": "Use somente a escala Kinesis de RPE de 1 a 5 na correção da interpretação.",
+      "knownStartFailure": "Os dados do treino foram salvos, mas não foi possível iniciar a análise.",
+      "dispositions": {
+        "pending": "Hipótese para revisar",
+        "confirmed": "Interpretação confirmada",
+        "corrected": "Relato corrigido pelo usuário",
+        "dismissed": "Descartada",
+        "superseded": "Substituída"
+      }
     }
   },
   "terrain": {
@@ -648,7 +827,11 @@
     "close": "Fechar diálogo de feedback",
     "intro": "Conte sobre um erro, uma ideia ou qualquer outra coisa que possa melhorar o Kinesis.",
     "type": "Tipo",
-    "types": { "bug": "Erro", "suggestion": "Sugestão", "other": "Outro" },
+    "types": {
+      "bug": "Erro",
+      "suggestion": "Sugestão",
+      "other": "Outro"
+    },
     "description": "Descrição",
     "descriptionPlaceholder": "O que aconteceu ou o que você gostaria de ver?",
     "source": "Tela",
@@ -660,10 +843,44 @@
     "maxHint": "Até 5.000 caracteres."
   },
   "feedbackAdmin": {
-    "pageTitle": "Feedbacks - Kinesis", "title": "Feedbacks", "subtitle": "Consulte os feedbacks enviados pelos usuários do Kinesis.",
-    "status": "Status", "type": "Tipo", "description": "Descrição enviada", "allStatuses": "Todos os status", "allTypes": "Todos os tipos", "loading": "Carregando feedbacks…", "loadError": "Não foi possível carregar os feedbacks.", "retry": "Tentar novamente", "empty": "Nenhum feedback corresponde aos filtros.", "loadMore": "Carregar mais", "view": "Ver", "viewAccessible": "Ver feedback", "detail": "Detalhes do feedback", "close": "Fechar", "internalNote": "Nota interna", "save": "Salvar", "delete": "Excluir", "deleteAccessible": "Excluir feedback", "cancel": "Cancelar", "deleteTitle": "Excluir feedback", "deleteConfirm": "Excluir este feedback permanentemente?", "saved": "Triagem do feedback salva.", "deleted": "Feedback excluído.", "notFound": "Este feedback não existe mais.", "requestError": "Não foi possível concluir a solicitação. Tente novamente.",
-    "types": { "bug": "Erro", "suggestion": "Sugestão", "other": "Outro" },
-    "statuses": { "new": "Novo", "inProgress": "Em andamento", "resolved": "Resolvido" }
+    "pageTitle": "Feedbacks - Kinesis",
+    "title": "Feedbacks",
+    "subtitle": "Consulte os feedbacks enviados pelos usuários do Kinesis.",
+    "status": "Status",
+    "type": "Tipo",
+    "description": "Descrição enviada",
+    "allStatuses": "Todos os status",
+    "allTypes": "Todos os tipos",
+    "loading": "Carregando feedbacks…",
+    "loadError": "Não foi possível carregar os feedbacks.",
+    "retry": "Tentar novamente",
+    "empty": "Nenhum feedback corresponde aos filtros.",
+    "loadMore": "Carregar mais",
+    "view": "Ver",
+    "viewAccessible": "Ver feedback",
+    "detail": "Detalhes do feedback",
+    "close": "Fechar",
+    "internalNote": "Nota interna",
+    "save": "Salvar",
+    "delete": "Excluir",
+    "deleteAccessible": "Excluir feedback",
+    "cancel": "Cancelar",
+    "deleteTitle": "Excluir feedback",
+    "deleteConfirm": "Excluir este feedback permanentemente?",
+    "saved": "Triagem do feedback salva.",
+    "deleted": "Feedback excluído.",
+    "notFound": "Este feedback não existe mais.",
+    "requestError": "Não foi possível concluir a solicitação. Tente novamente.",
+    "types": {
+      "bug": "Erro",
+      "suggestion": "Sugestão",
+      "other": "Outro"
+    },
+    "statuses": {
+      "new": "Novo",
+      "inProgress": "Em andamento",
+      "resolved": "Resolvido"
+    }
   },
   "shoes": {
     "title": "Tênis",
@@ -954,11 +1171,26 @@
       "loading": "Buscando a inspiração de hoje…",
       "ariaLabel": "Inspiração diária",
       "fallbackQuotes": [
-        { "text": "Corra quando puder, ande se precisar, arraste-se se necessário; mas nunca desista.", "author": "Dean Karnazes" },
-        { "text": "A dor que você sente hoje será a força que você sentirá amanhã.", "author": "Desconhecido" },
-        { "text": "Suporte o desconforto da disciplina, ou a dor do arrependimento.", "author": "Jim Rohn" },
-        { "text": "Todo treino começa com um único passo.", "author": "Desconhecido" },
-        { "text": "Ferro afia ferro, e quilômetros constroem campeões.", "author": "Coach Kinesis" }
+        {
+          "text": "Corra quando puder, ande se precisar, arraste-se se necessário; mas nunca desista.",
+          "author": "Dean Karnazes"
+        },
+        {
+          "text": "A dor que você sente hoje será a força que você sentirá amanhã.",
+          "author": "Desconhecido"
+        },
+        {
+          "text": "Suporte o desconforto da disciplina, ou a dor do arrependimento.",
+          "author": "Jim Rohn"
+        },
+        {
+          "text": "Todo treino começa com um único passo.",
+          "author": "Desconhecido"
+        },
+        {
+          "text": "Ferro afia ferro, e quilômetros constroem campeões.",
+          "author": "Coach Kinesis"
+        }
       ]
     },
     "cycle": {
@@ -1073,6 +1305,8 @@
     },
     "errors": {
       "generic": "Não foi possível concluir esta ação. Os valores digitados foram preservados. Tente novamente.",
+      "memoryReadFailed": "A decisão foi salva, mas não foi possível atualizar a lista de memória. Ela continua aplicada; recarregue a lista para conferi-la.",
+      "incompatibleRpeScale": "Use somente a escala Kinesis de RPE de 1 a 5 na correção da interpretação.",
       "memoryConflict": "As informações salvas mudaram. Recarregue, revise os valores digitados e salve novamente.",
       "resourceNotFound": "O ciclo ou treino selecionado não está mais disponível.",
       "invalidDate": "Selecione uma data válida. Solicitações semanais começam na segunda-feira.",
@@ -1146,7 +1380,33 @@
     "sessions": "Realizados / planejados",
     "effort": "RPE médio",
     "tableHint": "Role a tabela para consultar todas as colunas.",
-    "totalsHint": "Distância e duração usam apenas resultados registrados. Métricas ausentes são contadas à parte; sessões de referência não são somadas novamente."
+    "totalsHint": "Distância e duração usam apenas resultados registrados. Métricas ausentes são contadas à parte; sessões de referência não são somadas novamente.",
+    "interpretations": "Interpretações reutilizáveis",
+    "interpretationsOrigin": "Itens produzidos por análises de treino. Interpretações não são métricas medidas.",
+    "interpretationsEmpty": "Ainda não há interpretações de análises.",
+    "interpretationKinds": {
+      "pattern": "Padrão",
+      "recommendation": "Recomendação",
+      "attention": "Ponto de atenção"
+    },
+    "interpretationStates": {
+      "pending": "Hipótese não confirmada",
+      "confirmed": "Interpretação confirmada",
+      "corrected": "Corrigida como relato do usuário",
+      "dismissed": "Descartada",
+      "superseded": "Substituída"
+    },
+    "interpretationIncluded": "Fontes atuais: selecionada para contextos futuros.",
+    "interpretationNotSelected": "Não selecionada atualmente: as fontes podem ter mudado ou o item não coube no contexto.",
+    "interpretationSelectionUnverified": "Salvo. A seleção para o contexto será verificada ao atualizar a memória.",
+    "interpretationConfirm": "Confirmar",
+    "interpretationCorrect": "Corrigir",
+    "interpretationDiscard": "Descartar",
+    "interpretationCorrectionLabel": "Correção como relato do usuário",
+    "interpretationSaveCorrection": "Salvar correção",
+    "interpretationSaved": "Interpretação atualizada.",
+    "interpretationOriginal": "Interpretação original",
+    "interpretationCorrectionLabel": "Sua correção"
   },
   "cyclePlanning": {
     "admin": "Detalhes administrativos",

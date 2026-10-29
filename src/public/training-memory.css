@@ -72,3 +72,7 @@
 @media (max-width: 900px) { .memory-scroll-hint { display: block; margin-top: .5rem !important; } }
 
 .memory-recovery { margin-bottom: 1rem; }
+.memory-interpretation { display: grid; gap: 10px; }
+.memory-interpretation-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.memory-interpretation-editor { display: grid; gap: 8px; }
+.memory-interpretation-editor summary { cursor: pointer; color: var(--accent-deep); font-weight: 600; }

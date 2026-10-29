@@ -23,7 +23,13 @@
     "periodsLabel": "Preferred period",
     "legacyPeriodsLabel": "Previously saved periods",
     "legacyPeriodsHint": "These options were saved previously. Choose one preferred period to replace them.",
-    "periods": { "before_08": "Before 08:00", "08_12": "08:00–12:00", "12_14": "12:00–14:00", "14_18": "14:00–18:00", "after_18": "After 18:00" },
+    "periods": {
+      "before_08": "Before 08:00",
+      "08_12": "08:00–12:00",
+      "12_14": "12:00–14:00",
+      "14_18": "14:00–18:00",
+      "after_18": "After 18:00"
+    },
     "durationLabel": "Maximum session duration",
     "durationPromptLabel": "Maximum session time",
     "minutes": "minutes",
@@ -103,7 +109,11 @@
     "weeklyWorkoutDescription": "Workout description",
     "weeklyMainStep": "Main step {number}",
     "weeklyNoShoe": "No shoe selected",
-    "weeklyPhases": { "warmup": "Warm-up", "main": "Main set", "cooldown": "Cool-down" },
+    "weeklyPhases": {
+      "warmup": "Warm-up",
+      "main": "Main set",
+      "cooldown": "Cool-down"
+    },
     "weeklyNoHrReference": "By effort and breathing; no HR reference available.",
     "weeklyConflict": "The proposal sources changed. Review current availability, cycle, shoes and calendar, then generate a new proposal.",
     "weeklyCancelDone": "The local request was cancelled. Provider billing may already have occurred.",
@@ -123,7 +133,6 @@
     "targetHrLabel": "Target HR",
     "mainRpeLabel": "Main RPE",
     "shoeLabel": "Shoe",
-    "availabilityEditedDuringSave": "Availability changed while saving. Save again before generating the proposal.",
     "resultTitle": "External prompt",
     "copy": "Copy prompt",
     "copied": "Copied!",
@@ -168,12 +177,36 @@
       "error": "Could not move the training. Please try again."
     },
     "months": [
-      "January", "February", "March", "April", "May", "June",
-      "July", "August", "September", "October", "November", "December"
+      "January",
+      "February",
+      "March",
+      "April",
+      "May",
+      "June",
+      "July",
+      "August",
+      "September",
+      "October",
+      "November",
+      "December"
     ],
-    "weekdaysShort": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+    "weekdaysShort": [
+      "Mon",
+      "Tue",
+      "Wed",
+      "Thu",
+      "Fri",
+      "Sat",
+      "Sun"
+    ],
     "weekdaysLong": [
-      "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"
+      "Monday",
+      "Tuesday",
+      "Wednesday",
+      "Thursday",
+      "Friday",
+      "Saturday",
+      "Sunday"
     ]
   },
   "shell": {
@@ -184,8 +217,8 @@
       "workouts": "Workouts",
       "shoes": "Shoe Rotation",
       "administration": "Administration",
-      "users": "Users"
-      ,"feedback": "Feedbacks"
+      "users": "Users",
+      "feedback": "Feedbacks"
     },
     "soon": "Soon",
     "noCycle": "No active cycle",
@@ -253,11 +286,20 @@
   "preferences": {
     "title": "Preferences",
     "firstDayLabel": "First day of the week",
-    "firstDay": { "monday": "Monday", "sunday": "Sunday" },
+    "firstDay": {
+      "monday": "Monday",
+      "sunday": "Sunday"
+    },
     "distanceLabel": "Distance unit",
-    "distance": { "km": "Kilometres (km)", "mi": "Miles (mi)" },
+    "distance": {
+      "km": "Kilometres (km)",
+      "mi": "Miles (mi)"
+    },
     "temperatureLabel": "Temperature unit",
-    "temperature": { "celsius": "Celsius (°C)", "fahrenheit": "Fahrenheit (°F)" },
+    "temperature": {
+      "celsius": "Celsius (°C)",
+      "fahrenheit": "Fahrenheit (°F)"
+    },
     "save": "Save Preferences",
     "saving": "Saving…",
     "saved": "Preferences saved successfully.",
@@ -370,15 +412,53 @@
         "unsupported": "Format not supported yet",
         "unverified": "Export method not confirmed"
       },
-      "formats": { "fit": ".FIT", "zip-fit": ".ZIP containing one .FIT", "gpx": ".GPX", "xml": ".XML" },
+      "formats": {
+        "fit": ".FIT",
+        "zip-fit": ".ZIP containing one .FIT",
+        "gpx": ".GPX",
+        "xml": ".XML"
+      },
       "providers": {
-        "garmin": { "step1": "Open Garmin Connect on the web.", "step2": "Open your activity from the activities list.", "step3": "Open the activity options menu.", "step4": "Choose Export Original (the original activity file may be delivered in a ZIP).", "step5": "Keep the FIT file, or send the ZIP directly to Kinesis.", "step6": "Upload it in the FIT or ZIP dropzone." },
-        "coros": { "step1": "Open the COROS app and locate the workout on the Workouts page.", "step2": "Open the workout details.", "step3": "Open the options menu in the top-right corner and select Export Data.", "step4": "Choose FIT as the export format.", "step5": "Save or share the exported file from your phone.", "step6": "Return to Kinesis and upload the FIT file." },
-        "polar": { "step1": "Open Polar Flow on the web and go to Diary.", "step2": "Open the training session.", "step3": "Use Export and choose FIT, or the ZIP package option.", "step4": "If using ZIP, confirm it contains exactly one FIT activity.", "step5": "Upload the FIT or ZIP to Kinesis." },
-        "amazfit-zepp": { "unverified": "No current official Zepp activity-export path to FIT was confirmed. Check Zepp support for your model and use manual entry when no compatible file is available." },
-        "huawei": { "step1": "Huawei support documents exporting route files from Huawei Health.", "step2": "Those route exports are not FIT files accepted by Kinesis. Use manual entry for workout totals." },
-        "apple": { "step1": "Apple Health can export all health and fitness data as XML.", "step2": "The export is a complete health archive, not a FIT activity file.", "step3": "Kinesis does not accept that XML yet; use manual entry for the workout totals." },
-        "samsung": { "step1": "Samsung documents GPX route import/export for supported devices.", "step2": "GPX routes are not FIT activity files accepted by Kinesis.", "step3": "Use manual entry for workout totals." }
+        "garmin": {
+          "step1": "Open Garmin Connect on the web.",
+          "step2": "Open your activity from the activities list.",
+          "step3": "Open the activity options menu.",
+          "step4": "Choose Export Original (the original activity file may be delivered in a ZIP).",
+          "step5": "Keep the FIT file, or send the ZIP directly to Kinesis.",
+          "step6": "Upload it in the FIT or ZIP dropzone."
+        },
+        "coros": {
+          "step1": "Open the COROS app and locate the workout on the Workouts page.",
+          "step2": "Open the workout details.",
+          "step3": "Open the options menu in the top-right corner and select Export Data.",
+          "step4": "Choose FIT as the export format.",
+          "step5": "Save or share the exported file from your phone.",
+          "step6": "Return to Kinesis and upload the FIT file."
+        },
+        "polar": {
+          "step1": "Open Polar Flow on the web and go to Diary.",
+          "step2": "Open the training session.",
+          "step3": "Use Export and choose FIT, or the ZIP package option.",
+          "step4": "If using ZIP, confirm it contains exactly one FIT activity.",
+          "step5": "Upload the FIT or ZIP to Kinesis."
+        },
+        "amazfit-zepp": {
+          "unverified": "No current official Zepp activity-export path to FIT was confirmed. Check Zepp support for your model and use manual entry when no compatible file is available."
+        },
+        "huawei": {
+          "step1": "Huawei support documents exporting route files from Huawei Health.",
+          "step2": "Those route exports are not FIT files accepted by Kinesis. Use manual entry for workout totals."
+        },
+        "apple": {
+          "step1": "Apple Health can export all health and fitness data as XML.",
+          "step2": "The export is a complete health archive, not a FIT activity file.",
+          "step3": "Kinesis does not accept that XML yet; use manual entry for the workout totals."
+        },
+        "samsung": {
+          "step1": "Samsung documents GPX route import/export for supported devices.",
+          "step2": "GPX routes are not FIT activity files accepted by Kinesis.",
+          "step3": "Use manual entry for workout totals."
+        }
       },
       "renameWarning": "Renaming a GPX, TCX, XML, CSV, or JSON file to .FIT does not convert it and will not make it compatible.",
       "privacy": "Kinesis never asks for manufacturer credentials or accesses your watch account."
@@ -494,20 +574,20 @@
     "fitLapAscent": "Ascent",
     "fitLapAscentUnit": "(m)",
     "fitLapAscentAccessible": "Ascent (m)",
-    "fitLapTypes": { "run": "Run", "warmup": "Warmup", "cooldown": "Cooldown", "rest": "Rest" },
+    "fitLapTypes": {
+      "run": "Run",
+      "warmup": "Warmup",
+      "cooldown": "Cooldown",
+      "rest": "Rest"
+    },
     "fieldWeather": "Temperature & weather",
     "weatherPlaceholder": "e.g.: 22°C, cloudy, light wind",
     "fieldTerrain": "Terrain/route",
     "fieldBreathing": "Breathing",
     "fieldMuscle": "Muscle sensation",
     "fieldEnergy": "Energy at finish",
-    "generatePrompt": "Save and Generate Analysis Prompt",
-    "promptHeading": "Generated Prompt",
-    "copyPrompt": "Copy to clipboard",
-    "copied": "Copied!",
     "save": "Save and back to calendar",
     "saving": "Saving…",
-    "generatingPrompt": "Generating prompt…",
     "deleteTooltip": "Delete workout",
     "deleteAriaLabel": "Delete workout",
     "deleteConfirmTitle": "Delete training",
@@ -520,19 +600,118 @@
       "rpe": "Realized RPE must be an integer between 1 and 5.",
       "rpeRequired": "Select the realized RPE (1 to 5) to record and analyze this workout.",
       "save": "We could not save your feedback. Please try again.",
-    "fitUpload": "Could not upload the FIT file. Please try again.",
-    "manualValidation": "Enter a valid distance and duration before saving.",
-    "manualSave": "Could not save manual results. Please try again.",
-    "fitInvalidFile": "The uploaded file is invalid.",
-    "fitInvalidZip": "The ZIP file is invalid or corrupted.",
-    "fitMissingInZip": "The ZIP file does not contain a FIT file.",
-    "fitMultipleInZip": "The ZIP file contains more than one FIT file.",
-    "fitEncryptedZip": "Encrypted ZIP files are not supported.",
-    "fitUnsafeZip": "The ZIP file contains an unsafe entry.",
-    "fitTooManyEntries": "The ZIP file contains too many entries.",
-    "fitTooLarge": "The FIT file exceeds the allowed size.",
-    "fitZipTooLarge": "The decompressed ZIP contents exceed the allowed size.",
-    "fitUnsupportedType": "Please upload a .FIT or .ZIP file."
+      "fitUpload": "Could not upload the FIT file. Please try again.",
+      "manualValidation": "Enter a valid distance and duration before saving.",
+      "manualSave": "Could not save manual results. Please try again.",
+      "fitInvalidFile": "The uploaded file is invalid.",
+      "fitInvalidZip": "The ZIP file is invalid or corrupted.",
+      "fitMissingInZip": "The ZIP file does not contain a FIT file.",
+      "fitMultipleInZip": "The ZIP file contains more than one FIT file.",
+      "fitEncryptedZip": "Encrypted ZIP files are not supported.",
+      "fitUnsafeZip": "The ZIP file contains an unsafe entry.",
+      "fitTooManyEntries": "The ZIP file contains too many entries.",
+      "fitTooLarge": "The FIT file exceeds the allowed size.",
+      "fitZipTooLarge": "The decompressed ZIP contents exceed the allowed size.",
+      "fitUnsupportedType": "Please upload a .FIT or .ZIP file."
+    },
+    "analysis": {
+      "analyze": "Analyze workout",
+      "saving": "Saving workout data…",
+      "title": "Workout analysis",
+      "externalPrompt": "View external prompt",
+      "copyPrompt": "Copy prompt",
+      "loadingPrompt": "Loading prompt…",
+      "promptUnavailable": "The prompt could not be loaded. Try again.",
+      "promptCopied": "Prompt copied.",
+      "promptCopyFailed": "Could not copy. The prompt is still available to select.",
+      "close": "Close",
+      "running": "Analysis in progress…",
+      "readAgain": "Read again",
+      "summary": "Summary",
+      "classification": "Classification",
+      "classifications": {
+        "below": "Below expectations",
+        "adequate": "Adequate",
+        "good": "Good",
+        "veryGood": "Very good",
+        "excellent": "Excellent",
+        "insufficient": "Insufficient data"
+      },
+      "comparison": "Planned and realized",
+      "contextualReading": "Contextual reading and progress",
+      "attention": "Points to watch",
+      "recommendations": "Recommendations",
+      "limitations": "Data limitations",
+      "interpretations": "Interpretations for future context",
+      "confirm": "Confirm",
+      "correct": "Correct",
+      "discard": "Discard",
+      "correctTitle": "Correct interpretation",
+      "correctDescription": "Record your correction as a user report for future context.",
+      "correctionLabel": "Your correction",
+      "saveCorrection": "Save correction",
+      "cancel": "Cancel",
+      "version": "Version",
+      "outdated": "This analysis is outdated relative to current data.",
+      "states": {
+        "queued": "Queued",
+        "running": "In progress",
+        "failed": "Failed",
+        "uncertain": "Outcome uncertain",
+        "cancelled": "Cancelled",
+        "outdated": "Outdated",
+        "completed": "Completed"
+      },
+      "errors": {
+        "failed": "Your workout data was saved, but the analysis did not finish. You can explicitly request another analysis.",
+        "uncertain": "The call ended without a confirmed result. Read again to recover the same execution.",
+        "cancelled": "The analysis was cancelled. Your workout data remains saved.",
+        "outdated": "Sources changed during analysis. Your data is saved; review the workout before explicitly requesting another analysis.",
+        "aiUnavailable": "Your workout data was saved, but analysis is temporarily unavailable and was not started.",
+        "accountUnavailable": "Your workout data was saved, but this account can no longer start an analysis.",
+        "usageLimit": "Your workout data was saved, but the configured AI usage limit was reached. Try again later.",
+        "executionLimit": "Your workout data was saved, but another analysis is already running. Read that execution again.",
+        "providerRateLimited": "Your workout data was saved, but the analysis provider is temporarily busy. No new request was started; try again later.",
+        "providerRejected": "Your workout data was saved, but the analysis provider rejected the request. Try again later.",
+        "providerOutcomeUncertain": "Your workout data was saved, but the provider outcome is uncertain. Read this execution before requesting another analysis.",
+        "providerTimeout": "Your workout data was saved, but the analysis timed out. Read this execution again before requesting another.",
+        "providerOutputLimit": "Your workout data was saved, but the analysis response exceeded its output limit and could not be used.",
+        "providerIncomplete": "Your workout data was saved, but the analysis response was incomplete and could not be used.",
+        "providerInvalidResponse": "Your workout data was saved, but the analysis response could not be validated.",
+        "providerRefused": "Your workout data was saved, but the analysis provider did not return an analysis.",
+        "providerContentFiltered": "Your workout data was saved, but the analysis response could not be used.",
+        "providerFailed": "Your workout data was saved, but the analysis could not be completed.",
+        "invalidDomainResponse": "Your workout data was saved, but the analysis did not meet the required response rules.",
+        "sourceChanged": "Your workout data was saved, but its sources changed during analysis. Review the workout before requesting another analysis.",
+        "contextTooLarge": "Your workout data was saved, but the selected context exceeds the configured limit.",
+        "criticalContextTooLarge": "Your workout data was saved, but required context exceeds the configured limit.",
+        "inputTooLarge": "Your workout data was saved, but the analysis request exceeds the configured limit.",
+        "analysisRequiresCompletedResult": "Save a completed workout result and choose a realized effort from 1 to 5 before analyzing.",
+        "adapterUnavailable": "Your workout data was saved, but this analysis version is temporarily unavailable.",
+        "reservationExpired": "Your workout data was saved, but this queued analysis expired before it could run. Review the execution before requesting another.",
+        "restartOutcomeUncertain": "Your workout data was saved, but the server restarted before the analysis result was confirmed. Read this execution before requesting another.",
+        "resultPersistenceFailed": "Your workout data was saved, but the analysis result could not be stored. Do not retry until the saved execution has been checked.",
+        "incompatibleRpeScale": "Use only the Kinesis RPE scale from 1 to 5 in an interpretation correction."
+      },
+      "readUnavailable": "Could not read the execution. Try reading again; this will not start another analysis.",
+      "analysisUnavailable": "Could not load saved analyses. Try reading again; no workout will be generated.",
+      "analysisDisplayUnavailable": "The saved analysis was retrieved but could not be displayed. Try reading again; no workout will be generated.",
+      "recoveryUnavailable": "Could not verify the previous request. Any saved analysis remains available; try reading again. This will not start another analysis.",
+      "connectionRetrying": "Temporary connection problem. Continuing to read this execution…",
+      "recovering": "Checking the previous request…",
+      "outcomeUnknown": "The analysis request had an uncertain response. Read again; a new request will reuse the same key and cannot duplicate the execution.",
+      "analysisConflict": "A new analysis could not start while another execution for this workout is active.",
+      "interpretationConflict": "This interpretation changed in another action. The list was refreshed; review it before trying again.",
+      "interpretationSaveError": "Could not save this decision. Try again.",
+      "incompatibleRpeScale": "Use only the Kinesis RPE scale from 1 to 5 in an interpretation correction.",
+      "knownStartFailure": "Your workout data was saved, but the analysis could not be started.",
+      "dispositions": {
+        "pending": "Hypothesis to review",
+        "confirmed": "Confirmed interpretation",
+        "corrected": "Corrected user report",
+        "dismissed": "Dismissed",
+        "superseded": "Superseded"
+      }
     }
   },
   "terrain": {
@@ -648,7 +827,11 @@
     "close": "Close feedback dialog",
     "intro": "Tell us about a bug, an idea, or anything else that would improve Kinesis.",
     "type": "Type",
-    "types": { "bug": "Bug", "suggestion": "Suggestion", "other": "Other" },
+    "types": {
+      "bug": "Bug",
+      "suggestion": "Suggestion",
+      "other": "Other"
+    },
     "description": "Description",
     "descriptionPlaceholder": "What happened or what would you like to see?",
     "source": "Screen",
@@ -660,10 +843,44 @@
     "maxHint": "Up to 5,000 characters."
   },
   "feedbackAdmin": {
-    "pageTitle": "Feedbacks - Kinesis", "title": "Feedbacks", "subtitle": "Review feedback sent by Kinesis users.",
-    "status": "Status", "type": "Type", "description": "Submitted description", "allStatuses": "All statuses", "allTypes": "All types", "loading": "Loading feedback…", "loadError": "Feedback could not be loaded.", "retry": "Try again", "empty": "No feedback matches these filters.", "loadMore": "Load more", "view": "View", "viewAccessible": "View feedback", "detail": "Feedback detail", "close": "Close", "internalNote": "Internal note", "save": "Save", "delete": "Delete", "deleteAccessible": "Delete feedback", "cancel": "Cancel", "deleteTitle": "Delete feedback", "deleteConfirm": "Delete this feedback permanently?", "saved": "Feedback triage saved.", "deleted": "Feedback deleted.", "notFound": "This feedback no longer exists.", "requestError": "The request could not be completed. Try again.",
-    "types": { "bug": "Bug", "suggestion": "Suggestion", "other": "Other" },
-    "statuses": { "new": "New", "inProgress": "In progress", "resolved": "Resolved" }
+    "pageTitle": "Feedbacks - Kinesis",
+    "title": "Feedbacks",
+    "subtitle": "Review feedback sent by Kinesis users.",
+    "status": "Status",
+    "type": "Type",
+    "description": "Submitted description",
+    "allStatuses": "All statuses",
+    "allTypes": "All types",
+    "loading": "Loading feedback…",
+    "loadError": "Feedback could not be loaded.",
+    "retry": "Try again",
+    "empty": "No feedback matches these filters.",
+    "loadMore": "Load more",
+    "view": "View",
+    "viewAccessible": "View feedback",
+    "detail": "Feedback detail",
+    "close": "Close",
+    "internalNote": "Internal note",
+    "save": "Save",
+    "delete": "Delete",
+    "deleteAccessible": "Delete feedback",
+    "cancel": "Cancel",
+    "deleteTitle": "Delete feedback",
+    "deleteConfirm": "Delete this feedback permanently?",
+    "saved": "Feedback triage saved.",
+    "deleted": "Feedback deleted.",
+    "notFound": "This feedback no longer exists.",
+    "requestError": "The request could not be completed. Try again.",
+    "types": {
+      "bug": "Bug",
+      "suggestion": "Suggestion",
+      "other": "Other"
+    },
+    "statuses": {
+      "new": "New",
+      "inProgress": "In progress",
+      "resolved": "Resolved"
+    }
   },
   "shoes": {
     "title": "Shoes",
@@ -954,11 +1171,26 @@
       "loading": "Finding today's inspiration…",
       "ariaLabel": "Daily inspiration",
       "fallbackQuotes": [
-        { "text": "Run when you can, walk if you have to, crawl if you must; just never give up.", "author": "Dean Karnazes" },
-        { "text": "The pain you feel today will be the strength you feel tomorrow.", "author": "Unknown" },
-        { "text": "Suffer the discomfort of discipline, or the pain of regret.", "author": "Jim Rohn" },
-        { "text": "Every run starts with a single step.", "author": "Unknown" },
-        { "text": "Iron sharpens iron, and miles make champions.", "author": "Kinesis Coach" }
+        {
+          "text": "Run when you can, walk if you have to, crawl if you must; just never give up.",
+          "author": "Dean Karnazes"
+        },
+        {
+          "text": "The pain you feel today will be the strength you feel tomorrow.",
+          "author": "Unknown"
+        },
+        {
+          "text": "Suffer the discomfort of discipline, or the pain of regret.",
+          "author": "Jim Rohn"
+        },
+        {
+          "text": "Every run starts with a single step.",
+          "author": "Unknown"
+        },
+        {
+          "text": "Iron sharpens iron, and miles make champions.",
+          "author": "Kinesis Coach"
+        }
       ]
     },
     "cycle": {
@@ -1073,6 +1305,8 @@
     },
     "errors": {
       "generic": "Unable to complete this action. Your entered values were kept. Try again.",
+      "memoryReadFailed": "The decision was saved, but the memory list could not be refreshed. Your saved decision is still in effect; reload the list to verify it.",
+      "incompatibleRpeScale": "Use only the Kinesis RPE scale from 1 to 5 in an interpretation correction.",
       "memoryConflict": "Saved information changed. Reload it, review your entered values and save again.",
       "resourceNotFound": "The selected cycle or workout is no longer available.",
       "invalidDate": "Select a valid date. Weekly requests start on Monday.",
@@ -1146,7 +1380,33 @@
     "sessions": "Completed / planned",
     "effort": "Average RPE",
     "tableHint": "Scroll the table to see all columns.",
-    "totalsHint": "Distance and duration use recorded results only. Missing metrics are counted separately; reference sessions are not added again."
+    "totalsHint": "Distance and duration use recorded results only. Missing metrics are counted separately; reference sessions are not added again.",
+    "interpretations": "Reusable interpretations",
+    "interpretationsOrigin": "Items produced by workout analyses. Interpretations are not measured metrics.",
+    "interpretationsEmpty": "There are no workout-analysis interpretations yet.",
+    "interpretationKinds": {
+      "pattern": "Pattern",
+      "recommendation": "Recommendation",
+      "attention": "Point to watch"
+    },
+    "interpretationStates": {
+      "pending": "Unconfirmed hypothesis",
+      "confirmed": "Confirmed interpretation",
+      "corrected": "Corrected as a user report",
+      "dismissed": "Dismissed",
+      "superseded": "Superseded"
+    },
+    "interpretationIncluded": "Sources are current: selected for future contexts.",
+    "interpretationNotSelected": "Not selected currently: sources may have changed or the item did not fit the context budget.",
+    "interpretationSelectionUnverified": "Saved. Context selection will be checked when the memory refreshes.",
+    "interpretationConfirm": "Confirm",
+    "interpretationCorrect": "Correct",
+    "interpretationDiscard": "Discard",
+    "interpretationCorrectionLabel": "Correction as a user report",
+    "interpretationSaveCorrection": "Save correction",
+    "interpretationSaved": "Interpretation updated.",
+    "interpretationOriginal": "Original interpretation",
+    "interpretationCorrectionLabel": "Your correction"
   },
   "cyclePlanning": {
     "admin": "Administrator details",

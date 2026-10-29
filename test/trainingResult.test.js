@@ -22,17 +22,10 @@ const {
   persistManualResultsIfNeeded,
   persistCurrentTrainingState,
   weekdayLabel,
-  resolveTemplateLang,
-  templateFor,
-  buildAnalysisPrompt,
-  collectPromptValues,
-  buildCanonicalPromptForm,
-  painPromptText,
   copyAnalysisPrompt,
   escapeHtmlText,
   fitDropzonePrimaryHtml,
   fitUploadErrorMessage,
-  buildLapsMarkdown,
   formatCadence,
   splitPaceLabel,
   formatLapType,
@@ -43,9 +36,13 @@ const {
   WEATHER_CODE_LABEL_KEYS,
   WEATHER_UNKNOWN_KEY,
   selectableFeedbackShoes,
-  PROMPT_TEMPLATE_PT,
-  PROMPT_TEMPLATE_EN,
 } = require('../src/public/training-result.js');
+const {
+  resolveTemplateLang, templateFor, buildAnalysisPrompt, collectPromptValues,
+  buildCanonicalPromptForm, painPromptText, buildLapsMarkdown,
+  formatCadence: formatPromptCadence, splitPaceLabel: splitPromptPaceLabel,
+  PROMPT_TEMPLATE_PT, PROMPT_TEMPLATE_EN,
+} = require('../src/ai/external-analysis-prompt.js');
 const { summarize } = require('../src/fitParser.js');
 const en = require('../src/public/locales/en.json');
 const pt = require('../src/public/locales/pt.json');
@@ -839,6 +836,16 @@ test('splitPaceLabel keeps the pace above its localized unit', () => {
   assert.deepEqual(splitPaceLabel('-'), { value: '-', unit: '' });
 });
 
+test('private external prompt formatting helpers preserve safe FIT and pace fallbacks', () => {
+  assert.equal(formatPromptCadence(null), '-');
+  assert.equal(formatPromptCadence(-1), '-');
+  assert.equal(formatPromptCadence(88), '88');
+  assert.deepEqual(splitPromptPaceLabel('6:12 min/km'), { value: '6:12', unit: 'min/km' });
+  assert.deepEqual(splitPromptPaceLabel('unparsed'), { value: 'unparsed', unit: '' });
+  assert.deepEqual(splitPromptPaceLabel(null), { value: '-', unit: '' });
+  assert.deepEqual(splitPromptPaceLabel(''), { value: '-', unit: '' });
+});
+
 test('collectPromptValues injects Markdown lap table when fitData has laps', () => {
   const fitData = {
     fit_duration: '1:00:00',
@@ -1107,25 +1114,20 @@ test('training-result.html ships the expanded feedback grid and generator button
 
   assert.match(html, /<div class="form-actions">/);
   assert.match(html, /<button id="generateBtn" class="btn-primary" type="button">/);
-  assert.match(
-    html,
-    /<i data-lucide="sparkles"[^>]*><\/i>\s*<span data-i18n=/,
-    'the icon renders directly before the label span'
-  );
-  assert.match(html, /<i data-lucide="sparkles" aria-hidden="true"><\/i>/);
-  assert.match(html, /data-i18n="session\.generatePrompt"/);
-  assert.match(en.session.generatePrompt, /^Save and Generate Analysis Prompt$/);
-  assert.match(pt.session.generatePrompt, /^Salvar e Gerar Prompt de Análise$/);
-  assert.match(html, /<button id="saveBtn" class="btn-secondary" type="button"/);
+  assert.match(html, /<i data-lucide="activity" aria-hidden="true"><\/i>\s*<span data-i18n="session\.analysis\.analyze"/);
+  assert.equal(en.session.analysis.analyze, 'Analyze workout');
+  assert.equal(pt.session.analysis.analyze, 'Analisar treino');
+  assert.match(html, /id="analysisSection"[^>]*aria-live="polite"[^>]*hidden/);
+  assert.doesNotMatch(html, /promptSection|promptOutput/);
+  assert.match(html, /<button id="saveBtn" class="btn-secondary btn-session-save" type="button"/);
 
   assert.match(html, /<select id="feedbackShoe" class="input-control">/, 'shoe is a select dropdown, not free text');
   assert.ok(
     !html.includes('id="feedbackShoe" type="text"') && !/<input[^>]*id="feedbackShoe"/.test(html),
     'no free-text shoe input remains'
   );
-  assert.match(html, /id="promptSection"[^>]*hidden/, 'prompt section starts hidden');
-  assert.match(html, /id="promptOutput"/);
-  assert.match(html, /id="copyPromptBtn"/);
+  assert.doesNotMatch(html, /promptSection|promptOutput|copyPromptBtn/, 'the external prompt is not embedded in the common page DOM');
+  assert.match(html, /id="analysisCorrectionDialog"[^>]*role="dialog"[^>]*aria-modal="true"/);
 
   for (const legacy of ['id="dropzone"', 'id="fileInput"', 'markdownPreview', 'copyBtn', 'form-state.js', 'shoeUsedPlaceholder']) {
     assert.ok(!html.includes(legacy), `${legacy} is gone from the refactored page`);
@@ -1166,9 +1168,13 @@ test('training-result.html ships the planned location field and weather spinner'
   assert.ok(!html.includes('title="'), 'no native title attributes sneak in');
 });
 
-test('training-result.js wires toggling, saving, generation and i18n refreshes', () => {
+test('training-result.js wires explicit persisted analysis, protected prompt preview, recovery and i18n refreshes', () => {
   const js = readFileSync(join(publicDir, 'training-result.js'), 'utf8') + readFileSync(join(publicDir, 'shared/analysis-prompts.js'), 'utf8');
   const markup = readFileSync(join(publicDir, 'training-result.html'), 'utf8');
+  const sharedApi = readFileSync(join(publicDir, 'shared/api.js'), 'utf8');
+  const sharedComponents = readFileSync(join(publicDir, 'shared/components.css'), 'utf8');
+  const sharedPromptModal = readFileSync(join(publicDir, 'shared/external-prompt-modal.js'), 'utf8');
+  const sharedPromptStyles = readFileSync(join(publicDir, 'shared/external-prompt-modal.css'), 'utf8');
 
   assert.match(js, /import \{ initShell, getShellI18n, getUserPreferences, showConfirm, showShellToast, refreshIcons \} from '\.\/shared\/shell\.js';/);
   assert.match(js, /saveManualTrainingResults/);
@@ -1285,11 +1291,7 @@ test('training-result.js wires toggling, saving, generation and i18n refreshes',
     /feedback_pain: hasPainValue === 'yes' \? painInput\.value : '',/,
     'descriptions are ignored unless pain was reported'
   );
-  assert.match(
-    js,
-    /pain_description: painPromptText\(hasPainValue, painInput\.value, t\),/,
-    'the briefing text is derived from the shared pain helper'
-  );
+  assert.doesNotMatch(js, /painPromptText\(|pain_description:/, 'the browser does not construct prompt-only briefing fields');
   assert.match(js, /const terrainKey = TERRAIN_LABEL_KEYS\[terrainInput\.value\];/);
   assert.match(
     js,
@@ -1312,31 +1314,6 @@ test('training-result.js wires toggling, saving, generation and i18n refreshes',
   assert.match(js, /energy_label: energyKey \? t\(energyKey\) : '',/);
   assert.match(
     js,
-    /TERRENO: form\.terrain_label,/,
-    'the prompt shows the localized terrain label, not the stored token'
-  );
-  assert.match(
-    js,
-    /RESPIRACAO: form\.breathing_label,/,
-    'the prompt shows the localized breathing label, not the stored token'
-  );
-  assert.match(
-    js,
-    /SENSACAO_MUSCULAR: form\.muscle_label,/,
-    'the prompt shows the localized muscle label, not the stored token'
-  );
-  assert.match(
-    js,
-    /ENERGIA_FINAL: form\.energy_label,/,
-    'the prompt shows the localized energy label, not the stored token'
-  );
-  assert.match(
-    js,
-    /DOR_DESCONFORTO: form\.pain_description,/,
-    'the prompt renders the pain answer through its dedicated formatter'
-  );
-  assert.match(
-    js,
     new RegExp(
       [
         'const \\{',
@@ -1356,33 +1333,60 @@ test('training-result.js wires toggling, saving, generation and i18n refreshes',
     'only persistable feedback columns reach the PATCH endpoint'
   );
 
-  assert.match(js, /templateFor\(i18n\.language\)/);
+  assert.match(js, /startAiExecution\(\{[\s\S]*purpose: 'analysis',[\s\S]*resource_id: String\(training\.id\)/);
+  assert.match(js, /training = await fetchTraining\(id\);\s*if \(!training\) throw new Error\('saved-session-unavailable'\);/);
+  assert.match(js, /previewAnalysisPrompt\(currentTrainingId\)/);
+  assert.match(js, /sessionUser\?\.role === 'admin'/, 'the prompt control is only constructed for the current administrator');
+  assert.match(js, /externalPromptButton\.addEventListener\('click', async \(\) => \{[\s\S]*?const rpe = requireFeedbackRpe\(\);[\s\S]*?const saved = await persistCurrentState\(rpe\);[\s\S]*?previewAnalysisPrompt\(currentTrainingId\)/, 'the owner-admin prompt action persists the complete feedback before reading the prompt');
+  assert.match(js, /externalPromptButton\.className = 'btn-secondary'/, 'the admin prompt uses the same shared secondary variant as the weekly prompt');
+  assert.match(js, /promptIcon\.dataset\.lucide = 'sparkles'/, 'the session and weekly prompt actions share the sparkles icon reference');
+  assert.match(js, /const formActions = document\.querySelector\('\.feedback-card > \.form-actions'\)/, 'session actions share one layout group');
+  assert.match(js, /formActions\.classList\.add\('has-admin-prompt'\)/, 'only the admin action layout opts into the wider three-button threshold');
+  assert.match(js, /formActions\.insertBefore\(externalPromptButton, generateBtn\)/, 'the admin prompt is inserted between save and analysis in DOM and tab order');
+  assert.match(js, /analysisSection\.hidden = !\([\s\S]*?analysisNotice\.dataset\.key\)/, 'only explicit analysis state, never stale notice text, reveals the section');
+  assert.match(js, /if \(analysisData\.active\)[\s\S]*?void refreshAnalysisExecution\(activeAnalysisId, token\)/, 'execution status polling starts only for an active persisted execution');
+  assert.match(js, /setAnalysisNotice\('recoveryUnavailable', true\)/, 'failure to verify a stored idempotency key is distinct from execution polling failure');
+  assert.match(js, /analysisLoadWarning\.hidden = false/, 'unknown history failures use a separate contextual warning');
+  assert.match(js, /analysisSection\.hidden = true/, 'an empty or unknown history failure cannot reveal an empty analysis section');
+  assert.match(js, /analysisLoadAgain\.addEventListener\('click', async \(\) => \{[\s\S]*loadAnalysisState\(\)/, 'history retry only repeats the free history read');
+  assert.match(js, /analysisData = loaded;[\s\S]*renderAnalysis\(\)/, 'a successful historical read feeds the persisted result into the view renderer');
+  assert.match(sharedApi, /export async function fetchWorkoutAnalyses[\s\S]*?cache:\s*'no-store'/, 'analysis history reads bypass stale browser HTTP cache entries');
+  assert.match(markup, /id="analysisLoadWarning"[^>]*role="alert"[^>]*hidden/, 'unknown history failures have a separate initially hidden alert outside the analysis section');
+  assert.match(markup, /shared\/components\.css/, 'the result page loads the same shared button components as Request Workouts');
+  assert.match(js, /createDialogFocusTrap\(externalPromptDialog/);
+  assert.match(js, /createExternalPromptModal\(/, 'the result prompt uses the shared external prompt component');
+  assert.match(markup, /href="shared\/external-prompt-modal\.css"/);
+  assert.match(sharedPromptModal, /element\('textarea', 'external-prompt-text'\)/);
+  assert.match(sharedPromptModal, /closeActionId[\s\S]*copyButtonId/);
+  assert.match(sharedPromptStyles, /\.external-prompt-actions[\s\S]*?border:\s*0/);
+  assert.match(js, /fetchWorkoutAnalyses\(currentTrainingId/);
+  assert.match(js, /setTimeout\(\(\) => \{[\s\S]*refreshAnalysisExecution/);
+  assert.match(js, /analysisReadController\?\.abort\(\)/);
+  assert.doesNotMatch(js, /templateFor\(|PROMPT_TEMPLATE|INSTRUCTIONS FOR ANALYSIS|INSTRUÇÕES PARA A ANÁLISE/, 'external prompt text and templates are not bundled in public code');
   assert.ok(!js.includes('saveManualResultsBtn'), 'the removed control has no stale JavaScript reference');
   assert.ok(!markup.includes('Save manual results'), 'the obsolete intermediate action is removed from markup');
   assert.ok(!readFileSync(join(publicDir, 'training-result.css'), 'utf8').includes('.manual-results-field .btn-primary'), 'the retired intermediate-button CSS is removed');
   assert.match(js, /persistManualResultsIfNeeded\(\{/);
   assert.match(js, /persistCurrentTrainingState\(\{/);
-  assert.equal((js.match(/persistCurrentState\(rpe\);/g) || []).length, 2, 'both terminal actions share one persistence flow');
+  assert.equal((js.match(/persistCurrentState\(rpe\);/g) || []).length, 3, 'save, analysis and admin prompt actions share one persistence flow');
   assert.ok(js.indexOf('persistManual: () => persistManualResults(rpe)') < js.indexOf('saveFeedback: \(payload\) => saveTrainingFeedback'), 'manual result precedes feedback');
-  assert.ok(js.lastIndexOf('const result = await persistCurrentState(rpe);') < js.lastIndexOf('buildAnalysisPrompt('), 'prompt generation follows complete persistence');
+  assert.ok(js.lastIndexOf('const result = await persistCurrentState(rpe);') < js.lastIndexOf('startAiExecution('), 'paid analysis begins only after complete persistence');
   assert.match(js, /generateBtn\.disabled = true;\s*\n\s*saveBtn\.disabled = true;/);
   assert.match(js, /saveBtn\.disabled = false;\s*\n\s*generateLabel\.textContent/);
   assert.match(js, /manualDistanceUnit\.textContent = nextUnit;/);
   assert.match(js, /renderManualDistanceUnit\(\{ convertExisting: true \}\)/);
   assert.match(js, /confirm_replace_fit = true/);
   assert.match(js, /confirm_replace_manual/);
-  assert.match(js, /buildCanonicalPromptForm\(training,\s*\{[\s\S]*messages: i18n\.messages/);
-  assert.doesNotMatch(js, /collectPromptValues\(\{ training, form: collectFormState\(\), fitData/);
-  assert.match(js, /promptOutput\.value = promptText;/);
-  assert.match(js, /promptSection\.hidden = false;/);
-  assert.match(js, /setTimeout\(/, 'Copied! feedback restores itself after a moment');
+  assert.match(js, /renderWorkoutAnalysis\(content, version\.result, analysisLabels\(\)\)/);
+  assert.match(js, /content\.className = 'analysis-version-content'/, 'analysis cleanup is confined to its content container so version notices survive');
+  assert.match(js, /text\.textContent = claim\.text/);
 
   assert.match(js, /addEventListener\('app:languagechange'/);
   assert.match(js, /dateEl\.textContent = formatDateLabel\(training\.dia, i18n\.language\)/);
   assert.match(
     js,
-    /if \(!generateBtn\.disabled\) generateLabel\.textContent = t\('session\.generatePrompt'\);\s*\n\s*if \(!copyPromptBtn\.disabled\) copyLabel\.textContent = t\('session\.copyPrompt'\);\s*\n\s*renderFitDropzoneState\(\);/,
-    'language switches re-render the dropzone and copy label with the new locale'
+    /if \(!generateBtn\.disabled\) generateLabel\.textContent = analysisKey\('analyze'\);[\s\S]*?renderFitDropzoneState\(\);/,
+    'language switches re-render analysis controls and the dropzone'
   );
 
   assert.match(
@@ -1583,7 +1587,6 @@ test('session locale namespace stays in parity across en-US and pt-BR', () => {
     'manualMaxHr',
     'manualElevation',
     'resultCalories',
-    'generatingPrompt',
     'sourceManualBadge',
     'sourceFitBadge',
     'replaceFitTitle',
@@ -1623,10 +1626,6 @@ test('session locale namespace stays in parity across en-US and pt-BR', () => {
     'fieldBreathing',
     'fieldMuscle',
     'fieldEnergy',
-    'generatePrompt',
-    'promptHeading',
-    'copyPrompt',
-    'copied',
     'save',
     'saving',
     'deleteTooltip',
@@ -1662,6 +1661,10 @@ test('session locale namespace stays in parity across en-US and pt-BR', () => {
     assert.equal(typeof english, 'string', `en.session.${key}`);
     assert.equal(typeof portuguese, 'string', `pt.session.${key}`);
   }
+  assert.deepEqual(Object.keys(en.session.analysis).sort(), Object.keys(pt.session.analysis).sort());
+  for (const key of Object.keys(en.session.analysis))
+    assert.equal(typeof en.session.analysis[key], typeof pt.session.analysis[key], `analysis.${key} locale type`);
+  assert.deepEqual(Object.keys(en.session.analysis.errors).sort(), Object.keys(pt.session.analysis.errors).sort(), 'every analysis failure code has PT and EN copy');
 
   assert.notEqual(en.session.save, pt.session.save);
   assert.notEqual(en.session.smartwatchYes, pt.session.smartwatchYes);
@@ -1806,11 +1809,14 @@ test('fit upload error codes resolve through the real localized dictionaries wit
 
 test('training-result.css keeps the earthy premium aesthetic for the session view', () => {
   const css = readFileSync(join(publicDir, 'training-result.css'), 'utf8');
+  const sharedComponents = readFileSync(join(publicDir, 'shared/components.css'), 'utf8');
 
   assert.match(css, /@import url\('\.\/shared\/theme\.css'\);/);
   assert.match(css, /\.planned-grid \{[^}]*display:\s*grid/);
   assert.match(css, /\.status\[data-tone='error'\] \{[^}]*color:\s*var\(--danger\)/);
   assert.match(css, /font-family: 'DM Sans', system-ui, -apple-system, sans-serif;/);
+  assert.match(css, /#analysisReadAgain\[hidden\]\s*\{\s*display:\s*none;/, 'the read-again action is visually absent after execution recovery');
+  assert.match(css, /\.workout-analysis\[hidden\]\s*\{\s*display:\s*none;/, 'the empty analysis section remains absent despite its flex layout');
 
   assert.match(css, /\.feedback-grid \{[^}]*display:\s*grid/);
   assert.match(css, /\.feedback-grid \{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/);
@@ -1851,31 +1857,20 @@ test('training-result.css keeps the earthy premium aesthetic for the session vie
   assert.match(css, /\.dropzone-text-secondary \{[^}]*margin-top:\s*0\.25rem/);
   assert.match(css, /\.pain-field\[hidden\] \{[^}]*display:\s*none/, 'the pain description hides until pain is reported');
   assert.match(css, /\.form-actions \{[^}]*display:\s*flex/);
-  assert.match(css, /\.form-actions \.btn-primary,[\s\S]*white-space:\s*normal/);
-  assert.match(css, /\.btn-secondary \{[^}]*border:\s*1px solid var\(--accent-deep\)/);
-  assert.match(css, /\.btn-secondary svg \{[^}]*width:\s*16px/);
-  assert.match(
-    css,
-    /\.btn-primary,\s*\n\s*\.btn-secondary \{[^}]*transition:\s*all 0\.2s ease/,
-    'both buttons share one smooth animation curve'
-  );
-  assert.match(
-    css,
-    /\.btn-primary,\s*\n\s*\.btn-secondary \{[^}]*display:\s*inline-flex;\s*\n\s*align-items:\s*center;\s*\n\s*justify-content:\s*center/,
-    'both buttons center their icon and label with strict flex'
-  );
-  assert.match(
-    css,
-    /\.btn-primary:hover:not\(:disabled\),\s*\n\s*\.btn-secondary:hover:not\(:disabled\) \{[^}]*transform:\s*translateY\(-2px\)/,
-    'the hover motion is identical for both styles'
-  );
-  assert.match(
-    css,
-    /\.btn-secondary:hover:not\(:disabled\) \{[^}]*background-color:\s*rgba\(111,\s*144,\s*112,\s*0\.08\)/,
-    'the outline button dims subtly instead of filling solid'
-  );
-  assert.ok(!css.includes('#3d5a43'), 'the old solid-fill outline hover is gone');
-  assert.match(css, /\.btn-secondary \{[^}]*background:\s*transparent/, 'the outline stays surface-colored');
+  assert.match(css, /\.form-actions \{[^}]*gap:\s*16px/);
+  assert.match(css, /\.form-actions \{[^}]*border-top:\s*1px solid var\(--line\)/, 'the actions follow the shared form footer divider and spacing');
+  assert.match(css, /\.form-actions \.btn-session-save \{[^}]*min-height:\s*44px[\s\S]*padding:\s*9px 18px[\s\S]*border-color:\s*var\(--accent-deep\)[\s\S]*color:\s*var\(--accent-deep\)/, 'only the session save action restores its historic green outlined variant and geometry');
+  assert.match(css, /\.form-actions #generateBtn \{[^}]*min-height:\s*44px[\s\S]*padding:\s*9px 10px/, 'the analysis button only adjusts dimensions to match save');
+  assert.doesNotMatch(css, /\.form-actions \.btn-(?:primary|secondary)\s*\{/, 'the result page does not override shared button geometry');
+  assert.doesNotMatch(css, /(?:^|\n)\.btn-(?:primary|secondary)\s*\{/, 'the result page does not define a second button treatment');
+  assert.match(css, /\.form-actions button svg \{[^}]*width:\s*16px[\s\S]*height:\s*16px/, 'primary and secondary action icons share the established size');
+  assert.match(css, /@container session-feedback \(max-width:\s*620px\)/, 'the action group stacks according to the available card width');
+  assert.match(css, /@container session-feedback \(max-width:\s*696px\)[\s\S]*?\.form-actions\.has-admin-prompt \{[^}]*flex-direction:\s*column[^}]*align-items:\s*flex-start/, 'admin actions stack together without stretching their intrinsic button widths until all labels fit');
+  assert.match(css, /\.analysis-load-warning\[hidden\] \{[^}]*display:\s*none/, 'history errors stay outside the analysis content and hidden after success');
+  assert.match(css, /\.form-actions button \{\s*white-space:\s*nowrap/);
+  assert.match(sharedComponents, /\.btn-secondary \{[^}]*border-radius:\s*999px[\s\S]*padding:\s*9px 18px/, 'secondary actions use the shared pill geometry');
+  assert.match(sharedComponents, /\.btn-secondary:hover:not\(:disabled\)/, 'secondary actions use the shared hover state');
+  assert.match(sharedComponents, /\.btn-secondary:disabled/, 'secondary actions use the shared disabled state');
   assert.match(css, /\.input-control:focus \{[^}]*border-color:\s*var\(--accent\)/);
   assert.match(
     css,

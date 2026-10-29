@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="shared/shell.css">
   <link rel="stylesheet" href="shared/components.css">
   <link rel="stylesheet" href="cycles.css">
+  <link rel="stylesheet" href="shared/external-prompt-modal.css">
 </head>
 <body>
   <main id="appView">
@@ -106,23 +107,7 @@
     </div>
   </div>
 
-  <div id="promptModal" class="modal-backdrop hidden">
-    <div class="modal-card prompt-modal-card" role="dialog" aria-modal="true">
-      <header class="modal-header">
-        <h2 data-i18n="cycles.promptTitle">Macrocycle prompt</h2>
-        <button type="button" id="promptCloseBtn" class="modal-close" aria-label="Close">
-          <i data-lucide="x"></i>
-        </button>
-      </header>
-      <pre id="promptOutput" class="prompt-output"></pre>
-      <div class="prompt-modal-actions">
-        <button id="promptCopyBtn" class="btn-secondary" type="button">
-          <i data-lucide="copy"></i>
-          <span data-i18n="cycles.copyPrompt">Copy to Clipboard</span>
-        </button>
-      </div>
-    </div>
-  </div>
+  <div id="promptModal" hidden></div>
 
   <div id="cyclePlanningModal" class="modal-backdrop cycle-planning-modal" hidden>
     <div class="modal-card cycle-planning-card" role="dialog" aria-modal="true" aria-labelledby="cyclePlanningHeading" aria-describedby="cyclePlanningHint">
@@ -134,7 +119,7 @@
       </header>
       <div class="cycle-planning-body">
         <p id="cyclePlanningHint" class="field-hint"></p>
-        <p id="cyclePlanningStatus" role="status" aria-live="polite"></p>
+        <p id="cyclePlanningStatus" class="cycle-planning-state" role="status" aria-live="polite"></p>
         <p id="cyclePlanningError" class="form-error" role="alert" tabindex="-1" hidden></p>
         <div id="cyclePlanningContent" class="cycle-planning-content"></div>
         <section id="cyclePlanningAdmin" class="cycle-plan-section" aria-labelledby="cyclePlanningDebugHeading" hidden>
@@ -143,12 +128,12 @@
           <div id="cyclePlanningDebugDetails" hidden><pre id="cyclePlanningDebugOutput" class="prompt-output"></pre></div>
         </section>
       </div>
-      <footer class="form-actions">
-        <button id="cyclePlanningLater" type="button" class="btn-secondary">Not now</button>
-        <button id="cyclePlanningRetry" type="button" class="btn-secondary" hidden data-i18n="cyclePlanning.retry">Try again</button>
-        <button id="cyclePlanningCancel" type="button" class="btn-secondary" hidden data-i18n="cyclePlanning.cancel">Cancel generation</button>
-        <button id="cyclePlanningGenerate" type="button" class="btn-primary" disabled data-i18n="cyclePlanning.generate">Generate planning</button>
-        <button id="cyclePlanningApply" type="button" class="btn-primary" hidden data-i18n="cyclePlanning.apply">Apply proposal</button>
+      <footer id="cyclePlanningActions" class="form-actions confirm-actions" data-action-count="2">
+        <button id="cyclePlanningLater" type="button" class="btn btn-secondary">Not now</button>
+        <button id="cyclePlanningRetry" type="button" class="btn btn-primary" hidden data-i18n="cyclePlanning.retry">Try again</button>
+        <button id="cyclePlanningCancel" type="button" class="btn btn-secondary" hidden data-i18n="cyclePlanning.cancel">Cancel generation</button>
+        <button id="cyclePlanningGenerate" type="button" class="btn btn-primary" disabled data-i18n="cyclePlanning.generate">Generate planning</button>
+        <button id="cyclePlanningApply" type="button" class="btn btn-primary" hidden data-i18n="cyclePlanning.apply">Apply proposal</button>
       </footer>
     </div>
   </div>
