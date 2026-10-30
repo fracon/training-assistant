@@ -1,6 +1,6 @@
 # Garmin Connect integration contract
 
-Status (2026-10-29): **Phase 1 foundation implemented; real-account and
+Status (2026-10-30): **Phase 1 foundation implemented; real-account and
 Forerunner 55 acceptance not performed. The pilot remains disabled.** This
 document separates library documentation, simulated tests, account evidence,
 and device evidence. Nothing in the first two categories is a substitute for
@@ -36,17 +36,26 @@ Python >=3.12. It no longer uses `garth` (since 0.3.0). The connector image is
 based on Python 3.12 and installs a hash-locked dependency set. The upstream
 project documents these relevant methods and behavior:
 
-- `Garmin.login(tokenstore, return_on_mfa=True)` and
-  `resume_login(client_state, mfa_code)` allow an MFA challenge to continue in
-  another request/process. The client state contains SSO cookies and is treated
-  as a credential.
+- The pinned 0.3.20 signature is `Garmin.login(self, /, tokenstore=None)`;
+  `return_on_mfa=True` belongs on the `Garmin` constructor. `resume_login` on
+  its transport continues an MFA challenge. The client state contains SSO
+  cookies and is treated as a credential.
 - Typed running workout creation through `upload_running_workout`, lookup with
   `get_workout_by_id`, and calendar scheduling with `schedule_workout` are
   documented. The adapter only accepts a small allowlisted synthetic workout
   schema.
-- `get_activities_by_date` lists date-bounded activities and
-  `download_activity(id, dl_fmt="original")` returns the Garmin original
-  archive. It is bounded further by a 31-day request window and page response.
+- `get_activities(start, limit)` reads one activity page; the adapter requests
+  at most five pages and applies the date window while scanning. The library's
+  `download_activity(id, dl_fmt=Garmin.ActivityDownloadFormat.ORIGINAL)`
+  returns a fully materialized byte string, so the adapter instead uses the
+  pinned transport's `_run_request(..., stream=True)` with the library's
+  original-download endpoint and enforces 25 MiB while receiving chunks. This
+  private-library API dependency must be rechecked on upgrades.
+- `get_scheduled_workouts(year, month)` returns a calendar object. The adapter
+  inspects `calendarItems` and filters `itemType == "workout"`. It only
+  confirms a schedule when the response also contains the exact `workoutId`,
+  civil `date`, and occurrence `id`; absent or malformed identity yields
+  `outcome_unknown` and blocks another mutation.
 - Device enumeration is documented by `get_devices`; this does not establish
   Forerunner 55 compatibility, transfer to a device, or successful sync.
 - Tokens from the library are normally plain JSON with mode 0600. Kinesis
@@ -91,32 +100,43 @@ or workouts.
 The first-phase adapter is not a product synchronization pipeline. The
 authenticated Kinesis pilot entry point is the local TTY command
 `npm run garmin:pilot -- <action>` executed inside the Node container. Supported
-actions are `auth`, `status`, `disconnect`, `publish-simple`,
+actions are `auth`, `status`, `capabilities`, `disconnect`, `publish-simple`,
 `publish-interval`, `schedule`, `activities`, `download`, and `cancel`.
 Credentials and MFA codes are entered without terminal echo. Mutations require
 an interactive TTY and typed confirmation; publication uses a visible
 operation UUID that can be reused to reconcile an uncertain result. The
 connector checks the same flag and configured pilot owner on each request. The
 Node command also re-reads the configured Kinesis account and its active state
-for every action. Do not pass credentials as command arguments, environment
+immediately before and after each dispatched request. If the owner becomes
+inactive while a call is in flight, the CLI requests local connector
+disconnection; a Garmin mutation already accepted remotely cannot be undone and
+is reported as uncertain. Local disconnect/cancel remain available for an
+inactive or deleted owner. Do not pass credentials as command arguments, environment
 values, shell history, chat, GitHub, or logs.
 
 ## Token custody and recovery
 
 There is one token custodian: the Python connector. Its named Docker volume
 `garmin-tokens` stores AES-GCM ciphertext, keyed by owner and opaque connection
-ID. `GARMIN_ENCRYPTION_KEY` is a 32-byte URL-safe base64 key supplied at
+ID. It also stores an encrypted `.ops` journal for publish/schedule idempotency;
+the journal contains only operation fingerprints, states and Garmin IDs, never
+FIT/GPS or credentials. `GARMIN_ENCRYPTION_KEY` is a 32-byte URL-safe base64 key supplied at
 runtime, independently of the volume and image. The service key is a separate
 runtime secret shared with Node. The token directory is mode 0700, records are
 mode 0600, and replacement is atomic. The connector runs as UID/GID 10001.
 
-Back up the encrypted `garmin-tokens` volume and the encryption key separately
+Back up the encrypted `garmin-tokens` volume (including `.ops`) and the encryption key separately
 using the operator's protected backup system. A restore requires both. Rotate
 by decrypting/re-encrypting every record with an offline maintenance tool while
 the service is stopped; this tool is intentionally not part of the pilot API.
 If the key is lost, encrypted tokens cannot be recovered: remove the volume,
 generate a new key, and reconnect locally. Reconnecting does not promise remote
-token revocation. `disconnect` deletes local ciphertext and pending challenges.
+token revocation. `disconnect` deletes local token ciphertext, the encrypted
+operation journal, and pending challenges. There is not yet a supported online
+key rotation command: an operator must stop Compose, make a protected copy,
+decrypt and re-encrypt both `.bin` and `.ops` records with a reviewed offline
+tool, verify the replacement with the new key, then restart; if that cannot be
+performed safely, preserve the backup and reconnect after clearing the volume.
 
 The current implementation keeps MFA challenges in volatile memory: a
 connector restart invalidates them and requires starting login again. A
@@ -151,16 +171,30 @@ startup or FIT/ZIP import.
    garmin-connector`; logs must not contain request bodies. Health is local and
    does not contact Garmin.
 5. To authenticate, run
-   `docker exec -it training-assistant npm run garmin:pilot -- auth`. Status and
-   local disconnection use `status` and `disconnect` respectively. The command
-   requires the explicit active owner and the flag. It is intentionally
-   interactive; credentials are never CLI arguments.
+   `docker exec -it training-assistant npm run garmin:pilot -- auth`. Use
+   `capabilities` for the bounded device/workout read, `status` for session
+   state, and `disconnect` to remove local state. The command requires the
+   explicit owner and feature flag, uses a TTY, and never accepts credential
+   arguments.
 
 Updating: keep the Node image SHA and connector source revision together, run
 checks below, back up the encrypted token volume and key, then deploy. Rollback
 to the preceding Compose/source revision and image tag. Restore matching token
 volume/key backups if the rollback changed the token format; this release uses
 the `KGC1` envelope. Do not restore a token backup from a different key.
+
+## Automated evidence and go/no-go
+
+At this revision the connector suite has **29 passing tests**; Python coverage
+(`coverage run --branch --source=app -m pytest`) measured **86% total coverage**
+for `app/main.py` (612 statements and 186 branches). The local TTY pilot has
+**16 passing tests**; `npm run test:garmin-pilot-coverage` measures **91.41%
+statements/lines, 81.42% branches, and 88.88% functions** for
+`scripts/garmin-pilot.js`. These are measurements, not added 100% gates. The
+existing Node backend coverage command retains its required 100% thresholds.
+Contract tests use the actual pinned Garmin wrapper/signatures and enums with
+transport/authentication patched; Python sockets are blocked. They do not
+establish live Garmin or Forerunner behavior.
 
 ## Evidence and go/no-go
 

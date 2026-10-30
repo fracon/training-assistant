@@ -28,13 +28,20 @@ python3 -m venv .venv-garmin
 . .venv-garmin/bin/activate
 python -m pip install --require-hashes -r services/garmin-connector/requirements-dev.lock
 cd services/garmin-connector
-PYTHONPATH=. coverage run --source=app -m pytest
+PYTHONPATH=. coverage run --branch --source=app -m pytest
 coverage report -m
 ```
 
 Coverage scope is `services/garmin-connector/app`; test modules are excluded.
-The current measured line coverage is 84%; uncovered paths are listed by
-`coverage report -m`, so this is evidence of exercised code rather than a
-complete coverage claim. The 14 tests exercise HTTP validation, mocked Garmin
-methods, AES-GCM persistence, MFA lifetime/ownership, mutation reconciliation,
-and payload boundaries. No CI job or live Garmin test is added in this phase.
+`tests/conftest.py` blocks socket connections, so CI/local tests cannot call
+Garmin. Tests use the real pinned `Garmin` wrapper and `Client` types with
+simulated transport/authentication, plus narrow fake operation responses. The
+coverage report measures both lines and branches; the current percentages are
+recorded in `docs/garmin-integration.md` and uncovered paths remain visible in
+`coverage report -m`. These figures are not the Node coverage gate. There is no
+CI job or live Garmin test in this phase.
+
+The local Node TTY adapter has its own browser-free tests and a separate
+coverage command: `npm run test:garmin-pilot-coverage`. It covers the CLI,
+authorization rechecks, stream handling, and synthetic FIT parsing; its report
+is separate from both the required Node backend gate and Python coverage.

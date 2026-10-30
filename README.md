@@ -1286,6 +1286,7 @@ password/MFA entry:
 ```bash
 docker exec -it training-assistant npm run garmin:pilot -- auth
 docker exec -it training-assistant npm run garmin:pilot -- status
+docker exec -it training-assistant npm run garmin:pilot -- capabilities
 docker exec -it training-assistant npm run garmin:pilot -- disconnect
 docker exec -it training-assistant npm run garmin:pilot -- publish-simple
 docker exec -it training-assistant npm run garmin:pilot -- publish-interval

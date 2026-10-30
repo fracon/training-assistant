@@ -207,12 +207,19 @@ onboarding record of the account is preserved.
 - Tokens have one custodian: the Python connector's named volume. Persist only
   AES-GCM ciphertext, with a separate runtime key; keep temp plaintext token
   stores mode 0600 in mode 0700 ephemeral directories and remove them after use.
+  The encrypted `.ops` sidecar journal shares the volume/key for bounded
+  publish/schedule reconciliation; disconnect deletes it with tokens.
   Never log Garmin library request/response bodies. Password and MFA are local
   hidden TTY inputs, never command arguments, environment values, or chat.
 - MFA challenge state is opaque, owner/connection-bound, expires after five
   minutes, allows three attempts, and is invalidated on use, disconnect, or
   connector restart. A restart requires a new login if MFA was pending. A
   transient Garmin failure does not clear an existing encrypted token record.
+- Revalidate the pilot owner's current active state immediately before and after
+  each Node-to-Python request. If eligibility changes during an operation, the
+  Node CLI requests local disconnect; an already accepted Garmin mutation is
+  uncertain and is never represented as rolled back. Cleanup remains available
+  for an inactive or deleted owner.
 - Internal operations are allowlisted and versioned under `/v1`; no arbitrary
   URL/proxy endpoint is permitted. Bound request bodies, date windows, paging,
   downloads, timeouts, and concurrency. Mutations whose result is uncertain
