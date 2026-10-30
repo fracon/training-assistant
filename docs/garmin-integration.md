@@ -186,8 +186,9 @@ the `KGC1` envelope. Do not restore a token backup from a different key.
 ## Automated evidence and go/no-go
 
 At this revision the connector suite has **30 passing tests**; Python coverage
-(`coverage run --branch --source=app -m pytest`) measured **86% total coverage**
-for `app/main.py` (616 statements and 186 branches). The local TTY pilot has
+(`coverage run --branch --source=app -m pytest`) measured **89.94% lines**
+(554/616), **73.12% branches** (136/186), and **86.03% combined coverage** for
+`app/main.py`. The local TTY pilot has
 **16 passing tests**; `npm run test:garmin-pilot-coverage` measures **91.41%
 statements/lines, 81.42% branches, and 88.88% functions** for
 `scripts/garmin-pilot.js`. These are measurements, not added 100% gates. The
