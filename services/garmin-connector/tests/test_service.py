@@ -150,6 +150,18 @@ class ConnectorTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             main._decrypt(link, key)
 
+    def test_token_ciphertext_is_bound_to_its_owner_and_connection_path(self):
+        key = b"k" * 32
+        first = Path(self.temp.name, "17-pilot.bin")
+        second = Path(self.temp.name, "18-pilot.bin")
+        main._save_encrypted(first, key, b'{"di_token":"owner-17"}')
+        main._save_encrypted(second, key, b'{"di_token":"owner-18"}')
+        self.assertEqual(main._decrypt(first, key), b'{"di_token":"owner-17"}')
+        self.assertEqual(main._decrypt(second, key), b'{"di_token":"owner-18"}')
+        first.write_bytes(second.read_bytes())
+        with self.assertRaises(Exception):
+            main._decrypt(first, key)
+
     def test_bad_key_configuration(self):
         with patch.dict(os.environ, {"GARMIN_ENCRYPTION_KEY": "not-base64"}):
             with self.assertRaises(RuntimeError):
