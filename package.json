@@ -12,7 +12,9 @@
     "admin:bootstrap": "node scripts/admin-bootstrap.js",
     "admin:promote": "node scripts/admin-promote.js",
     "garmin:pilot": "node scripts/garmin-pilot.js",
-    "test:garmin-pilot-coverage": "c8 --include=scripts/garmin-pilot.js --reporter=text node --test test/garminPilot.test.js",
+    "garmin:setup": "node scripts/garmin-setup.js",
+    "garmin:connector": "node scripts/garmin-connector.js",
+    "test:garmin-pilot-coverage": "c8 --include=scripts/garmin-pilot.js --include=scripts/garmin-local-config.js --include=scripts/garmin-setup.js --include=scripts/garmin-connector.js --reporter=text node --test test/garminPilot.test.js test/garminLocal.test.js",
     "test": "node --test",
     "test:coverage": "c8 --check-coverage --include=src/** --include=scripts/admin-prompts.js --include=scripts/admin-runtime.js --include=scripts/admin-commands.js --exclude=src/public/** --exclude=src/start.js --statements=100 --branches=100 --functions=100 --lines=100 --reporter=text --reporter=html npm run test -- --test-concurrency=1"
   },

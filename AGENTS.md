@@ -225,6 +225,33 @@ onboarding record of the account is preserved.
   downloads, timeouts, and concurrency. Mutations whose result is uncertain
   require remote reconciliation before retry. Never expose raw upstream
   exceptions or payloads.
+- Local development uses `npm run garmin:setup`, then separate terminals for
+  `npm run dev`, `npm run garmin:connector`, and
+  `npm run garmin:pilot -- auth`. Setup requires Python 3.12+, installs only
+  the hash-locked connector requirements into `.venv-garmin`, and selects an
+  active Kinesis account by explicit email against the existing configured
+  database in read-only mode. It never creates a database or changes accounts.
+  Local secrets and pilot selection are generated/persisted under the ignored
+  mode-0600 `.kinesis-private/garmin-pilot.json`; local token ciphertext is in
+  its mode-0700 `garmin-store`. Repeat setup must preserve secrets; invalid or
+  partial config must fail without replacement. Do not source secret files or
+  pass secrets in arguments. The launcher and CLI share the same loader; Python
+  runs from the prepared virtualenv on `127.0.0.1` with an allowlisted
+  subprocess environment. `npm run dev` does not load this config. Local
+  configuration, venv, Python caches and coverage files must be Git-ignored and
+  excluded from Docker build context.
+- `GARMIN_PILOT_USER_ID` is temporarily the selected Kinesis account ID for
+  this Phase 1 terminal pilot. `KINESIS_GARMIN_SERVICE_TOKEN` authenticates
+  Node-to-Python requests; `GARMIN_ENCRYPTION_KEY` encrypts Python token and
+  operation-journal storage. Local setup creates the latter two once; in
+  ZimaOS the operator supplies all three as runtime config and preserves the
+  secrets through updates. End users do not configure these values. Production
+  multi-user identity from the authenticated Kinesis session and a “Connect
+  Garmin” UI are future work, not delivered by this pilot.
+- Keep the ZimaOS Compose boundary unchanged: Node owns authorization/SQLite
+  and public port `8081:3000`; Python remains a separate non-public container
+  without SQLite or a Cloudflare route. Local execution is an additional pilot
+  workflow, not a replacement for this production packaging.
 - Library methods are not evidence of Garmin account or device support. Record
   documentation, mock tests, live account results, and Forerunner 55 results
   separately in `docs/garmin-integration.md`. Keep phases 2/3 blocked until the

@@ -5,8 +5,9 @@ const { createPrompts } = require('./admin-prompts');
 const Database = require('better-sqlite3');
 const { parseFitFile } = require('../src/fitParser');
 const { resolveFitBuffer } = require('../src/fitUpload');
+const localConfig = require('./garmin-local-config');
 
-const API = () => process.env.GARMIN_CONNECTOR_URL || 'http://garmin-connector:8080';
+const API = () => process.env.GARMIN_CONNECTOR_URL || 'http://127.0.0.1:8080';
 const OWNER_ID = () => process.env.GARMIN_PILOT_USER_ID || '';
 const CONNECTION_ID = 'pilot';
 
@@ -147,11 +148,11 @@ async function requestOriginal(path, dependencies = {}) {
 
 function validatePilot({ allowInactive = false } = {}) {
   if (process.env.GARMIN_PILOT_ENABLED !== 'true') {
-    throw new Error('Garmin pilot is disabled.');
+    throw new Error('Garmin pilot is disabled. Run npm run garmin:setup for the local pilot, or enable it explicitly in the operator runtime configuration.');
   }
   const ownerId = OWNER_ID();
   if (!/^\d+$/.test(ownerId) || !process.env.KINESIS_GARMIN_SERVICE_TOKEN) {
-    throw new Error('Set the local pilot owner and connector service key first.');
+    throw new Error('Local Garmin pilot configuration is missing. Run npm run garmin:setup, or configure the operator runtime settings.');
   }
   const db = new Database(process.env.DATABASE_FILE || resolveDatabaseFile(process.cwd()), {
     readonly: true,
@@ -355,7 +356,18 @@ async function runMain(options = {}) {
 }
 
 if (require.main === module) {
-  runMain().then((code) => { process.exitCode = code; });
+  try {
+    localConfig.applyRuntimeConfig({ variables: [
+      'GARMIN_PILOT_USER_ID', 'KINESIS_GARMIN_SERVICE_TOKEN', 'DATABASE_FILE',
+      'GARMIN_CONNECTOR_URL', 'GARMIN_PILOT_ENABLED',
+    ] });
+  } catch (error) {
+    process.stderr.write(`${error.message}\n`);
+    process.exitCode = 1;
+  }
+  if (!process.exitCode) {
+    runMain().then((code) => { process.exitCode = code; });
+  }
 }
 
 module.exports = { invalidateConnection, main, request, requestOriginal, runMain, validatePilot };

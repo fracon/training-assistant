@@ -6,30 +6,35 @@ are fixed in `requirements.lock` and `requirements-dev.lock`. The upstream
 library requires Python >=3.12 and no longer depends on `garth`. Read the
 project's operation and security contract in `../../docs/garmin-integration.md`.
 
-Run with Docker Compose from the repository root:
+For local development without Docker, use the repository-level preparation
+command once. It verifies Python 3.12+, creates/reuses `.venv-garmin`, installs
+the hash-locked development dependencies, and prepares private pilot settings
+after the operator selects an active Kinesis account by email:
 
 ```bash
-docker compose build garmin-connector
-docker compose up -d
-docker compose ps
+npm run garmin:setup
 ```
 
-The service binds only inside the Compose network on port 8080. It runs as
-UID/GID 10001 with Uvicorn access logs disabled. `GET /healthz` has no Garmin
-side effect. Do not publish a connector port or add it to Cloudflare. The
+Start `npm run dev` and `npm run garmin:connector` in separate terminals. The
+local Python process uses the prepared virtualenv, listens on `127.0.0.1`,
+disables access logs/reload, and receives only the runtime variables it needs.
+It uses the same private configuration as `npm run garmin:pilot`. No Docker or
+manual shell activation is needed. The local token store is under the ignored
+`.kinesis-private/garmin-store` directory.
+
+For ZimaOS, run Compose from the repository root as described in
+`docs/garmin-integration.md`. There the service binds only inside the Compose
+network on port 8080, has no published port, and runs as UID/GID 10001. The
 Python image is built for the ZimaOS host architecture by the deployment helper;
-the current development host is amd64, which is not evidence of the ZimaOS
-host architecture.
+the development host architecture does not establish the ZimaOS architecture.
+`GET /healthz` has no Garmin side effect in either mode.
 
 Run automated tests without Garmin credentials or calls:
 
 ```bash
-python3 -m venv .venv-garmin
-. .venv-garmin/bin/activate
-python -m pip install --require-hashes -r services/garmin-connector/requirements-dev.lock
 cd services/garmin-connector
-PYTHONPATH=. coverage run --branch --source=app -m pytest
-coverage report -m
+PYTHONPATH=. ../../.venv-garmin/bin/python -m coverage run --branch --source=app -m pytest
+../../.venv-garmin/bin/python -m coverage report -m
 ```
 
 Coverage scope is `services/garmin-connector/app`; test modules are excluded.
@@ -42,6 +47,7 @@ recorded in `docs/garmin-integration.md` and uncovered paths remain visible in
 CI job or live Garmin test in this phase.
 
 The local Node TTY adapter has its own browser-free tests and a separate
-coverage command: `npm run test:garmin-pilot-coverage`. It covers the CLI,
-authorization rechecks, stream handling, and synthetic FIT parsing; its report
-is separate from both the required Node backend gate and Python coverage.
+coverage command: `npm run test:garmin-pilot-coverage`. It covers the CLI, local
+config loader, setup/launcher, authorization rechecks, stream handling, and
+synthetic FIT parsing; its report is separate from both the required Node
+backend gate and Python coverage.

@@ -99,7 +99,8 @@ or workouts.
 
 The first-phase adapter is not a product synchronization pipeline. The
 authenticated Kinesis pilot entry point is the local TTY command
-`npm run garmin:pilot -- <action>` executed inside the Node container. Supported
+`npm run garmin:pilot -- <action>`; locally it calls the loopback connector,
+and in ZimaOS it is run inside the Node container. Supported
 actions are `auth`, `status`, `capabilities`, `disconnect`, `publish-simple`,
 `publish-interval`, `schedule`, `activities`, `download`, and `cancel`.
 Credentials and MFA codes are entered without terminal echo. Mutations require
@@ -116,17 +117,24 @@ values, shell history, chat, GitHub, or logs.
 
 ## Token custody and recovery
 
-There is one token custodian: the Python connector. Its named Docker volume
-`garmin-tokens` stores AES-GCM ciphertext, keyed by owner and opaque connection
-ID. It also stores an encrypted `.ops` journal for publish/schedule idempotency;
+There is one token custodian: the Python connector. Locally,
+`.kinesis-private/garmin-store` stores AES-GCM ciphertext; in ZimaOS, the named
+Docker volume `garmin-tokens` stores the same format, keyed by owner and opaque
+connection ID. It also stores an encrypted `.ops` journal for publish/schedule idempotency;
 the journal contains only operation fingerprints, states and Garmin IDs, never
 FIT/GPS or credentials. `GARMIN_ENCRYPTION_KEY` is a 32-byte URL-safe base64 key supplied at
-runtime, independently of the volume and image. The service key is a separate
-runtime secret shared with Node. The token directory is mode 0700, records are
+runtime, independently of the token store and image. The service key is a separate
+runtime secret shared with Node. Locally both secrets are generated once by
+`npm run garmin:setup`, stored in the mode-0600 ignored file
+`.kinesis-private/garmin-pilot.json`, and reused on later preparations and
+restarts. The private parent and local token store are mode 0700; records are
 mode 0600, and replacement is atomic. The connector runs as UID/GID 10001.
 
-Back up the encrypted `garmin-tokens` volume (including `.ops`) and the encryption key separately
-using the operator's protected backup system. A restore requires both. Rotate
+Back up the encrypted token store (including `.ops`) and encryption key
+separately using the operator's protected backup system. A restore requires
+both. Locally, protect `.kinesis-private/garmin-pilot.json` and the adjacent
+store separately under the same policy; never put this directory in Git or an
+image. Rotate
 by decrypting/re-encrypting every record with an offline maintenance tool while
 the service is stopped; this tool is intentionally not part of the pilot API.
 If the key is lost, encrypted tokens cannot be recovered: remove the volume,
@@ -146,7 +154,86 @@ responses. Uvicorn access logging is disabled; Garmin/library debug logging is
 not enabled. The library session/cookie challenge exists only in memory and is
 discarded after completion, cancel, timeout, or restart.
 
-## Build and ZimaOS operation
+## Local development pilot
+
+Local preparation requires Python 3.12 or newer and an existing Kinesis
+database. From the repository root, run `npm run garmin:setup` once. The command
+creates/reuses `.venv-garmin`, installs `requirements-dev.lock` with
+`--require-hashes`, then asks for the email of the operator's own Kinesis
+account. It opens the configured database read-only, requires an exact existing
+active account, shows its email/ID and asks for explicit confirmation. It never
+selects the first account, creates a database, changes account data, asks for
+Garmin credentials, or calls Garmin/OpenAI. Dependency installation may access
+the configured package index.
+
+Preparation generates a random 256-bit service token and a random 32-byte
+encryption key, plus the default local port 8080. Subsequent runs preserve both
+secrets. A port can be selected during setup, for example
+`GARMIN_CONNECTOR_PORT=8123 npm run garmin:setup`; the stored setting is shared
+by the CLI and connector. No shell `source`, manual virtualenv activation, or
+repeated environment export is needed. Setup and pilot commands do not edit
+`.env`.
+
+Run these three terminals from the repository root:
+
+```bash
+# Terminal 1
+npm run dev
+
+# Terminal 2
+npm run garmin:connector
+
+# Terminal 3
+npm run garmin:pilot -- auth
+npm run garmin:pilot -- status
+npm run garmin:pilot -- capabilities
+```
+
+To verify token resume, restart the connector in Terminal 2, then query status
+in Terminal 3. Disconnect with `npm run garmin:pilot -- disconnect`; this
+removes only local tokens/journal and does not claim remote revocation. Garmin
+password and MFA are entered only through local hidden prompts. `npm run dev`
+does not load the private pilot file or enable Garmin/AI globally; normal
+Kinesis and manual FIT/ZIP imports work while the connector is stopped.
+
+For Garmin values, precedence is: an explicitly inherited environment variable
+wins; otherwise private local configuration supplies pilot owner, service/key,
+port, and local URL/store; without either source the pilot is disabled. Local
+Garmin settings are never read from `.env`. Ordinary Kinesis configuration
+such as `DATABASE_FILE` uses explicit environment, then `.env`, then the project
+default. The
+connector child receives only PATH, HOME, locale/temp paths, and required Garmin
+runtime settings; it does not inherit Node options, OpenAI keys, or unrelated
+variables. It runs `uvicorn app.main:app` from the connector directory on
+`127.0.0.1`, without reload or access/body logging. The launcher forwards
+termination signals and reports a missing virtualenv/config before starting.
+
+The config file must be complete and valid, mode 0600; its parent is mode 0700.
+The local token store is also mode 0700. Existing config is never silently
+regenerated. Partial/malformed config or token files without their config cause
+a safe stop and recovery guidance. Setup refuses an owner switch while tokens
+or journal files exist. If the key is lost, ciphertext is unrecoverable; first
+preserve a protected backup, then follow the existing disconnect/recovery
+procedure. There is no improvised key rotation. The local config, virtualenv,
+Python caches, and coverage artifacts are ignored by Git and excluded from
+Docker build context.
+
+### Pilot variables and production boundary
+
+| Variable | Used by | Scope |
+|---|---|---|
+| `GARMIN_PILOT_USER_ID` | Node authorization and Python connector | Temporary Phase 1 restriction; Kinesis `users.id`, not Garmin ID |
+| `KINESIS_GARMIN_SERVICE_TOKEN` | Node → Python authentication | Internal operator secret, retained across updates |
+| `GARMIN_ENCRYPTION_KEY` | Python token/journal encryption | Internal operator secret, backed up separately from token storage |
+
+The local setup selects the first value and generates/persists the other two.
+End users will not configure any of them. For ZimaOS the operator supplies the
+three runtime settings once per installation and preserves both secrets during
+image updates. Future multi-user ownership should come from the authenticated
+Kinesis session; that path is not implemented. This PR remains a terminal-only,
+single-owner pilot without the production “Connect Garmin” interface.
+
+## ZimaOS packaging and operation
 
 The host Compose stack retains the existing public mapping `8081:3000` for
 Kinesis. Python has no published port and no Cloudflare route. The default
@@ -156,12 +243,13 @@ startup or FIT/ZIP import.
 
 1. Copy `.env.example` to `.env` on the ZimaOS host; restrict it to the operator
    (`chmod 600 .env`). Keep `GARMIN_PILOT_ENABLED=false` until the real pilot is
-   explicitly being run. Set the owner ID from the local Kinesis database only
-   after identity verification.
-2. Generate two unrelated secrets locally with `openssl rand -base64 32` and
-   save them directly in the protected `.env`: one for
-   `KINESIS_GARMIN_SERVICE_TOKEN`, one for `GARMIN_ENCRYPTION_KEY`. Never paste
-   either into chat/issue/PR or shell arguments. Restart Compose after changes.
+   explicitly being run. Set the temporary owner ID from the Kinesis database
+   only after identity verification. End users do not configure these values.
+2. Provision unrelated values for `KINESIS_GARMIN_SERVICE_TOKEN` and
+   `GARMIN_ENCRYPTION_KEY` from the operator's protected secret manager; inject
+   them directly as runtime secrets or into the mode-0600 `.env` without
+   echoing them to the terminal/shell history. Keep the encryption key backed
+   up separately from the token volume. Restart Compose after changes.
 3. Confirm the host architecture with `uname -m` and `docker info --format
    '{{.Architecture}}'`. `scripts/deploy-zimaos.sh` pulls the existing Node image,
    builds the Python image on that host architecture, then starts both. No CI
@@ -170,7 +258,7 @@ startup or FIT/ZIP import.
 4. Check `docker compose ps` and `docker compose logs --tail=50
    garmin-connector`; logs must not contain request bodies. Health is local and
    does not contact Garmin.
-5. To authenticate, run
+5. To authenticate in the controlled ZimaOS pilot, run
    `docker exec -it training-assistant npm run garmin:pilot -- auth`. Use
    `capabilities` for the bounded device/workout read, `status` for session
    state, and `disconnect` to remove local state. The command requires the
@@ -185,14 +273,15 @@ the `KGC1` envelope. Do not restore a token backup from a different key.
 
 ## Automated evidence and go/no-go
 
-At this revision the connector suite has **30 passing tests**; Python coverage
-(`coverage run --branch --source=app -m pytest`) measured **89.94% lines**
-(554/616), **73.12% branches** (136/186), and **86.03% combined coverage** for
-`app/main.py`. The local TTY pilot has
-**16 passing tests**; `npm run test:garmin-pilot-coverage` measures **91.41%
-statements/lines, 81.42% branches, and 88.88% functions** for
-`scripts/garmin-pilot.js`. These are measurements, not added 100% gates. The
-existing Node backend coverage command retains its required 100% thresholds.
+At this revision the connector suite has **38 passing tests**; Python coverage
+(`coverage run --branch --source=app -m pytest`) measures **90.95% lines**
+(573/630), **77.32% branches** (150/194), and **87.74% combined coverage** for
+`app/main.py`. The browser-free Garmin CLI/setup/launcher suite has **25 passing
+tests**; `npm run test:garmin-pilot-coverage` measures **87.21% statements/lines,
+73.47% branches, and 77.14% functions** across the four Garmin Node scripts
+(`garmin-pilot.js`, local config loader, setup and connector launcher). These
+are reported measurements, not added 100% gates. The existing Node backend
+coverage command retains its required 100% thresholds.
 Contract tests use the actual pinned Garmin wrapper/signatures and enums with
 transport/authentication patched; Python sockets are blocked. They do not
 establish live Garmin or Forerunner behavior.

@@ -7,6 +7,10 @@ coverage/
 .coverage
 __pycache__/
 .venv-garmin/
+.kinesis-private/
+services/garmin-connector/.coverage
+services/garmin-connector/.pytest_cache/
+services/garmin-connector/**/__pycache__/
 
 # Logs
 logs/
