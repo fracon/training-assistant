@@ -1168,7 +1168,15 @@ GitHub main ──push──▶ Self-Hosted Runner (Docker on ZimaOS)
                  ghcr.io/fracon/training-assistant:latest
                           │  docker compose pull
                           ▼
-              Kinesis (Fastify, Docker on ZimaOS :8081)
+              Kinesis (Node/Fastify, :8081 → :3000)
+                 │ private Compose HTTP + service key
+                 ▼
+              Garmin connector (Python, no published port)
+                 │ outbound HTTPS
+                 ▼
+              Garmin Connect (unofficial integration)
+                 │
+                 └──── Kinesis public traffic stays on port 8081
                           │  HTTP
                           ▼
                  Cloudflare Tunnel (Zero Trust)
@@ -1177,7 +1185,7 @@ GitHub main ──push──▶ Self-Hosted Runner (Docker on ZimaOS)
                      https://your-domain.com
 ```
 
-- **App:** Node.js 24 / Fastify running in a Docker container (`node:24-alpine` base, non-root user).
+- **App:** Node.js 24 / Fastify running in a Docker container (`node:24-alpine` base, non-root user); the private pilot adds a separate Python 3.12 container, built locally by Compose for the ZimaOS host architecture.
 - **Host:** ZimaOS, orchestrated with Docker Compose.
 - **Exposure:** Cloudflare Zero Trust Tunnel — no open inbound ports on the router; Cloudflare handles the public HTTPS layer.
 
@@ -1259,6 +1267,37 @@ Tunnel public hostname configuration:
 - DNS for your domain is managed by the tunnel (CNAME to the tunnel ID), so no port forwarding rules are ever created on the router.
 
 ---
+
+## Private Garmin connector (Phase 1 pilot)
+
+An unofficial, private Python connector is packaged alongside Kinesis in
+`docker-compose.yml`; only Kinesis is published on host port `8081` to
+container port `3000`. The Garmin service has no host port or Cloudflare route,
+does not mount SQLite, and does not block Kinesis or existing FIT/ZIP imports.
+The pilot feature flag is off by default. The owner-only authorization scope,
+token encryption, internal API, ZimaOS operation, evidence status, and real
+account/device acceptance steps are in [docs/garmin-integration.md](docs/garmin-integration.md).
+
+The connector image builds locally for the ZimaOS host architecture through
+`scripts/deploy-zimaos.sh`; the existing Node image pipeline remains unchanged.
+The first authenticated pilot command is interactive and hides the Garmin
+password/MFA entry:
+
+```bash
+docker exec -it training-assistant npm run garmin:pilot -- auth
+docker exec -it training-assistant npm run garmin:pilot -- status
+docker exec -it training-assistant npm run garmin:pilot -- disconnect
+docker exec -it training-assistant npm run garmin:pilot -- publish-simple
+docker exec -it training-assistant npm run garmin:pilot -- publish-interval
+docker exec -it training-assistant npm run garmin:pilot -- schedule
+docker exec -it training-assistant npm run garmin:pilot -- activities
+docker exec -it training-assistant npm run garmin:pilot -- download
+```
+
+Keep the local deployment `.env` mode 0600 and leave `GARMIN_PILOT_ENABLED=false`
+until the owner's real account and Forerunner 55 acceptance is authorized. This
+phase has not been homologated; mocks and documented library methods do not
+prove real Garmin or device behavior.
 
 ## Verifying With Real Files
 

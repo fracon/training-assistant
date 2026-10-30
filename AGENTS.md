@@ -8,7 +8,7 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.24.0` on the issue #65
+`package.json` and `package-lock.json` (currently `0.25.0` on the issue #72
 branch); follow the SemVer
 rule below.
 
@@ -189,6 +189,45 @@ onboarding record of the account is preserved.
   Only admins can list, inspect, triage, or delete feedback.
 - The admin page reuses the Administration sidebar group, shared modal/focus
   and confirmation patterns, escaped DOM text, and the PT/EN locale contract.
+
+## Garmin Connect Phase 1 pilot
+
+- The owner explicitly authorized an unofficial Garmin Connect integration,
+  one private Python adapter container in the ZimaOS Compose deployment, and a
+  controlled proof of concept on the owner's Garmin account/Forerunner 55 only.
+  Do not extend this to other users, public connector access, remote deletion of
+  preexisting records, OpenAI/third-party FIT or GPS processing, paid AI calls,
+  or global enablement before homologation.
+- Node remains the product authorization and canonical SQLite owner. The
+  Python adapter is private on the Compose network, has no published port or
+  Cloudflare route, and never mounts SQLite. Kinesis starts and accepts current
+  FIT/ZIP imports when Python is unavailable. `GARMIN_PILOT_ENABLED` defaults
+  to `false`; owner identity is configured locally and the pilot CLI rechecks
+  that the account exists and is active before authentication.
+- Tokens have one custodian: the Python connector's named volume. Persist only
+  AES-GCM ciphertext, with a separate runtime key; keep temp plaintext token
+  stores mode 0600 in mode 0700 ephemeral directories and remove them after use.
+  Never log Garmin library request/response bodies. Password and MFA are local
+  hidden TTY inputs, never command arguments, environment values, or chat.
+- MFA challenge state is opaque, owner/connection-bound, expires after five
+  minutes, allows three attempts, and is invalidated on use, disconnect, or
+  connector restart. A restart requires a new login if MFA was pending. A
+  transient Garmin failure does not clear an existing encrypted token record.
+- Internal operations are allowlisted and versioned under `/v1`; no arbitrary
+  URL/proxy endpoint is permitted. Bound request bodies, date windows, paging,
+  downloads, timeouts, and concurrency. Mutations whose result is uncertain
+  require remote reconciliation before retry. Never expose raw upstream
+  exceptions or payloads.
+- Library methods are not evidence of Garmin account or device support. Record
+  documentation, mock tests, live account results, and Forerunner 55 results
+  separately in `docs/garmin-integration.md`. Keep phases 2/3 blocked until the
+  real acceptance criteria are met. No Garmin credentials or personal FIT/GPS
+  files belong in Git, tests, issue/PR text, or CI.
+- Build/run Python tests and coverage with the commands in
+  `services/garmin-connector/README.md`; run Node `npm test`, serial
+  `npm run test:coverage`, Compose validation, and `git diff --check` for this
+  infrastructure change. No frontend was added in Phase 1, so browser visual
+  checks are not applicable.
 
 ## Current product behavior and invariants
 

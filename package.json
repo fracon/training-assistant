@@ -1,6 +1,6 @@
 {
   "name": "training-assistant",
-  "version": "0.24.0",
+  "version": "0.25.0",
   "description": "Self-hosted running training assistant with FIT analysis, training cycles, calendar planning, and AI-ready training prompts",
   "main": "src/server.js",
   "engines": {
@@ -11,6 +11,7 @@
     "dev": "node --watch src/start.js",
     "admin:bootstrap": "node scripts/admin-bootstrap.js",
     "admin:promote": "node scripts/admin-promote.js",
+    "garmin:pilot": "node scripts/garmin-pilot.js",
     "test": "node --test",
     "test:coverage": "c8 --check-coverage --include=src/** --include=scripts/admin-prompts.js --include=scripts/admin-runtime.js --include=scripts/admin-commands.js --exclude=src/public/** --exclude=src/start.js --statements=100 --branches=100 --functions=100 --lines=100 --reporter=text --reporter=html npm run test -- --test-concurrency=1"
   },
