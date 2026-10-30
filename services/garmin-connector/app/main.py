@@ -499,7 +499,6 @@ def activities(owner_id: str, connection_id: str, body: ActivityQuery,
     with _lock(str(path)):
         try:
             with _client(path, key) as (client, _, _):
-                start_text, end_text = body.start.isoformat(), body.end.isoformat()
                 allowed = ("activityId", "activityName", "startTimeLocal", "duration", "distance",
                            "calories", "averageHR", "maxHR", "elevationGain")
                 items = []
@@ -507,13 +506,17 @@ def activities(owner_id: str, connection_id: str, body: ActivityQuery,
                 page_size = max(body.limit, 1)
                 previous_page_hash = None
                 pages_read = 0
-                while pages_read < 5 and len(items) < body.limit:
+                search_complete = False
+                while pages_read < 5:
                     rows = client.get_activities(start=cursor, limit=page_size)
                     _check_deadline(deadline)
                     if not isinstance(rows, list):
                         raise RuntimeError("Garmin activity page had an unknown shape")
                     if not rows:
+                        search_complete = True
                         break
+                    if len(rows) > page_size:
+                        raise RuntimeError("Garmin activity page exceeded its requested size")
                     page_hash = hashlib.sha256(json.dumps(rows, sort_keys=True, default=str).encode()).hexdigest()
                     if page_hash == previous_page_hash:
                         raise RuntimeError("Garmin repeated an activity page")
@@ -522,17 +525,27 @@ def activities(owner_id: str, connection_id: str, body: ActivityQuery,
                     for row in rows:
                         if not isinstance(row, dict):
                             raise RuntimeError("Garmin activity item had an unknown shape")
-                        day = str(row.get("startTimeLocal", ""))[:10]
-                        if start_text <= day <= end_text:
+                        local_start = row.get("startTimeLocal")
+                        if not isinstance(local_start, str) or len(local_start) < 10:
+                            raise RuntimeError("Garmin activity item had an unknown date")
+                        try:
+                            activity_day = date.fromisoformat(local_start[:10])
+                        except ValueError as exc:
+                            raise RuntimeError("Garmin activity item had an invalid date") from exc
+                        if body.start <= activity_day <= body.end:
                             items.append({key: str(value)[:120] if key == "activityName" else value
                                           for key, value in row.items() if key in allowed})
                             if len(items) == body.limit:
                                 break
-                    cursor += len(rows)
-                    oldest = min(str(row.get("startTimeLocal", ""))[:10] for row in rows)
-                    if len(rows) < page_size or oldest < start_text:
+                    if len(items) >= body.limit:
+                        search_complete = True
                         break
-                else:
+                    cursor += len(rows)
+                    oldest = min(date.fromisoformat(row["startTimeLocal"][:10]) for row in rows)
+                    if len(rows) < page_size or oldest < body.start:
+                        search_complete = True
+                        break
+                if not search_complete:
                     raise RuntimeError("Activity pagination reached its request limit")
                 return {"items": items, "offset": body.offset,
                         "limit": body.limit}

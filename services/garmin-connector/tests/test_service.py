@@ -3,7 +3,7 @@ import os
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
@@ -118,6 +118,147 @@ class ConnectorTests(unittest.TestCase):
 
     def tearDown(self):
         self.temp.cleanup()
+
+    def _query_activity_pages(self, pages, limit=10, offset=0, clock_values=None):
+        main._save_encrypted(Path(self.temp.name, "17-pilot.bin"), b"k" * 32,
+                             b'{"di_token":"synthetic"}')
+        calls = []
+
+        class PagedGarmin(FakeGarmin):
+            def get_activities(_self, start=0, limit=20):
+                calls.append((start, limit))
+                page_index = len(calls) - 1
+                page = pages[page_index] if page_index < len(pages) else []
+                if isinstance(page, Exception):
+                    raise page
+                return page
+
+        @contextmanager
+        def fake_client(*_args, **_kwargs):
+            yield PagedGarmin(), Path(self.temp.name), Path(self.temp.name, "tokens.json")
+
+        clock_context = (patch.object(main, "_clock", side_effect=clock_values)
+                         if clock_values is not None else nullcontext())
+        with clock_context, patch.object(main, "_client", fake_client):
+            response = self.client.post(
+                f"{self.prefix}/activities", headers=self.headers,
+                json={"start": "2026-10-01", "end": "2026-10-31", "offset": offset,
+                      "limit": limit},
+            )
+        return response, calls
+
+    @staticmethod
+    def _activity(activity_id, day="2026-10-12"):
+        return {"activityId": activity_id, "activityName": f"run {activity_id}",
+                "startTimeLocal": f"{day}T08:00:00", "distance": 5000}
+
+    def test_activity_page_satisfying_requested_limit_is_success_not_page_exhaustion(self):
+        page = [self._activity(index) for index in range(10)]
+        response, calls = self._query_activity_pages([page])
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(len(response.json()["items"]), 10)
+        self.assertEqual(calls, [(0, 10)])
+
+    def test_activity_pagination_returns_partial_and_empty_pages_as_success(self):
+        partial, partial_calls = self._query_activity_pages([
+            [self._activity(1), self._activity(2)],
+        ])
+        empty, empty_calls = self._query_activity_pages([[]])
+
+        self.assertEqual(partial.status_code, 200, partial.text)
+        self.assertEqual([item["activityId"] for item in partial.json()["items"]], [1, 2])
+        self.assertEqual(partial_calls, [(0, 10)])
+        self.assertEqual(empty.status_code, 200, empty.text)
+        self.assertEqual(empty.json()["items"], [])
+        self.assertEqual(empty_calls, [(0, 10)])
+
+    def test_activity_pagination_continues_past_out_of_window_rows_only_as_needed(self):
+        newer = [self._activity(index, "2026-11-01") for index in range(10)]
+        mixed = [self._activity(index, "2026-11-01") for index in range(5)]
+        mixed.extend(self._activity(index + 10) for index in range(5))
+        last = [self._activity(index + 15) for index in range(5)]
+        response, calls = self._query_activity_pages([newer, mixed, last])
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual([item["activityId"] for item in response.json()["items"]],
+                         [10, 11, 12, 13, 14, 15, 16, 17, 18, 19])
+        self.assertEqual(calls, [(0, 10), (10, 10), (20, 10)])
+
+        intermediate, intermediate_calls = self._query_activity_pages([
+            [self._activity(index, "2026-11-01") for index in range(10)],
+            [self._activity(index + 10) for index in range(10)],
+            TimeoutError("must not request another page after satisfying the limit"),
+        ])
+        self.assertEqual(intermediate.status_code, 200, intermediate.text)
+        self.assertEqual(len(intermediate.json()["items"]), 10)
+        self.assertEqual(intermediate_calls, [(0, 10), (10, 10)])
+
+    def test_activity_pagination_preserves_offset_and_stops_when_limit_is_met_mid_search(self):
+        first = [self._activity(index) for index in range(10)]
+        response, calls = self._query_activity_pages([first, [self._activity(99)]], offset=20)
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["offset"], 20)
+        self.assertEqual(response.json()["limit"], 10)
+        self.assertEqual(calls, [(20, 10)])
+
+    def test_activity_limit_reached_on_fifth_page_is_success(self):
+        pages = [[self._activity(page * 10 + index, "2026-11-01") for index in range(10)]
+                 for page in range(4)]
+        pages.append([self._activity(index + 40) for index in range(10)])
+        response, calls = self._query_activity_pages(pages)
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(len(response.json()["items"]), 10)
+        self.assertEqual(calls, [(0, 10), (10, 10), (20, 10), (30, 10), (40, 10)])
+
+    def test_short_or_empty_fifth_activity_page_proves_end_successfully(self):
+        full_pages = [[self._activity(index, "2026-11-01") for index in range(page * 10, page * 10 + 10)]
+                      for page in range(4)]
+        partial_pages = full_pages + [[self._activity(40), self._activity(41)]]
+        partial, partial_calls = self._query_activity_pages(partial_pages)
+        empty, empty_calls = self._query_activity_pages(full_pages + [[]])
+
+        self.assertEqual(partial.status_code, 200, partial.text)
+        self.assertEqual([item["activityId"] for item in partial.json()["items"]], [40, 41])
+        self.assertEqual(partial_calls, [(0, 10), (10, 10), (20, 10), (30, 10), (40, 10)])
+        self.assertEqual(empty.status_code, 200, empty.text)
+        self.assertEqual(empty.json()["items"], [])
+        self.assertEqual(empty_calls, [(0, 10), (10, 10), (20, 10), (30, 10), (40, 10)])
+
+    def test_five_full_activity_pages_without_complete_answer_fail_without_sixth_call(self):
+        pages = [[self._activity(index, "2026-11-01") for index in range(page * 10, page * 10 + 10)]
+                 for page in range(5)]
+        response, calls = self._query_activity_pages(pages)
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json(), {"detail": {"code": "unavailable"}})
+        self.assertEqual(calls, [(0, 10), (10, 10), (20, 10), (30, 10), (40, 10)])
+
+    def test_repeated_malformed_and_timed_out_activity_pages_fail_safely(self):
+        repeated_page = [self._activity(index, "2026-11-01") for index in range(10)]
+        repeated, repeated_calls = self._query_activity_pages([repeated_page, repeated_page])
+        malformed, malformed_calls = self._query_activity_pages([[{"activityId": 1}]])
+        timed_out, timeout_calls = self._query_activity_pages(
+            [[self._activity(index) for index in range(10)]], clock_values=[0, 91])
+
+        self.assertEqual(repeated.status_code, 503)
+        self.assertEqual(repeated.json(), {"detail": {"code": "unavailable"}})
+        self.assertEqual(repeated_calls, [(0, 10), (10, 10)])
+        self.assertEqual(malformed.status_code, 503)
+        self.assertEqual(malformed.json(), {"detail": {"code": "unavailable"}})
+        self.assertEqual(malformed_calls, [(0, 10)])
+        self.assertEqual(timed_out.status_code, 503)
+        self.assertEqual(timed_out.json(), {"detail": {"code": "unavailable"}})
+        self.assertEqual(timeout_calls, [(0, 10)])
+
+        oversized, oversized_calls = self._query_activity_pages([
+            [self._activity(index) for index in range(11)],
+        ])
+        self.assertEqual(oversized.status_code, 503)
+        self.assertEqual(oversized.json(), {"detail": {"code": "unavailable"}})
+        self.assertEqual(oversized_calls, [(0, 10)])
 
     def test_health_is_local_and_versioned(self):
         response = self.client.get("/healthz")
