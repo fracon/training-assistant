@@ -276,7 +276,7 @@ the `KGC1` envelope. Do not restore a token backup from a different key.
 At this revision the connector suite has **38 passing tests**; Python coverage
 (`coverage run --branch --source=app -m pytest`) measures **90.95% lines**
 (573/630), **77.32% branches** (150/194), and **87.74% combined coverage** for
-`app/main.py`. The browser-free Garmin CLI/setup/launcher suite has **25 passing
+`app/main.py`. The browser-free Garmin CLI/setup/launcher suite has **27 passing
 tests**; `npm run test:garmin-pilot-coverage` measures **87.21% statements/lines,
 73.47% branches, and 77.14% functions** across the four Garmin Node scripts
 (`garmin-pilot.js`, local config loader, setup and connector launcher). These
