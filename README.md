@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, request and review weekly AI proposals, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized training-request prompts for use with an external AI.
 
-Current application version: **0.27.0** (active beta development; issue #73 is on its dedicated open PR branch until merged).
+Current application version: **0.28.0** (active beta development; issue #73 is on its dedicated open PR branch until merged).
 
 ## AI integration: cycle planning and weekly proposals
 
@@ -1362,3 +1362,20 @@ node scripts/tryRealFit.js path/to/activity.fit
 - Docker (`node:24-alpine`) deployed on ZimaOS via Docker Compose
 - CI/CD with GitHub Actions on a self-hosted runner, published to GHCR
 - Secure exposure via Cloudflare Zero Trust Tunnel
+
+## Garmin structured workout editor (#73)
+
+The open #73 branch extends the restricted Garmin Connect terminal pilot with a
+session editor organized into warm-up, running blocks, and cool-down. New and
+edited prescriptions use a versioned structured contract, with independent time
+duration or distance and an optional none/pace/absolute-HR target per step.
+Repeated intervals may omit recovery or use an independent recovery step; the
+preview shows the effective final-recovery policy and does not estimate time
+for distance-based steps.
+
+“Save and review” stores only in Kinesis. Garmin is changed only after the
+separate “Publish and schedule” action and confirmation. The editor remains
+restricted to the configured pilot owner; it does not enable multi-user
+production access, auto-convert workout prose, invoke AI, or import activities
+from #74. Device delivery still requires separate Garmin Connect/watch
+verification. See [the Garmin contract](docs/garmin-integration.md#structured-workout-editor-v2).

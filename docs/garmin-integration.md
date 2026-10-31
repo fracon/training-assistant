@@ -345,7 +345,7 @@ startup or FIT/ZIP import.
    '{{.Architecture}}'`. `scripts/deploy-zimaos.sh` pulls the existing Node image,
    builds the Python image on that host architecture, then starts both. No CI
    publishing pipeline was changed. Keep the connector image digest/tag with
-   deployment records; the Compose version is `0.27.0`.
+   deployment records; the Compose version is `0.28.0`.
 4. Check `docker compose ps` and `docker compose logs --tail=50
    garmin-connector`; logs must not contain request bodies. Health is local and
    does not contact Garmin.
@@ -374,17 +374,18 @@ exercise the pinned `Garmin.update_workout` and `Garmin.reschedule_workout`
 methods with a simulated transport; automated tests make no real Garmin or
 OpenAI calls.
 
-The corrective verification on the PR branch runs 1,457 Node tests with no
+The current editor verification on the PR branch runs 1,465 Node tests with no
 failures. The serial `npm run test:coverage` gate passes at 100% statements,
 branches, functions, and lines across its required backend scope, including
-`src/garmin/product.js`. The focused product/converter suite has 100 tests and
-also reports 100% in all four metrics for the product adapter. The separate
-Garmin local-tool and CLI coverage command ran 130 tests (93.15% statements/lines,
-89.96% branches, 87.69% functions overall); its `src/garmin/product.js` scope
-is 100% in all four metrics, while the interactive local scripts are reported
-at 87.73% statements/lines, 74.79% branches, and 78.94% functions. The Python
-connector suite has 61 tests; `app/main.py` has 87.47% line coverage and 71.71%
-branch coverage. Python and local CLI coverage are separate from
+`src/garmin/product.js` and the v2 workout contract. The focused
+product/converter suite has 108 tests and reports 100% in all four metrics for
+both product and contract. The separate Garmin local-tool and CLI coverage
+command runs 138 tests (93.19% statements/lines, 90.02% branches, 88.05%
+functions overall); its `src/garmin/product.js` scope is 100% in all four
+metrics, while interactive local scripts are reported at 87.73%
+statements/lines, 74.79% branches, and 78.94% functions. The Python connector
+suite has 63 tests; `app/main.py` has 82.36% line coverage and 71.64% branch
+coverage. Python and local CLI coverage are separate from
 the Node backend gate and are not asserted as 100%. Browser tests use a
 simulated connector. None of those checks establishes live account behavior
 beyond the owner-reported evidence below.
@@ -588,3 +589,50 @@ Phase 3 (#74) may add activity import only after execution identity and the
 result pipeline are proven. Neither this feature nor its scheduled state marks
 a session complete, adds shoe mileage, generates analysis, imports FIT, or
 enables account-wide synchronization.
+
+## Structured workout editor v2
+
+The product editor now stores new/edited prescriptions as contract `version: 2`.
+Version 1 records are read in place and remain byte/fingerprint stable until the
+person edits them; a no-op review writes the existing value unchanged. An edit
+converts the supported legacy steps to v2. Legacy open-lap steps remain
+read-only and block editing rather than being silently dropped. Existing
+operation rows retain their stored `converter_version`; new operations record
+converter version 2. A dispatched operation is never rewritten under its old
+identity.
+
+A v2 prescription is an ordered sequence of optional warm-up, running blocks,
+and optional cool-down. A running block is either one timed/distance interval,
+a repeat group with an optional independent timed/distance recovery, or an
+independent recovery between running blocks. Every block has its own target:
+none, absolute heart-rate bounds in bpm, or pace bounds in min/km or min/mile.
+Repeat groups can omit recovery entirely; this is distinct from a zero-duration
+step. If recovery is present, `skip_last_rest_step` records whether recovery is
+omitted after the last repeat. The preview renders the repeat and recovery
+policy from the validated payload and reports known time/distance without
+inventing duration for distance-based steps.
+
+The Node validator and Python connector independently enforce the same v2
+shape, targets, ordering, positive durations/distances, 20-repeat maximum,
+50-expanded-step maximum, 24-hour timed-workout bound, and 100 km aggregate
+distance bound. `garminconnect==0.3.20` models are built from this structure:
+run intervals use the upstream interval helpers, repeat groups use
+`create_repeat_group`, and the connector maps warm-up/recovery/cool-down
+end conditions and targets to Garmin step models. These are synthetic contract
+checks against the pinned library, not a new real-device homologation.
+
+The form has explicit independent warm-up/cool-down toggles; disabled stages
+are omitted, not encoded with zero. Run blocks can be added, duplicated,
+removed, and moved with buttons. Equal repeats have an optional recovery toggle
+and a separate final-recovery policy. Time and pace entry use `min:sec`,
+heart-rate targets use integer bpm, and distance is entered in the preferred
+km/mi unit and stored in meters. “Salvar e revisar / Save and review” persists
+only to Kinesis and opens a read-only preview; it does not call Garmin. A
+separate confirmation is still required before publishing or scheduling.
+
+Garmin's [workout support documentation](https://support.garmin.com/en-CA/?faq=wZ52AaLbLG2GC1Lxu2l4k7&identifier=777730&tab=topics)
+describes workout steps and repeat/recovery structures. Device-specific
+acceptance still depends on Garmin Connect and the selected watch; the v2
+converter test is not proof that every accepted structure reaches a device.
+The connection remains restricted to the configured pilot owner. No multi-user
+production integration or activity import (#74) is delivered by this editor.

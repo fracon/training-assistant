@@ -547,6 +547,20 @@ test('converter preserves a single timed or distance run and refuses unsupported
   assert.throws(() => toConnectorPayload(operation), /unsupported/);
 });
 
+test('structured v2 connector payload preserves every ordered block and optional repeat recovery', () => {
+  const prescription = { version: 2, sport: 'running', name: 'Mixed run', steps: [
+    { id: 'warmup', kind: 'warmup', end: { type: 'time', value: 300 }, target: { type: 'none' } },
+    { id: 'run-a', kind: 'run', end: { type: 'time', value: 600 }, target: { type: 'heart_rate', mode: 'absolute', lower_bpm: 125, upper_bpm: 145 } },
+    { id: 'reps', kind: 'repeat', repetitions: 2, skip_last_rest_step: true,
+      interval: { end: { type: 'distance', value: 400 }, target: { type: 'pace', unit: 'min_per_km', slower_seconds: 330, faster_seconds: 300 } } },
+    { id: 'cooldown', kind: 'cooldown', end: { type: 'distance', value: 1000 }, target: { type: 'none' } },
+  ] };
+  const payload = toConnectorPayload({ operationId: 'op-v2', prescription });
+  assert.deepEqual(payload, { operation_id: 'op-v2', version: 2, name: 'Mixed run', steps: prescription.steps });
+  assert.equal(payload.steps.length, 4);
+  assert.equal(Object.hasOwn(payload.steps[2], 'recovery'), false);
+});
+
 test('MFA challenge is bound to the Kinesis login session and cancellation rejects another session', async () => {
   const db = createDatabase({ filename: ':memory:' }); const remotePaths = [];
   const app = await buildServer({ db, sessionCookieSecure: false,
@@ -1321,6 +1335,36 @@ test('publish clicks with the same confirmed snapshot return one durable operati
     JSON.stringify({ first: first.json(), second: second.json(), rows: h.db.prepare('SELECT operation_id,user_id,training_id,connection_generation,prescription_revision,scheduled_date,action,source_operation_id,occurrence_id FROM garmin_training_operations').all() }));
   assert.equal(second.json().reused, true);
   await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(remoteCalls.filter((call) => call.url.endsWith('/workouts')).length, 1);
+  assert.equal(remoteCalls.filter((call) => call.url.endsWith('/workouts/schedule')).length, 1);
+  await h.close();
+});
+
+test('publishing a saved version 2 prescription persists converter version 2 on the operation', async () => {
+  const remoteCalls = [];
+  const h = await productApiHarness({ garminFetch: async (url, init) => {
+    remoteCalls.push({ url, method: init.method });
+    if (url.endsWith('/status')) return Response.json({ status: 'connected' });
+    if (url.endsWith('/capabilities')) return Response.json({ devices: [], running_catalog_status: 'present' });
+    if (url.endsWith('/workouts')) return Response.json({ workout_id: 421 });
+    if (url.endsWith('/workouts/schedule')) return Response.json({ scheduled: true, scheduled_workout_id: 771 });
+    return Response.json({ status: 'disconnected' });
+  } });
+  const prescription = { version: 2, sport: 'running', name: 'Mixed intervals', steps: [
+    { id: 'warmup', kind: 'warmup', end: { type: 'time', value: 300 }, target: { type: 'none' } },
+    { id: 'run', kind: 'run', end: { type: 'distance', value: 1000 }, target: { type: 'none' } },
+  ] };
+  const saved = await h.app.inject({ method: 'PUT', url: '/api/trainings/1/garmin/prescription', headers: { cookie: h.cookie }, payload: {
+    prescription, expected_revision: null, expected_training_date: '2026-11-02', expected_connection_generation: 1,
+  } });
+  assert.equal(saved.statusCode, 200);
+  const response = await h.app.inject({ method: 'POST', url: '/api/trainings/1/garmin/publish', headers: { cookie: h.cookie }, payload: {
+    fingerprint: saved.json().fingerprint, expected_date: '2026-11-02', expected_revision: 1, expected_connection_generation: 1,
+  } });
+  assert.equal(response.statusCode, 202);
+  await new Promise((resolve) => setImmediate(resolve));
+  const operation = h.db.prepare('SELECT converter_version,status,workout_id,occurrence_id FROM garmin_training_operations WHERE operation_id=?').get(response.json().operation_id);
+  assert.deepEqual(operation, { converter_version: 2, status: 'scheduled', workout_id: '421', occurrence_id: '771' });
   assert.equal(remoteCalls.filter((call) => call.url.endsWith('/workouts')).length, 1);
   assert.equal(remoteCalls.filter((call) => call.url.endsWith('/workouts/schedule')).length, 1);
   await h.close();

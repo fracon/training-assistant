@@ -16,7 +16,7 @@ import uuid
 from contextlib import contextmanager
 from datetime import date
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urljoin, urlsplit
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -33,6 +33,8 @@ MAX_MFA_ATTEMPTS = 3
 MAX_WORKOUT_SCAN_PAGES = 11
 MAX_REMOTE_OPERATION_SECONDS = 90
 MAX_ORIGINAL_REDIRECTS = 3
+MAX_GARMIN_EXPANDED_STEPS = 50
+MAX_REPEAT_COUNT = 20
 ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,80}$")
 app = FastAPI(title="Kinesis Garmin connector", version="1",
               docs_url=None, redoc_url=None, openapi_url=None)
@@ -113,7 +115,224 @@ class WorkoutUpdate(WorkoutPayload):
     source_scheduled_workout_id: int = Field(gt=0)
 
 
-def _build_running_workout(body: WorkoutPayload, workout_name: str):
+class StructuredWorkoutPayload(StrictModel):
+    operation_id: uuid.UUID
+    version: Literal[2]
+    name: str = Field(min_length=1, max_length=32)
+    steps: list[dict[str, Any]] = Field(min_length=1, max_length=MAX_GARMIN_EXPANDED_STEPS)
+
+
+class StructuredWorkoutUpdate(StructuredWorkoutPayload):
+    workout_id: int = Field(gt=0)
+    source_operation_id: uuid.UUID
+    source_scheduled_workout_id: int = Field(gt=0)
+
+
+WorkoutCreateBody = WorkoutPayload | StructuredWorkoutPayload
+WorkoutUpdateBody = WorkoutUpdate | StructuredWorkoutUpdate
+
+
+def _validate_v2_target(target: Any) -> None:
+    if not isinstance(target, dict):
+        raise ValueError("invalid workout target")
+    if target == {"type": "none"}:
+        return
+    if (set(target) == {"type", "mode", "lower_bpm", "upper_bpm"}
+            and target.get("type") == "heart_rate" and target.get("mode") == "absolute"
+            and type(target.get("lower_bpm")) is int and type(target.get("upper_bpm")) is int
+            and 40 <= target["lower_bpm"] <= target["upper_bpm"] <= 230):
+        return
+    if (set(target) == {"type", "unit", "slower_seconds", "faster_seconds"}
+            and target.get("type") == "pace" and target.get("unit") in ("min_per_km", "min_per_mile")
+            and type(target.get("slower_seconds")) is int and type(target.get("faster_seconds")) is int
+            and 120 <= target["faster_seconds"] <= target["slower_seconds"] <= 1800):
+        return
+    raise ValueError("invalid workout target")
+
+
+def _validate_v2_end(end: Any) -> None:
+    if (not isinstance(end, dict) or set(end) != {"type", "value"}
+            or end.get("type") not in ("time", "distance") or type(end.get("value")) is not int):
+        raise ValueError("invalid workout end condition")
+    if not 1 <= end["value"] <= (7200 if end["type"] == "time" else 100000):
+        raise ValueError("workout end condition outside supported range")
+
+
+def _validate_structured_workout(body: StructuredWorkoutPayload) -> list[dict[str, Any]]:
+    if (not isinstance(body.name, str) or not body.name.strip()
+            or len(body.name.strip()) > 32
+            or not re.fullmatch(r"[\w .,'’()&+-]+", body.name.strip(), flags=re.UNICODE)):
+        raise ValueError("invalid workout name")
+    steps = body.steps
+    seen: set[str] = set()
+    expanded_steps = 0
+    total_seconds = 0
+    total_distance = 0
+    main_count = 0
+    if not steps:
+        raise ValueError("workout has no steps")
+    for index, step in enumerate(steps):
+        if not isinstance(step, dict):
+            raise ValueError("invalid workout step")
+        step_id = step.get("id")
+        kind = step.get("kind")
+        if (not isinstance(step_id, str) or not re.fullmatch(r"[a-zA-Z0-9_-]{1,40}", step_id)
+                or step_id in seen or kind not in ("warmup", "run", "recovery", "cooldown", "repeat")):
+            raise ValueError("invalid workout step identity")
+        seen.add(step_id)
+        if kind == "repeat":
+            allowed = {"id", "kind", "repetitions", "interval", "recovery", "skip_last_rest_step"}
+            if (set(step) - allowed or not {"id", "kind", "repetitions", "interval", "skip_last_rest_step"}.issubset(step)
+                    or type(step.get("repetitions")) is not int or not 2 <= step["repetitions"] <= MAX_REPEAT_COUNT
+                    or type(step.get("skip_last_rest_step")) is not bool):
+                raise ValueError("invalid repeat group")
+            interval = step["interval"]
+            if not isinstance(interval, dict) or set(interval) != {"end", "target"}:
+                raise ValueError("invalid repeat interval")
+            _validate_v2_end(interval["end"])
+            _validate_v2_target(interval["target"])
+            recovery = step.get("recovery")
+            if recovery is not None:
+                if not isinstance(recovery, dict) or set(recovery) != {"end", "target"}:
+                    raise ValueError("invalid repeat recovery")
+                _validate_v2_end(recovery["end"])
+                _validate_v2_target(recovery["target"])
+            elif not step["skip_last_rest_step"]:
+                raise ValueError("final recovery policy requires a recovery step")
+            rest_count = (step["repetitions"] - (1 if step["skip_last_rest_step"] else 0)) if recovery else 0
+            expanded_steps += 1 + step["repetitions"] + rest_count
+            if interval["end"]["type"] == "time":
+                total_seconds += interval["end"]["value"] * step["repetitions"]
+            else:
+                total_distance += interval["end"]["value"] * step["repetitions"]
+            if recovery:
+                if recovery["end"]["type"] == "time":
+                    total_seconds += recovery["end"]["value"] * rest_count
+                else:
+                    total_distance += recovery["end"]["value"] * rest_count
+            main_count += step["repetitions"]
+        else:
+            if set(step) != {"id", "kind", "end", "target"}:
+                raise ValueError("invalid workout step fields")
+            _validate_v2_end(step["end"])
+            _validate_v2_target(step["target"])
+            expanded_steps += 1
+            if step["end"]["type"] == "time":
+                total_seconds += step["end"]["value"]
+            else:
+                total_distance += step["end"]["value"]
+            if kind == "run":
+                main_count += 1
+            if kind == "warmup" and index != 0:
+                raise ValueError("warmup must be first")
+            if kind == "cooldown" and index != len(steps) - 1:
+                raise ValueError("cooldown must be last")
+    if expanded_steps > MAX_GARMIN_EXPANDED_STEPS or total_seconds > 86400 or total_distance > 100000 or main_count < 1:
+        raise ValueError("workout exceeds Garmin limits")
+    if sum(step["kind"] == "warmup" for step in steps) > 1 or sum(step["kind"] == "cooldown" for step in steps) > 1:
+        raise ValueError("workout has duplicate warmup/cooldown")
+    for index, step in enumerate(steps):
+        if step["kind"] == "recovery" and (
+                not any(item["kind"] in ("run", "repeat") for item in steps[:index])
+                or not any(item["kind"] in ("run", "repeat") for item in steps[index + 1:])):
+            raise ValueError("recovery must separate running blocks")
+    return steps
+
+
+def _build_structured_running_workout(body: StructuredWorkoutPayload, workout_name: str):
+    from garminconnect.workout import (
+        ConditionType, CustomHeartRateTarget, PaceTarget, RunningWorkout, StepType,
+        WorkoutSegment, create_cooldown_step, create_distance_interval_step,
+        create_interval_step, create_recovery_step, create_repeat_group,
+        create_targeted_distance_interval_step, create_targeted_interval_step,
+        create_warmup_step,
+    )
+
+    _validate_structured_workout(body)
+
+    def target_model(block):
+        target = block["target"]
+        if target["type"] == "heart_rate":
+            return CustomHeartRateTarget(lower_limit=target["lower_bpm"], upper_limit=target["upper_bpm"])
+        if target["type"] == "pace":
+            meters_per_unit = 1609.344 if target["unit"] == "min_per_mile" else 1000
+            return PaceTarget(lower_limit=meters_per_unit / target["slower_seconds"],
+                              upper_limit=meters_per_unit / target["faster_seconds"])
+        return None
+
+    def target_type(target):
+        return {"workoutTargetTypeId": target.target_type,
+                "workoutTargetTypeKey": target.target_type_key, "displayOrder": 1} if target else None
+
+    def apply_target(step, block):
+        target = target_model(block)
+        if target:
+            step.targetType = target_type(target)
+            step.targetValueOne = target.lower_limit
+            step.targetValueTwo = target.upper_limit
+        return step
+
+    def create_step(kind, block, order):
+        end = block["end"]
+        target = target_model(block)
+        if kind == "run":
+            if end["type"] == "time":
+                return create_targeted_interval_step(end["value"], step_order=order, target=target) if target \
+                    else create_interval_step(end["value"], step_order=order)
+            return create_targeted_distance_interval_step(end["value"], step_order=order, target=target) if target \
+                else create_distance_interval_step(end["value"], step_order=order)
+        if end["type"] == "time":
+            if kind == "warmup":
+                return apply_target(create_warmup_step(end["value"], step_order=order, target_type=target_type(target)), block)
+            if kind == "cooldown":
+                return apply_target(create_cooldown_step(end["value"], step_order=order, target_type=target_type(target)), block)
+            return apply_target(create_recovery_step(end["value"], step_order=order, target_type=target_type(target)), block)
+        step_type = {"warmup": StepType.WARMUP, "recovery": StepType.RECOVERY,
+                     "cooldown": StepType.COOLDOWN}[kind]
+        display = {"warmup": ("warmup", 1), "recovery": ("recovery", 4), "cooldown": ("cooldown", 2)}[kind]
+        step = create_distance_interval_step(end["value"], step_order=order)
+        step.stepType = {"stepTypeId": step_type, "stepTypeKey": display[0], "displayOrder": display[1]}
+        return apply_target(step, block)
+
+    garmin_steps = []
+    known_time = 0
+    duration_complete = True
+    for order, item in enumerate(body.steps, start=1):
+        if item["kind"] != "repeat":
+            garmin_steps.append(create_step(item["kind"], item, order))
+            if item["end"]["type"] == "time":
+                known_time += item["end"]["value"]
+            else:
+                duration_complete = False
+            continue
+        interval = create_step("run", item["interval"], 1)
+        repeated = [interval]
+        if item.get("recovery"):
+            repeated.append(create_step("recovery", item["recovery"], 2))
+        garmin_steps.append(create_repeat_group(item["repetitions"], repeated, step_order=order,
+                                                skip_last_rest_step=item["skip_last_rest_step"]
+                                                if item.get("recovery") else None))
+        if item["interval"]["end"]["type"] == "time":
+            known_time += item["interval"]["end"]["value"] * item["repetitions"]
+        else:
+            duration_complete = False
+        if item.get("recovery"):
+            recovery_count = item["repetitions"] - (1 if item["skip_last_rest_step"] else 0)
+            if item["recovery"]["end"]["type"] == "time":
+                known_time += item["recovery"]["end"]["value"] * recovery_count
+            else:
+                duration_complete = False
+    return RunningWorkout(
+        workoutName=workout_name[:60],
+        estimatedDurationInSecs=known_time if duration_complete else 0,
+        workoutSegments=[WorkoutSegment(segmentOrder=1,
+            sportType={"sportTypeId": 1, "sportTypeKey": "running"}, workoutSteps=garmin_steps)],
+    )
+
+
+def _build_running_workout(body: WorkoutPayload | StructuredWorkoutPayload, workout_name: str):
+    if isinstance(body, StructuredWorkoutPayload):
+        return _build_structured_running_workout(body, workout_name)
     from garminconnect.workout import (
         CustomHeartRateTarget, PaceTarget, RunningWorkout, WorkoutSegment,
         create_cooldown_step, create_interval_step, create_recovery_step,
@@ -1174,7 +1393,7 @@ def _log_download_diagnostic(request_id, stage, code, exc, remote_status,
 
 
 @app.post("/v1/connections/{owner_id}/{connection_id}/workouts")
-def publish_workout(owner_id: str, connection_id: str, body: WorkoutPayload,
+def publish_workout(owner_id: str, connection_id: str, body: WorkoutCreateBody,
                     x_kinesis_service_key: str | None = Header(default=None)):
     path, key = _authenticated_client(owner_id, connection_id, x_kinesis_service_key)
     deadline = _clock() + MAX_REMOTE_OPERATION_SECONDS
@@ -1187,38 +1406,41 @@ def publish_workout(owner_id: str, connection_id: str, body: WorkoutPayload,
                 create_targeted_interval_step, create_distance_interval_step,
                 create_targeted_distance_interval_step, create_warmup_step,
             )
-            if (body.interval_seconds is None) == (body.interval_distance_meters is None):
+            structured = isinstance(body, StructuredWorkoutPayload)
+            if structured:
+                _validate_structured_workout(body)
+            if not structured and (body.interval_seconds is None) == (body.interval_distance_meters is None):
                 raise ValueError("Exactly one interval end condition is required")
-            if (body.target_lower_mps is None) != (body.target_upper_mps is None):
+            if not structured and (body.target_lower_mps is None) != (body.target_upper_mps is None):
                 raise ValueError("Both pace bounds are required")
-            if (body.target_lower_bpm is None) != (body.target_upper_bpm is None):
+            if not structured and (body.target_lower_bpm is None) != (body.target_upper_bpm is None):
                 raise ValueError("Both heart-rate bounds are required")
-            if body.target_kind == "heart_rate":
+            if not structured and body.target_kind == "heart_rate":
                 if body.target_lower_bpm is None or body.target_lower_bpm > body.target_upper_bpm:
                     raise ValueError("Heart-rate bounds are invalid")
                 if body.target_lower_mps is not None:
                     raise ValueError("Only one target type is allowed")
-            elif body.target_kind == "pace":
+            elif not structured and body.target_kind == "pace":
                 if body.target_lower_bpm is not None:
                     raise ValueError("Only one target type is allowed")
-            elif any(value is not None for value in (body.target_lower_mps, body.target_upper_mps,
+            elif not structured and any(value is not None for value in (body.target_lower_mps, body.target_upper_mps,
                                                       body.target_lower_bpm, body.target_upper_bpm)):
                 raise ValueError("No-target workouts cannot carry target bounds")
-            if body.repetitions == 1 and body.recovery_seconds:
+            if not structured and body.repetitions == 1 and body.recovery_seconds:
                 raise ValueError("Recovery is only supported between repeated intervals")
-            if body.target_lower_mps is not None and body.target_lower_mps > body.target_upper_mps:
+            if not structured and body.target_lower_mps is not None and body.target_lower_mps > body.target_upper_mps:
                 raise ValueError("Pace bounds are invalid")
-            if (body.recovery_target_lower_mps is None) != (body.recovery_target_upper_mps is None):
+            if not structured and (body.recovery_target_lower_mps is None) != (body.recovery_target_upper_mps is None):
                 raise ValueError("Both recovery pace bounds are required")
-            if (body.recovery_target_lower_bpm is None) != (body.recovery_target_upper_bpm is None):
+            if not structured and (body.recovery_target_lower_bpm is None) != (body.recovery_target_upper_bpm is None):
                 raise ValueError("Both recovery heart-rate bounds are required")
-            if body.recovery_target_kind == "heart_rate":
+            if not structured and body.recovery_target_kind == "heart_rate":
                 if body.recovery_target_lower_bpm is None or body.recovery_target_lower_bpm > body.recovery_target_upper_bpm or body.recovery_target_lower_mps is not None:
                     raise ValueError("Recovery heart-rate bounds are invalid")
-            elif body.recovery_target_kind == "pace":
+            elif not structured and body.recovery_target_kind == "pace":
                 if body.recovery_target_lower_bpm is not None or body.recovery_target_lower_mps is None or body.recovery_target_lower_mps > body.recovery_target_upper_mps:
                     raise ValueError("Recovery pace bounds are invalid")
-            elif any(value is not None for value in (body.recovery_target_lower_mps, body.recovery_target_upper_mps,
+            elif not structured and any(value is not None for value in (body.recovery_target_lower_mps, body.recovery_target_upper_mps,
                                                        body.recovery_target_lower_bpm, body.recovery_target_upper_bpm)):
                 raise ValueError("No-target recovery cannot carry target bounds")
             operation_token = base64.urlsafe_b64encode(body.operation_id.bytes).decode().rstrip("=")
@@ -1264,71 +1486,72 @@ def publish_workout(owner_id: str, connection_id: str, body: WorkoutPayload,
                             "status": "reconciled"}
                 if not complete_scan or prior_operation is not None:
                     raise HTTPException(503, detail={"code": "outcome_unknown"})
-                target = None
-                if body.target_kind == "heart_rate":
-                    target = CustomHeartRateTarget(lower_limit=body.target_lower_bpm,
-                                                   upper_limit=body.target_upper_bpm)
-                elif body.target_kind == "pace" and body.target_lower_mps is not None:
-                    target = PaceTarget(lower_limit=body.target_lower_mps,
-                                        upper_limit=body.target_upper_mps)
-                interval_order = 2 if body.warmup_seconds else 1
-                interval_step_order = 1 if body.repetitions > 1 else interval_order
-                if body.interval_seconds is not None:
-                    interval = (create_targeted_interval_step(
-                        body.interval_seconds, step_order=interval_step_order, target=target
-                    ) if target else create_interval_step(body.interval_seconds, step_order=interval_step_order))
-                    estimated_interval_seconds = body.interval_seconds * body.repetitions
+                if structured:
+                    workout = _build_structured_running_workout(body, expected_name)
                 else:
-                    interval = (create_targeted_distance_interval_step(
-                        body.interval_distance_meters, step_order=interval_step_order, target=target
-                    ) if target else create_distance_interval_step(
-                        body.interval_distance_meters, step_order=interval_step_order
-                    ))
-                    # Garmin requires this field, but Kinesis does not invent a
-                    # duration estimate for a distance step.
-                    estimated_interval_seconds = None
-                repeated_steps = [interval]
-                if body.repetitions > 1:
-                    if body.recovery_seconds < 1:
-                        raise ValueError("Recovery is required for repeats")
-                    recovery_step = create_recovery_step(body.recovery_seconds, step_order=2)
-                    if body.recovery_target_kind == "heart_rate":
-                        recovery_target = CustomHeartRateTarget(lower_limit=body.recovery_target_lower_bpm,
-                                                                upper_limit=body.recovery_target_upper_bpm)
-                    elif body.recovery_target_kind == "pace":
-                        recovery_target = PaceTarget(lower_limit=body.recovery_target_lower_mps,
-                                                     upper_limit=body.recovery_target_upper_mps)
+                    target = None
+                    if body.target_kind == "heart_rate":
+                        target = CustomHeartRateTarget(lower_limit=body.target_lower_bpm,
+                                                       upper_limit=body.target_upper_bpm)
+                    elif body.target_kind == "pace" and body.target_lower_mps is not None:
+                        target = PaceTarget(lower_limit=body.target_lower_mps,
+                                            upper_limit=body.target_upper_mps)
+                    interval_order = 2 if body.warmup_seconds else 1
+                    interval_step_order = 1 if body.repetitions > 1 else interval_order
+                    if body.interval_seconds is not None:
+                        interval = (create_targeted_interval_step(
+                            body.interval_seconds, step_order=interval_step_order, target=target
+                        ) if target else create_interval_step(body.interval_seconds, step_order=interval_step_order))
+                        estimated_interval_seconds = body.interval_seconds * body.repetitions
                     else:
-                        recovery_target = None
-                    if recovery_target:
-                        recovery_step.targetType = {"workoutTargetTypeId": recovery_target.target_type,
-                                                    "workoutTargetTypeKey": recovery_target.target_type_key,
-                                                    "displayOrder": 1}
-                        recovery_step.targetValueOne = recovery_target.lower_limit
-                        recovery_step.targetValueTwo = recovery_target.upper_limit
-                    repeated_steps.append(recovery_step)
-                    interval_group = create_repeat_group(body.repetitions, repeated_steps,
-                                                        step_order=interval_order,
-                                                        skip_last_rest_step=body.skip_last_rest_step)
-                else:
-                    interval_group = repeated_steps[0]
-                steps = []
-                if body.warmup_seconds:
-                    steps.append(create_warmup_step(body.warmup_seconds, step_order=1))
-                steps.append(interval_group)
-                if body.cooldown_seconds:
-                    steps.append(create_cooldown_step(body.cooldown_seconds, step_order=len(steps) + 1))
-            workout = RunningWorkout(
-                workoutName=expected_name[:60],
-                estimatedDurationInSecs=(body.warmup_seconds + estimated_interval_seconds
-                                         + max(0, body.repetitions - (1 if body.skip_last_rest_step else 0)) * body.recovery_seconds
-                                         + body.cooldown_seconds) if estimated_interval_seconds is not None else 0,
-                workoutSegments=[WorkoutSegment(
-                    segmentOrder=1,
-                    sportType={"sportTypeId": 1, "sportTypeKey": "running"},
-                    workoutSteps=steps,
-                )],
-            )
+                        interval = (create_targeted_distance_interval_step(
+                            body.interval_distance_meters, step_order=interval_step_order, target=target
+                        ) if target else create_distance_interval_step(
+                            body.interval_distance_meters, step_order=interval_step_order
+                        ))
+                        estimated_interval_seconds = None
+                    repeated_steps = [interval]
+                    if body.repetitions > 1:
+                        if body.recovery_seconds < 1:
+                            raise ValueError("Recovery is required for repeats")
+                        recovery_step = create_recovery_step(body.recovery_seconds, step_order=2)
+                        if body.recovery_target_kind == "heart_rate":
+                            recovery_target = CustomHeartRateTarget(lower_limit=body.recovery_target_lower_bpm,
+                                                                    upper_limit=body.recovery_target_upper_bpm)
+                        elif body.recovery_target_kind == "pace":
+                            recovery_target = PaceTarget(lower_limit=body.recovery_target_lower_mps,
+                                                         upper_limit=body.recovery_target_upper_mps)
+                        else:
+                            recovery_target = None
+                        if recovery_target:
+                            recovery_step.targetType = {"workoutTargetTypeId": recovery_target.target_type,
+                                                        "workoutTargetTypeKey": recovery_target.target_type_key,
+                                                        "displayOrder": 1}
+                            recovery_step.targetValueOne = recovery_target.lower_limit
+                            recovery_step.targetValueTwo = recovery_target.upper_limit
+                        repeated_steps.append(recovery_step)
+                        interval_group = create_repeat_group(body.repetitions, repeated_steps,
+                                                            step_order=interval_order,
+                                                            skip_last_rest_step=body.skip_last_rest_step)
+                    else:
+                        interval_group = repeated_steps[0]
+                    steps = []
+                    if body.warmup_seconds:
+                        steps.append(create_warmup_step(body.warmup_seconds, step_order=1))
+                    steps.append(interval_group)
+                    if body.cooldown_seconds:
+                        steps.append(create_cooldown_step(body.cooldown_seconds, step_order=len(steps) + 1))
+                    workout = RunningWorkout(
+                        workoutName=expected_name[:60],
+                        estimatedDurationInSecs=(body.warmup_seconds + estimated_interval_seconds
+                            + max(0, body.repetitions - (1 if body.skip_last_rest_step else 0)) * body.recovery_seconds
+                            + body.cooldown_seconds) if estimated_interval_seconds is not None else 0,
+                        workoutSegments=[WorkoutSegment(
+                            segmentOrder=1,
+                            sportType={"sportTypeId": 1, "sportTypeKey": "running"},
+                            workoutSteps=steps,
+                        )],
+                    )
             with _client(path, key) as (client, _, _):
                 if len(journal) >= 1000:
                     raise HTTPException(503, detail={"code": "unavailable"})
@@ -1458,7 +1681,7 @@ def schedule_workout(owner_id: str, connection_id: str, body: WorkoutSchedule,
 
 
 @app.put("/v1/connections/{owner_id}/{connection_id}/workouts/{workout_id}")
-def update_workout(owner_id: str, connection_id: str, workout_id: int, body: WorkoutUpdate,
+def update_workout(owner_id: str, connection_id: str, workout_id: int, body: WorkoutUpdateBody,
                    x_kinesis_service_key: str | None = Header(default=None)):
     path, key = _authenticated_client(owner_id, connection_id, x_kinesis_service_key)
     if body.workout_id != workout_id:
@@ -1466,8 +1689,9 @@ def update_workout(owner_id: str, connection_id: str, workout_id: int, body: Wor
     operation_token = base64.urlsafe_b64encode(body.operation_id.bytes).decode().rstrip("=")
     marker = f"K{operation_token}-"
     fingerprint = hashlib.sha256(body.model_dump_json().encode()).hexdigest()
-    legacy_fingerprint = hashlib.sha256(
+    legacy_fingerprint = (hashlib.sha256(
         body.model_dump_json(exclude={"source_scheduled_workout_id"}).encode()).hexdigest()
+        if isinstance(body, WorkoutUpdate) else None)
     deadline = _clock() + MAX_REMOTE_OPERATION_SECONDS
     with _lock(str(path)):
         try:

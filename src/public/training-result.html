@@ -83,6 +83,24 @@
           <p data-i18n="garmin.product.proseNote">The original workout description stays unchanged. Confirm the structure below; it is not inferred from prose.</p>
           <form id="garminPrescriptionForm">
             <div class="field"><label for="garminWorkoutName" data-i18n="garmin.product.name">Workout name</label><input id="garminWorkoutName" class="input-control" maxlength="32" required></div>
+            <div id="garminWorkoutEditor" class="garmin-workout-editor">
+              <fieldset class="garmin-editor-section"><legend data-i18n="garmin.product.warmupSection">Aquecimento</legend>
+                <label class="garmin-inline-check"><input id="garminWarmupEnabled" type="checkbox"><span data-i18n="garmin.product.includeStage">Incluir etapa</span></label>
+                <div id="garminWarmupEditor" hidden></div>
+              </fieldset>
+              <fieldset class="garmin-editor-section"><legend data-i18n="garmin.product.runSection">Corrida</legend>
+                <p data-i18n="garmin.product.runSectionHelp">Adicione blocos na ordem em que serão executados.</p>
+                <div id="garminRunBlocks"></div>
+                <button id="garminAddRunBlock" type="button" class="btn-secondary" data-i18n="garmin.product.addBlock">Adicionar bloco</button>
+                <button id="garminAddRecoveryBlock" type="button" class="btn-secondary" data-i18n="garmin.product.addRecovery">Adicionar recuperação</button>
+                <button id="garminAddRepeatBlock" type="button" class="btn-secondary" data-i18n="garmin.product.addRepeat">Adicionar repetições iguais</button>
+              </fieldset>
+              <fieldset class="garmin-editor-section"><legend data-i18n="garmin.product.cooldownSection">Desaquecimento</legend>
+                <label class="garmin-inline-check"><input id="garminCooldownEnabled" type="checkbox"><span data-i18n="garmin.product.includeStage">Incluir etapa</span></label>
+                <div id="garminCooldownEditor" hidden></div>
+              </fieldset>
+            </div>
+            <div hidden aria-hidden="true">
             <div class="garmin-step-grid">
               <label><span data-i18n="garmin.product.warmup">Warm-up (minutes)</span><input id="garminWarmup" type="number" step="any" min="0" max="60" value="0" class="input-control"></label>
               <label><span data-i18n="garmin.product.repetitions">Intervals</span><input id="garminRepetitions" type="number" min="1" max="30" value="1" class="input-control"></label>
@@ -96,7 +114,10 @@
             <div class="garmin-step-grid" id="garminTargetFields" hidden><label><span id="garminLowerLabel" data-i18n="garmin.product.lower">Lower bound</span><input id="garminLower" type="number" min="1" class="input-control"></label><label><span id="garminUpperLabel" data-i18n="garmin.product.upper">Upper bound</span><input id="garminUpper" type="number" min="1" class="input-control"></label></div>
             <div class="field"><label for="garminRecoveryTargetType" data-i18n="garmin.product.recoveryTarget">Recovery target</label><select id="garminRecoveryTargetType" class="input-control"><option value="none" data-i18n="garmin.product.noTarget">No target</option><option value="pace" data-i18n="garmin.product.pace">Pace range</option><option value="heart_rate" data-i18n="garmin.product.heartRate">Heart rate range</option></select></div>
             <div class="garmin-step-grid" id="garminRecoveryTargetFields" hidden><label><span id="garminRecoveryLowerLabel"></span><input id="garminRecoveryLower" type="number" min="1" class="input-control"></label><label><span id="garminRecoveryUpperLabel"></span><input id="garminRecoveryUpper" type="number" min="1" class="input-control"></label></div>
-            <div class="garmin-actions"><button type="submit" class="btn-secondary" data-i18n="garmin.product.preview">Save and preview</button></div>
+            </div>
+            <p data-i18n="garmin.product.saveHelp">Salva a estrutura no Kinesis e abre a revisão. Nada é enviado à Garmin.</p>
+            <p id="garminPrescriptionError" role="alert" hidden></p>
+            <div class="garmin-actions"><button type="submit" class="btn-secondary" data-i18n="garmin.product.preview">Salvar e revisar</button></div>
           </form>
           <div id="garminPreview" hidden><h3 data-i18n="garmin.product.previewTitle">Review before sending</h3><p id="garminPreviewName"></p><p id="garminPreviewDestination"></p><ol id="garminPreviewSteps"></ol><p id="garminPreviewTotal"></p><p id="garminScheduleDate"></p><div class="garmin-actions"><button id="garminPublishButton" type="button" class="btn-primary" data-i18n="garmin.product.publish">Publish and schedule</button><button id="garminUpdateButton" type="button" class="btn-primary" hidden data-i18n="garmin.product.update">Update in Garmin</button><button id="garminRescheduleButton" type="button" class="btn-secondary" hidden data-i18n="garmin.product.reschedule">Reschedule in Garmin</button></div></div>
           <p id="garminOperationStatus" role="status"></p>

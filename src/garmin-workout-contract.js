@@ -4,6 +4,8 @@ const MAX_STEPS = 80;
 const MAX_TOTAL_SECONDS = 24 * 60 * 60;
 const MAX_DISTANCE_METERS = 100000;
 const MAX_NAME_LENGTH = 32;
+const MAX_GARMIN_EXPANDED_STEPS = 50;
+const MAX_REPEAT_COUNT = 20;
 
 class GarminWorkoutContractError extends Error {
   constructor(code) { super(code); this.name = 'GarminWorkoutContractError'; this.code = code; }
@@ -15,7 +17,7 @@ function hasOnlyKeys(value, allowed) {
   return Object.keys(value).every((key) => allowed.includes(key));
 }
 
-function validatePrescription(value) {
+function validateV1Prescription(value) {
   const name = typeof value?.name === 'string' ? value.name.trim().normalize('NFC') : '';
   if (!value || typeof value !== 'object' || Array.isArray(value)
       || !hasOnlyKeys(value, ['version', 'sport', 'name', 'steps'])
@@ -64,6 +66,88 @@ function validatePrescription(value) {
   return { version: 1, sport: 'running', name, steps };
 }
 
+function validateEnd(end) {
+  if (!end || typeof end !== 'object' || Array.isArray(end)
+      || !hasOnlyKeys(end, ['type', 'value'])
+      || !['time', 'distance'].includes(end.type)
+      || !Number.isInteger(end.value) || end.value < 1
+      || end.value > (end.type === 'time' ? 7200 : MAX_DISTANCE_METERS)) fail();
+}
+
+function validateBlock(block) {
+  if (!block || typeof block !== 'object' || Array.isArray(block)
+      || !hasOnlyKeys(block, ['end', 'target'])) fail();
+  validateEnd(block.end);
+  validateTarget(block.target);
+}
+
+function validateV2Prescription(value) {
+  const name = typeof value?.name === 'string' ? value.name.trim().normalize('NFC') : '';
+  if (!value || typeof value !== 'object' || Array.isArray(value)
+      || !hasOnlyKeys(value, ['version', 'sport', 'name', 'steps'])
+      || value.version !== 2 || value.sport !== 'running'
+      || name.length < 1 || name.length > MAX_NAME_LENGTH
+      || !/^[\p{L}\p{N}\p{M} _.,'’()&+-]+$/u.test(name)
+      || !Array.isArray(value.steps) || value.steps.length < 1
+      || value.steps.length > MAX_GARMIN_EXPANDED_STEPS) fail();
+  const ids = new Set();
+  let expandedSteps = 0;
+  let totalSeconds = 0;
+  let totalDistance = 0;
+  let mainCount = 0;
+  const steps = value.steps.map((step, index) => {
+    if (!step || typeof step !== 'object' || Array.isArray(step)
+        || typeof step.id !== 'string' || !/^[a-zA-Z0-9_-]{1,40}$/.test(step.id)
+        || ids.has(step.id) || !['warmup', 'run', 'recovery', 'cooldown', 'repeat'].includes(step.kind)) fail();
+    ids.add(step.id);
+    if (step.kind === 'repeat') {
+      if (!hasOnlyKeys(step, ['id', 'kind', 'repetitions', 'interval', 'recovery', 'skip_last_rest_step'])
+          || !Number.isInteger(step.repetitions) || step.repetitions < 2 || step.repetitions > MAX_REPEAT_COUNT
+          || typeof step.skip_last_rest_step !== 'boolean') fail();
+      validateBlock(step.interval);
+      if (step.recovery !== undefined) validateBlock(step.recovery);
+      if (!step.recovery && !step.skip_last_rest_step) fail();
+      const recoveryCount = step.recovery
+        ? step.repetitions - (step.skip_last_rest_step ? 1 : 0) : 0;
+      expandedSteps += 1 + step.repetitions + recoveryCount;
+      if (step.interval.end.type === 'time') totalSeconds += step.interval.end.value * step.repetitions;
+      else totalDistance += step.interval.end.value * step.repetitions;
+      if (step.recovery) {
+        if (step.recovery.end.type === 'time') totalSeconds += step.recovery.end.value * recoveryCount;
+        else totalDistance += step.recovery.end.value * recoveryCount;
+      }
+      mainCount += step.repetitions;
+    } else {
+      if (!hasOnlyKeys(step, ['id', 'kind', 'end', 'target'])) fail();
+      validateBlock({ end: step.end, target: step.target });
+      expandedSteps += 1;
+      if (step.end.type === 'time') totalSeconds += step.end.value;
+      else totalDistance += step.end.value;
+      if (step.kind === 'run') mainCount += 1;
+      if (step.kind === 'warmup' && index !== 0) fail();
+      if (step.kind === 'cooldown' && index !== value.steps.length - 1) fail();
+    }
+    return JSON.parse(JSON.stringify(step));
+  });
+  if (expandedSteps > MAX_GARMIN_EXPANDED_STEPS || totalSeconds > MAX_TOTAL_SECONDS
+      || totalDistance > MAX_DISTANCE_METERS || mainCount < 1) fail();
+  // The per-step position checks above already permit warm-up only at index 0
+  // and cool-down only at the final index, making duplicate/start/end checks
+  // here redundant while preserving the same accepted sequence contract.
+  for (let index = 0; index < steps.length; index += 1) {
+    if (steps[index].kind === 'recovery'
+        && (!steps.slice(0, index).some((step) => step.kind === 'run' || step.kind === 'repeat')
+          || !steps.slice(index + 1).some((step) => step.kind === 'run' || step.kind === 'repeat'))) fail();
+  }
+  return { version: 2, sport: 'running', name, steps };
+}
+
+function validatePrescription(value) {
+  if (value?.version === 1) return validateV1Prescription(value);
+  if (value?.version === 2) return validateV2Prescription(value);
+  fail();
+}
+
 function validateTarget(target) {
   if (!target || typeof target !== 'object' || Array.isArray(target)) fail();
   if (target.type === 'none' && hasOnlyKeys(target, ['type'])) return;
@@ -96,6 +180,35 @@ function prescriptionFingerprint(prescription) {
 
 function previewPrescription(prescription) {
   const valid = validatePrescription(prescription);
+  if (valid.version === 2) {
+    const durationComplete = valid.steps.every((step) => {
+      const ends = step.kind === 'repeat' ? [step.interval.end, ...(step.recovery ? [step.recovery.end] : [])] : [step.end];
+      return ends.every((end) => end.type === 'time');
+    });
+    const totalTime = valid.steps.reduce((sum, step) => {
+      if (step.kind !== 'repeat') return sum + (step.end.type === 'time' ? step.end.value : 0);
+      const restCount = step.recovery
+        ? step.repetitions - (step.skip_last_rest_step ? 1 : 0) : 0;
+      return sum + (step.interval.end.type === 'time' ? step.interval.end.value * step.repetitions : 0)
+        + (step.recovery?.end.type === 'time' ? step.recovery.end.value * restCount : 0);
+    }, 0);
+    const totalDistance = valid.steps.reduce((sum, step) => {
+      if (step.kind !== 'repeat') return sum + (step.end.type === 'distance' ? step.end.value : 0);
+      const restCount = step.recovery
+        ? step.repetitions - (step.skip_last_rest_step ? 1 : 0) : 0;
+      return sum + (step.interval.end.type === 'distance' ? step.interval.end.value * step.repetitions : 0)
+        + (step.recovery?.end.type === 'distance' ? step.recovery.end.value * restCount : 0);
+    }, 0);
+    return {
+      steps: valid.steps.map((step, index) => ({ order: index + 1, ...step })),
+      total_time_seconds: totalTime,
+      total_distance_meters: totalDistance,
+      duration_complete: durationComplete,
+      estimated_duration_seconds: durationComplete ? totalTime : null,
+      expanded_step_count: valid.steps.reduce((sum, step) => sum + (step.kind === 'repeat'
+        ? 1 + step.repetitions + (step.recovery ? step.repetitions - (step.skip_last_rest_step ? 1 : 0) : 0) : 1), 0),
+    };
+  }
   const steps = valid.steps.map((step, index) => ({
     order: index + 1,
     kind: step.kind,
@@ -138,6 +251,8 @@ function previewPrescription(prescription) {
 module.exports = {
   GarminWorkoutContractError,
   MAX_STEPS,
+  MAX_GARMIN_EXPANDED_STEPS,
+  MAX_REPEAT_COUNT,
   paceBoundsMps,
   prescriptionFingerprint,
   previewPrescription,

@@ -1613,6 +1613,93 @@ process.stdout.write(JSON.stringify({
         self.assertEqual(response.status_code, 503)
         self.assertEqual(response.json()["detail"]["code"], "unavailable")
 
+    def test_structured_v2_endpoint_builds_distinct_real_garmin_steps_and_targets(self):
+        main._save_encrypted(Path(self.temp.name, "17-pilot.bin"), b"k" * 32,
+                             b'{"di_token":"synthetic"}')
+        fake = FakeGarmin()
+
+        @contextmanager
+        def fake_client(*_args, **_kwargs):
+            yield fake, Path(self.temp.name), Path(self.temp.name, "tokens.json")
+
+        body = {
+            "operation_id": "f51db93c-9fb5-44ea-9a4c-79758a3b10c0",
+            "version": 2, "name": "Mixed intervals", "steps": [
+                {"id": "warmup", "kind": "warmup", "end": {"type": "time", "value": 300},
+                 "target": {"type": "heart_rate", "mode": "absolute", "lower_bpm": 110, "upper_bpm": 130}},
+                {"id": "easy", "kind": "run", "end": {"type": "time", "value": 600},
+                 "target": {"type": "none"}},
+                {"id": "hill", "kind": "repeat", "repetitions": 2, "skip_last_rest_step": True,
+                 "interval": {"end": {"type": "distance", "value": 400},
+                              "target": {"type": "pace", "unit": "min_per_km", "slower_seconds": 330, "faster_seconds": 300}}},
+                {"id": "recovery", "kind": "recovery", "end": {"type": "time", "value": 90},
+                 "target": {"type": "none"}},
+                {"id": "finish", "kind": "run", "end": {"type": "time", "value": 180},
+                 "target": {"type": "none"}},
+                {"id": "cooldown", "kind": "cooldown", "end": {"type": "distance", "value": 500},
+                 "target": {"type": "heart_rate", "mode": "absolute", "lower_bpm": 90, "upper_bpm": 110}},
+            ],
+        }
+        with patch.object(main, "_client", fake_client):
+            response = self.client.post(f"{self.prefix}/workouts", headers=self.headers, json=body)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(fake.upload_calls, 1)
+        workout = fake.workout.model_dump(mode="json", by_alias=True, exclude_none=True)
+        steps = workout["workoutSegments"][0]["workoutSteps"]
+        self.assertEqual([item["stepType"]["stepTypeKey"] for item in steps],
+                         ["warmup", "interval", "repeat", "recovery", "interval", "cooldown"])
+        self.assertEqual(steps[0]["endCondition"]["conditionTypeKey"], "time")
+        self.assertEqual(steps[0]["targetValueOne"], 110)
+        repeated = steps[2]["workoutSteps"]
+        self.assertEqual(len(repeated), 1)
+        self.assertEqual(repeated[0]["endConditionValue"], 400)
+        self.assertEqual(repeated[0]["targetType"]["workoutTargetTypeKey"], "pace.zone")
+        self.assertEqual(steps[3]["endCondition"]["conditionTypeKey"], "time")
+        self.assertEqual(steps[5]["endCondition"]["conditionTypeKey"], "distance")
+        self.assertEqual(steps[5]["targetValueOne"], 90)
+
+    def test_structured_v2_update_uses_real_workout_models_and_keeps_source_identity(self):
+        path = Path(self.temp.name, "17-pilot.bin")
+        main._save_encrypted(path, b"k" * 32, b'{"di_token":"synthetic"}')
+        source_id = "4c497608-2fc4-47e5-89a6-1e6ec315c70c"
+        operation_id = "f51db93c-9fb5-44ea-9a4c-79758a3b10c0"
+        main._save_operation_journal(path, b"k" * 32, {
+            source_id: {"status": "complete", "workout_id": 42, "occurrence_id": 84},
+            "schedule:42:2026-11-12": {"status": "complete", "workout_id": 42,
+                                             "scheduled_workout_id": 84},
+        })
+        fake = FakeGarmin()
+
+        @contextmanager
+        def fake_client(*_args, **_kwargs):
+            yield fake, Path(self.temp.name), Path(self.temp.name, "tokens.json")
+
+        body = {"operation_id": operation_id, "version": 2, "name": "Updated blocks",
+                "steps": [
+                    {"id": "warmup", "kind": "warmup", "end": {"type": "distance", "value": 500},
+                     "target": {"type": "none"}},
+                    {"id": "run-one", "kind": "run", "end": {"type": "time", "value": 300},
+                     "target": {"type": "heart_rate", "mode": "absolute", "lower_bpm": 120, "upper_bpm": 140}},
+                    {"id": "run-two", "kind": "run", "end": {"type": "distance", "value": 800},
+                     "target": {"type": "none"}},
+                    {"id": "cooldown", "kind": "cooldown", "end": {"type": "time", "value": 240},
+                     "target": {"type": "none"}},
+                ], "workout_id": 42, "source_operation_id": source_id,
+                "source_scheduled_workout_id": 84}
+        with patch.object(main, "_client", fake_client):
+            response = self.client.put(f"{self.prefix}/workouts/42", headers=self.headers, json=body)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["status"], "updated")
+        self.assertEqual(fake.update_calls, 1)
+        self.assertEqual(fake.updated[0], 42)
+        steps = fake.updated[1]["workoutSegments"][0]["workoutSteps"]
+        self.assertEqual([item["endCondition"]["conditionTypeKey"] for item in steps],
+                         ["distance", "time", "distance", "time"])
+        self.assertEqual(steps[1]["targetValueOne"], 120)
+        saved_journal = main._operation_journal(path, b"k" * 32)
+        self.assertEqual(saved_journal[f"update:{operation_id}"]["status"], "complete")
+        self.assertEqual(saved_journal[operation_id]["workout_id"], 42)
+
 
 if __name__ == "__main__":
     unittest.main()
