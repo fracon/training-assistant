@@ -1168,7 +1168,15 @@ GitHub main ──push──▶ Self-Hosted Runner (Docker on ZimaOS)
                  ghcr.io/fracon/training-assistant:latest
                           │  docker compose pull
                           ▼
-              Kinesis (Fastify, Docker on ZimaOS :8081)
+              Kinesis (Node/Fastify, :8081 → :3000)
+                 │ private Compose HTTP + service key
+                 ▼
+              Garmin connector (Python, no published port)
+                 │ outbound HTTPS
+                 ▼
+              Garmin Connect (unofficial integration)
+                 │
+                 └──── Kinesis public traffic stays on port 8081
                           │  HTTP
                           ▼
                  Cloudflare Tunnel (Zero Trust)
@@ -1177,7 +1185,7 @@ GitHub main ──push──▶ Self-Hosted Runner (Docker on ZimaOS)
                      https://your-domain.com
 ```
 
-- **App:** Node.js 24 / Fastify running in a Docker container (`node:24-alpine` base, non-root user).
+- **App:** Node.js 24 / Fastify running in a Docker container (`node:24-alpine` base, non-root user); the private pilot adds a separate Python 3.12 container, built locally by Compose for the ZimaOS host architecture.
 - **Host:** ZimaOS, orchestrated with Docker Compose.
 - **Exposure:** Cloudflare Zero Trust Tunnel — no open inbound ports on the router; Cloudflare handles the public HTTPS layer.
 
@@ -1259,6 +1267,65 @@ Tunnel public hostname configuration:
 - DNS for your domain is managed by the tunnel (CNAME to the tunnel ID), so no port forwarding rules are ever created on the router.
 
 ---
+
+## Private Garmin connector (Phase 1 pilot)
+
+An unofficial, private Python connector is packaged alongside Kinesis in
+`docker-compose.yml`; only Kinesis is published on host port `8081` to
+container port `3000`. The Garmin service has no host port or Cloudflare route,
+does not mount SQLite, and does not block Kinesis or existing FIT/ZIP imports.
+The pilot feature flag is off by default. The owner-only authorization scope,
+token encryption, internal API, ZimaOS operation, evidence status, and real
+account/device acceptance steps are in [docs/garmin-integration.md](docs/garmin-integration.md).
+
+The current PR is a terminal-only pilot for one explicitly selected Kinesis
+account. It does not add the production “Connect Garmin” UI or multi-user
+integration. For local development, prepare once (Python 3.12+, dedicated
+virtualenv, hash-locked packages, private generated config, and explicit account
+confirmation):
+
+```bash
+npm run garmin:setup
+```
+
+Then use three terminals; neither Python activation nor repeated environment
+exports are required. Garmin credentials and MFA are entered only at the
+interactive local prompt, without terminal echo:
+
+```bash
+# Terminal 1
+npm run dev
+
+# Terminal 2
+npm run garmin:connector
+
+# Terminal 3
+npm run garmin:pilot -- auth
+npm run garmin:pilot -- status
+npm run garmin:pilot -- capabilities
+# Local read-only diagnostic: Garmin account workout-type catalog only
+npm run garmin:pilot -- capabilities-diagnose
+# Restart the connector in Terminal 2, then check status again to verify token resume.
+npm run garmin:pilot -- disconnect
+```
+
+The private `.kinesis-private/garmin-pilot.json` stores the selected Kinesis
+owner, internal Node/Python service token, encryption key, and local connector
+port; `.venv-garmin/` stores the isolated Python environment. Both are ignored
+by Git and excluded from Docker build context. The setup command never requests
+Garmin credentials or calls Garmin/OpenAI. See the [Garmin operator contract](docs/garmin-integration.md#local-development-pilot).
+
+For ZimaOS, retain the existing two-container Compose deployment: Node exposes
+`8081:3000`; Python has no published port or Cloudflare route, and its encrypted
+token volume and runtime key remain separate. The operator configures the
+three deployment variables once per installation and preserves the secrets
+across image updates; end users will not configure them. The Kinesis account
+owner ID is a temporary Phase 1 restriction. Production multi-user identity
+from the authenticated Kinesis session is future work, not delivered here.
+
+This phase has not been homologated; mocks and documented library methods do
+not prove real Garmin account or Forerunner 55 behavior and do not release
+issues #73/#74.
 
 ## Verifying With Real Files
 

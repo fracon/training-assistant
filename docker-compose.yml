@@ -6,6 +6,10 @@ services:
     ports:
       - "8081:3000"
     environment:
+      GARMIN_PILOT_ENABLED: ${GARMIN_PILOT_ENABLED:-false}
+      GARMIN_PILOT_USER_ID: ${GARMIN_PILOT_USER_ID:-}
+      KINESIS_GARMIN_SERVICE_TOKEN: ${KINESIS_GARMIN_SERVICE_TOKEN:-}
+      GARMIN_CONNECTOR_URL: http://garmin-connector:8080
       UNSPLASH_ACCESS_KEY: ${UNSPLASH_ACCESS_KEY:-}
       AI_ENABLED: ${AI_ENABLED:-false}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
@@ -29,3 +33,27 @@ services:
       AI_RETRIES: ${AI_RETRIES:-1}
     volumes:
       - ./data:/app/data
+  garmin-connector:
+    image: ghcr.io/fracon/kinesis-garmin-connector:0.25.0
+    build:
+      context: ./services/garmin-connector
+      dockerfile: Dockerfile
+    container_name: kinesis-garmin-connector
+    restart: unless-stopped
+    environment:
+      KINESIS_GARMIN_SERVICE_TOKEN: ${KINESIS_GARMIN_SERVICE_TOKEN:-}
+      GARMIN_PILOT_ENABLED: ${GARMIN_PILOT_ENABLED:-false}
+      GARMIN_PILOT_USER_ID: ${GARMIN_PILOT_USER_ID:-}
+      GARMIN_ENCRYPTION_KEY: ${GARMIN_ENCRYPTION_KEY:-}
+      GARMIN_STORE: /var/lib/kinesis-garmin
+    volumes:
+      - garmin-tokens:/var/lib/kinesis-garmin
+    # No published host port: only containers on this Compose network can reach it.
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8080/healthz', timeout=2).read()"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+    stop_grace_period: 20s
+volumes:
+  garmin-tokens:

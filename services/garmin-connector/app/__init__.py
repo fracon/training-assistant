@@ -1,0 +1,1 @@
+"""Private Kinesis Garmin adapter."""

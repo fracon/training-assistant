@@ -8,7 +8,7 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.24.0` on the issue #65
+`package.json` and `package-lock.json` (currently `0.25.0` on the issue #72
 branch); follow the SemVer
 rule below.
 
@@ -189,6 +189,88 @@ onboarding record of the account is preserved.
   Only admins can list, inspect, triage, or delete feedback.
 - The admin page reuses the Administration sidebar group, shared modal/focus
   and confirmation patterns, escaped DOM text, and the PT/EN locale contract.
+
+## Garmin Connect Phase 1 pilot
+
+- The owner explicitly authorized an unofficial Garmin Connect integration,
+  one private Python adapter container in the ZimaOS Compose deployment, and a
+  controlled proof of concept on the owner's Garmin account/Forerunner 55 only.
+  Do not extend this to other users, public connector access, remote deletion of
+  preexisting records, OpenAI/third-party FIT or GPS processing, paid AI calls,
+  or global enablement before homologation.
+- Node remains the product authorization and canonical SQLite owner. The
+  Python adapter is private on the Compose network, has no published port or
+  Cloudflare route, and never mounts SQLite. Kinesis starts and accepts current
+  FIT/ZIP imports when Python is unavailable. `GARMIN_PILOT_ENABLED` defaults
+  to `false`; owner identity is configured locally and the pilot CLI rechecks
+  that the account exists and is active before authentication.
+- Tokens have one custodian: the Python connector's named volume. Persist only
+  AES-GCM ciphertext, with a separate runtime key; keep temp plaintext token
+  stores mode 0600 in mode 0700 ephemeral directories and remove them after use.
+  The encrypted `.ops` sidecar journal shares the volume/key for bounded
+  publish/schedule reconciliation; disconnect deletes it with tokens.
+  Never log Garmin library request/response bodies. Password and MFA are local
+  hidden TTY inputs, never command arguments, environment values, or chat.
+- MFA challenge state is opaque, owner/connection-bound, expires after five
+  minutes, allows three attempts, and is invalidated on use, disconnect, or
+  connector restart. A restart requires a new login if MFA was pending. A
+  transient Garmin failure does not clear an existing encrypted token record.
+- Revalidate the pilot owner's current active state immediately before and after
+  each Node-to-Python request. If eligibility changes during an operation, the
+  Node CLI requests local disconnect; an already accepted Garmin mutation is
+  uncertain and is never represented as rolled back. Cleanup remains available
+  for an inactive or deleted owner.
+- Internal operations are allowlisted and versioned under `/v1`; no arbitrary
+  URL/proxy endpoint is permitted. Bound request bodies, date windows, paging,
+  downloads, timeouts, and concurrency. Mutations whose result is uncertain
+  require remote reconciliation before retry. Never expose raw upstream
+  exceptions or payloads.
+- Local development uses `npm run garmin:setup`, then separate terminals for
+  `npm run dev`, `npm run garmin:connector`, and
+  `npm run garmin:pilot -- auth`. Setup requires Python 3.12+, installs only
+  the hash-locked connector requirements into `.venv-garmin`, and selects an
+  active Kinesis account by explicit email against the existing configured
+  database in read-only mode. It never creates a database or changes accounts.
+  Local secrets and pilot selection are generated/persisted under the ignored
+  mode-0600 `.kinesis-private/garmin-pilot.json`; local token ciphertext is in
+  its mode-0700 `garmin-store`. Repeat setup must preserve secrets; invalid or
+  partial config must fail without replacement. Do not source secret files or
+  pass secrets in arguments. The launcher and CLI share the same loader; Python
+  runs from the prepared virtualenv on `127.0.0.1` with an allowlisted
+  subprocess environment. `npm run dev` does not load this config. Local
+  configuration, venv, Python caches and coverage files must be Git-ignored and
+  excluded from Docker build context.
+- `GARMIN_PILOT_USER_ID` is temporarily the selected Kinesis account ID for
+  this Phase 1 terminal pilot. `KINESIS_GARMIN_SERVICE_TOKEN` authenticates
+  Node-to-Python requests; `GARMIN_ENCRYPTION_KEY` encrypts Python token and
+  operation-journal storage. Local setup creates the latter two once; in
+  ZimaOS the operator supplies all three as runtime config and preserves the
+  secrets through updates. End users do not configure these values. Production
+  multi-user identity from the authenticated Kinesis session and a “Connect
+  Garmin” UI are future work, not delivered by this pilot.
+- Keep the ZimaOS Compose boundary unchanged: Node owns authorization/SQLite
+  and public port `8081:3000`; Python remains a separate non-public container
+  without SQLite or a Cloudflare route. Local execution is an additional pilot
+  workflow, not a replacement for this production packaging.
+- Library methods are not evidence of Garmin account or device support. Record
+  documentation, mock tests, live account results, and Forerunner 55 results
+  separately in `docs/garmin-integration.md`. Keep phases 2/3 blocked until the
+  real acceptance criteria are met. No Garmin credentials or personal FIT/GPS
+  files belong in Git, tests, issue/PR text, or CI.
+- `get_workout_types()['workoutSportTypes']` uses the pinned library's
+  `SportTypeModel` fields `sportTypeId`, `sportTypeKey`, and `displayOrder`;
+  classify `running` only by exact `sportTypeKey`. Capabilities describe the
+  account's workout-type catalog, not a device's ability to receive or sync a
+  workout. Return `available`, `absent`, or `unknown`; missing, empty, or
+  malformed catalog structures are `unknown`, never an inferred negative.
+  `npm run garmin:pilot -- capabilities-diagnose` is a read-only local command
+  that prints only structural keys/counts and allowlisted sport type fields;
+  never print raw Garmin responses or device/account identifiers in diagnostics.
+- Build/run Python tests and coverage with the commands in
+  `services/garmin-connector/README.md`; run Node `npm test`, serial
+  `npm run test:coverage`, Compose validation, and `git diff --check` for this
+  infrastructure change. No frontend was added in Phase 1, so browser visual
+  checks are not applicable.
 
 ## Current product behavior and invariants
 

@@ -2,6 +2,11 @@ node_modules
 coverage
 .git
 .github
+.kinesis-private/
+.venv-garmin/
+services/garmin-connector/.coverage
+services/garmin-connector/.pytest_cache/
+services/garmin-connector/**/__pycache__/
 *.md
 test
 scripts/*
@@ -10,6 +15,8 @@ scripts/*
 !scripts/admin-commands.js
 !scripts/admin-runtime.js
 !scripts/admin-prompts.js
+!scripts/garmin-pilot.js
+!scripts/garmin-local-config.js
 .env*
 Dockerfile
 docker-compose.yml
