@@ -1,8 +1,8 @@
 # Garmin Connect integration contract
 
 Status (2026-10-31): **Phase 1 foundation implemented; pilot evidence is
-partial and publication/device/activity acceptance remains pending. The pilot
-is restricted to the explicitly selected owner.** This
+partial and full Garmin/device homologation remains pending. The pilot is
+restricted to the explicitly selected owner.** This
 document separates library documentation, simulated tests, account evidence,
 and device evidence. Nothing in the first two categories is a substitute for
 the last two.
