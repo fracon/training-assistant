@@ -442,9 +442,19 @@ complete phase acceptance merely by passing mocks.
 The #73 branch adds Node route/conversion tests, a Chrome flow test for preview,
 cancel/confirm, polling/reload, keyboard focus and PT/EN translation, plus
 connector conversion tests using the pinned Garmin model classes. Chrome
-captures are generated under `/tmp/kinesis-garmin-ui-*.png` during that test;
-they are review artifacts and are not checked into the repository. The UI has
-only been exercised against a simulated connector, not the owner's connection.
+captures use synthetic user/device names and a simulated connector; they show
+layout only, not Garmin evidence. The UI has only been exercised against that
+simulated connector, not the owner's connection.
+
+#### Chrome captures (synthetic connector)
+
+| State | English | Português |
+|---|---|---|
+| Session editor, desktop 1280×900 | [Capture](garmin-pilot-screenshots/en-desktop.png) | [Captura](garmin-pilot-screenshots/pt-desktop.png) |
+| Session editor, mobile 390×844 | [Capture](garmin-pilot-screenshots/en-mobile.png) | [Captura](garmin-pilot-screenshots/pt-mobile.png) |
+| Structured preview | [Capture](garmin-pilot-screenshots/en-preview.png) | [Captura](garmin-pilot-screenshots/pt-preview.png) |
+
+The low-height desktop capture is [available separately](garmin-pilot-screenshots/en-low-window.png).
 
 ### Evidence and remaining boundary
 
