@@ -13,6 +13,7 @@ const { buildServer } = require('../src/server');
 const { createDatabase } = require('../src/db/database');
 const { registerUser } = require('../src/auth/registration');
 const { createSession, SESSION_COOKIE_NAME } = require('../src/auth/sessions');
+const { prescriptionFingerprint } = require('../src/garmin-workout-contract');
 
 const chrome = ['/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'].find(existsSync);
 const freePort = async () => {
@@ -26,11 +27,23 @@ test('Garmin session UI previews without remote mutation in PT/EN on desktop and
   const owner = await registerUser(db, { email: 'garmin-ui@example.test', password: 'Synthetic-only-1', first_name: 'Test', last_name: 'Runner' });
   db.prepare("UPDATE users SET distance_unit = 'mi' WHERE id = ?").run(owner.id);
   db.prepare('INSERT INTO trainings (user_id,dia,tipo,treino,detalhes) VALUES (?,?,?,?,?)').run(owner.id, '2026-11-02', 'Run', 'Intervals', '6 x 3 min');
+  const restored = { version: 1, sport: 'running', name: 'Restored synthetic', steps: [
+    { id: 'repeat', kind: 'repeat', repetitions: 4, skip_last_rest_step: true,
+      interval: { end: { type: 'distance', value: 8047 },
+        target: { type: 'heart_rate', mode: 'absolute', lower_bpm: 145, upper_bpm: 165 } },
+      recovery: { end: { type: 'time', value: 120 },
+        target: { type: 'pace', unit: 'min_per_mile', slower_seconds: 540, faster_seconds: 480 } } },
+  ] };
+  db.prepare('INSERT INTO garmin_workout_prescriptions (user_id,training_id,revision,prescription_json,fingerprint) VALUES (1,1,1,?,?)')
+    .run(JSON.stringify(restored), prescriptionFingerprint(restored));
   const remoteCalls = [];
+  let releaseStatus;
+  const statusGate = new Promise((resolve) => { releaseStatus = resolve; });
   const app = await buildServer({ db, sessionCookieSecure: false,
     garminConfig: { GARMIN_PILOT_ENABLED: 'true', GARMIN_PILOT_USER_ID: String(owner.id), KINESIS_GARMIN_SERVICE_TOKEN: 'synthetic-service-token-'.repeat(2), GARMIN_CONNECTOR_URL: 'http://connector.invalid' },
     garminFetch: async (url) => {
       remoteCalls.push(url);
+      if (url.endsWith('/status')) { await statusGate; return Response.json({ status: 'connected' }); }
       if (url.endsWith('/capabilities')) return Response.json({ devices: [{ name: 'Synthetic watch' }], running_catalog_status: 'available' });
       if (url.endsWith('/workouts/schedule')) return Response.json({ scheduled: true, scheduled_workout_id: 123 });
       if (url.endsWith('/workouts')) return Response.json({ workout_id: 42 });
@@ -55,9 +68,25 @@ test('Garmin session UI previews without remote mutation in PT/EN on desktop and
     await command('Network.enable'); await command('Network.setCookie', { name: SESSION_COOKIE_NAME, value: createSession(db, owner.id).token, url: baseUrl });
     await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
     await command('Page.navigate', { url: `${baseUrl}/training-result.html?id=1` });
-    const wait = async (expression) => { for (let i = 0; i < 150; i += 1) { if (await evaluate(expression).catch(() => false)) return; await delay(100); } const diagnostic = await evaluate("document.getElementById('garminOperationStatus')?.textContent").catch(() => 'unavailable'); throw new Error(`Garmin session panel did not become ready: ${diagnostic}`); };
-    await wait("document.getElementById('sessionDate')?.textContent.trim() !== '-' && !document.getElementById('garminSessionCard').hidden");
+    const wait = async (expression) => { for (let i = 0; i < 150; i += 1) { if (await evaluate(expression).catch(() => false)) return; await delay(100); } const diagnostic = await evaluate("JSON.stringify({operation:document.getElementById('garminOperationStatus')?.textContent,connection:document.getElementById('garminConnectionStatus')?.textContent,invalid:[...document.querySelectorAll('#garminPrescriptionForm :invalid')].map(el=>el.id)})").catch(() => 'unavailable'); throw new Error(`Garmin session panel did not become ready: ${diagnostic}`); };
+    await wait("document.getElementById('sessionDate')?.textContent.trim() !== '-' && !document.getElementById('garminSessionCard').hidden && document.getElementById('feedbackNotas')");
+    assert.equal(await evaluate("document.getElementById('garminTargetType').value"), 'heart_rate');
+    assert.equal(await evaluate("document.getElementById('garminLower').value"), '145');
+    assert.equal(await evaluate("document.getElementById('garminUpper').value"), '165');
+    assert.equal(await evaluate("document.getElementById('garminRecoveryTargetType').value"), 'pace');
+    assert.equal(await evaluate("document.getElementById('garminRecoveryLower').value"), '9.0000');
+    assert.equal(await evaluate("document.getElementById('garminRecoveryUpper').value"), '8.0000');
+    assert.equal(await evaluate("!document.getElementById('fitFile').disabled"), true);
+    await evaluate("document.getElementById('garminWorkoutName').value='Edited while Garmin is pending';document.getElementById('garminWorkoutName').dispatchEvent(new Event('input',{bubbles:true}))");
+    releaseStatus();
     await wait("document.getElementById('garminConnectionStatus').textContent.includes('Connected')");
+    assert.equal(await evaluate("document.getElementById('garminWorkoutName').value"), 'Edited while Garmin is pending');
+    await evaluate("document.getElementById('garminPrescriptionForm').requestSubmit()");
+    await wait("!document.getElementById('garminPreview').hidden");
+    const persistedHeartRate = JSON.parse(db.prepare('SELECT prescription_json FROM garmin_workout_prescriptions WHERE training_id=1').get().prescription_json);
+    assert.deepEqual(persistedHeartRate.steps[0].target, restored.steps[0].target);
+    assert.equal(persistedHeartRate.steps[0].interval.end.value, 8047);
+    assert.deepEqual(persistedHeartRate.steps[0].recovery.target, restored.steps[0].recovery.target);
     await evaluate("document.getElementById('garminSessionCard').scrollIntoView()");
     const desktop = await evaluate("(()=>{const el=document.getElementById('garminSessionCard'),r=el.getBoundingClientRect();return {width:innerWidth,scrollWidth:document.documentElement.scrollWidth,cardWidth:r.width,visible:!el.hidden}})()");
     assert.equal(desktop.visible, true); assert.ok(desktop.scrollWidth <= desktop.width); assert.ok(desktop.cardWidth > 300);
@@ -78,27 +107,29 @@ test('Garmin session UI previews without remote mutation in PT/EN on desktop and
     await command('Page.captureScreenshot').then((shot) => require('node:fs').writeFileSync('/tmp/kinesis-garmin-ui-en-low-window.png', Buffer.from(shot.data, 'base64')));
     await evaluate("document.getElementById('garminWorkoutName').value='Tempo synthetic';document.getElementById('garminIntervalType').value='distance';document.getElementById('garminIntervalType').dispatchEvent(new Event('change'));document.getElementById('garminInterval').value='5';document.getElementById('garminPrescriptionForm').requestSubmit()");
     await wait("!document.getElementById('garminPreview').hidden");
-    assert.match(await evaluate("document.getElementById('garminPreviewSteps').textContent"), /Run: 5\.00 mi/);
-    assert.equal(JSON.parse(db.prepare('SELECT prescription_json FROM garmin_workout_prescriptions').get().prescription_json).steps[0].end.value, 8047);
+    assert.match(await evaluate("document.getElementById('garminPreviewSteps').textContent"), /4 repeats: 5\.00 mi/);
+    assert.equal(JSON.parse(db.prepare('SELECT prescription_json FROM garmin_workout_prescriptions').get().prescription_json).steps[0].interval.end.value, 8047);
     await evaluate("document.getElementById('garminPreview').scrollIntoView()");
     await command('Page.captureScreenshot').then((shot) => require('node:fs').writeFileSync('/tmp/kinesis-garmin-ui-en-distance-preview.png', Buffer.from(shot.data, 'base64')));
-    await evaluate("document.getElementById('garminIntervalType').value='time';document.getElementById('garminIntervalType').dispatchEvent(new Event('change'));document.getElementById('garminInterval').value='30';document.getElementById('garminPrescriptionForm').requestSubmit()");
-    await wait("document.getElementById('garminPreviewSteps').textContent.includes('Run: 30 min')");
+    await evaluate("document.getElementById('garminIntervalType').value='time';document.getElementById('garminIntervalType').dispatchEvent(new Event('change'));document.getElementById('garminInterval').value='5';document.getElementById('garminInterval').dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('garminRepetitions').value='4';document.getElementById('garminRepetitions').dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('garminRecovery').value='2';document.getElementById('garminRecovery').dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('garminPrescriptionForm').requestSubmit()");
+    await wait("document.getElementById('garminPreviewSteps').textContent.includes('5:00 min')");
     await evaluate("document.getElementById('garminWorkoutName').value='Tempo synthetic';document.getElementById('garminPrescriptionForm').requestSubmit()");
     await wait("!document.getElementById('garminPreview').hidden");
-    assert.match(await evaluate("document.getElementById('garminPreviewSteps').textContent"), /Run: 30 min/);
+    assert.match(await evaluate("document.getElementById('garminPreviewSteps').textContent"), /4 repeats: 5:00 min/);
+    assert.match(await evaluate("document.getElementById('garminPreviewSteps').textContent"), /Recovery after 3 intervals \(no recovery after the final interval\): 2:00 min/);
     assert.doesNotMatch(await evaluate("document.getElementById('garminPreview').textContent"), /\{(?:kind|detail|date)\}/);
     await evaluate("document.getElementById('garminPreview').scrollIntoView()");
     await command('Page.captureScreenshot').then((shot) => require('node:fs').writeFileSync('/tmp/kinesis-garmin-ui-en-preview.png', Buffer.from(shot.data, 'base64')));
     await evaluate("document.querySelector('.lang-switch [data-lang=\"pt-BR\"]').click()");
     await wait("document.documentElement.lang === 'pt-BR'");
-    assert.match(await evaluate("document.getElementById('garminPreviewSteps').textContent"), /Corrida: 30 min/);
+    assert.match(await evaluate("document.getElementById('garminPreviewSteps').textContent"), /4 repetições: 5:00 min/);
+    assert.match(await evaluate("document.getElementById('garminPreviewSteps').textContent"), /Recuperação após 3 intervalos \(sem recuperação após a última repetição\): 2:00 min/);
     assert.doesNotMatch(await evaluate("document.getElementById('garminPreview').textContent"), /\{(?:kind|detail|date)\}/);
     assert.match(await evaluate("document.getElementById('garminOperationStatus').textContent"), /Estrutura salva/);
     await command('Page.captureScreenshot').then((shot) => require('node:fs').writeFileSync('/tmp/kinesis-garmin-ui-pt-preview.png', Buffer.from(shot.data, 'base64')));
     await evaluate("document.querySelector('.lang-switch [data-lang=\"en-US\"]').click()");
     await wait("document.documentElement.lang === 'en-US'");
-    assert.match(await evaluate("document.getElementById('garminPreviewSteps').textContent"), /Run: 30 min/);
+    assert.match(await evaluate("document.getElementById('garminPreviewSteps').textContent"), /4 repeats: 5:00 min/);
     assert.equal(remoteCalls.filter((url) => url.endsWith('/workouts') || url.endsWith('/workouts/schedule')).length, 0, 'saving and previewing must not mutate Garmin');
     assert.equal(db.prepare('SELECT COUNT(*) AS count FROM garmin_training_operations').get().count, 0);
     await evaluate("document.getElementById('garminPublishButton').click()");
@@ -122,6 +153,19 @@ test('Garmin session UI previews without remote mutation in PT/EN on desktop and
     assert.equal(db.prepare('SELECT status FROM garmin_training_operations').get().status, 'scheduled');
     await evaluate('location.reload()');
     await wait("document.getElementById('garminOperationStatus').textContent.includes('Scheduled in Garmin Connect')");
+    const restoredPace = { ...restored, name: 'Pace synthetic', steps: [{ ...restored.steps[0],
+      interval: { ...restored.steps[0].interval,
+        target: { type: 'pace', unit: 'min_per_mile', slower_seconds: 540, faster_seconds: 480 } } }] };
+    db.prepare('UPDATE garmin_workout_prescriptions SET revision=revision+1,prescription_json=?,fingerprint=? WHERE user_id=? AND training_id=1')
+      .run(JSON.stringify(restoredPace), prescriptionFingerprint(restoredPace), owner.id);
+    await evaluate('location.reload()');
+    await wait("document.getElementById('garminTargetType').value === 'pace'");
+    assert.equal(await evaluate("document.getElementById('garminLower').value"), '9.0000');
+    assert.equal(await evaluate("document.getElementById('garminUpper').value"), '8.0000');
+    await evaluate("document.getElementById('garminWorkoutName').value='Pace renamed';document.getElementById('garminWorkoutName').dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('garminPrescriptionForm').requestSubmit()");
+    await wait("!document.getElementById('garminPreview').hidden");
+    const persistedPace = JSON.parse(db.prepare('SELECT prescription_json FROM garmin_workout_prescriptions WHERE training_id=1').get().prescription_json);
+    assert.deepEqual(persistedPace.steps[0].interval.target, restoredPace.steps[0].interval.target);
   } finally {
     socket?.close(); process.kill('SIGTERM');
     await Promise.race([once(process, 'exit'), delay(2000)]);

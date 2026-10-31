@@ -61,7 +61,8 @@ class UpstreamContractTests(unittest.TestCase):
             return None, None
 
         with patch.object(GarminTransport, "login", simulated_transport_login), \
-             patch.object(Garmin, "_load_profile_and_settings", return_value=None):
+             patch.object(Garmin, "_load_profile_and_settings", return_value=None), \
+             patch.object(Garmin, "get_user_profile", return_value={"userData": {"id": 31001}}):
             response = self.client.post(
                 f"{self.prefix}/auth/start", headers=self.headers,
                 json={"email": "owner@example.test", "password": "local-only"},
@@ -72,6 +73,47 @@ class UpstreamContractTests(unittest.TestCase):
         self.assertIn(b"KGC1", token_path.read_bytes())
         self.assertNotIn(b"synthetic-refresh-token", token_path.read_bytes())
         self.assertIn("di_token", json.loads(main._decrypt(token_path, b"u" * 32)))
+
+    def test_pinned_update_and_reschedule_methods_use_existing_workout_and_occurrence_contract(self):
+        client = Garmin()
+        client.client.di_token = "synthetic-bearer"
+        captured = []
+
+        def response(payload, status=200):
+            result = Response()
+            result.status_code = status
+            result.headers = CaseInsensitiveDict({"Content-Type": "application/json"})
+            result._content = json.dumps(payload).encode()
+            return result
+
+        def request(method, url, **kwargs):
+            captured.append((method, url, kwargs))
+            if url.endswith("/workout/42"):
+                return response({"workoutId": 42})
+            if method == "GET":
+                return response({"scheduleId": 84, "calendarDate": "2026-11-12",
+                                 "workout": {"workoutId": 42}})
+            return response({"scheduleId": 84, "calendarDate": "2026-11-13",
+                             "workout": {"workoutId": 42}})
+
+        with patch.object(GarminTransport, "_token_expires_soon", return_value=False), \
+             patch.object(client.client._api_session, "request", request):
+            updated = client.update_workout(42, {
+                "workoutName": "Updated synthetic", "workoutId": 999,
+                "workoutSegments": [{"segmentOrder": 1, "workoutSteps": []}],
+            })
+            moved = client.reschedule_workout(84, "2026-11-13")
+
+        self.assertEqual(updated, {"workoutId": 42})
+        self.assertEqual(moved, {"scheduleId": 84, "calendarDate": "2026-11-13",
+                                 "workout": {"workoutId": 42}})
+        self.assertEqual([item[0] for item in captured], ["PUT", "GET", "PUT"])
+        self.assertEqual(captured[0][1], client.client._resolve_url(f"{client.garmin_workouts}/workout/42"))
+        self.assertEqual(captured[0][2]["json"]["workoutId"], 42)
+        self.assertEqual(captured[1][1], client.client._resolve_url(f"{client.garmin_workouts_schedule_url}/84"))
+        self.assertEqual(captured[2][1], captured[1][1])
+        self.assertEqual(captured[2][2]["json"]["calendarDate"], "2026-11-13")
+        self.assertEqual(captured[2][2]["json"]["workout"], {"workoutId": 42})
 
     def test_real_garmin_original_format_is_passed_to_transport(self):
         token_path = Path(self.temp.name, "31-pilot.bin")
@@ -330,12 +372,14 @@ class UpstreamContractTests(unittest.TestCase):
             return None, None
 
         with patch.object(GarminTransport, "resume_login", simulated_mfa_finish), \
-             patch.object(Garmin, "_load_profile_and_settings", return_value=None):
+             patch.object(Garmin, "_load_profile_and_settings", return_value=None), \
+             patch.object(Garmin, "get_user_profile", return_value={"userData": {"id": 31001}}):
             finish = self.client.post(
                 f"{self.prefix}/auth/finish", headers=self.headers,
                 json={"challenge_id": challenge_id, "code": "654321"},
             )
-        self.assertEqual(finish.json(), {"status": "connected"})
+        self.assertEqual(finish.json()["status"], "connected")
+        self.assertRegex(finish.json()["identity_fingerprint"], r"^[a-f0-9]{64}$")
         self.assertTrue(token_path.exists())
         self.assertIn("mfa-refresh-token", main._decrypt(token_path, b"u" * 32).decode())
 
@@ -388,7 +432,7 @@ class UpstreamContractTests(unittest.TestCase):
         def refreshed_profile(instance):
             self.assertTrue(instance.client.is_authenticated)
             instance.client.di_token = "after-refresh"
-            return {"synthetic": True}
+            return {"userData": {"id": 31001}}
 
         with patch.object(Garmin, "_load_profile_and_settings", return_value=None), \
              patch.object(Garmin, "get_user_profile", refreshed_profile):

@@ -98,7 +98,9 @@ Errors use `{"detail":{"code":"…"}}`; unexpected exceptions are sanitized.
 | Workout catalog diagnostic | `GET /v1/connections/{owner}/{connection}/workout-catalog` | One read-only catalog call; sanitized structure and allowlisted sport type identifiers only |
 | Publish workout | `POST /v1/connections/{owner}/{connection}/workouts` | Bounded timed running template, optional repeated interval group and pace range |
 | Read workout | `GET /v1/connections/{owner}/{connection}/workouts/{id}` | Sanitized details only |
+| Update workout | `PUT /v1/connections/{owner}/{connection}/workouts/{id}` | Complete validated structure; retains workout ID; journal reconciles by operation ID and fingerprint |
 | Schedule workout | `POST /v1/connections/{owner}/{connection}/workouts/schedule` | Calendar date, after revalidation by caller |
+| Reschedule occurrence | `PUT /v1/connections/{owner}/{connection}/workouts/schedule/{occurrence_id}` | Verifies the existing workout/occurrence pair and moves only that occurrence's civil date in place |
 | List activities | `POST /v1/connections/{owner}/{connection}/activities` | Required date window <=31 days, offset, page size <=25; response fields are allowlisted |
 | Download original | `GET /v1/connections/{owner}/{connection}/activities/{id}/original` | Max response 25 MiB; bytes are not logged or persisted by Node |
 
@@ -133,7 +135,8 @@ values, shell history, chat, GitHub, or logs.
 There is one token custodian: the Python connector. Locally,
 `.kinesis-private/garmin-store` stores AES-GCM ciphertext; in ZimaOS, the named
 Docker volume `garmin-tokens` stores the same format, keyed by owner and opaque
-connection ID. It also stores an encrypted `.ops` journal for publish/schedule idempotency;
+connection ID. It also stores an encrypted `.ops` journal for publish, schedule,
+update, and reschedule idempotency;
 the journal contains only operation fingerprints, states and Garmin IDs, never
 FIT/GPS or credentials. `GARMIN_ENCRYPTION_KEY` is a 32-byte URL-safe base64 key supplied at
 runtime, independently of the token store and image. The service key is a separate
@@ -269,7 +272,7 @@ startup or FIT/ZIP import.
    '{{.Architecture}}'`. `scripts/deploy-zimaos.sh` pulls the existing Node image,
    builds the Python image on that host architecture, then starts both. No CI
    publishing pipeline was changed. Keep the connector image digest/tag with
-   deployment records; the Compose version is `0.26.0`.
+   deployment records; the Compose version is `0.27.0`.
 4. Check `docker compose ps` and `docker compose logs --tail=50
    garmin-connector`; logs must not contain request bodies. Health is local and
    does not contact Garmin.
@@ -288,19 +291,22 @@ the `KGC1` envelope. Do not restore a token backup from a different key.
 
 ## Automated evidence and go/no-go
 
-At the #73 branch the connector suite has **47 passing tests**; Python coverage
-(`coverage run --branch --source=app -m pytest`) measures **88.91% lines**
-(762/857), **75.33% branches** (229/304), and **85.36% combined coverage** for
-`app/main.py`. The Garmin CLI/setup/launcher and product route/contract suites
-have **41 passing tests**; `npm run test:garmin-pilot-coverage` measures
-**82.39% statements/lines, 71.08% branches, and 82.35% functions** across the
-five Garmin Node tools. The product route adapter itself measures 68.12%
-statements/lines, 60.90% branches and 92.30% functions; the versioned workout
-contract measures 100% in all four metrics. These separate measurements are
-reported honestly and are not added 100% gates. The full `npm test` run passed
-**1,366 tests**, and `npm run test:coverage` passed the repository's existing
-100% Node backend thresholds. Garmin-tool coverage does not stand in for Python
-coverage, or vice versa.
+The issue #73 branch moves the Node product adapter into `src/garmin/product.js`
+so the required c8 backend gate includes it. The v4 idempotent operation
+identity migration preserves existing operation IDs and makes retries stable
+by owner, session, connection generation, prescription revision, civil date,
+action, and source operation. A generated occurrence ID is persisted as a
+result and is deliberately excluded from the request identity. Connector tests
+exercise the pinned `Garmin.update_workout` and `Garmin.reschedule_workout`
+methods with a simulated transport; automated tests make no real Garmin or
+OpenAI calls.
+
+The complete Node suite passes, but the serial coverage gate currently fails:
+the moved product adapter has 100% statements, functions, and lines, while its
+branch coverage is 92.5%. The workout contract is at 100% in all four metrics.
+This is a blocking verification gap, not a passing gate. Connector, Garmin CLI,
+and browser results are reported separately. None of those checks establishes
+live account behavior beyond the owner-reported evidence below.
 Contract tests use the actual pinned Garmin wrapper/signatures and enums with
 transport/authentication patched; Python sockets are blocked. They do not
 establish live Garmin or Forerunner behavior.
@@ -372,16 +378,17 @@ submission; neither enters browser storage. Connector credentials remain
 server-side.
 
 An explicit prescription is stored in `garmin_workout_prescriptions`, separate
-from `trainings.detalhes`, with a content fingerprint and monotonically
-increasing revision. The v1 contract is running-only and validates unique step
-IDs, repeat bounds, time/distance values, absolute heart-rate bounds, and pace
-units. RPE is not converted. The UI edits timed warm-up/recovery/cool-down and a
-main or repeated run interval by time or distance, with no target, pace range,
-or absolute heart-rate range. Distance is stored in meters and the selected UI
-unit is used for entry/preview. Open-lap, zone targets and nested repeats are
-not supported by the current adapter; incompatible structures are refused
-before remote dispatch instead of being flattened. Original prose is never
-interpreted or rewritten.
+from `trainings.detalhes`, with a content fingerprint and optimistic revision.
+The v1 contract is running-only and validates unique step IDs, repeat bounds,
+time/distance values, absolute heart-rate bounds, and pace units. RPE is not
+converted. The editor restores and round-trips interval and recovery targets,
+including stored pace units and exact integer-second bounds; changing only the
+friendly name does not quantize saved durations or distances. The preview shows
+warm-up, each repeated interval, recovery duration/target and final-recovery
+policy, cool-down, known totals, and the localized civil date. It is generated
+from the same validated prescription and connector payload. Open-lap, zone
+targets and nested repeats are refused before dispatch instead of flattened.
+Original prose is never interpreted or rewritten.
 
 The preview saves the local prescription but does not mutate Garmin. A separate
 confirmation starts a durable owner/session/revision/fingerprint operation.
@@ -390,11 +397,22 @@ outside SQLite transactions, and status can be read after reload. A timed-out
 or process-interrupted `publishing`/`scheduling` operation is changed to
 `outcome_unknown` on restart and is not automatically dispatched again. The
 connector's encrypted operation journal continues to reconcile the same
-operation marker. Repeating the same published revision returns its existing
-operation rather than creating a second one. A changed structure increments
-the revision and marks prior scheduled status outdated; it requires an explicit
-new publish action. There is no remote delete or automatic update of older
-workouts in this pilot.
+operation marker. Repeating the same revision/action/date/source occurrence
+returns its existing operation rather than creating a second one. The v4 key
+does not depend on the occurrence ID returned after mutation, so adding that
+remote result cannot turn a duplicate click into a new operation. A changed
+structure increments the revision and marks the previous schedule outdated.
+**Update in Garmin Connect** explicitly replaces the tracked workout in place,
+keeping its ID; this affects every Garmin calendar occurrence that reuses that
+workout, which the confirmation states. If the planned date also changed, the
+operation updates the workout and then reschedules only its linked occurrence.
+**Reschedule** moves that tracked occurrence without changing the workout.
+Both actions require the new saved preview and a separate confirmation. The
+connector verifies the workout/occurrence identity before mutation and confirms
+the resulting state. It never deletes a workout or activity. If one remote step
+succeeds and the next fails, the local journal keeps its stage/IDs and requires
+reconciliation; it does not claim a distributed rollback or create a second
+workout automatically.
 
 The displayed device is informational. A completed state means Garmin Connect
 confirmed the workout and scheduled occurrence; it prompts watch synchronization
@@ -403,22 +421,14 @@ translates timed steps and pace/absolute-HR targets to the pinned library
 contract. The remote title starts with the friendly workout name and retains a
 technical operation marker for reconciliation.
 
-The editor creates time-based warm-up, recovery, and cool-down steps and a
-main/repeated interval by time or distance. Distance input follows the Kinesis
-preferred unit and is converted to canonical integer meters before persistence;
-the preview formats that value in the same preference. The adapter uses the
-pinned library's real distance-step constructor and sets Garmin's required
-estimated-duration field to zero rather than inventing a total duration for a
-distance-based prescription. This path is covered with synthetic model/transport
-tests, but distance workout creation has not been homologated on the real Garmin
-account or Forerunner 55. Open-lap steps remain rejected before dispatch.
-Nested repeats and zone targets are also outside this v1 adapter. Changing a
-prescription creates an explicit new revision and can leave the earlier Garmin
-workout/occurrence in place; the product does not delete or silently update it.
-Changing only the planned civil date marks the old operation outdated, but safe
-remote rescheduling is not implemented because the pinned contract does not yet
-provide a verified occurrence replacement/removal operation. Use Garmin Connect
-manually for such a date change until that capability is implemented.
+Distance input follows the Kinesis preferred unit and is converted to canonical
+integer meters; pace remains stored with its explicit `min_per_km` or
+`min_per_mile` unit. Known timed portions are shown separately when distance
+duration cannot be estimated. The adapter uses the pinned library's real
+distance-step constructor and does not invent a duration. Open-lap steps remain
+rejected before dispatch; nested repeats and zone targets are outside v1.
+Distance creation, workout update, and occurrence rescheduling are covered by
+synthetic model/transport tests, not new live Garmin calls in this PR.
 
 ### Local UI pilot
 
@@ -430,10 +440,15 @@ With the local private Garmin setup already prepared, run:
    connect/re-authenticate if requested, set its explicit structure, choose
    **Save and preview / Salvar e conferir**, review destination and civil date,
    then choose **Publish and schedule / Publicar e agendar** and confirm.
-4. Reload the page and inspect the stored operation status. After a
+4. For an already linked workout, change the structure and use **Update in
+   Garmin Connect / Atualizar no Garmin Connect** after saving a new preview.
+   Change only the planned civil date and use **Reschedule / Reagendar**. If
+   both changed, the explicit update operation replaces the workout and moves
+   the linked occurrence; inspect its state after any partial failure.
+5. Reload the page and inspect the stored operation status. After a
    `scheduled` result, synchronize Garmin Connect with the watch and inspect the
    workout there. A Connect success is not physical watch-delivery proof.
-5. Disconnect from the panel to remove local Garmin tokens.
+6. Disconnect from the panel to remove local Garmin tokens.
 
 `npm run dev` reads the prepared private pilot configuration into the server
 process only for the restricted local owner flow. The encryption key is not
@@ -445,12 +460,12 @@ synthetic data and make no Garmin/OpenAI calls. The browser UI path and its
 real-account behavior still require owner homologation; this branch does not
 complete phase acceptance merely by passing mocks.
 
-The #73 branch adds Node route/conversion tests, a Chrome flow test for preview,
-cancel/confirm, polling/reload, keyboard focus and PT/EN translation, plus
-connector conversion tests using the pinned Garmin model classes. Chrome
-captures use synthetic user/device names and a simulated connector; they show
-layout only, not Garmin evidence. The UI has only been exercised against that
-simulated connector, not the owner's connection.
+The #73 branch adds route/conversion and lifecycle tests, plus a Chrome flow
+covering saved HR/pace/recovery targets, preserving a dirty form while Garmin
+status is pending, complete interval preview, explicit confirmation,
+polling/reload and PT/EN. Chrome captures use synthetic user/device names and a
+simulated connector; they show layout only, not Garmin evidence. The new UI has
+not been exercised against the owner's connection.
 
 #### Chrome captures (synthetic connector)
 
@@ -458,7 +473,7 @@ simulated connector, not the owner's connection.
 |---|---|---|
 | Session editor, desktop 1280×900 | [Capture](garmin-pilot-screenshots/en-desktop.png) | [Captura](garmin-pilot-screenshots/pt-desktop.png) |
 | Session editor, mobile 390×844 | [Capture](garmin-pilot-screenshots/en-mobile.png) | [Captura](garmin-pilot-screenshots/pt-mobile.png) |
-| Structured preview | [Capture](garmin-pilot-screenshots/en-preview.png) | [Captura](garmin-pilot-screenshots/pt-preview.png) |
+| Interval preview, including recovery target/count and final-recovery policy | [Capture](garmin-pilot-screenshots/en-preview.png) | [Captura](garmin-pilot-screenshots/pt-preview.png) |
 | Distance preview, preferred miles | [Capture](garmin-pilot-screenshots/en-distance-preview.png) | — |
 
 The low-height desktop capture is [available separately](garmin-pilot-screenshots/en-low-window.png).

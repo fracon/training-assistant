@@ -32,6 +32,76 @@ test('createDatabase requires a filename', () => {
   assert.throws(() => createDatabase({}), TypeError);
 });
 
+test('Garmin operation identity migration is idempotent and excludes generated occurrence IDs from retry identity', () => {
+  const db = createDatabase({ filename: ':memory:' });
+  const marker = db.prepare("SELECT 1 FROM schema_migrations WHERE name='2026-10-garmin-session-publish-v4'").get();
+  assert.ok(marker);
+  const index = db.prepare("SELECT sql FROM sqlite_master WHERE type='index' AND name='garmin_operation_identity_v4'").get();
+  assert.match(index.sql, /COALESCE\(source_operation_id/);
+  assert.doesNotMatch(index.sql, /occurrence_id/);
+  db.prepare("INSERT INTO users (id,email,password_hash) VALUES (1,'garmin-migration@example.test','hash')").run();
+  db.prepare("INSERT INTO trainings (id,user_id,dia,tipo,treino) VALUES (1,1,'2026-11-02','run','tempo')").run();
+  db.prepare(`INSERT INTO garmin_training_operations
+    (operation_id,user_id,training_id,connection_generation,prescription_revision,fingerprint,converter_version,status,stage,scheduled_date,workout_id,occurrence_id)
+    VALUES ('kept-operation',1,1,1,1,'fingerprint',1,'scheduled','complete','2026-11-02','42','84')`).run();
+  db.exec(`DROP INDEX IF EXISTS garmin_operation_identity_v4;
+    DROP INDEX IF EXISTS garmin_operation_identity_v3;
+    CREATE UNIQUE INDEX garmin_operation_identity_v2 ON garmin_training_operations
+      (user_id,training_id,connection_generation,prescription_revision,scheduled_date,action);
+    DELETE FROM schema_migrations WHERE name IN ('2026-10-garmin-session-publish-v3','2026-10-garmin-session-publish-v4');`);
+  migrateDatabase(db);
+  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM schema_migrations WHERE name='2026-10-garmin-session-publish-v4'").get().count, 1);
+  assert.equal(db.prepare("SELECT sql FROM sqlite_master WHERE type='index' AND name='garmin_operation_identity_v4'").get().sql, index.sql);
+  assert.deepEqual(db.prepare("SELECT status,stage,workout_id,occurrence_id FROM garmin_training_operations WHERE operation_id='kept-operation'").get(),
+    { status: 'scheduled', stage: 'complete', workout_id: '42', occurrence_id: '84' });
+  const insertReschedule = db.prepare(`INSERT INTO garmin_training_operations
+    (operation_id,user_id,training_id,connection_generation,prescription_revision,fingerprint,converter_version,status,stage,scheduled_date,action,source_operation_id,workout_id,occurrence_id)
+    VALUES (?,1,1,1,1,'fingerprint',1,'scheduled','complete','2026-11-03','reschedule',?,'42',?)`);
+  insertReschedule.run('move-a', 'source-a', '84');
+  insertReschedule.run('move-b', 'source-b', '84');
+  assert.throws(() => insertReschedule.run('move-a-retry', 'source-a', '85'), /UNIQUE constraint failed/);
+  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM garmin_training_operations WHERE source_operation_id='source-a'").get().count, 1);
+  db.close();
+});
+
+test('Garmin v2 upgrade preserves a v1 journal row and adds identity and cleanup columns', () => {
+  const db = createDatabase({ filename: ':memory:' });
+  db.prepare("INSERT INTO users (id,email,password_hash) VALUES (1,'migration@example.test','hash')").run();
+  db.prepare("INSERT INTO trainings (id,user_id,dia,tipo,treino) VALUES (1,1,'2026-11-02','run','tempo')").run();
+  db.prepare(`INSERT INTO garmin_training_operations
+    (operation_id,user_id,training_id,connection_generation,prescription_revision,fingerprint,converter_version,status,stage,workout_id,occurrence_id,scheduled_date)
+    VALUES ('legacy-op',1,1,1,1,'fingerprint',1,'outcome_unknown','schedule','42','77','2026-11-02')`).run();
+
+  db.pragma('foreign_keys = OFF');
+  db.exec(`DROP INDEX IF EXISTS garmin_operation_identity_v4;
+    DROP INDEX IF EXISTS garmin_operation_identity_v3;
+    ALTER TABLE garmin_training_operations RENAME TO garmin_operations_newer;
+    CREATE TABLE garmin_training_operations (
+      operation_id TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      training_id INTEGER NOT NULL REFERENCES trainings(id) ON DELETE CASCADE,
+      connection_generation INTEGER NOT NULL, prescription_revision INTEGER NOT NULL, fingerprint TEXT NOT NULL,
+      converter_version INTEGER NOT NULL, status TEXT NOT NULL, stage TEXT NOT NULL, workout_id TEXT,
+      occurrence_id TEXT, scheduled_date TEXT NOT NULL, error_code TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')));
+    INSERT INTO garmin_training_operations (operation_id,user_id,training_id,connection_generation,prescription_revision,
+      fingerprint,converter_version,status,stage,workout_id,occurrence_id,scheduled_date,error_code,created_at,updated_at)
+      SELECT operation_id,user_id,training_id,connection_generation,prescription_revision,fingerprint,converter_version,
+      status,stage,workout_id,occurrence_id,scheduled_date,error_code,created_at,updated_at FROM garmin_operations_newer;
+    DROP TABLE garmin_operations_newer;
+    ALTER TABLE garmin_pilot_connections RENAME TO garmin_connections_newer;
+    CREATE TABLE garmin_pilot_connections (user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      connection_generation INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL DEFAULT (datetime('now')));
+    DROP TABLE garmin_connections_newer;
+    DELETE FROM schema_migrations WHERE name IN ('2026-10-garmin-session-publish-v2','2026-10-garmin-session-publish-v3','2026-10-garmin-session-publish-v4');`);
+  db.pragma('foreign_keys = ON');
+  migrateDatabase(db);
+  assert.deepEqual(db.prepare(`SELECT action,source_operation_id,workout_id,occurrence_id FROM garmin_training_operations
+    WHERE operation_id='legacy-op'`).get(), { action: 'publish', source_operation_id: null, workout_id: '42', occurrence_id: '77' });
+  assert.deepEqual(db.prepare('SELECT identity_fingerprint,cleanup_pending FROM garmin_pilot_connections WHERE user_id=1').get(), undefined);
+  assert.equal(db.prepare("SELECT 1 FROM schema_migrations WHERE name='2026-10-garmin-session-publish-v3'").get() !== undefined, true);
+  db.close();
+});
+
 test('initializeDatabase applies pragmas and creates the schema', () => {
   const db = initializeDatabase(new Database(':memory:'));
 
@@ -57,6 +127,7 @@ test('initializeDatabase applies pragmas and creates the schema', () => {
     'cycle_plan_proposals',
     'cycle_plan_versions',
     'feedback',
+    'garmin_cleanup_state',
     'garmin_pilot_connections',
     'garmin_training_operations',
     'garmin_workout_prescriptions',
@@ -1081,6 +1152,7 @@ test('migrateDatabase removes the obsolete workouts table from existing database
       'cycle_plan_proposals',
       'cycle_plan_versions',
       'feedback',
+      'garmin_cleanup_state',
       'garmin_pilot_connections',
       'garmin_training_operations',
       'garmin_workout_prescriptions',

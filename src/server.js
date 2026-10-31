@@ -95,7 +95,7 @@ const {
   deleteCycle,
 } = require('./cycles');
 const { version: APP_VERSION } = require('../package.json');
-const { createGarminProduct } = require('../scripts/garmin-product');
+const { createGarminProduct } = require('./garmin/product');
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
@@ -273,6 +273,7 @@ async function buildServer(options = {}) {
       db: options.db,
       fetchImpl: options.garminFetch || fetch,
       config: options.garminConfig || process.env,
+      now: options.garminNow,
     });
     garminProduct.register(app, requireAuth);
   }

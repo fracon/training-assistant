@@ -18,8 +18,8 @@ WORKDIR /app
 COPY package*.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY src ./src
-COPY scripts/admin-bootstrap.js scripts/admin-promote.js scripts/admin-commands.js scripts/admin-runtime.js scripts/admin-prompts.js scripts/garmin-pilot.js scripts/garmin-local-config.js scripts/garmin-product.js ./scripts/
-LABEL org.opencontainers.image.version="0.26.0"
+COPY scripts/admin-bootstrap.js scripts/admin-promote.js scripts/admin-commands.js scripts/admin-runtime.js scripts/admin-prompts.js scripts/garmin-pilot.js scripts/garmin-local-config.js ./scripts/
+LABEL org.opencontainers.image.version="0.27.0"
 
 USER node
 

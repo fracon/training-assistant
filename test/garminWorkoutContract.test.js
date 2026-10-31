@@ -17,10 +17,29 @@ function sample(target = { type: 'none' }) {
 test('prescription validation preserves structured repeat order and preview', () => {
   const p = validatePrescription(sample());
   assert.deepEqual(p.steps.map((step) => step.id), ['warm', 'repeat', 'cool']);
-  assert.equal(previewPrescription(p)[1].repetitions, 4);
-  assert.equal(previewPrescription(p)[1].end.value, 300);
+  assert.equal(previewPrescription(p).steps[1].repetitions, 4);
+  assert.equal(previewPrescription(p).steps[1].end.value, 300);
   assert.match(prescriptionFingerprint(p), /^[a-f0-9]{64}$/);
   assert.equal(MAX_STEPS, 80);
+});
+
+test('repeat preview preserves recovery prescription and final recovery policy', () => {
+  const prescription = sample();
+  prescription.steps[1].skip_last_rest_step = true;
+  prescription.steps[1].recovery.target = { type: 'heart_rate', mode: 'absolute', lower_bpm: 120, upper_bpm: 140 };
+  const preview = previewPrescription(prescription);
+  assert.deepEqual(preview.steps[1].recovery, prescription.steps[1].recovery);
+  assert.equal(preview.steps[1].skip_last_rest_step, true);
+  assert.equal(preview.total_time_seconds, 600 + 4 * 300 + 3 * 120 + 600);
+  assert.equal(preview.estimated_duration_seconds, 2760);
+});
+
+test('timed repeat includes the final recovery when that Garmin policy is explicit', () => {
+  const prescription = sample();
+  prescription.steps[1].skip_last_rest_step = false;
+  const preview = previewPrescription(prescription);
+  assert.equal(preview.duration_complete, true);
+  assert.equal(preview.estimated_duration_seconds, 600 + 4 * 300 + 4 * 120 + 600);
 });
 
 test('supports positive time and distance steps and open laps in the contract', () => {
@@ -30,7 +49,8 @@ test('supports positive time and distance steps and open laps in the contract', 
     { id: 'open', kind: 'open', end: { type: 'open' }, target: { type: 'none' } },
   ];
   assert.equal(validatePrescription(p).steps.length, 2);
-  assert.equal(previewPrescription(p)[0].end.type, 'distance');
+  assert.equal(previewPrescription(p).steps[0].end.type, 'distance');
+  assert.equal(previewPrescription(p).estimated_duration_seconds, null);
 });
 
 test('counts repeated distance intervals against the aggregate distance limit', () => {
@@ -40,6 +60,20 @@ test('counts repeated distance intervals against the aggregate distance limit', 
   assert.equal(valid.steps[1].interval.end.value, 1000);
   prescription.steps[1].interval.end.value = 26000;
   assert.throws(() => validatePrescription(prescription), GarminWorkoutContractError);
+});
+
+test('distance repeats and final recovery are counted exactly without inventing duration', () => {
+  const prescription = sample();
+  const repeat = prescription.steps[1];
+  repeat.interval.end = { type: 'distance', value: 1000 };
+  repeat.recovery.end = { type: 'time', value: 90 };
+  repeat.skip_last_rest_step = false;
+  const preview = previewPrescription(prescription);
+  assert.equal(preview.total_distance_meters, 4000);
+  assert.equal(preview.total_time_seconds, 600 + 4 * 90 + 600);
+  assert.equal(preview.duration_complete, false);
+  assert.equal(preview.estimated_duration_seconds, null);
+  assert.equal(preview.steps[1].skip_last_rest_step, false);
 });
 
 test('validates absolute heart rate and pace bounds with correct speed order', () => {
@@ -52,9 +86,20 @@ test('validates absolute heart rate and pace bounds with correct speed order', (
   assert.ok(paceBoundsMps({ type: 'pace', unit: 'min_per_mile', slower_seconds: 600, faster_seconds: 500 }).upper_mps > 0);
 });
 
+test('friendly PT workout names retain accented letters and normalize canonically', () => {
+  const prescription = sample();
+  // En dash is intentionally not part of the connector-safe title alphabet;
+  // the normal product separator remains an ordinary space/hyphen.
+  prescription.name = 'Corrida ra\u0301pida - intervalos';
+  const valid = validatePrescription(prescription);
+  assert.equal(valid.name, 'Corrida rápida - intervalos');
+  prescription.name = 'Corrida\nmaliciosa';
+  assert.throws(() => validatePrescription(prescription), GarminWorkoutContractError);
+});
+
 test('rejects malformed prescriptions, duplicate IDs, bad targets, and limits', () => {
   const cases = [null, {}, { ...sample(), version: 2 }, { ...sample(), sport: 'cycling' },
-    { ...sample(), name: ' ' }, { ...sample(), name: 'x'.repeat(33) }, { ...sample(), name: 'treino rápido' },
+    { ...sample(), name: ' ' }, { ...sample(), name: 'x'.repeat(33) },
     { ...sample(), unexpected: true }, { ...sample(), steps: [{ ...sample().steps[0], extra: 'ignored' }] },
     { ...sample(), steps: [{ ...sample().steps[0], end: { type: 'time', value: 10, extra: true } }] },
     { ...sample(), steps: [{ ...sample().steps[0], target: { type: 'none', extra: true } }] },
