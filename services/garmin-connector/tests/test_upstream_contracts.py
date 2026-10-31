@@ -97,6 +97,23 @@ class UpstreamContractTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             main._activity_download_base(client, "original")
 
+    def test_real_get_workout_types_contract_is_parsed_using_sport_type_key(self):
+        # Exercise garminconnect's real method while replacing only its transport.
+        response = {
+            "workoutSportTypes": [{
+                "sportTypeId": 1, "sportTypeKey": "running", "displayOrder": 1,
+            }],
+            "workoutStepTypes": [],
+        }
+        client = Garmin()
+        with patch.object(Garmin, "connectapi", return_value=response) as connectapi:
+            parsed = main._workout_catalog_summary(client.get_workout_types())
+        connectapi.assert_called_once_with(
+            f"{client.garmin_connect_workout_service_url}/workout/types"
+        )
+        self.assertEqual(parsed["status"], "available")
+        self.assertEqual(parsed["sport_types"][0]["sport_type_key"], "running")
+
     def test_mfa_uses_real_garmin_wrapper_and_persists_before_success(self):
         def simulated_mfa_start(transport, email, password, prompt_mfa=None, return_on_mfa=False):
             assert return_on_mfa is True

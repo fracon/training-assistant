@@ -1,7 +1,8 @@
 # Garmin Connect integration contract
 
-Status (2026-10-30): **Phase 1 foundation implemented; real-account and
-Forerunner 55 acceptance not performed. The pilot remains disabled.** This
+Status (2026-10-31): **Phase 1 foundation implemented; pilot evidence is
+partial and publication/device/activity acceptance remains pending. The pilot
+is restricted to the explicitly selected owner.** This
 document separates library documentation, simulated tests, account evidence,
 and device evidence. Nothing in the first two categories is a substitute for
 the last two.
@@ -58,6 +59,13 @@ project documents these relevant methods and behavior:
   `outcome_unknown` and blocks another mutation.
 - Device enumeration is documented by `get_devices`; this does not establish
   Forerunner 55 compatibility, transfer to a device, or successful sync.
+- `get_workout_types()` returns `workoutSportTypes` entries modeled in pinned
+  0.3.20 as `SportTypeModel(sportTypeId, sportTypeKey, displayOrder=1)`;
+  running is identified by exact `sportTypeKey == "running"`. This is the
+  account's workout-type catalog, not a device capability. Kinesis reports
+  `running_catalog_status` as `available`, `absent`, or `unknown`; the legacy
+  `running_supported` is true/false/null for those respective states. An empty
+  or malformed response is `unknown` rather than evidence of absence.
 - Tokens from the library are normally plain JSON with mode 0600. Kinesis
   materializes that JSON only in a mode-0700 temporary directory, encrypts it
   before persistent storage, and removes the temporary copy.
@@ -82,7 +90,8 @@ Errors use `{"detail":{"code":"…"}}`; unexpected exceptions are sanitized.
 | Cancel MFA | `POST /v1/connections/{owner}/{connection}/auth/cancel` | Invalidates the matching in-memory challenge |
 | State | `GET /v1/connections/{owner}/{connection}/status` | Validates saved tokens using a minimal profile request; health remains local-only |
 | Disconnect | `DELETE /v1/connections/{owner}/{connection}` | Deletes local tokens and challenges; remote revocation is not claimed |
-| Capabilities | `GET /v1/connections/{owner}/{connection}/capabilities` | Device IDs/names and running-workout availability only |
+| Capabilities | `GET /v1/connections/{owner}/{connection}/capabilities` | Device IDs/names plus account catalog state; not device sync compatibility |
+| Workout catalog diagnostic | `GET /v1/connections/{owner}/{connection}/workout-catalog` | One read-only catalog call; sanitized structure and allowlisted sport type identifiers only |
 | Publish workout | `POST /v1/connections/{owner}/{connection}/workouts` | Bounded timed running template, optional repeated interval group and pace range |
 | Read workout | `GET /v1/connections/{owner}/{connection}/workouts/{id}` | Sanitized details only |
 | Schedule workout | `POST /v1/connections/{owner}/{connection}/workouts/schedule` | Calendar date, after revalidation by caller |
@@ -101,7 +110,7 @@ The first-phase adapter is not a product synchronization pipeline. The
 authenticated Kinesis pilot entry point is the local TTY command
 `npm run garmin:pilot -- <action>`; locally it calls the loopback connector,
 and in ZimaOS it is run inside the Node container. Supported
-actions are `auth`, `status`, `capabilities`, `disconnect`, `publish-simple`,
+actions are `auth`, `status`, `capabilities`, `capabilities-diagnose`, `disconnect`, `publish-simple`,
 `publish-interval`, `schedule`, `activities`, `download`, and `cancel`.
 Credentials and MFA codes are entered without terminal echo. Mutations require
 an interactive TTY and typed confirmation; publication uses a visible
@@ -187,6 +196,7 @@ npm run garmin:connector
 npm run garmin:pilot -- auth
 npm run garmin:pilot -- status
 npm run garmin:pilot -- capabilities
+npm run garmin:pilot -- capabilities-diagnose
 ```
 
 To verify token resume, restart the connector in Terminal 2, then query status
@@ -273,12 +283,12 @@ the `KGC1` envelope. Do not restore a token backup from a different key.
 
 ## Automated evidence and go/no-go
 
-At this revision the connector suite has **38 passing tests**; Python coverage
-(`coverage run --branch --source=app -m pytest`) measures **90.95% lines**
-(573/630), **77.32% branches** (150/194), and **87.74% combined coverage** for
-`app/main.py`. The browser-free Garmin CLI/setup/launcher suite has **27 passing
-tests**; `npm run test:garmin-pilot-coverage` measures **87.21% statements/lines,
-73.47% branches, and 77.14% functions** across the four Garmin Node scripts
+At this revision the connector suite has **43 passing tests**; Python coverage
+(`coverage run --branch --source=app -m pytest`) measures **91.48% lines**
+(612/669), **78.64% branches** (162/206), and **88.46% combined coverage** for
+`app/main.py`. The browser-free Garmin CLI/setup/launcher suite has **29 passing
+tests**; `npm run test:garmin-pilot-coverage` measures **87.57% statements/lines,
+74.05% branches, and 78.37% functions** across the four Garmin Node scripts
 (`garmin-pilot.js`, local config loader, setup and connector launcher). These
 are reported measurements, not added 100% gates. The existing Node backend
 coverage command retains its required 100% thresholds.
@@ -290,17 +300,22 @@ establish live Garmin or Forerunner behavior.
 
 | Capability | Upstream documentation/code | Automated simulation | Owner account | Forerunner 55 |
 |---|---|---|---|---|
-| Login and MFA resume | Documented in 0.3.20 | Covered by local tests | **Pending** | N/A |
-| Encrypted token resume after restart | Kinesis implementation | Covered by local tests | **Pending** | N/A |
+| Login without MFA | Documented in 0.3.20 | Covered by local tests | **Reported and observed connected by owner** | N/A |
+| MFA | Documented in 0.3.20 | Covered by local tests | **Not exercised** | N/A |
+| Encrypted token resume after restart | Kinesis implementation | Covered by local tests | **Reported by owner after connector restart** | N/A |
+| Forerunner 55 appears in account devices | `get_devices` documented | Contract tests | **Reported by owner** | Listed; does not prove workout delivery |
+| Running workout type in account catalog | `SportTypeModel.sportTypeKey` in pinned 0.3.20 | Correct-field and unknown-state regressions | **Observed by agent with sanitized read-only catalog: 12 entries; exact `running` key present** | Does not prove compatibility or sync |
 | Create simple/interval workout and schedule | Methods documented | Local adapter tests only | **Pending** | **Pending** |
 | Push/sync and step/target/date fidelity | Not guaranteed by library method | Not proven by mocks | **Pending** | **Pending** |
 | List activity and download original archive | Methods documented | Local adapter tests only | **Pending** | N/A |
 | FIT validation with existing parser and exact activity link | Existing parser is local | Existing FIT suites; new integration pending | **Pending** | N/A |
 
-No owner Garmin credentials, ZimaOS host access, or Forerunner 55 were supplied
-to this implementation environment. No live Garmin request, remote mutation,
-activity download, device synchronization, or cleanup was performed. Thus the
-phase is **not homologated**, there is no go decision for issue #73/#74, and
+The owner supplied no credentials in this task; the existing encrypted local
+session was reused for one read-only catalog query after the connector restart.
+No password or MFA was requested. No remote mutation, activity download, device
+synchronization, or cleanup was performed. Login, post-restart token resume and
+Forerunner listing above are separately attributed to the owner's report. Thus
+the phase is **not homologated**, there is no go decision for issue #73/#74, and
 there is no evidence of an exact workout occurrence-to-activity identifier.
 Workout ID, title, and date alone are not treated as execution identity. A
 future phase needs either a verified remote linkage or an explicit confirmation

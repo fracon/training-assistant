@@ -11,6 +11,24 @@ const API = () => process.env.GARMIN_CONNECTOR_URL || 'http://127.0.0.1:8080';
 const OWNER_ID = () => process.env.GARMIN_PILOT_USER_ID || '';
 const CONNECTION_ID = 'pilot';
 
+function connectorFailure(error) {
+  const code = error?.cause?.code;
+  if (error?.name === 'AbortError' || error?.name === 'TimeoutError') return new Error('connector_timeout');
+  if (code === 'ECONNREFUSED' || code === 'ECONNRESET' || code === 'ENOTFOUND'
+      || (error instanceof TypeError && error.message === 'fetch failed')) {
+    return new Error('connector_unavailable');
+  }
+  return error;
+}
+
+function displayPilotError(error) {
+  const messages = {
+    connector_unavailable: 'Conector Garmin indisponível. Inicie npm run garmin:connector e tente novamente.',
+    connector_timeout: 'O conector Garmin excedeu o tempo limite. Verifique o processo local e tente novamente.',
+  };
+  return messages[error?.message] || error?.message || 'unavailable';
+}
+
 async function invalidateConnection(fetchImpl = fetch) {
   try {
     await fetchImpl(`${API()}/v1/connections/${OWNER_ID()}/${CONNECTION_ID}`, {
@@ -56,7 +74,7 @@ async function request(path, options = {}, dependencies = {}) {
   } catch (error) {
     await validateAccess(true);
     if (mutation) throw new Error('outcome_unknown');
-    throw error;
+    throw connectorFailure(error);
   }
   await validateAccess(true);
   let body = {};
@@ -91,7 +109,7 @@ async function requestOriginal(path, dependencies = {}) {
       await invalidate(fetchImpl);
       throw new Error('account_inactive');
     }
-    throw error;
+    throw connectorFailure(error);
   }
   try {
     validate();
@@ -193,7 +211,7 @@ async function main(options = {}) {
     throw error;
   }
   const prefix = `/v1/connections/${OWNER_ID()}/${CONNECTION_ID}`;
-  if (['auth', 'disconnect', 'publish-simple', 'publish-interval', 'schedule', 'activities', 'download', 'cancel', 'capabilities'].includes(action)) {
+  if (['auth', 'disconnect', 'publish-simple', 'publish-interval', 'schedule', 'activities', 'download', 'cancel', 'capabilities', 'capabilities-diagnose'].includes(action)) {
     prompts.assertInteractive();
   }
   if (action === 'status') {
@@ -203,6 +221,11 @@ async function main(options = {}) {
   }
   if (action === 'capabilities') {
     const value = await send(`${prefix}/capabilities`);
+    writeOut(`${JSON.stringify(value)}\n`);
+    return;
+  }
+  if (action === 'capabilities-diagnose') {
+    const value = await send(`${prefix}/workout-catalog`);
     writeOut(`${JSON.stringify(value)}\n`);
     return;
   }
@@ -254,7 +277,7 @@ async function main(options = {}) {
     return;
   }
   if (!['auth', 'schedule', 'activities', 'download', 'cancel'].includes(action)) {
-    throw new Error('Use auth, status, capabilities, disconnect, publish-simple, publish-interval, schedule, activities, download, or cancel.');
+    throw new Error('Use auth, status, capabilities, capabilities-diagnose, disconnect, publish-simple, publish-interval, schedule, activities, download, or cancel.');
   }
 
   if (action === 'schedule') {
@@ -350,7 +373,7 @@ async function runMain(options = {}) {
     return 0;
   } catch (error) {
     const writeError = options.writeError || ((value) => process.stderr.write(value));
-    writeError(`${error.message}\n`);
+    writeError(`${displayPilotError(error)}\n`);
     return 1;
   }
 }
@@ -370,4 +393,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { invalidateConnection, main, request, requestOriginal, runMain, validatePilot };
+module.exports = { invalidateConnection, main, request, requestOriginal, runMain, validatePilot, connectorFailure, displayPilotError };

@@ -283,6 +283,60 @@ test('TTY pilot prints only the bounded device capabilities response', async () 
   assert.deepEqual(JSON.parse(capabilities.output[0]), {
     running_supported: true, devices: [{ device_id: '55', name: 'Synthetic watch' }],
   });
+
+  const unknown = pilotOptions('capabilities', [], [], [{
+    running_supported: null, running_catalog_status: 'unknown', devices: [],
+  }]);
+  await pilot.main(unknown.options);
+  assert.deepEqual(JSON.parse(unknown.output[0]), {
+    running_supported: null, running_catalog_status: 'unknown', devices: [],
+  });
+});
+
+test('catalog diagnostic prints only allowlisted catalog data and preserves unknown', async () => {
+  const diagnostic = pilotOptions('capabilities-diagnose', [], [], [{
+    response_type: 'dict', top_level_keys: ['workoutSportTypes'],
+    sport_types_type: 'list', sport_type_count: 1,
+    sport_types: [{ sport_type_id: 1, sport_type_key: 'running', display_order: 1 }],
+    status: 'available',
+  }]);
+  await pilot.main(diagnostic.options);
+  assert.match(diagnostic.sent[0].url, /workout-catalog$/);
+  const printed = JSON.parse(diagnostic.output[0]);
+  assert.equal(printed.status, 'available');
+  assert.equal(printed.sport_types[0].sport_type_key, 'running');
+  assert.equal(JSON.stringify(printed).includes('device'), false);
+
+  const unknown = pilotOptions('capabilities-diagnose', [], [], [{
+    response_type: 'dict', top_level_keys: [], sport_types_type: 'missing',
+    sport_type_count: null, sport_types: [], status: 'unknown',
+  }]);
+  await pilot.main(unknown.options);
+  assert.equal(JSON.parse(unknown.output[0]).status, 'unknown');
+});
+
+test('connector refusal is actionable while HTTP/auth errors remain distinct', async () => {
+  let invalidations = 0;
+  await assert.rejects(pilot.request('/status', {}, {
+    validate() {}, async invalidate() { invalidations += 1; },
+    async fetchImpl() {
+      const error = new TypeError('fetch failed');
+      error.cause = { code: 'ECONNREFUSED' };
+      throw error;
+    },
+  }), /connector_unavailable/);
+  assert.equal(invalidations, 0);
+  assert.equal(pilot.connectorFailure(new DOMException('deadline', 'TimeoutError')).message, 'connector_timeout');
+  assert.match(pilot.displayPilotError(new Error('connector_unavailable')), /npm run garmin:connector/);
+  assert.equal(pilot.displayPilotError(new Error('auth_required')), 'auth_required');
+  const cli = pilotOptions('status');
+  cli.options.request = async () => { throw new Error('connector_unavailable'); };
+  assert.equal(await pilot.runMain(cli.options), 1);
+  assert.match(cli.errors[0], /Conector Garmin indisponível.*npm run garmin:connector/);
+  await assert.rejects(pilot.request('/status', {}, {
+    validate() {}, async invalidate() {},
+    async fetchImpl() { return response(401, { detail: { code: 'auth_required' } }); },
+  }), /auth_required/);
 });
 
 test('TTY pilot validates operation IDs and confirms simple and interval mutations', async () => {

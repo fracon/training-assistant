@@ -257,6 +257,15 @@ onboarding record of the account is preserved.
   separately in `docs/garmin-integration.md`. Keep phases 2/3 blocked until the
   real acceptance criteria are met. No Garmin credentials or personal FIT/GPS
   files belong in Git, tests, issue/PR text, or CI.
+- `get_workout_types()['workoutSportTypes']` uses the pinned library's
+  `SportTypeModel` fields `sportTypeId`, `sportTypeKey`, and `displayOrder`;
+  classify `running` only by exact `sportTypeKey`. Capabilities describe the
+  account's workout-type catalog, not a device's ability to receive or sync a
+  workout. Return `available`, `absent`, or `unknown`; missing, empty, or
+  malformed catalog structures are `unknown`, never an inferred negative.
+  `npm run garmin:pilot -- capabilities-diagnose` is a read-only local command
+  that prints only structural keys/counts and allowlisted sport type fields;
+  never print raw Garmin responses or device/account identifiers in diagnostics.
 - Build/run Python tests and coverage with the commands in
   `services/garmin-connector/README.md`; run Node `npm test`, serial
   `npm run test:coverage`, Compose validation, and `git diff --check` for this

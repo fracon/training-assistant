@@ -29,6 +29,15 @@ Python image is built for the ZimaOS host architecture by the deployment helper;
 the development host architecture does not establish the ZimaOS architecture.
 `GET /healthz` has no Garmin side effect in either mode.
 
+The workout catalog follows `garminconnect==0.3.20`'s
+`SportTypeModel` (`sportTypeId`, `sportTypeKey`, optional `displayOrder`).
+`running_catalog_status` is `available`, `absent`, or `unknown` and describes
+only whether the account's returned workout-type catalog contains the exact
+`sportTypeKey: "running"`; it says nothing about device transfer or sync. An
+empty, absent, or malformed catalog is `unknown`, not `absent`. For a live,
+read-only local diagnostic, run `npm run garmin:pilot -- capabilities-diagnose`;
+it outputs a sanitized structure/count and allowlisted sport fields only.
+
 Run automated tests without Garmin credentials or calls:
 
 ```bash

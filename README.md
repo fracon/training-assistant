@@ -1303,6 +1303,8 @@ npm run garmin:connector
 npm run garmin:pilot -- auth
 npm run garmin:pilot -- status
 npm run garmin:pilot -- capabilities
+# Local read-only diagnostic: Garmin account workout-type catalog only
+npm run garmin:pilot -- capabilities-diagnose
 # Restart the connector in Terminal 2, then check status again to verify token resume.
 npm run garmin:pilot -- disconnect
 ```

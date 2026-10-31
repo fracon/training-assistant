@@ -43,7 +43,7 @@ class FakeGarmin:
         Path(token_dir, "garmin_tokens.json").write_text('{"di_token":"synthetic"}')
 
     def get_workout_types(self):
-        return {"workoutSportTypes": [{"workoutSportTypeKey": "running"}]}
+        return {"workoutSportTypes": [{"sportTypeId": 1, "sportTypeKey": "running", "displayOrder": 1}]}
 
     def get_devices(self):
         return [{"deviceId": 55, "productDisplayName": "Synthetic Forerunner"}]
@@ -486,6 +486,101 @@ class ConnectorTests(unittest.TestCase):
         with patch.object(main, "_client", large_client):
             too_large = self.client.get(f"{self.prefix}/activities/42/original", headers=self.headers)
         self.assertEqual(too_large.status_code, 413)
+
+    def test_capabilities_recognizes_running_using_pinned_garmin_sport_type_contract(self):
+        path = Path(self.temp.name, "17-pilot.bin")
+        main._save_encrypted(path, b"k" * 32, b'{"di_token":"x"}')
+        fake = FakeGarmin()
+        # garminconnect 0.3.20's SportTypeModel uses sportTypeKey.
+        fake.get_workout_types = lambda: {
+            "workoutSportTypes": [{"sportTypeId": 1, "sportTypeKey": "running", "displayOrder": 1}]
+        }
+
+        @contextmanager
+        def fake_client(*_args, **_kwargs):
+            yield fake, Path(self.temp.name), Path(self.temp.name, "tokens.json")
+
+        with patch.object(main, "_client", fake_client):
+            response = self.client.get(f"{self.prefix}/capabilities", headers=self.headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["running_supported"])
+        self.assertEqual(response.json()["running_catalog_status"], "available")
+
+    def test_workout_catalog_diagnostic_distinguishes_valid_absent_and_unknown(self):
+        path = Path(self.temp.name, "17-pilot.bin")
+        main._save_encrypted(path, b"k" * 32, b'{"di_token":"x"}')
+        cases = [
+            ({"workoutSportTypes": [{"sportTypeId": 1, "sportTypeKey": "cycling"}]}, "absent"),
+            ({"workoutSportTypes": []}, "unknown"),
+            ({}, "unknown"),
+            ({"workoutSportTypes": None}, "unknown"),
+            ([], "unknown"),
+            ({"workoutSportTypes": [{"sportTypeId": 1, "sportTypeKey": "running"}, None]}, "unknown"),
+            ({"workoutSportTypes": [{"sportTypeId": "1", "sportTypeKey": "running"}]}, "unknown"),
+            ({"workoutSportTypes": [{"sportTypeId": 2, "sportTypeKey": "cycling"}]}, "absent"),
+        ]
+        fake = FakeGarmin()
+
+        @contextmanager
+        def fake_client(*_args, **_kwargs):
+            yield fake, Path(self.temp.name), Path(self.temp.name, "tokens.json")
+
+        with patch.object(main, "_client", fake_client):
+            for catalog, expected in cases:
+                with self.subTest(expected=expected, catalog_type=type(catalog).__name__):
+                    fake.get_workout_types = lambda catalog=catalog: catalog
+                    response = self.client.get(f"{self.prefix}/workout-catalog", headers=self.headers)
+                    self.assertEqual(response.status_code, 200)
+                    self.assertEqual(response.json()["status"], expected)
+                    self.assertNotIn("email", response.text.lower())
+                    self.assertNotIn("device", response.text.lower())
+
+    def test_capabilities_unknown_catalog_is_not_reported_as_false(self):
+        path = Path(self.temp.name, "17-pilot.bin")
+        main._save_encrypted(path, b"k" * 32, b'{"di_token":"x"}')
+        fake = FakeGarmin()
+        fake.get_workout_types = lambda: {"workoutSportTypes": []}
+
+        @contextmanager
+        def fake_client(*_args, **_kwargs):
+            yield fake, Path(self.temp.name), Path(self.temp.name, "tokens.json")
+
+        with patch.object(main, "_client", fake_client):
+            response = self.client.get(f"{self.prefix}/capabilities", headers=self.headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.json()["running_supported"])
+        self.assertEqual(response.json()["running_catalog_status"], "unknown")
+
+    def test_catalog_remote_failures_keep_normalized_auth_rate_limit_and_timeout_codes(self):
+        path = Path(self.temp.name, "17-pilot.bin")
+        main._save_encrypted(path, b"k" * 32, b'{"di_token":"x"}')
+
+        class BrokenGarmin(FakeGarmin):
+            failure = None
+
+            def get_workout_types(self):
+                raise self.failure
+
+        fake = BrokenGarmin()
+
+        @contextmanager
+        def fake_client(*_args, **_kwargs):
+            yield fake, Path(self.temp.name), Path(self.temp.name, "tokens.json")
+
+        from garminconnect.exceptions import GarminConnectAuthenticationError
+        cases = [
+            (GarminConnectAuthenticationError("private auth detail"), 401, "auth_required"),
+            (type("GarminConnectTooManyRequestsError", (Exception,), {})("private rate detail"), 429, "rate_limited"),
+            (TimeoutError("private timeout detail"), 503, "unavailable"),
+        ]
+        with patch.object(main, "_client", fake_client):
+            for error, status, code in cases:
+                with self.subTest(code=code):
+                    fake.failure = error
+                    response = self.client.get(f"{self.prefix}/workout-catalog", headers=self.headers)
+                    self.assertEqual(response.status_code, status)
+                    self.assertEqual(response.json(), {"detail": {"code": code}})
+                    self.assertNotIn("private", response.text)
 
     def test_credentials_are_not_logged_or_returned(self):
         fake = FakeGarmin((None, None))

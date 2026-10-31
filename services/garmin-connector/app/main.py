@@ -474,10 +474,14 @@ def capabilities(owner_id: str, connection_id: str,
                 _check_deadline(deadline)
                 devices = client.get_devices()
                 _check_deadline(deadline)
+                catalog = _workout_catalog_summary(types)
                 return {
-                    "running_supported": any(
-                        item.get("workoutSportTypeKey") == "running"
-                        for item in types.get("workoutSportTypes", [])
+                    # This is the account's Garmin workout-type catalog, not
+                    # a claim that a listed device can receive or sync workouts.
+                    "running_catalog_status": catalog["status"],
+                    "running_supported": (
+                        True if catalog["status"] == "available"
+                        else False if catalog["status"] == "absent" else None
                     ),
                     "devices": [
                         {"device_id": str(item.get("deviceId", "")),
@@ -485,6 +489,75 @@ def capabilities(owner_id: str, connection_id: str,
                         for item in devices if item.get("deviceId") is not None
                     ],
                 }
+        except Exception as exc:
+            raise _record_error(path, exc) from None
+
+
+_WORKOUT_TYPE_STRUCTURE_KEYS = frozenset({
+    "workoutSportTypes", "workoutStepTypes", "workoutConditionTypes",
+    "workoutTargetTypes", "workoutIntensityTypes", "strokeTypes",
+})
+
+
+def _workout_catalog_summary(types):
+    """Return a bounded, personal-data-free view of the Garmin type catalog."""
+    summary = {
+        "response_type": type(types).__name__,
+        "top_level_keys": [],
+        "sport_types_type": "missing",
+        "sport_type_count": None,
+        "sport_types": [],
+        "status": "unknown",
+    }
+    if not isinstance(types, dict):
+        return summary
+    summary["top_level_keys"] = sorted(
+        key for key in types if isinstance(key, str) and key in _WORKOUT_TYPE_STRUCTURE_KEYS
+    )
+    sports = types.get("workoutSportTypes")
+    summary["sport_types_type"] = type(sports).__name__
+    if not isinstance(sports, list):
+        return summary
+    summary["sport_type_count"] = len(sports)
+    if not sports:
+        # An empty payload does not establish that Garmin's catalog is complete.
+        return summary
+    normalized = []
+    for item in sports:
+        if not isinstance(item, dict):
+            return summary
+        sport_id = item.get("sportTypeId")
+        sport_key = item.get("sportTypeKey")
+        display_order = item.get("displayOrder", 1)
+        if (isinstance(sport_id, bool) or not isinstance(sport_id, int)
+                or not isinstance(sport_key, str)
+                or not re.fullmatch(r"[a-z0-9_]{1,80}", sport_key)
+                or isinstance(display_order, bool) or not isinstance(display_order, int)):
+            return summary
+        normalized.append({
+            "sport_type_id": sport_id,
+            "sport_type_key": sport_key,
+            "display_order": display_order,
+        })
+    summary["sport_types"] = normalized
+    summary["status"] = "available" if any(
+        item["sport_type_key"] == "running" for item in normalized
+    ) else "absent"
+    return summary
+
+
+@app.get("/v1/connections/{owner_id}/{connection_id}/workout-catalog")
+def workout_catalog(owner_id: str, connection_id: str,
+                    x_kinesis_service_key: str | None = Header(default=None)):
+    """Read only the workout-type catalog and return a safe diagnostic summary."""
+    path, key = _authenticated_client(owner_id, connection_id, x_kinesis_service_key)
+    deadline = _clock() + MAX_REMOTE_OPERATION_SECONDS
+    with _lock(str(path)):
+        try:
+            with _client(path, key) as (client, _, _):
+                result = _workout_catalog_summary(client.get_workout_types())
+                _check_deadline(deadline)
+                return result
         except Exception as exc:
             raise _record_error(path, exc) from None
 
