@@ -518,6 +518,7 @@ async function runOperation(db, fetchImpl, config, operation, currentTraining, o
   const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(90000)]);
   let workoutId = operation.workoutId ? String(operation.workoutId) : null;
   let occurrenceId = operation.occurrenceId ? String(operation.occurrenceId) : null;
+  let activeStage = operation.stage || (operation.action === 'publish' ? 'publish' : operation.action);
   const currentState = () => {
     const owner = db.prepare('SELECT is_active FROM users WHERE id = ?').get(operation.ownerId);
     if (!owner || owner.is_active !== 1) return 'owner_ineligible';
@@ -556,6 +557,8 @@ async function runOperation(db, fetchImpl, config, operation, currentTraining, o
     const source = operation.sourceOperation;
     const payload = toConnectorPayload(operation);
     let stage = operation.stage || (action === 'publish' ? 'publish' : action);
+    if (action === 'update' && ['unknown', 'update_confirmation'].includes(stage)) stage = 'update';
+    activeStage = stage;
 
     if (action === 'publish' && !workoutId) {
       const response = await remoteRequest('/workouts', { method: 'POST', body: JSON.stringify(payload) });
@@ -568,23 +571,34 @@ async function runOperation(db, fetchImpl, config, operation, currentTraining, o
       update.run('workout_created', 'schedule', workoutId, null, null, operation.operationId, operation.ownerId);
       stage = 'schedule';
     } else if (action === 'update' && stage === 'update') {
-      if (!workoutId || !source?.workout_id) { errorResult('outcome_unknown', 'update_reconciliation', workoutId); return; }
+      if (!workoutId || !source?.workout_id || !source?.occurrence_id) {
+        errorResult('outcome_unknown', 'update_reconciliation', workoutId, occurrenceId); return;
+      }
+      activeStage = 'update';
+      update.run('publishing', activeStage, workoutId, occurrenceId, null, operation.operationId, operation.ownerId);
       const response = await remoteRequest(`/workouts/${encodeURIComponent(workoutId)}`, {
         method: 'PUT', body: JSON.stringify({ ...payload, workout_id: Number(workoutId),
-          source_operation_id: source.operation_id }),
+          source_operation_id: source.operation_id,
+          source_scheduled_workout_id: Number(source.occurrence_id) }),
       });
+      activeStage = 'update_confirmation';
       const body = await readJson(response);
       const after = currentState();
       if (after !== 'current') { await invalidate(after, true); return; }
-      if (!response.ok) { errorResult(body?.detail?.code || 'unavailable', 'update', workoutId, occurrenceId); return; }
+      if (!response.ok) { errorResult(body?.detail?.code || 'unavailable', 'update_confirmation', workoutId, occurrenceId); return; }
+      if (String(body.workout_id) !== workoutId || !['updated', 'reconciled'].includes(body.status)) {
+        errorResult('outcome_unknown', 'update_confirmation', workoutId, occurrenceId); return;
+      }
       update.run('workout_created', 'schedule', workoutId, occurrenceId, null, operation.operationId, operation.ownerId);
       stage = 'schedule';
+      activeStage = stage;
     }
 
     if (action === 'reschedule') {
       if (!workoutId || !occurrenceId || !source?.operation_id) { errorResult('outcome_unknown', 'reschedule_reconciliation', workoutId, occurrenceId); return; }
       if (currentState() !== 'current') { await invalidate(currentState(), false); return; }
-      update.run('scheduling', 'reschedule', workoutId, occurrenceId, null, operation.operationId, operation.ownerId);
+      activeStage = 'reschedule';
+      update.run('scheduling', activeStage, workoutId, occurrenceId, null, operation.operationId, operation.ownerId);
       const response = await remoteRequest(`/workouts/schedule/${encodeURIComponent(occurrenceId)}`, {
         method: 'PUT', body: JSON.stringify({ operation_id: operation.operationId,
           source_operation_id: source.operation_id,
@@ -603,7 +617,8 @@ async function runOperation(db, fetchImpl, config, operation, currentTraining, o
     if (action === 'update' && source && source.scheduled_date !== operation.date) {
       if (!workoutId || !occurrenceId) { errorResult('outcome_unknown', 'reschedule_reconciliation', workoutId, occurrenceId); return; }
       if (currentState() !== 'current') { await invalidate(currentState(), true); return; }
-      update.run('scheduling', 'reschedule', workoutId, occurrenceId, null, operation.operationId, operation.ownerId);
+      activeStage = 'reschedule';
+      update.run('scheduling', activeStage, workoutId, occurrenceId, null, operation.operationId, operation.ownerId);
       const response = await remoteRequest(`/workouts/schedule/${encodeURIComponent(occurrenceId)}`, {
         method: 'PUT', body: JSON.stringify({ operation_id: operation.operationId,
           source_operation_id: source.operation_id,
@@ -625,7 +640,8 @@ async function runOperation(db, fetchImpl, config, operation, currentTraining, o
       return;
     }
     if (currentState() !== 'current') { await invalidate(currentState(), true); return; }
-    update.run('scheduling', 'schedule', workoutId, null, null, operation.operationId, operation.ownerId);
+    activeStage = 'schedule';
+    update.run('scheduling', activeStage, workoutId, null, null, operation.operationId, operation.ownerId);
     const scheduleResponse = await remoteRequest('/workouts/schedule', { method: 'POST', body: JSON.stringify({
       operation_id: operation.operationId, workout_id: Number(workoutId), date: operation.date,
     }) });
@@ -651,7 +667,7 @@ async function runOperation(db, fetchImpl, config, operation, currentTraining, o
       ? await options.onOwnerIneligible?.() : undefined;
     const code = ['unsupported', 'invalid_prescription'].includes(error.message) ? error.message : 'outcome_unknown';
     const status = code === 'unsupported' ? 'failed' : 'outcome_unknown';
-    try { update.run(status, reason === 'owner_ineligible' ? 'owner_revoked' : error.beforeDispatch ? 'worker_stopping' : 'unknown', workoutId || operation.workoutId || null, occurrenceId || operation.occurrenceId || null, reason === 'owner_ineligible' ? (cleanupComplete ? 'cleanup_complete' : 'cleanup_pending') : code, operation.operationId, operation.ownerId); } catch { /* restart recovery marks persisted in-flight work uncertain */ }
+    try { update.run(status, reason === 'owner_ineligible' ? 'owner_revoked' : error.beforeDispatch ? 'worker_stopping' : activeStage || 'unknown', workoutId || operation.workoutId || null, occurrenceId || operation.occurrenceId || null, reason === 'owner_ineligible' ? (cleanupComplete ? 'cleanup_complete' : 'cleanup_pending') : code, operation.operationId, operation.ownerId); } catch { /* restart recovery marks persisted in-flight work uncertain */ }
   } finally {
     options.controllers?.delete(controller);
     activeJobs.delete(operation.operationId);

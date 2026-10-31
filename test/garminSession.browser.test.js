@@ -37,6 +37,7 @@ test('Garmin session UI previews without remote mutation in PT/EN on desktop and
   db.prepare('INSERT INTO garmin_workout_prescriptions (user_id,training_id,revision,prescription_json,fingerprint) VALUES (1,1,1,?,?)')
     .run(JSON.stringify(restored), prescriptionFingerprint(restored));
   const remoteCalls = [];
+  const prescriptionRequests = [];
   let releaseStatus;
   const statusGate = new Promise((resolve) => { releaseStatus = resolve; });
   const app = await buildServer({ db, sessionCookieSecure: false,
@@ -62,13 +63,23 @@ test('Garmin session UI previews without remote mutation in PT/EN on desktop and
     socket = new WebSocket(target.webSocketDebuggerUrl);
     await new Promise((resolve, reject) => { socket.addEventListener('open', resolve, { once: true }); socket.addEventListener('error', reject, { once: true }); });
     let id = 0; const pending = new Map();
-    socket.addEventListener('message', (event) => { const message = JSON.parse(event.data); if (message.method) return; const handle = pending.get(message.id); if (!handle) return; pending.delete(message.id); message.error ? handle.reject(new Error(message.error.message)) : handle.resolve(message.result); });
+    socket.addEventListener('message', (event) => {
+      const message = JSON.parse(event.data);
+      if (message.method === 'Network.requestWillBeSent'
+          && message.params.request.url.includes('/api/trainings/1/garmin/prescription')
+          && message.params.request.postData) {
+        prescriptionRequests.push(JSON.parse(message.params.request.postData));
+      }
+      if (message.method) return;
+      const handle = pending.get(message.id); if (!handle) return; pending.delete(message.id);
+      message.error ? handle.reject(new Error(message.error.message)) : handle.resolve(message.result);
+    });
     const command = (method, params = {}) => new Promise((resolve, reject) => { const key = ++id; pending.set(key, { resolve, reject }); socket.send(JSON.stringify({ id: key, method, params })); });
     const evaluate = async (expression) => { const result = await command('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }); if (result.exceptionDetails) throw new Error(result.exceptionDetails.text); return result.result.value; };
     await command('Network.enable'); await command('Network.setCookie', { name: SESSION_COOKIE_NAME, value: createSession(db, owner.id).token, url: baseUrl });
     await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
     await command('Page.navigate', { url: `${baseUrl}/training-result.html?id=1` });
-    const wait = async (expression) => { for (let i = 0; i < 150; i += 1) { if (await evaluate(expression).catch(() => false)) return; await delay(100); } const diagnostic = await evaluate("JSON.stringify({operation:document.getElementById('garminOperationStatus')?.textContent,connection:document.getElementById('garminConnectionStatus')?.textContent,invalid:[...document.querySelectorAll('#garminPrescriptionForm :invalid')].map(el=>el.id)})").catch(() => 'unavailable'); throw new Error(`Garmin session panel did not become ready: ${diagnostic}`); };
+    const wait = async (expression) => { for (let i = 0; i < 150; i += 1) { if (await evaluate(expression).catch(() => false)) return; await delay(100); } const diagnostic = await evaluate("JSON.stringify({operation:document.getElementById('garminOperationStatus')?.textContent,connection:document.getElementById('garminConnectionStatus')?.textContent,previewHidden:document.getElementById('garminPreview')?.hidden,recoveryType:document.getElementById('garminRecoveryTargetType')?.value,recoveryLower:document.getElementById('garminRecoveryLower')?.value,recoveryUpper:document.getElementById('garminRecoveryUpper')?.value,invalid:[...document.querySelectorAll('#garminPrescriptionForm :invalid')].map(el=>el.id)})").catch(() => 'unavailable'); throw new Error(`Garmin session panel did not become ready: ${diagnostic}; last prescription request=${JSON.stringify(prescriptionRequests.at(-1))}; persisted=${db.prepare('SELECT revision,prescription_json FROM garmin_workout_prescriptions WHERE training_id=1').get().prescription_json}`); };
     await wait("document.getElementById('sessionDate')?.textContent.trim() !== '-' && !document.getElementById('garminSessionCard').hidden && document.getElementById('feedbackNotas')");
     assert.equal(await evaluate("document.getElementById('garminTargetType').value"), 'heart_rate');
     assert.equal(await evaluate("document.getElementById('garminLower').value"), '145');
@@ -164,8 +175,107 @@ test('Garmin session UI previews without remote mutation in PT/EN on desktop and
     assert.equal(await evaluate("document.getElementById('garminUpper').value"), '8.0000');
     await evaluate("document.getElementById('garminWorkoutName').value='Pace renamed';document.getElementById('garminWorkoutName').dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('garminPrescriptionForm').requestSubmit()");
     await wait("!document.getElementById('garminPreview').hidden");
+    for (let i = 0; i < 100; i += 1) {
+      const current = JSON.parse(db.prepare('SELECT prescription_json FROM garmin_workout_prescriptions WHERE training_id=1').get().prescription_json);
+      if (current.name === 'Pace renamed') break;
+      await delay(50);
+    }
     const persistedPace = JSON.parse(db.prepare('SELECT prescription_json FROM garmin_workout_prescriptions WHERE training_id=1').get().prescription_json);
     assert.deepEqual(persistedPace.steps[0].interval.target, restoredPace.steps[0].interval.target);
+    await wait("document.getElementById('garminOperationStatus').textContent.includes('Structure saved')");
+
+    const noRecoveryTarget = { ...restored, name: 'Recovery target synthetic', steps: [{ ...restored.steps[0],
+      recovery: { end: { type: 'time', value: 120 }, target: { type: 'none' } } }] };
+    db.prepare('UPDATE garmin_workout_prescriptions SET revision=revision+1,prescription_json=?,fingerprint=? WHERE user_id=? AND training_id=1')
+      .run(JSON.stringify(noRecoveryTarget), prescriptionFingerprint(noRecoveryTarget), owner.id);
+    await evaluate('location.reload()');
+    await wait("document.getElementById('garminRecoveryTargetType').value === 'none'");
+    await delay(250);
+    await evaluate("window.__garminSubmitCount=0;document.getElementById('garminPrescriptionForm').addEventListener('submit',()=>window.__garminSubmitCount++)");
+    const requestsBeforeRecoveryEdit = prescriptionRequests.length;
+    await evaluate("document.getElementById('garminRecoveryTargetType').value='heart_rate';document.getElementById('garminRecoveryTargetType').dispatchEvent(new Event('change',{bubbles:true}));document.getElementById('garminRecoveryLower').value='110';document.getElementById('garminRecoveryLower').dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('garminRecoveryUpper').value='130';document.getElementById('garminRecoveryUpper').dispatchEvent(new Event('input',{bubbles:true}));document.querySelector('#garminPrescriptionForm button[type=submit]').click()");
+    for (let i = 0; i < 100; i += 1) {
+      const current = JSON.parse(db.prepare('SELECT prescription_json FROM garmin_workout_prescriptions WHERE training_id=1').get().prescription_json);
+      if (current.steps[0].recovery.target.type === 'heart_rate') break;
+      await delay(50);
+    }
+    assert.equal(prescriptionRequests.length, requestsBeforeRecoveryEdit + 1,
+      `the explicit recovery-target save reached the backend once (submit events=${await evaluate('window.__garminSubmitCount')})`);
+    const persistedRecoveryTarget = JSON.parse(db.prepare('SELECT prescription_json FROM garmin_workout_prescriptions WHERE training_id=1').get().prescription_json);
+    assert.equal(persistedRecoveryTarget.steps[0].recovery.end.value, 120);
+    assert.deepEqual(persistedRecoveryTarget.steps[0].recovery.target,
+      { type: 'heart_rate', mode: 'absolute', lower_bpm: 110, upper_bpm: 130 });
+    assert.match(await evaluate("document.getElementById('garminPreviewSteps').textContent"), /110–130 bpm/);
+    assert.deepEqual(prescriptionRequests.at(-1).prescription.steps[0].recovery.target,
+      persistedRecoveryTarget.steps[0].recovery.target);
+
+    const saveRecoveryEdit = async ({ type, lower, upper, minutes, expectedTarget, expectedSeconds }) => {
+      const previousRequestCount = prescriptionRequests.length;
+      const previousRow = db.prepare('SELECT revision,fingerprint,prescription_json FROM garmin_workout_prescriptions WHERE training_id=1').get();
+      const previous = JSON.parse(previousRow.prescription_json);
+      const changes = [`document.getElementById('garminRecoveryTargetType').value=${JSON.stringify(type)}`,
+        "document.getElementById('garminRecoveryTargetType').dispatchEvent(new Event('change',{bubbles:true}))"];
+      if (lower !== undefined) changes.push(`document.getElementById('garminRecoveryLower').value=${JSON.stringify(String(lower))}`,
+        "document.getElementById('garminRecoveryLower').dispatchEvent(new Event('input',{bubbles:true}))");
+      if (upper !== undefined) changes.push(`document.getElementById('garminRecoveryUpper').value=${JSON.stringify(String(upper))}`,
+        "document.getElementById('garminRecoveryUpper').dispatchEvent(new Event('input',{bubbles:true}))");
+      if (minutes !== undefined) changes.push(`document.getElementById('garminRecovery').value=${JSON.stringify(String(minutes))}`,
+        "document.getElementById('garminRecovery').dispatchEvent(new Event('input',{bubbles:true}))");
+      changes.push("document.querySelector('#garminPrescriptionForm button[type=submit]').click()");
+      await evaluate(changes.join(';'));
+      for (let i = 0; i < 100 && prescriptionRequests.length === previousRequestCount; i += 1) await delay(50);
+      assert.equal(prescriptionRequests.length, previousRequestCount + 1, `one save request for ${type}`);
+      for (let i = 0; i < 100; i += 1) {
+        const saved = JSON.parse(db.prepare('SELECT prescription_json FROM garmin_workout_prescriptions WHERE training_id=1').get().prescription_json);
+        const recovery = saved.steps[0].recovery;
+        if (JSON.stringify(recovery.target) === JSON.stringify(expectedTarget)
+            && recovery.end.value === expectedSeconds) break;
+        await delay(50);
+      }
+      const savedRow = db.prepare('SELECT revision,fingerprint,prescription_json FROM garmin_workout_prescriptions WHERE training_id=1').get();
+      const saved = JSON.parse(savedRow.prescription_json);
+      const recovery = saved.steps[0].recovery;
+      assert.equal(recovery.end.value, expectedSeconds);
+      assert.deepEqual(recovery.target, expectedTarget);
+      assert.deepEqual(prescriptionRequests.at(-1).prescription.steps[0].recovery, recovery);
+      await wait("!document.getElementById('garminPreview').hidden");
+      assert.notEqual(previousRow.fingerprint, savedRow.fingerprint);
+      return recovery;
+    };
+
+    await saveRecoveryEdit({ type: 'none', expectedTarget: { type: 'none' }, expectedSeconds: 120 });
+    await saveRecoveryEdit({ type: 'heart_rate', lower: 120, upper: 140,
+      expectedTarget: { type: 'heart_rate', mode: 'absolute', lower_bpm: 120, upper_bpm: 140 }, expectedSeconds: 120 });
+    await saveRecoveryEdit({ type: 'pace', lower: 9.5, upper: 8.25,
+      expectedTarget: { type: 'pace', unit: 'min_per_mile', slower_seconds: 570, faster_seconds: 495 }, expectedSeconds: 120 });
+    await saveRecoveryEdit({ type: 'pace', lower: 9.25, upper: 8.5,
+      expectedTarget: { type: 'pace', unit: 'min_per_mile', slower_seconds: 555, faster_seconds: 510 }, expectedSeconds: 120 });
+
+    db.prepare("UPDATE users SET distance_unit='km' WHERE id=?").run(owner.id);
+    await evaluate('location.reload()');
+    await wait("document.getElementById('garminRecoveryTargetType').value === 'pace'");
+    assert.equal(await evaluate("document.getElementById('garminRecovery').value"), '2');
+    assert.equal(await evaluate("document.getElementById('garminRecoveryLower').value"), String((555 / 60 / 1.609344).toFixed(4)));
+    await evaluate("document.querySelector('.lang-switch [data-lang=\"pt-BR\"]').click()");
+    await wait("document.documentElement.lang === 'pt-BR'");
+    await saveRecoveryEdit({ type: 'pace', lower: 5.25, upper: 4.5,
+      expectedTarget: { type: 'pace', unit: 'min_per_km', slower_seconds: 315, faster_seconds: 270 }, expectedSeconds: 120 });
+    assert.match(await evaluate("document.getElementById('garminPreviewSteps').textContent"), /4:30 min\/km/);
+    await saveRecoveryEdit({ type: 'heart_rate', lower: 135, upper: 150, minutes: 4,
+      expectedTarget: { type: 'heart_rate', mode: 'absolute', lower_bpm: 135, upper_bpm: 150 }, expectedSeconds: 240 });
+    assert.match(await evaluate("document.getElementById('garminPreviewSteps').textContent"), /135–150 bpm/);
+    await evaluate("document.querySelector('.lang-switch [data-lang=\"en-US\"]').click()");
+    await wait("document.documentElement.lang === 'en-US'");
+    const beforeNoop = db.prepare('SELECT revision,fingerprint,prescription_json FROM garmin_workout_prescriptions WHERE training_id=1').get();
+    const noOpRequestCount = prescriptionRequests.length;
+    await evaluate("document.getElementById('garminPrescriptionForm').requestSubmit()");
+    for (let i = 0; i < 100 && prescriptionRequests.length === noOpRequestCount; i += 1) await delay(50);
+    assert.equal(prescriptionRequests.length, noOpRequestCount + 1);
+    const afterNoop = db.prepare('SELECT revision,fingerprint,prescription_json FROM garmin_workout_prescriptions WHERE training_id=1').get();
+    assert.equal(afterNoop.revision, beforeNoop.revision);
+    assert.equal(afterNoop.fingerprint, beforeNoop.fingerprint);
+    assert.deepEqual(JSON.parse(afterNoop.prescription_json).steps[0].recovery,
+      JSON.parse(beforeNoop.prescription_json).steps[0].recovery);
   } finally {
     socket?.close(); process.kill('SIGTERM');
     await Promise.race([once(process, 'exit'), delay(2000)]);

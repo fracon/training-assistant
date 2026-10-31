@@ -98,9 +98,9 @@ Errors use `{"detail":{"code":"…"}}`; unexpected exceptions are sanitized.
 | Workout catalog diagnostic | `GET /v1/connections/{owner}/{connection}/workout-catalog` | One read-only catalog call; sanitized structure and allowlisted sport type identifiers only |
 | Publish workout | `POST /v1/connections/{owner}/{connection}/workouts` | Bounded timed running template, optional repeated interval group and pace range |
 | Read workout | `GET /v1/connections/{owner}/{connection}/workouts/{id}` | Sanitized details only |
-| Update workout | `PUT /v1/connections/{owner}/{connection}/workouts/{id}` | Requires a completed source operation ID in the encrypted journal; retains workout ID and reconciles by operation ID/fingerprint |
+| Update workout | `PUT /v1/connections/{owner}/{connection}/workouts/{id}` | Requires a completed source operation ID, its scheduled occurrence ID, and matching encrypted schedule provenance; retains workout ID and reconciles by operation ID/fingerprint |
 | Schedule workout | `POST /v1/connections/{owner}/{connection}/workouts/schedule` | Requires the completed publish operation ID and confirms a pending occurrence by that workout/date before reconciling |
-| Reschedule occurrence | `PUT /v1/connections/{owner}/{connection}/workouts/schedule/{occurrence_id}` | Requires the completed source publish and schedule journal entries, verifies the workout/occurrence pair, and moves only that occurrence's civil date in place |
+| Reschedule occurrence | `PUT /v1/connections/{owner}/{connection}/workouts/schedule/{occurrence_id}` | Requires completed source-operation and schedule journal proof for the exact workout/occurrence pair; moves only that occurrence's civil date in place and records the completed reschedule as a future provenance source |
 | List activities | `POST /v1/connections/{owner}/{connection}/activities` | Required date window <=31 days, offset, page size <=25; response fields are allowlisted |
 | Download original | `GET /v1/connections/{owner}/{connection}/activities/{id}/original` | Max response 25 MiB; bytes are not logged or persisted by Node |
 
@@ -111,6 +111,44 @@ before any retry. The adapter confirms a created workout by looking it up
 before returning its ID. Scheduling uncertainty still requires explicit
 calendar reconciliation. No delete operation is exposed for remote activities
 or workouts.
+
+### Update/reschedule recovery and provenance
+
+The connector's encrypted operation journal is the provenance authority for
+workout and occurrence ownership. Successful publish, update, and reschedule
+operations are addressable by their operation UUID and record the artifact
+kind, workout ID, occurrence ID (when applicable), source operation, and
+request fingerprint. A later update or reschedule must cite that completed
+operation and independently prove the occurrence through the completed
+schedule journal entry. Matching Garmin names or IDs alone never establish
+ownership.
+
+Reschedule writes both its operation UUID alias and the historical
+`reschedule:<UUID>` journal key. This keeps subsequent reschedules and updates
+working after connector restart without relying on process memory. Existing
+branch journals that contain only a completed legacy reschedule can be
+recovered only if its stored fingerprint matches the exact occurrence/workout/
+civil-date tuple and a completed schedule record binds that same occurrence to
+that workout. Old pending update records can continue only when their exact
+legacy request fingerprint and source occurrence proof match; the connector
+preserves that old marker fingerprint while reconciling. If either proof is
+missing or conflicting, the operation is refused as uncertain/invalid rather
+than adopting a remote artifact or deleting data. No journal migration deletes
+or rewrites existing records preemptively.
+
+Node persists the concrete in-flight stage before each remote mutation. An
+update failure remains at `update` or `update_confirmation`; a following
+reschedule remains at `reschedule`. Reconciliation reuses the same operation
+UUID and connector journal. For a legacy row with `stage=unknown`, IDs do not
+prove an update: Node dispatches the same idempotent update operation for
+connector reconciliation and accepts completion only when the connector
+returns the expected workout ID and an explicit `updated`/`reconciled` status.
+The connector confirms updates by reading the workout and matching the
+operation marker/fingerprint, and confirms schedule changes by reading the
+specific occurrence and checking workout ID and civil date. An unavailable,
+malformed, failed, or divergent confirmation remains uncertain; it never
+advances based only on stored remote IDs. Once an update is confirmed, a
+separate persisted reschedule stage can resume without repeating the update.
 
 The first-phase adapter is not a product synchronization pipeline. The
 authenticated Kinesis pilot entry point is the local TTY command
@@ -301,18 +339,17 @@ exercise the pinned `Garmin.update_workout` and `Garmin.reschedule_workout`
 methods with a simulated transport; automated tests make no real Garmin or
 OpenAI calls.
 
-The corrective verification on the PR branch runs 1,455 Node tests with no
+The corrective verification on the PR branch runs 1,457 Node tests with no
 failures. The serial `npm run test:coverage` gate passes at 100% statements,
 branches, functions, and lines across its required backend scope, including
-`src/garmin/product.js`. The focused product/converter suite has 98 tests and
+`src/garmin/product.js`. The focused product/converter suite has 100 tests and
 also reports 100% in all four metrics for the product adapter. The separate
-Garmin local-tool and CLI coverage command is recorded in the PR verification
-report; its coverage is not represented by the backend gate. The Python
-connector suite has 52 tests; `app/main.py` has 86.62% line coverage and 73.82%
-branch coverage (82% combined). The dedicated Garmin pilot/tool command ran 128
-tests; its `src/garmin/product.js` scope is 100% in all four metrics, while the
-interactive local scripts are reported at 87.73% statements/lines, 74.79%
-branches, and 78.94% functions. Python and local CLI coverage are separate from
+Garmin local-tool and CLI coverage command ran 130 tests (93.15% statements/lines,
+89.96% branches, 87.69% functions overall); its `src/garmin/product.js` scope
+is 100% in all four metrics, while the interactive local scripts are reported
+at 87.73% statements/lines, 74.79% branches, and 78.94% functions. The Python
+connector suite has 55 tests; `app/main.py` has 86.93% line coverage and 70.23%
+branch coverage. Python and local CLI coverage are separate from
 the Node backend gate and are not asserted as 100%. Browser tests use a
 simulated connector. None of those checks establishes live account behavior
 beyond the owner-reported evidence below.

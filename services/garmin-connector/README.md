@@ -77,6 +77,24 @@ service invents duration or distance. Warm-up, recovery and cool-down remain
 time based in this adapter. Lap-button steps and nested repeat groups are
 refused before remote mutation.
 
+Update calls also carry `source_operation_id` and
+`source_scheduled_workout_id`. Both must be proven by this connection's
+encrypted journal: a completed source operation proves the workout, and a
+completed schedule record proves the exact occurrence. Successful updates and
+reschedules are recorded under their own operation UUIDs so they can be used
+as provenance sources in later chained operations after process restart.
+Legacy completed reschedules are adopted only when their encrypted historical
+fingerprint and a completed schedule record prove the same workout/occurrence/
+civil-date tuple. Missing evidence is refused; remote names and IDs alone are
+not ownership proof.
+
+For uncertain Node update rows, the persisted stage identifies whether the
+connector must reconcile the workout update or continue to reschedule. A
+legacy `unknown` stage is conservatively sent through the same update operation
+UUID so the connector journal can confirm its marker; Node requires the
+expected workout ID and an explicit `updated` or `reconciled` response before
+advancing. Existing remote IDs alone do not complete an operation.
+
 `npm run test:garmin-product-coverage` separately reports the Node product
 adapter and prescription contract; do not combine it with the backend Node
 100% gate or Python connector coverage.

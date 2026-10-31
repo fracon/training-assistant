@@ -1459,9 +1459,13 @@ async function initTrainingResult() {
       : { type: 'time', value: Math.round(minutes('garminInterval') * 60) };
     const interval = { end: intervalEnd, target };
     if (repetitions > 1) {
-      const recovery = !garminDirtyFields.has('garminRecovery') && originalRepeat?.recovery
-        ? structuredClone(originalRepeat.recovery)
-        : { end: { type: 'time', value: Math.round(minutes('garminRecovery') * 60) }, target: recoveryTarget };
+      const originalRecovery = originalRepeat?.recovery;
+      const recoveryEnd = !garminDirtyFields.has('garminRecovery') && originalRecovery
+        ? structuredClone(originalRecovery.end)
+        : { type: 'time', value: Math.round(minutes('garminRecovery') * 60) };
+      const resolvedRecoveryTarget = !recoveryTargetDirty && originalRecovery
+        ? structuredClone(originalRecovery.target || { type: 'none' }) : recoveryTarget;
+      const recovery = { end: recoveryEnd, target: resolvedRecoveryTarget };
       steps.push({ id: 'repeat', kind: 'repeat', repetitions,
         skip_last_rest_step: !garminDirtyFields.has('garminSkipLastRest') && originalRepeat
           ? originalRepeat.skip_last_rest_step !== false : document.getElementById('garminSkipLastRest').checked,
