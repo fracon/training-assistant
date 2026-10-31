@@ -1,6 +1,8 @@
 import base64
 import hashlib
+import json
 import os
+import subprocess
 import tempfile
 import unittest
 import uuid
@@ -762,6 +764,377 @@ class ConnectorTests(unittest.TestCase):
             retried = self.client.put(f"{self.prefix}/workouts/schedule/84", headers=self.headers, json=reschedule_body)
             self.assertEqual(retried.json()["status"], "reconciled")
         self.assertEqual(fake.scheduled[0]["calendarDate"], "2026-11-13")
+
+    def test_product_update_and_reschedule_share_one_operation_id_without_journal_collision(self):
+        path = Path(self.temp.name, "17-pilot.bin")
+        main._save_encrypted(path, b"k" * 32, b'{"di_token":"x"}')
+        fake = FakeGarmin()
+
+        @contextmanager
+        def fake_client(*_args, **_kwargs):
+            yield fake, Path(self.temp.name), Path(self.temp.name, "tokens.json")
+
+        source_id = "00000000-0000-4000-8000-000000000071"
+        product_operation_id = "00000000-0000-4000-8000-000000000072"
+        with patch.object(main, "_client", fake_client):
+            published = self.client.post(f"{self.prefix}/workouts", headers=self.headers, json={
+                "operation_id": source_id, "name": "composite synthetic", "interval_seconds": 300,
+                "repetitions": 3, "recovery_seconds": 90,
+            })
+            self.assertEqual(published.status_code, 200, published.text)
+            scheduled = self.client.post(f"{self.prefix}/workouts/schedule", headers=self.headers, json={
+                "operation_id": source_id, "workout_id": 42, "date": "2026-11-12",
+            })
+            self.assertEqual(scheduled.status_code, 200, scheduled.text)
+            update_body = {"operation_id": product_operation_id, "source_operation_id": source_id,
+                           "source_scheduled_workout_id": 84, "workout_id": 42,
+                           "name": "composite changed", "interval_seconds": 360,
+                           "repetitions": 4, "recovery_seconds": 120}
+            updated = self.client.put(f"{self.prefix}/workouts/42", headers=self.headers, json=update_body)
+            self.assertEqual(updated.status_code, 200, updated.text)
+            reschedule_body = {"operation_id": product_operation_id, "source_operation_id": source_id,
+                               "scheduled_workout_id": 84, "workout_id": 42, "date": "2026-11-13"}
+            moved = self.client.put(f"{self.prefix}/workouts/schedule/84", headers=self.headers,
+                                    json=reschedule_body)
+            self.assertEqual(moved.status_code, 200, moved.text)
+            self.assertEqual(moved.json()["scheduled_workout_id"], 84)
+            replayed_update = self.client.put(f"{self.prefix}/workouts/42", headers=self.headers, json=update_body)
+            self.assertEqual(replayed_update.status_code, 200, replayed_update.text)
+            self.assertEqual(replayed_update.json()["status"], "reconciled")
+
+            main._states.clear()
+            main._challenges.clear()
+            main._locks.clear()
+            repeated_move = self.client.put(f"{self.prefix}/workouts/schedule/84", headers=self.headers,
+                                            json=reschedule_body)
+            self.assertEqual(repeated_move.status_code, 200, repeated_move.text)
+            self.assertEqual(repeated_move.json()["status"], "reconciled")
+            divergent = self.client.put(f"{self.prefix}/workouts/schedule/84", headers=self.headers,
+                                        json={**reschedule_body, "date": "2026-11-14"})
+            self.assertEqual(divergent.status_code, 409, divergent.text)
+
+            second_operation_id = "00000000-0000-4000-8000-000000000073"
+            second_update_body = {**update_body, "operation_id": second_operation_id,
+                                  "source_operation_id": product_operation_id,
+                                  "name": "second composite", "interval_seconds": 420}
+            second_updated = self.client.put(f"{self.prefix}/workouts/42", headers=self.headers,
+                                             json=second_update_body)
+            self.assertEqual(second_updated.status_code, 200, second_updated.text)
+            second_reschedule_body = {"operation_id": second_operation_id,
+                                      "source_operation_id": product_operation_id,
+                                      "scheduled_workout_id": 84, "workout_id": 42,
+                                      "date": "2026-11-14"}
+            second_moved = self.client.put(f"{self.prefix}/workouts/schedule/84", headers=self.headers,
+                                           json=second_reschedule_body)
+            self.assertEqual(second_moved.status_code, 200, second_moved.text)
+            calls_before_conflicting_source = fake.reschedule_calls
+            wrong_source = self.client.put(f"{self.prefix}/workouts/schedule/84", headers=self.headers,
+                                           json={**reschedule_body, "source_operation_id": second_operation_id})
+            self.assertEqual(wrong_source.status_code, 409)
+            self.assertEqual(fake.reschedule_calls, calls_before_conflicting_source,
+                             "reusing an operation UUID with another source is rejected before mutation")
+            main._states.clear()
+            main._challenges.clear()
+            main._locks.clear()
+
+            after_composite_update = {**second_update_body,
+                                      "operation_id": "00000000-0000-4000-8000-000000000074",
+                                      "source_operation_id": second_operation_id,
+                                      "name": "after composite update"}
+            accepted_update = self.client.put(f"{self.prefix}/workouts/42", headers=self.headers,
+                                              json=after_composite_update)
+            self.assertEqual(accepted_update.status_code, 200, accepted_update.text)
+            after_composite_reschedule = {"operation_id": "00000000-0000-4000-8000-000000000075",
+                                          "source_operation_id": after_composite_update["operation_id"],
+                                          "scheduled_workout_id": 84, "workout_id": 42,
+                                          "date": "2026-11-15"}
+            accepted_move = self.client.put(f"{self.prefix}/workouts/schedule/84", headers=self.headers,
+                                            json=after_composite_reschedule)
+            self.assertEqual(accepted_move.status_code, 200, accepted_move.text)
+
+        self.assertEqual(fake.update_calls, 3)
+        self.assertEqual(fake.reschedule_calls, 3)
+        self.assertEqual(fake.scheduled[0]["calendarDate"], "2026-11-15")
+        journal = main._operation_journal(path, b"k" * 32)
+        self.assertEqual(journal[product_operation_id]["artifact_kind"], "composite")
+        self.assertEqual(journal[product_operation_id]["status"], "complete")
+        self.assertEqual(journal[product_operation_id]["workout_id"], 42)
+        self.assertEqual(journal[product_operation_id]["occurrence_id"], 84)
+        self.assertEqual(journal[product_operation_id]["source_operation_id"], source_id)
+        self.assertEqual(journal[f"update:{product_operation_id}"]["status"], "complete")
+        self.assertEqual(journal[f"reschedule:{product_operation_id}"]["status"], "complete")
+        self.assertEqual(journal[second_operation_id]["artifact_kind"], "composite")
+        self.assertEqual(journal["00000000-0000-4000-8000-000000000074"]["artifact_kind"], "update")
+        self.assertEqual(journal["00000000-0000-4000-8000-000000000075"]["artifact_kind"], "reschedule")
+
+    def test_node_worker_payload_builders_match_real_combined_connector_endpoints(self):
+        path = Path(self.temp.name, "17-pilot.bin")
+        main._save_encrypted(path, b"k" * 32, b'{"di_token":"x"}')
+        fake = FakeGarmin()
+
+        @contextmanager
+        def fake_client(*_args, **_kwargs):
+            yield fake, Path(self.temp.name), Path(self.temp.name, "tokens.json")
+
+        repository_root = Path(__file__).resolve().parents[3]
+        node_script = r'''const product = require('./src/garmin/product');
+const operation = {
+  operationId: '00000000-0000-4000-8000-000000000082', date: '2026-11-13',
+  sourceOperation: { operation_id: '00000000-0000-4000-8000-000000000081',
+    workout_id: '42', occurrence_id: '84', scheduled_date: '2026-11-12' },
+  prescription: { version: 1, sport: 'running', name: 'combined contract', steps: [
+    { id: 'run', kind: 'run', end: { type: 'time', value: 360 }, target: { type: 'none' } }
+  ] }
+};
+process.stdout.write(JSON.stringify({
+  update: product.toConnectorUpdatePayload(operation, '42'),
+  reschedule: product.toConnectorReschedulePayload(operation, '42', '84')
+}));'''
+        completed = subprocess.run(["node", "-e", node_script], cwd=repository_root,
+                                   check=True, capture_output=True, text=True, timeout=10)
+        payloads = json.loads(completed.stdout)
+        self.assertEqual(payloads["update"]["operation_id"], payloads["reschedule"]["operation_id"])
+        self.assertEqual(payloads["update"]["source_operation_id"], payloads["reschedule"]["source_operation_id"])
+        self.assertEqual(payloads["update"]["source_scheduled_workout_id"], payloads["reschedule"]["scheduled_workout_id"])
+
+        with patch.object(main, "_client", fake_client):
+            published = self.client.post(f"{self.prefix}/workouts", headers=self.headers, json={
+                "operation_id": payloads["update"]["source_operation_id"],
+                "name": "source synthetic", "interval_seconds": 300,
+            })
+            self.assertEqual(published.status_code, 200, published.text)
+            scheduled = self.client.post(f"{self.prefix}/workouts/schedule", headers=self.headers, json={
+                "operation_id": payloads["update"]["source_operation_id"],
+                "workout_id": 42, "date": "2026-11-12",
+            })
+            self.assertEqual(scheduled.status_code, 200, scheduled.text)
+            updated = self.client.put(f"{self.prefix}/workouts/42", headers=self.headers,
+                                      json=payloads["update"])
+            self.assertEqual(updated.status_code, 200, updated.text)
+            moved = self.client.put(f"{self.prefix}/workouts/schedule/84", headers=self.headers,
+                                    json=payloads["reschedule"])
+            self.assertEqual(moved.status_code, 200, moved.text)
+            self.assertEqual(moved.json()["status"], "rescheduled")
+        self.assertEqual(fake.update_calls, 1)
+        self.assertEqual(fake.reschedule_calls, 1)
+        self.assertEqual(fake.scheduled[0]["calendarDate"], "2026-11-13")
+        self.assertEqual(main._operation_journal(path, b"k" * 32)[payloads["update"]["operation_id"]]["artifact_kind"], "composite")
+
+    def test_combined_operation_recovers_lost_update_and_reschedule_responses_after_restart(self):
+        path = Path(self.temp.name, "17-pilot.bin")
+        main._save_encrypted(path, b"k" * 32, b'{"di_token":"x"}')
+        fake = FakeGarmin()
+        source_id = "00000000-0000-4000-8000-000000000091"
+        operation_id = "00000000-0000-4000-8000-000000000092"
+        update_body = {"operation_id": operation_id, "source_operation_id": source_id,
+                       "source_scheduled_workout_id": 84, "workout_id": 42,
+                       "name": "lost update response", "interval_seconds": 360,
+                       "repetitions": 3, "recovery_seconds": 90}
+        reschedule_body = {"operation_id": operation_id, "source_operation_id": source_id,
+                           "scheduled_workout_id": 84, "workout_id": 42, "date": "2026-11-13"}
+
+        @contextmanager
+        def fake_client(*_args, **_kwargs):
+            yield fake, Path(self.temp.name), Path(self.temp.name, "tokens.json")
+
+        original_update = fake.update_workout
+        update_lost = True
+        def update_then_lose_response(*args):
+            nonlocal update_lost
+            original_update(*args)
+            if update_lost:
+                update_lost = False
+                raise TimeoutError("synthetic response lost")
+        original_reschedule = fake.reschedule_workout
+        reschedule_lost = True
+        def reschedule_then_lose_response(*args):
+            nonlocal reschedule_lost
+            original_reschedule(*args)
+            if reschedule_lost:
+                reschedule_lost = False
+                raise TimeoutError("synthetic response lost")
+
+        with patch.object(main, "_client", fake_client):
+            self.client.post(f"{self.prefix}/workouts", headers=self.headers, json={
+                "operation_id": source_id, "name": "lost source", "interval_seconds": 300,
+            })
+            self.client.post(f"{self.prefix}/workouts/schedule", headers=self.headers, json={
+                "operation_id": source_id, "workout_id": 42, "date": "2026-11-12",
+            })
+            fake.update_workout = update_then_lose_response
+            failed_update = self.client.put(f"{self.prefix}/workouts/42", headers=self.headers, json=update_body)
+            self.assertEqual(failed_update.status_code, 503)
+            self.assertEqual(main._operation_journal(path, b"k" * 32)[f"update:{operation_id}"]["status"], "pending")
+            fake.update_workout = original_update
+            main._states.clear()
+            main._challenges.clear()
+            main._locks.clear()
+            recovered_update = self.client.put(f"{self.prefix}/workouts/42", headers=self.headers, json=update_body)
+            self.assertEqual(recovered_update.status_code, 200, recovered_update.text)
+            self.assertEqual(recovered_update.json()["status"], "reconciled")
+            self.assertEqual(fake.update_calls, 1)
+
+            fake.reschedule_workout = reschedule_then_lose_response
+            failed_reschedule = self.client.put(f"{self.prefix}/workouts/schedule/84", headers=self.headers,
+                                                json=reschedule_body)
+            self.assertEqual(failed_reschedule.status_code, 503)
+            self.assertEqual(fake.scheduled[0]["calendarDate"], "2026-11-13")
+            self.assertEqual(main._operation_journal(path, b"k" * 32)[f"reschedule:{operation_id}"]["status"], "pending")
+            fake.reschedule_workout = original_reschedule
+            main._states.clear()
+            main._challenges.clear()
+            main._locks.clear()
+            recovered_reschedule = self.client.put(f"{self.prefix}/workouts/schedule/84", headers=self.headers,
+                                                   json=reschedule_body)
+            self.assertEqual(recovered_reschedule.status_code, 200, recovered_reschedule.text)
+            self.assertEqual(recovered_reschedule.json()["status"], "reconciled")
+
+        self.assertEqual(fake.update_calls, 1)
+        self.assertEqual(fake.reschedule_calls, 1)
+        composite = main._operation_journal(path, b"k" * 32)[operation_id]
+        self.assertEqual(composite["artifact_kind"], "composite")
+        self.assertEqual(composite["steps"]["update"]["status"], "complete")
+        self.assertEqual(composite["steps"]["reschedule"]["status"], "complete")
+
+    def test_combined_update_retries_after_failure_before_remote_mutation(self):
+        path = Path(self.temp.name, "17-pilot.bin")
+        main._save_encrypted(path, b"k" * 32, b'{"di_token":"x"}')
+        fake = FakeGarmin()
+        source_id = "00000000-0000-4000-8000-000000000111"
+        operation_id = "00000000-0000-4000-8000-000000000112"
+        update_body = {"operation_id": operation_id, "source_operation_id": source_id,
+                       "source_scheduled_workout_id": 84, "workout_id": 42,
+                       "name": "pre-mutation failure", "interval_seconds": 360,
+                       "repetitions": 3, "recovery_seconds": 90}
+
+        @contextmanager
+        def fake_client(*_args, **_kwargs):
+            yield fake, Path(self.temp.name), Path(self.temp.name, "tokens.json")
+
+        with patch.object(main, "_client", fake_client):
+            self.client.post(f"{self.prefix}/workouts", headers=self.headers, json={
+                "operation_id": source_id, "name": "pre-mutation source", "interval_seconds": 300,
+            })
+            self.client.post(f"{self.prefix}/workouts/schedule", headers=self.headers, json={
+                "operation_id": source_id, "workout_id": 42, "date": "2026-11-12",
+            })
+            original = fake.update_workout
+            def fail_before_mutation(*_args):
+                raise TimeoutError("synthetic pre-mutation failure")
+            fake.update_workout = fail_before_mutation
+            refused = self.client.put(f"{self.prefix}/workouts/42", headers=self.headers, json=update_body)
+            self.assertEqual(refused.status_code, 503)
+            self.assertEqual(getattr(fake, "update_calls", 0), 0)
+            self.assertEqual(main._operation_journal(path, b"k" * 32)[f"update:{operation_id}"]["status"], "pending")
+            fake.update_workout = original
+            main._states.clear()
+            main._locks.clear()
+            completed = self.client.put(f"{self.prefix}/workouts/42", headers=self.headers, json=update_body)
+            self.assertEqual(completed.status_code, 200, completed.text)
+            self.assertEqual(completed.json()["status"], "updated")
+        self.assertEqual(fake.update_calls, 1)
+        self.assertEqual(main._operation_journal(path, b"k" * 32)[operation_id]["status"], "complete")
+
+    def test_combined_reschedule_confirms_remote_effect_after_final_journal_write_fails(self):
+        path = Path(self.temp.name, "17-pilot.bin")
+        main._save_encrypted(path, b"k" * 32, b'{"di_token":"x"}')
+        fake = FakeGarmin()
+        source_id = "00000000-0000-4000-8000-000000000121"
+        operation_id = "00000000-0000-4000-8000-000000000122"
+        update_body = {"operation_id": operation_id, "source_operation_id": source_id,
+                       "source_scheduled_workout_id": 84, "workout_id": 42,
+                       "name": "journal failure", "interval_seconds": 360,
+                       "repetitions": 3, "recovery_seconds": 90}
+        reschedule_body = {"operation_id": operation_id, "source_operation_id": source_id,
+                           "scheduled_workout_id": 84, "workout_id": 42, "date": "2026-11-13"}
+
+        @contextmanager
+        def fake_client(*_args, **_kwargs):
+            yield fake, Path(self.temp.name), Path(self.temp.name, "tokens.json")
+
+        with patch.object(main, "_client", fake_client):
+            self.client.post(f"{self.prefix}/workouts", headers=self.headers, json={
+                "operation_id": source_id, "name": "journal source", "interval_seconds": 300,
+            })
+            self.client.post(f"{self.prefix}/workouts/schedule", headers=self.headers, json={
+                "operation_id": source_id, "workout_id": 42, "date": "2026-11-12",
+            })
+            self.assertEqual(self.client.put(f"{self.prefix}/workouts/42", headers=self.headers,
+                                             json=update_body).status_code, 200)
+            save = main._save_operation_journal
+            fail_once = True
+            def fail_completed_compound_save(journal_path, key, journal):
+                nonlocal fail_once
+                entry = journal.get(f"reschedule:{operation_id}", {})
+                if fail_once and entry.get("status") == "complete":
+                    fail_once = False
+                    raise OSError("synthetic local journal failure")
+                return save(journal_path, key, journal)
+            with patch.object(main, "_save_operation_journal", fail_completed_compound_save):
+                failed = self.client.put(f"{self.prefix}/workouts/schedule/84", headers=self.headers,
+                                          json=reschedule_body)
+            self.assertEqual(failed.status_code, 503)
+            self.assertEqual(fake.scheduled[0]["calendarDate"], "2026-11-13")
+            durable = main._operation_journal(path, b"k" * 32)
+            self.assertEqual(durable[operation_id]["artifact_kind"], "update")
+            self.assertEqual(durable[f"reschedule:{operation_id}"]["status"], "pending")
+            main._states.clear()
+            main._locks.clear()
+            retry = self.client.put(f"{self.prefix}/workouts/schedule/84", headers=self.headers,
+                                    json=reschedule_body)
+            self.assertEqual(retry.status_code, 200, retry.text)
+            self.assertEqual(retry.json()["status"], "reconciled")
+        self.assertEqual(fake.update_calls, 1)
+        self.assertEqual(fake.reschedule_calls, 1)
+        self.assertEqual(main._operation_journal(path, b"k" * 32)[operation_id]["artifact_kind"], "composite")
+
+    def test_legacy_post_mutation_pending_reschedule_is_reconciled_into_composite(self):
+        path = Path(self.temp.name, "17-pilot.bin")
+        main._save_encrypted(path, b"k" * 32, b'{"di_token":"x"}')
+        fake = FakeGarmin()
+        source_id = uuid.UUID("00000000-0000-4000-8000-000000000101")
+        operation_id = uuid.UUID("00000000-0000-4000-8000-000000000102")
+        update_body = {"operation_id": str(operation_id), "source_operation_id": str(source_id),
+                       "source_scheduled_workout_id": 84, "workout_id": 42,
+                       "name": "legacy composed", "interval_seconds": 360,
+                       "repetitions": 3, "recovery_seconds": 90}
+        reschedule_body = {"operation_id": str(operation_id), "source_operation_id": str(source_id),
+                           "scheduled_workout_id": 84, "workout_id": 42, "date": "2026-11-13"}
+
+        @contextmanager
+        def fake_client(*_args, **_kwargs):
+            yield fake, Path(self.temp.name), Path(self.temp.name, "tokens.json")
+
+        with patch.object(main, "_client", fake_client):
+            self.client.post(f"{self.prefix}/workouts", headers=self.headers, json={
+                "operation_id": str(source_id), "name": "legacy source", "interval_seconds": 300,
+            })
+            self.client.post(f"{self.prefix}/workouts/schedule", headers=self.headers, json={
+                "operation_id": str(source_id), "workout_id": 42, "date": "2026-11-12",
+            })
+            updated = self.client.put(f"{self.prefix}/workouts/42", headers=self.headers, json=update_body)
+            self.assertEqual(updated.status_code, 200, updated.text)
+            remote = fake.get_scheduled_workout_by_id(84)
+            remote["calendarDate"] = "2026-11-13"  # the prior code moved it before its alias conflict
+            reschedule_fingerprint = hashlib.sha256(b"84:42:2026-11-13").hexdigest()
+            journal = main._operation_journal(path, b"k" * 32)
+            update_fingerprint = journal[f"update:{operation_id}"]["fingerprint"]
+            journal[f"reschedule:{operation_id}"] = {"fingerprint": reschedule_fingerprint,
+                                                       "status": "pending", "workout_id": 42,
+                                                       "scheduled_workout_id": 84,
+                                                       "previous_date": "2026-11-12"}
+            main._save_operation_journal(path, b"k" * 32, journal)
+            main._states.clear()
+            main._locks.clear()
+            calls_before = getattr(fake, "reschedule_calls", 0)
+            recovered = self.client.put(f"{self.prefix}/workouts/schedule/84", headers=self.headers,
+                                        json=reschedule_body)
+            self.assertEqual(recovered.status_code, 200, recovered.text)
+            self.assertEqual(recovered.json()["status"], "reconciled")
+        self.assertEqual(getattr(fake, "reschedule_calls", 0), calls_before)
+        repaired = main._operation_journal(path, b"k" * 32)
+        self.assertEqual(repaired[str(operation_id)]["artifact_kind"], "composite")
+        self.assertEqual(repaired[f"reschedule:{operation_id}"]["status"], "complete")
 
     def test_completed_reschedule_remains_a_provenance_source_for_following_operations(self):
         path = Path(self.temp.name, "17-pilot.bin")

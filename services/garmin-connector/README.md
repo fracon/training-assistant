@@ -88,6 +88,19 @@ fingerprint and a completed schedule record prove the same workout/occurrence/
 civil-date tuple. Missing evidence is refused; remote names and IDs alone are
 not ownership proof.
 
+When Node updates a workout and moves its occurrence in the same product
+operation, both endpoint requests intentionally carry the same product UUID.
+The encrypted journal keeps distinct `update:<UUID>` and `reschedule:<UUID>`
+step records/fingerprints and a completed root alias with
+`artifact_kind: "composite"` after both effects are confirmed. Reschedule
+prevalidates that it can safely extend the update alias before remote mutation.
+Retries read the exact workout or occurrence and complete an already-applied
+step without repeating it. The prior branch's state (completed update alias,
+pending reschedule journal, and possibly the already-moved remote date) is
+repairable only with matching request fingerprints and schedule provenance;
+otherwise it stays explicitly uncertain/invalid without journal or token
+deletion.
+
 For uncertain Node update rows, the persisted stage identifies whether the
 connector must reconcile the workout update or continue to reschedule. A
 legacy `unknown` stage is conservatively sent through the same update operation

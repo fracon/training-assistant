@@ -674,6 +674,12 @@ test('updating a changed prescription reuses the workout and reschedules only it
   assert.deepEqual(calls.map((call) => call.method), ['PUT', 'PUT']);
   assert.match(calls[0].url, /\/workouts\/42$/);
   assert.match(calls[1].url, /\/workouts\/schedule\/77$/);
+  assert.equal(calls[0].body.operation_id, 'update-op');
+  assert.equal(calls[1].body.operation_id, 'update-op', 'both remote steps use the durable product operation identity');
+  assert.equal(calls[0].body.source_operation_id, 'source-update');
+  assert.equal(calls[1].body.source_operation_id, 'source-update');
+  assert.equal(calls[0].body.source_scheduled_workout_id, 77);
+  assert.equal(calls[1].body.scheduled_workout_id, 77);
   assert.equal(calls[1].body.date, '2026-11-03');
   assert.equal(db.prepare("SELECT status FROM garmin_training_operations WHERE operation_id='update-op'").get().status, 'scheduled');
   db.close();

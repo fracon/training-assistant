@@ -610,7 +610,17 @@ is a separate explicit action for the exact tracked occurrence and uses the
 pinned `reschedule_workout` contract. If structure and civil date both changed,
 the persisted update operation performs the update and then the exact
 occurrence move; a partial outcome keeps the existing IDs and stage for
-reconciliation. Never remove preexisting workouts or activities. Operation
+reconciliation. Both connector mutations use the same stable product
+`operation_id` and source/workout/occurrence identity. The encrypted connector
+journal records separate `update` and `reschedule` step fingerprints beneath a
+completed composite root; a composite is provenance only after both remote
+effects have been confirmed. Validate that identity before remote mutation,
+and reconcile pending steps by reading the exact workout/occurrence before
+retrying. Legacy update-plus-pending-reschedule journals can be promoted only
+when their fingerprints and workout/occurrence/date evidence agree; never
+infer provenance from Garmin names or IDs alone, overwrite a conflicting
+journal entry, or claim rollback of an already completed remote step. Never
+remove preexisting workouts or activities. Operation
 identity/idempotency includes owner, session, generation, revision, date,
 action, and source operation; the generated occurrence ID is a persisted result,
 not part of the stable request key. The product adapter lives under

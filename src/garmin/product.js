@@ -505,6 +505,17 @@ function toConnectorPayload(operation) {
     skip_last_rest_step: ordered.find((step) => step.kind === 'repeat')?.skip_last_rest_step !== false };
 }
 
+function toConnectorUpdatePayload(operation, workoutId) {
+  return { ...toConnectorPayload(operation), workout_id: Number(workoutId),
+    source_operation_id: operation.sourceOperation.operation_id,
+    source_scheduled_workout_id: Number(operation.sourceOperation.occurrence_id) };
+}
+
+function toConnectorReschedulePayload(operation, workoutId, occurrenceId) {
+  return { operation_id: operation.operationId, source_operation_id: operation.sourceOperation.operation_id,
+    scheduled_workout_id: Number(occurrenceId), workout_id: Number(workoutId), date: operation.date };
+}
+
 async function runOperation(db, fetchImpl, config, operation, currentTraining, options = {}) {
   const activeJobs = activeJobsFor(db);
   if (activeJobs.has(operation.operationId)) return;
@@ -577,9 +588,7 @@ async function runOperation(db, fetchImpl, config, operation, currentTraining, o
       activeStage = 'update';
       update.run('publishing', activeStage, workoutId, occurrenceId, null, operation.operationId, operation.ownerId);
       const response = await remoteRequest(`/workouts/${encodeURIComponent(workoutId)}`, {
-        method: 'PUT', body: JSON.stringify({ ...payload, workout_id: Number(workoutId),
-          source_operation_id: source.operation_id,
-          source_scheduled_workout_id: Number(source.occurrence_id) }),
+        method: 'PUT', body: JSON.stringify(toConnectorUpdatePayload(operation, workoutId)),
       });
       activeStage = 'update_confirmation';
       const body = await readJson(response);
@@ -600,9 +609,7 @@ async function runOperation(db, fetchImpl, config, operation, currentTraining, o
       activeStage = 'reschedule';
       update.run('scheduling', activeStage, workoutId, occurrenceId, null, operation.operationId, operation.ownerId);
       const response = await remoteRequest(`/workouts/schedule/${encodeURIComponent(occurrenceId)}`, {
-        method: 'PUT', body: JSON.stringify({ operation_id: operation.operationId,
-          source_operation_id: source.operation_id,
-          scheduled_workout_id: Number(occurrenceId), workout_id: Number(workoutId), date: operation.date }),
+        method: 'PUT', body: JSON.stringify(toConnectorReschedulePayload(operation, workoutId, occurrenceId)),
       });
       const body = await readJson(response);
       const after = currentState();
@@ -620,9 +627,7 @@ async function runOperation(db, fetchImpl, config, operation, currentTraining, o
       activeStage = 'reschedule';
       update.run('scheduling', activeStage, workoutId, occurrenceId, null, operation.operationId, operation.ownerId);
       const response = await remoteRequest(`/workouts/schedule/${encodeURIComponent(occurrenceId)}`, {
-        method: 'PUT', body: JSON.stringify({ operation_id: operation.operationId,
-          source_operation_id: source.operation_id,
-          scheduled_workout_id: Number(occurrenceId), workout_id: Number(workoutId), date: operation.date }),
+        method: 'PUT', body: JSON.stringify(toConnectorReschedulePayload(operation, workoutId, occurrenceId)),
       });
       const body = await readJson(response);
       const after = currentState();
@@ -674,4 +679,5 @@ async function runOperation(db, fetchImpl, config, operation, currentTraining, o
   }
 }
 
-module.exports = { createGarminProduct, runOperation, safeCode, toConnectorPayload, connectorTarget };
+module.exports = { createGarminProduct, runOperation, safeCode, toConnectorPayload,
+  toConnectorUpdatePayload, toConnectorReschedulePayload, connectorTarget };

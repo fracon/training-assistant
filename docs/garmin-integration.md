@@ -136,6 +136,41 @@ missing or conflicting, the operation is refused as uncertain/invalid rather
 than adopting a remote artifact or deleting data. No journal migration deletes
 or rewrites existing records preemptively.
 
+When one product update changes both structure and date, Node deliberately
+sends the same stable product `operation_id` to the update and reschedule
+endpoints, with the same source operation and workout/occurrence binding. The
+connector represents that as one completed `artifact_kind: "composite"` root
+with separate `steps.update` and `steps.reschedule` records. Each step keeps
+its own fingerprint and completion evidence; the root fingerprint is derived
+from both step fingerprints. The existing `update:<UUID>` and
+`reschedule:<UUID>` records remain the per-step idempotency journals. This
+avoids UUID churn while preventing the two different payload fingerprints
+from colliding. Composite operations are valid provenance sources only after
+both steps are confirmed. Follow-up update/reschedule calls still prove the
+workout and exact occurrence independently.
+
+The connector validates the prospective composite identity before dispatching
+the reschedule mutation. If the update alias, source operation, workout,
+occurrence, or per-step fingerprint conflicts, it refuses before touching the
+remote calendar. A pending reschedule is persisted before dispatch. If the
+remote date changes but its response or final journal write is lost, retry
+reads that exact occurrence: the target workout/date confirms the reschedule
+and completes the composite without repeating the mutation; the previous date
+permits the same journaled mutation to continue; any other/divergent state
+remains uncertain. An update whose response is lost is similarly reconciled
+from its step marker and workout read before rescheduling can begin. These
+steps are not a distributed transaction and do not claim remote rollback.
+
+For the branch's exact legacy failure shape (completed UUID update alias plus
+`reschedule:<UUID>` pending with the expected fingerprint, where Garmin may
+already show the target date), the same reschedule request can repair the
+root into a composite after confirming workout ID, occurrence ID and target
+civil date. It records completion without resending a reschedule when that
+date is already present. If the source journal, occurrence proof, or pending
+fingerprint does not match, the connector leaves the old journal intact and
+returns a sanitized conflict/uncertain result; it does not infer ownership
+from the name or numeric IDs, discard tokens, or clear the journal.
+
 Node persists the concrete in-flight stage before each remote mutation. An
 update failure remains at `update` or `update_confirmation`; a following
 reschedule remains at `reschedule`. Reconciliation reuses the same operation
@@ -348,21 +383,23 @@ Garmin local-tool and CLI coverage command ran 130 tests (93.15% statements/line
 89.96% branches, 87.69% functions overall); its `src/garmin/product.js` scope
 is 100% in all four metrics, while the interactive local scripts are reported
 at 87.73% statements/lines, 74.79% branches, and 78.94% functions. The Python
-connector suite has 55 tests; `app/main.py` has 86.93% line coverage and 70.23%
+connector suite has 61 tests; `app/main.py` has 87.47% line coverage and 71.71%
 branch coverage. Python and local CLI coverage are separate from
 the Node backend gate and are not asserted as 100%. Browser tests use a
 simulated connector. None of those checks establishes live account behavior
 beyond the owner-reported evidence below.
 
-For this correction, both versioned images were rebuilt and an isolated
-container smoke test used a temporary SQLite directory, private Garmin volume,
-and synthetic runtime secrets. It verified Compose configuration, Node startup
-and login-page access, Node-to-Python private health, rejection of an invalid
-internal key (401), absence of published Python ports and a Python SQLite
-mount, continued Node page service while Python was stopped, and private health
-again after restarting Python. The isolated Compose project and its volume were
-removed afterward. This smoke test did not authenticate to Garmin or perform a
-workout operation.
+For this correction, both versioned images were rebuilt. An isolated
+Node-to-connector smoke used a temporary SQLite database, private Garmin
+volume, and synthetic runtime secrets. The real Node worker called the real
+Python update and reschedule endpoints with the same product operation ID;
+the connector Garmin client was replaced only at the simulated transport
+boundary. It observed one update and one reschedule, a completed composite
+journal with both step records, and the target date. After restarting the
+connector, a new Node process read the same encrypted journal and synthetic
+remote state. The isolated network, containers, and volume were removed.
+This smoke made no Garmin or OpenAI calls and does not establish live account
+behavior.
 Contract tests use the actual pinned Garmin wrapper/signatures and enums with
 transport/authentication patched; Python sockets are blocked. They do not
 establish live Garmin or Forerunner behavior.
