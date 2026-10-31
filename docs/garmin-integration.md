@@ -304,9 +304,13 @@ OpenAI calls.
 The complete Node suite passes, but the serial coverage gate currently fails:
 the moved product adapter has 100% statements, functions, and lines, while its
 branch coverage is 92.5%. The workout contract is at 100% in all four metrics.
-This is a blocking verification gap, not a passing gate. Connector, Garmin CLI,
-and browser results are reported separately. None of those checks establishes
-live account behavior beyond the owner-reported evidence below.
+This is a blocking verification gap, not a passing gate. The focused Node
+product/converter suite has 74 tests; the CLI/configuration suite has 30 tests
+and 87.73% statements/lines, 74.79% branches, and 78.94% functions. The Python
+connector suite has 49 tests; `app/main.py` has 85.0% line coverage, 67.72%
+branch coverage, and 80.19% combined coverage. Browser tests use a simulated
+connector and are reported separately. None of those checks establishes live
+account behavior beyond the owner-reported evidence below.
 Contract tests use the actual pinned Garmin wrapper/signatures and enums with
 transport/authentication patched; Python sockets are blocked. They do not
 establish live Garmin or Forerunner behavior.
