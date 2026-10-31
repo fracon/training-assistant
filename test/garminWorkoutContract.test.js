@@ -23,6 +23,23 @@ test('prescription validation preserves structured repeat order and preview', ()
   assert.equal(MAX_STEPS, 80);
 });
 
+test('version 3 requires explicit recovery for repeat groups and counts the selected final recovery policy', () => {
+  const prescription = sample();
+  prescription.version = 3;
+  prescription.steps[1].skip_last_rest_step = true;
+  const validated = validatePrescription(prescription);
+  const preview = previewPrescription(validated);
+  assert.equal(validated.version, 3);
+  assert.equal(preview.total_time_seconds, 600 + (300 * 4) + (120 * 3) + 600);
+  assert.equal(preview.expanded_step_count, 1 + 1 + 4 + 3 + 1);
+  prescription.steps[1].skip_last_rest_step = false;
+  assert.equal(previewPrescription(prescription).total_time_seconds, 600 + (300 * 4) + (120 * 4) + 600);
+  // Keep the legacy v2 shape valid so this reaches the v3 required-recovery rule.
+  prescription.steps[1].skip_last_rest_step = true;
+  delete prescription.steps[1].recovery;
+  assert.throws(() => validatePrescription(prescription), GarminWorkoutContractError);
+});
+
 test('repeat preview preserves recovery prescription and final recovery policy', () => {
   const prescription = sample();
   prescription.steps[1].skip_last_rest_step = true;
@@ -108,7 +125,7 @@ test('version 2 rejects malformed identity, step shape, repeat bounds and aggreg
   const cases = [
     null,
     [],
-    { version: 3, sport: 'running', name: 'wrong version', steps: [run()] },
+    { version: 4, sport: 'running', name: 'wrong version', steps: [run()] },
     { version: 2, sport: 'cycling', name: 'wrong sport', steps: [run()] },
     { version: 2, sport: 'running', name: 7, steps: [run()] },
     { version: 2, sport: 'running', name: 'x'.repeat(33), steps: [run()] },

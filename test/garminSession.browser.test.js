@@ -21,7 +21,7 @@ const freePort = async () => {
   const port = server.address().port; await new Promise((resolve) => server.close(resolve)); return port;
 };
 
-test('Garmin workout editor saves a faithful v2 sequence without remote mutation in PT/EN desktop and mobile Chrome', async (t) => {
+test('Garmin workout editor edits incomplete drafts and saves a faithful v3 sequence without remote mutation in PT/EN desktop and mobile Chrome', async (t) => {
   assert.ok(chrome, 'Chrome is required for Garmin UI verification.');
   const db = createDatabase({ filename: ':memory:' });
   const owner = await registerUser(db, { email: 'garmin-ui@example.test', password: 'Synthetic-only-1', first_name: 'Test', last_name: 'Runner' });
@@ -78,11 +78,18 @@ test('Garmin workout editor saves a faithful v2 sequence without remote mutation
       const shot = await command('Page.captureScreenshot', { format: 'png' });
       require('node:fs').writeFileSync(filename, Buffer.from(shot.data, 'base64'));
     };
+    const captureEditorState = async (selector, filename) => {
+      await evaluate(`document.querySelector(${JSON.stringify(selector)})?.scrollIntoView({block:'center'})`);
+      await delay(80);
+      const shot = await command('Page.captureScreenshot', { format: 'png' });
+      require('node:fs').writeFileSync(filename, Buffer.from(shot.data, 'base64'));
+    };
     await command('Network.enable'); await command('Network.setCookie', { name: SESSION_COOKIE_NAME, value: createSession(db, owner.id).token, url: baseUrl });
     await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
     await command('Page.navigate', { url: `${baseUrl}/training-result.html?id=1` });
-    const wait = async (expression) => { for (let i = 0; i < 150; i += 1) { if (await evaluate(expression).catch(() => false)) return; await delay(100); } const diagnostic = await evaluate("JSON.stringify({title:document.getElementById('garminTitle')?.textContent,card:document.getElementById('garminSessionCard')?.hidden,date:document.getElementById('sessionDate')?.textContent,blocks:[...document.querySelectorAll('#garminWorkoutEditor [data-end-value]')].map(el=>[el.dataset.endValue,el.value]),operation:document.getElementById('garminOperationStatus')?.textContent,preview:document.getElementById('garminPreview')?.hidden,errors:[...document.querySelectorAll('[role=alert]')].map(el=>el.textContent)})").catch(()=>'none'); throw new Error(`Timed out waiting for ${expression}; ${diagnostic}; responses=${prescriptionResponses}`); };
+    const wait = async (expression) => { for (let i = 0; i < 150; i += 1) { if (await evaluate(expression).catch(() => false)) return; await delay(100); } const diagnostic = await evaluate("JSON.stringify({title:document.getElementById('garminTitle')?.textContent,card:document.getElementById('garminSessionCard')?.hidden,date:document.getElementById('sessionDate')?.textContent,blocks:[...document.querySelectorAll('#garminWorkoutEditor [data-end-value]')].map(el=>[el.dataset.endValue,el.value]),invalid:[...document.querySelectorAll('[aria-invalid=true]')].map(el=>[el.outerHTML.slice(0,250),el.value]),operation:document.getElementById('garminOperationStatus')?.textContent,preview:document.getElementById('garminPreview')?.hidden,errors:[...document.querySelectorAll('[role=alert]')].map(el=>el.textContent)})").catch(()=>'none'); throw new Error(`Timed out waiting for ${expression}; ${diagnostic}; responses=${prescriptionResponses}`); };
     await wait("document.getElementById('sessionDate')?.textContent.trim() !== '-' && !document.getElementById('garminSessionCard').hidden && document.querySelector('#garminRunBlocks .garmin-editor-block')");
+    assert.equal(await evaluate("[...document.querySelectorAll('#garminWorkoutEditor button[data-editor-action],#garminAddRunBlock,#garminAddRecoveryBlock,#garminAddRepeatBlock')].every(button=>button.type==='button')"), true, 'editor controls cannot submit the form');
     assert.equal(await evaluate("document.querySelector('[data-end-type=\\\"step-run-1\\\"]')?.value"), 'time');
     assert.equal(await evaluate("document.querySelector('#garminRunBlocks [data-editor-action=remove]').disabled"), true, 'the editor keeps one run block');
     assert.equal(await evaluate("!document.getElementById('fitFile').disabled"), true);
@@ -92,15 +99,43 @@ test('Garmin workout editor saves a faithful v2 sequence without remote mutation
     // This catches action IDs being read from the wrong data attribute.
     await evaluate("document.getElementById('garminAddRunBlock').click();document.getElementById('garminAddRunBlock').click()");
     await evaluate("[...document.querySelectorAll('#garminRunBlocks [data-end-value]')].forEach((input,index)=>{input.value=['10:00','20:00','30:00'][index];input.dispatchEvent(new Event('input',{bubbles:true}))})");
+    const beforeInvalidTargetRemoval = await evaluate("[...document.querySelectorAll('#garminRunBlocks .garmin-editor-block')].map((block)=>block.dataset.blockId)");
+    await evaluate("(()=>{const block=document.querySelectorAll('#garminRunBlocks .garmin-editor-block')[1];const type=block.querySelector('[data-target-type]');type.value='heart_rate';type.dispatchEvent(new Event('change',{bubbles:true}));block.querySelector('[data-editor-action=remove]').click()})()");
+    assert.deepEqual(await evaluate("[...document.querySelectorAll('#garminRunBlocks .garmin-editor-block')].map((block)=>block.dataset.blockId)"), [beforeInvalidTargetRemoval[0], beforeInvalidTargetRemoval[2]], 'removing a block does not validate an incomplete heart-rate target');
+    assert.deepEqual(await evaluate("[...document.querySelectorAll('#garminRunBlocks .garmin-editor-block [data-end-value]')].map((input)=>input.value)"), ['10:00', '30:00'], 'other draft blocks remain unchanged');
+    await evaluate("document.getElementById('garminAddRunBlock').click();(()=>{const input=[...document.querySelectorAll('#garminRunBlocks [data-end-value]')].at(-1);input.value='20:00';input.dispatchEvent(new Event('input',{bubbles:true}))})()");
+    await evaluate("document.querySelectorAll('#garminRunBlocks [data-editor-action=up]')[2].click()");
+    const incompleteTargetDuplicate = await evaluate("(()=>{const original=document.querySelectorAll('#garminRunBlocks .garmin-editor-block')[1];const target=original.querySelector('[data-target-type]');target.value='heart_rate';target.dispatchEvent(new Event('change',{bubbles:true}));original.querySelector('[data-editor-action=duplicate]').click();const copy=document.querySelectorAll('#garminRunBlocks .garmin-editor-block')[2];return {count:document.querySelectorAll('#garminRunBlocks .garmin-editor-block').length,ids:[original.dataset.blockId,copy.dataset.blockId],type:copy.querySelector('[data-target-type]').value,required:copy.querySelector('[data-target-lower]').required,value:copy.querySelector('[data-target-lower]').value}})()");
+    assert.equal(incompleteTargetDuplicate.count, 4);
+    assert.notEqual(incompleteTargetDuplicate.ids[0], incompleteTargetDuplicate.ids[1]);
+    assert.equal(incompleteTargetDuplicate.type, 'heart_rate');
+    assert.equal(incompleteTargetDuplicate.required, true);
+    assert.equal(incompleteTargetDuplicate.value, '');
+    await evaluate("document.querySelectorAll('#garminRunBlocks [data-editor-action=remove]')[2].click();const select=document.querySelectorAll('#garminRunBlocks [data-target-type]')[1];select.value='none';select.dispatchEvent(new Event('change',{bubbles:true}))");
+    const paceTarget = await evaluate("(()=>{const block=document.querySelectorAll('#garminRunBlocks .garmin-editor-block')[0];const select=block.querySelector('[data-target-type]');select.value='pace';select.dispatchEvent(new Event('change',{bubbles:true}));return {lower:block.querySelector('[data-target-lower]').closest('label').textContent,upper:block.querySelector('[data-target-upper]').closest('label').textContent,lowerType:block.querySelector('[data-target-lower]').type,unit:block.querySelector('[data-target-lower]').getAttribute('aria-label')}})()");
+    assert.match(paceTarget.lower, /slower pace|ritmo mais lento/i);
+    assert.match(paceTarget.upper, /faster pace|ritmo mais rápido/i);
+    assert.equal(paceTarget.lowerType, 'text');
+    assert.doesNotMatch(paceTarget.lower + paceTarget.upper + paceTarget.unit, /bpm|frequência cardíaca/i);
+    const targetModes = await evaluate("(()=>{const block=document.querySelector('#garminRunBlocks .garmin-editor-block');const select=block.querySelector('[data-target-type]');const lower=block.querySelector('[data-target-lower]');const upper=block.querySelector('[data-target-upper]');select.value='heart_rate';select.dispatchEvent(new Event('change',{bubbles:true}));const hr={type:lower.type,label:lower.getAttribute('aria-label'),required:lower.required,min:lower.min,step:lower.step};select.value='pace';select.dispatchEvent(new Event('change',{bubbles:true}));const pace={type:lower.type,label:lower.getAttribute('aria-label'),placeholder:lower.placeholder,upper:upper.placeholder,required:lower.required,value:lower.value};select.value='none';select.dispatchEvent(new Event('change',{bubbles:true}));return {hr,pace,none:{hidden:block.querySelector('[data-target-fields]').hidden,required:lower.required,lower:lower.value,upper:upper.value}}})()");
+    assert.equal(targetModes.hr.type, 'number'); assert.match(targetModes.hr.label, /heart rate|frequência cardíaca/i); assert.equal(targetModes.hr.required, true); assert.equal(targetModes.hr.min, '40'); assert.equal(targetModes.hr.step, '1');
+    assert.equal(targetModes.pace.type, 'text'); assert.match(targetModes.pace.label, /pace|ritmo/i); assert.match(targetModes.pace.placeholder, /^\d+:\d{2}$/); assert.equal(targetModes.pace.required, true); assert.equal(targetModes.pace.value, '');
+    assert.deepEqual(targetModes.none, { hidden: true, required: false, lower: '', upper: '' });
+    const targetCaptureLang = await evaluate('document.documentElement.lang');
+    const targetCapturePrefix = targetCaptureLang === 'pt-BR' ? 'pt' : 'en';
+    await evaluate("(()=>{const select=document.querySelector('#garminRunBlocks .garmin-editor-block [data-target-type]');select.value='heart_rate';select.dispatchEvent(new Event('change',{bubbles:true}))})()");
+    await captureEditorState('#garminRunBlocks .garmin-editor-block', `/tmp/kinesis-garmin-editor-${targetCapturePrefix}-desktop-heart-rate.png`);
+    await evaluate("(()=>{const select=document.querySelector('#garminRunBlocks .garmin-editor-block [data-target-type]');select.value='pace';select.dispatchEvent(new Event('change',{bubbles:true}))})()");
+    await captureEditorState('#garminRunBlocks .garmin-editor-block', `/tmp/kinesis-garmin-editor-${targetCapturePrefix}-desktop-pace.png`);
+    await evaluate("(()=>{const select=document.querySelector('#garminRunBlocks .garmin-editor-block [data-target-type]');select.value='none';select.dispatchEvent(new Event('change',{bubbles:true}))})()");
     const runOrder = () => evaluate("[...document.querySelectorAll('#garminRunBlocks .garmin-editor-block [data-end-value]')].map((input)=>input.value)");
     assert.deepEqual(await runOrder(), ['10:00', '20:00', '30:00']);
     const idsBeforeInvalidAction = await evaluate("[...document.querySelectorAll('#garminRunBlocks .garmin-editor-block')].map((block)=>block.dataset.blockId)");
     await evaluate("(()=>{const input=document.querySelectorAll('#garminRunBlocks [data-end-value]')[1];input.value='invalid';input.dispatchEvent(new Event('input',{bubbles:true}));document.querySelectorAll('#garminRunBlocks [data-editor-action=up]')[1].click()})()");
-    assert.deepEqual(await evaluate("[...document.querySelectorAll('#garminRunBlocks .garmin-editor-block')].map((block)=>block.dataset.blockId)"), idsBeforeInvalidAction, 'invalid drafts block rerendering actions instead of losing content');
-    assert.equal(await evaluate("document.activeElement.getAttribute('aria-invalid')"), 'true');
-    assert.equal(await evaluate("document.querySelectorAll('#garminRunBlocks [data-end-value]')[1].value"), 'invalid');
-    await evaluate("(()=>{const input=document.querySelectorAll('#garminRunBlocks [data-end-value]')[1];input.value='20:00';input.dispatchEvent(new Event('input',{bubbles:true}))})()");
-    await evaluate("(()=>{const b=document.querySelectorAll('#garminRunBlocks [data-editor-action=up]')[1];b.innerHTML='<span aria-hidden=\"true\">↑</span>';b.querySelector('span').click()})()");
+    assert.deepEqual(await evaluate("[...document.querySelectorAll('#garminRunBlocks .garmin-editor-block')].map((block)=>block.dataset.blockId)"), [idsBeforeInvalidAction[1], idsBeforeInvalidAction[0], ...idsBeforeInvalidAction.slice(2)], 'invalid drafts can be reordered without losing content');
+    assert.equal(await evaluate("document.querySelectorAll('#garminRunBlocks [data-end-value]')[0].value"), 'invalid');
+    await evaluate("(()=>{const input=document.querySelectorAll('#garminRunBlocks [data-end-value]')[0];input.value='20:00';input.dispatchEvent(new Event('input',{bubbles:true}))})()");
+    await evaluate("(()=>{const b=document.querySelectorAll('#garminRunBlocks [data-editor-action=down]')[0];b.innerHTML='<span aria-hidden=\"true\">↓</span>';b.querySelector('span').click();document.querySelectorAll('#garminRunBlocks [data-editor-action=up]')[1].click()})()");
     assert.deepEqual(await runOrder(), ['20:00', '10:00', '30:00']);
     assert.equal(await evaluate("document.activeElement.closest('.garmin-editor-block')?.dataset.blockId===document.querySelector('#garminRunBlocks .garmin-editor-block').dataset.blockId"), true);
     await evaluate("document.querySelector('#garminRunBlocks [data-editor-action=down]').click()");
@@ -136,14 +171,17 @@ test('Garmin workout editor saves a faithful v2 sequence without remote mutation
     await evaluate("document.getElementById('garminWarmupEnabled').click()");
     await evaluate("document.querySelector('[data-end-type=warmup]').value='distance';document.querySelector('[data-end-type=warmup]').dispatchEvent(new Event('change',{bubbles:true}));document.querySelector('[data-end-value=warmup]').value='1.5';document.querySelector('[data-target-type=warmup]').value='pace';document.querySelector('[data-target-type=warmup]').dispatchEvent(new Event('change',{bubbles:true}));document.querySelector('[data-target-lower=warmup]').value='6:00';document.querySelector('[data-target-upper=warmup]').value='5:30'");
     await evaluate("document.querySelector('[data-end-value=step-run-1]').value='10:00';document.querySelector('[data-target-type=step-run-1-target]').value='heart_rate';document.querySelector('[data-target-type=step-run-1-target]').dispatchEvent(new Event('change',{bubbles:true}));document.querySelector('[data-target-lower=step-run-1-target]').value='130';document.querySelector('[data-target-upper=step-run-1-target]').value='145'");
-    await evaluate("document.getElementById('garminAddRepeatBlock').click();document.querySelector('#garminRunBlocks [data-repetitions]').value='2'");
+    await evaluate("document.getElementById('garminAddRepeatBlock').click();document.querySelector('#garminRunBlocks [data-repetitions]').value='2';document.getElementById('garminPrescriptionForm').requestSubmit()");
+    await captureEditorState('#garminRunBlocks [data-repetitions]', `/tmp/kinesis-garmin-editor-${targetCapturePrefix}-desktop-repeat-recovery.png`);
+    assert.equal(prescriptionRequests.length, 0, 'incomplete required recovery is rejected before a prescription save');
+    assert.match(await evaluate("document.activeElement.dataset.endValue || ''"), /-recovery$/);
+    await evaluate("document.querySelector('[data-end-value$=\\\"-recovery\\\"]').value='02:00';document.querySelector('[data-end-value$=\\\"-recovery\\\"]').dispatchEvent(new Event('input',{bubbles:true}))");
     await evaluate("document.getElementById('garminAddRunBlock').click()");
     await evaluate("document.getElementById('garminCooldownEnabled').click();document.querySelector('[data-end-value=cooldown]').value='05:00'");
     await evaluate("document.getElementById('garminPrescriptionForm').requestSubmit()");
     await wait("!document.getElementById('garminPreview').hidden");
-    assert.equal(await evaluate("getComputedStyle(document.querySelector('[data-recovery-enabled]').closest('label')).display"), 'flex');
     const saved = JSON.parse(db.prepare('SELECT prescription_json FROM garmin_workout_prescriptions WHERE training_id=1').get().prescription_json);
-    assert.equal(saved.version, 2);
+    assert.equal(saved.version, 3);
     assert.equal(saved.steps[0].kind, 'warmup');
     assert.deepEqual(saved.steps[0].end, { type: 'distance', value: 1500 });
     assert.deepEqual(saved.steps[0].target, { type: 'pace', unit: 'min_per_km', slower_seconds: 360, faster_seconds: 330 });
@@ -155,7 +193,7 @@ test('Garmin workout editor saves a faithful v2 sequence without remote mutation
     assert.equal(remoteCalls.filter((url) => url.endsWith('/workouts') || url.endsWith('/workouts/schedule')).length, 0, 'save/review never calls Garmin mutations');
     assert.equal(db.prepare('SELECT COUNT(*) AS count FROM garmin_training_operations').get().count, 0);
     const requestsBeforeInvalid = prescriptionRequests.length;
-    await evaluate("document.querySelector('[data-recovery-enabled]').click();document.querySelector('[data-end-value$=\\\"-recovery\\\"]').value='00:00';document.getElementById('garminPrescriptionForm').requestSubmit()");
+    await evaluate("document.querySelector('[data-end-value$=\\\"-recovery\\\"]').value='00:00';document.getElementById('garminPrescriptionForm').requestSubmit()");
     assert.equal(await evaluate("document.getElementById('garminPrescriptionSave').disabled"), false, 'validation failure releases the save control');
     assert.equal(prescriptionRequests.length, requestsBeforeInvalid, 'invalid active recovery is rejected before saving');
     assert.equal(await evaluate("document.activeElement.getAttribute('aria-invalid')"), 'true');
@@ -219,6 +257,14 @@ test('Garmin workout editor saves a faithful v2 sequence without remote mutation
     await captureGarminCard('/tmp/kinesis-garmin-editor-en-mobile-bottom.png', 'bottom');
     await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
     await evaluate("document.getElementById('garminSessionCard').scrollIntoView({block:'start'})");
+    await command('Emulation.setDeviceMetricsOverride', { width: 640, height: 450, deviceScaleFactor: 2, mobile: false });
+    const zoomed = await evaluate("({width:innerWidth,scrollWidth:document.documentElement.scrollWidth})");
+    assert.equal(zoomed.width, 640, 'a 1280px viewport at 200% is checked at its 640 CSS-pixel layout width');
+    assert.ok(zoomed.scrollWidth <= zoomed.width, 'the editor does not overflow horizontally at the 200% equivalent layout width');
+    const zoomShot = await command('Page.captureScreenshot', { format: 'png' });
+    require('node:fs').writeFileSync('/tmp/kinesis-garmin-editor-pt-200-percent-layout.png', Buffer.from(zoomShot.data, 'base64'));
+    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+    await evaluate("document.getElementById('garminSessionCard').scrollIntoView({block:'start'})");
     assert.equal(await evaluate("document.querySelector('[data-end-type=warmup]').value"), 'distance');
     assert.equal(await evaluate("document.querySelector('[data-end-value=step-run-1]').value"), '10:00');
     await evaluate("document.querySelector('.lang-switch [data-lang=\\\"pt-BR\\\"]').click()"); await wait("document.documentElement.lang==='pt-BR'");
@@ -232,6 +278,27 @@ test('Garmin workout editor saves a faithful v2 sequence without remote mutation
     assert.equal(await evaluate("document.querySelectorAll('#garminRunBlocks .garmin-editor-block').length"), blocksAtLimit, 'over-limit duplicate preserves existing content');
     assert.match(await evaluate("document.getElementById('garminEditorActionStatus').textContent"), /limite de etapas|step limit/i);
     assert.equal(prescriptionRequests.length, requestCountAfterReload + 1, 'limit feedback does not save');
+
+    const legacyWithoutRecovery = { version: 2, sport: 'running', name: 'Legacy repeats', steps: [
+      { id: 'before', kind: 'run', end: { type: 'time', value: 300 }, target: { type: 'none' } },
+      { id: 'legacy-repeat', kind: 'repeat', repetitions: 3, skip_last_rest_step: true,
+        interval: { end: { type: 'time', value: 60 }, target: { type: 'heart_rate', mode: 'absolute', lower_bpm: 120, upper_bpm: 140 } } },
+      { id: 'after', kind: 'run', end: { type: 'distance', value: 500 }, target: { type: 'none' } },
+    ] };
+    db.prepare('UPDATE garmin_workout_prescriptions SET revision=revision+1,prescription_json=?,fingerprint=? WHERE training_id=1')
+      .run(JSON.stringify(legacyWithoutRecovery), prescriptionFingerprint(legacyWithoutRecovery));
+    await command('Page.reload');
+    await wait("document.querySelector('[data-editor-action=convert-repeat]') && document.querySelector('[data-end-value=\\\"step-legacy-repeat-recovery\\\"]')");
+    assert.equal(await evaluate("document.querySelector('[data-end-value=\\\"step-legacy-repeat-recovery\\\"]').value"), '', 'legacy recovery is never invented');
+    assert.ok(await evaluate("document.querySelector('.garmin-editor-warning')?.textContent.includes('Convert') || document.querySelector('.garmin-editor-warning')?.textContent.includes('converta')"));
+    await evaluate("document.querySelector('[data-editor-action=convert-repeat]').click()");
+    const convertedLegacy = await evaluate("({ids:[...document.querySelectorAll('#garminRunBlocks .garmin-editor-block')].map(block=>block.dataset.blockId),ends:[...document.querySelectorAll('#garminRunBlocks .garmin-editor-block [data-end-value]')].map(input=>input.value),targets:[...document.querySelectorAll('#garminRunBlocks .garmin-editor-block [data-target-type]')].map(input=>input.value),lower:[...document.querySelectorAll('#garminRunBlocks .garmin-editor-block [data-target-lower]')].map(input=>input.value)})");
+    assert.equal(convertedLegacy.ids.length, 5);
+    assert.equal(new Set(convertedLegacy.ids).size, 5);
+    assert.equal(await evaluate("document.querySelectorAll('#garminRunBlocks [data-repetitions]').length"), 0);
+    assert.deepEqual(convertedLegacy.ends, ['5:00', '1:00', '1:00', '1:00', '0.5']);
+    assert.deepEqual(convertedLegacy.targets, ['none', 'heart_rate', 'heart_rate', 'heart_rate', 'none']);
+    assert.deepEqual(convertedLegacy.lower, ['', '120', '120', '120', '']);
   } finally {
     socket?.close();
     const chromeExit = child.exitCode !== null ? Promise.resolve() : once(child, 'exit').catch(() => {});

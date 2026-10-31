@@ -561,6 +561,16 @@ test('structured v2 connector payload preserves every ordered block and optional
   assert.equal(Object.hasOwn(payload.steps[2], 'recovery'), false);
 });
 
+test('structured v3 connector payload preserves required equal-repeat recovery as a distinct contract', () => {
+  const prescription = { version: 3, sport: 'running', name: 'Equal repeats', steps: [
+    { id: 'run', kind: 'repeat', repetitions: 3, skip_last_rest_step: false,
+      interval: { end: { type: 'time', value: 180 }, target: { type: 'none' } },
+      recovery: { end: { type: 'distance', value: 100 }, target: { type: 'heart_rate', mode: 'absolute', lower_bpm: 100, upper_bpm: 120 } } },
+  ] };
+  const payload = toConnectorPayload({ operationId: 'op-v3', prescription });
+  assert.deepEqual(payload, { operation_id: 'op-v3', version: 3, name: 'Equal repeats', steps: prescription.steps });
+});
+
 test('MFA challenge is bound to the Kinesis login session and cancellation rejects another session', async () => {
   const db = createDatabase({ filename: ':memory:' }); const remotePaths = [];
   const app = await buildServer({ db, sessionCookieSecure: false,
@@ -1340,7 +1350,7 @@ test('publish clicks with the same confirmed snapshot return one durable operati
   await h.close();
 });
 
-test('publishing a saved version 2 prescription persists converter version 2 on the operation', async () => {
+test('publishing a saved version 3 prescription persists converter version 3 on the operation', async () => {
   const remoteCalls = [];
   const h = await productApiHarness({ garminFetch: async (url, init) => {
     remoteCalls.push({ url, method: init.method });
@@ -1350,7 +1360,7 @@ test('publishing a saved version 2 prescription persists converter version 2 on 
     if (url.endsWith('/workouts/schedule')) return Response.json({ scheduled: true, scheduled_workout_id: 771 });
     return Response.json({ status: 'disconnected' });
   } });
-  const prescription = { version: 2, sport: 'running', name: 'Mixed intervals', steps: [
+  const prescription = { version: 3, sport: 'running', name: 'Mixed intervals', steps: [
     { id: 'warmup', kind: 'warmup', end: { type: 'time', value: 300 }, target: { type: 'none' } },
     { id: 'run', kind: 'run', end: { type: 'distance', value: 1000 }, target: { type: 'none' } },
   ] };
@@ -1364,7 +1374,7 @@ test('publishing a saved version 2 prescription persists converter version 2 on 
   assert.equal(response.statusCode, 202);
   await new Promise((resolve) => setImmediate(resolve));
   const operation = h.db.prepare('SELECT converter_version,status,workout_id,occurrence_id FROM garmin_training_operations WHERE operation_id=?').get(response.json().operation_id);
-  assert.deepEqual(operation, { converter_version: 2, status: 'scheduled', workout_id: '421', occurrence_id: '771' });
+  assert.deepEqual(operation, { converter_version: 3, status: 'scheduled', workout_id: '421', occurrence_id: '771' });
   assert.equal(remoteCalls.filter((call) => call.url.endsWith('/workouts')).length, 1);
   assert.equal(remoteCalls.filter((call) => call.url.endsWith('/workouts/schedule')).length, 1);
   await h.close();

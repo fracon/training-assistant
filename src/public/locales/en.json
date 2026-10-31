@@ -733,7 +733,7 @@
       "warmup": "Warm-up (minutes)",
       "repetitions": "Intervals",
       "interval": "Run (minutes)",
-      "endCondition": "Main step ends by",
+      "endCondition": "Ends by",
       "byTime": "Time",
       "byDistance": "Distance",
       "runMinutes": "Run (minutes)",
@@ -804,7 +804,6 @@
       "runBlock": "Run block",
       "repeatBlock": "Repeat group",
       "repetitionCount": "Repetitions",
-      "includeRecovery": "Include recovery between repetitions",
       "duplicateBlock": "Duplicate",
       "removeBlock": "Remove",
       "moveUp": "Move up",
@@ -820,7 +819,16 @@
       "saveHelp": "Saves the workout in Kinesis for review. Sending it to Garmin happens in the next step.",
       "publishFailed": "The workout could not be published to Garmin Connect.",
       "updateFailed": "The workout could not be updated in Garmin Connect.",
-      "rescheduleFailed": "The workout could not be rescheduled in Garmin Connect."
+      "rescheduleFailed": "The workout could not be rescheduled in Garmin Connect.",
+      "recoveryBlock": "Recovery",
+      "paceShort": "Pace",
+      "heartRateShort": "Heart rate",
+      "slowerPaceUnit": "Slower pace (min/{unit})",
+      "fasterPaceUnit": "Faster pace (min/{unit})",
+      "repeatRun": "Run interval",
+      "repeatRecovery": "Recovery",
+      "legacyRepeatRecoveryRequired": "This older group has no recovery defined. Add a positive recovery or convert the repetitions to simple blocks.",
+      "convertRepeatToBlocks": "Convert to simple blocks"
     }
   },
   "terrain": {

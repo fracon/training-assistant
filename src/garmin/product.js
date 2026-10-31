@@ -342,7 +342,7 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
           (operation_id, user_id, training_id, connection_generation, prescription_revision, fingerprint, converter_version, status, stage, scheduled_date, action, source_operation_id, workout_id, occurrence_id)
           VALUES (?, ?, ?, ?, ?, ?, ?, 'publishing', ?, ?, ?, ?, ?, ?)`)
           .run(operationId, request.user.id, training.id, generation, saved.revision, saved.fingerprint,
-            JSON.parse(saved.prescription_json).version === 2 ? 2 : 1,
+          [2, 3].includes(JSON.parse(saved.prescription_json).version) ? JSON.parse(saved.prescription_json).version : 1,
             action === 'publish' ? 'publish' : action, training.dia, action, sourceOperationId,
             sourceOperation?.workout_id || null, sourceOperation?.occurrence_id || null);
         if (!inserted.changes) {
@@ -448,8 +448,8 @@ function connectorTarget(target) {
 
 function toConnectorPayload(operation) {
   const valid = validatePrescription(operation.prescription);
-  if (valid.version === 2) {
-    return { operation_id: operation.operationId, version: 2, name: valid.name,
+  if (valid.version === 2 || valid.version === 3) {
+    return { operation_id: operation.operationId, version: valid.version, name: valid.name,
       steps: structuredClone(valid.steps) };
   }
   const ordered = valid.steps;

@@ -142,9 +142,16 @@ function validateV2Prescription(value) {
   return { version: 2, sport: 'running', name, steps };
 }
 
+function validateV3Prescription(value) {
+  const legacy = validateV2Prescription({ ...value, version: 2 });
+  if (legacy.steps.some((step) => step.kind === 'repeat' && !step.recovery)) fail();
+  return { ...legacy, version: 3 };
+}
+
 function validatePrescription(value) {
   if (value?.version === 1) return validateV1Prescription(value);
   if (value?.version === 2) return validateV2Prescription(value);
+  if (value?.version === 3) return validateV3Prescription(value);
   fail();
 }
 
@@ -180,7 +187,7 @@ function prescriptionFingerprint(prescription) {
 
 function previewPrescription(prescription) {
   const valid = validatePrescription(prescription);
-  if (valid.version === 2) {
+  if (valid.version === 2 || valid.version === 3) {
     const durationComplete = valid.steps.every((step) => {
       const ends = step.kind === 'repeat' ? [step.interval.end, ...(step.recovery ? [step.recovery.end] : [])] : [step.end];
       return ends.every((end) => end.type === 'time');

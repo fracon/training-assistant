@@ -117,7 +117,7 @@ class WorkoutUpdate(WorkoutPayload):
 
 class StructuredWorkoutPayload(StrictModel):
     operation_id: uuid.UUID
-    version: Literal[2]
+    version: Literal[2, 3]
     name: str = Field(min_length=1, max_length=32)
     steps: list[dict[str, Any]] = Field(min_length=1, max_length=MAX_GARMIN_EXPANDED_STEPS)
 
@@ -192,6 +192,8 @@ def _validate_structured_workout(body: StructuredWorkoutPayload) -> list[dict[st
             _validate_v2_end(interval["end"])
             _validate_v2_target(interval["target"])
             recovery = step.get("recovery")
+            if body.version == 3 and recovery is None:
+                raise ValueError("repeat recovery is required")
             if recovery is not None:
                 if not isinstance(recovery, dict) or set(recovery) != {"end", "target"}:
                     raise ValueError("invalid repeat recovery")

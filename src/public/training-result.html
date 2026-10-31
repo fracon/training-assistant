@@ -81,7 +81,7 @@
         <div id="garminPrescriptionPanel" hidden>
           <h3 data-i18n="garmin.product.prescription">Workout structure</h3>
           <p data-i18n="garmin.product.proseNote">The original workout description stays unchanged. Confirm the structure below; it is not inferred from prose.</p>
-          <form id="garminPrescriptionForm">
+          <form id="garminPrescriptionForm" novalidate>
             <div class="field"><label for="garminWorkoutName" data-i18n="garmin.product.name">Workout name</label><input id="garminWorkoutName" class="input-control" maxlength="32" required></div>
             <div id="garminWorkoutEditor" class="garmin-workout-editor">
               <fieldset class="garmin-editor-section"><legend data-i18n="garmin.product.warmupSection">Aquecimento</legend>
@@ -99,21 +99,6 @@
                 <label class="garmin-inline-check"><input id="garminCooldownEnabled" type="checkbox"><span data-i18n="garmin.product.includeStage">Incluir etapa</span></label>
                 <div id="garminCooldownEditor" hidden></div>
               </fieldset>
-            </div>
-            <div hidden aria-hidden="true">
-            <div class="garmin-step-grid">
-              <label><span data-i18n="garmin.product.warmup">Warm-up (minutes)</span><input id="garminWarmup" type="number" step="any" min="0" max="60" value="0" class="input-control"></label>
-              <label><span data-i18n="garmin.product.repetitions">Intervals</span><input id="garminRepetitions" type="number" min="1" max="30" value="1" class="input-control"></label>
-              <label><span data-i18n="garmin.product.endCondition">Main step ends by</span><select id="garminIntervalType" class="input-control"><option value="time" data-i18n="garmin.product.byTime">Time</option><option value="distance" data-i18n="garmin.product.byDistance">Distance</option></select></label>
-              <label><span id="garminIntervalLabel" data-i18n="garmin.product.runMinutes">Run (minutes)</span><input id="garminInterval" type="number" step="any" min="1" max="120" value="30" class="input-control" required></label>
-              <label><span data-i18n="garmin.product.recovery">Recovery (minutes)</span><input id="garminRecovery" type="number" step="any" min="0" max="60" value="0" class="input-control"></label>
-              <label><span data-i18n="garmin.product.cooldown">Cool-down (minutes)</span><input id="garminCooldown" type="number" step="any" min="0" max="60" value="0" class="input-control"></label>
-            </div>
-            <label class="garmin-inline-check"><input id="garminSkipLastRest" type="checkbox" checked><span data-i18n="garmin.product.skipLastRecovery">Skip recovery after the last interval</span></label>
-            <div class="field"><label for="garminTargetType" data-i18n="garmin.product.target">Interval target</label><select id="garminTargetType" class="input-control"><option value="none" data-i18n="garmin.product.noTarget">No target</option><option value="pace" data-i18n="garmin.product.pace">Pace range (min/km)</option><option value="heart_rate" data-i18n="garmin.product.heartRate">Heart rate range (bpm)</option></select></div>
-            <div class="garmin-step-grid" id="garminTargetFields" hidden><label><span id="garminLowerLabel" data-i18n="garmin.product.lower">Lower bound</span><input id="garminLower" type="number" min="1" class="input-control"></label><label><span id="garminUpperLabel" data-i18n="garmin.product.upper">Upper bound</span><input id="garminUpper" type="number" min="1" class="input-control"></label></div>
-            <div class="field"><label for="garminRecoveryTargetType" data-i18n="garmin.product.recoveryTarget">Recovery target</label><select id="garminRecoveryTargetType" class="input-control"><option value="none" data-i18n="garmin.product.noTarget">No target</option><option value="pace" data-i18n="garmin.product.pace">Pace range</option><option value="heart_rate" data-i18n="garmin.product.heartRate">Heart rate range</option></select></div>
-            <div class="garmin-step-grid" id="garminRecoveryTargetFields" hidden><label><span id="garminRecoveryLowerLabel"></span><input id="garminRecoveryLower" type="number" min="1" class="input-control"></label><label><span id="garminRecoveryUpperLabel"></span><input id="garminRecoveryUpper" type="number" min="1" class="input-control"></label></div>
             </div>
             <p id="garminPrescriptionError" role="alert" hidden></p>
             <div class="garmin-review-actions">

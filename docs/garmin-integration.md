@@ -345,7 +345,7 @@ startup or FIT/ZIP import.
    '{{.Architecture}}'`. `scripts/deploy-zimaos.sh` pulls the existing Node image,
    builds the Python image on that host architecture, then starts both. No CI
    publishing pipeline was changed. Keep the connector image digest/tag with
-   deployment records; the Compose version is `0.28.0`.
+   deployment records; the Compose version is `0.29.0`.
 4. Check `docker compose ps` and `docker compose logs --tail=50
    garmin-connector`; logs must not contain request bodies. Health is local and
    does not contact Garmin.
@@ -377,7 +377,7 @@ OpenAI calls.
 The current editor verification on the PR branch runs 1,465 Node tests with no
 failures. The serial `npm run test:coverage` gate passes at 100% statements,
 branches, functions, and lines across its required backend scope, including
-`src/garmin/product.js` and the v2 workout contract. The focused
+`src/garmin/product.js` and the v3 workout contract. The focused
 product/converter suite has 108 tests and reports 100% in all four metrics for
 both product and contract. The separate Garmin local-tool and CLI coverage
 command runs 138 tests (93.19% statements/lines, 90.02% branches, 88.05%
@@ -590,29 +590,31 @@ result pipeline are proven. Neither this feature nor its scheduled state marks
 a session complete, adds shoe mileage, generates analysis, imports FIT, or
 enables account-wide synchronization.
 
-## Structured workout editor v2
+## Structured workout editor v3
 
-The product editor now stores new/edited prescriptions as contract `version: 2`.
-Version 1 records are read in place and remain byte/fingerprint stable until the
-person edits them; a no-op review writes the existing value unchanged. An edit
-converts the supported legacy steps to v2. Legacy open-lap steps remain
-read-only and block editing rather than being silently dropped. Existing
+The product editor stores new/edited prescriptions as contract `version: 3`.
+Version 1 and 2 records remain read in place and no-op review writes the
+existing value unchanged, preserving their stored fingerprints. Editing an old
+repeat group without recovery opens it with an empty recovery field and an
+explicit explanation. The person must enter a positive recovery or explicitly
+convert the repeats to simple run blocks; no recovery is invented. Existing
 operation rows retain their stored `converter_version`; new operations record
-converter version 2. A dispatched operation is never rewritten under its old
-identity.
+converter version 3. A dispatched operation is never rewritten under its old
+identity and historical v1/v2 operations remain reconcilable.
 
-A v2 prescription is an ordered sequence of optional warm-up, running blocks,
+A v3 prescription is an ordered sequence of optional warm-up, running blocks,
 and optional cool-down. A running block is either one timed/distance interval,
-a repeat group with an optional independent timed/distance recovery, or an
+a repeat group with a required independent timed/distance recovery, or an
 independent recovery between running blocks. Every block has its own target:
 none, absolute heart-rate bounds in bpm, or pace bounds in min/km or min/mile.
-Repeat groups can omit recovery entirely; this is distinct from a zero-duration
-step. If recovery is present, `skip_last_rest_step` records whether recovery is
-omitted after the last repeat. The preview renders the repeat and recovery
-policy from the validated payload and reports known time/distance without
-inventing duration for distance-based steps.
+In v3 every repeat contains a positive recovery interval. The
+`skip_last_rest_step` policy yields N−1 recoveries when enabled and N when
+disabled. v2 remains accepted for historical operations, including groups
+without recovery; those records are not silently upgraded. The preview renders
+the exact validated sequence and reports known time/distance without inventing
+duration for distance-based steps.
 
-The Node validator and Python connector independently enforce the same v2
+The Node validator and Python connector independently enforce the same v3
 shape, targets, ordering, positive durations/distances, 20-repeat maximum,
 50-expanded-step maximum, 24-hour timed-workout bound, and 100 km aggregate
 distance bound. `garminconnect==0.3.20` models are built from this structure:
@@ -623,8 +625,11 @@ checks against the pinned library, not a new real-device homologation.
 
 The form has explicit independent warm-up/cool-down toggles; disabled stages
 are omitted, not encoded with zero. Run blocks can be added, duplicated,
-removed, and moved with buttons. Equal repeats have an optional recovery toggle
-and a separate final-recovery policy. Time and pace entry use `min:sec`,
+removed, and moved with buttons, including while another field contains an
+incomplete draft; only “Save and review” validates the full prescription.
+Equal repeats always show a running interval, recovery, count, and final-
+recovery policy. Missing/invalid recovery is rejected before saving or remote
+mutation. Time and pace entry use `min:sec`,
 heart-rate targets use integer bpm, and distance is entered in the preferred
 km/mi unit and stored in meters. “Salvar e revisar / Save and review” persists
 only to Kinesis and opens a read-only preview; it does not call Garmin. A
@@ -632,7 +637,7 @@ separate confirmation is still required before publishing or scheduling.
 
 Garmin's [workout support documentation](https://support.garmin.com/en-CA/?faq=wZ52AaLbLG2GC1Lxu2l4k7&identifier=777730&tab=topics)
 describes workout steps and repeat/recovery structures. Device-specific
-acceptance still depends on Garmin Connect and the selected watch; the v2
+acceptance still depends on Garmin Connect and the selected watch; the v3
 converter test is not proof that every accepted structure reaches a device.
 The connection remains restricted to the configured pilot owner. No multi-user
 production integration or activity import (#74) is delivered by this editor.

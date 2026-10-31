@@ -21,7 +21,7 @@
       "warmup": "Aquecimento (minutos)",
       "repetitions": "Intervalos",
       "interval": "Corrida (minutos)",
-      "endCondition": "Etapa principal termina por",
+      "endCondition": "Termina por",
       "byTime": "Tempo",
       "byDistance": "Distância",
       "runMinutes": "Corrida (minutos)",
@@ -92,7 +92,6 @@
       "runBlock": "Bloco de corrida",
       "repeatBlock": "Grupo de repetições",
       "repetitionCount": "Repetições",
-      "includeRecovery": "Incluir recuperação entre as repetições",
       "duplicateBlock": "Duplicar",
       "removeBlock": "Remover",
       "moveUp": "Mover para cima",
@@ -108,7 +107,16 @@
       "saveHelp": "Salva o treino no Kinesis para revisão. O envio à Garmin é feito na próxima etapa.",
       "publishFailed": "Não foi possível publicar o treino no Garmin Connect.",
       "updateFailed": "Não foi possível atualizar o treino no Garmin Connect.",
-      "rescheduleFailed": "Não foi possível reagendar este treino no Garmin Connect."
+      "rescheduleFailed": "Não foi possível reagendar este treino no Garmin Connect.",
+      "recoveryBlock": "Recuperação",
+      "paceShort": "Ritmo",
+      "heartRateShort": "Frequência cardíaca",
+      "slowerPaceUnit": "Ritmo mais lento (min/{unit})",
+      "fasterPaceUnit": "Ritmo mais rápido (min/{unit})",
+      "repeatRun": "Corrida",
+      "repeatRecovery": "Recuperação",
+      "legacyRepeatRecoveryRequired": "Este grupo antigo não define recuperação. Informe uma recuperação positiva ou converta as repetições em blocos simples.",
+      "convertRepeatToBlocks": "Converter em blocos simples"
     }
   },
   "aiCoach": {

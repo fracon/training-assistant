@@ -8,7 +8,7 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.28.0` on the issue #73
+`package.json` and `package-lock.json` (currently `0.29.0` on the issue #73
 branch); follow the SemVer
 rule below.
 
@@ -594,14 +594,16 @@ automatically repeated. A Garmin Connect schedule is not proof of delivery to
 a watch. This pilot does not implement multi-user production integration or
 the activity import phase (#74).
 
-New prescriptions and edited legacy prescriptions use version 2: ordered
+New prescriptions and edited legacy prescriptions use version 3: ordered
 optional warm-up, run/repeat/recovery sequence, and optional cool-down. Every
-step owns its time/distance end and target. Repeat recovery is optional; an
-omitted recovery is not a zero-duration step. Node and Python enforce the same
-limits and strict payload shape before remote work. Version 1 remains supported
-and no-op saves preserve its stored JSON/fingerprint; dispatched historical
-operations are not converted or rewritten. Open legacy laps remain explicitly
-unsupported for editing and cannot be silently discarded. Run `npm test`, the
+step owns its time/distance end and target. Repeat groups require a positive
+recovery step; the final-recovery policy determines N−1 or N recovery steps.
+Historical v1/v2 prescriptions remain readable and no-op saves preserve their
+stored JSON/fingerprint. A legacy repeat without recovery requires an explicit
+recovery entry or explicit conversion to simple run blocks before editing is
+saved; no duration is invented. Dispatched historical operations are not
+converted or rewritten. Open legacy laps remain explicitly unsupported for
+editing and cannot be silently discarded. Run `npm test`, the
 100% backend coverage gate, Python connector coverage, and the Chrome Garmin UI
 suite when changing this contract or editor. The “Save and review” action must
 remain local-only; only the separately confirmed publish action may mutate
