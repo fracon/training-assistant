@@ -26,6 +26,16 @@ function displayPilotError(error) {
     connector_unavailable: 'Conector Garmin indisponível. Inicie npm run garmin:connector e tente novamente.',
     connector_timeout: 'O conector Garmin excedeu o tempo limite. Verifique o processo local e tente novamente.',
   };
+  const downloadStages = new Set([
+    'restore_session', 'request_original', 'read_original', 'persist_session',
+    'close_response', 'cleanup_temp', 'connector_response', 'resolve_archive', 'parse_fit',
+  ]);
+  if (downloadStages.has(error?.diagnosticStage)) {
+    const diagnosticId = /^[a-f0-9]{32}$/.test(error.diagnosticId || '')
+      ? `; diagnostic ID ${error.diagnosticId}` : '';
+    const code = /^[a-z_]+$/.test(error.message || '') ? error.message : 'unavailable';
+    return `Download Garmin falhou na etapa ${error.diagnosticStage} (${code})${diagnosticId}. Consulte o terminal do conector para o registro sanitizado.`;
+  }
   return messages[error?.message] || error?.message || 'unavailable';
 }
 
@@ -117,20 +127,43 @@ async function requestOriginal(path, dependencies = {}) {
     await invalidate(fetchImpl);
     throw new Error('account_inactive');
   }
+  const diagnosticId = response.headers.get('x-kinesis-diagnostic-id');
+  const safeDiagnosticId = /^[a-f0-9]{32}$/.test(diagnosticId || '') ? diagnosticId : null;
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    throw new Error(body?.detail?.code || 'unavailable');
+    const error = new Error(body?.detail?.code || 'unavailable');
+    error.diagnosticStage = 'connector_response';
+    error.diagnosticId = safeDiagnosticId;
+    throw error;
+  }
+  dependencies.onDiagnostic?.(safeDiagnosticId);
+  const contentType = response.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase();
+  if (contentType === 'text/html' || contentType === 'application/json'
+      || contentType?.endsWith('+json')) {
+    await response.body?.cancel().catch(() => {});
+    const error = new Error('invalid_payload');
+    error.diagnosticStage = 'connector_response';
+    error.diagnosticId = safeDiagnosticId;
+    throw error;
   }
   const maxBytes = 25 * 1024 * 1024;
   const declared = Number(response.headers.get('content-length'));
   if (Number.isFinite(declared) && declared > maxBytes) {
     await response.body?.cancel().catch(() => {});
-    throw new Error('invalid_payload');
+    const error = new Error('invalid_payload');
+    error.diagnosticStage = 'connector_response';
+    error.diagnosticId = safeDiagnosticId;
+    throw error;
   }
   const chunks = [];
   let total = 0;
   const reader = response.body?.getReader();
-  if (!reader) throw new Error('invalid_payload');
+  if (!reader) {
+    const error = new Error('invalid_payload');
+    error.diagnosticStage = 'read_original';
+    error.diagnosticId = safeDiagnosticId;
+    throw error;
+  }
   try {
     while (true) {
       const { done, value } = await reader.read();
@@ -139,7 +172,10 @@ async function requestOriginal(path, dependencies = {}) {
       total += chunk.byteLength;
       if (total > maxBytes) {
         await reader.cancel();
-        throw new Error('invalid_payload');
+        const error = new Error('invalid_payload');
+        error.diagnosticStage = 'read_original';
+        error.diagnosticId = safeDiagnosticId;
+        throw error;
       }
       chunks.push(Buffer.from(chunk));
     }
@@ -151,6 +187,8 @@ async function requestOriginal(path, dependencies = {}) {
       await invalidate(fetchImpl);
       throw new Error('account_inactive');
     }
+    error.diagnosticStage ||= 'read_original';
+    error.diagnosticId ||= safeDiagnosticId;
     throw error;
   } finally {
     reader.releaseLock();
@@ -197,8 +235,8 @@ async function main(options = {}) {
   const send = options.request || ((path, requestOptions = {}) => request(path, requestOptions, {
     validate, invalidate, fetchImpl: options.fetchImpl,
   }));
-  const sendOriginal = options.requestOriginal || ((path) => requestOriginal(path, {
-    validate, invalidate, fetchImpl: options.fetchImpl,
+  const sendOriginal = options.requestOriginal || ((path, dependencies = {}) => requestOriginal(path, {
+    validate, invalidate, fetchImpl: options.fetchImpl, ...dependencies,
   }));
   const resolveBuffer = options.resolveFitBuffer || resolveFitBuffer;
   const parse = options.parseFitFile || parseFitFile;
@@ -308,15 +346,28 @@ async function main(options = {}) {
   if (action === 'download') {
     const activityId = await prompts.question('Your Garmin activity ID: ');
     if (!/^\d+$/.test(activityId)) throw new Error('Activity ID must be numeric.');
-    const archive = await sendOriginal(`${prefix}/activities/${activityId}/original`);
-    const fit = await resolveBuffer({ buffer: archive, filename: 'garmin-original.zip' });
-    const summary = await parse(fit);
-    writeOut(`${JSON.stringify({
-      activity: summary.activity,
-      totals: summary.totals,
-      laps: summary.laps.length,
-      bytes: archive.length,
-    })}\n`);
+    let diagnosticId = null;
+    let downloadStage = 'request_original';
+    try {
+      const archive = await sendOriginal(`${prefix}/activities/${activityId}/original`, {
+        onDiagnostic(id) { diagnosticId = id; },
+      });
+      downloadStage = 'resolve_archive';
+      const fit = await resolveBuffer({ buffer: archive, filename: 'garmin-original.zip' });
+      downloadStage = 'parse_fit';
+      const summary = await parse(fit);
+      writeOut(`${JSON.stringify({
+        activity: summary.activity,
+        totals: summary.totals,
+        laps: summary.laps.length,
+        bytes: archive.length,
+        diagnostic_id: diagnosticId,
+      })}\n`);
+    } catch (error) {
+      error.diagnosticStage ||= downloadStage;
+      error.diagnosticId ||= diagnosticId;
+      throw error;
+    }
     return;
   }
   if (action === 'cancel') {

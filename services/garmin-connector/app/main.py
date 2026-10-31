@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import logging
 import os
 import re
 import secrets
@@ -16,6 +17,7 @@ from contextlib import contextmanager
 from datetime import date
 from pathlib import Path
 from typing import Any
+from urllib.parse import urljoin, urlsplit
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from fastapi import FastAPI, Header, HTTPException, Path as PathParam, Request
@@ -30,9 +32,11 @@ CHALLENGE_TTL_SECONDS = 300
 MAX_MFA_ATTEMPTS = 3
 MAX_WORKOUT_SCAN_PAGES = 11
 MAX_REMOTE_OPERATION_SECONDS = 90
+MAX_ORIGINAL_REDIRECTS = 3
 ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,80}$")
 app = FastAPI(title="Kinesis Garmin connector", version="1",
               docs_url=None, redoc_url=None, openapi_url=None)
+_logger = logging.getLogger("uvicorn.error")
 _guard = threading.Lock()
 _locks: dict[str, threading.RLock] = {}
 _challenges: dict[str, dict[str, Any]] = {}
@@ -238,7 +242,8 @@ def _decrypt(path: Path, key: bytes) -> bytes:
 @contextmanager
 def _client(path: Path, key: bytes, *, email: str | None = None,
             password: str | None = None, restore: bool = True,
-            persist_on_exit: bool = True, set_connected_on_exit: bool = True):
+            persist_on_exit: bool = True, set_connected_on_exit: bool = True,
+            stage_callback=None, diagnostic_id: str | None = None):
     """Materialize library JSON only in a private temporary directory."""
     from garminconnect import Garmin
 
@@ -249,8 +254,11 @@ def _client(path: Path, key: bytes, *, email: str | None = None,
         client = Garmin(email, password, return_on_mfa=True)
         original_tokens = None
         successful = False
+        operation_error = None
         try:
             if restore and path.exists():
+                if stage_callback:
+                    stage_callback("restore_session")
                 original_tokens = _decrypt(path, key)
                 token_file.write_bytes(original_tokens)
                 os.chmod(token_file, 0o600)
@@ -259,9 +267,15 @@ def _client(path: Path, key: bytes, *, email: str | None = None,
                     raise RuntimeError("Stored Garmin tokens did not restore an authenticated session")
             yield client, token_dir, token_file
             successful = True
+        except BaseException as exc:
+            operation_error = exc
+            raise
         finally:
+            maintenance_error = None
             try:
                 if persist_on_exit and client.client.is_authenticated:
+                    if stage_callback and operation_error is None:
+                        stage_callback("persist_session")
                     clear = _token_bytes(client, token_dir)
                     if successful or original_tokens is None or clear != original_tokens:
                         token_file.write_bytes(clear)
@@ -269,8 +283,32 @@ def _client(path: Path, key: bytes, *, email: str | None = None,
                         _save_encrypted(path, key, clear)
                 if successful and set_connected_on_exit:
                     _states[str(path)] = "connected"
+            except Exception as exc:
+                maintenance_error = exc
+                if operation_error is not None:
+                    _logger.warning(
+                        "garmin_download request_id=%s stage=persist_session "
+                        "exception=%s code=unavailable",
+                        diagnostic_id or "none",
+                        _safe_exception_category(exc),
+                    )
             finally:
-                token_file.unlink(missing_ok=True)
+                try:
+                    if stage_callback and operation_error is None and maintenance_error is None:
+                        stage_callback("cleanup_temp")
+                    token_file.unlink(missing_ok=True)
+                except Exception as exc:
+                    if operation_error is None and maintenance_error is None:
+                        maintenance_error = exc
+                    else:
+                        _logger.warning(
+                            "garmin_download request_id=%s stage=cleanup_temp "
+                            "exception=%s code=unavailable",
+                            diagnostic_id or "none",
+                            _safe_exception_category(exc),
+                        )
+            if operation_error is None and maintenance_error is not None:
+                raise maintenance_error
 
 
 def _error(exc: Exception) -> HTTPException:
@@ -631,37 +669,231 @@ def activity_original(owner_id: str, connection_id: str, activity_id: int = Path
                       x_kinesis_service_key: str | None = Header(default=None)):
     path, key = _authenticated_client(owner_id, connection_id, x_kinesis_service_key)
     deadline = _clock() + MAX_REMOTE_OPERATION_SECONDS
+    diagnostic_id = secrets.token_hex(16)
+    stage = ["restore_session"]
+    started = _clock()
+    received = 0
+    response = None
+    response_closed = False
+    content_category = "missing"
+    remote_status = None
+    failure = None
+    data = None
+
+    def mark_stage(value):
+        stage[0] = value
+
     with _lock(str(path)):
         try:
             from garminconnect import Garmin
 
-            with _client(path, key) as (client, _, _):
-                download_format = Garmin.ActivityDownloadFormat.ORIGINAL
-                url = f"{_activity_download_base(client, download_format)}/{activity_id}"
-                response = client.client._run_request("GET", url, stream=True, timeout=30)
+            with _client(path, key, stage_callback=mark_stage,
+                         diagnostic_id=diagnostic_id) as (client, _, _):
                 try:
-                    declared = response.headers.get("Content-Length")
-                    if declared and (not declared.isdigit() or int(declared) > MAX_DOWNLOAD_BYTES):
-                        raise HTTPException(413, detail={"code": "invalid_payload"})
+                    stage[0] = "request_original"
+                    response = _request_original_stream(
+                        client, Garmin.ActivityDownloadFormat.ORIGINAL,
+                        activity_id, deadline,
+                    )
+                    remote_status = getattr(response, "status_code", None)
+                    content_category = _download_content_category(response)
+                    if remote_status != 200:
+                        raise _download_failure("unavailable", 502)
+                    if content_category in {"html", "json"}:
+                        raise _download_failure("invalid_payload", 422)
+                    declared = (getattr(response, "headers", {}) or {}).get("Content-Length")
+                    if declared is not None:
+                        declared = str(declared).strip()
+                        if not declared.isdigit() or int(declared) > MAX_DOWNLOAD_BYTES:
+                            raise _download_failure("invalid_payload", 413)
                     chunks = []
-                    total = 0
+                    stage[0] = "read_original"
                     for chunk in response.iter_content(chunk_size=64 * 1024):
                         _check_deadline(deadline)
                         if not chunk:
                             continue
-                        total += len(chunk)
-                        if total > MAX_DOWNLOAD_BYTES:
-                            raise HTTPException(413, detail={"code": "invalid_payload"})
+                        received += len(chunk)
+                        if received > MAX_DOWNLOAD_BYTES:
+                            raise _download_failure("invalid_payload", 413)
                         chunks.append(chunk)
                     data = b"".join(chunks)
+                    if not data.startswith(b"PK"):
+                        raise _download_failure("invalid_payload", 422)
+                except Exception as exc:
+                    failure = exc
+                    raise
                 finally:
-                    response.close()
-                return Response(data, media_type="application/octet-stream",
-                                headers={"Content-Disposition": 'attachment; filename="activity.zip"'})
-        except HTTPException:
-            raise
+                    if response is not None:
+                        try:
+                            response.close()
+                        except Exception as close_exc:
+                            response_closed = True
+                            if failure is None:
+                                stage[0] = "close_response"
+                                raise close_exc
+                            _logger.warning(
+                                "garmin_download request_id=%s stage=close_response "
+                                "code=unavailable exception=%s remote_status=%s",
+                                diagnostic_id, _safe_exception_category(close_exc),
+                                remote_status if isinstance(remote_status, int) else "none",
+                            )
+                        else:
+                            response_closed = True
+                stage[0] = "persist_session"
         except Exception as exc:
-            raise _record_error(path, exc) from None
+            failure = exc
+
+    duration_ms = max(0, round((_clock() - started) * 1000))
+    if failure is not None:
+        error = failure if isinstance(failure, HTTPException) else _error(failure)
+        if not isinstance(failure, HTTPException):
+            _record_error(path, failure)
+        remote_status = _download_remote_status(failure, response, remote_status)
+        code = error.detail.get("code", "unavailable") if isinstance(error.detail, dict) else "unavailable"
+        if remote_status == 401:
+            code = "auth_required"
+            error = HTTPException(401, detail={"code": code})
+            _states[str(path)] = "reauthentication_required"
+        elif remote_status == 404:
+            code = "invalid_payload"
+            error = HTTPException(400, detail={"code": code})
+        elif remote_status == 429:
+            code = "rate_limited"
+            error = HTTPException(429, detail={"code": code})
+        if response is None:
+            response = getattr(failure, "response", None)
+        if response is not None:
+            content_category = _download_content_category(response)
+            if not response_closed:
+                try:
+                    response.close()
+                except Exception as close_exc:
+                    _logger.warning(
+                        "garmin_download request_id=%s stage=close_response "
+                        "code=unavailable exception=%s remote_status=%s",
+                        diagnostic_id, _safe_exception_category(close_exc),
+                        remote_status if isinstance(remote_status, int) else "none",
+                    )
+        _log_download_diagnostic(
+            diagnostic_id, stage[0], code, failure, remote_status,
+            duration_ms, received, content_category,
+        )
+        headers = dict(error.headers or {})
+        headers["X-Kinesis-Diagnostic-Id"] = diagnostic_id
+        raise HTTPException(error.status_code, detail={"code": code}, headers=headers) from None
+
+    _log_download_diagnostic(
+        diagnostic_id, "connector_response", "ok", None,
+        remote_status, duration_ms, received, content_category,
+    )
+    return Response(
+        data, media_type="application/octet-stream",
+        headers={
+            "Content-Disposition": 'attachment; filename="activity.zip"',
+            "X-Kinesis-Diagnostic-Id": diagnostic_id,
+        },
+    )
+
+
+def _download_failure(code: str, status_code: int):
+    return HTTPException(status_code, detail={"code": code})
+
+
+def _download_content_category(response) -> str:
+    headers = getattr(response, "headers", {}) or {}
+    raw = headers.get("Content-Type") or headers.get("content-type") or ""
+    media_type = str(raw).split(";", 1)[0].strip().lower()
+    if media_type in {"application/zip", "application/octet-stream", "application/x-zip-compressed"}:
+        return "zip"
+    if media_type in {"text/html", "application/xhtml+xml"}:
+        return "html"
+    if media_type == "application/json" or media_type.endswith("+json"):
+        return "json"
+    return "other" if media_type else "missing"
+
+
+def _request_original_stream(client, download_format, activity_id: int, deadline: float):
+    from garminconnect import Garmin
+
+    request_path = f"{_activity_download_base(client, download_format)}/{activity_id}"
+    url = client.client._resolve_url(request_path)
+    origin = urlsplit(url)
+    if origin.scheme != "https" or not origin.hostname or origin.username or origin.password:
+        raise _download_failure("unsupported", 502)
+    current = url
+    redirects = 0
+    while True:
+        _check_deadline(deadline)
+        remaining = max(1, min(30, int(deadline - _clock())))
+        response = client.client._run_request(
+            "GET", current, headers={"Accept": "*/*"}, stream=True,
+            timeout=remaining, allow_redirects=False,
+        )
+        status = getattr(response, "status_code", None)
+        if status is not None and 300 <= status < 400:
+            location = (getattr(response, "headers", {}) or {}).get("Location")
+            try:
+                response.close()
+            except Exception:
+                pass
+            if not location or redirects >= MAX_ORIGINAL_REDIRECTS:
+                raise _download_failure("unavailable", 502)
+            target = urlsplit(urljoin(current, str(location)))
+            if (target.scheme != "https" or target.hostname != origin.hostname
+                    or (target.port or 443) != (origin.port or 443)
+                    or target.username or target.password
+                    or target.fragment or len(target.geturl()) > 4096):
+                raise _download_failure("unsupported", 502)
+            current = target.geturl()
+            redirects += 1
+            continue
+        return response
+
+
+def _download_remote_status(exc, response, current_status):
+    if isinstance(current_status, int):
+        return current_status
+    status = getattr(response, "status_code", None)
+    if not isinstance(status, int):
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+    return status if isinstance(status, int) else None
+
+
+def _safe_exception_category(exc) -> str:
+    if exc is None:
+        return "none"
+    name = type(exc).__name__
+    if isinstance(exc, TimeoutError) or "Timeout" in name:
+        return "timeout"
+    if name == "GarminConnectAuthenticationError":
+        return "garmin_authentication"
+    if name == "GarminConnectTooManyRequestsError":
+        return "garmin_rate_limit"
+    if name in {"GarminConnectConnectionError", "GarminConnectNotFoundError"}:
+        return "garmin_remote"
+    if type(exc).__module__.startswith("requests.exceptions"):
+        if name in {"ConnectionError", "ChunkedEncodingError", "ContentDecodingError"}:
+            return "network_read"
+        return "network_transport"
+    if isinstance(exc, HTTPException):
+        return "connector_http"
+    if isinstance(exc, ValueError):
+        return "validation"
+    if isinstance(exc, OSError):
+        return "io"
+    return "internal"
+
+
+def _log_download_diagnostic(request_id, stage, code, exc, remote_status,
+                             duration_ms, received, content_category):
+    logger = _logger.info if code == "ok" else _logger.warning
+    logger(
+        "garmin_download request_id=%s stage=%s code=%s exception=%s "
+        "remote_status=%s duration_ms=%d bytes_received=%d content=%s",
+        request_id, stage, code, _safe_exception_category(exc),
+        remote_status if isinstance(remote_status, int) else "none",
+        duration_ms, received, content_category,
+    )
 
 
 @app.post("/v1/connections/{owner_id}/{connection_id}/workouts")

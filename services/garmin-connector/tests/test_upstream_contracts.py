@@ -1,6 +1,7 @@
 """Regression tests use garminconnect 0.3.20's real public client types."""
 
 import base64
+import io
 import inspect
 import json
 import os
@@ -13,6 +14,8 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 from garminconnect import Garmin
 from garminconnect.client import Client as GarminTransport
+from requests import Response, Timeout
+from requests.structures import CaseInsensitiveDict
 
 from app import main
 
@@ -35,6 +38,17 @@ class UpstreamContractTests(unittest.TestCase):
 
     def tearDown(self):
         self.temp.cleanup()
+
+    def _stream_response(self, status=200, body=b"PK\x03\x04synthetic-original", headers=None):
+        response = Response()
+        response.status_code = status
+        response.url = "https://connect.garmin.test/download"
+        response.headers = CaseInsensitiveDict(headers or {
+            "Content-Type": "application/zip",
+        })
+        response._content = False
+        response.raw = io.BytesIO(body)
+        return response
 
     def test_pinned_login_signature_and_fresh_authentication_persist_tokens(self):
         self.assertEqual(tuple(inspect.signature(Garmin.login).parameters), ("self", "tokenstore"))
@@ -62,32 +76,207 @@ class UpstreamContractTests(unittest.TestCase):
     def test_real_garmin_original_format_is_passed_to_transport(self):
         token_path = Path(self.temp.name, "31-pilot.bin")
         main._save_encrypted(token_path, b"u" * 32, b'{"di_token":"synthetic"}')
+        client = Garmin()
+        client.client.di_token = "synthetic-bearer"
+        original = b"PK\x03\x04synthetic-original"
         captured = []
 
-        class StreamingResponse:
-            headers = {"Content-Length": "18"}
-
-            def iter_content(self, chunk_size):
-                yield b"synthetic-original"
-
-            def close(self):
-                pass
-
-        def request(transport, method, url, **kwargs):
-            captured.append((url, kwargs))
+        def request(method, url, **kwargs):
+            captured.append((method, url, kwargs))
             self.assertEqual(method, "GET")
-            return StreamingResponse()
+            response = self._stream_response(body=original, headers={
+                "Content-Length": str(len(original)),
+                "Content-Type": "application/zip",
+            })
+            response.url = url
+            return response
 
-        with patch.object(Garmin, "_load_profile_and_settings", return_value=None), \
-             patch.object(GarminTransport, "_run_request", request):
+        @contextmanager
+        def real_client(*_args, **_kwargs):
+            yield client, Path(self.temp.name), Path(self.temp.name, "tokens.json")
+
+        with patch.object(main, "_client", real_client), \
+             patch.object(GarminTransport, "_token_expires_soon", return_value=False), \
+             patch.object(client.client._api_session, "request", request):
             response = self.client.get(
                 f"{self.prefix}/activities/321/original", headers=self.headers,
             )
         self.assertEqual(response.status_code, 200, response.text)
-        self.assertEqual(response.content, b"synthetic-original")
-        self.assertTrue(captured)
-        self.assertTrue(captured[0][1]["stream"])
-        self.assertEqual(captured[0][1]["timeout"], 30)
+        self.assertEqual(response.content, original)
+        self.assertEqual(response.headers["content-type"], "application/octet-stream")
+        self.assertRegex(response.headers["x-kinesis-diagnostic-id"], r"^[a-f0-9]{32}$")
+        self.assertEqual(len(captured), 1)
+        method, url, kwargs = captured[0]
+        self.assertEqual(method, "GET")
+        self.assertEqual(url, client.client._resolve_url(
+            f"{client.garmin_connect_fit_download}/321"
+        ))
+        self.assertTrue(kwargs["stream"])
+        self.assertEqual(kwargs["timeout"], 30)
+        self.assertFalse(kwargs["allow_redirects"])
+        self.assertEqual(kwargs["headers"]["Accept"], "*/*")
+        self.assertEqual(kwargs["headers"]["Authorization"], "Bearer synthetic-bearer")
+
+    def test_real_transport_rejects_remote_errors_and_unexpected_content_safely(self):
+        cases = ((403, 503, "unavailable"), (404, 400, "invalid_payload"),
+                 (429, 429, "rate_limited"), (503, 503, "unavailable"))
+        for remote_status, expected_status, expected_code in cases:
+            with self.subTest(remote_status=remote_status):
+                client = Garmin()
+                client.client.di_token = "synthetic-bearer"
+                response = self._stream_response(remote_status, b'{"message":"private"}', {
+                    "Content-Type": "application/json",
+                })
+                closed = []
+                close = response.close
+                response.close = lambda: (closed.append(True), close())[1]
+                with patch.object(main, "_client", self._client_context(client)), \
+                     patch.object(GarminTransport, "_token_expires_soon", return_value=False), \
+                     patch.object(client.client._api_session, "request", return_value=response):
+                    result = self.client.get(
+                        f"{self.prefix}/activities/321/original", headers=self.headers,
+                    )
+                self.assertEqual(result.status_code, expected_status)
+                self.assertEqual(result.json()["detail"]["code"], expected_code)
+                self.assertTrue(closed)
+                self.assertRegex(result.headers["x-kinesis-diagnostic-id"], r"^[a-f0-9]{32}$")
+                self.assertNotIn("private", result.text)
+
+        for content_type in ("text/html", "application/json"):
+            with self.subTest(content_type=content_type):
+                client = Garmin()
+                client.client.di_token = "synthetic-bearer"
+                response = self._stream_response(headers={"Content-Type": content_type})
+                with patch.object(main, "_client", self._client_context(client)), \
+                     patch.object(GarminTransport, "_token_expires_soon", return_value=False), \
+                     patch.object(client.client._api_session, "request", return_value=response):
+                    result = self.client.get(
+                        f"{self.prefix}/activities/321/original", headers=self.headers,
+                    )
+                self.assertEqual(result.status_code, 422)
+                self.assertEqual(result.json()["detail"]["code"], "invalid_payload")
+
+    def test_real_stream_accepts_missing_or_false_small_length_and_stops_on_oversize_header(self):
+        for headers in (
+            {"Content-Type": "application/zip"},
+            {"Content-Type": "application/zip", "Content-Length": "1"},
+        ):
+            with self.subTest(headers=headers):
+                client = Garmin()
+                client.client.di_token = "synthetic-bearer"
+                original = b"PK\x03\x04synthetic-stream"
+                response = self._stream_response(body=original, headers=headers)
+                with patch.object(main, "_client", self._client_context(client)), \
+                     patch.object(GarminTransport, "_token_expires_soon", return_value=False), \
+                     patch.object(client.client._api_session, "request", return_value=response) as request:
+                    result = self.client.get(
+                        f"{self.prefix}/activities/321/original", headers=self.headers,
+                    )
+                self.assertEqual(result.status_code, 200, result.text)
+                self.assertEqual(result.content, original)
+                self.assertEqual(request.call_count, 1)
+
+        client = Garmin()
+        client.client.di_token = "synthetic-bearer"
+        response = self._stream_response(headers={
+            "Content-Type": "application/zip",
+            "Content-Length": str(main.MAX_DOWNLOAD_BYTES + 1),
+        })
+        consumed = []
+        response.iter_content = lambda **_kwargs: consumed.append(True)
+        with patch.object(main, "_client", self._client_context(client)), \
+             patch.object(GarminTransport, "_token_expires_soon", return_value=False), \
+             patch.object(client.client._api_session, "request", return_value=response):
+            result = self.client.get(
+                f"{self.prefix}/activities/321/original", headers=self.headers,
+            )
+        self.assertEqual(result.status_code, 413)
+        self.assertEqual(result.json()["detail"]["code"], "invalid_payload")
+        self.assertEqual(consumed, [])
+
+    def test_real_transport_redirects_only_inside_origin_and_never_sends_credentials_elsewhere(self):
+        client = Garmin()
+        client.client.di_token = "synthetic-bearer"
+        redirect = self._stream_response(302, headers={
+            "Location": "https://connectapi.garmin.com/download-service/redirected",
+        })
+        redirect_closed = []
+        redirect.close = lambda: redirect_closed.append(True)
+        final = self._stream_response(body=b"PK\x03\x04redirected", headers={
+            "Content-Type": "application/zip",
+        })
+        requests_seen = []
+
+        def same_origin_request(method, url, **kwargs):
+            requests_seen.append((url, kwargs))
+            return redirect if len(requests_seen) == 1 else final
+
+        with patch.object(main, "_client", self._client_context(client)), \
+             patch.object(GarminTransport, "_token_expires_soon", return_value=False), \
+             patch.object(client.client._api_session, "request", same_origin_request):
+            result = self.client.get(
+                f"{self.prefix}/activities/321/original", headers=self.headers,
+            )
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertEqual(len(requests_seen), 2)
+        self.assertTrue(redirect_closed)
+        self.assertTrue(all(call[1]["allow_redirects"] is False for call in requests_seen))
+
+        client = Garmin()
+        client.client.di_token = "synthetic-bearer"
+        external = self._stream_response(302, headers={
+            "Location": "https://elsewhere.invalid/original",
+        })
+        external_calls = []
+        with patch.object(main, "_client", self._client_context(client)), \
+             patch.object(GarminTransport, "_token_expires_soon", return_value=False), \
+             patch.object(client.client._api_session, "request",
+                          lambda *args, **kwargs: (external_calls.append((args, kwargs)), external)[1]):
+            result = self.client.get(
+                f"{self.prefix}/activities/321/original", headers=self.headers,
+            )
+        self.assertEqual(result.status_code, 502)
+        self.assertEqual(result.json()["detail"]["code"], "unsupported")
+        self.assertEqual(len(external_calls), 1)
+        self.assertTrue(external_calls[0][1]["allow_redirects"] is False)
+
+    def test_network_timeout_is_sanitized_and_read_failure_closes_without_masking(self):
+        client = Garmin()
+        client.client.di_token = "synthetic-bearer"
+        with patch.object(main, "_client", self._client_context(client)), \
+             patch.object(GarminTransport, "_token_expires_soon", return_value=False), \
+             patch.object(client.client._api_session, "request", side_effect=Timeout("private timeout")):
+            before_body = self.client.get(
+                f"{self.prefix}/activities/321/original", headers=self.headers,
+            )
+        self.assertEqual(before_body.status_code, 503)
+        self.assertNotIn("private timeout", before_body.text)
+
+        client = Garmin()
+        client.client.di_token = "synthetic-bearer"
+        response = self._stream_response()
+        closed = []
+        response.iter_content = lambda **_kwargs: (_ for _ in ()).throw(Timeout("private stream timeout"))
+        response.close = lambda: (closed.append(True), (_ for _ in ()).throw(OSError("private close error")))[1]
+        with patch.object(main, "_client", self._client_context(client)), \
+             patch.object(GarminTransport, "_token_expires_soon", return_value=False), \
+             patch.object(client.client._api_session, "request", return_value=response):
+            during_body = self.client.get(
+                f"{self.prefix}/activities/321/original", headers=self.headers,
+            )
+        self.assertEqual(during_body.status_code, 503)
+        self.assertEqual(during_body.json()["detail"]["code"], "unavailable")
+        self.assertNotIn("private", during_body.text)
+        self.assertEqual(len(closed), 1)
+
+    def _client_context(self, client):
+        token_path = Path(self.temp.name, "31-pilot.bin")
+        if not token_path.exists():
+            main._save_encrypted(token_path, b"u" * 32, b'{"di_token":"synthetic"}')
+        @contextmanager
+        def real_client(*_args, **_kwargs):
+            yield client, Path(self.temp.name), Path(self.temp.name, "tokens.json")
+        return real_client
 
     def test_original_format_is_the_upstream_enum_and_not_a_string_alias(self):
         client = Garmin()

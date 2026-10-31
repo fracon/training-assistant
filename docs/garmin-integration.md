@@ -50,8 +50,12 @@ project documents these relevant methods and behavior:
   `download_activity(id, dl_fmt=Garmin.ActivityDownloadFormat.ORIGINAL)`
   returns a fully materialized byte string, so the adapter instead uses the
   pinned transport's `_run_request(..., stream=True)` with the library's
-  original-download endpoint and enforces 25 MiB while receiving chunks. This
-  private-library API dependency must be rechecked on upgrades.
+  original-download endpoint and enforces 25 MiB while receiving chunks. The
+  custom streaming request preserves the official `Client.download` contract
+  by adding `Accept: */*` before `_run_request`; redirects are limited to the
+  original HTTPS origin, and status/content category are checked before FIT/ZIP
+  handling. The private `_run_request` streaming API and this header contract
+  must be rechecked on upgrades.
 - `get_scheduled_workouts(year, month)` returns a calendar object. The adapter
   inspects `calendarItems` and filters `itemType == "workout"`. It only
   confirms a schedule when the response also contains the exact `workoutId`,
@@ -283,12 +287,12 @@ the `KGC1` envelope. Do not restore a token backup from a different key.
 
 ## Automated evidence and go/no-go
 
-At this revision the connector suite has **43 passing tests**; Python coverage
-(`coverage run --branch --source=app -m pytest`) measures **91.48% lines**
-(612/669), **78.64% branches** (162/206), and **88.46% combined coverage** for
-`app/main.py`. The browser-free Garmin CLI/setup/launcher suite has **29 passing
-tests**; `npm run test:garmin-pilot-coverage` measures **87.57% statements/lines,
-74.05% branches, and 78.37% functions** across the four Garmin Node scripts
+At this revision the connector suite has **47 passing tests**; Python coverage
+(`coverage run --branch --source=app -m pytest`) measures **89.44% lines**
+(745/833), **76.41% branches** (217/284), and **86.12% combined coverage** for
+`app/main.py`. The browser-free Garmin CLI/setup/launcher suite has **30 passing
+tests**; `npm run test:garmin-pilot-coverage` measures **87.73% statements/lines,
+74.79% branches, and 78.94% functions** across the four Garmin Node scripts
 (`garmin-pilot.js`, local config loader, setup and connector launcher). These
 are reported measurements, not added 100% gates. The existing Node backend
 coverage command retains its required 100% thresholds.
@@ -305,27 +309,44 @@ establish live Garmin or Forerunner behavior.
 | Encrypted token resume after restart | Kinesis implementation | Covered by local tests | **Reported by owner after connector restart** | N/A |
 | Forerunner 55 appears in account devices | `get_devices` documented | Contract tests | **Reported by owner** | Listed; does not prove workout delivery |
 | Running workout type in account catalog | `SportTypeModel.sportTypeKey` in pinned 0.3.20 | Correct-field and unknown-state regressions | **Observed by agent with sanitized read-only catalog: 12 entries; exact `running` key present** | Does not prove compatibility or sync |
-| Create simple/interval workout and schedule | Methods documented | Local adapter tests only | **Pending** | **Pending** |
-| Push/sync and step/target/date fidelity | Not guaranteed by library method | Not proven by mocks | **Pending** | **Pending** |
-| List activity and download original archive | Methods documented | Local adapter tests only | **Pending** | N/A |
-| FIT validation with existing parser and exact activity link | Existing parser is local | Existing FIT suites; new integration pending | **Pending** | N/A |
+| Create simple/interval workout and schedule | Methods documented | Local adapter tests | **Reported by owner; both appeared in Garmin Connect** | **Reported by owner after normal sync** |
+| Push/sync and step/target/date fidelity | Not guaranteed by library method | Not proven by mocks | **Reported by owner** | **Reported by owner**; exact fidelity not independently inspected |
+| List activity | `get_activities` documented | Real pinned transport contract | **Reported by owner; listing succeeded** | N/A |
+| Download original and process FIT locally | `download_activity(..., ORIGINAL)` documented; Kinesis preserves streaming limit | Real pinned `Garmin`/`requests.Response` transport plus synthetic archive/parser tests | **One read-only recovery succeeded in the owner's existing local session; the CLI completed archive resolution and FIT parsing. Output metrics were suppressed and no personal file was retained.** | N/A |
+| Exact planned-workout-to-activity link | Not provided by the download method | No deterministic linkage established | **Pending** | N/A |
 
-The owner supplied no credentials in this task; the existing encrypted local
-session was reused for one read-only catalog query after the connector restart.
-No password or MFA was requested. No remote mutation, activity download, device
-synchronization, or cleanup was performed. Login, post-restart token resume and
-Forerunner listing above are separately attributed to the owner's report. Thus
-the phase is **not homologated**, there is no go decision for issue #73/#74, and
-there is no evidence of an exact workout occurrence-to-activity identifier.
+The owner supplied no credentials in this task. The existing encrypted local
+session was reused after restarting the instrumented connector. One owner-
+provided activity was downloaded and passed through the existing local archive
+resolver and FIT parser; its ID and metrics were not retained in logs or
+documentation. The connector's random correlation ID was
+`84ef7bf6b5a57c0841222cf9a3092497`. No password or MFA was requested, no Garmin
+mutation or cleanup was performed, and no original file was retained. Login,
+post-restart token resume, device listing, and simple/interval publication and
+sync are separately attributed to the owner's report. Thus the phase is **not
+homologated**, there is no go decision for issue #73/#74, and there is no
+evidence of an exact workout occurrence-to-activity identifier.
+
+The previous download route collapsed transport and parsing failures to
+`unavailable` and emitted no stage diagnostics, so the original failed attempt
+cannot be assigned a remote status retrospectively. Review against pinned
+`garminconnect==0.3.20` identified a concrete protocol mismatch: its official
+`Client.download()` adds `Accept: */*`, while the bounded streaming path omitted
+that header. The real read-only retry after restoring that contract completed
+download, archive resolution, and FIT parsing. The regression test failed
+before the fix because the required header was absent and passes after the fix.
+New diagnostic records use only a random request ID, fixed stage/code/error
+category, HTTP status, duration, byte count, and content category; no activity
+ID, URL, response body, or personal metric is recorded.
 Workout ID, title, and date alone are not treated as execution identity. A
 future phase needs either a verified remote linkage or an explicit confirmation
 flow with deterministic candidate evidence; a historical FIT proves download
 only, not a new planned workout's execution.
 
-No physical run is required to continue coding. Actual account login/MFA,
-post-restart token resume, synthetic upload/scheduling, Forerunner 55 sync and
-inspection, activity original download, isolated FIT parse/metric comparison,
-and failure experiments remain manual acceptance steps. Any cleanup must
+No physical run is required to continue coding. MFA, independent inspection of
+workout step/target/date fidelity on the device, FIT metric comparison against
+the owner's activity, exact workout-to-activity linkage, and remaining failure
+experiments remain manual acceptance steps. Any cleanup must
 identify the exact synthetic workout and schedule created by that run; never
 delete preexisting activities or workouts.
 

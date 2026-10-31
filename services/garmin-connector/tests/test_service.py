@@ -21,8 +21,12 @@ class FakeGarmin:
         self.scheduled = []
         self.workouts = []
         self.upload_calls = 0
-        self.client = SimpleNamespace(is_authenticated=False, dump=self.dump_tokens,
-                                      _run_request=self.run_request)
+        self.client = SimpleNamespace(
+            is_authenticated=False, dump=self.dump_tokens,
+            _run_request=self.run_request,
+            _resolve_url=lambda path: path if path.startswith("https://")
+            else f"https://connect.garmin.test/{path.lstrip('/')}",
+        )
 
     def dump_tokens(self, token_dir):
         Path(token_dir, "garmin_tokens.json").write_text('{"di_token":"synthetic-token"}')
@@ -70,10 +74,11 @@ class FakeGarmin:
     garmin_connect_csv_download = "https://connect.garmin.test/csv"
 
     class StreamResponse:
-        headers = {}
+        status_code = 200
+        headers = {"Content-Type": "application/zip"}
 
         def iter_content(self, chunk_size):
-            yield b"synthetic-fit"
+            yield b"PK\x03\x04synthetic-fit"
 
         def close(self):
             pass
@@ -470,7 +475,7 @@ class ConnectorTests(unittest.TestCase):
             workout = self.client.get(f"{self.prefix}/workouts/42", headers=self.headers)
             self.assertEqual(workout.json()["steps"], 2)
             original = self.client.get(f"{self.prefix}/activities/42/original", headers=self.headers)
-            self.assertEqual(original.content, b"synthetic-fit")
+            self.assertEqual(original.content, b"PK\x03\x04synthetic-fit")
 
         class LargeFile(FakeGarmin):
             def run_request(self, *_args, **_kwargs):

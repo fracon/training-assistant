@@ -154,6 +154,47 @@ test('original download streams into the existing ZIP resolver and FIT parser', 
   const fit = buildFitFile();
   const archive = buildStoredZip([{ name: 'activity.fit', data: fit }]);
   let validations = 0;
+  const previousOwner = process.env.GARMIN_PILOT_USER_ID;
+  process.env.GARMIN_PILOT_USER_ID = '31';
+  const output = [];
+  let parseCalls = 0;
+  try {
+    await pilot.main({
+      action: 'download',
+      prompts: promptStub(['77']),
+      validate() { validations += 1; },
+      fetchImpl: async (url) => {
+        assert.match(url, /\/v1\/connections\/31\/pilot\/activities\/77\/original$/);
+        return new Response(archive, {
+          status: 200,
+          headers: {
+            'content-type': 'application/octet-stream',
+            'x-kinesis-diagnostic-id': 'a'.repeat(32),
+          },
+        });
+      },
+      parseFitFile: async (resolved) => {
+        parseCalls += 1;
+        return parseFitFile(resolved);
+      },
+      writeOut(value) { output.push(value); },
+      writeError() {},
+    });
+  } finally {
+    if (previousOwner === undefined) delete process.env.GARMIN_PILOT_USER_ID;
+    else process.env.GARMIN_PILOT_USER_ID = previousOwner;
+  }
+  const report = JSON.parse(output[0]);
+  assert.equal(report.activity.sport, 'running');
+  assert.equal(report.totals.distanceKm, 5);
+  assert.equal(report.totals.avgPaceSecondsPerKm, 360.1);
+  assert.equal(report.laps, 2);
+  assert.equal(report.bytes, archive.length);
+  assert.equal(report.diagnostic_id, 'a'.repeat(32));
+  assert.equal(parseCalls, 1);
+
+  // Keep a direct stream-boundary assertion separate from the CLI composition.
+  validations = 0;
   const bytes = await pilot.requestOriginal('/activities/77/original', {
     validate() { validations += 1; },
     async fetchImpl() { return new Response(archive, { status: 200 }); },
@@ -165,6 +206,19 @@ test('original download streams into the existing ZIP resolver and FIT parser', 
   assert.equal(summary.totals.avgPaceSecondsPerKm, 360.1);
   assert.equal(summary.laps.length, 2);
   assert.equal(validations, 3);
+});
+
+test('download parser failures report only a safe stage/code and diagnostic correlation ID', async () => {
+  const cli = pilotOptions('download', ['77']);
+  cli.options.requestOriginal = async (_path, dependencies) => {
+    dependencies.onDiagnostic('b'.repeat(32));
+    return Buffer.from('synthetic-zip');
+  };
+  cli.options.resolveFitBuffer = async () => Buffer.from('synthetic-fit');
+  cli.options.parseFitFile = async () => { throw new Error('private parser detail'); };
+  assert.equal(await pilot.runMain(cli.options), 1);
+  assert.match(cli.errors[0], /parse_fit.*unavailable.*diagnostic ID b{32}/);
+  assert.doesNotMatch(cli.errors[0], /private parser detail/);
 });
 
 test('original download enforces actual streamed bytes when length is missing or false and cancels the stream', async () => {
