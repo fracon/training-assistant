@@ -80,6 +80,10 @@ test('connector conversion preserves timed repeat, pace and absolute HR semantic
   assert.equal(hrPayload.target_kind, 'heart_rate');
   assert.deepEqual([hrPayload.target_lower_bpm, hrPayload.target_upper_bpm], [140, 165]);
   operation.prescription.steps[1].interval.end = { type: 'distance', value: 1000 };
+  const distancePayload = toConnectorPayload(operation);
+  assert.equal(distancePayload.interval_seconds, null);
+  assert.equal(distancePayload.interval_distance_meters, 1000);
+  operation.prescription.steps = [{ id: 'open', kind: 'open', end: { type: 'open' }, target: { type: 'none' } }];
   assert.throws(() => toConnectorPayload(operation), /unsupported/);
 });
 

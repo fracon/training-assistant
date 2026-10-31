@@ -24,6 +24,7 @@ test('Garmin session UI previews without remote mutation in PT/EN on desktop and
   assert.ok(chrome, 'Chrome is required for Garmin UI verification.');
   const db = createDatabase({ filename: ':memory:' });
   const owner = await registerUser(db, { email: 'garmin-ui@example.test', password: 'Synthetic-only-1', first_name: 'Test', last_name: 'Runner' });
+  db.prepare("UPDATE users SET distance_unit = 'mi' WHERE id = ?").run(owner.id);
   db.prepare('INSERT INTO trainings (user_id,dia,tipo,treino,detalhes) VALUES (?,?,?,?,?)').run(owner.id, '2026-11-02', 'Run', 'Intervals', '6 x 3 min');
   const remoteCalls = [];
   const app = await buildServer({ db, sessionCookieSecure: false,
@@ -54,7 +55,7 @@ test('Garmin session UI previews without remote mutation in PT/EN on desktop and
     await command('Network.enable'); await command('Network.setCookie', { name: SESSION_COOKIE_NAME, value: createSession(db, owner.id).token, url: baseUrl });
     await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
     await command('Page.navigate', { url: `${baseUrl}/training-result.html?id=1` });
-    const wait = async (expression) => { for (let i = 0; i < 150; i += 1) { if (await evaluate(expression).catch(() => false)) return; await delay(100); } throw new Error('Garmin session panel did not become ready.'); };
+    const wait = async (expression) => { for (let i = 0; i < 150; i += 1) { if (await evaluate(expression).catch(() => false)) return; await delay(100); } const diagnostic = await evaluate("document.getElementById('garminOperationStatus')?.textContent").catch(() => 'unavailable'); throw new Error(`Garmin session panel did not become ready: ${diagnostic}`); };
     await wait("document.getElementById('sessionDate')?.textContent.trim() !== '-' && !document.getElementById('garminSessionCard').hidden");
     await wait("document.getElementById('garminConnectionStatus').textContent.includes('Connected')");
     await evaluate("document.getElementById('garminSessionCard').scrollIntoView()");
@@ -75,6 +76,14 @@ test('Garmin session UI previews without remote mutation in PT/EN on desktop and
     const low = await evaluate("(()=>({height:innerHeight,scrollWidth:document.documentElement.scrollWidth,width:innerWidth,cardWidth:document.getElementById('garminSessionCard').getBoundingClientRect().width}))()");
     assert.equal(low.height, 480); assert.ok(low.scrollWidth <= low.width); assert.ok(low.cardWidth < low.width);
     await command('Page.captureScreenshot').then((shot) => require('node:fs').writeFileSync('/tmp/kinesis-garmin-ui-en-low-window.png', Buffer.from(shot.data, 'base64')));
+    await evaluate("document.getElementById('garminWorkoutName').value='Tempo synthetic';document.getElementById('garminIntervalType').value='distance';document.getElementById('garminIntervalType').dispatchEvent(new Event('change'));document.getElementById('garminInterval').value='5';document.getElementById('garminPrescriptionForm').requestSubmit()");
+    await wait("!document.getElementById('garminPreview').hidden");
+    assert.match(await evaluate("document.getElementById('garminPreviewSteps').textContent"), /Run: 5\.00 mi/);
+    assert.equal(JSON.parse(db.prepare('SELECT prescription_json FROM garmin_workout_prescriptions').get().prescription_json).steps[0].end.value, 8047);
+    await evaluate("document.getElementById('garminPreview').scrollIntoView()");
+    await command('Page.captureScreenshot').then((shot) => require('node:fs').writeFileSync('/tmp/kinesis-garmin-ui-en-distance-preview.png', Buffer.from(shot.data, 'base64')));
+    await evaluate("document.getElementById('garminIntervalType').value='time';document.getElementById('garminIntervalType').dispatchEvent(new Event('change'));document.getElementById('garminInterval').value='30';document.getElementById('garminPrescriptionForm').requestSubmit()");
+    await wait("document.getElementById('garminPreviewSteps').textContent.includes('Run: 30 min')");
     await evaluate("document.getElementById('garminWorkoutName').value='Tempo synthetic';document.getElementById('garminPrescriptionForm').requestSubmit()");
     await wait("!document.getElementById('garminPreview').hidden");
     assert.match(await evaluate("document.getElementById('garminPreviewSteps').textContent"), /Run: 30 min/);

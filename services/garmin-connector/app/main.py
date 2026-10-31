@@ -80,7 +80,8 @@ class WorkoutPayload(StrictModel):
     operation_id: uuid.UUID
     name: str = Field(min_length=1, max_length=32, pattern=r"^[\w .-]+$")
     warmup_seconds: int = Field(default=0, ge=0, le=3600)
-    interval_seconds: int = Field(ge=1, le=7200)
+    interval_seconds: int | None = Field(default=None, ge=1, le=7200)
+    interval_distance_meters: int | None = Field(default=None, ge=1, le=100000)
     recovery_seconds: int = Field(default=0, ge=0, le=3600)
     repetitions: int = Field(default=1, ge=1, le=20)
     cooldown_seconds: int = Field(default=0, ge=0, le=3600)
@@ -910,8 +911,11 @@ def publish_workout(owner_id: str, connection_id: str, body: WorkoutPayload,
             from garminconnect.workout import (
                 CustomHeartRateTarget, PaceTarget, RunningWorkout, WorkoutSegment, create_cooldown_step,
                 create_interval_step, create_recovery_step, create_repeat_group,
-                create_targeted_interval_step, create_warmup_step,
+                create_targeted_interval_step, create_distance_interval_step,
+                create_targeted_distance_interval_step, create_warmup_step,
             )
+            if (body.interval_seconds is None) == (body.interval_distance_meters is None):
+                raise ValueError("Exactly one interval end condition is required")
             if (body.target_lower_mps is None) != (body.target_upper_mps is None):
                 raise ValueError("Both pace bounds are required")
             if (body.target_lower_bpm is None) != (body.target_upper_bpm is None):
@@ -983,9 +987,20 @@ def publish_workout(owner_id: str, connection_id: str, body: WorkoutPayload,
                                         upper_limit=body.target_upper_mps)
                 interval_order = 2 if body.warmup_seconds else 1
                 interval_step_order = 1 if body.repetitions > 1 else interval_order
-                interval = (create_targeted_interval_step(
-                    body.interval_seconds, step_order=interval_step_order, target=target
-                ) if target else create_interval_step(body.interval_seconds, step_order=interval_step_order))
+                if body.interval_seconds is not None:
+                    interval = (create_targeted_interval_step(
+                        body.interval_seconds, step_order=interval_step_order, target=target
+                    ) if target else create_interval_step(body.interval_seconds, step_order=interval_step_order))
+                    estimated_interval_seconds = body.interval_seconds * body.repetitions
+                else:
+                    interval = (create_targeted_distance_interval_step(
+                        body.interval_distance_meters, step_order=interval_step_order, target=target
+                    ) if target else create_distance_interval_step(
+                        body.interval_distance_meters, step_order=interval_step_order
+                    ))
+                    # Garmin requires this field, but Kinesis does not invent a
+                    # duration estimate for a distance step.
+                    estimated_interval_seconds = None
                 repeated_steps = [interval]
                 if body.repetitions > 1:
                     if body.recovery_seconds < 1:
@@ -1004,9 +1019,9 @@ def publish_workout(owner_id: str, connection_id: str, body: WorkoutPayload,
                     steps.append(create_cooldown_step(body.cooldown_seconds, step_order=len(steps) + 1))
             workout = RunningWorkout(
                 workoutName=expected_name[:60],
-                estimatedDurationInSecs=(body.warmup_seconds + body.repetitions * body.interval_seconds
+                estimatedDurationInSecs=(body.warmup_seconds + estimated_interval_seconds
                                          + max(0, body.repetitions - 1) * body.recovery_seconds
-                                         + body.cooldown_seconds),
+                                         + body.cooldown_seconds) if estimated_interval_seconds is not None else 0,
                 workoutSegments=[WorkoutSegment(
                     segmentOrder=1,
                     sportType={"sportTypeId": 1, "sportTypeKey": "running"},

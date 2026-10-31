@@ -69,6 +69,14 @@ browser never calls Python directly. This remains restricted to the configured
 Kinesis pilot owner and is not production multi-user support. See
 `../../docs/garmin-integration.md` for supported shapes and owner homologation.
 
+The internal `POST /workouts` contract accepts exactly one main interval end
+condition: `interval_seconds` or `interval_distance_meters`. Distance is
+canonical meters and maps to the pinned library's distance-step constructor.
+For distance-based prescriptions `estimatedDurationInSecs` is zero; neither
+service invents duration or distance. Warm-up, recovery and cool-down remain
+time based in this adapter. Lap-button steps and nested repeat groups are
+refused before remote mutation.
+
 `npm run test:garmin-product-coverage` separately reports the Node product
 adapter and prescription contract; do not combine it with the backend Node
 100% gate or Python connector coverage.

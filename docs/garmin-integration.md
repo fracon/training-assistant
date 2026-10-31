@@ -289,13 +289,13 @@ the `KGC1` envelope. Do not restore a token backup from a different key.
 ## Automated evidence and go/no-go
 
 At the #73 branch the connector suite has **47 passing tests**; Python coverage
-(`coverage run --branch --source=app -m pytest`) measures **88.94% lines**
-(756/850), **75.33% branches** (226/300), and **85.39% combined coverage** for
+(`coverage run --branch --source=app -m pytest`) measures **88.91% lines**
+(762/857), **75.33% branches** (229/304), and **85.36% combined coverage** for
 `app/main.py`. The Garmin CLI/setup/launcher and product route/contract suites
 have **41 passing tests**; `npm run test:garmin-pilot-coverage` measures
-**82.51% statements/lines, 70.62% branches, and 82.35% functions** across the
-five Garmin Node tools. The product route adapter itself measures 68.16%
-statements/lines, 59.09% branches and 92.30% functions; the versioned workout
+**82.39% statements/lines, 71.08% branches, and 82.35% functions** across the
+five Garmin Node tools. The product route adapter itself measures 68.12%
+statements/lines, 60.90% branches and 92.30% functions; the versioned workout
 contract measures 100% in all four metrics. These separate measurements are
 reported honestly and are not added 100% gates. The full `npm test` run passed
 **1,366 tests**, and `npm run test:coverage` passed the repository's existing
@@ -375,12 +375,13 @@ An explicit prescription is stored in `garmin_workout_prescriptions`, separate
 from `trainings.detalhes`, with a content fingerprint and monotonically
 increasing revision. The v1 contract is running-only and validates unique step
 IDs, repeat bounds, time/distance values, absolute heart-rate bounds, and pace
-units. RPE is not converted. The UI edits timed warm-up, run/repeat/recovery,
-and cool-down steps with no target, pace range, or absolute heart-rate range.
-The contract can represent distance and open-lap steps, but the current
-connector conversion rejects those shapes before remote dispatch; they are
-not silently flattened. Zone targets and nested repeats are not supported.
-Original prose is never interpreted or rewritten.
+units. RPE is not converted. The UI edits timed warm-up/recovery/cool-down and a
+main or repeated run interval by time or distance, with no target, pace range,
+or absolute heart-rate range. Distance is stored in meters and the selected UI
+unit is used for entry/preview. Open-lap, zone targets and nested repeats are
+not supported by the current adapter; incompatible structures are refused
+before remote dispatch instead of being flattened. Original prose is never
+interpreted or rewritten.
 
 The preview saves the local prescription but does not mutate Garmin. A separate
 confirmation starts a durable owner/session/revision/fingerprint operation.
@@ -402,15 +403,20 @@ translates timed steps and pace/absolute-HR targets to the pinned library
 contract. The remote title starts with the friendly workout name and retains a
 technical operation marker for reconciliation.
 
-The editor currently creates time-based warm-up, work/repeat, recovery, and
-cool-down steps. Although the versioned local schema can represent distance or
-open-lap steps, the product adapter rejects these before dispatch; no distance
-or lap-button workout is currently offered by the UI. Nested repeats and zone
-targets are also outside this v1 adapter. Changing a prescription creates an
-explicit new revision and can leave the earlier Garmin workout/occurrence in
-place; the product does not delete or silently update it. Changing only the
-planned civil date marks the old operation outdated, but safe remote
-rescheduling is not implemented because the pinned contract does not yet
+The editor creates time-based warm-up, recovery, and cool-down steps and a
+main/repeated interval by time or distance. Distance input follows the Kinesis
+preferred unit and is converted to canonical integer meters before persistence;
+the preview formats that value in the same preference. The adapter uses the
+pinned library's real distance-step constructor and sets Garmin's required
+estimated-duration field to zero rather than inventing a total duration for a
+distance-based prescription. This path is covered with synthetic model/transport
+tests, but distance workout creation has not been homologated on the real Garmin
+account or Forerunner 55. Open-lap steps remain rejected before dispatch.
+Nested repeats and zone targets are also outside this v1 adapter. Changing a
+prescription creates an explicit new revision and can leave the earlier Garmin
+workout/occurrence in place; the product does not delete or silently update it.
+Changing only the planned civil date marks the old operation outdated, but safe
+remote rescheduling is not implemented because the pinned contract does not yet
 provide a verified occurrence replacement/removal operation. Use Garmin Connect
 manually for such a date change until that capability is implemented.
 
@@ -453,6 +459,7 @@ simulated connector, not the owner's connection.
 | Session editor, desktop 1280×900 | [Capture](garmin-pilot-screenshots/en-desktop.png) | [Captura](garmin-pilot-screenshots/pt-desktop.png) |
 | Session editor, mobile 390×844 | [Capture](garmin-pilot-screenshots/en-mobile.png) | [Captura](garmin-pilot-screenshots/pt-mobile.png) |
 | Structured preview | [Capture](garmin-pilot-screenshots/en-preview.png) | [Captura](garmin-pilot-screenshots/pt-preview.png) |
+| Distance preview, preferred miles | [Capture](garmin-pilot-screenshots/en-distance-preview.png) | — |
 
 The low-height desktop capture is [available separately](garmin-pilot-screenshots/en-low-window.png).
 

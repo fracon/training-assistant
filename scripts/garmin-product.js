@@ -230,7 +230,8 @@ function toConnectorPayload(operation) {
       || (warmups.length && ordered[0] !== warmups[0])
       || (cooldowns.length && ordered[ordered.length - 1] !== cooldowns[0])
       || (ordered.length !== warmups.length + cooldowns.length + mains.length)) throw new Error('unsupported');
-  let warmup = 0, interval = 0, recovery = 0, cooldown = 0, repetitions = 1, pace = null;
+  let warmup = 0, intervalSeconds = null, intervalDistanceMeters = null;
+  let recovery = 0, cooldown = 0, repetitions = 1, pace = null;
   let targetKind = 'none';
   let lowerBpm = null;
   let upperBpm = null;
@@ -245,18 +246,26 @@ function toConnectorPayload(operation) {
   for (const step of ordered) {
     if (step.kind === 'warmup' && step.end.type === 'time' && step.end.value <= 3600 && step.target.type === 'none') warmup = step.end.value;
     else if (step.kind === 'cooldown' && step.end.type === 'time' && step.end.value <= 3600 && step.target.type === 'none') cooldown = step.end.value;
-    else if (step.kind === 'repeat' && step.interval.end.type === 'time' && step.recovery.end.type === 'time'
+    else if (step.kind === 'repeat' && ['time', 'distance'].includes(step.interval.end.type) && step.recovery.end.type === 'time'
       && step.recovery.target.type === 'none' && step.repetitions <= 20) {
       if (step.recovery.end.value > 3600) throw new Error('unsupported');
-      interval = step.interval.end.value; recovery = step.recovery.end.value; repetitions = step.repetitions;
+      if (step.interval.end.type === 'time') intervalSeconds = step.interval.end.value;
+      else intervalDistanceMeters = step.interval.end.value;
+      recovery = step.recovery.end.value; repetitions = step.repetitions;
       applyTarget(step.interval.target);
-    } else if (step.kind === 'run' && step.end.type === 'time') {
-      if (interval) throw new Error('unsupported');
-      interval = step.end.value; applyTarget(step.target);
+    } else if (step.kind === 'run' && ['time', 'distance'].includes(step.end.type)) {
+      if (intervalSeconds !== null || intervalDistanceMeters !== null) throw new Error('unsupported');
+      if (step.end.type === 'time') intervalSeconds = step.end.value;
+      else intervalDistanceMeters = step.end.value;
+      applyTarget(step.target);
     } else throw new Error('unsupported');
   }
-  if (!interval) throw new Error('unsupported');
-  return { operation_id: operation.operationId, name: valid.name, warmup_seconds: warmup, interval_seconds: interval, recovery_seconds: recovery, repetitions, cooldown_seconds: cooldown, target_kind: targetKind, target_lower_mps: pace?.lower_mps ?? null, target_upper_mps: pace?.upper_mps ?? null, target_lower_bpm: lowerBpm, target_upper_bpm: upperBpm };
+  if ((intervalSeconds === null) === (intervalDistanceMeters === null)) throw new Error('unsupported');
+  return { operation_id: operation.operationId, name: valid.name, warmup_seconds: warmup,
+    interval_seconds: intervalSeconds, interval_distance_meters: intervalDistanceMeters,
+    recovery_seconds: recovery, repetitions, cooldown_seconds: cooldown, target_kind: targetKind,
+    target_lower_mps: pace?.lower_mps ?? null, target_upper_mps: pace?.upper_mps ?? null,
+    target_lower_bpm: lowerBpm, target_upper_bpm: upperBpm };
 }
 
 async function runOperation(db, fetchImpl, config, operation, currentTraining) {

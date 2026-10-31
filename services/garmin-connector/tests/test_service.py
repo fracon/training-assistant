@@ -644,6 +644,19 @@ class ConnectorTests(unittest.TestCase):
             reconciled = self.client.post(f"{self.prefix}/workouts", headers=self.headers, json=workout_body)
             self.assertEqual(reconciled.json()["status"], "reconciled")
             self.assertEqual(fake.upload_calls, 2)
+            distance_body = {**workout_body,
+                             "operation_id": "e2376b45-a2b4-4dfd-8f77-dba9508d36ab",
+                             "interval_seconds": None,
+                             "interval_distance_meters": 1000}
+            distance_result = self.client.post(f"{self.prefix}/workouts", headers=self.headers,
+                                               json=distance_body)
+            self.assertEqual(distance_result.status_code, 200, distance_result.text)
+            distance_workout = fake.workout
+            distance_repeat = distance_workout.workoutSegments[0].workoutSteps[1]
+            distance_interval = distance_repeat.workoutSteps[0]
+            self.assertEqual(distance_interval.endCondition["conditionTypeId"], 3)
+            self.assertEqual(distance_interval.endConditionValue, 1000)
+            self.assertEqual(distance_workout.estimatedDurationInSecs, 0)
             changed = {**workout_body, "interval_seconds": 121}
             conflict = self.client.post(f"{self.prefix}/workouts", headers=self.headers, json=changed)
             self.assertEqual(conflict.status_code, 409)

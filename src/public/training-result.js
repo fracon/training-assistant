@@ -1276,6 +1276,7 @@ async function initTrainingResult() {
   const garminOperationStatus = document.getElementById('garminOperationStatus');
   const garminReconcileButton = document.getElementById('garminReconcileButton');
   const garminTargetType = document.getElementById('garminTargetType');
+  const garminIntervalType = document.getElementById('garminIntervalType');
   const garminTargetFields = document.getElementById('garminTargetFields');
   let garminChallenge = null;
   let garminFingerprint = null;
@@ -1337,7 +1338,13 @@ async function initTrainingResult() {
     const cooldown = value.steps.find((step) => step.kind === 'cooldown');
     document.getElementById('garminWarmup').value = warmup ? warmup.end.value / 60 : 0;
     document.getElementById('garminRepetitions').value = repeat?.repetitions || 1;
-    document.getElementById('garminInterval').value = run ? run.end.value / 60 : 30;
+    const runEnd = run?.end || { type: 'time', value: 1800 };
+    garminIntervalType.value = runEnd.type;
+    const distanceUnit = getUserPreferences().distance_unit === 'mi' ? 'mi' : 'km';
+    document.getElementById('garminInterval').value = runEnd.type === 'distance'
+      ? runEnd.value / (distanceUnit === 'mi' ? 1609.344 : 1000)
+      : runEnd.value / 60;
+    updateGarminIntervalInput(false);
     document.getElementById('garminRecovery').value = recovery ? recovery.end.value / 60 : 0;
     document.getElementById('garminCooldown').value = cooldown ? cooldown.end.value / 60 : 0;
   };
@@ -1352,7 +1359,10 @@ async function initTrainingResult() {
     const repetitions = Number(document.getElementById('garminRepetitions').value);
     const steps = [];
     if (minutes('garminWarmup')) steps.push({ id: 'warmup', kind: 'warmup', end: { type: 'time', value: Math.round(minutes('garminWarmup') * 60) }, target: { type: 'none' } });
-    const interval = { end: { type: 'time', value: Math.round(minutes('garminInterval') * 60) }, target };
+    const intervalEnd = garminIntervalType.value === 'distance'
+      ? { type: 'distance', value: Math.round(convertDistanceToKm(minutes('garminInterval'), getUserPreferences().distance_unit === 'mi' ? 'mi' : 'km') * 1000) }
+      : { type: 'time', value: Math.round(minutes('garminInterval') * 60) };
+    const interval = { end: intervalEnd, target };
     if (repetitions > 1) steps.push({ id: 'repeat', kind: 'repeat', repetitions, interval, recovery: { end: { type: 'time', value: Math.round(minutes('garminRecovery') * 60) }, target: { type: 'none' } } });
     else steps.push({ id: 'run', kind: 'run', ...interval });
     if (minutes('garminCooldown')) steps.push({ id: 'cooldown', kind: 'cooldown', end: { type: 'time', value: Math.round(minutes('garminCooldown') * 60) }, target: { type: 'none' } });
@@ -1379,7 +1389,10 @@ async function initTrainingResult() {
     for (const step of preview.steps) {
       const li = document.createElement('li');
       const label = garminText(step.kind === 'repeat' ? 'repeatName' : `${step.kind}Name`, { count: step.repetitions });
-      const detail = step.end?.type === 'time' ? garminText('timeDetail', { minutes: Math.round(step.end.value / 60) }) : garminText('unsupported');
+      const distanceUnit = getUserPreferences().distance_unit === 'mi' ? 'mi' : 'km';
+      const detail = step.end?.type === 'time' ? garminText('timeDetail', { minutes: Math.round(step.end.value / 60) })
+        : step.end?.type === 'distance' ? garminText('distanceDetail', { distance: formatDistance(step.end.value / 1000, distanceUnit) })
+          : garminText('unsupported');
       let target = garminText('noTarget');
       if (step.target?.type === 'heart_rate') target = `${step.target.lower_bpm}–${step.target.upper_bpm} bpm`;
       else if (step.target?.type === 'pace') target = `${formatPaceFromMetric(step.target.faster_seconds)}–${formatPaceFromMetric(step.target.slower_seconds)} /km`;
@@ -1391,6 +1404,7 @@ async function initTrainingResult() {
   };
   document.addEventListener('app:languagechange', () => {
     setGarminConnectionMessage(garminConnectionMessage);
+    updateGarminIntervalInput(false);
     if (garminCurrentOperation) renderGarminOperation(garminCurrentOperation);
     else if (garminOperationMessageKey) setGarminOperationMessage(garminOperationMessageKey);
     if (garminPreviewModel) renderGarminPreview(garminPreviewModel);
@@ -1403,6 +1417,19 @@ async function initTrainingResult() {
     document.getElementById('garminLower').min = garminTargetType.value === 'pace' ? '2' : '40';
     document.getElementById('garminUpper').min = garminTargetType.value === 'pace' ? '2' : '40';
   });
+  function updateGarminIntervalInput(reset = false) {
+    const input = document.getElementById('garminInterval');
+    const unit = getUserPreferences().distance_unit === 'mi' ? 'mi' : 'km';
+    const byDistance = garminIntervalType.value === 'distance';
+    document.getElementById('garminIntervalLabel').textContent = garminText(
+      byDistance ? (unit === 'mi' ? 'runDistanceMi' : 'runDistanceKm') : 'runMinutes',
+    );
+    input.min = byDistance ? '0.1' : '1';
+    input.max = byDistance ? (unit === 'mi' ? '62.1' : '100') : '120';
+    input.step = byDistance ? '0.1' : '1';
+    if (reset) input.value = byDistance ? '5' : '30';
+  }
+  garminIntervalType.addEventListener('change', () => updateGarminIntervalInput(true));
   garminConnectButton.addEventListener('click', () => {
     garminAuthForm.dataset.open = 'true'; garminAuthForm.hidden = false;
     garminConnectButton.hidden = true; document.getElementById('garminEmail').focus();

@@ -86,7 +86,8 @@
             <div class="garmin-step-grid">
               <label><span data-i18n="garmin.product.warmup">Warm-up (minutes)</span><input id="garminWarmup" type="number" min="0" max="60" value="0" class="input-control"></label>
               <label><span data-i18n="garmin.product.repetitions">Intervals</span><input id="garminRepetitions" type="number" min="1" max="30" value="1" class="input-control"></label>
-              <label><span data-i18n="garmin.product.interval">Run (minutes)</span><input id="garminInterval" type="number" min="1" max="120" value="30" class="input-control" required></label>
+              <label><span data-i18n="garmin.product.endCondition">Main step ends by</span><select id="garminIntervalType" class="input-control"><option value="time" data-i18n="garmin.product.byTime">Time</option><option value="distance" data-i18n="garmin.product.byDistance">Distance</option></select></label>
+              <label><span id="garminIntervalLabel" data-i18n="garmin.product.runMinutes">Run (minutes)</span><input id="garminInterval" type="number" min="1" max="120" value="30" class="input-control" required></label>
               <label><span data-i18n="garmin.product.recovery">Recovery (minutes)</span><input id="garminRecovery" type="number" min="0" max="60" value="0" class="input-control"></label>
               <label><span data-i18n="garmin.product.cooldown">Cool-down (minutes)</span><input id="garminCooldown" type="number" min="0" max="60" value="0" class="input-control"></label>
             </div>
