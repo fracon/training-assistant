@@ -95,6 +95,7 @@ class FakeGarmin:
         return {"workoutName": name, "workoutSegments": [{"workoutSteps": [{}, {}]}]}
 
     def update_workout(self, workout_id, workout_json):
+        self.update_calls = getattr(self, "update_calls", 0) + 1
         self.updated = (workout_id, workout_json)
         self.workout = type("Workout", (), {"workoutName": workout_json["workoutName"]})()
         return {"workoutId": workout_id, "workoutName": self.workout.workoutName}
@@ -103,6 +104,7 @@ class FakeGarmin:
         return next((item for item in self.scheduled if item.get("scheduleId", item.get("id")) == scheduled_workout_id), None)
 
     def reschedule_workout(self, scheduled_workout_id, date_text):
+        self.reschedule_calls = getattr(self, "reschedule_calls", 0) + 1
         item = self.get_scheduled_workout_by_id(scheduled_workout_id)
         item["calendarDate"] = date_text
         return item
@@ -136,6 +138,12 @@ class ConnectorTests(unittest.TestCase):
 
     def tearDown(self):
         self.temp.cleanup()
+
+    def seed_completed_workout(self, operation_id, workout_id=42):
+        path = Path(self.temp.name, "17-pilot.bin")
+        main._save_operation_journal(path, b"k" * 32, {
+            operation_id: {"status": "complete", "workout_id": workout_id},
+        })
 
     def _query_activity_pages(self, pages, limit=10, offset=0, clock_values=None):
         main._save_encrypted(Path(self.temp.name, "17-pilot.bin"), b"k" * 32,
@@ -677,7 +685,8 @@ class ConnectorTests(unittest.TestCase):
             conflict = self.client.post(f"{self.prefix}/workouts", headers=self.headers, json=changed)
             self.assertEqual(conflict.status_code, 409)
             scheduled = self.client.post(f"{self.prefix}/workouts/schedule", headers=self.headers,
-                                         json={"workout_id": 42, "date": "2026-11-12"})
+                                         json={"operation_id": workout_body["operation_id"],
+                                               "workout_id": 42, "date": "2026-11-12"})
             self.assertEqual(scheduled.json()["status"], "scheduled")
 
             class ExistingSchedule(FakeGarmin):
@@ -691,10 +700,66 @@ class ConnectorTests(unittest.TestCase):
 
             with patch.object(main, "_client", reconciled_client):
                 retry = self.client.post(f"{self.prefix}/workouts/schedule", headers=self.headers,
-                                         json={"workout_id": 42, "date": "2026-11-12"})
+                                         json={"operation_id": workout_body["operation_id"],
+                                               "workout_id": 42, "date": "2026-11-12"})
             self.assertEqual(retry.json()["status"], "reconciled")
 
     def test_update_and_reschedule_are_scoped_to_confirmed_kinesis_artifacts(self):
+        path = Path(self.temp.name, "17-pilot.bin")
+        main._save_encrypted(path, b"k" * 32, b'{"di_token":"x"}')
+        fake = FakeGarmin()
+        fake.workout = type("Workout", (), {"workoutName": "Kinesis old synthetic"})()
+        fake.scheduled.append({"itemType": "workout", "workout": {"workoutId": 42},
+                               "scheduleId": 84, "calendarDate": "2026-11-12"})
+        source_id = "00000000-0000-4000-8000-000000000001"
+        main._save_operation_journal(path, b"k" * 32, {
+            source_id: {"status": "complete", "workout_id": 42},
+            "schedule:42:2026-11-12": {"status": "complete", "workout_id": 42,
+                                       "scheduled_workout_id": 84},
+        })
+
+        @contextmanager
+        def fake_client(*_args, **_kwargs):
+            yield fake, Path(self.temp.name), Path(self.temp.name, "tokens.json")
+
+        update_body = {
+            "operation_id": "a14b6c50-ea44-4e0b-beb1-2e3934fb8850",
+            "source_operation_id": source_id,
+            "workout_id": 42, "name": "Updated synthetic", "interval_seconds": 300,
+            "repetitions": 4, "recovery_seconds": 120,
+            "recovery_target_kind": "heart_rate", "recovery_target_lower_bpm": 110,
+            "recovery_target_upper_bpm": 130, "skip_last_rest_step": True,
+        }
+        reschedule_body = {
+            "operation_id": "f0743e49-001d-4de5-a6b3-53757c9fe263",
+            # The update itself becomes the latest local operation identity.
+            "source_operation_id": update_body["operation_id"],
+            "scheduled_workout_id": 84, "workout_id": 42, "date": "2026-11-13",
+        }
+        with patch.object(main, "_client", fake_client):
+            updated = self.client.put(f"{self.prefix}/workouts/42", headers=self.headers, json=update_body)
+            self.assertEqual(updated.status_code, 200, updated.text)
+            self.assertEqual(updated.json()["status"], "updated")
+            self.assertEqual(fake.updated[0], 42)
+            self.assertEqual(fake.updated[1]["workoutName"].split(" ")[0:2], ["Updated", "synthetic"])
+            alias = main._operation_journal(path, b"k" * 32)[update_body["operation_id"]]
+            self.assertEqual(alias["artifact_kind"], "update")
+            self.assertEqual(alias["workout_id"], 42)
+            # Exercise the encrypted journal as the only source of provenance after restart.
+            main._states.clear()
+            main._challenges.clear()
+            main._locks.clear()
+            repeated = self.client.put(f"{self.prefix}/workouts/42", headers=self.headers, json=update_body)
+            self.assertEqual(repeated.json()["status"], "reconciled")
+            moved = self.client.put(f"{self.prefix}/workouts/schedule/84", headers=self.headers, json=reschedule_body)
+            self.assertEqual(moved.status_code, 200, moved.text)
+            self.assertEqual(moved.json()["status"], "rescheduled")
+            retried = self.client.put(f"{self.prefix}/workouts/schedule/84", headers=self.headers, json=reschedule_body)
+            self.assertEqual(retried.json()["status"], "reconciled")
+        self.assertEqual(fake.scheduled[0]["calendarDate"], "2026-11-13")
+
+    def test_update_and_reschedule_refuse_remote_objects_without_kinesis_journal_provenance(self):
+        """A matching remote ID/name is not proof that Kinesis created the artifact."""
         path = Path(self.temp.name, "17-pilot.bin")
         main._save_encrypted(path, b"k" * 32, b'{"di_token":"x"}')
         fake = FakeGarmin()
@@ -708,28 +773,78 @@ class ConnectorTests(unittest.TestCase):
 
         update_body = {
             "operation_id": "a14b6c50-ea44-4e0b-beb1-2e3934fb8850",
+            "source_operation_id": "00000000-0000-4000-8000-000000000099",
             "workout_id": 42, "name": "Updated synthetic", "interval_seconds": 300,
             "repetitions": 4, "recovery_seconds": 120,
-            "recovery_target_kind": "heart_rate", "recovery_target_lower_bpm": 110,
-            "recovery_target_upper_bpm": 130, "skip_last_rest_step": True,
         }
         reschedule_body = {
             "operation_id": "f0743e49-001d-4de5-a6b3-53757c9fe263",
+            "source_operation_id": "00000000-0000-4000-8000-000000000099",
             "scheduled_workout_id": 84, "workout_id": 42, "date": "2026-11-13",
         }
         with patch.object(main, "_client", fake_client):
             updated = self.client.put(f"{self.prefix}/workouts/42", headers=self.headers, json=update_body)
-            self.assertEqual(updated.status_code, 200, updated.text)
-            self.assertEqual(updated.json()["status"], "updated")
-            self.assertEqual(fake.updated[0], 42)
-            self.assertEqual(fake.updated[1]["workoutName"].split(" ")[0:2], ["Updated", "synthetic"])
-            repeated = self.client.put(f"{self.prefix}/workouts/42", headers=self.headers, json=update_body)
-            self.assertEqual(repeated.json()["status"], "reconciled")
             moved = self.client.put(f"{self.prefix}/workouts/schedule/84", headers=self.headers, json=reschedule_body)
-            self.assertEqual(moved.status_code, 200, moved.text)
-            self.assertEqual(moved.json()["status"], "rescheduled")
-            retried = self.client.put(f"{self.prefix}/workouts/schedule/84", headers=self.headers, json=reschedule_body)
-            self.assertEqual(retried.json()["status"], "reconciled")
+
+        self.assertIn(updated.status_code, (403, 409))
+        self.assertIn(moved.status_code, (403, 409))
+        self.assertEqual(getattr(fake, "update_calls", 0), 0)
+        self.assertEqual(getattr(fake, "reschedule_calls", 0), 0)
+        self.assertEqual(fake.scheduled[0]["calendarDate"], "2026-11-12")
+
+    def test_update_and_reschedule_reconcile_lost_mutation_responses_without_repeating(self):
+        path = Path(self.temp.name, "17-pilot.bin")
+        main._save_encrypted(path, b"k" * 32, b'{"di_token":"x"}')
+        source_id = "00000000-0000-4000-8000-000000000001"
+        main._save_operation_journal(path, b"k" * 32, {
+            source_id: {"status": "complete", "workout_id": 42},
+            "schedule:42:2026-11-12": {"status": "complete", "workout_id": 42,
+                                       "scheduled_workout_id": 84},
+        })
+        fake = FakeGarmin()
+        fake.workout = type("Workout", (), {"workoutName": "Original remote"})()
+        fake.scheduled.append({"itemType": "workout", "workout": {"workoutId": 42},
+                               "scheduleId": 84, "calendarDate": "2026-11-12"})
+
+        def lose_update_response(workout_id, workout_json):
+            fake.update_calls = getattr(fake, "update_calls", 0) + 1
+            fake.workout = type("Workout", (), {"workoutName": workout_json["workoutName"]})()
+            raise TimeoutError("synthetic response lost after mutation")
+
+        def lose_reschedule_response(schedule_id, date_text):
+            fake.reschedule_calls = getattr(fake, "reschedule_calls", 0) + 1
+            fake.get_scheduled_workout_by_id(schedule_id)["calendarDate"] = date_text
+            raise TimeoutError("synthetic response lost after mutation")
+
+        fake.update_workout = lose_update_response
+        fake.reschedule_workout = lose_reschedule_response
+
+        @contextmanager
+        def fake_client(*_args, **_kwargs):
+            yield fake, Path(self.temp.name), Path(self.temp.name, "tokens.json")
+
+        update_id = "a14b6c50-ea44-4e0b-beb1-2e3934fb8850"
+        update_body = {"operation_id": update_id, "source_operation_id": source_id,
+                       "workout_id": 42, "name": "Updated synthetic", "interval_seconds": 300,
+                       "repetitions": 4, "recovery_seconds": 120}
+        with patch.object(main, "_client", fake_client):
+            first_update = self.client.put(f"{self.prefix}/workouts/42", headers=self.headers, json=update_body)
+            self.assertEqual(first_update.status_code, 503)
+            self.assertEqual(first_update.json()["detail"]["code"], "outcome_unknown")
+            replay_update = self.client.put(f"{self.prefix}/workouts/42", headers=self.headers, json=update_body)
+            self.assertEqual(replay_update.status_code, 200, replay_update.text)
+            self.assertEqual(replay_update.json()["status"], "reconciled")
+            reschedule_body = {"operation_id": "f0743e49-001d-4de5-a6b3-53757c9fe263",
+                               "source_operation_id": update_id, "scheduled_workout_id": 84,
+                               "workout_id": 42, "date": "2026-11-13"}
+            first_move = self.client.put(f"{self.prefix}/workouts/schedule/84", headers=self.headers, json=reschedule_body)
+            self.assertEqual(first_move.status_code, 503)
+            self.assertEqual(first_move.json()["detail"]["code"], "outcome_unknown")
+            replay_move = self.client.put(f"{self.prefix}/workouts/schedule/84", headers=self.headers, json=reschedule_body)
+            self.assertEqual(replay_move.status_code, 200, replay_move.text)
+            self.assertEqual(replay_move.json()["status"], "reconciled")
+        self.assertEqual(fake.update_calls, 1)
+        self.assertEqual(fake.reschedule_calls, 1)
         self.assertEqual(fake.scheduled[0]["calendarDate"], "2026-11-13")
 
     def test_uncertain_upload_is_reconciled_without_retrying_the_mutation(self):
@@ -761,6 +876,8 @@ class ConnectorTests(unittest.TestCase):
     def test_uncertain_schedule_is_reconciled_without_repeating_calendar_mutation(self):
         main._save_encrypted(Path(self.temp.name, "17-pilot.bin"), b"k" * 32,
                              b'{"di_token":"x"}')
+        operation_id = "f51db93c-9fb5-44ea-9a4c-79758a3b10c0"
+        self.seed_completed_workout(operation_id)
 
         class AmbiguousSchedule(FakeGarmin):
             schedule_calls = 0
@@ -780,13 +897,13 @@ class ConnectorTests(unittest.TestCase):
         with patch.object(main, "_client", fake_client):
             uncertain = self.client.post(
                 f"{self.prefix}/workouts/schedule", headers=self.headers,
-                json={"workout_id": 42, "date": "2026-11-12"},
+                json={"operation_id": operation_id, "workout_id": 42, "date": "2026-11-12"},
             )
             self.assertEqual(uncertain.json()["detail"]["code"], "outcome_unknown")
             fake.schedule_workout = FakeGarmin.schedule_workout.__get__(fake)
             reconciled = self.client.post(
                 f"{self.prefix}/workouts/schedule", headers=self.headers,
-                json={"workout_id": 42, "date": "2026-11-12"},
+                json={"operation_id": operation_id, "workout_id": 42, "date": "2026-11-12"},
             )
         self.assertEqual(reconciled.json()["status"], "reconciled")
         self.assertEqual(fake.schedule_calls, 1)
@@ -841,6 +958,8 @@ class ConnectorTests(unittest.TestCase):
     def test_calendar_response_without_contract_is_unknown_and_never_mutated(self):
         main._save_encrypted(Path(self.temp.name, "17-pilot.bin"), b"k" * 32,
                              b'{"di_token":"x"}')
+        operation_id = "f51db93c-9fb5-44ea-9a4c-79758a3b10c0"
+        self.seed_completed_workout(operation_id)
 
         class UnknownCalendar(FakeGarmin):
             schedule_calls = 0
@@ -860,7 +979,7 @@ class ConnectorTests(unittest.TestCase):
         with patch.object(main, "_client", fake_client):
             response = self.client.post(
                 f"{self.prefix}/workouts/schedule", headers=self.headers,
-                json={"workout_id": 42, "date": "2026-11-12"},
+                json={"operation_id": operation_id, "workout_id": 42, "date": "2026-11-12"},
             )
         self.assertEqual(response.json()["detail"]["code"], "outcome_unknown")
         self.assertEqual(fake.schedule_calls, 0)
@@ -879,10 +998,40 @@ class ConnectorTests(unittest.TestCase):
         with patch.object(main, "_client", malformed_client):
             response = self.client.post(
                 f"{self.prefix}/workouts/schedule", headers=self.headers,
-                json={"workout_id": 42, "date": "2026-11-12"},
+                json={"operation_id": operation_id, "workout_id": 42, "date": "2026-11-12"},
             )
         self.assertEqual(response.json()["detail"]["code"], "outcome_unknown")
         self.assertEqual(malformed.schedule_calls, 0)
+
+    def test_preexisting_matching_occurrence_is_not_adopted_as_a_kinesis_schedule(self):
+        main._save_encrypted(Path(self.temp.name, "17-pilot.bin"), b"k" * 32,
+                             b'{"di_token":"x"}')
+        operation_id = "f51db93c-9fb5-44ea-9a4c-79758a3b10c0"
+        self.seed_completed_workout(operation_id)
+
+        class ExistingCalendar(FakeGarmin):
+            schedule_calls = 0
+
+            def get_scheduled_workouts(self, *_args):
+                return {"calendarItems": [{"itemType": "workout", "workoutId": 42,
+                                            "date": "2026-11-12", "id": 999}]}
+
+            def schedule_workout(self, *_args):
+                self.schedule_calls += 1
+
+        fake = ExistingCalendar()
+
+        @contextmanager
+        def fake_client(*_args, **_kwargs):
+            yield fake, Path(self.temp.name), Path(self.temp.name, "tokens.json")
+
+        with patch.object(main, "_client", fake_client):
+            response = self.client.post(f"{self.prefix}/workouts/schedule", headers=self.headers,
+                                        json={"operation_id": operation_id, "workout_id": 42,
+                                              "date": "2026-11-12"})
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()["detail"]["code"], "outcome_unknown")
+        self.assertEqual(fake.schedule_calls, 0)
 
     def test_mutation_timeout_is_uncertain(self):
         path = Path(self.temp.name, "17-pilot.bin")

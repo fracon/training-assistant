@@ -1,6 +1,7 @@
 """Regression tests use garminconnect 0.3.20's real public client types."""
 
 import base64
+import hashlib
 import io
 import inspect
 import json
@@ -521,10 +522,17 @@ class UpstreamContractTests(unittest.TestCase):
 
         main._save_encrypted(Path(self.temp.name, "31-pilot.bin"), b"u" * 32,
                              b'{"di_token":"synthetic"}')
+        path = Path(self.temp.name, "31-pilot.bin")
+        schedule_key = "schedule:88:2026-11-12"
+        main._save_operation_journal(path, b"u" * 32, {
+            "00000000-0000-4000-8000-000000000031": {"status": "complete", "workout_id": 88},
+            schedule_key: {"status": "pending", "fingerprint": hashlib.sha256(schedule_key.encode()).hexdigest()},
+        })
         with patch.object(main, "_client", client_context):
             response = self.client.post(
                 f"{self.prefix}/workouts/schedule", headers=self.headers,
-                json={"workout_id": 88, "date": "2026-11-12"},
+                json={"operation_id": "00000000-0000-4000-8000-000000000031",
+                      "workout_id": 88, "date": "2026-11-12"},
             )
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(fake.calls, 0)

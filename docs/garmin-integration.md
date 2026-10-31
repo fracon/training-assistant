@@ -98,9 +98,9 @@ Errors use `{"detail":{"code":"…"}}`; unexpected exceptions are sanitized.
 | Workout catalog diagnostic | `GET /v1/connections/{owner}/{connection}/workout-catalog` | One read-only catalog call; sanitized structure and allowlisted sport type identifiers only |
 | Publish workout | `POST /v1/connections/{owner}/{connection}/workouts` | Bounded timed running template, optional repeated interval group and pace range |
 | Read workout | `GET /v1/connections/{owner}/{connection}/workouts/{id}` | Sanitized details only |
-| Update workout | `PUT /v1/connections/{owner}/{connection}/workouts/{id}` | Complete validated structure; retains workout ID; journal reconciles by operation ID and fingerprint |
-| Schedule workout | `POST /v1/connections/{owner}/{connection}/workouts/schedule` | Calendar date, after revalidation by caller |
-| Reschedule occurrence | `PUT /v1/connections/{owner}/{connection}/workouts/schedule/{occurrence_id}` | Verifies the existing workout/occurrence pair and moves only that occurrence's civil date in place |
+| Update workout | `PUT /v1/connections/{owner}/{connection}/workouts/{id}` | Requires a completed source operation ID in the encrypted journal; retains workout ID and reconciles by operation ID/fingerprint |
+| Schedule workout | `POST /v1/connections/{owner}/{connection}/workouts/schedule` | Requires the completed publish operation ID and confirms a pending occurrence by that workout/date before reconciling |
+| Reschedule occurrence | `PUT /v1/connections/{owner}/{connection}/workouts/schedule/{occurrence_id}` | Requires the completed source publish and schedule journal entries, verifies the workout/occurrence pair, and moves only that occurrence's civil date in place |
 | List activities | `POST /v1/connections/{owner}/{connection}/activities` | Required date window <=31 days, offset, page size <=25; response fields are allowlisted |
 | Download original | `GET /v1/connections/{owner}/{connection}/activities/{id}/original` | Max response 25 MiB; bytes are not logged or persisted by Node |
 
@@ -301,16 +301,31 @@ exercise the pinned `Garmin.update_workout` and `Garmin.reschedule_workout`
 methods with a simulated transport; automated tests make no real Garmin or
 OpenAI calls.
 
-The complete Node suite passes, but the serial coverage gate currently fails:
-the moved product adapter has 100% statements, functions, and lines, while its
-branch coverage is 92.5%. The workout contract is at 100% in all four metrics.
-This is a blocking verification gap, not a passing gate. The focused Node
-product/converter suite has 74 tests; the CLI/configuration suite has 30 tests
-and 87.73% statements/lines, 74.79% branches, and 78.94% functions. The Python
-connector suite has 49 tests; `app/main.py` has 85.0% line coverage, 67.72%
-branch coverage, and 80.19% combined coverage. Browser tests use a simulated
-connector and are reported separately. None of those checks establishes live
-account behavior beyond the owner-reported evidence below.
+The corrective verification on the PR branch runs 1,455 Node tests with no
+failures. The serial `npm run test:coverage` gate passes at 100% statements,
+branches, functions, and lines across its required backend scope, including
+`src/garmin/product.js`. The focused product/converter suite has 98 tests and
+also reports 100% in all four metrics for the product adapter. The separate
+Garmin local-tool and CLI coverage command is recorded in the PR verification
+report; its coverage is not represented by the backend gate. The Python
+connector suite has 52 tests; `app/main.py` has 86.62% line coverage and 73.82%
+branch coverage (82% combined). The dedicated Garmin pilot/tool command ran 128
+tests; its `src/garmin/product.js` scope is 100% in all four metrics, while the
+interactive local scripts are reported at 87.73% statements/lines, 74.79%
+branches, and 78.94% functions. Python and local CLI coverage are separate from
+the Node backend gate and are not asserted as 100%. Browser tests use a
+simulated connector. None of those checks establishes live account behavior
+beyond the owner-reported evidence below.
+
+For this correction, both versioned images were rebuilt and an isolated
+container smoke test used a temporary SQLite directory, private Garmin volume,
+and synthetic runtime secrets. It verified Compose configuration, Node startup
+and login-page access, Node-to-Python private health, rejection of an invalid
+internal key (401), absence of published Python ports and a Python SQLite
+mount, continued Node page service while Python was stopped, and private health
+again after restarting Python. The isolated Compose project and its volume were
+removed afterward. This smoke test did not authenticate to Garmin or perform a
+workout operation.
 Contract tests use the actual pinned Garmin wrapper/signatures and enums with
 transport/authentication patched; Python sockets are blocked. They do not
 establish live Garmin or Forerunner behavior.
@@ -412,8 +427,11 @@ workout, which the confirmation states. If the planned date also changed, the
 operation updates the workout and then reschedules only its linked occurrence.
 **Reschedule** moves that tracked occurrence without changing the workout.
 Both actions require the new saved preview and a separate confirmation. The
-connector verifies the workout/occurrence identity before mutation and confirms
-the resulting state. It never deletes a workout or activity. If one remote step
+connector verifies the source operation and workout/occurrence journal proof
+before mutation and confirms the resulting state. A matching remote name, ID,
+or calendar item alone is not adopted as a Kinesis artifact; an inconclusive
+pre-existing occurrence stays `outcome_unknown` and is never mutated. It never
+deletes a workout or activity. If one remote step
 succeeds and the next fails, the local journal keeps its stage/IDs and requires
 reconciliation; it does not claim a distributed rollback or create a second
 workout automatically.

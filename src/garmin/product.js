@@ -145,6 +145,7 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
       authAttempts.set(request.user.id, attempt);
       authInFlight.set(request.user.id, true);
       challenges.forEach((challenge, id) => { if (challenge.owner === request.user.id) challenges.delete(id); });
+      const executeAuthStart = async () => {
       try {
         const result = await remote(request, '/auth/start', { method: 'POST', body: JSON.stringify(body) });
         if (authAttempts.get(request.user.id) !== attempt) {
@@ -166,12 +167,16 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
         if (!eligible(request)) await cleanupRevokedConnection();
         return reply.code(error.statusCode || 503).send({ code: safeCode(error) });
       }
-      finally {
+      };
+      const clearAuthStart = () => {
         body.password = '';
-        // The in-flight guard prevents another attempt from starting before
-        // this finally block runs.
         authInFlight.delete(request.user.id);
-      }
+      };
+      let authStartResult;
+      try { authStartResult = await executeAuthStart(); }
+      catch (error) { clearAuthStart(); throw error; }
+      clearAuthStart();
+      return authStartResult;
     });
     app.post('/api/garmin/auth/finish', { preHandler: requireAuth }, async (request, reply) => {
       if (!eligible(request)) return reply.code(404).send({ code: 'pilot_unavailable' });
@@ -181,6 +186,7 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
       if (typeof code !== 'string' || code.length > 32) return reply.code(400).send({ code: 'invalid_payload' });
       if (authInFlight.has(request.user.id)) return reply.code(409).send({ code: 'auth_required' });
       authInFlight.set(request.user.id, true);
+      const executeMfaFinish = async () => {
       try {
         const result = await remote(request, '/auth/finish', { method: 'POST', body: JSON.stringify({ challenge_id: id, code }) });
         if (!eligible(request)) {
@@ -202,9 +208,13 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
       } catch (error) {
         if (!eligible(request)) { challenges.delete(id); await cleanupRevokedConnection(); }
         return reply.code(error.statusCode || 503).send({ code: safeCode(error) });
-      } finally {
-        authInFlight.delete(request.user.id);
       }
+      };
+      let finishResult;
+      try { finishResult = await executeMfaFinish(); }
+      catch (error) { authInFlight.delete(request.user.id); throw error; }
+      authInFlight.delete(request.user.id);
+      return finishResult;
     });
     app.post('/api/garmin/auth/cancel', { preHandler: requireAuth }, async (request, reply) => {
       if (!eligible(request)) return reply.code(404).send({ code: 'pilot_unavailable' });
@@ -379,7 +389,9 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
         generation: row.connection_generation, revision: row.prescription_revision,
         fingerprint: row.fingerprint, date: row.scheduled_date,
         prescription: JSON.parse(prescription.prescription_json),
-        action: row.action || 'publish', stage: row.stage,
+        // action and stage are NOT NULL database invariants; avoid disguising
+        // a corrupt row as a publish fallback.
+        action: row.action, stage: row.stage,
         workoutId: row.workout_id || null, occurrenceId: row.occurrence_id || null,
         sourceOperation: row.source_operation_id ? db.prepare('SELECT * FROM garmin_training_operations WHERE operation_id = ? AND user_id = ?').get(row.source_operation_id, request.user.id) : null,
       }, current));
@@ -558,7 +570,8 @@ async function runOperation(db, fetchImpl, config, operation, currentTraining, o
     } else if (action === 'update' && stage === 'update') {
       if (!workoutId || !source?.workout_id) { errorResult('outcome_unknown', 'update_reconciliation', workoutId); return; }
       const response = await remoteRequest(`/workouts/${encodeURIComponent(workoutId)}`, {
-        method: 'PUT', body: JSON.stringify({ ...payload, workout_id: Number(workoutId) }),
+        method: 'PUT', body: JSON.stringify({ ...payload, workout_id: Number(workoutId),
+          source_operation_id: source.operation_id }),
       });
       const body = await readJson(response);
       const after = currentState();
@@ -569,11 +582,12 @@ async function runOperation(db, fetchImpl, config, operation, currentTraining, o
     }
 
     if (action === 'reschedule') {
-      if (!workoutId || !occurrenceId) { errorResult('outcome_unknown', 'reschedule_reconciliation', workoutId, occurrenceId); return; }
+      if (!workoutId || !occurrenceId || !source?.operation_id) { errorResult('outcome_unknown', 'reschedule_reconciliation', workoutId, occurrenceId); return; }
       if (currentState() !== 'current') { await invalidate(currentState(), false); return; }
       update.run('scheduling', 'reschedule', workoutId, occurrenceId, null, operation.operationId, operation.ownerId);
       const response = await remoteRequest(`/workouts/schedule/${encodeURIComponent(occurrenceId)}`, {
         method: 'PUT', body: JSON.stringify({ operation_id: operation.operationId,
+          source_operation_id: source.operation_id,
           scheduled_workout_id: Number(occurrenceId), workout_id: Number(workoutId), date: operation.date }),
       });
       const body = await readJson(response);
@@ -592,6 +606,7 @@ async function runOperation(db, fetchImpl, config, operation, currentTraining, o
       update.run('scheduling', 'reschedule', workoutId, occurrenceId, null, operation.operationId, operation.ownerId);
       const response = await remoteRequest(`/workouts/schedule/${encodeURIComponent(occurrenceId)}`, {
         method: 'PUT', body: JSON.stringify({ operation_id: operation.operationId,
+          source_operation_id: source.operation_id,
           scheduled_workout_id: Number(occurrenceId), workout_id: Number(workoutId), date: operation.date }),
       });
       const body = await readJson(response);
@@ -611,13 +626,21 @@ async function runOperation(db, fetchImpl, config, operation, currentTraining, o
     }
     if (currentState() !== 'current') { await invalidate(currentState(), true); return; }
     update.run('scheduling', 'schedule', workoutId, null, null, operation.operationId, operation.ownerId);
-    const scheduleResponse = await remoteRequest('/workouts/schedule', { method: 'POST', body: JSON.stringify({ workout_id: Number(workoutId), date: operation.date }) });
+    const scheduleResponse = await remoteRequest('/workouts/schedule', { method: 'POST', body: JSON.stringify({
+      operation_id: operation.operationId, workout_id: Number(workoutId), date: operation.date,
+    }) });
     const scheduleBody = await readJson(scheduleResponse);
+    const returnedOccurrence = scheduleBody.scheduled_workout_id;
+    if ((typeof returnedOccurrence === 'number' && Number.isSafeInteger(returnedOccurrence) && returnedOccurrence > 0)
+        || (typeof returnedOccurrence === 'string' && /^[0-9]+$/.test(returnedOccurrence))) {
+      occurrenceId = String(returnedOccurrence);
+    }
     const after = currentState();
     if (after !== 'current') { await invalidate(after, true); return; }
     if (!scheduleResponse.ok) { errorResult(scheduleBody?.detail?.code || 'unavailable', 'schedule', workoutId); return; }
-    occurrenceId = scheduleBody.scheduled_workout_id;
-    if (scheduleBody.scheduled !== true || !((typeof occurrenceId === 'number' && Number.isSafeInteger(occurrenceId) && occurrenceId > 0) || (typeof occurrenceId === 'string' && /^[0-9]+$/.test(occurrenceId)))) {
+    // IDs are normalized to strings before this point; a numeric ID branch
+    // here is unreachable and could obscure malformed provider responses.
+    if (scheduleBody.scheduled !== true || !(typeof occurrenceId === 'string' && /^[0-9]+$/.test(occurrenceId))) {
       errorResult('outcome_unknown', 'schedule_reconciliation', workoutId); return;
     }
     if (currentState() !== 'current') { await invalidate(currentState(), true); return; }

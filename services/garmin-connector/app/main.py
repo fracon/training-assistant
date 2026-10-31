@@ -72,12 +72,14 @@ class ActivityQuery(StrictModel):
 
 
 class WorkoutSchedule(StrictModel):
+    operation_id: uuid.UUID
     workout_id: int = Field(gt=0)
     date: date
 
 
 class WorkoutReschedule(StrictModel):
     operation_id: uuid.UUID
+    source_operation_id: uuid.UUID
     scheduled_workout_id: int = Field(gt=0)
     workout_id: int = Field(gt=0)
     date: date
@@ -107,6 +109,7 @@ class WorkoutPayload(StrictModel):
 
 class WorkoutUpdate(WorkoutPayload):
     workout_id: int = Field(gt=0)
+    source_operation_id: uuid.UUID
 
 
 def _build_running_workout(body: WorkoutPayload, workout_name: str):
@@ -311,6 +314,18 @@ def _operation_journal(path: Path, key: bytes) -> dict[str, Any]:
 def _save_operation_journal(path: Path, key: bytes, journal: dict[str, Any]) -> None:
     journal_path = path.with_suffix(".ops")
     _save_encrypted(journal_path, key, json.dumps(journal, sort_keys=True).encode())
+
+
+def _record_completed_workout_operation(journal: dict[str, Any], operation_id: uuid.UUID,
+                                        fingerprint: str, workout_id: int) -> None:
+    operation_key = str(operation_id)
+    existing = journal.get(operation_key)
+    if existing and (existing.get("fingerprint") != fingerprint
+                     or str(existing.get("workout_id")) != str(workout_id)
+                     or existing.get("artifact_kind") != "update"):
+        raise HTTPException(409, detail={"code": "invalid_payload"})
+    journal[operation_key] = {"fingerprint": fingerprint, "status": "complete",
+                              "workout_id": workout_id, "artifact_kind": "update"}
 
 
 def _activity_download_base(client: Any, download_format: Any) -> str:
@@ -1218,6 +1233,10 @@ def schedule_workout(owner_id: str, connection_id: str, body: WorkoutSchedule,
         try:
             with _client(path, key) as (client, _, _):
                 journal = _operation_journal(path, key)
+                source = journal.get(str(body.operation_id))
+                if (not source or source.get("status") != "complete"
+                        or str(source.get("workout_id")) != str(body.workout_id)):
+                    raise HTTPException(409, detail={"code": "invalid_payload"})
                 journal_id = f"schedule:{body.workout_id}:{body.date.isoformat()}"
                 fingerprint = hashlib.sha256(journal_id.encode()).hexdigest()
                 previous_operation = journal.get(journal_id)
@@ -1257,7 +1276,14 @@ def schedule_workout(owner_id: str, connection_id: str, body: WorkoutSchedule,
                     occurrence_id = prior.get("id")
                     if occurrence_id is None:
                         raise HTTPException(503, detail={"code": "outcome_unknown"})
+                    # An existing calendar item is not proof Kinesis created it.
+                    # Only reconcile an occurrence after our durable pending write.
+                    if previous_operation is None:
+                        raise HTTPException(503, detail={"code": "outcome_unknown"})
+                    if previous_operation.get("status") not in ("pending", "complete"):
+                        raise HTTPException(503, detail={"code": "outcome_unknown"})
                     journal[journal_id] = {"fingerprint": fingerprint, "status": "complete",
+                                           "workout_id": body.workout_id,
                                            "scheduled_workout_id": occurrence_id}
                     _save_operation_journal(path, key, journal)
                     return {"scheduled": True, "status": "reconciled",
@@ -1276,6 +1302,7 @@ def schedule_workout(owner_id: str, connection_id: str, body: WorkoutSchedule,
                 if not confirmed or confirmed.get("id") is None:
                     raise HTTPException(503, detail={"code": "outcome_unknown"})
                 journal[journal_id] = {"fingerprint": fingerprint, "status": "complete",
+                                       "workout_id": body.workout_id,
                                        "scheduled_workout_id": confirmed["id"]}
                 _save_operation_journal(path, key, journal)
                 return {"scheduled": True, "status": "scheduled",
@@ -1312,16 +1339,23 @@ def update_workout(owner_id: str, connection_id: str, workout_id: int, body: Wor
                 prior = journal.get(journal_id)
                 if prior and prior.get("fingerprint") != fingerprint:
                     raise HTTPException(409, detail={"code": "invalid_payload"})
+                source = journal.get(str(body.source_operation_id))
+                if (not source or source.get("status") != "complete"
+                        or str(source.get("workout_id")) != str(workout_id)):
+                    raise HTTPException(409, detail={"code": "invalid_payload"})
                 current_workout = client.get_workout_by_id(workout_id)
                 _check_deadline(deadline)
                 if not isinstance(current_workout, dict) or str(current_workout.get("workoutId", workout_id)) != str(workout_id):
                     raise RuntimeError("Garmin workout identity was inconclusive")
                 if prior and prior.get("status") == "complete":
                     if current_workout.get("workoutName") == expected_name:
+                        _record_completed_workout_operation(journal, body.operation_id, fingerprint, workout_id)
+                        _save_operation_journal(path, key, journal)
                         return {"workout_id": workout_id, "status": "reconciled", "updated": False}
                     raise HTTPException(503, detail={"code": "outcome_unknown"})
                 if prior and current_workout.get("workoutName") == expected_name:
                     journal[journal_id] = {"fingerprint": fingerprint, "status": "complete", "workout_id": workout_id, "name": expected_name}
+                    _record_completed_workout_operation(journal, body.operation_id, fingerprint, workout_id)
                     _save_operation_journal(path, key, journal)
                     return {"workout_id": workout_id, "status": "reconciled", "updated": False}
                 if prior and current_workout.get("workoutName") != prior.get("previous_name"):
@@ -1341,6 +1375,7 @@ def update_workout(owner_id: str, connection_id: str, workout_id: int, body: Wor
                     raise HTTPException(503, detail={"code": "outcome_unknown"})
                 journal[journal_id] = {"fingerprint": fingerprint, "status": "complete",
                                        "workout_id": workout_id, "name": expected_name}
+                _record_completed_workout_operation(journal, body.operation_id, fingerprint, workout_id)
                 _save_operation_journal(path, key, journal)
                 return {"workout_id": workout_id, "status": "updated", "updated": True}
         except HTTPException:
@@ -1366,6 +1401,16 @@ def reschedule_workout(owner_id: str, connection_id: str, scheduled_workout_id: 
                 journal = _operation_journal(path, key)
                 prior = journal.get(journal_id)
                 if prior and prior.get("fingerprint") != fingerprint:
+                    raise HTTPException(409, detail={"code": "invalid_payload"})
+                source = journal.get(str(body.source_operation_id))
+                schedule_entry = next((entry for key_name, entry in journal.items()
+                                       if key_name.startswith(f"schedule:{body.workout_id}:")
+                                       and entry.get("status") == "complete"
+                                       and str(entry.get("scheduled_workout_id")) == str(scheduled_workout_id)), None)
+                if (not source or source.get("status") != "complete"
+                        or str(source.get("workout_id")) != str(body.workout_id)
+                        or not schedule_entry
+                        or str(schedule_entry.get("scheduled_workout_id")) != str(scheduled_workout_id)):
                     raise HTTPException(409, detail={"code": "invalid_payload"})
                 current = client.get_scheduled_workout_by_id(scheduled_workout_id)
                 _check_deadline(deadline)

@@ -40,11 +40,12 @@ function seedWorker(operationId, overrides = {}) {
   db.prepare("INSERT INTO trainings (id,user_id,dia,tipo,treino) VALUES (1,1,'2026-11-02','run','tempo')").run();
   const prescription = workout(); const fingerprint = prescriptionFingerprint(prescription);
   db.prepare('INSERT INTO garmin_workout_prescriptions (user_id,training_id,revision,prescription_json,fingerprint) VALUES (1,1,1,?,?)').run(JSON.stringify(prescription), fingerprint);
+  const workerStage = Object.hasOwn(overrides, 'stage') ? overrides.stage : 'schedule';
   db.prepare(`INSERT INTO garmin_training_operations (operation_id,user_id,training_id,connection_generation,prescription_revision,fingerprint,converter_version,status,stage,scheduled_date,workout_id,occurrence_id,action)
-    VALUES (?,1,1,1,1,?,1,'publishing',?,'2026-11-02',?,?,?)`).run(operationId, fingerprint, overrides.stage || 'schedule', overrides.workoutId || null, overrides.occurrenceId || null, overrides.action || 'publish');
+    VALUES (?,1,1,1,1,?,1,'publishing',?,'2026-11-02',?,?,?)`).run(operationId, fingerprint, workerStage, overrides.workoutId || null, overrides.occurrenceId || null, overrides.action || 'publish');
   const operation = { operationId, ownerId: 1, trainingId: 1, generation: 1, revision: 1,
     fingerprint, date: '2026-11-02', prescription, action: overrides.action || 'publish',
-    stage: overrides.stage || 'schedule', workoutId: overrides.workoutId || null,
+    stage: workerStage, workoutId: overrides.workoutId || null,
     occurrenceId: overrides.occurrenceId || null, sourceOperation: overrides.sourceOperation };
   const current = (_request, id) => db.prepare('SELECT id,dia,user_id,completed FROM trainings WHERE id=?').get(id);
   return { db, operation, current };
@@ -149,6 +150,45 @@ test('product API rejects absent and stale resources and keeps an unchanged sche
     const duplicateReconcile = await h.app.inject({ method: 'POST', url: '/api/garmin/operations/still-current/reconcile', headers: { cookie } });
     assert.equal(duplicateReconcile.statusCode, 409);
     assert.equal(duplicateReconcile.json().code, 'invalid_state');
+    h.db.prepare("UPDATE trainings SET dia='2026-11-03' WHERE id=1").run();
+    const moved = await h.app.inject({ method: 'GET', url: '/api/garmin/status?training_id=1', headers: { cookie } });
+    assert.equal(moved.json().operation.status, 'outdated');
+  } finally { await h.close(); }
+});
+
+test('publish refuses missing and completed source sessions before remote work', async () => {
+  const calls = [];
+  const h = await productApiHarness({ garminFetch: async (url) => { calls.push(url); return Response.json({ status: 'connected' }); } });
+  try {
+    const cookie = h.cookie;
+    assert.equal((await h.app.inject({ method: 'GET', url: '/api/trainings/999/garmin', headers: { cookie } })).statusCode, 404);
+    const absentPublish = await h.app.inject({ method: 'POST', url: '/api/trainings/999/garmin/publish', headers: { cookie }, payload: {} });
+    assert.equal(absentPublish.statusCode, 404);
+    const saved = await h.app.inject({ method: 'PUT', url: '/api/trainings/1/garmin/prescription', headers: { cookie }, payload: {
+      expected_revision: null, expected_training_date: '2026-11-02', expected_connection_generation: 1, prescription: workout(),
+    } });
+    const snapshot = { fingerprint: saved.json().fingerprint, expected_date: '2026-11-02', expected_revision: 1, expected_connection_generation: 1 };
+    h.db.prepare('UPDATE trainings SET completed=1 WHERE id=1').run();
+    const completed = await h.app.inject({ method: 'POST', url: '/api/trainings/1/garmin/publish', headers: { cookie }, payload: snapshot });
+    assert.equal(completed.statusCode, 409);
+    assert.equal(completed.json().code, 'session_not_planned');
+    h.db.prepare('UPDATE trainings SET completed=0 WHERE id=1').run();
+    const missingSource = await h.app.inject({ method: 'POST', url: '/api/trainings/1/garmin/publish', headers: { cookie }, payload: { ...snapshot, action: 'update' } });
+    assert.equal(missingSource.statusCode, 409);
+    assert.equal(missingSource.json().code, 'operation_required');
+    const openLap = { version: 1, sport: 'running', name: 'Open lap', steps: [
+      { id: 'open', kind: 'open', end: { type: 'open' }, target: { type: 'none' } },
+    ] };
+    const unsupported = await h.app.inject({ method: 'PUT', url: '/api/trainings/1/garmin/prescription', headers: { cookie }, payload: {
+      expected_revision: 1, expected_training_date: '2026-11-02', expected_connection_generation: 1, prescription: openLap,
+    } });
+    assert.equal(unsupported.statusCode, 200);
+    const rejected = await h.app.inject({ method: 'POST', url: '/api/trainings/1/garmin/publish', headers: { cookie }, payload: {
+      fingerprint: unsupported.json().fingerprint, expected_date: '2026-11-02', expected_revision: 2, expected_connection_generation: 1,
+    } });
+    assert.equal(rejected.statusCode, 422);
+    assert.equal(rejected.json().code, 'unsupported');
+    assert.deepEqual(calls, []);
   } finally { await h.close(); }
 });
 
@@ -168,6 +208,114 @@ test('authentication endpoints validate missing requests and preserve sanitized 
     const disconnect = await h.app.inject({ method: 'DELETE', url: '/api/garmin/connection', headers: { cookie: h.cookie } });
     assert.equal(disconnect.statusCode, 503);
   } finally { await h.close(); }
+});
+
+test('connected capability reads include the saved prescription and auth identity; successful disconnect stays owner scoped', async () => {
+  const fingerprint = 'a'.repeat(64);
+  const calls = [];
+  const h = await productApiHarness({ garminFetch: async (url, init = {}) => {
+    calls.push({ url, method: init.method || 'GET' });
+    if (url.endsWith('/auth/start')) return Response.json({ status: 'connected', identity_fingerprint: fingerprint });
+    if (url.endsWith('/capabilities')) return Response.json({ devices: [{ name: 'Synthetic device' }], running_catalog_status: 'present' });
+    if (url.endsWith('/status')) return Response.json({ status: 'connected', identity_fingerprint: fingerprint });
+    if (init.method === 'DELETE') return Response.json({ status: 'disconnected' });
+    return Response.json({ status: 'disconnected' });
+  } });
+  try {
+    const started = await h.app.inject({ method: 'POST', url: '/api/garmin/auth/start', headers: { cookie: h.cookie },
+      payload: { email: 'pilot@example.test', password: 'transient-only' } });
+    assert.equal(started.statusCode, 200);
+    assert.equal(started.json().status, 'connected');
+    assert.equal(h.db.prepare('SELECT identity_fingerprint FROM garmin_pilot_connections WHERE user_id=1').get().identity_fingerprint, fingerprint);
+
+    const saved = await h.app.inject({ method: 'PUT', url: '/api/trainings/1/garmin/prescription', headers: { cookie: h.cookie }, payload: {
+      expected_revision: null, expected_training_date: '2026-11-02', expected_connection_generation: 1, prescription: workout(),
+    } });
+    assert.equal(saved.statusCode, 200);
+    const local = await h.app.inject({ method: 'GET', url: '/api/trainings/1/garmin', headers: { cookie: h.cookie } });
+    assert.equal(local.json().prescription.fingerprint, saved.json().fingerprint);
+    const invalidQuery = await h.app.inject({ method: 'GET', url: '/api/garmin/status?training_id=not-a-number', headers: { cookie: h.cookie } });
+    assert.equal(invalidQuery.statusCode, 200);
+    const currentQuery = await h.app.inject({ method: 'GET', url: '/api/garmin/status?training_id=1', headers: { cookie: h.cookie } });
+    assert.equal(currentQuery.json().running_catalog_status, 'present');
+    assert.deepEqual(currentQuery.json().devices, [{ name: 'Synthetic device' }]);
+    assert.equal(currentQuery.json().prescription.revision, 1);
+
+    const disconnected = await h.app.inject({ method: 'DELETE', url: '/api/garmin/connection', headers: { cookie: h.cookie } });
+    assert.equal(disconnected.statusCode, 200);
+    assert.equal(h.db.prepare('SELECT identity_fingerprint FROM garmin_pilot_connections WHERE user_id=1').get().identity_fingerprint, null);
+    assert.equal(calls.some((call) => call.method === 'DELETE'), true);
+  } finally { await h.close(); }
+});
+
+test('authentication errors revalidate revoked eligibility and request internal token cleanup', async () => {
+  for (const action of ['start', 'finish', 'cancel', 'disconnect']) {
+    let db;
+    let revoked = false;
+    let deleteCalls = 0;
+    const challengeId = 'challenge-for-eligibility-revocation';
+    const h = await productApiHarness({ garminFetch: async (url, init = {}) => {
+      if (init.method === 'DELETE') {
+        deleteCalls += 1;
+        if (action === 'disconnect' && deleteCalls === 1) {
+          db.prepare('UPDATE users SET is_active=0 WHERE id=1').run(); revoked = true;
+          throw new Error('transient transport');
+        }
+        return Response.json({ status: 'disconnected' });
+      }
+      if (url.endsWith('/auth/start') && action === 'start') {
+        db.prepare('UPDATE users SET is_active=0 WHERE id=1').run(); revoked = true;
+        throw new Error('transient transport');
+      }
+      if (url.endsWith('/auth/start')) return Response.json({ status: 'mfa_required', challenge_id: challengeId, expires_in: 120 });
+      if (url.endsWith('/auth/finish') || url.endsWith('/auth/cancel')) {
+        db.prepare('UPDATE users SET is_active=0 WHERE id=1').run(); revoked = true;
+        throw new Error('transient transport');
+      }
+      return Response.json({ status: 'disconnected' });
+    } });
+    db = h.db;
+    try {
+      if (action !== 'start') {
+        const started = await h.app.inject({ method: 'POST', url: '/api/garmin/auth/start', headers: { cookie: h.cookie },
+          payload: { email: 'pilot@example.test', password: 'transient-only' } });
+        assert.equal(started.statusCode, 200);
+      }
+      let response;
+      if (action === 'start') response = await h.app.inject({ method: 'POST', url: '/api/garmin/auth/start', headers: { cookie: h.cookie }, payload: { email: 'pilot@example.test', password: 'transient-only' } });
+      if (action === 'finish') response = await h.app.inject({ method: 'POST', url: '/api/garmin/auth/finish', headers: { cookie: h.cookie }, payload: { challenge_id: challengeId, code: '123456' } });
+      if (action === 'cancel') response = await h.app.inject({ method: 'POST', url: '/api/garmin/auth/cancel', headers: { cookie: h.cookie }, payload: { challenge_id: challengeId } });
+      if (action === 'disconnect') response = await h.app.inject({ method: 'DELETE', url: '/api/garmin/connection', headers: { cookie: h.cookie } });
+      assert.ok(revoked);
+      assert.ok([401, 503].includes(response.statusCode));
+      assert.equal(h.db.prepare('SELECT pending FROM garmin_cleanup_state WHERE id=1').get().pending, 0);
+    } finally { await h.close(); }
+  }
+});
+
+test('MFA finish accepts an empty request safely and refuses a concurrent completion', async () => {
+  let releaseFinish;
+  const finishPending = new Promise((resolve) => { releaseFinish = resolve; });
+  let finishStarted;
+  const started = new Promise((resolve) => { finishStarted = resolve; });
+  const challengeId = 'challenge-concurrent-completion-id';
+  const h = await productApiHarness({ garminFetch: async (url) => {
+    if (url.endsWith('/auth/start')) return Response.json({ status: 'mfa_required', challenge_id: challengeId, expires_in: 120 });
+    if (url.endsWith('/auth/finish')) { finishStarted(); return finishPending; }
+    return Response.json({ status: 'disconnected' });
+  } });
+  try {
+    const startedAuth = await h.app.inject({ method: 'POST', url: '/api/garmin/auth/start', headers: { cookie: h.cookie }, payload: { email: 'pilot@example.test', password: 'transient-only' } });
+    assert.equal(startedAuth.statusCode, 200);
+    const empty = await h.app.inject({ method: 'POST', url: '/api/garmin/auth/finish', headers: { cookie: h.cookie }, payload: null });
+    assert.equal(empty.statusCode, 400);
+    const first = h.app.inject({ method: 'POST', url: '/api/garmin/auth/finish', headers: { cookie: h.cookie }, payload: { challenge_id: challengeId, code: '123456' } });
+    await started;
+    const duplicate = await h.app.inject({ method: 'POST', url: '/api/garmin/auth/finish', headers: { cookie: h.cookie }, payload: { challenge_id: challengeId, code: '123456' } });
+    assert.equal(duplicate.statusCode, 409);
+    releaseFinish(Response.json({ status: 'mfa_required' }));
+    assert.equal((await first).statusCode, 200);
+  } finally { releaseFinish(Response.json({ status: 'mfa_required' })); await h.close(); }
 });
 
 test('status, auth start, cancel, and disconnect normalize connection failures', async () => {
@@ -620,8 +768,58 @@ test('reschedule updates only the linked occurrence and reaches a terminal state
   assert.equal(calls.length, 1);
   assert.match(calls[0].url, /\/workouts\/schedule\/77$/);
   assert.equal(calls[0].method, 'PUT');
-  assert.deepEqual(calls[0].body, { operation_id: 'reschedule-op', scheduled_workout_id: 77, workout_id: 42, date: '2026-11-03' });
+  assert.deepEqual(calls[0].body, { operation_id: 'reschedule-op', source_operation_id: 'source-reschedule',
+    scheduled_workout_id: 77, workout_id: 42, date: '2026-11-03' });
   assert.deepEqual(h.row(), { status: 'scheduled', stage: 'complete', error_code: null, workout_id: '42', occurrence_id: '77' });
+  h.db.close();
+});
+
+test('worker refuses reschedule without source identity and preserves IDs on HTTP refusals', async () => {
+  const missing = seedWorker('reschedule-no-source', { action: 'reschedule', stage: 'reschedule', workoutId: '42', occurrenceId: '77' });
+  let calls = 0;
+  await runOperation(missing.db, async () => { calls += 1; return Response.json({}); },
+    { GARMIN_CONNECTOR_URL: 'http://connector', KINESIS_GARMIN_SERVICE_TOKEN: 'synthetic' }, missing.operation, missing.current);
+  assert.equal(calls, 0);
+  assert.deepEqual(missing.db.prepare('SELECT status,stage,error_code,workout_id,occurrence_id FROM garmin_training_operations WHERE operation_id=?').get('reschedule-no-source'),
+    { status: 'outcome_unknown', stage: 'reschedule_reconciliation', error_code: 'outcome_unknown', workout_id: '42', occurrence_id: '77' });
+  missing.db.close();
+
+  const sourceOperation = { operation_id: 'source-op', workout_id: '42', occurrence_id: '77', scheduled_date: '2026-11-02' };
+  for (const config of [
+    { id: 'http-update-refusal', action: 'update', stage: 'update', status: 401, code: 'auth_required' },
+    { id: 'http-reschedule-refusal', action: 'reschedule', stage: 'reschedule', status: 429, code: 'rate_limited' },
+  ]) {
+    const h = seedWorker(config.id, { ...config, workoutId: '42', occurrenceId: '77', sourceOperation });
+    const requests = [];
+    await runOperation(h.db, async (url, init) => {
+      requests.push({ url, body: JSON.parse(init.body) });
+      return Response.json({ detail: { code: config.code } }, { status: config.status });
+    }, { GARMIN_CONNECTOR_URL: 'http://connector', KINESIS_GARMIN_SERVICE_TOKEN: 'synthetic' }, h.operation, h.current);
+    const row = h.db.prepare('SELECT status,stage,error_code,workout_id,occurrence_id FROM garmin_training_operations WHERE operation_id=?').get(config.id);
+    assert.equal(requests.length, 1);
+    assert.equal(row.status, config.code === 'auth_required' ? 'reauth_required' : 'failed');
+    assert.equal(row.stage, config.action);
+    assert.equal(row.error_code, config.code);
+    assert.equal(row.workout_id, '42');
+    assert.equal(row.occurrence_id, '77');
+    if (config.action === 'update') assert.equal(requests[0].body.source_operation_id, 'source-op');
+    else assert.equal(requests[0].body.source_operation_id, 'source-op');
+    h.db.close();
+  }
+});
+
+test('worker resumes an operation with a missing stage and retains the confirmed workout', async () => {
+  const h = seedWorker('missing-stage', { stage: '', action: 'publish', workoutId: '42' });
+  const calls = [];
+  await runOperation(h.db, async (url, init) => {
+    calls.push({ url, body: JSON.parse(init.body) });
+    return Response.json({ scheduled: true, scheduled_workout_id: 88 });
+  }, { GARMIN_CONNECTOR_URL: 'http://connector', KINESIS_GARMIN_SERVICE_TOKEN: 'synthetic' }, h.operation, h.current);
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].url, /\/workouts\/schedule$/);
+  assert.equal(calls[0].body.operation_id, 'missing-stage');
+  assert.deepEqual(h.db.prepare('SELECT status,stage,workout_id,occurrence_id FROM garmin_training_operations WHERE operation_id=?').get('missing-stage'),
+    { status: 'scheduled', stage: 'complete', workout_id: '42', occurrence_id: '88' });
   h.db.close();
 });
 
@@ -845,7 +1043,7 @@ test('a session edit after a remote effect preserves uncertainty and never accep
     return Response.json({ scheduled: true, scheduled_workout_id: 77 });
   }, { GARMIN_CONNECTOR_URL: 'http://connector' }, h.operation, h.current);
   assert.equal(calls, 2);
-  assert.deepEqual(h.row(), { status: 'outcome_unknown', stage: 'validation', error_code: 'session_changed', workout_id: '42', occurrence_id: null });
+  assert.deepEqual(h.row(), { status: 'outcome_unknown', stage: 'validation', error_code: 'session_changed', workout_id: '42', occurrence_id: '77' });
   h.db.close();
 });
 
@@ -1361,6 +1559,510 @@ test('rescheduling an old prescription revision is rejected without remote work'
   } });
   assert.equal(response.statusCode, 409);
   assert.equal(response.json().code, 'prescription_changed');
+  await h.close();
+});
+
+test('worker preserves confirmed IDs when eligibility changes after update or reschedule responses', async () => {
+  const cases = [
+    { action: 'update', stage: 'update', scheduledDate: '2026-11-02', expectedCalls: 1 },
+    { action: 'reschedule', stage: 'reschedule', scheduledDate: '2026-11-02', expectedCalls: 1 },
+    { action: 'update', stage: 'update', scheduledDate: '2026-11-01', expectedCalls: 2 },
+  ];
+  for (const [index, item] of cases.entries()) {
+    const { db, operation, current } = seedWorker(`late-change-${index}`, {
+      action: item.action, stage: item.stage, workoutId: 42, occurrenceId: 84,
+      sourceOperation: { operation_id: 'source-id', workout_id: 42, occurrence_id: 84,
+        scheduled_date: item.scheduledDate },
+    });
+    let calls = 0;
+    const fetchImpl = async () => {
+      calls += 1;
+      if (calls === item.expectedCalls) db.prepare("UPDATE trainings SET dia='2026-11-03' WHERE id=1").run();
+      return Response.json(item.action === 'reschedule'
+        ? { scheduled: true, scheduled_workout_id: 84 }
+        : { workout_id: 42 });
+    };
+    await runOperation(db, fetchImpl, { KINESIS_GARMIN_SERVICE_TOKEN: 'x'.repeat(40) }, operation, current);
+    const saved = db.prepare('SELECT status, workout_id, occurrence_id FROM garmin_training_operations WHERE operation_id=?').get(operation.operationId);
+    assert.equal(saved.status, 'outcome_unknown');
+    assert.equal(saved.workout_id, '42');
+    assert.equal(saved.occurrence_id, '84');
+    assert.equal(calls, item.expectedCalls);
+    assert.equal(db.inTransaction, false);
+    db.close();
+  }
+});
+
+test('worker distinguishes stale state before reschedule, after schedule, and missing workout identity', async () => {
+  const staleBefore = seedWorker('stale-before-reschedule', {
+    action: 'reschedule', stage: 'reschedule', workoutId: 42, occurrenceId: 84,
+    sourceOperation: { operation_id: 'source', workout_id: 42, occurrence_id: 84, scheduled_date: '2026-11-02' },
+  });
+  let stopChecks = 0;
+  let calls = 0;
+  await runOperation(staleBefore.db, async () => { calls += 1; return Response.json({}); },
+    { KINESIS_GARMIN_SERVICE_TOKEN: 'x'.repeat(40) }, staleBefore.operation, staleBefore.current,
+    { shouldStop: () => { stopChecks += 1; if (stopChecks === 1) staleBefore.db.prepare("UPDATE trainings SET dia='2026-11-03' WHERE id=1").run(); return false; } });
+  assert.equal(calls, 0);
+  assert.equal(staleBefore.db.prepare('SELECT status FROM garmin_training_operations WHERE operation_id=?').get(staleBefore.operation.operationId).status, 'outdated');
+  staleBefore.db.close();
+
+  const staleAfter = seedWorker('stale-after-schedule', { workoutId: 42 });
+  let reads = 0;
+  const currentAfterSchedule = (request, id) => {
+    reads += 1;
+    const row = staleAfter.current(request, id);
+    return reads >= 3 ? { ...row, dia: '2026-11-03' } : row;
+  };
+  const scheduleCalls = [];
+  await runOperation(staleAfter.db, async (url, init) => {
+    scheduleCalls.push([url, init.method]);
+    return Response.json({ scheduled: true, scheduled_workout_id: 84 });
+  }, { KINESIS_GARMIN_SERVICE_TOKEN: 'x'.repeat(40) }, staleAfter.operation, currentAfterSchedule);
+  const uncertain = staleAfter.db.prepare('SELECT status,workout_id,occurrence_id FROM garmin_training_operations WHERE operation_id=?').get(staleAfter.operation.operationId);
+  assert.deepEqual(scheduleCalls.map(([, method]) => method), ['POST']);
+  assert.equal(uncertain.status, 'outcome_unknown');
+  assert.equal(uncertain.workout_id, '42');
+  assert.equal(uncertain.occurrence_id, '84');
+  staleAfter.db.close();
+
+  const missingWorkout = seedWorker('missing-workout-for-schedule', { stage: 'schedule' });
+  await runOperation(missingWorkout.db, async () => { throw new Error('must not dispatch'); },
+    { KINESIS_GARMIN_SERVICE_TOKEN: 'x'.repeat(40) }, missingWorkout.operation, missingWorkout.current);
+  assert.equal(missingWorkout.db.prepare('SELECT error_code FROM garmin_training_operations WHERE operation_id=?').get(missingWorkout.operation.operationId).error_code, 'outcome_unknown');
+  missingWorkout.db.close();
+});
+
+test('worker normalizes missing remote error codes and persists uncertainty if its journal write fails', async () => {
+  const failed = seedWorker('remote-error-without-code', { stage: 'publish' });
+  await runOperation(failed.db, async () => new Response('{}', { status: 503 }),
+    { KINESIS_GARMIN_SERVICE_TOKEN: 'x'.repeat(40) }, failed.operation, failed.current);
+  const refusal = failed.db.prepare('SELECT status,stage,error_code FROM garmin_training_operations WHERE operation_id=?').get(failed.operation.operationId);
+  assert.deepEqual(refusal, { status: 'failed', stage: 'publish', error_code: 'unavailable' });
+  failed.db.close();
+
+  const broken = seedWorker('journal-write-failure', { stage: 'publish' });
+  const originalPrepare = broken.db.prepare.bind(broken.db);
+  let failWrites = false;
+  broken.db.prepare = (sql) => {
+    const statement = originalPrepare(sql);
+    if (sql.startsWith('UPDATE garmin_training_operations')) return {
+      run: (...args) => { if (failWrites) throw new Error('synthetic database write error'); return statement.run(...args); },
+    };
+    return statement;
+  };
+  await runOperation(broken.db, async () => { failWrites = true; return Response.json({ workout_id: 43 }); },
+    { KINESIS_GARMIN_SERVICE_TOKEN: 'x'.repeat(40) }, broken.operation, broken.current);
+  assert.equal(broken.db.inTransaction, false);
+  broken.db.close();
+});
+
+test('worker covers partial update and reschedule refusals without losing their stable remote IDs', async () => {
+  const cases = [
+    { action: 'update', stage: 'update', date: '2026-11-02', responses: [new Response('{}', { status: 503 })], expectedCalls: 1, expectedStage: 'update', expectedError: 'unavailable' },
+    { action: 'reschedule', stage: 'reschedule', date: '2026-11-02', responses: [new Response('{}', { status: 429 })], expectedCalls: 1, expectedStage: 'reschedule', expectedError: 'unavailable' },
+    { action: 'update', stage: 'update', date: '2026-11-01', responses: [Response.json({ workout_id: 42 }), new Response('{}', { status: 503 })], expectedCalls: 2, expectedStage: 'reschedule', expectedError: 'unavailable' },
+    { action: 'update', stage: 'update', date: '2026-11-01', responses: [Response.json({ workout_id: 42 }), Response.json({ detail: { code: 'rate_limited' } }, { status: 429 })], expectedCalls: 2, expectedStage: 'reschedule', expectedError: 'rate_limited' },
+  ];
+  for (const [index, item] of cases.entries()) {
+    const h = seedWorker(`mutation-refusal-${index}`, { action: item.action, stage: item.stage,
+      workoutId: 42, occurrenceId: 84, sourceOperation: { operation_id: 'stable-source', workout_id: 42,
+        occurrence_id: 84, scheduled_date: item.date } });
+    let calls = 0;
+    await runOperation(h.db, async () => item.responses[calls++],
+      { KINESIS_GARMIN_SERVICE_TOKEN: 'x'.repeat(40) }, h.operation, h.current);
+    const saved = h.db.prepare('SELECT status,stage,error_code,workout_id,occurrence_id FROM garmin_training_operations WHERE operation_id=?').get(h.operation.operationId);
+    assert.equal(calls, item.expectedCalls);
+    assert.equal(saved.status, 'failed');
+    assert.equal(saved.stage, item.expectedStage);
+    assert.equal(saved.error_code, item.expectedError);
+    assert.equal(saved.workout_id, '42');
+    assert.equal(saved.occurrence_id, '84');
+    assert.equal(h.db.inTransaction, false);
+    h.db.close();
+  }
+});
+
+test('worker refuses a stale reschedule before dispatch and keeps an update from accepting a late session change', async () => {
+  const stale = seedWorker('stale-before-reschedule', { action: 'reschedule', stage: 'reschedule',
+    workoutId: 42, occurrenceId: 84, sourceOperation: { operation_id: 'source', workout_id: 42,
+      occurrence_id: 84, scheduled_date: '2026-11-02' } });
+  let stopCalls = 0; let remoteCalls = 0;
+  await runOperation(stale.db, async () => { remoteCalls += 1; return Response.json({}); },
+    { KINESIS_GARMIN_SERVICE_TOKEN: 'x'.repeat(40) }, stale.operation, stale.current,
+    { shouldStop: () => { stopCalls += 1; if (stopCalls === 1) stale.db.prepare("UPDATE trainings SET dia='2026-11-03' WHERE id=1").run(); return false; } });
+  assert.equal(remoteCalls, 0);
+  assert.equal(stale.db.prepare('SELECT status,workout_id,occurrence_id FROM garmin_training_operations WHERE operation_id=?').get(stale.operation.operationId).status, 'outdated');
+  stale.db.close();
+
+  const update = seedWorker('late-update-change', { action: 'update', stage: 'update', workoutId: 42, occurrenceId: 84,
+    sourceOperation: { operation_id: 'source', workout_id: 42, occurrence_id: 84, scheduled_date: '2026-11-02' } });
+  let currentReads = 0;
+  const currentTraining = (request, id) => {
+    currentReads += 1;
+    const row = update.current(request, id);
+    return currentReads >= 3 ? { ...row, dia: '2026-11-03' } : row;
+  };
+  let calls = 0;
+  await runOperation(update.db, async () => { calls += 1; return Response.json({ workout_id: 42 }); },
+    { KINESIS_GARMIN_SERVICE_TOKEN: 'x'.repeat(40) }, update.operation, currentTraining);
+  const result = update.db.prepare('SELECT status,workout_id,occurrence_id FROM garmin_training_operations WHERE operation_id=?').get(update.operation.operationId);
+  assert.equal(calls, 1);
+  assert.equal(result.status, 'outcome_unknown');
+  assert.equal(result.workout_id, '42');
+  assert.equal(result.occurrence_id, '84');
+  update.db.close();
+});
+
+test('prescription and publish transactions reject state that changed after their outer snapshot', async () => {
+  const saveHarness = await productApiHarness();
+  const saveRequest = () => saveHarness.app.inject({ method: 'PUT', url: '/api/trainings/1/garmin/prescription', headers: { cookie: saveHarness.cookie }, payload: {
+    expected_revision: null, expected_training_date: '2026-11-02', expected_connection_generation: 1, prescription: workout(),
+  } });
+  const generationInsert = `INSERT INTO garmin_pilot_connections (user_id,connection_generation,identity_fingerprint) VALUES (1,2,NULL)
+    ON CONFLICT(user_id) DO UPDATE SET connection_generation=2`;
+  const originalTransaction = saveHarness.db.transaction.bind(saveHarness.db);
+  saveHarness.db.transaction = (callback) => {
+    const tx = originalTransaction(callback);
+    return (...args) => { saveHarness.db.prepare(generationInsert).run(); return tx(...args); };
+  };
+  const staleSave = await saveRequest();
+  assert.equal(staleSave.statusCode, 409);
+  assert.equal(saveHarness.db.prepare('SELECT count(*) AS count FROM garmin_workout_prescriptions').get().count, 0);
+  await saveHarness.close();
+
+  const publishHarness = await productApiHarness();
+  const saved = await publishHarness.app.inject({ method: 'PUT', url: '/api/trainings/1/garmin/prescription', headers: { cookie: publishHarness.cookie }, payload: {
+    expected_revision: null, expected_training_date: '2026-11-02', expected_connection_generation: 1, prescription: workout(),
+  } });
+  const transaction = publishHarness.db.transaction.bind(publishHarness.db);
+  publishHarness.db.transaction = (callback) => {
+    const tx = transaction(callback);
+    return (...args) => { publishHarness.db.prepare(generationInsert).run(); return tx(...args); };
+  };
+  const response = await publishHarness.app.inject({ method: 'POST', url: '/api/trainings/1/garmin/publish', headers: { cookie: publishHarness.cookie }, payload: {
+    fingerprint: saved.json().fingerprint, expected_date: '2026-11-02', expected_revision: 1,
+    expected_connection_generation: 1, action: 'publish',
+  } });
+  assert.equal(response.statusCode, 409);
+  assert.equal(publishHarness.db.prepare('SELECT count(*) AS count FROM garmin_training_operations').get().count, 0);
+  await publishHarness.close();
+});
+
+test('publish transaction rejects a source operation that changes after preview validation', async () => {
+  const h = await productApiHarness();
+  const saved = await h.app.inject({ method: 'PUT', url: '/api/trainings/1/garmin/prescription', headers: { cookie: h.cookie }, payload: {
+    expected_revision: null, expected_training_date: '2026-11-02', expected_connection_generation: 1, prescription: workout(),
+  } });
+  h.db.prepare(`INSERT INTO garmin_training_operations (operation_id,user_id,training_id,connection_generation,prescription_revision,fingerprint,
+    converter_version,status,stage,scheduled_date,action,workout_id,occurrence_id)
+    VALUES ('source-race',1,1,1,1,?,1,'scheduled','complete','2026-11-02','publish','42','84')`).run(saved.json().fingerprint);
+  const txFactory = h.db.transaction.bind(h.db);
+  h.db.transaction = (callback) => {
+    const tx = txFactory(callback);
+    return (...args) => { h.db.prepare("UPDATE garmin_training_operations SET status='failed' WHERE operation_id='source-race'").run(); return tx(...args); };
+  };
+  const response = await h.app.inject({ method: 'POST', url: '/api/trainings/1/garmin/publish', headers: { cookie: h.cookie }, payload: {
+    action: 'update', source_operation_id: 'source-race', fingerprint: saved.json().fingerprint,
+    expected_date: '2026-11-02', expected_revision: 1, expected_connection_generation: 1,
+  } });
+  assert.equal(response.statusCode, 409);
+  assert.equal(h.db.prepare("SELECT status FROM garmin_training_operations WHERE operation_id='source-race'").get().status, 'failed');
+  assert.equal(h.db.prepare("SELECT count(*) AS count FROM garmin_training_operations WHERE action='update'").get().count, 0);
+  await h.close();
+});
+
+test('reconcile resumes a source-free publish while respecting persisted action and stage invariants', async () => {
+  const requests = [];
+  const h = await productApiHarness({ garminFetch: async (url, init) => {
+    requests.push({ url, method: init.method });
+    return url.endsWith('/workouts') ? Response.json({ workout_id: 42 })
+      : Response.json({ scheduled: true, scheduled_workout_id: 84 });
+  } });
+  const saved = await h.app.inject({ method: 'PUT', url: '/api/trainings/1/garmin/prescription', headers: { cookie: h.cookie }, payload: {
+    expected_revision: null, expected_training_date: '2026-11-02', expected_connection_generation: 1, prescription: workout(),
+  } });
+  const operationId = 'legacy-null-operation';
+  h.db.prepare(`INSERT INTO garmin_training_operations (operation_id,user_id,training_id,connection_generation,prescription_revision,fingerprint,
+    converter_version,status,stage,scheduled_date,action,source_operation_id,workout_id,occurrence_id)
+    VALUES (?,1,1,1,1,?,1,'failed','publish','2026-11-02','publish',NULL,NULL,NULL)`).run(operationId, saved.json().fingerprint);
+  const response = await h.app.inject({ method: 'POST', url: `/api/garmin/operations/${operationId}/reconcile`, headers: { cookie: h.cookie } });
+  assert.equal(response.statusCode, 202);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.deepEqual(requests.map(({ method }) => method), ['POST', 'POST']);
+  assert.match(requests[0].url, /\/workouts$/);
+  assert.match(requests[1].url, /\/workouts\/schedule$/);
+  assert.deepEqual(h.db.prepare('SELECT status,stage,workout_id,occurrence_id,action,source_operation_id FROM garmin_training_operations WHERE operation_id=?').get(operationId), {
+    status: 'scheduled', stage: 'complete', workout_id: '42', occurrence_id: '84', action: 'publish', source_operation_id: null,
+  });
+  assert.equal(h.db.inTransaction, false);
+  await h.close();
+});
+
+test('training state and operation reconciliation reject outdated revision and connection snapshots', async () => {
+  const h = await productApiHarness();
+  const saved = await h.app.inject({ method: 'PUT', url: '/api/trainings/1/garmin/prescription', headers: { cookie: h.cookie }, payload: {
+    expected_revision: null, expected_training_date: '2026-11-02', expected_connection_generation: 1, prescription: workout(),
+  } });
+  const insert = h.db.prepare(`INSERT INTO garmin_training_operations (operation_id,user_id,training_id,connection_generation,prescription_revision,
+    fingerprint,converter_version,status,stage,scheduled_date,action,workout_id,occurrence_id)
+    VALUES (?,1,1,1,2,?,1,'scheduled','complete','2026-11-02','publish','42','84')`);
+  insert.run('outdated-revision', saved.json().fingerprint);
+  const state = await h.app.inject({ method: 'GET', url: '/api/trainings/1/garmin', headers: { cookie: h.cookie } });
+  assert.equal(state.statusCode, 200);
+  assert.equal(state.json().operation.status, 'outdated');
+  assert.equal(h.db.prepare("SELECT status FROM garmin_training_operations WHERE operation_id='outdated-revision'").get().status, 'outdated');
+
+  h.db.prepare(`INSERT INTO garmin_pilot_connections (user_id,connection_generation,identity_fingerprint) VALUES (1,2,NULL)`).run();
+  const stale = h.db.prepare(`INSERT INTO garmin_training_operations (operation_id,user_id,training_id,connection_generation,prescription_revision,
+    fingerprint,converter_version,status,stage,scheduled_date,action,workout_id,occurrence_id)
+    VALUES ('old-generation',1,1,1,1,?,1,'outcome_unknown','schedule','2026-11-02','publish','42',NULL)`);
+  stale.run(saved.json().fingerprint);
+  const response = await h.app.inject({ method: 'POST', url: '/api/garmin/operations/old-generation/reconcile', headers: { cookie: h.cookie } });
+  assert.equal(response.statusCode, 409);
+  assert.equal(response.json().code, 'session_changed');
+  assert.equal(h.db.prepare("SELECT status,stage,workout_id,occurrence_id FROM garmin_training_operations WHERE operation_id='old-generation'").get().status, 'outcome_unknown');
+  await h.close();
+});
+
+test('worker safely defaults an in-memory operation without action or stage and schedules the known workout once', async () => {
+  const h = seedWorker('legacy-operation-shape', { stage: 'publish', workoutId: 42 });
+  h.operation.action = null;
+  h.operation.stage = null;
+  const requests = [];
+  await runOperation(h.db, async (url, init) => {
+    requests.push({ url, method: init.method });
+    return Response.json({ scheduled: true, scheduled_workout_id: 84 });
+  }, { KINESIS_GARMIN_SERVICE_TOKEN: 'x'.repeat(40) }, h.operation, h.current);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].method, 'POST');
+  assert.match(requests[0].url, /\/workouts\/schedule$/);
+  assert.deepEqual(h.db.prepare('SELECT status,stage,workout_id,occurrence_id FROM garmin_training_operations WHERE operation_id=?').get(h.operation.operationId), {
+    status: 'scheduled', stage: 'complete', workout_id: '42', occurrence_id: '84',
+  });
+  h.db.close();
+});
+
+test('worker updates the source workout and moves its existing occurrence without creating either twice', async () => {
+  const h = seedWorker('update-and-move-success', { action: 'update', stage: 'update', workoutId: 42, occurrenceId: 84,
+    sourceOperation: { operation_id: 'source', workout_id: 42, occurrence_id: 84, scheduled_date: '2026-11-01' } });
+  const calls = [];
+  await runOperation(h.db, async (url, init) => {
+    calls.push({ url, method: init.method, body: JSON.parse(init.body) });
+    return calls.length === 1 ? Response.json({ workout_id: 42 })
+      : Response.json({ scheduled: true, scheduled_workout_id: 84 });
+  }, { KINESIS_GARMIN_SERVICE_TOKEN: 'x'.repeat(40) }, h.operation, h.current);
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls.map((call) => call.method), ['PUT', 'PUT']);
+  assert.match(calls[1].url, /\/workouts\/schedule\/84$/);
+  assert.equal(calls[1].body.source_operation_id, 'source');
+  const saved = h.db.prepare('SELECT status,stage,workout_id,occurrence_id FROM garmin_training_operations WHERE operation_id=?').get(h.operation.operationId);
+  assert.deepEqual(saved, { status: 'scheduled', stage: 'complete', workout_id: '42', occurrence_id: '84' });
+  assert.equal(h.db.prepare('SELECT count(*) AS count FROM garmin_training_operations').get().count, 1);
+  assert.equal(h.db.inTransaction, false);
+  h.db.close();
+});
+
+test('worker infers an update stage for a persisted update action without changing its source operation', async () => {
+  const h = seedWorker('update-stage-default', { action: 'update', stage: 'update', workoutId: 42, occurrenceId: 84,
+    sourceOperation: { operation_id: 'source-update', workout_id: 42, occurrence_id: 84, scheduled_date: '2026-11-02' } });
+  h.operation.stage = null;
+  const requests = [];
+  await runOperation(h.db, async (url, init) => { requests.push({ url, body: JSON.parse(init.body) }); return Response.json({ workout_id: 42 }); },
+    { KINESIS_GARMIN_SERVICE_TOKEN: 'x'.repeat(40) }, h.operation, h.current);
+  assert.equal(requests.length, 1);
+  assert.match(requests[0].url, /\/workouts\/42$/);
+  assert.equal(requests[0].body.source_operation_id, 'source-update');
+  assert.equal(h.db.prepare('SELECT status FROM garmin_training_operations WHERE operation_id=?').get(h.operation.operationId).status, 'scheduled');
+  h.db.close();
+});
+
+test('owner cleanup failure after a remote result remains a durable cleanup-pending outcome', async () => {
+  const h = seedWorker('owner-cleanup-retry', { stage: 'publish' });
+  let cleanups = 0;
+  await runOperation(h.db, async () => {
+    h.db.prepare('UPDATE users SET is_active=0 WHERE id=1').run();
+    return Response.json({ workout_id: 42 });
+  }, { KINESIS_GARMIN_SERVICE_TOKEN: 'x'.repeat(40) }, h.operation, h.current,
+  { onOwnerIneligible: async () => { cleanups += 1; return false; } });
+  const saved = h.db.prepare('SELECT status,stage,error_code,workout_id FROM garmin_training_operations WHERE operation_id=?').get(h.operation.operationId);
+  assert.deepEqual(saved, { status: 'outcome_unknown', stage: 'owner_revoked', error_code: 'cleanup_pending', workout_id: '42' });
+  assert.equal(cleanups, 1);
+  assert.equal(h.db.prepare('SELECT count(*) AS count FROM users WHERE id=1').get().count, 1);
+  assert.equal(h.db.inTransaction, false);
+  h.db.close();
+});
+
+test('owner cleanup success after a transport exception records durable cleanup completion', async () => {
+  const h = seedWorker('owner-cleanup-complete-after-throw', { stage: 'publish' });
+  let cleanups = 0;
+  await runOperation(h.db, async () => {
+    h.db.prepare('UPDATE users SET is_active=0 WHERE id=1').run();
+    throw new Error('synthetic post-revocation transport interruption');
+  }, { KINESIS_GARMIN_SERVICE_TOKEN: 'x'.repeat(40) }, h.operation, h.current,
+  { onOwnerIneligible: async () => { cleanups += 1; return true; } });
+  const saved = h.db.prepare('SELECT status,stage,error_code FROM garmin_training_operations WHERE operation_id=?').get(h.operation.operationId);
+  assert.deepEqual(saved, { status: 'outcome_unknown', stage: 'owner_revoked', error_code: 'cleanup_complete' });
+  assert.equal(cleanups, 1);
+  assert.equal(h.db.inTransaction, false);
+  h.db.close();
+});
+
+test('worker covers update recovery guards, malformed confirmation, and final stale snapshots', async () => {
+  const source = { operation_id: 'source-op', workout_id: 42, occurrence_id: 84, scheduled_date: '2026-11-01' };
+
+  const missingIds = seedWorker('update-missing-occurrence', { action: 'update', stage: 'update', workoutId: 42,
+    sourceOperation: source });
+  const updateCalls = [];
+  await runOperation(missingIds.db, async (url) => { updateCalls.push(url); return Response.json({ workout_id: 42 }); },
+    { KINESIS_GARMIN_SERVICE_TOKEN: 'x'.repeat(40) }, missingIds.operation, missingIds.current);
+  assert.equal(updateCalls.length, 1);
+  assert.match(updateCalls[0], /\/workouts\/42$/);
+  assert.equal(missingIds.db.prepare('SELECT stage FROM garmin_training_operations WHERE operation_id=?').get(missingIds.operation.operationId).stage, 'reschedule_reconciliation');
+  missingIds.db.close();
+
+  const staleBeforeReschedule = seedWorker('update-stale-before-reschedule', { action: 'update', stage: 'update',
+    workoutId: 42, occurrenceId: 84, sourceOperation: source });
+  let stateReads = 0; let staleCalls = 0;
+  const becomesStaleBeforeMove = (request, id) => {
+    stateReads += 1; const row = staleBeforeReschedule.current(request, id);
+    return stateReads === 3 ? { ...row, dia: '2026-11-03' } : row;
+  };
+  await runOperation(staleBeforeReschedule.db, async () => { staleCalls += 1; return Response.json({ workout_id: 42 }); },
+    { KINESIS_GARMIN_SERVICE_TOKEN: 'x'.repeat(40) }, staleBeforeReschedule.operation, becomesStaleBeforeMove);
+  assert.equal(staleCalls, 1);
+  assert.equal(staleBeforeReschedule.db.prepare('SELECT status,stage,workout_id,occurrence_id FROM garmin_training_operations WHERE operation_id=?').get(staleBeforeReschedule.operation.operationId).status, 'outcome_unknown');
+  staleBeforeReschedule.db.close();
+
+  const malformedMove = seedWorker('update-malformed-reschedule', { action: 'update', stage: 'update',
+    workoutId: 42, occurrenceId: 84, sourceOperation: source });
+  let moveCalls = 0;
+  await runOperation(malformedMove.db, async () => ++moveCalls === 1 ? Response.json({ workout_id: 42 })
+    : Response.json({ scheduled: false, scheduled_workout_id: 84 }),
+  { KINESIS_GARMIN_SERVICE_TOKEN: 'x'.repeat(40) }, malformedMove.operation, malformedMove.current);
+  const uncertainMove = malformedMove.db.prepare('SELECT status,stage,error_code,workout_id,occurrence_id FROM garmin_training_operations WHERE operation_id=?').get(malformedMove.operation.operationId);
+  assert.deepEqual(uncertainMove, { status: 'outcome_unknown', stage: 'reschedule_reconciliation', error_code: 'outcome_unknown', workout_id: '42', occurrence_id: '84' });
+  malformedMove.db.close();
+
+  const noWorkout = seedWorker('update-without-workout', { action: 'update', stage: 'schedule', sourceOperation: null });
+  noWorkout.operation.action = 'update'; noWorkout.operation.stage = 'schedule'; noWorkout.operation.workoutId = null;
+  await runOperation(noWorkout.db, async () => { throw new Error('must not dispatch'); },
+    { KINESIS_GARMIN_SERVICE_TOKEN: 'x'.repeat(40) }, noWorkout.operation, noWorkout.current);
+  assert.equal(noWorkout.db.prepare('SELECT stage FROM garmin_training_operations WHERE operation_id=?').get(noWorkout.operation.operationId).stage, 'schedule_reconciliation');
+  noWorkout.db.close();
+
+  const staleBeforeSchedule = seedWorker('stale-before-schedule', { stage: 'schedule', workoutId: 42 });
+  let reads = 0; let scheduleCalls = 0;
+  const staleBeforeScheduleCheck = (request, id) => {
+    reads += 1; const row = staleBeforeSchedule.current(request, id);
+    return reads === 2 ? { ...row, dia: '2026-11-03' } : row;
+  };
+  await runOperation(staleBeforeSchedule.db, async () => { scheduleCalls += 1; return Response.json({}); },
+    { KINESIS_GARMIN_SERVICE_TOKEN: 'x'.repeat(40) }, staleBeforeSchedule.operation, staleBeforeScheduleCheck);
+  assert.equal(scheduleCalls, 0);
+  const preserved = staleBeforeSchedule.db.prepare('SELECT status,workout_id FROM garmin_training_operations WHERE operation_id=?').get(staleBeforeSchedule.operation.operationId);
+  assert.deepEqual(preserved, { status: 'outcome_unknown', workout_id: '42' });
+  staleBeforeSchedule.db.close();
+
+  const staleAfterSchedule = seedWorker('stale-after-confirmed-schedule');
+  let readsAfter = 0; let callsAfter = 0;
+  const staleAfterConfirmation = (request, id) => {
+    readsAfter += 1; const row = staleAfterSchedule.current(request, id);
+    return readsAfter === 5 ? { ...row, dia: '2026-11-03' } : row;
+  };
+  await runOperation(staleAfterSchedule.db, async (url) => {
+    callsAfter += 1;
+    return url.endsWith('/workouts') ? Response.json({ workout_id: 42 })
+      : Response.json({ scheduled: true, scheduled_workout_id: 84 });
+  }, { KINESIS_GARMIN_SERVICE_TOKEN: 'x'.repeat(40) }, staleAfterSchedule.operation, staleAfterConfirmation);
+  const staleFinal = staleAfterSchedule.db.prepare('SELECT status,stage,workout_id,occurrence_id FROM garmin_training_operations WHERE operation_id=?').get(staleAfterSchedule.operation.operationId);
+  assert.equal(callsAfter, 2);
+  assert.deepEqual(staleFinal, { status: 'outcome_unknown', stage: 'validation', workout_id: '42', occurrence_id: '84' });
+  staleAfterSchedule.db.close();
+});
+
+test('publish refuses a corrupted persisted prescription without creating an operation or dispatching remotely', async () => {
+  const remoteCalls = [];
+  const h = await productApiHarness({ garminFetch: async (url) => { remoteCalls.push(url); return Response.json({ workout_id: 42 }); } });
+  const saved = await h.app.inject({ method: 'PUT', url: '/api/trainings/1/garmin/prescription', headers: { cookie: h.cookie }, payload: {
+    expected_revision: null, expected_training_date: '2026-11-02', expected_connection_generation: 1, prescription: workout(),
+  } });
+  h.db.prepare("UPDATE garmin_workout_prescriptions SET prescription_json='{}' WHERE user_id=1 AND training_id=1").run();
+  const response = await h.app.inject({ method: 'POST', url: '/api/trainings/1/garmin/publish', headers: { cookie: h.cookie }, payload: {
+    fingerprint: saved.json().fingerprint, expected_date: '2026-11-02', expected_revision: 1,
+    expected_connection_generation: 1, action: 'publish',
+  } });
+  assert.equal(response.statusCode, 422);
+  assert.equal(response.json().code, 'invalid_prescription');
+  assert.deepEqual(remoteCalls, []);
+  assert.equal(h.db.prepare('SELECT count(*) AS count FROM garmin_training_operations').get().count, 0);
+  await h.close();
+});
+
+test('auth start and MFA finish always release their in-flight guard after exceptional cleanup checks', async () => {
+  for (const path of ['start', 'finish']) {
+    let release;
+    let didStart;
+    const started = new Promise((resolve) => { didStart = resolve; });
+    let first = true;
+    const fingerprint = 'b'.repeat(64);
+    const h = await productApiHarness({ garminFetch: async (url) => {
+      if (path === 'finish' && url.endsWith('/auth/start')) return Response.json({ status: 'mfa_required', challenge_id: 'exceptional-mfa', expires_in: 300 });
+      if (url.endsWith(`/auth/${path}`) && first) {
+        first = false;
+        didStart();
+        return new Promise((resolve) => { release = resolve; });
+      }
+      return Response.json({ status: 'connected', identity_fingerprint: fingerprint });
+    } });
+    const payload = path === 'start'
+      ? { email: 'garmin@example.test', password: 'transient-only' }
+      : { challenge_id: 'exceptional-mfa', code: '123456' };
+    if (path === 'finish') await h.app.inject({ method: 'POST', url: '/api/garmin/auth/start', headers: { cookie: h.cookie }, payload: {
+      email: 'garmin@example.test', password: 'transient-only',
+    } });
+    const pending = h.app.inject({ method: 'POST', url: `/api/garmin/auth/${path}`, headers: { cookie: h.cookie }, payload });
+    await started;
+    const originalPrepare = h.db.prepare.bind(h.db);
+    h.db.prepare = (sql) => {
+      if (sql === 'SELECT id, is_active FROM users WHERE id = ?') throw new Error('synthetic eligibility read interruption');
+      return originalPrepare(sql);
+    };
+    release(Response.json({ detail: { code: 'unavailable' } }, { status: 503 }));
+    const failed = await pending;
+    assert.equal(failed.statusCode, 500);
+    assert.equal(failed.body.includes('transient-only'), false);
+    h.db.prepare = originalPrepare;
+    const retry = await h.app.inject({ method: 'POST', url: `/api/garmin/auth/${path}`, headers: { cookie: h.cookie }, payload });
+    assert.equal(retry.statusCode, 200);
+    assert.equal(retry.json().status, 'connected');
+    await h.close();
+  }
+});
+
+test('reconcile restores and dispatches a source-owned update without losing the provenance ID', async () => {
+  const calls = [];
+  const h = await productApiHarness({ garminFetch: async (url, init) => {
+    calls.push({ url, body: init.body ? JSON.parse(init.body) : null });
+    return Response.json({ workout_id: 42, status: 'updated', updated: true });
+  } });
+  const prescription = workout(); const fingerprint = prescriptionFingerprint(prescription);
+  h.db.prepare('INSERT INTO garmin_workout_prescriptions (user_id,training_id,revision,prescription_json,fingerprint) VALUES (1,1,1,?,?)').run(JSON.stringify(prescription), fingerprint);
+  h.db.prepare(`INSERT INTO garmin_training_operations
+    (operation_id,user_id,training_id,connection_generation,prescription_revision,fingerprint,converter_version,status,stage,scheduled_date,action,workout_id,occurrence_id)
+    VALUES ('update-source',1,1,1,1,?,1,'scheduled','complete','2026-11-02','publish','42','84')`).run(fingerprint);
+  h.db.prepare(`INSERT INTO garmin_training_operations
+    (operation_id,user_id,training_id,connection_generation,prescription_revision,fingerprint,converter_version,status,stage,scheduled_date,action,source_operation_id,workout_id,occurrence_id)
+    VALUES ('resume-update',1,1,1,1,?,1,'failed','update','2026-11-02','update','update-source','42','84')`).run(fingerprint);
+  const response = await h.app.inject({ method: 'POST', url: '/api/garmin/operations/resume-update/reconcile', headers: { cookie: h.cookie } });
+  assert.equal(response.statusCode, 202);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].url, /\/workouts\/42$/);
+  assert.equal(calls[0].body.source_operation_id, 'update-source');
+  assert.deepEqual(h.db.prepare('SELECT status,stage,workout_id,occurrence_id FROM garmin_training_operations WHERE operation_id=?').get('resume-update'), {
+    status: 'scheduled', stage: 'complete', workout_id: '42', occurrence_id: '84',
+  });
   await h.close();
 });
 
