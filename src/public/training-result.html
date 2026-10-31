@@ -89,7 +89,7 @@
                 <div id="garminWarmupEditor" hidden></div>
               </fieldset>
               <fieldset class="garmin-editor-section"><legend data-i18n="garmin.product.runSection">Corrida</legend>
-                <p data-i18n="garmin.product.runSectionHelp">Adicione blocos na ordem em que serão executados.</p>
+                <p data-i18n="garmin.product.runSectionHelp">Adicione blocos na ordem em que serão executados. Mantenha ao menos um bloco de corrida.</p>
                 <div id="garminRunBlocks"></div>
                 <button id="garminAddRunBlock" type="button" class="btn-secondary" data-i18n="garmin.product.addBlock">Adicionar bloco</button>
                 <button id="garminAddRecoveryBlock" type="button" class="btn-secondary" data-i18n="garmin.product.addRecovery">Adicionar recuperação</button>
@@ -115,9 +115,12 @@
             <div class="field"><label for="garminRecoveryTargetType" data-i18n="garmin.product.recoveryTarget">Recovery target</label><select id="garminRecoveryTargetType" class="input-control"><option value="none" data-i18n="garmin.product.noTarget">No target</option><option value="pace" data-i18n="garmin.product.pace">Pace range</option><option value="heart_rate" data-i18n="garmin.product.heartRate">Heart rate range</option></select></div>
             <div class="garmin-step-grid" id="garminRecoveryTargetFields" hidden><label><span id="garminRecoveryLowerLabel"></span><input id="garminRecoveryLower" type="number" min="1" class="input-control"></label><label><span id="garminRecoveryUpperLabel"></span><input id="garminRecoveryUpper" type="number" min="1" class="input-control"></label></div>
             </div>
-            <p data-i18n="garmin.product.saveHelp">Salva a estrutura no Kinesis e abre a revisão. Nada é enviado à Garmin.</p>
             <p id="garminPrescriptionError" role="alert" hidden></p>
-            <div class="garmin-actions"><button type="submit" class="btn-secondary" data-i18n="garmin.product.preview">Salvar e revisar</button></div>
+            <div class="garmin-review-actions">
+              <p id="garminEditorActionStatus" class="garmin-editor-action-status" role="status" aria-live="polite" hidden></p>
+              <p class="garmin-review-help" id="garminSaveHelp" data-i18n="garmin.product.saveHelp">Salva o treino no Kinesis para revisão. O envio à Garmin é feito na próxima etapa.</p>
+              <button id="garminPrescriptionSave" type="submit" class="btn-primary" data-i18n="garmin.product.preview">Salvar e revisar</button>
+            </div>
           </form>
           <div id="garminPreview" hidden><h3 data-i18n="garmin.product.previewTitle">Review before sending</h3><p id="garminPreviewName"></p><p id="garminPreviewDestination"></p><ol id="garminPreviewSteps"></ol><p id="garminPreviewTotal"></p><p id="garminScheduleDate"></p><div class="garmin-actions"><button id="garminPublishButton" type="button" class="btn-primary" data-i18n="garmin.product.publish">Publish and schedule</button><button id="garminUpdateButton" type="button" class="btn-primary" hidden data-i18n="garmin.product.update">Update in Garmin</button><button id="garminRescheduleButton" type="button" class="btn-secondary" hidden data-i18n="garmin.product.reschedule">Reschedule in Garmin</button></div></div>
           <p id="garminOperationStatus" role="status"></p>

@@ -922,13 +922,19 @@ select.input-control {
 .garmin-editor-target { grid-column: 1 / -1; }
 .garmin-editor-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
 .garmin-editor-actions button { min-height: 2.5rem; padding: .45rem .7rem; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: var(--ink); }
+.garmin-editor-actions button:hover:not(:disabled) { border-color: var(--accent-deep); background: var(--bg); }
+.garmin-editor-actions button:disabled { opacity: .55; cursor: not-allowed; }
 .garmin-editor-actions button:focus-visible, .garmin-inline-check input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .garmin-inline-check { display: flex; align-items: center; gap: .65rem; min-height: 2.5rem; margin-block: .35rem; }
 .garmin-editor-fields label.garmin-inline-check { display: flex; align-items: center; justify-content: flex-start; }
 .garmin-inline-check span { cursor: pointer; }
 .garmin-skip-rest { grid-column: 1 / -1; margin-block-start: .35rem; padding-block-start: .7rem; border-top: 1px solid var(--line); }
+.garmin-review-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 1rem; margin-block-start: .25rem; padding-block: .75rem .25rem; }
+.garmin-review-help { max-width: 62ch; color: var(--muted); font-size: .95rem; line-height: 1.55; }
+.garmin-editor-action-status { grid-column: 1 / -1; color: var(--danger); font-size: .95rem; line-height: 1.5; }
 @media (max-width: 600px) { .garmin-editor-section, .garmin-editor-block { padding: .7rem; } .garmin-editor-actions button { flex: 1 1 auto; } }
 #garminPreview { border-top: 1px solid var(--line); padding-top: 1rem; }
 #garminPreview ol { display: grid; gap: .5rem; padding-left: 1.5rem; }
 #garminOperationStatus { min-height: 1.5em; }
 @media (max-width: 600px) { .garmin-actions > button { width: 100%; } }
+@media (max-width: 600px) { .garmin-review-actions { grid-template-columns: minmax(0, 1fr); gap: .75rem; padding-block: .75rem .5rem; } .garmin-review-actions > button { width: 100%; } }
