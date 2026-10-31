@@ -248,6 +248,43 @@ function migrateDatabase(db) {
     name TEXT PRIMARY KEY,
     applied_at TEXT NOT NULL DEFAULT (datetime('now'))
   )`);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS garmin_workout_prescriptions (
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      training_id INTEGER NOT NULL REFERENCES trainings(id) ON DELETE CASCADE,
+      revision INTEGER NOT NULL CHECK (revision > 0),
+      prescription_json TEXT NOT NULL,
+      fingerprint TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (user_id, training_id)
+    );
+    CREATE TABLE IF NOT EXISTS garmin_training_operations (
+      operation_id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      training_id INTEGER NOT NULL REFERENCES trainings(id) ON DELETE CASCADE,
+      connection_generation INTEGER NOT NULL CHECK (connection_generation > 0),
+      prescription_revision INTEGER NOT NULL CHECK (prescription_revision > 0),
+      fingerprint TEXT NOT NULL,
+      converter_version INTEGER NOT NULL CHECK (converter_version > 0),
+      status TEXT NOT NULL CHECK (status IN ('publishing','workout_created','scheduling','scheduled','reauth_required','failed','outcome_unknown','outdated')),
+      stage TEXT NOT NULL,
+      workout_id TEXT,
+      occurrence_id TEXT,
+      scheduled_date TEXT NOT NULL,
+      error_code TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (user_id, training_id, connection_generation, prescription_revision)
+    );
+    CREATE TABLE IF NOT EXISTS garmin_pilot_connections (
+      user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      connection_generation INTEGER NOT NULL DEFAULT 1 CHECK (connection_generation > 0),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+  db.prepare('INSERT OR IGNORE INTO schema_migrations (name) VALUES (?)').run(
+    '2026-10-garmin-session-publish-v1',
+  );
   const roleMarker = '2026-09-user-roles-v1';
   const migrateRoles = db.transaction(() => {
     if (

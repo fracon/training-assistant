@@ -644,6 +644,16 @@ Then open <http://127.0.0.1:3000> — you'll land on the login page. Create an a
 
 > **The 100% Rule:** `npm run test:coverage` enforces 100% Statements, Branches, Functions, and Lines for the files instrumented by c8 (`src/**`, excluding `src/public/**` and `src/start.js`, plus `scripts/admin-prompts.js`, `scripts/admin-runtime.js`, and `scripts/admin-commands.js`). Frontend behavior remains test-mandatory when it changes, but `src/public/**` is not included in that instrumentation percentage.
 
+### Garmin structured workout pilot
+
+The issue #73 pilot adds an explicit structure editor and publish/schedule
+confirmation on an owned planned-session page. It stores a versioned
+prescription separately from the original prose and remains restricted to the
+operator-selected `GARMIN_PILOT_USER_ID`; it is not a production multi-user
+connection flow. Locally, run `npm run dev` and `npm run garmin:connector`.
+See [`docs/garmin-integration.md`](docs/garmin-integration.md) for supported
+steps, recovery semantics, evidence, and the required owner walkthrough.
+
 Configuration via environment variables:
 
 | Variable | Default | Description |
@@ -1278,9 +1288,10 @@ The pilot feature flag is off by default. The owner-only authorization scope,
 token encryption, internal API, ZimaOS operation, evidence status, and real
 account/device acceptance steps are in [docs/garmin-integration.md](docs/garmin-integration.md).
 
-The current PR is a terminal-only pilot for one explicitly selected Kinesis
-account. It does not add the production “Connect Garmin” UI or multi-user
-integration. For local development, prepare once (Python 3.12+, dedicated
+The issue #73 branch adds a browser-based session publishing pilot for the one
+explicitly selected Kinesis account. It is not a production multi-user
+“Connect Garmin” integration. Existing terminal commands remain diagnostic
+tools. For local development, prepare once (Python 3.12+, dedicated
 virtualenv, hash-locked packages, private generated config, and explicit account
 confirmation):
 

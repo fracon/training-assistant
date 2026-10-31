@@ -66,6 +66,40 @@
         </dl>
       </section>
 
+      <section class="card garmin-session-card" id="garminSessionCard" hidden aria-labelledby="garminTitle">
+        <h2 id="garminTitle" data-i18n="garmin.product.title">Garmin Connect</h2>
+        <p id="garminConnectionStatus" role="status">Checking connection…</p>
+        <p id="garminDestination" hidden></p>
+        <form id="garminAuthForm" class="garmin-auth-form" hidden>
+          <div class="field"><label for="garminEmail" data-i18n="garmin.product.email">Garmin email</label><input id="garminEmail" type="email" autocomplete="username" class="input-control" required maxlength="254"></div>
+          <div class="field"><label for="garminPassword" data-i18n="garmin.product.password">Garmin password</label><input id="garminPassword" type="password" autocomplete="current-password" class="input-control" required maxlength="1024"></div>
+          <div class="field" id="garminMfaField" hidden><label for="garminMfaCode" data-i18n="garmin.product.mfa">Verification code</label><input id="garminMfaCode" inputmode="numeric" autocomplete="one-time-code" class="input-control" maxlength="32"></div>
+          <div class="garmin-actions"><button id="garminAuthSubmit" type="submit" class="btn-primary" data-i18n="garmin.product.connect">Connect Garmin</button><button id="garminAuthCancel" type="button" class="btn-secondary" hidden data-i18n="garmin.product.cancel">Cancel</button></div>
+        </form>
+        <button id="garminConnectButton" type="button" class="btn-secondary" data-i18n="garmin.product.connect">Connect Garmin</button>
+        <button id="garminDisconnectButton" type="button" class="btn-secondary" hidden data-i18n="garmin.product.disconnect">Disconnect</button>
+        <div id="garminPrescriptionPanel" hidden>
+          <h3 data-i18n="garmin.product.prescription">Workout structure</h3>
+          <p data-i18n="garmin.product.proseNote">The original workout description stays unchanged. Confirm the structure below; it is not inferred from prose.</p>
+          <form id="garminPrescriptionForm">
+            <div class="field"><label for="garminWorkoutName" data-i18n="garmin.product.name">Workout name</label><input id="garminWorkoutName" class="input-control" maxlength="32" required></div>
+            <div class="garmin-step-grid">
+              <label><span data-i18n="garmin.product.warmup">Warm-up (minutes)</span><input id="garminWarmup" type="number" min="0" max="60" value="0" class="input-control"></label>
+              <label><span data-i18n="garmin.product.repetitions">Intervals</span><input id="garminRepetitions" type="number" min="1" max="30" value="1" class="input-control"></label>
+              <label><span data-i18n="garmin.product.interval">Run (minutes)</span><input id="garminInterval" type="number" min="1" max="120" value="30" class="input-control" required></label>
+              <label><span data-i18n="garmin.product.recovery">Recovery (minutes)</span><input id="garminRecovery" type="number" min="0" max="60" value="0" class="input-control"></label>
+              <label><span data-i18n="garmin.product.cooldown">Cool-down (minutes)</span><input id="garminCooldown" type="number" min="0" max="60" value="0" class="input-control"></label>
+            </div>
+            <div class="field"><label for="garminTargetType" data-i18n="garmin.product.target">Interval target</label><select id="garminTargetType" class="input-control"><option value="none" data-i18n="garmin.product.noTarget">No target</option><option value="pace" data-i18n="garmin.product.pace">Pace range (min/km)</option><option value="heart_rate" data-i18n="garmin.product.heartRate">Heart rate range (bpm)</option></select></div>
+            <div class="garmin-step-grid" id="garminTargetFields" hidden><label><span id="garminLowerLabel" data-i18n="garmin.product.lower">Lower bound</span><input id="garminLower" type="number" min="1" class="input-control"></label><label><span id="garminUpperLabel" data-i18n="garmin.product.upper">Upper bound</span><input id="garminUpper" type="number" min="1" class="input-control"></label></div>
+            <div class="garmin-actions"><button type="submit" class="btn-secondary" data-i18n="garmin.product.preview">Save and preview</button></div>
+          </form>
+          <div id="garminPreview" hidden><h3 data-i18n="garmin.product.previewTitle">Review before sending</h3><p id="garminPreviewName"></p><p id="garminPreviewDestination"></p><ol id="garminPreviewSteps"></ol><p id="garminScheduleDate"></p><button id="garminPublishButton" type="button" class="btn-primary" data-i18n="garmin.product.publish">Publish and schedule</button></div>
+          <p id="garminOperationStatus" role="status"></p>
+          <button id="garminReconcileButton" type="button" class="btn-secondary" hidden data-i18n="garmin.product.reconcile">Reconcile remote result</button>
+        </div>
+      </section>
+
       <section class="card feedback-card" aria-labelledby="feedbackTitle">
         <h2 id="feedbackTitle" data-i18n="session.feedbackHeading">Your feedback</h2>
         <div class="feedback-grid">

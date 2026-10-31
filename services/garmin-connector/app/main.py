@@ -86,6 +86,9 @@ class WorkoutPayload(StrictModel):
     cooldown_seconds: int = Field(default=0, ge=0, le=3600)
     target_lower_mps: float | None = Field(default=None, ge=0.5, le=10)
     target_upper_mps: float | None = Field(default=None, ge=0.5, le=10)
+    target_kind: str = Field(default="pace", pattern=r"^(pace|heart_rate|none)$")
+    target_lower_bpm: int | None = Field(default=None, ge=40, le=230)
+    target_upper_bpm: int | None = Field(default=None, ge=40, le=230)
 
 
 def _secret(name: str) -> bytes:
@@ -905,12 +908,25 @@ def publish_workout(owner_id: str, connection_id: str, body: WorkoutPayload,
         mutation_started = False
         try:
             from garminconnect.workout import (
-                PaceTarget, RunningWorkout, WorkoutSegment, create_cooldown_step,
+                CustomHeartRateTarget, PaceTarget, RunningWorkout, WorkoutSegment, create_cooldown_step,
                 create_interval_step, create_recovery_step, create_repeat_group,
                 create_targeted_interval_step, create_warmup_step,
             )
             if (body.target_lower_mps is None) != (body.target_upper_mps is None):
                 raise ValueError("Both pace bounds are required")
+            if (body.target_lower_bpm is None) != (body.target_upper_bpm is None):
+                raise ValueError("Both heart-rate bounds are required")
+            if body.target_kind == "heart_rate":
+                if body.target_lower_bpm is None or body.target_lower_bpm > body.target_upper_bpm:
+                    raise ValueError("Heart-rate bounds are invalid")
+                if body.target_lower_mps is not None:
+                    raise ValueError("Only one target type is allowed")
+            elif body.target_kind == "pace":
+                if body.target_lower_bpm is not None:
+                    raise ValueError("Only one target type is allowed")
+            elif any(value is not None for value in (body.target_lower_mps, body.target_upper_mps,
+                                                      body.target_lower_bpm, body.target_upper_bpm)):
+                raise ValueError("No-target workouts cannot carry target bounds")
             if body.repetitions == 1 and body.recovery_seconds:
                 raise ValueError("Recovery is only supported between repeated intervals")
             if body.target_lower_mps is not None and body.target_lower_mps > body.target_upper_mps:
@@ -920,7 +936,9 @@ def publish_workout(owner_id: str, connection_id: str, body: WorkoutPayload,
             fingerprint_full = hashlib.sha256(body.model_dump_json().encode()).hexdigest()
             fingerprint = fingerprint_full
             remote_fingerprint = fingerprint_full[:8]
-            expected_name = f"{marker}{remote_fingerprint}"
+            # Keep a human-readable label first while retaining the stable
+            # operation marker used for safe remote reconciliation.
+            expected_name = f"{body.name[:24].strip()} {marker}{remote_fingerprint}"
             with _client(path, key) as (client, _, _):
                 journal = _operation_journal(path, key)
                 prior_operation = journal.get(str(body.operation_id))
@@ -957,7 +975,10 @@ def publish_workout(owner_id: str, connection_id: str, body: WorkoutPayload,
                 if not complete_scan or prior_operation is not None:
                     raise HTTPException(503, detail={"code": "outcome_unknown"})
                 target = None
-                if body.target_lower_mps is not None:
+                if body.target_kind == "heart_rate":
+                    target = CustomHeartRateTarget(lower_limit=body.target_lower_bpm,
+                                                   upper_limit=body.target_upper_bpm)
+                elif body.target_kind == "pace" and body.target_lower_mps is not None:
                     target = PaceTarget(lower_limit=body.target_lower_mps,
                                         upper_limit=body.target_upper_mps)
                 interval_order = 2 if body.warmup_seconds else 1
@@ -971,7 +992,8 @@ def publish_workout(owner_id: str, connection_id: str, body: WorkoutPayload,
                         raise ValueError("Recovery is required for repeats")
                     repeated_steps.append(create_recovery_step(body.recovery_seconds, step_order=2))
                     interval_group = create_repeat_group(body.repetitions, repeated_steps,
-                                                        step_order=interval_order)
+                                                        step_order=interval_order,
+                                                        skip_last_rest_step=True)
                 else:
                     interval_group = repeated_steps[0]
                 steps = []
@@ -982,8 +1004,9 @@ def publish_workout(owner_id: str, connection_id: str, body: WorkoutPayload,
                     steps.append(create_cooldown_step(body.cooldown_seconds, step_order=len(steps) + 1))
             workout = RunningWorkout(
                 workoutName=expected_name[:60],
-                estimatedDurationInSecs=(body.warmup_seconds + body.repetitions *
-                                         (body.interval_seconds + body.recovery_seconds) + body.cooldown_seconds),
+                estimatedDurationInSecs=(body.warmup_seconds + body.repetitions * body.interval_seconds
+                                         + max(0, body.repetitions - 1) * body.recovery_seconds
+                                         + body.cooldown_seconds),
                 workoutSegments=[WorkoutSegment(
                     segmentOrder=1,
                     sportType={"sportTypeId": 1, "sportTypeKey": "running"},

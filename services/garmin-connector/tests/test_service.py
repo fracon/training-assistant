@@ -621,18 +621,29 @@ class ConnectorTests(unittest.TestCase):
             self.assertEqual(published.status_code, 200, published.text)
             self.assertEqual(published.json()["workout_id"], 42)
             self.assertEqual(published.json()["status"], "created")
-            self.assertEqual(len(fake.workout.workoutName), 32)
-            self.assertEqual(fake.workout.estimatedDurationInSecs, 1260)
+            self.assertLessEqual(len(fake.workout.workoutName), 60)
+            self.assertTrue(fake.workout.workoutName.startswith("synthetic intervals "))
+            self.assertEqual(fake.workout.estimatedDurationInSecs, 1200)
             steps = fake.workout.workoutSegments[0].workoutSteps
             self.assertEqual([step.stepOrder for step in steps], [1, 2, 3])
             self.assertEqual(steps[1].numberOfIterations, 4)
+            self.assertTrue(steps[1].skipLastRestStep)
             self.assertEqual([step.stepType["stepTypeKey"] for step in steps[1].workoutSteps],
                              ["interval", "recovery"])
+            hr_body = {**workout_body, "operation_id": "3c8b9e44-82ba-4e95-9d4c-4ae3f59ad18b",
+                       "target_kind": "heart_rate", "target_lower_mps": None,
+                       "target_upper_mps": None, "target_lower_bpm": 140,
+                       "target_upper_bpm": 165}
+            hr_result = self.client.post(f"{self.prefix}/workouts", headers=self.headers, json=hr_body)
+            self.assertEqual(hr_result.status_code, 200, hr_result.text)
+            hr_step = fake.workout.workoutSegments[0].workoutSteps[1].workoutSteps[0]
+            self.assertEqual(hr_step.targetType["workoutTargetTypeKey"], "heart.rate.zone")
+            self.assertEqual((hr_step.targetValueOne, hr_step.targetValueTwo), (140, 165))
             fake.workouts = ([{"workoutId": index + 1000, "workoutName": "older"}
                               for index in range(100)] + fake.workouts)
             reconciled = self.client.post(f"{self.prefix}/workouts", headers=self.headers, json=workout_body)
             self.assertEqual(reconciled.json()["status"], "reconciled")
-            self.assertEqual(fake.upload_calls, 1)
+            self.assertEqual(fake.upload_calls, 2)
             changed = {**workout_body, "interval_seconds": 121}
             conflict = self.client.post(f"{self.prefix}/workouts", headers=self.headers, json=changed)
             self.assertEqual(conflict.status_code, 409)

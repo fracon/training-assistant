@@ -244,8 +244,9 @@ The local setup selects the first value and generates/persists the other two.
 End users will not configure any of them. For ZimaOS the operator supplies the
 three runtime settings once per installation and preserves both secrets during
 image updates. Future multi-user ownership should come from the authenticated
-Kinesis session; that path is not implemented. This PR remains a terminal-only,
-single-owner pilot without the production “Connect Garmin” interface.
+Kinesis session; that path is not implemented. The #73 branch adds a web flow
+for the configured single pilot owner; it does not provide production
+multi-user “Connect Garmin” support.
 
 ## ZimaOS packaging and operation
 
@@ -268,7 +269,7 @@ startup or FIT/ZIP import.
    '{{.Architecture}}'`. `scripts/deploy-zimaos.sh` pulls the existing Node image,
    builds the Python image on that host architecture, then starts both. No CI
    publishing pipeline was changed. Keep the connector image digest/tag with
-   deployment records; the Compose version is `0.25.0`.
+   deployment records; the Compose version is `0.26.0`.
 4. Check `docker compose ps` and `docker compose logs --tail=50
    garmin-connector`; logs must not contain request bodies. Health is local and
    does not contact Garmin.
@@ -287,15 +288,19 @@ the `KGC1` envelope. Do not restore a token backup from a different key.
 
 ## Automated evidence and go/no-go
 
-At this revision the connector suite has **47 passing tests**; Python coverage
-(`coverage run --branch --source=app -m pytest`) measures **89.44% lines**
-(745/833), **76.41% branches** (217/284), and **86.12% combined coverage** for
-`app/main.py`. The browser-free Garmin CLI/setup/launcher suite has **30 passing
-tests**; `npm run test:garmin-pilot-coverage` measures **87.73% statements/lines,
-74.79% branches, and 78.94% functions** across the four Garmin Node scripts
-(`garmin-pilot.js`, local config loader, setup and connector launcher). These
-are reported measurements, not added 100% gates. The existing Node backend
-coverage command retains its required 100% thresholds.
+At the #73 branch the connector suite has **47 passing tests**; Python coverage
+(`coverage run --branch --source=app -m pytest`) measures **88.94% lines**
+(756/850), **75.33% branches** (226/300), and **85.39% combined coverage** for
+`app/main.py`. The Garmin CLI/setup/launcher and product route/contract suites
+have **41 passing tests**; `npm run test:garmin-pilot-coverage` measures
+**82.51% statements/lines, 70.62% branches, and 82.35% functions** across the
+five Garmin Node tools. The product route adapter itself measures 68.16%
+statements/lines, 59.09% branches and 92.30% functions; the versioned workout
+contract measures 100% in all four metrics. These separate measurements are
+reported honestly and are not added 100% gates. The full `npm test` run passed
+**1,366 tests**, and `npm run test:coverage` passed the repository's existing
+100% Node backend thresholds. Garmin-tool coverage does not stand in for Python
+coverage, or vice versa.
 Contract tests use the actual pinned Garmin wrapper/signatures and enums with
 transport/authentication patched; Python sockets are blocked. They do not
 establish live Garmin or Forerunner behavior.
@@ -355,11 +360,103 @@ a test artifact, use Garmin Connect manually and match the recorded operation
 UUID and date; delete only that explicitly created synthetic workout or its
 schedule. Never delete an activity. No remote cleanup has been performed.
 
-## Future phase boundary
+## Phase 2 product pilot (#73)
 
-Phase 2 (#73) may add the user-facing publication workflow only after real
-account/device capability checks and approval. Phase 3 (#74) may add activity
-recovery/import only after the phase 2 execution identity and result pipeline
-are proven. This phase does not add a full workout editor, automatic result
-import, account-wide synchronization, health/sleep/HRV, or automatic OpenAI
-analysis.
+The #73 branch adds a small Garmin panel to the owned training-result/session
+page. It is available only when the operator pilot flag is enabled and the
+authenticated Kinesis account is the configured `GARMIN_PILOT_USER_ID`; an
+administrator does not bypass ownership. The page supports connect/status,
+transient password entry, an MFA challenge when returned, cancellation, and
+local disconnect. Password and MFA code are cleared from the form after
+submission; neither enters browser storage. Connector credentials remain
+server-side.
+
+An explicit prescription is stored in `garmin_workout_prescriptions`, separate
+from `trainings.detalhes`, with a content fingerprint and monotonically
+increasing revision. The v1 contract is running-only and validates unique step
+IDs, repeat bounds, time/distance values, absolute heart-rate bounds, and pace
+units. RPE is not converted. The UI edits timed warm-up, run/repeat/recovery,
+and cool-down steps with no target, pace range, or absolute heart-rate range.
+The contract can represent distance and open-lap steps, but the current
+connector conversion rejects those shapes before remote dispatch; they are
+not silently flattened. Zone targets and nested repeats are not supported.
+Original prose is never interpreted or rewritten.
+
+The preview saves the local prescription but does not mutate Garmin. A separate
+confirmation starts a durable owner/session/revision/fingerprint operation.
+The operation is written before network dispatch, connector calls happen
+outside SQLite transactions, and status can be read after reload. A timed-out
+or process-interrupted `publishing`/`scheduling` operation is changed to
+`outcome_unknown` on restart and is not automatically dispatched again. The
+connector's encrypted operation journal continues to reconcile the same
+operation marker. Repeating the same published revision returns its existing
+operation rather than creating a second one. A changed structure increments
+the revision and marks prior scheduled status outdated; it requires an explicit
+new publish action. There is no remote delete or automatic update of older
+workouts in this pilot.
+
+The displayed device is informational. A completed state means Garmin Connect
+confirmed the workout and scheduled occurrence; it prompts watch synchronization
+and does not claim that the workout is already on the Forerunner. The connector
+translates timed steps and pace/absolute-HR targets to the pinned library
+contract. The remote title starts with the friendly workout name and retains a
+technical operation marker for reconciliation.
+
+The editor currently creates time-based warm-up, work/repeat, recovery, and
+cool-down steps. Although the versioned local schema can represent distance or
+open-lap steps, the product adapter rejects these before dispatch; no distance
+or lap-button workout is currently offered by the UI. Nested repeats and zone
+targets are also outside this v1 adapter. Changing a prescription creates an
+explicit new revision and can leave the earlier Garmin workout/occurrence in
+place; the product does not delete or silently update it. Changing only the
+planned civil date marks the old operation outdated, but safe remote
+rescheduling is not implemented because the pinned contract does not yet
+provide a verified occurrence replacement/removal operation. Use Garmin Connect
+manually for such a date change until that capability is implemented.
+
+### Local UI pilot
+
+With the local private Garmin setup already prepared, run:
+
+1. `npm run dev`
+2. `npm run garmin:connector`
+3. Sign in to Kinesis as the configured pilot owner, open a planned session,
+   connect/re-authenticate if requested, set its explicit structure, choose
+   **Save and preview / Salvar e conferir**, review destination and civil date,
+   then choose **Publish and schedule / Publicar e agendar** and confirm.
+4. Reload the page and inspect the stored operation status. After a
+   `scheduled` result, synchronize Garmin Connect with the watch and inspect the
+   workout there. A Connect success is not physical watch-delivery proof.
+5. Disconnect from the panel to remove local Garmin tokens.
+
+`npm run dev` reads the prepared private pilot configuration into the server
+process only for the restricted local owner flow. The encryption key is not
+needed by Node and is not copied into its runtime environment or browser
+responses; the Python launcher reads it directly for token encryption.
+
+Existing terminal commands remain diagnostic tools. Automated tests use
+synthetic data and make no Garmin/OpenAI calls. The browser UI path and its
+real-account behavior still require owner homologation; this branch does not
+complete phase acceptance merely by passing mocks.
+
+The #73 branch adds Node route/conversion tests, a Chrome flow test for preview,
+cancel/confirm, polling/reload, keyboard focus and PT/EN translation, plus
+connector conversion tests using the pinned Garmin model classes. Chrome
+captures are generated under `/tmp/kinesis-garmin-ui-*.png` during that test;
+they are review artifacts and are not checked into the repository. The UI has
+only been exercised against a simulated connector, not the owner's connection.
+
+### Evidence and remaining boundary
+
+Owner-reported prior CLI evidence remains: simple and interval workouts were
+published and scheduled, and both appeared in Garmin Connect and reached the
+Forerunner 55 after normal synchronization. These are reports about the CLI
+pilot, not this new UI. The new UI requires a separate end-to-end walkthrough.
+MFA was not exercised on the real account. Exact planned-workout-to-completed-
+activity identity remains unproven and belongs to #74. ZimaOS deployment and
+final operational validation remain tracked in #76.
+
+Phase 3 (#74) may add activity import only after execution identity and the
+result pipeline are proven. Neither this feature nor its scheduled state marks
+a session complete, adds shoe mileage, generates analysis, imports FIT, or
+enables account-wide synchronization.

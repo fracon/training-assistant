@@ -60,3 +60,15 @@ coverage command: `npm run test:garmin-pilot-coverage`. It covers the CLI, local
 config loader, setup/launcher, authorization rechecks, stream handling, and
 synthetic FIT parsing; its report is separate from both the required Node
 backend gate and Python coverage.
+
+Issue #73 adds a restricted Garmin UI pilot on the owned planned-session page.
+It stores an explicit structured prescription separately from original prose,
+previews it, and requires a separate confirmation before Node dispatches to
+this private connector. Run `npm run dev` and `npm run garmin:connector`; the
+browser never calls Python directly. This remains restricted to the configured
+Kinesis pilot owner and is not production multi-user support. See
+`../../docs/garmin-integration.md` for supported shapes and owner homologation.
+
+`npm run test:garmin-product-coverage` separately reports the Node product
+adapter and prescription contract; do not combine it with the backend Node
+100% gate or Python connector coverage.
