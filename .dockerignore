@@ -17,6 +17,7 @@ scripts/*
 !scripts/admin-prompts.js
 !scripts/garmin-pilot.js
 !scripts/garmin-local-config.js
+!scripts/garmin-product.js
 .env*
 Dockerfile
 docker-compose.yml

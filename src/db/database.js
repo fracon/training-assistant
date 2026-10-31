@@ -248,6 +248,112 @@ function migrateDatabase(db) {
     name TEXT PRIMARY KEY,
     applied_at TEXT NOT NULL DEFAULT (datetime('now'))
   )`);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS garmin_workout_prescriptions (
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      training_id INTEGER NOT NULL REFERENCES trainings(id) ON DELETE CASCADE,
+      revision INTEGER NOT NULL CHECK (revision > 0),
+      prescription_json TEXT NOT NULL,
+      fingerprint TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (user_id, training_id)
+    );
+    CREATE TABLE IF NOT EXISTS garmin_training_operations (
+      operation_id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      training_id INTEGER NOT NULL REFERENCES trainings(id) ON DELETE CASCADE,
+      connection_generation INTEGER NOT NULL CHECK (connection_generation > 0),
+      prescription_revision INTEGER NOT NULL CHECK (prescription_revision > 0),
+      fingerprint TEXT NOT NULL,
+      converter_version INTEGER NOT NULL CHECK (converter_version > 0),
+      status TEXT NOT NULL CHECK (status IN ('publishing','workout_created','scheduling','scheduled','reauth_required','failed','outcome_unknown','outdated')),
+      stage TEXT NOT NULL,
+      workout_id TEXT,
+      occurrence_id TEXT,
+      scheduled_date TEXT NOT NULL,
+      action TEXT NOT NULL DEFAULT 'publish' CHECK (action IN ('publish','update','reschedule')),
+      source_operation_id TEXT,
+      error_code TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      CHECK (source_operation_id IS NULL OR source_operation_id <> operation_id)
+    );
+    CREATE TABLE IF NOT EXISTS garmin_pilot_connections (
+      user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      connection_generation INTEGER NOT NULL DEFAULT 1 CHECK (connection_generation > 0),
+      identity_fingerprint TEXT,
+      cleanup_pending INTEGER NOT NULL DEFAULT 0 CHECK (cleanup_pending IN (0,1)),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE IF NOT EXISTS garmin_cleanup_state (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      pending INTEGER NOT NULL DEFAULT 0 CHECK (pending IN (0,1)),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+  db.prepare('INSERT OR IGNORE INTO schema_migrations (name) VALUES (?)').run(
+    '2026-10-garmin-session-publish-v1',
+  );
+  const garminV2 = '2026-10-garmin-session-publish-v2';
+  if (!db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(garminV2)) {
+    const operationColumns = db.prepare('PRAGMA table_info(garmin_training_operations)').all().map((row) => row.name);
+    if (!operationColumns.includes('action') || !operationColumns.includes('source_operation_id')) {
+      db.exec(`CREATE TABLE garmin_training_operations_v2 (
+        operation_id TEXT PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        training_id INTEGER NOT NULL REFERENCES trainings(id) ON DELETE CASCADE,
+        connection_generation INTEGER NOT NULL CHECK (connection_generation > 0),
+        prescription_revision INTEGER NOT NULL CHECK (prescription_revision > 0),
+        fingerprint TEXT NOT NULL,
+        converter_version INTEGER NOT NULL CHECK (converter_version > 0),
+        status TEXT NOT NULL CHECK (status IN ('publishing','workout_created','scheduling','scheduled','reauth_required','failed','outcome_unknown','outdated')),
+        stage TEXT NOT NULL,
+        workout_id TEXT,
+        occurrence_id TEXT,
+        scheduled_date TEXT NOT NULL,
+        action TEXT NOT NULL DEFAULT 'publish' CHECK (action IN ('publish','update','reschedule')),
+        source_operation_id TEXT,
+        error_code TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        CHECK (source_operation_id IS NULL OR source_operation_id <> operation_id)
+      );
+      INSERT INTO garmin_training_operations_v2 (
+        operation_id,user_id,training_id,connection_generation,prescription_revision,fingerprint,converter_version,
+        status,stage,workout_id,occurrence_id,scheduled_date,error_code,created_at,updated_at
+      ) SELECT operation_id,user_id,training_id,connection_generation,prescription_revision,fingerprint,converter_version,
+        status,stage,workout_id,occurrence_id,scheduled_date,error_code,created_at,updated_at
+        FROM garmin_training_operations;
+      DROP TABLE garmin_training_operations;
+      ALTER TABLE garmin_training_operations_v2 RENAME TO garmin_training_operations;`);
+    }
+    const connectionColumns = db.prepare('PRAGMA table_info(garmin_pilot_connections)').all().map((row) => row.name);
+    if (!connectionColumns.includes('identity_fingerprint')) db.exec('ALTER TABLE garmin_pilot_connections ADD COLUMN identity_fingerprint TEXT');
+    if (!connectionColumns.includes('cleanup_pending')) db.exec('ALTER TABLE garmin_pilot_connections ADD COLUMN cleanup_pending INTEGER NOT NULL DEFAULT 0 CHECK (cleanup_pending IN (0,1))');
+    db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS garmin_operation_identity_v2
+      ON garmin_training_operations(user_id,training_id,connection_generation,prescription_revision,scheduled_date,action);
+      CREATE INDEX IF NOT EXISTS garmin_cleanup_pending_v1 ON garmin_pilot_connections(cleanup_pending);`);
+    db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(garminV2);
+  }
+  const garminV3 = '2026-10-garmin-session-publish-v3';
+  if (!db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(garminV3)) {
+    db.exec(`DROP INDEX IF EXISTS garmin_operation_identity_v2;
+      CREATE UNIQUE INDEX garmin_operation_identity_v3 ON garmin_training_operations(
+        user_id,training_id,connection_generation,prescription_revision,scheduled_date,action,
+        COALESCE(source_operation_id,''),COALESCE(occurrence_id,''));`);
+    db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(garminV3);
+  }
+  const garminV4 = '2026-10-garmin-session-publish-v4';
+  if (!db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(garminV4)) {
+    // occurrence_id is filled after dispatch. It cannot be part of the idempotency
+    // key or a second click would acquire a different identity after first success.
+    // source_operation_id already scopes each explicitly linked reschedule.
+    db.exec(`DROP INDEX IF EXISTS garmin_operation_identity_v3;
+      CREATE UNIQUE INDEX garmin_operation_identity_v4 ON garmin_training_operations(
+        user_id,training_id,connection_generation,prescription_revision,scheduled_date,action,
+        COALESCE(source_operation_id,''));`);
+    db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(garminV4);
+  }
   const roleMarker = '2026-09-user-roles-v1';
   const migrateRoles = db.transaction(() => {
     if (

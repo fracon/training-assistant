@@ -455,7 +455,7 @@ async function initTrainingResult() {
   let correctionMutationPending = false;
   let manualDistanceInputUnit = 'km';
   let rpeErrorKey = null;
-  const t = (key) => translate(i18n ? i18n.messages : {}, key);
+  const t = (key, params) => translate(i18n ? i18n.messages : {}, key, params);
   const analysisLabels = () => ({
     summary: t('session.analysis.summary'), comparison: t('session.analysis.comparison'),
     contextualReading: t('session.analysis.contextualReading'), attention: t('session.analysis.attention'),
@@ -1259,6 +1259,501 @@ async function initTrainingResult() {
   }
 
   currentTrainingId = id;
+  const garminCard = document.getElementById('garminSessionCard');
+  const garminText = (key, params) => t(`garmin.product.${key}`, params);
+  const garminStatus = document.getElementById('garminConnectionStatus');
+  const garminAuthForm = document.getElementById('garminAuthForm');
+  const garminConnectButton = document.getElementById('garminConnectButton');
+  const garminDisconnectButton = document.getElementById('garminDisconnectButton');
+  const garminMfaField = document.getElementById('garminMfaField');
+  const garminMfaCode = document.getElementById('garminMfaCode');
+  const garminPassword = document.getElementById('garminPassword');
+  const garminCancel = document.getElementById('garminAuthCancel');
+  const garminPanel = document.getElementById('garminPrescriptionPanel');
+  const garminPrescriptionForm = document.getElementById('garminPrescriptionForm');
+  const garminPreview = document.getElementById('garminPreview');
+  const garminPreviewSteps = document.getElementById('garminPreviewSteps');
+  const garminOperationStatus = document.getElementById('garminOperationStatus');
+  const garminOperationRetry = document.getElementById('garminOperationRetry');
+  const garminReconcileButton = document.getElementById('garminReconcileButton');
+  const garminUpdateButton = document.getElementById('garminUpdateButton');
+  const garminRescheduleButton = document.getElementById('garminRescheduleButton');
+  const garminTargetType = document.getElementById('garminTargetType');
+  const garminRecoveryTargetType = document.getElementById('garminRecoveryTargetType');
+  const garminIntervalType = document.getElementById('garminIntervalType');
+  const garminTargetFields = document.getElementById('garminTargetFields');
+  const garminRecoveryTargetFields = document.getElementById('garminRecoveryTargetFields');
+  let garminChallenge = null;
+  let garminFingerprint = null;
+  let garminVisible = false;
+  let garminPending = false;
+  let garminConnectionMessage = 'loading';
+  let garminCurrentOperation = null;
+  let garminOperationMessageKey = null;
+  let garminPreviewModel = null;
+  let garminSavedRevision = null;
+  let garminFormDirty = false;
+  let garminStatusRead = 0;
+  let garminOperationTimer = null;
+  let garminOperationController = null;
+  let garminOperationRead = 0;
+  let garminOperationId = null;
+  let garminDestinationNames = [];
+  let garminPreviewSnapshot = null;
+  let garminConnectionGeneration = 1;
+  let garminTargetDirty = false;
+  let garminOriginalIntervalTarget = { type: 'none' };
+  let garminOriginalRecoveryTarget = { type: 'none' };
+  let garminOriginalPrescription = null;
+  const garminDirtyFields = new Set();
+  const setGarminOperationMessage = (key) => {
+    garminOperationMessageKey = key;
+    garminOperationStatus.textContent = garminText(key);
+  };
+  const setGarminConnectionMessage = (key) => {
+    garminConnectionMessage = key;
+    garminStatus.textContent = garminText(key);
+  };
+  const garminFetch = async (url, options = {}) => {
+    const response = await fetch(url, { ...options, headers: { 'content-type': 'application/json', ...options.headers } });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) { const error = new Error(body.code || 'unavailable'); error.status = response.status; throw error; }
+    return body;
+  };
+  const renderGarminStatus = async () => {
+    if (training?.completed === 1) { garminCard.hidden = true; return; }
+    const read = ++garminStatusRead;
+    garminVisible = true;
+    garminCard.hidden = false;
+    // The canonical prescription and operation state are local Node reads.
+    // Load them first so a stopped connector cannot hide saved work.
+    try {
+      const local = await garminFetch(`/api/trainings/${encodeURIComponent(currentTrainingId)}/garmin`);
+      if (read !== garminStatusRead) return;
+      if (local.prescription) {
+        garminSavedRevision = local.prescription.revision;
+        garminFingerprint = local.prescription.fingerprint;
+        if (!garminFormDirty) fillGarminPrescription(local.prescription.value);
+      }
+      garminConnectionGeneration = local.connection_generation || garminConnectionGeneration;
+      if (local.operation) renderGarminOperation(local.operation);
+    } catch (error) {
+      if (read !== garminStatusRead) return;
+      if (error.status === 404) { garminCard.hidden = true; return; }
+    }
+    try {
+      const state = await garminFetch(`/api/garmin/status?training_id=${encodeURIComponent(currentTrainingId)}`);
+      if (read !== garminStatusRead) return;
+      garminVisible = true;
+      garminCard.hidden = false;
+      const connected = state.status === 'connected';
+      setGarminConnectionMessage(connected ? 'connected' : 'disconnected');
+      const destination = document.getElementById('garminDestination');
+      garminDestinationNames = connected ? (state.devices || []).map((device) => device.name).filter(Boolean) : [];
+      destination.hidden = garminDestinationNames.length === 0;
+      destination.textContent = garminDestinationNames.length ? `${garminText('destination')}: ${garminDestinationNames.join(', ')}` : '';
+      garminConnectButton.hidden = connected || garminAuthForm.hidden === false;
+      garminDisconnectButton.hidden = !connected;
+      garminAuthForm.hidden = connected || !garminAuthForm.dataset.open;
+      garminPanel.hidden = !connected;
+      if (state.operation) renderGarminOperation(state.operation);
+      if (state.prescription && !garminFormDirty) {
+        fillGarminPrescription(state.prescription.value);
+        garminSavedRevision = state.prescription.revision;
+        garminFingerprint = state.prescription.fingerprint;
+      }
+      garminConnectionGeneration = state.connection_generation || garminConnectionGeneration;
+    } catch (error) {
+      if (read !== garminStatusRead) return;
+      if (error.status === 404) { garminCard.hidden = true; return; }
+      // A stopped local connector is a pilot setup state; keep the action visible.
+      setGarminConnectionMessage(error.name === 'TypeError' || error.status === 503 ? 'connectError' : 'disconnected');
+      garminConnectButton.hidden = false;
+      garminDisconnectButton.hidden = true;
+      garminPanel.hidden = !garminFingerprint;
+    }
+  };
+  const fillGarminPrescription = (value) => {
+    if (!value) return;
+    garminOriginalPrescription = structuredClone(value);
+    garminDirtyFields.clear();
+    document.getElementById('garminWorkoutName').value = value.name;
+    const repeat = value.steps.find((step) => step.kind === 'repeat');
+    const run = repeat?.interval || value.steps.find((step) => step.kind === 'run');
+    const warmup = value.steps.find((step) => step.kind === 'warmup');
+    const recovery = repeat?.recovery || value.steps.find((step) => step.kind === 'recovery');
+    const cooldown = value.steps.find((step) => step.kind === 'cooldown');
+    const target = run?.target || { type: 'none' };
+    garminOriginalIntervalTarget = structuredClone(target);
+    garminOriginalRecoveryTarget = structuredClone(recovery?.target || { type: 'none' });
+    garminTargetType.value = target.type;
+    garminRecoveryTargetType.value = garminOriginalRecoveryTarget.type;
+    const distanceUnit = getUserPreferences().distance_unit === 'mi' ? 'mi' : 'km';
+    for (const id of ['garminWarmup', 'garminInterval', 'garminRecovery', 'garminCooldown']) {
+      document.getElementById(id).step = 'any';
+    }
+    const fillTargetFields = (savedTarget, lowerId, upperId) => {
+      if (savedTarget.type === 'heart_rate') {
+        document.getElementById(lowerId).value = savedTarget.lower_bpm;
+        document.getElementById(upperId).value = savedTarget.upper_bpm;
+      } else if (savedTarget.type === 'pace') {
+        const storedUnit = savedTarget.unit === 'min_per_mile' ? 'mi' : 'km';
+        const ratio = storedUnit === distanceUnit ? 1 : storedUnit === 'km' ? 1 / KM_TO_MILES : KM_TO_MILES;
+        document.getElementById(lowerId).value = String((savedTarget.slower_seconds * ratio / 60).toFixed(4));
+        document.getElementById(upperId).value = String((savedTarget.faster_seconds * ratio / 60).toFixed(4));
+      } else {
+        document.getElementById(lowerId).value = '';
+        document.getElementById(upperId).value = '';
+      }
+    };
+    fillTargetFields(target, 'garminLower', 'garminUpper');
+    fillTargetFields(garminOriginalRecoveryTarget, 'garminRecoveryLower', 'garminRecoveryUpper');
+    updateGarminTargetInputs();
+    updateGarminRecoveryTargetInputs();
+    garminTargetDirty = false;
+    document.getElementById('garminWarmup').value = warmup ? warmup.end.value / 60 : 0;
+    document.getElementById('garminRepetitions').value = repeat?.repetitions || 1;
+    const runEnd = run?.end || { type: 'time', value: 1800 };
+    garminIntervalType.value = runEnd.type;
+    document.getElementById('garminInterval').value = runEnd.type === 'distance'
+      ? (runEnd.value / (distanceUnit === 'mi' ? 1609.344 : 1000)).toFixed(distanceUnit === 'mi' ? 6 : 3)
+      : (runEnd.value / 60).toFixed(4);
+    updateGarminIntervalInput(false);
+    document.getElementById('garminRecovery').value = recovery ? recovery.end.value / 60 : 0;
+    document.getElementById('garminCooldown').value = cooldown ? cooldown.end.value / 60 : 0;
+    document.getElementById('garminSkipLastRest').checked = repeat?.skip_last_rest_step !== false;
+    garminFormDirty = false;
+  };
+  const garminPrescriptionFromForm = () => {
+    const minutes = (id) => Number(document.getElementById(id).value || 0);
+    const targetKind = garminTargetType.value;
+    const lower = Number(document.getElementById('garminLower').value);
+    const upper = Number(document.getElementById('garminUpper').value);
+    const target = !garminTargetDirty && targetKind === garminOriginalIntervalTarget.type
+      ? structuredClone(garminOriginalIntervalTarget)
+      : targetKind === 'none' ? { type: 'none' }
+        : targetKind === 'pace' ? { type: 'pace', unit: getUserPreferences().distance_unit === 'mi' ? 'min_per_mile' : 'min_per_km', slower_seconds: Math.round(lower * 60), faster_seconds: Math.round(upper * 60) }
+          : { type: 'heart_rate', mode: 'absolute', lower_bpm: lower, upper_bpm: upper };
+    const recoveryKind = garminRecoveryTargetType.value;
+    const recoveryLower = Number(document.getElementById('garminRecoveryLower').value);
+    const recoveryUpper = Number(document.getElementById('garminRecoveryUpper').value);
+    const recoveryTargetDirty = ['garminRecoveryTargetType', 'garminRecoveryLower', 'garminRecoveryUpper']
+      .some((id) => garminDirtyFields.has(id));
+    const recoveryTarget = !recoveryTargetDirty ? structuredClone(garminOriginalRecoveryTarget)
+      : recoveryKind === 'none' ? { type: 'none' }
+        : recoveryKind === 'pace' ? { type: 'pace', unit: getUserPreferences().distance_unit === 'mi' ? 'min_per_mile' : 'min_per_km', slower_seconds: Math.round(recoveryLower * 60), faster_seconds: Math.round(recoveryUpper * 60) }
+          : { type: 'heart_rate', mode: 'absolute', lower_bpm: recoveryLower, upper_bpm: recoveryUpper };
+    const repetitions = Number(document.getElementById('garminRepetitions').value);
+    const original = garminOriginalPrescription;
+    const originalRepeat = original?.steps.find((step) => step.kind === 'repeat');
+    const originalRun = originalRepeat?.interval || original?.steps.find((step) => step.kind === 'run');
+    const warmupValue = garminDirtyFields.has('garminWarmup') || !original
+      ? (minutes('garminWarmup') ? { id: 'warmup', kind: 'warmup', end: { type: 'time', value: Math.round(minutes('garminWarmup') * 60) }, target: { type: 'none' } } : null)
+      : original.steps.find((step) => step.kind === 'warmup') || null;
+    const steps = [];
+    if (warmupValue) steps.push(structuredClone(warmupValue));
+    const intervalEnd = !garminDirtyFields.has('garminInterval') && !garminDirtyFields.has('garminIntervalType') && originalRun
+      ? structuredClone(originalRun.end)
+      : garminIntervalType.value === 'distance'
+      ? { type: 'distance', value: Math.round(convertDistanceToKm(minutes('garminInterval'), getUserPreferences().distance_unit === 'mi' ? 'mi' : 'km') * 1000) }
+      : { type: 'time', value: Math.round(minutes('garminInterval') * 60) };
+    const interval = { end: intervalEnd, target };
+    if (repetitions > 1) {
+      const recovery = !garminDirtyFields.has('garminRecovery') && originalRepeat?.recovery
+        ? structuredClone(originalRepeat.recovery)
+        : { end: { type: 'time', value: Math.round(minutes('garminRecovery') * 60) }, target: recoveryTarget };
+      steps.push({ id: 'repeat', kind: 'repeat', repetitions,
+        skip_last_rest_step: !garminDirtyFields.has('garminSkipLastRest') && originalRepeat
+          ? originalRepeat.skip_last_rest_step !== false : document.getElementById('garminSkipLastRest').checked,
+        interval, recovery });
+    } else steps.push({ id: 'run', kind: 'run', ...interval });
+    const originalCooldown = original?.steps.find((step) => step.kind === 'cooldown');
+    const cooldownValue = !garminDirtyFields.has('garminCooldown') && originalCooldown
+      ? originalCooldown
+      : (minutes('garminCooldown') ? { id: 'cooldown', kind: 'cooldown', end: { type: 'time', value: Math.round(minutes('garminCooldown') * 60) }, target: { type: 'none' } } : null);
+    if (cooldownValue) steps.push(structuredClone(cooldownValue));
+    return { version: 1, sport: 'running', name: document.getElementById('garminWorkoutName').value.trim(), steps };
+  };
+  const renderGarminOperation = (operation) => {
+    if (garminOperationId !== operation.operation_id) {
+      clearTimeout(garminOperationTimer);
+      garminOperationController?.abort();
+      garminOperationController = null;
+      garminOperationId = operation.operation_id;
+      garminOperationRead += 1;
+    }
+    garminCurrentOperation = operation;
+    const read = ++garminOperationRead;
+    const keys = { scheduled: 'scheduled', publishing: 'publishing', workout_created: 'publishing', scheduling: 'publishing', outcome_unknown: 'uncertain', outdated: 'outdated', reauth_required: 'authError', failed: operation.error_code === 'unsupported' ? 'unsupported' : 'failed' };
+    setGarminOperationMessage(keys[operation.status] || 'failed');
+    garminOperationRetry.hidden = true;
+    garminReconcileButton.hidden = !['outcome_unknown', 'reauth_required', 'failed', 'workout_created'].includes(operation.status);
+    if (['publishing', 'workout_created', 'scheduling'].includes(operation.status) && !garminOperationTimer && !garminOperationController) {
+      const operationId = operation.operation_id;
+      garminOperationTimer = window.setTimeout(async () => {
+        garminOperationTimer = null;
+        const controller = new AbortController();
+        garminOperationController = controller;
+        try {
+          const latest = await garminFetch(`/api/garmin/operations/${operationId}`, { signal: controller.signal });
+          if (read === garminOperationRead && operationId === garminOperationId
+              && garminCurrentOperation?.operation_id === operationId
+              && ['publishing', 'workout_created', 'scheduling'].includes(garminCurrentOperation.status)) renderGarminOperation(latest.operation);
+        } catch {
+          if (read === garminOperationRead && operationId === garminOperationId) {
+            setGarminOperationMessage('statusReadError');
+            garminOperationRetry.hidden = false;
+          }
+        } finally {
+          if (garminOperationController === controller) garminOperationController = null;
+          if (garminCurrentOperation?.operation_id === operationId
+              && ['publishing', 'workout_created', 'scheduling'].includes(garminCurrentOperation.status)
+              && !garminOperationTimer && !garminOperationController) renderGarminOperation(garminCurrentOperation);
+        }
+      }, 1800);
+    }
+  };
+  const renderGarminPreview = (preview) => {
+    garminPreviewModel = preview;
+    if (!preview) return;
+    garminPreviewSteps.replaceChildren();
+    const distanceUnit = getUserPreferences().distance_unit === 'mi' ? 'mi' : 'km';
+    document.getElementById('garminPreviewName').textContent = `${garminText('name')}: ${preview.name}`;
+    document.getElementById('garminPreviewDestination').textContent = document.getElementById('garminDestination').textContent;
+    for (const step of preview.steps) {
+      const li = document.createElement('li');
+      const label = garminText(step.kind === 'repeat' ? 'repeatName' : `${step.kind}Name`, { count: step.repetitions });
+      const detail = step.end?.type === 'time' ? garminText('timeDetail', { minutes: formatDuration(step.end.value) })
+        : step.end?.type === 'distance' ? garminText('distanceDetail', { distance: formatDistance(step.end.value / 1000, distanceUnit) })
+          : garminText('unsupported');
+      let target = garminText('noTarget');
+      if (step.target?.type === 'heart_rate') target = `${step.target.lower_bpm}–${step.target.upper_bpm} bpm`;
+      else if (step.target?.type === 'pace') target = `${paceText(step.target.faster_seconds, step.target.unit)}–${paceText(step.target.slower_seconds, step.target.unit)}`;
+      li.textContent = garminText('steps', { kind: label, detail: `${detail} · ${target}` });
+      garminPreviewSteps.append(li);
+      if (step.kind === 'repeat' && step.recovery) {
+        const recovery = document.createElement('li');
+        const recoveryDetail = step.recovery.end.type === 'time'
+          ? garminText('timeDetail', { minutes: formatDuration(step.recovery.end.value) })
+          : garminText('distanceDetail', { distance: formatDistance(step.recovery.end.value / 1000, distanceUnit) });
+        recovery.textContent = garminText('recoveryAfter', {
+          count: step.skip_last_rest_step ? Math.max(0, step.repetitions - 1) : step.repetitions,
+          detail: recoveryDetail,
+          target: formatGarminTarget(step.recovery.target, distanceUnit),
+          policy: garminText(step.skip_last_rest_step ? 'noFinalRecovery' : 'finalRecoveryIncluded'),
+        });
+        garminPreviewSteps.append(recovery);
+      }
+    }
+    const totalParts = [];
+    if (preview.estimated_duration_seconds !== null) totalParts.push(garminText('totalDuration', { duration: formatDuration(preview.estimated_duration_seconds) }));
+    else if (preview.total_time_seconds) totalParts.push(garminText('knownTimedParts', { duration: formatDuration(preview.total_time_seconds) }));
+    if (preview.total_distance_meters) totalParts.push(garminText('knownDistance', { distance: formatDistance(preview.total_distance_meters / 1000, distanceUnit) }));
+    document.getElementById('garminPreviewTotal').textContent = totalParts.join(' · ');
+    document.getElementById('garminScheduleDate').textContent = garminText('date', { date: formatLocalizedDate(training.dia, i18n.language) });
+    document.getElementById('garminPreviewDestination').textContent = garminDestinationNames.length
+      ? `${garminText('destination')}: ${garminDestinationNames.join(', ')}` : garminText('watchSyncNeeded');
+    const canUpdate = ['scheduled', 'outdated'].includes(garminCurrentOperation?.status)
+      && garminCurrentOperation.connection_generation === garminConnectionGeneration
+      && garminCurrentOperation.workout_id && garminCurrentOperation.occurrence_id;
+    garminUpdateButton.hidden = !canUpdate || garminCurrentOperation.prescription_revision === garminSavedRevision;
+    garminRescheduleButton.hidden = !canUpdate || garminCurrentOperation.prescription_revision !== garminSavedRevision;
+    document.getElementById('garminPublishButton').hidden = Boolean(canUpdate);
+    garminPreview.hidden = false;
+  };
+  document.addEventListener('app:languagechange', () => {
+    setGarminConnectionMessage(garminConnectionMessage);
+    updateGarminIntervalInput(false);
+    updateGarminTargetInputs();
+    updateGarminRecoveryTargetInputs();
+    if (garminCurrentOperation) renderGarminOperation(garminCurrentOperation);
+    else if (garminOperationMessageKey) setGarminOperationMessage(garminOperationMessageKey);
+    if (garminPreviewModel) renderGarminPreview(garminPreviewModel);
+  });
+  function updateGarminTargetInputs() {
+    const pace = garminTargetType.value === 'pace';
+    const heartRate = garminTargetType.value === 'heart_rate';
+    const distanceUnit = getUserPreferences().distance_unit === 'mi' ? 'mi' : 'km';
+    garminTargetFields.hidden = !pace && !heartRate;
+    document.getElementById('garminTargetType').options[1].textContent = garminText('paceUnit', { unit: distanceUnit });
+    document.getElementById('garminLowerLabel').textContent = garminText(pace ? 'slowerPace' : 'lowerHeartRate');
+    document.getElementById('garminUpperLabel').textContent = garminText(pace ? 'fasterPace' : 'upperHeartRate');
+    for (const id of ['garminLower', 'garminUpper']) {
+      const input = document.getElementById(id);
+      input.step = pace ? 'any' : '1';
+      input.min = pace ? String(120 / 60) : '40';
+      input.max = pace ? String(1800 / 60) : '230';
+      input.setAttribute('aria-label', garminText(id === 'garminLower' ? (pace ? 'slowerPace' : 'lowerHeartRate') : (pace ? 'fasterPace' : 'upperHeartRate')));
+    }
+  }
+  function updateGarminRecoveryTargetInputs() {
+    const pace = garminRecoveryTargetType.value === 'pace';
+    const heartRate = garminRecoveryTargetType.value === 'heart_rate';
+    const distanceUnit = getUserPreferences().distance_unit === 'mi' ? 'mi' : 'km';
+    garminRecoveryTargetFields.hidden = !pace && !heartRate;
+    garminRecoveryTargetType.options[1].textContent = garminText('paceUnit', { unit: distanceUnit });
+    document.getElementById('garminRecoveryLowerLabel').textContent = garminText(pace ? 'slowerPace' : 'lowerHeartRate');
+    document.getElementById('garminRecoveryUpperLabel').textContent = garminText(pace ? 'fasterPace' : 'upperHeartRate');
+    for (const id of ['garminRecoveryLower', 'garminRecoveryUpper']) {
+      const input = document.getElementById(id);
+      input.step = pace ? 'any' : '1';
+      input.min = pace ? '2' : '40';
+      input.max = pace ? '30' : '230';
+      input.setAttribute('aria-label', garminText(id === 'garminRecoveryLower' ? (pace ? 'slowerPace' : 'lowerHeartRate') : (pace ? 'fasterPace' : 'upperHeartRate')));
+    }
+  }
+  function formatDuration(seconds) {
+    const total = Math.max(0, Number(seconds) || 0);
+    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+  }
+  function paceText(seconds, unit = 'min_per_km') {
+    const total = Math.round(Number(seconds));
+    const suffix = unit === 'min_per_mile' ? 'mi' : 'km';
+    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')} min/${suffix}`;
+  }
+  function formatGarminTarget(target, distanceUnit) {
+    if (!target || target.type === 'none') return garminText('noTarget');
+    if (target.type === 'heart_rate') return `${target.lower_bpm}–${target.upper_bpm} bpm`;
+    if (target.type === 'pace') return `${paceText(target.faster_seconds, target.unit)}–${paceText(target.slower_seconds, target.unit)}`;
+    return garminText('unsupported');
+  }
+  garminTargetType.addEventListener('change', () => {
+    garminFormDirty = true;
+    garminTargetDirty = true;
+    garminDirtyFields.add('garminTargetType');
+    garminPreviewSnapshot = null;
+    garminPreview.hidden = true;
+    updateGarminTargetInputs();
+  });
+  garminRecoveryTargetType.addEventListener('change', () => {
+    garminFormDirty = true;
+    garminDirtyFields.add('garminRecoveryTargetType');
+    garminPreviewSnapshot = null;
+    garminPreview.hidden = true;
+    updateGarminRecoveryTargetInputs();
+  });
+  for (const input of garminPrescriptionForm.querySelectorAll('input,select')) input.addEventListener('input', () => {
+    garminFormDirty = true;
+    garminDirtyFields.add(input.id);
+    if (['garminLower','garminUpper'].includes(input.id)) garminTargetDirty = true;
+    if (['garminRecoveryLower','garminRecoveryUpper'].includes(input.id)) garminDirtyFields.add(input.id);
+    garminPreviewSnapshot = null;
+    garminPreview.hidden = true;
+  });
+  function updateGarminIntervalInput(reset = false) {
+    const input = document.getElementById('garminInterval');
+    const unit = getUserPreferences().distance_unit === 'mi' ? 'mi' : 'km';
+    const byDistance = garminIntervalType.value === 'distance';
+    document.getElementById('garminIntervalLabel').textContent = garminText(
+      byDistance ? (unit === 'mi' ? 'runDistanceMi' : 'runDistanceKm') : 'runMinutes',
+    );
+    input.min = byDistance ? '0.1' : '1';
+    input.max = byDistance ? (unit === 'mi' ? '62.1' : '100') : '120';
+    input.step = 'any';
+    if (reset) input.value = byDistance ? '5' : '30';
+  }
+  garminIntervalType.addEventListener('change', () => {
+    garminFormDirty = true;
+    garminDirtyFields.add('garminIntervalType');
+    garminPreviewSnapshot = null;
+    garminPreview.hidden = true;
+    updateGarminIntervalInput(true);
+  });
+  garminConnectButton.addEventListener('click', () => {
+    garminAuthForm.dataset.open = 'true'; garminAuthForm.hidden = false;
+    garminConnectButton.hidden = true; document.getElementById('garminEmail').focus();
+  });
+  garminAuthForm.addEventListener('submit', async (event) => {
+    event.preventDefault(); if (garminPending) return;
+    garminPending = true;
+    const email = document.getElementById('garminEmail').value;
+    const password = garminPassword.value;
+    garminPassword.value = '';
+    try {
+      const result = garminChallenge
+        ? await garminFetch('/api/garmin/auth/finish', { method: 'POST', body: JSON.stringify({ challenge_id: garminChallenge, code: garminMfaCode.value }) })
+        : await garminFetch('/api/garmin/auth/start', { method: 'POST', body: JSON.stringify({ email, password }) });
+      if (result.status === 'mfa_required') {
+        garminChallenge = result.challenge_id; garminMfaField.hidden = false; garminCancel.hidden = false;
+        document.getElementById('garminEmail').required = false; garminPassword.required = false;
+        setGarminConnectionMessage('mfaRequired'); garminMfaCode.focus();
+      } else {
+        garminChallenge = null; garminAuthForm.dataset.open = ''; garminAuthForm.hidden = true; garminMfaCode.value = ''; garminMfaField.hidden = true; garminCancel.hidden = true; document.getElementById('garminEmail').required = true; garminPassword.required = true; await renderGarminStatus();
+      }
+    } catch (error) { setGarminConnectionMessage(error.message === 'connector_unavailable' || error.status === 503 ? 'connectError' : 'authError'); }
+    finally { garminPassword.value = ''; garminPending = false; }
+  });
+  garminCancel.addEventListener('click', async () => {
+    if (garminChallenge) await garminFetch('/api/garmin/auth/cancel', { method: 'POST', body: JSON.stringify({ challenge_id: garminChallenge }) }).catch(() => {});
+    garminChallenge = null; garminMfaCode.value = ''; garminMfaField.hidden = true; garminCancel.hidden = true;
+    garminAuthForm.dataset.open = ''; garminAuthForm.hidden = true; document.getElementById('garminEmail').required = true; garminPassword.required = true; garminConnectButton.hidden = false;
+  });
+  garminDisconnectButton.addEventListener('click', async () => {
+    const confirmed = await showConfirm({ title: garminText('disconnect'), message: garminText('disconnectConfirm'), confirmLabel: garminText('disconnect'), cancelLabel: t('shell.confirm.no') });
+    if (!confirmed) return;
+    try { await garminFetch('/api/garmin/connection', { method: 'DELETE' }); setGarminConnectionMessage('disconnected'); await renderGarminStatus(); }
+    catch { setGarminConnectionMessage('failed'); }
+  });
+  garminPrescriptionForm.addEventListener('submit', async (event) => {
+    event.preventDefault(); if (garminPending) return;
+    garminPending = true;
+    try {
+      const prescription = garminPrescriptionFromForm();
+      const saved = await garminFetch(`/api/trainings/${currentTrainingId}/garmin/prescription`, { method: 'PUT', body: JSON.stringify({
+        expected_revision: garminSavedRevision, expected_training_date: training.dia,
+        expected_connection_generation: garminConnectionGeneration, prescription,
+      }) });
+      garminSavedRevision = saved.revision;
+      garminFingerprint = saved.fingerprint;
+      garminConnectionGeneration = saved.connection_generation;
+      garminPreviewSnapshot = { revision: saved.revision, fingerprint: saved.fingerprint,
+        date: saved.date, connection_generation: saved.connection_generation };
+      garminFormDirty = false;
+      renderGarminPreview({ name: prescription.name, ...saved.preview });
+      setGarminOperationMessage('saved');
+    } catch (error) { setGarminOperationMessage(error.message === 'unsupported' ? 'unsupported' : 'failed'); }
+    finally { garminPending = false; }
+  });
+  const performGarminAction = async (action) => {
+    if (garminPending || !garminPreviewSnapshot || !garminCurrentOperation && action !== 'publish') return;
+    const actionKey = action === 'publish' ? 'publish' : action === 'update' ? 'update' : 'reschedule';
+    const confirmed = await showConfirm({ title: garminText(actionKey), message: garminText(`${actionKey}Confirm`), confirmLabel: garminText(actionKey), cancelLabel: t('shell.confirm.no') });
+    if (!confirmed) return;
+    garminPending = true;
+    try {
+      const result = await garminFetch(`/api/trainings/${currentTrainingId}/garmin/publish`, { method: 'POST', body: JSON.stringify({
+        ...garminPreviewSnapshot,
+        expected_date: garminPreviewSnapshot.date,
+        expected_revision: garminPreviewSnapshot.revision,
+        expected_connection_generation: garminPreviewSnapshot.connection_generation,
+        action,
+        source_operation_id: action === 'publish' ? null : garminCurrentOperation?.operation_id,
+      }) });
+      renderGarminOperation({ ...result, operation_id: result.operation_id });
+      const latest = await garminFetch(`/api/garmin/operations/${result.operation_id}`); renderGarminOperation(latest.operation);
+    } catch (error) { setGarminOperationMessage(error.message === 'unsupported' ? 'unsupported' : 'failed'); }
+    finally { garminPending = false; }
+  };
+  document.getElementById('garminPublishButton').addEventListener('click', () => performGarminAction('publish'));
+  garminOperationRetry.addEventListener('click', () => {
+    if (garminCurrentOperation) renderGarminOperation(garminCurrentOperation);
+  });
+  garminUpdateButton.addEventListener('click', () => performGarminAction('update'));
+  garminRescheduleButton.addEventListener('click', () => performGarminAction('reschedule'));
+  garminReconcileButton.addEventListener('click', async () => {
+    if (garminPending) return;
+    garminPending = true; garminReconcileButton.disabled = true;
+    try {
+      const current = await garminFetch(`/api/trainings/${currentTrainingId}/garmin`);
+      const operationId = current.operation?.operation_id;
+      if (!operationId) throw new Error('not_found');
+      const result = await garminFetch(`/api/garmin/operations/${operationId}/reconcile`, { method: 'POST', body: '{}' });
+      renderGarminOperation(result);
+      const latest = await garminFetch(`/api/garmin/operations/${operationId}`); renderGarminOperation(latest.operation);
+    } catch (error) { setGarminOperationMessage(error.message === 'auth_required' ? 'authError' : 'uncertain'); }
+    finally { garminPending = false; garminReconcileButton.disabled = false; }
+  });
+  void renderGarminStatus();
   try { activeAnalysisRequestKey = sessionStorage.getItem(analysisStorageKey()); } catch { activeAnalysisRequestKey = null; }
   analysisOutcomeUncertain = Boolean(activeAnalysisRequestKey);
   void loadAnalysisState();
@@ -1283,6 +1778,14 @@ async function initTrainingResult() {
     analysisReadController?.abort();
     document.removeEventListener('visibilitychange', onAnalysisVisibility);
   };
+  window.addEventListener('pagehide', () => {
+    clearTimeout(garminOperationTimer);
+    garminOperationController?.abort();
+    garminOperationController = null;
+    garminOperationTimer = null;
+    garminOperationRead += 1;
+    garminOperationController?.abort();
+  }, { once: true });
   const onAnalysisPageShow = (event) => {
     analysisPageActive = true;
     document.addEventListener('visibilitychange', onAnalysisVisibility);

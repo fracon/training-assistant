@@ -8,7 +8,7 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.25.0` on the issue #72
+`package.json` and `package-lock.json` (currently `0.27.0` on the issue #73
 branch); follow the SemVer
 rule below.
 
@@ -237,25 +237,29 @@ onboarding record of the account is preserved.
   partial config must fail without replacement. Do not source secret files or
   pass secrets in arguments. The launcher and CLI share the same loader; Python
   runs from the prepared virtualenv on `127.0.0.1` with an allowlisted
-  subprocess environment. `npm run dev` does not load this config. Local
+  subprocess environment. The Node startup loads pilot settings only when the
+  private local configuration is present; it never passes the encryption key
+  to the browser. Local
   configuration, venv, Python caches and coverage files must be Git-ignored and
   excluded from Docker build context.
 - `GARMIN_PILOT_USER_ID` is temporarily the selected Kinesis account ID for
-  this Phase 1 terminal pilot. `KINESIS_GARMIN_SERVICE_TOKEN` authenticates
+  the single-owner terminal and web pilot. Node revalidates that owner and
+  active state for every web request and around remote mutations. The web flow
+  remains a pilot, not production multi-user support. `KINESIS_GARMIN_SERVICE_TOKEN` authenticates
   Node-to-Python requests; `GARMIN_ENCRYPTION_KEY` encrypts Python token and
   operation-journal storage. Local setup creates the latter two once; in
   ZimaOS the operator supplies all three as runtime config and preserves the
   secrets through updates. End users do not configure these values. Production
-  multi-user identity from the authenticated Kinesis session and a “Connect
-  Garmin” UI are future work, not delivered by this pilot.
+  multi-user identity from the authenticated Kinesis session remains future
+  work; the issue #73 “Connect Garmin” panel is only the restricted pilot UI.
 - Keep the ZimaOS Compose boundary unchanged: Node owns authorization/SQLite
   and public port `8081:3000`; Python remains a separate non-public container
   without SQLite or a Cloudflare route. Local execution is an additional pilot
   workflow, not a replacement for this production packaging.
 - Library methods are not evidence of Garmin account or device support. Record
   documentation, mock tests, live account results, and Forerunner 55 results
-  separately in `docs/garmin-integration.md`. Keep phases 2/3 blocked until the
-  real acceptance criteria are met. No Garmin credentials or personal FIT/GPS
+  separately in `docs/garmin-integration.md`. The #73 browser flow still needs
+  owner acceptance; #74 activity import remains separate. No Garmin credentials or personal FIT/GPS
   files belong in Git, tests, issue/PR text, or CI.
 - `get_workout_types()['workoutSportTypes']` uses the pinned library's
   `SportTypeModel` fields `sportTypeId`, `sportTypeKey`, and `displayOrder`;
@@ -269,8 +273,10 @@ onboarding record of the account is preserved.
 - Build/run Python tests and coverage with the commands in
   `services/garmin-connector/README.md`; run Node `npm test`, serial
   `npm run test:coverage`, Compose validation, and `git diff --check` for this
-  infrastructure change. No frontend was added in Phase 1, so browser visual
-  checks are not applicable.
+  infrastructure change. When changing the Garmin session UI, run its browser
+  tests in PT/EN, desktop/mobile and reduced-height viewports; test focus and
+  explicit-action boundaries. Keep CLI pilot, Node product, and Python
+  connector coverage separate.
 
 ## Current product behavior and invariants
 
@@ -567,6 +573,49 @@ finding does not apply, answer with the concrete justification and evidence.
 Resolved threads are not a substitute for validation. Distinguish local test
 results from checks published on GitHub, and do not promise that one Codex pass
 will find every issue.
+
+## Garmin structured workout pilot (#73)
+
+The Garmin Connect product surface is an opt-in, single-owner pilot layered on
+the private Python connector. Node owns authentication, ownership, active
+account checks, SQLite, structured prescription revisions, and publication
+operation state. Browsers call only Node. The pilot owner comes from operator
+configuration and is never accepted from a request body; administrators gain
+no cross-account access. Password and MFA input are transient and tokens stay
+encrypted in the connector's private store.
+
+Planned-session prose remains canonical and untouched. Structured Garmin
+prescriptions use `garmin_workout_prescriptions` and the versioned contract in
+`src/garmin-workout-contract.js`; never infer structure from prose, invoke AI
+for conversion, or map RPE to a physiological target. Preview is read-only.
+Publishing is an explicit confirmed action; durable operations are scoped to
+owner/session/revision/fingerprint, and uncertain outcomes must never be
+automatically repeated. A Garmin Connect schedule is not proof of delivery to
+a watch. This pilot does not implement multi-user production integration or
+the activity import phase (#74).
+
+Prescription writes require the expected revision, civil session date, and
+connection generation in the same SQLite transaction. A publish preview is
+bound to that snapshot and a confirmation cannot publish a later date or
+prescription. The editor must round-trip saved interval and recovery targets,
+units, seconds, and repeat recovery policy when only another field changes.
+Status/capability reads stay isolated from session initialization and cannot
+replace dirty local form state. Operation polling has one abortable timer/read
+per operation; stale replies must not revert a terminal result.
+
+Updating a tracked workout is explicit and uses the pinned Garmin
+`update_workout` method, which replaces the remote structure while preserving
+the workout ID and affects all calendar schedules referring to it. Reschedule
+is a separate explicit action for the exact tracked occurrence and uses the
+pinned `reschedule_workout` contract. If structure and civil date both changed,
+the persisted update operation performs the update and then the exact
+occurrence move; a partial outcome keeps the existing IDs and stage for
+reconciliation. Never remove preexisting workouts or activities. Operation
+identity/idempotency includes owner, session, generation, revision, date,
+action, and source operation; the generated occurrence ID is a persisted result,
+not part of the stable request key. The product adapter lives under
+`src/garmin/` so the mandatory `npm run test:coverage` 100% gate includes it;
+do not place backend product code in `scripts/` to avoid coverage.
 
 ## Solicitar Treinos weekly availability
 

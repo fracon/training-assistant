@@ -34,7 +34,7 @@ services:
     volumes:
       - ./data:/app/data
   garmin-connector:
-    image: ghcr.io/fracon/kinesis-garmin-connector:0.25.0
+    image: ghcr.io/fracon/kinesis-garmin-connector:0.27.0
     build:
       context: ./services/garmin-connector
       dockerfile: Dockerfile
