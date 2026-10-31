@@ -783,6 +783,7 @@
       "cooldownName": "Cool-down",
       "repeatName": "{count} repeats",
       "recoveryAfter": "Recovery after {count} intervals ({policy}): {detail} · {target}",
+      "recoveryAfterOne": "Recovery after {count} interval ({policy}): {detail} · {target}",
       "noFinalRecovery": "no recovery after the final interval",
       "finalRecoveryIncluded": "including recovery after the final interval",
       "timeDetail": "{minutes} min",

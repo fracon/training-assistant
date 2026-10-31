@@ -1801,11 +1801,12 @@ async function initTrainingResult() {
       garminPreviewSteps.append(li);
       if (step.kind === 'repeat' && step.recovery) {
         const recovery = document.createElement('li');
+        const recoveryCount = step.skip_last_rest_step ? Math.max(0, step.repetitions - 1) : step.repetitions;
         const recoveryDetail = step.recovery.end.type === 'time'
           ? garminText('timeDetail', { minutes: formatDuration(step.recovery.end.value) })
           : garminText('distanceDetail', { distance: formatDistance(step.recovery.end.value / 1000, distanceUnit) });
-        recovery.textContent = garminText('recoveryAfter', {
-          count: step.skip_last_rest_step ? Math.max(0, step.repetitions - 1) : step.repetitions,
+        recovery.textContent = garminText(recoveryCount === 1 ? 'recoveryAfterOne' : 'recoveryAfter', {
+          count: recoveryCount,
           detail: recoveryDetail,
           target: formatGarminTarget(step.recovery.target, distanceUnit),
           policy: garminText(step.skip_last_rest_step ? 'noFinalRecovery' : 'finalRecoveryIncluded'),

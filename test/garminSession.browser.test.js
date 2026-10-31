@@ -50,31 +50,29 @@ test('Garmin workout editor saves a faithful v2 sequence without remote mutation
     const target = await (await fetch(`${debugUrl}/json/new?about:blank`, { method: 'PUT' })).json();
     socket = new WebSocket(target.webSocketDebuggerUrl);
     await new Promise((resolve, reject) => { socket.addEventListener('open', resolve, { once: true }); socket.addEventListener('error', reject, { once: true }); });
-    let id = 0; const pending = new Map(); const prescriptionRequests = [];
+    let id = 0; const pending = new Map(); const prescriptionRequests = []; const prescriptionResponses = [];
     socket.addEventListener('message', (event) => {
       const message = JSON.parse(event.data);
       if (message.method === 'Network.requestWillBeSent' && message.params.request.url.includes('/api/trainings/1/garmin/prescription') && message.params.request.postData) prescriptionRequests.push(JSON.parse(message.params.request.postData));
+      if (message.method === 'Network.responseReceived' && message.params.response.url.includes('/api/trainings/1/garmin/prescription')) prescriptionResponses.push(message.params.response.status);
       if (message.method) return;
       const handle = pending.get(message.id); if (!handle) return; pending.delete(message.id);
       message.error ? handle.reject(new Error(message.error.message)) : handle.resolve(message.result);
     });
     const command = (method, params = {}) => new Promise((resolve, reject) => { const key = ++id; pending.set(key, { resolve, reject }); socket.send(JSON.stringify({ id: key, method, params })); });
     const evaluate = async (expression) => { const result = await command('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }); if (result.exceptionDetails) throw new Error(result.exceptionDetails.text); return result.result.value; };
-    const captureGarminCard = async (filename) => {
-      const geometry = await evaluate("(()=>{const r=document.getElementById('garminSessionCard').getBoundingClientRect();return {width:innerWidth,height:Math.min(5000,Math.ceil(r.height+140))}})()");
-      // The application shell scrolls inside .main-content. Give that scroll
-      // container enough viewport height for a complete, reviewable capture.
-      await command('Emulation.setDeviceMetricsOverride', {
-        width: geometry.width, height: geometry.height, deviceScaleFactor: 1, mobile: geometry.width < 600,
-      });
-      await evaluate("document.querySelector('.main-content').scrollTop=0");
-      const shot = await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true });
+    const captureGarminCard = async (filename, edge = 'top') => {
+      // The shell scrolls inside .main-content, so capture both viewport edges
+      // at the exact requested device dimensions without distorting layout.
+      await evaluate(`(()=>{const e=document.querySelector('.main-content');const card=document.getElementById('garminSessionCard');e.scrollTop=${edge === 'bottom' ? 'Math.max(0,e.scrollTop+card.getBoundingClientRect().bottom-e.getBoundingClientRect().bottom)' : '0'}})()`);
+      await delay(80);
+      const shot = await command('Page.captureScreenshot', { format: 'png' });
       require('node:fs').writeFileSync(filename, Buffer.from(shot.data, 'base64'));
     };
     await command('Network.enable'); await command('Network.setCookie', { name: SESSION_COOKIE_NAME, value: createSession(db, owner.id).token, url: baseUrl });
     await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
     await command('Page.navigate', { url: `${baseUrl}/training-result.html?id=1` });
-    const wait = async (expression) => { for (let i = 0; i < 150; i += 1) { if (await evaluate(expression).catch(() => false)) return; await delay(100); } const diagnostic = await evaluate("JSON.stringify({title:document.getElementById('garminTitle')?.textContent,card:document.getElementById('garminSessionCard')?.hidden,date:document.getElementById('sessionDate')?.textContent,blocks:document.getElementById('garminRunBlocks')?.innerHTML,errors:[...document.querySelectorAll('[role=alert]')].map(el=>el.textContent)})").catch(()=>'none'); throw new Error(`Timed out waiting for ${expression}; ${diagnostic}`); };
+    const wait = async (expression) => { for (let i = 0; i < 150; i += 1) { if (await evaluate(expression).catch(() => false)) return; await delay(100); } const diagnostic = await evaluate("JSON.stringify({title:document.getElementById('garminTitle')?.textContent,card:document.getElementById('garminSessionCard')?.hidden,date:document.getElementById('sessionDate')?.textContent,blocks:[...document.querySelectorAll('#garminWorkoutEditor [data-end-value]')].map(el=>[el.dataset.endValue,el.value]),operation:document.getElementById('garminOperationStatus')?.textContent,preview:document.getElementById('garminPreview')?.hidden,errors:[...document.querySelectorAll('[role=alert]')].map(el=>el.textContent)})").catch(()=>'none'); throw new Error(`Timed out waiting for ${expression}; ${diagnostic}; responses=${prescriptionResponses}`); };
     await wait("document.getElementById('sessionDate')?.textContent.trim() !== '-' && !document.getElementById('garminSessionCard').hidden && document.querySelector('#garminRunBlocks .garmin-editor-block')");
     assert.equal(await evaluate("document.querySelector('[data-end-type=\\\"step-run-1\\\"]')?.value"), 'time');
     assert.equal(await evaluate("!document.getElementById('fitFile').disabled"), true);
@@ -110,19 +108,29 @@ test('Garmin workout editor saves a faithful v2 sequence without remote mutation
     assert.match(await evaluate("document.getElementById('garminOperationStatus').textContent"), /highlighted fields|campos destacados/i);
     await evaluate("document.querySelector('[data-end-value$=\\\"-recovery\\\"]').value='02:00';document.getElementById('garminPrescriptionForm').requestSubmit()");
     await wait("document.getElementById('garminOperationStatus').textContent.includes('Structure saved')");
+    assert.match(await evaluate("document.getElementById('garminPreviewSteps').textContent"), /Recovery after 1 interval/);
     await evaluate("document.getElementById('garminSessionCard').scrollIntoView({block:'start'})");
-    await captureGarminCard('/tmp/kinesis-garmin-editor-pt-desktop.png');
+    assert.equal(await evaluate("document.documentElement.lang"), 'en-US');
+    await captureGarminCard('/tmp/kinesis-garmin-editor-en-desktop-top.png');
+    await captureGarminCard('/tmp/kinesis-garmin-editor-en-desktop-bottom.png', 'bottom');
+    await evaluate("document.querySelector('.lang-switch [data-lang=\\\"pt-BR\\\"]').click()"); await wait("document.documentElement.lang==='pt-BR'");
+    assert.equal(await evaluate("document.querySelector('#garminWorkoutEditor legend').textContent.trim()"), 'Aquecimento');
+    assert.match(await evaluate("document.getElementById('garminPreviewSteps').textContent"), /Recuperação após 1 intervalo/);
+    await evaluate("document.getElementById('garminSessionCard').scrollIntoView({block:'start'})");
+    await captureGarminCard('/tmp/kinesis-garmin-editor-pt-desktop-top.png');
+    await captureGarminCard('/tmp/kinesis-garmin-editor-pt-desktop-bottom.png', 'bottom');
     await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
     const mobile = await evaluate("({width:innerWidth,scrollWidth:document.documentElement.scrollWidth})");
     assert.equal(mobile.width, 390); assert.ok(mobile.scrollWidth <= mobile.width);
     await evaluate("document.getElementById('garminSessionCard').scrollIntoView({block:'start'})");
-    await captureGarminCard('/tmp/kinesis-garmin-editor-pt-mobile.png');
+    await captureGarminCard('/tmp/kinesis-garmin-editor-pt-mobile-top.png');
+    await captureGarminCard('/tmp/kinesis-garmin-editor-pt-mobile-bottom.png', 'bottom');
     await evaluate("document.querySelector('.lang-switch [data-lang=\\\"en-US\\\"]').click()"); await wait("document.documentElement.lang==='en-US'");
     await evaluate("document.getElementById('garminSessionCard').scrollIntoView({block:'start'})");
-    await captureGarminCard('/tmp/kinesis-garmin-editor-en-mobile.png');
+    await captureGarminCard('/tmp/kinesis-garmin-editor-en-mobile-top.png');
+    await captureGarminCard('/tmp/kinesis-garmin-editor-en-mobile-bottom.png', 'bottom');
     await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
     await evaluate("document.getElementById('garminSessionCard').scrollIntoView({block:'start'})");
-    await captureGarminCard('/tmp/kinesis-garmin-editor-en-desktop.png');
     assert.equal(await evaluate("document.querySelector('[data-end-type=warmup]').value"), 'distance');
     assert.equal(await evaluate("document.querySelector('[data-end-value=step-run-1]').value"), '10:00');
     await evaluate("document.querySelector('.lang-switch [data-lang=\\\"pt-BR\\\"]').click()"); await wait("document.documentElement.lang==='pt-BR'");
@@ -130,6 +138,10 @@ test('Garmin workout editor saves a faithful v2 sequence without remote mutation
     await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 480, deviceScaleFactor: 1, mobile: false });
     await command('Page.captureScreenshot').then((shot) => require('node:fs').writeFileSync('/tmp/kinesis-garmin-editor-pt-low-window.png', Buffer.from(shot.data, 'base64')));
   } finally {
-    socket?.close(); child.kill('SIGTERM'); await app.close(); db.close(); rmSync(profile, { recursive: true, force: true });
+    socket?.close();
+    const chromeExit = child.exitCode !== null ? Promise.resolve() : once(child, 'exit').catch(() => {});
+    child.kill('SIGTERM');
+    await Promise.race([chromeExit, delay(2000)]);
+    await app.close(); db.close(); rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   }
 });

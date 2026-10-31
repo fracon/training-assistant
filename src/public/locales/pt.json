@@ -71,6 +71,7 @@
       "cooldownName": "Desaquecimento",
       "repeatName": "{count} repetições",
       "recoveryAfter": "Recuperação após {count} intervalos ({policy}): {detail} · {target}",
+      "recoveryAfterOne": "Recuperação após {count} intervalo ({policy}): {detail} · {target}",
       "noFinalRecovery": "sem recuperação após a última repetição",
       "finalRecoveryIncluded": "incluindo recuperação após a última repetição",
       "timeDetail": "{minutes} min",
