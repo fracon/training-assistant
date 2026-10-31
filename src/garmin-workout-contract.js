@@ -187,6 +187,10 @@ function prescriptionFingerprint(prescription) {
 
 function previewPrescription(prescription) {
   const valid = validatePrescription(prescription);
+  const distanceComplete = valid.steps.every((step) => {
+    const ends = step.kind === 'repeat' ? [step.interval.end, ...(step.recovery ? [step.recovery.end] : [])] : [step.end];
+    return ends.every((end) => end.type === 'distance');
+  });
   if (valid.version === 2 || valid.version === 3) {
     const durationComplete = valid.steps.every((step) => {
       const ends = step.kind === 'repeat' ? [step.interval.end, ...(step.recovery ? [step.recovery.end] : [])] : [step.end];
@@ -211,6 +215,7 @@ function previewPrescription(prescription) {
       total_time_seconds: totalTime,
       total_distance_meters: totalDistance,
       duration_complete: durationComplete,
+      distance_complete: distanceComplete,
       estimated_duration_seconds: durationComplete ? totalTime : null,
       expanded_step_count: valid.steps.reduce((sum, step) => sum + (step.kind === 'repeat'
         ? 1 + step.repetitions + (step.recovery ? step.repetitions - (step.skip_last_rest_step ? 1 : 0) : 0) : 1), 0),
@@ -243,6 +248,10 @@ function previewPrescription(prescription) {
     duration_complete: valid.steps.every((step) => step.kind === 'repeat'
       ? step.interval.end.type === 'time' && step.recovery.end.type === 'time'
       : step.kind !== 'open' && step.end?.type === 'time'),
+    // Legacy repeats always include a time-based recovery, so their total
+    // distance cannot be complete even when their running interval is fixed.
+    distance_complete: valid.steps.every((step) => step.kind !== 'repeat'
+      && step.kind !== 'open' && step.end?.type === 'distance'),
     estimated_duration_seconds: valid.steps.every((step) => step.kind === 'repeat'
       ? step.interval.end.type === 'time' && step.recovery.end.type === 'time'
       : step.kind !== 'open' && step.end?.type === 'time') ? valid.steps.reduce((sum, step) => {
@@ -252,6 +261,8 @@ function previewPrescription(prescription) {
       // has a time end, so this value is known and does not need a fallback.
       return sum + step.end.value;
     }, 0) : null,
+    expanded_step_count: valid.steps.reduce((sum, step) => sum + (step.kind === 'repeat'
+      ? 1 + step.repetitions + (step.repetitions - (step.skip_last_rest_step === false ? 0 : 1)) : 1), 0),
   };
 }
 

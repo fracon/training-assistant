@@ -1270,6 +1270,7 @@ async function initTrainingResult() {
   const garminPassword = document.getElementById('garminPassword');
   const garminCancel = document.getElementById('garminAuthCancel');
   const garminPanel = document.getElementById('garminPrescriptionPanel');
+  const garminEditorView = document.getElementById('garminEditorView');
   const garminPrescriptionForm = document.getElementById('garminPrescriptionForm');
   const garminPreview = document.getElementById('garminPreview');
   const garminPreviewSteps = document.getElementById('garminPreviewSteps');
@@ -1295,6 +1296,7 @@ async function initTrainingResult() {
   let garminOperationId = null;
   let garminDestinationNames = [];
   let garminPreviewSnapshot = null;
+  let garminConnected = false;
   let garminConnectionGeneration = 1;
   let garminOriginalPrescription = null;
   let garminEditorSteps = [{ id: 'run-1', kind: 'run', end: { type: 'time', value: 1800 }, target: { type: 'none' } }];
@@ -1329,6 +1331,13 @@ async function initTrainingResult() {
         garminSavedRevision = local.prescription.revision;
         garminFingerprint = local.prescription.fingerprint;
         if (!garminFormDirty) fillGarminPrescription(local.prescription.value);
+        garminPreviewSnapshot = { revision: local.prescription.revision, fingerprint: local.prescription.fingerprint,
+          date: local.training_date || training.dia, connection_generation: local.connection_generation };
+        if (!garminFormDirty && local.prescription.preview) {
+          renderGarminPreview({ name: local.prescription.value.name,
+            ...local.prescription.preview, date: local.training_date || training.dia });
+          garminEditorView.hidden = true;
+        }
       }
       garminConnectionGeneration = local.connection_generation || garminConnectionGeneration;
       if (local.operation) renderGarminOperation(local.operation);
@@ -1342,11 +1351,12 @@ async function initTrainingResult() {
       garminVisible = true;
       garminCard.hidden = false;
       const connected = state.status === 'connected';
+      garminConnected = connected;
       setGarminConnectionMessage(connected ? 'connected' : 'disconnected');
       const destination = document.getElementById('garminDestination');
       garminDestinationNames = connected ? (state.devices || []).map((device) => device.name).filter(Boolean) : [];
       destination.hidden = garminDestinationNames.length === 0;
-      destination.textContent = garminDestinationNames.length ? `${garminText('destination')}: ${garminDestinationNames.join(', ')}` : '';
+      destination.textContent = garminDestinationNames.length ? `${garminText('accountDevice')}: ${garminDestinationNames.join(', ')}` : '';
       garminConnectButton.hidden = connected || garminAuthForm.hidden === false;
       garminDisconnectButton.hidden = !connected;
       garminAuthForm.hidden = connected || !garminAuthForm.dataset.open;
@@ -1356,16 +1366,25 @@ async function initTrainingResult() {
         fillGarminPrescription(state.prescription.value);
         garminSavedRevision = state.prescription.revision;
         garminFingerprint = state.prescription.fingerprint;
+        if (state.prescription.preview) {
+          garminPreviewSnapshot = { revision: state.prescription.revision, fingerprint: state.prescription.fingerprint,
+            date: state.training_date || training.dia, connection_generation: state.connection_generation };
+          renderGarminPreview({ name: state.prescription.value.name, ...state.prescription.preview,
+            date: state.training_date || training.dia });
+          garminEditorView.hidden = true;
+        }
       }
       garminConnectionGeneration = state.connection_generation || garminConnectionGeneration;
     } catch (error) {
       if (read !== garminStatusRead) return;
       if (error.status === 404) { garminCard.hidden = true; return; }
       // A stopped local connector is a pilot setup state; keep the action visible.
+      garminConnected = false;
       setGarminConnectionMessage(error.name === 'TypeError' || error.status === 503 ? 'connectError' : 'disconnected');
       garminConnectButton.hidden = false;
       garminDisconnectButton.hidden = true;
       garminPanel.hidden = !garminFingerprint;
+      if (garminPreviewModel) renderGarminPreview(garminPreviewModel);
     }
   };
   const editorTargetMarkup = (prefix, target = { type: 'none' }) => {
@@ -1743,6 +1762,7 @@ async function initTrainingResult() {
     setGarminOperationMessage(keys[operation.status] || 'failed');
     garminOperationRetry.hidden = true;
     garminReconcileButton.hidden = !['outcome_unknown', 'reauth_required', 'failed', 'workout_created'].includes(operation.status);
+    if (garminPreviewModel) renderGarminPreview(garminPreviewModel);
     if (['publishing', 'workout_created', 'scheduling'].includes(operation.status) && !garminOperationTimer && !garminOperationController) {
       const operationId = operation.operation_id;
       garminOperationTimer = window.setTimeout(async () => {
@@ -1773,51 +1793,108 @@ async function initTrainingResult() {
     if (!preview) return;
     garminPreviewSteps.replaceChildren();
     const distanceUnit = getUserPreferences().distance_unit === 'mi' ? 'mi' : 'km';
-    document.getElementById('garminPreviewName').textContent = `${garminText('name')}: ${preview.name}`;
-    document.getElementById('garminPreviewDestination').textContent = document.getElementById('garminDestination').textContent;
-    const detailFor = (end) => end?.type === 'time' ? garminText('timeDetail', { minutes: formatDuration(end.value) })
-      : end?.type === 'distance' ? garminText('distanceDetail', { distance: formatDistance(end.value / 1000, distanceUnit) }) : garminText('unsupported');
+    document.getElementById('garminPreviewName').textContent = preview.name || '';
+    const deviceContext = document.getElementById('garminPreviewDeviceContext');
+    deviceContext.hidden = garminDestinationNames.length === 0;
+    document.getElementById('garminPreviewDestination').textContent = garminDestinationNames.join(', ');
+    const humanDuration = (seconds) => {
+      const total = Math.max(0, Math.round(Number(seconds) || 0));
+      const hours = Math.floor(total / 3600);
+      const minutes = Math.floor((total % 3600) / 60);
+      const remainingSeconds = total % 60;
+      const parts = [];
+      if (hours) parts.push(garminText('durationHours', { count: hours }));
+      if (minutes) parts.push(garminText('durationMinutes', { count: minutes }));
+      if (remainingSeconds) parts.push(garminText('durationSeconds', { count: remainingSeconds }));
+      return parts.length ? parts.join(' ') : garminText('durationZero');
+    };
+    const detailFor = (end) => end?.type === 'time' ? humanDuration(end.value)
+      : end?.type === 'distance' ? formatDistance(end.value / 1000, distanceUnit)
+        : end?.type === 'open' ? garminText('openStep') : garminText('unsupported');
     const targetFor = (target) => formatGarminTarget(target, distanceUnit);
-    for (const step of preview.steps) {
+    const appendPart = (container, label, block, count = null) => {
+      const part = document.createElement('div');
+      part.className = 'garmin-review-part';
+      const heading = document.createElement('span');
+      heading.className = 'garmin-review-part-title';
+      heading.textContent = count === null ? label || '' : garminText(count === 1 ? 'recoveryCountOne' : 'recoveryCount', { count, label });
+      const value = document.createElement('strong');
+      value.className = 'garmin-review-step-value';
+      value.textContent = detailFor(block.end);
+      const target = document.createElement('span');
+      target.className = block.target?.type === 'none' ? 'garmin-review-target garmin-review-target-muted' : 'garmin-review-target';
+      target.textContent = garminText('targetLine', { target: targetFor(block.target) });
+      if (label !== null || count !== null) part.append(heading);
+      part.append(value, target);
+      container.append(part);
+    };
+    preview.steps.forEach((step, index) => {
       const li = document.createElement('li');
-      const label = garminText(step.kind === 'repeat' ? 'repeatName' : `${step.kind}Name`, { count: step.repetitions });
-      const block = step.kind === 'repeat' ? (step.interval || { end: step.end, target: step.target }) : step;
-      li.textContent = garminText('steps', { kind: label, detail: `${detailFor(block.end)} · ${targetFor(block.target)}` });
+      li.className = `garmin-review-step garmin-review-step-${step.kind}`;
+      const marker = document.createElement('span');
+      marker.className = 'garmin-review-order';
+      marker.setAttribute('aria-hidden', 'true');
+      marker.textContent = String(index + 1);
+      const content = document.createElement('div');
+      content.className = 'garmin-review-step-content';
+      const heading = document.createElement('h4');
+      heading.textContent = garminText(step.kind === 'repeat' ? 'repeatName' : `${step.kind}Name`, { count: step.repetitions });
+      content.append(heading);
+      if (step.kind === 'repeat') {
+        const run = step.interval || { end: step.end, target: step.target };
+        appendPart(content, garminText('intervalPart'), run);
+        if (step.recovery) {
+          const recoveryCount = step.skip_last_rest_step ? Math.max(0, step.repetitions - 1) : step.repetitions;
+          appendPart(content, garminText('recoveryPart'), step.recovery, recoveryCount);
+          const policy = document.createElement('p');
+          policy.className = 'garmin-review-policy';
+          policy.textContent = garminText(step.skip_last_rest_step ? 'noFinalRecovery' : 'finalRecoveryIncluded');
+          content.append(policy);
+        }
+      } else appendPart(content, null, step);
+      li.append(marker, content);
       garminPreviewSteps.append(li);
-      if (step.kind === 'repeat' && step.recovery) {
-        const recovery = document.createElement('li');
-        const recoveryCount = step.skip_last_rest_step ? Math.max(0, step.repetitions - 1) : step.repetitions;
-        const recoveryDetail = step.recovery.end.type === 'time'
-          ? garminText('timeDetail', { minutes: formatDuration(step.recovery.end.value) })
-          : garminText('distanceDetail', { distance: formatDistance(step.recovery.end.value / 1000, distanceUnit) });
-        recovery.textContent = garminText(recoveryCount === 1 ? 'recoveryAfterOne' : 'recoveryAfter', {
-          count: recoveryCount,
-          detail: recoveryDetail,
-          target: formatGarminTarget(step.recovery.target, distanceUnit),
-          policy: garminText(step.skip_last_rest_step ? 'noFinalRecovery' : 'finalRecoveryIncluded'),
-        });
-        garminPreviewSteps.append(recovery);
-      }
-      if (step.kind === 'recovery') li.textContent = garminText('steps', { kind: label, detail: `${detailFor(step.end)} · ${targetFor(step.target)}` });
-    }
-    const totalParts = [];
-    if (preview.estimated_duration_seconds !== null) totalParts.push(garminText('totalDuration', { duration: formatDuration(preview.estimated_duration_seconds) }));
-    else if (preview.total_time_seconds) totalParts.push(garminText('knownTimedParts', { duration: formatDuration(preview.total_time_seconds) }));
-    if (preview.total_distance_meters) totalParts.push(garminText('knownDistance', { distance: formatDistance(preview.total_distance_meters / 1000, distanceUnit) }));
-    document.getElementById('garminPreviewTotal').textContent = totalParts.join(' · ');
-    document.getElementById('garminScheduleDate').textContent = garminText('date', { date: formatLocalizedDate(training.dia, i18n.language) });
-    document.getElementById('garminPreviewDestination').textContent = garminDestinationNames.length
-      ? `${garminText('destination')}: ${garminDestinationNames.join(', ')}` : garminText('watchSyncNeeded');
+    });
+    const summary = document.getElementById('garminPreviewTotal');
+    summary.replaceChildren();
+    const addMetric = (labelKey, value, helpKey = null) => {
+      const item = document.createElement('div'); item.className = 'garmin-review-metric';
+      const label = document.createElement('span'); label.className = 'garmin-review-metric-label'; label.textContent = garminText(labelKey);
+      const amount = document.createElement('strong'); amount.textContent = value; item.append(label, amount);
+      if (helpKey) { const help = document.createElement('span'); help.className = 'garmin-review-metric-help'; help.textContent = garminText(helpKey); item.append(help); }
+      summary.append(item);
+    };
+    if (preview.duration_complete && preview.estimated_duration_seconds !== null) addMetric('totalDurationLabel', humanDuration(preview.estimated_duration_seconds));
+    else if (preview.total_time_seconds > 0) addMetric('definedTimeLabel', humanDuration(preview.total_time_seconds), 'partialTotalHelp');
+    if (preview.distance_complete && preview.total_distance_meters > 0) addMetric('totalDistanceLabel', formatDistance(preview.total_distance_meters / 1000, distanceUnit));
+    else if (preview.total_distance_meters > 0) addMetric('definedDistanceLabel', formatDistance(preview.total_distance_meters / 1000, distanceUnit), 'partialTotalHelp');
+    addMetric('stageCountLabel', garminText('stageCount', { count: preview.expanded_step_count ?? preview.steps.length }));
+    document.getElementById('garminScheduleDate').textContent = formatLocalizedDate(preview.date || training.dia, i18n.language);
     const canUpdate = ['scheduled', 'outdated'].includes(garminCurrentOperation?.status)
       && garminCurrentOperation.connection_generation === garminConnectionGeneration
       && garminCurrentOperation.workout_id && garminCurrentOperation.occurrence_id;
+    const operationNeedsReconciliation = garminCurrentOperation
+      && garminCurrentOperation.connection_generation === garminConnectionGeneration
+      && ['publishing', 'workout_created', 'scheduling', 'outcome_unknown', 'reauth_required', 'failed'].includes(garminCurrentOperation.status);
     garminUpdateButton.hidden = !canUpdate || garminCurrentOperation.prescription_revision === garminSavedRevision;
-    garminRescheduleButton.hidden = !canUpdate || garminCurrentOperation.prescription_revision !== garminSavedRevision;
-    document.getElementById('garminPublishButton').hidden = Boolean(canUpdate);
+    garminRescheduleButton.hidden = !canUpdate || garminCurrentOperation.prescription_revision !== garminSavedRevision
+      || garminCurrentOperation.scheduled_date === (preview.date || training.dia);
+    document.getElementById('garminPublishButton').hidden = Boolean(canUpdate || operationNeedsReconciliation);
+    const dateChanged = Boolean(canUpdate && garminCurrentOperation.scheduled_date !== (preview.date || training.dia));
+    const helpKey = operationNeedsReconciliation ? 'reconcileActionHelp'
+      : canUpdate && !dateChanged && garminCurrentOperation.prescription_revision === garminSavedRevision ? 'alreadyScheduledHelp'
+      : !garminCurrentOperation || !canUpdate ? 'publishActionHelp'
+      : dateChanged && garminCurrentOperation.prescription_revision !== garminSavedRevision ? 'updateAndRescheduleActionHelp'
+        : dateChanged ? 'rescheduleActionHelp' : 'updateActionHelp';
+    document.getElementById('garminActionHelp').textContent = garminText(helpKey);
+    const actionButtons = [document.getElementById('garminPublishButton'), garminUpdateButton, garminRescheduleButton];
+    actionButtons.forEach((button) => { button.disabled = !garminConnected || garminPending || !garminPreviewSnapshot; });
     garminPreview.hidden = false;
   };
   document.addEventListener('app:languagechange', () => {
     setGarminConnectionMessage(garminConnectionMessage);
+    const destination = document.getElementById('garminDestination');
+    destination.textContent = garminDestinationNames.length ? `${garminText('accountDevice')}: ${garminDestinationNames.join(', ')}` : '';
     if (garminCurrentOperation) renderGarminOperation(garminCurrentOperation);
     else if (garminOperationMessageKey) setGarminOperationMessage(garminOperationMessageKey);
     if (garminPreviewModel) renderGarminPreview(garminPreviewModel);
@@ -1828,8 +1905,12 @@ async function initTrainingResult() {
     return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
   }
   function paceText(seconds, unit = 'min_per_km') {
-    const total = Math.round(Number(seconds));
-    const suffix = unit === 'min_per_mile' ? 'mi' : 'km';
+    const preferred = getUserPreferences().distance_unit === 'mi' ? 'mi' : 'km';
+    const source = unit === 'min_per_mile' ? 'mi' : 'km';
+    let converted = Number(seconds);
+    if (source !== preferred) converted = preferred === 'mi' ? converted / KM_TO_MILES : converted * KM_TO_MILES;
+    const total = Math.round(converted);
+    const suffix = preferred;
     return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')} min/${suffix}`;
   }
   function formatGarminTarget(target, distanceUnit) {
@@ -1894,8 +1975,11 @@ async function initTrainingResult() {
       garminPreviewSnapshot = { revision: saved.revision, fingerprint: saved.fingerprint,
         date: saved.date, connection_generation: saved.connection_generation };
       garminFormDirty = false;
-      renderGarminPreview({ name: prescription.name, ...saved.preview });
-      setGarminOperationMessage('saved');
+      renderGarminPreview({ name: prescription.name, ...saved.preview, date: saved.date });
+      garminEditorView.hidden = true;
+      garminOperationMessageKey = null;
+      garminOperationStatus.textContent = '';
+      document.getElementById('garminPreviewTitle').focus();
     } catch (error) {
       if (error.message === 'invalid_prescription') {
         prescriptionError.textContent = garminText('invalidPrescription');
@@ -1915,15 +1999,45 @@ async function initTrainingResult() {
       garminPending = false;
       saveButton.disabled = false;
       saveButton.textContent = garminText('preview');
+      if (garminPreviewModel) renderGarminPreview(garminPreviewModel);
     }
   });
   const performGarminAction = async (action) => {
     if (garminPending || !garminPreviewSnapshot || !garminCurrentOperation && action !== 'publish') return;
     const actionKey = action === 'publish' ? 'publish' : action === 'update' ? 'update' : 'reschedule';
-    const confirmed = await showConfirm({ title: garminText(actionKey), message: garminText(`${actionKey}Confirm`), confirmLabel: garminText(actionKey), cancelLabel: t('shell.confirm.no') });
-    if (!confirmed) return;
+    const combinedUpdateReschedule = action === 'update' && garminCurrentOperation?.scheduled_date !== garminPreviewSnapshot.date;
+    if (action !== 'publish') {
+      const confirmKey = combinedUpdateReschedule ? 'updateAndRescheduleConfirm' : `${actionKey}Confirm`;
+      const confirmed = await showConfirm({ title: garminText(actionKey), message: garminText(confirmKey), confirmLabel: garminText(actionKey), cancelLabel: t('shell.confirm.no') });
+      if (!confirmed) return;
+    }
     garminPending = true;
+    garminPreviewModel && renderGarminPreview(garminPreviewModel);
+    let remoteDispatched = false;
     try {
+      setGarminOperationMessage('checkingReview');
+      const currentReview = await garminFetch(`/api/trainings/${encodeURIComponent(currentTrainingId)}/garmin`);
+      if (!currentReview.prescription || currentReview.prescription.revision !== garminPreviewSnapshot.revision
+          || currentReview.prescription.fingerprint !== garminPreviewSnapshot.fingerprint
+          || currentReview.training_date !== garminPreviewSnapshot.date
+          || currentReview.connection_generation !== garminPreviewSnapshot.connection_generation) {
+        if (currentReview.prescription) {
+          garminSavedRevision = currentReview.prescription.revision;
+          garminFingerprint = currentReview.prescription.fingerprint;
+          garminConnectionGeneration = currentReview.connection_generation;
+          garminPreviewSnapshot = { revision: currentReview.prescription.revision, fingerprint: currentReview.prescription.fingerprint,
+            date: currentReview.training_date, connection_generation: currentReview.connection_generation };
+          fillGarminPrescription(currentReview.prescription.value);
+          if (currentReview.prescription.preview) renderGarminPreview({ name: currentReview.prescription.value.name,
+            ...currentReview.prescription.preview, date: currentReview.training_date });
+          if (currentReview.prescription.preview && !garminFormDirty) garminEditorView.hidden = true;
+        } else garminPreviewSnapshot = null;
+        if (currentReview.operation) renderGarminOperation(currentReview.operation);
+        setGarminOperationMessage('reviewChanged');
+        return;
+      }
+      setGarminOperationMessage(action === 'publish' ? 'publishing' : action === 'update' ? 'updating' : 'rescheduling');
+      remoteDispatched = true;
       const result = await garminFetch(`/api/trainings/${currentTrainingId}/garmin/publish`, { method: 'POST', body: JSON.stringify({
         ...garminPreviewSnapshot,
         expected_date: garminPreviewSnapshot.date,
@@ -1935,15 +2049,24 @@ async function initTrainingResult() {
       renderGarminOperation({ ...result, operation_id: result.operation_id });
       const latest = await garminFetch(`/api/garmin/operations/${result.operation_id}`); renderGarminOperation(latest.operation);
     } catch (error) {
-      if (error.message === 'auth_required') setGarminOperationMessage('authError');
+      if (!remoteDispatched && error.status !== 404) setGarminOperationMessage('reviewFailed');
+      else if (error.message === 'auth_required') setGarminOperationMessage('authError');
       else if (error.message === 'outcome_unknown') setGarminOperationMessage('uncertain');
       else if (error.status === 409) setGarminOperationMessage('revisionConflict');
       else if (error.status === 503 || error.name === 'TypeError') setGarminOperationMessage('connectError');
+      else if (error.status === 404) { garminPreviewSnapshot = null; setGarminOperationMessage('sessionUnavailable'); }
+      else if (error.status === 400) setGarminOperationMessage('reviewFailed');
       else setGarminOperationMessage(action === 'update' ? 'updateFailed' : action === 'reschedule' ? 'rescheduleFailed' : 'publishFailed');
     }
-    finally { garminPending = false; }
+    finally { garminPending = false; if (garminPreviewModel) renderGarminPreview(garminPreviewModel); }
   };
   document.getElementById('garminPublishButton').addEventListener('click', () => performGarminAction('publish'));
+  document.getElementById('garminEditStructure').addEventListener('click', () => {
+    garminPreview.hidden = true;
+    garminEditorView.hidden = false;
+    document.getElementById('garminWorkoutName').focus();
+    document.getElementById('garminWorkoutName').scrollIntoView({ block: 'center', behavior: 'smooth' });
+  });
   garminOperationRetry.addEventListener('click', () => {
     if (garminCurrentOperation) renderGarminOperation(garminCurrentOperation);
   });

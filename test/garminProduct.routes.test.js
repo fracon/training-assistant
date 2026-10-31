@@ -70,6 +70,11 @@ test('Garmin session APIs require login, enforce pilot owner, and persist previe
   assert.equal(response.statusCode, 200);
   assert.equal(response.json().revision, 1);
   assert.equal(response.json().preview.steps[1].repetitions, 4);
+  const localReview = await app.inject({ method: 'GET', url: '/api/trainings/1/garmin', headers: { cookie } });
+  assert.equal(localReview.json().training_date, '2026-11-02');
+  assert.equal(localReview.json().prescription.preview.total_time_seconds, response.json().preview.total_time_seconds);
+  assert.deepEqual(localReview.json().prescription.preview.steps, response.json().preview.steps,
+    'reload review is rebuilt from the same canonical backend preview');
   assert.equal(db.prepare('SELECT detalhes FROM trainings WHERE id = 1').get().detalhes, '6 x 3 min');
   assert.deepEqual(remoteCalls, ['http://connector.invalid/v1/connections/1/pilot/status', 'http://connector.invalid/v1/connections/1/pilot/capabilities']);
   await app.close(); db.close();

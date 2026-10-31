@@ -29,12 +29,13 @@ test('Garmin workout editor edits incomplete drafts and saves a faithful v3 sequ
   db.prepare('INSERT INTO trainings (user_id,dia,tipo,treino,detalhes) VALUES (?,?,?,?,?)').run(owner.id, '2026-11-02', 'Run', 'Intervals', 'structured workout');
   const remoteCalls = [];
   let releaseStatus;
+  let connectorUnavailable = false;
   const statusGate = new Promise((resolve) => { releaseStatus = resolve; });
   const app = await buildServer({ db, sessionCookieSecure: false,
     garminConfig: { GARMIN_PILOT_ENABLED: 'true', GARMIN_PILOT_USER_ID: String(owner.id), KINESIS_GARMIN_SERVICE_TOKEN: 'synthetic-service-token-'.repeat(2), GARMIN_CONNECTOR_URL: 'http://connector.invalid' },
     garminFetch: async (url) => {
       remoteCalls.push(url);
-      if (url.endsWith('/status')) { await statusGate; return Response.json({ status: 'connected' }); }
+      if (url.endsWith('/status')) { await statusGate; if (connectorUnavailable) throw new TypeError('synthetic connector unavailable'); return Response.json({ status: 'connected' }); }
       if (url.endsWith('/capabilities')) return Response.json({ devices: [{ name: 'Forerunner 55' }], running_catalog_status: 'available' });
       return Response.json({ status: 'connected' });
     },
@@ -81,6 +82,18 @@ test('Garmin workout editor edits incomplete drafts and saves a faithful v3 sequ
     const captureEditorState = async (selector, filename) => {
       await evaluate(`document.querySelector(${JSON.stringify(selector)})?.scrollIntoView({block:'center'})`);
       await delay(80);
+      const shot = await command('Page.captureScreenshot', { format: 'png' });
+      require('node:fs').writeFileSync(filename, Buffer.from(shot.data, 'base64'));
+    };
+    const captureReview = async (filename) => {
+      await evaluate("document.getElementById('garminPreview').scrollIntoView({block:'start'})");
+      await delay(100);
+      const shot = await command('Page.captureScreenshot', { format: 'png' });
+      require('node:fs').writeFileSync(filename, Buffer.from(shot.data, 'base64'));
+    };
+    const captureReviewActions = async (filename) => {
+      await evaluate("document.querySelector('.garmin-review-buttons').scrollIntoView({block:'center'})");
+      await delay(100);
       const shot = await command('Page.captureScreenshot', { format: 'png' });
       require('node:fs').writeFileSync(filename, Buffer.from(shot.data, 'base64'));
     };
@@ -190,22 +203,61 @@ test('Garmin workout editor edits incomplete drafts and saves a faithful v3 sequ
     assert.deepEqual(prescriptionRequests.at(-1).prescription, saved);
     const preview = await evaluate("document.getElementById('garminPreviewSteps').textContent");
     assert.match(preview, /Warm-up/); assert.match(preview, /2 repeats/); assert.match(preview, /Cool-down/);
+    const review = await evaluate("({title:document.getElementById('garminPreviewTitle').textContent,intro:document.querySelector('.garmin-review-heading > p').textContent,dateLabel:document.querySelector('.garmin-review-context dt').textContent,date:document.getElementById('garminScheduleDate').textContent,device:document.getElementById('garminPreviewDestination').textContent,summary:document.getElementById('garminPreviewTotal').textContent,steps:document.querySelectorAll('#garminPreviewSteps > li').length,html:document.getElementById('garminPreviewSteps').textContent})");
+    assert.match(review.title, /Review your workout|Revise seu treino/);
+    assert.match(review.dateLabel, /Planned date|Data planejada/);
+    assert.doesNotMatch(review.dateLabel + review.date, /Scheduled for|Agendado para/);
+    assert.match(review.device, /Forerunner 55/);
+    assert.doesNotMatch(review.intro, /Forerunner|destination|destino/i);
+    assert.match(review.summary, /Defined time|Tempo definido/i);
+    assert.match(review.summary, /Defined distance|Distância definida/i);
+    assert.doesNotMatch(review.summary, /Total duration|Duração total/i, 'mixed steps are not described as a complete duration');
+    assert.equal(review.steps, saved.steps.length, 'the sequence has one visual entry for each canonical top-level step');
+    assert.match(review.html, /1 recovery|1 recuperação/);
+    assert.match(review.html, /no recovery after the final interval|sem recuperação após a última repetição/);
+    assert.match(review.html, /130–145 bpm/);
+    assert.match(review.html, /6:00 min\/km|6:00 min\/mi/);
+    assert.doesNotMatch(review.html, /\b\d{2}:\d{2} min/);
+    const reviewLang = await evaluate('document.documentElement.lang === "pt-BR" ? "pt" : "en"');
+    await captureReview(`/tmp/kinesis-garmin-review-${reviewLang}-desktop.png`);
+    await captureReviewActions(`/tmp/kinesis-garmin-review-${reviewLang}-desktop-actions.png`);
+    assert.equal(await evaluate("document.getElementById('garminPublishButton').disabled"), false, 'connected pilot enables the explicit publish action');
+    assert.equal(await evaluate("document.getElementById('garminPublishButton').textContent.trim().replace(/\\s+/g,' ')").then((value) => value.length > 0), true);
+    db.prepare("UPDATE users SET distance_unit='mi' WHERE id=?").run(owner.id);
+    await command('Page.reload');
+    await wait("!document.getElementById('garminPreview').hidden && document.getElementById('garminPreviewSteps').textContent.includes('9:39 min/mi')");
+    assert.match(await evaluate("document.getElementById('garminPreviewSteps').textContent"), /8:51 min\/mi–9:39 min\/mi/);
+    assert.match(await evaluate("document.getElementById('garminPreviewSteps').textContent"), /0\.93 mi/);
+    await captureReview(`/tmp/kinesis-garmin-review-${reviewLang}-desktop-miles.png`);
+    db.prepare("UPDATE users SET distance_unit='km' WHERE id=?").run(owner.id);
+    await command('Page.reload');
+    await wait("!document.getElementById('garminPreview').hidden && document.getElementById('garminPreviewSteps').textContent.includes('6:00 min/km')");
+    await evaluate("document.getElementById('garminEditStructure').click()");
+    await wait("document.activeElement.id==='garminWorkoutName'");
+    assert.equal(await evaluate("document.getElementById('garminEditorView').hidden"), false, 'edit reveals the saved structure');
+    assert.equal(await evaluate("document.activeElement.id"), 'garminWorkoutName', 'edit returns focus to the saved structure');
+    assert.equal(await evaluate("document.getElementById('garminPreview').hidden"), true);
+    await evaluate("document.getElementById('garminPrescriptionForm').requestSubmit()");
+    await wait("!document.getElementById('garminPreview').hidden");
     assert.equal(remoteCalls.filter((url) => url.endsWith('/workouts') || url.endsWith('/workouts/schedule')).length, 0, 'save/review never calls Garmin mutations');
     assert.equal(db.prepare('SELECT COUNT(*) AS count FROM garmin_training_operations').get().count, 0);
+    await evaluate("document.getElementById('garminEditStructure').click()");
     const requestsBeforeInvalid = prescriptionRequests.length;
-    await evaluate("document.querySelector('[data-end-value$=\\\"-recovery\\\"]').value='00:00';document.getElementById('garminPrescriptionForm').requestSubmit()");
+    await evaluate("(()=>{const input=document.querySelector('[data-end-value$=\\\"-recovery\\\"]');input.value='00:00';input.dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('garminPrescriptionForm').requestSubmit()})()");
+    await wait("document.getElementById('garminPrescriptionSave').disabled===false");
     assert.equal(await evaluate("document.getElementById('garminPrescriptionSave').disabled"), false, 'validation failure releases the save control');
     assert.equal(prescriptionRequests.length, requestsBeforeInvalid, 'invalid active recovery is rejected before saving');
     assert.equal(await evaluate("document.activeElement.getAttribute('aria-invalid')"), 'true');
     assert.equal(await evaluate("document.activeElement.getAttribute('aria-describedby')"), 'garminPrescriptionError');
     assert.match(await evaluate("document.getElementById('garminOperationStatus').textContent"), /highlighted fields|campos destacados/i);
     await evaluate("document.querySelector('[data-end-value$=\\\"-recovery\\\"]').value='02:00';document.getElementById('garminPrescriptionForm').requestSubmit()");
-    await wait("document.getElementById('garminOperationStatus').textContent.includes('Structure saved')");
-    assert.match(await evaluate("document.getElementById('garminPreviewSteps').textContent"), /Recovery after 1 interval/);
+    await wait("!document.getElementById('garminPreview').hidden");
+    assert.match(await evaluate("document.getElementById('garminPreviewSteps').textContent"), /Recovery · 1 recovery|Recuperação · 1 recuperação/);
     assert.equal(await evaluate("document.getElementById('garminPrescriptionSave').classList.contains('btn-primary')"), true);
     assert.match(await evaluate("document.getElementById('garminSaveHelp').textContent"), /Saves the workout in Kinesis for review\. Sending it to Garmin happens in the next step\./);
     assert.equal(await evaluate("getComputedStyle(document.querySelector('.garmin-review-actions')).display"), 'grid');
     assert.ok(Number.parseFloat(await evaluate("getComputedStyle(document.getElementById('garminSaveHelp')).lineHeight")) > 20);
+    await evaluate("document.getElementById('garminEditStructure').click()");
     const requestCountBeforeMove = prescriptionRequests.length;
     const orderBeforeMove = await evaluate("[...document.querySelectorAll('#garminRunBlocks .garmin-editor-block')].map((block)=>block.dataset.blockId)");
     await evaluate("document.querySelectorAll('#garminRunBlocks [data-editor-action=up]')[1].click()");
@@ -213,14 +265,17 @@ test('Garmin workout editor edits incomplete drafts and saves a faithful v3 sequ
     assert.equal(await evaluate("document.getElementById('garminPreview').hidden"), true, 'editing invalidates the existing preview');
     assert.equal(prescriptionRequests.length, requestCountBeforeMove, 'reordering does not save');
     await evaluate("document.getElementById('garminPrescriptionForm').requestSubmit()");
-    await wait("document.getElementById('garminOperationStatus').textContent.includes('Structure saved')");
+    await wait("!document.getElementById('garminPreview').hidden");
     const finalSaved = JSON.parse(db.prepare('SELECT prescription_json FROM garmin_workout_prescriptions WHERE training_id=1').get().prescription_json);
     assert.deepEqual(prescriptionRequests.at(-1).prescription, finalSaved);
     const persistedRunIds = finalSaved.steps.filter((step) => ['run', 'repeat', 'recovery'].includes(step.kind)).map((step) => step.id);
     assert.deepEqual(await evaluate("[...document.querySelectorAll('#garminRunBlocks .garmin-editor-block')].map((block)=>block.dataset.blockId)"), persistedRunIds);
     await command('Page.reload');
     await wait("document.querySelectorAll('#garminRunBlocks .garmin-editor-block').length===" + persistedRunIds.length + " && document.querySelector('#garminRunBlocks .garmin-editor-block')?.dataset.blockId===" + JSON.stringify(persistedRunIds[0]));
+    assert.equal(await evaluate("document.getElementById('garminPreview').hidden"), false, 'reload restores the canonical review with the saved prescription');
+    assert.equal(await evaluate("document.getElementById('garminEditorView').hidden"), true, 'reload opens the review view instead of duplicating the editor above it');
     assert.deepEqual(await evaluate("[...document.querySelectorAll('#garminRunBlocks .garmin-editor-block')].map((block)=>block.dataset.blockId)"), persistedRunIds, 'saved blocks hydrate in order after reload');
+    await evaluate("document.getElementById('garminEditStructure').click()");
     const requestCountAfterReload = prescriptionRequests.length;
     const reloadedCloneId = await evaluate("(()=>{const button=document.querySelector('#garminRunBlocks [data-editor-action=duplicate]');button.click();return document.querySelectorAll('#garminRunBlocks .garmin-editor-block')[1].dataset.blockId})()");
     assert.ok(!persistedRunIds.includes(reloadedCloneId), 'duplicate after reload receives a new ID');
@@ -229,6 +284,7 @@ test('Garmin workout editor edits incomplete drafts and saves a faithful v3 sequ
     assert.equal(prescriptionRequests.length, requestCountAfterReload, 'post-reload block actions remain local');
     await evaluate("document.getElementById('garminPrescriptionForm').requestSubmit()");
     await wait("!document.getElementById('garminPreview').hidden");
+    await evaluate("document.getElementById('garminEditStructure').click()");
     await evaluate("document.getElementById('garminSessionCard').scrollIntoView({block:'start'})");
     assert.equal(await evaluate("document.documentElement.lang"), 'en-US');
     await captureEditorToolbar('/tmp/kinesis-garmin-editor-en-desktop-actions.png');
@@ -236,7 +292,9 @@ test('Garmin workout editor edits incomplete drafts and saves a faithful v3 sequ
     await captureGarminCard('/tmp/kinesis-garmin-editor-en-desktop-bottom.png', 'bottom');
     await evaluate("document.querySelector('.lang-switch [data-lang=\\\"pt-BR\\\"]').click()"); await wait("document.documentElement.lang==='pt-BR'");
     assert.equal(await evaluate("document.querySelector('#garminWorkoutEditor legend').textContent.trim()"), 'Aquecimento');
-    assert.match(await evaluate("document.getElementById('garminPreviewSteps').textContent"), /Recuperação após 1 intervalo/);
+    assert.match(await evaluate("document.getElementById('garminPreviewSteps').textContent"), /Recuperação · 1 recuperação/);
+    await captureReview('/tmp/kinesis-garmin-review-pt-desktop.png');
+    await captureReviewActions('/tmp/kinesis-garmin-review-pt-desktop-actions.png');
     await evaluate("document.getElementById('garminSessionCard').scrollIntoView({block:'start'})");
     await captureEditorToolbar('/tmp/kinesis-garmin-editor-pt-desktop-actions.png');
     await captureGarminCard('/tmp/kinesis-garmin-editor-pt-desktop-top.png');
@@ -246,11 +304,15 @@ test('Garmin workout editor edits incomplete drafts and saves a faithful v3 sequ
     assert.equal(mobile.width, 390); assert.ok(mobile.scrollWidth <= mobile.width);
     assert.equal(await evaluate("getComputedStyle(document.querySelector('.garmin-review-actions')).gridTemplateColumns.split(' ').length"), 1);
     assert.equal(await evaluate("document.getElementById('garminPrescriptionSave').getBoundingClientRect().width <= document.querySelector('.garmin-review-actions').getBoundingClientRect().width"), true);
+    await captureReview('/tmp/kinesis-garmin-review-pt-mobile.png');
+    await captureReviewActions('/tmp/kinesis-garmin-review-pt-mobile-actions.png');
     await evaluate("document.getElementById('garminSessionCard').scrollIntoView({block:'start'})");
     await captureEditorToolbar('/tmp/kinesis-garmin-editor-pt-mobile-actions.png');
     await captureGarminCard('/tmp/kinesis-garmin-editor-pt-mobile-top.png');
     await captureGarminCard('/tmp/kinesis-garmin-editor-pt-mobile-bottom.png', 'bottom');
     await evaluate("document.querySelector('.lang-switch [data-lang=\\\"en-US\\\"]').click()"); await wait("document.documentElement.lang==='en-US'");
+    await captureReview('/tmp/kinesis-garmin-review-en-mobile.png');
+    await captureReviewActions('/tmp/kinesis-garmin-review-en-mobile-actions.png');
     await evaluate("document.getElementById('garminSessionCard').scrollIntoView({block:'start'})");
     await captureEditorToolbar('/tmp/kinesis-garmin-editor-en-mobile-actions.png');
     await captureGarminCard('/tmp/kinesis-garmin-editor-en-mobile-top.png');
@@ -299,6 +361,34 @@ test('Garmin workout editor edits incomplete drafts and saves a faithful v3 sequ
     assert.deepEqual(convertedLegacy.ends, ['5:00', '1:00', '1:00', '1:00', '0.5']);
     assert.deepEqual(convertedLegacy.targets, ['none', 'heart_rate', 'heart_rate', 'heart_rate', 'none']);
     assert.deepEqual(convertedLegacy.lower, ['', '120', '120', '120', '']);
+    const currentPrescription = db.prepare('SELECT revision,fingerprint FROM garmin_workout_prescriptions WHERE training_id=1').get();
+    db.prepare(`INSERT INTO garmin_training_operations (operation_id,user_id,training_id,connection_generation,prescription_revision,fingerprint,converter_version,status,stage,scheduled_date,workout_id,occurrence_id,action)
+      VALUES ('review-state-operation',?,?,1,?,?,?,?, 'complete','2026-11-01','synthetic-workout','synthetic-occurrence','update')`)
+      .run(owner.id, 1, currentPrescription.revision - 1, currentPrescription.fingerprint, 3, 'scheduled');
+    await command('Page.reload');
+    await wait("!document.getElementById('garminUpdateButton').hidden");
+    assert.equal(await evaluate("document.getElementById('garminPublishButton').hidden"), true, 'an existing Kinesis operation cannot be replaced by a new publish');
+    assert.match(await evaluate("document.getElementById('garminActionHelp').textContent"), /updates.*moves|atualiza.*move/i, 'combined update and date change explains both effects');
+    db.prepare("UPDATE garmin_training_operations SET prescription_revision=?,status='scheduled',scheduled_date='2026-11-01' WHERE operation_id='review-state-operation'")
+      .run(currentPrescription.revision);
+    await command('Page.reload');
+    await wait("!document.getElementById('garminRescheduleButton').hidden");
+    assert.equal(await evaluate("document.getElementById('garminUpdateButton').hidden"), true);
+    assert.match(await evaluate("document.getElementById('garminActionHelp').textContent"), /moves only|move somente/i);
+    db.prepare("UPDATE garmin_training_operations SET status='outcome_unknown',stage='unknown' WHERE operation_id='review-state-operation'").run();
+    await command('Page.reload');
+    await wait("!document.getElementById('garminReconcileButton').hidden");
+    assert.equal(await evaluate("document.getElementById('garminPublishButton').hidden"), true, 'an uncertain operation requires reconciliation instead of another mutation');
+    assert.match(await evaluate("document.getElementById('garminActionHelp').textContent"), /previous operation|operação anterior/i);
+    connectorUnavailable = true;
+    await command('Page.reload');
+    await wait("!document.getElementById('garminPreview').hidden && /unavailable|indisponível/i.test(document.getElementById('garminConnectionStatus').textContent)");
+    assert.equal(await evaluate("document.getElementById('garminPreview').hidden"), false, 'connector failure leaves the local canonical review available');
+    assert.equal(await evaluate("document.getElementById('garminPublishButton').disabled"), true, 'remote action stays disabled while disconnected');
+    await captureReview('/tmp/kinesis-garmin-review-pt-desktop-connector-offline.png');
+    await command('Emulation.setDeviceMetricsOverride', { width: 640, height: 450, deviceScaleFactor: 1, mobile: false });
+    assert.ok(await evaluate("document.documentElement.scrollWidth <= innerWidth"), 'review has no horizontal overflow in a low-height, narrow desktop viewport');
+    await captureReviewActions('/tmp/kinesis-garmin-review-low-window-actions.png');
   } finally {
     socket?.close();
     const chromeExit = child.exitCode !== null ? Promise.resolve() : once(child, 'exit').catch(() => {});

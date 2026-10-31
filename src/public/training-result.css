@@ -908,6 +908,8 @@ select.input-control {
 .garmin-session-card h2, .garmin-session-card h3, .garmin-session-card p { margin: 0; }
 .garmin-auth-form, #garminPrescriptionPanel { display: grid; gap: 1rem; }
 .garmin-auth-form[hidden], #garminPrescriptionPanel[hidden], #garminPreview[hidden], #garminTargetFields[hidden] { display: none; }
+.garmin-editor-view { display: grid; gap: 1rem; }
+.garmin-editor-view[hidden] { display: none; }
 .garmin-actions { display: flex; flex-wrap: wrap; gap: .75rem; }
 .garmin-step-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); gap: .75rem; }
 .garmin-step-grid label { display: grid; gap: .4rem; color: var(--muted); }
@@ -938,8 +940,48 @@ select.input-control {
 .garmin-review-help { max-width: 62ch; color: var(--muted); font-size: .95rem; line-height: 1.55; }
 .garmin-editor-action-status { grid-column: 1 / -1; color: var(--danger); font-size: .95rem; line-height: 1.5; }
 @media (max-width: 600px) { .garmin-editor-section, .garmin-editor-block { padding: .7rem; } .garmin-editor-actions button { flex: 1 1 auto; } }
-#garminPreview { border-top: 1px solid var(--line); padding-top: 1rem; }
-#garminPreview ol { display: grid; gap: .5rem; padding-left: 1.5rem; }
-#garminOperationStatus { min-height: 1.5em; }
+#garminPreview.garmin-review { display: grid; gap: 1.5rem; margin-block-start: 1.5rem; padding-block: 1.5rem .5rem; border-top: 1px solid var(--line); }
+.garmin-review-heading { display: grid; gap: .5rem; }
+.garmin-review-heading h3 { font-size: 1.35rem; line-height: 1.3; }
+.garmin-review-heading > p { color: var(--muted); line-height: 1.55; }
+.garmin-review-name { color: var(--ink); font-size: 1.05rem; font-weight: 600; overflow-wrap: anywhere; }
+.garmin-review-context { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: .75rem 1.5rem; margin: 0; padding: 1rem 1.1rem; background: var(--bg); border-radius: 10px; }
+.garmin-review-context > div { min-width: 0; }
+.garmin-review-context dt, .garmin-review-metric-label { color: var(--muted); font-size: .875rem; line-height: 1.4; }
+.garmin-review-context dd { margin: .2rem 0 0; color: var(--ink); font-weight: 600; overflow-wrap: anywhere; }
+.garmin-review-sync { color: var(--muted); font-size: .9rem; line-height: 1.5; }
+.garmin-review-summary { display: flex; flex-wrap: wrap; gap: .75rem 1.5rem; padding-block: .25rem; }
+.garmin-review-metric { display: grid; gap: .2rem; min-width: min(100%, 8rem); }
+.garmin-review-metric strong { color: var(--ink); font-size: 1.05rem; line-height: 1.35; }
+.garmin-review-metric-help { color: var(--muted); font-size: .8rem; line-height: 1.4; max-width: 30ch; }
+.garmin-review-sequence { display: grid; gap: .75rem; margin: 0; padding: 0; list-style: none; }
+.garmin-review-step { display: grid; grid-template-columns: 2rem minmax(0, 1fr); gap: .85rem; align-items: start; padding: .9rem 1rem; background: var(--bg); border-radius: 10px; }
+.garmin-review-order { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: 50%; background: var(--card); color: var(--muted); font-size: .875rem; font-weight: 600; }
+.garmin-review-step-content { display: grid; gap: .55rem; min-width: 0; }
+.garmin-review-step-content h4 { margin: 0; color: var(--ink); font-size: 1rem; line-height: 1.4; }
+.garmin-review-part { display: grid; grid-template-columns: minmax(6rem, .7fr) minmax(6rem, 1fr) minmax(8rem, 1.4fr); gap: .5rem 1rem; align-items: baseline; min-width: 0; }
+.garmin-review-part-title { color: var(--muted); line-height: 1.45; }
+.garmin-review-step-value { color: var(--ink); font-variant-numeric: tabular-nums; line-height: 1.45; }
+.garmin-review-target { color: var(--ink); font-size: .9rem; line-height: 1.45; overflow-wrap: anywhere; }
+.garmin-review-target-muted, .garmin-review-policy { color: var(--muted); }
+.garmin-review-policy { margin: 0; font-size: .85rem; line-height: 1.45; }
+.garmin-review-footer { display: grid; gap: .85rem; margin-block-start: .5rem; padding-block: 1.25rem .25rem; border-top: 1px solid var(--line); }
+.garmin-review-action-help { max-width: 70ch; color: var(--muted); line-height: 1.5; }
+.garmin-review-footer #garminOperationStatus { min-height: 1.5em; margin: 0; line-height: 1.5; }
+.garmin-review-buttons { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; }
+.garmin-review-buttons button { min-height: 2.75rem; }
+.garmin-publish-short { display: none; }
+.garmin-review-heading h3:focus { outline: none; }
 @media (max-width: 600px) { .garmin-actions > button { width: 100%; } }
 @media (max-width: 600px) { .garmin-review-actions { grid-template-columns: minmax(0, 1fr); gap: .75rem; padding-block: .75rem .5rem; } .garmin-review-actions > button { width: 100%; } }
+@media (max-width: 600px) {
+  #garminPreview.garmin-review { gap: 1.1rem; padding-block-start: 1.1rem; }
+  .garmin-review-context { grid-template-columns: minmax(0, 1fr); gap: .65rem; padding: .85rem; }
+  .garmin-review-step { padding: .8rem; }
+  .garmin-review-part { grid-template-columns: minmax(0, 1fr); gap: .15rem; }
+  .garmin-review-part-title { font-size: .9rem; }
+  .garmin-review-buttons { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .garmin-review-buttons button { width: 100%; }
+  .garmin-publish-long { display: none; }
+  .garmin-publish-short { display: inline; }
+}

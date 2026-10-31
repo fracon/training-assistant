@@ -133,7 +133,8 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
           operation = { ...operation, status: 'outdated' };
         }
         const { identity_fingerprint: _privateIdentity, ...publicResult } = result;
-        return { ...publicResult, connection_generation: connectionGeneration(request.user.id), pilot: true, devices: capabilities?.devices || [], running_catalog_status: capabilities?.running_catalog_status || 'unknown', prescription: sessionState ? { revision: sessionState.revision, value: JSON.parse(sessionState.prescription_json), fingerprint: sessionState.fingerprint } : null, operation: operation || null };
+        const savedPrescription = sessionState ? JSON.parse(sessionState.prescription_json) : null;
+        return { ...publicResult, connection_generation: connectionGeneration(request.user.id), pilot: true, devices: capabilities?.devices || [], running_catalog_status: capabilities?.running_catalog_status || 'unknown', prescription: sessionState ? { revision: sessionState.revision, value: savedPrescription, fingerprint: sessionState.fingerprint, preview: previewPrescription(savedPrescription) } : null, training_date: training?.dia || null, operation: operation || null };
       } catch (error) { return reply.code(error.statusCode || 503).send({ code: safeCode(error) }); }
     });
     app.post('/api/garmin/auth/start', { preHandler: requireAuth }, async (request, reply) => {
@@ -258,7 +259,10 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
         db.prepare(`UPDATE garmin_training_operations SET status = 'outdated', updated_at = datetime('now') WHERE operation_id = ? AND user_id = ?`).run(operation.operation_id, request.user.id);
         operation = { ...operation, status: 'outdated' };
       }
-      return { connection_generation: connectionGeneration(request.user.id), prescription: saved ? { revision: saved.revision, value: JSON.parse(saved.prescription_json), fingerprint: saved.fingerprint } : null, operation: operation || null };
+      const value = saved ? JSON.parse(saved.prescription_json) : null;
+      return { connection_generation: connectionGeneration(request.user.id), training_date: training.dia,
+        prescription: saved ? { revision: saved.revision, value, fingerprint: saved.fingerprint, preview: previewPrescription(value) } : null,
+        operation: operation || null };
     });
     app.put('/api/trainings/:id/garmin/prescription', { preHandler: requireAuth }, async (request, reply) => {
       if (!eligible(request)) return reply.code(404).send({ code: 'pilot_unavailable' });

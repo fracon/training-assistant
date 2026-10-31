@@ -19,6 +19,7 @@ test('prescription validation preserves structured repeat order and preview', ()
   assert.deepEqual(p.steps.map((step) => step.id), ['warm', 'repeat', 'cool']);
   assert.equal(previewPrescription(p).steps[1].repetitions, 4);
   assert.equal(previewPrescription(p).steps[1].end.value, 300);
+  assert.equal(previewPrescription(p).expanded_step_count, 10, 'legacy preview count includes repeat, intervals, and the three non-final recoveries');
   assert.match(prescriptionFingerprint(p), /^[a-f0-9]{64}$/);
   assert.equal(MAX_STEPS, 80);
 });
@@ -56,6 +57,7 @@ test('timed repeat includes the final recovery when that Garmin policy is explic
   prescription.steps[1].skip_last_rest_step = false;
   const preview = previewPrescription(prescription);
   assert.equal(preview.duration_complete, true);
+  assert.equal(preview.distance_complete, false);
   assert.equal(preview.estimated_duration_seconds, 600 + 4 * 300 + 4 * 120 + 600);
 });
 
@@ -77,6 +79,20 @@ test('version 2 counts distance-based recovery in aggregate distance without inv
   const preview = previewPrescription(prescription);
   assert.equal(preview.total_distance_meters, 3400);
   assert.equal(preview.total_time_seconds, 0);
+  assert.equal(preview.duration_complete, false);
+  assert.equal(preview.distance_complete, true);
+  assert.equal(preview.estimated_duration_seconds, null);
+});
+
+test('preview marks a mixed time and distance prescription as partial in both dimensions', () => {
+  const prescription = { version: 2, sport: 'running', name: 'Mixed units', steps: [
+    { id: 'distance', kind: 'warmup', end: { type: 'distance', value: 1500 }, target: { type: 'none' } },
+    { id: 'time', kind: 'run', end: { type: 'time', value: 600 }, target: { type: 'none' } },
+  ] };
+  const preview = previewPrescription(prescription);
+  assert.equal(preview.total_distance_meters, 1500);
+  assert.equal(preview.total_time_seconds, 600);
+  assert.equal(preview.distance_complete, false);
   assert.equal(preview.duration_complete, false);
   assert.equal(preview.estimated_duration_seconds, null);
 });
@@ -193,6 +209,16 @@ test('supports positive time and distance steps and open laps in the contract', 
   assert.equal(validatePrescription(p).steps.length, 2);
   assert.equal(previewPrescription(p).steps[0].end.type, 'distance');
   assert.equal(previewPrescription(p).estimated_duration_seconds, null);
+  assert.equal(previewPrescription(p).distance_complete, false, 'an open stage prevents claiming a complete distance');
+});
+
+test('distance-only legacy prescription has a complete distance total', () => {
+  const prescription = sample();
+  prescription.steps = [{ id: 'run', kind: 'run', end: { type: 'distance', value: 5000 }, target: { type: 'none' } }];
+  const preview = previewPrescription(prescription);
+  assert.equal(preview.distance_complete, true);
+  assert.equal(preview.total_distance_meters, 5000);
+  assert.equal(preview.duration_complete, false);
 });
 
 test('counts repeated distance intervals against the aggregate distance limit', () => {

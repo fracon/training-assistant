@@ -79,9 +79,10 @@
         <button id="garminConnectButton" type="button" class="btn-secondary" data-i18n="garmin.product.connect">Connect Garmin</button>
         <button id="garminDisconnectButton" type="button" class="btn-secondary" hidden data-i18n="garmin.product.disconnect">Disconnect</button>
         <div id="garminPrescriptionPanel" hidden>
-          <h3 data-i18n="garmin.product.prescription">Workout structure</h3>
-          <p data-i18n="garmin.product.proseNote">The original workout description stays unchanged. Confirm the structure below; it is not inferred from prose.</p>
-          <form id="garminPrescriptionForm" novalidate>
+          <div id="garminEditorView" class="garmin-editor-view">
+            <h3 data-i18n="garmin.product.prescription">Workout structure</h3>
+            <p data-i18n="garmin.product.proseNote">The original workout description stays unchanged. Confirm the structure below; it is not inferred from prose.</p>
+            <form id="garminPrescriptionForm" novalidate>
             <div class="field"><label for="garminWorkoutName" data-i18n="garmin.product.name">Workout name</label><input id="garminWorkoutName" class="input-control" maxlength="32" required></div>
             <div id="garminWorkoutEditor" class="garmin-workout-editor">
               <fieldset class="garmin-editor-section"><legend data-i18n="garmin.product.warmupSection">Aquecimento</legend>
@@ -106,11 +107,35 @@
               <p class="garmin-review-help" id="garminSaveHelp" data-i18n="garmin.product.saveHelp">Salva o treino no Kinesis para revisão. O envio à Garmin é feito na próxima etapa.</p>
               <button id="garminPrescriptionSave" type="submit" class="btn-primary" data-i18n="garmin.product.preview">Salvar e revisar</button>
             </div>
-          </form>
-          <div id="garminPreview" hidden><h3 data-i18n="garmin.product.previewTitle">Review before sending</h3><p id="garminPreviewName"></p><p id="garminPreviewDestination"></p><ol id="garminPreviewSteps"></ol><p id="garminPreviewTotal"></p><p id="garminScheduleDate"></p><div class="garmin-actions"><button id="garminPublishButton" type="button" class="btn-primary" data-i18n="garmin.product.publish">Publish and schedule</button><button id="garminUpdateButton" type="button" class="btn-primary" hidden data-i18n="garmin.product.update">Update in Garmin</button><button id="garminRescheduleButton" type="button" class="btn-secondary" hidden data-i18n="garmin.product.reschedule">Reschedule in Garmin</button></div></div>
-          <p id="garminOperationStatus" role="status"></p>
-          <button id="garminOperationRetry" type="button" class="btn-secondary" hidden data-i18n="garmin.product.retryStatus">Retry status</button>
-          <button id="garminReconcileButton" type="button" class="btn-secondary" hidden data-i18n="garmin.product.reconcile">Reconcile remote result</button>
+            </form>
+          </div>
+          <section id="garminPreview" class="garmin-review" hidden aria-labelledby="garminPreviewTitle">
+            <header class="garmin-review-heading">
+              <h3 id="garminPreviewTitle" tabindex="-1" data-i18n="garmin.product.previewTitle">Revise seu treino</h3>
+              <p data-i18n="garmin.product.reviewIntro">A estrutura está salva no Kinesis. Confira os detalhes antes de enviar ao Garmin Connect.</p>
+              <p id="garminPreviewName" class="garmin-review-name"></p>
+            </header>
+            <dl class="garmin-review-context">
+              <div><dt data-i18n="garmin.product.plannedDate">Planned date</dt><dd id="garminScheduleDate"></dd></div>
+              <div><dt data-i18n="garmin.product.service">Publishing service</dt><dd>Garmin Connect</dd></div>
+              <div id="garminPreviewDeviceContext" hidden><dt data-i18n="garmin.product.accountDevice">Device reported by account</dt><dd id="garminPreviewDestination"></dd></div>
+            </dl>
+            <p class="garmin-review-sync" data-i18n="garmin.product.watchSyncNeeded">Após o envio, sincronize seu relógio pelo Garmin Connect.</p>
+            <section class="garmin-review-summary" id="garminPreviewTotal" aria-live="polite"></section>
+            <ol id="garminPreviewSteps" class="garmin-review-sequence"></ol>
+            <div class="garmin-review-footer">
+              <p id="garminActionHelp" class="garmin-review-action-help"></p>
+              <p id="garminOperationStatus" role="status" aria-live="polite"></p>
+              <div class="garmin-review-buttons">
+                <button id="garminEditStructure" type="button" class="btn-secondary" data-i18n="garmin.product.editStructure">Edit structure</button>
+                <button id="garminPublishButton" type="button" class="btn-primary garmin-publish-primary"><span class="garmin-publish-long" data-i18n="garmin.product.publish">Enviar e agendar no Garmin Connect</span><span class="garmin-publish-short" data-i18n="garmin.product.publishShort">Enviar e agendar</span></button>
+                <button id="garminUpdateButton" type="button" class="btn-primary" hidden data-i18n="garmin.product.update">Update in Garmin</button>
+                <button id="garminRescheduleButton" type="button" class="btn-primary" hidden data-i18n="garmin.product.reschedule">Reschedule in Garmin</button>
+                <button id="garminOperationRetry" type="button" class="btn-secondary" hidden data-i18n="garmin.product.retryStatus">Retry status</button>
+                <button id="garminReconcileButton" type="button" class="btn-secondary" hidden data-i18n="garmin.product.reconcile">Reconcile remote result</button>
+              </div>
+            </div>
+          </section>
         </div>
       </section>
 
