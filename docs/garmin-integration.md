@@ -492,6 +492,17 @@ number of recoveries, and the final-recovery policy. Open-lap, zone targets and
 nested repeats are refused before dispatch instead of flattened. Original
 prose is never interpreted or rewritten.
 
+Duration fields share one browser parser: a bare integer is minutes (`3` → 180
+seconds), and `m:ss` is also accepted (`3:5` → `3:05`). Values are not
+rewritten while typing; valid values normalize on blur or save. The parser
+rejects empty required values, zero, negative input, seconds above 59, unsupported
+syntax, and per-step durations above the contract's 120-minute limit. Saving
+validates active controls before serialization, reports each error beside its
+field, links a localized summary to the affected step/field, and focuses the
+first invalid control. Hidden target modes and disabled optional stages do not
+participate. Node still validates canonical positive integer seconds and totals
+before persisting; save/review does not call Garmin.
+
 Saving opens the review and does not mutate Garmin. The explicit **Send and
 schedule in Garmin Connect** action is the publish confirmation; update and
 reschedule continue to use their specific confirmation dialogs. Before any

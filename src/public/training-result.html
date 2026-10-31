@@ -83,7 +83,7 @@
             <h3 data-i18n="garmin.product.prescription">Workout structure</h3>
             <p data-i18n="garmin.product.proseNote">The original workout description stays unchanged. Confirm the structure below; it is not inferred from prose.</p>
             <form id="garminPrescriptionForm" novalidate>
-            <div class="field"><label for="garminWorkoutName" data-i18n="garmin.product.name">Workout name</label><input id="garminWorkoutName" class="input-control" maxlength="32" required></div>
+            <div class="field"><label for="garminWorkoutName" data-i18n="garmin.product.name">Workout name</label><input id="garminWorkoutName" class="input-control" maxlength="32" required><span id="garminWorkoutName-error" class="garmin-field-error" data-validation-error hidden></span></div>
             <div id="garminWorkoutEditor" class="garmin-workout-editor">
               <fieldset class="garmin-editor-section"><legend data-i18n="garmin.product.warmupSection">Aquecimento</legend>
                 <label class="garmin-inline-check"><input id="garminWarmupEnabled" type="checkbox"><span data-i18n="garmin.product.includeStage">Incluir etapa</span></label>
@@ -103,6 +103,7 @@
             </div>
             <p id="garminPrescriptionError" role="alert" hidden></p>
             <div class="garmin-review-actions">
+              <div id="garminValidationSummary" class="garmin-validation-summary" role="alert" aria-live="assertive" hidden><p></p><ul></ul></div>
               <p id="garminEditorActionStatus" class="garmin-editor-action-status" role="status" aria-live="polite" hidden></p>
               <p class="garmin-review-help" id="garminSaveHelp" data-i18n="garmin.product.saveHelp">Salva o treino no Kinesis para revisão. O envio à Garmin é feito na próxima etapa.</p>
               <button id="garminPrescriptionSave" type="submit" class="btn-primary" data-i18n="garmin.product.preview">Salvar e revisar</button>

@@ -20,6 +20,7 @@ import { KM_TO_MILES, convertDistanceInputValue, convertDistanceToKm, formatDist
 import { createImportGuidance } from './shared/workout-import-guidance.js';
 import { createWorkoutCreationGuidance } from './shared/workout-creation-guidance.js';
 import { summarizePrescription } from './shared/weekly-prescription-display.js';
+import { parseWorkoutDurationInput } from './shared/duration-input.mjs';
 
 export { HR_SOURCE_LABEL_KEYS, TERRAIN_LABEL_KEYS, BREATHING_LABEL_KEYS,
   MUSCLE_LABEL_KEYS, ENERGY_LABEL_KEYS, formatDateLabel, resolveResultSource,
@@ -1289,6 +1290,7 @@ async function initTrainingResult() {
   let garminPreviewModel = null;
   let garminSavedRevision = null;
   let garminFormDirty = false;
+  let garminEditingRequested = false;
   let garminStatusRead = 0;
   let garminOperationTimer = null;
   let garminOperationController = null;
@@ -1330,13 +1332,13 @@ async function initTrainingResult() {
       if (local.prescription) {
         garminSavedRevision = local.prescription.revision;
         garminFingerprint = local.prescription.fingerprint;
-        if (!garminFormDirty) fillGarminPrescription(local.prescription.value);
+        if (!garminFormDirty && !garminEditingRequested) fillGarminPrescription(local.prescription.value);
         garminPreviewSnapshot = { revision: local.prescription.revision, fingerprint: local.prescription.fingerprint,
           date: local.training_date || training.dia, connection_generation: local.connection_generation };
-        if (!garminFormDirty && local.prescription.preview) {
+        if (!garminFormDirty && !garminEditingRequested && local.prescription.preview) {
+          garminEditorView.hidden = true;
           renderGarminPreview({ name: local.prescription.value.name,
             ...local.prescription.preview, date: local.training_date || training.dia });
-          garminEditorView.hidden = true;
         }
       }
       garminConnectionGeneration = local.connection_generation || garminConnectionGeneration;
@@ -1362,16 +1364,16 @@ async function initTrainingResult() {
       garminAuthForm.hidden = connected || !garminAuthForm.dataset.open;
       garminPanel.hidden = !connected;
       if (state.operation) renderGarminOperation(state.operation);
-      if (state.prescription && !garminFormDirty) {
+      if (state.prescription && !garminFormDirty && !garminEditingRequested) {
         fillGarminPrescription(state.prescription.value);
         garminSavedRevision = state.prescription.revision;
         garminFingerprint = state.prescription.fingerprint;
         if (state.prescription.preview) {
           garminPreviewSnapshot = { revision: state.prescription.revision, fingerprint: state.prescription.fingerprint,
             date: state.training_date || training.dia, connection_generation: state.connection_generation };
+          garminEditorView.hidden = true;
           renderGarminPreview({ name: state.prescription.value.name, ...state.prescription.preview,
             date: state.training_date || training.dia });
-          garminEditorView.hidden = true;
         }
       }
       garminConnectionGeneration = state.connection_generation || garminConnectionGeneration;
@@ -1397,7 +1399,10 @@ async function initTrainingResult() {
     const paceText = (seconds) => { const total = Math.round(seconds); return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`; };
     const lowerLabel = pace ? garminText('slowerPaceUnit', { unit: paceUnitLabel }) : garminText('lowerHeartRate');
     const upperLabel = pace ? garminText('fasterPaceUnit', { unit: paceUnitLabel }) : garminText('upperHeartRate');
-    return `<label class="garmin-target-select">${garminText('target')}<select data-target-type="${prefix}" data-previous-type="${target.type}" data-pace-unit="${paceUnit}" class="input-control"><option value="none" ${!pace && !hr ? 'selected' : ''}>${garminText('noTarget')}</option><option value="pace" ${pace ? 'selected' : ''}>${garminText('paceShort')}</option><option value="heart_rate" ${hr ? 'selected' : ''}>${garminText('heartRateShort')}</option></select></label><div class="garmin-editor-target" data-target-fields="${prefix}" ${!pace && !hr ? 'hidden' : ''}><label><span data-target-lower-label="${prefix}">${lowerLabel}</span><input data-target-lower="${prefix}" class="input-control" type="${pace ? 'text' : 'number'}" ${pace ? 'inputmode="numeric" placeholder="5:30"' : 'inputmode="numeric" min="40" max="230" step="1" placeholder="140"'} value="${pace ? paceText(lower) : hr ? lower : ''}" ${pace || hr ? 'required' : ''} aria-label="${lowerLabel}"></label><label><span data-target-upper-label="${prefix}">${upperLabel}</span><input data-target-upper="${prefix}" class="input-control" type="${pace ? 'text' : 'number'}" ${pace ? 'inputmode="numeric" placeholder="5:45"' : 'inputmode="numeric" min="40" max="230" step="1" placeholder="150"'} value="${pace ? paceText(upper) : hr ? upper : ''}" ${pace || hr ? 'required' : ''} aria-label="${upperLabel}"></label></div>`;
+    const lowerId = `garmin-target-${prefix}-lower`;
+    const upperId = `garmin-target-${prefix}-upper`;
+    const input = (side, id, label, value, placeholder, isPace) => `<label for="${id}"><span data-target-${side}-label="${prefix}">${label}</span><input id="${id}" data-target-${side}="${prefix}" class="input-control" type="${isPace ? 'text' : 'number'}" ${isPace ? `inputmode="numeric" placeholder="${placeholder}"` : `inputmode="numeric" min="40" max="230" step="1" placeholder="${placeholder}"`} value="${value}" ${pace || hr ? 'required' : ''} aria-label="${label}"><span id="${id}-error" class="garmin-field-error" data-validation-error hidden></span></label>`;
+    return `<label class="garmin-target-select">${garminText('target')}<select data-target-type="${prefix}" data-previous-type="${target.type}" data-pace-unit="${paceUnit}" class="input-control"><option value="none" ${!pace && !hr ? 'selected' : ''}>${garminText('noTarget')}</option><option value="pace" ${pace ? 'selected' : ''}>${garminText('paceShort')}</option><option value="heart_rate" ${hr ? 'selected' : ''}>${garminText('heartRateShort')}</option></select></label><div class="garmin-editor-target" data-target-fields="${prefix}" ${!pace && !hr ? 'hidden' : ''}>${input('lower', lowerId, lowerLabel, pace ? paceText(lower) : hr ? lower : '', pace ? '5:30' : '140', pace)}${input('upper', upperId, upperLabel, pace ? paceText(upper) : hr ? upper : '', pace ? '5:45' : '150', pace)}</div>`;
   };
   const updateGarminTargetPresentation = (select) => {
     const fields = document.querySelector(`[data-target-fields="${select.dataset.targetType}"]`);
@@ -1421,7 +1426,11 @@ async function initTrainingResult() {
     const unit = getUserPreferences().distance_unit === 'mi' ? 'mi' : 'km';
     const value = end.type === 'time' ? (Number.isFinite(Number(end.value)) && Number(end.value) > 0 ? `${Math.floor(end.value / 60)}:${String(end.value % 60).padStart(2, '0')}` : '')
       : String((end.value / (unit === 'mi' ? 1609.344 : 1000)).toFixed(6)).replace(/\.?0+$/, '');
-      return `<div class="garmin-editor-end"><label>${garminText('endCondition')}<select data-end-type="${prefix}" class="input-control"><option value="time" ${end.type === 'time' ? 'selected' : ''}>${garminText('byTime')}</option><option value="distance" ${end.type === 'distance' ? 'selected' : ''}>${garminText('byDistance')}</option></select></label><label>${garminText(end.type === 'time' ? 'durationMmSs' : unit === 'mi' ? 'distanceMi' : 'distanceKm')}<input data-end-value="${prefix}" class="input-control" value="${value}" inputmode="${end.type === 'time' ? 'text' : 'decimal'}" required aria-label="${garminText(end.type === 'time' ? 'durationMmSs' : unit === 'mi' ? 'distanceMi' : 'distanceKm')}"></label></div>`;
+    const inputId = `garmin-end-${prefix}`;
+    const helpId = `${inputId}-help`;
+    const time = end.type === 'time';
+    const labelKey = time ? 'durationMmSs' : unit === 'mi' ? 'distanceMi' : 'distanceKm';
+    return `<div class="garmin-editor-end"><label for="garmin-end-type-${prefix}">${garminText('endCondition')}<select id="garmin-end-type-${prefix}" data-end-type="${prefix}" class="input-control"><option value="time" ${time ? 'selected' : ''}>${garminText('byTime')}</option><option value="distance" ${!time ? 'selected' : ''}>${garminText('byDistance')}</option></select></label><label for="${inputId}"><span data-end-label="${prefix}">${garminText(labelKey)}</span><input id="${inputId}" data-end-value="${prefix}" class="input-control" value="${value}" inputmode="${time ? 'text' : 'decimal'}" required aria-label="${garminText(labelKey)}" ${time ? `aria-describedby="${helpId}"` : ''}><small id="${helpId}" class="garmin-field-help" ${time ? '' : 'hidden'}>${garminText(time ? 'durationHelp' : 'distanceHelp', { unit })}</small><span id="${inputId}-error" class="garmin-field-error" data-validation-error hidden></span></label></div>`;
   };
   const renderGarminEditor = (preserve = false) => {
     const savedControls = preserve ? [...document.querySelectorAll('#garminWorkoutEditor [data-end-value], #garminWorkoutEditor [data-end-type], #garminWorkoutEditor [data-target-type], #garminWorkoutEditor [data-target-lower], #garminWorkoutEditor [data-target-upper], #garminWorkoutEditor [data-repetitions], #garminWorkoutEditor [data-recovery-enabled], #garminWorkoutEditor [data-skip-last]')].map((el) => ({
@@ -1452,7 +1461,7 @@ async function initTrainingResult() {
       const cannotRemove = ['run', 'repeat'].includes(step.kind) && runStepCount <= 1;
       const titleKey = repetition ? 'repeatBlock' : step.kind === 'recovery' ? 'recoveryBlock' : 'runBlock';
       const legacyRepeat = repetition && !recovery && garminOriginalPrescription && garminOriginalPrescription.version < 3;
-      return `<fieldset class="garmin-editor-block" data-block-id="${step.id}"><legend tabindex="-1">${garminText(titleKey)} ${index + 1}</legend><div class="garmin-editor-fields">${legacyRepeat ? `<p class="garmin-editor-warning" role="note">${garminText('legacyRepeatRecoveryRequired')} <button type="button" class="btn-secondary" data-editor-action="convert-repeat" data-id="${step.id}">${garminText('convertRepeatToBlocks')}</button></p>` : ''}${repetition ? `<p class="garmin-repeat-intro">${garminText('repeatRun')}</p>` : ''}${editorEndMarkup(prefix, step.interval?.end || step.end)}${editorTargetMarkup(`${prefix}-target`, step.interval?.target || step.target)}${repetition ? `<label>${garminText('repetitionCount')}<input data-repetitions="${step.id}" class="input-control" type="number" min="2" max="20" value="${step.repetitions}" required></label><p class="garmin-repeat-intro">${garminText('repeatRecovery')}</p>${editorEndMarkup(`${prefix}-recovery`, recovery?.end || { type: 'time', value: '' })}${editorTargetMarkup(`${prefix}-recovery-target`, recovery?.target || { type: 'none' })}<label class="garmin-inline-check garmin-skip-rest"><input data-skip-last="${step.id}" type="checkbox" ${step.skip_last_rest_step ? 'checked' : ''}><span>${garminText('skipLastRecovery')}</span></label>` : ''}</div><div class="garmin-editor-actions"><button type="button" data-editor-action="up" data-id="${step.id}" aria-label="${garminText('moveUp')}" ${index === 0 ? 'disabled' : ''}>↑</button><button type="button" data-editor-action="down" data-id="${step.id}" aria-label="${garminText('moveDown')}" ${index === runSteps.length - 1 ? 'disabled' : ''}>↓</button><button type="button" data-editor-action="duplicate" data-id="${step.id}" aria-label="${garminText('duplicateBlock')}">${garminText('duplicateBlock')}</button><button type="button" data-editor-action="remove" data-id="${step.id}" aria-label="${garminText('removeBlock')}" ${cannotRemove ? 'disabled' : ''}>${garminText('removeBlock')}</button></div></fieldset>`;
+      return `<fieldset class="garmin-editor-block" data-block-id="${step.id}"><legend tabindex="-1">${garminText(titleKey)} ${index + 1}</legend><div class="garmin-editor-fields">${legacyRepeat ? `<p class="garmin-editor-warning" role="note">${garminText('legacyRepeatRecoveryRequired')} <button type="button" class="btn-secondary" data-editor-action="convert-repeat" data-id="${step.id}">${garminText('convertRepeatToBlocks')}</button></p>` : ''}${repetition ? `<p class="garmin-repeat-intro">${garminText('repeatRun')}</p>` : ''}${editorEndMarkup(prefix, step.interval?.end || step.end)}${editorTargetMarkup(`${prefix}-target`, step.interval?.target || step.target)}${repetition ? `<label for="garmin-repetitions-${step.id}">${garminText('repetitionCount')}<input id="garmin-repetitions-${step.id}" data-repetitions="${step.id}" class="input-control" type="number" min="2" max="20" value="${step.repetitions}" required><span id="garmin-repetitions-${step.id}-error" class="garmin-field-error" data-validation-error hidden></span></label><p class="garmin-repeat-intro">${garminText('repeatRecovery')}</p>${editorEndMarkup(`${prefix}-recovery`, recovery?.end || { type: 'time', value: '' })}${editorTargetMarkup(`${prefix}-recovery-target`, recovery?.target || { type: 'none' })}<label class="garmin-inline-check garmin-skip-rest"><input data-skip-last="${step.id}" type="checkbox" ${step.skip_last_rest_step ? 'checked' : ''}><span>${garminText('skipLastRecovery')}</span></label>` : ''}</div><div class="garmin-editor-actions"><button type="button" data-editor-action="up" data-id="${step.id}" aria-label="${garminText('moveUp')}" ${index === 0 ? 'disabled' : ''}>↑</button><button type="button" data-editor-action="down" data-id="${step.id}" aria-label="${garminText('moveDown')}" ${index === runSteps.length - 1 ? 'disabled' : ''}>↓</button><button type="button" data-editor-action="duplicate" data-id="${step.id}" aria-label="${garminText('duplicateBlock')}">${garminText('duplicateBlock')}</button><button type="button" data-editor-action="remove" data-id="${step.id}" aria-label="${garminText('removeBlock')}" ${cannotRemove ? 'disabled' : ''}>${garminText('removeBlock')}</button></div></fieldset>`;
     }).join('');
     document.querySelectorAll('[data-target-type]').forEach((select) => {
       select.addEventListener('change', () => {
@@ -1465,6 +1474,7 @@ async function initTrainingResult() {
         if (lower) lower.value = '';
         if (upper) upper.value = '';
         updateGarminTargetPresentation(select);
+        clearGarminFieldError(lower); clearGarminFieldError(upper);
         select.dataset.previousType = select.value;
         markGarminEditorDirty();
       });
@@ -1472,8 +1482,17 @@ async function initTrainingResult() {
     document.querySelectorAll('[data-end-type]').forEach((select) => select.addEventListener('change', () => {
       const input = document.querySelector(`[data-end-value="${select.dataset.endType}"]`);
       if (input) input.value = '';
-      const label = input?.closest('label')?.firstChild;
-      if (label) label.textContent = `${garminText(select.value === 'time' ? 'durationMmSs' : unit === 'mi' ? 'distanceMi' : 'distanceKm')}`;
+      const label = document.querySelector(`[data-end-label="${select.dataset.endType}"]`);
+      const time = select.value === 'time';
+      if (label) label.textContent = garminText(time ? 'durationMmSs' : unit === 'mi' ? 'distanceMi' : 'distanceKm');
+      const help = document.getElementById(`${input?.id}-help`);
+      if (help) help.hidden = !time;
+      if (input) {
+        input.inputMode = time ? 'text' : 'decimal';
+        if (time) input.setAttribute('aria-describedby', help?.id || '');
+        else input.removeAttribute('aria-describedby');
+        clearGarminFieldError(input);
+      }
       markGarminEditorDirty();
     }));
     for (const saved of savedControls) {
@@ -1497,7 +1516,7 @@ async function initTrainingResult() {
   const markGarminEditorDirty = () => {
     garminFormDirty = true; garminPreviewSnapshot = null; garminPreview.hidden = true;
   };
-  const parseMmSs = (value) => {
+  const parsePaceMmSs = (value) => {
     const match = /^(\d{1,3}):(\d{2})$/.exec(String(value).trim());
     if (!match || Number(match[2]) > 59) throw new Error('invalid_prescription');
     return Number(match[1]) * 60 + Number(match[2]);
@@ -1512,7 +1531,7 @@ async function initTrainingResult() {
       if (!Number.isInteger(low) || !Number.isInteger(high) || low < 40 || high > 230 || low > high) throw new Error('invalid_prescription');
       return { type, mode: 'absolute', lower_bpm: low, upper_bpm: high };
     }
-    const parsePace = (value) => parseMmSs(value);
+    const parsePace = (value) => parsePaceMmSs(value);
     const slower = parsePace(lower), faster = parsePace(upper);
     if (faster < 120 || slower > 1800 || faster > slower) throw new Error('invalid_prescription');
     return { type, unit: document.querySelector(`[data-target-type="${prefix}"]`)?.dataset.paceUnit || (getUserPreferences().distance_unit === 'mi' ? 'min_per_mile' : 'min_per_km'), slower_seconds: slower, faster_seconds: faster };
@@ -1520,27 +1539,134 @@ async function initTrainingResult() {
   const readEditorEnd = (prefix) => {
     const type = document.querySelector(`[data-end-type="${prefix}"]`)?.value || 'time';
     const raw = document.querySelector(`[data-end-value="${prefix}"]`)?.value || '';
-    const value = type === 'time' ? parseMmSs(raw)
+    const value = type === 'time' ? parseWorkoutDurationInput(raw).seconds
       : Math.round(Number(raw) * (getUserPreferences().distance_unit === 'mi' ? 1609.344 : 1000));
     if (!Number.isFinite(value) || !Number.isInteger(value) || value <= 0) throw new Error('invalid_prescription');
     return { type, value };
   };
-  const firstInvalidEditorControl = () => {
-    const repetition = [...document.querySelectorAll('#garminRunBlocks [data-repetitions]')]
-      .find((input) => !Number.isInteger(Number(input.value)) || Number(input.value) < 2 || Number(input.value) > 20);
-    if (repetition) return repetition;
-    const ends = [...document.querySelectorAll('#garminWorkoutEditor [data-end-type]')];
-    for (const select of ends) {
-      const value = document.querySelector(`[data-end-value="${select.dataset.endType}"]`);
-      try { readEditorEnd(select.dataset.endType); }
-      catch { return value; }
-    }
-    for (const select of document.querySelectorAll('#garminWorkoutEditor [data-target-type]')) {
-      try { readEditorTarget(select.dataset.targetType); }
-      catch { return document.querySelector(`[data-target-lower="${select.dataset.targetType}"]`); }
-    }
-    return null;
+  const garminValidationSummary = document.getElementById('garminValidationSummary');
+  const describedByTokens = (control) => (control.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean);
+  const clearGarminFieldError = (control) => {
+    if (!control?.id) return;
+    const error = document.getElementById(`${control.id}-error`);
+    if (error) { error.hidden = true; error.textContent = ''; }
+    control.removeAttribute('aria-invalid');
+    const ids = describedByTokens(control).filter((id) => id !== error?.id);
+    if (ids.length) control.setAttribute('aria-describedby', ids.join(' '));
+    else control.removeAttribute('aria-describedby');
+    garminValidationSummary.querySelector(`[data-validation-focus-id="${CSS.escape(control.id)}"]`)?.remove();
+    refreshGarminValidationSummary();
   };
+  const refreshGarminValidationSummary = () => {
+    const list = garminValidationSummary.querySelector('ul');
+    const links = [...list.querySelectorAll('button[data-validation-focus-id]')];
+    if (!links.length) { garminValidationSummary.hidden = true; return; }
+    garminValidationSummary.querySelector('p').textContent = garminText(links.length === 1 ? 'validationSummaryOne' : 'validationSummaryMany', { count: links.length });
+    garminValidationSummary.hidden = false;
+  };
+  const setGarminFieldError = (control, key, params = {}) => {
+    if (!control?.id) return;
+    const error = document.getElementById(`${control.id}-error`);
+    if (!error) return;
+    error.textContent = garminText(key, params); error.hidden = false;
+    control.setAttribute('aria-invalid', 'true');
+    const ids = describedByTokens(control);
+    if (!ids.includes(error.id)) ids.push(error.id);
+    control.setAttribute('aria-describedby', ids.join(' '));
+  };
+  const garminFieldContext = (control) => {
+    const block = control.closest('.garmin-editor-block');
+    const blockTitle = block?.querySelector('legend')?.textContent.trim()
+      || control.closest('.garmin-editor-section')?.querySelector('legend')?.textContent.trim()
+      || garminText('workoutNameField');
+    const fieldTitle = control.getAttribute('aria-label')
+      || control.closest('label')?.querySelector('[data-end-label], [data-target-lower-label], [data-target-upper-label]')?.textContent.trim()
+      || control.closest('label')?.textContent.trim()
+      || garminText('workoutNameField');
+    return `${blockTitle} — ${fieldTitle}`;
+  };
+  const clearGarminValidation = () => {
+    document.querySelectorAll('#garminWorkoutEditor [data-validation-error], #garminWorkoutName-error').forEach((node) => { node.hidden = true; node.textContent = ''; });
+    document.querySelectorAll('#garminPrescriptionForm [aria-invalid="true"]').forEach((control) => {
+      const errorId = `${control.id}-error`;
+      control.removeAttribute('aria-invalid');
+      const ids = describedByTokens(control).filter((id) => id !== errorId);
+      if (ids.length) control.setAttribute('aria-describedby', ids.join(' ')); else control.removeAttribute('aria-describedby');
+    });
+    garminValidationSummary.querySelector('ul').replaceChildren();
+    garminValidationSummary.hidden = true;
+  };
+  const validateGarminEditorFields = () => {
+    clearGarminValidation();
+    const invalid = [];
+    const add = (control, key, params) => { setGarminFieldError(control, key, params); invalid.push({ control, key }); };
+    const name = document.getElementById('garminWorkoutName');
+    const nameValue = name.value.trim();
+    if (!nameValue) add(name, 'nameRequired');
+    else if (nameValue.length > 32 || !/^[\p{L}\p{N}\p{M} _.,'’()&+-]+$/u.test(nameValue)) add(name, 'nameInvalid');
+
+    for (const select of document.querySelectorAll('#garminWorkoutEditor [data-end-type]:not(:disabled)')) {
+      const input = document.querySelector(`[data-end-value="${select.dataset.endType}"]`);
+      if (!input || input.disabled) continue;
+      if (select.value === 'time') {
+        try { input.value = parseWorkoutDurationInput(input.value).normalized; }
+        catch (error) {
+          const key = ['duration_required', 'duration_positive', 'duration_format', 'duration_seconds_range', 'duration_too_long'].includes(error.message) ? error.message : 'duration_format';
+          add(input, key, { limit: garminText('durationLimit') });
+        }
+      } else {
+        const raw = input.value.trim();
+        const amount = raw === '' ? Number.NaN : Number(raw);
+        const unit = getUserPreferences().distance_unit === 'mi' ? 'mi' : 'km';
+        const meters = amount * (unit === 'mi' ? 1609.344 : 1000);
+        if (raw === '') add(input, 'distanceRequired');
+        else if (!Number.isFinite(amount)) add(input, 'distanceFormat');
+        else if (amount <= 0) add(input, 'distancePositive');
+        else if (!Number.isSafeInteger(Math.round(meters)) || Math.round(meters) > 100000) add(input, 'distanceTooLong', { limit: unit === 'mi' ? '62.14 mi' : '100 km' });
+      }
+    }
+    for (const select of document.querySelectorAll('#garminWorkoutEditor [data-target-type]:not(:disabled)')) {
+      if (select.value === 'none') continue;
+      const prefix = select.dataset.targetType;
+      const lower = document.querySelector(`[data-target-lower="${prefix}"]`);
+      const upper = document.querySelector(`[data-target-upper="${prefix}"]`);
+      if (select.value === 'heart_rate') {
+        const lo = lower.value.trim() === '' ? Number.NaN : Number(lower.value);
+        const hi = upper.value.trim() === '' ? Number.NaN : Number(upper.value);
+        if (!Number.isInteger(lo)) add(lower, 'heartRateRequired');
+        else if (lo < 40 || lo > 230) add(lower, 'heartRateRange');
+        if (!Number.isInteger(hi)) add(upper, 'heartRateRequired');
+        else if (hi < 40 || hi > 230) add(upper, 'heartRateRange');
+        else if (Number.isInteger(lo) && lo > hi) add(upper, 'heartRateOrder');
+      } else {
+        let slower; let faster;
+        try { slower = parsePaceMmSs(lower.value); } catch { add(lower, lower.value.trim() ? 'paceFormat' : 'paceRequired'); }
+        try { faster = parsePaceMmSs(upper.value); } catch { add(upper, upper.value.trim() ? 'paceFormat' : 'paceRequired'); }
+        if (Number.isInteger(slower) && (slower < 120 || slower > 1800)) add(lower, 'paceRange');
+        if (Number.isInteger(faster) && (faster < 120 || faster > 1800)) add(upper, 'paceRange');
+        else if (Number.isInteger(slower) && Number.isInteger(faster) && faster > slower) add(upper, 'paceOrder');
+      }
+    }
+    for (const input of document.querySelectorAll('#garminRunBlocks [data-repetitions]')) {
+      const count = Number(input.value);
+      if (!Number.isInteger(count) || count < 2 || count > 20) add(input, 'repetitionRange');
+    }
+    if (!invalid.length) return invalid;
+    const list = garminValidationSummary.querySelector('ul');
+    for (const { control } of invalid) {
+      const button = document.createElement('button');
+      button.type = 'button'; button.dataset.validationFocusId = control.id;
+      button.textContent = garminFieldContext(control); list.append(button);
+    }
+    refreshGarminValidationSummary();
+    return invalid;
+  };
+  garminValidationSummary.addEventListener('click', (event) => {
+    const button = event.target.closest('button[data-validation-focus-id]');
+    if (!button) return;
+    const control = document.getElementById(button.dataset.validationFocusId);
+    control?.focus(); control?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  });
   const fillGarminPrescription = (value) => {
     if (!value) return;
     garminOriginalPrescription = structuredClone(value);
@@ -1738,11 +1864,16 @@ async function initTrainingResult() {
       (focusableAction || block.querySelector('legend'))?.focus();
     } else document.getElementById('garminAddRunBlock').focus();
   });
-  garminPrescriptionForm.querySelector('#garminWorkoutEditor').addEventListener('input', (event) => {
-    event.target.removeAttribute('aria-invalid');
-    if (event.target.getAttribute('aria-describedby') === 'garminPrescriptionError') event.target.removeAttribute('aria-describedby');
+  garminPrescriptionForm.addEventListener('input', (event) => {
+    clearGarminFieldError(event.target);
+    if (garminOperationMessageKey === 'invalidFields') { garminOperationMessageKey = null; garminOperationStatus.textContent = ''; }
     document.getElementById('garminPrescriptionError').hidden = true;
-    if (!event.target.closest('button')) markGarminEditorDirty();
+    if (event.target.id === 'garminWorkoutName' || event.target.closest('#garminWorkoutEditor')) markGarminEditorDirty();
+  });
+  garminPrescriptionForm.addEventListener('focusout', (event) => {
+    const input = event.target.closest('[data-end-value]');
+    if (!input || document.querySelector(`[data-end-type="${input.dataset.endValue}"]`)?.value !== 'time') return;
+    try { input.value = parseWorkoutDurationInput(input.value).normalized; } catch { /* Keep invalid text visible for correction. */ }
   });
   document.querySelectorAll('[aria-hidden="true"] [required]').forEach((control) => { control.required = false; control.disabled = true; });
   renderGarminEditor();
@@ -1889,7 +2020,7 @@ async function initTrainingResult() {
     document.getElementById('garminActionHelp').textContent = garminText(helpKey);
     const actionButtons = [document.getElementById('garminPublishButton'), garminUpdateButton, garminRescheduleButton];
     actionButtons.forEach((button) => { button.disabled = !garminConnected || garminPending || !garminPreviewSnapshot; });
-    garminPreview.hidden = false;
+    garminPreview.hidden = !garminPreviewSnapshot || garminFormDirty || !garminEditorView.hidden;
   };
   document.addEventListener('app:languagechange', () => {
     setGarminConnectionMessage(garminConnectionMessage);
@@ -1956,6 +2087,14 @@ async function initTrainingResult() {
   });
   garminPrescriptionForm.addEventListener('submit', async (event) => {
     event.preventDefault(); if (garminPending) return;
+    const invalidFields = validateGarminEditorFields();
+    if (invalidFields.length) {
+      invalidFields[0].control.focus();
+      invalidFields[0].control.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      setGarminOperationMessage('invalidFields');
+      return;
+    }
+    if (garminOperationMessageKey === 'invalidFields') { garminOperationMessageKey = null; garminOperationStatus.textContent = ''; }
     garminPending = true;
     const saveButton = document.getElementById('garminPrescriptionSave');
     saveButton.disabled = true;
@@ -1975,22 +2114,16 @@ async function initTrainingResult() {
       garminPreviewSnapshot = { revision: saved.revision, fingerprint: saved.fingerprint,
         date: saved.date, connection_generation: saved.connection_generation };
       garminFormDirty = false;
-      renderGarminPreview({ name: prescription.name, ...saved.preview, date: saved.date });
+      garminEditingRequested = false;
       garminEditorView.hidden = true;
+      renderGarminPreview({ name: prescription.name, ...saved.preview, date: saved.date });
       garminOperationMessageKey = null;
       garminOperationStatus.textContent = '';
       document.getElementById('garminPreviewTitle').focus();
     } catch (error) {
       if (error.message === 'invalid_prescription') {
-        prescriptionError.textContent = garminText('invalidPrescription');
+        prescriptionError.textContent = garminText('contractRejected');
         prescriptionError.hidden = false;
-        const invalidControl = firstInvalidEditorControl();
-        if (invalidControl) {
-          invalidControl.setAttribute('aria-invalid', 'true');
-          invalidControl.setAttribute('aria-describedby', 'garminPrescriptionError');
-          invalidControl.focus();
-        }
-        setGarminOperationMessage('invalidPrescription');
       } else if (error.status === 409) setGarminOperationMessage('revisionConflict');
       else if (error.status === 422 || error.message === 'unsupported') setGarminOperationMessage('unsupported');
       else setGarminOperationMessage('saveFailed');
@@ -2028,9 +2161,11 @@ async function initTrainingResult() {
           garminPreviewSnapshot = { revision: currentReview.prescription.revision, fingerprint: currentReview.prescription.fingerprint,
             date: currentReview.training_date, connection_generation: currentReview.connection_generation };
           fillGarminPrescription(currentReview.prescription.value);
-          if (currentReview.prescription.preview) renderGarminPreview({ name: currentReview.prescription.value.name,
-            ...currentReview.prescription.preview, date: currentReview.training_date });
-          if (currentReview.prescription.preview && !garminFormDirty) garminEditorView.hidden = true;
+          if (currentReview.prescription.preview && !garminFormDirty) {
+            garminEditorView.hidden = true;
+            renderGarminPreview({ name: currentReview.prescription.value.name,
+              ...currentReview.prescription.preview, date: currentReview.training_date });
+          }
         } else garminPreviewSnapshot = null;
         if (currentReview.operation) renderGarminOperation(currentReview.operation);
         setGarminOperationMessage('reviewChanged');
@@ -2062,6 +2197,7 @@ async function initTrainingResult() {
   };
   document.getElementById('garminPublishButton').addEventListener('click', () => performGarminAction('publish'));
   document.getElementById('garminEditStructure').addEventListener('click', () => {
+    garminEditingRequested = true;
     garminPreview.hidden = true;
     garminEditorView.hidden = false;
     document.getElementById('garminWorkoutName').focus();

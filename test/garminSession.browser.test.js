@@ -80,7 +80,8 @@ test('Garmin workout editor edits incomplete drafts and saves a faithful v3 sequ
       require('node:fs').writeFileSync(filename, Buffer.from(shot.data, 'base64'));
     };
     const captureEditorState = async (selector, filename) => {
-      await evaluate(`document.querySelector(${JSON.stringify(selector)})?.scrollIntoView({block:'center'})`);
+      const found = await evaluate(`(()=>{const target=document.querySelector(${JSON.stringify(selector)});if(!target)return false;target.scrollIntoView({block:'center',inline:'nearest'});return true})()`);
+      assert.equal(found, true, `capture target exists: ${selector}`);
       await delay(80);
       const shot = await command('Page.captureScreenshot', { format: 'png' });
       require('node:fs').writeFileSync(filename, Buffer.from(shot.data, 'base64'));
@@ -100,7 +101,7 @@ test('Garmin workout editor edits incomplete drafts and saves a faithful v3 sequ
     await command('Network.enable'); await command('Network.setCookie', { name: SESSION_COOKIE_NAME, value: createSession(db, owner.id).token, url: baseUrl });
     await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
     await command('Page.navigate', { url: `${baseUrl}/training-result.html?id=1` });
-    const wait = async (expression) => { for (let i = 0; i < 150; i += 1) { if (await evaluate(expression).catch(() => false)) return; await delay(100); } const diagnostic = await evaluate("JSON.stringify({title:document.getElementById('garminTitle')?.textContent,card:document.getElementById('garminSessionCard')?.hidden,date:document.getElementById('sessionDate')?.textContent,blocks:[...document.querySelectorAll('#garminWorkoutEditor [data-end-value]')].map(el=>[el.dataset.endValue,el.value]),invalid:[...document.querySelectorAll('[aria-invalid=true]')].map(el=>[el.outerHTML.slice(0,250),el.value]),operation:document.getElementById('garminOperationStatus')?.textContent,preview:document.getElementById('garminPreview')?.hidden,errors:[...document.querySelectorAll('[role=alert]')].map(el=>el.textContent)})").catch(()=>'none'); throw new Error(`Timed out waiting for ${expression}; ${diagnostic}; responses=${prescriptionResponses}`); };
+    const wait = async (expression) => { for (let i = 0; i < 150; i += 1) { if (await evaluate(expression).catch(() => false)) return; await delay(100); } const diagnostic = await evaluate("JSON.stringify({title:document.getElementById('garminTitle')?.textContent,card:document.getElementById('garminSessionCard')?.hidden,panel:document.getElementById('garminPrescriptionPanel')?.hidden,editor:document.getElementById('garminEditorView')?.hidden,active:document.activeElement?.id,date:document.getElementById('sessionDate')?.textContent,blocks:[...document.querySelectorAll('#garminWorkoutEditor [data-end-value]')].map(el=>[el.dataset.endValue,el.value]),invalid:[...document.querySelectorAll('[aria-invalid=true]')].map(el=>[el.outerHTML.slice(0,250),el.value]),operation:document.getElementById('garminOperationStatus')?.textContent,preview:document.getElementById('garminPreview')?.hidden,errors:[...document.querySelectorAll('[role=alert]')].map(el=>el.textContent)})").catch(()=>'none'); throw new Error(`Timed out waiting for ${expression}; ${diagnostic}; responses=${prescriptionResponses}`); };
     await wait("document.getElementById('sessionDate')?.textContent.trim() !== '-' && !document.getElementById('garminSessionCard').hidden && document.querySelector('#garminRunBlocks .garmin-editor-block')");
     assert.equal(await evaluate("[...document.querySelectorAll('#garminWorkoutEditor button[data-editor-action],#garminAddRunBlock,#garminAddRecoveryBlock,#garminAddRepeatBlock')].every(button=>button.type==='button')"), true, 'editor controls cannot submit the form');
     assert.equal(await evaluate("document.querySelector('[data-end-type=\\\"step-run-1\\\"]')?.value"), 'time');
@@ -248,16 +249,40 @@ test('Garmin workout editor edits incomplete drafts and saves a faithful v3 sequ
     assert.equal(await evaluate("document.getElementById('garminPrescriptionSave').disabled"), false, 'validation failure releases the save control');
     assert.equal(prescriptionRequests.length, requestsBeforeInvalid, 'invalid active recovery is rejected before saving');
     assert.equal(await evaluate("document.activeElement.getAttribute('aria-invalid')"), 'true');
-    assert.equal(await evaluate("document.activeElement.getAttribute('aria-describedby')"), 'garminPrescriptionError');
-    assert.match(await evaluate("document.getElementById('garminOperationStatus').textContent"), /highlighted fields|campos destacados/i);
+    assert.match(await evaluate("document.activeElement.getAttribute('aria-describedby')"), /garmin-end-.*-recovery-(help|error)/);
+    assert.match(await evaluate("document.activeElement.closest('label').querySelector('[data-validation-error]').textContent"), /greater than zero|maior que zero/i);
+    assert.match(await evaluate("document.getElementById('garminValidationSummary').textContent"), /Review 1 field|Revise 1 campo/i);
+    assert.equal(await evaluate("document.getElementById('garminPreview').hidden"), true, 'failed edits do not reveal the stale review');
+    await captureEditorState('[aria-invalid="true"]', '/tmp/kinesis-garmin-duration-error-en-desktop.png');
+    await captureEditorState('#garminValidationSummary', '/tmp/kinesis-garmin-validation-summary-en-desktop.png');
+    for (const [raw, expected] of [['', /Enter this step's duration/i], ['3:60', /between 00 and 59/i], ['120:01', /at most 120 min/i]]) {
+      await evaluate(`(()=>{const input=document.querySelector('[data-end-value$="-recovery"]');input.value=${JSON.stringify(raw)};input.dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('garminPrescriptionForm').requestSubmit()})()`);
+      const errorText = await evaluate("document.querySelector('[data-end-value$=\\\"-recovery\\\"]')?.closest('label')?.querySelector('[data-validation-error]')?.textContent || ''");
+      assert.match(errorText, expected, `duration ${JSON.stringify(raw)} receives a specific inline error`);
+      assert.equal(prescriptionRequests.length, requestsBeforeInvalid, 'duration validation does not submit invalid values');
+    }
     await evaluate("document.querySelector('[data-end-value$=\\\"-recovery\\\"]').value='02:00';document.getElementById('garminPrescriptionForm').requestSubmit()");
     await wait("!document.getElementById('garminPreview').hidden");
     assert.match(await evaluate("document.getElementById('garminPreviewSteps').textContent"), /Recovery · 1 recovery|Recuperação · 1 recuperação/);
+    await evaluate("document.getElementById('garminEditStructure').click();(()=>{const duration=document.querySelector('[data-end-value$=\\\"-recovery\\\"]');duration.value='3:00';duration.dispatchEvent(new Event('input',{bubbles:true}));const target=document.querySelector('[data-target-lower=\\\"step-run-1-target\\\"]');target.value='';target.dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('garminPrescriptionForm').requestSubmit()})()");
+    await wait("document.activeElement.dataset.targetLower==='step-run-1-target'");
+    assert.equal(await evaluate("document.querySelector('[data-end-value$=\\\"-recovery\\\"]').value"), '3:00', 'valid duration text is preserved when another target is invalid');
+    assert.equal(await evaluate("document.querySelector('[data-end-value$=\\\"-recovery\\\"]').getAttribute('aria-invalid')"), null, 'the valid duration is not blamed for the target error');
+    assert.match(await evaluate("document.getElementById(document.querySelector('[data-target-lower=\\\"step-run-1-target\\\"]').id+'-error').textContent"), /heart-rate|frequência cardíaca/i);
+    assert.match(await evaluate("document.getElementById('garminValidationSummary').textContent"), /Run block|Bloco de corrida/);
+    await captureEditorState('[aria-invalid="true"]', '/tmp/kinesis-garmin-other-field-error-en-desktop.png');
+    await evaluate("(()=>{const target=document.querySelector('[data-target-lower=\\\"step-run-1-target\\\"]');target.value='130';target.dispatchEvent(new Event('input',{bubbles:true}))})()");
+    assert.equal(await evaluate("document.getElementById('garminValidationSummary').hidden"), true, 'correcting the only invalid field clears its obsolete summary');
+    await evaluate("document.getElementById('garminPrescriptionForm').requestSubmit()");
+    await wait("!document.getElementById('garminPreview').hidden");
+    const correctedSteps = JSON.parse(db.prepare('SELECT prescription_json FROM garmin_workout_prescriptions WHERE training_id=1').get().prescription_json).steps;
+    assert.equal(correctedSteps.find((step) => step.kind === 'repeat')?.recovery?.end?.value, 180, `valid duration stays 180 seconds after correcting another field: ${JSON.stringify(correctedSteps)}`);
+    await evaluate("document.getElementById('garminEditStructure').click()");
+    await captureEditorState('[data-end-value$="-recovery"]', '/tmp/kinesis-garmin-duration-valid-en-desktop.png');
     assert.equal(await evaluate("document.getElementById('garminPrescriptionSave').classList.contains('btn-primary')"), true);
     assert.match(await evaluate("document.getElementById('garminSaveHelp').textContent"), /Saves the workout in Kinesis for review\. Sending it to Garmin happens in the next step\./);
     assert.equal(await evaluate("getComputedStyle(document.querySelector('.garmin-review-actions')).display"), 'grid');
     assert.ok(Number.parseFloat(await evaluate("getComputedStyle(document.getElementById('garminSaveHelp')).lineHeight")) > 20);
-    await evaluate("document.getElementById('garminEditStructure').click()");
     const requestCountBeforeMove = prescriptionRequests.length;
     const orderBeforeMove = await evaluate("[...document.querySelectorAll('#garminRunBlocks .garmin-editor-block')].map((block)=>block.dataset.blockId)");
     await evaluate("document.querySelectorAll('#garminRunBlocks [data-editor-action=up]')[1].click()");
@@ -285,6 +310,32 @@ test('Garmin workout editor edits incomplete drafts and saves a faithful v3 sequ
     await evaluate("document.getElementById('garminPrescriptionForm').requestSubmit()");
     await wait("!document.getElementById('garminPreview').hidden");
     await evaluate("document.getElementById('garminEditStructure').click()");
+    await evaluate("document.getElementById('garminAddRecoveryBlock').click();document.getElementById('garminAddRunBlock').click()");
+    const dynamicRecovery = await evaluate("document.querySelector('#garminRunBlocks .garmin-editor-block[data-block-id^=\"recovery-\"] [data-end-value]')?.dataset.endValue");
+    assert.ok(dynamicRecovery, 'the regression uses a recovery added dynamically in the complete editor');
+    await evaluate("(()=>{const input=document.querySelector('#garminRunBlocks .garmin-editor-block[data-block-id^=\"recovery-\"] [data-end-value]');input.value='3';input.dispatchEvent(new Event('input',{bubbles:true}))})()");
+    assert.equal(await evaluate("document.querySelector('#garminRunBlocks .garmin-editor-block[data-block-id^=\"recovery-\"] [data-end-value]').value"), '3', 'typing is not reformatted character by character');
+    await evaluate("document.getElementById('garminPrescriptionForm').requestSubmit()");
+    await wait("!document.getElementById('garminPreview').hidden");
+    let savedSteps = JSON.parse(db.prepare('SELECT prescription_json FROM garmin_workout_prescriptions WHERE training_id=1').get().prescription_json).steps;
+    let savedRecovery = savedSteps.find((step) => step.kind === 'recovery');
+    assert.equal(savedRecovery?.end?.value, 180, `a bare 3 means three minutes in the persisted canonical payload: ${JSON.stringify(savedSteps)}`);
+    assert.equal(await evaluate("document.querySelector('#garminRunBlocks .garmin-editor-block[data-block-id^=\"recovery-\"] [data-end-value]').value"), '3:00', 'saving normalizes without changing the value while typing');
+    await evaluate("document.getElementById('garminEditStructure').click();(()=>{const input=document.querySelector('#garminRunBlocks .garmin-editor-block[data-block-id^=\"recovery-\"] [data-end-value]');input.value='3:00';input.dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('garminPrescriptionForm').requestSubmit()})()");
+    await wait("!document.getElementById('garminPreview').hidden");
+    savedRecovery = JSON.parse(db.prepare('SELECT prescription_json FROM garmin_workout_prescriptions WHERE training_id=1').get().prescription_json).steps.find((step) => step.kind === 'recovery');
+    assert.equal(savedRecovery.end.value, 180, '3:00 round-trips as the same three-minute duration');
+    assert.match(await evaluate("document.getElementById('garminPreviewSteps').textContent"), /Recovery[\s\S]*3 min|Recuperação[\s\S]*3 min/);
+    await evaluate("document.getElementById('garminEditStructure').click();(()=>{const input=document.querySelector('#garminRunBlocks .garmin-editor-block[data-block-id^=\\\"recovery-\\\"] [data-end-value]');input.value='3:5';input.dispatchEvent(new Event('input',{bubbles:true}))})()");
+    assert.equal(await evaluate("document.querySelector('#garminRunBlocks .garmin-editor-block[data-block-id^=\\\"recovery-\\\"] [data-end-value]').value"), '3:5', 'editing keeps partial seconds text until blur/save');
+    await evaluate("(()=>{const input=document.querySelector('#garminRunBlocks .garmin-editor-block[data-block-id^=\\\"recovery-\\\"] [data-end-value]');input.focus();input.blur()})()");
+    assert.equal(await evaluate("document.querySelector('#garminRunBlocks .garmin-editor-block[data-block-id^=\\\"recovery-\\\"] [data-end-value]').value"), '3:05', 'blur normalizes a one-digit seconds field');
+    await evaluate("document.getElementById('garminPrescriptionForm').requestSubmit()");
+    await wait("!document.getElementById('garminPreview').hidden");
+    savedRecovery = JSON.parse(db.prepare('SELECT prescription_json FROM garmin_workout_prescriptions WHERE training_id=1').get().prescription_json).steps.find((step) => step.kind === 'recovery');
+    assert.equal(savedRecovery.end.value, 185, '3:5 is persisted as 3 minutes and 5 seconds');
+    assert.match(await evaluate("document.getElementById('garminPreviewSteps').textContent"), /3 min 5 s|3 min 5 sec/);
+    await evaluate("document.getElementById('garminEditStructure').click()");
     await evaluate("document.getElementById('garminSessionCard').scrollIntoView({block:'start'})");
     assert.equal(await evaluate("document.documentElement.lang"), 'en-US');
     await captureEditorToolbar('/tmp/kinesis-garmin-editor-en-desktop-actions.png');
@@ -293,6 +344,7 @@ test('Garmin workout editor edits incomplete drafts and saves a faithful v3 sequ
     await evaluate("document.querySelector('.lang-switch [data-lang=\\\"pt-BR\\\"]').click()"); await wait("document.documentElement.lang==='pt-BR'");
     assert.equal(await evaluate("document.querySelector('#garminWorkoutEditor legend').textContent.trim()"), 'Aquecimento');
     assert.match(await evaluate("document.getElementById('garminPreviewSteps').textContent"), /Recuperação · 1 recuperação/);
+    await captureEditorState('[data-end-value$="-recovery"]', '/tmp/kinesis-garmin-duration-valid-pt-desktop.png');
     await captureReview('/tmp/kinesis-garmin-review-pt-desktop.png');
     await captureReviewActions('/tmp/kinesis-garmin-review-pt-desktop-actions.png');
     await evaluate("document.getElementById('garminSessionCard').scrollIntoView({block:'start'})");
@@ -308,6 +360,7 @@ test('Garmin workout editor edits incomplete drafts and saves a faithful v3 sequ
     await captureReviewActions('/tmp/kinesis-garmin-review-pt-mobile-actions.png');
     await evaluate("document.getElementById('garminSessionCard').scrollIntoView({block:'start'})");
     await captureEditorToolbar('/tmp/kinesis-garmin-editor-pt-mobile-actions.png');
+    await captureEditorState('[data-end-value$="-recovery"]', '/tmp/kinesis-garmin-duration-valid-pt-mobile.png');
     await captureGarminCard('/tmp/kinesis-garmin-editor-pt-mobile-top.png');
     await captureGarminCard('/tmp/kinesis-garmin-editor-pt-mobile-bottom.png', 'bottom');
     await evaluate("document.querySelector('.lang-switch [data-lang=\\\"en-US\\\"]').click()"); await wait("document.documentElement.lang==='en-US'");
@@ -339,7 +392,7 @@ test('Garmin workout editor edits incomplete drafts and saves a faithful v3 sequ
     await evaluate("document.querySelector('#garminRunBlocks .garmin-editor-block:last-child [data-editor-action=duplicate]').click()");
     assert.equal(await evaluate("document.querySelectorAll('#garminRunBlocks .garmin-editor-block').length"), blocksAtLimit, 'over-limit duplicate preserves existing content');
     assert.match(await evaluate("document.getElementById('garminEditorActionStatus').textContent"), /limite de etapas|step limit/i);
-    assert.equal(prescriptionRequests.length, requestCountAfterReload + 1, 'limit feedback does not save');
+    assert.equal(prescriptionRequests.length, requestCountAfterReload + 4, 'only the four explicit save/review actions reached Node; editor limits do not save');
 
     const legacyWithoutRecovery = { version: 2, sport: 'running', name: 'Legacy repeats', steps: [
       { id: 'before', kind: 'run', end: { type: 'time', value: 300 }, target: { type: 'none' } },
