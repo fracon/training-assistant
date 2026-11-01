@@ -1263,6 +1263,7 @@ async function initTrainingResult() {
   const garminCard = document.getElementById('garminSessionCard');
   const garminText = (key, params) => t(`garmin.product.${key}`, params);
   const garminStatus = document.getElementById('garminConnectionStatus');
+  const garminConnectionRetry = document.getElementById('garminConnectionRetry');
   const garminAuthForm = document.getElementById('garminAuthForm');
   const garminConnectButton = document.getElementById('garminConnectButton');
   const garminDisconnectButton = document.getElementById('garminDisconnectButton');
@@ -1293,6 +1294,9 @@ async function initTrainingResult() {
   let garminFormDirty = false;
   let garminEditingRequested = false;
   let garminStatusRead = 0;
+  let garminStatusPromise = null;
+  let garminConnectionKnown = false;
+  let garminStatusUnavailable = false;
   let garminOperationTimer = null;
   let garminOperationController = null;
   let garminOperationRead = 0;
@@ -1325,7 +1329,7 @@ async function initTrainingResult() {
     if (!response.ok) { const error = new Error(body.code || 'unavailable'); error.status = response.status; error.diagnostic = body.diagnostic; throw error; }
     return body;
   };
-  const renderGarminStatus = async () => {
+  const readGarminStatus = async () => {
     if (training?.completed === 1) { garminCard.hidden = true; return; }
     const read = ++garminStatusRead;
     garminVisible = true;
@@ -1365,7 +1369,13 @@ async function initTrainingResult() {
       garminCard.hidden = false;
       const connected = state.status === 'connected';
       garminConnected = connected;
-      setGarminConnectionMessage(connected ? 'connected' : 'disconnected');
+      garminConnectionKnown = true;
+      garminStatusUnavailable = false;
+      garminConnectionRetry.hidden = true;
+      const connectionMessage = state.status === 'reauthentication_required'
+        ? 'connectionReauthRequired' : state.status === 'mfa_required' ? 'mfaRequired'
+          : connected ? 'connected' : 'disconnected';
+      setGarminConnectionMessage(connectionMessage);
       const destination = document.getElementById('garminDestination');
       garminDestinationNames = connected ? (state.devices || []).map((device) => device.name).filter(Boolean) : [];
       destination.hidden = garminDestinationNames.length === 0;
@@ -1391,15 +1401,49 @@ async function initTrainingResult() {
     } catch (error) {
       if (read !== garminStatusRead) return;
       if (error.status === 404) { garminCard.hidden = true; return; }
-      // A stopped local connector is a pilot setup state; keep the action visible.
-      garminConnected = false;
-      setGarminConnectionMessage(error.name === 'TypeError' || error.status === 503 ? 'connectError' : 'disconnected');
-      garminConnectButton.hidden = false;
-      garminDisconnectButton.hidden = true;
-      garminPanel.hidden = !garminFingerprint;
+      if (error.message === 'auth_required') {
+        garminConnectionKnown = true;
+        garminConnected = false;
+        garminStatusUnavailable = false;
+        setGarminConnectionMessage('connectionReauthRequired');
+        garminConnectionRetry.hidden = true;
+        garminConnectButton.hidden = garminAuthForm.hidden === false;
+        garminDisconnectButton.hidden = true;
+        garminPanel.hidden = true;
+      } else {
+        setGarminConnectionMessage(garminConnectionKnown ? 'connectionRefreshFailed' : 'connectError');
+        garminStatusUnavailable = true;
+        garminConnectionRetry.hidden = false;
+        if (!garminConnectionKnown) garminPanel.hidden = !garminFingerprint;
+      }
       if (garminPreviewModel) renderGarminPreview(garminPreviewModel);
     }
   };
+  const renderGarminStatus = () => {
+    if (garminStatusPromise) return garminStatusPromise;
+    const pending = readGarminStatus();
+    garminStatusPromise = pending.finally(() => {
+      if (garminStatusPromise === wrapped) {
+        garminStatusPromise = null;
+        garminConnectionRetry.disabled = false;
+        garminConnectionRetry.removeAttribute('aria-disabled');
+      }
+    });
+    const wrapped = garminStatusPromise;
+    return wrapped;
+  };
+  garminConnectionRetry.addEventListener('click', () => {
+    if (garminStatusPromise || garminConnectionRetry.getAttribute('aria-disabled') === 'true') return;
+    // Keep focus on the retry action while preventing duplicate requests.
+    // Native disabled removes the focused button from interaction and drops
+    // focus in several browsers; aria-disabled plus the in-flight guard keeps
+    // the state perceivable and keyboard focus stable.
+    garminConnectionRetry.setAttribute('aria-disabled', 'true');
+    garminStatusUnavailable = true;
+    setGarminConnectionMessage('connectionChecking');
+    if (garminPreviewModel) renderGarminPreview(garminPreviewModel);
+    void renderGarminStatus();
+  });
   const editorTargetMarkup = (prefix, target = { type: 'none' }) => {
     const pace = target.type === 'pace';
     const hr = target.type === 'heart_rate';
@@ -1991,6 +2035,7 @@ async function initTrainingResult() {
         : operation.error_code === 'rate_limited' ? 'rateLimited'
           : operation.error_code === 'auth_required' ? 'authError'
             : operation.error_code === 'unavailable' ? 'connectorUnavailableResult'
+              : ['connector_auth_failed', 'connector_configuration_error', 'connector_service_error'].includes(operation.error_code) ? 'connectError'
               : operation.action === 'update' ? 'updateFailed'
                 : operation.action === 'reschedule' ? 'rescheduleFailed' : 'publishFailed';
     if (sameStoredState && garminStatusRetryAvailable) messageKey = 'statusReadError';
@@ -2136,7 +2181,7 @@ async function initTrainingResult() {
     actionHelp.textContent = unresolved ? '' : garminText(helpKey);
     actionHelp.hidden = unresolved;
     const actionButtons = [document.getElementById('garminPublishButton'), garminUpdateButton, garminRescheduleButton];
-    actionButtons.forEach((button) => { button.disabled = !garminConnected || garminPending || unresolved || !garminPreviewSnapshot; });
+    actionButtons.forEach((button) => { button.disabled = !garminConnected || garminStatusUnavailable || garminPending || unresolved || !garminPreviewSnapshot; });
     garminEditStructure.disabled = garminPending || unresolved;
     garminReconcileButton.disabled = garminPending;
     garminOperationRetry.hidden = !(garminDispatchUncertain || garminStatusRetryAvailable);

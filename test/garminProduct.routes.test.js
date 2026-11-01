@@ -56,7 +56,9 @@ test('Garmin session APIs require login, enforce pilot owner, and persist previe
   const remoteCalls = [];
   const app = await buildServer({ db, sessionCookieSecure: false,
     garminConfig: { GARMIN_PILOT_ENABLED: 'true', GARMIN_PILOT_USER_ID: '1', KINESIS_GARMIN_SERVICE_TOKEN: 'x'.repeat(40), GARMIN_CONNECTOR_URL: 'http://connector.invalid' },
-    garminFetch: async (url) => { remoteCalls.push(url); return Response.json({ status: 'connected' }); },
+    garminFetch: async (url) => { remoteCalls.push(url); return url.endsWith('/capabilities')
+      ? Response.json({ devices: [], running_catalog_status: 'unknown' })
+      : Response.json({ status: 'connected' }); },
   });
   await app.inject({ method: 'POST', url: '/api/auth/register', payload: { email: 'pilot-ui@example.com', password: 'pilot-password', first_name: 'Runner', last_name: 'Test' } });
   const cookie = await login(app, 'pilot-ui@example.com');
@@ -139,7 +141,7 @@ test('a saved v3 workout keeps a standalone recovery in the canonical payload, S
 
 test('status tolerates a disconnected connector without a training snapshot and cleanup failure stays recoverable', async () => {
   let db;
-  const h = await productApiHarness({ config: { KINESIS_GARMIN_SERVICE_TOKEN: '' }, garminFetch: async (url, init) => {
+  const h = await productApiHarness({ garminFetch: async (url, init) => {
     if (url.endsWith('/auth/start')) { db.prepare('UPDATE users SET is_active=0 WHERE id=1').run(); return Response.json({ status: 'disconnected' }); }
     if (init.method === 'DELETE') throw new Error('synthetic transport failure');
     return Response.json({ status: 'disconnected' });
@@ -254,7 +256,7 @@ test('connected capability reads include the saved prescription and auth identit
   const h = await productApiHarness({ garminFetch: async (url, init = {}) => {
     calls.push({ url, method: init.method || 'GET' });
     if (url.endsWith('/auth/start')) return Response.json({ status: 'connected', identity_fingerprint: fingerprint });
-    if (url.endsWith('/capabilities')) return Response.json({ devices: [{ name: 'Synthetic device' }], running_catalog_status: 'present' });
+    if (url.endsWith('/capabilities')) return Response.json({ devices: [{ name: 'Synthetic device' }], running_catalog_status: 'available' });
     if (url.endsWith('/status')) return Response.json({ status: 'connected', identity_fingerprint: fingerprint });
     if (init.method === 'DELETE') return Response.json({ status: 'disconnected' });
     return Response.json({ status: 'disconnected' });
@@ -275,7 +277,7 @@ test('connected capability reads include the saved prescription and auth identit
     const invalidQuery = await h.app.inject({ method: 'GET', url: '/api/garmin/status?training_id=not-a-number', headers: { cookie: h.cookie } });
     assert.equal(invalidQuery.statusCode, 200);
     const currentQuery = await h.app.inject({ method: 'GET', url: '/api/garmin/status?training_id=1', headers: { cookie: h.cookie } });
-    assert.equal(currentQuery.json().running_catalog_status, 'present');
+    assert.equal(currentQuery.json().running_catalog_status, 'available');
     assert.deepEqual(currentQuery.json().devices, [{ name: 'Synthetic device' }]);
     assert.equal(currentQuery.json().prescription.revision, 1);
 
@@ -858,6 +860,8 @@ test('worker refuses reschedule without source identity and preserves IDs on HTT
   for (const config of [
     { id: 'http-update-refusal', action: 'update', stage: 'update', status: 401, code: 'auth_required' },
     { id: 'http-reschedule-refusal', action: 'reschedule', stage: 'reschedule', status: 429, code: 'rate_limited' },
+    { id: 'internal-auth-refusal', action: 'reschedule', stage: 'reschedule', status: 401, code: 'service_auth_failed', expectedCode: 'connector_auth_failed' },
+    { id: 'internal-config-refusal', action: 'reschedule', stage: 'reschedule', status: 503, code: 'service_configuration_error', expectedCode: 'connector_configuration_error' },
   ]) {
     const h = seedWorker(config.id, { ...config, workoutId: '42', occurrenceId: '77', sourceOperation });
     const requests = [];
@@ -869,7 +873,7 @@ test('worker refuses reschedule without source identity and preserves IDs on HTT
     assert.equal(requests.length, 1);
     assert.equal(row.status, config.code === 'auth_required' ? 'reauth_required' : 'failed');
     assert.equal(row.stage, config.action === 'update' ? 'update_confirmation' : config.action);
-    assert.equal(row.error_code, config.code);
+    assert.equal(row.error_code, config.expectedCode || config.code);
     assert.equal(row.workout_id, '42');
     assert.equal(row.occurrence_id, '77');
     if (config.action === 'update') assert.equal(requests[0].body.source_operation_id, 'source-op');
@@ -1008,6 +1012,28 @@ test('worker stop before dispatch is terminal and never calls the connector', as
     { shouldStop: () => true });
   assert.equal(calls, 0);
   assert.deepEqual(h.row(), { status: 'failed', stage: 'worker_stopping', error_code: 'unavailable', workout_id: null, occurrence_id: null });
+  h.db.close();
+});
+
+test('unexpected worker preflight failures are logged with an unknown stage without contacting Garmin', async () => {
+  const h = seedWorker('unexpected-preflight');
+  h.operation.action = null;
+  h.operation.stage = null;
+  const logs = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => logs.push(args.join(' '));
+  let calls = 0;
+  try {
+    await runOperation(h.db, async () => { calls += 1; }, {}, h.operation, h.current, {
+      shouldStop: () => { throw new Error('synthetic preflight failure'); },
+    });
+  } finally { console.warn = originalWarn; }
+  assert.equal(calls, 0);
+  const state = h.db.prepare('SELECT status,stage,error_code,workout_id,occurrence_id FROM garmin_training_operations WHERE operation_id=?').get('unexpected-preflight');
+  assert.deepEqual(state, { status: 'outcome_unknown', stage: 'unknown', error_code: 'outcome_unknown', workout_id: null, occurrence_id: null });
+  assert.equal(logs.length, 1);
+  assert.match(logs[0], /"stage":"unknown","code":"outcome_unknown","status":null/);
+  assert.doesNotMatch(logs[0], /synthetic preflight failure/);
   h.db.close();
 });
 
@@ -1262,10 +1288,12 @@ test('cancel and disconnect normalize connector failures without exposing remote
   const started = await h.app.inject({ method: 'POST', url: '/api/garmin/auth/start', headers: { cookie: h.cookie }, payload: { email: 'private@example.test', password: 'secret' } });
   let response = await h.app.inject({ method: 'POST', url: '/api/garmin/auth/cancel', headers: { cookie: h.cookie }, payload: { challenge_id: started.json().challenge_id } });
   assert.equal(response.statusCode, 503);
-  assert.deepEqual(response.json(), { code: 'unavailable' });
+  assert.equal(response.json().code, 'connector_service_error');
+  assert.match(response.json().diagnostic_id, /^[a-f0-9]{32}$/);
   response = await h.app.inject({ method: 'DELETE', url: '/api/garmin/connection', headers: { cookie: h.cookie } });
   assert.equal(response.statusCode, 503);
-  assert.deepEqual(response.json(), { code: 'unavailable' });
+  assert.equal(response.json().code, 'connector_service_error');
+  assert.match(response.json().diagnostic_id, /^[a-f0-9]{32}$/);
   assert.doesNotMatch(response.body, /private connector body/);
   await h.close();
 });
@@ -1299,7 +1327,204 @@ test('status preserves local operation when disconnected and sanitizes connector
   await h.close();
 });
 
-test('status marks a remotely observed scheduled operation outdated and tolerates an incomplete capability DTO', async () => {
+test('status distinguishes connector configuration, transport, internal auth, service errors and expired Garmin sessions', async () => {
+  const logged = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => logged.push(args.join(' '));
+  try {
+    let calls = 0;
+    const missingConfig = await productApiHarness({ config: { KINESIS_GARMIN_SERVICE_TOKEN: '' },
+      garminFetch: async () => { calls += 1; return Response.json({ status: 'connected' }); } });
+    let response = await missingConfig.app.inject({ method: 'GET', url: '/api/garmin/status', headers: { cookie: missingConfig.cookie } });
+    assert.equal(response.statusCode, 503);
+    assert.equal(response.json().code, 'connector_configuration_error');
+    assert.match(response.json().diagnostic_id, /^[a-f0-9]{32}$/);
+    assert.equal(calls, 0);
+    await missingConfig.close();
+
+    const invalidUrl = await productApiHarness({ config: { GARMIN_CONNECTOR_URL: 'file:///private/path' },
+      garminFetch: async () => { calls += 1; return Response.json({ status: 'connected' }); } });
+    response = await invalidUrl.app.inject({ method: 'GET', url: '/api/garmin/status', headers: { cookie: invalidUrl.cookie } });
+    assert.equal(response.json().code, 'connector_configuration_error');
+    assert.equal(calls, 0);
+    await invalidUrl.close();
+
+    const refused = await productApiHarness({ garminFetch: async () => {
+      const error = new TypeError('fetch failed: private host and secret');
+      error.cause = { code: 'ECONNREFUSED' };
+      throw error;
+    } });
+    response = await refused.app.inject({ method: 'GET', url: '/api/garmin/status', headers: { cookie: refused.cookie } });
+    assert.equal(response.statusCode, 503);
+    assert.equal(response.json().code, 'connector_unavailable');
+    await refused.close();
+
+    const timeout = await productApiHarness({ garminFetch: async () => { throw new DOMException('private timeout', 'TimeoutError'); } });
+    response = await timeout.app.inject({ method: 'GET', url: '/api/garmin/status', headers: { cookie: timeout.cookie } });
+    assert.equal(response.statusCode, 504);
+    assert.equal(response.json().code, 'connector_timeout');
+    await timeout.close();
+
+    for (const [status, body, code] of [
+      [401, { detail: { code: 'service_auth_failed' } }, 'connector_auth_failed'],
+      [503, { detail: { code: 'service_configuration_error' } }, 'connector_configuration_error'],
+      [503, { detail: { message: 'private response text' } }, 'connector_service_error'],
+      [502, { detail: { message: 'private response text' } }, 'connector_service_error'],
+      [403, { detail: { code: 'unknown_private_code', message: 'private response text' } }, 'connector_service_error'],
+      [401, { detail: { code: 'auth_required' } }, 'auth_required'],
+      [429, { detail: { code: 'rate_limited' } }, 'rate_limited'],
+    ]) {
+      const h = await productApiHarness({ garminFetch: async () => Response.json(body, { status }) });
+      response = await h.app.inject({ method: 'GET', url: '/api/garmin/status', headers: { cookie: h.cookie } });
+      assert.equal(response.json().code, code);
+      assert.doesNotMatch(response.body, /private response text/);
+      await h.close();
+    }
+
+    const invalidJson = await productApiHarness({ garminFetch: async () => new Response('private raw body', { status: 200 }) });
+    response = await invalidJson.app.inject({ method: 'GET', url: '/api/garmin/status', headers: { cookie: invalidJson.cookie } });
+    assert.equal(response.statusCode, 502);
+    assert.equal(response.json().code, 'connector_invalid_response');
+    await invalidJson.close();
+
+    const invalidStatus = await productApiHarness({ garminFetch: async () => Response.json({ status: 'private-invalid-state' }) });
+    response = await invalidStatus.app.inject({ method: 'GET', url: '/api/garmin/status', headers: { cookie: invalidStatus.cookie } });
+    assert.equal(response.statusCode, 502);
+    assert.equal(response.json().code, 'connector_invalid_response');
+    assert.doesNotMatch(response.body, /private-invalid-state/);
+    await invalidStatus.close();
+
+    const expired = await productApiHarness({ garminFetch: async () => Response.json({ status: 'reauthentication_required' }) });
+    response = await expired.app.inject({ method: 'GET', url: '/api/garmin/status', headers: { cookie: expired.cookie } });
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.json().status, 'reauthentication_required');
+    await expired.close();
+    assert.equal(logged.length, 13);
+    for (const line of logged) {
+      assert.match(line, /\[kinesis-garmin\]/);
+      assert.doesNotMatch(line, /private host|secret|private response text|private raw body|connector\.invalid/);
+    }
+  } finally { console.warn = originalWarn; }
+});
+
+test('local adapter failures get sanitized diagnostics and cleanup remains possible without the service token', async () => {
+  const logged = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => logged.push(args.join(' '));
+  try {
+    const corrupt = await productApiHarness({ garminFetch: async (url) => url.endsWith('/status')
+      ? Response.json({ status: 'connected' }) : Response.json({ devices: [], running_catalog_status: 'unknown' }) });
+    corrupt.db.prepare(`INSERT INTO garmin_workout_prescriptions
+      (user_id,training_id,revision,prescription_json,fingerprint) VALUES (1,1,1,?,?)`)
+      .run(JSON.stringify({ version: 3, sport: 'running', name: 'private synthetic name', steps: [] }), 'a'.repeat(64));
+    let response = await corrupt.app.inject({ method: 'GET', url: '/api/garmin/status?training_id=1', headers: { cookie: corrupt.cookie } });
+    assert.equal(response.statusCode, 503);
+    assert.equal(response.json().code, 'unavailable');
+    assert.match(response.json().diagnostic_id, /^[a-f0-9]{32}$/);
+    assert.doesNotMatch(response.body, /private synthetic name|steps/);
+    await corrupt.close();
+
+    const statusWithHttpCode = await productApiHarness({ garminFetch: async () => Response.json({ status: 'disconnected' }) });
+    const statusPrepare = statusWithHttpCode.db.prepare.bind(statusWithHttpCode.db);
+    statusWithHttpCode.db.prepare = (sql) => {
+      if (sql.startsWith('SELECT revision, prescription_json, fingerprint FROM garmin_workout_prescriptions')) {
+        throw Object.assign(new Error('private storage diagnostic'), { statusCode: 418 });
+      }
+      return statusPrepare(sql);
+    };
+    response = await statusWithHttpCode.app.inject({ method: 'GET', url: '/api/garmin/status?training_id=1', headers: { cookie: statusWithHttpCode.cookie } });
+    assert.equal(response.statusCode, 418);
+    assert.equal(response.json().code, 'unavailable');
+    assert.match(response.json().diagnostic_id, /^[a-f0-9]{32}$/);
+    await statusWithHttpCode.close();
+
+    const finish = await productApiHarness({ garminFetch: async (url) => url.endsWith('/auth/start')
+      ? Response.json({ status: 'mfa_required', challenge_id: 'synthetic-finish-challenge-123456', expires_in: 300 })
+      : Response.json({ status: 'connected' }) });
+    response = await finish.app.inject({ method: 'POST', url: '/api/garmin/auth/start', headers: { cookie: finish.cookie },
+      payload: { email: 'synthetic@example.test', password: 'synthetic-only' } });
+    const challengeId = response.json().challenge_id;
+    response = await finish.app.inject({ method: 'POST', url: '/api/garmin/auth/finish', headers: { cookie: finish.cookie },
+      payload: { challenge_id: challengeId, code: '123456' } });
+    assert.equal(response.statusCode, 503);
+    assert.equal(response.json().code, 'unavailable');
+    assert.match(response.json().diagnostic_id, /^[a-f0-9]{32}$/);
+    assert.doesNotMatch(response.body, /synthetic@example|synthetic-only|123456/);
+    await finish.close();
+
+    const calls = [];
+    const inactive = await productApiHarness({ config: { KINESIS_GARMIN_SERVICE_TOKEN: '' },
+      garminFetch: async (url, init = {}) => { calls.push({ url, key: init.headers?.['x-kinesis-service-key'] }); return Response.json({ status: 'disconnected' }); } });
+    const originalPrepare = inactive.db.prepare.bind(inactive.db);
+    inactive.db.prepare = (sql) => {
+      const statement = originalPrepare(sql);
+      if (!sql.startsWith('INSERT INTO garmin_pilot_connections')) return statement;
+      return { run: (...args) => {
+        originalPrepare('UPDATE users SET is_active=0 WHERE id=1').run();
+        return statement.run(...args);
+      } };
+    };
+    response = await inactive.app.inject({ method: 'DELETE', url: '/api/garmin/connection', headers: { cookie: inactive.cookie } });
+    assert.equal(response.statusCode, 503);
+    assert.equal(response.json().code, 'connector_configuration_error');
+    assert.equal(calls.length, 1, 'only the internal local-token cleanup is attempted');
+    assert.equal(calls[0].key, '', 'cleanup is not blocked by an absent service token');
+    assert.ok(logged.some((line) => line.includes('"stage":"status","code":"connector_service_error","status":null')));
+    assert.ok(logged.some((line) => line.includes('"stage":"status","code":"connector_service_error","status":418')));
+    assert.ok(logged.some((line) => line.includes('"stage":"auth_finish","code":"connector_service_error"')));
+  } finally { console.warn = originalWarn; }
+});
+
+test('auth cancellation and disconnect report correlation IDs for local failures after remote completion', async () => {
+  for (const kind of ['cancel', 'disconnect']) {
+    let failOwnerRead = false;
+    let remoteCompleted = false;
+    const h = await productApiHarness({ garminFetch: async (url, init = {}) => {
+      if (url.endsWith('/auth/start')) return Response.json({ status: 'mfa_required', challenge_id: `challenge-${kind}-synthetic`, expires_in: 300 });
+      if ((kind === 'cancel' && url.endsWith('/auth/cancel')) || (kind === 'disconnect' && init.method === 'DELETE')) {
+        remoteCompleted = true;
+        failOwnerRead = true;
+        return Response.json({ status: kind === 'cancel' ? 'cancelled' : 'disconnected' });
+      }
+      return Response.json({ status: 'disconnected' });
+    } });
+    const originalPrepare = h.db.prepare.bind(h.db);
+    h.db.prepare = (sql) => {
+      if (failOwnerRead && sql === 'SELECT id, is_active FROM users WHERE id = ?') {
+        failOwnerRead = false;
+        throw new Error('synthetic local database read failure');
+      }
+      return originalPrepare(sql);
+    };
+    const originalWarn = console.warn;
+    const logged = [];
+    console.warn = (...args) => logged.push(args.join(' '));
+    try {
+      let response;
+      if (kind === 'cancel') {
+        const started = await h.app.inject({ method: 'POST', url: '/api/garmin/auth/start', headers: { cookie: h.cookie },
+          payload: { email: 'synthetic@example.test', password: 'synthetic-only' } });
+        response = await h.app.inject({ method: 'POST', url: '/api/garmin/auth/cancel', headers: { cookie: h.cookie },
+          payload: { challenge_id: started.json().challenge_id } });
+      } else {
+        response = await h.app.inject({ method: 'DELETE', url: '/api/garmin/connection', headers: { cookie: h.cookie } });
+      }
+      assert.equal(remoteCompleted, true);
+      assert.equal(response.statusCode, 503);
+      assert.equal(response.json().code, 'unavailable');
+      assert.match(response.json().diagnostic_id, /^[a-f0-9]{32}$/);
+      assert.equal(logged.length, 1);
+      assert.ok(logged[0].includes(kind === 'cancel' ? '"stage":"auth_cancel"' : '"stage":"disconnect"'));
+      assert.doesNotMatch(logged.join(' '), /synthetic@example|synthetic-only|database read failure/);
+    } finally {
+      console.warn = originalWarn;
+      h.db.prepare = originalPrepare;
+      await h.close();
+    }
+  }
+});
+
+test('status rejects an incomplete capability DTO instead of treating a healthy connection as a valid endpoint', async () => {
   const h = await productApiHarness({ garminFetch: async (url, init) => {
     if (url.endsWith('/status')) return Response.json({ status: 'connected', identity_fingerprint: 'private' });
     if (url.endsWith('/capabilities')) return Response.json({ identity_fingerprint: 'private' });
@@ -1311,18 +1536,16 @@ test('status marks a remotely observed scheduled operation outdated and tolerate
     (operation_id,user_id,training_id,connection_generation,prescription_revision,fingerprint,converter_version,status,stage,scheduled_date,workout_id,occurrence_id)
     VALUES ('status-outdated',1,1,1,1,?,1,'scheduled','complete','2026-11-01','42','77')`).run(fingerprint);
   const response = await h.app.inject({ method: 'GET', url: '/api/garmin/status?training_id=1', headers: { cookie: h.cookie } });
-  assert.equal(response.statusCode, 200);
-  assert.equal(response.json().operation.status, 'outdated');
-  assert.deepEqual(response.json().devices, []);
-  assert.equal(response.json().running_catalog_status, 'unknown');
-  assert.equal(response.json().identity_fingerprint, undefined);
-  assert.equal(h.db.prepare("SELECT status FROM garmin_training_operations WHERE operation_id='status-outdated'").get().status, 'outdated');
+  assert.equal(response.statusCode, 502);
+  assert.equal(response.json().code, 'connector_invalid_response');
+  assert.match(response.json().diagnostic_id, /^[a-f0-9]{32}$/);
+  assert.equal(h.db.prepare("SELECT status FROM garmin_training_operations WHERE operation_id='status-outdated'").get().status, 'scheduled');
   await h.close();
 });
 
 test('local review and connection status retain the persisted operation action and remote stage', async () => {
   const h = await productApiHarness({ garminFetch: async (url) => url.endsWith('/status')
-    ? Response.json({ status: 'connected' }) : Response.json({ devices: [] }) });
+    ? Response.json({ status: 'connected' }) : Response.json({ devices: [], running_catalog_status: 'unknown' }) });
   const prescription = workout(); const fingerprint = prescriptionFingerprint(prescription);
   h.db.prepare('INSERT INTO garmin_workout_prescriptions (user_id,training_id,revision,prescription_json,fingerprint) VALUES (1,1,1,?,?)')
     .run(JSON.stringify(prescription), fingerprint);
@@ -1359,7 +1582,8 @@ test('status revalidates owner after both remote reads before returning private 
     const pending = h.app.inject({ method: 'GET', url: '/api/garmin/status', headers: { cookie: h.cookie } });
     await didStart;
     h.db.prepare('UPDATE users SET is_active=0 WHERE id=1').run();
-    release(Response.json(stopAt === 'status' ? { status: 'connected' } : { devices: [{ name: 'private device' }] }));
+    release(Response.json(stopAt === 'status' ? { status: 'connected' }
+      : { devices: [{ name: 'private device' }], running_catalog_status: 'available' }));
     const response = await pending;
     assert.equal(response.statusCode, 404);
     assert.doesNotMatch(response.body, /private device/);
@@ -1371,12 +1595,13 @@ test('status revalidates owner after both remote reads before returning private 
 test('remote connector HTTP errors are normalized without trusting arbitrary response messages', async () => {
   for (const [status, body, expected] of [
     [429, { detail: { code: 'rate_limited', message: 'private Garmin response' } }, 'rate_limited'],
-    [503, { detail: { message: 'private Garmin response' } }, 'unavailable'],
+    [503, { detail: { message: 'private Garmin response' } }, 'connector_service_error'],
   ]) {
-    const h = await productApiHarness({ garminFetch: async () => Response.json(body, { status }), config: { KINESIS_GARMIN_SERVICE_TOKEN: undefined } });
+    const h = await productApiHarness({ garminFetch: async () => Response.json(body, { status }) });
     const response = await h.app.inject({ method: 'GET', url: '/api/garmin/status', headers: { cookie: h.cookie } });
     assert.equal(response.statusCode, status);
-    assert.deepEqual(response.json(), { code: expected });
+    assert.equal(response.json().code, expected);
+    assert.match(response.json().diagnostic_id, /^[a-f0-9]{32}$/);
     assert.doesNotMatch(response.body, /private Garmin response/);
     await h.close();
   }
@@ -1387,7 +1612,7 @@ test('publish clicks with the same confirmed snapshot return one durable operati
   const h = await productApiHarness({ garminFetch: async (url, init) => {
     remoteCalls.push({ url, method: init.method });
     if (url.endsWith('/status')) return Response.json({ status: 'connected' });
-    if (url.endsWith('/capabilities')) return Response.json({ devices: [], running_catalog_status: 'present' });
+    if (url.endsWith('/capabilities')) return Response.json({ devices: [], running_catalog_status: 'available' });
     if (url.endsWith('/workouts')) return Response.json({ workout_id: 420 });
     if (url.endsWith('/workouts/schedule')) return Response.json({ scheduled: true, scheduled_workout_id: 770 });
     return Response.json({ status: 'disconnected' });
@@ -1415,7 +1640,7 @@ test('publishing a saved version 3 prescription persists converter version 3 on 
   const h = await productApiHarness({ garminFetch: async (url, init) => {
     remoteCalls.push({ url, method: init.method });
     if (url.endsWith('/status')) return Response.json({ status: 'connected' });
-    if (url.endsWith('/capabilities')) return Response.json({ devices: [], running_catalog_status: 'present' });
+    if (url.endsWith('/capabilities')) return Response.json({ devices: [], running_catalog_status: 'available' });
     if (url.endsWith('/workouts')) return Response.json({ workout_id: 421 });
     if (url.endsWith('/workouts/schedule')) return Response.json({ scheduled: true, scheduled_workout_id: 771 });
     return Response.json({ status: 'disconnected' });

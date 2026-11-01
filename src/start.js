@@ -1,9 +1,13 @@
+// Preserve the shell-provided environment separately. Garmin's local private
+// config must not be shadowed by stale Garmin variables in the app .env; the
+// connector launcher reads that same shell environment and private config.
+const explicitRuntimeEnv = { ...process.env };
 require('dotenv').config();
 
 // Local Garmin pilot settings are read from the private operator config when
 // present. This is opt-in and does not start the connector or contact Garmin.
 require('../scripts/garmin-local-config').applyRuntimeConfig({
-  explicitEnv: process.env,
+  explicitEnv: explicitRuntimeEnv,
   variables: [
     'GARMIN_PILOT_USER_ID', 'KINESIS_GARMIN_SERVICE_TOKEN',
     'GARMIN_CONNECTOR_PORT', 'GARMIN_CONNECTOR_URL', 'GARMIN_PILOT_ENABLED', 'GARMIN_STORE',

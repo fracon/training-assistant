@@ -446,13 +446,15 @@ def _secret(name: str) -> bytes:
 
 def _connection(connection_id: str, owner_id: str, owner_header: str | None) -> tuple[Path, bytes]:
     pilot_owner = os.environ.get("GARMIN_PILOT_USER_ID", "")
-    if os.environ.get("GARMIN_PILOT_ENABLED") != "true" or owner_id != pilot_owner:
-        raise HTTPException(403, detail={"code": "unsupported"})
+    if os.environ.get("GARMIN_PILOT_ENABLED") != "true" or not pilot_owner:
+        raise HTTPException(503, detail={"code": "service_configuration_error"})
     expected = os.environ.get("KINESIS_GARMIN_SERVICE_TOKEN", "")
     if not expected or not secrets.compare_digest(expected, owner_header or ""):
-        raise HTTPException(401, detail={"code": "auth_required"})
+        raise HTTPException(401, detail={"code": "service_auth_failed"})
     if not ID_RE.fullmatch(connection_id) or not ID_RE.fullmatch(owner_id):
         raise HTTPException(400, detail={"code": "invalid_payload"})
+    if owner_id != pilot_owner:
+        raise HTTPException(403, detail={"code": "unsupported"})
     root = Path(os.environ.get("GARMIN_STORE", "/var/lib/kinesis-garmin"))
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     os.chmod(root, 0o700)

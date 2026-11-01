@@ -31,6 +31,11 @@ test('Garmin editor and send states preserve drafts and block conflicting action
   const remoteMutationCalls = [];
   let releaseStatus;
   let connectorUnavailable = false;
+  let garminSessionExpired = false;
+  let retryStatusGate = null;
+  let retryStatusStarted;
+  let signalRetryStatusStarted;
+  retryStatusStarted = new Promise((resolve) => { signalRetryStatusStarted = resolve; });
   let pauseSchedule = false;
   let releaseSchedule;
   let signalScheduleEntered;
@@ -41,7 +46,12 @@ test('Garmin editor and send states preserve drafts and block conflicting action
     garminConfig: { GARMIN_PILOT_ENABLED: 'true', GARMIN_PILOT_USER_ID: String(owner.id), KINESIS_GARMIN_SERVICE_TOKEN: 'synthetic-service-token-'.repeat(2), GARMIN_CONNECTOR_URL: 'http://connector.invalid' },
     garminFetch: async (url, init = {}) => {
       remoteCalls.push(url);
-      if (url.endsWith('/status')) { await statusGate; if (connectorUnavailable) throw new TypeError('synthetic connector unavailable'); return Response.json({ status: 'connected' }); }
+      if (url.endsWith('/status')) {
+        await statusGate;
+        if (connectorUnavailable) throw new TypeError('synthetic connector unavailable');
+        if (retryStatusGate) { const gate = retryStatusGate; signalRetryStatusStarted(); await gate; retryStatusGate = null; }
+        return Response.json({ status: garminSessionExpired ? 'reauthentication_required' : 'connected' });
+      }
       if (url.endsWith('/capabilities')) return Response.json({ devices: [{ name: 'Forerunner 55' }], running_catalog_status: 'available' });
       if (url.endsWith('/workouts') && init.method === 'POST') {
         remoteMutationCalls.push({ path: '/workouts', method: init.method, body: JSON.parse(init.body) });
@@ -514,10 +524,35 @@ test('Garmin editor and send states preserve drafts and block conflicting action
     await evaluate("document.querySelector('.lang-switch [data-lang=\"en-US\"]').click()"); await wait("document.documentElement.lang==='en-US'");
     connectorUnavailable = true;
     await command('Page.reload');
-    await wait("!document.getElementById('garminPreview').hidden && /unavailable|indisponível/i.test(document.getElementById('garminConnectionStatus').textContent)");
+    await wait("!document.getElementById('garminPreview').hidden && /could not be reached|não foi possível acessar/i.test(document.getElementById('garminConnectionStatus').textContent)");
     assert.equal(await evaluate("document.getElementById('garminPreview').hidden"), false, 'connector failure leaves the local canonical review available');
     assert.equal(await evaluate("document.getElementById('garminPublishButton').disabled"), true, 'remote action stays disabled while disconnected');
-    await captureReview('/tmp/kinesis-garmin-review-pt-desktop-connector-offline.png');
+    assert.equal(await evaluate("!document.getElementById('garminConnectionRetry').hidden"), true, 'a read-only connection retry is available');
+    assert.doesNotMatch(await evaluate("document.getElementById('garminConnectionStatus').textContent"), /npm run|Python|port|connector/i);
+    await captureGarminCard('/tmp/kinesis-garmin-connection-unavailable-en-desktop.png');
+    await evaluate("document.querySelector('.lang-switch [data-lang=\"pt-BR\"]').click()");
+    await wait("document.documentElement.lang==='pt-BR'");
+    await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await captureGarminCard('/tmp/kinesis-garmin-connection-unavailable-pt-mobile.png');
+    assert.match(await evaluate("document.getElementById('garminConnectionRetry').textContent"), /Tentar novamente/);
+    assert.doesNotMatch(await evaluate("document.getElementById('garminConnectionStatus').textContent"), /npm run|Python|porta|conector/i);
+    const mutationsBeforeConnectionRetry = remoteMutationCalls.length;
+    connectorUnavailable = false;
+    let releaseRetryStatus;
+    retryStatusGate = new Promise((resolve) => { releaseRetryStatus = resolve; });
+    await evaluate("document.getElementById('garminConnectionRetry').focus(); document.getElementById('garminConnectionRetry').click()");
+    await retryStatusStarted;
+    assert.match(await evaluate("document.getElementById('garminConnectionStatus').textContent"), /Verificando conexão/);
+    assert.equal(await evaluate("document.getElementById('garminConnectionRetry').getAttribute('aria-disabled')"), 'true', 'connection retry is locked during its read');
+    assert.equal(await evaluate("document.activeElement.id"), 'garminConnectionRetry', 'retry keeps visible keyboard focus');
+    await evaluate("document.getElementById('garminConnectionRetry').click()");
+    releaseRetryStatus();
+    await wait("/Connected|Conectado/.test(document.getElementById('garminConnectionStatus').textContent) && document.getElementById('garminConnectionRetry').hidden");
+    assert.equal(remoteMutationCalls.length, mutationsBeforeConnectionRetry, 'connection retry performs no publish or schedule mutation');
+    garminSessionExpired = true;
+    await command('Page.reload');
+    await wait("/Sua sessão Garmin expirou/.test(document.getElementById('garminConnectionStatus').textContent)");
+    assert.equal(await evaluate("!document.getElementById('garminConnectButton').hidden"), true, 'a confirmed expired session offers reconnect');
     await command('Emulation.setDeviceMetricsOverride', { width: 640, height: 450, deviceScaleFactor: 1, mobile: false });
     assert.ok(await evaluate("document.documentElement.scrollWidth <= innerWidth"), 'review has no horizontal overflow in a low-height, narrow desktop viewport');
     await captureReviewActions('/tmp/kinesis-garmin-review-low-window-actions.png');

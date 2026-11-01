@@ -116,7 +116,11 @@ function applyRuntimeConfig(options = {}) {
   ];
   for (const name of names) {
     if (values[name] !== undefined) process.env[name] = values[name];
+    else if (name !== 'DATABASE_FILE') delete process.env[name];
   }
+  // The encryption key is Python-only. dotenv may have placed a stale value in
+  // Node's environment before this resolver ran; never retain or forward it.
+  delete process.env.GARMIN_ENCRYPTION_KEY;
   return values;
 }
 

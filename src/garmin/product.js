@@ -31,22 +31,76 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
   }
 
   async function remote(request, path, options = {}) {
-    const response = await fetchImpl(`${connector}/v1/connections/${pilotOwner}/${CONNECTION}${path}`, {
-      ...options,
-      headers: {
-        'content-type': 'application/json',
-        'x-kinesis-service-key': config.KINESIS_GARMIN_SERVICE_TOKEN || '',
-        ...options.headers,
-      },
-      signal: AbortSignal.timeout(90000),
-    });
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      const error = new Error(body?.detail?.code || 'unavailable');
-      error.statusCode = response.status;
+    const diagnosticId = crypto.randomBytes(16).toString('hex');
+    let stage = 'configuration';
+    let statusCode = null;
+    let code = 'connector_configuration_error';
+    const fail = (nextCode, nextStatus = 503) => {
+      code = nextCode;
+      const error = new Error(nextCode);
+      error.statusCode = nextStatus;
+      error.diagnosticId = diagnosticId;
       throw error;
+    };
+    try {
+      const target = new URL(connector);
+      if (!['http:', 'https:'].includes(target.protocol) || target.username || target.password
+          || !config.KINESIS_GARMIN_SERVICE_TOKEN) fail('connector_configuration_error');
+      stage = 'connector_request';
+      let response;
+      try {
+        response = await fetchImpl(`${connector}/v1/connections/${pilotOwner}/${CONNECTION}${path}`, {
+          ...options,
+          headers: {
+            'content-type': 'application/json',
+            'x-kinesis-service-key': config.KINESIS_GARMIN_SERVICE_TOKEN,
+            ...options.headers,
+          },
+          signal: AbortSignal.timeout(90000),
+        });
+      } catch (error) {
+        const causeCode = error?.cause?.code;
+        if (error?.name === 'AbortError' || error?.name === 'TimeoutError') code = 'connector_timeout';
+        else if (causeCode === 'ECONNREFUSED' || causeCode === 'ECONNRESET'
+          || causeCode === 'ENOTFOUND' || error instanceof TypeError) code = 'connector_unavailable';
+        else code = 'connector_service_error';
+        throw error;
+      }
+      statusCode = response.status;
+      stage = 'connector_response';
+      let body;
+      try { body = await response.json(); }
+      catch { fail('connector_invalid_response', 502); }
+      if (!response.ok) {
+        const remoteCode = body?.detail?.code;
+        if (remoteCode === 'service_auth_failed') fail('connector_auth_failed');
+        if (remoteCode === 'service_configuration_error') fail('connector_configuration_error');
+        if (response.status >= 500) fail('connector_service_error', 503);
+        if (['auth_required', 'mfa_required', 'rate_limited', 'unsupported', 'invalid_payload', 'outcome_unknown'].includes(remoteCode)) {
+          fail(remoteCode, response.status);
+        }
+        fail('connector_service_error', 502);
+      }
+      if (path === '/status'
+          && !['authenticating', 'mfa_required', 'connected', 'disconnected', 'reauthentication_required', 'temporarily_unavailable'].includes(body?.status)) {
+        fail('connector_invalid_response', 502);
+      }
+      if (path === '/capabilities'
+          && (!Array.isArray(body?.devices)
+            || !['available', 'absent', 'unknown'].includes(body?.running_catalog_status))) {
+        fail('connector_invalid_response', 502);
+      }
+      return body;
+    } catch (error) {
+      const safeError = error?.diagnosticId ? error : Object.assign(new Error(code), {
+        statusCode: code === 'connector_unavailable' ? 503 : code === 'connector_timeout' ? 504 : 503,
+        diagnosticId,
+      });
+      console.warn('[kinesis-garmin]', JSON.stringify({
+        diagnostic_id: diagnosticId, stage, code, status: statusCode,
+      }));
+      throw safeError;
     }
-    return body;
   }
 
   async function cleanupRevokedConnection() {
@@ -135,7 +189,9 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
         const { identity_fingerprint: _privateIdentity, ...publicResult } = result;
         const savedPrescription = sessionState ? JSON.parse(sessionState.prescription_json) : null;
         return { ...publicResult, connection_generation: connectionGeneration(request.user.id), pilot: true, devices: capabilities?.devices || [], running_catalog_status: capabilities?.running_catalog_status || 'unknown', prescription: sessionState ? { revision: sessionState.revision, value: savedPrescription, fingerprint: sessionState.fingerprint, preview: previewPrescription(savedPrescription) } : null, training_date: training?.dia || null, operation: operation || null };
-      } catch (error) { return reply.code(error.statusCode || 503).send({ code: safeCode(error) }); }
+      } catch (error) {
+        return reply.code(error.statusCode || 503).send({ code: safeCode(error), diagnostic_id: diagnosticIdFor(error, 'status') });
+      }
     });
     app.post('/api/garmin/auth/start', { preHandler: requireAuth }, async (request, reply) => {
       if (!eligible(request)) return reply.code(404).send({ code: 'pilot_unavailable' });
@@ -166,7 +222,7 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
         return result.status === 'mfa_required' ? { status: result.status, challenge_id: result.challenge_id, expires_in: result.expires_in } : { status: result.status };
       } catch (error) {
         if (!eligible(request)) await cleanupRevokedConnection();
-        return reply.code(error.statusCode || 503).send({ code: safeCode(error) });
+        return reply.code(error.statusCode || 503).send({ code: safeCode(error), diagnostic_id: diagnosticIdFor(error, 'auth_start') });
       }
       };
       const clearAuthStart = () => {
@@ -208,7 +264,7 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
         return { status: result.status };
       } catch (error) {
         if (!eligible(request)) { challenges.delete(id); await cleanupRevokedConnection(); }
-        return reply.code(error.statusCode || 503).send({ code: safeCode(error) });
+        return reply.code(error.statusCode || 503).send({ code: safeCode(error), diagnostic_id: diagnosticIdFor(error, 'auth_finish') });
       }
       };
       let finishResult;
@@ -230,7 +286,7 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
         return result;
       } catch (error) {
         if (!eligible(request)) await cleanupRevokedConnection();
-        return reply.code(error.statusCode || 503).send({ code: safeCode(error) });
+        return reply.code(error.statusCode || 503).send({ code: safeCode(error), diagnostic_id: diagnosticIdFor(error, 'auth_cancel') });
       }
     });
     app.delete('/api/garmin/connection', { preHandler: requireAuth }, async (request, reply) => {
@@ -246,7 +302,7 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
         return result;
       } catch (error) {
         if (!eligible(request)) await cleanupRevokedConnection();
-        return reply.code(error.statusCode || 503).send({ code: safeCode(error) });
+        return reply.code(error.statusCode || 503).send({ code: safeCode(error), diagnostic_id: diagnosticIdFor(error, 'disconnect') });
       }
     });
     app.get('/api/trainings/:id/garmin', { preHandler: requireAuth }, async (request, reply) => {
@@ -439,7 +495,17 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
 }
 
 function safeCode(error) {
-  return ['auth_required', 'mfa_required', 'rate_limited', 'unavailable', 'unsupported', 'invalid_payload', 'outcome_unknown'].includes(error.message) ? error.message : 'unavailable';
+  return ['auth_required', 'mfa_required', 'rate_limited', 'unavailable', 'unsupported', 'invalid_payload', 'outcome_unknown',
+    'connector_unavailable', 'connector_timeout', 'connector_auth_failed', 'connector_configuration_error',
+    'connector_service_error', 'connector_invalid_response'].includes(error.message) ? error.message : 'unavailable';
+}
+
+function diagnosticIdFor(error, stage) {
+  if (error?.diagnosticId) return error.diagnosticId;
+  const diagnosticId = crypto.randomBytes(16).toString('hex');
+  console.warn('[kinesis-garmin]', JSON.stringify({ diagnostic_id: diagnosticId, stage,
+    code: 'connector_service_error', status: Number.isInteger(error?.statusCode) ? error.statusCode : null }));
+  return diagnosticId;
 }
 
 function connectorTarget(target) {
@@ -565,7 +631,13 @@ async function runOperation(db, fetchImpl, config, operation, currentTraining, o
     return fetchImpl(`${root}${path}`, { ...init, headers, signal });
   };
   const readJson = async (response) => response.json().catch(() => ({}));
-  const errorResult = (code, stage, workoutId, occurrenceId = null) => {
+  const errorResult = (remoteCode, stage, workoutId, occurrenceId = null, remoteStatus = null) => {
+    const code = remoteCode === 'service_auth_failed' ? 'connector_auth_failed'
+      : remoteCode === 'service_configuration_error' ? 'connector_configuration_error' : remoteCode;
+    if (remoteStatus !== null || ['outcome_unknown', 'connector_auth_failed', 'connector_configuration_error'].includes(code)) {
+      const diagnosticId = crypto.randomBytes(16).toString('hex');
+      console.warn('[kinesis-garmin]', JSON.stringify({ diagnostic_id: diagnosticId, stage, code, status: remoteStatus }));
+    }
     const status = code === 'auth_required' ? 'reauth_required'
       : code === 'outcome_unknown' ? 'outcome_unknown' : 'failed';
     update.run(status, stage, workoutId, occurrenceId, code, operation.operationId, operation.ownerId);
@@ -586,7 +658,7 @@ async function runOperation(db, fetchImpl, config, operation, currentTraining, o
       const body = await readJson(response);
       const after = currentState();
       if (after !== 'current') { workoutId = /^[0-9]+$/.test(String(body.workout_id || '')) ? String(body.workout_id) : null; await invalidate(after, true); return; }
-      if (!response.ok) { errorResult(body?.detail?.code || 'unavailable', 'publish', null); return; }
+      if (!response.ok) { errorResult(body?.detail?.code || 'unavailable', 'publish', null, null, response.status); return; }
       workoutId = String(body.workout_id || '');
       if (!/^[0-9]+$/.test(workoutId)) { errorResult('outcome_unknown', 'publish', null); return; }
       update.run('workout_created', 'schedule', workoutId, null, null, operation.operationId, operation.ownerId);
@@ -604,7 +676,7 @@ async function runOperation(db, fetchImpl, config, operation, currentTraining, o
       const body = await readJson(response);
       const after = currentState();
       if (after !== 'current') { await invalidate(after, true); return; }
-      if (!response.ok) { errorResult(body?.detail?.code || 'unavailable', 'update_confirmation', workoutId, occurrenceId); return; }
+      if (!response.ok) { errorResult(body?.detail?.code || 'unavailable', 'update_confirmation', workoutId, occurrenceId, response.status); return; }
       if (String(body.workout_id) !== workoutId || !['updated', 'reconciled'].includes(body.status)) {
         errorResult('outcome_unknown', 'update_confirmation', workoutId, occurrenceId); return;
       }
@@ -624,7 +696,7 @@ async function runOperation(db, fetchImpl, config, operation, currentTraining, o
       const body = await readJson(response);
       const after = currentState();
       if (after !== 'current') { await invalidate(after, true); return; }
-      if (!response.ok) { errorResult(body?.detail?.code || 'unavailable', 'reschedule', workoutId, occurrenceId); return; }
+      if (!response.ok) { errorResult(body?.detail?.code || 'unavailable', 'reschedule', workoutId, occurrenceId, response.status); return; }
       const returnedId = body.scheduled_workout_id;
       if (body.scheduled !== true || String(returnedId) !== String(occurrenceId)) { errorResult('outcome_unknown', 'reschedule_reconciliation', workoutId, occurrenceId); return; }
       update.run('scheduled', 'complete', workoutId, occurrenceId, null, operation.operationId, operation.ownerId);
@@ -642,7 +714,7 @@ async function runOperation(db, fetchImpl, config, operation, currentTraining, o
       const body = await readJson(response);
       const after = currentState();
       if (after !== 'current') { await invalidate(after, true); return; }
-      if (!response.ok) { errorResult(body?.detail?.code || 'unavailable', 'reschedule', workoutId, occurrenceId); return; }
+      if (!response.ok) { errorResult(body?.detail?.code || 'unavailable', 'reschedule', workoutId, occurrenceId, response.status); return; }
       if (body.scheduled !== true || String(body.scheduled_workout_id) !== String(occurrenceId)) { errorResult('outcome_unknown', 'reschedule_reconciliation', workoutId, occurrenceId); return; }
       update.run('scheduled', 'complete', workoutId, occurrenceId, null, operation.operationId, operation.ownerId);
       return;
@@ -668,7 +740,7 @@ async function runOperation(db, fetchImpl, config, operation, currentTraining, o
     }
     const after = currentState();
     if (after !== 'current') { await invalidate(after, true); return; }
-    if (!scheduleResponse.ok) { errorResult(scheduleBody?.detail?.code || 'unavailable', 'schedule', workoutId); return; }
+    if (!scheduleResponse.ok) { errorResult(scheduleBody?.detail?.code || 'unavailable', 'schedule', workoutId, null, scheduleResponse.status); return; }
     // IDs are normalized to strings before this point; a numeric ID branch
     // here is unreachable and could obscure malformed provider responses.
     if (scheduleBody.scheduled !== true || !(typeof occurrenceId === 'string' && /^[0-9]+$/.test(occurrenceId))) {
@@ -682,6 +754,9 @@ async function runOperation(db, fetchImpl, config, operation, currentTraining, o
       ? await options.onOwnerIneligible?.() : undefined;
     const code = ['unsupported', 'invalid_prescription'].includes(error.message) ? error.message : 'outcome_unknown';
     const status = code === 'unsupported' ? 'failed' : 'outcome_unknown';
+    if (code === 'outcome_unknown') console.warn('[kinesis-garmin]', JSON.stringify({
+      diagnostic_id: crypto.randomBytes(16).toString('hex'), stage: activeStage || 'unknown', code, status: null,
+    }));
     try { update.run(status, reason === 'owner_ineligible' ? 'owner_revoked' : error.beforeDispatch ? 'worker_stopping' : activeStage || 'unknown', workoutId || operation.workoutId || null, occurrenceId || operation.occurrenceId || null, reason === 'owner_ineligible' ? (cleanupComplete ? 'cleanup_complete' : 'cleanup_pending') : code, operation.operationId, operation.ownerId); } catch { /* restart recovery marks persisted in-flight work uncertain */ }
   } finally {
     options.controllers?.delete(controller);

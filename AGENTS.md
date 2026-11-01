@@ -237,9 +237,13 @@ onboarding record of the account is preserved.
   partial config must fail without replacement. Do not source secret files or
   pass secrets in arguments. The launcher and CLI share the same loader; Python
   runs from the prepared virtualenv on `127.0.0.1` with an allowlisted
-  subprocess environment. The Node startup loads pilot settings only when the
-  private local configuration is present; it never passes the encryption key
-  to the browser. Local
+  subprocess environment. Both processes use inherited environment values
+  before the same private config; Garmin values from `.env` are deliberately
+  ignored, while ordinary app settings still use dotenv. Node snapshots the
+  inherited environment before dotenv loads, preventing configuration drift.
+  Restart both processes after changing settings. Node loads pilot settings
+  only when the private local configuration is present; it never passes the
+  encryption key to the browser. Local
   configuration, venv, Python caches and coverage files must be Git-ignored and
   excluded from Docker build context.
 - `GARMIN_PILOT_USER_ID` is temporarily the selected Kinesis account ID for

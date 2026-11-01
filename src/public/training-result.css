@@ -981,6 +981,7 @@ select.input-control {
 #garminEditStructure:disabled { opacity: .55; cursor: not-allowed; box-shadow: none; transform: none; }
 .garmin-review-buttons { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; }
 .garmin-review-buttons button { min-height: 2.75rem; }
+.garmin-session-card #garminConnectionRetry[aria-disabled="true"] { opacity: .55; cursor: progress; }
 .garmin-publish-short { display: none; }
 .garmin-review-heading h3:focus { outline: none; }
 @media (max-width: 600px) { .garmin-actions > button { width: 100%; } }

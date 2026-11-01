@@ -289,9 +289,14 @@ Kinesis and manual FIT/ZIP imports work while the connector is stopped.
 For Garmin values, precedence is: an explicitly inherited environment variable
 wins; otherwise private local configuration supplies pilot owner, service/key,
 port, and local URL/store; without either source the pilot is disabled. Local
-Garmin settings are never read from `.env`. Ordinary Kinesis configuration
-such as `DATABASE_FILE` uses explicit environment, then `.env`, then the project
-default. The
+Garmin settings are never read from `.env`. Node snapshots shell-provided values
+before loading `.env`, then applies the private Garmin config; the standalone
+connector and pilot CLI resolve the same shell/private precedence. This avoids
+Node silently treating stale Garmin entries in `.env` as explicit overrides
+that Python does not receive. Ordinary Kinesis configuration such as
+`DATABASE_FILE` uses explicit environment, then `.env`, then the project
+default. After changing runtime configuration, restart both local processes;
+neither process hot-reloads secrets or connection settings. The
 connector child receives only PATH, HOME, locale/temp paths, and required Garmin
 runtime settings; it does not inherit Node options, OpenAI keys, or unrelated
 variables. It runs `uvicorn app.main:app` from the connector directory on
@@ -307,6 +312,17 @@ preserve a protected backup, then follow the existing disconnect/recovery
 procedure. There is no improvised key rotation. The local config, virtualenv,
 Python caches, and coverage artifacts are ignored by Git and excluded from
 Docker build context.
+
+The browser's connection retry performs only local-state and connector status
+reads; it never publishes, schedules, reconciles, or clears Garmin tokens. The
+last known connection state is retained when a refresh fails, and Garmin
+re-authentication is requested only when the connector reports an expired
+session. Node emits a sanitized `[kinesis-garmin]` log with a random diagnostic
+ID, stage, normalized code, and HTTP status; no URL, key, token, response body,
+or account data is logged. `/healthz` only proves that the Python process is
+alive. A successful internal status request additionally proves that the
+Node/connector address and service key match; a Garmin session can still be
+disconnected or expired.
 
 ### Pilot variables and production boundary
 

@@ -1331,6 +1331,16 @@ port; `.venv-garmin/` stores the isolated Python environment. Both are ignored
 by Git and excluded from Docker build context. The setup command never requests
 Garmin credentials or calls Garmin/OpenAI. See the [Garmin operator contract](docs/garmin-integration.md#local-development-pilot).
 
+For local Garmin settings, explicitly inherited shell variables take precedence
+over the private setup file; stale Garmin entries in the Kinesis `.env` are not
+used. Node and the connector resolve the same shell/private values. After
+changing configuration, restart both processes. A connection retry in the
+session page only rechecks saved state and connectivity; it never republishes or
+reschedules a workout. If the page cannot refresh the connection, it preserves
+the last known state and offers a localized retry. `/healthz` only confirms the
+Python process is alive; it does not check Node-to-connector authentication or
+the Garmin session.
+
 For ZimaOS, retain the existing two-container Compose deployment: Node exposes
 `8081:3000`; Python has no published port or Cloudflare route, and its encrypted
 token volume and runtime key remain separate. The operator configures the

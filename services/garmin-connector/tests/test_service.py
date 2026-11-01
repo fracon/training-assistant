@@ -308,10 +308,23 @@ class ConnectorTests(unittest.TestCase):
         self.assertEqual(self.client.get("/docs").status_code, 404)
 
     def test_auth_and_owner_validation(self):
-        self.assertEqual(self.client.get(f"{self.prefix}/status").status_code, 401)
+        missing_key = self.client.get(f"{self.prefix}/status")
+        self.assertEqual(missing_key.status_code, 401)
+        self.assertEqual(missing_key.json(), {"detail": {"code": "service_auth_failed"}})
+        wrong_key = self.client.get(f"{self.prefix}/status", headers={"X-Kinesis-Service-Key": "wrong-synthetic-key"})
+        self.assertEqual(wrong_key.status_code, 401)
+        self.assertEqual(wrong_key.json(), {"detail": {"code": "service_auth_failed"}})
         self.assertEqual(self.client.get("/v1/connections/../pilot/status", headers=self.headers).status_code, 404)
-        self.assertEqual(self.client.get("/v1/connections/bad!/pilot/status", headers=self.headers).status_code, 403)
-        self.assertEqual(self.client.get("/v1/connections/18/pilot/status", headers=self.headers).status_code, 403)
+        self.assertEqual(self.client.get("/v1/connections/bad!/pilot/status", headers=self.headers).status_code, 400)
+        mismatch = self.client.get("/v1/connections/18/pilot/status", headers=self.headers)
+        self.assertEqual(mismatch.status_code, 403)
+        self.assertEqual(mismatch.json(), {"detail": {"code": "unsupported"}})
+        prior_enabled = os.environ["GARMIN_PILOT_ENABLED"]
+        os.environ["GARMIN_PILOT_ENABLED"] = "false"
+        misconfigured = self.client.get(f"{self.prefix}/status", headers=self.headers)
+        os.environ["GARMIN_PILOT_ENABLED"] = prior_enabled
+        self.assertEqual(misconfigured.status_code, 503)
+        self.assertEqual(misconfigured.json(), {"detail": {"code": "service_configuration_error"}})
         self.assertEqual(self.client.get(f"{self.prefix}/status", headers=self.headers).json()["status"], "disconnected")
 
     def test_encrypted_token_round_trip_and_authentication(self):
