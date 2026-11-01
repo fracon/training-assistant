@@ -41,6 +41,17 @@ project documents these relevant methods and behavior:
   `return_on_mfa=True` belongs on the `Garmin` constructor. `resume_login` on
   its transport continues an MFA challenge. The client state contains SSO
   cookies and is treated as a credential.
+- In 0.3.20, `Garmin.get_user_profile()` returns the user-settings endpoint
+  (`/userprofile-service/userprofile/user-settings`); the method's contract
+  does not require an account ID in that payload. The library's own
+  `_load_social_profile()` reads `/userprofile-service/socialProfile` and
+  assigns `profileId` to `client.profile_id` when it is an integer. Kinesis
+  keeps the existing `userData.id`/`userId` fingerprint path when present for
+  continuity, then uses the same fixed social-profile endpoint and requires
+  `profileId`; it never fabricates an identity. Authentication diagnostics
+  identify the fixed operation (`read_user_settings`, `validate_user_settings`,
+  `read_social_profile`, `validate_social_profile`, or `persist_tokens`) and an allowlisted exception
+  class/category, without raw messages or profile content.
 - Typed running workout creation through `upload_running_workout`, lookup with
   `get_workout_by_id`, and calendar scheduling with `schedule_workout` are
   documented. The adapter only accepts a small allowlisted synthetic workout
@@ -328,14 +339,39 @@ The local `garmin:pilot auth` command, `npm run dev`, and the connector launcher
 all resolve shell-provided Garmin settings before the same private local config;
 Garmin variables in `.env` are ignored. Authentication failures now preserve
 the prior encrypted session when one exists and return a normalized code plus
-diagnostic ID and stage. The connector log records only that ID, stage, code,
-safe exception category, and remote HTTP status. The CLI distinguishes local
+diagnostic ID, stage, and operation. The connector log records only that ID,
+stage, fixed operation, code, allowlisted exception class/category, and remote
+HTTP status. The CLI distinguishes local
 transport failures, internal service-key/configuration failures, Garmin auth,
 MFA, rate limits, Garmin timeouts, and token persistence failures. An
 unclassified Garmin error remains `unavailable`, but includes a diagnostic ID
-so the connector log can identify its stage without exposing the exception
-message. A `persistence_error` means the prior ciphertext remains authoritative;
+so the connector log can identify its stage, operation and safe exception class
+without exposing the exception message. A `persistence_error` means the prior ciphertext remains authoritative;
 do not delete or regenerate local tokens/configuration to retry it.
+
+### Login profile identity diagnosis
+
+The login path previously treated `get_user_profile()` as an identity API and
+raised a generic `RuntimeError` when its user-settings object lacked
+`userData.id` or `userId`. A synthetic contract test using the real 0.3.20
+`Garmin` wrapper and its real `get_user_profile()`/HTTP transport path returned
+the library-compatible settings shape without either identifier; this
+reproduced the old `503 unavailable` at `profile_identity`. The fix keeps those
+historical identity fields first (so an existing same-account fingerprint is
+stable), then uses the pinned library's fixed social-profile endpoint and
+requires its integer `profileId`. Malformed settings, missing remote identity,
+remote authentication failures, and local programming exceptions now remain
+distinct in the normalized code/operation/allowlisted exception class.
+
+The supplied real diagnostic (`stage=profile_identity`, `code=unavailable`,
+`exception=internal`, no remote status) did not include an exception class or
+operation, and the account response was not captured. It therefore cannot
+prove retrospectively that the owner's particular failure was the missing-ID
+case, nor rule out another local exception. The code-level contract mismatch
+and regression are proven synthetically; the actual account login has not been
+retried. New diagnostics are sufficient to distinguish the profile read,
+identity validation, token persistence, and allowlisted exception class on a
+future user-initiated attempt without recording profile contents.
 
 ### Pilot variables and production boundary
 

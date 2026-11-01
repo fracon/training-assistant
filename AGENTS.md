@@ -215,6 +215,16 @@ onboarding record of the account is preserved.
   minutes, allows three attempts, and is invalidated on use, disconnect, or
   connector restart. A restart requires a new login if MFA was pending. A
   transient Garmin failure does not clear an existing encrypted token record.
+- Garmin account identity must follow the pinned `garminconnect==0.3.20`
+  contract: `Garmin.get_user_profile()` returns user settings and does not
+  promise an account ID. Preserve the existing `userData.id`/`userId`
+  fingerprint paths when present; if absent, read the fixed
+  `/userprofile-service/socialProfile` endpoint used by the library's own
+  `_load_social_profile()` and require its integer `profileId`. Never invent
+  an identity or treat a missing field as a new account. Authentication
+  diagnostics may include only a fixed operation name, normalized code,
+  allowlisted exception class/category, diagnostic ID, and remote status;
+  never include exception messages or profile data.
 - Revalidate the pilot owner's current active state immediately before and after
   each Node-to-Python request. If eligibility changes during an operation, the
   Node CLI requests local disconnect; an already accepted Garmin mutation is

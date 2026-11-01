@@ -479,20 +479,74 @@ def _challenge_state(owner_id: str, connection_id: str, path: Path) -> str:
     return "connected" if path.exists() else "disconnected"
 
 
-def _identity_fingerprint(profile: Any) -> str:
-    """Return a one-way fingerprint of Garmin's stable numeric user identity."""
+class GarminProfileResponseError(Exception):
+    """The library returned a profile shape outside the inspected contract."""
+
+
+class GarminIdentityMissingError(Exception):
+    """A valid profile response did not contain a stable remote identity."""
+
+
+def _identity_fingerprint(profile: Any, *, identity_field: str | None = None,
+                          required: bool = True) -> str | None:
+    """Fingerprint the identity fields used by the pinned library contract.
+
+    ``get_user_profile()`` returns user settings; that response is not required
+    to contain an account ID. Its historical ``userData.id``/``userId`` values
+    remain preferred for fingerprint continuity. The pinned library obtains
+    ``profileId`` from its separate ``/userprofile-service/socialProfile``
+    request and stores that value as ``client.profile_id``.
+    """
     if not isinstance(profile, dict):
-        raise RuntimeError("Garmin profile identity was unavailable")
-    user_data = profile.get("userData")
-    candidate = user_data.get("id") if isinstance(user_data, dict) else None
-    if candidate is None:
-        candidate = profile.get("userId")
-    if isinstance(candidate, bool) or not isinstance(candidate, (int, str)):
-        raise RuntimeError("Garmin profile identity was unavailable")
+        raise GarminProfileResponseError("profile response has an unexpected shape")
+    if identity_field:
+        candidate = profile.get(identity_field)
+        if candidate is None and required:
+            raise GarminIdentityMissingError("remote profile identity is missing")
+        # garminconnect 0.3.20 sets profile_id only for an integer profileId.
+        if candidate is not None and (isinstance(candidate, bool) or not isinstance(candidate, int)):
+            raise GarminProfileResponseError("social profile identity has an unexpected type")
+    else:
+        user_data = profile.get("userData")
+        if user_data is not None and not isinstance(user_data, dict):
+            raise GarminProfileResponseError("user settings have an unexpected shape")
+        candidate = user_data.get("id") if isinstance(user_data, dict) else None
+        if candidate is None:
+            candidate = profile.get("userId")
+        if candidate is None and not required:
+            return None
+        if isinstance(candidate, bool) or not isinstance(candidate, (int, str)):
+            if candidate is None:
+                raise GarminIdentityMissingError("remote profile identity is missing")
+            raise GarminProfileResponseError("user settings identity has an unexpected type")
     normalized = str(candidate).strip()
     if not normalized.isdigit() or int(normalized) <= 0:
-        raise RuntimeError("Garmin profile identity was unavailable")
+        raise GarminProfileResponseError("remote profile identity is invalid")
     return hashlib.sha256(f"kinesis-garmin-account-v1:{normalized}".encode()).hexdigest()
+
+
+def _remote_identity(client: Any, set_operation) -> str:
+    """Read identity without assuming the user-settings payload contains an ID."""
+    set_operation("read_user_settings")
+    settings = client.get_user_profile()
+    set_operation("validate_user_settings")
+    if (not isinstance(settings, dict)
+            or ("userData" in settings and not isinstance(settings.get("userData"), dict))
+            or ("userData" not in settings and "userId" not in settings)):
+        raise GarminProfileResponseError("user settings response is incompatible")
+    fingerprint = _identity_fingerprint(settings, required=False)
+    if fingerprint:
+        return fingerprint
+
+    # This is the fixed endpoint used by Garmin._load_social_profile() in
+    # garminconnect 0.3.20, not a caller-controlled URL or generic proxy.
+    set_operation("read_social_profile")
+    social_profile = client.connectapi("/userprofile-service/socialProfile")
+    set_operation("validate_social_profile")
+    fingerprint = _identity_fingerprint(social_profile, identity_field="profileId")
+    if fingerprint is None:
+        raise GarminIdentityMissingError("remote profile identity is missing")
+    return fingerprint
 
 
 def _remove_connection_challenges(owner_id: str, connection_id: str) -> None:
@@ -513,21 +567,27 @@ def _previous_connection_state(owner_id: str, connection_id: str, path: Path) ->
     return current or _challenge_state(owner_id, connection_id, path)
 
 
-def _authentication_failure(exc: Exception, stage: str,
+def _authentication_failure(exc: Exception, stage: str, operation: str,
                             code_override: str | None = None) -> HTTPException:
     normalized = _error(exc)
     code = code_override or (normalized.detail.get("code") if isinstance(normalized.detail, dict) else "unavailable")
     status = 503 if code_override else normalized.status_code
+    if not code_override and isinstance(exc, GarminProfileResponseError):
+        code, status = "profile_response_invalid", 502
+    elif not code_override and isinstance(exc, GarminIdentityMissingError):
+        code, status = "remote_identity_missing", 502
     if not code_override and (isinstance(exc, TimeoutError) or "Timeout" in type(exc).__name__):
         code, status = "garmin_timeout", 504
     diagnostic_id = uuid.uuid4().hex
     _logger.warning(
-        "garmin_auth diagnostic_id=%s stage=%s code=%s exception=%s remote_status=%s",
-        diagnostic_id, stage, code, _safe_exception_category(exc),
+        "garmin_auth diagnostic_id=%s stage=%s operation=%s code=%s exception=%s exception_class=%s remote_status=%s",
+        diagnostic_id, stage, operation, code, _safe_exception_category(exc),
+        _safe_exception_class(exc),
         _download_remote_status(exc, None, None) or "none",
     )
     return HTTPException(status_code=status,
-                         detail={"code": code, "stage": stage, "diagnostic_id": diagnostic_id},
+                         detail={"code": code, "stage": stage, "operation": operation,
+                                 "diagnostic_id": diagnostic_id},
                          headers=normalized.headers)
 
 
@@ -916,7 +976,13 @@ def auth_start(owner_id: str, connection_id: str, body: AuthStart,
         _remove_connection_challenges(owner_id, connection_id)
         _states[str(path)] = "authenticating"
         stage = "garmin_login"
+        operation = "login"
         failure_code = None
+
+        def set_operation(value: str) -> None:
+            nonlocal operation
+            operation = value
+
         try:
             with _client(path, key, email=body.email, password=body.password,
                          restore=False, persist_on_exit=False,
@@ -936,8 +1002,10 @@ def auth_start(owner_id: str, connection_id: str, body: AuthStart,
                     return {"status": "mfa_required", "challenge_id": challenge_id,
                             "expires_in": CHALLENGE_TTL_SECONDS}
                 stage = "profile_identity"
-                identity = _identity_fingerprint(client.get_user_profile())
+                operation = "read_user_settings"
+                identity = _remote_identity(client, set_operation)
                 stage = "persist_session"
+                operation = "persist_tokens"
                 try:
                     _persist_tokens(client, token_dir, token_file, path, key)
                 except Exception:
@@ -946,7 +1014,7 @@ def auth_start(owner_id: str, connection_id: str, body: AuthStart,
                 _states[str(path)] = "connected"
                 return {"status": "connected", "identity_fingerprint": identity}
         except Exception as exc:
-            error = _authentication_failure(exc, stage, failure_code)
+            error = _authentication_failure(exc, stage, operation, failure_code)
             if previous_state == "connected" and path.exists():
                 _states[str(path)] = previous_state
             elif error.detail.get("code") == "auth_required":
@@ -970,7 +1038,13 @@ def auth_finish(owner_id: str, connection_id: str, body: AuthFinish,
             raise HTTPException(400, detail={"code": "auth_required"})
         try:
             stage = "resume_mfa"
+            operation = "resume_mfa"
             failure_code = None
+
+            def set_operation(value: str) -> None:
+                nonlocal operation
+                operation = value
+
             with _client(path, key, restore=False, persist_on_exit=False,
                          set_connected_on_exit=False) as (
                 client, token_dir, token_file
@@ -979,8 +1053,10 @@ def auth_finish(owner_id: str, connection_id: str, body: AuthFinish,
                 if not client.client.is_authenticated:
                     raise RuntimeError("MFA did not produce a usable Garmin session")
                 stage = "profile_identity"
-                identity = _identity_fingerprint(client.get_user_profile())
+                operation = "read_user_settings"
+                identity = _remote_identity(client, set_operation)
                 stage = "persist_session"
+                operation = "persist_tokens"
                 try:
                     _persist_tokens(client, token_dir, token_file, path, key)
                 except Exception:
@@ -990,7 +1066,7 @@ def auth_finish(owner_id: str, connection_id: str, body: AuthFinish,
             _states[str(path)] = "connected"
             return {"status": "connected", "identity_fingerprint": identity}
         except Exception as exc:
-            error = _authentication_failure(exc, stage, failure_code)
+            error = _authentication_failure(exc, stage, operation, failure_code)
             if error.detail.get("code") == "auth_required":
                 challenge["attempts"] += 1
                 if challenge["attempts"] >= MAX_MFA_ATTEMPTS:
@@ -1035,8 +1111,8 @@ def status(owner_id: str, connection_id: str,
     with _lock(str(path)):
         try:
             with _client(path, key) as (client, _, _):
-                profile = client.get_user_profile()
-            return {"status": "connected", "identity_fingerprint": _identity_fingerprint(profile)}
+                identity = _remote_identity(client, lambda _value: None)
+            return {"status": "connected", "identity_fingerprint": identity}
         except Exception as exc:
             error = _record_error(path, exc)
             return {"status": _states[str(path)], "error": error.detail["code"]}
@@ -1438,11 +1514,31 @@ def _safe_exception_category(exc) -> str:
         return "network_transport"
     if isinstance(exc, HTTPException):
         return "connector_http"
+    if isinstance(exc, (GarminProfileResponseError, GarminIdentityMissingError)):
+        return "profile_contract"
     if isinstance(exc, ValueError):
         return "validation"
     if isinstance(exc, OSError):
         return "io"
     return "internal"
+
+
+_SAFE_EXCEPTION_CLASS_NAMES = {
+    "AttributeError", "ConnectionError", "GarminConnectAuthenticationError",
+    "GarminConnectConnectionError", "GarminConnectNotFoundError",
+    "GarminConnectTooManyRequestsError", "HTTPError", "KeyError",
+    "GarminIdentityMissingError", "GarminProfileResponseError",
+    "JSONDecodeError", "OSError", "ReadTimeout", "RuntimeError",
+    "Timeout", "TypeError", "ValueError",
+}
+
+
+def _safe_exception_class(exc) -> str:
+    """Expose only a small class-name allowlist in local diagnostics."""
+    if exc is None:
+        return "none"
+    name = type(exc).__name__
+    return name if name in _SAFE_EXCEPTION_CLASS_NAMES else "OtherException"
 
 
 def _log_download_diagnostic(request_id, stage, code, exc, remote_status,

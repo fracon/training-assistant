@@ -12,6 +12,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
+import requests
 from fastapi.testclient import TestClient
 from garminconnect import Garmin
 from garminconnect.client import Client as GarminTransport
@@ -70,11 +71,138 @@ class UpstreamContractTests(unittest.TestCase):
                 json={"email": "owner@example.test", "password": "local-only"},
             )
         self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["identity_fingerprint"],
+                         hashlib.sha256(b"kinesis-garmin-account-v1:31001").hexdigest())
         token_path = Path(self.temp.name, "31-pilot.bin")
         self.assertTrue(token_path.exists())
         self.assertIn(b"KGC1", token_path.read_bytes())
         self.assertNotIn(b"synthetic-refresh-token", token_path.read_bytes())
         self.assertIn("di_token", json.loads(main._decrypt(token_path, b"u" * 32)))
+
+    def test_real_client_uses_library_social_profile_identity_when_settings_has_no_id(self):
+        """0.3.20's user-settings profile does not promise an account ID."""
+        self.assertEqual(tuple(inspect.signature(Garmin.get_user_profile).parameters), ("self",))
+        social_profile_source = inspect.getsource(Garmin._load_social_profile)
+        self.assertIn("/userprofile-service/socialProfile", social_profile_source)
+        self.assertIn('prof.get("profileId")', social_profile_source)
+        self.assertIn("isinstance(profile_id, int)", social_profile_source)
+
+        def simulated_transport_login(transport, email, password, prompt_mfa=None, return_on_mfa=False):
+            self.assertEqual((email, password), ("owner@example.test", "local-only"))
+            self.assertTrue(return_on_mfa)
+            transport.di_token = "synthetic-di-token"
+            transport.di_refresh_token = "synthetic-refresh-token"
+            return None, None
+
+        requests_seen = []
+
+        def response(payload):
+            result = Response()
+            result.status_code = 200
+            result.headers = CaseInsensitiveDict({"Content-Type": "application/json"})
+            result._content = json.dumps(payload).encode()
+            return result
+
+        def request(_session, method, url, **kwargs):
+            requests_seen.append((method, url))
+            if url.endswith("/user-settings"):
+                return response({"userData": {"measurementSystem": "metric"}})
+            if url.endswith("/socialProfile"):
+                return response({"displayName": "Synthetic", "fullName": "Synthetic User",
+                                 "profileId": 31001})
+            self.fail("unexpected Garmin endpoint in synthetic auth contract")
+
+        with patch.object(GarminTransport, "login", simulated_transport_login), \
+             patch.object(GarminTransport, "_token_expires_soon", return_value=False), \
+             patch.object(requests.Session, "request", request):
+            # Patch only the lowest HTTP boundary; Garmin.login/get_user_profile/connectapi stay real.
+            response_from_service = self.client.post(
+                f"{self.prefix}/auth/start", headers=self.headers,
+                json={"email": "owner@example.test", "password": "local-only"},
+            )
+
+        self.assertEqual(response_from_service.status_code, 200, response_from_service.text)
+        self.assertEqual(response_from_service.json()["status"], "connected")
+        self.assertEqual(response_from_service.json()["identity_fingerprint"],
+                         hashlib.sha256(b"kinesis-garmin-account-v1:31001").hexdigest())
+        self.assertEqual([url.rsplit("/", 1)[-1] for _, url in requests_seen],
+                         ["user-settings", "socialProfile"])
+
+    def test_profile_identity_diagnostics_distinguish_invalid_profile_and_missing_identity(self):
+        legacy_fingerprint = hashlib.sha256(b"kinesis-garmin-account-v1:31002").hexdigest()
+        self.assertEqual(main._identity_fingerprint({"userId": "31002"}), legacy_fingerprint)
+
+        def simulated_transport_login(transport, *_args, **kwargs):
+            self.assertTrue(kwargs["return_on_mfa"])
+            transport.di_token = "synthetic-di-token"
+            transport.di_refresh_token = "synthetic-refresh-token"
+            return None, None
+
+        def response(payload):
+            result = Response()
+            result.status_code = 200
+            result.headers = CaseInsensitiveDict({"Content-Type": "application/json"})
+            result._content = json.dumps(payload).encode()
+            return result
+
+        for settings, social, expected_code, expected_operation in (
+            ([], {"profileId": 31001}, "profile_response_invalid", "validate_user_settings"),
+            ({"userData": {"measurementSystem": "metric"}}, {"displayName": "Synthetic"},
+             "remote_identity_missing", "validate_social_profile"),
+        ):
+            def request(_session, method, url, **_kwargs):
+                return response(settings if url.endswith("/user-settings") else social)
+
+            with patch.object(GarminTransport, "login", simulated_transport_login), \
+                 patch.object(GarminTransport, "_token_expires_soon", return_value=False), \
+                 patch.object(requests.Session, "request", request), \
+                 self.assertLogs(main._logger, level="WARNING") as captured:
+                result = self.client.post(
+                    f"{self.prefix}/auth/start", headers=self.headers,
+                    json={"email": "owner@example.test", "password": "local-only"},
+                )
+            self.assertEqual(result.status_code, 502, result.text)
+            self.assertEqual(result.json()["detail"]["code"], expected_code)
+            self.assertEqual(result.json()["detail"]["operation"], expected_operation)
+            joined = "\n".join(captured.output)
+            self.assertIn(f"operation={expected_operation}", joined)
+            self.assertIn("exception_class=GarminProfileResponseError" if expected_code == "profile_response_invalid"
+                          else "exception_class=GarminIdentityMissingError", joined)
+            self.assertNotIn("owner@example.test", joined)
+            self.assertNotIn("Synthetic", joined)
+            self.assertNotIn("profileId", joined)
+
+    def test_social_profile_http_auth_error_stays_distinct_from_missing_identity(self):
+        def simulated_transport_login(transport, *_args, **kwargs):
+            transport.di_token = "synthetic-di-token"
+            transport.di_refresh_token = "synthetic-refresh-token"
+            return None, None
+
+        def response(payload, status=200):
+            result = Response()
+            result.status_code = status
+            result.headers = CaseInsensitiveDict({"Content-Type": "application/json"})
+            result._content = json.dumps(payload).encode()
+            return result
+
+        def request(_session, method, url, **_kwargs):
+            if url.endswith("/user-settings"):
+                return response({"userData": {"measurementSystem": "metric"}})
+            return response({"message": "private remote body"}, 401)
+
+        with patch.object(GarminTransport, "login", simulated_transport_login), \
+             patch.object(GarminTransport, "_token_expires_soon", return_value=False), \
+             patch.object(requests.Session, "request", request), \
+             self.assertLogs(main._logger, level="WARNING") as captured:
+            result = self.client.post(
+                f"{self.prefix}/auth/start", headers=self.headers,
+                json={"email": "owner@example.test", "password": "local-only"},
+            )
+        self.assertEqual(result.status_code, 401)
+        self.assertEqual(result.json()["detail"]["code"], "auth_required")
+        self.assertEqual(result.json()["detail"]["operation"], "read_social_profile")
+        self.assertIn("exception_class=GarminConnectAuthenticationError", captured.output[0])
+        self.assertNotIn("private remote body", captured.output[0])
 
     def test_pinned_update_and_reschedule_methods_use_existing_workout_and_occurrence_contract(self):
         client = Garmin()
@@ -558,6 +686,7 @@ class UpstreamContractTests(unittest.TestCase):
 
         with patch.object(main.tempfile, "TemporaryDirectory", tracked_temporary_directory), \
              patch.object(GarminTransport, "login", simulated_login), \
+             patch.object(Garmin, "get_user_profile", return_value={"userData": {"id": 31001}}), \
              patch.object(Garmin, "_load_profile_and_settings", return_value=None), \
              patch.object(main, "_save_encrypted", side_effect=OSError("disk unavailable")):
             response = self.client.post(
