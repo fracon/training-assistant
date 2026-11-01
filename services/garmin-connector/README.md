@@ -88,6 +88,21 @@ fingerprint and a completed schedule record prove the same workout/occurrence/
 civil-date tuple. Missing evidence is refused; remote names and IDs alone are
 not ownership proof.
 
+New workout titles are exactly the canonical name supplied by Node. The
+connector keeps the per-operation marker in the pinned
+`RunningWorkout.description` field instead of appending it to `workoutName`.
+The encrypted journal stores the marker location and fingerprint. If a create
+response is lost before Garmin returns a workout ID, reconciliation searches
+for that exact marker; once Garmin returns an ID, the connector journals the ID
+before the confirmation read and resumes through that stable ID. A prior
+branch's title marker is still recognized only with the exact operation
+fingerprint/title. If an uncertain create has neither a marker on the remote
+object nor a persisted ID, it remains `outcome_unknown` and is not repeated.
+Existing journals are read in place; no migration, token deletion, or remote
+name-based ownership inference is performed. `garminconnect==0.3.20` serializes
+the optional description separately from the title; retention of that field by
+Garmin Connect itself remains a live-account verification item.
+
 When Node updates a workout and moves its occurrence in the same product
 operation, both endpoint requests intentionally carry the same product UUID.
 The encrypted journal keeps distinct `update:<UUID>` and `reschedule:<UUID>`

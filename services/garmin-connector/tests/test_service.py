@@ -91,17 +91,26 @@ class FakeGarmin:
     def upload_running_workout(self, workout):
         self.workout = workout
         self.upload_calls += 1
-        self.workouts.append({"workoutId": 42, "workoutName": workout.workoutName})
-        return {"workoutId": 42}
+        workout_id = 41 + self.upload_calls
+        self.workouts.append({"workoutId": workout_id, "workoutName": workout.workoutName,
+                              "description": getattr(workout, "description", None)})
+        return {"workoutId": workout_id}
 
     def get_workout_by_id(self, workout_id):
-        name = getattr(getattr(self, "workout", None), "workoutName", "Synthetic")
-        return {"workoutName": name, "workoutSegments": [{"workoutSteps": [{}, {}]}]}
+        remote = next((item for item in self.workouts if str(item.get("workoutId")) == str(workout_id)), None)
+        name = remote.get("workoutName") if remote else getattr(getattr(self, "workout", None), "workoutName", "Synthetic")
+        description = remote.get("description") if remote else getattr(getattr(self, "workout", None), "description", None)
+        return {"workoutId": workout_id, "workoutName": name, "description": description,
+                "workoutSegments": [{"workoutSteps": [{}, {}]}]}
 
     def update_workout(self, workout_id, workout_json):
         self.update_calls = getattr(self, "update_calls", 0) + 1
         self.updated = (workout_id, workout_json)
-        self.workout = type("Workout", (), {"workoutName": workout_json["workoutName"]})()
+        self.workout = type("Workout", (), {"workoutName": workout_json["workoutName"],
+                                             "description": workout_json.get("description")})()
+        remote = next((item for item in self.workouts if str(item.get("workoutId")) == str(workout_id)), None)
+        if remote:
+            remote.update(workoutName=workout_json["workoutName"], description=workout_json.get("description"))
         return {"workoutId": workout_id, "workoutName": self.workout.workoutName}
 
     def get_scheduled_workout_by_id(self, scheduled_workout_id):
@@ -650,8 +659,8 @@ class ConnectorTests(unittest.TestCase):
             self.assertEqual(published.status_code, 200, published.text)
             self.assertEqual(published.json()["workout_id"], 42)
             self.assertEqual(published.json()["status"], "created")
-            self.assertLessEqual(len(fake.workout.workoutName), 60)
-            self.assertTrue(fake.workout.workoutName.startswith("synthetic intervals "))
+            self.assertEqual(fake.workout.workoutName, "synthetic intervals")
+            self.assertRegex(fake.workout.description, r"^K[A-Za-z0-9_-]+-[a-f0-9]{8}$")
             self.assertEqual(fake.workout.estimatedDurationInSecs, 1260)
             steps = fake.workout.workoutSegments[0].workoutSteps
             self.assertEqual([step.stepOrder for step in steps], [1, 2, 3])
@@ -748,7 +757,8 @@ class ConnectorTests(unittest.TestCase):
             self.assertEqual(updated.status_code, 200, updated.text)
             self.assertEqual(updated.json()["status"], "updated")
             self.assertEqual(fake.updated[0], 42)
-            self.assertEqual(fake.updated[1]["workoutName"].split(" ")[0:2], ["Updated", "synthetic"])
+            self.assertEqual(fake.updated[1]["workoutName"], "Updated synthetic")
+            self.assertRegex(fake.updated[1]["description"], r"^K[A-Za-z0-9_-]+-[a-f0-9]{8}$")
             alias = main._operation_journal(path, b"k" * 32)[update_body["operation_id"]]
             self.assertEqual(alias["artifact_kind"], "update")
             self.assertEqual(alias["workout_id"], 42)
@@ -1347,7 +1357,8 @@ process.stdout.write(JSON.stringify({
 
         def lose_update_response(workout_id, workout_json):
             fake.update_calls = getattr(fake, "update_calls", 0) + 1
-            fake.workout = type("Workout", (), {"workoutName": workout_json["workoutName"]})()
+            fake.workout = type("Workout", (), {"workoutName": workout_json["workoutName"],
+                                                 "description": workout_json.get("description")})()
             raise TimeoutError("synthetic response lost after mutation")
 
         def lose_reschedule_response(schedule_id, date_text):
@@ -1415,7 +1426,8 @@ process.stdout.write(JSON.stringify({
 
         def ambiguous_upload(workout):
             fake.upload_calls += 1
-            fake.workouts.append({"workoutId": 43, "workoutName": workout.workoutName})
+            fake.workouts.append({"workoutId": 43, "workoutName": workout.workoutName,
+                                  "description": workout.description})
             raise TimeoutError("response lost after remote create")
 
         fake.upload_running_workout = ambiguous_upload
@@ -1432,6 +1444,91 @@ process.stdout.write(JSON.stringify({
             fake.upload_running_workout = FakeGarmin.upload_running_workout.__get__(fake)
             reconciled = self.client.post(f"{self.prefix}/workouts", headers=self.headers, json=body)
         self.assertEqual(reconciled.json()["status"], "reconciled")
+        self.assertEqual(fake.upload_calls, 1)
+
+    def test_legacy_pending_upload_marker_in_title_remains_reconcilable(self):
+        path = Path(self.temp.name, "17-pilot.bin")
+        main._save_encrypted(path, b"k" * 32, b'{"di_token":"x"}')
+        operation_id = uuid.UUID("f51db93c-9fb5-44ea-9a4c-79758a3b10c0")
+        body = {"operation_id": str(operation_id), "name": "Teste Kinesis", "interval_seconds": 60}
+        model = main.WorkoutPayload.model_validate(body)
+        fingerprint = hashlib.sha256(model.model_dump_json().encode()).hexdigest()
+        token = base64.urlsafe_b64encode(operation_id.bytes).decode().rstrip("=")
+        legacy_marker = f"K{token}-{fingerprint[:8]}"
+        legacy_title = f"{body['name'][:24].strip()} {legacy_marker}"[:60]
+        main._save_operation_journal(path, b"k" * 32, {
+            str(operation_id): {"fingerprint": fingerprint, "status": "pending"},
+        })
+        fake = FakeGarmin()
+        fake.workouts = [{"workoutId": 42, "workoutName": legacy_title}]
+
+        @contextmanager
+        def fake_client(*_args, **_kwargs):
+            yield fake, Path(self.temp.name), Path(self.temp.name, "tokens.json")
+
+        with patch.object(main, "_client", fake_client):
+            response = self.client.post(f"{self.prefix}/workouts", headers=self.headers, json=body)
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["status"], "reconciled")
+        self.assertEqual(response.json()["workout_id"], 42)
+        self.assertEqual(fake.upload_calls, 0)
+        self.assertEqual(main._operation_journal(path, b"k" * 32)[str(operation_id)]["workout_id"], 42)
+
+    def test_uncertain_upload_without_a_persisted_marker_stays_unknown_without_duplicate(self):
+        path = Path(self.temp.name, "17-pilot.bin")
+        main._save_encrypted(path, b"k" * 32, b'{"di_token":"x"}')
+        fake = FakeGarmin()
+
+        def upload_without_marker(workout):
+            fake.upload_calls += 1
+            fake.workouts.append({"workoutId": 43, "workoutName": workout.workoutName})
+            raise TimeoutError("response lost and connector metadata was not returned")
+
+        fake.upload_running_workout = upload_without_marker
+
+        @contextmanager
+        def fake_client(*_args, **_kwargs):
+            yield fake, Path(self.temp.name), Path(self.temp.name, "tokens.json")
+
+        body = {"operation_id": "f51db93c-9fb5-44ea-9a4c-79758a3b10c0",
+                "name": "Teste Kinesis", "interval_seconds": 60}
+        with patch.object(main, "_client", fake_client):
+            first = self.client.post(f"{self.prefix}/workouts", headers=self.headers, json=body)
+            second = self.client.post(f"{self.prefix}/workouts", headers=self.headers, json=body)
+        self.assertEqual(first.json()["detail"]["code"], "outcome_unknown")
+        self.assertEqual(second.json()["detail"]["code"], "outcome_unknown")
+        self.assertEqual(fake.upload_calls, 1)
+
+    def test_upload_id_is_journaled_before_confirmation_read_and_recovered_by_stable_id(self):
+        path = Path(self.temp.name, "17-pilot.bin")
+        main._save_encrypted(path, b"k" * 32, b'{"di_token":"x"}')
+
+        class FirstConfirmationReadFails(FakeGarmin):
+            fail_confirmation_read = True
+
+            def get_workout_by_id(self, workout_id):
+                if self.fail_confirmation_read:
+                    self.fail_confirmation_read = False
+                    raise TimeoutError("synthetic read timeout after upload response")
+                return super().get_workout_by_id(workout_id)
+
+        fake = FirstConfirmationReadFails()
+
+        @contextmanager
+        def fake_client(*_args, **_kwargs):
+            yield fake, Path(self.temp.name), Path(self.temp.name, "tokens.json")
+
+        body = {"operation_id": "f51db93c-9fb5-44ea-9a4c-79758a3b10c0",
+                "name": "Teste Kinesis", "interval_seconds": 60}
+        with patch.object(main, "_client", fake_client):
+            first = self.client.post(f"{self.prefix}/workouts", headers=self.headers, json=body)
+            persisted = main._operation_journal(path, b"k" * 32)[body["operation_id"]]
+            second = self.client.post(f"{self.prefix}/workouts", headers=self.headers, json=body)
+        self.assertEqual(first.json()["detail"]["code"], "outcome_unknown")
+        self.assertEqual(persisted["status"], "remote_created")
+        self.assertEqual(persisted["workout_id"], 42)
+        self.assertEqual(second.status_code, 200, second.text)
+        self.assertEqual(second.json()["status"], "reconciled")
         self.assertEqual(fake.upload_calls, 1)
 
     def test_uncertain_schedule_is_reconciled_without_repeating_calendar_mutation(self):

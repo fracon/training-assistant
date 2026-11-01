@@ -15,6 +15,7 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 from garminconnect import Garmin
 from garminconnect.client import Client as GarminTransport
+from garminconnect.workout import RunningWorkout, WorkoutSegment, create_interval_step
 from requests import Response, Timeout
 from requests.structures import CaseInsensitiveDict
 
@@ -115,6 +116,80 @@ class UpstreamContractTests(unittest.TestCase):
         self.assertEqual(captured[2][1], captured[1][1])
         self.assertEqual(captured[2][2]["json"]["calendarDate"], "2026-11-13")
         self.assertEqual(captured[2][2]["json"]["workout"], {"workoutId": 42})
+
+    def test_pinned_upload_serializes_canonical_title_and_reconciliation_metadata_separately(self):
+        client = Garmin()
+        client.client.di_token = "synthetic-bearer"
+        captured = []
+
+        def request(method, url, **kwargs):
+            captured.append((method, url, kwargs))
+            response = Response()
+            response.status_code = 200
+            response.headers = CaseInsensitiveDict({"Content-Type": "application/json"})
+            response._content = json.dumps({"workoutId": 42}).encode()
+            return response
+
+        workout = RunningWorkout(
+            workoutName="Teste Kinesis",
+            description="Koperationmarker-fingerprint",
+            estimatedDurationInSecs=60,
+            workoutSegments=[WorkoutSegment(segmentOrder=1,
+                sportType={"sportTypeId": 1, "sportTypeKey": "running"},
+                workoutSteps=[create_interval_step(60, step_order=1)])],
+        )
+        with patch.object(GarminTransport, "_token_expires_soon", return_value=False), \
+             patch.object(client.client._api_session, "request", request):
+            result = client.upload_running_workout(workout)
+
+        self.assertEqual(result, {"workoutId": 42})
+        self.assertEqual(len(captured), 1)
+        payload = captured[0][2]["json"]
+        self.assertEqual(payload["workoutName"], "Teste Kinesis")
+        self.assertEqual(payload["description"], "Koperationmarker-fingerprint")
+
+    def test_publish_endpoint_uses_pinned_garmin_upload_contract_with_exact_canonical_name(self):
+        token_path = Path(self.temp.name, "31-pilot.bin")
+        main._save_encrypted(token_path, b"u" * 32, b'{"di_token":"synthetic"}')
+        client = Garmin()
+        client.client.di_token = "synthetic-bearer"
+        captured = []
+
+        def response(payload):
+            result = Response()
+            result.status_code = 200
+            result.headers = CaseInsensitiveDict({"Content-Type": "application/json"})
+            result._content = json.dumps(payload).encode()
+            return result
+
+        def request(method, url, **kwargs):
+            captured.append((method, url, kwargs))
+            if method == "GET" and url.endswith("/workouts"):
+                return response([])
+            if method == "POST":
+                return response({"workoutId": 42})
+            upload = next(item[2]["json"] for item in captured if item[0] == "POST")
+            return response({"workoutId": 42, "workoutName": upload["workoutName"],
+                             "description": upload["description"],
+                             "workoutSegments": upload["workoutSegments"]})
+
+        @contextmanager
+        def real_client(*_args, **_kwargs):
+            yield client, Path(self.temp.name), Path(self.temp.name, "tokens.json")
+
+        body = {"operation_id": "f51db93c-9fb5-44ea-9a4c-79758a3b10c0",
+                "name": "Teste Kinesis", "interval_seconds": 60}
+        with patch.object(main, "_client", real_client), \
+             patch.object(GarminTransport, "_token_expires_soon", return_value=False), \
+             patch.object(client.client._api_session, "request", request):
+            result = self.client.post(f"{self.prefix}/workouts", headers=self.headers, json=body)
+
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertEqual(result.json()["status"], "created")
+        self.assertEqual(result.json()["workout"]["name"], "Teste Kinesis")
+        upload = next(item[2]["json"] for item in captured if item[0] == "POST")
+        self.assertEqual(upload["workoutName"], "Teste Kinesis")
+        self.assertRegex(upload["description"], r"^K[A-Za-z0-9_-]+-[a-f0-9]{8}$")
 
     def test_real_garmin_original_format_is_passed_to_transport(self):
         token_path = Path(self.temp.name, "31-pilot.bin")

@@ -550,12 +550,28 @@ result says what may already have happened and asks the user to verify before
 trying again. The “Verify send result” action calls Kinesis reconciliation; it
 does not open Garmin Connect.
 
+The workout title sent to Garmin Connect is the canonical saved workout name,
+unchanged and without an operation UUID or hash. The connector places its
+opaque operation/fingerprint marker in the pinned library model's optional
+workout `description`, while the encrypted journal remains the durable source
+of operation identity. For a lost create response before Garmin returns an ID,
+the marker lets the connector find and reconcile that exact operation without
+creating a duplicate. If neither the marker nor a persisted remote ID can
+confirm the effect, the operation remains uncertain and is never republished
+automatically. Existing encrypted journals need no migration: legacy marked
+titles are still recognized only when the exact operation marker, request
+fingerprint, and expected title agree. Existing completed operations reconcile
+through their journaled workout ID and exact title. A matching friendly name
+alone is never proof of ownership. The pinned `garminconnect==0.3.20` typed
+`RunningWorkout` serializes `workoutName` and optional `description` separately;
+remote retention of that description has not been revalidated against the live
+Garmin account in this correction.
+
 The displayed device is informational. A completed state means Garmin Connect
 confirmed the workout and scheduled occurrence; it prompts watch synchronization
 and does not claim that the workout is already on the Forerunner. The connector
 translates timed steps and pace/absolute-HR targets to the pinned library
-contract. The remote title starts with the friendly workout name and retains a
-technical operation marker for reconciliation.
+contract.
 
 Distance input follows the Kinesis preferred unit and is converted to canonical
 integer meters; pace remains stored with its explicit `min_per_km` or

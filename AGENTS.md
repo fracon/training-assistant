@@ -600,6 +600,12 @@ stage, action, and confirmed remote IDs; never pair a generic publish-failed
 message with a pending-operation warning. Reconciliation resumes the same
 operation and only its unresolved stage. A lost HTTP response triggers a
 owner-scoped local operation read before the UI classifies the outcome.
+The Garmin workout title must equal the canonical saved name. Keep the opaque
+operation/fingerprint marker in the pinned connector model's separate
+description field, not in `workoutName`; use the encrypted journal and stable
+remote ID as recovery evidence. Continue recognizing exact legacy marker-title
+journals. A friendly name alone never proves ownership, and an uncertain create
+without a marker or persisted ID remains uncertain rather than being repeated.
 
 New prescriptions and edited legacy prescriptions use version 3: ordered
 optional warm-up, run/repeat/recovery sequence, and optional cool-down. A

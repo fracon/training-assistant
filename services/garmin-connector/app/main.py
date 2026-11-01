@@ -417,6 +417,22 @@ def _build_running_workout(body: WorkoutPayload | StructuredWorkoutPayload, work
     )
 
 
+def _workout_operation_marker(operation_id: uuid.UUID, fingerprint: str) -> str:
+    token = base64.urlsafe_b64encode(operation_id.bytes).decode().rstrip("=")
+    return f"K{token}-{fingerprint[:8]}"
+
+
+def _legacy_marked_workout_name(name: str, marker: str) -> str:
+    """Name written by earlier connector versions; retain it for recovery."""
+    return f"{name[:24].strip()} {marker}"[:60]
+
+
+def _workout_has_operation_marker(workout: Any, marker: str) -> bool:
+    return (isinstance(workout, dict)
+            and (marker in str(workout.get("description", ""))
+                 or marker in str(workout.get("workoutName", ""))))
+
+
 def _secret(name: str) -> bytes:
     value = os.environ.get(name, "")
     try:
@@ -1444,19 +1460,42 @@ def publish_workout(owner_id: str, connection_id: str, body: WorkoutCreateBody,
             elif not structured and any(value is not None for value in (body.recovery_target_lower_mps, body.recovery_target_upper_mps,
                                                        body.recovery_target_lower_bpm, body.recovery_target_upper_bpm)):
                 raise ValueError("No-target recovery cannot carry target bounds")
-            operation_token = base64.urlsafe_b64encode(body.operation_id.bytes).decode().rstrip("=")
-            marker = f"K{operation_token}-"
             fingerprint_full = hashlib.sha256(body.model_dump_json().encode()).hexdigest()
             fingerprint = fingerprint_full
-            remote_fingerprint = fingerprint_full[:8]
-            # Keep a human-readable label first while retaining the stable
-            # operation marker used for safe remote reconciliation.
-            expected_name = f"{body.name[:24].strip()} {marker}{remote_fingerprint}"
+            operation_marker = _workout_operation_marker(body.operation_id, fingerprint)
+            expected_name = body.name.strip()
+            legacy_name = _legacy_marked_workout_name(body.name, operation_marker)
             with _client(path, key) as (client, _, _):
                 journal = _operation_journal(path, key)
                 prior_operation = journal.get(str(body.operation_id))
                 if prior_operation and prior_operation.get("fingerprint") != fingerprint:
                     raise HTTPException(409, detail={"code": "invalid_payload"})
+                if prior_operation and prior_operation.get("status") in ("complete", "remote_created"):
+                    prior_workout_id = prior_operation.get("workout_id")
+                    if isinstance(prior_workout_id, int) and prior_workout_id > 0:
+                        try:
+                            prior_remote = client.get_workout_by_id(prior_workout_id)
+                        except Exception:
+                            prior_remote = None
+                        _check_deadline(deadline)
+                        if (isinstance(prior_remote, dict)
+                                and str(prior_remote.get("workoutId", prior_workout_id)) == str(prior_workout_id)
+                                and ((prior_operation.get("status") == "remote_created"
+                                      and prior_remote.get("workoutName") == expected_name)
+                                     or (prior_operation.get("status") == "complete"
+                                         and prior_remote.get("workoutName") == expected_name)
+                                     or (prior_remote.get("workoutName") == legacy_name)
+                                     or (prior_remote.get("workoutName") == expected_name
+                                         and prior_remote.get("description") == operation_marker))):
+                            journal[str(body.operation_id)] = {
+                                "fingerprint": fingerprint, "status": "complete",
+                                "workout_id": prior_workout_id, "remote_marker": operation_marker,
+                                "marker_location": "description",
+                            }
+                            _save_operation_journal(path, key, journal)
+                            return {"operation_id": str(body.operation_id),
+                                    "workout_id": prior_workout_id, "created": False,
+                                    "status": "reconciled"}
                 entries = []
                 complete_scan = False
                 for page in range(MAX_WORKOUT_SCAN_PAGES):
@@ -1472,14 +1511,14 @@ def publish_workout(owner_id: str, connection_id: str, body: WorkoutCreateBody,
                         complete_scan = True
                         break
                 prior = next((item for item in entries
-                              if marker in str(item.get("workoutName", ""))), None)
+                              if _workout_has_operation_marker(item, operation_marker)), None)
                 if prior:
-                    if prior.get("workoutName") != expected_name:
+                    if prior.get("workoutName") not in (expected_name, legacy_name):
                         raise HTTPException(409, detail={"code": "invalid_payload"})
                     workout_id = int(prior["workoutId"])
                     journal[str(body.operation_id)] = {
-                        "fingerprint": fingerprint, "status": "complete",
-                        "workout_id": workout_id,
+                        "fingerprint": fingerprint, "status": "complete", "workout_id": workout_id,
+                        "remote_marker": operation_marker, "marker_location": "description"
                     }
                     _save_operation_journal(path, key, journal)
                     return {"operation_id": str(body.operation_id),
@@ -1543,7 +1582,7 @@ def publish_workout(owner_id: str, connection_id: str, body: WorkoutCreateBody,
                     if body.cooldown_seconds:
                         steps.append(create_cooldown_step(body.cooldown_seconds, step_order=len(steps) + 1))
                     workout = RunningWorkout(
-                        workoutName=expected_name[:60],
+                        workoutName=expected_name,
                         estimatedDurationInSecs=(body.warmup_seconds + estimated_interval_seconds
                             + max(0, body.repetitions - (1 if body.skip_last_rest_step else 0)) * body.recovery_seconds
                             + body.cooldown_seconds) if estimated_interval_seconds is not None else 0,
@@ -1553,29 +1592,40 @@ def publish_workout(owner_id: str, connection_id: str, body: WorkoutCreateBody,
                             workoutSteps=steps,
                         )],
                     )
+                workout.description = operation_marker
             with _client(path, key) as (client, _, _):
                 if len(journal) >= 1000:
                     raise HTTPException(503, detail={"code": "unavailable"})
-                journal[str(body.operation_id)] = {"fingerprint": fingerprint, "status": "pending"}
+                journal[str(body.operation_id)] = {"fingerprint": fingerprint, "status": "pending",
+                                                    "remote_marker": operation_marker,
+                                                    "marker_location": "description"}
                 _save_operation_journal(path, key, journal)
                 mutation_started = True
                 result = client.upload_running_workout(workout)
                 _check_deadline(deadline)
                 workout_id = result.get("workoutId") if isinstance(result, dict) else None
-                if not isinstance(workout_id, int):
+                if not isinstance(workout_id, int) or workout_id <= 0:
                     raise RuntimeError("remote workout result not confirmed")
+                journal[str(body.operation_id)] = {
+                    "fingerprint": fingerprint, "status": "remote_created", "workout_id": workout_id,
+                    "remote_marker": operation_marker, "marker_location": "description",
+                }
+                _save_operation_journal(path, key, journal)
                 confirmed = client.get_workout_by_id(workout_id)
                 _check_deadline(deadline)
-                if not isinstance(confirmed, dict) or confirmed.get("workoutName") != expected_name:
+                if (not isinstance(confirmed, dict)
+                        or str(confirmed.get("workoutId", workout_id)) != str(workout_id)
+                        or confirmed.get("workoutName") != expected_name):
                     raise RuntimeError("remote workout reconciliation did not match")
                 journal[str(body.operation_id)] = {
                     "fingerprint": fingerprint, "status": "complete",
-                    "workout_id": workout_id,
+                    "workout_id": workout_id, "remote_marker": operation_marker,
+                    "marker_location": "description",
                 }
                 _save_operation_journal(path, key, journal)
                 return {"operation_id": str(body.operation_id),
                         "workout_id": workout_id, "created": True, "status": "created",
-                        "workout": {"name": confirmed.get("workoutName", ""),
+                        "workout": {"name": expected_name,
                                     "steps": len(confirmed.get("workoutSegments", [{}])[0].get("workoutSteps", []))}}
         except HTTPException:
             raise
@@ -1687,8 +1737,6 @@ def update_workout(owner_id: str, connection_id: str, workout_id: int, body: Wor
     path, key = _authenticated_client(owner_id, connection_id, x_kinesis_service_key)
     if body.workout_id != workout_id:
         raise HTTPException(400, detail={"code": "invalid_payload"})
-    operation_token = base64.urlsafe_b64encode(body.operation_id.bytes).decode().rstrip("=")
-    marker = f"K{operation_token}-"
     fingerprint = hashlib.sha256(body.model_dump_json().encode()).hexdigest()
     legacy_fingerprint = (hashlib.sha256(
         body.model_dump_json(exclude={"source_scheduled_workout_id"}).encode()).hexdigest()
@@ -1708,8 +1756,11 @@ def update_workout(owner_id: str, connection_id: str, workout_id: int, body: Wor
                     fingerprint = legacy_fingerprint
                 if prior and prior.get("fingerprint") != fingerprint:
                     raise HTTPException(409, detail={"code": "invalid_payload"})
-                expected_name = f"{body.name[:24].strip()} {marker}{fingerprint[:8]}"[:60]
+                operation_marker = _workout_operation_marker(body.operation_id, fingerprint)
+                expected_name = body.name.strip()
+                legacy_name = _legacy_marked_workout_name(body.name, operation_marker)
                 workout = _build_running_workout(body, expected_name)
+                workout.description = operation_marker
                 payload = workout.model_dump(mode="json", by_alias=True, exclude_none=True)
                 source = _completed_source_operation(journal, body.source_operation_id)
                 schedule_source = next((entry for entry in journal.values()
@@ -1730,14 +1781,18 @@ def update_workout(owner_id: str, connection_id: str, workout_id: int, body: Wor
                 if not isinstance(current_workout, dict) or str(current_workout.get("workoutId", workout_id)) != str(workout_id):
                     raise RuntimeError("Garmin workout identity was inconclusive")
                 if prior and prior.get("status") == "complete":
-                    if current_workout.get("workoutName") == expected_name:
+                    if current_workout.get("workoutName") in (expected_name, legacy_name, prior.get("name")):
                         _record_completed_workout_operation(journal, body.operation_id, fingerprint, workout_id,
                                                             body.source_scheduled_workout_id, body.source_operation_id)
                         _save_operation_journal(path, key, journal)
                         return {"workout_id": workout_id, "status": "reconciled", "updated": False}
                     raise HTTPException(503, detail={"code": "outcome_unknown"})
-                if prior and current_workout.get("workoutName") == expected_name:
-                    journal[journal_id] = {"fingerprint": fingerprint, "status": "complete", "workout_id": workout_id, "name": expected_name}
+                if prior and (current_workout.get("workoutName") == legacy_name
+                              or (current_workout.get("workoutName") == expected_name
+                                  and current_workout.get("description") == operation_marker)):
+                    journal[journal_id] = {"fingerprint": fingerprint, "status": "complete",
+                                           "workout_id": workout_id, "name": expected_name,
+                                           "remote_marker": operation_marker, "marker_location": "description"}
                     _record_completed_workout_operation(journal, body.operation_id, fingerprint, workout_id,
                                                         body.source_scheduled_workout_id, body.source_operation_id)
                     _save_operation_journal(path, key, journal)
@@ -1748,17 +1803,21 @@ def update_workout(owner_id: str, connection_id: str, workout_id: int, body: Wor
                     if len(journal) >= 1000:
                         raise HTTPException(503, detail={"code": "unavailable"})
                     prior = {"fingerprint": fingerprint, "status": "pending",
-                             "workout_id": workout_id, "previous_name": current_workout.get("workoutName")}
+                             "workout_id": workout_id, "previous_name": current_workout.get("workoutName"),
+                             "remote_marker": operation_marker, "marker_location": "description"}
                     journal[journal_id] = prior
                     _save_operation_journal(path, key, journal)
                 client.update_workout(workout_id, payload)
                 _check_deadline(deadline)
                 confirmed = client.get_workout_by_id(workout_id)
                 _check_deadline(deadline)
-                if not isinstance(confirmed, dict) or confirmed.get("workoutName") != expected_name:
+                if (not isinstance(confirmed, dict)
+                        or str(confirmed.get("workoutId", workout_id)) != str(workout_id)
+                        or confirmed.get("workoutName") != expected_name):
                     raise HTTPException(503, detail={"code": "outcome_unknown"})
                 journal[journal_id] = {"fingerprint": fingerprint, "status": "complete",
-                                       "workout_id": workout_id, "name": expected_name}
+                                       "workout_id": workout_id, "name": expected_name,
+                                       "remote_marker": operation_marker, "marker_location": "description"}
                 _record_completed_workout_operation(journal, body.operation_id, fingerprint, workout_id,
                                                     body.source_scheduled_workout_id, body.source_operation_id)
                 _save_operation_journal(path, key, journal)
