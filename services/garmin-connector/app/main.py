@@ -444,13 +444,21 @@ def _secret(name: str) -> bytes:
     return decoded
 
 
+def _private_service_failure(code: str, status: int, stage: str):
+    diagnostic_id = uuid.uuid4().hex
+    _logger.warning("garmin_connector diagnostic_id=%s stage=%s code=%s status=%s",
+                    diagnostic_id, stage, code, status)
+    raise HTTPException(status_code=status,
+                        detail={"code": code, "stage": stage, "diagnostic_id": diagnostic_id})
+
+
 def _connection(connection_id: str, owner_id: str, owner_header: str | None) -> tuple[Path, bytes]:
     pilot_owner = os.environ.get("GARMIN_PILOT_USER_ID", "")
     if os.environ.get("GARMIN_PILOT_ENABLED") != "true" or not pilot_owner:
-        raise HTTPException(503, detail={"code": "service_configuration_error"})
+        _private_service_failure("service_configuration_error", 503, "configuration")
     expected = os.environ.get("KINESIS_GARMIN_SERVICE_TOKEN", "")
     if not expected or not secrets.compare_digest(expected, owner_header or ""):
-        raise HTTPException(401, detail={"code": "service_auth_failed"})
+        _private_service_failure("service_auth_failed", 401, "service_auth")
     if not ID_RE.fullmatch(connection_id) or not ID_RE.fullmatch(owner_id):
         raise HTTPException(400, detail={"code": "invalid_payload"})
     if owner_id != pilot_owner:
@@ -503,6 +511,24 @@ def _previous_connection_state(owner_id: str, connection_id: str, path: Path) ->
     if current == "mfa_required":
         return _challenge_state(owner_id, connection_id, path)
     return current or _challenge_state(owner_id, connection_id, path)
+
+
+def _authentication_failure(exc: Exception, stage: str,
+                            code_override: str | None = None) -> HTTPException:
+    normalized = _error(exc)
+    code = code_override or (normalized.detail.get("code") if isinstance(normalized.detail, dict) else "unavailable")
+    status = 503 if code_override else normalized.status_code
+    if not code_override and (isinstance(exc, TimeoutError) or "Timeout" in type(exc).__name__):
+        code, status = "garmin_timeout", 504
+    diagnostic_id = uuid.uuid4().hex
+    _logger.warning(
+        "garmin_auth diagnostic_id=%s stage=%s code=%s exception=%s remote_status=%s",
+        diagnostic_id, stage, code, _safe_exception_category(exc),
+        _download_remote_status(exc, None, None) or "none",
+    )
+    return HTTPException(status_code=status,
+                         detail={"code": code, "stage": stage, "diagnostic_id": diagnostic_id},
+                         headers=normalized.headers)
 
 
 def _check_deadline(deadline: float) -> None:
@@ -889,6 +915,8 @@ def auth_start(owner_id: str, connection_id: str, body: AuthStart,
         previous_state = _previous_connection_state(owner_id, connection_id, path)
         _remove_connection_challenges(owner_id, connection_id)
         _states[str(path)] = "authenticating"
+        stage = "garmin_login"
+        failure_code = None
         try:
             with _client(path, key, email=body.email, password=body.password,
                          restore=False, persist_on_exit=False,
@@ -907,12 +935,18 @@ def auth_start(owner_id: str, connection_id: str, body: AuthStart,
                     _states[str(path)] = "mfa_required"
                     return {"status": "mfa_required", "challenge_id": challenge_id,
                             "expires_in": CHALLENGE_TTL_SECONDS}
+                stage = "profile_identity"
                 identity = _identity_fingerprint(client.get_user_profile())
-                _persist_tokens(client, token_dir, token_file, path, key)
+                stage = "persist_session"
+                try:
+                    _persist_tokens(client, token_dir, token_file, path, key)
+                except Exception:
+                    failure_code = "persistence_error"
+                    raise
                 _states[str(path)] = "connected"
                 return {"status": "connected", "identity_fingerprint": identity}
         except Exception as exc:
-            error = _error(exc)
+            error = _authentication_failure(exc, stage, failure_code)
             if previous_state == "connected" and path.exists():
                 _states[str(path)] = previous_state
             elif error.detail.get("code") == "auth_required":
@@ -935,6 +969,8 @@ def auth_finish(owner_id: str, connection_id: str, body: AuthFinish,
             _states[str(path)] = challenge["previous_state"]
             raise HTTPException(400, detail={"code": "auth_required"})
         try:
+            stage = "resume_mfa"
+            failure_code = None
             with _client(path, key, restore=False, persist_on_exit=False,
                          set_connected_on_exit=False) as (
                 client, token_dir, token_file
@@ -942,13 +978,19 @@ def auth_finish(owner_id: str, connection_id: str, body: AuthFinish,
                 client.resume_login(challenge["state"], body.code)
                 if not client.client.is_authenticated:
                     raise RuntimeError("MFA did not produce a usable Garmin session")
+                stage = "profile_identity"
                 identity = _identity_fingerprint(client.get_user_profile())
-                _persist_tokens(client, token_dir, token_file, path, key)
+                stage = "persist_session"
+                try:
+                    _persist_tokens(client, token_dir, token_file, path, key)
+                except Exception:
+                    failure_code = "persistence_error"
+                    raise
             _challenges.pop(body.challenge_id, None)
             _states[str(path)] = "connected"
             return {"status": "connected", "identity_fingerprint": identity}
         except Exception as exc:
-            error = _error(exc)
+            error = _authentication_failure(exc, stage, failure_code)
             if error.detail.get("code") == "auth_required":
                 challenge["attempts"] += 1
                 if challenge["attempts"] >= MAX_MFA_ATTEMPTS:
@@ -956,6 +998,10 @@ def auth_finish(owner_id: str, connection_id: str, body: AuthFinish,
                     _states[str(path)] = challenge["previous_state"]
                 else:
                     _states[str(path)] = "mfa_required"
+                raise error from None
+            if error.detail.get("code") == "persistence_error":
+                _challenges.pop(body.challenge_id, None)
+                _states[str(path)] = challenge["previous_state"] if path.exists() else "temporarily_unavailable"
                 raise error from None
             if error.detail.get("code") in ("rate_limited", "invalid_payload"):
                 raise error from None

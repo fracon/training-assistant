@@ -310,10 +310,13 @@ class ConnectorTests(unittest.TestCase):
     def test_auth_and_owner_validation(self):
         missing_key = self.client.get(f"{self.prefix}/status")
         self.assertEqual(missing_key.status_code, 401)
-        self.assertEqual(missing_key.json(), {"detail": {"code": "service_auth_failed"}})
+        self.assertEqual(missing_key.json()["detail"]["code"], "service_auth_failed")
+        self.assertEqual(missing_key.json()["detail"]["stage"], "service_auth")
+        self.assertRegex(missing_key.json()["detail"]["diagnostic_id"], r"^[a-f0-9]{32}$")
         wrong_key = self.client.get(f"{self.prefix}/status", headers={"X-Kinesis-Service-Key": "wrong-synthetic-key"})
         self.assertEqual(wrong_key.status_code, 401)
-        self.assertEqual(wrong_key.json(), {"detail": {"code": "service_auth_failed"}})
+        self.assertEqual(wrong_key.json()["detail"]["code"], "service_auth_failed")
+        self.assertEqual(wrong_key.json()["detail"]["stage"], "service_auth")
         self.assertEqual(self.client.get("/v1/connections/../pilot/status", headers=self.headers).status_code, 404)
         self.assertEqual(self.client.get("/v1/connections/bad!/pilot/status", headers=self.headers).status_code, 400)
         mismatch = self.client.get("/v1/connections/18/pilot/status", headers=self.headers)
@@ -324,7 +327,9 @@ class ConnectorTests(unittest.TestCase):
         misconfigured = self.client.get(f"{self.prefix}/status", headers=self.headers)
         os.environ["GARMIN_PILOT_ENABLED"] = prior_enabled
         self.assertEqual(misconfigured.status_code, 503)
-        self.assertEqual(misconfigured.json(), {"detail": {"code": "service_configuration_error"}})
+        self.assertEqual(misconfigured.json()["detail"]["code"], "service_configuration_error")
+        self.assertEqual(misconfigured.json()["detail"]["stage"], "configuration")
+        self.assertRegex(misconfigured.json()["detail"]["diagnostic_id"], r"^[a-f0-9]{32}$")
         self.assertEqual(self.client.get(f"{self.prefix}/status", headers=self.headers).json()["status"], "disconnected")
 
     def test_encrypted_token_round_trip_and_authentication(self):
@@ -407,6 +412,73 @@ class ConnectorTests(unittest.TestCase):
         }
         self.client.get("/healthz")
         self.assertNotIn("expired-challenge-token-value", main._challenges)
+
+    def test_auth_failure_has_stage_diagnostic_and_preserves_previous_ciphertext(self):
+        from garminconnect.exceptions import GarminConnectAuthenticationError
+
+        path = Path(self.temp.name, "17-pilot.bin")
+        key = b"k" * 32
+        main._save_encrypted(path, key, b'{"di_token":"previous-synthetic-token"}')
+        previous_ciphertext = path.read_bytes()
+        main._states[str(path)] = "connected"
+
+        class RejectedGarmin(FakeGarmin):
+            def login(self, *_args, **_kwargs):
+                raise GarminConnectAuthenticationError("private-password-fragment must not be logged")
+
+        @contextmanager
+        def rejected_client(*_args, **_kwargs):
+            yield RejectedGarmin(), Path(self.temp.name), Path(self.temp.name, "tokens.json")
+
+        with patch.object(main, "_client", rejected_client), self.assertLogs("uvicorn.error", level="WARNING") as logs:
+            rejected = self.client.post(f"{self.prefix}/auth/start", headers=self.headers,
+                                        json={"email": "pilot@example.test", "password": "never-log-this"})
+        self.assertEqual(rejected.status_code, 401)
+        self.assertEqual(rejected.json()["detail"]["code"], "auth_required")
+        self.assertEqual(rejected.json()["detail"]["stage"], "garmin_login")
+        self.assertRegex(rejected.json()["detail"]["diagnostic_id"], r"^[a-f0-9]{32}$")
+        self.assertEqual(path.read_bytes(), previous_ciphertext)
+        self.assertEqual(main._states[str(path)], "connected")
+        self.assertNotIn("private-password-fragment", " ".join(logs.output))
+        self.assertNotIn("never-log-this", " ".join(logs.output))
+
+        @contextmanager
+        def successful_client(*_args, **_kwargs):
+            yield FakeGarmin(), Path(self.temp.name), Path(self.temp.name, "tokens.json")
+
+        with patch.object(main, "_client", successful_client), patch.object(
+            main, "_persist_tokens", side_effect=OSError("private filesystem path")
+        ), self.assertLogs("uvicorn.error", level="WARNING") as persistence_logs:
+            persistence = self.client.post(f"{self.prefix}/auth/start", headers=self.headers,
+                                           json={"email": "pilot@example.test", "password": "never-log-this"})
+        self.assertEqual(persistence.status_code, 503)
+        self.assertEqual(persistence.json()["detail"]["code"], "persistence_error")
+        self.assertEqual(persistence.json()["detail"]["stage"], "persist_session")
+        self.assertRegex(persistence.json()["detail"]["diagnostic_id"], r"^[a-f0-9]{32}$")
+        self.assertEqual(path.read_bytes(), previous_ciphertext)
+        self.assertEqual(main._states[str(path)], "connected")
+        self.assertNotIn("private filesystem path", " ".join(persistence_logs.output))
+
+        class UnclassifiedGarmin(FakeGarmin):
+            def login(self, *_args, **_kwargs):
+                raise RuntimeError("private-upstream-response-fragment")
+
+        @contextmanager
+        def unclassified_client(*_args, **_kwargs):
+            yield UnclassifiedGarmin(), Path(self.temp.name), Path(self.temp.name, "tokens.json")
+
+        with patch.object(main, "_client", unclassified_client), self.assertLogs(
+            "uvicorn.error", level="WARNING"
+        ) as unknown_logs:
+            unknown = self.client.post(f"{self.prefix}/auth/start", headers=self.headers,
+                                       json={"email": "pilot@example.test", "password": "never-log-this"})
+        self.assertEqual(unknown.status_code, 503)
+        self.assertEqual(unknown.json()["detail"]["code"], "unavailable")
+        self.assertEqual(unknown.json()["detail"]["stage"], "garmin_login")
+        self.assertRegex(unknown.json()["detail"]["diagnostic_id"], r"^[a-f0-9]{32}$")
+        self.assertEqual(path.read_bytes(), previous_ciphertext)
+        self.assertEqual(main._states[str(path)], "connected")
+        self.assertNotIn("private-upstream-response-fragment", " ".join(unknown_logs.output))
 
     def test_mfa_attempt_limit_and_wrong_owner(self):
         challenge = "opaque-challenge-id-is-long-enough"

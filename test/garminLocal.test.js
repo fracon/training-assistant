@@ -10,6 +10,7 @@ const Database = require('better-sqlite3');
 const local = require('../scripts/garmin-local-config');
 const setup = require('../scripts/garmin-setup');
 const connector = require('../scripts/garmin-connector');
+const pilot = require('../scripts/garmin-pilot');
 
 function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kinesis-garmin-local-'));
@@ -218,15 +219,18 @@ test('Node and the local connector ignore stale Garmin dotenv values and use the
   // Python launcher receives the same shell environment directly.
   const nodeConfig = local.runtimeConfig({ explicitEnv: shell, dotenvValues, privateConfig });
   const connectorConfig = local.runtimeConfig({ explicitEnv: shell, dotenvValues, privateConfig });
+  const pilotConfig = pilot.pilotRuntimeConfig({ explicitEnv: shell, dotenvValues, privateConfig });
   for (const key of ['GARMIN_PILOT_USER_ID', 'KINESIS_GARMIN_SERVICE_TOKEN', 'GARMIN_ENCRYPTION_KEY',
     'GARMIN_CONNECTOR_PORT', 'GARMIN_CONNECTOR_URL', 'GARMIN_PILOT_ENABLED']) {
     assert.equal(connectorConfig[key], nodeConfig[key], `${key} must match in both processes`);
+    assert.equal(pilotConfig[key], nodeConfig[key], `${key} must match in the CLI`);
   }
   assert.equal(connectorConfig.KINESIS_GARMIN_SERVICE_TOKEN, 'p'.repeat(43));
   assert.equal(connectorConfig.GARMIN_CONNECTOR_URL, 'http://127.0.0.1:8080');
   const pythonEnv = connector.connectorEnvironment(connectorConfig, shell);
   assert.equal(pythonEnv.KINESIS_GARMIN_SERVICE_TOKEN, nodeConfig.KINESIS_GARMIN_SERVICE_TOKEN);
   assert.equal(pythonEnv.GARMIN_ENCRYPTION_KEY, nodeConfig.GARMIN_ENCRYPTION_KEY);
+  assert.equal(pilotConfig.KINESIS_GARMIN_SERVICE_TOKEN, connectorConfig.KINESIS_GARMIN_SERVICE_TOKEN);
   fs.rmSync(root, { recursive: true, force: true });
 });
 

@@ -324,6 +324,19 @@ alive. A successful internal status request additionally proves that the
 Node/connector address and service key match; a Garmin session can still be
 disconnected or expired.
 
+The local `garmin:pilot auth` command, `npm run dev`, and the connector launcher
+all resolve shell-provided Garmin settings before the same private local config;
+Garmin variables in `.env` are ignored. Authentication failures now preserve
+the prior encrypted session when one exists and return a normalized code plus
+diagnostic ID and stage. The connector log records only that ID, stage, code,
+safe exception category, and remote HTTP status. The CLI distinguishes local
+transport failures, internal service-key/configuration failures, Garmin auth,
+MFA, rate limits, Garmin timeouts, and token persistence failures. An
+unclassified Garmin error remains `unavailable`, but includes a diagnostic ID
+so the connector log can identify its stage without exposing the exception
+message. A `persistence_error` means the prior ciphertext remains authoritative;
+do not delete or regenerate local tokens/configuration to retry it.
+
 ### Pilot variables and production boundary
 
 | Variable | Used by | Scope |
