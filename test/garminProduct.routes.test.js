@@ -104,6 +104,39 @@ test('prescription writes reject an obsolete expected revision without overwriti
   await app.close(); db.close();
 });
 
+test('a saved v3 workout keeps a standalone recovery in the canonical payload, SQLite and rebuilt review', async () => {
+  const h = await productApiHarness();
+  try {
+    const prescription = { version: 3, sport: 'running', name: 'Long run with recovery', steps: [
+      { id: 'warmup', kind: 'warmup', end: { type: 'time', value: 600 }, target: { type: 'none' } },
+      { id: 'run', kind: 'run', end: { type: 'time', value: 7200 }, target: { type: 'none' } },
+      { id: 'recovery', kind: 'recovery', end: { type: 'time', value: 180 }, target: { type: 'none' } },
+      { id: 'cooldown', kind: 'cooldown', end: { type: 'time', value: 600 }, target: { type: 'none' } },
+    ] };
+    const saved = await h.app.inject({ method: 'PUT', url: '/api/trainings/1/garmin/prescription', headers: { cookie: h.cookie }, payload: {
+      expected_revision: null, expected_training_date: '2026-11-02', expected_connection_generation: 1, prescription,
+    } });
+    assert.equal(saved.statusCode, 200, saved.body);
+    assert.deepEqual(saved.json().preview.steps.map((step) => step.kind), ['warmup', 'run', 'recovery', 'cooldown']);
+    assert.equal(saved.json().preview.expanded_step_count, 4);
+    assert.equal(saved.json().preview.estimated_duration_seconds, 8580);
+    const stored = JSON.parse(h.db.prepare('SELECT prescription_json FROM garmin_workout_prescriptions WHERE user_id=1 AND training_id=1').get().prescription_json);
+    assert.deepEqual(stored.steps, prescription.steps);
+    const reloaded = await h.app.inject({ method: 'GET', url: '/api/trainings/1/garmin', headers: { cookie: h.cookie } });
+    assert.equal(reloaded.statusCode, 200);
+    assert.deepEqual(reloaded.json().prescription.preview.steps.map((step) => step.kind), ['warmup', 'run', 'recovery', 'cooldown']);
+    assert.equal(reloaded.json().prescription.preview.estimated_duration_seconds, 8580);
+
+    const invalid = { ...prescription, steps: [prescription.steps[0], prescription.steps[2], prescription.steps[1], prescription.steps[3]] };
+    const rejected = await h.app.inject({ method: 'PUT', url: '/api/trainings/1/garmin/prescription', headers: { cookie: h.cookie }, payload: {
+      expected_revision: 1, expected_training_date: '2026-11-02', expected_connection_generation: 1, prescription: invalid,
+    } });
+    assert.equal(rejected.statusCode, 400);
+    assert.equal(rejected.json().diagnostic.reason, 'step_position_invalid');
+    assert.equal(JSON.parse(h.db.prepare('SELECT prescription_json FROM garmin_workout_prescriptions WHERE user_id=1 AND training_id=1').get().prescription_json).steps[2].kind, 'recovery', 'a rejected edit leaves the last saved prescription intact');
+  } finally { await h.close(); }
+});
+
 test('status tolerates a disconnected connector without a training snapshot and cleanup failure stays recoverable', async () => {
   let db;
   const h = await productApiHarness({ config: { KINESIS_GARMIN_SERVICE_TOKEN: '' }, garminFetch: async (url, init) => {
@@ -2126,6 +2159,7 @@ test('publish refuses a corrupted persisted prescription without creating an ope
   } });
   assert.equal(response.statusCode, 422);
   assert.equal(response.json().code, 'invalid_prescription');
+  assert.equal(response.json().diagnostic.reason, 'malformed_structure');
   assert.deepEqual(remoteCalls, []);
   assert.equal(h.db.prepare('SELECT count(*) AS count FROM garmin_training_operations').get().count, 0);
   await h.close();

@@ -271,7 +271,7 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
       if (training.completed === 1) return reply.code(409).send({ code: 'session_not_planned' });
       let prescription;
       try { prescription = validatePrescription(request.body?.prescription); }
-      catch { return reply.code(400).send({ code: 'invalid_prescription' }); }
+      catch (error) { return reply.code(400).send({ code: 'invalid_prescription', diagnostic: error.diagnostic }); }
       const fingerprint = prescriptionFingerprint(prescription);
       const expectedRevision = request.body?.expected_revision;
       const expectedDate = request.body?.expected_training_date;
@@ -327,7 +327,8 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
       }
       const operationId = crypto.randomUUID();
       try { toConnectorPayload({ operationId, prescription: JSON.parse(saved.prescription_json) }); }
-      catch (error) { return reply.code(422).send({ code: error.message === 'unsupported' ? 'unsupported' : 'invalid_prescription' }); }
+      catch (error) { return reply.code(422).send({ code: error.message === 'unsupported' ? 'unsupported' : 'invalid_prescription',
+        ...(error.diagnostic ? { diagnostic: error.diagnostic } : {}) }); }
       const generation = connectionGeneration(request.user.id);
       const write = db.transaction(() => {
         const latest = current(request, training.id);

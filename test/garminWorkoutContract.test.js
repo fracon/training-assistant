@@ -97,7 +97,7 @@ test('preview marks a mixed time and distance prescription as partial in both di
   assert.equal(preview.estimated_duration_seconds, null);
 });
 
-test('version 2 validates stage placement and recovery adjacency instead of accepting a partial sequence', () => {
+test('version 2 validates stage placement and requires a running step before standalone recovery', () => {
   const run = { id: 'run', kind: 'run', end: { type: 'time', value: 60 }, target: { type: 'none' } };
   const recovery = { id: 'rest', kind: 'recovery', end: { type: 'time', value: 30 }, target: { type: 'none' } };
   const cooldown = { id: 'cool', kind: 'cooldown', end: { type: 'time', value: 60 }, target: { type: 'none' } };
@@ -108,11 +108,11 @@ test('version 2 validates stage placement and recovery adjacency instead of acce
     [cooldown, run],
     [run, warmup],
     [recovery, run],
-    [run, recovery],
   ]) {
     assert.throws(() => validatePrescription({ version: 2, sport: 'running', name: 'Invalid order', steps }), GarminWorkoutContractError);
   }
   assert.doesNotThrow(() => validatePrescription({ version: 2, sport: 'running', name: 'Recovery in sequence', steps: [run, recovery, { ...run, id: 'run2' }] }));
+  assert.doesNotThrow(() => validatePrescription({ version: 2, sport: 'running', name: 'Final recovery', steps: [run, recovery] }));
   assert.doesNotThrow(() => validatePrescription({ version: 2, sport: 'running', name: 'Recovery after repeats', steps: [repeat, recovery, run] }));
   assert.doesNotThrow(() => validatePrescription({ version: 2, sport: 'running', name: 'Recovery before repeats', steps: [run, recovery, repeat] }));
   const repeatWithoutRecoveryButWithoutSkip = { version: 2, sport: 'running', name: 'Missing recovery', steps: [
@@ -120,6 +120,64 @@ test('version 2 validates stage placement and recovery adjacency instead of acce
       interval: { end: { type: 'time', value: 60 }, target: { type: 'none' } } },
   ] };
   assert.throws(() => validatePrescription(repeatWithoutRecoveryButWithoutSkip), GarminWorkoutContractError);
+});
+
+test('prescription diagnostics keep the stable error code while distinguishing actionable contract limits', () => {
+  const run = (id, end = { type: 'time', value: 60 }) => ({ id, kind: 'run', end, target: { type: 'none' } });
+  const expectReason = (prescription, reason, expected = {}) => {
+    assert.throws(() => validatePrescription(prescription), (error) => {
+      assert.equal(error.message, 'invalid_prescription');
+      assert.equal(error.code, 'invalid_prescription');
+      assert.equal(error.diagnostic.reason, reason);
+      for (const [key, value] of Object.entries(expected)) assert.equal(error.diagnostic[key], value);
+      return true;
+    });
+  };
+  expectReason({ version: 3, sport: 'running', name: 'Step cap', steps: [run('long', { type: 'time', value: 7201 })] },
+    'step_duration_limit', { step_id: 'long', actual: 7201, maximum: 7200, unit: 'seconds' });
+  expectReason({ version: 3, sport: 'running', name: 'Total cap', steps: Array.from({ length: 13 }, (_, index) => run(`t${index}`, { type: 'time', value: 7200 })) },
+    'total_duration_limit', { actual: 93600, maximum: 86400 });
+  expectReason({ version: 3, sport: 'running', name: 'Distance cap', steps: [
+    run('a', { type: 'distance', value: 100000 }), run('b', { type: 'distance', value: 1 }),
+  ] }, 'distance_limit', { actual: 100001, maximum: 100000, unit: 'meters' });
+  expectReason({ version: 3, sport: 'running', name: 'Distance step cap', steps: [run('long-distance', { type: 'distance', value: 100001 })] },
+    'distance_limit', { step_id: 'long-distance', actual: 100001, maximum: 100000, unit: 'meters' });
+  const many = Array.from({ length: 13 }, (_, index) => ({ id: `r${index}`, kind: 'repeat', repetitions: 2,
+    skip_last_rest_step: true, interval: { end: { type: 'time', value: 60 }, target: { type: 'none' } },
+    recovery: { end: { type: 'time', value: 30 }, target: { type: 'none' } } }));
+  expectReason({ version: 3, sport: 'running', name: 'Step count', steps: many },
+    'expanded_steps_limit', { actual: 52, maximum: 50 });
+  expectReason({ version: 3, sport: 'running', name: 'Position', steps: [
+    { id: 'warm', kind: 'warmup', end: { type: 'time', value: 60 }, target: { type: 'none' } },
+    { id: 'recovery', kind: 'recovery', end: { type: 'time', value: 30 }, target: { type: 'none' } }, run('run'),
+  ] }, 'step_position_invalid', { step_id: 'recovery', requirement: 'after_running_step' });
+  const target = { type: 'pace', unit: 'min_per_km', slower_seconds: 90, faster_seconds: 60 };
+  expectReason({ version: 3, sport: 'running', name: 'Bad target', steps: [{ ...run('target'), target }] }, 'target_invalid', { step_id: 'target', field: 'target' });
+  expectReason({ version: 3, sport: 'running', name: 'Missing target', steps: [{ ...run('target'), target: null }] }, 'target_invalid', { step_id: 'target', field: 'target' });
+  expectReason({ version: 3, sport: 'running', name: 'Bad repeats', steps: [{ id: 'repeat', kind: 'repeat', repetitions: 1,
+    skip_last_rest_step: true, interval: { end: { type: 'time', value: 60 }, target: { type: 'none' } },
+    recovery: { end: { type: 'time', value: 30 }, target: { type: 'none' } } }] },
+  'repetition_count_invalid', { step_id: 'repeat', actual: 1, minimum: 2, maximum: 20 });
+});
+
+test('v3 allows an explicit recovery after a run before cooldown or as the final step and previews it intact', () => {
+  const warmup = { id: 'warm', kind: 'warmup', end: { type: 'time', value: 600 }, target: { type: 'none' } };
+  const run = { id: 'run', kind: 'run', end: { type: 'time', value: 7200 }, target: { type: 'none' } };
+  const recovery = { id: 'rest', kind: 'recovery', end: { type: 'time', value: 180 }, target: { type: 'none' } };
+  const cooldown = { id: 'cool', kind: 'cooldown', end: { type: 'time', value: 600 }, target: { type: 'none' } };
+  for (const steps of [[warmup, run, recovery, cooldown], [warmup, run, recovery]]) {
+    const prescription = { version: 3, sport: 'running', name: 'Easy with recovery', steps };
+    assert.doesNotThrow(() => validatePrescription(prescription));
+    const preview = previewPrescription(prescription);
+    assert.deepEqual(preview.steps.map((step) => step.kind), steps.map((step) => step.kind));
+    assert.equal(preview.expanded_step_count, steps.length);
+    assert.equal(preview.estimated_duration_seconds, steps.reduce((sum, step) => sum + step.end.value, 0));
+  }
+  const fixture = previewPrescription({ version: 3, sport: 'running', name: 'Easy with recovery',
+    steps: [warmup, run, recovery, cooldown] });
+  assert.equal(fixture.estimated_duration_seconds, 8580);
+  assert.deepEqual(fixture.steps.map((step) => step.kind), ['warmup', 'run', 'recovery', 'cooldown']);
+  assert.deepEqual(fixture.steps[2], { order: 3, ...recovery });
 });
 
 test('version 2 includes the final recovery when requested and repeats its totals consistently', () => {

@@ -630,14 +630,28 @@ identity and historical v1/v2 operations remain reconcilable.
 A v3 prescription is an ordered sequence of optional warm-up, running blocks,
 and optional cool-down. A running block is either one timed/distance interval,
 a repeat group with a required independent timed/distance recovery, or an
-independent recovery between running blocks. Every block has its own target:
+independent recovery after a run/repeat block. That recovery may be followed by
+another running block or be the final work step immediately before an optional
+cool-down (or the final step when there is no cool-down). A recovery before any
+run/repeat remains invalid. Every block has its own target:
 none, absolute heart-rate bounds in bpm, or pace bounds in min/km or min/mile.
+This ordering is a Kinesis prescription rule; it is not asserted as a Garmin
+Connect restriction. The pinned connector's workout-step mapping supports an
+ordered recovery step at this position and is checked with synthetic models.
 In v3 every repeat contains a positive recovery interval. The
 `skip_last_rest_step` policy yields N−1 recoveries when enabled and N when
 disabled. v2 remains accepted for historical operations, including groups
 without recovery; those records are not silently upgraded. The preview renders
 the exact validated sequence and reports known time/distance without inventing
 duration for distance-based steps.
+
+Validation keeps the stable `invalid_prescription` API code and may include a
+sanitized `diagnostic.reason` (`step_position_invalid`, `step_duration_limit`,
+`total_duration_limit`, `distance_limit`, `expanded_steps_limit`,
+`repetition_count_invalid`, `target_invalid`, or `malformed_structure`). The
+editor maps these to localized block/summary guidance. The 120-minute per-step,
+24-hour total-time, 100 km distance, 50 expanded-step, and 20-repeat limits are
+current Kinesis contract limits, not claims about Garmin product limits.
 
 The Node validator and Python connector independently enforce the same v3
 shape, targets, ordering, positive durations/distances, 20-repeat maximum,

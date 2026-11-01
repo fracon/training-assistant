@@ -1695,6 +1695,52 @@ process.stdout.write(JSON.stringify({
         self.assertEqual(rejected.json()["detail"]["code"], "invalid_payload")
         self.assertEqual(fake.upload_calls, 1)
 
+    def test_structured_v3_accepts_explicit_recovery_after_final_run_and_before_cooldown(self):
+        main._save_encrypted(Path(self.temp.name, "17-pilot.bin"), b"k" * 32,
+                             b'{"di_token":"synthetic"}')
+        fake = FakeGarmin()
+
+        @contextmanager
+        def fake_client(*_args, **_kwargs):
+            yield fake, Path(self.temp.name), Path(self.temp.name, "tokens.json")
+
+        run = {"kind": "run", "end": {"type": "time", "value": 7200}, "target": {"type": "none"}}
+        recovery = {"kind": "recovery", "end": {"type": "time", "value": 180}, "target": {"type": "none"}}
+        warmup = {"kind": "warmup", "end": {"type": "time", "value": 600}, "target": {"type": "none"}}
+        cooldown = {"kind": "cooldown", "end": {"type": "time", "value": 600}, "target": {"type": "none"}}
+        cases = [
+            ("f51db93c-9fb5-44ea-9a4c-79758a3b10c1", [warmup, run, recovery, cooldown]),
+            ("f51db93c-9fb5-44ea-9a4c-79758a3b10c2", [warmup, run, recovery]),
+            ("f51db93c-9fb5-44ea-9a4c-79758a3b10c3", [warmup, run, recovery,
+             {**run, "end": {"type": "time", "value": 300}}, cooldown]),
+            ("f51db93c-9fb5-44ea-9a4c-79758a3b10c5", [warmup, run,
+             {**recovery, "end": {"type": "distance", "value": 200},
+              "target": {"type": "heart_rate", "mode": "absolute", "lower_bpm": 110, "upper_bpm": 130}}, cooldown]),
+        ]
+        with patch.object(main, "_client", fake_client):
+            for operation_id, raw_steps in cases:
+                body = {"operation_id": operation_id, "version": 3, "name": "Run recovery",
+                        "steps": [{"id": f"step-{index}", **step} for index, step in enumerate(raw_steps)]}
+                response = self.client.post(f"{self.prefix}/workouts", headers=self.headers, json=body)
+                self.assertEqual(response.status_code, 200, response.text)
+                steps = fake.workout.model_dump(mode="json", by_alias=True, exclude_none=True)["workoutSegments"][0]["workoutSteps"]
+                self.assertEqual([item["stepType"]["stepTypeKey"] for item in steps],
+                                 [step["kind"] if step["kind"] != "run" else "interval" for step in raw_steps])
+                self.assertEqual(steps[-1]["endConditionValue"], raw_steps[-1]["end"]["value"])
+        distance_recovery = fake.workout.model_dump(mode="json", by_alias=True, exclude_none=True)["workoutSegments"][0]["workoutSteps"][2]
+        self.assertEqual(distance_recovery["endCondition"]["conditionTypeKey"], "distance")
+        self.assertEqual(distance_recovery["endConditionValue"], 200)
+        self.assertEqual(distance_recovery["targetValueOne"], 110)
+        self.assertEqual(fake.upload_calls, len(cases))
+        invalid = {"operation_id": "f51db93c-9fb5-44ea-9a4c-79758a3b10c4", "version": 3,
+                   "name": "Recovery first", "steps": [
+                       {"id": "recovery", **recovery}, {"id": "run", **run}]}
+        with patch.object(main, "_client", fake_client):
+            response = self.client.post(f"{self.prefix}/workouts", headers=self.headers, json=invalid)
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["detail"]["code"], "invalid_payload")
+        self.assertEqual(fake.upload_calls, len(cases))
+
     def test_structured_v2_update_uses_real_workout_models_and_keeps_source_identity(self):
         path = Path(self.temp.name, "17-pilot.bin")
         main._save_encrypted(path, b"k" * 32, b'{"di_token":"synthetic"}')

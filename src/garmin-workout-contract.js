@@ -8,10 +8,15 @@ const MAX_GARMIN_EXPANDED_STEPS = 50;
 const MAX_REPEAT_COUNT = 20;
 
 class GarminWorkoutContractError extends Error {
-  constructor(code) { super(code); this.name = 'GarminWorkoutContractError'; this.code = code; }
+  constructor(code, reason = 'malformed_structure', details = {}) {
+    super(code); this.name = 'GarminWorkoutContractError'; this.code = code;
+    this.diagnostic = { reason, ...details };
+  }
 }
 
-function fail() { throw new GarminWorkoutContractError('invalid_prescription'); }
+function fail(reason = 'malformed_structure', details = {}) {
+  throw new GarminWorkoutContractError('invalid_prescription', reason, details);
+}
 
 function hasOnlyKeys(value, allowed) {
   return Object.keys(value).every((key) => allowed.includes(key));
@@ -66,19 +71,22 @@ function validateV1Prescription(value) {
   return { version: 1, sport: 'running', name, steps };
 }
 
-function validateEnd(end) {
+function validateEnd(end, context = {}) {
   if (!end || typeof end !== 'object' || Array.isArray(end)
       || !hasOnlyKeys(end, ['type', 'value'])
       || !['time', 'distance'].includes(end.type)
-      || !Number.isInteger(end.value) || end.value < 1
-      || end.value > (end.type === 'time' ? 7200 : MAX_DISTANCE_METERS)) fail();
+      || !Number.isInteger(end.value) || end.value < 1) fail('malformed_structure', context);
+  const maximum = end.type === 'time' ? 7200 : MAX_DISTANCE_METERS;
+  if (end.value > maximum) fail(end.type === 'time' ? 'step_duration_limit' : 'distance_limit', {
+    ...context, actual: end.value, maximum, unit: end.type === 'time' ? 'seconds' : 'meters',
+  });
 }
 
-function validateBlock(block) {
+function validateBlock(block, context = {}) {
   if (!block || typeof block !== 'object' || Array.isArray(block)
-      || !hasOnlyKeys(block, ['end', 'target'])) fail();
-  validateEnd(block.end);
-  validateTarget(block.target);
+      || !hasOnlyKeys(block, ['end', 'target'])) fail('malformed_structure', context);
+  validateEnd(block.end, { ...context, field: context.field || 'end' });
+  validateTarget(block.target, { ...context, field: 'target' });
 }
 
 function validateV2Prescription(value) {
@@ -102,11 +110,13 @@ function validateV2Prescription(value) {
     ids.add(step.id);
     if (step.kind === 'repeat') {
       if (!hasOnlyKeys(step, ['id', 'kind', 'repetitions', 'interval', 'recovery', 'skip_last_rest_step'])
-          || !Number.isInteger(step.repetitions) || step.repetitions < 2 || step.repetitions > MAX_REPEAT_COUNT
-          || typeof step.skip_last_rest_step !== 'boolean') fail();
-      validateBlock(step.interval);
-      if (step.recovery !== undefined) validateBlock(step.recovery);
-      if (!step.recovery && !step.skip_last_rest_step) fail();
+          || typeof step.skip_last_rest_step !== 'boolean') fail('malformed_structure', { step_id: step.id, step_index: index });
+      if (!Number.isInteger(step.repetitions) || step.repetitions < 2 || step.repetitions > MAX_REPEAT_COUNT) {
+        fail('repetition_count_invalid', { step_id: step.id, step_index: index, actual: step.repetitions, minimum: 2, maximum: MAX_REPEAT_COUNT });
+      }
+      validateBlock(step.interval, { step_id: step.id, step_index: index, field: 'interval.end' });
+      if (step.recovery !== undefined) validateBlock(step.recovery, { step_id: step.id, step_index: index, field: 'recovery.end' });
+      if (!step.recovery && !step.skip_last_rest_step) fail('malformed_structure', { step_id: step.id, step_index: index, field: 'recovery' });
       const recoveryCount = step.recovery
         ? step.repetitions - (step.skip_last_rest_step ? 1 : 0) : 0;
       expandedSteps += 1 + step.repetitions + recoveryCount;
@@ -119,32 +129,36 @@ function validateV2Prescription(value) {
       mainCount += step.repetitions;
     } else {
       if (!hasOnlyKeys(step, ['id', 'kind', 'end', 'target'])) fail();
-      validateBlock({ end: step.end, target: step.target });
+      validateBlock({ end: step.end, target: step.target }, { step_id: step.id, step_index: index, kind: step.kind });
       expandedSteps += 1;
       if (step.end.type === 'time') totalSeconds += step.end.value;
       else totalDistance += step.end.value;
       if (step.kind === 'run') mainCount += 1;
-      if (step.kind === 'warmup' && index !== 0) fail();
-      if (step.kind === 'cooldown' && index !== value.steps.length - 1) fail();
+      if (step.kind === 'warmup' && index !== 0) fail('step_position_invalid', { step_id: step.id, step_index: index, kind: step.kind });
+      if (step.kind === 'cooldown' && index !== value.steps.length - 1) fail('step_position_invalid', { step_id: step.id, step_index: index, kind: step.kind });
     }
     return JSON.parse(JSON.stringify(step));
   });
-  if (expandedSteps > MAX_GARMIN_EXPANDED_STEPS || totalSeconds > MAX_TOTAL_SECONDS
-      || totalDistance > MAX_DISTANCE_METERS || mainCount < 1) fail();
+  if (expandedSteps > MAX_GARMIN_EXPANDED_STEPS) fail('expanded_steps_limit', { actual: expandedSteps, maximum: MAX_GARMIN_EXPANDED_STEPS });
+  if (totalSeconds > MAX_TOTAL_SECONDS) fail('total_duration_limit', { actual: totalSeconds, maximum: MAX_TOTAL_SECONDS, unit: 'seconds' });
+  if (totalDistance > MAX_DISTANCE_METERS) fail('distance_limit', { field: 'total_distance', actual: totalDistance, maximum: MAX_DISTANCE_METERS, unit: 'meters' });
+  if (mainCount < 1) fail('missing_running_step');
   // The per-step position checks above already permit warm-up only at index 0
   // and cool-down only at the final index, making duplicate/start/end checks
   // here redundant while preserving the same accepted sequence contract.
   for (let index = 0; index < steps.length; index += 1) {
     if (steps[index].kind === 'recovery'
-        && (!steps.slice(0, index).some((step) => step.kind === 'run' || step.kind === 'repeat')
-          || !steps.slice(index + 1).some((step) => step.kind === 'run' || step.kind === 'repeat'))) fail();
+        && !steps.slice(0, index).some((step) => step.kind === 'run' || step.kind === 'repeat')) {
+      fail('step_position_invalid', { step_id: steps[index].id, step_index: index, kind: 'recovery', requirement: 'after_running_step' });
+    }
   }
   return { version: 2, sport: 'running', name, steps };
 }
 
 function validateV3Prescription(value) {
   const legacy = validateV2Prescription({ ...value, version: 2 });
-  if (legacy.steps.some((step) => step.kind === 'repeat' && !step.recovery)) fail();
+  const missingRecovery = legacy.steps.find((step) => step.kind === 'repeat' && !step.recovery);
+  if (missingRecovery) fail('malformed_structure', { step_id: missingRecovery.id, field: 'recovery' });
   return { ...legacy, version: 3 };
 }
 
@@ -155,8 +169,8 @@ function validatePrescription(value) {
   fail();
 }
 
-function validateTarget(target) {
-  if (!target || typeof target !== 'object' || Array.isArray(target)) fail();
+function validateTarget(target, context = {}) {
+  if (!target || typeof target !== 'object' || Array.isArray(target)) fail('target_invalid', context);
   if (target.type === 'none' && hasOnlyKeys(target, ['type'])) return;
   if (target.type === 'heart_rate' && target.mode === 'absolute'
       && hasOnlyKeys(target, ['type', 'mode', 'lower_bpm', 'upper_bpm'])
@@ -168,7 +182,7 @@ function validateTarget(target) {
       && Number.isInteger(target.slower_seconds) && Number.isInteger(target.faster_seconds)
       && target.faster_seconds >= 120 && target.slower_seconds <= 1800
       && target.faster_seconds <= target.slower_seconds) return;
-  fail();
+  fail('target_invalid', context);
 }
 
 function paceBoundsMps(target) {

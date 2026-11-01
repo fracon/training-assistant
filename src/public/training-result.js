@@ -1316,7 +1316,7 @@ async function initTrainingResult() {
   const garminFetch = async (url, options = {}) => {
     const response = await fetch(url, { ...options, headers: { 'content-type': 'application/json', ...options.headers } });
     const body = await response.json().catch(() => ({}));
-    if (!response.ok) { const error = new Error(body.code || 'unavailable'); error.status = response.status; throw error; }
+    if (!response.ok) { const error = new Error(body.code || 'unavailable'); error.status = response.status; error.diagnostic = body.diagnostic; throw error; }
     return body;
   };
   const renderGarminStatus = async () => {
@@ -1593,6 +1593,11 @@ async function initTrainingResult() {
       const ids = describedByTokens(control).filter((id) => id !== errorId);
       if (ids.length) control.setAttribute('aria-describedby', ids.join(' ')); else control.removeAttribute('aria-describedby');
     });
+    document.querySelectorAll('#garminWorkoutEditor [aria-invalid="true"]').forEach((control) => {
+      control.removeAttribute('aria-invalid');
+      const ids = describedByTokens(control).filter((id) => id !== 'garminPrescriptionError');
+      if (ids.length) control.setAttribute('aria-describedby', ids.join(' ')); else control.removeAttribute('aria-describedby');
+    });
     garminValidationSummary.querySelector('ul').replaceChildren();
     garminValidationSummary.hidden = true;
   };
@@ -1612,7 +1617,7 @@ async function initTrainingResult() {
         try { input.value = parseWorkoutDurationInput(input.value).normalized; }
         catch (error) {
           const key = ['duration_required', 'duration_positive', 'duration_format', 'duration_seconds_range', 'duration_too_long'].includes(error.message) ? error.message : 'duration_format';
-          add(input, key, { limit: garminText('durationLimit') });
+          add(input, key, { limit: garminText('durationLimit'), actual: input.value.trim() || garminText('durationEmptyValue') });
         }
       } else {
         const raw = input.value.trim();
@@ -1622,7 +1627,7 @@ async function initTrainingResult() {
         if (raw === '') add(input, 'distanceRequired');
         else if (!Number.isFinite(amount)) add(input, 'distanceFormat');
         else if (amount <= 0) add(input, 'distancePositive');
-        else if (!Number.isSafeInteger(Math.round(meters)) || Math.round(meters) > 100000) add(input, 'distanceTooLong', { limit: unit === 'mi' ? '62.14 mi' : '100 km' });
+        else if (!Number.isSafeInteger(Math.round(meters)) || Math.round(meters) > 100000) add(input, 'distanceTooLong', { actual: `${raw} ${unit}`, limit: unit === 'mi' ? '62.14 mi' : '100 km' });
       }
     }
     for (const select of document.querySelectorAll('#garminWorkoutEditor [data-target-type]:not(:disabled)')) {
@@ -1661,6 +1666,49 @@ async function initTrainingResult() {
     refreshGarminValidationSummary();
     return invalid;
   };
+  const showGarminContractDiagnostic = (diagnostic) => {
+    const reason = diagnostic?.reason || 'malformed_structure';
+    const messages = {
+      step_position_invalid: diagnostic?.kind === 'recovery' ? 'stepPositionInvalid' : 'stagePositionInvalid',
+      step_duration_limit: 'stepDurationLimit',
+      total_duration_limit: 'totalDurationLimit',
+      distance_limit: diagnostic?.field === 'total_distance' ? 'totalDistanceLimit' : 'stepDistanceLimit',
+      expanded_steps_limit: 'expandedStepsLimit',
+      repetition_count_invalid: 'repetitionRange',
+      target_invalid: 'targetInvalid',
+      missing_running_step: 'missingRunningStep',
+      malformed_structure: 'malformedStructure',
+    };
+    const block = diagnostic?.step_id
+      ? document.querySelector(`#garminRunBlocks [data-block-id="${CSS.escape(diagnostic.step_id)}"]`)
+      : null;
+    const displayDistance = (meters) => getUserPreferences().distance_unit === 'mi'
+      ? `${(meters / 1609.344).toLocaleString(undefined, { maximumFractionDigits: 2 })} mi`
+      : `${(meters / 1000).toLocaleString(undefined, { maximumFractionDigits: 2 })} km`;
+    const message = garminText(messages[reason] || 'malformedStructure', {
+      actual: diagnostic?.unit === 'seconds' ? formatDuration(diagnostic.actual) : diagnostic?.unit === 'meters' ? displayDistance(diagnostic.actual) : diagnostic?.actual,
+      maximum: diagnostic?.unit === 'seconds' ? formatDuration(diagnostic.maximum) : diagnostic?.unit === 'meters' ? displayDistance(diagnostic.maximum) : diagnostic?.maximum,
+    });
+    const prescriptionError = document.getElementById('garminPrescriptionError');
+    prescriptionError.textContent = block ? `${block.querySelector('legend')?.textContent.trim() || garminText('runBlock')}: ${message}` : message;
+    prescriptionError.hidden = false;
+    if (block) {
+      block.setAttribute('aria-invalid', 'true');
+      block.setAttribute('aria-describedby', 'garminPrescriptionError');
+      garminValidationSummary.querySelector('p').textContent = garminText('validationSummaryOne');
+      const item = document.createElement('li');
+      item.textContent = prescriptionError.textContent;
+      garminValidationSummary.querySelector('ul').replaceChildren(item);
+      garminValidationSummary.hidden = false;
+      block.querySelector('legend')?.focus();
+      block.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    } else {
+      garminValidationSummary.hidden = false;
+      garminValidationSummary.querySelector('p').textContent = message;
+      garminValidationSummary.querySelector('ul').replaceChildren();
+      prescriptionError.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+  };
   garminValidationSummary.addEventListener('click', (event) => {
     const button = event.target.closest('button[data-validation-focus-id]');
     if (!button) return;
@@ -1687,9 +1735,14 @@ async function initTrainingResult() {
     return [];
   });
   const garminPrescriptionFromForm = () => {
+    const reject = (reason, details = {}) => {
+      const error = new Error('invalid_prescription');
+      error.diagnostic = { reason, ...details };
+      throw error;
+    };
     if (!garminFormDirty && garminOriginalPrescription) return structuredClone(garminOriginalPrescription);
     if (garminOriginalPrescription?.steps.some((step) => step.kind === 'open')) throw new Error('unsupported');
-    if (garminEditorSteps.length === 0) throw new Error('invalid_prescription');
+    if (garminEditorSteps.length === 0) reject('malformed_structure');
     const steps = [];
     const warmToggle = document.getElementById('garminWarmupEnabled').checked;
     const coolToggle = document.getElementById('garminCooldownEnabled').checked;
@@ -1697,7 +1750,7 @@ async function initTrainingResult() {
     const originalCool = garminEditorSteps.find((step) => step.kind === 'cooldown');
     if (warmToggle) steps.push({ id: 'warmup', kind: 'warmup', end: readEditorEnd('warmup'), target: readEditorTarget('warmup') });
     const runRows = [...document.querySelectorAll('#garminRunBlocks .garmin-editor-block')];
-    if (!runRows.length) throw new Error('invalid_prescription');
+    if (!runRows.length) reject('missing_running_step');
     runRows.forEach((row, index) => {
       const original = garminEditorSteps.filter((step) => ['run', 'repeat', 'recovery'].includes(step.kind))[index];
       const id = original?.id || `run-${index + 1}`;
@@ -1714,7 +1767,7 @@ async function initTrainingResult() {
     let expanded = 0, totalSeconds = 0, totalMeters = 0;
     for (const step of steps) {
       if (step.kind === 'repeat') {
-        if (!Number.isInteger(step.repetitions) || step.repetitions < 2 || step.repetitions > 20) throw new Error('invalid_prescription');
+        if (!Number.isInteger(step.repetitions) || step.repetitions < 2 || step.repetitions > 20) reject('repetition_count_invalid', { step_id: step.id, actual: step.repetitions, minimum: 2, maximum: 20 });
         const rests = step.repetitions - (step.skip_last_rest_step ? 1 : 0);
         expanded += 1 + step.repetitions + rests;
         if (step.interval.end.type === 'time') totalSeconds += step.interval.end.value * step.repetitions;
@@ -1729,8 +1782,16 @@ async function initTrainingResult() {
         else totalMeters += step.end.value;
       }
     }
-    if (expanded > 50 || totalSeconds > 86400 || totalMeters > 100000
-        || !steps.some((step) => step.kind === 'run' || step.kind === 'repeat')) throw new Error('invalid_prescription');
+    let seenRunningStep = false;
+    for (let index = 0; index < steps.length; index += 1) {
+      const step = steps[index];
+      if (step.kind === 'run' || step.kind === 'repeat') seenRunningStep = true;
+      if (step.kind === 'recovery' && !seenRunningStep) reject('step_position_invalid', { step_id: step.id, step_index: index, kind: 'recovery', requirement: 'after_running_step' });
+    }
+    if (expanded > 50) reject('expanded_steps_limit', { actual: expanded, maximum: 50 });
+    if (totalSeconds > 86400) reject('total_duration_limit', { actual: totalSeconds, maximum: 86400, unit: 'seconds' });
+    if (totalMeters > 100000) reject('distance_limit', { field: 'total_distance', actual: totalMeters, maximum: 100000, unit: 'meters' });
+    if (!steps.some((step) => step.kind === 'run' || step.kind === 'repeat')) reject('missing_running_step');
     return { version: 3, sport: 'running', name: document.getElementById('garminWorkoutName').value.trim(), steps };
   };
   const garminExpandedStepCount = (steps) => steps.reduce((total, step) => {
@@ -2122,8 +2183,7 @@ async function initTrainingResult() {
       document.getElementById('garminPreviewTitle').focus();
     } catch (error) {
       if (error.message === 'invalid_prescription') {
-        prescriptionError.textContent = garminText('contractRejected');
-        prescriptionError.hidden = false;
+        showGarminContractDiagnostic(error.diagnostic);
       } else if (error.status === 409) setGarminOperationMessage('revisionConflict');
       else if (error.status === 422 || error.message === 'unsupported') setGarminOperationMessage('unsupported');
       else setGarminOperationMessage('saveFailed');

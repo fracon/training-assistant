@@ -595,8 +595,10 @@ a watch. This pilot does not implement multi-user production integration or
 the activity import phase (#74).
 
 New prescriptions and edited legacy prescriptions use version 3: ordered
-optional warm-up, run/repeat/recovery sequence, and optional cool-down. Every
-step owns its time/distance end and target. Repeat groups require a positive
+optional warm-up, run/repeat/recovery sequence, and optional cool-down. A
+standalone recovery must follow a run or repeat, but may be followed directly
+by the optional cool-down or be the final step; a later running step is not
+required. Every step owns its time/distance end and target. Repeat groups require a positive
 recovery step; the final-recovery policy determines N−1 or N recovery steps.
 Historical v1/v2 prescriptions remain readable and no-op saves preserve their
 stored JSON/fingerprint. A legacy repeat without recovery requires an explicit

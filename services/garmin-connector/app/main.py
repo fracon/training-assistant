@@ -234,10 +234,9 @@ def _validate_structured_workout(body: StructuredWorkoutPayload) -> list[dict[st
     if sum(step["kind"] == "warmup" for step in steps) > 1 or sum(step["kind"] == "cooldown" for step in steps) > 1:
         raise ValueError("workout has duplicate warmup/cooldown")
     for index, step in enumerate(steps):
-        if step["kind"] == "recovery" and (
-                not any(item["kind"] in ("run", "repeat") for item in steps[:index])
-                or not any(item["kind"] in ("run", "repeat") for item in steps[index + 1:])):
-            raise ValueError("recovery must separate running blocks")
+        if step["kind"] == "recovery" and not any(
+                item["kind"] in ("run", "repeat") for item in steps[:index]):
+            raise ValueError("standalone recovery must follow a running step")
     return steps
 
 
