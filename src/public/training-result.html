@@ -75,10 +75,12 @@
           <div class="field"><label for="garminEmail" data-i18n="garmin.product.email">Garmin email</label><input id="garminEmail" type="email" autocomplete="username" class="input-control" required maxlength="254"></div>
           <div class="field"><label for="garminPassword" data-i18n="garmin.product.password">Garmin password</label><input id="garminPassword" type="password" autocomplete="current-password" class="input-control" required maxlength="1024"></div>
           <div class="field" id="garminMfaField" hidden><label for="garminMfaCode" data-i18n="garmin.product.mfa">Verification code</label><input id="garminMfaCode" inputmode="numeric" autocomplete="one-time-code" class="input-control" maxlength="32"></div>
+          <p id="garminAuthProgress" class="garmin-auth-progress" role="status" aria-live="polite" hidden><span class="garmin-auth-spinner" aria-hidden="true"></span><span></span></p>
           <div class="garmin-actions"><button id="garminAuthSubmit" type="submit" class="btn-primary" data-i18n="garmin.product.connect">Connect Garmin</button><button id="garminAuthCancel" type="button" class="btn-secondary" hidden data-i18n="garmin.product.cancel">Cancel</button></div>
         </form>
         <button id="garminConnectButton" type="button" class="btn-secondary" data-i18n="garmin.product.connect">Connect Garmin</button>
         <button id="garminDisconnectButton" type="button" class="btn-secondary" hidden data-i18n="garmin.product.disconnect">Disconnect</button>
+        <p id="garminDisconnectHelp" class="garmin-field-help" hidden data-i18n="garmin.product.disconnectResolveHelp">Verify the pending workout operation before disconnecting.</p>
         <div id="garminPrescriptionPanel" hidden>
           <div id="garminEditorView" class="garmin-editor-view">
             <h3 data-i18n="garmin.product.prescription">Workout structure</h3>

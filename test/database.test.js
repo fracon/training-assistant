@@ -92,6 +92,10 @@ test('Garmin v2 upgrade preserves a v1 journal row and adds identity and cleanup
     CREATE TABLE garmin_pilot_connections (user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
       connection_generation INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL DEFAULT (datetime('now')));
     DROP TABLE garmin_connections_newer;
+    ALTER TABLE garmin_cleanup_state RENAME TO garmin_cleanup_newer;
+    CREATE TABLE garmin_cleanup_state (id INTEGER PRIMARY KEY CHECK (id=1), pending INTEGER NOT NULL DEFAULT 0 CHECK (pending IN (0,1)), updated_at TEXT NOT NULL DEFAULT (datetime('now')));
+    INSERT INTO garmin_cleanup_state (id,pending) VALUES (1,1);
+    DROP TABLE garmin_cleanup_newer;
     DELETE FROM schema_migrations WHERE name IN ('2026-10-garmin-session-publish-v2','2026-10-garmin-session-publish-v3','2026-10-garmin-session-publish-v4');`);
   db.pragma('foreign_keys = ON');
   migrateDatabase(db);
@@ -99,6 +103,8 @@ test('Garmin v2 upgrade preserves a v1 journal row and adds identity and cleanup
     WHERE operation_id='legacy-op'`).get(), { action: 'publish', source_operation_id: null, workout_id: '42', occurrence_id: '77' });
   assert.deepEqual(db.prepare('SELECT identity_fingerprint,cleanup_pending FROM garmin_pilot_connections WHERE user_id=1').get(), undefined);
   assert.equal(db.prepare("SELECT 1 FROM schema_migrations WHERE name='2026-10-garmin-session-publish-v3'").get() !== undefined, true);
+  assert.deepEqual(db.prepare('SELECT pending,preserve_identity FROM garmin_cleanup_state WHERE id=1').get(), { pending: 1, preserve_identity: 0 });
+  assert.ok(db.prepare("SELECT 1 FROM schema_migrations WHERE name='2026-11-garmin-cleanup-identity-v1'").get());
   db.close();
 });
 

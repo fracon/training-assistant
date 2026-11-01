@@ -1124,7 +1124,6 @@ def disconnect(owner_id: str, connection_id: str,
     path, _ = _connection(connection_id, owner_id, x_kinesis_service_key)
     with _lock(str(path)):
         path.unlink(missing_ok=True)
-        path.with_suffix(".ops").unlink(missing_ok=True)
         _states[str(path)] = "disconnected"
         _remove_connection_challenges(owner_id, connection_id)
     return {"status": "disconnected", "remote_revocation": "not_proven"}

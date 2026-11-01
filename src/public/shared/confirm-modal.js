@@ -11,6 +11,10 @@ export function showConfirm({
   cancelText,
   confirmButtonClass = 'btn-danger',
   onConfirm,
+  pendingText,
+  pendingMessage,
+  failureMessage,
+  keepOpenOnError = false,
   // Backwards-compatible aliases for existing callers while they migrate.
   confirmLabel = confirmText,
   cancelLabel = cancelText,
@@ -51,6 +55,19 @@ export function showConfirm({
     msg.className = 'confirm-message';
     msg.textContent = message;
     body.appendChild(msg);
+    const progress = document.createElement('p');
+    progress.className = 'confirm-progress';
+    progress.setAttribute('role', 'status');
+    progress.setAttribute('aria-live', 'polite');
+    progress.hidden = true;
+    if (pendingMessage) progress.textContent = pendingMessage;
+    body.appendChild(progress);
+    const failure = document.createElement('p');
+    failure.className = 'confirm-failure';
+    failure.setAttribute('role', 'alert');
+    failure.hidden = true;
+    failure.textContent = failureMessage || '';
+    body.appendChild(failure);
     card.appendChild(body);
 
     const actions = document.createElement('div');
@@ -93,19 +110,46 @@ export function showConfirm({
     confirmBtn.addEventListener('click', async () => {
       if (confirming || settled) return;
       confirming = true;
+      card.setAttribute('aria-busy', 'true');
       confirmBtn.disabled = true;
       cancelBtn.disabled = true;
+      failure.hidden = true;
+      if (pendingText) confirmBtn.textContent = pendingText;
+      progress.hidden = !pendingMessage;
+      confirmBtn.insertAdjacentHTML('afterbegin', '<span class="confirm-spinner" aria-hidden="true"></span>');
       try {
-        if (typeof onConfirm === 'function') await onConfirm();
+        const result = typeof onConfirm === 'function' ? await onConfirm() : undefined;
+        if (result === false && keepOpenOnError) {
+          confirming = false;
+          card.removeAttribute('aria-busy');
+          confirmBtn.disabled = false;
+          cancelBtn.disabled = false;
+          confirmBtn.textContent = confirmText ?? confirmLabel ?? '';
+          confirmBtn.querySelector('.confirm-spinner')?.remove();
+          progress.hidden = true;
+          failure.hidden = !failureMessage;
+          return;
+        }
         cleanup(true);
       } catch {
-        cleanup(false);
+        if (!keepOpenOnError) {
+          cleanup(false);
+          return;
+        }
+        confirming = false;
+        card.removeAttribute('aria-busy');
+        confirmBtn.disabled = false;
+        cancelBtn.disabled = false;
+        confirmBtn.textContent = confirmText ?? confirmLabel ?? '';
+        confirmBtn.querySelector('.confirm-spinner')?.remove();
+        progress.hidden = true;
+        failure.hidden = !failureMessage;
       }
-    }, { once: true });
+    });
     cancelBtn.addEventListener('click', () => cleanup(false), { once: true });
     backdrop.addEventListener('click', (event) => {
       if (!confirming && event.target === backdrop) cleanup(false);
-    }, { once: true });
+    });
 
     focusTrap.activate();
     cancelBtn.focus();

@@ -239,8 +239,18 @@ by decrypting/re-encrypting every record with an offline maintenance tool while
 the service is stopped; this tool is intentionally not part of the pilot API.
 If the key is lost, encrypted tokens cannot be recovered: remove the volume,
 generate a new key, and reconnect locally. Reconnecting does not promise remote
-token revocation. `disconnect` deletes local token ciphertext, the encrypted
-operation journal, and pending challenges. There is not yet a supported online
+token revocation. `disconnect` deletes local token ciphertext and pending
+challenges. It preserves the encrypted operation journal and its provenance;
+disconnecting does not delete or change workouts, scheduled occurrences, or
+activities in Garmin Connect. A confirmed disconnect clears the saved local
+connection state. If cleanup cannot be confirmed, Node persists a
+cleanup-pending marker and the UI keeps the dialog open for an explicit retry.
+A retry after restart uses that marker and does not repeat a workout mutation.
+An explicit user disconnect preserves the non-secret account identity
+fingerprint and connection generation so reconnecting the same account can
+retain operation provenance; a different remote identity still advances the
+generation. Revocation after owner ineligibility invalidates that identity.
+There is not yet a supported online
 key rotation command: an operator must stop Compose, make a protected copy,
 decrypt and re-encrypt both `.bin` and `.ops` records with a reviewed offline
 tool, verify the replacement with the new key, then restart; if that cannot be
@@ -292,7 +302,8 @@ npm run garmin:pilot -- capabilities-diagnose
 
 To verify token resume, restart the connector in Terminal 2, then query status
 in Terminal 3. Disconnect with `npm run garmin:pilot -- disconnect`; this
-removes only local tokens/journal and does not claim remote revocation. Garmin
+removes local credentials/challenges, preserves operation provenance, and does
+not claim remote revocation. Garmin
 password and MFA are entered only through local hidden prompts. `npm run dev`
 does not load the private pilot file or enable Garmin/AI globally; normal
 Kinesis and manual FIT/ZIP imports work while the connector is stopped.
@@ -410,7 +421,7 @@ startup or FIT/ZIP import.
    '{{.Architecture}}'`. `scripts/deploy-zimaos.sh` pulls the existing Node image,
    builds the Python image on that host architecture, then starts both. No CI
    publishing pipeline was changed. Keep the connector image digest/tag with
-   deployment records; the Compose version is `0.29.0`.
+   deployment records; the Compose version is `0.29.1`.
 4. Check `docker compose ps` and `docker compose logs --tail=50
    garmin-connector`; logs must not contain request bodies. Health is local and
    does not contact Garmin.

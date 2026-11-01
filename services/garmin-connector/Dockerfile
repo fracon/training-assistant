@@ -12,7 +12,7 @@ RUN python -m pip install --no-cache-dir --require-hashes -r requirements.lock \
     && chown -R connector:connector /app /var/lib/kinesis-garmin \
     && chmod 0700 /var/lib/kinesis-garmin
 COPY --chown=connector:connector app ./app
-LABEL org.opencontainers.image.version="0.29.0" \
+LABEL org.opencontainers.image.version="0.29.1" \
       org.opencontainers.image.title="Kinesis private Garmin connector"
 USER 10001:10001
 EXPOSE 8080

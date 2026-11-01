@@ -413,6 +413,30 @@ class ConnectorTests(unittest.TestCase):
         self.client.get("/healthz")
         self.assertNotIn("expired-challenge-token-value", main._challenges)
 
+    def test_disconnect_removes_ciphertext_but_preserves_operation_provenance_across_restart(self):
+        path = Path(self.temp.name, "17-pilot.bin")
+        journal = path.with_suffix(".ops")
+        main._save_encrypted(path, b"k" * 32, b'{"di_token":"synthetic"}')
+        main._save_operation_journal(path, b"k" * 32,
+                                     {"synthetic-operation": {"fingerprint": "a" * 64, "status": "complete"}})
+        journal_ciphertext = journal.read_bytes()
+        main._states[str(path)] = "connected"
+
+        disconnected = self.client.delete(self.prefix, headers=self.headers)
+
+        self.assertEqual(disconnected.status_code, 200)
+        self.assertEqual(disconnected.json()["status"], "disconnected")
+        self.assertFalse(path.exists(), "disconnect removes local Garmin credentials")
+        self.assertEqual(journal.read_bytes(), journal_ciphertext,
+                         "disconnect must retain the encrypted operation/provenance journal")
+        self.assertEqual(main._operation_journal(path, b"k" * 32)["synthetic-operation"]["status"], "complete")
+        main._states.clear()
+        main._locks.clear()
+        status = self.client.get(f"{self.prefix}/status", headers=self.headers)
+        self.assertEqual(status.json()["status"], "disconnected",
+                         "a fresh connector process cannot restore removed credentials")
+        self.assertEqual(journal.read_bytes(), journal_ciphertext)
+
     def test_auth_failure_has_stage_diagnostic_and_preserves_previous_ciphertext(self):
         from garminconnect.exceptions import GarminConnectAuthenticationError
 

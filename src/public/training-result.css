@@ -911,6 +911,11 @@ select.input-control {
 .garmin-editor-view { display: grid; gap: 1rem; }
 .garmin-editor-view[hidden] { display: none; }
 .garmin-actions { display: flex; flex-wrap: wrap; gap: .75rem; }
+.garmin-auth-progress { display: flex; align-items: center; gap: .65rem; margin: 0; color: var(--muted); line-height: 1.5; }
+.garmin-auth-progress[hidden] { display: none; }
+.garmin-auth-spinner { width: 1rem; height: 1rem; flex: 0 0 auto; border: 2px solid var(--line); border-inline-end-color: var(--accent); border-radius: 50%; animation: garmin-auth-spin .75s linear infinite; }
+@keyframes garmin-auth-spin { to { transform: rotate(1turn); } }
+@media (prefers-reduced-motion: reduce) { .garmin-auth-spinner { animation-duration: 1.5s; } }
 .garmin-step-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); gap: .75rem; }
 .garmin-step-grid label { display: grid; gap: .4rem; color: var(--muted); }
 .garmin-workout-editor { display: grid; gap: 1rem; margin-block: 1rem; }

@@ -69,6 +69,14 @@ browser never calls Python directly. This remains restricted to the configured
 Kinesis pilot owner and is not production multi-user support. See
 `../../docs/garmin-integration.md` for supported shapes and owner homologation.
 
+`DELETE /v1/connections/{owner}/{connection}` removes that connection's local
+encrypted token record and in-memory challenges. It deliberately retains the
+encrypted `.ops` journal because it is the durable provenance for already
+published/scheduled workouts; disconnect does not delete remote Garmin data or
+claim remote token revocation. A new connector process remains disconnected
+when the token record is absent, while the journal is still available for safe
+operation reconciliation after an eligible reconnect.
+
 The internal `POST /workouts` contract accepts exactly one main interval end
 condition: `interval_seconds` or `interval_distance_meters`. Distance is
 canonical meters and maps to the pinned library's distance-step constructor.

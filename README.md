@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, request and review weekly AI proposals, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized training-request prompts for use with an external AI.
 
-Current application version: **0.29.0** (active beta development; issue #73 is on its dedicated open PR branch until merged).
+Current application version: **0.29.1** (active beta development; issue #73 is on its dedicated open PR branch until merged).
 
 ## AI integration: cycle planning and weekly proposals
 

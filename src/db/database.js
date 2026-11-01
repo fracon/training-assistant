@@ -288,9 +288,17 @@ function migrateDatabase(db) {
     CREATE TABLE IF NOT EXISTS garmin_cleanup_state (
       id INTEGER PRIMARY KEY CHECK (id = 1),
       pending INTEGER NOT NULL DEFAULT 0 CHECK (pending IN (0,1)),
+      -- User-initiated disconnect preserves the non-secret identity fingerprint
+      -- so reconnecting the same Garmin account can retain its provenance.
+      preserve_identity INTEGER NOT NULL DEFAULT 0 CHECK (preserve_identity IN (0,1)),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `);
+  const cleanupColumns = db.prepare('PRAGMA table_info(garmin_cleanup_state)').all().map((row) => row.name);
+  if (!cleanupColumns.includes('preserve_identity')) {
+    db.exec('ALTER TABLE garmin_cleanup_state ADD COLUMN preserve_identity INTEGER NOT NULL DEFAULT 0 CHECK (preserve_identity IN (0,1))');
+  }
+  db.prepare('INSERT OR IGNORE INTO schema_migrations (name) VALUES (?)').run('2026-11-garmin-cleanup-identity-v1');
   db.prepare('INSERT OR IGNORE INTO schema_migrations (name) VALUES (?)').run(
     '2026-10-garmin-session-publish-v1',
   );
