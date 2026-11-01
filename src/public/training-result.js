@@ -1276,6 +1276,7 @@ async function initTrainingResult() {
   const garminPreview = document.getElementById('garminPreview');
   const garminPreviewSteps = document.getElementById('garminPreviewSteps');
   const garminOperationStatus = document.getElementById('garminOperationStatus');
+  const garminEditStructure = document.getElementById('garminEditStructure');
   const garminOperationRetry = document.getElementById('garminOperationRetry');
   const garminReconcileButton = document.getElementById('garminReconcileButton');
   const garminUpdateButton = document.getElementById('garminUpdateButton');
@@ -1296,6 +1297,9 @@ async function initTrainingResult() {
   let garminOperationController = null;
   let garminOperationRead = 0;
   let garminOperationId = null;
+  let garminRemoteActionToken = 0;
+  let garminDispatchUncertain = false;
+  let garminStatusRetryAvailable = false;
   let garminDestinationNames = [];
   let garminPreviewSnapshot = null;
   let garminConnected = false;
@@ -1313,6 +1317,8 @@ async function initTrainingResult() {
     garminConnectionMessage = key;
     garminStatus.textContent = garminText(key);
   };
+  const garminOperationNeedsResolution = (operation = garminCurrentOperation) => Boolean(operation
+    && ['publishing', 'workout_created', 'scheduling', 'outcome_unknown', 'reauth_required', 'failed'].includes(operation.status));
   const garminFetch = async (url, options = {}) => {
     const response = await fetch(url, { ...options, headers: { 'content-type': 'application/json', ...options.headers } });
     const body = await response.json().catch(() => ({}));
@@ -1342,7 +1348,12 @@ async function initTrainingResult() {
         }
       }
       garminConnectionGeneration = local.connection_generation || garminConnectionGeneration;
-      if (local.operation) renderGarminOperation(local.operation);
+      if (local.operation) { garminDispatchUncertain = false; renderGarminOperation(local.operation); }
+      else if (garminDispatchUncertain) {
+        garminDispatchUncertain = false;
+        garminOperationStatus.textContent = '';
+        garminOperationRetry.hidden = true;
+      }
     } catch (error) {
       if (read !== garminStatusRead) return;
       if (error.status === 404) { garminCard.hidden = true; return; }
@@ -1939,6 +1950,9 @@ async function initTrainingResult() {
   document.querySelectorAll('[aria-hidden="true"] [required]').forEach((control) => { control.required = false; control.disabled = true; });
   renderGarminEditor();
   const renderGarminOperation = (operation) => {
+    const sameStoredState = garminCurrentOperation?.operation_id === operation.operation_id
+      && garminCurrentOperation?.status === operation.status && garminCurrentOperation?.stage === operation.stage;
+    if (!sameStoredState) garminStatusRetryAvailable = false;
     if (garminOperationId !== operation.operation_id) {
       clearTimeout(garminOperationTimer);
       garminOperationController?.abort();
@@ -1948,14 +1962,52 @@ async function initTrainingResult() {
     }
     garminCurrentOperation = operation;
     const read = ++garminOperationRead;
-    const failedKey = operation.action === 'update' ? 'updateFailed'
-      : operation.action === 'reschedule' ? 'rescheduleFailed' : 'publishFailed';
-    const keys = { scheduled: 'scheduled', publishing: 'publishing', workout_created: 'publishing', scheduling: 'publishing', outcome_unknown: 'uncertain', outdated: 'outdated', reauth_required: 'authError', failed: operation.error_code === 'unsupported' ? 'unsupported' : failedKey };
-    setGarminOperationMessage(keys[operation.status] || 'failed');
-    garminOperationRetry.hidden = true;
+    const active = ['publishing', 'workout_created', 'scheduling'].includes(operation.status);
+    const unresolved = garminOperationNeedsResolution(operation);
+    const hasWorkout = Boolean(operation.workout_id);
+    const scheduleStage = ['schedule', 'schedule_reconciliation'].includes(operation.stage);
+    const rescheduleStage = ['reschedule', 'reschedule_reconciliation'].includes(operation.stage);
+    const updateStage = ['update', 'update_confirmation', 'update_reconciliation'].includes(operation.stage);
+    let messageKey = 'failed';
+    if (operation.status === 'scheduled') messageKey = 'scheduled';
+    else if (operation.status === 'outdated') messageKey = 'outdated';
+    else if (active && hasWorkout && scheduleStage) messageKey = operation.action === 'update' ? 'workoutUpdatedScheduling' : 'workoutCreatedScheduling';
+    else if (active && hasWorkout && rescheduleStage) messageKey = operation.action === 'update' ? 'workoutUpdatedRescheduling' : 'rescheduling';
+    else if (active && updateStage) messageKey = 'updating';
+    else if (active && rescheduleStage) messageKey = 'rescheduling';
+    else if (active) messageKey = 'publishing';
+    else if (hasWorkout && scheduleStage && operation.status === 'reauth_required') messageKey = operation.action === 'update' ? 'workoutUpdatedAuthRequired' : 'workoutCreatedAuthRequired';
+    else if (hasWorkout && scheduleStage && operation.status === 'outcome_unknown') messageKey = operation.action === 'update' ? 'workoutUpdatedScheduleUncertain' : 'workoutCreatedScheduleUncertain';
+    else if (hasWorkout && scheduleStage && operation.status === 'failed') messageKey = operation.error_code === 'rate_limited'
+      ? operation.action === 'update' ? 'workoutUpdatedScheduleRateLimited' : 'workoutCreatedScheduleRateLimited'
+      : operation.action === 'update' ? 'workoutUpdatedScheduleFailed' : 'workoutCreatedScheduleFailed';
+    else if (hasWorkout && rescheduleStage && operation.status === 'reauth_required') messageKey = 'workoutUpdatedAuthRequired';
+    else if (hasWorkout && rescheduleStage && operation.status === 'outcome_unknown') messageKey = 'workoutUpdatedRescheduleUncertain';
+    else if (hasWorkout && rescheduleStage && operation.status === 'failed') messageKey = operation.error_code === 'rate_limited' ? 'workoutUpdatedRescheduleRateLimited' : 'workoutUpdatedRescheduleFailed';
+    else if (operation.status === 'outcome_unknown') messageKey = updateStage ? 'updateUncertain' : 'uncertain';
+    else if (operation.status === 'reauth_required') messageKey = 'authError';
+    else if (operation.status === 'failed') messageKey = operation.error_code === 'unsupported' ? 'unsupported'
+      : operation.error_code === 'invalid_payload' || operation.error_code === 'invalid_prescription' ? 'structureRejected'
+        : operation.error_code === 'rate_limited' ? 'rateLimited'
+          : operation.error_code === 'auth_required' ? 'authError'
+            : operation.error_code === 'unavailable' ? 'connectorUnavailableResult'
+              : operation.action === 'update' ? 'updateFailed'
+                : operation.action === 'reschedule' ? 'rescheduleFailed' : 'publishFailed';
+    if (sameStoredState && garminStatusRetryAvailable) messageKey = 'statusReadError';
+    setGarminOperationMessage(messageKey);
+    garminOperationStatus.dataset.operationId = operation.operation_id;
+    garminOperationRetry.hidden = !(garminDispatchUncertain || garminStatusRetryAvailable);
     garminReconcileButton.hidden = !['outcome_unknown', 'reauth_required', 'failed', 'workout_created'].includes(operation.status);
+    garminReconcileButton.disabled = garminPending;
+    // Keep a single source of truth for editing and mutation controls. An
+    // uncertain or partially completed operation holds the saved snapshot
+    // until reconciliation, because editing could replace its recovery data.
+    garminEditStructure.disabled = garminPending || unresolved;
+    garminEditorView.inert = unresolved;
+    const saveButton = document.getElementById('garminPrescriptionSave');
+    if (saveButton) saveButton.disabled = garminPending || unresolved;
     if (garminPreviewModel) renderGarminPreview(garminPreviewModel);
-    if (['publishing', 'workout_created', 'scheduling'].includes(operation.status) && !garminOperationTimer && !garminOperationController) {
+    if (active && !garminOperationTimer && !garminOperationController) {
       const operationId = operation.operation_id;
       garminOperationTimer = window.setTimeout(async () => {
         garminOperationTimer = null;
@@ -1969,6 +2021,7 @@ async function initTrainingResult() {
         } catch {
           if (read === garminOperationRead && operationId === garminOperationId) {
             setGarminOperationMessage('statusReadError');
+            garminStatusRetryAvailable = true;
             garminOperationRetry.hidden = false;
           }
         } finally {
@@ -2078,9 +2131,15 @@ async function initTrainingResult() {
       : !garminCurrentOperation || !canUpdate ? 'publishActionHelp'
       : dateChanged && garminCurrentOperation.prescription_revision !== garminSavedRevision ? 'updateAndRescheduleActionHelp'
         : dateChanged ? 'rescheduleActionHelp' : 'updateActionHelp';
-    document.getElementById('garminActionHelp').textContent = garminText(helpKey);
+    const unresolved = garminPending || garminDispatchUncertain || garminOperationNeedsResolution();
+    const actionHelp = document.getElementById('garminActionHelp');
+    actionHelp.textContent = unresolved ? '' : garminText(helpKey);
+    actionHelp.hidden = unresolved;
     const actionButtons = [document.getElementById('garminPublishButton'), garminUpdateButton, garminRescheduleButton];
-    actionButtons.forEach((button) => { button.disabled = !garminConnected || garminPending || !garminPreviewSnapshot; });
+    actionButtons.forEach((button) => { button.disabled = !garminConnected || garminPending || unresolved || !garminPreviewSnapshot; });
+    garminEditStructure.disabled = garminPending || unresolved;
+    garminReconcileButton.disabled = garminPending;
+    garminOperationRetry.hidden = !(garminDispatchUncertain || garminStatusRetryAvailable);
     garminPreview.hidden = !garminPreviewSnapshot || garminFormDirty || !garminEditorView.hidden;
   };
   document.addEventListener('app:languagechange', () => {
@@ -2196,20 +2255,26 @@ async function initTrainingResult() {
     }
   });
   const performGarminAction = async (action) => {
-    if (garminPending || !garminPreviewSnapshot || !garminCurrentOperation && action !== 'publish') return;
+    if (garminPending || garminDispatchUncertain || garminOperationNeedsResolution()
+        || !garminPreviewSnapshot || !garminCurrentOperation && action !== 'publish') return;
+    garminPending = true;
+    const actionToken = ++garminRemoteActionToken;
+    garminStatusRead += 1;
+    clearTimeout(garminOperationTimer); garminOperationTimer = null;
+    garminOperationController?.abort(); garminOperationController = null;
+    if (garminPreviewModel) renderGarminPreview(garminPreviewModel);
     const actionKey = action === 'publish' ? 'publish' : action === 'update' ? 'update' : 'reschedule';
     const combinedUpdateReschedule = action === 'update' && garminCurrentOperation?.scheduled_date !== garminPreviewSnapshot.date;
-    if (action !== 'publish') {
-      const confirmKey = combinedUpdateReschedule ? 'updateAndRescheduleConfirm' : `${actionKey}Confirm`;
-      const confirmed = await showConfirm({ title: garminText(actionKey), message: garminText(confirmKey), confirmLabel: garminText(actionKey), cancelLabel: t('shell.confirm.no') });
-      if (!confirmed) return;
-    }
-    garminPending = true;
-    garminPreviewModel && renderGarminPreview(garminPreviewModel);
     let remoteDispatched = false;
     try {
+      if (action !== 'publish') {
+        const confirmKey = combinedUpdateReschedule ? 'updateAndRescheduleConfirm' : `${actionKey}Confirm`;
+        const confirmed = await showConfirm({ title: garminText(actionKey), message: garminText(confirmKey), confirmLabel: garminText(actionKey), cancelLabel: t('shell.confirm.no') });
+        if (!confirmed || actionToken !== garminRemoteActionToken) return;
+      }
       setGarminOperationMessage('checkingReview');
       const currentReview = await garminFetch(`/api/trainings/${encodeURIComponent(currentTrainingId)}/garmin`);
+      if (actionToken !== garminRemoteActionToken) return;
       if (!currentReview.prescription || currentReview.prescription.revision !== garminPreviewSnapshot.revision
           || currentReview.prescription.fingerprint !== garminPreviewSnapshot.fingerprint
           || currentReview.training_date !== garminPreviewSnapshot.date
@@ -2241,22 +2306,40 @@ async function initTrainingResult() {
         action,
         source_operation_id: action === 'publish' ? null : garminCurrentOperation?.operation_id,
       }) });
+      if (actionToken !== garminRemoteActionToken) return;
+      garminDispatchUncertain = false;
       renderGarminOperation({ ...result, operation_id: result.operation_id });
-      const latest = await garminFetch(`/api/garmin/operations/${result.operation_id}`); renderGarminOperation(latest.operation);
+      const latest = await garminFetch(`/api/garmin/operations/${result.operation_id}`);
+      if (actionToken === garminRemoteActionToken && latest.operation.operation_id === result.operation_id) renderGarminOperation(latest.operation);
     } catch (error) {
-      if (!remoteDispatched && error.status !== 404) setGarminOperationMessage('reviewFailed');
+      if (actionToken !== garminRemoteActionToken) return;
+      if (remoteDispatched) {
+        try {
+          const local = await garminFetch(`/api/trainings/${encodeURIComponent(currentTrainingId)}/garmin`);
+          if (actionToken !== garminRemoteActionToken) return;
+          if (local.operation) { garminDispatchUncertain = false; renderGarminOperation(local.operation); return; }
+          garminDispatchUncertain = false;
+        } catch { garminDispatchUncertain = true; }
+      }
+      if (remoteDispatched && garminDispatchUncertain) {
+        setGarminOperationMessage('uncertain');
+        garminOperationRetry.hidden = false;
+      }
+      else if (!remoteDispatched && error.status !== 404) setGarminOperationMessage('reviewFailed');
       else if (error.message === 'auth_required') setGarminOperationMessage('authError');
       else if (error.message === 'outcome_unknown') setGarminOperationMessage('uncertain');
       else if (error.status === 409) setGarminOperationMessage('revisionConflict');
       else if (error.status === 503 || error.name === 'TypeError') setGarminOperationMessage('connectError');
       else if (error.status === 404) { garminPreviewSnapshot = null; setGarminOperationMessage('sessionUnavailable'); }
       else if (error.status === 400) setGarminOperationMessage('reviewFailed');
+      else if (remoteDispatched) setGarminOperationMessage('uncertain');
       else setGarminOperationMessage(action === 'update' ? 'updateFailed' : action === 'reschedule' ? 'rescheduleFailed' : 'publishFailed');
     }
-    finally { garminPending = false; if (garminPreviewModel) renderGarminPreview(garminPreviewModel); }
+    finally { if (actionToken === garminRemoteActionToken) { garminPending = false; if (garminPreviewModel) renderGarminPreview(garminPreviewModel); } }
   };
   document.getElementById('garminPublishButton').addEventListener('click', () => performGarminAction('publish'));
   document.getElementById('garminEditStructure').addEventListener('click', () => {
+    if (garminPending || garminDispatchUncertain || garminOperationNeedsResolution()) return;
     garminEditingRequested = true;
     garminPreview.hidden = true;
     garminEditorView.hidden = false;
@@ -2264,22 +2347,68 @@ async function initTrainingResult() {
     document.getElementById('garminWorkoutName').scrollIntoView({ block: 'center', behavior: 'smooth' });
   });
   garminOperationRetry.addEventListener('click', () => {
+    if (garminPending) return;
+    if (garminDispatchUncertain) {
+      garminPending = true;
+      const token = ++garminRemoteActionToken;
+      garminOperationRetry.disabled = true;
+      setGarminOperationMessage('verifyingResult');
+      if (garminPreviewModel) renderGarminPreview(garminPreviewModel);
+      void garminFetch(`/api/trainings/${encodeURIComponent(currentTrainingId)}/garmin`).then((local) => {
+        if (token !== garminRemoteActionToken) return;
+        if (local.operation) { garminDispatchUncertain = false; renderGarminOperation(local.operation); }
+        else {
+          garminDispatchUncertain = false;
+          garminOperationRetry.hidden = true;
+          setGarminOperationMessage('noOperationFound');
+        }
+      }).catch((error) => {
+        if (token === garminRemoteActionToken) setGarminOperationMessage(error.status === 503 || error.name === 'TypeError' ? 'connectError' : 'statusReadError');
+      }).finally(() => {
+        if (token === garminRemoteActionToken) {
+          garminPending = false; garminOperationRetry.disabled = false;
+          if (garminPreviewModel) renderGarminPreview(garminPreviewModel);
+        }
+      });
+      return;
+    }
     if (garminCurrentOperation) renderGarminOperation(garminCurrentOperation);
   });
   garminUpdateButton.addEventListener('click', () => performGarminAction('update'));
   garminRescheduleButton.addEventListener('click', () => performGarminAction('reschedule'));
   garminReconcileButton.addEventListener('click', async () => {
     if (garminPending) return;
-    garminPending = true; garminReconcileButton.disabled = true;
+    garminPending = true;
+    const actionToken = ++garminRemoteActionToken;
+    const operationId = garminCurrentOperation?.operation_id;
+    garminStatusRead += 1;
+    clearTimeout(garminOperationTimer); garminOperationTimer = null;
+    garminOperationController?.abort(); garminOperationController = null;
+    garminOperationRead += 1;
+    garminReconcileButton.disabled = true;
+    setGarminOperationMessage('verifyingResult');
+    if (garminPreviewModel) renderGarminPreview(garminPreviewModel);
     try {
       const current = await garminFetch(`/api/trainings/${currentTrainingId}/garmin`);
-      const operationId = current.operation?.operation_id;
-      if (!operationId) throw new Error('not_found');
+      if (actionToken !== garminRemoteActionToken) return;
+      if (!operationId || current.operation?.operation_id !== operationId) {
+        if (current.operation) renderGarminOperation(current.operation);
+        else setGarminOperationMessage('operationNotFound');
+        return;
+      }
       const result = await garminFetch(`/api/garmin/operations/${operationId}/reconcile`, { method: 'POST', body: '{}' });
+      if (actionToken !== garminRemoteActionToken || result.operation_id !== operationId) return;
       renderGarminOperation(result);
-      const latest = await garminFetch(`/api/garmin/operations/${operationId}`); renderGarminOperation(latest.operation);
-    } catch (error) { setGarminOperationMessage(error.message === 'auth_required' ? 'authError' : 'uncertain'); }
-    finally { garminPending = false; garminReconcileButton.disabled = false; }
+      const latest = await garminFetch(`/api/garmin/operations/${operationId}`);
+      if (actionToken === garminRemoteActionToken && latest.operation.operation_id === operationId) renderGarminOperation(latest.operation);
+    } catch (error) {
+      if (actionToken !== garminRemoteActionToken) return;
+      if (error.message === 'auth_required') setGarminOperationMessage('authError');
+      else if (error.status === 503 || error.name === 'TypeError') setGarminOperationMessage('connectError');
+      else if (error.status === 404) setGarminOperationMessage('operationNotFound');
+      else setGarminOperationMessage('uncertain');
+    }
+    finally { if (actionToken === garminRemoteActionToken) { garminPending = false; if (garminPreviewModel) renderGarminPreview(garminPreviewModel); } }
   });
   void renderGarminStatus();
   try { activeAnalysisRequestKey = sessionStorage.getItem(analysisStorageKey()); } catch { activeAnalysisRequestKey = null; }

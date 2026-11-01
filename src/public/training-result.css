@@ -978,6 +978,7 @@ select.input-control {
 .garmin-review-footer { display: grid; gap: .85rem; margin-block-start: .5rem; padding-block: 1.25rem .25rem; border-top: 1px solid var(--line); }
 .garmin-review-action-help { max-width: 70ch; color: var(--muted); line-height: 1.5; }
 .garmin-review-footer #garminOperationStatus { min-height: 1.5em; margin: 0; line-height: 1.5; }
+#garminEditStructure:disabled { opacity: .55; cursor: not-allowed; box-shadow: none; transform: none; }
 .garmin-review-buttons { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; }
 .garmin-review-buttons button { min-height: 2.75rem; }
 .garmin-publish-short { display: none; }

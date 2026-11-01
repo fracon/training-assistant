@@ -21,22 +21,37 @@ const freePort = async () => {
   const port = server.address().port; await new Promise((resolve) => server.close(resolve)); return port;
 };
 
-test('Garmin workout editor edits incomplete drafts and saves a faithful v3 sequence without remote mutation in PT/EN desktop and mobile Chrome', async (t) => {
+test('Garmin editor and send states preserve drafts and block conflicting actions in PT/EN desktop and mobile Chrome', async (t) => {
   assert.ok(chrome, 'Chrome is required for Garmin UI verification.');
   const db = createDatabase({ filename: ':memory:' });
   const owner = await registerUser(db, { email: 'garmin-ui@example.test', password: 'Synthetic-only-1', first_name: 'Test', last_name: 'Runner' });
   db.prepare("UPDATE users SET distance_unit = 'km' WHERE id = ?").run(owner.id);
   db.prepare('INSERT INTO trainings (user_id,dia,tipo,treino,detalhes) VALUES (?,?,?,?,?)').run(owner.id, '2026-11-02', 'Run', 'Intervals', 'structured workout');
   const remoteCalls = [];
+  const remoteMutationCalls = [];
   let releaseStatus;
   let connectorUnavailable = false;
+  let pauseSchedule = false;
+  let releaseSchedule;
+  let signalScheduleEntered;
   const statusGate = new Promise((resolve) => { releaseStatus = resolve; });
+  const scheduleGate = new Promise((resolve) => { releaseSchedule = resolve; });
+  const scheduleEntered = new Promise((resolve) => { signalScheduleEntered = resolve; });
   const app = await buildServer({ db, sessionCookieSecure: false,
     garminConfig: { GARMIN_PILOT_ENABLED: 'true', GARMIN_PILOT_USER_ID: String(owner.id), KINESIS_GARMIN_SERVICE_TOKEN: 'synthetic-service-token-'.repeat(2), GARMIN_CONNECTOR_URL: 'http://connector.invalid' },
-    garminFetch: async (url) => {
+    garminFetch: async (url, init = {}) => {
       remoteCalls.push(url);
       if (url.endsWith('/status')) { await statusGate; if (connectorUnavailable) throw new TypeError('synthetic connector unavailable'); return Response.json({ status: 'connected' }); }
       if (url.endsWith('/capabilities')) return Response.json({ devices: [{ name: 'Forerunner 55' }], running_catalog_status: 'available' });
+      if (url.endsWith('/workouts') && init.method === 'POST') {
+        remoteMutationCalls.push({ path: '/workouts', method: init.method, body: JSON.parse(init.body) });
+        return Response.json({ workout_id: 8101, status: 'created' });
+      }
+      if (url.endsWith('/workouts/schedule') && init.method === 'POST') {
+        remoteMutationCalls.push({ path: '/workouts/schedule', method: init.method, body: JSON.parse(init.body) });
+        if (pauseSchedule) { signalScheduleEntered(); await scheduleGate; }
+        return Response.json({ scheduled: true, scheduled_workout_id: 9101, status: 'scheduled' });
+      }
       return Response.json({ status: 'connected' });
     },
   });
@@ -345,6 +360,33 @@ test('Garmin workout editor edits incomplete drafts and saves a faithful v3 sequ
     savedRecovery = JSON.parse(db.prepare('SELECT prescription_json FROM garmin_workout_prescriptions WHERE training_id=1').get().prescription_json).steps.find((step) => step.kind === 'recovery');
     assert.equal(savedRecovery.end.value, 185, '3:5 is persisted as 3 minutes and 5 seconds');
     assert.match(await evaluate("document.getElementById('garminPreviewSteps').textContent"), /3 min 5 s|3 min 5 sec/);
+    pauseSchedule = true;
+    await evaluate("(()=>{const original=window.fetch.bind(window);window.fetch=async(input,init={})=>{const response=await original(input,init);if(String(input).includes('/garmin/publish')&&init.method==='POST'){window.fetch=original;throw new TypeError('synthetic lost response after accepted dispatch')}return response}})()");
+    await evaluate("document.getElementById('garminPublishButton').click()");
+    await Promise.race([scheduleEntered, delay(10000).then(() => { throw new Error('synthetic schedule request was not reached'); })]);
+    await wait("/scheduling|agendando/i.test(document.getElementById('garminOperationStatus').textContent)");
+    const pendingOperation = db.prepare('SELECT operation_id,status,stage,workout_id,occurrence_id FROM garmin_training_operations WHERE training_id=1 ORDER BY rowid DESC LIMIT 1').get();
+    assert.equal(pendingOperation.status, 'scheduling');
+    assert.equal(pendingOperation.stage, 'schedule');
+    assert.equal(pendingOperation.workout_id, '8101', 'the remote workout creation is persisted before scheduling');
+    assert.match(await evaluate("document.getElementById('garminOperationStatus').textContent"), /Workout created.*Scheduling|Treino criado.*Agendando/i, 'the lost POST response is recovered from the durable operation stage');
+    assert.equal(await evaluate("document.getElementById('garminEditStructure').disabled"), true, 'editing is disabled while the remote operation is active');
+    assert.equal(await evaluate("document.getElementById('garminPublishButton').disabled"), true, 'a second send cannot start while the operation is active');
+    assert.equal(await evaluate("document.getElementById('garminActionHelp').hidden"), true, 'one operation status replaces generic helper copy while sending');
+    await evaluate("document.getElementById('garminEditStructure').click();document.getElementById('garminPublishButton').click();document.getElementById('garminEditStructure').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}))");
+    assert.equal(await evaluate("document.getElementById('garminEditorView').hidden"), true, 'click and keyboard attempts cannot open the editor during the send');
+    assert.equal(remoteMutationCalls.filter((call) => call.path === '/workouts').length, 1);
+    assert.equal(remoteMutationCalls.filter((call) => call.path === '/workouts/schedule').length, 1, 'no repeated remote mutation is dispatched');
+    await evaluate("(()=>{const original=window.fetch.bind(window);let fail=true;window.fetch=async(input,init={})=>{if(fail&&String(input).includes('/api/garmin/operations/')&&(init.method||'GET')==='GET'){fail=false;throw new TypeError('synthetic operation read failure')}return original(input,init)}})()");
+    await wait("!document.getElementById('garminOperationRetry').hidden && /last confirmed state|último estado confirmado/i.test(document.getElementById('garminOperationStatus').textContent)");
+    assert.match(await evaluate("document.getElementById('garminOperationRetry').textContent"), /Retry status|Atualizar estado/i, 'a failed status read offers an explicit local retry');
+    await captureReviewActions('/tmp/kinesis-garmin-send-pending-en-desktop.png');
+    releaseSchedule();
+    pauseSchedule = false;
+    await wait("/confirmed in Garmin Connect|confirmado no Garmin Connect/i.test(document.getElementById('garminOperationStatus').textContent)");
+    const completedOperation = db.prepare('SELECT status,stage,workout_id,occurrence_id FROM garmin_training_operations WHERE operation_id=?').get(pendingOperation.operation_id);
+    assert.deepEqual(completedOperation, { status: 'scheduled', stage: 'complete', workout_id: '8101', occurrence_id: '9101' });
+    assert.equal(await evaluate("document.getElementById('garminEditStructure').disabled"), false, 'editing becomes available after the operation reaches a confirmed terminal state');
     await evaluate("document.getElementById('garminEditStructure').click()");
     await evaluate("document.getElementById('garminSessionCard').scrollIntoView({block:'start'})");
     assert.equal(await evaluate("document.documentElement.lang"), 'en-US');
@@ -442,7 +484,34 @@ test('Garmin workout editor edits incomplete drafts and saves a faithful v3 sequ
     await command('Page.reload');
     await wait("!document.getElementById('garminReconcileButton').hidden");
     assert.equal(await evaluate("document.getElementById('garminPublishButton').hidden"), true, 'an uncertain operation requires reconciliation instead of another mutation');
-    assert.match(await evaluate("document.getElementById('garminActionHelp').textContent"), /previous operation|operação anterior/i);
+    assert.equal(await evaluate("document.getElementById('garminEditStructure').disabled"), true, 'an unresolved send also locks the saved structure after reload');
+    assert.equal(await evaluate("document.getElementById('garminActionHelp').hidden"), true, 'the unresolved state is presented once, without contradictory helper copy');
+    assert.match(await evaluate("document.getElementById('garminOperationStatus').textContent"), /remote result is uncertain|resultado remoto é incerto/i);
+    assert.doesNotMatch(await evaluate("document.getElementById('garminOperationStatus').textContent"), /could not be published|não foi possível publicar/i);
+    assert.match(await evaluate("document.getElementById('garminReconcileButton').textContent"), /Verify send result|Verificar resultado do envio/i);
+    db.prepare(`UPDATE garmin_training_operations SET status='failed',stage='schedule',error_code='unavailable',scheduled_date='2026-11-02',action='publish',workout_id='8101',occurrence_id=NULL WHERE operation_id='review-state-operation'`).run();
+    await command('Page.reload');
+    await wait("!document.getElementById('garminPreview').hidden && /created.*scheduling did not complete|criado.*agendamento não foi concluído/i.test(document.getElementById('garminOperationStatus').textContent)");
+    assert.equal(await evaluate("document.getElementById('garminEditStructure').disabled"), true);
+    assert.equal(await evaluate("document.getElementById('garminActionHelp').hidden"), true);
+    assert.doesNotMatch(await evaluate("document.getElementById('garminOperationStatus').textContent"), /could not be published|não foi possível publicar/i);
+    db.prepare(`UPDATE garmin_training_operations SET error_code='rate_limited' WHERE operation_id='review-state-operation'`).run();
+    await command('Page.reload');
+    await wait("/temporarily rate limited|temporariamente limitado/i.test(document.getElementById('garminOperationStatus').textContent)");
+    assert.equal(await evaluate("document.getElementById('garminEditStructure').disabled"), true);
+    db.prepare(`UPDATE garmin_training_operations SET status='outcome_unknown',error_code='outcome_unknown' WHERE operation_id='review-state-operation'`).run();
+    await command('Page.reload');
+    await wait("!document.getElementById('garminPreview').hidden && /created.*could not be confirmed|criado.*não foi possível confirmar/i.test(document.getElementById('garminOperationStatus').textContent)");
+    await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await evaluate("document.querySelector('.lang-switch [data-lang=\"pt-BR\"]').click()"); await wait("document.documentElement.lang==='pt-BR'");
+    await captureReviewActions('/tmp/kinesis-garmin-schedule-uncertain-pt-mobile.png');
+    await evaluate("document.getElementById('garminReconcileButton').click()");
+    await wait("/confirmado no Garmin Connect|confirmed in Garmin Connect/i.test(document.getElementById('garminOperationStatus').textContent)");
+    assert.equal(remoteMutationCalls.filter((call) => call.path === '/workouts').length, 1, 'reconciliation never republishes the already-created workout');
+    assert.equal(remoteMutationCalls.filter((call) => call.path === '/workouts/schedule').length, 2, 'reconciliation resumes only the uncertain schedule stage');
+    assert.equal(db.prepare("SELECT status FROM garmin_training_operations WHERE operation_id='review-state-operation'").get().status, 'scheduled');
+    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+    await evaluate("document.querySelector('.lang-switch [data-lang=\"en-US\"]').click()"); await wait("document.documentElement.lang==='en-US'");
     connectorUnavailable = true;
     await command('Page.reload');
     await wait("!document.getElementById('garminPreview').hidden && /unavailable|indisponível/i.test(document.getElementById('garminConnectionStatus').textContent)");

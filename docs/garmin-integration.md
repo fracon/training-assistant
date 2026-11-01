@@ -535,6 +535,21 @@ succeeds and the next fails, the local journal keeps its stage/IDs and requires
 reconciliation; it does not claim a distributed rollback or create a second
 workout automatically.
 
+The review UI treats the persisted operation as its single source of truth.
+During a mutation or reconciliation, editing and all new mutations are locked;
+the lock remains while an uncertain, reauthentication-required, or failed
+operation still needs reconciliation. The status API includes the persisted
+action and stage so the UI can distinguish workout creation from a pending
+schedule/reschedule. If an HTTP response is lost after dispatch, the browser
+reads the owner-scoped local operation before showing an outcome; if that read
+also fails, it keeps editing/mutation locked and offers a local status check.
+Reconciliation resumes the existing operation and does not publish a second
+workout when creation was already confirmed. A partial schedule error says the
+workout was created and identifies only scheduling as incomplete; an uncertain
+result says what may already have happened and asks the user to verify before
+trying again. The “Verify send result” action calls Kinesis reconciliation; it
+does not open Garmin Connect.
+
 The displayed device is informational. A completed state means Garmin Connect
 confirmed the workout and scheduled occurrence; it prompts watch synchronization
 and does not claim that the workout is already on the Forerunner. The connector

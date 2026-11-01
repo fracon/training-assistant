@@ -1320,6 +1320,28 @@ test('status marks a remotely observed scheduled operation outdated and tolerate
   await h.close();
 });
 
+test('local review and connection status retain the persisted operation action and remote stage', async () => {
+  const h = await productApiHarness({ garminFetch: async (url) => url.endsWith('/status')
+    ? Response.json({ status: 'connected' }) : Response.json({ devices: [] }) });
+  const prescription = workout(); const fingerprint = prescriptionFingerprint(prescription);
+  h.db.prepare('INSERT INTO garmin_workout_prescriptions (user_id,training_id,revision,prescription_json,fingerprint) VALUES (1,1,1,?,?)')
+    .run(JSON.stringify(prescription), fingerprint);
+  h.db.prepare(`INSERT INTO garmin_training_operations
+    (operation_id,user_id,training_id,connection_generation,prescription_revision,fingerprint,converter_version,status,stage,scheduled_date,action,workout_id)
+    VALUES ('partial-send',1,1,1,1,?,1,'outcome_unknown','schedule','2026-11-02','publish','42')`).run(fingerprint);
+  const local = await h.app.inject({ method: 'GET', url: '/api/trainings/1/garmin', headers: { cookie: h.cookie } });
+  const status = await h.app.inject({ method: 'GET', url: '/api/garmin/status?training_id=1', headers: { cookie: h.cookie } });
+  assert.equal(local.statusCode, 200);
+  assert.equal(status.statusCode, 200);
+  for (const body of [local.json(), status.json()]) {
+    assert.equal(body.operation.action, 'publish');
+    assert.equal(body.operation.stage, 'schedule');
+    assert.equal(body.operation.status, 'outcome_unknown');
+    assert.equal(body.operation.workout_id, '42');
+  }
+  await h.close();
+});
+
 test('status revalidates owner after both remote reads before returning private capability data', async () => {
   for (const stopAt of ['status', 'capabilities']) {
     let release; let started;

@@ -593,6 +593,13 @@ owner/session/revision/fingerprint, and uncertain outcomes must never be
 automatically repeated. A Garmin Connect schedule is not proof of delivery to
 a watch. This pilot does not implement multi-user production integration or
 the activity import phase (#74).
+While a durable send/update/reschedule is active, failed with remote effects,
+or awaiting reconciliation, disable editing and every new mutation for that
+snapshot. Present one localized operation state based on its persisted status,
+stage, action, and confirmed remote IDs; never pair a generic publish-failed
+message with a pending-operation warning. Reconciliation resumes the same
+operation and only its unresolved stage. A lost HTTP response triggers a
+owner-scoped local operation read before the UI classifies the outcome.
 
 New prescriptions and edited legacy prescriptions use version 3: ordered
 optional warm-up, run/repeat/recovery sequence, and optional cool-down. A

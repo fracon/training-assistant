@@ -127,7 +127,7 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
         const trainingId = Number(request.query?.training_id);
         const training = Number.isInteger(trainingId) ? current(request, trainingId) : null;
         const sessionState = training ? db.prepare('SELECT revision, prescription_json, fingerprint FROM garmin_workout_prescriptions WHERE user_id = ? AND training_id = ?').get(request.user.id, training.id) : null;
-      let operation = training ? db.prepare('SELECT operation_id, connection_generation, prescription_revision, status, stage, workout_id, occurrence_id, scheduled_date, error_code, updated_at FROM garmin_training_operations WHERE user_id = ? AND training_id = ? ORDER BY rowid DESC LIMIT 1').get(request.user.id, training.id) : null;
+      let operation = training ? db.prepare('SELECT operation_id, connection_generation, prescription_revision, status, stage, action, workout_id, occurrence_id, scheduled_date, error_code, updated_at FROM garmin_training_operations WHERE user_id = ? AND training_id = ? ORDER BY rowid DESC LIMIT 1').get(request.user.id, training.id) : null;
         if (operation?.status === 'scheduled' && (operation.scheduled_date !== training.dia || operation.prescription_revision !== sessionState?.revision)) {
           db.prepare(`UPDATE garmin_training_operations SET status = 'outdated', updated_at = datetime('now') WHERE operation_id = ? AND user_id = ?`).run(operation.operation_id, request.user.id);
           operation = { ...operation, status: 'outdated' };
@@ -254,7 +254,7 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
       const training = current(request, Number(request.params.id));
       if (!training) return reply.code(404).send({ code: 'not_found' });
       const saved = db.prepare('SELECT revision, prescription_json, fingerprint FROM garmin_workout_prescriptions WHERE user_id = ? AND training_id = ?').get(request.user.id, training.id);
-      let operation = db.prepare('SELECT operation_id, connection_generation, prescription_revision, status, stage, workout_id, occurrence_id, scheduled_date, error_code, updated_at FROM garmin_training_operations WHERE user_id = ? AND training_id = ? ORDER BY rowid DESC LIMIT 1').get(request.user.id, training.id);
+      let operation = db.prepare('SELECT operation_id, connection_generation, prescription_revision, status, stage, action, workout_id, occurrence_id, scheduled_date, error_code, updated_at FROM garmin_training_operations WHERE user_id = ? AND training_id = ? ORDER BY rowid DESC LIMIT 1').get(request.user.id, training.id);
       if (operation?.status === 'scheduled' && (operation.scheduled_date !== training.dia || operation.prescription_revision !== saved?.revision)) {
         db.prepare(`UPDATE garmin_training_operations SET status = 'outdated', updated_at = datetime('now') WHERE operation_id = ? AND user_id = ?`).run(operation.operation_id, request.user.id);
         operation = { ...operation, status: 'outdated' };
