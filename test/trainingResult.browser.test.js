@@ -70,10 +70,22 @@ test('the session page requires a realized RPE before saving, generating or uplo
   const db = createDatabase({ filename: ':memory:' });
   let providerCalls = 0;
   let invalidNextProviderResponse = false;
+  let holdNextFitParse = false;
+  let notifyFitParseStarted;
+  let releaseFitParse;
+  const fitParseStarted = new Promise((resolve) => { notifyFitParseStarted = resolve; });
+  const fitParseGate = new Promise((resolve) => { releaseFitParse = resolve; });
   const app = await buildServer({
     db,
     sessionCookieSecure: false,
-    parseFitFile: async () => fitSummary(),
+    parseFitFile: async () => {
+      if (holdNextFitParse) {
+        holdNextFitParse = false;
+        notifyFitParseStarted();
+        await fitParseGate;
+      }
+      return fitSummary();
+    },
     aiConfig: readAiConfig({ AI_ENABLED: 'true', OPENAI_API_KEY: 'synthetic-browser-only', AI_RETRIES: '0' }),
     aiClient: async (payload) => {
       providerCalls += 1;
@@ -273,6 +285,34 @@ test('the session page requires a realized RPE before saving, generating or uplo
         `session ${trainingId} loaded`
       );
       await setLanguage('en-US');
+      assert.deepEqual(await evaluate(`(()=>({garmin:{expanded:document.getElementById('garminAccordionTrigger').getAttribute('aria-expanded'),hidden:document.getElementById('garminAccordionPanel').hidden},feedback:{expanded:document.getElementById('feedbackAccordionTrigger').getAttribute('aria-expanded'),hidden:document.getElementById('feedbackAccordionPanel').hidden}}))()`),
+        { garmin: { expanded: 'false', hidden: true }, feedback: { expanded: 'false', hidden: true } },
+        'a fresh page entry starts both independent panels closed');
+      if (trainingId === manualId) {
+        await evaluate("document.querySelector('.feedback-card').scrollIntoView({block:'center'})");
+        await delay(80);
+        writeFileSync('/tmp/kinesis-session-accordions-closed-en-desktop.png', Buffer.from((await command('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+      }
+      const beforeToggleWrites = writes().length;
+      await evaluate("document.getElementById('feedbackAccordionTrigger').focus()");
+      await pressKey('Tab', 'Tab', 9);
+      assert.equal(await evaluate("document.getElementById('feedbackAccordionPanel').contains(document.activeElement)"), false,
+        'collapsed feedback controls are excluded from keyboard navigation');
+      await evaluate("document.getElementById('feedbackAccordionTrigger').focus()");
+      await pressKey(' ', 'Space', 32);
+      await waitFor("document.getElementById('feedbackAccordionTrigger').getAttribute('aria-expanded')==='true'", 'Space opens the feedback accordion');
+      await evaluate("document.getElementById('feedbackAccordionTrigger').click()");
+      await waitFor("document.getElementById('feedbackAccordionTrigger').getAttribute('aria-expanded')==='false'", 'the header button closes the feedback accordion');
+      await evaluate("document.getElementById('feedbackAccordionTrigger').focus()");
+      await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+      await command('Input.dispatchKeyEvent', { type: 'char', key: 'Enter', code: 'Enter', text: '\r', unmodifiedText: '\r', windowsVirtualKeyCode: 13 });
+      await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+      await delay(60);
+      await waitFor("document.getElementById('feedbackAccordionTrigger').getAttribute('aria-expanded')==='true'", 'Enter opens the feedback accordion');
+      await pressKey('Tab', 'Tab', 9);
+      assert.equal(await evaluate("document.getElementById('feedbackAccordionPanel').contains(document.activeElement)"), true,
+        'expanded content enters the normal tab order');
+      assert.equal(writes().length, beforeToggleWrites, 'accordion keyboard actions do not submit or persist the form');
       await delay(300);
     };
     // The page attaches its listeners once the session is loaded, so an
@@ -331,6 +371,12 @@ test('the session page requires a realized RPE before saving, generating or uplo
     /* ── The group is required, named, and silent until it is answered ── */
 
     await openSession(manualId);
+    await evaluate("(()=>{const note=document.getElementById('feedbackNotas');note.value='draft preserved while closed';note.dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('feedbackAccordionTrigger').click();return note.value})()");
+    assert.equal(await evaluate("document.getElementById('feedbackAccordionSummary').textContent"), 'Unsaved changes', 'local edits appear in the collapsed summary');
+    assert.equal(await evaluate("document.getElementById('feedbackAccordionPanel').hidden"), true, 'the feedback panel can be collapsed without rebuilding it');
+    assert.equal(await evaluate("document.getElementById('feedbackNotas').value"), 'draft preserved while closed', 'collapsing keeps an unsaved feedback draft');
+    await evaluate("document.getElementById('feedbackAccordionTrigger').click()");
+    assert.equal(await evaluate("document.getElementById('feedbackNotas').value"), 'draft preserved while closed', 'reopening restores the same DOM field state');
     assert.equal(
       await evaluate(`(()=>{const section=document.getElementById('analysisSection');return section.hidden && getComputedStyle(section).display==='none'})()`),
       true,
@@ -344,12 +390,23 @@ test('the session page requires a realized RPE before saving, generating or uplo
     await openSession(feedbackId);
     assert.equal(await evaluate("document.getElementById('analysisSection').hidden"), true,
       'saved feedback by itself does not reveal an analysis section');
-    const regularActionLayout = await evaluate(`(()=>{const buttons=[...document.querySelectorAll('.feedback-card > .form-actions button')],rects=buttons.map(button=>button.getBoundingClientRect());return {count:buttons.length,sameRow:rects.length===2&&Math.abs(rects[0].top-rects[1].top)<=2,gap:rects[1]?.left-rects[0]?.right,saveColor:getComputedStyle(buttons[0]).color,analyzeBackground:getComputedStyle(buttons[1]).backgroundColor}})()`);
+    assert.equal(await evaluate("document.getElementById('feedbackAccordionSummary').textContent"), 'Feedback saved · Result not recorded',
+      'the collapsed summary reflects canonical saved feedback rather than a form field guess');
+    await evaluate("document.getElementById('feedbackAccordionTrigger').scrollIntoView({block:'start'})");
+    await delay(80);
+    writeFileSync('/tmp/kinesis-session-feedback-saved-en-desktop.png', Buffer.from((await command('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+    await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await evaluate("document.getElementById('feedbackAccordionTrigger').scrollIntoView({block:'start'})");
+    await delay(80);
+    writeFileSync('/tmp/kinesis-session-feedback-saved-en-mobile.png', Buffer.from((await command('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+    await delay(100);
+    const regularActionLayout = await evaluate(`(()=>{const card=document.querySelector('.feedback-card'),panel=document.getElementById('feedbackAccordionPanel'),buttons=[...document.querySelectorAll('#feedbackAccordionPanel > .form-actions button')],rects=buttons.map(button=>button.getBoundingClientRect());return {viewport:innerWidth,session:document.querySelector('.session-page').clientWidth,parent:card.parentElement.clientWidth,count:buttons.length,expanded:document.getElementById('feedbackAccordionTrigger').getAttribute('aria-expanded'),panelHidden:panel.hidden,cardHidden:card.hidden,sameRow:rects.length===2&&Math.abs(rects[0].top-rects[1].top)<=2,gap:rects[1]?.left-rects[0]?.right,cardWidth:card.clientWidth,panelWidth:panel.clientWidth,actionsWidth:document.querySelector('.form-actions').clientWidth,display:getComputedStyle(document.querySelector('.form-actions')).display,saveColor:getComputedStyle(buttons[0]).color,analyzeBackground:getComputedStyle(buttons[1]).backgroundColor}})()`);
     assert.equal(regularActionLayout.count, 2, 'a regular user sees only save and analysis actions');
-    assert.equal(regularActionLayout.sameRow, true, 'regular-user desktop actions align on one row');
+    assert.equal(regularActionLayout.sameRow, true, `regular-user desktop actions align on one row: ${JSON.stringify(regularActionLayout)}`);
     assert.equal(regularActionLayout.gap, 16, 'regular-user desktop actions have a rendered 16px gap');
     await command('Emulation.setDeviceMetricsOverride', { width: 697, height: 844, deviceScaleFactor: 1, mobile: false });
-    const regularNarrowActions = await evaluate(`(()=>{const card=document.querySelector('.feedback-card'),buttons=[...card.querySelectorAll(':scope > .form-actions button')],rects=buttons.map(button=>button.getBoundingClientRect());return {cardWidth:card.clientWidth,viewport:innerWidth,overflow:document.documentElement.scrollWidth>innerWidth,sameRow:rects.length===2&&Math.abs(rects[0].top-rects[1].top)<=2,saveWidth:rects[0]?.width,analyzeWidth:rects[1]?.width}})()`);
+    const regularNarrowActions = await evaluate(`(()=>{const card=document.querySelector('.feedback-card'),buttons=[...card.querySelectorAll('#feedbackAccordionPanel > .form-actions button')],rects=buttons.map(button=>button.getBoundingClientRect());return {cardWidth:card.clientWidth,viewport:innerWidth,overflow:document.documentElement.scrollWidth>innerWidth,sameRow:rects.length===2&&Math.abs(rects[0].top-rects[1].top)<=2,saveWidth:rects[0]?.width,analyzeWidth:rects[1]?.width}})()`);
     assert.equal(regularNarrowActions.overflow, false, 'narrow desktop has no horizontal overflow');
     assert.equal(regularNarrowActions.sameRow, false, `the full app viewport leaves insufficient room beside its sidebar: ${JSON.stringify(regularNarrowActions)}`);
     assert.ok(regularNarrowActions.cardWidth < 620, 'the 697px app viewport has insufficient card space for both labels on one line');
@@ -385,6 +442,8 @@ test('the session page requires a realized RPE before saving, generating or uplo
     await evaluate(`sessionStorage.setItem('kinesis:analysis-request:${feedbackId}', 'stale-synthetic-request-key')`);
     await command('Page.reload');
     await waitFor(`sessionStorage.getItem('kinesis:analysis-request:${feedbackId}')===null`, 'clearing a stale request key after the owner-scoped execution list confirms no accepted request');
+    assert.deepEqual(await evaluate(`(()=>({garmin:[document.getElementById('garminAccordionTrigger').getAttribute('aria-expanded'),document.getElementById('garminAccordionPanel').hidden],feedback:[document.getElementById('feedbackAccordionTrigger').getAttribute('aria-expanded'),document.getElementById('feedbackAccordionPanel').hidden]}))()`),
+      { garmin: ['false', true], feedback: ['false', true] }, 'reload returns both panels to their default collapsed state');
     assert.equal(await evaluate("document.getElementById('analysisSection').hidden"), true,
       'a stale key with no accepted execution does not leave an empty error panel');
     assert.equal(requests.filter(({ method, url }) => method === 'GET' && new URL(url).pathname === '/api/ai/executions').length, 1,
@@ -452,7 +511,8 @@ test('the session page requires a realized RPE before saving, generating or uplo
       set('feedbackWeather','22C nublado');
       return true;
     })()`);
-    await clickUntil('#saveBtn', "document.getElementById('feedbackRpeError').hidden===false", 'the inline RPE error');
+    await evaluate("document.getElementById('feedbackAccordionTrigger').click()");
+    await clickUntil('#saveBtn', "document.getElementById('feedbackRpeError').hidden===false && document.getElementById('feedbackAccordionTrigger').getAttribute('aria-expanded')==='true'", 'the inline RPE error opens its panel before focusing');
     const refused = await evaluate(`(()=>{
       const group=document.getElementById('feedbackRpe');
       const error=document.getElementById('feedbackRpeError');
@@ -495,6 +555,7 @@ test('the session page requires a realized RPE before saving, generating or uplo
     /* ── The same refusal answers in the language being read ── */
 
     await setLanguage('pt-BR');
+    assert.equal(await evaluate("document.getElementById('feedbackAccordionTrigger').getAttribute('aria-expanded')"), 'true', 'changing language preserves the chosen open state');
     const translated = await evaluate(`(()=>({
       errorText:document.getElementById('feedbackRpeError').textContent,
       status:document.getElementById('status').textContent,
@@ -513,6 +574,14 @@ test('the session page requires a realized RPE before saving, generating or uplo
     assert.equal(refusedPrompt.analysisHidden, true, 'no analysis appears without a saved result and effort');
     assert.equal(refusedPrompt.technicalPrompt, false, 'a common account does not receive the admin prompt control');
     assert.deepEqual(writes(), [], 'an invalid analysis request made no result write or paid execution');
+    await evaluate("document.getElementById('feedbackAccordionTrigger').scrollIntoView({block:'start'})");
+    await delay(80);
+    writeFileSync('/tmp/kinesis-session-feedback-error-pt-desktop.png', Buffer.from((await command('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+    await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await evaluate("document.getElementById('feedbackAccordionTrigger').scrollIntoView({block:'start'})");
+    await delay(80);
+    writeFileSync('/tmp/kinesis-session-feedback-error-pt-mobile.png', Buffer.from((await command('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
     await setLanguage('en-US');
 
     /* ── The keyboard answers the group and the result is recorded ── */
@@ -765,7 +834,21 @@ test('the session page requires a realized RPE before saving, generating or uplo
     });
 
     await evaluate("document.getElementById('rpe-4').click(); true");
-    await clickUntilFile('#fitFile', fitFile, "document.getElementById('fitDataSection').hidden===false", 'the stored FIT result');
+    holdNextFitParse = true;
+    await chooseFile('#fitFile', fitFile);
+    await fitParseStarted;
+    await waitFor("document.getElementById('feedbackAccordionSummary').textContent==='Importing workout result…'", 'the collapsed summary shows an upload in progress');
+    await evaluate("document.getElementById('feedbackAccordionTrigger').click()");
+    assert.deepEqual(await evaluate("({hidden:document.getElementById('feedbackAccordionPanel').hidden,fileCount:document.getElementById('fitFile').files.length})"),
+      { hidden: true, fileCount: 1 }, 'collapsing during the upload leaves the selected file and request intact');
+    await evaluate("document.getElementById('feedbackAccordionTrigger').scrollIntoView({block:'start'})");
+    await delay(80);
+    writeFileSync('/tmp/kinesis-session-feedback-import-progress-en.png', Buffer.from((await command('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
+    releaseFitParse();
+    await waitFor("document.getElementById('fitDataSection').hidden===false", 'the stored FIT result');
+    assert.equal(await evaluate("document.getElementById('feedbackAccordionPanel').hidden"), true, 'completion preserves the user’s collapsed presentation choice');
+    assert.equal(await evaluate("document.getElementById('feedbackAccordionSummary').textContent"), 'FIT imported · Feedback saved', 'the header reflects the persisted FIT result and effort');
+    await evaluate("document.getElementById('feedbackAccordionTrigger').click()");
     const upload = writes().find(({ method }) => method === 'POST');
     assert.ok(upload, 'the upload was sent once the effort was reported');
     assert.match(upload.url, new RegExp(`/api/trainings/${fitId}/fit$`));
@@ -990,13 +1073,13 @@ test('the session page requires a realized RPE before saving, generating or uplo
       { prompt: 'Ver prompt externo', analyze: 'Analisar treino' },
       'admin actions retain localized product labels in Portuguese'
     );
-    await waitFor("document.querySelectorAll('.feedback-card > .form-actions button svg').length===2", 'the Lucide icons in the action footer');
+    await waitFor("document.querySelectorAll('#feedbackAccordionPanel > .form-actions button svg').length===2", 'the Lucide icons in the action footer');
     await evaluate(`(()=>{
       document.getElementById('rpe-4').click();
       const notes=document.getElementById('feedbackNotas');
       notes.value='Saved before external prompt preview.';
       notes.dispatchEvent(new Event('input',{bubbles:true}));
-      const buttons=[...document.querySelectorAll('.feedback-card > .form-actions button')];
+      const buttons=[...document.querySelectorAll('#feedbackAccordionPanel > .form-actions button')];
       window.__actionButtonHeights=buttons.map(button=>Math.round(button.getBoundingClientRect().height));
       window.__actionButtonRects=buttons.map(button=>{const rect=button.getBoundingClientRect();return {x:Math.round(rect.x),y:Math.round(rect.y),bottom:Math.round(rect.bottom),centerY:Math.round(rect.top+rect.height/2),right:Math.round(rect.right),label:button.textContent.trim()}});
       const footer=document.querySelector('.form-actions').getBoundingClientRect();
@@ -1015,8 +1098,8 @@ test('the session page requires a realized RPE before saving, generating or uplo
     await evaluate("document.querySelector('.form-actions').scrollIntoView({block:'center'}); true");
     await delay(100);
     const mobileActionLayout = await evaluate(`(()=>({
-      rows:new Set([...document.querySelectorAll('.feedback-card > .form-actions button')].map(button=>Math.round(button.getBoundingClientRect().y))).size,
-      widths:[...document.querySelectorAll('.feedback-card > .form-actions button')].map(button=>Math.round(button.getBoundingClientRect().width)),
+      rows:new Set([...document.querySelectorAll('#feedbackAccordionPanel > .form-actions button')].map(button=>Math.round(button.getBoundingClientRect().y))).size,
+      widths:[...document.querySelectorAll('#feedbackAccordionPanel > .form-actions button')].map(button=>Math.round(button.getBoundingClientRect().width)),
       overflow:document.documentElement.scrollWidth>innerWidth,
     }))()`);
     assert.equal(mobileActionLayout.rows, 3, 'mobile actions use an intentional single-column layout');
@@ -1055,7 +1138,7 @@ test('the session page requires a realized RPE before saving, generating or uplo
       'the second adjacent admin actions render with a 16px gap, regardless of row wrapping');
     const desktopActionRows = await evaluate('(()=>{const ys=window.__actionButtonRects.map(rect=>rect.centerY).sort((a,b)=>a-b);return ys.reduce((rows,y,index)=>index===0||y-ys[index-1]>2?rows+1:rows,0)})()');
     const actionContainerWidth = await evaluate('window.__actionContainerWidth');
-    const actionLayout = await evaluate(`(()=>{const buttons=[...document.querySelectorAll('.feedback-card > .form-actions button')],footer=document.querySelector('.form-actions'),style=getComputedStyle(footer);return {footerWidth:footer.clientWidth,widths:buttons.map(button=>button.getBoundingClientRect().width),gap:style.columnGap,direction:style.flexDirection,alignItems:style.alignItems,rows:new Set(buttons.map(button=>Math.round(button.getBoundingClientRect().y))).size}})()`);
+    const actionLayout = await evaluate(`(()=>{const buttons=[...document.querySelectorAll('#feedbackAccordionPanel > .form-actions button')],footer=document.querySelector('.form-actions'),style=getComputedStyle(footer);return {footerWidth:footer.clientWidth,widths:buttons.map(button=>button.getBoundingClientRect().width),gap:style.columnGap,direction:style.flexDirection,alignItems:style.alignItems,rows:new Set(buttons.map(button=>Math.round(button.getBoundingClientRect().y))).size}})()`);
     const requiredActionWidth = actionLayout.widths.reduce((sum, width) => sum + width, 0) + 32;
     const hasAdminPrompt = await evaluate("document.querySelector('.form-actions').classList.contains('has-admin-prompt')");
     const expectedDesktopRows = actionContainerWidth <= (hasAdminPrompt ? 696 : 620)
@@ -1162,7 +1245,7 @@ test('the session page requires a realized RPE before saving, generating or uplo
     await waitFor("document.querySelector('.external-prompt-backdrop').hidden", 'closing the mobile prompt through its localized footer action');
     await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
     await setLanguage('en-US');
-    const englishActionRow = await evaluate(`(()=>{const buttons=[...document.querySelectorAll('.feedback-card > .form-actions button')],rects=buttons.map(button=>button.getBoundingClientRect()),center=rects[0]?.top+(rects[0]?.height||0)/2,footer=document.querySelector('.form-actions');return {sameRow:rects.length===3&&rects.every(rect=>Math.abs(rect.top+rect.height/2-center)<=2),widths:rects.map(rect=>Math.round(rect.width)),footerWidth:footer.clientWidth,gap:getComputedStyle(footer).columnGap}})()`);
+    const englishActionRow = await evaluate(`(()=>{const buttons=[...document.querySelectorAll('#feedbackAccordionPanel > .form-actions button')],rects=buttons.map(button=>button.getBoundingClientRect()),center=rects[0]?.top+(rects[0]?.height||0)/2,footer=document.querySelector('.form-actions');return {sameRow:rects.length===3&&rects.every(rect=>Math.abs(rect.top+rect.height/2-center)<=2),widths:rects.map(rect=>Math.round(rect.width)),footerWidth:footer.clientWidth,gap:getComputedStyle(footer).columnGap}})()`);
     const englishFits = englishActionRow.widths.reduce((sum, width) => sum + width, 0) + 32 <= englishActionRow.footerWidth;
     assert.equal(englishActionRow.sameRow, englishFits,
       `English actions share a row exactly when their labels fit the available footer width: ${JSON.stringify(englishActionRow)}`);
@@ -1177,7 +1260,7 @@ test('the session page requires a realized RPE before saving, generating or uplo
     await waitFor("document.getElementById('generateBtn').disabled===false", 'the completed analysis action is enabled before comparing shared button styles');
     await command('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1, y: 1 });
     await delay(250);
-    const sessionButtonMetrics = await evaluate(`(()=>Object.fromEntries([...document.querySelectorAll('.feedback-card > .form-actions button')].map((button,index)=>{const style=getComputedStyle(button);const icon=button.querySelector('svg'),iconStyle=icon?getComputedStyle(icon):null;return [["save","prompt","analyze"][index],{height:style.height,padding:style.padding,borderRadius:style.borderRadius,fontFamily:style.fontFamily,fontSize:style.fontSize,fontWeight:style.fontWeight,color:style.color,backgroundColor:style.backgroundColor,border:style.border,boxShadow:style.boxShadow,gap:style.gap,transition:style.transition,icon:icon?.getAttribute('data-lucide'),iconSize:iconStyle?iconStyle.width+' '+iconStyle.height:null}]})))()`);
+    const sessionButtonMetrics = await evaluate(`(()=>Object.fromEntries([...document.querySelectorAll('#feedbackAccordionPanel > .form-actions button')].map((button,index)=>{const style=getComputedStyle(button);const icon=button.querySelector('svg'),iconStyle=icon?getComputedStyle(icon):null;return [["save","prompt","analyze"][index],{height:style.height,padding:style.padding,borderRadius:style.borderRadius,fontFamily:style.fontFamily,fontSize:style.fontSize,fontWeight:style.fontWeight,color:style.color,backgroundColor:style.backgroundColor,border:style.border,boxShadow:style.boxShadow,gap:style.gap,transition:style.transition,icon:icon?.getAttribute('data-lucide'),iconSize:iconStyle?iconStyle.width+' '+iconStyle.height:null}]})))()`);
     assert.equal(sessionButtonMetrics.prompt.icon, 'sparkles', 'the session prompt renders the same Lucide icon as Request Workouts');
     assert.equal(sessionButtonMetrics.save.color, 'rgb(76, 110, 81)', 'save restores the historic green text');
     assert.match(sessionButtonMetrics.save.border, /rgb\(76, 110, 81\)/, 'save restores the historic green outline');
@@ -1251,6 +1334,7 @@ test('the session page requires a realized RPE before saving, generating or uplo
     await delay(100);
     writeFileSync('/tmp/kinesis-request-workouts-actions-mobile-en.png', Buffer.from((await command('Page.captureScreenshot', { format: 'png' })).data, 'base64'));
   } finally {
+    releaseFitParse?.();
     try {
       socket?.close();
     } catch {}

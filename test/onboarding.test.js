@@ -102,6 +102,11 @@ async function runChromeAtViewport(chrome, url, { width, height, mobile, cookie 
           returnByValue: true,
         });
       }
+      await command('Runtime.evaluate', {
+        expression: `new Promise((resolve,reject)=>{const end=Date.now()+12000;const attempt=()=>{const trigger=document.getElementById('feedbackAccordionTrigger');const panel=document.getElementById('feedbackAccordionPanel');if(trigger&&panel&&!panel.hidden){resolve(true);return}if(trigger&&panel)trigger.click();if(Date.now()>end){reject(new Error('Feedback accordion did not open for platform focus validation'));return}setTimeout(attempt,40)};attempt()})`,
+        awaitPromise: true,
+        returnByValue: true,
+      });
       const keyboardFocusState = {};
       const validatePlatformList = async ({ name, trigger, dialog, item, count, activateIndex = 1 }) => {
         await command('Runtime.evaluate', {
@@ -1160,6 +1165,8 @@ test('authenticated training-result guidance and feedback shoes render by canoni
         const api=await fetch('/api/trainings/'+new URL(location.href).searchParams.get('id')).then(r=>r.json()).catch(()=>null);
         if(select&&api?.training&&document.body.classList.contains('shell-mounted')){
           await new Promise(r=>setTimeout(r,250));
+          document.getElementById('feedbackAccordionTrigger').click();
+          await new Promise((resolve,reject)=>{const end=Date.now()+2000;const wait=()=>{if(!document.getElementById('feedbackAccordionPanel').hidden){resolve();return}if(Date.now()>end){reject(new Error('Feedback accordion did not open for import guide validation'));return}setTimeout(wait,20)};wait()});
           const importButton=document.getElementById('importHelpBtn');
           const sourceSelect=document.getElementById('resultSourceSelect');
           const manualValues=['manualDistance','manualHours','manualMinutes','manualSeconds','manualAvgHr','manualMaxHr','manualElevation','manualCalories'].map(id=>document.getElementById(id)?.value);
@@ -1266,6 +1273,8 @@ test('authenticated result shoe options retranslate live without refetching or c
       try{
         await wait(()=>document.body.classList.contains('shell-mounted')&&document.getElementById('feedbackShoe')?.options.length>1,'options');
         const select=document.getElementById('feedbackShoe');
+        document.getElementById('feedbackAccordionTrigger').click();
+        await new Promise((resolve,reject)=>{const end=Date.now()+2000;const wait=()=>{if(!document.getElementById('feedbackAccordionPanel').hidden){resolve();return}if(Date.now()>end){reject(new Error('Feedback accordion did not open'));return}setTimeout(wait,20)};wait()});
         const retired=()=>[...select.options].find(option=>option.value==='shoe-language-retired-current');
         const before={value:select.value,retiredText:retired()?.textContent.trim()??null,retiredDisabled:retired()?.disabled??null,
           otherRetiredPresent:[...select.options].some(option=>option.value==='shoe-language-retired-other'),

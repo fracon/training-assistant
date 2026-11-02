@@ -138,6 +138,10 @@ test('the three external prompt screens share the approved modal in Chrome acros
             width: viewport.width, height: viewport.height, deviceScaleFactor: 1, mobile: viewport.mobile,
           });
           await command('Page.navigate', { url: `${baseUrl}${page.path}` });
+          if (page.name === 'result') {
+            await waitFor("document.getElementById('feedbackAccordionTrigger') && document.getElementById('feedbackAccordionTrigger').offsetParent!==null", 'result feedback accordion');
+            await evaluate("new Promise((resolve,reject)=>{const end=Date.now()+12000;const open=()=>{const trigger=document.getElementById('feedbackAccordionTrigger');const panel=document.getElementById('feedbackAccordionPanel');if(trigger&&panel&&!panel.hidden){resolve(true);return}trigger?.click();if(Date.now()>end){reject(new Error('Expanded result feedback panel timed out')) ;return}setTimeout(open,40)};open()})");
+          }
           await waitFor(`document.querySelector(${JSON.stringify(page.trigger)}) && document.querySelector(${JSON.stringify(page.trigger)}).offsetParent!==null`, `${page.name} admin trigger`);
           if (page.name === 'workouts') {
             await waitFor(`document.querySelector('#availabilityGrid [data-day="monday"] [data-can-train]')`, 'availability editor readiness');

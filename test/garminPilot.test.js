@@ -141,7 +141,7 @@ test('request preserves normalized connector errors and handles cleanup-only cal
   assert.deepEqual(nonJson, {});
   await assert.rejects(pilot.request('/status', { allowInactive: true }, {
     async fetchImpl() { return response(503, {}); },
-  }), /unavailable/);
+  }), /connector_service_error/);
   await assert.rejects(pilot.request('/status', { allowInactive: true }, {
     async fetchImpl() { throw new Error('network down'); },
   }), /network down/);
@@ -382,7 +382,18 @@ test('connector refusal is actionable while HTTP/auth errors remain distinct', a
   assert.equal(invalidations, 0);
   assert.equal(pilot.connectorFailure(new DOMException('deadline', 'TimeoutError')).message, 'connector_timeout');
   assert.match(pilot.displayPilotError(new Error('connector_unavailable')), /npm run garmin:connector/);
-  assert.equal(pilot.displayPilotError(new Error('auth_required')), 'auth_required');
+  assert.match(pilot.displayPilotError(new Error('auth_required')), /autenticação Garmin foi recusada/);
+  assert.match(pilot.displayPilotError(Object.assign(new Error('auth_required'), { diagnosticStage: 'resume_mfa' })), /código MFA foi recusado/);
+  assert.match(pilot.displayPilotError(new Error('service_auth_failed')), /autenticação interna/);
+  assert.match(pilot.displayPilotError(new Error('garmin_timeout')), /solicitação à Garmin excedeu o tempo limite/);
+  assert.match(pilot.displayPilotError(new Error('service_configuration_error')), /configuração Garmin está ausente ou inválida/);
+  assert.match(pilot.displayPilotError(new Error('persistence_error')), /sessão anterior foi preservada/);
+  assert.match(pilot.displayPilotError(Object.assign(new Error('unavailable'), { diagnosticId: 'c'.repeat(32) })),
+    /sem uma causa classificada.*ID de diagnóstico: c{32}/);
+  assert.equal(pilot.responseFailureCode({ detail: { code: 'service_auth_failed' } }, 401), 'service_auth_failed');
+  assert.equal(pilot.responseFailureCode({ error: { code: 'unavailable' } }, 503), 'unavailable');
+  assert.equal(pilot.responseFailureCode({}, 429), 'rate_limited');
+  assert.equal(pilot.responseFailureCode({}, 503), 'connector_service_error');
   const cli = pilotOptions('status');
   cli.options.request = async () => { throw new Error('connector_unavailable'); };
   assert.equal(await pilot.runMain(cli.options), 1);
@@ -391,6 +402,13 @@ test('connector refusal is actionable while HTTP/auth errors remain distinct', a
     validate() {}, async invalidate() {},
     async fetchImpl() { return response(401, { detail: { code: 'auth_required' } }); },
   }), /auth_required/);
+  const internalAuth = await pilot.request('/auth/start', {}, {
+    validate() {}, async invalidate() {},
+    async fetchImpl() { return response(401, { detail: { code: 'service_auth_failed', stage: 'connector_response', diagnostic_id: 'd'.repeat(32) } }); },
+  }).catch((error) => error);
+  assert.equal(internalAuth.message, 'service_auth_failed');
+  assert.equal(internalAuth.diagnosticStage, 'connector_response');
+  assert.equal(internalAuth.diagnosticId, 'd'.repeat(32));
 });
 
 test('TTY pilot validates operation IDs and confirms simple and interval mutations', async () => {

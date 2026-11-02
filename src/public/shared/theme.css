@@ -516,6 +516,29 @@ input.input-error:focus-visible {
   color: var(--muted);
 }
 
+.confirm-progress,
+.confirm-failure {
+  margin: 0.75rem 0 0;
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.confirm-progress { display: flex; align-items: center; gap: 0.55rem; color: var(--muted); }
+.confirm-progress[hidden], .confirm-failure[hidden] { display: none; }
+.confirm-failure { color: var(--danger); }
+.confirm-spinner {
+  display: inline-block;
+  width: 1em;
+  height: 1em;
+  flex: 0 0 auto;
+  border: 2px solid currentColor;
+  border-inline-end-color: transparent;
+  border-radius: 50%;
+  animation: confirm-spin .75s linear infinite;
+}
+@keyframes confirm-spin { to { transform: rotate(1turn); } }
+@media (prefers-reduced-motion: reduce) { .confirm-spinner { animation-duration: 1.5s; } }
+
 .confirm-actions {
   display: flex;
   align-items: center;

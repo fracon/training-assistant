@@ -1,6 +1,7 @@
 """Regression tests use garminconnect 0.3.20's real public client types."""
 
 import base64
+import hashlib
 import io
 import inspect
 import json
@@ -11,9 +12,11 @@ from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
+import requests
 from fastapi.testclient import TestClient
 from garminconnect import Garmin
 from garminconnect.client import Client as GarminTransport
+from garminconnect.workout import RunningWorkout, WorkoutSegment, create_interval_step
 from requests import Response, Timeout
 from requests.structures import CaseInsensitiveDict
 
@@ -61,17 +64,260 @@ class UpstreamContractTests(unittest.TestCase):
             return None, None
 
         with patch.object(GarminTransport, "login", simulated_transport_login), \
-             patch.object(Garmin, "_load_profile_and_settings", return_value=None):
+             patch.object(Garmin, "_load_profile_and_settings", return_value=None), \
+             patch.object(Garmin, "get_user_profile", return_value={"userData": {"id": 31001}}):
             response = self.client.post(
                 f"{self.prefix}/auth/start", headers=self.headers,
                 json={"email": "owner@example.test", "password": "local-only"},
             )
         self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["identity_fingerprint"],
+                         hashlib.sha256(b"kinesis-garmin-account-v1:31001").hexdigest())
         token_path = Path(self.temp.name, "31-pilot.bin")
         self.assertTrue(token_path.exists())
         self.assertIn(b"KGC1", token_path.read_bytes())
         self.assertNotIn(b"synthetic-refresh-token", token_path.read_bytes())
         self.assertIn("di_token", json.loads(main._decrypt(token_path, b"u" * 32)))
+
+    def test_real_client_uses_library_social_profile_identity_when_settings_has_no_id(self):
+        """0.3.20's user-settings profile does not promise an account ID."""
+        self.assertEqual(tuple(inspect.signature(Garmin.get_user_profile).parameters), ("self",))
+        social_profile_source = inspect.getsource(Garmin._load_social_profile)
+        self.assertIn("/userprofile-service/socialProfile", social_profile_source)
+        self.assertIn('prof.get("profileId")', social_profile_source)
+        self.assertIn("isinstance(profile_id, int)", social_profile_source)
+
+        def simulated_transport_login(transport, email, password, prompt_mfa=None, return_on_mfa=False):
+            self.assertEqual((email, password), ("owner@example.test", "local-only"))
+            self.assertTrue(return_on_mfa)
+            transport.di_token = "synthetic-di-token"
+            transport.di_refresh_token = "synthetic-refresh-token"
+            return None, None
+
+        requests_seen = []
+
+        def response(payload):
+            result = Response()
+            result.status_code = 200
+            result.headers = CaseInsensitiveDict({"Content-Type": "application/json"})
+            result._content = json.dumps(payload).encode()
+            return result
+
+        def request(_session, method, url, **kwargs):
+            requests_seen.append((method, url))
+            if url.endswith("/user-settings"):
+                return response({"userData": {"measurementSystem": "metric"}})
+            if url.endswith("/socialProfile"):
+                return response({"displayName": "Synthetic", "fullName": "Synthetic User",
+                                 "profileId": 31001})
+            self.fail("unexpected Garmin endpoint in synthetic auth contract")
+
+        with patch.object(GarminTransport, "login", simulated_transport_login), \
+             patch.object(GarminTransport, "_token_expires_soon", return_value=False), \
+             patch.object(requests.Session, "request", request):
+            # Patch only the lowest HTTP boundary; Garmin.login/get_user_profile/connectapi stay real.
+            response_from_service = self.client.post(
+                f"{self.prefix}/auth/start", headers=self.headers,
+                json={"email": "owner@example.test", "password": "local-only"},
+            )
+
+        self.assertEqual(response_from_service.status_code, 200, response_from_service.text)
+        self.assertEqual(response_from_service.json()["status"], "connected")
+        self.assertEqual(response_from_service.json()["identity_fingerprint"],
+                         hashlib.sha256(b"kinesis-garmin-account-v1:31001").hexdigest())
+        self.assertEqual([url.rsplit("/", 1)[-1] for _, url in requests_seen],
+                         ["user-settings", "socialProfile"])
+
+    def test_profile_identity_diagnostics_distinguish_invalid_profile_and_missing_identity(self):
+        legacy_fingerprint = hashlib.sha256(b"kinesis-garmin-account-v1:31002").hexdigest()
+        self.assertEqual(main._identity_fingerprint({"userId": "31002"}), legacy_fingerprint)
+
+        def simulated_transport_login(transport, *_args, **kwargs):
+            self.assertTrue(kwargs["return_on_mfa"])
+            transport.di_token = "synthetic-di-token"
+            transport.di_refresh_token = "synthetic-refresh-token"
+            return None, None
+
+        def response(payload):
+            result = Response()
+            result.status_code = 200
+            result.headers = CaseInsensitiveDict({"Content-Type": "application/json"})
+            result._content = json.dumps(payload).encode()
+            return result
+
+        for settings, social, expected_code, expected_operation in (
+            ([], {"profileId": 31001}, "profile_response_invalid", "validate_user_settings"),
+            ({"userData": {"measurementSystem": "metric"}}, {"displayName": "Synthetic"},
+             "remote_identity_missing", "validate_social_profile"),
+        ):
+            def request(_session, method, url, **_kwargs):
+                return response(settings if url.endswith("/user-settings") else social)
+
+            with patch.object(GarminTransport, "login", simulated_transport_login), \
+                 patch.object(GarminTransport, "_token_expires_soon", return_value=False), \
+                 patch.object(requests.Session, "request", request), \
+                 self.assertLogs(main._logger, level="WARNING") as captured:
+                result = self.client.post(
+                    f"{self.prefix}/auth/start", headers=self.headers,
+                    json={"email": "owner@example.test", "password": "local-only"},
+                )
+            self.assertEqual(result.status_code, 502, result.text)
+            self.assertEqual(result.json()["detail"]["code"], expected_code)
+            self.assertEqual(result.json()["detail"]["operation"], expected_operation)
+            joined = "\n".join(captured.output)
+            self.assertIn(f"operation={expected_operation}", joined)
+            self.assertIn("exception_class=GarminProfileResponseError" if expected_code == "profile_response_invalid"
+                          else "exception_class=GarminIdentityMissingError", joined)
+            self.assertNotIn("owner@example.test", joined)
+            self.assertNotIn("Synthetic", joined)
+            self.assertNotIn("profileId", joined)
+
+    def test_social_profile_http_auth_error_stays_distinct_from_missing_identity(self):
+        def simulated_transport_login(transport, *_args, **kwargs):
+            transport.di_token = "synthetic-di-token"
+            transport.di_refresh_token = "synthetic-refresh-token"
+            return None, None
+
+        def response(payload, status=200):
+            result = Response()
+            result.status_code = status
+            result.headers = CaseInsensitiveDict({"Content-Type": "application/json"})
+            result._content = json.dumps(payload).encode()
+            return result
+
+        def request(_session, method, url, **_kwargs):
+            if url.endswith("/user-settings"):
+                return response({"userData": {"measurementSystem": "metric"}})
+            return response({"message": "private remote body"}, 401)
+
+        with patch.object(GarminTransport, "login", simulated_transport_login), \
+             patch.object(GarminTransport, "_token_expires_soon", return_value=False), \
+             patch.object(requests.Session, "request", request), \
+             self.assertLogs(main._logger, level="WARNING") as captured:
+            result = self.client.post(
+                f"{self.prefix}/auth/start", headers=self.headers,
+                json={"email": "owner@example.test", "password": "local-only"},
+            )
+        self.assertEqual(result.status_code, 401)
+        self.assertEqual(result.json()["detail"]["code"], "auth_required")
+        self.assertEqual(result.json()["detail"]["operation"], "read_social_profile")
+        self.assertIn("exception_class=GarminConnectAuthenticationError", captured.output[0])
+        self.assertNotIn("private remote body", captured.output[0])
+
+    def test_pinned_update_and_reschedule_methods_use_existing_workout_and_occurrence_contract(self):
+        client = Garmin()
+        client.client.di_token = "synthetic-bearer"
+        captured = []
+
+        def response(payload, status=200):
+            result = Response()
+            result.status_code = status
+            result.headers = CaseInsensitiveDict({"Content-Type": "application/json"})
+            result._content = json.dumps(payload).encode()
+            return result
+
+        def request(method, url, **kwargs):
+            captured.append((method, url, kwargs))
+            if url.endswith("/workout/42"):
+                return response({"workoutId": 42})
+            if method == "GET":
+                return response({"scheduleId": 84, "calendarDate": "2026-11-12",
+                                 "workout": {"workoutId": 42}})
+            return response({"scheduleId": 84, "calendarDate": "2026-11-13",
+                             "workout": {"workoutId": 42}})
+
+        with patch.object(GarminTransport, "_token_expires_soon", return_value=False), \
+             patch.object(client.client._api_session, "request", request):
+            updated = client.update_workout(42, {
+                "workoutName": "Updated synthetic", "workoutId": 999,
+                "workoutSegments": [{"segmentOrder": 1, "workoutSteps": []}],
+            })
+            moved = client.reschedule_workout(84, "2026-11-13")
+
+        self.assertEqual(updated, {"workoutId": 42})
+        self.assertEqual(moved, {"scheduleId": 84, "calendarDate": "2026-11-13",
+                                 "workout": {"workoutId": 42}})
+        self.assertEqual([item[0] for item in captured], ["PUT", "GET", "PUT"])
+        self.assertEqual(captured[0][1], client.client._resolve_url(f"{client.garmin_workouts}/workout/42"))
+        self.assertEqual(captured[0][2]["json"]["workoutId"], 42)
+        self.assertEqual(captured[1][1], client.client._resolve_url(f"{client.garmin_workouts_schedule_url}/84"))
+        self.assertEqual(captured[2][1], captured[1][1])
+        self.assertEqual(captured[2][2]["json"]["calendarDate"], "2026-11-13")
+        self.assertEqual(captured[2][2]["json"]["workout"], {"workoutId": 42})
+
+    def test_pinned_upload_serializes_canonical_title_and_reconciliation_metadata_separately(self):
+        client = Garmin()
+        client.client.di_token = "synthetic-bearer"
+        captured = []
+
+        def request(method, url, **kwargs):
+            captured.append((method, url, kwargs))
+            response = Response()
+            response.status_code = 200
+            response.headers = CaseInsensitiveDict({"Content-Type": "application/json"})
+            response._content = json.dumps({"workoutId": 42}).encode()
+            return response
+
+        workout = RunningWorkout(
+            workoutName="Teste Kinesis",
+            description="Koperationmarker-fingerprint",
+            estimatedDurationInSecs=60,
+            workoutSegments=[WorkoutSegment(segmentOrder=1,
+                sportType={"sportTypeId": 1, "sportTypeKey": "running"},
+                workoutSteps=[create_interval_step(60, step_order=1)])],
+        )
+        with patch.object(GarminTransport, "_token_expires_soon", return_value=False), \
+             patch.object(client.client._api_session, "request", request):
+            result = client.upload_running_workout(workout)
+
+        self.assertEqual(result, {"workoutId": 42})
+        self.assertEqual(len(captured), 1)
+        payload = captured[0][2]["json"]
+        self.assertEqual(payload["workoutName"], "Teste Kinesis")
+        self.assertEqual(payload["description"], "Koperationmarker-fingerprint")
+
+    def test_publish_endpoint_uses_pinned_garmin_upload_contract_with_exact_canonical_name(self):
+        token_path = Path(self.temp.name, "31-pilot.bin")
+        main._save_encrypted(token_path, b"u" * 32, b'{"di_token":"synthetic"}')
+        client = Garmin()
+        client.client.di_token = "synthetic-bearer"
+        captured = []
+
+        def response(payload):
+            result = Response()
+            result.status_code = 200
+            result.headers = CaseInsensitiveDict({"Content-Type": "application/json"})
+            result._content = json.dumps(payload).encode()
+            return result
+
+        def request(method, url, **kwargs):
+            captured.append((method, url, kwargs))
+            if method == "GET" and url.endswith("/workouts"):
+                return response([])
+            if method == "POST":
+                return response({"workoutId": 42})
+            upload = next(item[2]["json"] for item in captured if item[0] == "POST")
+            return response({"workoutId": 42, "workoutName": upload["workoutName"],
+                             "description": upload["description"],
+                             "workoutSegments": upload["workoutSegments"]})
+
+        @contextmanager
+        def real_client(*_args, **_kwargs):
+            yield client, Path(self.temp.name), Path(self.temp.name, "tokens.json")
+
+        body = {"operation_id": "f51db93c-9fb5-44ea-9a4c-79758a3b10c0",
+                "name": "Teste Kinesis", "interval_seconds": 60}
+        with patch.object(main, "_client", real_client), \
+             patch.object(GarminTransport, "_token_expires_soon", return_value=False), \
+             patch.object(client.client._api_session, "request", request):
+            result = self.client.post(f"{self.prefix}/workouts", headers=self.headers, json=body)
+
+        self.assertEqual(result.status_code, 200, result.text)
+        self.assertEqual(result.json()["status"], "created")
+        self.assertEqual(result.json()["workout"]["name"], "Teste Kinesis")
+        upload = next(item[2]["json"] for item in captured if item[0] == "POST")
+        self.assertEqual(upload["workoutName"], "Teste Kinesis")
+        self.assertRegex(upload["description"], r"^K[A-Za-z0-9_-]+-[a-f0-9]{8}$")
 
     def test_real_garmin_original_format_is_passed_to_transport(self):
         token_path = Path(self.temp.name, "31-pilot.bin")
@@ -330,12 +576,14 @@ class UpstreamContractTests(unittest.TestCase):
             return None, None
 
         with patch.object(GarminTransport, "resume_login", simulated_mfa_finish), \
-             patch.object(Garmin, "_load_profile_and_settings", return_value=None):
+             patch.object(Garmin, "_load_profile_and_settings", return_value=None), \
+             patch.object(Garmin, "get_user_profile", return_value={"userData": {"id": 31001}}):
             finish = self.client.post(
                 f"{self.prefix}/auth/finish", headers=self.headers,
                 json={"challenge_id": challenge_id, "code": "654321"},
             )
-        self.assertEqual(finish.json(), {"status": "connected"})
+        self.assertEqual(finish.json()["status"], "connected")
+        self.assertRegex(finish.json()["identity_fingerprint"], r"^[a-f0-9]{64}$")
         self.assertTrue(token_path.exists())
         self.assertIn("mfa-refresh-token", main._decrypt(token_path, b"u" * 32).decode())
 
@@ -388,7 +636,7 @@ class UpstreamContractTests(unittest.TestCase):
         def refreshed_profile(instance):
             self.assertTrue(instance.client.is_authenticated)
             instance.client.di_token = "after-refresh"
-            return {"synthetic": True}
+            return {"userData": {"id": 31001}}
 
         with patch.object(Garmin, "_load_profile_and_settings", return_value=None), \
              patch.object(Garmin, "get_user_profile", refreshed_profile):
@@ -438,6 +686,7 @@ class UpstreamContractTests(unittest.TestCase):
 
         with patch.object(main.tempfile, "TemporaryDirectory", tracked_temporary_directory), \
              patch.object(GarminTransport, "login", simulated_login), \
+             patch.object(Garmin, "get_user_profile", return_value={"userData": {"id": 31001}}), \
              patch.object(Garmin, "_load_profile_and_settings", return_value=None), \
              patch.object(main, "_save_encrypted", side_effect=OSError("disk unavailable")):
             response = self.client.post(
@@ -477,10 +726,17 @@ class UpstreamContractTests(unittest.TestCase):
 
         main._save_encrypted(Path(self.temp.name, "31-pilot.bin"), b"u" * 32,
                              b'{"di_token":"synthetic"}')
+        path = Path(self.temp.name, "31-pilot.bin")
+        schedule_key = "schedule:88:2026-11-12"
+        main._save_operation_journal(path, b"u" * 32, {
+            "00000000-0000-4000-8000-000000000031": {"status": "complete", "workout_id": 88},
+            schedule_key: {"status": "pending", "fingerprint": hashlib.sha256(schedule_key.encode()).hexdigest()},
+        })
         with patch.object(main, "_client", client_context):
             response = self.client.post(
                 f"{self.prefix}/workouts/schedule", headers=self.headers,
-                json={"workout_id": 88, "date": "2026-11-12"},
+                json={"operation_id": "00000000-0000-4000-8000-000000000031",
+                      "workout_id": 88, "date": "2026-11-12"},
             )
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(fake.calls, 0)

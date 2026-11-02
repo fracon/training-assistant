@@ -60,3 +60,77 @@ coverage command: `npm run test:garmin-pilot-coverage`. It covers the CLI, local
 config loader, setup/launcher, authorization rechecks, stream handling, and
 synthetic FIT parsing; its report is separate from both the required Node
 backend gate and Python coverage.
+
+Issue #73 adds a restricted Garmin UI pilot on the owned planned-session page.
+It stores an explicit structured prescription separately from original prose,
+previews it, and requires a separate confirmation before Node dispatches to
+this private connector. Run `npm run dev` and `npm run garmin:connector`; the
+browser never calls Python directly. This remains restricted to the configured
+Kinesis pilot owner and is not production multi-user support. See
+`../../docs/garmin-integration.md` for supported shapes and owner homologation.
+
+`DELETE /v1/connections/{owner}/{connection}` removes that connection's local
+encrypted token record and in-memory challenges. It deliberately retains the
+encrypted `.ops` journal because it is the durable provenance for already
+published/scheduled workouts; disconnect does not delete remote Garmin data or
+claim remote token revocation. A new connector process remains disconnected
+when the token record is absent, while the journal is still available for safe
+operation reconciliation after an eligible reconnect.
+
+The internal `POST /workouts` contract accepts exactly one main interval end
+condition: `interval_seconds` or `interval_distance_meters`. Distance is
+canonical meters and maps to the pinned library's distance-step constructor.
+For distance-based prescriptions `estimatedDurationInSecs` is zero; neither
+service invents duration or distance. Warm-up, recovery and cool-down remain
+time based in this adapter. Lap-button steps and nested repeat groups are
+refused before remote mutation.
+
+Update calls also carry `source_operation_id` and
+`source_scheduled_workout_id`. Both must be proven by this connection's
+encrypted journal: a completed source operation proves the workout, and a
+completed schedule record proves the exact occurrence. Successful updates and
+reschedules are recorded under their own operation UUIDs so they can be used
+as provenance sources in later chained operations after process restart.
+Legacy completed reschedules are adopted only when their encrypted historical
+fingerprint and a completed schedule record prove the same workout/occurrence/
+civil-date tuple. Missing evidence is refused; remote names and IDs alone are
+not ownership proof.
+
+New workout titles are exactly the canonical name supplied by Node. The
+connector keeps the per-operation marker in the pinned
+`RunningWorkout.description` field instead of appending it to `workoutName`.
+The encrypted journal stores the marker location and fingerprint. If a create
+response is lost before Garmin returns a workout ID, reconciliation searches
+for that exact marker; once Garmin returns an ID, the connector journals the ID
+before the confirmation read and resumes through that stable ID. A prior
+branch's title marker is still recognized only with the exact operation
+fingerprint/title. If an uncertain create has neither a marker on the remote
+object nor a persisted ID, it remains `outcome_unknown` and is not repeated.
+Existing journals are read in place; no migration, token deletion, or remote
+name-based ownership inference is performed. `garminconnect==0.3.20` serializes
+the optional description separately from the title; retention of that field by
+Garmin Connect itself remains a live-account verification item.
+
+When Node updates a workout and moves its occurrence in the same product
+operation, both endpoint requests intentionally carry the same product UUID.
+The encrypted journal keeps distinct `update:<UUID>` and `reschedule:<UUID>`
+step records/fingerprints and a completed root alias with
+`artifact_kind: "composite"` after both effects are confirmed. Reschedule
+prevalidates that it can safely extend the update alias before remote mutation.
+Retries read the exact workout or occurrence and complete an already-applied
+step without repeating it. The prior branch's state (completed update alias,
+pending reschedule journal, and possibly the already-moved remote date) is
+repairable only with matching request fingerprints and schedule provenance;
+otherwise it stays explicitly uncertain/invalid without journal or token
+deletion.
+
+For uncertain Node update rows, the persisted stage identifies whether the
+connector must reconcile the workout update or continue to reschedule. A
+legacy `unknown` stage is conservatively sent through the same update operation
+UUID so the connector journal can confirm its marker; Node requires the
+expected workout ID and an explicit `updated` or `reconciled` response before
+advancing. Existing remote IDs alone do not complete an operation.
+
+`npm run test:garmin-product-coverage` separately reports the Node product
+adapter and prescription contract; do not combine it with the backend Node
+100% gate or Python connector coverage.

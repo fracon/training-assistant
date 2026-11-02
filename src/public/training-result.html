@@ -18,7 +18,7 @@
         <p id="sessionDate" class="session-date"></p>
       </header>
 
-      <p id="status" class="status" role="status"></p>
+      <p id="status" class="status" role="status" tabindex="-1"></p>
 
       <section class="card planned-card" aria-labelledby="plannedTitle">
         <div class="card-head">
@@ -66,8 +66,100 @@
         </dl>
       </section>
 
-      <section class="card feedback-card" aria-labelledby="feedbackTitle">
-        <h2 id="feedbackTitle" data-i18n="session.feedbackHeading">Your feedback</h2>
+      <section class="card garmin-session-card session-accordion-card" id="garminSessionCard" hidden aria-labelledby="garminTitle">
+        <h2 class="session-accordion-heading" id="garminTitle">
+          <button id="garminAccordionTrigger" class="session-accordion-trigger" type="button" aria-expanded="false" aria-controls="garminAccordionPanel">
+            <span class="session-accordion-title" data-i18n="garmin.product.title">Garmin Connect</span>
+            <span id="garminAccordionSummary" class="session-accordion-summary" data-i18n="session.accordion.garminLoading">Checking connection…</span>
+            <i class="session-accordion-chevron" data-lucide="chevron-down" aria-hidden="true"></i>
+          </button>
+        </h2>
+        <div id="garminAccordionPanel" class="session-accordion-panel garmin-accordion-panel" role="region" aria-labelledby="garminTitle" hidden>
+        <p id="garminConnectionStatus" role="status">Checking connection…</p>
+        <button id="garminConnectionRetry" type="button" class="btn-secondary" hidden data-i18n="garmin.product.retryConnection">Try again</button>
+        <p id="garminDestination" hidden></p>
+        <form id="garminAuthForm" class="garmin-auth-form" hidden>
+          <div class="field"><label for="garminEmail" data-i18n="garmin.product.email">Garmin email</label><input id="garminEmail" type="email" autocomplete="username" class="input-control" required maxlength="254"></div>
+          <div class="field"><label for="garminPassword" data-i18n="garmin.product.password">Garmin password</label><input id="garminPassword" type="password" autocomplete="current-password" class="input-control" required maxlength="1024"></div>
+          <div class="field" id="garminMfaField" hidden><label for="garminMfaCode" data-i18n="garmin.product.mfa">Verification code</label><input id="garminMfaCode" inputmode="numeric" autocomplete="one-time-code" class="input-control" maxlength="32"></div>
+          <p id="garminAuthProgress" class="garmin-auth-progress" role="status" aria-live="polite" hidden><span class="garmin-auth-spinner" aria-hidden="true"></span><span></span></p>
+          <div class="garmin-actions"><button id="garminAuthSubmit" type="submit" class="btn-primary" data-i18n="garmin.product.connect">Connect Garmin</button><button id="garminAuthCancel" type="button" class="btn-secondary" hidden data-i18n="garmin.product.cancel">Cancel</button></div>
+        </form>
+        <button id="garminConnectButton" type="button" class="btn-secondary" data-i18n="garmin.product.connect">Connect Garmin</button>
+        <button id="garminDisconnectButton" type="button" class="btn-secondary" hidden data-i18n="garmin.product.disconnect">Disconnect</button>
+        <p id="garminDisconnectHelp" class="garmin-field-help" hidden data-i18n="garmin.product.disconnectResolveHelp">Verify the pending workout operation before disconnecting.</p>
+        <div id="garminPrescriptionPanel" hidden>
+          <div id="garminEditorView" class="garmin-editor-view">
+            <h3 data-i18n="garmin.product.prescription">Workout structure</h3>
+            <p data-i18n="garmin.product.proseNote">The original workout description stays unchanged. Confirm the structure below; it is not inferred from prose.</p>
+            <form id="garminPrescriptionForm" novalidate>
+            <div class="field"><label for="garminWorkoutName" data-i18n="garmin.product.name">Workout name</label><input id="garminWorkoutName" class="input-control" maxlength="32" required><span id="garminWorkoutName-error" class="garmin-field-error" data-validation-error hidden></span></div>
+            <div id="garminWorkoutEditor" class="garmin-workout-editor">
+              <fieldset class="garmin-editor-section"><legend data-i18n="garmin.product.warmupSection">Aquecimento</legend>
+                <label class="garmin-inline-check"><input id="garminWarmupEnabled" type="checkbox"><span data-i18n="garmin.product.includeStage">Incluir etapa</span></label>
+                <div id="garminWarmupEditor" hidden></div>
+              </fieldset>
+              <fieldset class="garmin-editor-section"><legend data-i18n="garmin.product.runSection">Corrida</legend>
+                <p data-i18n="garmin.product.runSectionHelp">Adicione blocos na ordem em que serão executados. Mantenha ao menos um bloco de corrida.</p>
+                <div id="garminRunBlocks"></div>
+                <button id="garminAddRunBlock" type="button" class="btn-secondary" data-i18n="garmin.product.addBlock">Adicionar bloco</button>
+                <button id="garminAddRecoveryBlock" type="button" class="btn-secondary" data-i18n="garmin.product.addRecovery">Adicionar recuperação</button>
+                <button id="garminAddRepeatBlock" type="button" class="btn-secondary" data-i18n="garmin.product.addRepeat">Adicionar repetições iguais</button>
+              </fieldset>
+              <fieldset class="garmin-editor-section"><legend data-i18n="garmin.product.cooldownSection">Desaquecimento</legend>
+                <label class="garmin-inline-check"><input id="garminCooldownEnabled" type="checkbox"><span data-i18n="garmin.product.includeStage">Incluir etapa</span></label>
+                <div id="garminCooldownEditor" hidden></div>
+              </fieldset>
+            </div>
+            <p id="garminPrescriptionError" role="alert" hidden></p>
+            <div class="garmin-review-actions">
+              <div id="garminValidationSummary" class="garmin-validation-summary" role="alert" aria-live="assertive" hidden><p></p><ul></ul></div>
+              <p id="garminEditorActionStatus" class="garmin-editor-action-status" role="status" aria-live="polite" hidden></p>
+              <p class="garmin-review-help" id="garminSaveHelp" data-i18n="garmin.product.saveHelp">Salva o treino no Kinesis para revisão. O envio à Garmin é feito na próxima etapa.</p>
+              <button id="garminPrescriptionSave" type="submit" class="btn-primary" data-i18n="garmin.product.preview">Salvar e revisar</button>
+            </div>
+            </form>
+          </div>
+          <section id="garminPreview" class="garmin-review" hidden aria-labelledby="garminPreviewTitle">
+            <header class="garmin-review-heading">
+              <h3 id="garminPreviewTitle" tabindex="-1" data-i18n="garmin.product.previewTitle">Revise seu treino</h3>
+              <p data-i18n="garmin.product.reviewIntro">A estrutura está salva no Kinesis. Confira os detalhes antes de enviar ao Garmin Connect.</p>
+              <p id="garminPreviewName" class="garmin-review-name"></p>
+            </header>
+            <dl class="garmin-review-context">
+              <div><dt data-i18n="garmin.product.plannedDate">Planned date</dt><dd id="garminScheduleDate"></dd></div>
+              <div><dt data-i18n="garmin.product.service">Publishing service</dt><dd>Garmin Connect</dd></div>
+              <div id="garminPreviewDeviceContext" hidden><dt data-i18n="garmin.product.accountDevice">Device reported by account</dt><dd id="garminPreviewDestination"></dd></div>
+            </dl>
+            <p class="garmin-review-sync" data-i18n="garmin.product.watchSyncNeeded">Após o envio, sincronize seu relógio pelo Garmin Connect.</p>
+            <section class="garmin-review-summary" id="garminPreviewTotal" aria-live="polite"></section>
+            <ol id="garminPreviewSteps" class="garmin-review-sequence"></ol>
+            <div class="garmin-review-footer">
+              <p id="garminActionHelp" class="garmin-review-action-help"></p>
+              <p id="garminOperationStatus" role="status" aria-live="polite"></p>
+              <div class="garmin-review-buttons">
+                <button id="garminEditStructure" type="button" class="btn-secondary" data-i18n="garmin.product.editStructure">Edit structure</button>
+                <button id="garminPublishButton" type="button" class="btn-primary garmin-publish-primary"><span class="garmin-publish-long" data-i18n="garmin.product.publish">Enviar e agendar no Garmin Connect</span><span class="garmin-publish-short" data-i18n="garmin.product.publishShort">Enviar e agendar</span></button>
+                <button id="garminUpdateButton" type="button" class="btn-primary" hidden data-i18n="garmin.product.update">Update in Garmin</button>
+                <button id="garminRescheduleButton" type="button" class="btn-primary" hidden data-i18n="garmin.product.reschedule">Reschedule in Garmin</button>
+                <button id="garminOperationRetry" type="button" class="btn-secondary" hidden data-i18n="garmin.product.retryStatus">Retry status</button>
+                <button id="garminReconcileButton" type="button" class="btn-secondary" hidden data-i18n="garmin.product.reconcile">Verify send result</button>
+              </div>
+            </div>
+          </section>
+        </div>
+        </div>
+      </section>
+
+      <section class="card feedback-card session-accordion-card" aria-labelledby="feedbackTitle">
+        <h2 class="session-accordion-heading" id="feedbackTitle">
+          <button id="feedbackAccordionTrigger" class="session-accordion-trigger" type="button" aria-expanded="false" aria-controls="feedbackAccordionPanel">
+            <span class="session-accordion-title" data-i18n="session.resultFeedbackHeading">Result and feedback</span>
+            <span id="feedbackAccordionSummary" class="session-accordion-summary" data-i18n="session.accordion.resultNotRecorded">Result and feedback not recorded</span>
+            <i class="session-accordion-chevron" data-lucide="chevron-down" aria-hidden="true"></i>
+          </button>
+        </h2>
+        <div id="feedbackAccordionPanel" class="session-accordion-panel feedback-accordion-panel" role="region" aria-labelledby="feedbackTitle" hidden>
         <div class="feedback-grid">
           <div class="field field-wide">
             <span class="field-label" id="feedbackRpeLabel"><span data-i18n="session.realizedRpeLabel">Realized RPE (1 to 5)</span><span class="required-mark" aria-hidden="true">*</span></span>
@@ -286,6 +378,7 @@
             <i data-lucide="activity" aria-hidden="true"></i>
             <span data-i18n="session.analysis.analyze">Analyze workout</span>
           </button>
+        </div>
         </div>
       </section>
       <div id="analysisLoadWarning" class="analysis-load-warning" role="alert" hidden>

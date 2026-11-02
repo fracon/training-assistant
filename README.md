@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, request and review weekly AI proposals, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized training-request prompts for use with an external AI.
 
-Current application version: **0.24.0** (active beta development).
+Current application version: **0.29.1** (active beta development; issue #73 is on its dedicated open PR branch until merged).
 
 ## AI integration: cycle planning and weekly proposals
 
@@ -644,6 +644,16 @@ Then open <http://127.0.0.1:3000> — you'll land on the login page. Create an a
 
 > **The 100% Rule:** `npm run test:coverage` enforces 100% Statements, Branches, Functions, and Lines for the files instrumented by c8 (`src/**`, excluding `src/public/**` and `src/start.js`, plus `scripts/admin-prompts.js`, `scripts/admin-runtime.js`, and `scripts/admin-commands.js`). Frontend behavior remains test-mandatory when it changes, but `src/public/**` is not included in that instrumentation percentage.
 
+### Garmin structured workout pilot
+
+The issue #73 pilot adds an explicit structure editor and publish/schedule
+confirmation on an owned planned-session page. It stores a versioned
+prescription separately from the original prose and remains restricted to the
+operator-selected `GARMIN_PILOT_USER_ID`; it is not a production multi-user
+connection flow. Locally, run `npm run dev` and `npm run garmin:connector`.
+See [`docs/garmin-integration.md`](docs/garmin-integration.md) for supported
+steps, recovery semantics, evidence, and the required owner walkthrough.
+
 Configuration via environment variables:
 
 | Variable | Default | Description |
@@ -1278,9 +1288,15 @@ The pilot feature flag is off by default. The owner-only authorization scope,
 token encryption, internal API, ZimaOS operation, evidence status, and real
 account/device acceptance steps are in [docs/garmin-integration.md](docs/garmin-integration.md).
 
-The current PR is a terminal-only pilot for one explicitly selected Kinesis
-account. It does not add the production “Connect Garmin” UI or multi-user
-integration. For local development, prepare once (Python 3.12+, dedicated
+The issue #73 branch adds a browser-based session publishing pilot for the one
+explicitly selected Kinesis account. Its explicit update action replaces the
+tracked Garmin workout in place; reschedule moves only the linked Kinesis-created
+calendar occurrence. Both require a fresh saved preview and confirmation, reuse
+the same workout/occurrence IDs, and preserve uncertain outcomes for explicit
+reconciliation. Updating a workout also affects every Garmin calendar date that
+uses that workout, which the confirmation states. It is not a production multi-user
+“Connect Garmin” integration. Existing terminal commands remain diagnostic
+tools. For local development, prepare once (Python 3.12+, dedicated
 virtualenv, hash-locked packages, private generated config, and explicit account
 confirmation):
 
@@ -1315,6 +1331,16 @@ port; `.venv-garmin/` stores the isolated Python environment. Both are ignored
 by Git and excluded from Docker build context. The setup command never requests
 Garmin credentials or calls Garmin/OpenAI. See the [Garmin operator contract](docs/garmin-integration.md#local-development-pilot).
 
+For local Garmin settings, explicitly inherited shell variables take precedence
+over the private setup file; stale Garmin entries in the Kinesis `.env` are not
+used. Node and the connector resolve the same shell/private values. After
+changing configuration, restart both processes. A connection retry in the
+session page only rechecks saved state and connectivity; it never republishes or
+reschedules a workout. If the page cannot refresh the connection, it preserves
+the last known state and offers a localized retry. `/healthz` only confirms the
+Python process is alive; it does not check Node-to-connector authentication or
+the Garmin session.
+
 For ZimaOS, retain the existing two-container Compose deployment: Node exposes
 `8081:3000`; Python has no published port or Cloudflare route, and its encrypted
 token volume and runtime key remain separate. The operator configures the
@@ -1346,3 +1372,22 @@ node scripts/tryRealFit.js path/to/activity.fit
 - Docker (`node:24-alpine`) deployed on ZimaOS via Docker Compose
 - CI/CD with GitHub Actions on a self-hosted runner, published to GHCR
 - Secure exposure via Cloudflare Zero Trust Tunnel
+
+## Garmin structured workout editor (#73)
+
+The open #73 branch extends the restricted Garmin Connect terminal pilot with a
+session editor organized into warm-up, running blocks, and cool-down. New and
+edited prescriptions use a versioned structured contract, with independent time
+duration or distance and an optional none/pace/absolute-HR target per step.
+Equal repeated intervals have a required independent recovery step and an
+explicit final-recovery policy. Historical repeat groups without recovery
+remain readable and require explicit recovery entry or conversion to simple
+blocks before they can be saved as a new prescription. The preview shows the
+effective recovery count and does not estimate time for distance-based steps.
+
+“Save and review” stores only in Kinesis. Garmin is changed only after the
+separate “Publish and schedule” action and confirmation. The editor remains
+restricted to the configured pilot owner; it does not enable multi-user
+production access, auto-convert workout prose, invoke AI, or import activities
+from #74. Device delivery still requires separate Garmin Connect/watch
+verification. See [the Garmin contract](docs/garmin-integration.md#structured-workout-editor-v3).

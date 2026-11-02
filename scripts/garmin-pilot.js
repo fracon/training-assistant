@@ -6,6 +6,7 @@ const Database = require('better-sqlite3');
 const { parseFitFile } = require('../src/fitParser');
 const { resolveFitBuffer } = require('../src/fitUpload');
 const localConfig = require('./garmin-local-config');
+const crypto = require('node:crypto');
 
 const API = () => process.env.GARMIN_CONNECTOR_URL || 'http://127.0.0.1:8080';
 const OWNER_ID = () => process.env.GARMIN_PILOT_USER_ID || '';
@@ -21,10 +22,57 @@ function connectorFailure(error) {
   return error;
 }
 
+function pilotRuntimeConfig(options = {}) {
+  return localConfig.runtimeConfig(options);
+}
+
+const PILOT_RUNTIME_VARIABLES = [
+  'GARMIN_PILOT_USER_ID', 'KINESIS_GARMIN_SERVICE_TOKEN', 'DATABASE_FILE',
+  'GARMIN_CONNECTOR_URL', 'GARMIN_PILOT_ENABLED',
+];
+
+function applyPilotRuntimeConfig(options = {}) {
+  return localConfig.applyRuntimeConfig({ ...options, variables: PILOT_RUNTIME_VARIABLES });
+}
+
+function diagnosticError(code, { statusCode = null, stage = 'connector_response', diagnosticId = null } = {}) {
+  const error = new Error(code);
+  error.statusCode = statusCode;
+  error.diagnosticStage = stage;
+  error.diagnosticId = /^[a-f0-9]{32}$/.test(diagnosticId || '') ? diagnosticId : crypto.randomBytes(16).toString('hex');
+  error.remote = true;
+  return error;
+}
+
+function responseFailureCode(body, statusCode) {
+  const code = body?.detail?.code || body?.error?.code;
+  if (typeof code === 'string' && /^[a-z_]{1,48}$/.test(code)) return code;
+  if (statusCode === 401) return 'connector_auth_failed';
+  if (statusCode === 429) return 'rate_limited';
+  if (statusCode >= 500) return 'connector_service_error';
+  return 'connector_invalid_response';
+}
+
 function displayPilotError(error) {
+  if (error?.message === 'auth_required' && error.diagnosticStage === 'resume_mfa') {
+    const id = /^[a-f0-9]{32}$/.test(error?.diagnosticId || '') ? ` (ID de diagnóstico: ${error.diagnosticId})` : '';
+    return `O código MFA foi recusado ou expirou. Solicite um novo código e tente novamente${id}.`;
+  }
   const messages = {
     connector_unavailable: 'Conector Garmin indisponível. Inicie npm run garmin:connector e tente novamente.',
     connector_timeout: 'O conector Garmin excedeu o tempo limite. Verifique o processo local e tente novamente.',
+    garmin_timeout: 'A solicitação à Garmin excedeu o tempo limite. Nenhuma causa adicional foi confirmada; aguarde e consulte o estado antes de repetir.',
+    connector_auth_failed: 'A autenticação interna entre Kinesis e o conector foi rejeitada. Confira a configuração local compartilhada.',
+    service_auth_failed: 'A autenticação interna entre Kinesis e o conector foi rejeitada. Confira a configuração local compartilhada.',
+    connector_configuration_error: 'A configuração Garmin está ausente ou inválida. Revise o arquivo privado do piloto e reinicie os processos locais.',
+    service_configuration_error: 'A configuração Garmin está ausente ou inválida. Revise o arquivo privado do piloto e reinicie os processos locais.',
+    auth_required: 'A autenticação Garmin foi recusada ou a sessão expirou. Confira a credencial informada; se a sessão anterior expirou, autentique novamente.',
+    mfa_required: 'A Garmin solicitou uma verificação adicional. Informe o código apresentado no terminal.',
+    rate_limited: 'A Garmin limitou temporariamente as tentativas. Aguarde antes de tentar novamente.',
+    persistence_error: 'A autenticação Garmin foi concluída, mas não foi possível salvar a sessão cifrada. A sessão anterior foi preservada; confira permissões e espaço no armazenamento privado.',
+    connector_service_error: 'O conector respondeu com erro durante a autenticação. Consulte o diagnóstico sanitizado no terminal do conector.',
+    connector_invalid_response: 'O conector retornou uma resposta inválida durante a autenticação. Consulte o diagnóstico sanitizado no terminal do conector.',
+    unavailable: 'A autenticação Garmin falhou sem uma causa classificada. Consulte o diagnóstico sanitizado no terminal do conector.',
   };
   const downloadStages = new Set([
     'restore_session', 'request_original', 'read_original', 'persist_session',
@@ -36,7 +84,14 @@ function displayPilotError(error) {
     const code = /^[a-z_]+$/.test(error.message || '') ? error.message : 'unavailable';
     return `Download Garmin falhou na etapa ${error.diagnosticStage} (${code})${diagnosticId}. Consulte o terminal do conector para o registro sanitizado.`;
   }
-  return messages[error?.message] || error?.message || 'unavailable';
+  const known = messages[error?.message];
+  if (known) return `${known}${/^[a-f0-9]{32}$/.test(error?.diagnosticId || '') ? ` (ID de diagnóstico: ${error.diagnosticId})` : ''}`;
+  if (error?.remote) {
+    const code = /^[a-z_]{1,48}$/.test(error.message || '') ? error.message : 'unclassified_error';
+    const id = /^[a-f0-9]{32}$/.test(error.diagnosticId || '') ? ` (ID de diagnóstico: ${error.diagnosticId})` : '';
+    return `Falha não classificada na comunicação Garmin (${code}). Consulte o terminal do conector${id}.`;
+  }
+  return error?.message || 'unavailable';
 }
 
 async function invalidateConnection(fetchImpl = fetch) {
@@ -84,7 +139,11 @@ async function request(path, options = {}, dependencies = {}) {
   } catch (error) {
     await validateAccess(true);
     if (mutation) throw new Error('outcome_unknown');
-    throw connectorFailure(error);
+    const failure = connectorFailure(error);
+    failure.diagnosticStage ||= 'connector_request';
+    failure.diagnosticId ||= crypto.randomBytes(16).toString('hex');
+    failure.remote = true;
+    throw failure;
   }
   await validateAccess(true);
   let body = {};
@@ -94,10 +153,21 @@ async function request(path, options = {}, dependencies = {}) {
     }
   } catch {
     await validateAccess(true);
-    throw new Error(mutation ? 'outcome_unknown' : 'unavailable');
+    if (mutation) throw new Error('outcome_unknown');
+    throw diagnosticError('connector_invalid_response', {
+      statusCode: response.status,
+      stage: 'connector_response',
+      diagnosticId: response.headers.get('x-kinesis-diagnostic-id'),
+    });
   }
   await validateAccess(true);
-  if (!response.ok) throw new Error(body?.detail?.code || 'unavailable');
+  if (!response.ok) {
+    throw diagnosticError(responseFailureCode(body, response.status), {
+      statusCode: response.status,
+      stage: body?.detail?.stage || 'connector_response',
+      diagnosticId: body?.detail?.diagnostic_id || body?.diagnostic_id || response.headers.get('x-kinesis-diagnostic-id'),
+    });
+  }
   return body;
 }
 
@@ -385,6 +455,9 @@ async function main(options = {}) {
     const result = await send(`${prefix}/auth/start`, {
       method: 'POST', body: JSON.stringify({ email, password }),
     });
+    if (!['connected', 'mfa_required'].includes(result?.status)) {
+      throw diagnosticError('connector_invalid_response', { stage: 'garmin_auth' });
+    }
     if (result.status === 'mfa_required') {
       writeOut(`MFA challenge ID (expires in 5 minutes): ${result.challenge_id}\n`);
       try {
@@ -394,10 +467,13 @@ async function main(options = {}) {
             const completed = await send(`${prefix}/auth/finish`, {
               method: 'POST', body: JSON.stringify({ challenge_id: result.challenge_id, code }),
             });
+            if (completed?.status !== 'connected') {
+              throw diagnosticError('connector_invalid_response', { stage: 'garmin_auth' });
+            }
             writeOut(`${completed.status}\n`);
             return;
           } catch (error) {
-            writeError(`Authentication attempt failed (${error.message}).\n`);
+            writeError(`Falha na tentativa de autenticação. ${displayPilotError(error)}\n`);
             if (attempt === 2) throw error;
           } finally {
             code = '';
@@ -431,10 +507,7 @@ async function runMain(options = {}) {
 
 if (require.main === module) {
   try {
-    localConfig.applyRuntimeConfig({ variables: [
-      'GARMIN_PILOT_USER_ID', 'KINESIS_GARMIN_SERVICE_TOKEN', 'DATABASE_FILE',
-      'GARMIN_CONNECTOR_URL', 'GARMIN_PILOT_ENABLED',
-    ] });
+    applyPilotRuntimeConfig();
   } catch (error) {
     process.stderr.write(`${error.message}\n`);
     process.exitCode = 1;
@@ -444,4 +517,5 @@ if (require.main === module) {
   }
 }
 
-module.exports = { invalidateConnection, main, request, requestOriginal, runMain, validatePilot, connectorFailure, displayPilotError };
+module.exports = { invalidateConnection, main, request, requestOriginal, runMain, validatePilot, connectorFailure,
+  displayPilotError, pilotRuntimeConfig, applyPilotRuntimeConfig, responseFailureCode };

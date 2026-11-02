@@ -10,6 +10,7 @@ const Database = require('better-sqlite3');
 const local = require('../scripts/garmin-local-config');
 const setup = require('../scripts/garmin-setup');
 const connector = require('../scripts/garmin-connector');
+const pilot = require('../scripts/garmin-pilot');
 
 function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kinesis-garmin-local-'));
@@ -194,6 +195,45 @@ test('explicit environment overrides private config, which overrides dotenv, wit
   assert.equal(env.GARMIN_ENCRYPTION_KEY, privateConfig.encryption_key);
 });
 
+test('Node and the local connector ignore stale Garmin dotenv values and use the same private settings', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kinesis-garmin-precedence-'));
+  const envFile = path.join(root, '.env');
+  fs.writeFileSync(envFile, [
+    'GARMIN_PILOT_USER_ID=27',
+    `KINESIS_GARMIN_SERVICE_TOKEN=${'d'.repeat(43)}`,
+    `GARMIN_ENCRYPTION_KEY=${Buffer.alloc(32, 4).toString('base64url')}`,
+    'GARMIN_CONNECTOR_PORT=8124',
+    'GARMIN_CONNECTOR_URL=http://127.0.0.1:8124',
+    'GARMIN_PILOT_ENABLED=true',
+  ].join('\n'));
+  const privateConfig = { version: 1, pilot_user_id: '17', service_token: 'p'.repeat(43),
+    encryption_key: Buffer.alloc(32, 1).toString('base64url'), connector_port: 8080 };
+  const dotenvValues = local.readDotenv(envFile);
+  const shell = { PATH: '/bin' };
+  // This models the previous app bootstrap, which passed process.env after
+  // dotenv had populated it as though every .env value were explicitly set.
+  const legacyNodeConfig = local.runtimeConfig({ explicitEnv: { ...shell, ...dotenvValues }, dotenvValues, privateConfig });
+  assert.equal(legacyNodeConfig.KINESIS_GARMIN_SERVICE_TOKEN, 'd'.repeat(43));
+  assert.notEqual(legacyNodeConfig.KINESIS_GARMIN_SERVICE_TOKEN, privateConfig.service_token);
+  // src/start captures shell variables before dotenv loads; the independent
+  // Python launcher receives the same shell environment directly.
+  const nodeConfig = local.runtimeConfig({ explicitEnv: shell, dotenvValues, privateConfig });
+  const connectorConfig = local.runtimeConfig({ explicitEnv: shell, dotenvValues, privateConfig });
+  const pilotConfig = pilot.pilotRuntimeConfig({ explicitEnv: shell, dotenvValues, privateConfig });
+  for (const key of ['GARMIN_PILOT_USER_ID', 'KINESIS_GARMIN_SERVICE_TOKEN', 'GARMIN_ENCRYPTION_KEY',
+    'GARMIN_CONNECTOR_PORT', 'GARMIN_CONNECTOR_URL', 'GARMIN_PILOT_ENABLED']) {
+    assert.equal(connectorConfig[key], nodeConfig[key], `${key} must match in both processes`);
+    assert.equal(pilotConfig[key], nodeConfig[key], `${key} must match in the CLI`);
+  }
+  assert.equal(connectorConfig.KINESIS_GARMIN_SERVICE_TOKEN, 'p'.repeat(43));
+  assert.equal(connectorConfig.GARMIN_CONNECTOR_URL, 'http://127.0.0.1:8080');
+  const pythonEnv = connector.connectorEnvironment(connectorConfig, shell);
+  assert.equal(pythonEnv.KINESIS_GARMIN_SERVICE_TOKEN, nodeConfig.KINESIS_GARMIN_SERVICE_TOKEN);
+  assert.equal(pythonEnv.GARMIN_ENCRYPTION_KEY, nodeConfig.GARMIN_ENCRYPTION_KEY);
+  assert.equal(pilotConfig.KINESIS_GARMIN_SERVICE_TOKEN, connectorConfig.KINESIS_GARMIN_SERVICE_TOKEN);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
 test('dotenv is read without mutating .env or exporting it into the application process', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kinesis-garmin-dotenv-'));
   const envFile = path.join(root, '.env');
@@ -207,6 +247,37 @@ test('dotenv is read without mutating .env or exporting it into the application 
   assert.equal(process.env.GARMIN_PILOT_ENABLED, before);
   assert.equal(fs.readFileSync(envFile, 'utf8'), 'DATABASE_FILE=./custom.sqlite\nGARMIN_PILOT_ENABLED=true\n');
   fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('app startup clears stale dotenv Garmin values when no private pilot config exists', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kinesis-garmin-stale-dotenv-'));
+  const envFile = path.join(root, '.env');
+  fs.writeFileSync(envFile, [
+    'GARMIN_PILOT_ENABLED=true', 'GARMIN_PILOT_USER_ID=99',
+    `KINESIS_GARMIN_SERVICE_TOKEN=${'x'.repeat(43)}`,
+    `GARMIN_ENCRYPTION_KEY=${Buffer.alloc(32, 3).toString('base64url')}`,
+    'GARMIN_CONNECTOR_PORT=9999',
+  ].join('\n'));
+  const names = ['GARMIN_PILOT_ENABLED', 'GARMIN_PILOT_USER_ID', 'KINESIS_GARMIN_SERVICE_TOKEN',
+    'GARMIN_ENCRYPTION_KEY', 'GARMIN_CONNECTOR_PORT', 'GARMIN_CONNECTOR_URL', 'GARMIN_STORE'];
+  const previous = Object.fromEntries(names.map((name) => [name, process.env[name]]));
+  try {
+    for (const name of names) delete process.env[name];
+    const dotenvValues = local.readDotenv(envFile);
+    for (const name of names) if (dotenvValues[name] !== undefined) process.env[name] = dotenvValues[name];
+    local.applyRuntimeConfig({ explicitEnv: {}, dotenvValues, privateConfig: null, variables: names });
+    assert.equal(process.env.GARMIN_PILOT_ENABLED, 'false');
+    assert.equal(process.env.GARMIN_PILOT_USER_ID, undefined);
+    assert.equal(process.env.KINESIS_GARMIN_SERVICE_TOKEN, undefined);
+    assert.equal(process.env.GARMIN_ENCRYPTION_KEY, undefined);
+    assert.equal(process.env.GARMIN_CONNECTOR_PORT, undefined);
+    assert.equal(process.env.GARMIN_CONNECTOR_URL, 'http://127.0.0.1:8080');
+  } finally {
+    for (const [name, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[name]; else process.env[name] = value;
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('pilot CLI configuration does not copy the Python-only encryption key into Node environment', () => {

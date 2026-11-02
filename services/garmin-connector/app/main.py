@@ -16,7 +16,7 @@ import uuid
 from contextlib import contextmanager
 from datetime import date
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urljoin, urlsplit
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -33,6 +33,8 @@ MAX_MFA_ATTEMPTS = 3
 MAX_WORKOUT_SCAN_PAGES = 11
 MAX_REMOTE_OPERATION_SECONDS = 90
 MAX_ORIGINAL_REDIRECTS = 3
+MAX_GARMIN_EXPANDED_STEPS = 50
+MAX_REPEAT_COUNT = 20
 ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,80}$")
 app = FastAPI(title="Kinesis Garmin connector", version="1",
               docs_url=None, redoc_url=None, openapi_url=None)
@@ -72,20 +74,363 @@ class ActivityQuery(StrictModel):
 
 
 class WorkoutSchedule(StrictModel):
+    operation_id: uuid.UUID
+    workout_id: int = Field(gt=0)
+    date: date
+
+
+class WorkoutReschedule(StrictModel):
+    operation_id: uuid.UUID
+    source_operation_id: uuid.UUID
+    scheduled_workout_id: int = Field(gt=0)
     workout_id: int = Field(gt=0)
     date: date
 
 
 class WorkoutPayload(StrictModel):
     operation_id: uuid.UUID
-    name: str = Field(min_length=1, max_length=32, pattern=r"^[\w .-]+$")
+    name: str = Field(min_length=1, max_length=32, pattern=r"^[\w .,'’()&+-]+$")
     warmup_seconds: int = Field(default=0, ge=0, le=3600)
-    interval_seconds: int = Field(ge=1, le=7200)
+    interval_seconds: int | None = Field(default=None, ge=1, le=7200)
+    interval_distance_meters: int | None = Field(default=None, ge=1, le=100000)
     recovery_seconds: int = Field(default=0, ge=0, le=3600)
     repetitions: int = Field(default=1, ge=1, le=20)
+    skip_last_rest_step: bool = True
     cooldown_seconds: int = Field(default=0, ge=0, le=3600)
     target_lower_mps: float | None = Field(default=None, ge=0.5, le=10)
     target_upper_mps: float | None = Field(default=None, ge=0.5, le=10)
+    target_kind: str = Field(default="pace", pattern=r"^(pace|heart_rate|none)$")
+    target_lower_bpm: int | None = Field(default=None, ge=40, le=230)
+    target_upper_bpm: int | None = Field(default=None, ge=40, le=230)
+    recovery_target_kind: str = Field(default="none", pattern=r"^(pace|heart_rate|none)$")
+    recovery_target_lower_mps: float | None = Field(default=None, ge=0.5, le=10)
+    recovery_target_upper_mps: float | None = Field(default=None, ge=0.5, le=10)
+    recovery_target_lower_bpm: int | None = Field(default=None, ge=40, le=230)
+    recovery_target_upper_bpm: int | None = Field(default=None, ge=40, le=230)
+
+
+class WorkoutUpdate(WorkoutPayload):
+    workout_id: int = Field(gt=0)
+    source_operation_id: uuid.UUID
+    source_scheduled_workout_id: int = Field(gt=0)
+
+
+class StructuredWorkoutPayload(StrictModel):
+    operation_id: uuid.UUID
+    version: Literal[2, 3]
+    name: str = Field(min_length=1, max_length=32)
+    steps: list[dict[str, Any]] = Field(min_length=1, max_length=MAX_GARMIN_EXPANDED_STEPS)
+
+
+class StructuredWorkoutUpdate(StructuredWorkoutPayload):
+    workout_id: int = Field(gt=0)
+    source_operation_id: uuid.UUID
+    source_scheduled_workout_id: int = Field(gt=0)
+
+
+WorkoutCreateBody = WorkoutPayload | StructuredWorkoutPayload
+WorkoutUpdateBody = WorkoutUpdate | StructuredWorkoutUpdate
+
+
+def _validate_v2_target(target: Any) -> None:
+    if not isinstance(target, dict):
+        raise ValueError("invalid workout target")
+    if target == {"type": "none"}:
+        return
+    if (set(target) == {"type", "mode", "lower_bpm", "upper_bpm"}
+            and target.get("type") == "heart_rate" and target.get("mode") == "absolute"
+            and type(target.get("lower_bpm")) is int and type(target.get("upper_bpm")) is int
+            and 40 <= target["lower_bpm"] <= target["upper_bpm"] <= 230):
+        return
+    if (set(target) == {"type", "unit", "slower_seconds", "faster_seconds"}
+            and target.get("type") == "pace" and target.get("unit") in ("min_per_km", "min_per_mile")
+            and type(target.get("slower_seconds")) is int and type(target.get("faster_seconds")) is int
+            and 120 <= target["faster_seconds"] <= target["slower_seconds"] <= 1800):
+        return
+    raise ValueError("invalid workout target")
+
+
+def _validate_v2_end(end: Any) -> None:
+    if (not isinstance(end, dict) or set(end) != {"type", "value"}
+            or end.get("type") not in ("time", "distance") or type(end.get("value")) is not int):
+        raise ValueError("invalid workout end condition")
+    if not 1 <= end["value"] <= (7200 if end["type"] == "time" else 100000):
+        raise ValueError("workout end condition outside supported range")
+
+
+def _validate_structured_workout(body: StructuredWorkoutPayload) -> list[dict[str, Any]]:
+    if (not isinstance(body.name, str) or not body.name.strip()
+            or len(body.name.strip()) > 32
+            or not re.fullmatch(r"[\w .,'’()&+-]+", body.name.strip(), flags=re.UNICODE)):
+        raise ValueError("invalid workout name")
+    steps = body.steps
+    seen: set[str] = set()
+    expanded_steps = 0
+    total_seconds = 0
+    total_distance = 0
+    main_count = 0
+    if not steps:
+        raise ValueError("workout has no steps")
+    for index, step in enumerate(steps):
+        if not isinstance(step, dict):
+            raise ValueError("invalid workout step")
+        step_id = step.get("id")
+        kind = step.get("kind")
+        if (not isinstance(step_id, str) or not re.fullmatch(r"[a-zA-Z0-9_-]{1,40}", step_id)
+                or step_id in seen or kind not in ("warmup", "run", "recovery", "cooldown", "repeat")):
+            raise ValueError("invalid workout step identity")
+        seen.add(step_id)
+        if kind == "repeat":
+            allowed = {"id", "kind", "repetitions", "interval", "recovery", "skip_last_rest_step"}
+            if (set(step) - allowed or not {"id", "kind", "repetitions", "interval", "skip_last_rest_step"}.issubset(step)
+                    or type(step.get("repetitions")) is not int or not 2 <= step["repetitions"] <= MAX_REPEAT_COUNT
+                    or type(step.get("skip_last_rest_step")) is not bool):
+                raise ValueError("invalid repeat group")
+            interval = step["interval"]
+            if not isinstance(interval, dict) or set(interval) != {"end", "target"}:
+                raise ValueError("invalid repeat interval")
+            _validate_v2_end(interval["end"])
+            _validate_v2_target(interval["target"])
+            recovery = step.get("recovery")
+            if body.version == 3 and recovery is None:
+                raise ValueError("repeat recovery is required")
+            if recovery is not None:
+                if not isinstance(recovery, dict) or set(recovery) != {"end", "target"}:
+                    raise ValueError("invalid repeat recovery")
+                _validate_v2_end(recovery["end"])
+                _validate_v2_target(recovery["target"])
+            elif not step["skip_last_rest_step"]:
+                raise ValueError("final recovery policy requires a recovery step")
+            rest_count = (step["repetitions"] - (1 if step["skip_last_rest_step"] else 0)) if recovery else 0
+            expanded_steps += 1 + step["repetitions"] + rest_count
+            if interval["end"]["type"] == "time":
+                total_seconds += interval["end"]["value"] * step["repetitions"]
+            else:
+                total_distance += interval["end"]["value"] * step["repetitions"]
+            if recovery:
+                if recovery["end"]["type"] == "time":
+                    total_seconds += recovery["end"]["value"] * rest_count
+                else:
+                    total_distance += recovery["end"]["value"] * rest_count
+            main_count += step["repetitions"]
+        else:
+            if set(step) != {"id", "kind", "end", "target"}:
+                raise ValueError("invalid workout step fields")
+            _validate_v2_end(step["end"])
+            _validate_v2_target(step["target"])
+            expanded_steps += 1
+            if step["end"]["type"] == "time":
+                total_seconds += step["end"]["value"]
+            else:
+                total_distance += step["end"]["value"]
+            if kind == "run":
+                main_count += 1
+            if kind == "warmup" and index != 0:
+                raise ValueError("warmup must be first")
+            if kind == "cooldown" and index != len(steps) - 1:
+                raise ValueError("cooldown must be last")
+    if expanded_steps > MAX_GARMIN_EXPANDED_STEPS or total_seconds > 86400 or total_distance > 100000 or main_count < 1:
+        raise ValueError("workout exceeds Garmin limits")
+    if sum(step["kind"] == "warmup" for step in steps) > 1 or sum(step["kind"] == "cooldown" for step in steps) > 1:
+        raise ValueError("workout has duplicate warmup/cooldown")
+    for index, step in enumerate(steps):
+        if step["kind"] == "recovery" and not any(
+                item["kind"] in ("run", "repeat") for item in steps[:index]):
+            raise ValueError("standalone recovery must follow a running step")
+    return steps
+
+
+def _build_structured_running_workout(body: StructuredWorkoutPayload, workout_name: str):
+    from garminconnect.workout import (
+        ConditionType, CustomHeartRateTarget, PaceTarget, RunningWorkout, StepType,
+        WorkoutSegment, create_cooldown_step, create_distance_interval_step,
+        create_interval_step, create_recovery_step, create_repeat_group,
+        create_targeted_distance_interval_step, create_targeted_interval_step,
+        create_warmup_step,
+    )
+
+    _validate_structured_workout(body)
+
+    def target_model(block):
+        target = block["target"]
+        if target["type"] == "heart_rate":
+            return CustomHeartRateTarget(lower_limit=target["lower_bpm"], upper_limit=target["upper_bpm"])
+        if target["type"] == "pace":
+            meters_per_unit = 1609.344 if target["unit"] == "min_per_mile" else 1000
+            return PaceTarget(lower_limit=meters_per_unit / target["slower_seconds"],
+                              upper_limit=meters_per_unit / target["faster_seconds"])
+        return None
+
+    def target_type(target):
+        return {"workoutTargetTypeId": target.target_type,
+                "workoutTargetTypeKey": target.target_type_key, "displayOrder": 1} if target else None
+
+    def apply_target(step, block):
+        target = target_model(block)
+        if target:
+            step.targetType = target_type(target)
+            step.targetValueOne = target.lower_limit
+            step.targetValueTwo = target.upper_limit
+        return step
+
+    def create_step(kind, block, order):
+        end = block["end"]
+        target = target_model(block)
+        if kind == "run":
+            if end["type"] == "time":
+                return create_targeted_interval_step(end["value"], step_order=order, target=target) if target \
+                    else create_interval_step(end["value"], step_order=order)
+            return create_targeted_distance_interval_step(end["value"], step_order=order, target=target) if target \
+                else create_distance_interval_step(end["value"], step_order=order)
+        if end["type"] == "time":
+            if kind == "warmup":
+                return apply_target(create_warmup_step(end["value"], step_order=order, target_type=target_type(target)), block)
+            if kind == "cooldown":
+                return apply_target(create_cooldown_step(end["value"], step_order=order, target_type=target_type(target)), block)
+            return apply_target(create_recovery_step(end["value"], step_order=order, target_type=target_type(target)), block)
+        step_type = {"warmup": StepType.WARMUP, "recovery": StepType.RECOVERY,
+                     "cooldown": StepType.COOLDOWN}[kind]
+        display = {"warmup": ("warmup", 1), "recovery": ("recovery", 4), "cooldown": ("cooldown", 2)}[kind]
+        step = create_distance_interval_step(end["value"], step_order=order)
+        step.stepType = {"stepTypeId": step_type, "stepTypeKey": display[0], "displayOrder": display[1]}
+        return apply_target(step, block)
+
+    garmin_steps = []
+    known_time = 0
+    duration_complete = True
+    for order, item in enumerate(body.steps, start=1):
+        if item["kind"] != "repeat":
+            garmin_steps.append(create_step(item["kind"], item, order))
+            if item["end"]["type"] == "time":
+                known_time += item["end"]["value"]
+            else:
+                duration_complete = False
+            continue
+        interval = create_step("run", item["interval"], 1)
+        repeated = [interval]
+        if item.get("recovery"):
+            repeated.append(create_step("recovery", item["recovery"], 2))
+        garmin_steps.append(create_repeat_group(item["repetitions"], repeated, step_order=order,
+                                                skip_last_rest_step=item["skip_last_rest_step"]
+                                                if item.get("recovery") else None))
+        if item["interval"]["end"]["type"] == "time":
+            known_time += item["interval"]["end"]["value"] * item["repetitions"]
+        else:
+            duration_complete = False
+        if item.get("recovery"):
+            recovery_count = item["repetitions"] - (1 if item["skip_last_rest_step"] else 0)
+            if item["recovery"]["end"]["type"] == "time":
+                known_time += item["recovery"]["end"]["value"] * recovery_count
+            else:
+                duration_complete = False
+    return RunningWorkout(
+        workoutName=workout_name[:60],
+        estimatedDurationInSecs=known_time if duration_complete else 0,
+        workoutSegments=[WorkoutSegment(segmentOrder=1,
+            sportType={"sportTypeId": 1, "sportTypeKey": "running"}, workoutSteps=garmin_steps)],
+    )
+
+
+def _build_running_workout(body: WorkoutPayload | StructuredWorkoutPayload, workout_name: str):
+    if isinstance(body, StructuredWorkoutPayload):
+        return _build_structured_running_workout(body, workout_name)
+    from garminconnect.workout import (
+        CustomHeartRateTarget, PaceTarget, RunningWorkout, WorkoutSegment,
+        create_cooldown_step, create_interval_step, create_recovery_step,
+        create_repeat_group, create_targeted_distance_interval_step,
+        create_targeted_interval_step, create_distance_interval_step,
+        create_warmup_step,
+    )
+    if (body.interval_seconds is None) == (body.interval_distance_meters is None):
+        raise ValueError("Exactly one interval end condition is required")
+    if body.target_kind == "heart_rate":
+        if body.target_lower_bpm is None or body.target_lower_bpm > body.target_upper_bpm:
+            raise ValueError("Heart-rate bounds are invalid")
+        target = CustomHeartRateTarget(lower_limit=body.target_lower_bpm, upper_limit=body.target_upper_bpm)
+    elif body.target_kind == "pace":
+        if (body.target_lower_mps is None) != (body.target_upper_mps is None):
+            raise ValueError("Both pace bounds are required")
+        if body.target_lower_mps is not None and body.target_lower_mps > body.target_upper_mps:
+            raise ValueError("Pace bounds are invalid")
+        target = PaceTarget(lower_limit=body.target_lower_mps, upper_limit=body.target_upper_mps) if body.target_lower_mps is not None else None
+    else:
+        if any(value is not None for value in (body.target_lower_mps, body.target_upper_mps,
+                                                body.target_lower_bpm, body.target_upper_bpm)):
+            raise ValueError("No-target workouts cannot carry target bounds")
+        target = None
+    if (body.recovery_target_lower_mps is None) != (body.recovery_target_upper_mps is None):
+        raise ValueError("Both recovery pace bounds are required")
+    if (body.recovery_target_lower_bpm is None) != (body.recovery_target_upper_bpm is None):
+        raise ValueError("Both recovery heart-rate bounds are required")
+    if body.recovery_target_kind == "heart_rate":
+        if body.recovery_target_lower_bpm is None or body.recovery_target_lower_bpm > body.recovery_target_upper_bpm or body.recovery_target_lower_mps is not None:
+            raise ValueError("Recovery heart-rate bounds are invalid")
+        recovery_target = CustomHeartRateTarget(lower_limit=body.recovery_target_lower_bpm, upper_limit=body.recovery_target_upper_bpm)
+    elif body.recovery_target_kind == "pace":
+        if body.recovery_target_lower_bpm is not None or body.recovery_target_lower_mps is None or body.recovery_target_lower_mps > body.recovery_target_upper_mps:
+            raise ValueError("Recovery pace bounds are invalid")
+        recovery_target = PaceTarget(lower_limit=body.recovery_target_lower_mps, upper_limit=body.recovery_target_upper_mps)
+    else:
+        if any(value is not None for value in (body.recovery_target_lower_mps, body.recovery_target_upper_mps,
+                                                body.recovery_target_lower_bpm, body.recovery_target_upper_bpm)):
+            raise ValueError("No-target recovery cannot carry target bounds")
+        recovery_target = None
+    if body.repetitions == 1 and body.recovery_seconds:
+        raise ValueError("Recovery is only supported between repeated intervals")
+    interval_order = 2 if body.warmup_seconds else 1
+    interval_step_order = 1 if body.repetitions > 1 else interval_order
+    if body.interval_seconds is not None:
+        interval = (create_targeted_interval_step(body.interval_seconds, step_order=interval_step_order, target=target)
+                    if target else create_interval_step(body.interval_seconds, step_order=interval_step_order))
+        estimated_interval_seconds = body.interval_seconds * body.repetitions
+    else:
+        interval = (create_targeted_distance_interval_step(body.interval_distance_meters, step_order=interval_step_order, target=target)
+                    if target else create_distance_interval_step(body.interval_distance_meters, step_order=interval_step_order))
+        estimated_interval_seconds = None
+    steps = []
+    if body.warmup_seconds:
+        steps.append(create_warmup_step(body.warmup_seconds, step_order=1))
+    if body.repetitions > 1:
+        if body.recovery_seconds < 1:
+            raise ValueError("Recovery is required for repeats")
+        recovery = create_recovery_step(body.recovery_seconds, step_order=2)
+        if recovery_target:
+            recovery.targetType = {"workoutTargetTypeId": recovery_target.target_type,
+                                   "workoutTargetTypeKey": recovery_target.target_type_key,
+                                   "displayOrder": 1}
+            recovery.targetValueOne = recovery_target.lower_limit
+            recovery.targetValueTwo = recovery_target.upper_limit
+        group = create_repeat_group(body.repetitions, [interval, recovery], step_order=interval_order,
+                                    skip_last_rest_step=body.skip_last_rest_step)
+    else:
+        group = interval
+    steps.append(group)
+    if body.cooldown_seconds:
+        steps.append(create_cooldown_step(body.cooldown_seconds, step_order=len(steps) + 1))
+    return RunningWorkout(
+        workoutName=workout_name,
+        estimatedDurationInSecs=(body.warmup_seconds + estimated_interval_seconds
+                                 + max(0, body.repetitions - (1 if body.skip_last_rest_step else 0)) * body.recovery_seconds
+                                 + body.cooldown_seconds) if estimated_interval_seconds is not None else 0,
+        workoutSegments=[WorkoutSegment(segmentOrder=1,
+            sportType={"sportTypeId": 1, "sportTypeKey": "running"}, workoutSteps=steps)],
+    )
+
+
+def _workout_operation_marker(operation_id: uuid.UUID, fingerprint: str) -> str:
+    token = base64.urlsafe_b64encode(operation_id.bytes).decode().rstrip("=")
+    return f"K{token}-{fingerprint[:8]}"
+
+
+def _legacy_marked_workout_name(name: str, marker: str) -> str:
+    """Name written by earlier connector versions; retain it for recovery."""
+    return f"{name[:24].strip()} {marker}"[:60]
+
+
+def _workout_has_operation_marker(workout: Any, marker: str) -> bool:
+    return (isinstance(workout, dict)
+            and (marker in str(workout.get("description", ""))
+                 or marker in str(workout.get("workoutName", ""))))
 
 
 def _secret(name: str) -> bytes:
@@ -99,15 +444,25 @@ def _secret(name: str) -> bytes:
     return decoded
 
 
+def _private_service_failure(code: str, status: int, stage: str):
+    diagnostic_id = uuid.uuid4().hex
+    _logger.warning("garmin_connector diagnostic_id=%s stage=%s code=%s status=%s",
+                    diagnostic_id, stage, code, status)
+    raise HTTPException(status_code=status,
+                        detail={"code": code, "stage": stage, "diagnostic_id": diagnostic_id})
+
+
 def _connection(connection_id: str, owner_id: str, owner_header: str | None) -> tuple[Path, bytes]:
     pilot_owner = os.environ.get("GARMIN_PILOT_USER_ID", "")
-    if os.environ.get("GARMIN_PILOT_ENABLED") != "true" or owner_id != pilot_owner:
-        raise HTTPException(403, detail={"code": "unsupported"})
+    if os.environ.get("GARMIN_PILOT_ENABLED") != "true" or not pilot_owner:
+        _private_service_failure("service_configuration_error", 503, "configuration")
     expected = os.environ.get("KINESIS_GARMIN_SERVICE_TOKEN", "")
     if not expected or not secrets.compare_digest(expected, owner_header or ""):
-        raise HTTPException(401, detail={"code": "auth_required"})
+        _private_service_failure("service_auth_failed", 401, "service_auth")
     if not ID_RE.fullmatch(connection_id) or not ID_RE.fullmatch(owner_id):
         raise HTTPException(400, detail={"code": "invalid_payload"})
+    if owner_id != pilot_owner:
+        raise HTTPException(403, detail={"code": "unsupported"})
     root = Path(os.environ.get("GARMIN_STORE", "/var/lib/kinesis-garmin"))
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     os.chmod(root, 0o700)
@@ -122,6 +477,76 @@ def _lock(key: str) -> threading.RLock:
 
 def _challenge_state(owner_id: str, connection_id: str, path: Path) -> str:
     return "connected" if path.exists() else "disconnected"
+
+
+class GarminProfileResponseError(Exception):
+    """The library returned a profile shape outside the inspected contract."""
+
+
+class GarminIdentityMissingError(Exception):
+    """A valid profile response did not contain a stable remote identity."""
+
+
+def _identity_fingerprint(profile: Any, *, identity_field: str | None = None,
+                          required: bool = True) -> str | None:
+    """Fingerprint the identity fields used by the pinned library contract.
+
+    ``get_user_profile()`` returns user settings; that response is not required
+    to contain an account ID. Its historical ``userData.id``/``userId`` values
+    remain preferred for fingerprint continuity. The pinned library obtains
+    ``profileId`` from its separate ``/userprofile-service/socialProfile``
+    request and stores that value as ``client.profile_id``.
+    """
+    if not isinstance(profile, dict):
+        raise GarminProfileResponseError("profile response has an unexpected shape")
+    if identity_field:
+        candidate = profile.get(identity_field)
+        if candidate is None and required:
+            raise GarminIdentityMissingError("remote profile identity is missing")
+        # garminconnect 0.3.20 sets profile_id only for an integer profileId.
+        if candidate is not None and (isinstance(candidate, bool) or not isinstance(candidate, int)):
+            raise GarminProfileResponseError("social profile identity has an unexpected type")
+    else:
+        user_data = profile.get("userData")
+        if user_data is not None and not isinstance(user_data, dict):
+            raise GarminProfileResponseError("user settings have an unexpected shape")
+        candidate = user_data.get("id") if isinstance(user_data, dict) else None
+        if candidate is None:
+            candidate = profile.get("userId")
+        if candidate is None and not required:
+            return None
+        if isinstance(candidate, bool) or not isinstance(candidate, (int, str)):
+            if candidate is None:
+                raise GarminIdentityMissingError("remote profile identity is missing")
+            raise GarminProfileResponseError("user settings identity has an unexpected type")
+    normalized = str(candidate).strip()
+    if not normalized.isdigit() or int(normalized) <= 0:
+        raise GarminProfileResponseError("remote profile identity is invalid")
+    return hashlib.sha256(f"kinesis-garmin-account-v1:{normalized}".encode()).hexdigest()
+
+
+def _remote_identity(client: Any, set_operation) -> str:
+    """Read identity without assuming the user-settings payload contains an ID."""
+    set_operation("read_user_settings")
+    settings = client.get_user_profile()
+    set_operation("validate_user_settings")
+    if (not isinstance(settings, dict)
+            or ("userData" in settings and not isinstance(settings.get("userData"), dict))
+            or ("userData" not in settings and "userId" not in settings)):
+        raise GarminProfileResponseError("user settings response is incompatible")
+    fingerprint = _identity_fingerprint(settings, required=False)
+    if fingerprint:
+        return fingerprint
+
+    # This is the fixed endpoint used by Garmin._load_social_profile() in
+    # garminconnect 0.3.20, not a caller-controlled URL or generic proxy.
+    set_operation("read_social_profile")
+    social_profile = client.connectapi("/userprofile-service/socialProfile")
+    set_operation("validate_social_profile")
+    fingerprint = _identity_fingerprint(social_profile, identity_field="profileId")
+    if fingerprint is None:
+        raise GarminIdentityMissingError("remote profile identity is missing")
+    return fingerprint
 
 
 def _remove_connection_challenges(owner_id: str, connection_id: str) -> None:
@@ -140,6 +565,30 @@ def _previous_connection_state(owner_id: str, connection_id: str, path: Path) ->
     if current == "mfa_required":
         return _challenge_state(owner_id, connection_id, path)
     return current or _challenge_state(owner_id, connection_id, path)
+
+
+def _authentication_failure(exc: Exception, stage: str, operation: str,
+                            code_override: str | None = None) -> HTTPException:
+    normalized = _error(exc)
+    code = code_override or (normalized.detail.get("code") if isinstance(normalized.detail, dict) else "unavailable")
+    status = 503 if code_override else normalized.status_code
+    if not code_override and isinstance(exc, GarminProfileResponseError):
+        code, status = "profile_response_invalid", 502
+    elif not code_override and isinstance(exc, GarminIdentityMissingError):
+        code, status = "remote_identity_missing", 502
+    if not code_override and (isinstance(exc, TimeoutError) or "Timeout" in type(exc).__name__):
+        code, status = "garmin_timeout", 504
+    diagnostic_id = uuid.uuid4().hex
+    _logger.warning(
+        "garmin_auth diagnostic_id=%s stage=%s operation=%s code=%s exception=%s exception_class=%s remote_status=%s",
+        diagnostic_id, stage, operation, code, _safe_exception_category(exc),
+        _safe_exception_class(exc),
+        _download_remote_status(exc, None, None) or "none",
+    )
+    return HTTPException(status_code=status,
+                         detail={"code": code, "stage": stage, "operation": operation,
+                                 "diagnostic_id": diagnostic_id},
+                         headers=normalized.headers)
 
 
 def _check_deadline(deadline: float) -> None:
@@ -190,6 +639,156 @@ def _operation_journal(path: Path, key: bytes) -> dict[str, Any]:
 def _save_operation_journal(path: Path, key: bytes, journal: dict[str, Any]) -> None:
     journal_path = path.with_suffix(".ops")
     _save_encrypted(journal_path, key, json.dumps(journal, sort_keys=True).encode())
+
+
+def _validate_workout_operation_identity(journal: dict[str, Any], operation_id: uuid.UUID,
+                                        fingerprint: str, workout_id: int,
+                                        scheduled_workout_id: int,
+                                        source_operation_id: uuid.UUID) -> None:
+    operation_key = str(operation_id)
+    existing = journal.get(operation_key)
+    if existing:
+        composite_update = existing.get("steps", {}).get("update") if isinstance(existing.get("steps"), dict) else None
+        existing_update_fingerprint = (composite_update or {}).get("fingerprint", existing.get("fingerprint"))
+        if (existing_update_fingerprint != fingerprint
+                or str(existing.get("workout_id")) != str(workout_id)
+                or existing.get("artifact_kind") not in (None, "update", "composite")
+                or (existing.get("occurrence_id") is not None
+                    and str(existing.get("occurrence_id")) != str(scheduled_workout_id))
+                or existing.get("source_operation_id") not in (None, str(source_operation_id))):
+            raise HTTPException(409, detail={"code": "invalid_payload"})
+
+
+def _record_completed_workout_operation(journal: dict[str, Any], operation_id: uuid.UUID,
+                                        fingerprint: str, workout_id: int,
+                                        scheduled_workout_id: int,
+                                        source_operation_id: uuid.UUID) -> None:
+    _validate_workout_operation_identity(journal, operation_id, fingerprint, workout_id,
+                                         scheduled_workout_id, source_operation_id)
+    operation_key = str(operation_id)
+    existing = journal.get(operation_key)
+    update_step = {"fingerprint": fingerprint, "status": "complete", "workout_id": workout_id,
+                   "occurrence_id": scheduled_workout_id, "source_operation_id": str(source_operation_id)}
+    if existing and existing.get("artifact_kind") == "composite":
+        steps = dict(existing.get("steps", {}))
+        steps["update"] = update_step
+        journal[operation_key] = {**existing, "status": "complete", "steps": steps}
+    else:
+        journal[operation_key] = {"fingerprint": fingerprint, "status": "complete",
+                                  "workout_id": workout_id, "occurrence_id": scheduled_workout_id,
+                                  "source_operation_id": str(source_operation_id),
+                                  "artifact_kind": "update", "steps": {"update": update_step}}
+
+
+def _completed_source_operation(journal: dict[str, Any], operation_id: uuid.UUID) -> dict[str, Any] | None:
+    operation_key = str(operation_id)
+    direct = journal.get(operation_key)
+    if direct and direct.get("status") == "complete" and direct.get("artifact_kind") in (
+            None, "publish", "update", "reschedule", "composite") and direct.get("workout_id") is not None:
+        return direct
+
+    # Older branch journals wrote completed reschedules only as reschedule:<id>.
+    # Recover provenance only when that encrypted fingerprint agrees with a
+    # completed schedule entry binding the same occurrence to the workout.
+    legacy = journal.get(f"reschedule:{operation_key}")
+    if (not legacy or legacy.get("status") != "complete"
+            or not isinstance(legacy.get("date"), str)
+            or legacy.get("scheduled_workout_id") is None):
+        return None
+    occurrence_id = legacy["scheduled_workout_id"]
+    for entry_key, schedule in journal.items():
+        if not entry_key.startswith("schedule:") or schedule.get("status") != "complete":
+            continue
+        workout_id = schedule.get("workout_id")
+        if workout_id is None or str(schedule.get("scheduled_workout_id")) != str(occurrence_id):
+            continue
+        expected = hashlib.sha256(
+            f"{occurrence_id}:{workout_id}:{legacy['date']}".encode()).hexdigest()
+        if legacy.get("fingerprint") != expected:
+            continue
+        return {"status": "complete", "artifact_kind": "reschedule", "workout_id": workout_id,
+                "occurrence_id": occurrence_id, "date": legacy["date"],
+                "legacy_source_operation_id": operation_key}
+    return None
+
+
+def _validate_reschedule_operation_identity(journal: dict[str, Any], operation_id: uuid.UUID,
+                                            fingerprint: str, workout_id: int,
+                                            scheduled_workout_id: int,
+                                            source_operation_id: uuid.UUID) -> None:
+    operation_key = str(operation_id)
+    existing = journal.get(operation_key)
+    if existing and existing.get("artifact_kind") in ("update", "composite"):
+        update_entry = journal.get(f"update:{operation_key}")
+        update_step = existing.get("steps", {}).get("update") if isinstance(existing.get("steps"), dict) else None
+        if (existing.get("artifact_kind") == "update"
+                and (not update_entry or update_entry.get("status") != "complete"
+                     or update_entry.get("fingerprint") != existing.get("fingerprint"))):
+            raise HTTPException(409, detail={"code": "invalid_payload"})
+        proven_update = update_step or {"fingerprint": update_entry.get("fingerprint") if update_entry else None,
+                                        "status": update_entry.get("status") if update_entry else None,
+                                        "workout_id": update_entry.get("workout_id") if update_entry else None,
+                                        "occurrence_id": existing.get("occurrence_id"),
+                                        "source_operation_id": existing.get("source_operation_id")}
+        if (not proven_update or proven_update.get("status") != "complete"
+                or str(proven_update.get("workout_id")) != str(workout_id)
+                or str(proven_update.get("occurrence_id")) != str(scheduled_workout_id)
+                or proven_update.get("source_operation_id") != str(source_operation_id)
+                or str(existing.get("workout_id")) != str(workout_id)
+                or str(existing.get("occurrence_id")) != str(scheduled_workout_id)
+                or existing.get("source_operation_id") != str(source_operation_id)):
+            raise HTTPException(409, detail={"code": "invalid_payload"})
+        reschedule_step = existing.get("steps", {}).get("reschedule") if isinstance(existing.get("steps"), dict) else None
+        if reschedule_step and reschedule_step.get("fingerprint") != fingerprint:
+            raise HTTPException(409, detail={"code": "invalid_payload"})
+        return
+    if existing and (existing.get("fingerprint") != fingerprint
+                     or str(existing.get("workout_id")) != str(workout_id)
+                     or str(existing.get("occurrence_id", existing.get("scheduled_workout_id")))
+                     != str(scheduled_workout_id)
+                     or existing.get("source_operation_id") not in (None, str(source_operation_id))
+                     or existing.get("artifact_kind") not in (None, "reschedule")):
+        raise HTTPException(409, detail={"code": "invalid_payload"})
+
+
+def _record_completed_reschedule_operation(journal: dict[str, Any], operation_id: uuid.UUID,
+                                           fingerprint: str, workout_id: int,
+                                           scheduled_workout_id: int, date_text: str,
+                                           source_operation_id: uuid.UUID) -> None:
+    _validate_reschedule_operation_identity(journal, operation_id, fingerprint, workout_id,
+                                            scheduled_workout_id, source_operation_id)
+    operation_key = str(operation_id)
+    existing = journal.get(operation_key)
+    reschedule_step = {"fingerprint": fingerprint, "status": "complete", "workout_id": workout_id,
+                       "occurrence_id": scheduled_workout_id, "date": date_text,
+                       "source_operation_id": str(source_operation_id)}
+    if existing and existing.get("artifact_kind") in ("update", "composite"):
+        update_entry = journal.get(f"update:{operation_key}")
+        update_step = existing.get("steps", {}).get("update") if isinstance(existing.get("steps"), dict) else None
+        proven_update = update_step or {"fingerprint": update_entry.get("fingerprint") if update_entry else None,
+                                        "status": update_entry.get("status") if update_entry else None,
+                                        "workout_id": update_entry.get("workout_id") if update_entry else None,
+                                        "occurrence_id": existing.get("occurrence_id"),
+                                        "source_operation_id": existing.get("source_operation_id")}
+        steps = {"update": proven_update, "reschedule": reschedule_step}
+        compound_fingerprint = hashlib.sha256(json.dumps(
+            {"step_fingerprints": {name: step["fingerprint"] for name, step in steps.items()},
+             "source_operation_id": str(source_operation_id), "workout_id": str(workout_id),
+             "occurrence_id": str(scheduled_workout_id)}, sort_keys=True,
+            separators=(",", ":")).encode()).hexdigest()
+        journal[operation_key] = {"fingerprint": compound_fingerprint, "status": "complete",
+                                  "artifact_kind": "composite", "workout_id": workout_id,
+                                  "occurrence_id": scheduled_workout_id,
+                                  "scheduled_workout_id": scheduled_workout_id, "date": date_text,
+                                  "source_operation_id": str(source_operation_id), "steps": steps}
+        return
+    journal[operation_key] = {"fingerprint": fingerprint, "status": "complete",
+                              "artifact_kind": "reschedule", "workout_id": workout_id,
+                              "occurrence_id": scheduled_workout_id,
+                              "scheduled_workout_id": scheduled_workout_id,
+                              "date": date_text,
+                              "source_operation_id": str(source_operation_id),
+                              "steps": {"reschedule": reschedule_step}}
 
 
 def _activity_download_base(client: Any, download_format: Any) -> str:
@@ -376,6 +975,14 @@ def auth_start(owner_id: str, connection_id: str, body: AuthStart,
         previous_state = _previous_connection_state(owner_id, connection_id, path)
         _remove_connection_challenges(owner_id, connection_id)
         _states[str(path)] = "authenticating"
+        stage = "garmin_login"
+        operation = "login"
+        failure_code = None
+
+        def set_operation(value: str) -> None:
+            nonlocal operation
+            operation = value
+
         try:
             with _client(path, key, email=body.email, password=body.password,
                          restore=False, persist_on_exit=False,
@@ -394,11 +1001,20 @@ def auth_start(owner_id: str, connection_id: str, body: AuthStart,
                     _states[str(path)] = "mfa_required"
                     return {"status": "mfa_required", "challenge_id": challenge_id,
                             "expires_in": CHALLENGE_TTL_SECONDS}
-                _persist_tokens(client, token_dir, token_file, path, key)
+                stage = "profile_identity"
+                operation = "read_user_settings"
+                identity = _remote_identity(client, set_operation)
+                stage = "persist_session"
+                operation = "persist_tokens"
+                try:
+                    _persist_tokens(client, token_dir, token_file, path, key)
+                except Exception:
+                    failure_code = "persistence_error"
+                    raise
                 _states[str(path)] = "connected"
-                return {"status": "connected"}
+                return {"status": "connected", "identity_fingerprint": identity}
         except Exception as exc:
-            error = _error(exc)
+            error = _authentication_failure(exc, stage, operation, failure_code)
             if previous_state == "connected" and path.exists():
                 _states[str(path)] = previous_state
             elif error.detail.get("code") == "auth_required":
@@ -421,6 +1037,14 @@ def auth_finish(owner_id: str, connection_id: str, body: AuthFinish,
             _states[str(path)] = challenge["previous_state"]
             raise HTTPException(400, detail={"code": "auth_required"})
         try:
+            stage = "resume_mfa"
+            operation = "resume_mfa"
+            failure_code = None
+
+            def set_operation(value: str) -> None:
+                nonlocal operation
+                operation = value
+
             with _client(path, key, restore=False, persist_on_exit=False,
                          set_connected_on_exit=False) as (
                 client, token_dir, token_file
@@ -428,12 +1052,21 @@ def auth_finish(owner_id: str, connection_id: str, body: AuthFinish,
                 client.resume_login(challenge["state"], body.code)
                 if not client.client.is_authenticated:
                     raise RuntimeError("MFA did not produce a usable Garmin session")
-                _persist_tokens(client, token_dir, token_file, path, key)
+                stage = "profile_identity"
+                operation = "read_user_settings"
+                identity = _remote_identity(client, set_operation)
+                stage = "persist_session"
+                operation = "persist_tokens"
+                try:
+                    _persist_tokens(client, token_dir, token_file, path, key)
+                except Exception:
+                    failure_code = "persistence_error"
+                    raise
             _challenges.pop(body.challenge_id, None)
             _states[str(path)] = "connected"
-            return {"status": "connected"}
+            return {"status": "connected", "identity_fingerprint": identity}
         except Exception as exc:
-            error = _error(exc)
+            error = _authentication_failure(exc, stage, operation, failure_code)
             if error.detail.get("code") == "auth_required":
                 challenge["attempts"] += 1
                 if challenge["attempts"] >= MAX_MFA_ATTEMPTS:
@@ -441,6 +1074,10 @@ def auth_finish(owner_id: str, connection_id: str, body: AuthFinish,
                     _states[str(path)] = challenge["previous_state"]
                 else:
                     _states[str(path)] = "mfa_required"
+                raise error from None
+            if error.detail.get("code") == "persistence_error":
+                _challenges.pop(body.challenge_id, None)
+                _states[str(path)] = challenge["previous_state"] if path.exists() else "temporarily_unavailable"
                 raise error from None
             if error.detail.get("code") in ("rate_limited", "invalid_payload"):
                 raise error from None
@@ -474,8 +1111,8 @@ def status(owner_id: str, connection_id: str,
     with _lock(str(path)):
         try:
             with _client(path, key) as (client, _, _):
-                client.get_user_profile()
-            return {"status": "connected"}
+                identity = _remote_identity(client, lambda _value: None)
+            return {"status": "connected", "identity_fingerprint": identity}
         except Exception as exc:
             error = _record_error(path, exc)
             return {"status": _states[str(path)], "error": error.detail["code"]}
@@ -487,7 +1124,6 @@ def disconnect(owner_id: str, connection_id: str,
     path, _ = _connection(connection_id, owner_id, x_kinesis_service_key)
     with _lock(str(path)):
         path.unlink(missing_ok=True)
-        path.with_suffix(".ops").unlink(missing_ok=True)
         _states[str(path)] = "disconnected"
         _remove_connection_challenges(owner_id, connection_id)
     return {"status": "disconnected", "remote_revocation": "not_proven"}
@@ -877,11 +1513,31 @@ def _safe_exception_category(exc) -> str:
         return "network_transport"
     if isinstance(exc, HTTPException):
         return "connector_http"
+    if isinstance(exc, (GarminProfileResponseError, GarminIdentityMissingError)):
+        return "profile_contract"
     if isinstance(exc, ValueError):
         return "validation"
     if isinstance(exc, OSError):
         return "io"
     return "internal"
+
+
+_SAFE_EXCEPTION_CLASS_NAMES = {
+    "AttributeError", "ConnectionError", "GarminConnectAuthenticationError",
+    "GarminConnectConnectionError", "GarminConnectNotFoundError",
+    "GarminConnectTooManyRequestsError", "HTTPError", "KeyError",
+    "GarminIdentityMissingError", "GarminProfileResponseError",
+    "JSONDecodeError", "OSError", "ReadTimeout", "RuntimeError",
+    "Timeout", "TypeError", "ValueError",
+}
+
+
+def _safe_exception_class(exc) -> str:
+    """Expose only a small class-name allowlist in local diagnostics."""
+    if exc is None:
+        return "none"
+    name = type(exc).__name__
+    return name if name in _SAFE_EXCEPTION_CLASS_NAMES else "OtherException"
 
 
 def _log_download_diagnostic(request_id, stage, code, exc, remote_status,
@@ -897,7 +1553,7 @@ def _log_download_diagnostic(request_id, stage, code, exc, remote_status,
 
 
 @app.post("/v1/connections/{owner_id}/{connection_id}/workouts")
-def publish_workout(owner_id: str, connection_id: str, body: WorkoutPayload,
+def publish_workout(owner_id: str, connection_id: str, body: WorkoutCreateBody,
                     x_kinesis_service_key: str | None = Header(default=None)):
     path, key = _authenticated_client(owner_id, connection_id, x_kinesis_service_key)
     deadline = _clock() + MAX_REMOTE_OPERATION_SECONDS
@@ -905,27 +1561,84 @@ def publish_workout(owner_id: str, connection_id: str, body: WorkoutPayload,
         mutation_started = False
         try:
             from garminconnect.workout import (
-                PaceTarget, RunningWorkout, WorkoutSegment, create_cooldown_step,
+                CustomHeartRateTarget, PaceTarget, RunningWorkout, WorkoutSegment, create_cooldown_step,
                 create_interval_step, create_recovery_step, create_repeat_group,
-                create_targeted_interval_step, create_warmup_step,
+                create_targeted_interval_step, create_distance_interval_step,
+                create_targeted_distance_interval_step, create_warmup_step,
             )
-            if (body.target_lower_mps is None) != (body.target_upper_mps is None):
+            structured = isinstance(body, StructuredWorkoutPayload)
+            if structured:
+                _validate_structured_workout(body)
+            if not structured and (body.interval_seconds is None) == (body.interval_distance_meters is None):
+                raise ValueError("Exactly one interval end condition is required")
+            if not structured and (body.target_lower_mps is None) != (body.target_upper_mps is None):
                 raise ValueError("Both pace bounds are required")
-            if body.repetitions == 1 and body.recovery_seconds:
+            if not structured and (body.target_lower_bpm is None) != (body.target_upper_bpm is None):
+                raise ValueError("Both heart-rate bounds are required")
+            if not structured and body.target_kind == "heart_rate":
+                if body.target_lower_bpm is None or body.target_lower_bpm > body.target_upper_bpm:
+                    raise ValueError("Heart-rate bounds are invalid")
+                if body.target_lower_mps is not None:
+                    raise ValueError("Only one target type is allowed")
+            elif not structured and body.target_kind == "pace":
+                if body.target_lower_bpm is not None:
+                    raise ValueError("Only one target type is allowed")
+            elif not structured and any(value is not None for value in (body.target_lower_mps, body.target_upper_mps,
+                                                      body.target_lower_bpm, body.target_upper_bpm)):
+                raise ValueError("No-target workouts cannot carry target bounds")
+            if not structured and body.repetitions == 1 and body.recovery_seconds:
                 raise ValueError("Recovery is only supported between repeated intervals")
-            if body.target_lower_mps is not None and body.target_lower_mps > body.target_upper_mps:
+            if not structured and body.target_lower_mps is not None and body.target_lower_mps > body.target_upper_mps:
                 raise ValueError("Pace bounds are invalid")
-            operation_token = base64.urlsafe_b64encode(body.operation_id.bytes).decode().rstrip("=")
-            marker = f"K{operation_token}-"
+            if not structured and (body.recovery_target_lower_mps is None) != (body.recovery_target_upper_mps is None):
+                raise ValueError("Both recovery pace bounds are required")
+            if not structured and (body.recovery_target_lower_bpm is None) != (body.recovery_target_upper_bpm is None):
+                raise ValueError("Both recovery heart-rate bounds are required")
+            if not structured and body.recovery_target_kind == "heart_rate":
+                if body.recovery_target_lower_bpm is None or body.recovery_target_lower_bpm > body.recovery_target_upper_bpm or body.recovery_target_lower_mps is not None:
+                    raise ValueError("Recovery heart-rate bounds are invalid")
+            elif not structured and body.recovery_target_kind == "pace":
+                if body.recovery_target_lower_bpm is not None or body.recovery_target_lower_mps is None or body.recovery_target_lower_mps > body.recovery_target_upper_mps:
+                    raise ValueError("Recovery pace bounds are invalid")
+            elif not structured and any(value is not None for value in (body.recovery_target_lower_mps, body.recovery_target_upper_mps,
+                                                       body.recovery_target_lower_bpm, body.recovery_target_upper_bpm)):
+                raise ValueError("No-target recovery cannot carry target bounds")
             fingerprint_full = hashlib.sha256(body.model_dump_json().encode()).hexdigest()
             fingerprint = fingerprint_full
-            remote_fingerprint = fingerprint_full[:8]
-            expected_name = f"{marker}{remote_fingerprint}"
+            operation_marker = _workout_operation_marker(body.operation_id, fingerprint)
+            expected_name = body.name.strip()
+            legacy_name = _legacy_marked_workout_name(body.name, operation_marker)
             with _client(path, key) as (client, _, _):
                 journal = _operation_journal(path, key)
                 prior_operation = journal.get(str(body.operation_id))
                 if prior_operation and prior_operation.get("fingerprint") != fingerprint:
                     raise HTTPException(409, detail={"code": "invalid_payload"})
+                if prior_operation and prior_operation.get("status") in ("complete", "remote_created"):
+                    prior_workout_id = prior_operation.get("workout_id")
+                    if isinstance(prior_workout_id, int) and prior_workout_id > 0:
+                        try:
+                            prior_remote = client.get_workout_by_id(prior_workout_id)
+                        except Exception:
+                            prior_remote = None
+                        _check_deadline(deadline)
+                        if (isinstance(prior_remote, dict)
+                                and str(prior_remote.get("workoutId", prior_workout_id)) == str(prior_workout_id)
+                                and ((prior_operation.get("status") == "remote_created"
+                                      and prior_remote.get("workoutName") == expected_name)
+                                     or (prior_operation.get("status") == "complete"
+                                         and prior_remote.get("workoutName") == expected_name)
+                                     or (prior_remote.get("workoutName") == legacy_name)
+                                     or (prior_remote.get("workoutName") == expected_name
+                                         and prior_remote.get("description") == operation_marker))):
+                            journal[str(body.operation_id)] = {
+                                "fingerprint": fingerprint, "status": "complete",
+                                "workout_id": prior_workout_id, "remote_marker": operation_marker,
+                                "marker_location": "description",
+                            }
+                            _save_operation_journal(path, key, journal)
+                            return {"operation_id": str(body.operation_id),
+                                    "workout_id": prior_workout_id, "created": False,
+                                    "status": "reconciled"}
                 entries = []
                 complete_scan = False
                 for page in range(MAX_WORKOUT_SCAN_PAGES):
@@ -941,14 +1654,14 @@ def publish_workout(owner_id: str, connection_id: str, body: WorkoutPayload,
                         complete_scan = True
                         break
                 prior = next((item for item in entries
-                              if marker in str(item.get("workoutName", ""))), None)
+                              if _workout_has_operation_marker(item, operation_marker)), None)
                 if prior:
-                    if prior.get("workoutName") != expected_name:
+                    if prior.get("workoutName") not in (expected_name, legacy_name):
                         raise HTTPException(409, detail={"code": "invalid_payload"})
                     workout_id = int(prior["workoutId"])
                     journal[str(body.operation_id)] = {
-                        "fingerprint": fingerprint, "status": "complete",
-                        "workout_id": workout_id,
+                        "fingerprint": fingerprint, "status": "complete", "workout_id": workout_id,
+                        "remote_marker": operation_marker, "marker_location": "description"
                     }
                     _save_operation_journal(path, key, journal)
                     return {"operation_id": str(body.operation_id),
@@ -956,63 +1669,106 @@ def publish_workout(owner_id: str, connection_id: str, body: WorkoutPayload,
                             "status": "reconciled"}
                 if not complete_scan or prior_operation is not None:
                     raise HTTPException(503, detail={"code": "outcome_unknown"})
-                target = None
-                if body.target_lower_mps is not None:
-                    target = PaceTarget(lower_limit=body.target_lower_mps,
-                                        upper_limit=body.target_upper_mps)
-                interval_order = 2 if body.warmup_seconds else 1
-                interval_step_order = 1 if body.repetitions > 1 else interval_order
-                interval = (create_targeted_interval_step(
-                    body.interval_seconds, step_order=interval_step_order, target=target
-                ) if target else create_interval_step(body.interval_seconds, step_order=interval_step_order))
-                repeated_steps = [interval]
-                if body.repetitions > 1:
-                    if body.recovery_seconds < 1:
-                        raise ValueError("Recovery is required for repeats")
-                    repeated_steps.append(create_recovery_step(body.recovery_seconds, step_order=2))
-                    interval_group = create_repeat_group(body.repetitions, repeated_steps,
-                                                        step_order=interval_order)
+                if structured:
+                    workout = _build_structured_running_workout(body, expected_name)
                 else:
-                    interval_group = repeated_steps[0]
-                steps = []
-                if body.warmup_seconds:
-                    steps.append(create_warmup_step(body.warmup_seconds, step_order=1))
-                steps.append(interval_group)
-                if body.cooldown_seconds:
-                    steps.append(create_cooldown_step(body.cooldown_seconds, step_order=len(steps) + 1))
-            workout = RunningWorkout(
-                workoutName=expected_name[:60],
-                estimatedDurationInSecs=(body.warmup_seconds + body.repetitions *
-                                         (body.interval_seconds + body.recovery_seconds) + body.cooldown_seconds),
-                workoutSegments=[WorkoutSegment(
-                    segmentOrder=1,
-                    sportType={"sportTypeId": 1, "sportTypeKey": "running"},
-                    workoutSteps=steps,
-                )],
-            )
+                    target = None
+                    if body.target_kind == "heart_rate":
+                        target = CustomHeartRateTarget(lower_limit=body.target_lower_bpm,
+                                                       upper_limit=body.target_upper_bpm)
+                    elif body.target_kind == "pace" and body.target_lower_mps is not None:
+                        target = PaceTarget(lower_limit=body.target_lower_mps,
+                                            upper_limit=body.target_upper_mps)
+                    interval_order = 2 if body.warmup_seconds else 1
+                    interval_step_order = 1 if body.repetitions > 1 else interval_order
+                    if body.interval_seconds is not None:
+                        interval = (create_targeted_interval_step(
+                            body.interval_seconds, step_order=interval_step_order, target=target
+                        ) if target else create_interval_step(body.interval_seconds, step_order=interval_step_order))
+                        estimated_interval_seconds = body.interval_seconds * body.repetitions
+                    else:
+                        interval = (create_targeted_distance_interval_step(
+                            body.interval_distance_meters, step_order=interval_step_order, target=target
+                        ) if target else create_distance_interval_step(
+                            body.interval_distance_meters, step_order=interval_step_order
+                        ))
+                        estimated_interval_seconds = None
+                    repeated_steps = [interval]
+                    if body.repetitions > 1:
+                        if body.recovery_seconds < 1:
+                            raise ValueError("Recovery is required for repeats")
+                        recovery_step = create_recovery_step(body.recovery_seconds, step_order=2)
+                        if body.recovery_target_kind == "heart_rate":
+                            recovery_target = CustomHeartRateTarget(lower_limit=body.recovery_target_lower_bpm,
+                                                                    upper_limit=body.recovery_target_upper_bpm)
+                        elif body.recovery_target_kind == "pace":
+                            recovery_target = PaceTarget(lower_limit=body.recovery_target_lower_mps,
+                                                         upper_limit=body.recovery_target_upper_mps)
+                        else:
+                            recovery_target = None
+                        if recovery_target:
+                            recovery_step.targetType = {"workoutTargetTypeId": recovery_target.target_type,
+                                                        "workoutTargetTypeKey": recovery_target.target_type_key,
+                                                        "displayOrder": 1}
+                            recovery_step.targetValueOne = recovery_target.lower_limit
+                            recovery_step.targetValueTwo = recovery_target.upper_limit
+                        repeated_steps.append(recovery_step)
+                        interval_group = create_repeat_group(body.repetitions, repeated_steps,
+                                                            step_order=interval_order,
+                                                            skip_last_rest_step=body.skip_last_rest_step)
+                    else:
+                        interval_group = repeated_steps[0]
+                    steps = []
+                    if body.warmup_seconds:
+                        steps.append(create_warmup_step(body.warmup_seconds, step_order=1))
+                    steps.append(interval_group)
+                    if body.cooldown_seconds:
+                        steps.append(create_cooldown_step(body.cooldown_seconds, step_order=len(steps) + 1))
+                    workout = RunningWorkout(
+                        workoutName=expected_name,
+                        estimatedDurationInSecs=(body.warmup_seconds + estimated_interval_seconds
+                            + max(0, body.repetitions - (1 if body.skip_last_rest_step else 0)) * body.recovery_seconds
+                            + body.cooldown_seconds) if estimated_interval_seconds is not None else 0,
+                        workoutSegments=[WorkoutSegment(
+                            segmentOrder=1,
+                            sportType={"sportTypeId": 1, "sportTypeKey": "running"},
+                            workoutSteps=steps,
+                        )],
+                    )
+                workout.description = operation_marker
             with _client(path, key) as (client, _, _):
                 if len(journal) >= 1000:
                     raise HTTPException(503, detail={"code": "unavailable"})
-                journal[str(body.operation_id)] = {"fingerprint": fingerprint, "status": "pending"}
+                journal[str(body.operation_id)] = {"fingerprint": fingerprint, "status": "pending",
+                                                    "remote_marker": operation_marker,
+                                                    "marker_location": "description"}
                 _save_operation_journal(path, key, journal)
                 mutation_started = True
                 result = client.upload_running_workout(workout)
                 _check_deadline(deadline)
                 workout_id = result.get("workoutId") if isinstance(result, dict) else None
-                if not isinstance(workout_id, int):
+                if not isinstance(workout_id, int) or workout_id <= 0:
                     raise RuntimeError("remote workout result not confirmed")
+                journal[str(body.operation_id)] = {
+                    "fingerprint": fingerprint, "status": "remote_created", "workout_id": workout_id,
+                    "remote_marker": operation_marker, "marker_location": "description",
+                }
+                _save_operation_journal(path, key, journal)
                 confirmed = client.get_workout_by_id(workout_id)
                 _check_deadline(deadline)
-                if not isinstance(confirmed, dict) or confirmed.get("workoutName") != expected_name:
+                if (not isinstance(confirmed, dict)
+                        or str(confirmed.get("workoutId", workout_id)) != str(workout_id)
+                        or confirmed.get("workoutName") != expected_name):
                     raise RuntimeError("remote workout reconciliation did not match")
                 journal[str(body.operation_id)] = {
                     "fingerprint": fingerprint, "status": "complete",
-                    "workout_id": workout_id,
+                    "workout_id": workout_id, "remote_marker": operation_marker,
+                    "marker_location": "description",
                 }
                 _save_operation_journal(path, key, journal)
                 return {"operation_id": str(body.operation_id),
                         "workout_id": workout_id, "created": True, "status": "created",
-                        "workout": {"name": confirmed.get("workoutName", ""),
+                        "workout": {"name": expected_name,
                                     "steps": len(confirmed.get("workoutSegments", [{}])[0].get("workoutSteps", []))}}
         except HTTPException:
             raise
@@ -1033,6 +1789,10 @@ def schedule_workout(owner_id: str, connection_id: str, body: WorkoutSchedule,
         try:
             with _client(path, key) as (client, _, _):
                 journal = _operation_journal(path, key)
+                source = journal.get(str(body.operation_id))
+                if (not source or source.get("status") != "complete"
+                        or str(source.get("workout_id")) != str(body.workout_id)):
+                    raise HTTPException(409, detail={"code": "invalid_payload"})
                 journal_id = f"schedule:{body.workout_id}:{body.date.isoformat()}"
                 fingerprint = hashlib.sha256(journal_id.encode()).hexdigest()
                 previous_operation = journal.get(journal_id)
@@ -1072,7 +1832,14 @@ def schedule_workout(owner_id: str, connection_id: str, body: WorkoutSchedule,
                     occurrence_id = prior.get("id")
                     if occurrence_id is None:
                         raise HTTPException(503, detail={"code": "outcome_unknown"})
+                    # An existing calendar item is not proof Kinesis created it.
+                    # Only reconcile an occurrence after our durable pending write.
+                    if previous_operation is None:
+                        raise HTTPException(503, detail={"code": "outcome_unknown"})
+                    if previous_operation.get("status") not in ("pending", "complete"):
+                        raise HTTPException(503, detail={"code": "outcome_unknown"})
                     journal[journal_id] = {"fingerprint": fingerprint, "status": "complete",
+                                           "workout_id": body.workout_id,
                                            "scheduled_workout_id": occurrence_id}
                     _save_operation_journal(path, key, journal)
                     return {"scheduled": True, "status": "reconciled",
@@ -1091,6 +1858,7 @@ def schedule_workout(owner_id: str, connection_id: str, body: WorkoutSchedule,
                 if not confirmed or confirmed.get("id") is None:
                     raise HTTPException(503, detail={"code": "outcome_unknown"})
                 journal[journal_id] = {"fingerprint": fingerprint, "status": "complete",
+                                       "workout_id": body.workout_id,
                                        "scheduled_workout_id": confirmed["id"]}
                 _save_operation_journal(path, key, journal)
                 return {"scheduled": True, "status": "scheduled",
@@ -1103,6 +1871,195 @@ def schedule_workout(owner_id: str, connection_id: str, body: WorkoutSchedule,
                 raise HTTPException(503, detail={"code": "outcome_unknown"}) from None
             if error.status_code in (400, 401, 429):
                 raise error from None
+            raise HTTPException(503, detail={"code": "outcome_unknown"}) from None
+
+
+@app.put("/v1/connections/{owner_id}/{connection_id}/workouts/{workout_id}")
+def update_workout(owner_id: str, connection_id: str, workout_id: int, body: WorkoutUpdateBody,
+                   x_kinesis_service_key: str | None = Header(default=None)):
+    path, key = _authenticated_client(owner_id, connection_id, x_kinesis_service_key)
+    if body.workout_id != workout_id:
+        raise HTTPException(400, detail={"code": "invalid_payload"})
+    fingerprint = hashlib.sha256(body.model_dump_json().encode()).hexdigest()
+    legacy_fingerprint = (hashlib.sha256(
+        body.model_dump_json(exclude={"source_scheduled_workout_id"}).encode()).hexdigest()
+        if isinstance(body, WorkoutUpdate) else None)
+    deadline = _clock() + MAX_REMOTE_OPERATION_SECONDS
+    with _lock(str(path)):
+        try:
+            with _client(path, key) as (client, _, _):
+                journal = _operation_journal(path, key)
+                journal_id = f"update:{body.operation_id}"
+                prior = journal.get(journal_id)
+                # The occurrence binding was added after update operations had
+                # already shipped. Continue only an exact old request whose
+                # encrypted journal fingerprint proves that payload; keep its
+                # old marker fingerprint during reconciliation.
+                if prior and prior.get("fingerprint") == legacy_fingerprint:
+                    fingerprint = legacy_fingerprint
+                if prior and prior.get("fingerprint") != fingerprint:
+                    raise HTTPException(409, detail={"code": "invalid_payload"})
+                operation_marker = _workout_operation_marker(body.operation_id, fingerprint)
+                expected_name = body.name.strip()
+                legacy_name = _legacy_marked_workout_name(body.name, operation_marker)
+                workout = _build_running_workout(body, expected_name)
+                workout.description = operation_marker
+                payload = workout.model_dump(mode="json", by_alias=True, exclude_none=True)
+                source = _completed_source_operation(journal, body.source_operation_id)
+                schedule_source = next((entry for entry in journal.values()
+                                        if entry.get("status") == "complete"
+                                        and str(entry.get("workout_id")) == str(workout_id)
+                                        and str(entry.get("scheduled_workout_id", entry.get("occurrence_id")))
+                                        == str(body.source_scheduled_workout_id)), None)
+                if (not source or source.get("status") != "complete"
+                        or str(source.get("workout_id")) != str(workout_id)
+                        or not schedule_source
+                        or (source.get("occurrence_id") is not None
+                            and str(source.get("occurrence_id")) != str(body.source_scheduled_workout_id))):
+                    raise HTTPException(409, detail={"code": "invalid_payload"})
+                _validate_workout_operation_identity(journal, body.operation_id, fingerprint, workout_id,
+                                                     body.source_scheduled_workout_id, body.source_operation_id)
+                current_workout = client.get_workout_by_id(workout_id)
+                _check_deadline(deadline)
+                if not isinstance(current_workout, dict) or str(current_workout.get("workoutId", workout_id)) != str(workout_id):
+                    raise RuntimeError("Garmin workout identity was inconclusive")
+                if prior and prior.get("status") == "complete":
+                    if current_workout.get("workoutName") in (expected_name, legacy_name, prior.get("name")):
+                        _record_completed_workout_operation(journal, body.operation_id, fingerprint, workout_id,
+                                                            body.source_scheduled_workout_id, body.source_operation_id)
+                        _save_operation_journal(path, key, journal)
+                        return {"workout_id": workout_id, "status": "reconciled", "updated": False}
+                    raise HTTPException(503, detail={"code": "outcome_unknown"})
+                if prior and (current_workout.get("workoutName") == legacy_name
+                              or (current_workout.get("workoutName") == expected_name
+                                  and current_workout.get("description") == operation_marker)):
+                    journal[journal_id] = {"fingerprint": fingerprint, "status": "complete",
+                                           "workout_id": workout_id, "name": expected_name,
+                                           "remote_marker": operation_marker, "marker_location": "description"}
+                    _record_completed_workout_operation(journal, body.operation_id, fingerprint, workout_id,
+                                                        body.source_scheduled_workout_id, body.source_operation_id)
+                    _save_operation_journal(path, key, journal)
+                    return {"workout_id": workout_id, "status": "reconciled", "updated": False}
+                if prior and current_workout.get("workoutName") != prior.get("previous_name"):
+                    raise HTTPException(503, detail={"code": "outcome_unknown"})
+                if not prior:
+                    if len(journal) >= 1000:
+                        raise HTTPException(503, detail={"code": "unavailable"})
+                    prior = {"fingerprint": fingerprint, "status": "pending",
+                             "workout_id": workout_id, "previous_name": current_workout.get("workoutName"),
+                             "remote_marker": operation_marker, "marker_location": "description"}
+                    journal[journal_id] = prior
+                    _save_operation_journal(path, key, journal)
+                client.update_workout(workout_id, payload)
+                _check_deadline(deadline)
+                confirmed = client.get_workout_by_id(workout_id)
+                _check_deadline(deadline)
+                if (not isinstance(confirmed, dict)
+                        or str(confirmed.get("workoutId", workout_id)) != str(workout_id)
+                        or confirmed.get("workoutName") != expected_name):
+                    raise HTTPException(503, detail={"code": "outcome_unknown"})
+                journal[journal_id] = {"fingerprint": fingerprint, "status": "complete",
+                                       "workout_id": workout_id, "name": expected_name,
+                                       "remote_marker": operation_marker, "marker_location": "description"}
+                _record_completed_workout_operation(journal, body.operation_id, fingerprint, workout_id,
+                                                    body.source_scheduled_workout_id, body.source_operation_id)
+                _save_operation_journal(path, key, journal)
+                return {"workout_id": workout_id, "status": "updated", "updated": True}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            _record_error(path, exc)
+            raise HTTPException(503, detail={"code": "outcome_unknown"}) from None
+
+
+@app.put("/v1/connections/{owner_id}/{connection_id}/workouts/schedule/{scheduled_workout_id}")
+def reschedule_workout(owner_id: str, connection_id: str, scheduled_workout_id: int,
+                       body: WorkoutReschedule,
+                       x_kinesis_service_key: str | None = Header(default=None)):
+    path, key = _authenticated_client(owner_id, connection_id, x_kinesis_service_key)
+    if body.scheduled_workout_id != scheduled_workout_id:
+        raise HTTPException(400, detail={"code": "invalid_payload"})
+    journal_id = f"reschedule:{body.operation_id}"
+    fingerprint = hashlib.sha256(f"{scheduled_workout_id}:{body.workout_id}:{body.date.isoformat()}".encode()).hexdigest()
+    deadline = _clock() + MAX_REMOTE_OPERATION_SECONDS
+    with _lock(str(path)):
+        try:
+            with _client(path, key) as (client, _, _):
+                journal = _operation_journal(path, key)
+                prior = journal.get(journal_id)
+                if prior and prior.get("fingerprint") != fingerprint:
+                    raise HTTPException(409, detail={"code": "invalid_payload"})
+                if (prior and (str(prior.get("workout_id", body.workout_id)) != str(body.workout_id)
+                               or str(prior.get("scheduled_workout_id", scheduled_workout_id)) != str(scheduled_workout_id)
+                               or prior.get("source_operation_id") not in (None, str(body.source_operation_id)))):
+                    raise HTTPException(409, detail={"code": "invalid_payload"})
+                source = _completed_source_operation(journal, body.source_operation_id)
+                schedule_entry = next((entry for key_name, entry in journal.items()
+                                       if key_name.startswith(f"schedule:{body.workout_id}:")
+                                       and entry.get("status") == "complete"
+                                       and str(entry.get("scheduled_workout_id")) == str(scheduled_workout_id)), None)
+                if (not source or source.get("status") != "complete"
+                        or str(source.get("workout_id")) != str(body.workout_id)
+                        or not schedule_entry
+                        or str(schedule_entry.get("scheduled_workout_id")) != str(scheduled_workout_id)
+                        or (source.get("occurrence_id") is not None
+                            and str(source.get("occurrence_id")) != str(scheduled_workout_id))):
+                    raise HTTPException(409, detail={"code": "invalid_payload"})
+                _validate_reschedule_operation_identity(journal, body.operation_id, fingerprint,
+                                                        body.workout_id, scheduled_workout_id,
+                                                        body.source_operation_id)
+                current = client.get_scheduled_workout_by_id(scheduled_workout_id)
+                _check_deadline(deadline)
+                if not isinstance(current, dict):
+                    raise RuntimeError("Garmin schedule identity was inconclusive")
+                workout = current.get("workout")
+                current_workout_id = workout.get("workoutId") if isinstance(workout, dict) else current.get("workoutId")
+                current_date = current.get("calendarDate") or current.get("date")
+                if str(current_workout_id) != str(body.workout_id) or not isinstance(current_date, str):
+                    raise RuntimeError("Garmin schedule identity was inconclusive")
+                if current_date[:10] == body.date.isoformat():
+                    journal[journal_id] = {"fingerprint": fingerprint, "status": "complete",
+                                           "workout_id": body.workout_id,
+                                           "scheduled_workout_id": scheduled_workout_id, "date": body.date.isoformat(),
+                                           "source_operation_id": str(body.source_operation_id)}
+                    _record_completed_reschedule_operation(journal, body.operation_id, fingerprint,
+                                                           body.workout_id, scheduled_workout_id,
+                                                           body.date.isoformat(), body.source_operation_id)
+                    _save_operation_journal(path, key, journal)
+                    return {"scheduled": True, "status": "reconciled", "scheduled_workout_id": scheduled_workout_id}
+                if prior and (prior.get("status") == "complete" or current_date[:10] != prior.get("previous_date")):
+                    raise HTTPException(503, detail={"code": "outcome_unknown"})
+                if not prior:
+                    if len(journal) >= 1000:
+                        raise HTTPException(503, detail={"code": "unavailable"})
+                    prior = {"fingerprint": fingerprint, "status": "pending", "previous_date": current_date[:10],
+                             "workout_id": body.workout_id, "scheduled_workout_id": scheduled_workout_id,
+                             "source_operation_id": str(body.source_operation_id),
+                             "date": body.date.isoformat()}
+                    journal[journal_id] = prior
+                    _save_operation_journal(path, key, journal)
+                client.reschedule_workout(scheduled_workout_id, body.date.isoformat())
+                _check_deadline(deadline)
+                confirmed = client.get_scheduled_workout_by_id(scheduled_workout_id)
+                _check_deadline(deadline)
+                confirmed_workout = confirmed.get("workout") if isinstance(confirmed, dict) else None
+                confirmed_workout_id = confirmed_workout.get("workoutId") if isinstance(confirmed_workout, dict) else None
+                confirmed_date = (confirmed.get("calendarDate") or confirmed.get("date")) if isinstance(confirmed, dict) else None
+                if str(confirmed_workout_id) != str(body.workout_id) or not isinstance(confirmed_date, str) or confirmed_date[:10] != body.date.isoformat():
+                    raise HTTPException(503, detail={"code": "outcome_unknown"})
+                journal[journal_id] = {"fingerprint": fingerprint, "status": "complete",
+                                       "workout_id": body.workout_id,
+                                       "scheduled_workout_id": scheduled_workout_id, "date": body.date.isoformat(),
+                                       "source_operation_id": str(body.source_operation_id)}
+                _record_completed_reschedule_operation(journal, body.operation_id, fingerprint,
+                                                       body.workout_id, scheduled_workout_id,
+                                                       body.date.isoformat(), body.source_operation_id)
+                _save_operation_journal(path, key, journal)
+                return {"scheduled": True, "status": "rescheduled", "scheduled_workout_id": scheduled_workout_id}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            _record_error(path, exc)
             raise HTTPException(503, detail={"code": "outcome_unknown"}) from None
 
 
