@@ -155,10 +155,41 @@ test('candidate search filters known non-running sports and keeps malformed spor
     assert.deepEqual(response.json().items.map((item) => item.activity_id), ['2', '3', '4', '6']);
     assert.equal(response.json().items[0].sport, 'unknown');
     assert.equal(response.json().items[1].approximate_pace_seconds_per_km, 360);
+    assert.equal(response.json().items[1].suggestion, 'same_local_date_requires_confirmation');
+    assert.deepEqual(response.json().items[1].suggestion_criteria, ['running_sport', 'same_local_date']);
     assert.equal(response.json().items[2].suggestion, 'date_differs_requires_confirmation');
     assert.equal(response.json().items[2].average_hr, 150);
     assert.equal(response.json().items[3].duration_seconds, null);
     assert.equal(response.json().items[3].distance_m, null);
+  } finally { await h.close(); }
+});
+
+test('completed Garmin result can be replaced A to B to A while current-link history and shoe mileage stay consistent', async () => {
+  const h = await setup({ rows: [
+    { activityId: 42, activityName: 'A', startTimeLocal: '2026-11-02 07:00:00', activityType: 'running', duration: 3500, distance: 10000 },
+    { activityId: 43, activityName: 'B', startTimeLocal: '2026-11-02 08:00:00', activityType: 'running', duration: 3600, distance: 11000 },
+  ] });
+  try {
+    h.db.prepare("INSERT INTO shoes(id,user_id,brand,model,mileage) VALUES('shoe-a',1,'Kinesis','Run',0)").run();
+    h.db.prepare("UPDATE trainings SET completed=1,feedback_rpe=4,feedback_shoe_id='shoe-a' WHERE id=1").run();
+    const importActivity = async (id, cursor) => {
+      const reviewed = await preview(h, id, 1, cursor);
+      assert.equal(reviewed.statusCode, 200, reviewed.body);
+      const response = await h.app.inject({ method: 'POST', url: '/api/trainings/1/garmin/activity-import', headers: { cookie: h.cookie },
+        payload: { preview_id: reviewed.json().preview_id, confirm_replace: true } });
+      assert.equal(response.statusCode, 200, response.body);
+      assert.equal(response.json().training.completed, 1);
+      assert.equal(response.json().training.feedback_rpe, 4);
+      return response;
+    };
+    await importActivity(42, 0);
+    await importActivity(43, 1);
+    await importActivity(42, 0);
+    assert.deepEqual(h.db.prepare('SELECT activity_id,is_current FROM garmin_activity_imports ORDER BY activity_id').all(), [
+      { activity_id: '42', is_current: 1 }, { activity_id: '43', is_current: 0 },
+    ]);
+    assert.equal(h.db.prepare("SELECT COUNT(*) AS n FROM garmin_activity_imports WHERE is_current=1 AND training_id=1").get().n, 1);
+    assert.equal(h.db.prepare("SELECT mileage FROM shoes WHERE id='shoe-a'").get().mileage, 10);
   } finally { await h.close(); }
 });
 
@@ -231,8 +262,8 @@ test('activity identity is account-qualified and a linked activity cannot move s
   const h = await setup();
   try {
     h.db.prepare(`INSERT INTO trainings(id,user_id,dia,tipo,treino) VALUES(2,1,'2026-11-03','run','second')`).run();
-    h.db.prepare(`INSERT INTO garmin_activity_imports(user_id,training_id,account_fingerprint,activity_id,file_sha256,importer_version)
-      VALUES(1,2,?,?,?,1)`).run('a'.repeat(64), '42', 'b'.repeat(64));
+    h.db.prepare(`INSERT INTO garmin_activity_imports(user_id,training_id,account_fingerprint,activity_id,file_sha256,importer_version,is_current)
+      VALUES(1,2,?,?,?,1,1)`).run('a'.repeat(64), '42', 'b'.repeat(64));
     const reviewed = await preview(h, 42, 1);
     assert.equal(reviewed.statusCode, 200);
     assert.equal(reviewed.json().linked_training_id, 2);
@@ -242,6 +273,19 @@ test('activity identity is account-qualified and a linked activity cannot move s
     assert.equal(imported.statusCode, 409);
     assert.equal(imported.json().code, 'activity_already_linked');
     assert.equal(h.db.prepare('SELECT training_id FROM garmin_activity_imports').get().training_id, 2);
+    h.db.prepare('UPDATE garmin_activity_imports SET is_current=0 WHERE training_id=2 AND activity_id=\'42\'').run();
+    const historicalList = await h.app.inject({ method: 'GET', url: '/api/trainings/1/garmin/activities', headers: { cookie: h.cookie } });
+    assert.equal(historicalList.json().items[0].linked_training_id, null);
+    assert.equal(historicalList.json().items[0].historical_training_id, 2);
+    const historicalReview = await preview(h, 42, 1);
+    assert.equal(historicalReview.statusCode, 200);
+    assert.equal(historicalReview.json().linked_training_id, null);
+    const reimported = await h.app.inject({ method: 'POST', url: '/api/trainings/1/garmin/activity-import', headers: { cookie: h.cookie },
+      payload: { preview_id: historicalReview.json().preview_id, confirm_replace: true } });
+    assert.equal(reimported.statusCode, 200, reimported.body);
+    assert.deepEqual(h.db.prepare('SELECT training_id,is_current FROM garmin_activity_imports ORDER BY training_id').all(), [
+      { training_id: 1,is_current: 1 }, { training_id: 2,is_current: 0 },
+    ], 'released historical provenance remains while the activity moves to exactly one current session');
   } finally { await h.close(); }
 });
 
@@ -993,8 +1037,8 @@ test('the immediate import transaction rechecks connection state and activity ow
   try {
     h.db.prepare("INSERT INTO trainings(id,user_id,dia,tipo,treino) VALUES(2,1,'2026-11-03','run','other')").run();
     const reviewed = await preview(h);
-    h.db.prepare(`INSERT INTO garmin_activity_imports(user_id,training_id,account_fingerprint,activity_id,file_sha256,importer_version)
-      VALUES(1,2,?,?,?,1)`).run('a'.repeat(64), '42', 'b'.repeat(64));
+    h.db.prepare(`INSERT INTO garmin_activity_imports(user_id,training_id,account_fingerprint,activity_id,file_sha256,importer_version,is_current)
+      VALUES(1,2,?,?,?,1,1)`).run('a'.repeat(64), '42', 'b'.repeat(64));
     const linked = await h.app.inject({ method: 'POST', url: '/api/trainings/1/garmin/activity-import', headers: { cookie: h.cookie }, payload: { preview_id: reviewed.json().preview_id } });
     assert.equal(linked.json().code, 'activity_already_linked');
   } finally { await h.close(); }

@@ -414,6 +414,7 @@ async function initTrainingResult() {
   const resultSourceSelect = document.getElementById('resultSourceSelect');
   const fitField = document.getElementById('fitField');
   const garminActivityField = document.getElementById('garminActivityField');
+  const garminActivitySwitch = document.getElementById('garminActivitySwitch');
   const garminActivitySearch = document.getElementById('garminActivitySearch');
   const garminActivityRefresh = document.getElementById('garminActivityRefresh');
   const garminActivityMore = document.getElementById('garminActivityMore');
@@ -1042,13 +1043,24 @@ async function initTrainingResult() {
         candidate.calories == null ? '' : `${candidate.calories} ${t('session.resultCalories').toLowerCase()}`];
       detail.textContent = detailParts.filter(Boolean).join(' · ');
       info.append(detail);
-      const suggestion = document.createElement('p');
-      suggestion.textContent = t(candidate.suggestion === 'same_local_date_requires_confirmation'
-        ? 'session.garminImport.dateSuggestion' : 'session.garminImport.dateDifferent');
-      info.append(suggestion);
+      if (candidate.suggestion === 'same_local_date_requires_confirmation') {
+        const suggestion = document.createElement('p');
+        suggestion.className = 'garmin-activity-suggestion';
+        suggestion.textContent = t('session.garminImport.dateSuggestion');
+        info.append(suggestion);
+      } else {
+        const uncertainty = document.createElement('p');
+        uncertainty.textContent = t(candidate.suggestion === 'date_differs_requires_confirmation'
+          ? 'session.garminImport.dateDifferent' : 'session.garminImport.noMatch');
+        info.append(uncertainty);
+      }
       if (candidate.linked_training_id) {
         const linked = document.createElement('p');
         linked.textContent = t('session.garminImport.linked').replace('{id}', String(candidate.linked_training_id));
+        info.append(linked);
+      } else if (candidate.historical_training_id) {
+        const linked = document.createElement('p');
+        linked.textContent = t('session.garminImport.previouslyLinked').replace('{id}', String(candidate.historical_training_id));
         info.append(linked);
       }
       const choose = document.createElement('button');
@@ -1221,6 +1233,23 @@ async function initTrainingResult() {
     setGarminActivityStatus('');
     renderGarminActivityCandidates();
     requestAnimationFrame(() => garminActivityCandidates.querySelector(`[data-activity-id="${CSS.escape(String(selectedGarminActivity?.activity_id || ''))}"]`)?.focus());
+  });
+  garminActivitySwitch.addEventListener('click', () => {
+    if (garminActivityBusy) return;
+    if (resultSourceSelect.value !== 'garmin') {
+      resultSourceSelect.value = 'garmin';
+      syncResultSourceVisibility();
+    }
+    garminActivityPreview.hidden = true;
+    garminActivityGuidance.hidden = false;
+    garminActivityField.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    if (garminActivityHasSearched && garminActivityCandidatesState.length) {
+      garminActivityCandidates.hidden = false;
+      requestAnimationFrame(() => garminActivityCandidates.querySelector(`[data-activity-id="${CSS.escape(String(training?.garmin_activity?.activity_id || ''))}"]`)?.focus()
+        || garminActivityRefresh.focus());
+    } else {
+      requestAnimationFrame(() => { garminActivitySearch.focus(); void searchGarminActivities(); });
+    }
   });
   document.addEventListener('app:languagechange', () => {
     renderGarminActivityCandidates();
@@ -1411,6 +1440,8 @@ async function initTrainingResult() {
     const activityId = training?.garmin_activity?.activity_id;
     activityLink.hidden = source !== 'garmin_connect' || !activityId;
     activityLink.textContent = activityLink.hidden ? '' : t('session.garminActivityLink').replace('{id}', String(activityId));
+    garminActivitySwitch.hidden = activityLink.hidden;
+    garminActivitySwitch.textContent = t('session.garminImport.switchActivity');
     renderLapsTable();
   };
 

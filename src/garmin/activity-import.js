@@ -209,7 +209,9 @@ function createGarminActivityImporter({ db, fetchImpl = fetch, config = process.
           .filter(({ item }) => isRunningOrUnknown(item))
           .map(({ item }) => {
             const linked = db.prepare(`SELECT training_id FROM garmin_activity_imports
-              WHERE account_fingerprint=? AND activity_id=?`).get(link.identity_fingerprint, String(item.activityId));
+              WHERE account_fingerprint=? AND activity_id=? AND is_current=1`).get(link.identity_fingerprint, String(item.activityId));
+            const historical = linked ? null : db.prepare(`SELECT training_id FROM garmin_activity_imports
+              WHERE account_fingerprint=? AND activity_id=? ORDER BY imported_at DESC LIMIT 1`).get(link.identity_fingerprint, String(item.activityId));
             const localDate = item.startTimeLocal.slice(0, 10);
             return { activity_id: String(item.activityId), source_cursor: item.source_cursor,
               name: typeof item.activityName === 'string' ? item.activityName.slice(0, 120) : '',
@@ -225,7 +227,14 @@ function createGarminActivityImporter({ db, fetchImpl = fetch, config = process.
               calories: Number.isFinite(item.calories) ? item.calories : null,
               elevation_gain_m: Number.isFinite(item.elevationGain) ? item.elevationGain : null,
               linked_training_id: linked?.training_id || null,
-              suggestion: localDate === training.dia ? 'same_local_date_requires_confirmation' : 'date_differs_requires_confirmation' };
+              historical_training_id: historical?.training_id || null,
+              // Garmin's activity list does not expose a workout/occurrence link.
+              // Same-day running is therefore only a deterministic suggestion.
+              suggestion: activitySport(item).toLowerCase().includes('run') && localDate === training.dia
+                ? 'same_local_date_requires_confirmation' : localDate === training.dia
+                  ? 'unverified_requires_confirmation' : 'date_differs_requires_confirmation',
+              suggestion_criteria: activitySport(item).toLowerCase().includes('run') && localDate === training.dia
+                ? ['running_sport', 'same_local_date'] : [] };
           });
         return { items, window: { start, end }, offset, next_offset: response.next_offset,
           limit: 10, has_more: response.has_more, budget_exhausted: response.budget_exhausted === true };
@@ -278,7 +287,7 @@ function createGarminActivityImporter({ db, fetchImpl = fetch, config = process.
       if (!candidate) return reply.code(404).send({ code: 'activity_not_found' });
       if (!isRunningOrUnknown(candidate)) return reply.code(422).send({ code: 'unsupported_activity' });
       const alreadyLinked = db.prepare(`SELECT training_id FROM garmin_activity_imports
-        WHERE account_fingerprint=? AND activity_id=?`).get(link.identity_fingerprint, id);
+        WHERE account_fingerprint=? AND activity_id=? AND is_current=1`).get(link.identity_fingerprint, id);
       let buffer;
       let result;
       let parsing = false;
@@ -357,7 +366,7 @@ function createGarminActivityImporter({ db, fetchImpl = fetch, config = process.
           if (resultFingerprint(current) !== preview.expected) return { error: 'session_changed' };
           if (current.result_data_source !== 'none' && !confirmReplace) return { error: 'confirm_replace' };
           const linked = db.prepare(`SELECT training_id,file_sha256,is_current FROM garmin_activity_imports
-            WHERE account_fingerprint=? AND activity_id=?`).get(preview.identity, preview.activityId);
+            WHERE account_fingerprint=? AND activity_id=? AND is_current=1`).get(preview.identity, preview.activityId);
           if (linked && linked.training_id !== current.id) return { error: 'activity_already_linked' };
           if (linked && linked.training_id === current.id && linked.is_current === 1 && linked.file_sha256 === preview.fileHash
               && current.result_data_source === 'garmin_connect' && current.fit_summary_json === preview.summary) return { duplicate: true };
@@ -372,12 +381,18 @@ function createGarminActivityImporter({ db, fetchImpl = fetch, config = process.
             preview.summary, completed, current.id, request.user.id);
           db.prepare(`UPDATE garmin_activity_imports SET is_current=0 WHERE user_id=? AND training_id=? AND is_current=1`)
             .run(request.user.id, current.id);
-          db.prepare(`INSERT INTO garmin_activity_imports
-            (user_id,training_id,account_fingerprint,activity_id,file_sha256,importer_version,is_current)
-            VALUES(?,?,?,?,?,?,1) ON CONFLICT(account_fingerprint,activity_id) DO UPDATE SET
-            training_id=excluded.training_id,file_sha256=excluded.file_sha256,importer_version=excluded.importer_version,
-            is_current=1,imported_at=datetime('now')`).run(request.user.id, current.id, preview.identity, preview.activityId,
-            preview.fileHash, IMPORTER_VERSION);
+          const prior = db.prepare(`SELECT id FROM garmin_activity_imports
+            WHERE user_id=? AND training_id=? AND account_fingerprint=? AND activity_id=? LIMIT 1`)
+            .get(request.user.id, current.id, preview.identity, preview.activityId);
+          if (prior) {
+            db.prepare(`UPDATE garmin_activity_imports SET file_sha256=?,importer_version=?,is_current=1,imported_at=datetime('now')
+              WHERE id=?`).run(preview.fileHash, IMPORTER_VERSION, prior.id);
+          } else {
+            db.prepare(`INSERT INTO garmin_activity_imports
+              (user_id,training_id,account_fingerprint,activity_id,file_sha256,importer_version,is_current)
+              VALUES(?,?,?,?,?,?,1)`).run(request.user.id, current.id, preview.identity, preview.activityId,
+              preview.fileHash, IMPORTER_VERSION);
+          }
           reconcileShoeMileage(db, request.user.id, before, trainingFor(request));
           return { imported: true };
       });

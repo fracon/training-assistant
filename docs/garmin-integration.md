@@ -820,11 +820,32 @@ shown as unknown and the downloaded FIT must still identify a running activity.
 The list's optional pace is explicitly an estimate from Garmin summary
 duration/distance and is never persisted; the preview uses FIT-derived canonical
 pace.
-The only suggestion currently uses the same local calendar date and is labeled
-as uncertain; it is never an automatic association. A different date is shown
-as such. Workout IDs, schedule markers, titles, descriptions, and dates are not
-execution proof. The user must choose and confirm one candidate, including
-free runs and sessions that were never published by Kinesis.
+The action “Buscar resultado deste treino / Find this workout's result” uses
+that same bounded search. The pinned connector's activity-list contract exposes
+an activity ID, name, local start time, sport, and summary metrics; neither that
+list nor the parsed FIT contract exposes a verified Kinesis workout/occurrence
+to performed-activity relation. Kinesis publication and schedule records keep
+their workout and occurrence IDs, but these are not returned as an association
+on activity rows. A same-day candidate is therefore suggested only when the
+activity is identified as running, with both criteria shown and an explicit
+statement that Garmin has not confirmed the link. No schedule time is invented.
+Other dates and candidates without those criteria remain selectable but are
+not given the suggestion label. Two same-day runs remain separate choices;
+the user must choose and confirm one. Free runs and sessions never published
+by Kinesis remain supported.
+
+After a Garmin result is saved, its activity ID and a “Trocar atividade / Switch
+activity” action appear with the result. This opens the same candidate list;
+preview and back/cancel leave the saved result intact, and the existing explicit
+replacement confirmation applies to a completed result as well. The schema
+keeps one identity row per account/activity and a partial unique current link
+per session. When an activity is replaced, its row becomes historical. If that
+same activity is later selected again for the same session (A → B → A), the
+existing account/activity row is reactivated in the import transaction; it is
+not duplicated or blocked by history. A link to another session is still
+refused while another session has it as its current activity. A retired
+historical link may be reused in another session after a fresh preview; its old
+session record remains intact. No Garmin-side workout or activity is changed.
 
 Preview rechecks that the activity appears in the connected owner's bounded
 window, downloads the connector's original ZIP with redirects disabled at the
@@ -852,6 +873,17 @@ marker only after success. Unsafe legacy data fails startup with an actionable
 error; no links are deleted or rewritten. An interrupted migration rolls back
 its schema and index changes. It is idempotent when the v1 marker predates the
 `is_current` column.
+
+The idempotent `2026-11-garmin-activity-import-v3` migration rebuilds the import
+table transactionally to remove v1's global unique account/activity constraint
+while copying every row and timestamp unchanged. It adds a unique current-only
+account/activity index, keeps one history row for each account/activity/session
+tuple, and retains one current activity per session. It refuses duplicate
+current activities or duplicate same-session history before changing the table.
+The import transaction now blocks only an activity currently used by another
+session. A historical row for that activity is reactivated for the same session
+or kept alongside the new session's row; the partial current index still
+prevents simultaneous use. No migration backfills a current link.
 
 An activity identity is the Garmin connection's
 account fingerprint plus its remote activity ID; file SHA-256 and importer

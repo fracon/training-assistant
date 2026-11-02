@@ -348,6 +348,7 @@ body {
 
 .manual-results-field[hidden] { display: none; }
 .garmin-activity-field[hidden] { display: none; }
+#garminActivitySwitch[hidden] { display: none; }
 .garmin-activity-candidates[hidden], .garmin-activity-preview[hidden], .garmin-activity-status[hidden],
 .garmin-activity-search-actions [hidden], #garminActivityMore[hidden], #garminActivityReplaceNotice[hidden] { display: none; }
 .garmin-activity-field { display: grid; gap: 12px; align-content: start; }

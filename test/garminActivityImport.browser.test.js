@@ -107,8 +107,10 @@ test('Garmin activity result flow in Chrome stays explicit, localized, keyboard 
     await waitFor("document.getElementById('garminConnectionStatus').textContent !== 'Checking connection…'", 'shared Garmin status initialization');
     await evaluate("document.getElementById('feedbackAccordionTrigger').click(); const s=document.getElementById('resultSourceSelect'); s.value='garmin'; s.dispatchEvent(new Event('change',{bubbles:true})); document.getElementById('feedbackNotas').value='draft survives Garmin sign-in and import'; document.querySelector('[name=\"rpe\"][value=\"3\"]').checked=true; document.querySelector('[name=\"rpe\"][value=\"3\"]').dispatchEvent(new Event('change',{bubbles:true})); true");
     await waitFor("document.getElementById('garminActivityField').hidden===false", 'Garmin result source panel');
-    assert.deepEqual(await evaluate("(()=>({initial:document.getElementById('garminActivitySearch').textContent.trim(),refresh:document.getElementById('garminActivityRefresh').hidden,more:document.getElementById('garminActivityMore').hidden,list:document.getElementById('garminActivityCandidates').hidden,status:document.getElementById('garminActivityStatus').hidden,window:document.getElementById('garminActivityWindow').textContent}))()"),
-      { initial: 'Buscar atividades', refresh: true, more: true, list: true, status: true, window: 'Período da busca: 18/10/2026 – 17/11/2026' });
+    assert.deepEqual(await evaluate("(()=>({initial:document.getElementById('garminActivitySearch').textContent.trim(),refresh:document.getElementById('garminActivityRefresh').hidden,more:document.getElementById('garminActivityMore').hidden,list:document.getElementById('garminActivityCandidates').hidden,status:document.getElementById('garminActivityStatus').hidden,window:document.getElementById('garminActivityWindow').textContent,switchHidden:document.getElementById('garminActivitySwitch').hidden}))()"),
+      { initial: 'Buscar resultado deste treino', refresh: true, more: true, list: true, status: true, window: 'Período da busca: 18/10/2026 – 17/11/2026', switchHidden: true });
+    assert.equal(await evaluate("getComputedStyle(document.getElementById('garminActivitySwitch')).display"), 'none',
+      'the replacement control reserves no space before a Garmin result exists');
     assert.equal(await evaluate("getComputedStyle(document.getElementById('garminActivityMore')).display"), 'none', 'hidden pagination reserves no layout space');
     await evaluate("document.getElementById('garminActivityField').scrollIntoView({block:'center'}); true"); await delay(120); await screenshot('pt-initial-desktop.png');
     await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
@@ -223,6 +225,18 @@ test('Garmin activity result flow in Chrome stays explicit, localized, keyboard 
     await waitFor("document.querySelector('.confirm-card') !== null", 'replacement confirmation after recoverable failure');
     await evaluate("document.getElementById('confirmOkBtn').click(); true");
     await waitFor("document.getElementById('garminActivityLink').textContent.includes('42')", 'confirmed result link');
+    assert.equal(await evaluate("!document.getElementById('garminActivitySwitch').hidden && document.getElementById('garminActivitySwitch').textContent==='Trocar atividade'"), true,
+      'an imported activity has a direct replacement action');
+    await evaluate("document.getElementById('garminActivitySwitch').click(); true");
+    await waitFor("document.getElementById('garminActivityCandidates').hidden===false", 'switch action opens the existing candidate list');
+    await evaluate("document.querySelector('[data-activity-id=\"43\"]').click(); true");
+    await waitFor("document.getElementById('garminActivityPreview').hidden===false", 'another activity can be reviewed for replacement');
+    assert.equal(await evaluate("document.getElementById('garminActivityReplaceNotice').hidden"), false, 'review explains the replacement before confirmation');
+    assert.equal(await evaluate("document.getElementById('garminActivityConfirm').textContent"), 'Substituir resultado');
+    await evaluate("document.getElementById('garminActivityBack').click(); true");
+    await waitFor("document.getElementById('garminActivityPreview').hidden && document.activeElement.dataset.activityId==='43'", 'cancel returns focus to the alternative activity');
+    assert.equal(await evaluate("document.getElementById('garminActivityLink').textContent.includes('42')"), true,
+      'reviewing and returning leaves the persisted activity untouched');
     assert.equal(await evaluate("document.getElementById('feedbackRpeError').hidden"), true);
     assert.equal(await evaluate("document.getElementById('feedbackNotas').value"), 'draft survives Garmin sign-in and import');
     assert.equal(await evaluate("document.querySelector('[name=\"rpe\"][value=\"3\"]').checked"), true);
