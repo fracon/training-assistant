@@ -147,20 +147,55 @@ test('Garmin login progress and disconnect confirmation work in PT/EN Chrome', {
     await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
     await command('Page.navigate', { url: baseUrl + '/training-result.html?id=1' });
     await wait("document.getElementById('garminConnectionStatus')?.textContent.includes('Não conectado')");
+    assert.deepEqual(await evaluate(`(()=>({garmin:[document.getElementById('garminAccordionTrigger').getAttribute('aria-expanded'),document.getElementById('garminAccordionPanel').hidden],feedback:[document.getElementById('feedbackAccordionTrigger').getAttribute('aria-expanded'),document.getElementById('feedbackAccordionPanel').hidden]}))()`),
+      { garmin: ['false', true], feedback: ['false', true] }, 'both accordions start closed on the loaded session page');
+    await capture('/tmp/kinesis-session-accordions-closed-pt-desktop.png', '#garminSessionCard');
+    await evaluate("document.getElementById('garminAccordionTrigger').click()");
+    await wait("document.getElementById('garminAccordionPanel').hidden===false");
+    assert.equal(await evaluate("document.getElementById('feedbackAccordionPanel').hidden"), true, 'opening Garmin does not open feedback');
+    await evaluate("document.getElementById('feedbackAccordionTrigger').click()");
+    assert.deepEqual(await evaluate("[document.getElementById('garminAccordionPanel').hidden,document.getElementById('feedbackAccordionPanel').hidden]"),
+      [false, false], 'both independently opened panels remain open together');
+    await capture('/tmp/kinesis-session-accordions-expanded-pt-desktop.png', '#feedbackAccordionTrigger');
+    await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await evaluate("document.getElementById('feedbackAccordionTrigger').click();document.getElementById('garminAccordionTrigger').click()");
+    await capture('/tmp/kinesis-session-accordions-closed-pt-mobile.png', '#garminSessionCard');
+    await evaluate("document.getElementById('garminAccordionTrigger').click();document.getElementById('feedbackAccordionTrigger').click()");
+    await capture('/tmp/kinesis-session-accordions-expanded-pt-mobile.png', '#feedbackAccordionTrigger');
+    assert.equal(await evaluate('document.documentElement.scrollWidth>innerWidth'), false, 'the expanded mobile accordions do not overflow horizontally');
+    await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 500, deviceScaleFactor: 1, mobile: true });
+    await delay(80);
+    assert.equal(await evaluate('document.documentElement.scrollWidth>innerWidth'), false, 'the accordion headers and content remain usable in a low mobile window');
+    await command('Emulation.setDeviceMetricsOverride', { width: 640, height: 450, deviceScaleFactor: 1, mobile: false });
+    await delay(80);
+    assert.equal(await evaluate('document.documentElement.scrollWidth>innerWidth'), false, 'the content reflows without horizontal overflow at a 200% equivalent viewport');
+    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+    await delay(100);
     await evaluate("document.getElementById('garminConnectButton').click();document.getElementById('garminEmail').value='synthetic@example.test';document.getElementById('garminPassword').value='transient-only';document.getElementById('garminPassword').focus()");
     await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
     await command('Input.dispatchKeyEvent', { type: 'char', key: 'Enter', code: 'Enter', text: '\r', unmodifiedText: '\r', windowsVirtualKeyCode: 13 });
     await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
     await wait("document.getElementById('garminAuthProgress').textContent.includes('Conectando ao Garmin Connect')");
+    assert.equal(await evaluate("document.getElementById('garminAccordionSummary').textContent"), 'Conectando ao Garmin Connect…', 'the collapsed header carries authentication progress in Portuguese');
     await startSignal;
     assert.deepEqual(await evaluate("({busy:document.getElementById('garminAuthForm').getAttribute('aria-busy'),progress:document.getElementById('garminAuthProgress').innerText,disabled:document.getElementById('garminAuthSubmit').disabled,email:document.getElementById('garminEmail').value,password:document.getElementById('garminPassword').value})"),
       { busy: 'true', progress: 'Conectando ao Garmin Connect…', disabled: true, email: 'synthetic@example.test', password: '' });
+    await evaluate("document.getElementById('garminAccordionTrigger').click()");
+    assert.equal(await evaluate("document.getElementById('garminAccordionPanel').hidden"), true, 'collapsing the panel does not cancel authentication');
+    assert.equal(await evaluate("document.getElementById('garminAccordionSummary').textContent"), 'Conectando ao Garmin Connect…');
+    await evaluate("document.getElementById('garminAccordionTrigger').click()");
+    assert.equal(await evaluate("document.getElementById('garminAuthForm').getAttribute('aria-busy')"), 'true', 'reopening preserves the in-flight login state');
     await evaluate("document.getElementById('garminAuthForm').requestSubmit();document.getElementById('garminAuthForm').requestSubmit()");
     assert.equal(authStarts, 1, 'repeated Enter submission cannot dispatch a second login');
     await capture('/tmp/kinesis-garmin-auth-progress-pt-desktop.png', '#garminAuthProgress');
     releaseStart();
     await wait("!document.getElementById('garminMfaField').hidden && document.getElementById('garminConnectionStatus').textContent.includes('código de verificação')");
     assert.equal(await evaluate("document.getElementById('garminAuthProgress').hidden"), true);
+    await evaluate("document.getElementById('garminAccordionTrigger').click()");
+    assert.equal(await evaluate("document.getElementById('garminAccordionPanel').hidden"), true, 'the MFA challenge remains active while collapsed');
+    assert.equal(await evaluate("document.getElementById('garminAccordionSummary').textContent"), 'Aguardando verificação');
+    await evaluate("document.getElementById('garminAccordionTrigger').click()");
+    assert.equal(await evaluate("document.getElementById('garminMfaField').hidden"), false, 'reopening retains the same MFA challenge');
     await evaluate("document.getElementById('garminMfaCode').value='123456';document.getElementById('garminAuthForm').requestSubmit()");
     await finishSignal;
     assert.deepEqual(await evaluate("({progress:document.getElementById('garminAuthProgress').innerText,disabled:document.getElementById('garminMfaCode').disabled,busy:document.getElementById('garminAuthForm').getAttribute('aria-busy')})"),
@@ -168,6 +203,7 @@ test('Garmin login progress and disconnect confirmation work in PT/EN Chrome', {
     await capture('/tmp/kinesis-garmin-mfa-progress-pt-desktop.png', '#garminAuthProgress');
     releaseFinish();
     await wait("document.getElementById('garminConnectionStatus').textContent.includes('Conectado ao Garmin Connect') && document.getElementById('garminAuthForm').hidden");
+    assert.equal(await evaluate("document.getElementById('garminAccordionSummary').textContent"), 'Conectado · Sem estrutura salva', 'a connected account is distinguished from a saved workout');
     assert.equal(await evaluate("[localStorage,sessionStorage].some(store=>Object.values(store).some(value=>String(value).includes('transient-only')))"), false, 'credentials are absent from browser storage');
     await wait("!document.getElementById('garminDisconnectButton').disabled");
 

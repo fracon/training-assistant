@@ -18,6 +18,71 @@ body {
 
 .feedback-card { container: session-feedback / inline-size; }
 
+.session-accordion-heading {
+  min-width: 0;
+  margin: 0;
+}
+
+.session-accordion-trigger {
+  width: 100%;
+  min-height: 3.5rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(1rem, auto);
+  grid-template-areas: "title summary chevron";
+  align-items: center;
+  gap: .5rem 1rem;
+  padding: .25rem;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.session-accordion-trigger:hover { background: var(--bg); }
+.session-accordion-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.session-accordion-title { grid-area: title; min-width: 0; }
+.session-accordion-summary {
+  grid-area: summary;
+  min-width: 0;
+  color: var(--muted);
+  font-size: .875rem;
+  font-weight: 400;
+  line-height: 1.45;
+  text-align: end;
+  overflow-wrap: anywhere;
+}
+.session-accordion-chevron {
+  grid-area: chevron;
+  width: 1.125rem;
+  height: 1.125rem;
+  color: var(--muted);
+  transition: transform .16s ease;
+}
+.session-accordion-trigger[aria-expanded="true"] .session-accordion-chevron { transform: rotate(180deg); }
+.session-accordion-panel[hidden] { display: none; }
+.session-accordion-panel { min-width: 0; }
+.garmin-accordion-panel,
+.feedback-accordion-panel { display: grid; gap: 1rem; }
+.feedback-accordion-panel { display: block; }
+.feedback-accordion-panel > .form-actions { margin-top: 1.5rem; }
+
+@media (max-width: 540px) {
+  .session-accordion-trigger {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "title chevron" "summary chevron";
+    align-items: center;
+    gap: .25rem .75rem;
+  }
+  .session-accordion-summary { text-align: start; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-accordion-chevron { transition: none; }
+}
+
 .session-header h1 {
   margin: 0;
   font-size: 1.6rem;
@@ -118,6 +183,7 @@ body {
   color: var(--muted);
   min-height: 1.2em;
 }
+.status:focus { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 2px; }
 
 .status[data-tone='error'] {
   color: var(--danger);
@@ -676,7 +742,7 @@ select.input-control {
   .form-actions.has-admin-prompt { flex-direction: column; align-items: flex-start; gap: 16px; }
 }
 
-@container session-feedback (max-width: 620px) {
+@container session-feedback (max-width: 560px) {
   .form-actions { flex-direction: column; align-items: stretch; gap: 16px; }
   .form-actions-save { width: 100%; }
   .form-actions-save button { width: 100%; }

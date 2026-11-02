@@ -370,6 +370,35 @@ export async function handleTrainingDelete({
 
 async function initTrainingResult() {
   const statusEl = document.getElementById('status');
+  const feedbackAccordionTrigger = document.getElementById('feedbackAccordionTrigger');
+  const feedbackAccordionPanel = document.getElementById('feedbackAccordionPanel');
+  const garminAccordionTrigger = document.getElementById('garminAccordionTrigger');
+  const garminAccordionPanel = document.getElementById('garminAccordionPanel');
+  const setAccordionOpen = (trigger, panel, open) => {
+    const expanded = Boolean(open);
+    if (trigger.getAttribute('aria-expanded') === String(expanded)) return;
+    if (!expanded && panel.contains(document.activeElement)) trigger.focus({ preventScroll: true });
+    trigger.setAttribute('aria-expanded', String(expanded));
+    panel.hidden = !expanded;
+  };
+  const focusInAccordion = (trigger, panel, target) => {
+    setAccordionOpen(trigger, panel, true);
+    requestAnimationFrame(() => {
+      if (trigger.getAttribute('aria-expanded') !== 'true' || panel.hidden || !target?.isConnected) return;
+      target.focus({ preventScroll: true });
+      target.scrollIntoView?.({ block: 'center', behavior: 'auto' });
+    });
+  };
+  const wireAccordion = (trigger, panel) => {
+    trigger.addEventListener('click', () => setAccordionOpen(trigger, panel, trigger.getAttribute('aria-expanded') !== 'true'));
+  };
+  wireAccordion(feedbackAccordionTrigger, feedbackAccordionPanel);
+  wireAccordion(garminAccordionTrigger, garminAccordionPanel);
+  window.addEventListener('pageshow', (event) => {
+    if (!event.persisted) return;
+    setAccordionOpen(garminAccordionTrigger, garminAccordionPanel, false);
+    setAccordionOpen(feedbackAccordionTrigger, feedbackAccordionPanel, false);
+  });
   const dateEl = document.getElementById('sessionDate');
   const saveBtn = document.getElementById('saveBtn');
   const rpeSelector = document.getElementById('feedbackRpe');
@@ -394,7 +423,7 @@ async function initTrainingResult() {
   const generateBtn = document.getElementById('generateBtn');
   const generateLabel = generateBtn.querySelector('span');
   const analysisSection = document.getElementById('analysisSection');
-  const formActions = document.querySelector('.feedback-card > .form-actions');
+  const formActions = document.querySelector('#feedbackAccordionPanel > .form-actions');
   const analysisLoadWarning = document.getElementById('analysisLoadWarning');
   const analysisLoadMessage = document.getElementById('analysisLoadMessage');
   const analysisLoadAgain = document.getElementById('analysisLoadAgain');
@@ -456,7 +485,41 @@ async function initTrainingResult() {
   let correctionMutationPending = false;
   let manualDistanceInputUnit = 'km';
   let rpeErrorKey = null;
+  let feedbackBaselineSignature = null;
+  let feedbackPersistenceSnapshot = null;
+  let feedbackProgressKey = null;
   const t = (key, params) => translate(i18n ? i18n.messages : {}, key, params);
+  const feedbackSignature = ({ omitFile = false } = {}) => JSON.stringify([...feedbackAccordionPanel.querySelectorAll('input, select, textarea')]
+    .map((field) => [
+    field.id, field.type === 'file' ? '' : field.type === 'radio' || field.type === 'checkbox' ? field.checked : field.value,
+    field.type === 'file' && !omitFile && field.files?.length
+      ? [...field.files].map((file) => [file.name, file.size, file.lastModified]) : null,
+    ]));
+  const refreshFeedbackAccordionSummary = () => {
+    const dirty = feedbackBaselineSignature !== null && feedbackSignature() !== feedbackBaselineSignature;
+    let key = 'resultNotRecorded';
+    if (feedbackProgressKey) key = feedbackProgressKey;
+    else if (analysisStartPending || activeAnalysisId) key = 'analysisInProgress';
+    else if (analysisOutcomeUncertain) key = 'analysisAwaitingConfirmation';
+    else if (analysisNotice.dataset.key && !analysisNotice.hidden) key = 'analysisNeedsAttention';
+    else if (dirty) key = 'unsavedChanges';
+    else {
+      const hasRpe = isAnsweredFeedbackRpe(training?.feedback_rpe);
+      if (training?.result_data_source === 'fit_upload') key = hasRpe ? 'fitFeedbackSaved' : 'fitFeedbackPending';
+      else if (training?.result_data_source === 'manual') key = hasRpe ? 'manualFeedbackSaved' : 'manualFeedbackPending';
+      else if (hasRpe) key = 'feedbackSavedResultPending';
+    }
+    const summary = document.getElementById('feedbackAccordionSummary');
+    const text = t(`session.accordion.${key}`);
+    if (summary.textContent !== text) summary.textContent = text;
+  };
+  feedbackAccordionPanel.addEventListener('input', refreshFeedbackAccordionSummary);
+  feedbackAccordionPanel.addEventListener('change', refreshFeedbackAccordionSummary);
+  document.addEventListener('app:languagechange', refreshFeedbackAccordionSummary);
+  const setFeedbackProgress = (key) => {
+    feedbackProgressKey = key || null;
+    refreshFeedbackAccordionSummary();
+  };
   const analysisLabels = () => ({
     summary: t('session.analysis.summary'), comparison: t('session.analysis.comparison'),
     contextualReading: t('session.analysis.contextualReading'), attention: t('session.analysis.attention'),
@@ -575,6 +638,7 @@ async function initTrainingResult() {
     }
     analysisReadAgain.hidden = !(analysisNotice.dataset.retry === 'true');
     analysisReadAgain.textContent = analysisKey('readAgain');
+    refreshFeedbackAccordionSummary();
   };
   const setAnalysisNotice = (key, retry = false) => {
     analysisNotice.hidden = !key;
@@ -819,6 +883,7 @@ async function initTrainingResult() {
     statusEl.textContent = message;
     statusEl.dataset.tone = tone;
   };
+  const revealFeedbackError = () => focusInAccordion(feedbackAccordionTrigger, feedbackAccordionPanel, statusEl);
 
   const currentFeedbackRpe = () =>
     normalizeFeedbackRpe(rpeSelector.querySelector('input[type="radio"]:checked')?.value ?? '');
@@ -837,7 +902,7 @@ async function initTrainingResult() {
     rpeSelector.setAttribute('aria-invalid', 'true');
     rpeSelector.setAttribute('aria-describedby', 'feedbackRpeError');
     setStatus(t(rpeErrorKey), 'error');
-    rpeSelector.querySelector('input[type="radio"]')?.focus();
+    focusInAccordion(feedbackAccordionTrigger, feedbackAccordionPanel, rpeSelector.querySelector('input[type="radio"]'));
     return null;
   };
 
@@ -1142,6 +1207,8 @@ async function initTrainingResult() {
       saveBtn.disabled = true;
       generateBtn.disabled = true;
       promptLabel.textContent = analysisKey('saving');
+      setFeedbackProgress('savingChanges');
+      feedbackPersistenceSnapshot = feedbackSignature();
       try {
         const saved = await persistCurrentState(rpe);
         if (saved.status !== 'saved') {
@@ -1154,6 +1221,7 @@ async function initTrainingResult() {
         promptClose.focus();
         promptModal.setPrompt('');
         externalPromptStatusKey = 'loadingPrompt';
+        setFeedbackProgress('analysisInProgress');
         promptModal.setStatus(t(`session.analysis.${externalPromptStatusKey}`));
         const result = await previewAnalysisPrompt(currentTrainingId);
         externalPromptText = result.prompt;
@@ -1161,7 +1229,7 @@ async function initTrainingResult() {
         externalPromptStatusKey = '';
         promptModal.setStatus('');
       } catch {
-        if (externalPromptDialog.hidden) setStatus(t('session.analysis.promptUnavailable'), 'error');
+        if (externalPromptDialog.hidden) { setStatus(t('session.analysis.promptUnavailable'), 'error'); revealFeedbackError(); }
         else {
           externalPromptStatusKey = 'promptUnavailable';
           promptModal.setStatus(t(`session.analysis.${externalPromptStatusKey}`));
@@ -1172,6 +1240,9 @@ async function initTrainingResult() {
         saveBtn.disabled = false;
         renderAnalysis();
         promptLabel.textContent = analysisKey('externalPrompt');
+        feedbackPersistenceSnapshot = null;
+        setFeedbackProgress(null);
+        refreshFeedbackAccordionSummary();
       }
     });
     promptCopy.addEventListener('click', async () => {
@@ -1318,13 +1389,40 @@ async function initTrainingResult() {
   let garminWarmupDraftEnabled = false;
   let garminCooldownDraftEnabled = false;
   let garminOptionalDraft = { warmup: null, cooldown: null };
+  const refreshGarminAccordionSummary = () => {
+    const operation = garminCurrentOperation;
+    let key = 'garminLoading';
+    if (operation?.status === 'scheduled') key = 'garminSentScheduled';
+    else if (operation?.status === 'outcome_unknown') key = 'garminAwaitingConfirmation';
+    else if (['publishing', 'workout_created', 'scheduling'].includes(operation?.status)) key = 'garminSending';
+    else if (operation?.status === 'reauth_required') key = 'garminReauthenticationRequired';
+    else if (operation?.status === 'failed') key = 'garminOperationNeedsAttention';
+    else if (operation?.status === 'outdated') key = 'garminStructureOutdated';
+    else if (['publishing', 'updating', 'rescheduling', 'verifyingResult'].includes(garminOperationMessageKey)) {
+      key = garminOperationMessageKey === 'verifyingResult' ? 'garminAwaitingConfirmation' : 'garminSending';
+    }
+    else if (garminAuthProgress && !garminAuthProgress.hidden) {
+      const phase = garminAuthProgress.querySelector('span:last-child').textContent;
+      key = garminChallenge || /MFA|verification|código|code/i.test(phase) ? 'garminMfaInProgress' : 'garminConnecting';
+    } else if (garminConnectionMessage === 'mfaRequired') key = 'garminMfaInProgress';
+    else if (garminStatusUnavailable || ['connectionRefreshFailed', 'connectError', 'authUnavailable'].includes(garminConnectionMessage)) key = 'garminConnectionUnavailable';
+    else if (garminConnectionMessage === 'connectionReauthRequired') key = 'garminReauthenticationRequired';
+    else if (['authFailed', 'authRateLimited', 'disconnectFailed'].includes(garminConnectionMessage)) key = 'garminAuthenticationNeedsAttention';
+    else if (garminConnectionKnown && garminConnected) key = garminFingerprint || garminSavedRevision !== null ? 'garminConnectedSaved' : 'garminConnectedEmpty';
+    else if (garminConnectionKnown && garminConnectionMessage === 'disconnected') key = 'garminDisconnected';
+    const text = t(`session.accordion.${key}`);
+    if (garminAccordionSummary.textContent !== text) garminAccordionSummary.textContent = text;
+  };
+  document.addEventListener('app:languagechange', refreshGarminAccordionSummary);
   const setGarminOperationMessage = (key) => {
     garminOperationMessageKey = key;
     garminOperationStatus.textContent = garminText(key);
+    refreshGarminAccordionSummary();
   };
   const setGarminConnectionMessage = (key) => {
     garminConnectionMessage = key;
     garminStatus.textContent = garminText(key);
+    refreshGarminAccordionSummary();
   };
   const garminOperationNeedsResolution = (operation = garminCurrentOperation) => Boolean(operation
     && ['publishing', 'workout_created', 'scheduling', 'outcome_unknown', 'reauth_required', 'failed'].includes(operation.status));
@@ -2257,6 +2355,7 @@ async function initTrainingResult() {
     garminDisconnectButton.disabled = busy || garminOperationNeedsResolution();
     garminAuthProgress.hidden = !busy;
     garminAuthProgress.querySelector('span:last-child').textContent = busy ? garminText(phase) : '';
+    refreshGarminAccordionSummary();
   };
   const setGarminDisconnected = (generation) => {
     garminStatusRead += 1;
@@ -2322,6 +2421,7 @@ async function initTrainingResult() {
     if (garminChallenge) await garminFetch('/api/garmin/auth/cancel', { method: 'POST', body: JSON.stringify({ challenge_id: garminChallenge }) }).catch(() => {});
     garminChallenge = null; garminMfaCode.value = ''; garminMfaField.hidden = true; garminCancel.hidden = true;
     garminAuthForm.dataset.open = ''; garminAuthForm.hidden = true; garminEmail.required = true; garminPassword.required = true; garminConnectButton.hidden = false;
+    setGarminConnectionMessage(garminConnected ? 'connected' : 'disconnected');
   });
   garminDisconnectButton.addEventListener('click', async () => {
     if (garminConnectionActionBusy || garminPending || garminOperationNeedsResolution()) return;
@@ -2663,9 +2763,13 @@ async function initTrainingResult() {
   syncResultSourceVisibility();
   renderManualDistanceUnit();
   syncPainVisibility();
+  const hydratedFeedbackSignature = feedbackSignature();
+  feedbackBaselineSignature = hydratedFeedbackSignature;
   await autoFillWeatherField();
+  if (feedbackSignature() === hydratedFeedbackSignature) feedbackBaselineSignature = feedbackSignature();
   setStatus('');
   renderLocalizedUi();
+  refreshFeedbackAccordionSummary();
 
   const collectFormState = () => {
     const hrValue = hrSourceSelect.value;
@@ -2730,6 +2834,8 @@ async function initTrainingResult() {
     fitData = { ...canonical, laps };
     resultSourceSelect.value = canonical.result_data_source === 'manual' ? 'manual' : 'fit';
     renderFitData();
+    feedbackBaselineSignature = feedbackPersistenceSnapshot || feedbackSignature();
+    refreshFeedbackAccordionSummary();
   };
   const feedbackPayload = (state) => {
     const {
@@ -2767,6 +2873,7 @@ async function initTrainingResult() {
     if (result.status === 'error') {
       setStatus(result.stage === 'feedback' ? t('session.errors.save') : result.error?.message || t('session.errors.manualSave'), 'error');
     }
+    if (result.status === 'invalid' || result.status === 'error') revealFeedbackError();
   };
 
   saveBtn.addEventListener('click', async () => {
@@ -2777,6 +2884,8 @@ async function initTrainingResult() {
     saveBtn.disabled = true;
     generateBtn.disabled = true;
     saveBtn.textContent = t('session.saving');
+    setFeedbackProgress('savingChanges');
+    feedbackPersistenceSnapshot = feedbackSignature();
     try {
       const result = await persistCurrentState(rpe);
       if (result.status === 'invalid' || result.status === 'cancelled' || result.status === 'error') {
@@ -2790,6 +2899,9 @@ async function initTrainingResult() {
       saveBtn.disabled = false;
       generateBtn.disabled = false;
       saveBtn.textContent = t('session.save');
+      feedbackPersistenceSnapshot = null;
+      setFeedbackProgress(null);
+      refreshFeedbackAccordionSummary();
     }
   });
 
@@ -2801,6 +2913,8 @@ async function initTrainingResult() {
     generateBtn.disabled = true;
     saveBtn.disabled = true;
     generateLabel.textContent = analysisKey('saving');
+    setFeedbackProgress('savingChanges');
+    feedbackPersistenceSnapshot = feedbackSignature();
     setAnalysisNotice('', false);
     try {
       const result = await persistCurrentState(rpe);
@@ -2862,6 +2976,9 @@ async function initTrainingResult() {
       generateBtn.disabled = Boolean(activeAnalysisId || analysisOutcomeUncertain);
       saveBtn.disabled = false;
       generateLabel.textContent = analysisKey('analyze');
+      feedbackPersistenceSnapshot = null;
+      setFeedbackProgress(null);
+      refreshFeedbackAccordionSummary();
     }
   });
 
@@ -2880,6 +2997,7 @@ async function initTrainingResult() {
     const file = fitFileInput.files[0];
     if (!/\.(fit|zip)$/i.test(file.name)) {
       setStatus(t('session.fitUnsupported'), 'error');
+      revealFeedbackError();
       fitFileInput.value = '';
       renderFitDropzoneState();
       return;
@@ -2908,6 +3026,8 @@ async function initTrainingResult() {
     formData.append('file', file);
     formData.append('feedback_rpe', String(rpe));
     if (training.result_data_source === 'manual') formData.append('confirm_replace_manual', 'true');
+    setFeedbackProgress('importingResult');
+    feedbackPersistenceSnapshot = feedbackSignature({ omitFile: true });
     try {
       const response = await fetch(`/api/trainings/${currentTrainingId}/fit`, {
         method: 'POST',
@@ -2930,9 +3050,17 @@ async function initTrainingResult() {
         laps: result.laps || [],
       };
       training = { ...training, ...fitData, feedback_rpe: rpe };
+      fitFileInput.value = '';
       renderFitData();
+      feedbackBaselineSignature = feedbackPersistenceSnapshot || feedbackSignature();
+      refreshFeedbackAccordionSummary();
     } catch (error) {
       setStatus(error.message || t('session.errors.fitUpload'), 'error');
+      revealFeedbackError();
+    } finally {
+      feedbackPersistenceSnapshot = null;
+      setFeedbackProgress(null);
+      refreshFeedbackAccordionSummary();
     }
   });
 

@@ -1340,7 +1340,7 @@ test('training-result.js wires explicit persisted analysis, protected prompt pre
   assert.match(js, /externalPromptButton\.addEventListener\('click', async \(\) => \{[\s\S]*?const rpe = requireFeedbackRpe\(\);[\s\S]*?const saved = await persistCurrentState\(rpe\);[\s\S]*?previewAnalysisPrompt\(currentTrainingId\)/, 'the owner-admin prompt action persists the complete feedback before reading the prompt');
   assert.match(js, /externalPromptButton\.className = 'btn-secondary'/, 'the admin prompt uses the same shared secondary variant as the weekly prompt');
   assert.match(js, /promptIcon\.dataset\.lucide = 'sparkles'/, 'the session and weekly prompt actions share the sparkles icon reference');
-  assert.match(js, /const formActions = document\.querySelector\('\.feedback-card > \.form-actions'\)/, 'session actions share one layout group');
+  assert.match(js, /const formActions = document\.querySelector\('#feedbackAccordionPanel > \.form-actions'\)/, 'session actions share one layout group');
   assert.match(js, /formActions\.classList\.add\('has-admin-prompt'\)/, 'only the admin action layout opts into the wider three-button threshold');
   assert.match(js, /formActions\.insertBefore\(externalPromptButton, generateBtn\)/, 'the admin prompt is inserted between save and analysis in DOM and tab order');
   assert.match(js, /analysisSection\.hidden = !\([\s\S]*?analysisNotice\.dataset\.key\)/, 'only explicit analysis state, never stale notice text, reveals the section');
@@ -1469,6 +1469,39 @@ test('the RPE group is required, described, and never hides an invalid control',
   );
 });
 
+test('session result and Garmin sections use independent, initially closed APG accordions', () => {
+  const markup = readFileSync(join(publicDir, 'training-result.html'), 'utf8');
+  for (const [id, panelId, titleId] of [
+    ['garminAccordionTrigger', 'garminAccordionPanel', 'garminTitle'],
+    ['feedbackAccordionTrigger', 'feedbackAccordionPanel', 'feedbackTitle'],
+  ]) {
+    const trigger = markup.match(new RegExp(`<button id="${id}"[\\s\\S]*?<\\/button>`))?.[0] ?? '';
+    const panel = markup.match(new RegExp(`<div id="${panelId}"[\\s\\S]*?<\\/div>`))?.[0] ?? '';
+    assert.match(trigger, /type="button"/);
+    assert.match(trigger, /aria-expanded="false"/);
+    assert.match(trigger, new RegExp(`aria-controls="${panelId}"`));
+    assert.match(trigger, /session-accordion-title/);
+    assert.match(trigger, /session-accordion-summary/);
+    assert.match(panel, /role="region"/);
+    assert.match(panel, new RegExp(`aria-labelledby="${titleId}"`));
+    assert.match(panel, / hidden(?:[ >])/);
+  }
+  assert.match(markup, /data-i18n="session\.resultFeedbackHeading">Result and feedback/);
+  assert.match(markup, /id="feedbackAccordionPanel"[\s\S]*?id="fitFile"[\s\S]*?id="feedbackNotas"[\s\S]*?id="saveBtn"/,
+    'FIT upload, manual result and feedback actions stay in one panel');
+  assert.match(markup, /id="garminAccordionPanel"[\s\S]*?id="garminAuthForm"[\s\S]*?id="garminPrescriptionPanel"/,
+    'connection, MFA, prescription and operation controls stay in one panel');
+
+  const css = readFileSync(join(publicDir, 'training-result.css'), 'utf8');
+  assert.match(css, /\.session-accordion-trigger:focus-visible\s*\{[^}]*outline: 2px solid var\(--accent\)/);
+  assert.match(css, /\.session-accordion-panel\[hidden\]\s*\{\s*display: none;\s*\}/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)\s*\{\s*\.session-accordion-chevron\s*\{\s*transition: none;/);
+  assert.match(css, /@media \(max-width: 540px\)\s*\{\s*\.session-accordion-trigger/);
+
+  assert.deepEqual(Object.keys(en.session.accordion).sort(), Object.keys(pt.session.accordion).sort(),
+    'accordion summaries have matching PT and EN states');
+});
+
 test('training-result.js refuses the terminal actions without an answered RPE', () => {
   const js = readFileSync(join(publicDir, 'training-result.js'), 'utf8') + readFileSync(join(publicDir, 'shared/analysis-prompts.js'), 'utf8');
   const guard = js.match(/const requireFeedbackRpe = \(\) => \{[\s\S]*?\n  \};/)?.[0] ?? '';
@@ -1477,7 +1510,9 @@ test('training-result.js refuses the terminal actions without an answered RPE', 
   assert.match(guard, /rpeError\.hidden = false;/);
   assert.match(guard, /rpeSelector\.setAttribute\('aria-invalid', 'true'\);/);
   assert.match(guard, /rpeSelector\.setAttribute\('aria-describedby', 'feedbackRpeError'\);/);
-  assert.match(guard, /rpeSelector\.querySelector\('input\[type="radio"\]'\)\?\.focus\(\);/);
+  assert.match(guard, /focusInAccordion\(feedbackAccordionTrigger, feedbackAccordionPanel, rpeSelector\.querySelector\('input\[type="radio"\]'\)\);/);
+  assert.match(js, /const focusInAccordion = \(trigger, panel, target\) => \{[\s\S]*?setAccordionOpen\(trigger, panel, true\);[\s\S]*?requestAnimationFrame\(\(\) => \{[\s\S]*?target\.focus\(\{ preventScroll: true \}\);/,
+    'a validation target receives focus only after the hidden panel has opened');
   assert.ok(
     !/location\.href|fetch\(|saveManualTrainingResults\(|saveTrainingFeedback\(/.test(guard),
     'the guard itself performs no request and no navigation'
@@ -1563,7 +1598,33 @@ test('session locale namespace stays in parity across en-US and pt-BR', () => {
     'fieldRpe',
     'fieldTenis',
     'fieldLocation',
-    'feedbackHeading',
+    'resultFeedbackHeading',
+    'accordion.resultNotRecorded',
+    'accordion.feedbackSavedResultPending',
+    'accordion.fitFeedbackPending',
+    'accordion.fitFeedbackSaved',
+    'accordion.manualFeedbackPending',
+    'accordion.manualFeedbackSaved',
+    'accordion.unsavedChanges',
+    'accordion.savingChanges',
+    'accordion.importingResult',
+    'accordion.analysisInProgress',
+    'accordion.analysisAwaitingConfirmation',
+    'accordion.analysisNeedsAttention',
+    'accordion.garminLoading',
+    'accordion.garminDisconnected',
+    'accordion.garminConnectedEmpty',
+    'accordion.garminConnectedSaved',
+    'accordion.garminConnecting',
+    'accordion.garminMfaInProgress',
+    'accordion.garminSending',
+    'accordion.garminSentScheduled',
+    'accordion.garminAwaitingConfirmation',
+    'accordion.garminConnectionUnavailable',
+    'accordion.garminReauthenticationRequired',
+    'accordion.garminAuthenticationNeedsAttention',
+    'accordion.garminOperationNeedsAttention',
+    'accordion.garminStructureOutdated',
     'realizedRpeLabel',
     'rpeLabel1',
     'rpeLabel2',
@@ -1864,7 +1925,7 @@ test('training-result.css keeps the earthy premium aesthetic for the session vie
   assert.doesNotMatch(css, /\.form-actions \.btn-(?:primary|secondary)\s*\{/, 'the result page does not override shared button geometry');
   assert.doesNotMatch(css, /(?:^|\n)\.btn-(?:primary|secondary)\s*\{/, 'the result page does not define a second button treatment');
   assert.match(css, /\.form-actions button svg \{[^}]*width:\s*16px[\s\S]*height:\s*16px/, 'primary and secondary action icons share the established size');
-  assert.match(css, /@container session-feedback \(max-width:\s*620px\)/, 'the action group stacks according to the available card width');
+  assert.match(css, /@container session-feedback \(max-width:\s*560px\)/, 'the action group stacks according to the available card width');
   assert.match(css, /@container session-feedback \(max-width:\s*696px\)[\s\S]*?\.form-actions\.has-admin-prompt \{[^}]*flex-direction:\s*column[^}]*align-items:\s*flex-start/, 'admin actions stack together without stretching their intrinsic button widths until all labels fit');
   assert.match(css, /\.analysis-load-warning\[hidden\] \{[^}]*display:\s*none/, 'history errors stay outside the analysis content and hidden after success');
   assert.match(css, /\.form-actions button \{\s*white-space:\s*nowrap/);

@@ -127,7 +127,16 @@ test('Garmin editor and send states preserve drafts and block conflicting action
     await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
     await command('Page.navigate', { url: `${baseUrl}/training-result.html?id=1` });
     const wait = async (expression) => { for (let i = 0; i < 150; i += 1) { if (await evaluate(expression).catch(() => false)) return; await delay(100); } const diagnostic = await evaluate("JSON.stringify({title:document.getElementById('garminTitle')?.textContent,card:document.getElementById('garminSessionCard')?.hidden,panel:document.getElementById('garminPrescriptionPanel')?.hidden,editor:document.getElementById('garminEditorView')?.hidden,active:document.activeElement?.id,date:document.getElementById('sessionDate')?.textContent,blocks:[...document.querySelectorAll('#garminWorkoutEditor [data-end-value]')].map(el=>[el.dataset.endValue,el.value]),invalid:[...document.querySelectorAll('[aria-invalid=true]')].map(el=>[el.outerHTML.slice(0,250),el.value]),operation:document.getElementById('garminOperationStatus')?.textContent,preview:document.getElementById('garminPreview')?.hidden,errors:[...document.querySelectorAll('[role=alert]')].map(el=>el.textContent)})").catch(()=>'none'); throw new Error(`Timed out waiting for ${expression}; ${diagnostic}; responses=${prescriptionResponses}`); };
+    const openGarminAccordion = async () => {
+      if (await evaluate("document.getElementById('garminAccordionPanel').hidden")) {
+        await evaluate("document.getElementById('garminAccordionTrigger').click()");
+      }
+      await wait("document.getElementById('garminAccordionPanel').hidden===false");
+    };
     await wait("document.getElementById('sessionDate')?.textContent.trim() !== '-' && !document.getElementById('garminSessionCard').hidden && document.querySelector('#garminRunBlocks .garmin-editor-block')");
+    assert.equal(await evaluate("document.getElementById('garminAccordionPanel').hidden"), true, 'the Garmin panel starts collapsed on a fresh session entry');
+    await evaluate("document.getElementById('garminAccordionTrigger').click()");
+    await wait("document.getElementById('garminAccordionPanel').hidden===false");
     assert.equal(await evaluate("[...document.querySelectorAll('#garminWorkoutEditor button[data-editor-action],#garminAddRunBlock,#garminAddRecoveryBlock,#garminAddRepeatBlock')].every(button=>button.type==='button')"), true, 'editor controls cannot submit the form');
     assert.equal(await evaluate("document.querySelector('[data-end-type=\\\"step-run-1\\\"]')?.value"), 'time');
     assert.equal(await evaluate("document.querySelector('#garminRunBlocks [data-editor-action=remove]').disabled"), true, 'the editor keeps one run block');
@@ -252,12 +261,14 @@ test('Garmin editor and send states preserve drafts and block conflicting action
     db.prepare("UPDATE users SET distance_unit='mi' WHERE id=?").run(owner.id);
     await command('Page.reload');
     await wait("!document.getElementById('garminPreview').hidden && document.getElementById('garminPreviewSteps').textContent.includes('9:39 min/mi')");
+    await openGarminAccordion();
     assert.match(await evaluate("document.getElementById('garminPreviewSteps').textContent"), /8:51 min\/mi–9:39 min\/mi/);
     assert.match(await evaluate("document.getElementById('garminPreviewSteps').textContent"), /0\.93 mi/);
     await captureReview(`/tmp/kinesis-garmin-review-${reviewLang}-desktop-miles.png`);
     db.prepare("UPDATE users SET distance_unit='km' WHERE id=?").run(owner.id);
     await command('Page.reload');
     await wait("!document.getElementById('garminPreview').hidden && document.getElementById('garminPreviewSteps').textContent.includes('6:00 min/km')");
+    await openGarminAccordion();
     await evaluate("document.getElementById('garminEditStructure').click()");
     await wait("document.activeElement.id==='garminWorkoutName'");
     assert.equal(await evaluate("document.getElementById('garminEditorView').hidden"), false, 'edit reveals the saved structure');
@@ -322,6 +333,7 @@ test('Garmin editor and send states preserve drafts and block conflicting action
     assert.deepEqual(await evaluate("[...document.querySelectorAll('#garminRunBlocks .garmin-editor-block')].map((block)=>block.dataset.blockId)"), persistedRunIds);
     await command('Page.reload');
     await wait("document.querySelectorAll('#garminRunBlocks .garmin-editor-block').length===" + persistedRunIds.length + " && document.querySelector('#garminRunBlocks .garmin-editor-block')?.dataset.blockId===" + JSON.stringify(persistedRunIds[0]));
+    await openGarminAccordion();
     assert.equal(await evaluate("document.getElementById('garminPreview').hidden"), false, 'reload restores the canonical review with the saved prescription');
     assert.equal(await evaluate("document.getElementById('garminEditorView').hidden"), true, 'reload opens the review view instead of duplicating the editor above it');
     assert.deepEqual(await evaluate("[...document.querySelectorAll('#garminRunBlocks .garmin-editor-block')].map((block)=>block.dataset.blockId)"), persistedRunIds, 'saved blocks hydrate in order after reload');
@@ -373,6 +385,7 @@ test('Garmin editor and send states preserve drafts and block conflicting action
     pauseSchedule = true;
     await evaluate("(()=>{const original=window.fetch.bind(window);window.fetch=async(input,init={})=>{const response=await original(input,init);if(String(input).includes('/garmin/publish')&&init.method==='POST'){window.fetch=original;throw new TypeError('synthetic lost response after accepted dispatch')}return response}})()");
     await evaluate("document.getElementById('garminPublishButton').click()");
+    await evaluate("document.getElementById('garminAccordionTrigger').click()");
     await Promise.race([scheduleEntered, delay(10000).then(() => { throw new Error('synthetic schedule request was not reached'); })]);
     await wait("/scheduling|agendando/i.test(document.getElementById('garminOperationStatus').textContent)");
     const pendingOperation = db.prepare('SELECT operation_id,status,stage,workout_id,occurrence_id FROM garmin_training_operations WHERE training_id=1 ORDER BY rowid DESC LIMIT 1').get();
@@ -380,6 +393,8 @@ test('Garmin editor and send states preserve drafts and block conflicting action
     assert.equal(pendingOperation.stage, 'schedule');
     assert.equal(pendingOperation.workout_id, '8101', 'the remote workout creation is persisted before scheduling');
     assert.match(await evaluate("document.getElementById('garminOperationStatus').textContent"), /Workout created.*Scheduling|Treino criado.*Agendando/i, 'the lost POST response is recovered from the durable operation stage');
+    assert.equal(await evaluate("document.getElementById('garminAccordionPanel').hidden"), true, 'the product summary remains visible while the Garmin panel is collapsed');
+    assert.equal(await evaluate("document.getElementById('garminAccordionSummary').textContent"), 'Sending workout…', 'the collapsed summary reports the in-progress remote operation');
     assert.equal(await evaluate("document.getElementById('garminEditStructure').disabled"), true, 'editing is disabled while the remote operation is active');
     assert.equal(await evaluate("document.getElementById('garminPublishButton').disabled"), true, 'a second send cannot start while the operation is active');
     assert.equal(await evaluate("document.getElementById('garminActionHelp').hidden"), true, 'one operation status replaces generic helper copy while sending');
@@ -394,9 +409,11 @@ test('Garmin editor and send states preserve drafts and block conflicting action
     releaseSchedule();
     pauseSchedule = false;
     await wait("/confirmed in Garmin Connect|confirmado no Garmin Connect/i.test(document.getElementById('garminOperationStatus').textContent)");
+    assert.equal(await evaluate("document.getElementById('garminAccordionSummary').textContent"), 'Sent and scheduled', 'the collapsed summary reflects the confirmed operation');
     const completedOperation = db.prepare('SELECT status,stage,workout_id,occurrence_id FROM garmin_training_operations WHERE operation_id=?').get(pendingOperation.operation_id);
     assert.deepEqual(completedOperation, { status: 'scheduled', stage: 'complete', workout_id: '8101', occurrence_id: '9101' });
     assert.equal(await evaluate("document.getElementById('garminEditStructure').disabled"), false, 'editing becomes available after the operation reaches a confirmed terminal state');
+    await evaluate("document.getElementById('garminAccordionTrigger').click()");
     await evaluate("document.getElementById('garminEditStructure').click()");
     await evaluate("document.getElementById('garminSessionCard').scrollIntoView({block:'start'})");
     assert.equal(await evaluate("document.documentElement.lang"), 'en-US');
@@ -466,6 +483,7 @@ test('Garmin editor and send states preserve drafts and block conflicting action
       .run(JSON.stringify(legacyWithoutRecovery), prescriptionFingerprint(legacyWithoutRecovery));
     await command('Page.reload');
     await wait("document.querySelector('[data-editor-action=convert-repeat]') && document.querySelector('[data-end-value=\\\"step-legacy-repeat-recovery\\\"]')");
+    await openGarminAccordion();
     assert.equal(await evaluate("document.querySelector('[data-end-value=\\\"step-legacy-repeat-recovery\\\"]').value"), '', 'legacy recovery is never invented');
     assert.ok(await evaluate("document.querySelector('.garmin-editor-warning')?.textContent.includes('Convert') || document.querySelector('.garmin-editor-warning')?.textContent.includes('converta')"));
     await evaluate("document.querySelector('[data-editor-action=convert-repeat]').click()");
@@ -482,17 +500,20 @@ test('Garmin editor and send states preserve drafts and block conflicting action
       .run(owner.id, 1, currentPrescription.revision - 1, currentPrescription.fingerprint, 3, 'scheduled');
     await command('Page.reload');
     await wait("!document.getElementById('garminUpdateButton').hidden");
+    await openGarminAccordion();
     assert.equal(await evaluate("document.getElementById('garminPublishButton').hidden"), true, 'an existing Kinesis operation cannot be replaced by a new publish');
     assert.match(await evaluate("document.getElementById('garminActionHelp').textContent"), /updates.*moves|atualiza.*move/i, 'combined update and date change explains both effects');
     db.prepare("UPDATE garmin_training_operations SET prescription_revision=?,status='scheduled',scheduled_date='2026-11-01' WHERE operation_id='review-state-operation'")
       .run(currentPrescription.revision);
     await command('Page.reload');
     await wait("!document.getElementById('garminRescheduleButton').hidden");
+    await openGarminAccordion();
     assert.equal(await evaluate("document.getElementById('garminUpdateButton').hidden"), true);
     assert.match(await evaluate("document.getElementById('garminActionHelp').textContent"), /moves only|move somente/i);
     db.prepare("UPDATE garmin_training_operations SET status='outcome_unknown',stage='unknown' WHERE operation_id='review-state-operation'").run();
     await command('Page.reload');
     await wait("!document.getElementById('garminReconcileButton').hidden");
+    await openGarminAccordion();
     assert.equal(await evaluate("document.getElementById('garminPublishButton').hidden"), true, 'an uncertain operation requires reconciliation instead of another mutation');
     assert.equal(await evaluate("document.getElementById('garminEditStructure').disabled"), true, 'an unresolved send also locks the saved structure after reload');
     assert.equal(await evaluate("document.getElementById('garminActionHelp').hidden"), true, 'the unresolved state is presented once, without contradictory helper copy');
@@ -502,16 +523,19 @@ test('Garmin editor and send states preserve drafts and block conflicting action
     db.prepare(`UPDATE garmin_training_operations SET status='failed',stage='schedule',error_code='unavailable',scheduled_date='2026-11-02',action='publish',workout_id='8101',occurrence_id=NULL WHERE operation_id='review-state-operation'`).run();
     await command('Page.reload');
     await wait("!document.getElementById('garminPreview').hidden && /created.*scheduling did not complete|criado.*agendamento não foi concluído/i.test(document.getElementById('garminOperationStatus').textContent)");
+    await openGarminAccordion();
     assert.equal(await evaluate("document.getElementById('garminEditStructure').disabled"), true);
     assert.equal(await evaluate("document.getElementById('garminActionHelp').hidden"), true);
     assert.doesNotMatch(await evaluate("document.getElementById('garminOperationStatus').textContent"), /could not be published|não foi possível publicar/i);
     db.prepare(`UPDATE garmin_training_operations SET error_code='rate_limited' WHERE operation_id='review-state-operation'`).run();
     await command('Page.reload');
     await wait("/temporarily rate limited|temporariamente limitado/i.test(document.getElementById('garminOperationStatus').textContent)");
+    await openGarminAccordion();
     assert.equal(await evaluate("document.getElementById('garminEditStructure').disabled"), true);
     db.prepare(`UPDATE garmin_training_operations SET status='outcome_unknown',error_code='outcome_unknown' WHERE operation_id='review-state-operation'`).run();
     await command('Page.reload');
     await wait("!document.getElementById('garminPreview').hidden && /created.*could not be confirmed|criado.*não foi possível confirmar/i.test(document.getElementById('garminOperationStatus').textContent)");
+    await openGarminAccordion();
     await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
     await evaluate("document.querySelector('.lang-switch [data-lang=\"pt-BR\"]').click()"); await wait("document.documentElement.lang==='pt-BR'");
     await captureReviewActions('/tmp/kinesis-garmin-schedule-uncertain-pt-mobile.png');
@@ -525,6 +549,7 @@ test('Garmin editor and send states preserve drafts and block conflicting action
     connectorUnavailable = true;
     await command('Page.reload');
     await wait("!document.getElementById('garminPreview').hidden && /could not be reached|não foi possível acessar/i.test(document.getElementById('garminConnectionStatus').textContent)");
+    await openGarminAccordion();
     assert.equal(await evaluate("document.getElementById('garminPreview').hidden"), false, 'connector failure leaves the local canonical review available');
     assert.equal(await evaluate("document.getElementById('garminPublishButton').disabled"), true, 'remote action stays disabled while disconnected');
     assert.equal(await evaluate("!document.getElementById('garminConnectionRetry').hidden"), true, 'a read-only connection retry is available');
@@ -552,6 +577,7 @@ test('Garmin editor and send states preserve drafts and block conflicting action
     garminSessionExpired = true;
     await command('Page.reload');
     await wait("/Sua sessão Garmin expirou/.test(document.getElementById('garminConnectionStatus').textContent)");
+    await openGarminAccordion();
     assert.equal(await evaluate("!document.getElementById('garminConnectButton').hidden"), true, 'a confirmed expired session offers reconnect');
     await command('Emulation.setDeviceMetricsOverride', { width: 640, height: 450, deviceScaleFactor: 1, mobile: false });
     assert.ok(await evaluate("document.documentElement.scrollWidth <= innerWidth"), 'review has no horizontal overflow in a low-height, narrow desktop viewport');
