@@ -415,12 +415,20 @@ async function initTrainingResult() {
   const fitField = document.getElementById('fitField');
   const garminActivityField = document.getElementById('garminActivityField');
   const garminActivitySearch = document.getElementById('garminActivitySearch');
+  const garminActivityRefresh = document.getElementById('garminActivityRefresh');
   const garminActivityMore = document.getElementById('garminActivityMore');
   const garminActivityStatus = document.getElementById('garminActivityStatus');
   const garminActivityCandidates = document.getElementById('garminActivityCandidates');
   const garminActivityPreview = document.getElementById('garminActivityPreview');
+  const garminActivityPreviewHeading = document.getElementById('garminActivityPreviewHeading');
+  const garminActivityPreviewName = document.getElementById('garminActivityPreviewName');
+  const garminActivityPreviewContext = document.getElementById('garminActivityPreviewContext');
+  const garminActivityReplaceNotice = document.getElementById('garminActivityReplaceNotice');
   const garminActivityPreviewData = document.getElementById('garminActivityPreviewData');
   const garminActivityConfirm = document.getElementById('garminActivityConfirm');
+  const garminActivityBack = document.getElementById('garminActivityBack');
+  const garminActivityWindow = document.getElementById('garminActivityWindow');
+  const garminActivityGuidance = document.getElementById('garminActivityGuidance');
   const fitFileInput = document.getElementById('fitFile');
   const fitDropzone = document.getElementById('fitDropzone');
   const fitDropzonePrimary = fitDropzone.querySelector('.dropzone-text-primary');
@@ -957,6 +965,23 @@ async function initTrainingResult() {
     manualDistanceUnit.textContent = nextUnit;
   };
   resultSourceSelect.addEventListener('change', syncResultSourceVisibility);
+  resultSourceSelect.addEventListener('change', () => {
+    if (resultSourceSelect.value === 'garmin') updateGarminActivityWindow();
+    else if (garminActivityBusy && !garminActivityConfirm.hasAttribute('aria-busy')) {
+      // A late search/download response must not repopulate a hidden source panel.
+      garminActivityReadId += 1;
+      garminActivityBusy = false;
+      garminActivitySearch.disabled = false;
+      garminActivityRefresh.disabled = false;
+      garminActivityMore.disabled = false;
+      garminActivityMore.textContent = t('session.garminImport.more');
+      garminActivitySearch.removeAttribute('aria-busy');
+      garminActivityMore.removeAttribute('aria-busy');
+      garminActivityCandidates.removeAttribute('aria-busy');
+      setGarminActivityStatus('');
+      renderGarminActivityCandidates();
+    }
+  });
 
   let garminActivityCandidatesState = [];
   let garminActivityNextOffset = 0;
@@ -965,6 +990,8 @@ async function initTrainingResult() {
   let garminActivityBusy = false;
   let garminActivityReadId = 0;
   let garminActivityStatusKey = '';
+  let garminActivityHasSearched = false;
+  let garminActivityHasMore = false;
   const formatActivityStart = (value) => {
     const raw = String(value || '');
     const date = raw.length >= 10 ? formatLocalizedDate(raw.slice(0, 10), i18n.language) : raw;
@@ -973,9 +1000,10 @@ async function initTrainingResult() {
   };
   const setGarminActivityStatus = (key) => {
     garminActivityStatusKey = key || '';
-    garminActivityStatus.textContent = key ? t(`session.garminImport.${key}`) : '';
+    garminActivityStatus.textContent = key ? t(`session.garminImport.${key === 'loadingMore' ? 'loadingMoreStatus' : key}`) : '';
+    garminActivityStatus.hidden = !key;
     const attention = key && !['searching', 'importing', 'imported'].includes(key);
-    setFeedbackProgress(key === 'searching' ? 'garminSearching' : ['downloading', 'importing'].includes(key) ? 'importingResult'
+    setFeedbackProgress(['searching', 'loadingMore'].includes(key) ? 'garminSearching' : ['downloading', 'importing'].includes(key) ? 'importingResult'
       : key === 'imported' ? null : attention ? 'garminNeedsAttention'
         : garminActivityPreviewId ? 'garminReviewReady' : null);
   };
@@ -992,6 +1020,7 @@ async function initTrainingResult() {
       const card = document.createElement('article');
       card.className = 'garmin-activity-candidate';
       card.setAttribute('role', 'listitem');
+      card.classList.toggle('is-selected', selectedGarminActivity?.activity_id === candidate.activity_id);
       const info = document.createElement('div');
       const title = document.createElement('strong');
       title.textContent = candidate.name || candidate.sport || t('session.garminImport.unknownActivity');
@@ -1000,9 +1029,18 @@ async function initTrainingResult() {
       const distanceUnit = getUserPreferences().distance_unit;
       const approximatePace = candidate.approximate_pace_seconds_per_km
         ? `~${formatPaceFromMetric(formatDuration(candidate.approximate_pace_seconds_per_km), distanceUnit)} · ${t('session.garminImport.summaryPace')}` : '';
-      detail.textContent = [formatActivityStart(candidate.start_time_local), candidate.sport || '',
+      const sportKey = String(candidate.sport || '').toLowerCase();
+      const sportLabel = t(`session.garminImport.sports.${sportKey}`);
+      const sport = sportLabel === `session.garminImport.sports.${sportKey}`
+        ? (candidate.sport || t('session.garminImport.unknownActivity')) : sportLabel;
+      const detailParts = [formatActivityStart(candidate.start_time_local), sport,
         candidate.duration_seconds == null ? '' : formatDuration(candidate.duration_seconds),
-        candidate.distance_m == null ? '' : formatDistance(candidate.distance_m / 1000, distanceUnit), approximatePace].filter(Boolean).join(' · ');
+        candidate.distance_m == null ? '' : formatDistance(candidate.distance_m / 1000, distanceUnit), approximatePace,
+        candidate.average_hr == null ? '' : `${t('session.garminImport.avgHr')} ${candidate.average_hr}`,
+        candidate.max_hr == null ? '' : `${t('session.garminImport.maxHr')} ${candidate.max_hr}`,
+        candidate.elevation_gain_m == null ? '' : `${t('session.garminImport.elevation')} ${candidate.elevation_gain_m} m`,
+        candidate.calories == null ? '' : `${candidate.calories} ${t('session.resultCalories').toLowerCase()}`];
+      detail.textContent = detailParts.filter(Boolean).join(' · ');
       info.append(detail);
       const suggestion = document.createElement('p');
       suggestion.textContent = t(candidate.suggestion === 'same_local_date_requires_confirmation'
@@ -1017,11 +1055,23 @@ async function initTrainingResult() {
       choose.type = 'button';
       choose.className = 'btn-secondary btn-small';
       choose.textContent = t('session.garminImport.choose');
+      choose.dataset.activityId = String(candidate.activity_id);
+      choose.setAttribute('aria-pressed', String(selectedGarminActivity?.activity_id === candidate.activity_id));
       choose.disabled = garminActivityBusy || Boolean(candidate.linked_training_id && candidate.linked_training_id !== Number(currentTrainingId));
       choose.addEventListener('click', () => { void previewGarminActivity(candidate); });
       card.append(info, choose);
       garminActivityCandidates.append(card);
     }
+    garminActivityCandidates.hidden = garminActivityCandidatesState.length === 0 || !garminActivityPreview.hidden;
+  };
+  const updateGarminActivityWindow = () => {
+    const date = new Date(`${training?.dia}T00:00:00Z`);
+    if (Number.isNaN(date.getTime())) { garminActivityWindow.hidden = true; return; }
+    const start = new Date(date.valueOf() - 15 * 86400000).toISOString().slice(0, 10);
+    const end = new Date(date.valueOf() + 15 * 86400000).toISOString().slice(0, 10);
+    garminActivityWindow.textContent = t(`session.garminImport.${garminActivityHasSearched ? 'searchedWindow' : 'searchWindow'}`)
+      .replace('{start}', formatLocalizedDate(start, i18n.language)).replace('{end}', formatLocalizedDate(end, i18n.language));
+    garminActivityWindow.hidden = false;
   };
   const readGarminActivity = async (url, options = {}) => {
     const response = await fetch(url, { credentials: 'same-origin', ...options,
@@ -1045,21 +1095,34 @@ async function initTrainingResult() {
     const readId = ++garminActivityReadId;
     const requestedTrainingId = currentTrainingId;
     garminActivitySearch.disabled = true;
+    garminActivityRefresh.disabled = true;
     garminActivityMore.disabled = true;
     garminActivitySearch.setAttribute('aria-busy', 'true');
     garminActivityPreview.hidden = true;
-    garminActivityPreviewId = null;
-    selectedGarminActivity = null;
-    if (!append) { garminActivityCandidatesState = []; garminActivityMore.hidden = true; renderGarminActivityCandidates(); }
-    setGarminActivityStatus('searching');
+    if (append) {
+      garminActivityMore.textContent = t('session.garminImport.loadingMore');
+      garminActivityMore.setAttribute('aria-busy', 'true');
+      garminActivityCandidates.setAttribute('aria-busy', 'true');
+    }
+    updateGarminActivityWindow();
+    setGarminActivityStatus(append ? 'loadingMore' : 'searching');
     try {
       const result = await readGarminActivity(`/api/trainings/${encodeURIComponent(requestedTrainingId)}/garmin/activities?offset=${append ? garminActivityNextOffset : 0}`);
       if (readId !== garminActivityReadId || currentTrainingId !== requestedTrainingId) return;
-      garminActivityCandidatesState = append ? [...garminActivityCandidatesState, ...(result.items || [])] : (result.items || []);
+      const refreshedItems = result.items || [];
+      garminActivityCandidatesState = append ? [...garminActivityCandidatesState, ...refreshedItems] : refreshedItems;
+      if (!garminActivityCandidatesState.some((candidate) => candidate.activity_id === selectedGarminActivity?.activity_id)) {
+        selectedGarminActivity = null;
+      }
       garminActivityNextOffset = Number.isInteger(result.next_offset) ? result.next_offset : 0;
+      garminActivityHasMore = result.has_more === true;
+      garminActivityHasSearched = true;
+      updateGarminActivityWindow();
       renderGarminActivityCandidates();
       setGarminActivityStatus(garminActivityCandidatesState.length ? '' : 'none');
-      garminActivityMore.hidden = !result.has_more;
+      garminActivityMore.hidden = !result.has_more || garminActivityCandidatesState.length === 0;
+      garminActivitySearch.hidden = true;
+      garminActivityRefresh.hidden = false;
     } catch (error) {
       if (readId !== garminActivityReadId || currentTrainingId !== requestedTrainingId) return;
       setGarminActivityStatus(activityErrorKey(error));
@@ -1074,7 +1137,11 @@ async function initTrainingResult() {
       if (readId === garminActivityReadId) {
         garminActivityBusy = false;
         garminActivitySearch.disabled = false;
+        garminActivityRefresh.disabled = false;
         garminActivityMore.disabled = false;
+        garminActivityMore.textContent = t('session.garminImport.more');
+        garminActivityMore.removeAttribute('aria-busy');
+        garminActivityCandidates.removeAttribute('aria-busy');
         garminActivitySearch.removeAttribute('aria-busy');
         renderGarminActivityCandidates();
       }
@@ -1095,8 +1162,18 @@ async function initTrainingResult() {
       if (readId !== garminActivityReadId || currentTrainingId !== requestedTrainingId) return;
       selectedGarminActivity = candidate;
       garminActivityPreviewId = result.preview_id;
+      const sportKey = String(candidate.sport || '').toLowerCase();
+      const sportTranslation = t(`session.garminImport.sports.${sportKey}`);
+      const sport = sportTranslation === `session.garminImport.sports.${sportKey}`
+        ? (candidate.sport || t('session.garminImport.unknownActivity')) : sportTranslation;
+      garminActivityPreviewName.textContent = candidate.name || t('session.garminImport.unknownActivity');
+      garminActivityPreviewContext.textContent = [formatActivityStart(candidate.start_time_local), sport].filter(Boolean).join(' · ');
+      garminActivityReplaceNotice.hidden = training.result_data_source === 'none';
+      garminActivityConfirm.textContent = t(training.result_data_source === 'none'
+        ? 'session.garminImport.confirm' : 'session.garminImport.confirmReplace');
       const rows = [
-        ['fitDuration', result.metrics.fit_duration], ['fitDistance', formatDistance(result.metrics.fit_distance, getUserPreferences().distance_unit)],
+        ['fitDuration', result.metrics.fit_duration], ['fitDistance', result.metrics.fit_distance == null
+          ? null : formatDistance(result.metrics.fit_distance, getUserPreferences().distance_unit)],
         ['fitAvgPace', result.metrics.fit_avg_pace ? formatPaceFromMetric(result.metrics.fit_avg_pace, getUserPreferences().distance_unit) : null], ['fitAvgHr', result.metrics.fit_avg_hr],
         ['fitMaxHr', result.metrics.fit_max_hr], ['fitElevation', result.metrics.fit_elevation_gain == null ? null : `${result.metrics.fit_elevation_gain} m`],
         ['resultCalories', result.metrics.fit_calories],
@@ -1109,13 +1186,15 @@ async function initTrainingResult() {
         wrapper.append(label, detail); garminActivityPreviewData.append(wrapper);
       }
       garminActivityPreview.querySelector('.garmin-activity-summary')?.remove();
-      const activityInfo = document.createElement('p');
-      activityInfo.className = 'garmin-activity-summary';
-      activityInfo.textContent = [candidate.name, formatActivityStart(candidate.start_time_local), candidate.sport].filter(Boolean).join(' · ');
-      garminActivityPreviewData.before(activityInfo);
       garminActivityPreview.hidden = false;
+      garminActivityGuidance.hidden = true;
+      garminActivityMore.hidden = true;
+      garminActivitySearch.hidden = true;
+      garminActivityRefresh.hidden = true;
+      garminActivityCandidates.hidden = true;
       setGarminActivityStatus('');
       refreshFeedbackAccordionSummary();
+      requestAnimationFrame(() => garminActivityPreviewHeading.focus({ preventScroll: true }));
     } catch (error) {
       if (readId !== garminActivityReadId || currentTrainingId !== requestedTrainingId) return;
       setGarminActivityStatus(activityErrorKey(error));
@@ -1128,10 +1207,39 @@ async function initTrainingResult() {
     }
   };
   garminActivitySearch.addEventListener('click', () => { void searchGarminActivities(); });
+  garminActivityRefresh.addEventListener('click', () => { void searchGarminActivities(); });
   garminActivityMore.addEventListener('click', () => { void searchGarminActivities(true); });
+  garminActivityBack.addEventListener('click', () => {
+    if (garminActivityBusy) return;
+    garminActivityPreview.hidden = true;
+    garminActivityGuidance.hidden = false;
+    garminActivitySearch.hidden = garminActivityHasSearched;
+    garminActivityRefresh.hidden = !garminActivityHasSearched;
+    garminActivityMore.hidden = !garminActivityCandidatesState.length || !garminActivityHasMore;
+    garminActivityCandidates.hidden = garminActivityCandidatesState.length === 0;
+    garminActivityPreviewId = null;
+    setGarminActivityStatus('');
+    renderGarminActivityCandidates();
+    requestAnimationFrame(() => garminActivityCandidates.querySelector(`[data-activity-id="${CSS.escape(String(selectedGarminActivity?.activity_id || ''))}"]`)?.focus());
+  });
   document.addEventListener('app:languagechange', () => {
     renderGarminActivityCandidates();
     setGarminActivityStatus(garminActivityStatusKey);
+    if (resultSourceSelect.value === 'garmin') updateGarminActivityWindow();
+    if (!garminActivityBusy) {
+      garminActivitySearch.textContent = t('session.garminImport.searchInitial');
+      garminActivityRefresh.textContent = t('session.garminImport.refresh');
+      garminActivityMore.textContent = t('session.garminImport.more');
+      garminActivityBack.textContent = t('session.garminImport.back');
+      garminActivityConfirm.textContent = t(training?.result_data_source === 'none'
+        ? 'session.garminImport.confirm' : 'session.garminImport.confirmReplace');
+      garminActivityPreviewName.textContent = selectedGarminActivity?.name || t('session.garminImport.unknownActivity');
+      const key = String(selectedGarminActivity?.sport || '').toLowerCase();
+      const translatedSport = t(`session.garminImport.sports.${key}`);
+      garminActivityPreviewContext.textContent = selectedGarminActivity
+        ? [formatActivityStart(selectedGarminActivity.start_time_local), translatedSport === `session.garminImport.sports.${key}`
+          ? (selectedGarminActivity.sport || t('session.garminImport.unknownActivity')) : translatedSport].filter(Boolean).join(' · ') : '';
+    }
     if (fitData) renderFitData();
   });
   garminActivityConfirm.addEventListener('click', async () => {
@@ -1147,6 +1255,7 @@ async function initTrainingResult() {
       if (!confirmReplace) { garminActivityBusy = false; garminActivityConfirm.disabled = false; return; }
     }
     garminActivityConfirm.setAttribute('aria-busy', 'true');
+    garminActivityConfirm.textContent = t('session.garminImport.importing');
     setGarminActivityStatus('importing');
     feedbackPersistenceSnapshot = feedbackSignature({ omitFile: true });
     try {
@@ -1177,6 +1286,8 @@ async function initTrainingResult() {
       garminActivityBusy = false;
       garminActivityConfirm.disabled = false;
       garminActivityConfirm.removeAttribute('aria-busy');
+      garminActivityConfirm.textContent = t(training?.result_data_source === 'none'
+        ? 'session.garminImport.confirm' : 'session.garminImport.confirmReplace');
       feedbackPersistenceSnapshot = null;
       setFeedbackProgress(null);
       refreshFeedbackAccordionSummary();
@@ -1403,6 +1514,11 @@ async function initTrainingResult() {
 
   const sessionUser = await initShell();
   i18n = getShellI18n();
+  garminActivitySearch.textContent = t('session.garminImport.searchInitial');
+  garminActivityRefresh.textContent = t('session.garminImport.refresh');
+  garminActivityMore.textContent = t('session.garminImport.more');
+  garminActivityBack.textContent = t('session.garminImport.back');
+  garminActivityConfirm.textContent = t('session.garminImport.confirm');
   let externalPromptButton = null;
   let externalPromptDialog = null;
   let externalPromptComponent = null;

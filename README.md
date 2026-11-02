@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, request and review weekly AI proposals, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized training-request prompts for use with an external AI.
 
-Current application version: **0.30.1** (active beta development; Garmin activity result import is an opt-in single-owner pilot).
+Current application version: **0.30.2** (active beta development; Garmin activity result import is an opt-in single-owner pilot).
 
 ## AI integration: cycle planning and weekly proposals
 

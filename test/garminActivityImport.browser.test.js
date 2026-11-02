@@ -37,6 +37,9 @@ test('Garmin activity result flow in Chrome stays explicit, localized, keyboard 
   const chrome = findChrome(); assert.ok(chrome, 'Chrome is required for session UI verification');
   const db = createDatabase({ filename: ':memory:' });
   const original = zipFit(); const calls = [];
+  let holdFirstActivityPage = false; let releaseFirstActivityPage;
+  let holdNextPage = false; let releaseNextPage;
+  let failNextPage = false; let emptyRefresh = false;
   const summary = { activity: { sport: 'running', startTime: '2026-11-02T07:00:00Z', endTime: '2026-11-02T07:58:20Z' },
     totals: { durationSeconds: 3500, durationLabel: '58:20', distanceKm: 10, avgPaceSecondsPerKm: 350,
       avgPaceLabel: '5:50', avgHeartRate: null, maxHeartRate: 181, ascentMeters: 78, calories: 501 },
@@ -50,10 +53,22 @@ test('Garmin activity result flow in Chrome stays explicit, localized, keyboard 
       if (url.endsWith('/auth/start')) return Response.json({ status: 'mfa_required', challenge_id: 'synthetic-mfa-challenge-1234567890', expires_in: 300 });
       if (url.endsWith('/auth/finish')) return Response.json({ status: 'connected', identity_fingerprint: 'a'.repeat(64) });
       if (url.endsWith('/capabilities')) return Response.json({ devices: [], running_catalog_status: 'available' });
-      if (url.endsWith('/activities')) return Response.json({ items: [{ activityId: 42, activityName: 'Synthetic morning run', source_cursor: init.body ? JSON.parse(init.body).offset : 0,
-        startTimeLocal: '2026-11-02T07:00:00', activityType: 'running', duration: 3500, distance: 10000,
-        averageHR: null, maxHR: 181, calories: 501, elevationGain: 78 }], next_offset: (init.body ? JSON.parse(init.body).offset : 0) + 1,
-        has_more: false, budget_exhausted: false });
+      if (url.endsWith('/activities')) {
+        const offset = Number(init.body ? JSON.parse(init.body).offset : 0);
+        if (offset === 0 && holdFirstActivityPage) { await new Promise((resolve) => { releaseFirstActivityPage = resolve; }); holdFirstActivityPage = false; }
+        if (offset > 0 && holdNextPage) { await new Promise((resolve) => { releaseNextPage = resolve; }); holdNextPage = false; }
+        if (offset > 0 && failNextPage) { failNextPage = false; return Response.json({ detail: { code: 'unavailable' } }, { status: 503 }); }
+        if (offset === 0 && emptyRefresh) { emptyRefresh = false; return Response.json({ items: [], next_offset: 0, has_more: false, budget_exhausted: false }); }
+        const item = offset === 0
+          ? { activityId: 42, activityName: 'Synthetic morning run', source_cursor: 0,
+            startTimeLocal: '2026-11-02T07:00:00', activityType: 'running', duration: 3500, distance: 10000,
+            averageHR: null, maxHR: 181, calories: 501, elevationGain: 78 }
+          : { activityId: 43, activityName: 'Second synthetic activity with a deliberately long display name '.repeat(3), source_cursor: offset,
+            startTimeLocal: '2026-11-01T18:10:00', activityType: 'running', duration: 1800, distance: 5000,
+            averageHR: 142, maxHR: 160, calories: 250, elevationGain: 12 };
+        return Response.json({ items: [item], next_offset: offset === 0 ? 20 : offset + 1,
+          has_more: offset === 0, budget_exhausted: false });
+      }
       if (url.endsWith('/original')) return new Response(original, { headers: { 'content-type': 'application/octet-stream' } });
       throw new Error('unexpected synthetic connector call');
     } });
@@ -81,6 +96,8 @@ test('Garmin activity result flow in Chrome stays explicit, localized, keyboard 
     socket.addEventListener('message', (event) => { const msg = JSON.parse(event.data); if (msg.method) return; const resolve = pending.get(msg.id); if (resolve) { pending.delete(msg.id); msg.error ? resolve.reject(new Error(msg.error.message)) : resolve.resolve(msg.result); } });
     const command = (method, params = {}) => new Promise((resolve, reject) => { const id = ++commandId; pending.set(id, { resolve, reject }); socket.send(JSON.stringify({ id, method, params })); });
     const evaluate = async (expression) => { const result = await command('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }); if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text); return result.result.value; };
+    const captureDir = path.join(__dirname, '..', 'docs', 'garmin-activity-import-screenshots'); mkdirSync(captureDir, { recursive: true });
+    const screenshot = async (name) => { const shot = await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false }); writeFileSync(path.join(captureDir, name), Buffer.from(shot.data, 'base64')); };
     const pressEnter = async () => { await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 }); await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 }); };
     const waitFor = async (expression, label) => { for (let attempt = 0; attempt < 160; attempt += 1) { try { if (await evaluate(expression)) return; } catch {} await delay(50); } throw new Error(`Timed out waiting for ${label}; state=${JSON.stringify(await evaluate(`(()=>({value:(${expression}),lang:document.documentElement.lang,summary:document.getElementById('feedbackAccordionSummary')?.textContent,status:document.getElementById('garminActivityStatus')?.textContent,source:document.getElementById('resultSourceSelect')?.value}))()`).catch((error)=>error.message))} calls=${calls.map((call)=>call.url).join(',')}`); };
     await command('Page.enable'); await command('Runtime.enable'); await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
@@ -90,6 +107,13 @@ test('Garmin activity result flow in Chrome stays explicit, localized, keyboard 
     await waitFor("document.getElementById('garminConnectionStatus').textContent !== 'Checking connection…'", 'shared Garmin status initialization');
     await evaluate("document.getElementById('feedbackAccordionTrigger').click(); const s=document.getElementById('resultSourceSelect'); s.value='garmin'; s.dispatchEvent(new Event('change',{bubbles:true})); document.getElementById('feedbackNotas').value='draft survives Garmin sign-in and import'; document.querySelector('[name=\"rpe\"][value=\"3\"]').checked=true; document.querySelector('[name=\"rpe\"][value=\"3\"]').dispatchEvent(new Event('change',{bubbles:true})); true");
     await waitFor("document.getElementById('garminActivityField').hidden===false", 'Garmin result source panel');
+    assert.deepEqual(await evaluate("(()=>({initial:document.getElementById('garminActivitySearch').textContent.trim(),refresh:document.getElementById('garminActivityRefresh').hidden,more:document.getElementById('garminActivityMore').hidden,list:document.getElementById('garminActivityCandidates').hidden,status:document.getElementById('garminActivityStatus').hidden,window:document.getElementById('garminActivityWindow').textContent}))()"),
+      { initial: 'Buscar atividades', refresh: true, more: true, list: true, status: true, window: 'Período da busca: 18/10/2026 – 17/11/2026' });
+    assert.equal(await evaluate("getComputedStyle(document.getElementById('garminActivityMore')).display"), 'none', 'hidden pagination reserves no layout space');
+    await evaluate("document.getElementById('garminActivityField').scrollIntoView({block:'center'}); true"); await delay(120); await screenshot('pt-initial-desktop.png');
+    await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await evaluate("document.getElementById('garminActivityField').scrollIntoView({block:'center'}); true"); await delay(100); await screenshot('pt-initial-mobile.png');
+    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
     await evaluate("document.getElementById('garminActivitySearch').click(); true");
     await waitFor("document.getElementById('garminActivityStatus').textContent.includes('Conecte')", 'connection needed guidance');
     await waitFor("document.getElementById('garminConnectButton').hidden===false", 'shared Garmin connection control');
@@ -100,27 +124,103 @@ test('Garmin activity result flow in Chrome stays explicit, localized, keyboard 
     await evaluate("document.getElementById('garminMfaCode').value='123456'; document.getElementById('garminAuthSubmit').click(); true");
     await waitFor("document.getElementById('garminDisconnectButton').hidden===false", 'shared connection completion');
     assert.equal(await evaluate("document.getElementById('feedbackNotas').value"), 'draft survives Garmin sign-in and import');
+    holdFirstActivityPage = true;
     await evaluate("document.getElementById('garminActivitySearch').click(); true");
+    await waitFor("document.getElementById('garminActivityStatus').textContent==='Buscando atividades…'", 'immediate activity search progress');
+    assert.deepEqual(await evaluate("(()=>({disabled:document.getElementById('garminActivitySearch').disabled,more:document.getElementById('garminActivityMore').hidden,list:document.getElementById('garminActivityCandidates').children.length}))()"),
+      { disabled: true, more: true, list: 0 });
+    for (let attempt = 0; attempt < 80 && !releaseFirstActivityPage; attempt += 1) await delay(25);
+    assert.equal(typeof releaseFirstActivityPage, 'function'); releaseFirstActivityPage();
+    const activityCallsWhileHeld = calls.filter((call) => call.url.endsWith('/activities')).length;
+    await evaluate("const b=document.getElementById('garminActivitySearch');b.dispatchEvent(new MouseEvent('click',{bubbles:true}));b.dispatchEvent(new MouseEvent('click',{bubbles:true}));true");
+    await delay(75);
+    assert.equal(calls.filter((call) => call.url.endsWith('/activities')).length, activityCallsWhileHeld, 'handler guard blocks repeated clicks during a held query');
     await waitFor("document.getElementById('garminActivityCandidates').children.length===1", 'running candidate');
+    assert.equal(await evaluate("document.getElementById('garminActivityMore').hidden"), false, 'continuation follows backend has_more rather than displayed count');
+    assert.equal(await evaluate("document.getElementById('garminActivityWindow').textContent"), 'Período pesquisado: 18/10/2026 – 17/11/2026');
+    assert.equal(await evaluate("document.getElementById('garminActivityCandidates').textContent.includes('Corrida')"), true, 'running is localized in Portuguese');
+    await evaluate("document.querySelector('.lang-switch [data-lang=\"en-US\"]').click(); true");
+    await waitFor("document.documentElement.lang==='en-US' && document.getElementById('garminActivityCandidates').textContent.includes('Running')", 'English candidate sport label');
+    assert.equal(await evaluate("document.getElementById('garminActivityCandidates').textContent.includes('10.00 km')"), true, 'distance stays in the selected metric unit in English');
+    await evaluate("document.querySelector('.lang-switch [data-lang=\"pt-BR\"]').click(); true");
+    await waitFor("document.documentElement.lang==='pt-BR' && document.getElementById('garminActivityCandidates').textContent.includes('Corrida')", 'Portuguese candidate sport label');
     assert.equal(await evaluate("document.getElementById('feedbackAccordionSummary').textContent.includes('Buscando')"), false);
+    await evaluate("document.getElementById('garminActivityCandidates').scrollIntoView({block:'center'}); true"); await delay(100); await screenshot('pt-list-desktop.png');
+    await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await evaluate("document.getElementById('garminActivityCandidates').scrollIntoView({block:'center'}); true"); await delay(100); await screenshot('pt-list-mobile.png');
+    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+    failNextPage = true; holdNextPage = true;
+    await evaluate("document.getElementById('garminActivityMore').click(); true");
+    await waitFor("document.getElementById('garminActivityMore').textContent==='Carregando…' && document.getElementById('garminActivityStatus').textContent==='Carregando mais atividades…'", 'immediate next-page loading');
+    assert.equal(await evaluate("document.getElementById('garminActivityCandidates').children.length"), 1, 'existing candidates remain while loading more');
+    for (let attempt = 0; attempt < 80 && !releaseNextPage; attempt += 1) await delay(25);
+    assert.equal(typeof releaseNextPage, 'function'); releaseNextPage();
+    await waitFor("document.getElementById('garminActivityStatus').textContent.includes('indisponível')", 'recoverable next-page error');
+    assert.equal(await evaluate("document.getElementById('garminActivityCandidates').children.length"), 1, 'next-page failure preserves previous items');
+    assert.equal(await evaluate("document.getElementById('garminActivityMore').hidden"), false, 'next-page failure preserves retry cursor action');
+    await evaluate("document.getElementById('garminActivityMore').click(); true");
+    await waitFor("document.getElementById('garminActivityCandidates').children.length===2", 'next page appended');
+    assert.equal(await evaluate("document.getElementById('garminActivityMore').hidden"), true, 'pagination action disappears when backend says no continuation');
+    assert.equal(await evaluate("document.getElementById('garminActivityRefresh').hidden"), false, 'refresh remains a distinct action after pagination ends');
+    await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    const longCandidateBounds = await evaluate("(()=>{const c=document.querySelector('[data-activity-id=\"43\"]').closest('article');return {page:document.documentElement.scrollWidth,viewport:innerWidth,card:c.scrollWidth,cardClient:c.clientWidth,title:c.querySelector('strong').scrollWidth,titleClient:c.querySelector('strong').clientWidth}})()");
+    assert.ok(longCandidateBounds.page <= longCandidateBounds.viewport && longCandidateBounds.card <= longCandidateBounds.cardClient
+      && longCandidateBounds.title <= longCandidateBounds.titleClient, `long activity names wrap without overflow: ${JSON.stringify(longCandidateBounds)}`);
+    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
     const sourceBadgeBeforePreview = await evaluate("document.getElementById('resultSourceBadge').textContent");
-    assert.equal(await evaluate("(()=>{const b=document.getElementById('garminActivitySearch');b.focus();return document.activeElement===b})()"), true,
-      'search action is keyboard focusable');
-    assert.equal(await evaluate("(()=>{const b=document.querySelector('.garmin-activity-candidate button');b.focus();return document.activeElement===b})()"), true,
+    assert.equal(await evaluate("(()=>{const b=document.getElementById('garminActivityRefresh');b.focus();return document.activeElement===b})()"), true,
+      'refresh action is keyboard focusable after the initial search');
+    assert.equal(await evaluate("(()=>{const b=document.querySelector('[data-activity-id=\"43\"]');b.focus();return document.activeElement===b})()"), true,
       'candidate selection is keyboard focusable');
-    await evaluate("document.querySelector('.garmin-activity-candidate button').click(); true");
+    await evaluate("document.querySelector('[data-activity-id=\"43\"]').click(); true");
+    await waitFor("!document.getElementById('garminActivityPreview').hidden", 'preview from the next page');
+    assert.ok((await evaluate("document.getElementById('garminActivityPreviewName').textContent")).startsWith('Second synthetic activity'), 'later-page preview uses the chosen activity identity');
+    assert.ok(calls.some((call) => call.url.endsWith('/activities') && JSON.parse(call.init.body).offset === 20), 'preview rechecks the candidate using its real source cursor');
+    await evaluate("document.getElementById('garminActivityBack').click(); true");
+    await waitFor("document.getElementById('garminActivityPreview').hidden && document.activeElement.dataset.activityId==='43'", 'return focus to later-page candidate');
+    await evaluate("document.querySelector('[data-activity-id=\"42\"]').click(); true");
     await waitFor("!document.getElementById('garminActivityPreview').hidden", 'local FIT preview');
+    await waitFor("document.activeElement.id==='garminActivityPreviewHeading'", 'review heading focus');
+    assert.equal(await evaluate("document.activeElement.id"), 'garminActivityPreviewHeading', 'review focuses its heading');
+    assert.deepEqual(await evaluate("(()=>({hidden:document.getElementById('garminActivityMore').hidden,display:getComputedStyle(document.getElementById('garminActivityMore')).display,refreshHidden:document.getElementById('garminActivityRefresh').hidden,searchHidden:document.getElementById('garminActivitySearch').hidden}))()"),
+      { hidden: true, display: 'none', refreshHidden: true, searchHidden: true }, 'review hides the list-only controls');
+    assert.equal(await evaluate("document.getElementById('garminActivityPreviewContext').textContent.includes('running')"), false, 'sport label is localized in review');
+    const actionMetrics = await evaluate("(()=>{const metrics=document.getElementById('garminActivityPreviewData').getBoundingClientRect();const actions=document.querySelector('.garmin-activity-preview-actions');const rect=actions.getBoundingClientRect();const notice=document.getElementById('garminActivityReplaceNotice');const noticeRect=notice.getBoundingClientRect();const button=document.getElementById('garminActivityConfirm');return {gap:getComputedStyle(document.getElementById('garminActivityPreview')).rowGap,metricsToNotice:Math.round(noticeRect.top-metrics.bottom),noticeToActions:Math.round(rect.top-noticeRect.bottom),noticeHidden:notice.hidden,actionMargin:getComputedStyle(actions).marginBlockStart,primary:button.classList.contains('btn-primary'),small:button.classList.contains('btn-small'),height:Math.round(button.getBoundingClientRect().height)}})()");
+    assert.deepEqual(actionMetrics,
+      { gap: '16px', metricsToNotice: 16, noticeToActions: 16, noticeHidden: false, actionMargin: '0px', primary: true, small: false, height: 44 }, `action spacing: ${JSON.stringify(actionMetrics)}`);
     assert.equal(await evaluate("document.getElementById('resultSourceBadge').textContent"), sourceBadgeBeforePreview, 'preview does not mutate the result');
     assert.equal(await evaluate("document.getElementById('feedbackAccordionPanel').hidden"), false);
     await evaluate("document.getElementById('garminActivityPreview').scrollIntoView({block:'center'}); true");
     await delay(150);
-    const captureDir = path.join(__dirname, '..', 'docs', 'garmin-activity-import-screenshots'); mkdirSync(captureDir, { recursive: true });
-    const screenshot = async (name) => { const shot = await command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false }); writeFileSync(path.join(captureDir, name), Buffer.from(shot.data, 'base64')); };
     await screenshot('pt-review-desktop.png');
+    await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await evaluate("document.getElementById('garminActivityPreview').scrollIntoView({block:'center'}); true"); await delay(120); await screenshot('pt-review-mobile.png');
+    const reviewMobileBounds = await evaluate("({width:innerWidth,scroll:document.documentElement.scrollWidth})");
+    assert.equal(reviewMobileBounds.width, 390); assert.ok(reviewMobileBounds.scroll <= reviewMobileBounds.width, `review controls fit mobile viewport: ${JSON.stringify(reviewMobileBounds)}`);
+    await evaluate("document.getElementById('garminActivityBack').click(); true");
+    await waitFor("document.getElementById('garminActivityPreview').hidden && document.activeElement.dataset.activityId==='42'", 'back to selected activity and restore focus');
+    await evaluate("document.querySelector('[data-activity-id=\"42\"]').click(); true");
+    await waitFor("!document.getElementById('garminActivityPreview').hidden", 'review activity again');
+    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
     await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 460, deviceScaleFactor: 1, mobile: false });
-    await evaluate("document.body.style.zoom='200%'; true"); await delay(150); await screenshot('pt-review-low-height-zoom-200.png');
-    await evaluate("document.body.style.zoom=''; document.getElementById('garminActivityConfirm').click(); true");
+    await evaluate("document.body.style.zoom='200%'; true"); await delay(150);
+    await evaluate("document.getElementById('garminActivityPreviewHeading').scrollIntoView({block:'center'}); true"); await delay(150);
+    await screenshot('pt-review-low-height-zoom-200.png');
+    await evaluate("document.getElementById('garminActivityConfirm').scrollIntoView({block:'center'}); true"); await delay(120);
+    await screenshot('pt-review-low-height-zoom-200-actions.png');
+    await evaluate("document.body.style.zoom=''; const nativeFetch=window.fetch.bind(window); window.__holdGarminImport=true; window.fetch=async(...args)=>{if(String(args[0]).includes('/garmin/activity-import')&&window.__holdGarminImport){window.__holdGarminImport=false;await new Promise(resolve=>window.__releaseGarminImport=resolve);return Response.json({code:'import_error'},{status:503})}return nativeFetch(...args)}; document.getElementById('garminActivityConfirm').click(); true");
     await waitFor("document.querySelector('.confirm-card') !== null", 'explicit replacement confirmation');
+    await evaluate("document.getElementById('confirmOkBtn').click(); true");
+    await waitFor("document.getElementById('garminActivityStatus').textContent==='Importando atividade…'", 'explicit import progress');
+    assert.equal(await evaluate("document.getElementById('garminActivityConfirm').disabled"), true, 'import button blocks duplicate confirmation');
+    assert.equal(db.prepare('SELECT result_data_source FROM trainings WHERE id=1').get().result_data_source, 'manual', 'no success before persistence');
+    await waitFor("typeof window.__releaseGarminImport==='function'", 'controlled import failure gate');
+    await evaluate("window.__releaseGarminImport(); true");
+    await waitFor("document.getElementById('garminActivityStatus').textContent.includes('Não foi possível importar')", 'recoverable import failure');
+    assert.equal(await evaluate("!document.getElementById('garminActivityPreview').hidden"), true, 'failed import keeps the review available');
+    assert.equal(db.prepare('SELECT result_data_source FROM trainings WHERE id=1').get().result_data_source, 'manual', 'failed import preserves prior result');
+    await evaluate("document.getElementById('garminActivityConfirm').click(); true");
+    await waitFor("document.querySelector('.confirm-card') !== null", 'replacement confirmation after recoverable failure');
     await evaluate("document.getElementById('confirmOkBtn').click(); true");
     await waitFor("document.getElementById('garminActivityLink').textContent.includes('42')", 'confirmed result link');
     assert.equal(await evaluate("document.getElementById('feedbackRpeError').hidden"), true);
@@ -156,6 +256,10 @@ test('Garmin activity result flow in Chrome stays explicit, localized, keyboard 
     const lapScroll = await evaluate("(()=>{const e=document.querySelector('.fit-laps-wrapper');return {tabIndex:e.tabIndex,overflow:getComputedStyle(e).overflowX}})()");
     assert.equal(lapScroll.tabIndex, 0); assert.ok(['auto', 'scroll'].includes(lapScroll.overflow), `lap detail supports horizontal scrolling: ${JSON.stringify(lapScroll)}`);
     await screenshot('en-imported-mobile.png');
+    const preferenceResponse = await fetch(`${origin}/api/users/me/preferences`, { method: 'PATCH',
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${session.token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ first_day_of_week: 'Monday', distance_unit: 'mi', temperature_unit: 'C' }) });
+    assert.equal(preferenceResponse.status, 200, 'synthetic account switches to miles through the preferences contract');
     await command('Page.reload');
     await waitFor("document.documentElement.lang==='en-US' && document.getElementById('garminActivityLink') && !document.getElementById('garminActivityLink').hidden", 'canonical result reload');
     const plannedAfterReload = JSON.parse(await evaluate("JSON.stringify({rpe:document.getElementById('plannedRpe').textContent,hr:document.getElementById('plannedFcAlvo').textContent,details:document.getElementById('plannedDetalhes').textContent})"));
@@ -164,6 +268,30 @@ test('Garmin activity result flow in Chrome stays explicit, localized, keyboard 
     assert.equal(plannedAfterReload.details, JSON.parse(plannedInEnglish).details);
     assert.equal(await evaluate("document.getElementById('garminActivityLink').textContent.includes('42')"), true);
     assert.equal(await evaluate("document.getElementById('fitAvgHr').textContent.trim()"), '-');
+    await evaluate("document.getElementById('feedbackAccordionTrigger').click(); true");
+    holdFirstActivityPage = true;
+    await evaluate("document.getElementById('garminActivitySearch').click(); true");
+    await waitFor("document.getElementById('garminActivityStatus').textContent==='Searching activities…'", 'English search loading');
+    for (let attempt = 0; attempt < 80 && !releaseFirstActivityPage; attempt += 1) await delay(25);
+    assert.equal(typeof releaseFirstActivityPage, 'function');
+    await evaluate("document.getElementById('resultSourceSelect').value='manual';document.getElementById('resultSourceSelect').dispatchEvent(new Event('change',{bubbles:true}));true");
+    assert.equal(await evaluate("document.getElementById('manualResultsField').hidden"), false, 'switching origin returns to the manual fallback');
+    releaseFirstActivityPage(); await delay(100);
+    assert.equal(await evaluate("document.getElementById('garminActivityCandidates').children.length"), 0, 'late Garmin results do not repaint after the origin changes');
+    await evaluate("document.getElementById('resultSourceSelect').value='garmin';document.getElementById('resultSourceSelect').dispatchEvent(new Event('change',{bubbles:true}));document.getElementById('garminActivitySearch').click();true");
+    await waitFor("document.getElementById('garminActivityCandidates').children.length===1", 'miles candidate after reload');
+    assert.equal(await evaluate("document.getElementById('garminActivityCandidates').textContent.includes('6.21 mi')"), true, 'candidate distance follows the persisted miles preference');
+    assert.equal(await evaluate("document.getElementById('garminActivityCandidates').textContent.includes('Running')"), true, 'reloaded English UI localizes the sport');
+    await evaluate("document.querySelector('.lang-switch [data-lang=\"pt-BR\"]').click(); true");
+    await waitFor("document.documentElement.lang==='pt-BR' && document.getElementById('garminActivityCandidates').textContent.includes('Corrida')", 'Portuguese candidate after miles reload');
+    assert.equal(await evaluate("document.getElementById('garminActivityCandidates').textContent.includes('6.21 mi')"), true, 'language changes do not change distance units');
+    await evaluate("document.getElementById('garminActivityBack').click(); true");
+    emptyRefresh = true;
+    await evaluate("document.getElementById('garminActivityRefresh').click(); true");
+    await waitFor("document.getElementById('garminActivityStatus').textContent.includes('Nenhuma corrida') || document.getElementById('garminActivityStatus').textContent.includes('No running activities found')", 'empty search result');
+    assert.equal(await evaluate("document.getElementById('garminActivityCandidates').hidden"), true, 'empty results do not leave an empty list container in layout');
+    assert.equal(await evaluate("document.getElementById('garminActivityMore').hidden"), true, 'empty result has no continuation action');
+    assert.equal(db.prepare('SELECT result_data_source FROM trainings WHERE id=1').get().result_data_source, 'garmin_connect', 'refreshing search never changes the imported result');
     await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
     const keyboard = await evaluate("(()=>{const b=document.getElementById('feedbackAccordionTrigger');b.focus();return document.activeElement.id})()");
     assert.equal(keyboard, 'feedbackAccordionTrigger', 'keyboard focus remains available on result summary');

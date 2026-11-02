@@ -203,15 +203,31 @@
           </div>
 
           <div class="field field-wide garmin-activity-field" id="garminActivityField" hidden>
-            <p class="field-hint" data-i18n="session.garminImport.explanation">Search activities synced to your connected Garmin account. Review and confirm one before importing.</p>
-            <button id="garminActivitySearch" class="btn-secondary btn-small" type="button" data-i18n="session.garminImport.search">Search Garmin Connect</button>
-            <p id="garminActivityStatus" class="field-hint" role="status" aria-live="polite" tabindex="-1"></p>
-            <div id="garminActivityCandidates" class="garmin-activity-candidates" role="list"></div>
+            <div id="garminActivityGuidance" class="garmin-activity-guidance">
+              <p class="field-hint" data-i18n="session.garminImport.explanation">Search activities synced to your connected Garmin account. Review and confirm one before importing.</p>
+              <p id="garminActivityWindow" class="garmin-activity-window" hidden></p>
+            </div>
+            <div class="garmin-activity-search-actions">
+              <button id="garminActivitySearch" class="btn-primary" type="button" data-i18n="session.garminImport.searchInitial">Search activities</button>
+              <button id="garminActivityRefresh" class="btn-secondary" type="button" data-i18n="session.garminImport.refresh" hidden>Refresh search</button>
+            </div>
+            <p id="garminActivityStatus" class="field-hint garmin-activity-status" role="status" aria-live="polite" tabindex="-1" hidden></p>
+            <div id="garminActivityCandidates" class="garmin-activity-candidates" role="list" hidden></div>
             <button id="garminActivityMore" class="btn-secondary btn-small" type="button" data-i18n="session.garminImport.more" hidden>Load more activities</button>
             <section id="garminActivityPreview" class="garmin-activity-preview" aria-live="polite" hidden>
-              <h3 data-i18n="session.garminImport.previewHeading">Review activity</h3>
+              <header class="garmin-activity-preview-heading">
+                <div>
+                  <h3 id="garminActivityPreviewHeading" tabindex="-1" data-i18n="session.garminImport.previewHeading">Review activity</h3>
+                  <p id="garminActivityPreviewName" class="garmin-activity-preview-name"></p>
+                  <p id="garminActivityPreviewContext" class="garmin-activity-preview-context"></p>
+                </div>
+              </header>
               <dl id="garminActivityPreviewData" class="fit-data-grid"></dl>
-              <button id="garminActivityConfirm" class="btn-primary btn-small" type="button" data-i18n="session.garminImport.confirm">Import this activity</button>
+              <p id="garminActivityReplaceNotice" class="garmin-activity-replace-notice" hidden data-i18n="session.garminImport.replaceNotice">Importing this activity will replace the current result.</p>
+              <div class="garmin-activity-preview-actions">
+                <button id="garminActivityBack" class="btn-secondary" type="button" data-i18n="session.garminImport.back">Back to activities</button>
+                <button id="garminActivityConfirm" class="btn-primary" type="button" data-i18n="session.garminImport.confirm">Import activity</button>
+              </div>
             </section>
           </div>
 
