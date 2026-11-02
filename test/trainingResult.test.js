@@ -1185,7 +1185,7 @@ test('training-result.js wires explicit persisted analysis, protected prompt pre
   assert.match(js, /saveManualTrainingResults/);
   assert.match(js, /convertDistanceToKm/);
 
-  assert.match(js, /resultSourceSelect\.addEventListener\('change', syncResultSourceVisibility\)/);
+  assert.match(js, /resultSourceSelect\.addEventListener\('change', \(\) => \{[\s\S]*?syncResultSourceVisibility\(\);/);
   assert.match(js, /fitField\.hidden = manual;/);
   assert.match(js, /manualResultsField\.hidden = !manual;/);
 

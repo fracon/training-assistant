@@ -632,7 +632,8 @@
     "garminImport": {
       "explanation": "Busque uma atividade da sua conta Garmin sincronizada. Uma corrida no mesmo dia pode ser uma sugestão; isso não comprova vínculo com o treino.",
       "searchInitial": "Buscar resultado deste treino",
-      "switchActivity": "Trocar atividade",
+      "switchActivity": "Escolher outra atividade",
+      "backToCurrentResult": "Voltar ao resultado atual",
       "refresh": "Atualizar busca",
       "more": "Carregar mais atividades",
       "loadingMore": "Carregando…",

@@ -944,13 +944,22 @@ async function initTrainingResult() {
   };
   rpeSelector.addEventListener('change', clearFeedbackRpeError);
 
+  let garminActivitySelectionOpen = false;
+  const hasCurrentGarminActivity = () => training?.result_data_source === 'garmin_connect'
+    && training?.garmin_activity?.activity_id != null;
   const syncResultSourceVisibility = () => {
     const manual = resultSourceSelect.value === 'manual';
     const garmin = resultSourceSelect.value === 'garmin';
+    const currentGarminActivity = hasCurrentGarminActivity();
     fitField.hidden = manual;
     fitField.hidden = manual || garmin;
     manualResultsField.hidden = !manual;
-    garminActivityField.hidden = !garmin;
+    garminActivityField.hidden = !garmin || (currentGarminActivity && !garminActivitySelectionOpen);
+    garminActivityGuidance.hidden = currentGarminActivity;
+    garminActivitySearch.hidden = currentGarminActivity || garminActivityHasSearched;
+    garminActivitySwitch.hidden = !currentGarminActivity;
+    garminActivitySwitch.textContent = t(garminActivitySelectionOpen
+      ? 'session.garminImport.backToCurrentResult' : 'session.garminImport.switchActivity');
   };
   const renderManualDistanceUnit = ({ convertExisting = false } = {}) => {
     const nextUnit = getUserPreferences().distance_unit === 'mi' ? 'mi' : 'km';
@@ -965,8 +974,9 @@ async function initTrainingResult() {
     manualDistanceInputUnit = nextUnit;
     manualDistanceUnit.textContent = nextUnit;
   };
-  resultSourceSelect.addEventListener('change', syncResultSourceVisibility);
   resultSourceSelect.addEventListener('change', () => {
+    if (resultSourceSelect.value !== 'garmin') garminActivitySelectionOpen = false;
+    syncResultSourceVisibility();
     if (resultSourceSelect.value === 'garmin') updateGarminActivityWindow();
     else if (garminActivityBusy && !garminActivityConfirm.hasAttribute('aria-busy')) {
       // A late search/download response must not repopulate a hidden source panel.
@@ -1138,6 +1148,7 @@ async function initTrainingResult() {
     } catch (error) {
       if (readId !== garminActivityReadId || currentTrainingId !== requestedTrainingId) return;
       setGarminActivityStatus(activityErrorKey(error));
+      if (hasCurrentGarminActivity() || garminActivityHasSearched) garminActivityRefresh.hidden = false;
       if (['connection_required', 'auth_required'].includes(error?.message)) {
         setAccordionOpen(garminAccordionTrigger, garminAccordionPanel, true);
         requestAnimationFrame(() => {
@@ -1224,8 +1235,8 @@ async function initTrainingResult() {
   garminActivityBack.addEventListener('click', () => {
     if (garminActivityBusy) return;
     garminActivityPreview.hidden = true;
-    garminActivityGuidance.hidden = false;
-    garminActivitySearch.hidden = garminActivityHasSearched;
+    garminActivityGuidance.hidden = hasCurrentGarminActivity();
+    garminActivitySearch.hidden = hasCurrentGarminActivity() || garminActivityHasSearched;
     garminActivityRefresh.hidden = !garminActivityHasSearched;
     garminActivityMore.hidden = !garminActivityCandidatesState.length || !garminActivityHasMore;
     garminActivityCandidates.hidden = garminActivityCandidatesState.length === 0;
@@ -1236,19 +1247,35 @@ async function initTrainingResult() {
   });
   garminActivitySwitch.addEventListener('click', () => {
     if (garminActivityBusy) return;
+    if (hasCurrentGarminActivity() && garminActivitySelectionOpen) {
+      garminActivitySelectionOpen = false;
+      garminActivityPreview.hidden = true;
+      garminActivityPreviewId = null;
+      garminActivityCandidates.hidden = true;
+      garminActivityMore.hidden = true;
+      setGarminActivityStatus('');
+      syncResultSourceVisibility();
+      garminActivitySwitch.focus({ preventScroll: true });
+      return;
+    }
+    garminActivitySelectionOpen = true;
+    setGarminActivityStatus('');
     if (resultSourceSelect.value !== 'garmin') {
       resultSourceSelect.value = 'garmin';
-      syncResultSourceVisibility();
     }
+    syncResultSourceVisibility();
     garminActivityPreview.hidden = true;
-    garminActivityGuidance.hidden = false;
     garminActivityField.scrollIntoView({ block: 'center', behavior: 'smooth' });
     if (garminActivityHasSearched && garminActivityCandidatesState.length) {
       garminActivityCandidates.hidden = false;
+      garminActivitySearch.hidden = true;
+      garminActivityRefresh.hidden = false;
+      garminActivityMore.hidden = !garminActivityHasMore;
       requestAnimationFrame(() => garminActivityCandidates.querySelector(`[data-activity-id="${CSS.escape(String(training?.garmin_activity?.activity_id || ''))}"]`)?.focus()
         || garminActivityRefresh.focus());
     } else {
-      requestAnimationFrame(() => { garminActivitySearch.focus(); void searchGarminActivities(); });
+      void searchGarminActivities();
+      requestAnimationFrame(() => garminActivityStatus.focus({ preventScroll: true }));
     }
   });
   document.addEventListener('app:languagechange', () => {
@@ -1257,6 +1284,8 @@ async function initTrainingResult() {
     if (resultSourceSelect.value === 'garmin') updateGarminActivityWindow();
     if (!garminActivityBusy) {
       garminActivitySearch.textContent = t('session.garminImport.searchInitial');
+      garminActivitySwitch.textContent = t(garminActivitySelectionOpen
+        ? 'session.garminImport.backToCurrentResult' : 'session.garminImport.switchActivity');
       garminActivityRefresh.textContent = t('session.garminImport.refresh');
       garminActivityMore.textContent = t('session.garminImport.more');
       garminActivityBack.textContent = t('session.garminImport.back');
@@ -1298,18 +1327,20 @@ async function initTrainingResult() {
         if (key.startsWith('feedback_')) training[key] = previousTraining[key];
       }
       fitData = { ...result.training, laps: JSON.parse(result.training.fit_summary_json || '{}').laps || [] };
+      garminActivitySelectionOpen = false;
       resultSourceSelect.value = 'garmin';
       garminActivityPreviewId = null;
       garminActivityPreview.hidden = true;
       renderFitData();
       setGarminActivityStatus(result.duplicate ? 'imported' : 'imported');
       refreshFeedbackAccordionSummary();
+      requestAnimationFrame(() => garminActivitySwitch.focus({ preventScroll: true }));
     } catch (error) {
       setGarminActivityStatus(activityErrorKey(error));
       focusGarminActivityError();
       if (['session_changed','connection_changed'].includes(error?.message)) {
         const current = await fetchTraining(requestedTrainingId).catch(() => null);
-        if (current) training = current;
+        if (current) applyCanonicalTraining(current, { preserveFeedbackBaseline: true });
       }
     } finally {
       garminActivityBusy = false;
@@ -1419,6 +1450,7 @@ async function initTrainingResult() {
       resultSourceBadge.textContent = '';
       fitLapsSection.hidden = true;
       fitLapsBody.innerHTML = '';
+      syncResultSourceVisibility();
       return;
     }
     fitDataSection.hidden = false;
@@ -1440,9 +1472,11 @@ async function initTrainingResult() {
     const activityId = training?.garmin_activity?.activity_id;
     activityLink.hidden = source !== 'garmin_connect' || !activityId;
     activityLink.textContent = activityLink.hidden ? '' : t('session.garminActivityLink').replace('{id}', String(activityId));
-    garminActivitySwitch.hidden = activityLink.hidden;
-    garminActivitySwitch.textContent = t('session.garminImport.switchActivity');
+    garminActivitySwitch.hidden = !hasCurrentGarminActivity();
+    garminActivitySwitch.textContent = t(garminActivitySelectionOpen
+      ? 'session.garminImport.backToCurrentResult' : 'session.garminImport.switchActivity');
     renderLapsTable();
+    syncResultSourceVisibility();
   };
 
   let feedbackShoes = [];
@@ -3270,14 +3304,20 @@ async function initTrainingResult() {
     }),
     applyResponse: applyManualResults,
   });
-  const applyCanonicalTraining = (canonical) => {
-    const laps = ['fit_upload', 'garmin_connect'].includes(canonical.result_data_source) ? (fitData?.laps || []) : [];
+  const applyCanonicalTraining = (canonical, { preserveFeedbackBaseline = false } = {}) => {
+    let laps = [];
+    if (['fit_upload', 'garmin_connect'].includes(canonical.result_data_source) && canonical.fit_summary_json) {
+      try {
+        const summary = JSON.parse(canonical.fit_summary_json);
+        if (Array.isArray(summary.laps)) laps = summary.laps;
+      } catch { /* malformed historical summaries stay readable without laps */ }
+    }
     training = canonical;
     fitData = { ...canonical, laps };
     resultSourceSelect.value = canonical.result_data_source === 'manual' ? 'manual'
       : canonical.result_data_source === 'garmin_connect' ? 'garmin' : 'fit';
     renderFitData();
-    feedbackBaselineSignature = feedbackPersistenceSnapshot || feedbackSignature();
+    if (!preserveFeedbackBaseline) feedbackBaselineSignature = feedbackPersistenceSnapshot || feedbackSignature();
     refreshFeedbackAccordionSummary();
   };
   const feedbackPayload = (state) => {

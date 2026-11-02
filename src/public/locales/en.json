@@ -418,7 +418,8 @@
     "garminImport": {
       "explanation": "Search for an activity synced to your Garmin account. A run on the same day may be a suggestion; this does not prove it belongs to this workout.",
       "searchInitial": "Find this workout's result",
-      "switchActivity": "Switch activity",
+      "switchActivity": "Choose another activity",
+      "backToCurrentResult": "Back to current result",
       "refresh": "Refresh search",
       "more": "Load more activities",
       "loadingMore": "Loading…",
