@@ -644,6 +644,7 @@
       "replaceTitle": "Substituir resultado atual?",
       "replaceMessage": "O resultado existente será substituído. Feedback salvo, tênis selecionado e histórico serão preservados.",
       "imported": "Atividade importada. Complete e salve o feedback quando quiser.",
+      "session_expired": "Sua sessão Kinesis expirou durante a solicitação Garmin. Entre novamente; nenhuma atividade foi importada.",
       "dateSuggestion": "Mesmo dia local da sessão; esta é apenas uma sugestão.",
       "dateDifferent": "A data da atividade difere da sessão; confirme explicitamente esta associação.",
       "summaryPace": "estimado pelo resumo Garmin",

@@ -430,6 +430,7 @@
       "replaceTitle": "Replace current result?",
       "replaceMessage": "The existing result will be replaced. Saved feedback, your selected shoe and its history will be preserved.",
       "imported": "Activity imported. Complete and save your feedback when ready.",
+      "session_expired": "Your Kinesis session expired during the Garmin request. Sign in again; no activity was imported.",
       "dateSuggestion": "Same local date as this session; this is only a suggestion.",
       "dateDifferent": "Activity date differs from this session; confirm this association explicitly.",
       "summaryPace": "estimated from Garmin summary",

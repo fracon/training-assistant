@@ -1254,6 +1254,10 @@ def activities(owner_id: str, connection_id: str, body: ActivityQuery,
                 previous_page_hash = None
                 pages_read = 0
                 search_complete = False
+                next_offset = body.offset
+                has_more = False
+                budget_exhausted = False
+                item_limit_reached = False
                 while pages_read < 5:
                     rows = client.get_activities(start=cursor, limit=page_size)
                     _check_deadline(deadline)
@@ -1269,7 +1273,8 @@ def activities(owner_id: str, connection_id: str, body: ActivityQuery,
                         raise RuntimeError("Garmin repeated an activity page")
                     previous_page_hash = page_hash
                     pages_read += 1
-                    for row in rows:
+                    stop_at_window_start = False
+                    for row_index, row in enumerate(rows):
                         if not isinstance(row, dict):
                             raise RuntimeError("Garmin activity item had an unknown shape")
                         local_start = row.get("startTimeLocal")
@@ -1279,6 +1284,12 @@ def activities(owner_id: str, connection_id: str, body: ActivityQuery,
                             activity_day = date.fromisoformat(local_start[:10])
                         except ValueError as exc:
                             raise RuntimeError("Garmin activity item had an invalid date") from exc
+                        source_cursor = cursor + row_index
+                        next_offset = source_cursor + 1
+                        if activity_day < body.start:
+                            search_complete = True
+                            stop_at_window_start = True
+                            break
                         if body.start <= activity_day <= body.end:
                             item = {key: str(value)[:120] if key == "activityName" else value
                                     for key, value in row.items() if key in allowed and key != "activityId"}
@@ -1295,21 +1306,27 @@ def activities(owner_id: str, connection_id: str, body: ActivityQuery,
                                 item["activityType"] = type_key[:80] if isinstance(type_key, str) else "unknown"
                             elif isinstance(activity_type, str):
                                 item["activityType"] = activity_type[:80]
+                            item["source_cursor"] = source_cursor
                             items.append(item)
                             if len(items) == body.limit:
+                                item_limit_reached = True
+                                has_more = True
                                 break
                     if len(items) >= body.limit:
-                        search_complete = True
+                        break
+                    if stop_at_window_start:
                         break
                     cursor += len(rows)
+                    next_offset = cursor
                     oldest = min(date.fromisoformat(row["startTimeLocal"][:10]) for row in rows)
                     if len(rows) < page_size or oldest < body.start:
                         search_complete = True
                         break
                 if not search_complete:
-                    raise RuntimeError("Activity pagination reached its request limit")
-                return {"items": items, "offset": body.offset,
-                        "limit": body.limit}
+                    budget_exhausted = pages_read == 5 and not item_limit_reached
+                    has_more = True
+                return {"items": items, "offset": body.offset, "next_offset": next_offset,
+                        "limit": body.limit, "has_more": has_more, "budget_exhausted": budget_exhausted}
         except Exception as exc:
             raise _record_error(path, exc) from None
 

@@ -279,6 +279,7 @@ async function buildServer(options = {}) {
     garminProduct.register(app, requireAuth);
     createGarminActivityImporter({ db: options.db, fetchImpl: options.garminFetch || fetch,
       config: options.garminConfig || process.env, parseFile, resolveBuffer: resolveFitBuffer,
+      resolveSession: options.garminSessionResolver,
       now: options.garminNow }).register(app, requireAuth);
   }
 

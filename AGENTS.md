@@ -1104,7 +1104,14 @@ upstream errors. No background sync, webhook, AI call, or Garmin mutation is
 part of result import.
 
 `garmin_activity_imports` is managed by idempotent migration
-`2026-11-garmin-activity-import-v1`. Identity is account fingerprint plus
+`2026-11-garmin-activity-import-v1` and schema repair/evolution
+`2026-11-garmin-activity-import-v2`. V2 adds `is_current` as historical (0)
+to every pre-existing row because the old schema cannot prove which binding is
+current; it preserves all rows and never fabricates a current association.
+Only a newly confirmed import can establish a current binding. V2 validates
+required columns, foreign keys, duplicates, and repairs the canonical indexes
+transactionally before recording its marker; unsafe or ambiguous legacy data
+fails startup with an actionable error and no partial migration. Identity is account fingerprint plus
 activity ID; SHA-256 supports exact file reimport checks and is never a universal
 activity identity. Keep one current activity binding per session while retaining
 superseded provenance across disconnect/account changes. Manual/FIT replacement
@@ -1115,3 +1122,10 @@ session open, and later feedback uses the ordinary completion/context/analysis
 invalidation contracts. Exact reimport is a no-op; stale previews, cross-session
 reuse, and concurrent writes are conflicts. Restart/reload discards only the
 short-lived preview cache and requires a new search/preview.
+The connector returns source-row cursors (including rows filtered by the date
+window); Node never derives a remote cursor from the filtered candidate list.
+The exact source cursor is only a lookup hint: preview also rechecks account,
+activity ID, sport, date window, and session authorization so list reordering
+cannot silently select a different activity. Authentication uses the shared
+session resolver after remote work, parsing, and immediately before/in the
+write transaction; a replacement login does not revive an old preview.

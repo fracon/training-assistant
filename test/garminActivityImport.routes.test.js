@@ -33,14 +33,28 @@ const summary = {
 };
 const original = zip([{ name: 'activity.fit', data: 'synthetic-fit-bytes' }]);
 
+function activityPage(items, { offset = 0, nextOffset = offset + items.length, hasMore = false,
+  budgetExhausted = false, limit = 10 } = {}) {
+  return Response.json({ items: items.map((item, index) => ({ ...item, source_cursor: item.source_cursor ?? offset + index })),
+    offset, next_offset: nextOffset, limit, has_more: hasMore, budget_exhausted: budgetExhausted });
+}
+
 async function setup({ rows = [{ activityId: 42, activityName: 'Morning run', startTimeLocal: '2026-11-02 07:00:00',
   activityType: 'running', duration: 3500, distance: 10000, averageHR: null, maxHR: 181, calories: 501, elevationGain: 78 }], parse = async () => summary,
-  originalFile = original, owner = 1, connectorFetch, garminConfig = {}, now } = {}) {
+  originalFile = original, owner = 1, connectorFetch, garminConfig = {}, now, sessionResolver } = {}) {
   const db = createDatabase({ filename: ':memory:' });
   const calls = [];
   const defaultFetch = async (url, init) => {
     calls.push({ url, init });
-    if (url.endsWith('/activities')) return Response.json({ items: rows, offset: 0, limit: 10 });
+    if (url.endsWith('/activities')) {
+      const query = JSON.parse(init.body);
+      const page = rows.slice(query.offset, query.offset + query.limit).map((item, index) => ({
+        ...item, source_cursor: item.source_cursor ?? query.offset + index,
+      }));
+      const nextOffset = query.offset + page.length;
+      return activityPage(page, { offset: query.offset, nextOffset,
+        limit: query.limit, hasMore: page.length >= query.limit || nextOffset < rows.length });
+    }
     if (url.endsWith('/original')) return new Response(originalFile, { status: 200, headers: { 'content-type': 'application/octet-stream' } });
     throw new Error('unexpected request');
   };
@@ -50,7 +64,7 @@ async function setup({ rows = [{ activityId: 42, activityName: 'Morning run', st
       KINESIS_GARMIN_SERVICE_TOKEN: 'synthetic-token'.repeat(4), GARMIN_CONNECTOR_URL: 'http://connector.invalid', ...garminConfig };
   const app = await buildServer({ db, sessionCookieSecure: false, parseFitFile: parse,
     garminConfig: config,
-    garminFetch: connectorFetch || defaultFetch, garminNow: now });
+    garminFetch: connectorFetch || defaultFetch, garminNow: now, garminSessionResolver: sessionResolver });
   await app.inject({ method: 'POST', url: '/api/auth/register', payload: { email: 'import@example.test', password: 'pilot-password', first_name: 'Import', last_name: 'Test' } });
   const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: 'import@example.test', password: 'pilot-password' } });
   const cookie = [].concat(login.headers['set-cookie'])[0].split(';')[0];
@@ -60,8 +74,8 @@ async function setup({ rows = [{ activityId: 42, activityName: 'Morning run', st
   return { db, app, cookie, calls, close: async () => { await app.close(); db.close(); } };
 }
 
-async function preview(h, id = 42, trainingId = 1) {
-  return h.app.inject({ method: 'POST', url: `/api/trainings/${trainingId}/garmin/activity-preview`, headers: { cookie: h.cookie }, payload: { activity_id: id } });
+async function preview(h, id = 42, trainingId = 1, sourceCursor = 0) {
+  return h.app.inject({ method: 'POST', url: `/api/trainings/${trainingId}/garmin/activity-preview`, headers: { cookie: h.cookie }, payload: { activity_id: id, source_cursor: sourceCursor } });
 }
 
 test('activity search, original ZIP preview, confirmed import, provenance, feedback and shoe ledger share the canonical pipeline', async () => {
@@ -157,6 +171,59 @@ test('candidate paging advances across filtered-out activities without repeating
     assert.deepEqual(response.json().items, []);
     assert.equal(response.json().has_more, true);
     assert.equal(response.json().next_offset, 10);
+    assert.equal(response.json().budget_exhausted, false);
+  } finally { await h.close(); }
+});
+
+test('Node follows real connector cursors through remote skips and uses account-qualified ID plus cursor for preview', async () => {
+  const rows = Array.from({ length: 40 }, (_, index) => ({ activityId: String(index + 1),
+    startTimeLocal: index < 20 ? '2026-12-20T07:00:00' : '2026-11-02T07:00:00',
+    activityType: index < 20 ? 'running' : index < 25 ? 'cycling' : 'running' }));
+  const connectorFetch = async (url, init) => {
+    if (!url.endsWith('/activities')) return new Response(original);
+    const request = JSON.parse(init.body);
+    const page = rows.slice(request.offset, request.offset + request.limit).map((row, index) => ({
+      ...row, source_cursor: request.offset + index,
+    }));
+    return activityPage(page, { offset: request.offset, nextOffset: request.offset + page.length,
+      limit: request.limit, hasMore: request.offset + page.length < rows.length || page.length === request.limit });
+  };
+  const h = await setup({ connectorFetch });
+  try {
+    const first = await h.app.inject({ method: 'GET', url: '/api/trainings/1/garmin/activities', headers: { cookie: h.cookie } });
+    assert.deepEqual(first.json().items.map((item) => item.activity_id), []);
+    assert.equal(first.json().next_offset, 10);
+    const second = await h.app.inject({ method: 'GET', url: `/api/trainings/1/garmin/activities?offset=${first.json().next_offset}`, headers: { cookie: h.cookie } });
+    assert.equal(second.json().next_offset, 20);
+    const third = await h.app.inject({ method: 'GET', url: `/api/trainings/1/garmin/activities?offset=${second.json().next_offset}`, headers: { cookie: h.cookie } });
+    assert.deepEqual(third.json().items.map((item) => [item.activity_id,item.source_cursor]), [
+      ['26',25],['27',26],['28',27],['29',28],['30',29],
+    ]);
+    assert.equal(third.json().next_offset, 30);
+    assert.equal(third.json().has_more, true);
+    const fourth = await h.app.inject({ method: 'GET', url: `/api/trainings/1/garmin/activities?offset=${third.json().next_offset}`, headers: { cookie: h.cookie } });
+    assert.deepEqual(fourth.json().items.map((item) => [item.activity_id,item.source_cursor]), [
+      ['31',30],['32',31],['33',32],['34',33],['35',34],['36',35],['37',36],['38',37],['39',38],['40',39],
+    ]);
+    assert.equal(fourth.json().next_offset, 40);
+    assert.equal(fourth.json().has_more, true);
+    const selected = third.json().items[0];
+    const staleOrder = await setup({ connectorFetch: async (url, init) => {
+      if (url.endsWith('/original')) return new Response(original);
+      assert.ok(url.endsWith('/activities'));
+      const request = JSON.parse(init.body);
+      assert.equal(request.offset, selected.source_cursor);
+      const changed = rows[selected.source_cursor];
+      return activityPage([{ ...changed, activityId: '9000', source_cursor: selected.source_cursor },
+        { ...rows[26], activityId: selected.activity_id, source_cursor: selected.source_cursor + 1 }],
+      { offset: selected.source_cursor, nextOffset: selected.source_cursor + 2, limit: 10, hasMore: false });
+    } });
+    try {
+      const previewResult = await preview(staleOrder, selected.activity_id, 1, selected.source_cursor);
+      assert.equal(previewResult.statusCode, 404);
+      assert.equal(previewResult.json().code, 'activity_not_found');
+      assert.equal(staleOrder.calls.some((call) => call.url.endsWith('/original')), false);
+    } finally { await staleOrder.close(); }
   } finally { await h.close(); }
 });
 
@@ -236,12 +303,12 @@ test('connector list errors stay bounded and eligibility is rechecked after the 
   }
   const h = await setup({ connectorFetch: async () => {
     h.db.prepare('UPDATE users SET is_active=0 WHERE id=1').run();
-    return Response.json({ items: [] });
+    return activityPage([]);
   } });
   try {
     const response = await h.app.inject({ method: 'GET', url: '/api/trainings/1/garmin/activities', headers: { cookie: h.cookie } });
-    assert.equal(response.statusCode, 404);
-    assert.equal(response.json().code, 'pilot_unavailable');
+    assert.equal(response.statusCode, 401);
+    assert.equal(response.json().code, 'session_expired');
   } finally { await h.close(); }
 
   let reads = 0;
@@ -267,7 +334,7 @@ test('connector list errors stay bounded and eligibility is rechecked after the 
 
 test('connector settings, search bounds, and connection state are validated before requests', async () => {
   let calls = 0;
-  const noCall = async () => { calls += 1; return Response.json({ items: [] }); };
+  const noCall = async () => { calls += 1; return activityPage([]); };
   const badSettings = [
     { GARMIN_CONNECTOR_URL: 'not a URL' },
     { GARMIN_CONNECTOR_URL: 'file:///tmp/connector' },
@@ -301,19 +368,21 @@ test('connector settings, search bounds, and connection state are validated befo
   } finally { await h.close(); }
 
   const duringJson = await setup({ connectorFetch: async () => {
-    const response = Response.json({ items: [] });
-    response.json = async () => { duringJson.db.prepare('UPDATE users SET is_active=0 WHERE id=1').run(); return { items: [] }; };
+    const response = activityPage([]);
+    response.json = async () => { duringJson.db.prepare('UPDATE users SET is_active=0 WHERE id=1').run(); return { items: [], next_offset: 0, has_more: false }; };
     return response;
   } });
   try {
     const response = await duringJson.app.inject({ method: 'GET', url: '/api/trainings/1/garmin/activities', headers: { cookie: duringJson.cookie } });
-    assert.equal(response.statusCode, 404);
-    assert.equal(response.json().code, 'pilot_unavailable');
+    assert.equal(response.statusCode, 401);
+    assert.equal(response.json().code, 'session_expired');
   } finally { await duringJson.close(); }
 });
 
 test('activity search keeps list errors sanitized, rechecks changed sessions/connections, and rejects oversized pages', async () => {
-  const oversizedPage = await setup({ rows: Array.from({ length: 11 }, (_, index) => ({ activityId: index + 1, startTimeLocal: '2026-11-02 07:00:00' })) });
+  const oversizedPage = await setup({ connectorFetch: async () => activityPage(
+    Array.from({ length: 11 }, (_, index) => ({ activityId: index + 1, startTimeLocal: '2026-11-02 07:00:00' })),
+    { offset: 0,nextOffset: 11,limit: 10,hasMore: true }) });
   try {
     const response = await oversizedPage.app.inject({ method: 'GET', url: '/api/trainings/1/garmin/activities', headers: { cookie: oversizedPage.cookie } });
     assert.equal(response.statusCode, 502);
@@ -325,7 +394,7 @@ test('activity search keeps list errors sanitized, rechecks changed sessions/con
     h = await setup({ connectorFetch: async () => {
       if (change === 'session') h.db.prepare("UPDATE trainings SET dia='2026-11-03' WHERE id=1").run();
       else h.db.prepare('UPDATE garmin_pilot_connections SET connection_generation=2 WHERE user_id=1').run();
-      return Response.json({ items: [] });
+      return activityPage([]);
     } });
     try {
       const response = await h.app.inject({ method: 'GET', url: '/api/trainings/1/garmin/activities', headers: { cookie: h.cookie } });
@@ -352,12 +421,297 @@ test('activity search keeps list errors sanitized, rechecks changed sessions/con
   } finally { await internal.close(); }
 });
 
+test('Garmin activity endpoints revalidate the original login session after search, download, parsing and in-transaction confirmation', async () => {
+  let markStarted;
+  let release;
+  const started = new Promise((resolve) => { markStarted = resolve; });
+  let gate = new Promise((resolve) => { release = resolve; });
+  let h = await setup({ connectorFetch: async () => { markStarted(); await gate; return activityPage([{ activityId: 42,
+    activityName: 'private run',startTimeLocal: '2026-11-02T07:00:00',activityType: 'running' }]); } });
+  try {
+    const pending = h.app.inject({ method: 'GET', url: '/api/trainings/1/garmin/activities', headers: { cookie: h.cookie } });
+    await started;
+    const token = h.cookie.split('=')[1];
+    h.db.prepare('DELETE FROM sessions WHERE id=?').run(token);
+    release();
+    const response = await pending;
+    assert.equal(response.statusCode, 401);
+    assert.deepEqual(response.json(), { code: 'session_expired' });
+    assert.doesNotMatch(response.body, /private run|activity_id|Morning run/);
+    assert.equal(h.db.prepare('SELECT result_data_source FROM trainings WHERE id=1').get().result_data_source, 'none');
+  } finally { release(); await h.close(); }
+
+  let downloadStarted;
+  let releaseDownload;
+  const downloadGate = new Promise((resolve) => { releaseDownload = resolve; });
+  const downloading = await setup({ connectorFetch: async (url) => {
+    if (url.endsWith('/activities')) return activityPage([{ activityId: 42, activityName: 'private run',
+      startTimeLocal: '2026-11-02T07:00:00',activityType: 'running' }]);
+    downloadStarted?.();
+    await downloadGate;
+    return new Response(original);
+  } });
+  const downloadPromise = new Promise((resolve) => { downloadStarted = resolve; });
+  try {
+    const pending = preview(downloading);
+    await downloadPromise;
+    const token = downloading.cookie.split('=')[1];
+    downloading.db.prepare('DELETE FROM sessions WHERE id=?').run(token);
+    releaseDownload();
+    const response = await pending;
+    assert.equal(response.statusCode, 401);
+    assert.equal(response.json().code, 'session_expired');
+    assert.equal(Object.hasOwn(response.json(), 'preview_id'), false);
+    assert.equal(downloading.db.prepare('SELECT result_data_source FROM trainings WHERE id=1').get().result_data_source, 'none');
+  } finally { releaseDownload(); await downloading.close(); }
+
+  let parseStarted;
+  let releaseParse;
+  const parsingGate = new Promise((resolve) => { releaseParse = resolve; });
+  const parsingStarted = new Promise((resolve) => { parseStarted = resolve; });
+  const parsing = await setup({ parse: async () => { parseStarted(); await parsingGate; return summary; } });
+  try {
+    parsing.db.prepare("UPDATE trainings SET result_data_source='manual',fit_distance=5,fit_duration='30:00' WHERE id=1").run();
+    const pending = preview(parsing);
+    await parsingStarted;
+    const token = parsing.cookie.split('=')[1];
+    parsing.db.prepare('UPDATE sessions SET expires_at=? WHERE id=?').run('2000-01-01T00:00:00.000Z', token);
+    releaseParse();
+    const response = await pending;
+    assert.equal(response.statusCode, 401);
+    assert.equal(response.json().code, 'session_expired');
+    assert.equal(Object.hasOwn(response.json(), 'preview_id'), false);
+    assert.deepEqual(parsing.db.prepare('SELECT result_data_source,fit_distance,fit_duration FROM trainings WHERE id=1').get(),
+      { result_data_source: 'manual',fit_distance: 5,fit_duration: '30:00' });
+  } finally { releaseParse(); await parsing.close(); }
+
+  let resolverCalls = 0;
+  let revokeAt = 0;
+  const txRevocation = await setup({ sessionResolver(db, token) {
+    resolverCalls += 1;
+    if (revokeAt && resolverCalls === revokeAt) db.prepare('DELETE FROM sessions WHERE id=?').run(token);
+    return require('../src/auth/sessions').findActiveSession(db, token);
+  } });
+  try {
+    const reviewed = await preview(txRevocation);
+    assert.equal(reviewed.statusCode, 200);
+    resolverCalls = 0;
+    revokeAt = 3;
+    txRevocation.db.prepare('UPDATE shoes SET mileage=0 WHERE user_id=1').run();
+    const response = await txRevocation.app.inject({ method: 'POST', url: '/api/trainings/1/garmin/activity-import',
+      headers: { cookie: txRevocation.cookie }, payload: { preview_id: reviewed.json().preview_id } });
+    assert.equal(response.statusCode, 401);
+    assert.equal(response.json().code, 'session_expired');
+    assert.equal(txRevocation.db.prepare('SELECT result_data_source FROM trainings WHERE id=1').get().result_data_source, 'none');
+    assert.equal(txRevocation.db.prepare('SELECT COUNT(*) AS count FROM garmin_activity_imports').get().count, 0);
+  } finally { await txRevocation.close(); }
+});
+
+test('activity import revalidates at response, stream-consumption, preview-registration and pre-transaction boundaries', async () => {
+  const sessionModule = require('../src/auth/sessions');
+  let resolverCalls = 0;
+  let revokeAt = 0;
+  const sessionResolver = (db, token) => {
+    resolverCalls += 1;
+    if (revokeAt && resolverCalls === revokeAt) db.prepare('DELETE FROM sessions WHERE id=?').run(token);
+    return sessionModule.findActiveSession(db, token);
+  };
+
+  const afterList = await setup({ sessionResolver, connectorFetch: async () => activityPage([{ activityId: 42,
+    activityName: 'private response-boundary run',startTimeLocal: '2026-11-02T07:00:00',activityType: 'running' }]) });
+  try {
+    resolverCalls = 0;
+    revokeAt = 5; // Route-level check after the connector has decoded its response.
+    const response = await afterList.app.inject({ method: 'GET', url: '/api/trainings/1/garmin/activities', headers: { cookie: afterList.cookie } });
+    assert.equal(response.statusCode, 401);
+    assert.deepEqual(response.json(), { code: 'session_expired' });
+    assert.doesNotMatch(response.body, /private response-boundary run|activity_id/);
+  } finally { await afterList.close(); }
+
+  let streamStarted;
+  let releaseStream;
+  const streamReady = new Promise((resolve) => { streamStarted = resolve; });
+  const streamGate = new Promise((resolve) => { releaseStream = resolve; });
+  const streaming = await setup({ connectorFetch: async (url) => {
+    if (url.endsWith('/activities')) return activityPage([{ activityId: 42, startTimeLocal: '2026-11-02T07:00:00', activityType: 'running' }]);
+    let pushed = false;
+    const body = new ReadableStream({
+      pull(controller) {
+        if (!pushed) { pushed = true; controller.enqueue(original); streamStarted(); return; }
+        return streamGate.then(() => controller.close());
+      },
+    });
+    return new Response(body, { headers: { 'content-type': 'application/octet-stream' } });
+  } });
+  try {
+    const pending = preview(streaming);
+    await streamReady;
+    streaming.db.prepare('DELETE FROM sessions WHERE id=?').run(streaming.cookie.split('=')[1]);
+    releaseStream();
+    const response = await pending;
+    assert.equal(response.statusCode, 401);
+    assert.deepEqual(response.json(), { code: 'session_expired' });
+    assert.equal(Object.hasOwn(response.json(), 'preview_id'), false);
+    assert.equal(streaming.db.prepare('SELECT result_data_source FROM trainings WHERE id=1').get().result_data_source, 'none');
+  } finally { releaseStream(); await streaming.close(); }
+
+  const beforeCache = await setup({ sessionResolver });
+  try {
+    resolverCalls = 0;
+    revokeAt = 10; // The final check immediately before the in-memory preview is registered.
+    const response = await preview(beforeCache);
+    assert.equal(response.statusCode, 401);
+    assert.deepEqual(response.json(), { code: 'session_expired' });
+    assert.equal(Object.hasOwn(response.json(), 'preview_id'), false);
+    assert.equal(beforeCache.db.prepare('SELECT result_data_source FROM trainings WHERE id=1').get().result_data_source, 'none');
+  } finally { revokeAt = 0; await beforeCache.close(); }
+
+  const afterPreviewList = await setup({ sessionResolver });
+  try {
+    resolverCalls = 0;
+    revokeAt = 5;
+    const response = await preview(afterPreviewList);
+    assert.equal(response.statusCode, 401);
+    assert.deepEqual(response.json(), { code: 'session_expired' });
+    assert.equal(afterPreviewList.calls.filter((call) => call.url.endsWith('/original')).length, 0);
+  } finally { revokeAt = 0; await afterPreviewList.close(); }
+
+  const beforeTransaction = await setup({ sessionResolver });
+  try {
+    revokeAt = 0;
+    const reviewed = await preview(beforeTransaction);
+    assert.equal(reviewed.statusCode, 200);
+    resolverCalls = 0;
+    revokeAt = 2; // Confirmation's second authorization check, before BEGIN IMMEDIATE.
+    const response = await beforeTransaction.app.inject({ method: 'POST', url: '/api/trainings/1/garmin/activity-import',
+      headers: { cookie: beforeTransaction.cookie }, payload: { preview_id: reviewed.json().preview_id } });
+    assert.equal(response.statusCode, 401);
+    assert.deepEqual(response.json(), { code: 'session_expired' });
+    assert.equal(beforeTransaction.db.prepare('SELECT result_data_source FROM trainings WHERE id=1').get().result_data_source, 'none');
+    assert.equal(beforeTransaction.db.prepare('SELECT COUNT(*) AS count FROM garmin_activity_imports').get().count, 0);
+  } finally { revokeAt = 0; await beforeTransaction.close(); }
+
+  const parserPilotError = await setup({ parse: async () => { throw new Error('pilot_unavailable'); } });
+  try {
+    const response = await preview(parserPilotError);
+    assert.equal(response.statusCode, 404);
+    assert.deepEqual(response.json(), { code: 'pilot_unavailable' });
+  } finally { await parserPilotError.close(); }
+
+  let unavailable;
+  unavailable = await setup({ connectorFetch: async () => {
+    const prepare = unavailable.db.prepare.bind(unavailable.db);
+    unavailable.db.prepare = (sql) => {
+      if (sql.includes('SELECT id, is_active FROM users')) throw new Error('synthetic local query fault');
+      return prepare(sql);
+    };
+    return activityPage([{ activityId: 42, startTimeLocal: '2026-11-02T07:00:00', activityType: 'running' }]);
+  } });
+  try {
+    const response = await preview(unavailable);
+    assert.equal(response.statusCode, 503);
+    assert.equal(response.json().code, 'connector_unavailable');
+    assert.ok(response.json().diagnostic_id);
+    assert.doesNotMatch(response.body, /no such table|trainings/i);
+  } finally { await unavailable.close(); }
+});
+
+test('connector requests recheck pilot eligibility before, after status/body and during original streaming', async () => {
+  const cases = [
+    { name: 'before request', failAt: 2, fetch: async () => activityPage([]) },
+    { name: 'after response', failAt: 3, fetch: async () => activityPage([]) },
+    { name: 'after JSON body', failAt: 4, fetch: async () => activityPage([]) },
+    { name: 'after failed request', failAt: 3, fetch: async () => { throw new TypeError('synthetic unavailable'); } },
+    { name: 'after error body', failAt: 4, fetch: async () => ({ ok: false, status: 503,
+      json: async () => { state.enabled = false; return { detail: { code: 'unavailable' } }; } }) },
+  ];
+  for (const scenario of cases) {
+    const state = { enabled: true, checks: 0 };
+    const h = await setup({ garminConfig: (config) => new Proxy(config, { get(target, key) {
+      if (key === 'GARMIN_PILOT_ENABLED') return state.enabled && ++state.checks !== scenario.failAt ? 'true' : 'false';
+      return target[key];
+    } }), connectorFetch: scenario.fetch });
+    try {
+      state.checks = 0;
+      const response = await h.app.inject({ method: 'GET', url: '/api/trainings/1/garmin/activities', headers: { cookie: h.cookie } });
+      assert.equal(response.statusCode, 404, scenario.name);
+      assert.equal(response.json().code, 'pilot_unavailable', scenario.name);
+      assert.doesNotMatch(response.body, /activity_id|Morning run/);
+      assert.equal(state.checks, scenario.failAt,
+        `${scenario.name} reached the intended authorization boundary`);
+    } finally { await h.close(); }
+  }
+
+  const state = { enabled: true, checks: 0 };
+  const streamed = await setup({ garminConfig: (config) => new Proxy(config, { get(target, key) {
+    if (key === 'GARMIN_PILOT_ENABLED') return state.enabled && ++state.checks !== 8 ? 'true' : 'false';
+    return target[key];
+  } }), connectorFetch: async (url) => url.endsWith('/activities')
+    ? activityPage([{ activityId: 42, startTimeLocal: '2026-11-02T07:00:00', activityType: 'running' }])
+    : new Response(original) });
+  try {
+    state.checks = 0;
+    const response = await preview(streamed);
+    assert.equal(state.checks, 8);
+    assert.equal(response.statusCode, 404);
+    assert.deepEqual(response.json(), { code: 'pilot_unavailable' });
+    assert.equal(Object.hasOwn(response.json(), 'preview_id'), false);
+  } finally { await streamed.close(); }
+});
+
+test('connector boundaries return 401 when the shared session expires before, after a failed response, or while decoding', async () => {
+  const sessionModule = require('../src/auth/sessions');
+  const scenarios = [
+    { name: 'before request', revokeAt: 2, fetch: async () => { throw new Error('fetch must not start'); } },
+    { name: 'after fetch failure', revokeAt: 3, fetch: async () => { throw new TypeError('synthetic timeout'); } },
+    { name: 'after error body', revokeAt: 4, fetch: async () => new Response(JSON.stringify({ detail: { code: 'unavailable' } }), { status: 503 }) },
+    { name: 'after JSON body', revokeAt: 4, fetch: async () => activityPage([]) },
+  ];
+  for (const scenario of scenarios) {
+    let calls = 0;
+    const sessionResolver = (db, token) => {
+      calls += 1;
+      if (calls === scenario.revokeAt) db.prepare('DELETE FROM sessions WHERE id=?').run(token);
+      return sessionModule.findActiveSession(db, token);
+    };
+    const h = await setup({ sessionResolver, connectorFetch: scenario.fetch });
+    try {
+      calls = 0;
+      const response = await h.app.inject({ method: 'GET', url: '/api/trainings/1/garmin/activities', headers: { cookie: h.cookie } });
+      assert.equal(response.statusCode, 401, scenario.name);
+      assert.deepEqual(response.json(), { code: 'session_expired' }, scenario.name);
+      assert.doesNotMatch(response.body, /activity_id|Morning run/);
+      assert.equal(h.db.prepare('SELECT result_data_source FROM trainings WHERE id=1').get().result_data_source, 'none');
+    } finally { await h.close(); }
+  }
+});
+
+test('logout, expired sessions, and replacement login cannot reuse a prior Garmin preview', async () => {
+  const h = await setup();
+  try {
+    const reviewed = await preview(h);
+    const oldToken = h.cookie.split('=')[1];
+    h.db.prepare('DELETE FROM sessions WHERE id=?').run(oldToken);
+    let response = await h.app.inject({ method: 'POST', url: '/api/trainings/1/garmin/activity-import',
+      headers: { cookie: h.cookie }, payload: { preview_id: reviewed.json().preview_id, confirm_replace: true } });
+    assert.equal(response.statusCode, 401);
+    assert.equal(h.db.prepare('SELECT COUNT(*) AS count FROM garmin_activity_imports').get().count, 0);
+    const replacement = createSession(h.db, 1);
+    response = await h.app.inject({ method: 'POST', url: '/api/trainings/1/garmin/activity-import',
+      headers: { cookie: `ta_session=${replacement.token}` }, payload: { preview_id: reviewed.json().preview_id, confirm_replace: true } });
+    assert.equal(response.statusCode, 409);
+    assert.equal(response.json().code, 'preview_expired');
+    assert.equal(h.db.prepare('SELECT result_data_source FROM trainings WHERE id=1').get().result_data_source, 'none');
+    assert.equal(h.db.prepare('SELECT COUNT(*) AS count FROM garmin_activity_imports').get().count, 0);
+  } finally { await h.close(); }
+});
+
 test('parallel activity searches fail fast without overlapping Garmin requests', async () => {
   let markStarted;
   let release;
   const started = new Promise((resolve) => { markStarted = resolve; });
   const gate = new Promise((resolve) => { release = resolve; });
-  const h = await setup({ connectorFetch: async () => { markStarted(); await gate; return Response.json({ items: [] }); } });
+  const h = await setup({ connectorFetch: async () => { markStarted(); await gate; return activityPage([]); } });
   try {
     const first = h.app.inject({ method: 'GET', url: '/api/trainings/1/garmin/activities', headers: { cookie: h.cookie } });
     await started;
@@ -383,7 +737,7 @@ test('original download rejects unsafe responses and preserves the previous resu
   ];
   for (const [name, responseFactory, status] of cases) {
     const h = await setup({ connectorFetch: async (url) => url.endsWith('/activities')
-      ? Response.json({ items: [{ activityId: '42', startTimeLocal: '2026-11-02 07:00:00', activityType: 'running' }] })
+      ? activityPage([{ activityId: '42', startTimeLocal: '2026-11-02 07:00:00', activityType: 'running' }])
       : responseFactory() });
     try {
       const response = await preview(h);
@@ -392,7 +746,7 @@ test('original download rejects unsafe responses and preserves the previous resu
     } finally { await h.close(); }
   }
   const streamed = await setup({ connectorFetch: async (url) => {
-    if (url.endsWith('/activities')) return Response.json({ items: [{ activityId: 42, startTimeLocal: '2026-11-02 07:00:00' }] });
+    if (url.endsWith('/activities')) return activityPage([{ activityId: 42, startTimeLocal: '2026-11-02 07:00:00' }]);
     const stream = new ReadableStream({ start(controller) { controller.enqueue(new Uint8Array(25 * 1024 * 1024 + 1)); } });
     return new Response(stream, { headers: { 'content-type': 'application/zip' } });
   } });
@@ -401,13 +755,13 @@ test('original download rejects unsafe responses and preserves the previous resu
 
   let revoked;
   revoked = await setup({ connectorFetch: async (url) => url.endsWith('/activities')
-    ? Response.json({ items: [{ activityId: 42, startTimeLocal: '2026-11-02 07:00:00' }] })
+    ? activityPage([{ activityId: 42, startTimeLocal: '2026-11-02 07:00:00' }])
     : ({ ok: true, status: 200, headers: { get: () => 'application/zip' }, body: null,
       arrayBuffer: async () => { revoked.db.prepare('UPDATE users SET is_active=0 WHERE id=1').run(); return original; } }) });
   try {
     const response = await preview(revoked);
-    assert.equal(response.statusCode, 404);
-    assert.equal(response.json().code, 'pilot_unavailable');
+    assert.equal(response.statusCode, 401);
+    assert.equal(response.json().code, 'session_expired');
   } finally { await revoked.close(); }
 
   const revokedAfterParse = await setup({ parse: async () => {
@@ -416,8 +770,8 @@ test('original download rejects unsafe responses and preserves the previous resu
   } });
   try {
     const response = await preview(revokedAfterParse);
-    assert.equal(response.statusCode, 404);
-    assert.equal(response.json().code, 'pilot_unavailable');
+    assert.equal(response.statusCode, 401);
+    assert.equal(response.json().code, 'session_expired');
   } finally { await revokedAfterParse.close(); }
 });
 
@@ -428,7 +782,7 @@ test('preview validates its selected candidate, parser output and import confirm
     assert.equal(notListed.statusCode, 404);
     const malformed = await h.app.inject({ method: 'POST', url: '/api/trainings/1/garmin/activity-preview', headers: { cookie: h.cookie }, payload: { activity_id: 'bad/id' } });
     assert.equal(malformed.statusCode, 400);
-    const badOffset = await h.app.inject({ method: 'POST', url: '/api/trainings/1/garmin/activity-preview', headers: { cookie: h.cookie }, payload: { activity_id: 42, search_offset: 10001 } });
+    const badOffset = await h.app.inject({ method: 'POST', url: '/api/trainings/1/garmin/activity-preview', headers: { cookie: h.cookie }, payload: { activity_id: 42, source_cursor: 10001 } });
     assert.equal(badOffset.statusCode, 400);
     const reviewed = await preview(h);
     assert.equal(reviewed.statusCode, 200);
@@ -479,7 +833,7 @@ test('preview rejects unauthorized, stale, absent and unsupported candidate stat
   ] });
   try {
     assert.equal((await preview(invalidType, 42)).json().code, 'unsupported_activity');
-    assert.equal((await preview(invalidType, 43)).json().code, 'activity_not_found');
+    assert.equal((await preview(invalidType, 43, 1, 1)).json().code, 'activity_not_found');
   } finally { await invalidType.close(); }
 
   const unsupported = await setup({ parse: async () => ({ activity: { sport: 'cycling' }, totals: {}, laps: [] }) });
@@ -503,14 +857,14 @@ test('preview handles remote list failures and rechecks session, identity and el
         if (change === 'session') h.db.prepare("UPDATE trainings SET dia='2026-11-03' WHERE id=1").run();
         if (change === 'identity') h.db.prepare("UPDATE garmin_pilot_connections SET identity_fingerprint=? WHERE user_id=1").run('b'.repeat(64));
         if (change === 'eligibility') h.db.prepare('UPDATE users SET is_active=0 WHERE id=1').run();
-        return Response.json({ items: [{ activityId: 42, startTimeLocal: '2026-11-02 07:00:00', activityType: 'running' }] });
+        return activityPage([{ activityId: 42, startTimeLocal: '2026-11-02 07:00:00', activityType: 'running' }]);
       }
       return new Response(original);
     } });
     try {
       const response = await preview(h);
-      assert.equal(response.statusCode, change === 'eligibility' ? 404 : 409);
-      assert.equal(response.json().code, change === 'eligibility' ? 'pilot_unavailable' : change === 'identity' ? 'connection_changed' : 'session_changed');
+      assert.equal(response.statusCode, change === 'eligibility' ? 401 : 409);
+      assert.equal(response.json().code, change === 'eligibility' ? 'session_expired' : change === 'identity' ? 'connection_changed' : 'session_changed');
     } finally { await h.close(); }
   }
 
@@ -525,7 +879,7 @@ test('preview handles remote list failures and rechecks session, identity and el
 test('preview rechecks connection generation when a connection changes during original download', async () => {
   let h;
   h = await setup({ connectorFetch: async (url) => {
-    if (url.endsWith('/activities')) return Response.json({ items: [{ activityId: 42, startTimeLocal: '2026-11-02 07:00:00' }] });
+    if (url.endsWith('/activities')) return activityPage([{ activityId: 42, startTimeLocal: '2026-11-02 07:00:00' }]);
     h.db.prepare('UPDATE garmin_pilot_connections SET connection_generation=connection_generation+1 WHERE user_id=1').run();
     return new Response(original);
   } });

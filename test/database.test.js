@@ -16,6 +16,7 @@ const {
 } = require('../src/db/database');
 const { buildServer } = require('../src/server');
 const { registerUser } = require('../src/auth/registration');
+const { createSession } = require('../src/auth/sessions');
 const {
   buildLapsMarkdown,
   formatCadence,
@@ -81,6 +82,200 @@ test('Garmin activity provenance migration is idempotent and enforces one curren
   db.prepare('UPDATE garmin_pilot_connections SET identity_fingerprint=NULL').run();
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM garmin_activity_imports').get().n, 1,
     'disconnect or account replacement keeps historical activity provenance');
+  db.close();
+});
+
+function replaceWithLegacyActivityImports(db, { rows = [], currentColumn = false, uniqueIdentity = true } = {}) {
+  db.exec('DROP TABLE garmin_activity_imports');
+  db.exec(`CREATE TABLE garmin_activity_imports (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    training_id INTEGER NOT NULL REFERENCES trainings(id) ON DELETE CASCADE,
+    account_fingerprint TEXT NOT NULL CHECK (length(account_fingerprint)=64),
+    activity_id TEXT NOT NULL,
+    file_sha256 TEXT NOT NULL CHECK (length(file_sha256)=64),
+    importer_version INTEGER NOT NULL CHECK (importer_version>0),
+    ${currentColumn ? 'is_current INTEGER NOT NULL DEFAULT 0 CHECK (is_current IN (0,1)),' : ''}
+    imported_at TEXT NOT NULL DEFAULT (datetime('now'))
+    ${uniqueIdentity ? ',UNIQUE(account_fingerprint,activity_id)' : ''}
+  )`);
+  const columns = ['id','user_id','training_id','account_fingerprint','activity_id','file_sha256','importer_version'];
+  if (currentColumn) columns.push('is_current');
+  columns.push('imported_at');
+  const values = rows.map((row) => `(${columns.map(() => '?').join(',')})`).join(',');
+  if (rows.length) {
+    const parameters = rows.flatMap((row) => [row.id, row.user_id, row.training_id, row.account_fingerprint,
+      row.activity_id, row.file_sha256, row.importer_version, ...(currentColumn ? [row.is_current] : []), row.imported_at]);
+    db.prepare(`INSERT INTO garmin_activity_imports (${columns.join(',')}) VALUES ${values}`).run(...parameters);
+  }
+}
+
+test('Garmin activity v2 repair preserves legacy rows as history and completes startup after upgrade', async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'kinesis-activity-migration-'));
+  const filename = path.join(temp, 'database.sqlite');
+  try {
+    let db = createDatabase({ filename });
+    db.prepare("INSERT INTO users(id,email,password_hash) VALUES(1,'activity-upgrade@example.test','hash')").run();
+    db.prepare("INSERT INTO trainings(id,user_id,dia,tipo,treino,result_data_source) VALUES(1,1,'2026-11-02','run','tempo','garmin_connect')").run();
+    replaceWithLegacyActivityImports(db, { rows: [
+      { id: 1,user_id: 1,training_id: 1,account_fingerprint: 'a'.repeat(64),activity_id: '72',file_sha256: 'b'.repeat(64),importer_version: 1,imported_at: '2026-11-01 10:00:00' },
+      { id: 2,user_id: 1,training_id: 1,account_fingerprint: 'a'.repeat(64),activity_id: '73',file_sha256: 'c'.repeat(64),importer_version: 1,imported_at: '2026-11-01 11:00:00' },
+    ] });
+    assert.ok(db.prepare("SELECT 1 FROM schema_migrations WHERE name='2026-11-garmin-activity-import-v1'").get());
+    db.prepare("DELETE FROM schema_migrations WHERE name='2026-11-garmin-activity-import-v2'").run();
+    db.close();
+
+    db = createDatabase({ filename });
+    assert.deepEqual(db.prepare('SELECT id,user_id,training_id,account_fingerprint,activity_id,file_sha256,importer_version,is_current,imported_at FROM garmin_activity_imports ORDER BY id').all(), [
+      { id: 1,user_id: 1,training_id: 1,account_fingerprint: 'a'.repeat(64),activity_id: '72',file_sha256: 'b'.repeat(64),importer_version: 1,is_current: 0,imported_at: '2026-11-01 10:00:00' },
+      { id: 2,user_id: 1,training_id: 1,account_fingerprint: 'a'.repeat(64),activity_id: '73',file_sha256: 'c'.repeat(64),importer_version: 1,is_current: 0,imported_at: '2026-11-01 11:00:00' },
+    ]);
+    const tableInfo = db.prepare('PRAGMA table_info(garmin_activity_imports)').all();
+    const current = tableInfo.find((column) => column.name === 'is_current');
+    assert.equal(current.type, 'INTEGER');
+    assert.equal(current.notnull, 1);
+    assert.equal(current.dflt_value, '0');
+    assert.match(db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='garmin_activity_imports'").get().sql, /CHECK \(is_current IN \(0,1\)\)/);
+    assert.deepEqual(db.prepare('PRAGMA foreign_key_list(garmin_activity_imports)').all().map((key) => [key.table,key.from,key.to,key.on_delete]).sort(), [
+      ['trainings','training_id','id','CASCADE'],['users','user_id','id','CASCADE'],
+    ]);
+    const indexes = db.prepare('PRAGMA index_list(garmin_activity_imports)').all();
+    assert.ok(indexes.some((index) => index.name === 'idx_garmin_activity_import_training' && !index.unique));
+    assert.ok(indexes.some((index) => index.name === 'idx_garmin_activity_import_current_training' && index.unique && index.partial));
+    db.prepare('UPDATE garmin_activity_imports SET is_current=1 WHERE id=1').run();
+    assert.throws(() => db.prepare('UPDATE garmin_activity_imports SET is_current=1 WHERE id=2').run(), /UNIQUE constraint failed/);
+    db.prepare('UPDATE garmin_activity_imports SET is_current=0 WHERE id=1').run();
+    assert.ok(db.prepare("SELECT 1 FROM schema_migrations WHERE name='2026-11-garmin-activity-import-v2'").get());
+
+    const beforeSecondRun = {
+      rows: db.prepare('SELECT id,activity_id,is_current,imported_at FROM garmin_activity_imports ORDER BY id').all(),
+      indexes: db.prepare('PRAGMA index_list(garmin_activity_imports)').all().map(({name,unique,partial})=>({name,unique,partial})).sort((a,b)=>a.name.localeCompare(b.name)),
+    };
+    migrateDatabase(db);
+    assert.deepEqual({
+      rows: db.prepare('SELECT id,activity_id,is_current,imported_at FROM garmin_activity_imports ORDER BY id').all(),
+      indexes: db.prepare('PRAGMA index_list(garmin_activity_imports)').all().map(({name,unique,partial})=>({name,unique,partial})).sort((a,b)=>a.name.localeCompare(b.name)),
+    }, beforeSecondRun);
+
+    const app = await buildServer({ db, sessionCookieSecure: false });
+    await app.close();
+    db.close();
+  } finally { fs.rmSync(temp, { recursive: true, force: true }); }
+});
+
+test('Garmin activity v2 repair fixes incompatible named indexes and preserves an explicit current link', () => {
+  const db = createDatabase({ filename: ':memory:' });
+  db.prepare("INSERT INTO users(id,email,password_hash) VALUES(1,'activity-index@example.test','hash')").run();
+  db.prepare("INSERT INTO trainings(id,user_id,dia,tipo,treino,result_data_source) VALUES(1,1,'2026-11-02','run','tempo','garmin_connect')").run();
+  db.prepare(`INSERT INTO garmin_activity_imports(user_id,training_id,account_fingerprint,activity_id,file_sha256,importer_version,is_current)
+    VALUES(1,1,?,?,?,1,1)`).run('a'.repeat(64),'72','b'.repeat(64));
+  db.exec(`DROP INDEX idx_garmin_activity_import_training;
+    DROP INDEX idx_garmin_activity_import_current_training;
+    CREATE INDEX idx_garmin_activity_import_training ON garmin_activity_imports(activity_id);
+    CREATE UNIQUE INDEX idx_garmin_activity_import_current_training ON garmin_activity_imports(user_id,training_id) WHERE is_current=0;
+    CREATE UNIQUE INDEX idx_garmin_activity_import_identity ON garmin_activity_imports(file_sha256);`);
+  db.prepare("DELETE FROM schema_migrations WHERE name='2026-11-garmin-activity-import-v2'").run();
+  migrateDatabase(db);
+  assert.equal(db.prepare('SELECT is_current FROM garmin_activity_imports WHERE activity_id=?').get('72').is_current, 1);
+  const indexes = db.prepare('PRAGMA index_list(garmin_activity_imports)').all();
+  assert.ok(indexes.some((index) => index.name === 'idx_garmin_activity_import_training' && !index.unique));
+  assert.ok(indexes.some((index) => index.name === 'idx_garmin_activity_import_current_training' && index.unique && index.partial));
+  const uniqueIndexes = db.prepare('PRAGMA index_list(garmin_activity_imports)').all().filter((index) => index.unique);
+  assert.ok(uniqueIndexes.some((index) => db.prepare(`PRAGMA index_info(${JSON.stringify(index.name)})`).all().map((row) => row.name)
+    .join(',') === 'account_fingerprint,activity_id'));
+  assert.deepEqual(db.prepare('PRAGMA index_info(idx_garmin_activity_import_training)').all().map((row) => row.name), ['user_id','training_id','imported_at']);
+  db.close();
+});
+
+test('Garmin activity v2 creates the missing identity index when legacy metadata lacks uniqueness', () => {
+  const db = createDatabase({ filename: ':memory:' });
+  db.prepare("INSERT INTO users(id,email,password_hash) VALUES(1,'activity-identity-index@example.test','hash')").run();
+  db.prepare("INSERT INTO trainings(id,user_id,dia,tipo,treino) VALUES(1,1,'2026-11-02','run','tempo')").run();
+  replaceWithLegacyActivityImports(db, { uniqueIdentity: false, rows: [
+    { id: 1,user_id: 1,training_id: 1,account_fingerprint: 'a'.repeat(64),activity_id: '72',file_sha256: 'b'.repeat(64),importer_version: 1,imported_at: '2026-11-01 10:00:00' },
+  ] });
+  db.prepare("DELETE FROM schema_migrations WHERE name='2026-11-garmin-activity-import-v2'").run();
+
+  migrateDatabase(db);
+  const index = db.prepare("SELECT sql FROM sqlite_master WHERE type='index' AND name='idx_garmin_activity_import_identity'").get();
+  assert.match(index.sql, /CREATE UNIQUE INDEX .*\(account_fingerprint,activity_id\)/);
+  assert.throws(() => db.prepare(`INSERT INTO garmin_activity_imports(user_id,training_id,account_fingerprint,activity_id,file_sha256,importer_version)
+    VALUES(1,1,?,?,?,1)`).run('a'.repeat(64),'72','c'.repeat(64)), /UNIQUE constraint failed/);
+  db.close();
+});
+
+test('Garmin activity v2 refuses ambiguous multiple current legacy rows without partial changes', () => {
+  const db = createDatabase({ filename: ':memory:' });
+  db.prepare("INSERT INTO users(id,email,password_hash) VALUES(1,'activity-current-index@example.test','hash')").run();
+  db.prepare("INSERT INTO trainings(id,user_id,dia,tipo,treino) VALUES(1,1,'2026-11-02','run','tempo')").run();
+  replaceWithLegacyActivityImports(db, { currentColumn: true, rows: [
+    { id: 1,user_id: 1,training_id: 1,account_fingerprint: 'a'.repeat(64),activity_id: '72',file_sha256: 'b'.repeat(64),importer_version: 1,is_current: 1,imported_at: '2026-11-01 10:00:00' },
+    { id: 2,user_id: 1,training_id: 1,account_fingerprint: 'a'.repeat(64),activity_id: '73',file_sha256: 'c'.repeat(64),importer_version: 1,is_current: 1,imported_at: '2026-11-01 11:00:00' },
+  ] });
+  db.prepare("DELETE FROM schema_migrations WHERE name='2026-11-garmin-activity-import-v2'").run();
+
+  assert.throws(() => migrateDatabase(db), /multiple current activities/);
+  assert.equal(db.prepare("SELECT 1 FROM schema_migrations WHERE name='2026-11-garmin-activity-import-v2'").get(), undefined);
+  assert.deepEqual(db.prepare('SELECT id,is_current FROM garmin_activity_imports ORDER BY id').all(), [
+    { id: 1,is_current: 1 }, { id: 2,is_current: 1 },
+  ]);
+  assert.equal(db.prepare('PRAGMA index_list(garmin_activity_imports)').all().filter((index) => index.origin === 'c').length, 0);
+  db.close();
+});
+
+test('Garmin activity v2 fails actionably for missing, partial, foreign-key-incompatible and invalid-current schemas', () => {
+  const variants = [
+    { name: 'missing table', create: null, error: /cannot find its v1 table/ },
+    { name: 'partial table', create: 'CREATE TABLE garmin_activity_imports(id INTEGER PRIMARY KEY)', error: /incomplete v1 table/ },
+    { name: 'foreign keys', create: `CREATE TABLE garmin_activity_imports (
+      id INTEGER PRIMARY KEY,user_id INTEGER NOT NULL,training_id INTEGER NOT NULL,
+      account_fingerprint TEXT NOT NULL,activity_id TEXT NOT NULL,file_sha256 TEXT NOT NULL,
+      importer_version INTEGER NOT NULL,imported_at TEXT NOT NULL)`, error: /incompatible ownership foreign keys/ },
+    { name: 'invalid is_current', create: `CREATE TABLE garmin_activity_imports (
+      id INTEGER PRIMARY KEY,user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      training_id INTEGER NOT NULL REFERENCES trainings(id) ON DELETE CASCADE,
+      account_fingerprint TEXT NOT NULL,activity_id TEXT NOT NULL,file_sha256 TEXT NOT NULL,
+      importer_version INTEGER NOT NULL,is_current TEXT NOT NULL DEFAULT '0',imported_at TEXT NOT NULL)`, error: /invalid is_current constraint/ },
+    { name: 'nullable is_current', create: `CREATE TABLE garmin_activity_imports (
+      id INTEGER PRIMARY KEY,user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      training_id INTEGER NOT NULL REFERENCES trainings(id) ON DELETE CASCADE,
+      account_fingerprint TEXT NOT NULL,activity_id TEXT NOT NULL,file_sha256 TEXT NOT NULL,
+      importer_version INTEGER NOT NULL,is_current INTEGER CHECK (is_current IN (0,1)),imported_at TEXT NOT NULL)`, error: /invalid is_current constraint/ },
+    { name: 'is_current without range check', create: `CREATE TABLE garmin_activity_imports (
+      id INTEGER PRIMARY KEY,user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      training_id INTEGER NOT NULL REFERENCES trainings(id) ON DELETE CASCADE,
+      account_fingerprint TEXT NOT NULL,activity_id TEXT NOT NULL,file_sha256 TEXT NOT NULL,
+      importer_version INTEGER NOT NULL,is_current INTEGER NOT NULL DEFAULT 0,imported_at TEXT NOT NULL)`, error: /invalid is_current constraint/ },
+  ];
+  for (const variant of variants) {
+    const db = createDatabase({ filename: ':memory:' });
+    if (variant.create) {
+      db.exec('DROP TABLE garmin_activity_imports');
+      db.exec(variant.create);
+    } else db.exec('DROP TABLE garmin_activity_imports');
+    db.prepare("DELETE FROM schema_migrations WHERE name='2026-11-garmin-activity-import-v2'").run();
+    const columnsBefore = db.prepare('PRAGMA table_info(garmin_activity_imports)').all().map((column) => column.name);
+    assert.throws(() => migrateDatabase(db), variant.error, variant.name);
+    assert.deepEqual(db.prepare('PRAGMA table_info(garmin_activity_imports)').all().map((column) => column.name), columnsBefore, variant.name);
+    assert.equal(db.prepare("SELECT 1 FROM schema_migrations WHERE name='2026-11-garmin-activity-import-v2'").get(), undefined, variant.name);
+    db.close();
+  }
+});
+
+test('Garmin activity v2 migration failure rolls back its added column, indexes, and marker', () => {
+  const db = createDatabase({ filename: ':memory:' });
+  db.prepare("INSERT INTO users(id,email,password_hash) VALUES(1,'activity-failure@example.test','hash')").run();
+  db.prepare("INSERT INTO trainings(id,user_id,dia,tipo,treino) VALUES(1,1,'2026-11-02','run','tempo')").run();
+  replaceWithLegacyActivityImports(db, { uniqueIdentity: false, rows: [
+    { id: 1,user_id: 1,training_id: 1,account_fingerprint: 'a'.repeat(64),activity_id: '72',file_sha256: 'b'.repeat(64),importer_version: 1,imported_at: '2026-11-01 10:00:00' },
+    { id: 2,user_id: 1,training_id: 1,account_fingerprint: 'a'.repeat(64),activity_id: '72',file_sha256: 'c'.repeat(64),importer_version: 1,imported_at: '2026-11-01 11:00:00' },
+  ] });
+  db.prepare("DELETE FROM schema_migrations WHERE name='2026-11-garmin-activity-import-v2'").run();
+  assert.throws(() => migrateDatabase(db), /duplicate identities exist/);
+  assert.equal(db.prepare('PRAGMA table_info(garmin_activity_imports)').all().some((column) => column.name === 'is_current'), false);
+  assert.equal(db.prepare("SELECT 1 FROM schema_migrations WHERE name='2026-11-garmin-activity-import-v2'").get(), undefined);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM garmin_activity_imports').get().count, 2);
+  assert.equal(db.prepare('PRAGMA index_list(garmin_activity_imports)').all().length, 0);
   db.close();
 });
 

@@ -840,7 +840,20 @@ search and preview. Parser and download failures leave the previous result
 untouched; diagnostics returned to the browser contain stable codes only.
 
 The idempotent `2026-11-garmin-activity-import-v1` migration adds
-`garmin_activity_imports`. An activity identity is the Garmin connection's
+`garmin_activity_imports`; `2026-11-garmin-activity-import-v2` evolves and
+repairs its schema. V2 adds `is_current` with default 0, treating every row
+from a legacy schema as historical. The prior schema has no evidence that can
+identify a current row, so migration never guesses or assigns a current link.
+All existing rows and their activity/session/account provenance are preserved;
+only a newly confirmed import can create a current association. V2 validates
+the table's required columns, foreign keys, duplicate identities/current rows,
+and ensures the canonical indexes in one SQLite transaction. It records its
+marker only after success. Unsafe legacy data fails startup with an actionable
+error; no links are deleted or rewritten. An interrupted migration rolls back
+its schema and index changes. It is idempotent when the v1 marker predates the
+`is_current` column.
+
+An activity identity is the Garmin connection's
 account fingerprint plus its remote activity ID; file SHA-256 and importer
 version are retained as supporting evidence. Hash alone is not treated as a
 universal activity ID. Exact same-activity/same-file/same-summary reimport is a

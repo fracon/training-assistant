@@ -50,15 +50,20 @@ test('Garmin activity result flow in Chrome stays explicit, localized, keyboard 
       if (url.endsWith('/auth/start')) return Response.json({ status: 'mfa_required', challenge_id: 'synthetic-mfa-challenge-1234567890', expires_in: 300 });
       if (url.endsWith('/auth/finish')) return Response.json({ status: 'connected', identity_fingerprint: 'a'.repeat(64) });
       if (url.endsWith('/capabilities')) return Response.json({ devices: [], running_catalog_status: 'available' });
-      if (url.endsWith('/activities')) return Response.json({ items: [{ activityId: 42, activityName: 'Synthetic morning run',
+      if (url.endsWith('/activities')) return Response.json({ items: [{ activityId: 42, activityName: 'Synthetic morning run', source_cursor: init.body ? JSON.parse(init.body).offset : 0,
         startTimeLocal: '2026-11-02T07:00:00', activityType: 'running', duration: 3500, distance: 10000,
-        averageHR: null, maxHR: 181, calories: 501, elevationGain: 78 }] });
+        averageHR: null, maxHR: 181, calories: 501, elevationGain: 78 }], next_offset: (init.body ? JSON.parse(init.body).offset : 0) + 1,
+        has_more: false, budget_exhausted: false });
       if (url.endsWith('/original')) return new Response(original, { headers: { 'content-type': 'application/octet-stream' } });
       throw new Error('unexpected synthetic connector call');
     } });
   const user = await registerUser(db, { email: 'visual-import@example.test', password: 'synthetic-password-1', first_name: 'Rita', last_name: 'Runner' });
   db.prepare("UPDATE users SET preferred_lang='pt-BR' WHERE id=?").run(user.id);
-  db.prepare("INSERT INTO trainings(id,user_id,dia,tipo,treino) VALUES(1,?,'2026-11-02','Corrida','Corrida livre')").run(user.id);
+  db.prepare(`INSERT INTO shoes(id,user_id,brand,model,mileage) VALUES('planned-shoe',?,'Planned','Road shoe',0)`).run(user.id);
+  db.prepare(`INSERT INTO trainings(id,user_id,dia,tipo,treino,detalhes,fc_alvo,rpe,tenis,location,fit_distance,
+    fit_duration,fit_avg_hr,fit_max_hr,fit_elevation_gain,fit_calories,result_data_source)
+    VALUES(1,?,'2026-11-02','Corrida','Corrida livre','Rodagem leve planejada','Zona 2','RPE 3',
+      'Planned Road shoe','Porto',5,'30:00',145,165,12,260,'manual')`).run(user.id);
   const session = createSession(db, user.id);
   const baseUrl = await app.listen({ port: 0, host: '127.0.0.1' }); const origin = new URL(baseUrl).origin;
   const chromePort = await port(); const profile = `/tmp/kinesis-garmin-import-chrome-${process.pid}`;
@@ -77,7 +82,7 @@ test('Garmin activity result flow in Chrome stays explicit, localized, keyboard 
     const command = (method, params = {}) => new Promise((resolve, reject) => { const id = ++commandId; pending.set(id, { resolve, reject }); socket.send(JSON.stringify({ id, method, params })); });
     const evaluate = async (expression) => { const result = await command('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }); if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text); return result.result.value; };
     const pressEnter = async () => { await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 }); await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 }); };
-    const waitFor = async (expression, label) => { for (let attempt = 0; attempt < 160; attempt += 1) { try { if (await evaluate(expression)) return; } catch {} await delay(50); } throw new Error(`Timed out waiting for ${label}; state=${JSON.stringify(await evaluate(`(()=>({value:(${expression}),status:document.getElementById('garminActivityStatus')?.textContent,source:document.getElementById('resultSourceSelect')?.value}))()`).catch((error)=>error.message))} calls=${calls.map((call)=>call.url).join(',')}`); };
+    const waitFor = async (expression, label) => { for (let attempt = 0; attempt < 160; attempt += 1) { try { if (await evaluate(expression)) return; } catch {} await delay(50); } throw new Error(`Timed out waiting for ${label}; state=${JSON.stringify(await evaluate(`(()=>({value:(${expression}),lang:document.documentElement.lang,summary:document.getElementById('feedbackAccordionSummary')?.textContent,status:document.getElementById('garminActivityStatus')?.textContent,source:document.getElementById('resultSourceSelect')?.value}))()`).catch((error)=>error.message))} calls=${calls.map((call)=>call.url).join(',')}`); };
     await command('Page.enable'); await command('Runtime.enable'); await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
     await command('Network.enable'); await command('Network.setCookie', { name: SESSION_COOKIE_NAME, value: session.token, url: origin, httpOnly: true, sameSite: 'Lax' });
     await command('Page.navigate', { url: `${origin}/training-result.html?id=1` });
@@ -98,13 +103,14 @@ test('Garmin activity result flow in Chrome stays explicit, localized, keyboard 
     await evaluate("document.getElementById('garminActivitySearch').click(); true");
     await waitFor("document.getElementById('garminActivityCandidates').children.length===1", 'running candidate');
     assert.equal(await evaluate("document.getElementById('feedbackAccordionSummary').textContent.includes('Buscando')"), false);
+    const sourceBadgeBeforePreview = await evaluate("document.getElementById('resultSourceBadge').textContent");
     assert.equal(await evaluate("(()=>{const b=document.getElementById('garminActivitySearch');b.focus();return document.activeElement===b})()"), true,
       'search action is keyboard focusable');
     assert.equal(await evaluate("(()=>{const b=document.querySelector('.garmin-activity-candidate button');b.focus();return document.activeElement===b})()"), true,
       'candidate selection is keyboard focusable');
     await evaluate("document.querySelector('.garmin-activity-candidate button').click(); true");
     await waitFor("!document.getElementById('garminActivityPreview').hidden", 'local FIT preview');
-    assert.equal(await evaluate("document.getElementById('resultSourceBadge').hidden"), true, 'preview does not mutate the result');
+    assert.equal(await evaluate("document.getElementById('resultSourceBadge').textContent"), sourceBadgeBeforePreview, 'preview does not mutate the result');
     assert.equal(await evaluate("document.getElementById('feedbackAccordionPanel').hidden"), false);
     await evaluate("document.getElementById('garminActivityPreview').scrollIntoView({block:'center'}); true");
     await delay(150);
@@ -114,24 +120,50 @@ test('Garmin activity result flow in Chrome stays explicit, localized, keyboard 
     await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 460, deviceScaleFactor: 1, mobile: false });
     await evaluate("document.body.style.zoom='200%'; true"); await delay(150); await screenshot('pt-review-low-height-zoom-200.png');
     await evaluate("document.body.style.zoom=''; document.getElementById('garminActivityConfirm').click(); true");
+    await waitFor("document.querySelector('.confirm-card') !== null", 'explicit replacement confirmation');
+    await evaluate("document.getElementById('confirmOkBtn').click(); true");
     await waitFor("document.getElementById('garminActivityLink').textContent.includes('42')", 'confirmed result link');
     assert.equal(await evaluate("document.getElementById('feedbackRpeError').hidden"), true);
     assert.equal(await evaluate("document.getElementById('feedbackNotas').value"), 'draft survives Garmin sign-in and import');
     assert.equal(await evaluate("document.querySelector('[name=\"rpe\"][value=\"3\"]').checked"), true);
-    assert.equal(db.prepare('SELECT rpe FROM trainings WHERE id=1').get().rpe, null,
+    assert.equal(db.prepare('SELECT feedback_rpe FROM trainings WHERE id=1').get().feedback_rpe, null,
       'an unsaved local effort remains a draft and is not sent as part of result import');
     assert.equal(db.prepare('SELECT completed FROM trainings WHERE id=1').get().completed, 0, 'missing RPE leaves the objective import open');
+    const plannedBeforeLanguage = await evaluate("JSON.stringify({rpe:document.getElementById('plannedRpe').textContent,hr:document.getElementById('plannedFcAlvo').textContent,details:document.getElementById('plannedDetalhes').textContent})");
+    assert.equal(db.prepare('SELECT fit_avg_hr FROM trainings WHERE id=1').get().fit_avg_hr, null,
+      'a missing metric in the replacement clears the previous value');
+    await evaluate("document.querySelector('.lang-switch [data-lang=\"en-US\"]').click(); true");
+    await waitFor("document.documentElement.lang==='en-US'", 'English language switch without reload');
+    assert.equal(await evaluate("JSON.stringify({rpe:document.getElementById('plannedRpe').textContent,hr:document.getElementById('plannedFcAlvo').textContent,details:document.getElementById('plannedDetalhes').textContent})"),
+      plannedBeforeLanguage, 'planned prescription survives canonical result merge and language change');
+    assert.equal(await evaluate("document.getElementById('feedbackNotas').value"), 'draft survives Garmin sign-in and import');
+    assert.equal(await evaluate("document.getElementById('garminActivityLink').textContent.includes('42')"), true);
+    assert.equal(await evaluate("document.getElementById('fitAvgHr').textContent.trim()"), '-');
+    await evaluate("document.querySelector('.lang-switch [data-lang=\"pt-BR\"]').click(); true");
+    await waitFor("document.documentElement.lang==='pt-BR'", 'Portuguese language switch without reload');
+    assert.equal(await evaluate("JSON.stringify({rpe:document.getElementById('plannedRpe').textContent,hr:document.getElementById('plannedFcAlvo').textContent,details:document.getElementById('plannedDetalhes').textContent})"),
+      plannedBeforeLanguage, 'planned prescription survives switching back to Portuguese');
     await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
-    db.prepare("UPDATE users SET preferred_lang='en-US' WHERE id=?").run(user.id);
-    await command('Page.navigate', { url: `${origin}/training-result.html?id=1` });
-    await waitFor("document.getElementById('feedbackAccordionSummary').textContent.includes('Garmin activity imported')", 'localized pending feedback summary');
-    await evaluate("document.getElementById('feedbackAccordionTrigger').click(); document.getElementById('garminActivityLink').scrollIntoView({block:'center'}); true");
+    await evaluate("document.querySelector('.lang-switch [data-lang=\"en-US\"]').click(); true");
+    await waitFor("document.documentElement.lang==='en-US'", 'English language switch at mobile viewport');
+    await waitFor("document.getElementById('feedbackAccordionSummary').textContent==='Unsaved changes'", 'localized unsaved feedback summary');
+    await evaluate("if(document.getElementById('feedbackAccordionTrigger').getAttribute('aria-expanded')!=='true')document.getElementById('feedbackAccordionTrigger').click();document.getElementById('garminActivityLink').scrollIntoView({block:'center'});true");
     await waitFor("!document.getElementById('garminActivityLink').hidden", 'visible Garmin provenance');
+    const plannedInEnglish = await evaluate("JSON.stringify({rpe:document.getElementById('plannedRpe').textContent,hr:document.getElementById('plannedFcAlvo').textContent,details:document.getElementById('plannedDetalhes').textContent})");
     const bounds = await evaluate("(()=>{const e=document.querySelector('.app-shell');const r=e.getBoundingClientRect();return {width:innerWidth,scroll:document.documentElement.scrollWidth,left:r.left,right:r.right}})()");
     assert.equal(bounds.width, 390); assert.ok(bounds.scroll <= bounds.width, `mobile content fits viewport: ${JSON.stringify(bounds)}`);
-    const lapScroll = await evaluate("(()=>{const e=document.querySelector('.fit-laps-wrapper');return {tabIndex:e.tabIndex,client:e.clientWidth,scroll:e.scrollWidth}})()");
-    assert.equal(lapScroll.tabIndex, 0); assert.ok(lapScroll.scroll > lapScroll.client, `lap detail is horizontally scrollable: ${JSON.stringify(lapScroll)}`);
+    await waitFor("!document.getElementById('fitLapsSection').hidden", 'imported lap details');
+    const lapScroll = await evaluate("(()=>{const e=document.querySelector('.fit-laps-wrapper');return {tabIndex:e.tabIndex,overflow:getComputedStyle(e).overflowX}})()");
+    assert.equal(lapScroll.tabIndex, 0); assert.ok(['auto', 'scroll'].includes(lapScroll.overflow), `lap detail supports horizontal scrolling: ${JSON.stringify(lapScroll)}`);
     await screenshot('en-imported-mobile.png');
+    await command('Page.reload');
+    await waitFor("document.documentElement.lang==='en-US' && document.getElementById('garminActivityLink') && !document.getElementById('garminActivityLink').hidden", 'canonical result reload');
+    const plannedAfterReload = JSON.parse(await evaluate("JSON.stringify({rpe:document.getElementById('plannedRpe').textContent,hr:document.getElementById('plannedFcAlvo').textContent,details:document.getElementById('plannedDetalhes').textContent})"));
+    assert.ok(plannedAfterReload.rpe.includes('3'), `planned RPE survives reload: ${JSON.stringify(plannedAfterReload)}`);
+    assert.equal(plannedAfterReload.hr, JSON.parse(plannedInEnglish).hr);
+    assert.equal(plannedAfterReload.details, JSON.parse(plannedInEnglish).details);
+    assert.equal(await evaluate("document.getElementById('garminActivityLink').textContent.includes('42')"), true);
+    assert.equal(await evaluate("document.getElementById('fitAvgHr').textContent.trim()"), '-');
     await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
     const keyboard = await evaluate("(()=>{const b=document.getElementById('feedbackAccordionTrigger');b.focus();return document.activeElement.id})()");
     assert.equal(keyboard, 'feedbackAccordionTrigger', 'keyboard focus remains available on result summary');

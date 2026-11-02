@@ -1031,7 +1031,7 @@ async function initTrainingResult() {
     return body;
   };
   const activityErrorKey = (error) => {
-    const allowed = ['pilot_unavailable','connection_required','auth_required','rate_limited','connector_timeout','connector_unavailable',
+    const allowed = ['session_expired','pilot_unavailable','connection_required','auth_required','rate_limited','connector_timeout','connector_unavailable',
       'connector_busy','connector_configuration_error','connector_invalid_response',
       'invalid_payload','invalid_fit','unsupported_activity','preview_expired','activity_already_linked',
       'activity_not_found','confirm_replace','session_changed','connection_changed','import_in_progress','import_error'];
@@ -1090,7 +1090,7 @@ async function initTrainingResult() {
     setGarminActivityStatus('downloading');
     try {
       const result = await readGarminActivity(`/api/trainings/${encodeURIComponent(requestedTrainingId)}/garmin/activity-preview`, {
-        method: 'POST', body: JSON.stringify({ activity_id: candidate.activity_id, search_offset: candidate.search_offset }),
+        method: 'POST', body: JSON.stringify({ activity_id: candidate.activity_id, source_cursor: candidate.source_cursor }),
       });
       if (readId !== garminActivityReadId || currentTrainingId !== requestedTrainingId) return;
       selectedGarminActivity = candidate;
@@ -1154,9 +1154,11 @@ async function initTrainingResult() {
         method: 'POST', body: JSON.stringify({ preview_id: garminActivityPreviewId, confirm_replace: confirmReplace }),
       });
       if (!result.training || currentTrainingId !== requestedTrainingId) return;
-      const previousFeedback = { ...training };
-      training = { ...result.training, ...Object.fromEntries(Object.keys(previousFeedback)
-        .filter((key) => key.startsWith('feedback_')).map((key) => [key, previousFeedback[key]])) };
+      const previousTraining = training;
+      training = { ...previousTraining, ...result.training };
+      for (const key of Object.keys(previousTraining)) {
+        if (key.startsWith('feedback_')) training[key] = previousTraining[key];
+      }
       fitData = { ...result.training, laps: JSON.parse(result.training.fit_summary_json || '{}').laps || [] };
       resultSourceSelect.value = 'garmin';
       garminActivityPreviewId = null;
@@ -2787,6 +2789,9 @@ async function initTrainingResult() {
     garminPending = true;
     const actionToken = ++garminRemoteActionToken;
     garminStatusRead += 1;
+    // Ignore an operation poll that was already in flight when this explicit
+    // action began; its older stage must not replace the new progress message.
+    garminOperationRead += 1;
     clearTimeout(garminOperationTimer); garminOperationTimer = null;
     garminOperationController?.abort(); garminOperationController = null;
     if (garminPreviewModel) renderGarminPreview(garminPreviewModel);

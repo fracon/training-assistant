@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, request and review weekly AI proposals, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized training-request prompts for use with an external AI.
 
-Current application version: **0.30.0** (active beta development; Garmin activity result import is an opt-in single-owner pilot).
+Current application version: **0.30.1** (active beta development; Garmin activity result import is an opt-in single-owner pilot).
 
 ## AI integration: cycle planning and weekly proposals
 
@@ -1405,7 +1405,9 @@ session open until the person completes feedback. Disconnect preserves
 historical provenance. No background sync or automatic analysis is started.
 
 Locally, run `npm run dev` and `npm run garmin:connector` in separate terminals
-after `npm run garmin:setup`. The browser uses the same connection/MFA flow as
+after `npm run garmin:setup`. After updating application code, restart both
+processes; the Node startup runs pending SQLite migrations automatically. Do not
+rerun setup to repair schema. The browser uses the same connection/MFA flow as
 the structured workout pilot. Preview state is short-lived in process memory;
 after reload or restart, search and review the activity again. No real Garmin
 account or watch was contacted for the implementation tests; owner acceptance

@@ -199,6 +199,10 @@ class ConnectorTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(len(response.json()["items"]), 10)
+        self.assertEqual([item["source_cursor"] for item in response.json()["items"]], list(range(10)))
+        self.assertEqual(response.json()["next_offset"], 10)
+        self.assertTrue(response.json()["has_more"])
+        self.assertFalse(response.json()["budget_exhausted"])
         self.assertEqual(calls, [(0, 10)])
 
     def test_activity_pagination_returns_partial_and_empty_pages_as_success(self):
@@ -224,6 +228,9 @@ class ConnectorTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual([item["activityId"] for item in response.json()["items"]],
                          [str(index) for index in range(10, 20)])
+        self.assertEqual([item["source_cursor"] for item in response.json()["items"]], list(range(15, 25)))
+        self.assertEqual(response.json()["next_offset"], 25)
+        self.assertTrue(response.json()["has_more"])
         self.assertEqual(calls, [(0, 10), (10, 10), (20, 10)])
 
         intermediate, intermediate_calls = self._query_activity_pages([
@@ -233,7 +240,24 @@ class ConnectorTests(unittest.TestCase):
         ])
         self.assertEqual(intermediate.status_code, 200, intermediate.text)
         self.assertEqual(len(intermediate.json()["items"]), 10)
+        self.assertEqual(intermediate.json()["next_offset"], 20)
         self.assertEqual(intermediate_calls, [(0, 10), (10, 10)])
+
+    def test_twenty_newer_remote_rows_advance_the_cursor_to_the_actual_compatible_candidates(self):
+        pages = [
+            [self._activity(index, "2026-11-01") for index in range(10)],
+            [self._activity(index + 10, "2026-11-01") for index in range(10)],
+            [self._activity(index + 20) for index in range(10)],
+        ]
+        response, calls = self._query_activity_pages(pages)
+        self.assertEqual(response.status_code, 200, response.text)
+        payload = response.json()
+        self.assertEqual([item["activityId"] for item in payload["items"]], [str(index) for index in range(20, 30)])
+        self.assertEqual([item["source_cursor"] for item in payload["items"]], list(range(20, 30)))
+        self.assertEqual(payload["next_offset"], 30)
+        self.assertTrue(payload["has_more"])
+        self.assertFalse(payload["budget_exhausted"])
+        self.assertEqual(calls, [(0, 10), (10, 10), (20, 10)])
 
     def test_activity_pagination_preserves_offset_and_stops_when_limit_is_met_mid_search(self):
         first = [self._activity(index) for index in range(1, 11)]
@@ -242,6 +266,8 @@ class ConnectorTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()["offset"], 20)
         self.assertEqual(response.json()["limit"], 10)
+        self.assertEqual(response.json()["next_offset"], 30)
+        self.assertEqual([item["source_cursor"] for item in response.json()["items"]], list(range(20, 30)))
         self.assertEqual(calls, [(20, 10)])
 
     def test_activity_limit_reached_on_fifth_page_is_success(self):
@@ -268,14 +294,28 @@ class ConnectorTests(unittest.TestCase):
         self.assertEqual(empty.json()["items"], [])
         self.assertEqual(empty_calls, [(0, 10), (10, 10), (20, 10), (30, 10), (40, 10)])
 
-    def test_five_full_activity_pages_without_complete_answer_fail_without_sixth_call(self):
+    def test_five_full_activity_pages_without_complete_answer_report_budget_exhaustion_without_sixth_call(self):
         pages = [[self._activity(index, "2026-11-01") for index in range(page * 10, page * 10 + 10)]
                  for page in range(5)]
         response, calls = self._query_activity_pages(pages)
 
-        self.assertEqual(response.status_code, 503)
-        self.assertEqual(response.json(), {"detail": {"code": "unavailable"}})
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["items"], [])
+        self.assertEqual(response.json()["next_offset"], 50)
+        self.assertTrue(response.json()["has_more"])
+        self.assertTrue(response.json()["budget_exhausted"])
         self.assertEqual(calls, [(0, 10), (10, 10), (20, 10), (30, 10), (40, 10)])
+
+    def test_oldest_row_proves_the_window_end_and_partial_page_reports_no_more(self):
+        rows = [self._activity(1), self._activity(2), self._activity(3, "2026-09-30")]
+        response, calls = self._query_activity_pages([rows])
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual([item["activityId"] for item in response.json()["items"]], ["1", "2"])
+        self.assertEqual([item["source_cursor"] for item in response.json()["items"]], [0,1])
+        self.assertEqual(response.json()["next_offset"], 3)
+        self.assertFalse(response.json()["has_more"])
+        self.assertFalse(response.json()["budget_exhausted"])
+        self.assertEqual(calls, [(0, 10)])
 
     def test_repeated_malformed_and_timed_out_activity_pages_fail_safely(self):
         repeated_page = [self._activity(index, "2026-11-01") for index in range(10)]
