@@ -1380,6 +1380,8 @@ async function initTrainingResult() {
   let garminRemoteActionToken = 0;
   let garminDispatchUncertain = false;
   let garminStatusRetryAvailable = false;
+  let garminAuthPhase = null;
+  let garminAuthAttempt = 0;
   let garminDestinationNames = [];
   let garminPreviewSnapshot = null;
   let garminConnected = false;
@@ -1392,22 +1394,33 @@ async function initTrainingResult() {
   const refreshGarminAccordionSummary = () => {
     const operation = garminCurrentOperation;
     let key = 'garminLoading';
-    if (operation?.status === 'scheduled') key = 'garminSentScheduled';
+    const authErrors = ['authFailed', 'authRateLimited', 'disconnectFailed'].includes(garminConnectionMessage);
+    const connectionUnavailable = garminStatusUnavailable
+      || ['connectionRefreshFailed', 'connectError', 'authUnavailable', 'disconnectPending'].includes(garminConnectionMessage);
+    const operationProgress = {
+      checkingReview: 'garminCheckingReview',
+      publishing: 'garminSending',
+      updating: 'garminUpdating',
+      rescheduling: 'garminRescheduling',
+      verifyingResult: 'garminAwaitingConfirmation',
+    }[garminOperationMessageKey];
+    if (garminAuthPhase === 'validatingMfa') key = 'garminMfaValidating';
+    else if (garminAuthPhase && garminChallenge) key = 'garminMfaInProgress';
+    else if (garminAuthPhase) key = 'garminConnecting';
+    else if (operationProgress) key = operationProgress;
+    else if (connectionUnavailable) key = 'garminConnectionUnavailable';
+    else if (garminConnectionMessage === 'connectionReauthRequired' || operation?.status === 'reauth_required') key = 'garminReauthenticationRequired';
+    else if (authErrors) key = 'garminAuthenticationNeedsAttention';
+    else if (garminConnectionMessage === 'mfaRequired' || garminChallenge) key = 'garminMfaInProgress';
     else if (operation?.status === 'outcome_unknown') key = 'garminAwaitingConfirmation';
-    else if (['publishing', 'workout_created', 'scheduling'].includes(operation?.status)) key = 'garminSending';
-    else if (operation?.status === 'reauth_required') key = 'garminReauthenticationRequired';
-    else if (operation?.status === 'failed') key = 'garminOperationNeedsAttention';
+    else if (['publishing', 'workout_created', 'scheduling'].includes(operation?.status)) {
+      key = operation.action === 'update' ? 'garminUpdating'
+        : operation.action === 'reschedule' ? 'garminRescheduling' : 'garminSending';
+    } else if (operation?.status === 'failed') key = 'garminOperationNeedsAttention';
     else if (operation?.status === 'outdated') key = 'garminStructureOutdated';
-    else if (['publishing', 'updating', 'rescheduling', 'verifyingResult'].includes(garminOperationMessageKey)) {
-      key = garminOperationMessageKey === 'verifyingResult' ? 'garminAwaitingConfirmation' : 'garminSending';
-    }
-    else if (garminAuthProgress && !garminAuthProgress.hidden) {
-      const phase = garminAuthProgress.querySelector('span:last-child').textContent;
-      key = garminChallenge || /MFA|verification|código|code/i.test(phase) ? 'garminMfaInProgress' : 'garminConnecting';
-    } else if (garminConnectionMessage === 'mfaRequired') key = 'garminMfaInProgress';
-    else if (garminStatusUnavailable || ['connectionRefreshFailed', 'connectError', 'authUnavailable'].includes(garminConnectionMessage)) key = 'garminConnectionUnavailable';
-    else if (garminConnectionMessage === 'connectionReauthRequired') key = 'garminReauthenticationRequired';
-    else if (['authFailed', 'authRateLimited', 'disconnectFailed'].includes(garminConnectionMessage)) key = 'garminAuthenticationNeedsAttention';
+    else if (garminConnectionKnown && !garminConnected && garminConnectionMessage === 'disconnected') {
+      key = operation?.status === 'scheduled' ? 'garminDisconnectedPreviouslySent' : 'garminDisconnected';
+    } else if (operation?.status === 'scheduled') key = 'garminSentScheduled';
     else if (garminConnectionKnown && garminConnected) key = garminFingerprint || garminSavedRevision !== null ? 'garminConnectedSaved' : 'garminConnectedEmpty';
     else if (garminConnectionKnown && garminConnectionMessage === 'disconnected') key = 'garminDisconnected';
     const text = t(`session.accordion.${key}`);
@@ -2348,6 +2361,7 @@ async function initTrainingResult() {
   }
   const setGarminAuthBusy = (phase) => {
     const busy = Boolean(phase);
+    garminAuthPhase = phase || null;
     garminAuthForm.setAttribute('aria-busy', String(busy));
     [garminEmail, garminPassword, garminMfaCode].forEach((field) => { field.disabled = busy; });
     garminAuthSubmit.disabled = busy;
@@ -2382,27 +2396,32 @@ async function initTrainingResult() {
   });
   garminAuthForm.addEventListener('submit', async (event) => {
     event.preventDefault(); if (garminPending || garminConnectionActionBusy) return;
+    const attempt = ++garminAuthAttempt;
     garminPending = true;
     garminConnectionActionBusy = true;
     garminStatusRead += 1;
     const email = garminEmail.value;
     let password = garminPassword.value;
     const completingMfa = Boolean(garminChallenge);
+    let focusMfaAfterUnlock = false;
     garminPassword.value = '';
     setGarminAuthBusy(completingMfa ? 'validatingMfa' : 'connecting');
     try {
       const result = garminChallenge
         ? await garminFetch('/api/garmin/auth/finish', { method: 'POST', body: JSON.stringify({ challenge_id: garminChallenge, code: garminMfaCode.value }) })
         : await garminFetch('/api/garmin/auth/start', { method: 'POST', body: JSON.stringify({ email, password }) });
+      if (attempt !== garminAuthAttempt) return;
       if (result.status === 'mfa_required') {
         garminChallenge = result.challenge_id; garminMfaField.hidden = false; garminCancel.hidden = false;
         garminEmail.required = false; garminPassword.required = false;
-        setGarminConnectionMessage('mfaRequired'); garminMfaCode.focus();
+        setGarminConnectionMessage('mfaRequired');
+        focusMfaAfterUnlock = true;
       } else {
         garminChallenge = null; garminAuthForm.dataset.open = ''; garminAuthForm.hidden = true; garminMfaCode.value = ''; garminMfaField.hidden = true; garminCancel.hidden = true; garminEmail.required = true; garminPassword.required = true;
         await refreshGarminStatus();
       }
     } catch (error) {
+      if (attempt !== garminAuthAttempt) return;
       const key = ['connector_unavailable', 'connector_timeout', 'connector_auth_failed', 'connector_configuration_error', 'connector_service_error', 'cleanup_pending'].includes(error.message)
         || error.status === 503 || error.status === 504 ? 'authUnavailable'
         : error.message === 'rate_limited' ? 'authRateLimited' : 'authFailed';
@@ -2410,18 +2429,37 @@ async function initTrainingResult() {
     }
     finally {
       password = '';
-      garminPassword.value = '';
-      garminPending = false;
-      garminConnectionActionBusy = false;
-      setGarminAuthBusy(null);
+      if (attempt === garminAuthAttempt) {
+        garminPassword.value = '';
+        garminPending = false;
+        garminConnectionActionBusy = false;
+        setGarminAuthBusy(null);
+        if (focusMfaAfterUnlock && garminChallenge && !garminCard.hidden && garminMfaField.isConnected) {
+          setAccordionOpen(garminAccordionTrigger, garminAccordionPanel, true);
+          requestAnimationFrame(() => {
+            if (attempt !== garminAuthAttempt || !garminChallenge || garminCard.hidden
+                || garminAccordionPanel.hidden || garminAuthForm.hidden || garminMfaField.hidden
+                || garminMfaCode.disabled || !garminMfaCode.isConnected) return;
+            garminMfaCode.focus();
+          });
+        }
+      }
     }
   });
   garminCancel.addEventListener('click', async () => {
     if (garminPending || garminConnectionActionBusy) return;
-    if (garminChallenge) await garminFetch('/api/garmin/auth/cancel', { method: 'POST', body: JSON.stringify({ challenge_id: garminChallenge }) }).catch(() => {});
-    garminChallenge = null; garminMfaCode.value = ''; garminMfaField.hidden = true; garminCancel.hidden = true;
-    garminAuthForm.dataset.open = ''; garminAuthForm.hidden = true; garminEmail.required = true; garminPassword.required = true; garminConnectButton.hidden = false;
-    setGarminConnectionMessage(garminConnected ? 'connected' : 'disconnected');
+    const attempt = ++garminAuthAttempt;
+    garminConnectionActionBusy = true;
+    try {
+      if (garminChallenge) await garminFetch('/api/garmin/auth/cancel', { method: 'POST', body: JSON.stringify({ challenge_id: garminChallenge }) }).catch(() => {});
+      if (attempt !== garminAuthAttempt) return;
+      garminChallenge = null; garminMfaCode.value = ''; garminMfaField.hidden = true; garminCancel.hidden = true;
+      garminAuthForm.dataset.open = ''; garminAuthForm.hidden = true; garminEmail.required = true; garminPassword.required = true; garminConnectButton.hidden = false;
+      setGarminConnectionMessage(garminConnected ? 'connected' : 'disconnected');
+      garminConnectButton.focus();
+    } finally {
+      if (attempt === garminAuthAttempt) garminConnectionActionBusy = false;
+    }
   });
   garminDisconnectButton.addEventListener('click', async () => {
     if (garminConnectionActionBusy || garminPending || garminOperationNeedsResolution()) return;

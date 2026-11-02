@@ -28,6 +28,8 @@ test('Garmin login progress and disconnect confirmation work in PT/EN Chrome', {
   db.prepare('INSERT INTO trainings (user_id,dia,tipo,treino) VALUES (?,?,?,?)').run(owner.id, '2026-11-02', 'Run', 'Synthetic');
   let connected = false;
   let authStarts = 0;
+  let finishAttempts = 0;
+  let authCancels = 0;
   let deletes = 0;
   let releaseStart;
   let startEntered;
@@ -79,15 +81,20 @@ test('Garmin login progress and disconnect confirmation work in PT/EN Chrome', {
       if (url.endsWith('/auth/start')) {
         authStarts += 1;
         if (authStarts === 1) { startEntered(); await startGate; return Response.json({ status: 'mfa_required', challenge_id: 'synthetic-mfa-challenge-123456', expires_in: 300 }); }
-        if (authStarts === 2) { secondStartEntered(); await secondStartGate; return Response.json({ detail: { code: 'auth_required' } }, { status: 401 }); }
+        if (authStarts === 2) { secondStartEntered(); await secondStartGate; return Response.json({ status: 'mfa_required', challenge_id: 'synthetic-mfa-cancel-challenge-123456', expires_in: 300 }); }
+        if (authStarts === 3) return Response.json({ detail: { code: 'auth_required' } }, { status: 401 });
         retryStartEntered(); await retryStartGate;
         connected = true;
         return Response.json({ status: 'connected', identity_fingerprint: 'a'.repeat(64) });
       }
       if (url.endsWith('/auth/finish')) {
-        finishEntered(); await finishGate; connected = true;
+        finishAttempts += 1;
+        finishEntered(); await finishGate;
+        if (JSON.parse(init.body).code === '000000') return Response.json({ detail: { code: 'auth_required' } }, { status: 401 });
+        connected = true;
         return Response.json({ status: 'connected', identity_fingerprint: 'a'.repeat(64) });
       }
+      if (url.endsWith('/auth/cancel')) { authCancels += 1; return Response.json({ status: 'cancelled' }); }
       if (init.method === 'DELETE') {
         deletes += 1;
         if (deletes === 1) { failedDeleteEntered(); await failedDeleteGate; return Response.json({ detail: { code: 'unavailable' } }, { status: 503 }); }
@@ -183,26 +190,39 @@ test('Garmin login progress and disconnect confirmation work in PT/EN Chrome', {
     await evaluate("document.getElementById('garminAccordionTrigger').click()");
     assert.equal(await evaluate("document.getElementById('garminAccordionPanel').hidden"), true, 'collapsing the panel does not cancel authentication');
     assert.equal(await evaluate("document.getElementById('garminAccordionSummary').textContent"), 'Conectando ao Garmin Connect…');
-    await evaluate("document.getElementById('garminAccordionTrigger').click()");
-    assert.equal(await evaluate("document.getElementById('garminAuthForm').getAttribute('aria-busy')"), 'true', 'reopening preserves the in-flight login state');
     await evaluate("document.getElementById('garminAuthForm').requestSubmit();document.getElementById('garminAuthForm').requestSubmit()");
     assert.equal(authStarts, 1, 'repeated Enter submission cannot dispatch a second login');
     await capture('/tmp/kinesis-garmin-auth-progress-pt-desktop.png', '#garminAuthProgress');
     releaseStart();
     await wait("!document.getElementById('garminMfaField').hidden && document.getElementById('garminConnectionStatus').textContent.includes('código de verificação')");
     assert.equal(await evaluate("document.getElementById('garminAuthProgress').hidden"), true);
+    assert.deepEqual(await evaluate("({panelOpen:!document.getElementById('garminAccordionPanel').hidden,fieldVisible:!document.getElementById('garminMfaField').hidden,disabled:document.getElementById('garminMfaCode').disabled,focused:document.activeElement.id})"),
+      { panelOpen: true, fieldVisible: true, disabled: false, focused: 'garminMfaCode' },
+      'the MFA result opens the collapsed panel, unlocks the input, then focuses it');
+    await capture('/tmp/kinesis-garmin-mfa-focused-pt-desktop.png', '#garminMfaField');
     await evaluate("document.getElementById('garminAccordionTrigger').click()");
     assert.equal(await evaluate("document.getElementById('garminAccordionPanel').hidden"), true, 'the MFA challenge remains active while collapsed');
     assert.equal(await evaluate("document.getElementById('garminAccordionSummary').textContent"), 'Aguardando verificação');
     await evaluate("document.getElementById('garminAccordionTrigger').click()");
     assert.equal(await evaluate("document.getElementById('garminMfaField').hidden"), false, 'reopening retains the same MFA challenge');
-    await evaluate("document.getElementById('garminMfaCode').value='123456';document.getElementById('garminAuthForm').requestSubmit()");
+    await evaluate("document.getElementById('garminMfaCode').value='000000';document.getElementById('garminMfaCode').focus()");
+    await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+    await command('Input.dispatchKeyEvent', { type: 'char', key: 'Enter', code: 'Enter', text: '\r', unmodifiedText: '\r', windowsVirtualKeyCode: 13 });
+    await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
     await finishSignal;
     assert.deepEqual(await evaluate("({progress:document.getElementById('garminAuthProgress').innerText,disabled:document.getElementById('garminMfaCode').disabled,busy:document.getElementById('garminAuthForm').getAttribute('aria-busy')})"),
       { progress: 'Validando código de verificação…', disabled: true, busy: 'true' });
     await capture('/tmp/kinesis-garmin-mfa-progress-pt-desktop.png', '#garminAuthProgress');
     releaseFinish();
+    await wait("document.getElementById('garminConnectionStatus').textContent.includes('Não foi possível autenticar') && !document.getElementById('garminMfaCode').disabled");
+    assert.equal(await evaluate("document.getElementById('garminMfaField').hidden"), false, 'a rejected code leaves the same challenge available for correction');
+    assert.equal(await evaluate("document.getElementById('garminAuthForm').getAttribute('aria-busy')"), 'false');
+    await evaluate("document.getElementById('garminMfaCode').value='123456';document.getElementById('garminMfaCode').focus()");
+    await command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+    await command('Input.dispatchKeyEvent', { type: 'char', key: 'Enter', code: 'Enter', text: '\r', unmodifiedText: '\r', windowsVirtualKeyCode: 13 });
+    await command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
     await wait("document.getElementById('garminConnectionStatus').textContent.includes('Conectado ao Garmin Connect') && document.getElementById('garminAuthForm').hidden");
+    assert.equal(finishAttempts, 2, 'the user retries the MFA code through the same keyboard form');
     assert.equal(await evaluate("document.getElementById('garminAccordionSummary').textContent"), 'Conectado · Sem estrutura salva', 'a connected account is distinguished from a saved workout');
     assert.equal(await evaluate("[localStorage,sessionStorage].some(store=>Object.values(store).some(value=>String(value).includes('transient-only')))"), false, 'credentials are absent from browser storage');
     await wait("!document.getElementById('garminDisconnectButton').disabled");
@@ -266,6 +286,15 @@ test('Garmin login progress and disconnect confirmation work in PT/EN Chrome', {
     assert.equal(await evaluate("document.getElementById('garminAuthSubmit').disabled"), true);
     await capture('/tmp/kinesis-garmin-auth-progress-en-mobile.png', '#garminAuthProgress');
     releaseSecondStart();
+    await wait("!document.getElementById('garminMfaField').hidden && document.getElementById('garminConnectionStatus').textContent.includes('verification code')");
+    assert.deepEqual(await evaluate("({panelOpen:!document.getElementById('garminAccordionPanel').hidden,disabled:document.getElementById('garminMfaCode').disabled,focused:document.activeElement.id})"),
+      { panelOpen: true, disabled: false, focused: 'garminMfaCode' }, 'English mobile MFA focuses the enabled field inside the expanded accordion');
+    await capture('/tmp/kinesis-garmin-mfa-focused-en-mobile.png', '#garminMfaField');
+    await evaluate("document.getElementById('garminAuthCancel').click()");
+    await wait("document.getElementById('garminAuthForm').hidden && !document.getElementById('garminConnectButton').hidden");
+    assert.equal(await evaluate("document.activeElement.id"), 'garminConnectButton', 'cancelling an MFA challenge returns focus to the connect action');
+    assert.equal(authCancels, 1, 'cancelling a challenge invalidates it through the connector');
+    await evaluate("document.getElementById('garminConnectButton').click();document.getElementById('garminEmail').value='synthetic@example.test';document.getElementById('garminPassword').value='transient-only';document.getElementById('garminAuthForm').requestSubmit()");
     await wait("document.getElementById('garminConnectionStatus').textContent.includes('Could not authenticate your Garmin account')");
     assert.deepEqual(await evaluate("({email:document.getElementById('garminEmail').value,password:document.getElementById('garminPassword').value,submitDisabled:document.getElementById('garminAuthSubmit').disabled,busy:document.getElementById('garminAuthForm').getAttribute('aria-busy')})"),
       { email: 'synthetic@example.test', password: '', submitDisabled: false, busy: 'false' });
@@ -291,7 +320,7 @@ test('Garmin login progress and disconnect confirmation work in PT/EN Chrome', {
     await capture('/tmp/kinesis-garmin-disconnected-en-mobile.png', '#garminConnectionStatus');
     assert.equal(deletes, 3, 'disconnect completes only after the user confirms it');
     assert.equal(await evaluate('document.documentElement.scrollWidth <= document.documentElement.clientWidth'), true);
-    assert.equal(authStarts, 3, 'one explicit retry follows one known authentication failure');
+    assert.equal(authStarts, 4, 'one explicit retry follows one known authentication failure after MFA cancellation');
     assert.equal(db.prepare('SELECT COUNT(*) AS count FROM garmin_training_operations WHERE user_id=?').get(owner.id).count, 0);
   } finally {
     releaseStart?.(); releaseSecondStart?.(); releaseRetryStart?.(); releaseFinish?.(); releaseFailedDelete?.(); releaseDelete?.(); releaseMobileDelete?.(); releaseStatus?.(); releaseAuthStaleStatus?.();

@@ -39,9 +39,20 @@ test('Garmin editor and send states preserve drafts and block conflicting action
   let pauseSchedule = false;
   let releaseSchedule;
   let signalScheduleEntered;
+  let pauseReschedule = false;
+  let releaseReschedule;
+  let signalRescheduleEntered;
+  let pauseUpdate = false;
+  let releaseUpdate;
+  let signalUpdateEntered;
+  let accountDisconnected = false;
   const statusGate = new Promise((resolve) => { releaseStatus = resolve; });
   const scheduleGate = new Promise((resolve) => { releaseSchedule = resolve; });
   const scheduleEntered = new Promise((resolve) => { signalScheduleEntered = resolve; });
+  const rescheduleGate = new Promise((resolve) => { releaseReschedule = resolve; });
+  const rescheduleEntered = new Promise((resolve) => { signalRescheduleEntered = resolve; });
+  const updateGate = new Promise((resolve) => { releaseUpdate = resolve; });
+  const updateEntered = new Promise((resolve) => { signalUpdateEntered = resolve; });
   const app = await buildServer({ db, sessionCookieSecure: false,
     garminConfig: { GARMIN_PILOT_ENABLED: 'true', GARMIN_PILOT_USER_ID: String(owner.id), KINESIS_GARMIN_SERVICE_TOKEN: 'synthetic-service-token-'.repeat(2), GARMIN_CONNECTOR_URL: 'http://connector.invalid' },
     garminFetch: async (url, init = {}) => {
@@ -50,16 +61,26 @@ test('Garmin editor and send states preserve drafts and block conflicting action
         await statusGate;
         if (connectorUnavailable) throw new TypeError('synthetic connector unavailable');
         if (retryStatusGate) { const gate = retryStatusGate; signalRetryStatusStarted(); await gate; retryStatusGate = null; }
-        return Response.json({ status: garminSessionExpired ? 'reauthentication_required' : 'connected' });
+        return Response.json({ status: garminSessionExpired ? 'reauthentication_required' : accountDisconnected ? 'disconnected' : 'connected' });
       }
       if (url.endsWith('/capabilities')) return Response.json({ devices: [{ name: 'Forerunner 55' }], running_catalog_status: 'available' });
       if (url.endsWith('/workouts') && init.method === 'POST') {
         remoteMutationCalls.push({ path: '/workouts', method: init.method, body: JSON.parse(init.body) });
         return Response.json({ workout_id: 8101, status: 'created' });
       }
+      if (/\/workouts\/8101$/.test(url) && init.method === 'PUT') {
+        remoteMutationCalls.push({ path: '/workouts/8101', method: init.method, body: JSON.parse(init.body) });
+        if (pauseUpdate) { signalUpdateEntered(); await updateGate; }
+        return Response.json({ workout_id: 8101, status: 'updated' });
+      }
       if (url.endsWith('/workouts/schedule') && init.method === 'POST') {
         remoteMutationCalls.push({ path: '/workouts/schedule', method: init.method, body: JSON.parse(init.body) });
         if (pauseSchedule) { signalScheduleEntered(); await scheduleGate; }
+        return Response.json({ scheduled: true, scheduled_workout_id: 9101, status: 'scheduled' });
+      }
+      if (url.includes('/workouts/schedule/') && init.method === 'PUT') {
+        remoteMutationCalls.push({ path: '/workouts/schedule/:id', method: init.method, body: JSON.parse(init.body) });
+        if (pauseReschedule) { signalRescheduleEntered(); await rescheduleGate; }
         return Response.json({ scheduled: true, scheduled_workout_id: 9101, status: 'scheduled' });
       }
       return Response.json({ status: 'connected' });
@@ -413,6 +434,19 @@ test('Garmin editor and send states preserve drafts and block conflicting action
     const completedOperation = db.prepare('SELECT status,stage,workout_id,occurrence_id FROM garmin_training_operations WHERE operation_id=?').get(pendingOperation.operation_id);
     assert.deepEqual(completedOperation, { status: 'scheduled', stage: 'complete', workout_id: '8101', occurrence_id: '9101' });
     assert.equal(await evaluate("document.getElementById('garminEditStructure').disabled"), false, 'editing becomes available after the operation reaches a confirmed terminal state');
+    accountDisconnected = true;
+    await command('Page.reload');
+    await wait("document.getElementById('garminConnectionStatus').textContent.includes('Not connected')");
+    assert.equal(await evaluate("document.getElementById('garminAccordionPanel').hidden"), true);
+    assert.equal(await evaluate("document.getElementById('garminAccordionSummary').textContent"), 'Not connected · Workout sent previously',
+      'a confirmed historical send remains visible after the current connection is disconnected');
+    assert.equal(db.prepare('SELECT status FROM garmin_training_operations WHERE operation_id=?').get(pendingOperation.operation_id).status, 'scheduled',
+      'changing the presentation does not erase the confirmed remote operation');
+    accountDisconnected = false;
+    await command('Page.reload');
+    await wait("document.getElementById('garminConnectionStatus').textContent.includes('Connected')");
+    assert.equal(await evaluate("document.getElementById('garminAccordionSummary').textContent"), 'Sent and scheduled',
+      'connection recovery restores the confirmed operation without erasing its history');
     await evaluate("document.getElementById('garminAccordionTrigger').click()");
     await evaluate("document.getElementById('garminEditStructure').click()");
     await evaluate("document.getElementById('garminSessionCard').scrollIntoView({block:'start'})");
@@ -513,6 +547,8 @@ test('Garmin editor and send states preserve drafts and block conflicting action
     db.prepare("UPDATE garmin_training_operations SET status='outcome_unknown',stage='unknown' WHERE operation_id='review-state-operation'").run();
     await command('Page.reload');
     await wait("!document.getElementById('garminReconcileButton').hidden");
+    assert.match(await evaluate("document.getElementById('garminAccordionSummary').textContent"), /Send awaiting confirmation|Envio aguardando confirmação/,
+      'a persisted uncertain operation supersedes the earlier scheduled success');
     await openGarminAccordion();
     assert.equal(await evaluate("document.getElementById('garminPublishButton').hidden"), true, 'an uncertain operation requires reconciliation instead of another mutation');
     assert.equal(await evaluate("document.getElementById('garminEditStructure').disabled"), true, 'an unresolved send also locks the saved structure after reload');
@@ -544,11 +580,51 @@ test('Garmin editor and send states preserve drafts and block conflicting action
     assert.equal(remoteMutationCalls.filter((call) => call.path === '/workouts').length, 1, 'reconciliation never republishes the already-created workout');
     assert.equal(remoteMutationCalls.filter((call) => call.path === '/workouts/schedule').length, 2, 'reconciliation resumes only the uncertain schedule stage');
     assert.equal(db.prepare("SELECT status FROM garmin_training_operations WHERE operation_id='review-state-operation'").get().status, 'scheduled');
+    assert.match(await evaluate("document.getElementById('garminAccordionSummary').textContent"), /Sent and scheduled|Enviado e agendado/,
+      'uncertain reconciliation returns the header to the confirmed historical state');
+    db.prepare("UPDATE garmin_training_operations SET scheduled_date='2026-11-01' WHERE operation_id='review-state-operation'").run();
+    await command('Page.reload');
+    await wait("!document.getElementById('garminRescheduleButton').hidden");
+    await openGarminAccordion();
+    pauseReschedule = true;
+    await evaluate("document.getElementById('garminRescheduleButton').click()");
+    await wait("document.querySelector('.confirm-card') !== null");
+    await evaluate("document.getElementById('confirmOkBtn').click()");
+    await rescheduleEntered;
+    await wait("/Rescheduling workout…|Reagendando treino…/.test(document.getElementById('garminAccordionSummary').textContent)");
+    releaseReschedule();
+    pauseReschedule = false;
+    await wait("/confirmed in Garmin Connect|confirmado no Garmin Connect/i.test(document.getElementById('garminOperationStatus').textContent)");
+    assert.match(await evaluate("document.getElementById('garminAccordionSummary').textContent"), /Sent and scheduled|Enviado e agendado/,
+      'completed rescheduling restores success only after confirmation');
+    assert.equal(remoteMutationCalls.filter((call) => call.path === '/workouts/schedule/:id').length, 1,
+      'the explicit reschedule dispatches exactly one remote mutation');
+    await evaluate("document.getElementById('garminEditStructure').click()");
+    await evaluate("(()=>{const input=document.getElementById('garminWorkoutName');input.value='Updated after scheduling';input.dispatchEvent(new Event('input',{bubbles:true}))})()");
+    await evaluate("(()=>{const input=document.querySelector('[data-end-value=\\\"step-legacy-repeat-recovery\\\"]');input.value='1:00';input.dispatchEvent(new Event('input',{bubbles:true}))})()");
+    await evaluate("document.getElementById('garminPrescriptionForm').requestSubmit()");
+    await wait("!document.getElementById('garminPreview').hidden && !document.getElementById('garminUpdateButton').hidden");
+    pauseUpdate = true;
+    await evaluate("document.getElementById('garminUpdateButton').click()");
+    await wait("document.querySelector('.confirm-card') !== null");
+    await evaluate("document.getElementById('confirmOkBtn').click()");
+    await updateEntered;
+    await wait("/Updating workout…|Atualizando treino…/.test(document.getElementById('garminAccordionSummary').textContent)");
+    assert.match(await evaluate("document.getElementById('garminOperationStatus').textContent"), /Updating|Atualizando/i);
+    releaseUpdate();
+    pauseUpdate = false;
+    await wait("/confirmed in Garmin Connect|confirmado no Garmin Connect/i.test(document.getElementById('garminOperationStatus').textContent)");
+    assert.match(await evaluate("document.getElementById('garminAccordionSummary').textContent"), /Sent and scheduled|Enviado e agendado/,
+      'the operation returns to a historical success summary after the update is confirmed');
+    assert.equal(remoteMutationCalls.filter((call) => call.path === '/workouts/8101').length, 1,
+      'the explicit workout update dispatches exactly once');
     await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
     await evaluate("document.querySelector('.lang-switch [data-lang=\"en-US\"]').click()"); await wait("document.documentElement.lang==='en-US'");
     connectorUnavailable = true;
     await command('Page.reload');
     await wait("!document.getElementById('garminPreview').hidden && /could not be reached|não foi possível acessar/i.test(document.getElementById('garminConnectionStatus').textContent)");
+    assert.equal(await evaluate("document.getElementById('garminAccordionSummary').textContent"), 'Could not refresh the connection',
+      'a failed connection read is visible instead of the previous scheduled-success summary');
     await openGarminAccordion();
     assert.equal(await evaluate("document.getElementById('garminPreview').hidden"), false, 'connector failure leaves the local canonical review available');
     assert.equal(await evaluate("document.getElementById('garminPublishButton').disabled"), true, 'remote action stays disabled while disconnected');
@@ -573,17 +649,23 @@ test('Garmin editor and send states preserve drafts and block conflicting action
     await evaluate("document.getElementById('garminConnectionRetry').click()");
     releaseRetryStatus();
     await wait("/Connected|Conectado/.test(document.getElementById('garminConnectionStatus').textContent) && document.getElementById('garminConnectionRetry').hidden");
+    assert.match(await evaluate("document.getElementById('garminAccordionSummary').textContent"), /Sent and scheduled|Enviado e agendado/,
+      'retry restores the connected state while preserving the confirmed operation summary');
     assert.equal(remoteMutationCalls.length, mutationsBeforeConnectionRetry, 'connection retry performs no publish or schedule mutation');
     garminSessionExpired = true;
     await command('Page.reload');
     await wait("/Sua sessão Garmin expirou/.test(document.getElementById('garminConnectionStatus').textContent)");
+    assert.match(await evaluate("document.getElementById('garminAccordionSummary').textContent"), /Reconnect your Garmin account|Conecte novamente sua conta Garmin/,
+      'a current reauthentication requirement supersedes a prior send result');
+    assert.equal(await evaluate("document.getElementById('garminAccordionSummary').textContent"), 'Conecte novamente sua conta Garmin',
+      'reauthentication need supersedes an older scheduled success');
     await openGarminAccordion();
     assert.equal(await evaluate("!document.getElementById('garminConnectButton').hidden"), true, 'a confirmed expired session offers reconnect');
     await command('Emulation.setDeviceMetricsOverride', { width: 640, height: 450, deviceScaleFactor: 1, mobile: false });
     assert.ok(await evaluate("document.documentElement.scrollWidth <= innerWidth"), 'review has no horizontal overflow in a low-height, narrow desktop viewport');
     await captureReviewActions('/tmp/kinesis-garmin-review-low-window-actions.png');
   } finally {
-    socket?.close();
+    releaseSchedule(); releaseReschedule(); releaseUpdate(); socket?.close();
     const chromeExit = child.exitCode !== null ? Promise.resolve() : once(child, 'exit').catch(() => {});
     child.kill('SIGTERM');
     await Promise.race([chromeExit, delay(2000)]);
