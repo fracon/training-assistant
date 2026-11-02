@@ -717,10 +717,10 @@ MFA was not exercised on the real account. Exact planned-workout-to-completed-
 activity identity remains unproven and belongs to #74. ZimaOS deployment and
 final operational validation remain tracked in #76.
 
-Phase 3 (#74) may add activity import only after execution identity and the
-result pipeline are proven. Neither this feature nor its scheduled state marks
-a session complete, adds shoe mileage, generates analysis, imports FIT, or
-enables account-wide synchronization.
+At the time of the phase 2 editor delivery, activity import (#74) remained
+separate. Neither the editor nor its scheduled state marks a session complete,
+adds shoe mileage, generates analysis, imports FIT, or enables account-wide
+synchronization. The separately delivered phase 3 behavior is described below.
 
 ## Structured workout editor v3
 
@@ -788,4 +788,94 @@ describes workout steps and repeat/recovery structures. Device-specific
 acceptance still depends on Garmin Connect and the selected watch; the v3
 converter test is not proof that every accepted structure reaches a device.
 The connection remains restricted to the configured pilot owner. No multi-user
-production integration or activity import (#74) is delivered by this editor.
+production integration is delivered by this editor.
+
+## Activity result import (issue #74)
+
+The session's **Result and feedback / Resultado e feedback** source selector has
+an explicit Garmin Connect search path beside FIT/ZIP and manual entry. It uses
+the same pilot connection and MFA controls as workout planning. Search is a
+user action; opening the accordion, loading the session, previewing candidates,
+and downloading an original do not update the training, conclude it, change shoe
+mileage, publish anything, or call an AI provider.
+
+Node remains the product authorization and SQLite owner. It checks the active,
+configured pilot owner, authenticated session, current connection generation,
+connection account fingerprint, and training ownership. Candidate IDs are
+looked up again in the connected account's bounded activity listing before the
+original is downloaded. The browser cannot supply a Garmin owner, remote URL,
+account fingerprint, FIT bytes, or a result payload. A separate account's IDs
+are not accepted as evidence. Connector traffic remains private and uses the
+existing service token and pinned `garminconnect==0.3.20` adapter.
+
+Search is limited to the 31 civil dates centered on the planned session date
+(15 days before through 15 days after), with ten displayed rows per request and
+an explicit bounded “load more” action. Each connector request is capped at
+five upstream pages of at most 25 rows and the connector enforces the 90 second
+operation deadline and rate-limit handling. Candidate data is an allowlisted,
+sanitized subset of Garmin activity summaries. Its activity type, local start,
+duration, distance, heart rate, calories, and elevation are descriptive only.
+Known non-running sport keys are omitted; missing/malformed sport metadata is
+shown as unknown and the downloaded FIT must still identify a running activity.
+The list's optional pace is explicitly an estimate from Garmin summary
+duration/distance and is never persisted; the preview uses FIT-derived canonical
+pace.
+The only suggestion currently uses the same local calendar date and is labeled
+as uncertain; it is never an automatic association. A different date is shown
+as such. Workout IDs, schedule markers, titles, descriptions, and dates are not
+execution proof. The user must choose and confirm one candidate, including
+free runs and sessions that were never published by Kinesis.
+
+Preview rechecks that the activity appears in the connected owner's bounded
+window, downloads the connector's original ZIP with redirects disabled at the
+Node boundary, validates its response type and 25 MiB streaming limit, extracts
+exactly one FIT through `src/fitUpload.js`, and runs `src/fitParser.js` locally.
+The parser's existing canonical pace, duration, calories, heart rate, elevation,
+and laps are persisted without a second metrics interpretation. No original
+file or GPS trace is stored on disk or in SQLite: the server keeps only the
+parsed preview and hash in process memory for five minutes, scoped to the
+current account, login session, training, connection generation, and result
+snapshot. Reload, process restart, expiry, or a connection change requires a new
+search and preview. Parser and download failures leave the previous result
+untouched; diagnostics returned to the browser contain stable codes only.
+
+The idempotent `2026-11-garmin-activity-import-v1` migration adds
+`garmin_activity_imports`. An activity identity is the Garmin connection's
+account fingerprint plus its remote activity ID; file SHA-256 and importer
+version are retained as supporting evidence. Hash alone is not treated as a
+universal activity ID. Exact same-activity/same-file/same-summary reimport is a
+no-op. A changed file or summary needs the same explicit replacement path.
+Unique account/activity and one-current-activity-per-session constraints stop
+cross-session double use and concurrent current links. Replacing the current
+activity leaves its historical row, marks it non-current, and preserves it
+across disconnect or account changes. Manual/FIT replacement also marks Garmin
+provenance historical; result deletion follows the existing training cascade.
+The session response exposes only the current activity ID and import time, not
+the account fingerprint. Manual FIT uploads do not yet supply a stable Garmin
+activity ID to compare, so a file hash match is not used to claim they are the
+same run; the user confirms any replacement.
+
+Preview and the confirmation modal make no SQLite writes. After confirmation,
+Node rechecks the preview's owner/session, active state, connection identity and
+generation, session date, shoe selection, and objective result snapshot inside
+one immediate SQLite transaction. It writes canonical result metrics, FIT lap
+summary, current provenance, and the shoe-mileage ledger delta together. A
+linked activity on another session, stale preview, changed connection, removed
+session, replacement without confirmation, or concurrent import returns a
+conflict without partial writes. Reimporting an identical current import does
+not add mileage again. Existing subjective feedback, selected shoe, and
+completion state are preserved. If there is no valid saved RPE 1–5, the result
+stays open and displays feedback pending; objective import never invents RPE.
+Saving feedback later uses the existing completion contract, context freshness,
+and analysis invalidation. Replacing a completed result requires confirmation.
+No analysis or OpenAI request is started by import.
+
+This is synthetic verification of the private Node→Python contract and local
+FIT parser/persistence path. No Garmin account or watch was contacted for this
+delivery. The manual owner acceptance, including a free run, a published
+session, delayed Connect sync, Forerunner 55 result, feedback save, disconnect,
+and reconnection/account-history review, remains an operational task in #76.
+The implementation has no webhook and does not receive data directly from the
+watch; Garmin Connect must first finish its normal watch synchronization.
+
+Synthetic Chrome review captures: [PT desktop preview](garmin-activity-import-screenshots/pt-review-desktop.png), [PT low window at 200% zoom](garmin-activity-import-screenshots/pt-review-low-height-zoom-200.png), and [EN mobile with feedback pending](garmin-activity-import-screenshots/en-imported-mobile.png). These show the UI against synthetic activity data and are not Garmin homologation evidence.

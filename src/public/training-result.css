@@ -347,6 +347,13 @@ body {
 }
 
 .manual-results-field[hidden] { display: none; }
+.garmin-activity-field[hidden] { display: none; }
+.garmin-activity-candidates { display: grid; gap: 12px; margin-top: 12px; }
+.garmin-activity-candidate, .garmin-activity-preview { padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+.garmin-activity-candidate { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.garmin-activity-candidate p { margin: 4px 0; }
+.garmin-activity-preview { margin-top: 12px; }
+@media (max-width: 600px) { .garmin-activity-candidate { align-items: stretch; flex-direction: column; } }
 
 .manual-results-grid {
   display: grid;
@@ -815,6 +822,8 @@ select.input-control {
   min-width: 0;
   max-width: 100%;
 }
+.fit-laps-wrapper:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.fit-laps-scroll-hint { display: none; margin: 0 0 4px; color: var(--muted); font-size: .75rem; }
 
 .fit-laps-table {
   width: 100%;
@@ -913,6 +922,9 @@ select.input-control {
 }
 
 @media (max-width: 480px) {
+  .fit-laps-scroll-hint { display: block; }
+  .fit-laps-wrapper { overflow-x: auto; overscroll-behavior-inline: contain; }
+  .fit-laps-table { min-width: 560px; }
   .fit-laps-table th,
   .fit-laps-table td {
     padding-inline: 0;

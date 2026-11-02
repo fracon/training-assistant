@@ -925,6 +925,7 @@ test('the session page requires a realized RPE before saving, generating or uplo
         pageOverflow:document.documentElement.scrollWidth>window.innerWidth,
         cardRect:(()=>{const r=document.getElementById('fitDataSection').closest('.card').getBoundingClientRect(); return {left:r.left,right:r.right}})(),
         tableRect:(()=>{const r=document.getElementById('fitLapsTable').getBoundingClientRect(); return {left:r.left,right:r.right}})(),
+        wrapperRect:(()=>{const r=document.querySelector('.fit-laps-wrapper').getBoundingClientRect();const e=document.querySelector('.fit-laps-wrapper');return {left:r.left,right:r.right,client:e.clientWidth,scroll:e.scrollWidth}})(),
         overflowing:[...document.querySelectorAll('#fitLapsTable th,#fitLapsTable td')].map(e=>({tag:e.tagName,text:e.textContent.trim(),width:e.clientWidth,scroll:e.scrollWidth,rect:[e.getBoundingClientRect().left,e.getBoundingClientRect().right]})).filter(e=>e.scroll>e.width),
       }))()`);
       assert.equal(compact.tableVisible, true, `table remains visible at ${width}px`);
@@ -937,8 +938,14 @@ test('the session page requires a realized RPE before saving, generating or uplo
       assert.equal(compact.lastLapNumber, '12');
       assert.equal(compact.sectionOverflow, false, `section has no horizontal overflow at ${width}px: ${JSON.stringify(compact)}`);
       assert.equal(compact.pageOverflow, false, `page has no horizontal overflow at ${width}px: ${JSON.stringify(compact)}`);
-      assert.ok(compact.tableRect.left > compact.cardRect.left, `table keeps card padding at ${width}px`);
-      assert.ok(compact.tableRect.right < compact.cardRect.right, `table keeps card padding at ${width}px`);
+      if (width <= 480) {
+        assert.ok(compact.wrapperRect.left > compact.cardRect.left && compact.wrapperRect.right < compact.cardRect.right,
+          `scroll area keeps card padding at ${width}px`);
+        assert.ok(compact.wrapperRect.scroll > compact.wrapperRect.client, `lap table scrolls within its card at ${width}px`);
+      } else {
+        assert.ok(compact.tableRect.left > compact.cardRect.left, `table keeps card padding at ${width}px`);
+        assert.ok(compact.tableRect.right < compact.cardRect.right, `table keeps card padding at ${width}px`);
+      }
       if ([360, 640].includes(width)) {
         await evaluate("document.getElementById('fitLapsSection').scrollIntoView({block:'center'}); true");
         await delay(80);
@@ -980,6 +987,7 @@ test('the session page requires a realized RPE before saving, generating or uplo
         rows:document.querySelectorAll('#fitLapsBody tr').length,
         card:(()=>{const r=document.getElementById('fitDataSection').closest('.card').getBoundingClientRect(); return {left:r.left,right:r.right}})(),
         table:(()=>{const r=document.getElementById('fitLapsTable').getBoundingClientRect(); return {left:r.left,right:r.right}})(),
+        wrapper:(()=>{const r=document.querySelector('.fit-laps-wrapper').getBoundingClientRect();const e=document.querySelector('.fit-laps-wrapper');return {left:r.left,right:r.right,client:e.clientWidth,scroll:e.scrollWidth}})(),
       }))()`);
       assert.equal(portugueseLayout.header, 'Cadência (ppm)');
       assert.equal(portugueseLayout.cadence, '220');
@@ -988,8 +996,14 @@ test('the session page requires a realized RPE before saving, generating or uplo
       assert.ok(portugueseLayout.fontSize >= 11);
       assert.equal(portugueseLayout.sectionOverflow, false, `PT table fits at ${width}px`);
       assert.equal(portugueseLayout.pageOverflow, false, `PT page fits at ${width}px`);
-      assert.ok(portugueseLayout.table.left > portugueseLayout.card.left);
-      assert.ok(portugueseLayout.table.right < portugueseLayout.card.right);
+      if (width <= 480) {
+        assert.ok(portugueseLayout.wrapper.left > portugueseLayout.card.left);
+        assert.ok(portugueseLayout.wrapper.right < portugueseLayout.card.right);
+        assert.ok(portugueseLayout.wrapper.scroll > portugueseLayout.wrapper.client);
+      } else {
+        assert.ok(portugueseLayout.table.left > portugueseLayout.card.left);
+        assert.ok(portugueseLayout.table.right < portugueseLayout.card.right);
+      }
       if ([360, 640].includes(width)) {
         await evaluate("document.getElementById('fitLapsSection').scrollIntoView({block:'center'}); true");
         await delay(80);

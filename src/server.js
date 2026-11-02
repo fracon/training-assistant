@@ -96,6 +96,7 @@ const {
 } = require('./cycles');
 const { version: APP_VERSION } = require('../package.json');
 const { createGarminProduct } = require('./garmin/product');
+const { createGarminActivityImporter } = require('./garmin/activity-import');
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
@@ -276,6 +277,9 @@ async function buildServer(options = {}) {
       now: options.garminNow,
     });
     garminProduct.register(app, requireAuth);
+    createGarminActivityImporter({ db: options.db, fetchImpl: options.garminFetch || fetch,
+      config: options.garminConfig || process.env, parseFile, resolveBuffer: resolveFitBuffer,
+      now: options.garminNow }).register(app, requireAuth);
   }
 
   app.get('/', async (request, reply) => {
@@ -818,11 +822,21 @@ async function buildServer(options = {}) {
          ELSE NULL
        END AS feedback_shoe,
        CASE WHEN EXISTS (SELECT 1 FROM shoes s WHERE s.id = feedback_shoe_id AND s.user_id = trainings.user_id) THEN feedback_shoe_id ELSE NULL END AS feedback_shoe_id,
-       feedback_hr_source, feedback_weather, feedback_terrain, feedback_breathing, feedback_muscle, feedback_energy, feedback_has_pain, feedback_pain, fit_duration, fit_distance, fit_avg_pace, fit_avg_hr, fit_max_hr, fit_elevation_gain, fit_calories, fit_summary_json, result_data_source`;
+       feedback_hr_source, feedback_weather, feedback_terrain, feedback_breathing, feedback_muscle, feedback_energy, feedback_has_pain, feedback_pain, fit_duration, fit_distance, fit_avg_pace, fit_avg_hr, fit_max_hr, fit_elevation_gain, fit_calories, fit_summary_json, result_data_source,
+       (SELECT json_object('activity_id', gai.activity_id, 'imported_at', gai.imported_at)
+          FROM garmin_activity_imports gai WHERE gai.training_id = trainings.id AND gai.user_id = trainings.user_id AND gai.is_current = 1
+          ORDER BY gai.imported_at DESC LIMIT 1) AS garmin_activity`;
 
-    const findTraining = db.prepare(
+    const findTrainingQuery = db.prepare(
       `SELECT ${TRAINING_COLUMNS} FROM trainings WHERE id = ? AND user_id = ?`,
     );
+    const findTraining = {
+      get(...parameters) {
+        const row = findTrainingQuery.get(...parameters);
+        if (row?.garmin_activity) row.garmin_activity = JSON.parse(row.garmin_activity);
+        return row;
+      },
+    };
 
     app.get(
       '/api/trainings/:id',
@@ -1098,6 +1112,9 @@ async function buildServer(options = {}) {
               error: 'Confirm FIT replacement before saving manual results.',
             });
         }
+        if (current.result_data_source === 'garmin_connect' && !normalized.value.confirm_replace_garmin) {
+          return reply.code(409).send({ code: 'confirm_replace' });
+        }
         const saveManual = db.transaction((values) => {
           const before = findTraining.get(id, request.user.id);
           // A manual write always concludes the workout, so the effort the request
@@ -1127,6 +1144,8 @@ async function buildServer(options = {}) {
             id,
             request.user.id,
           );
+          db.prepare('UPDATE garmin_activity_imports SET is_current=0 WHERE user_id=? AND training_id=? AND is_current=1')
+            .run(request.user.id, id);
           reconcileShoeMileage(
             db,
             request.user.id,
@@ -1163,6 +1182,7 @@ async function buildServer(options = {}) {
         let fileBuffer = null;
         let fileName = '';
         let confirmReplaceManual = false;
+        let confirmReplaceGarmin = false;
         let requestedRpe;
         let rpeSupplied = false;
         try {
@@ -1175,6 +1195,8 @@ async function buildServer(options = {}) {
               part.fieldname === 'confirm_replace_manual'
             ) {
               confirmReplaceManual = part.value === 'true';
+            } else if (part.type === 'field' && part.fieldname === 'confirm_replace_garmin') {
+              confirmReplaceGarmin = part.value === 'true';
             } else if (
               part.type === 'field' &&
               part.fieldname === 'feedback_rpe'
@@ -1202,6 +1224,9 @@ async function buildServer(options = {}) {
               error:
                 'Confirm manual result replacement before uploading a FIT file.',
             });
+        }
+        if (current.result_data_source === 'garmin_connect' && !confirmReplaceGarmin) {
+          return reply.code(409).send({ code: 'confirm_replace' });
         }
 
         try {
@@ -1274,6 +1299,8 @@ async function buildServer(options = {}) {
               id,
               request.user.id,
             );
+            db.prepare('UPDATE garmin_activity_imports SET is_current=0 WHERE user_id=? AND training_id=? AND is_current=1')
+              .run(request.user.id, id);
             reconcileShoeMileage(
               db,
               request.user.id,

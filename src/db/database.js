@@ -343,6 +343,26 @@ function migrateDatabase(db) {
       CREATE INDEX IF NOT EXISTS garmin_cleanup_pending_v1 ON garmin_pilot_connections(cleanup_pending);`);
     db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(garminV2);
   }
+  const activityImportMarker = '2026-11-garmin-activity-import-v1';
+  if (!db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(activityImportMarker)) {
+    db.exec(`CREATE TABLE IF NOT EXISTS garmin_activity_imports (
+      id INTEGER PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      training_id INTEGER NOT NULL REFERENCES trainings(id) ON DELETE CASCADE,
+      account_fingerprint TEXT NOT NULL CHECK (length(account_fingerprint) = 64),
+      activity_id TEXT NOT NULL,
+      file_sha256 TEXT NOT NULL CHECK (length(file_sha256) = 64),
+      importer_version INTEGER NOT NULL CHECK (importer_version > 0),
+      is_current INTEGER NOT NULL DEFAULT 1 CHECK (is_current IN (0,1)),
+      imported_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(account_fingerprint, activity_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_garmin_activity_import_training
+      ON garmin_activity_imports(user_id, training_id, imported_at DESC);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_garmin_activity_import_current_training
+      ON garmin_activity_imports(user_id, training_id) WHERE is_current = 1;`);
+    db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(activityImportMarker);
+  }
   const garminV3 = '2026-10-garmin-session-publish-v3';
   if (!db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(garminV3)) {
     db.exec(`DROP INDEX IF EXISTS garmin_operation_identity_v2;

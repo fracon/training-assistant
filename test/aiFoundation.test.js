@@ -1112,7 +1112,7 @@ test('dispatch lost claim cannot call provider or overwrite another worker', asy
   fixture.db.close();
 });
 
-test('prompt service uses English defaults and saved FIT laps, with PT ownership preserved', () => {
+test('prompt service uses English defaults and saved FIT or Garmin laps, with PT ownership preserved', () => {
   const { db } = setup();
   db.prepare(
     "UPDATE trainings SET result_data_source='fit_upload',fit_summary_json=? WHERE id=1",
@@ -1135,6 +1135,8 @@ test('prompt service uses English defaults and saved FIT laps, with PT ownership
   assert.ok(
     renderPrompt(db, 1, { purpose: 'analysis', resourceId: 1 }).includes('170'),
   );
+  db.prepare("UPDATE trainings SET result_data_source='garmin_connect' WHERE id=1").run();
+  assert.ok(renderPrompt(db, 1, { purpose: 'analysis', resourceId: 1 }).includes('170'));
   db.prepare("UPDATE users SET preferred_lang='pt-BR' WHERE id=1").run();
   assert.ok(
     renderPrompt(db, 1, { purpose: 'cycle', resourceId: 'cycle' }).includes(

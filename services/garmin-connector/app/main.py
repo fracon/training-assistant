@@ -1280,8 +1280,22 @@ def activities(owner_id: str, connection_id: str, body: ActivityQuery,
                         except ValueError as exc:
                             raise RuntimeError("Garmin activity item had an invalid date") from exc
                         if body.start <= activity_day <= body.end:
-                            items.append({key: str(value)[:120] if key == "activityName" else value
-                                          for key, value in row.items() if key in allowed})
+                            item = {key: str(value)[:120] if key == "activityName" else value
+                                    for key, value in row.items() if key in allowed and key != "activityId"}
+                            raw_activity_id = row.get("activityId")
+                            if isinstance(raw_activity_id, int) and not isinstance(raw_activity_id, bool) and raw_activity_id > 0:
+                                item["activityId"] = str(raw_activity_id)
+                            elif isinstance(raw_activity_id, str) and re.fullmatch(r"[1-9][0-9]{0,19}", raw_activity_id):
+                                item["activityId"] = raw_activity_id
+                            else:
+                                raise RuntimeError("Garmin activity item had an invalid identity")
+                            activity_type = row.get("activityType")
+                            if isinstance(activity_type, dict):
+                                type_key = activity_type.get("typeKey")
+                                item["activityType"] = type_key[:80] if isinstance(type_key, str) else "unknown"
+                            elif isinstance(activity_type, str):
+                                item["activityType"] = activity_type[:80]
+                            items.append(item)
                             if len(items) == body.limit:
                                 break
                     if len(items) >= body.limit:

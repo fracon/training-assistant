@@ -50,7 +50,7 @@ function suppliedRpe(value, present) {
 function normalizeManualResults(body = {}) {
   const allowed = new Set([
     'distance_km', 'duration_seconds', 'avg_hr', 'max_hr', 'elevation_gain_m',
-    'calories', 'confirm_replace_fit', 'feedback_rpe',
+    'calories', 'confirm_replace_fit', 'confirm_replace_garmin', 'feedback_rpe',
   ]);
   const unexpected = Object.keys(body).find((key) => !allowed.has(key));
   if (unexpected) return { ok: false, error: `Unexpected field: ${unexpected}.` };
@@ -62,6 +62,9 @@ function normalizeManualResults(body = {}) {
   }
   if (body.confirm_replace_fit !== undefined && typeof body.confirm_replace_fit !== 'boolean') {
     return { ok: false, error: 'confirm_replace_fit must be a boolean.' };
+  }
+  if (body.confirm_replace_garmin !== undefined && typeof body.confirm_replace_garmin !== 'boolean') {
+    return { ok: false, error: 'confirm_replace_garmin must be a boolean.' };
   }
   const avg = optionalInteger(body.avg_hr, 'avg_hr', { positive: true });
   const max = optionalInteger(body.max_hr, 'max_hr', { positive: true });
@@ -87,6 +90,7 @@ function normalizeManualResults(body = {}) {
       feedback_rpe: rpe.value,
       feedback_rpe_supplied: rpe.present,
       confirm_replace_fit: body.confirm_replace_fit === true,
+      confirm_replace_garmin: body.confirm_replace_garmin === true,
       fit_duration: formatDuration(body.duration_seconds),
       fit_avg_pace: calculateMetricPace(body.duration_seconds, body.distance_km),
     },

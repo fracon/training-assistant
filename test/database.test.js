@@ -64,6 +64,26 @@ test('Garmin operation identity migration is idempotent and excludes generated o
   db.close();
 });
 
+test('Garmin activity provenance migration is idempotent and enforces one current activity per session and account-qualified IDs', () => {
+  const db = createDatabase({ filename: ':memory:' });
+  db.prepare("INSERT INTO users (id,email,password_hash) VALUES (1,'activity-migration@example.test','hash')").run();
+  db.prepare("INSERT INTO trainings (id,user_id,dia,tipo,treino) VALUES (1,1,'2026-11-02','run','tempo')").run();
+  db.prepare(`INSERT INTO garmin_activity_imports
+    (user_id,training_id,account_fingerprint,activity_id,file_sha256,importer_version)
+    VALUES (1,1,?,?,?,1)`).run('a'.repeat(64), '72', 'b'.repeat(64));
+  db.prepare("DELETE FROM schema_migrations WHERE name='2026-11-garmin-activity-import-v1'").run();
+  migrateDatabase(db);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM schema_migrations WHERE name='2026-11-garmin-activity-import-v1'").get().n, 1);
+  assert.equal(db.prepare('SELECT is_current FROM garmin_activity_imports WHERE activity_id=?').get('72').is_current, 1);
+  assert.throws(() => db.prepare(`INSERT INTO garmin_activity_imports
+    (user_id,training_id,account_fingerprint,activity_id,file_sha256,importer_version)
+    VALUES (1,1,?,?,?,1)`).run('c'.repeat(64), '73', 'd'.repeat(64)), /UNIQUE constraint failed/);
+  db.prepare('UPDATE garmin_pilot_connections SET identity_fingerprint=NULL').run();
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM garmin_activity_imports').get().n, 1,
+    'disconnect or account replacement keeps historical activity provenance');
+  db.close();
+});
+
 test('Garmin v2 upgrade preserves a v1 journal row and adds identity and cleanup columns', () => {
   const db = createDatabase({ filename: ':memory:' });
   db.prepare("INSERT INTO users (id,email,password_hash) VALUES (1,'migration@example.test','hash')").run();
@@ -133,6 +153,7 @@ test('initializeDatabase applies pragmas and creates the schema', () => {
     'cycle_plan_proposals',
     'cycle_plan_versions',
     'feedback',
+    'garmin_activity_imports',
     'garmin_cleanup_state',
     'garmin_pilot_connections',
     'garmin_training_operations',
@@ -1158,6 +1179,7 @@ test('migrateDatabase removes the obsolete workouts table from existing database
       'cycle_plan_proposals',
       'cycle_plan_versions',
       'feedback',
+      'garmin_activity_imports',
       'garmin_cleanup_state',
       'garmin_pilot_connections',
       'garmin_training_operations',

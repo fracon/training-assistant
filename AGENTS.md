@@ -8,7 +8,7 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.29.1` on the issue #73
+`package.json` and `package-lock.json` (currently `0.30.0` on the issue #74
 branch); follow the SemVer
 rule below.
 
@@ -605,8 +605,7 @@ for conversion, or map RPE to a physiological target. Preview is read-only.
 Publishing is an explicit confirmed action; durable operations are scoped to
 owner/session/revision/fingerprint, and uncertain outcomes must never be
 automatically repeated. A Garmin Connect schedule is not proof of delivery to
-a watch. This pilot does not implement multi-user production integration or
-the activity import phase (#74).
+a watch. This pilot does not implement multi-user production integration.
 While a durable send/update/reschedule is active, failed with remote effects,
 or awaiting reconciliation, disable editing and every new mutation for that
 snapshot. Present one localized operation state based on its persisted status,
@@ -1083,3 +1082,36 @@ including overflow; functional tests alone do not replace visual inspection.
 8. **Git workflow:** develop on a task-appropriate branch, not directly on
    `main`; test, inspect `git diff --check`, and commit descriptively only after
    required verification passes.
+
+## Garmin activity result import (#74)
+
+The phase 3 activity import remains a restricted single-owner pilot. Use
+`src/garmin/activity-import.js` for Node authorization, candidate search, preview,
+and confirmed import; the Python connector's allowlisted activities and ORIGINAL
+routes remain private. Never accept a Garmin owner, connection, URL, account
+identity, or FIT payload from the browser. Revalidate active owner, login
+session, current connection fingerprint/generation, session ownership/date, and
+result snapshot after remote work and inside the final immediate transaction.
+Do not hold SQLite transactions across connector requests or FIT parsing.
+
+Search is user initiated and limited to 31 dates centered on the session date,
+with bounded pagination. Same local date is only an uncertain suggestion. Never
+infer execution from a Garmin workout ID, title, description, schedule marker, or
+date; require explicit activity selection, local FIT preview, and confirmation.
+The connector's original stays in process memory only; reuse `resolveFitBuffer`
+and `parseFitFile`, retain parser semantics, and never expose raw parser or
+upstream errors. No background sync, webhook, AI call, or Garmin mutation is
+part of result import.
+
+`garmin_activity_imports` is managed by idempotent migration
+`2026-11-garmin-activity-import-v1`. Identity is account fingerprint plus
+activity ID; SHA-256 supports exact file reimport checks and is never a universal
+activity identity. Keep one current activity binding per session while retaining
+superseded provenance across disconnect/account changes. Manual/FIT replacement
+requires explicit confirmation and marks Garmin binding historical. Commit
+result, laps, provenance and shoe mileage delta atomically; preserve subjective
+feedback and the chosen Kinesis shoe. Import without a valid stored RPE leaves a
+session open, and later feedback uses the ordinary completion/context/analysis
+invalidation contracts. Exact reimport is a no-op; stale previews, cross-session
+reuse, and concurrent writes are conflicts. Restart/reload discards only the
+short-lived preview cache and requires a new search/preview.

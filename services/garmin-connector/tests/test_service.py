@@ -194,7 +194,7 @@ class ConnectorTests(unittest.TestCase):
                 "startTimeLocal": f"{day}T08:00:00", "distance": 5000}
 
     def test_activity_page_satisfying_requested_limit_is_success_not_page_exhaustion(self):
-        page = [self._activity(index) for index in range(10)]
+        page = [self._activity(index) for index in range(1, 11)]
         response, calls = self._query_activity_pages([page])
 
         self.assertEqual(response.status_code, 200, response.text)
@@ -208,7 +208,7 @@ class ConnectorTests(unittest.TestCase):
         empty, empty_calls = self._query_activity_pages([[]])
 
         self.assertEqual(partial.status_code, 200, partial.text)
-        self.assertEqual([item["activityId"] for item in partial.json()["items"]], [1, 2])
+        self.assertEqual([item["activityId"] for item in partial.json()["items"]], ["1", "2"])
         self.assertEqual(partial_calls, [(0, 10)])
         self.assertEqual(empty.status_code, 200, empty.text)
         self.assertEqual(empty.json()["items"], [])
@@ -223,7 +223,7 @@ class ConnectorTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual([item["activityId"] for item in response.json()["items"]],
-                         [10, 11, 12, 13, 14, 15, 16, 17, 18, 19])
+                         [str(index) for index in range(10, 20)])
         self.assertEqual(calls, [(0, 10), (10, 10), (20, 10)])
 
         intermediate, intermediate_calls = self._query_activity_pages([
@@ -236,7 +236,7 @@ class ConnectorTests(unittest.TestCase):
         self.assertEqual(intermediate_calls, [(0, 10), (10, 10)])
 
     def test_activity_pagination_preserves_offset_and_stops_when_limit_is_met_mid_search(self):
-        first = [self._activity(index) for index in range(10)]
+        first = [self._activity(index) for index in range(1, 11)]
         response, calls = self._query_activity_pages([first, [self._activity(99)]], offset=20)
 
         self.assertEqual(response.status_code, 200, response.text)
@@ -262,7 +262,7 @@ class ConnectorTests(unittest.TestCase):
         empty, empty_calls = self._query_activity_pages(full_pages + [[]])
 
         self.assertEqual(partial.status_code, 200, partial.text)
-        self.assertEqual([item["activityId"] for item in partial.json()["items"]], [40, 41])
+        self.assertEqual([item["activityId"] for item in partial.json()["items"]], ["40", "41"])
         self.assertEqual(partial_calls, [(0, 10), (10, 10), (20, 10), (30, 10), (40, 10)])
         self.assertEqual(empty.status_code, 200, empty.text)
         self.assertEqual(empty.json()["items"], [])
@@ -597,11 +597,26 @@ class ConnectorTests(unittest.TestCase):
         with patch.object(main, "_client", fake_client):
             result = self.client.post(f"{self.prefix}/activities", headers=self.headers,
                                       json={"start": "2026-10-01", "end": "2026-10-31", "offset": 0, "limit": 10})
-            self.assertEqual([item["activityId"] for item in result.json()["items"]], [1])
+            self.assertEqual([item["activityId"] for item in result.json()["items"]], ["1"])
             self.assertEqual(self.client.get(f"{self.prefix}/activities/-1/original", headers=self.headers).status_code, 400)
             too_long = self.client.post(f"{self.prefix}/activities", headers=self.headers,
                                         json={"start": "2026-10-01", "end": "2026-11-02"})
             self.assertEqual(too_long.status_code, 400)
+
+    def test_activity_type_is_allowlisted_as_a_key_without_returning_remote_metadata(self):
+        activity = self._activity(17)
+        activity["activityType"] = {"typeKey": "running", "typeId": 1, "privateField": "must-not-leak"}
+        response, _ = self._query_activity_pages([[activity]])
+        self.assertEqual(response.status_code, 200, response.text)
+        item = response.json()["items"][0]
+        self.assertEqual(item["activityType"], "running")
+        self.assertNotIn("typeId", item)
+        self.assertNotIn("privateField", str(item))
+
+    def test_activity_identity_preserves_large_integer_precision(self):
+        response, _ = self._query_activity_pages([[self._activity(9007199254740993)]])
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["items"][0]["activityId"], "9007199254740993")
 
     def test_capabilities_download_and_workout_read_are_sanitized(self):
         path = Path(self.temp.name, "17-pilot.bin")

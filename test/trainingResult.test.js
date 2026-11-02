@@ -282,14 +282,16 @@ test('persistCurrentTrainingState blocks feedback and prompt continuation on val
   assert.equal(resultFailed.stage, 'result');
 });
 
-test('result source resolution and badge keys handle manual, FIT, none, and legacy omissions explicitly', () => {
+test('result source resolution and badge keys handle manual, FIT, Garmin, none, and legacy omissions explicitly', () => {
   assert.equal(resolveResultSource({ result_data_source: 'manual' }), 'manual');
   assert.equal(resolveResultSource({ result_data_source: 'fit_upload' }), 'fit_upload');
+  assert.equal(resolveResultSource({ result_data_source: 'garmin_connect' }), 'garmin_connect');
   assert.equal(resolveResultSource({ result_data_source: 'none' }), 'none');
   assert.equal(resolveResultSource({}), 'none');
   assert.equal(resolveResultSource({ result_data_source: 'fit_upload' }, { result_data_source: 'manual' }), 'manual');
   assert.equal(resultSourceBadgeKey('manual'), 'session.sourceManualBadge');
   assert.equal(resultSourceBadgeKey('fit_upload'), 'session.sourceFitBadge');
+  assert.equal(resultSourceBadgeKey('garmin_connect'), 'session.sourceGarminBadge');
   assert.equal(resultSourceBadgeKey('none'), null);
   assert.equal(pt.session.sourceManualBadge, 'Dados inseridos manualmente');
   assert.equal(en.session.sourceManualBadge, 'Manually entered data');
@@ -576,6 +578,8 @@ test('collectPromptValues resolves provenance explicitly in both languages and l
   assert.equal(sourceValues('manual', 'pt-BR', null).OBSERVACAO_PACE, '');
   for (const [source, language, label] of [
     ['fit_upload', 'pt-BR', 'Arquivo FIT'], ['fit_upload', 'en-US', 'FIT file'],
+    ['garmin_connect', 'pt-BR', 'Arquivo FIT importado do Garmin Connect'],
+    ['garmin_connect', 'en-US', 'FIT file imported from Garmin Connect'],
     ['none', 'pt-BR', 'Não informada'], ['none', 'en-US', 'Not provided'],
   ]) {
     const values = sourceValues(source, language);
@@ -583,6 +587,7 @@ test('collectPromptValues resolves provenance explicitly in both languages and l
     assert.equal(values.OBSERVACAO_FONTE, '');
     assert.equal(values.OBSERVACAO_PACE, '');
     if (source === 'none') assert.equal(values.ANEXAR_SCREENSHOT_GARMIN_OU_INSERIR_DADOS_DE_LAPS_AQUI, '-');
+    if (source === 'garmin_connect') assert.match(values.ANEXAR_SCREENSHOT_GARMIN_OU_INSERIR_DADOS_DE_LAPS_AQUI, /\| 1 \|/);
   }
   const legacy = collectPromptValues({ training: baseTraining, form: baseForm({ language: 'pt-BR' }), fitData: { laps: [] } });
   assert.equal(legacy.FONTE_DADOS, 'Não informada');
@@ -1896,7 +1901,8 @@ test('training-result.css keeps the earthy premium aesthetic for the session vie
   assert.match(css, /\.file-dropzone \{[^}]*background-color:\s*var\(--card\)/, 'subtle card surface behind the invitation');
   assert.match(css, /\.file-dropzone \{[^}]*cursor:\s*pointer/);
   assert.match(css, /\.file-dropzone \{[^}]*display:\s*flex/);
-  assert.doesNotMatch(css, /\.fit-laps-wrapper[^}]*overflow-x:\s*(?:auto|hidden|clip)/);
+  assert.match(css, /\.fit-laps-wrapper\s*\{[^}]*overflow-x:\s*auto/s);
+  assert.match(css, /\.fit-laps-table\s*\{\s*min-width:\s*560px/s);
   assert.doesNotMatch(css, /\.fit-laps-table \{[^}]*min-width:\s*720px/);
   assert.match(css, /\.fit-laps-section \{[^}]*margin-top:\s*14px/);
   assert.doesNotMatch(css, /\.fit-laps-section \{[^}]*margin-inline:\s*-/);

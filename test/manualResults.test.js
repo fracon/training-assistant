@@ -13,7 +13,7 @@ test('manual result helpers format duration and calculate rounded metric pace', 
 
 test('normalizeManualResults accepts canonical metrics and clears blank optionals', () => {
   const result = normalizeManualResults({ distance_km: 10.25, duration_seconds: 3725, avg_hr: '', max_hr: null, elevation_gain_m: 104, calories: 742 });
-  assert.deepEqual(result, { ok: true, value: { distance_km: 10.25, duration_seconds: 3725, avg_hr: null, max_hr: null, elevation_gain_m: 104, calories: 742, feedback_rpe: null, feedback_rpe_supplied: false, confirm_replace_fit: false, fit_duration: '1:02:05', fit_avg_pace: '6:03' } });
+  assert.deepEqual(result, { ok: true, value: { distance_km: 10.25, duration_seconds: 3725, avg_hr: null, max_hr: null, elevation_gain_m: 104, calories: 742, feedback_rpe: null, feedback_rpe_supplied: false, confirm_replace_fit: false, confirm_replace_garmin: false, fit_duration: '1:02:05', fit_avg_pace: '6:03' } });
 });
 
 test('normalizeManualResults keeps a supplied realized RPE apart from an omitted one', () => {
@@ -58,6 +58,7 @@ test('normalizeManualResults rejects invalid, conflicting, and unexpected payloa
     { distance_km: 1, duration_seconds: 60, avg_hr: 0 }, { distance_km: 1, duration_seconds: 60, max_hr: 120, avg_hr: 140 },
     { distance_km: 1, duration_seconds: 60, elevation_gain_m: -1 }, { distance_km: 1, duration_seconds: 60, calories: -1 },
     { distance_km: 1, duration_seconds: 60, user_id: 99 }, { distance_km: 1, duration_seconds: 60, confirm_replace_fit: 'yes' },
+    { distance_km: 1, duration_seconds: 60, confirm_replace_garmin: 'yes' },
   ]) assert.equal(normalizeManualResults(body).ok, false);
   assert.equal(isResultSource('manual'), true);
   assert.equal(isResultSource('garmin_connect'), true);

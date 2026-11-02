@@ -188,6 +188,7 @@
             </div>
             <select id="resultSourceSelect" class="input-control">
               <option value="fit" data-i18n="session.resultSourceFit">Import FIT or ZIP file</option>
+              <option value="garmin" data-i18n="session.resultSourceGarmin">Search Garmin Connect</option>
               <option value="manual" data-i18n="session.resultSourceManual">Enter data manually</option>
             </select>
           </div>
@@ -199,6 +200,19 @@
               </div>
               <div class="dropzone-text-secondary" data-i18n="session.fitClickText">or click to select from your computer</div>
             </label>
+          </div>
+
+          <div class="field field-wide garmin-activity-field" id="garminActivityField" hidden>
+            <p class="field-hint" data-i18n="session.garminImport.explanation">Search activities synced to your connected Garmin account. Review and confirm one before importing.</p>
+            <button id="garminActivitySearch" class="btn-secondary btn-small" type="button" data-i18n="session.garminImport.search">Search Garmin Connect</button>
+            <p id="garminActivityStatus" class="field-hint" role="status" aria-live="polite" tabindex="-1"></p>
+            <div id="garminActivityCandidates" class="garmin-activity-candidates" role="list"></div>
+            <button id="garminActivityMore" class="btn-secondary btn-small" type="button" data-i18n="session.garminImport.more" hidden>Load more activities</button>
+            <section id="garminActivityPreview" class="garmin-activity-preview" aria-live="polite" hidden>
+              <h3 data-i18n="session.garminImport.previewHeading">Review activity</h3>
+              <dl id="garminActivityPreviewData" class="fit-data-grid"></dl>
+              <button id="garminActivityConfirm" class="btn-primary btn-small" type="button" data-i18n="session.garminImport.confirm">Import this activity</button>
+            </section>
           </div>
 
           <div class="field field-wide manual-results-field" id="manualResultsField" hidden>
@@ -214,6 +228,7 @@
 
           <div class="field field-wide fit-data-section" id="fitDataSection" hidden>
             <div class="result-data-head"><h3 class="fit-data-title" data-i18n="session.fitDataHeading">Workout result</h3><span id="resultSourceBadge" class="result-source-badge"></span></div>
+            <p id="garminActivityLink" class="garmin-activity-link" hidden></p>
             <dl class="fit-data-grid">
               <div class="fit-data-item">
                 <dt data-i18n="session.fitDuration">Duration</dt>
@@ -243,7 +258,8 @@
             </dl>
             <div class="fit-laps-section" id="fitLapsSection" hidden>
               <h3 class="fit-data-title" data-i18n="session.fitLapsHeading">Lap by Lap</h3>
-              <div class="fit-laps-wrapper">
+              <p class="fit-laps-scroll-hint" data-i18n="session.fitLapsScrollHint">Swipe sideways to see all lap details.</p>
+              <div class="fit-laps-wrapper" tabindex="0" role="region" data-i18n-aria-label="session.fitLapsScrollLabel" aria-label="Lap details, horizontally scrollable">
                 <table class="fit-laps-table" id="fitLapsTable">
                   <thead>
                     <tr>

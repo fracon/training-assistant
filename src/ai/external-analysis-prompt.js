@@ -9,7 +9,7 @@ export function formatDateLabel(iso, language = 'pt-BR') {
 
 export function resolveResultSource(training = {}, fitData = {}) {
   const source = fitData?.result_data_source ?? training?.result_data_source;
-  return source === 'manual' || source === 'fit_upload' ? source : 'none';
+  return ['manual', 'fit_upload', 'garmin_connect'].includes(source) ? source : 'none';
 }
 
 
@@ -235,6 +235,8 @@ export function collectPromptValues({ training, form, fitData, preferences = {},
     ? (english ? 'Manually entered by the user' : 'Inserção manual pelo usuário')
     : source === 'fit_upload'
       ? (english ? 'FIT file' : 'Arquivo FIT')
+      : source === 'garmin_connect'
+        ? (english ? 'FIT file imported from Garmin Connect' : 'Arquivo FIT importado do Garmin Connect')
       : (english ? 'Not provided' : 'Não informada');
   return {
     DATA: formatDateLabel(training.dia, form.language),
@@ -268,7 +270,7 @@ export function collectPromptValues({ training, form, fitData, preferences = {},
     ENERGIA_FINAL: form.energy_label,
     DOR_DESCONFORTO: form.pain_description,
     FEEDBACK: form.feedback_notas,
-    ANEXAR_SCREENSHOT_GARMIN_OU_INSERIR_DADOS_DE_LAPS_AQUI: source !== 'fit_upload'
+    ANEXAR_SCREENSHOT_GARMIN_OU_INSERIR_DADOS_DE_LAPS_AQUI: !['fit_upload', 'garmin_connect'].includes(source)
       ? '-'
       : fitData?.laps?.length
         ? buildLapsMarkdown(fitData.laps, { ...preferences, language: form.language, messages })
