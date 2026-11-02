@@ -18,8 +18,16 @@ body {
 
 .feedback-card { container: session-feedback / inline-size; }
 
+.session-accordion-card {
+  display: grid;
+  gap: 1rem;
+}
+
 .session-accordion-heading {
   min-width: 0;
+}
+
+.session-accordion-card > .session-accordion-heading {
   margin: 0;
 }
 
@@ -968,7 +976,6 @@ select.input-control {
     grid-template-columns: minmax(0, 1fr);
   }
 }
-.garmin-session-card { display: grid; gap: 1rem; }
 .garmin-session-card[hidden] { display: none; }
 .garmin-session-card [hidden], .garmin-session-card button[hidden] { display: none !important; }
 .garmin-session-card h2, .garmin-session-card h3, .garmin-session-card p { margin: 0; }
