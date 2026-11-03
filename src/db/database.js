@@ -141,6 +141,97 @@ function resolveDatabaseFile(cwd) {
   return path.join(cwd, 'data', 'database.sqlite');
 }
 
+function ensureTrainingResultEvidenceIdentity(db) {
+  const table = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='training_result_evidence'").get();
+  const requiredColumns = ['user_id', 'training_id', 'evidence_type', 'evidence_value', 'source'];
+  const columns = table ? db.prepare('PRAGMA table_info(training_result_evidence)').all() : [];
+  if (!table || requiredColumns.some((name) => !columns.some((column) => column.name === name))) {
+    throw new Error('Cannot repair training_result_evidence: required table or identity columns are missing. Restore the table from backup or run a reviewed schema repair.');
+  }
+  const indexes = db.prepare('PRAGMA index_list(training_result_evidence)').all();
+  const indexColumns = (index) => db.prepare(`PRAGMA index_xinfo("${index.name.replaceAll('"', '""')}")`).all()
+    .filter((column) => column.key === 1);
+  const isIdentityIndex = (index) => {
+    if (!index.unique || index.partial) return false;
+    const key = indexColumns(index);
+    return key.length === requiredColumns.length
+      && key.every((column, position) => column.name === requiredColumns[position] && column.coll === 'BINARY' && column.desc === 0);
+  };
+  const matchesIdentity = indexes.some(isIdentityIndex);
+  const legacyFourColumnKey = indexes.find((index) => index.unique && !index.partial
+    && JSON.stringify(indexColumns(index).map((column) => column.name))
+      === JSON.stringify(requiredColumns.slice(0, 4)));
+  const repairIndex = indexes.find((index) => index.name === 'idx_training_result_evidence_identity_v2');
+  if (repairIndex && !isIdentityIndex(repairIndex)) {
+    throw new Error('Cannot repair training_result_evidence: idx_training_result_evidence_identity_v2 exists with an incompatible definition. No evidence rows were changed; review the index and retry migration.');
+  }
+  const unsupportedUniqueIndexes = indexes.filter((index) => index.unique && !index.partial
+    && index !== legacyFourColumnKey && !isIdentityIndex(index));
+  if (unsupportedUniqueIndexes.length) {
+    throw new Error('Cannot repair training_result_evidence: it has an unrecognized UNIQUE constraint. No evidence rows were changed; review the index definition before retrying migration.');
+  }
+  if (legacyFourColumnKey) {
+    const expectedColumns = ['id','user_id','training_id','evidence_type','evidence_value','source','is_current','created_at'];
+    if (JSON.stringify(columns.map((column) => column.name)) !== JSON.stringify(expectedColumns)) {
+      throw new Error('Cannot safely rebuild training_result_evidence: its legacy columns differ from the known v1 schema. No evidence rows were changed; review the table and restore from backup if needed.');
+    }
+    const unexpectedIndexes = indexes.filter((index) => index.origin === 'c'
+      && !['idx_training_result_evidence_training','idx_training_result_evidence_current_identity','idx_training_result_evidence_identity_v2'].includes(index.name));
+    if (unexpectedIndexes.length) {
+      throw new Error('Cannot safely rebuild training_result_evidence: it has additional custom indexes. No evidence rows were changed; review those indexes before retrying migration.');
+    }
+    const foreignKeys = db.prepare('PRAGMA foreign_key_list(training_result_evidence)').all();
+    const hasRequiredForeignKeys = foreignKeys.some((key) => key.table === 'users' && key.from === 'user_id' && key.to === 'id' && key.on_delete === 'CASCADE')
+      && foreignKeys.some((key) => key.table === 'trainings' && key.from === 'training_id' && key.to === 'id' && key.on_delete === 'CASCADE');
+    if (!hasRequiredForeignKeys || db.prepare('PRAGMA foreign_key_check(training_result_evidence)').all().length) {
+      throw new Error('Cannot safely rebuild training_result_evidence: required ownership foreign keys or row references are invalid. No evidence rows were changed; review the table before retrying migration.');
+    }
+    const currentDuplicates = db.prepare(`SELECT COUNT(*) AS groups FROM (
+      SELECT 1 FROM training_result_evidence WHERE is_current=1
+      GROUP BY user_id,evidence_type,evidence_value HAVING COUNT(*) > 1
+    )`).get().groups;
+    if (currentDuplicates) {
+      throw new Error(`Cannot safely rebuild training_result_evidence: ${currentDuplicates} duplicate current identity group(s) prevent its uniqueness constraint. No evidence rows were changed; resolve the ambiguity and retry migration.`);
+    }
+    if (db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='training_result_evidence_repair_v1'").get()) {
+      throw new Error('Cannot safely rebuild training_result_evidence: a prior repair table exists. No evidence rows were changed; review it before retrying migration.');
+    }
+    db.exec(`DROP INDEX IF EXISTS idx_training_result_evidence_training;
+      DROP INDEX IF EXISTS idx_training_result_evidence_current_identity;
+      ALTER TABLE training_result_evidence RENAME TO training_result_evidence_repair_v1;
+      CREATE TABLE training_result_evidence (
+        id INTEGER PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        training_id INTEGER NOT NULL REFERENCES trainings(id) ON DELETE CASCADE,
+        evidence_type TEXT NOT NULL CHECK (evidence_type IN ('fit_sha256','fit_file_id','garmin_activity')),
+        evidence_value TEXT NOT NULL,
+        source TEXT NOT NULL CHECK (source IN ('fit_upload','garmin_connect')),
+        is_current INTEGER NOT NULL CHECK (is_current IN (0,1)),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(user_id,training_id,evidence_type,evidence_value,source)
+      );
+      INSERT INTO training_result_evidence
+        (id,user_id,training_id,evidence_type,evidence_value,source,is_current,created_at)
+        SELECT id,user_id,training_id,evidence_type,evidence_value,source,is_current,created_at
+        FROM training_result_evidence_repair_v1;
+      DROP TABLE training_result_evidence_repair_v1;
+      CREATE INDEX idx_training_result_evidence_training
+        ON training_result_evidence(user_id,training_id,is_current);
+      CREATE UNIQUE INDEX idx_training_result_evidence_current_identity
+        ON training_result_evidence(user_id,evidence_type,evidence_value) WHERE is_current=1;`);
+  } else if (!matchesIdentity) {
+    const duplicates = db.prepare(`SELECT COUNT(*) AS groups FROM (
+      SELECT 1 FROM training_result_evidence
+      GROUP BY user_id,training_id,evidence_type,evidence_value,source HAVING COUNT(*) > 1
+    )`).get().groups;
+    if (duplicates) {
+      throw new Error(`Cannot repair training_result_evidence: ${duplicates} duplicate identity group(s) prevent a unique index. No evidence rows were changed; resolve the ambiguity and retry migration.`);
+    }
+    db.exec(`CREATE UNIQUE INDEX idx_training_result_evidence_identity_v2
+      ON training_result_evidence(user_id,training_id,evidence_type,evidence_value,source)`);
+  }
+}
+
 function migrateDatabase(db) {
   const columns = db.pragma('table_info(users)');
   if (!columns.some((column) => column.name === 'role')) {
@@ -342,6 +433,227 @@ function migrateDatabase(db) {
       ON garmin_training_operations(user_id,training_id,connection_generation,prescription_revision,scheduled_date,action);
       CREATE INDEX IF NOT EXISTS garmin_cleanup_pending_v1 ON garmin_pilot_connections(cleanup_pending);`);
     db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(garminV2);
+  }
+  const activityImportMarker = '2026-11-garmin-activity-import-v1';
+  if (!db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(activityImportMarker)) {
+    const initializeActivityImports = db.transaction(() => {
+      db.exec(`CREATE TABLE IF NOT EXISTS garmin_activity_imports (
+        id INTEGER PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        training_id INTEGER NOT NULL REFERENCES trainings(id) ON DELETE CASCADE,
+        account_fingerprint TEXT NOT NULL CHECK (length(account_fingerprint) = 64),
+        activity_id TEXT NOT NULL,
+        file_sha256 TEXT NOT NULL CHECK (length(file_sha256) = 64),
+        importer_version INTEGER NOT NULL CHECK (importer_version > 0),
+        is_current INTEGER NOT NULL DEFAULT 1 CHECK (is_current IN (0,1)),
+        imported_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(account_fingerprint, activity_id)
+      );`);
+      db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(activityImportMarker);
+    });
+    initializeActivityImports.immediate();
+  }
+  const activityImportRepairMarker = '2026-11-garmin-activity-import-v2';
+  if (!db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(activityImportRepairMarker)) {
+    const repairActivityImports = db.transaction(() => {
+      const exists = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='garmin_activity_imports'").get();
+      if (!exists) {
+        throw new Error('Garmin activity import repair cannot find its v1 table; restore the database backup or contact the operator.');
+      }
+      const columns = db.prepare('PRAGMA table_info(garmin_activity_imports)').all();
+      const names = new Set(columns.map((column) => column.name));
+      const required = ['id', 'user_id', 'training_id', 'account_fingerprint', 'activity_id',
+        'file_sha256', 'importer_version', 'imported_at'];
+      const missing = required.filter((name) => !names.has(name));
+      if (missing.length) {
+        throw new Error(`Garmin activity import repair found an incomplete v1 table (missing ${missing.join(', ')}); no records were changed.`);
+      }
+      const foreignKeys = db.prepare('PRAGMA foreign_key_list(garmin_activity_imports)').all();
+      const hasOwnerForeignKey = foreignKeys.some((key) => key.table === 'users' && key.from === 'user_id' && key.to === 'id' && key.on_delete === 'CASCADE');
+      const hasTrainingForeignKey = foreignKeys.some((key) => key.table === 'trainings' && key.from === 'training_id' && key.to === 'id' && key.on_delete === 'CASCADE');
+      if (!hasOwnerForeignKey || !hasTrainingForeignKey) {
+        throw new Error('Garmin activity import repair found incompatible ownership foreign keys; no records were changed. Restore a compatible schema or contact the operator.');
+      }
+
+      if (!names.has('is_current')) {
+        // The old schema has no persisted pointer to say which import currently
+        // supplies a training result. Keep every row as history; only a later
+        // explicit import confirmation may establish a current binding.
+        db.exec('ALTER TABLE garmin_activity_imports ADD COLUMN is_current INTEGER NOT NULL DEFAULT 0 CHECK (is_current IN (0,1))');
+      } else {
+        const currentColumn = columns.find((column) => column.name === 'is_current');
+        const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='garmin_activity_imports'").get().sql;
+        if (String(currentColumn.type).toUpperCase() !== 'INTEGER' || currentColumn.notnull !== 1
+            || !/CHECK\s*\(\s*is_current\s+IN\s*\(\s*0\s*,\s*1\s*\)\s*\)/i.test(tableSql)) {
+          throw new Error('Garmin activity import repair found an invalid is_current constraint; no records were changed. Restore a compatible schema or contact the operator.');
+        }
+      }
+
+      const duplicateIdentity = db.prepare(`SELECT 1 FROM garmin_activity_imports
+        GROUP BY account_fingerprint,activity_id HAVING COUNT(*)>1 LIMIT 1`).get();
+      if (duplicateIdentity) {
+        throw new Error('Garmin activity import repair cannot add the account/activity uniqueness constraint because duplicate identities exist; no records were changed. Preserve a backup and reconcile those records before retrying.');
+      }
+      const duplicateCurrent = db.prepare(`SELECT 1 FROM garmin_activity_imports WHERE is_current=1
+        GROUP BY user_id,training_id HAVING COUNT(*)>1 LIMIT 1`).get();
+      if (duplicateCurrent) {
+        throw new Error('Garmin activity import repair cannot add the current-binding constraint because a session has multiple current activities; no records were changed. Preserve a backup and reconcile those records before retrying.');
+      }
+
+      const indexRows = () => db.prepare('PRAGMA index_list(garmin_activity_imports)').all();
+      const indexColumns = (name) => db.prepare(`PRAGMA index_xinfo(${JSON.stringify(name)})`).all()
+        .filter((column) => column.key === 1).map((column) => ({ name: column.name, desc: column.desc }));
+      const dropIndex = (name) => {
+        if (indexRows().some((index) => index.name === name)) db.exec(`DROP INDEX ${JSON.stringify(name)}`);
+      };
+      const trainingIndexName = 'idx_garmin_activity_import_training';
+      const trainingIndex = indexRows().find((index) => index.name === trainingIndexName);
+      if (trainingIndex && (trainingIndex.unique || JSON.stringify(indexColumns(trainingIndexName))
+          !== JSON.stringify([{ name: 'user_id', desc: 0 }, { name: 'training_id', desc: 0 }, { name: 'imported_at', desc: 1 }]))) {
+        dropIndex(trainingIndexName);
+      }
+      if (!indexRows().some((index) => index.name === trainingIndexName)) {
+        db.exec(`CREATE INDEX ${trainingIndexName} ON garmin_activity_imports(user_id,training_id,imported_at DESC)`);
+      }
+
+      const identityIndexName = 'idx_garmin_activity_import_identity';
+      const identityIndex = indexRows().find((index) => index.name === identityIndexName);
+      if (identityIndex && (!identityIndex.unique || identityIndex.partial
+          || JSON.stringify(indexColumns(identityIndexName)) !== JSON.stringify([
+            { name: 'account_fingerprint', desc: 0 }, { name: 'activity_id', desc: 0 },
+          ]))) dropIndex(identityIndexName);
+      const hasIdentityUnique = indexRows().some((index) => index.unique && !index.partial
+        && JSON.stringify(indexColumns(index.name)) === JSON.stringify([
+          { name: 'account_fingerprint', desc: 0 }, { name: 'activity_id', desc: 0 },
+        ]));
+      if (!hasIdentityUnique) {
+        db.exec(`CREATE UNIQUE INDEX ${identityIndexName} ON garmin_activity_imports(account_fingerprint,activity_id)`);
+      }
+
+      const currentIndexName = 'idx_garmin_activity_import_current_training';
+      const currentIndex = indexRows().find((index) => index.name === currentIndexName);
+      const currentSql = currentIndex ? db.prepare("SELECT sql FROM sqlite_master WHERE type='index' AND name=?").get(currentIndexName).sql : '';
+      if (currentIndex && (!currentIndex.unique || !currentIndex.partial
+          || JSON.stringify(indexColumns(currentIndexName)) !== JSON.stringify([{ name: 'user_id', desc: 0 }, { name: 'training_id', desc: 0 }])
+          || !/WHERE\s+is_current\s*=\s*1\s*$/i.test(currentSql))) dropIndex(currentIndexName);
+      if (!indexRows().some((index) => index.name === currentIndexName)) {
+        db.exec(`CREATE UNIQUE INDEX ${currentIndexName} ON garmin_activity_imports(user_id,training_id) WHERE is_current=1`);
+      }
+      db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(activityImportRepairMarker);
+    });
+    repairActivityImports.immediate();
+  }
+  const activityImportHistoryMarker = '2026-11-garmin-activity-import-v3';
+  if (!db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(activityImportHistoryMarker)) {
+    const evolveActivityImportHistory = db.transaction(() => {
+      const rows = db.prepare('PRAGMA table_info(garmin_activity_imports)').all();
+      const columns = new Set(rows.map((row) => row.name));
+      const required = ['id','user_id','training_id','account_fingerprint','activity_id','file_sha256','importer_version','is_current','imported_at'];
+      const missing = required.filter((name) => !columns.has(name));
+      if (missing.length) throw new Error(`Garmin activity history migration cannot continue; missing columns: ${missing.join(', ')}. No records were changed.`);
+      const foreignKeys = db.prepare('PRAGMA foreign_key_list(garmin_activity_imports)').all();
+      if (!foreignKeys.some((key) => key.table === 'users' && key.from === 'user_id' && key.to === 'id' && key.on_delete === 'CASCADE')
+          || !foreignKeys.some((key) => key.table === 'trainings' && key.from === 'training_id' && key.to === 'id' && key.on_delete === 'CASCADE')) {
+        throw new Error('Garmin activity history migration found incompatible ownership foreign keys. No records were changed. Restore a compatible schema or contact the operator.');
+      }
+      const existingForeignKeyFailure = db.prepare('PRAGMA foreign_key_check(garmin_activity_imports)').get();
+      if (existingForeignKeyFailure) throw new Error('Garmin activity history migration found an invalid owner or training reference. No records were changed; reconcile the referenced record before retrying.');
+      const duplicateCurrentIdentity = db.prepare(`SELECT 1 FROM garmin_activity_imports WHERE is_current=1
+        GROUP BY account_fingerprint,activity_id HAVING COUNT(*)>1 LIMIT 1`).get();
+      if (duplicateCurrentIdentity) throw new Error('Garmin activity history migration found an activity currently linked to multiple sessions. No records were changed; reconcile the current links before retrying.');
+      const duplicateSessionIdentity = db.prepare(`SELECT 1 FROM garmin_activity_imports
+        GROUP BY user_id,training_id,account_fingerprint,activity_id HAVING COUNT(*)>1 LIMIT 1`).get();
+      if (duplicateSessionIdentity) throw new Error('Garmin activity history migration found duplicate activity history for one session. No records were changed; reconcile duplicate history before retrying.');
+
+      const indexes = db.prepare('PRAGMA index_list(garmin_activity_imports)').all();
+      const indexedColumns = (name) => db.prepare(`PRAGMA index_xinfo(${JSON.stringify(name)})`).all()
+        .filter((column) => column.key === 1).map((column) => column.name);
+      const hasLegacyIdentityConstraint = indexes.some((index) => index.unique && !index.partial
+        && JSON.stringify(indexedColumns(index.name)) === JSON.stringify(['account_fingerprint','activity_id']));
+      if (hasLegacyIdentityConstraint) {
+        if (db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='garmin_activity_imports_v3'").get()) {
+          throw new Error('Garmin activity history migration found an unexpected intermediate table. No records were changed; contact the operator.');
+        }
+        db.exec(`CREATE TABLE garmin_activity_imports_v3 (
+          id INTEGER PRIMARY KEY,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          training_id INTEGER NOT NULL REFERENCES trainings(id) ON DELETE CASCADE,
+          account_fingerprint TEXT NOT NULL CHECK (length(account_fingerprint) = 64),
+          activity_id TEXT NOT NULL,
+          file_sha256 TEXT NOT NULL CHECK (length(file_sha256) = 64),
+          importer_version INTEGER NOT NULL CHECK (importer_version > 0),
+          is_current INTEGER NOT NULL DEFAULT 0 CHECK (is_current IN (0,1)),
+          imported_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO garmin_activity_imports_v3
+          (id,user_id,training_id,account_fingerprint,activity_id,file_sha256,importer_version,is_current,imported_at)
+          SELECT id,user_id,training_id,account_fingerprint,activity_id,file_sha256,importer_version,is_current,imported_at
+          FROM garmin_activity_imports;
+        DROP TABLE garmin_activity_imports;
+        ALTER TABLE garmin_activity_imports_v3 RENAME TO garmin_activity_imports;`);
+      }
+
+      db.exec(`DROP INDEX IF EXISTS idx_garmin_activity_import_training;
+        DROP INDEX IF EXISTS idx_garmin_activity_import_identity;
+        DROP INDEX IF EXISTS idx_garmin_activity_import_current_training;
+        DROP INDEX IF EXISTS idx_garmin_activity_import_current_identity;
+        DROP INDEX IF EXISTS idx_garmin_activity_import_training_activity;
+        CREATE INDEX idx_garmin_activity_import_training ON garmin_activity_imports(user_id,training_id,imported_at DESC);
+        CREATE UNIQUE INDEX idx_garmin_activity_import_current_training ON garmin_activity_imports(user_id,training_id) WHERE is_current=1;
+        CREATE UNIQUE INDEX idx_garmin_activity_import_current_identity ON garmin_activity_imports(account_fingerprint,activity_id) WHERE is_current=1;
+        CREATE UNIQUE INDEX idx_garmin_activity_import_training_activity ON garmin_activity_imports(user_id,training_id,account_fingerprint,activity_id);`);
+      db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(activityImportHistoryMarker);
+    });
+    evolveActivityImportHistory.immediate();
+  }
+  const resultEvidenceMarker = '2026-11-training-result-evidence-v1';
+  if (!db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(resultEvidenceMarker)) {
+    const addResultEvidence = db.transaction(() => {
+      db.exec(`CREATE TABLE IF NOT EXISTS training_result_evidence (
+        id INTEGER PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        training_id INTEGER NOT NULL REFERENCES trainings(id) ON DELETE CASCADE,
+        evidence_type TEXT NOT NULL CHECK (evidence_type IN ('fit_sha256','fit_file_id','garmin_activity')),
+        evidence_value TEXT NOT NULL,
+        source TEXT NOT NULL CHECK (source IN ('fit_upload','garmin_connect')),
+        is_current INTEGER NOT NULL CHECK (is_current IN (0,1)),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(user_id,training_id,evidence_type,evidence_value,source)
+      );
+      CREATE INDEX IF NOT EXISTS idx_training_result_evidence_training
+        ON training_result_evidence(user_id,training_id,is_current);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_training_result_evidence_current_identity
+        ON training_result_evidence(user_id,evidence_type,evidence_value) WHERE is_current=1;`);
+      // Only Garmin's account-qualified activity identifier is recoverable from
+      // legacy rows. FIT bytes and stable FIT file IDs are never inferred.
+      db.exec(`INSERT OR IGNORE INTO training_result_evidence
+        (user_id,training_id,evidence_type,evidence_value,source,is_current,created_at)
+        SELECT user_id,training_id,'garmin_activity',account_fingerprint || ':' || activity_id,
+          'garmin_connect',is_current,imported_at FROM garmin_activity_imports`);
+      db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(resultEvidenceMarker);
+    });
+    addResultEvidence.immediate();
+  }
+  // V2 repairs the source-less key shape when first encountered. V3 repeats
+  // this idempotent check because early v2 builds could have marked the index
+  // as repaired without removing the legacy, stricter four-column constraint.
+  const evidenceRepairMarker = '2026-11-training-result-evidence-v2';
+  if (!db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(evidenceRepairMarker)) {
+    const repairEvidenceIdentity = db.transaction(() => {
+      if (db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(evidenceRepairMarker)) return;
+      ensureTrainingResultEvidenceIdentity(db);
+      db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(evidenceRepairMarker);
+    });
+    repairEvidenceIdentity.immediate();
+  }
+  const evidenceRepairFollowup = '2026-11-training-result-evidence-v3';
+  if (!db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(evidenceRepairFollowup)) {
+    const finishEvidenceRepair = db.transaction(() => {
+      if (db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(evidenceRepairFollowup)) return;
+      ensureTrainingResultEvidenceIdentity(db);
+      db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(evidenceRepairFollowup);
+    });
+    finishEvidenceRepair.immediate();
   }
   const garminV3 = '2026-10-garmin-session-publish-v3';
   if (!db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(garminV3)) {

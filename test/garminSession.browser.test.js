@@ -610,6 +610,7 @@ test('Garmin editor and send states preserve drafts and block conflicting action
     await evaluate("document.getElementById('confirmOkBtn').click()");
     await updateEntered;
     await wait("/Updating workout…|Atualizando treino…/.test(document.getElementById('garminAccordionSummary').textContent)");
+    await wait("/Updating|Atualizando/i.test(document.getElementById('garminOperationStatus').textContent)");
     assert.match(await evaluate("document.getElementById('garminOperationStatus').textContent"), /Updating|Atualizando/i);
     releaseUpdate();
     pauseUpdate = false;

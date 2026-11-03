@@ -13,6 +13,7 @@ const {
   normalizeCalories,
   resolveActivityTotals,
   resolveAscent,
+  stableFitFileIdentity,
 } = require('../src/fitParser');
 
 function makeLap(overrides = {}) {
@@ -737,4 +738,26 @@ test('parseFitFile integrates with the real fit-file-parser on garbage input', a
   ]);
   await assert.rejects(parseFitFile(Buffer.alloc(16, 0)), /header/i);
   await assert.rejects(parseFitFile(emptyFitFile), /No lap records found/);
+});
+
+test('stable FIT activity file identity hashes only one complete activity file_id', () => {
+  const created = new Date('2026-11-02T07:00:00.000Z');
+  const identity = stableFitFileIdentity([{ type: 'activity', manufacturer: 'garmin', product: 2, serial_number: 3, time_created: created }]);
+  assert.match(identity, /^[a-f0-9]{64}$/);
+  assert.notEqual(stableFitFileIdentity([{ type: 'activity', manufacturer: 'garmin', product: 2, serial_number: 3, time_created: created, number: 4 }]), identity,
+    'an available FIT file number further qualifies the file ID');
+  assert.equal(stableFitFileIdentity([]), null);
+  assert.equal(stableFitFileIdentity(null), null);
+  assert.equal(stableFitFileIdentity([{ type: 'course', manufacturer: 1, product: 2, serial_number: 3, time_created: created }]), null);
+  assert.equal(stableFitFileIdentity([
+    { type: 'activity', manufacturer: 'garmin', product: 2, serial_number: 3, time_created: created },
+    { type: 'activity', manufacturer: 'garmin', product: 2, serial_number: 3, time_created: created },
+  ]), null);
+  assert.equal(stableFitFileIdentity([{ type: 'activity', manufacturer: 'unknown !', product: 2, serial_number: 3, time_created: created }]), null);
+  assert.equal(stableFitFileIdentity([{ type: 'activity', manufacturer: -1, product: 2, serial_number: 3, time_created: created }]), null);
+  assert.equal(stableFitFileIdentity([{ type: 'activity', manufacturer: 1, product: 2, serial_number: 0, time_created: created }]), null);
+  assert.equal(stableFitFileIdentity([{ type: 'activity', manufacturer: 1, product: 2, serial_number: 3, time_created: 'invalid' }]), null);
+  assert.match(summarize({ sessions: [makeSession([makeLap()])], file_ids: [
+    { type: 'activity', manufacturer: 'garmin', product: 2, serial_number: 3, time_created: created },
+  ] }).fitFileIdentity, /^[a-f0-9]{64}$/);
 });

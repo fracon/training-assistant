@@ -20,7 +20,7 @@ export function formatDateLabel(iso, language = 'pt-BR') {
 
 export function resolveResultSource(training = {}, fitData = {}) {
   const source = fitData?.result_data_source ?? training?.result_data_source;
-  return source === 'manual' || source === 'fit_upload' ? source : 'none';
+  return ['manual', 'fit_upload', 'garmin_connect'].includes(source) ? source : 'none';
 }
 
 export function weekdayLabel(iso, language) {

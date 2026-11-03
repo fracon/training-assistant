@@ -717,10 +717,10 @@ MFA was not exercised on the real account. Exact planned-workout-to-completed-
 activity identity remains unproven and belongs to #74. ZimaOS deployment and
 final operational validation remain tracked in #76.
 
-Phase 3 (#74) may add activity import only after execution identity and the
-result pipeline are proven. Neither this feature nor its scheduled state marks
-a session complete, adds shoe mileage, generates analysis, imports FIT, or
-enables account-wide synchronization.
+At the time of the phase 2 editor delivery, activity import (#74) remained
+separate. Neither the editor nor its scheduled state marks a session complete,
+adds shoe mileage, generates analysis, imports FIT, or enables account-wide
+synchronization. The separately delivered phase 3 behavior is described below.
 
 ## Structured workout editor v3
 
@@ -788,4 +788,191 @@ describes workout steps and repeat/recovery structures. Device-specific
 acceptance still depends on Garmin Connect and the selected watch; the v3
 converter test is not proof that every accepted structure reaches a device.
 The connection remains restricted to the configured pilot owner. No multi-user
-production integration or activity import (#74) is delivered by this editor.
+production integration is delivered by this editor.
+
+## Activity result import (issue #74)
+
+The session's **Result and feedback / Resultado e feedback** source selector has
+an explicit Garmin Connect search path beside FIT/ZIP and manual entry. It uses
+the same pilot connection and MFA controls as workout planning. Search is a
+user action; opening the accordion, loading the session, previewing candidates,
+and downloading an original do not update the training, conclude it, change shoe
+mileage, publish anything, or call an AI provider.
+
+Node remains the product authorization and SQLite owner. It checks the active,
+configured pilot owner, authenticated session, current connection generation,
+connection account fingerprint, and training ownership. Candidate IDs are
+looked up again in the connected account's bounded activity listing before the
+original is downloaded. The browser cannot supply a Garmin owner, remote URL,
+account fingerprint, FIT bytes, or a result payload. A separate account's IDs
+are not accepted as evidence. Connector traffic remains private and uses the
+existing service token and pinned `garminconnect==0.3.20` adapter.
+
+Search is limited to the 31 civil dates centered on the planned session date
+(15 days before through 15 days after), with ten displayed rows per request and
+an explicit bounded “load more” action. Each connector request is capped at
+five upstream pages of at most 25 rows and the connector enforces the 90 second
+operation deadline and rate-limit handling. Candidate data is an allowlisted,
+sanitized subset of Garmin activity summaries. Its activity type, local start,
+duration, distance, heart rate, calories, and elevation are descriptive only.
+Known non-running sport keys are omitted; missing/malformed sport metadata is
+shown as unknown and the downloaded FIT must still identify a running activity.
+The list's optional pace is explicitly an estimate from Garmin summary
+duration/distance and is never persisted; the preview uses FIT-derived canonical
+pace.
+The action “Buscar resultado deste treino / Find this workout's result” uses
+that same bounded search. The pinned connector's activity-list contract exposes
+an activity ID, name, local start time, sport, and summary metrics; neither that
+list nor the parsed FIT contract exposes a verified Kinesis workout/occurrence
+to performed-activity relation. Kinesis publication and schedule records keep
+their workout and occurrence IDs, but these are not returned as an association
+on activity rows. A same-day candidate is therefore suggested only when the
+activity is identified as running, with both criteria shown and an explicit
+statement that Garmin has not confirmed the link. No schedule time is invented.
+Other dates and candidates without those criteria remain selectable but are
+not given the suggestion label. Two same-day runs remain separate choices;
+the user must choose and confirm one. Free runs and sessions never published
+by Kinesis remain supported.
+
+After a Garmin result is saved, its activity ID and a “Trocar atividade / Switch
+activity” action appear with the result. This opens the same candidate list;
+preview and back/cancel leave the saved result intact, and the existing explicit
+replacement confirmation applies to a completed result as well. The schema
+keeps one identity row per account/activity and a partial unique current link
+per session. When an activity is replaced, its row becomes historical. If that
+same activity is later selected again for the same session (A → B → A), the
+existing account/activity row is reactivated in the import transaction; it is
+not duplicated or blocked by history. A link to another session is still
+refused while another session has it as its current activity. A retired
+historical link may be reused in another session after a fresh preview; its old
+session record remains intact. No Garmin-side workout or activity is changed.
+
+Preview rechecks that the activity appears in the connected owner's bounded
+window, downloads the connector's original ZIP with redirects disabled at the
+Node boundary, validates its response type and 25 MiB streaming limit, extracts
+exactly one FIT through `src/fitUpload.js`, and runs `src/fitParser.js` locally.
+The parser's existing canonical pace, duration, calories, heart rate, elevation,
+and laps are persisted without a second metrics interpretation. No original
+file or GPS trace is stored on disk or in SQLite: the server keeps only the
+parsed preview and hash in process memory for five minutes, scoped to the
+current account, login session, training, connection generation, and result
+snapshot. Reload, process restart, expiry, or a connection change requires a new
+search and preview. Parser and download failures leave the previous result
+untouched; diagnostics returned to the browser contain stable codes only.
+
+The idempotent `2026-11-garmin-activity-import-v1` migration adds
+`garmin_activity_imports`; `2026-11-garmin-activity-import-v2` evolves and
+repairs its schema. V2 adds `is_current` with default 0, treating every row
+from a legacy schema as historical. The prior schema has no evidence that can
+identify a current row, so migration never guesses or assigns a current link.
+All existing rows and their activity/session/account provenance are preserved;
+only a newly confirmed import can create a current association. V2 validates
+the table's required columns, foreign keys, duplicate identities/current rows,
+and ensures the canonical indexes in one SQLite transaction. It records its
+marker only after success. Unsafe legacy data fails startup with an actionable
+error; no links are deleted or rewritten. An interrupted migration rolls back
+its schema and index changes. It is idempotent when the v1 marker predates the
+`is_current` column.
+
+The idempotent `2026-11-garmin-activity-import-v3` migration rebuilds the import
+table transactionally to remove v1's global unique account/activity constraint
+while copying every row and timestamp unchanged. It adds a unique current-only
+account/activity index, keeps one history row for each account/activity/session
+tuple, and retains one current activity per session. It refuses duplicate
+current activities or duplicate same-session history before changing the table.
+The import transaction now blocks only an activity currently used by another
+session. A historical row for that activity is reactivated for the same session
+or kept alongside the new session's row; the partial current index still
+prevents simultaneous use. No migration backfills a current link.
+
+An activity identity is the Garmin connection's
+account fingerprint plus its remote activity ID; file SHA-256 and importer
+version are retained as supporting evidence. Hash alone is not treated as a
+universal activity ID. Exact same-activity/same-file/same-summary reimport is a
+no-op. A changed file or summary needs the same explicit replacement path.
+Unique account/activity and one-current-activity-per-session constraints stop
+cross-session double use and concurrent current links. Replacing the current
+activity leaves its historical row, marks it non-current, and preserves it
+across disconnect or account changes. Manual/FIT replacement also marks Garmin
+provenance historical; result deletion follows the existing training cascade.
+The session response exposes only the current activity ID and import time, not
+the account fingerprint. Manual FIT uploads do not yet supply a stable Garmin
+activity ID to compare, so the shared evidence table now records equality of
+the validated FIT bytes for both direct FIT/ZIP uploads and the extracted FIT
+inside Garmin's original ZIP. It also records a hash of the sole complete FIT
+`file_id` activity tuple (manufacturer, product, serial number, and creation
+time) when present. The tuple is useful when exporters rewrite bytes, but is
+not a universal activity ID and may be absent or changed by an exporter. Only
+exact byte hashes, this stable file-ID tuple, and the independently
+account-qualified Garmin activity identity can trigger an exclusivity conflict;
+similar metrics never do. A hash only proves identical bytes, so distinct FIT
+exports of the same execution can still evade this evidence.
+
+The idempotent `2026-11-training-result-evidence-v1` migration adds the shared
+current/history evidence table and indexes in one transaction. It backfills
+only account-qualified Garmin activity IDs from existing Garmin import rows,
+preserving each row's current/history state. It does not create FIT hashes or
+file IDs for old uploads because the FIT bytes are no longer available, and it
+does not infer current links from summaries. Thus deduplication is not
+retroactively complete for historical manual FIT/ZIP results. Current evidence
+is retired and replaced with the result atomically; historic entries remain
+available for a later A→B→A reactivation but do not block reuse. The original
+FIT bytes are parsed in memory and are not retained.
+
+The idempotent `2026-11-training-result-evidence-v2` migration repairs a
+persisted v1 table whose UNIQUE key omitted `source`, even though the current
+replacement UPSERT targets `(user_id, training_id, evidence_type,
+evidence_value, source)`. It transactionally rebuilds that known table shape
+with the five-column key, copying every evidence ID, value, source, current flag,
+and timestamp. This also removes the old stricter four-column key, which would
+otherwise block the same FIT evidence when its source changes. Before rebuilding
+it validates columns, foreign keys, current-identity uniqueness, and custom
+indexes; unknown or ambiguous schemas fail startup with an actionable error
+and full rollback. The marker is written only after the indexes are restored.
+The idempotent v3 follow-up repeats the schema check for databases where an
+early v2 marker exists but the stricter key remains. The inspected database had
+the v1 marker and source column, but its autoindex covered only the first four
+columns; schema metadata alone cannot establish when that drift was introduced.
+FIT upload, Garmin import, feedback, and shoe-mileage history are not backfilled
+or rewritten by these repairs.
+
+The activity list response carries the connector's actual next cursor and
+`has_more`/budget state. `budget_exhausted` means only that the current request
+used its five-page remote-call budget; it is not end-of-search. The UI offers
+one explicit continuation at that cursor and keeps the cursor on recoverable
+failure. The global cursor limit remains 10,000; when that limit is reached,
+the API marks `limit_reached` and the UI explains the boundary without claiming
+that no activity exists. A filtered page with no running activities is
+announced as intermediate when continuation exists; no automatic traversal is
+started. Only a completed search with no candidates is presented as no matches.
+
+Preview and the confirmation modal make no SQLite writes. After confirmation,
+Node rechecks the preview's owner/session, active state, connection identity and
+generation, session date, shoe selection, and objective result snapshot inside
+one immediate SQLite transaction. It writes canonical result metrics, FIT lap
+summary, current provenance, and the shoe-mileage ledger delta together. A
+linked activity on another session, stale preview, changed connection, removed
+session, replacement without confirmation, or concurrent import returns a
+conflict without partial writes. Reimporting an identical current import does
+not add mileage again. Existing subjective feedback, selected shoe, and
+completion state are preserved. If there is no valid saved RPE 1–5, the result
+stays open and displays feedback pending; objective import never invents RPE.
+Saving feedback later uses the existing completion contract, context freshness,
+and analysis invalidation. Replacing a completed result requires confirmation.
+No analysis or OpenAI request is started by import.
+
+This is synthetic verification of the private Node→Python contract and local
+FIT parser/persistence path. No Garmin account or watch was contacted for this
+delivery. The manual owner acceptance, including a free run, a published
+session, delayed Connect sync, Forerunner 55 result, feedback save, disconnect,
+and reconnection/account-history review, remains an operational task in #76.
+The implementation has no webhook and does not receive data directly from the
+watch; Garmin Connect must first finish its normal watch synchronization.
+
+Synthetic Chrome review captures: [PT desktop preview](garmin-activity-import-screenshots/pt-review-desktop.png), [PT low window at 200% zoom](garmin-activity-import-screenshots/pt-review-low-height-zoom-200.png), and [EN mobile with feedback pending](garmin-activity-import-screenshots/en-imported-mobile.png). These show the UI against synthetic activity data and are not Garmin homologation evidence.
+
+The filtered-page continuation is also captured in [PT desktop](garmin-activity-import-screenshots/pt-empty-filtered-page-desktop.png), [PT mobile](garmin-activity-import-screenshots/pt-empty-filtered-page-mobile.png), and [EN desktop](garmin-activity-import-screenshots/en-empty-filtered-page-desktop.png). The empty filtered page and continuation are synthetic UI verification only.
+
+The per-request page-budget continuation is captured in [EN desktop, empty first page](garmin-activity-import-screenshots/en-budget-exhausted-empty-desktop.png), [PT desktop, partial results](garmin-activity-import-screenshots/pt-budget-exhausted-partial-desktop.png), [PT mobile](garmin-activity-import-screenshots/pt-budget-exhausted-partial-mobile.png), and [EN mobile](garmin-activity-import-screenshots/en-budget-exhausted-partial-mobile.png). These simulated pages show manual continuation after each five-page request budget; they do not represent live Garmin data.
+
+Cross-path exact-identity conflicts are captured in [PT desktop](garmin-activity-import-screenshots/pt-duplicate-activity-conflict.png), [EN desktop](garmin-activity-import-screenshots/en-duplicate-activity-conflict.png), [PT mobile](garmin-activity-import-screenshots/pt-duplicate-activity-conflict-mobile.png), and [EN mobile](garmin-activity-import-screenshots/en-duplicate-activity-conflict-mobile.png). The screenshots show the previous result retained after the explicit replacement was refused; they use synthetic FIT and Garmin transport data.

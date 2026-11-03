@@ -306,7 +306,7 @@ function buildContext(
     if (purpose === 'analysis')
       context.resource.includedInAggregates =
         resource.dia >= aggregateFrom && resource.dia < detailedFrom;
-    if (purpose === 'analysis' && resource.result_data_source === 'fit_upload') {
+    if (purpose === 'analysis' && ['fit_upload', 'garmin_connect'].includes(resource.result_data_source)) {
       try {
         const laps = JSON.parse(resource.fit_summary_json || '{}').laps;
         if (Array.isArray(laps)) context.resource.actual.fitLaps = laps.slice(0, 200).map((lap) => ({

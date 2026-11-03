@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, request and review weekly AI proposals, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized training-request prompts for use with an external AI.
 
-Current application version: **0.29.1** (active beta development; issue #73 is on its dedicated open PR branch until merged).
+Current application version: **0.30.2** (active beta development; Garmin activity result import is an opt-in single-owner pilot).
 
 ## AI integration: cycle planning and weekly proposals
 
@@ -1375,7 +1375,7 @@ node scripts/tryRealFit.js path/to/activity.fit
 
 ## Garmin structured workout editor (#73)
 
-The open #73 branch extends the restricted Garmin Connect terminal pilot with a
+The Garmin Connect pilot extends the terminal flow with a
 session editor organized into warm-up, running blocks, and cool-down. New and
 edited prescriptions use a versioned structured contract, with independent time
 duration or distance and an optional none/pace/absolute-HR target per step.
@@ -1389,5 +1389,26 @@ effective recovery count and does not estimate time for distance-based steps.
 separate “Publish and schedule” action and confirmation. The editor remains
 restricted to the configured pilot owner; it does not enable multi-user
 production access, auto-convert workout prose, invoke AI, or import activities
-from #74. Device delivery still requires separate Garmin Connect/watch
+automatically. Device delivery still requires separate Garmin Connect/watch
 verification. See [the Garmin contract](docs/garmin-integration.md#structured-workout-editor-v3).
+
+## Garmin activity result import (#74)
+
+The result and feedback accordion can search the configured pilot owner's
+Garmin Connect account, show bounded candidates, download and parse the
+original FIT locally, and import only after explicit review and confirmation.
+Activity identity is qualified by the connected Garmin account and remote
+activity ID; dates provide an uncertain suggestion only. Imports reuse the
+canonical FIT parser and update the result, laps, provenance, and shoe ledger
+atomically. Existing feedback is kept, and a missing realized RPE leaves the
+session open until the person completes feedback. Disconnect preserves
+historical provenance. No background sync or automatic analysis is started.
+
+Locally, run `npm run dev` and `npm run garmin:connector` in separate terminals
+after `npm run garmin:setup`. After updating application code, restart both
+processes; the Node startup runs pending SQLite migrations automatically. Do not
+rerun setup to repair schema. The browser uses the same connection/MFA flow as
+the structured workout pilot. Preview state is short-lived in process memory;
+after reload or restart, search and review the activity again. No real Garmin
+account or watch was contacted for the implementation tests; owner acceptance
+remains tracked in issue #76. See [the activity import contract](docs/garmin-integration.md#activity-result-import-issue-74).
