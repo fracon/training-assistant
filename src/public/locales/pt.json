@@ -648,6 +648,8 @@
       "downloading": "Baixando e lendo o arquivo original da atividade…",
       "none": "Nenhuma corrida encontrada neste período. Sincronize o relógio e tente novamente, ou use FIT/ZIP ou preenchimento manual.",
       "emptyPageMore": "Nenhuma corrida nesta parte da busca. Você pode carregar mais atividades.",
+      "searchIncomplete": "A busca ainda não terminou. Carregue mais atividades para continuar.",
+      "limitReached": "Esta busca atingiu o limite de paginação. Confira as atividades listadas ou use FIT/ZIP ou preenchimento manual.",
       "activity_evidence_conflict": "Este arquivo FIT ou atividade identificada já é o resultado atual de outra sessão. O resultado existente foi preservado.",
       "choose": "Conferir",
       "previewHeading": "Conferir atividade",

@@ -920,11 +920,14 @@ available for a later A→B→A reactivation but do not block reuse. The origina
 FIT bytes are parsed in memory and are not retained.
 
 The activity list response carries the connector's actual next cursor and
-`has_more`/budget state. The UI allows one explicit page request at a time and
-keeps the cursor on a recoverable failure. A filtered page with no running
-activities is announced as an intermediate page when a valid continuation
-exists; it does not trigger automatic page traversal. Only a completed search
-with no candidates is presented as no matches.
+`has_more`/budget state. `budget_exhausted` means only that the current request
+used its five-page remote-call budget; it is not end-of-search. The UI offers
+one explicit continuation at that cursor and keeps the cursor on recoverable
+failure. The global cursor limit remains 10,000; when that limit is reached,
+the API marks `limit_reached` and the UI explains the boundary without claiming
+that no activity exists. A filtered page with no running activities is
+announced as intermediate when continuation exists; no automatic traversal is
+started. Only a completed search with no candidates is presented as no matches.
 
 Preview and the confirmation modal make no SQLite writes. After confirmation,
 Node rechecks the preview's owner/session, active state, connection identity and
@@ -952,5 +955,7 @@ watch; Garmin Connect must first finish its normal watch synchronization.
 Synthetic Chrome review captures: [PT desktop preview](garmin-activity-import-screenshots/pt-review-desktop.png), [PT low window at 200% zoom](garmin-activity-import-screenshots/pt-review-low-height-zoom-200.png), and [EN mobile with feedback pending](garmin-activity-import-screenshots/en-imported-mobile.png). These show the UI against synthetic activity data and are not Garmin homologation evidence.
 
 The filtered-page continuation is also captured in [PT desktop](garmin-activity-import-screenshots/pt-empty-filtered-page-desktop.png), [PT mobile](garmin-activity-import-screenshots/pt-empty-filtered-page-mobile.png), and [EN desktop](garmin-activity-import-screenshots/en-empty-filtered-page-desktop.png). The empty filtered page and continuation are synthetic UI verification only.
+
+The per-request page-budget continuation is captured in [EN desktop, empty first page](garmin-activity-import-screenshots/en-budget-exhausted-empty-desktop.png), [PT desktop, partial results](garmin-activity-import-screenshots/pt-budget-exhausted-partial-desktop.png), [PT mobile](garmin-activity-import-screenshots/pt-budget-exhausted-partial-mobile.png), and [EN mobile](garmin-activity-import-screenshots/en-budget-exhausted-partial-mobile.png). These simulated pages show manual continuation after each five-page request budget; they do not represent live Garmin data.
 
 Cross-path exact-identity conflicts are captured in [PT desktop](garmin-activity-import-screenshots/pt-duplicate-activity-conflict.png), [EN desktop](garmin-activity-import-screenshots/en-duplicate-activity-conflict.png), [PT mobile](garmin-activity-import-screenshots/pt-duplicate-activity-conflict-mobile.png), and [EN mobile](garmin-activity-import-screenshots/en-duplicate-activity-conflict-mobile.png). The screenshots show the previous result retained after the explicit replacement was refused; they use synthetic FIT and Garmin transport data.

@@ -214,6 +214,51 @@ test('candidate paging advances across filtered-out activities without repeating
   } finally { await h.close(); }
 });
 
+test('budget-exhausted pages preserve the real cursor and the global cursor limit ends safely', async () => {
+  const requests = [];
+  const connectorFetch = async (url, init) => {
+    assert.ok(url.endsWith('/activities'));
+    const request = JSON.parse(init.body);
+    requests.push(request.offset);
+    if (request.offset === 0) return activityPage([], { offset: 0, nextOffset: 50, hasMore: true, budgetExhausted: true });
+    if (request.offset === 50) return activityPage([{ activityId: 51, startTimeLocal: '2026-11-02T07:00:00',
+      activityType: 'running', source_cursor: 50 }], { offset: 50, nextOffset: 60, hasMore: false });
+    if (request.offset === 10) return activityPage([], { offset: 10, nextOffset: 10, hasMore: true });
+    if (request.offset === 20) return activityPage([], { offset: 20, nextOffset: 71, hasMore: true });
+    if (request.offset === 9990) return activityPage([], { offset: 9990, nextOffset: 10040, hasMore: true, budgetExhausted: true });
+    throw new Error(`unexpected synthetic cursor ${request.offset}`);
+  };
+  const h = await setup({ connectorFetch });
+  try {
+    const first = await h.app.inject({ method: 'GET', url: '/api/trainings/1/garmin/activities?offset=0', headers: { cookie: h.cookie } });
+    assert.equal(first.statusCode, 200, first.body);
+    assert.deepEqual(first.json(), { items: [], window: { start: '2026-10-18', end: '2026-11-17' }, offset: 0,
+      next_offset: 50, limit: 10, has_more: true, budget_exhausted: true, limit_reached: false });
+    const second = await h.app.inject({ method: 'GET', url: `/api/trainings/1/garmin/activities?offset=${first.json().next_offset}`, headers: { cookie: h.cookie } });
+    assert.deepEqual(second.json().items.map((item) => [item.activity_id, item.source_cursor]), [['51', 50]]);
+    assert.equal(second.json().has_more, false);
+    assert.equal(second.json().budget_exhausted, false);
+    assert.equal(second.json().limit_reached, false);
+
+    const atLimit = await h.app.inject({ method: 'GET', url: '/api/trainings/1/garmin/activities?offset=9990', headers: { cookie: h.cookie } });
+    assert.equal(atLimit.statusCode, 200, atLimit.body);
+    assert.equal(atLimit.json().next_offset, 10040, 'backend retains the exact source cursor even when the global cap is crossed');
+    assert.equal(atLimit.json().has_more, true);
+    assert.equal(atLimit.json().limit_reached, true);
+    const callsAtLimit = h.calls.length;
+    const rejected = await h.app.inject({ method: 'GET', url: '/api/trainings/1/garmin/activities?offset=10000', headers: { cookie: h.cookie } });
+    assert.equal(rejected.statusCode, 400);
+    assert.equal(h.calls.length, callsAtLimit, 'a request at the terminal global cursor never reaches Garmin');
+    const noAdvance = await h.app.inject({ method: 'GET', url: '/api/trainings/1/garmin/activities?offset=10', headers: { cookie: h.cookie } });
+    assert.equal(noAdvance.statusCode, 502);
+    assert.equal(noAdvance.json().code, 'connector_invalid_response');
+    const excessiveAdvance = await h.app.inject({ method: 'GET', url: '/api/trainings/1/garmin/activities?offset=20', headers: { cookie: h.cookie } });
+    assert.equal(excessiveAdvance.statusCode, 502);
+    assert.equal(excessiveAdvance.json().code, 'connector_invalid_response');
+    assert.deepEqual(requests, [0, 50, 9990, 10, 20]);
+  } finally { await h.close(); }
+});
+
 test('Node follows real connector cursors through remote skips and uses account-qualified ID plus cursor for preview', async () => {
   const rows = Array.from({ length: 40 }, (_, index) => ({ activityId: String(index + 1),
     startTimeLocal: index < 20 ? '2026-12-20T07:00:00' : '2026-11-02T07:00:00',

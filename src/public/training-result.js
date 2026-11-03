@@ -1004,6 +1004,8 @@ async function initTrainingResult() {
   let garminActivityStatusKey = '';
   let garminActivityHasSearched = false;
   let garminActivityCanContinue = false;
+  let garminActivityBudgetExhausted = false;
+  let garminActivityLimitReached = false;
   const formatActivityStart = (value) => {
     const raw = String(value || '');
     const date = raw.length >= 10 ? formatLocalizedDate(raw.slice(0, 10), i18n.language) : raw;
@@ -1019,6 +1021,10 @@ async function initTrainingResult() {
       : key === 'imported' ? null : attention ? 'garminNeedsAttention'
         : garminActivityPreviewId ? 'garminReviewReady' : null);
   };
+  const continuationStatusKey = () => garminActivityLimitReached ? 'limitReached'
+    : garminActivityCanContinue ? garminActivityBudgetExhausted ? 'searchIncomplete'
+      : garminActivityCandidatesState.length ? '' : 'emptyPageMore'
+    : garminActivityHasSearched && !garminActivityCandidatesState.length ? 'none' : '';
   const focusGarminActivityError = (target = garminActivityStatus) => {
     setAccordionOpen(feedbackAccordionTrigger, feedbackAccordionPanel, true);
     requestAnimationFrame(() => {
@@ -1139,17 +1145,23 @@ async function initTrainingResult() {
       if (!garminActivityCandidatesState.some((candidate) => candidate.activity_id === selectedGarminActivity?.activity_id)) {
         selectedGarminActivity = null;
       }
-      const validContinuation = result.has_more === true && result.budget_exhausted !== true
-        && Number.isInteger(result.next_offset) && result.next_offset > requestedOffset;
+      const validCursor = Number.isInteger(result.next_offset) && result.next_offset > requestedOffset;
+      const reachedLimit = result.limit_reached === true
+        || (result.has_more === true && Number.isInteger(result.next_offset) && result.next_offset >= 10000);
+      const validContinuation = result.has_more === true && !reachedLimit && validCursor;
       if (Number.isInteger(result.next_offset) && result.next_offset >= requestedOffset) {
         garminActivityNextOffset = result.next_offset;
       }
       garminActivityCanContinue = validContinuation;
+      garminActivityBudgetExhausted = result.budget_exhausted === true;
+      garminActivityLimitReached = reachedLimit;
       garminActivityHasSearched = true;
       updateGarminActivityWindow();
       renderGarminActivityCandidates();
-      setGarminActivityStatus(garminActivityCandidatesState.length ? (refreshedItems.length ? '' : (validContinuation ? 'emptyPageMore' : ''))
-        : validContinuation ? 'emptyPageMore' : 'none');
+      setGarminActivityStatus(reachedLimit ? 'limitReached'
+        : validContinuation && result.budget_exhausted ? 'searchIncomplete'
+          : garminActivityCandidatesState.length ? (refreshedItems.length ? '' : (validContinuation ? 'emptyPageMore' : ''))
+            : validContinuation ? 'emptyPageMore' : 'none');
       garminActivityMore.hidden = !validContinuation;
       garminActivitySearch.hidden = true;
       garminActivityRefresh.hidden = false;
@@ -1249,7 +1261,7 @@ async function initTrainingResult() {
     garminActivityMore.hidden = !garminActivityCanContinue;
     garminActivityCandidates.hidden = garminActivityCandidatesState.length === 0;
     garminActivityPreviewId = null;
-    setGarminActivityStatus('');
+    setGarminActivityStatus(continuationStatusKey());
     renderGarminActivityCandidates();
     requestAnimationFrame(() => garminActivityCandidates.querySelector(`[data-activity-id="${CSS.escape(String(selectedGarminActivity?.activity_id || ''))}"]`)?.focus());
   });
@@ -1267,7 +1279,7 @@ async function initTrainingResult() {
       return;
     }
     garminActivitySelectionOpen = true;
-    setGarminActivityStatus('');
+    setGarminActivityStatus(continuationStatusKey());
     if (resultSourceSelect.value !== 'garmin') {
       resultSourceSelect.value = 'garmin';
     }
@@ -1288,7 +1300,7 @@ async function initTrainingResult() {
   });
   document.addEventListener('app:languagechange', () => {
     renderGarminActivityCandidates();
-    setGarminActivityStatus(garminActivityStatusKey);
+    setGarminActivityStatus(garminActivityStatusKey || (garminActivityPreview.hidden ? continuationStatusKey() : ''));
     if (resultSourceSelect.value === 'garmin') updateGarminActivityWindow();
     if (!garminActivityBusy) {
       garminActivitySearch.textContent = t('session.garminImport.searchInitial');

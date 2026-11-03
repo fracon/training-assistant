@@ -7,6 +7,9 @@ const { fitEvidence, garminActivityEvidence, findCurrentEvidenceConflict, replac
 const { reconcileShoeMileage } = require('../shoeMileage');
 const { SESSION_COOKIE_NAME, findActiveSession } = require('../auth/sessions');
 
+const MAX_ACTIVITY_SEARCH_OFFSET = 10000;
+const MAX_ACTIVITY_SEARCH_CURSOR_ADVANCE = 50;
+
 const MAX_ORIGINAL_BYTES = 25 * 1024 * 1024;
 const PREVIEW_TTL_MS = 5 * 60 * 1000;
 const MAX_PREVIEWS_PER_DB = 100;
@@ -183,7 +186,7 @@ function createGarminActivityImporter({ db, fetchImpl = fetch, config = process.
       if (!link) return reply.code(409).send({ code: 'connection_required' });
       const query = request.query;
       const offset = query.offset === undefined ? 0 : Number(query.offset);
-      if (!Number.isInteger(offset) || offset < 0 || offset > 10000) return reply.code(400).send({ code: 'invalid_payload' });
+      if (!Number.isInteger(offset) || offset < 0 || offset >= MAX_ACTIVITY_SEARCH_OFFSET) return reply.code(400).send({ code: 'invalid_payload' });
       const day = new Date(`${training.dia}T00:00:00Z`);
       if (Number.isNaN(day.valueOf())) return reply.code(409).send({ code: 'session_changed' });
       const start = new Date(day.valueOf() - 15 * 86400000).toISOString().slice(0, 10);
@@ -199,7 +202,7 @@ function createGarminActivityImporter({ db, fetchImpl = fetch, config = process.
             || afterLink.identity_fingerprint !== link.identity_fingerprint) return reply.code(409).send({ code: 'connection_changed' });
         if (!Array.isArray(response?.items) || response.items.length > 10
             || !Number.isInteger(response.next_offset) || response.next_offset < offset
-            || response.next_offset > 10000 || typeof response.has_more !== 'boolean'
+            || response.next_offset > offset + MAX_ACTIVITY_SEARCH_CURSOR_ADVANCE || typeof response.has_more !== 'boolean'
             || (response.has_more && response.next_offset <= offset)) {
           throw Object.assign(new Error('connector_invalid_response'), { statusCode: 502 });
         }
@@ -238,7 +241,8 @@ function createGarminActivityImporter({ db, fetchImpl = fetch, config = process.
                 ? ['running_sport', 'same_local_date'] : [] };
           });
         return { items, window: { start, end }, offset, next_offset: response.next_offset,
-          limit: 10, has_more: response.has_more, budget_exhausted: response.budget_exhausted === true };
+          limit: 10, has_more: response.has_more, budget_exhausted: response.budget_exhausted === true,
+          limit_reached: response.has_more && response.next_offset >= MAX_ACTIVITY_SEARCH_OFFSET };
       } catch (error) {
         const code = ['session_expired','pilot_unavailable','connector_busy','connector_configuration_error','connector_timeout','connector_unavailable',
           'connector_invalid_response','auth_required','rate_limited','invalid_payload'].includes(error.message)

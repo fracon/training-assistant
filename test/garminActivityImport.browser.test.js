@@ -42,6 +42,7 @@ test('Garmin activity result flow in Chrome stays explicit, localized, keyboard 
   let holdFirstActivityPage = false; let releaseFirstActivityPage;
   let holdNextPage = false; let releaseNextPage;
   let failNextPage = false; let emptyRefresh = false; let filteredPageScenario = false;
+  let budgetScenario = false; const budgetPageRequests = [];
   const summary = { activity: { sport: 'running', startTime: '2026-11-02T07:00:00Z', endTime: '2026-11-02T07:58:20Z' },
     totals: { durationSeconds: 3500, durationLabel: '58:20', distanceKm: 10, avgPaceSecondsPerKm: 350,
       avgPaceLabel: '5:50', avgHeartRate: null, maxHeartRate: 181, ascentMeters: 78, calories: 501 },
@@ -57,10 +58,21 @@ test('Garmin activity result flow in Chrome stays explicit, localized, keyboard 
       if (url.endsWith('/capabilities')) return Response.json({ devices: [], running_catalog_status: 'available' });
       if (url.endsWith('/activities')) {
         const offset = Number(init.body ? JSON.parse(init.body).offset : 0);
+        if (budgetScenario) budgetPageRequests.push(offset);
         if (offset === 0 && holdFirstActivityPage) { await new Promise((resolve) => { releaseFirstActivityPage = resolve; }); holdFirstActivityPage = false; }
         if (offset > 0 && holdNextPage) { await new Promise((resolve) => { releaseNextPage = resolve; }); holdNextPage = false; }
         if (offset > 0 && failNextPage) { failNextPage = false; return Response.json({ detail: { code: 'unavailable' } }, { status: 503 }); }
         if (offset === 0 && emptyRefresh) { emptyRefresh = false; return Response.json({ items: [], next_offset: 0, has_more: false, budget_exhausted: false }); }
+        if (budgetScenario && offset === 0) return Response.json({ items: [], next_offset: 50, has_more: true, budget_exhausted: true });
+        if (budgetScenario && offset === 50) return Response.json({ items: [{ activityId: 45, activityName: 'Run after five remote pages', source_cursor: 50,
+          startTimeLocal: '2026-11-02T07:00:00', activityType: 'running', duration: 3500, distance: 10000 }],
+        next_offset: 100, has_more: true, budget_exhausted: true });
+        if (budgetScenario && offset === 100) return Response.json({ items: [{ activityId: 46, activityName: 'Run beyond repeated page budgets', source_cursor: 100,
+          startTimeLocal: '2026-11-02T08:00:00', activityType: 'running', duration: 1800, distance: 5000 }],
+        next_offset: 150, has_more: true, budget_exhausted: true });
+        if (budgetScenario && offset === 150) return Response.json({ items: [{ activityId: 47, activityName: 'Run after retry', source_cursor: 150,
+          startTimeLocal: '2026-11-02T09:00:00', activityType: 'running', duration: 1800, distance: 5000 }],
+        next_offset: 151, has_more: false, budget_exhausted: false });
         if (filteredPageScenario && offset === 0) return Response.json({ items: [{ activityId: 88, activityName: 'Synthetic cycling', source_cursor: 0,
           startTimeLocal: '2026-11-02T07:00:00', activityType: 'cycling', duration: 3500, distance: 10000 }], next_offset: 20, has_more: true, budget_exhausted: false });
         const item = filteredPageScenario && offset >= 30
@@ -387,6 +399,54 @@ test('Garmin activity result flow in Chrome stays explicit, localized, keyboard 
     await waitFor("document.getElementById('garminActivityStatus').textContent.includes('No running activities found')", 'completed empty search result');
     assert.equal(await evaluate("document.getElementById('garminActivityMore').hidden"), true, 'a completed empty search has no continuation');
     assert.equal(db.prepare('SELECT result_data_source FROM trainings WHERE id=1').get().result_data_source, 'garmin_connect', 'refreshing search never changes the imported result');
+    budgetScenario = true;
+    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+    await evaluate("document.getElementById('garminActivityRefresh').click();true");
+    await waitFor("document.getElementById('garminActivityStatus').textContent.includes('search is not finished')", 'budget-exhausted search remains explicitly incomplete');
+    assert.equal(await evaluate("document.getElementById('garminActivityMore').hidden"), false, 'budget exhaustion does not hide a valid cursor');
+    assert.deepEqual(budgetPageRequests, [0], 'the UI waits for one explicit continuation instead of auto-traversing');
+    await evaluate("document.getElementById('garminActivityMore').scrollIntoView({block:'center'});true"); await delay(100); await screenshot('en-budget-exhausted-empty-desktop.png');
+    await evaluate("document.getElementById('garminActivityMore').click();true");
+    await waitFor("document.querySelector('[data-activity-id=\"45\"]') && document.getElementById('garminActivityStatus').textContent.includes('search is not finished')", 'manual cursor 50 returns a partial running candidate and a second exhausted budget');
+    assert.deepEqual(budgetPageRequests, [0, 50], 'the exact returned offset 50 is sent on explicit click');
+    assert.equal(await evaluate("document.getElementById('garminActivityCandidates').children.length"), 1, 'partial results remain visible while more data is available');
+    assert.equal(await evaluate("document.getElementById('garminActivityMore').hidden"), false);
+    await evaluate("document.querySelector('[data-activity-id=\"45\"]').click();true");
+    await waitFor("document.getElementById('garminActivityPreview').hidden===false", 'preview on the page after the exhausted search budget');
+    await evaluate("document.getElementById('garminActivityBack').click();true");
+    await waitFor("document.getElementById('garminActivityPreview').hidden && !document.getElementById('garminActivityMore').hidden", 'preview return keeps the continuation available');
+    budgetPageRequests.length = 0;
+    await evaluate("document.querySelector('.lang-switch [data-lang=\"pt-BR\"]').click();true");
+    await waitFor("document.documentElement.lang==='pt-BR' && document.getElementById('garminActivityStatus').textContent.includes('A busca ainda não terminou')", 'Portuguese incomplete-search message');
+    assert.equal(await evaluate("document.getElementById('garminActivityMore').hidden"), false, 'language changes preserve the cursor action');
+    await evaluate("document.getElementById('garminActivityStatus').scrollIntoView({block:'center'});true"); await delay(100); await screenshot('pt-budget-exhausted-partial-desktop.png');
+    await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await evaluate("document.getElementById('garminActivityStatus').scrollIntoView({block:'center'});true"); await delay(100); await screenshot('pt-budget-exhausted-partial-mobile.png');
+    await evaluate("document.querySelector('.lang-switch [data-lang=\"en-US\"]').click();true");
+    await waitFor("document.documentElement.lang==='en-US' && document.getElementById('garminActivityStatus').textContent.includes('search is not finished')", 'English incomplete-search message on mobile');
+    await evaluate("document.getElementById('garminActivityStatus').scrollIntoView({block:'center'});true"); await delay(100); await screenshot('en-budget-exhausted-partial-mobile.png');
+    await evaluate("document.querySelector('.lang-switch [data-lang=\"pt-BR\"]').click();true");
+    await waitFor("document.documentElement.lang==='pt-BR' && !document.getElementById('garminActivityMore').hidden", 'restore Portuguese continuation before retry');
+    await evaluate("document.getElementById('garminActivityMore').click();true");
+    await waitFor("document.querySelector('[data-activity-id=\"46\"]') && document.getElementById('garminActivityStatus').textContent.includes('A busca ainda não terminou')", 'third request budget returns another partial candidate');
+    assert.deepEqual(budgetPageRequests, [100], 'one click issues only the next bounded request');
+    assert.equal(await evaluate("document.getElementById('garminActivityCandidates').children.length"), 2, 'the next budget-exhausted response appends without discarding earlier candidates');
+    assert.equal(await evaluate("document.getElementById('garminActivityMore').hidden"), false);
+    budgetPageRequests.length = 0;
+    failNextPage = true;
+    await evaluate("document.getElementById('garminActivityMore').click();true");
+    await waitFor("document.getElementById('garminActivityStatus').textContent.includes('indisponível')", 'recoverable next-request failure after page budget exhaustion');
+    assert.deepEqual(budgetPageRequests, [150], 'failed continuation requests the exact cursor 150');
+    assert.equal(await evaluate("document.getElementById('garminActivityCandidates').children.length"), 2, 'failed continuation preserves partial candidates');
+    assert.equal(await evaluate("document.getElementById('garminActivityMore').hidden"), false, 'failed continuation retains retry action');
+    await evaluate("document.getElementById('garminActivityMore').click();true");
+    await waitFor("document.querySelector('[data-activity-id=\"47\"]') && document.getElementById('garminActivityMore').hidden", 'same-cursor retry reaches the next page and the confirmed search end');
+    assert.deepEqual(budgetPageRequests, [150, 150], 'retry reuses cursor 150 with no duplicated concurrent request');
+    assert.equal(await evaluate("document.getElementById('garminActivityCandidates').children.length"), 3, 'the new candidate appends to prior partial results');
+    budgetScenario = false;
+    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+    await evaluate("document.querySelector('.lang-switch [data-lang=\"en-US\"]').click();true");
+    await waitFor("document.documentElement.lang==='en-US' && document.getElementById('garminActivityMore').hidden", 'English terminal pagination state');
     const otherTraining = db.prepare(`INSERT INTO trainings(user_id,dia,tipo,treino,detalhes,result_data_source)
       VALUES(?,'2026-11-02','Corrida','Outra corrida','Resultado alheio','manual')`).run(user.id);
     db.prepare(`INSERT INTO training_result_evidence(user_id,training_id,evidence_type,evidence_value,source,is_current)
