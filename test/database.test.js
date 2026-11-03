@@ -15,6 +15,8 @@ const {
   createDatabase,
 } = require('../src/db/database');
 const { buildServer } = require('../src/server');
+const { replaceCurrentEvidence } = require('../src/result-import-evidence');
+const { installLegacyEvidenceSchema } = require('./helpers/legacyEvidenceSchema');
 const { registerUser } = require('../src/auth/registration');
 const { createSession } = require('../src/auth/sessions');
 const {
@@ -112,6 +114,251 @@ test('result evidence migration backfills only qualified Garmin IDs and preserve
   ]);
   assert.equal(db.prepare('PRAGMA index_list(training_result_evidence)').all().some((index) => index.name === 'idx_training_result_evidence_current_identity' && index.unique && index.partial), true);
   db.close();
+});
+
+test('result evidence repair evolves the persisted v1 key, preserves rows, and makes its UPSERT usable', () => {
+  const db = createDatabase({ filename: ':memory:' });
+  db.prepare("INSERT INTO users(id,email,password_hash) VALUES(1,'evidence-repair@example.test','hash')").run();
+  db.prepare("INSERT INTO trainings(id,user_id,dia,tipo,treino) VALUES(1,1,'2026-11-02','run','repair')").run();
+  db.prepare(`INSERT INTO training_result_evidence(user_id,training_id,evidence_type,evidence_value,source,is_current)
+    VALUES(1,1,'fit_sha256','${'a'.repeat(64)}','fit_upload',1)`).run();
+  installLegacyEvidenceSchema(db);
+  assert.ok(db.prepare("SELECT 1 FROM schema_migrations WHERE name='2026-11-training-result-evidence-v1'").get());
+  const before = db.prepare('SELECT id,user_id,training_id,evidence_type,evidence_value,source,is_current,created_at FROM training_result_evidence').all();
+  assert.deepEqual(db.prepare('PRAGMA index_xinfo(sqlite_autoindex_training_result_evidence_1)').all()
+    .filter((column) => column.key).map((column) => column.name),
+  ['user_id','training_id','evidence_type','evidence_value']);
+  let failure;
+  try {
+    db.transaction(() => replaceCurrentEvidence(db, 1, 1,
+      [{ type:'fit_sha256', value:'a'.repeat(64), source:'garmin_connect' }])).immediate();
+  } catch (error) { failure = error; }
+  assert.equal(failure?.code,'SQLITE_ERROR');
+  assert.equal(failure?.message,'ON CONFLICT clause does not match any PRIMARY KEY or UNIQUE constraint');
+  assert.match(failure?.stack,/replaceCurrentEvidence/);
+  assert.deepEqual(db.prepare('SELECT id,user_id,training_id,evidence_type,evidence_value,source,is_current,created_at FROM training_result_evidence').all(), before);
+
+  migrateDatabase(db);
+  assert.deepEqual(db.prepare('SELECT id,user_id,training_id,evidence_type,evidence_value,source,is_current,created_at FROM training_result_evidence').all(), before);
+  const identityIndexes = db.prepare('PRAGMA index_list(training_result_evidence)').all()
+    .filter((index) => index.unique && !index.partial)
+    .map((index) => db.prepare(`PRAGMA index_xinfo("${index.name}")`).all().filter((column) => column.key).map((column) => column.name));
+  assert.ok(identityIndexes.some((key) => JSON.stringify(key) === JSON.stringify(['user_id','training_id','evidence_type','evidence_value','source'])));
+  replaceCurrentEvidence(db, 1, 1, [{ type:'fit_sha256', value:'a'.repeat(64), source:'garmin_connect' }]);
+  assert.deepEqual(db.prepare('SELECT evidence_type,evidence_value,source,is_current FROM training_result_evidence ORDER BY id').all(), [
+    { evidence_type:'fit_sha256', evidence_value:'a'.repeat(64), source:'fit_upload', is_current:0 },
+    { evidence_type:'fit_sha256', evidence_value:'a'.repeat(64), source:'garmin_connect', is_current:1 },
+  ]);
+  const afterFirst = db.prepare('SELECT id,evidence_type,evidence_value,source,is_current,created_at FROM training_result_evidence ORDER BY id').all();
+  migrateDatabase(db);
+  assert.deepEqual(db.prepare('SELECT id,evidence_type,evidence_value,source,is_current,created_at FROM training_result_evidence ORDER BY id').all(), afterFirst);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM schema_migrations WHERE name='2026-11-training-result-evidence-v2'").get().n, 1);
+  db.close();
+});
+
+test('result evidence repair refuses duplicate keys atomically without discarding history', () => {
+  const db = createDatabase({ filename: ':memory:' });
+  db.prepare("INSERT INTO users(id,email,password_hash) VALUES(1,'evidence-ambiguous@example.test','hash')").run();
+  db.prepare("INSERT INTO trainings(id,user_id,dia,tipo,treino) VALUES(1,1,'2026-11-02','run','repair')").run();
+  db.exec(`DROP INDEX idx_training_result_evidence_training;
+    DROP INDEX idx_training_result_evidence_current_identity;
+    ALTER TABLE training_result_evidence RENAME TO training_result_evidence_new;
+    CREATE TABLE training_result_evidence (
+      id INTEGER PRIMARY KEY,user_id INTEGER NOT NULL,training_id INTEGER NOT NULL,
+      evidence_type TEXT NOT NULL,evidence_value TEXT NOT NULL,source TEXT NOT NULL,
+      is_current INTEGER NOT NULL,created_at TEXT NOT NULL
+    );
+    INSERT INTO training_result_evidence VALUES
+      (1,1,1,'fit_sha256','${'a'.repeat(64)}','fit_upload',0,'2026-11-03'),
+      (2,1,1,'fit_sha256','${'a'.repeat(64)}','fit_upload',0,'2026-11-04');
+    DROP TABLE training_result_evidence_new;`);
+  db.prepare("DELETE FROM schema_migrations WHERE name='2026-11-training-result-evidence-v2'").run();
+  const before = db.prepare('SELECT * FROM training_result_evidence ORDER BY id').all();
+  assert.throws(() => migrateDatabase(db), /duplicate identity group.*No evidence rows were changed/i);
+  assert.deepEqual(db.prepare('SELECT * FROM training_result_evidence ORDER BY id').all(), before);
+  assert.equal(db.prepare("SELECT 1 FROM schema_migrations WHERE name='2026-11-training-result-evidence-v2'").get(), undefined);
+  assert.equal(db.prepare("SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_training_result_evidence_identity_v2'").get(), undefined);
+  db.close();
+});
+
+test('result evidence repair fails actionably when its reserved index name is occupied', () => {
+  const db = createDatabase({ filename: ':memory:' });
+  installLegacyEvidenceSchema(db,{includeLegacyUnique:false});
+  db.exec('CREATE INDEX idx_training_result_evidence_identity_v2 ON training_result_evidence(evidence_value)');
+  assert.throws(() => migrateDatabase(db), /identity_v2 exists with an incompatible definition/i);
+  assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_training_result_evidence_identity_v2'").get());
+  assert.equal(db.prepare("SELECT 1 FROM schema_migrations WHERE name='2026-11-training-result-evidence-v2'").get(), undefined);
+  db.close();
+});
+
+test('result evidence repair creates its missing unique key when the table has no prior identity constraint', () => {
+  const db = createDatabase({ filename: ':memory:' });
+  installLegacyEvidenceSchema(db,{includeLegacyUnique:false});
+  migrateDatabase(db);
+  const index = db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_training_result_evidence_identity_v2'").get();
+  assert.ok(index);
+  assert.deepEqual(db.prepare('PRAGMA index_xinfo(idx_training_result_evidence_identity_v2)').all()
+    .filter((column) => column.key).map((column) => column.name),['user_id','training_id','evidence_type','evidence_value','source']);
+  db.close();
+});
+
+test('result evidence repair refuses unrecognized unique constraints without rewriting indexes', () => {
+  const db = createDatabase({ filename: ':memory:' });
+  installLegacyEvidenceSchema(db,{includeLegacyUnique:false});
+  db.exec('CREATE UNIQUE INDEX unexpected_evidence_key ON training_result_evidence(evidence_value)');
+  assert.throws(()=>migrateDatabase(db),/unrecognized UNIQUE constraint/i);
+  assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type='index' AND name='unexpected_evidence_key'").get());
+  assert.equal(db.prepare("SELECT 1 FROM schema_migrations WHERE name='2026-11-training-result-evidence-v2'").get(),undefined);
+  db.close();
+});
+
+test('result evidence repair refuses incompatible legacy columns and missing ownership foreign keys', () => {
+  const incomplete = createDatabase({ filename: ':memory:' });
+  incomplete.exec(`DROP INDEX idx_training_result_evidence_training;
+    DROP INDEX idx_training_result_evidence_current_identity;
+    ALTER TABLE training_result_evidence RENAME TO training_result_evidence_new;
+    CREATE TABLE training_result_evidence(id INTEGER PRIMARY KEY,user_id INTEGER NOT NULL,training_id INTEGER NOT NULL,
+      evidence_type TEXT NOT NULL,evidence_value TEXT NOT NULL,source TEXT NOT NULL,is_current INTEGER NOT NULL,
+      UNIQUE(user_id,training_id,evidence_type,evidence_value));
+    DROP TABLE training_result_evidence_new;
+    DELETE FROM schema_migrations WHERE name IN ('2026-11-training-result-evidence-v2','2026-11-training-result-evidence-v3');`);
+  assert.throws(()=>migrateDatabase(incomplete),/legacy columns differ/i);
+  incomplete.close();
+
+  const noForeignKeys = createDatabase({ filename: ':memory:' });
+  installLegacyEvidenceSchema(noForeignKeys,{includeForeignKeys:false});
+  assert.throws(()=>migrateDatabase(noForeignKeys),/ownership foreign keys or row references are invalid/i);
+  assert.equal(noForeignKeys.prepare("SELECT 1 FROM schema_migrations WHERE name='2026-11-training-result-evidence-v2'").get(),undefined);
+  noForeignKeys.close();
+});
+
+test('result evidence repair refuses invalid foreign-key rows before table rebuild', () => {
+  const db = createDatabase({ filename: ':memory:' });
+  db.pragma('foreign_keys = OFF');
+  installLegacyEvidenceSchema(db);
+  db.prepare(`INSERT INTO training_result_evidence(user_id,training_id,evidence_type,evidence_value,source,is_current)
+    VALUES(999,999,'fit_sha256','${'e'.repeat(64)}','fit_upload',0)`).run();
+  db.pragma('foreign_keys = ON');
+  assert.throws(()=>migrateDatabase(db),/ownership foreign keys or row references are invalid/i);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM training_result_evidence').get().n,1);
+  assert.equal(db.prepare("SELECT 1 FROM schema_migrations WHERE name='2026-11-training-result-evidence-v2'").get(),undefined);
+  db.close();
+});
+
+test('result evidence repair refuses custom indexes and a preexisting repair table', () => {
+  const db = createDatabase({ filename: ':memory:' });
+  installLegacyEvidenceSchema(db);
+  db.exec('CREATE INDEX custom_evidence_lookup ON training_result_evidence(evidence_value)');
+  assert.throws(() => migrateDatabase(db), /additional custom indexes/i);
+  db.exec('DROP INDEX custom_evidence_lookup; CREATE TABLE training_result_evidence_repair_v1 (id INTEGER)');
+  assert.throws(() => migrateDatabase(db), /prior repair table exists/i);
+  assert.equal(db.prepare("SELECT 1 FROM schema_migrations WHERE name='2026-11-training-result-evidence-v2'").get(),undefined);
+  db.close();
+});
+
+test('result evidence repair refuses duplicate current identities without changing evidence or marker', () => {
+  const db = createDatabase({ filename: ':memory:' });
+  db.prepare("INSERT INTO users(id,email,password_hash) VALUES(1,'evidence-current-duplicate@example.test','hash')").run();
+  db.prepare("INSERT INTO trainings(id,user_id,dia,tipo,treino) VALUES(1,1,'2026-11-02','run','one'),(2,1,'2026-11-03','run','two')").run();
+  installLegacyEvidenceSchema(db,{includeCurrentIndex:false});
+  db.prepare(`INSERT INTO training_result_evidence(user_id,training_id,evidence_type,evidence_value,source,is_current)
+    VALUES(1,1,'fit_sha256','${'c'.repeat(64)}','fit_upload',1),(1,2,'fit_sha256','${'c'.repeat(64)}','fit_upload',1)`).run();
+  const before=db.prepare('SELECT id,training_id,evidence_type,evidence_value,source,is_current FROM training_result_evidence ORDER BY id').all();
+  assert.throws(()=>migrateDatabase(db),/duplicate current identity group/i);
+  assert.deepEqual(db.prepare('SELECT id,training_id,evidence_type,evidence_value,source,is_current FROM training_result_evidence ORDER BY id').all(),before);
+  assert.equal(db.prepare("SELECT 1 FROM schema_migrations WHERE name='2026-11-training-result-evidence-v2'").get(),undefined);
+  db.close();
+});
+
+test('follow-up evidence repair removes the stricter v1 key even when an early v2 marker exists', () => {
+  const db = createDatabase({ filename: ':memory:' });
+  db.prepare("INSERT INTO users(id,email,password_hash) VALUES(1,'evidence-followup@example.test','hash')").run();
+  db.prepare("INSERT INTO trainings(id,user_id,dia,tipo,treino) VALUES(1,1,'2026-11-02','run','repair')").run();
+  db.prepare(`INSERT INTO training_result_evidence(user_id,training_id,evidence_type,evidence_value,source,is_current)
+    VALUES(1,1,'fit_sha256','${'f'.repeat(64)}','fit_upload',1)`).run();
+  installLegacyEvidenceSchema(db);
+  db.exec(`CREATE UNIQUE INDEX idx_training_result_evidence_identity_v2
+      ON training_result_evidence(user_id,training_id,evidence_type,evidence_value,source);
+    INSERT INTO schema_migrations(name) VALUES('2026-11-training-result-evidence-v2');`);
+  migrateDatabase(db);
+  const keys = db.prepare('PRAGMA index_list(training_result_evidence)').all()
+    .filter((index) => index.unique && !index.partial)
+    .map((index) => db.prepare(`PRAGMA index_xinfo("${index.name}")`).all().filter((column) => column.key).map((column) => column.name));
+  assert.ok(keys.some((key) => JSON.stringify(key) === JSON.stringify(['user_id','training_id','evidence_type','evidence_value','source'])));
+  assert.equal(keys.some((key) => JSON.stringify(key) === JSON.stringify(['user_id','training_id','evidence_type','evidence_value'])), false);
+  replaceCurrentEvidence(db,1,1,[{type:'fit_sha256',value:'f'.repeat(64),source:'garmin_connect'}]);
+  assert.deepEqual(db.prepare('SELECT source,is_current FROM training_result_evidence ORDER BY source').all(),[
+    {source:'fit_upload',is_current:0},{source:'garmin_connect',is_current:1},
+  ]);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM schema_migrations WHERE name='2026-11-training-result-evidence-v3'").get().n,1);
+  db.close();
+});
+
+test('result evidence repair refuses absent or incomplete tables without recording its marker', () => {
+  const db = createDatabase({ filename: ':memory:' });
+  db.exec("DROP TABLE training_result_evidence; DELETE FROM schema_migrations WHERE name='2026-11-training-result-evidence-v2';");
+  assert.throws(() => migrateDatabase(db), /required table or identity columns are missing/i);
+  assert.equal(db.prepare("SELECT 1 FROM schema_migrations WHERE name='2026-11-training-result-evidence-v2'").get(), undefined);
+  db.exec('CREATE TABLE training_result_evidence (id INTEGER PRIMARY KEY, user_id INTEGER, training_id INTEGER, evidence_type TEXT, evidence_value TEXT)');
+  assert.throws(() => migrateDatabase(db), /required table or identity columns are missing/i);
+  assert.equal(db.prepare("SELECT 1 FROM schema_migrations WHERE name='2026-11-training-result-evidence-v2'").get(), undefined);
+  db.close();
+});
+
+test('result evidence migration rechecks markers acquired by another initializer before its transaction starts', () => {
+  const db = createDatabase({ filename: ':memory:' });
+  const originalTransaction = db.transaction.bind(db);
+  const raceMarker = (callbackName, marker) => {
+    db.transaction = (callback,...args) => {
+      const transaction = originalTransaction(callback,...args);
+      if (callback.toString().includes(callbackName)) {
+        const wrapped = (...values) => transaction(...values);
+        Object.defineProperty(wrapped,'immediate',{value:()=>{
+          db.prepare('INSERT INTO schema_migrations(name) VALUES(?)').run(marker);
+          return transaction.immediate();
+        }});
+        return wrapped;
+      }
+      return transaction;
+    };
+  };
+  try {
+    db.prepare("DELETE FROM schema_migrations WHERE name IN ('2026-11-training-result-evidence-v2','2026-11-training-result-evidence-v3')").run();
+    raceMarker('evidenceRepairMarker','2026-11-training-result-evidence-v2');
+    migrateDatabase(db);
+    assert.ok(db.prepare("SELECT 1 FROM schema_migrations WHERE name='2026-11-training-result-evidence-v2'").get());
+    assert.ok(db.prepare("SELECT 1 FROM schema_migrations WHERE name='2026-11-training-result-evidence-v3'").get());
+
+    db.prepare("DELETE FROM schema_migrations WHERE name='2026-11-training-result-evidence-v3'").run();
+    raceMarker('evidenceRepairFollowup','2026-11-training-result-evidence-v3');
+    migrateDatabase(db);
+    assert.ok(db.prepare("SELECT 1 FROM schema_migrations WHERE name='2026-11-training-result-evidence-v3'").get());
+  } finally { db.transaction=originalTransaction; db.close(); }
+});
+
+test('createDatabase repairs the legacy file schema before a complete server build', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'kinesis-evidence-repair-'));
+  const filename = path.join(directory, 'database.sqlite');
+  let db = createDatabase({ filename });
+  db.prepare("INSERT INTO users(id,email,password_hash) VALUES(1,'file-repair@example.test','hash')").run();
+  db.prepare("INSERT INTO trainings(id,user_id,dia,tipo,treino) VALUES(1,1,'2026-11-02','run','persisted')").run();
+  db.prepare(`INSERT INTO training_result_evidence(user_id,training_id,evidence_type,evidence_value,source,is_current)
+    VALUES(1,1,'garmin_activity','account:99','garmin_connect',1)`).run();
+  installLegacyEvidenceSchema(db);
+  db.close();
+  try {
+    db = createDatabase({ filename });
+    assert.equal(db.prepare('SELECT evidence_value FROM training_result_evidence WHERE training_id=1').get().evidence_value, 'account:99');
+    assert.ok(db.prepare("SELECT 1 FROM schema_migrations WHERE name='2026-11-training-result-evidence-v2'").get());
+    const app = await buildServer({ db, sessionCookieSecure:false });
+    await app.close();
+    const indexesBefore = db.prepare('PRAGMA index_list(training_result_evidence)').all().map((row) => [row.name,row.unique,row.partial]).sort();
+    migrateDatabase(db);
+    assert.deepEqual(db.prepare('PRAGMA index_list(training_result_evidence)').all().map((row) => [row.name,row.unique,row.partial]).sort(), indexesBefore);
+  } finally {
+    if (db?.open) db.close();
+    fs.rmSync(directory, { recursive:true, force:true });
+  }
 });
 
 function replaceWithLegacyActivityImports(db, { rows = [], currentColumn = false, uniqueIdentity = true } = {}) {

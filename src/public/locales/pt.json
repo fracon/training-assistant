@@ -688,7 +688,8 @@
       "session_changed": "A sessão mudou durante a conferência. Recarregue e confira novamente.",
       "connection_changed": "A conexão Garmin mudou. Busque e confira novamente.",
       "import_in_progress": "Já há uma importação em andamento para esta sessão.",
-      "import_error": "Não foi possível importar a atividade. O resultado anterior foi preservado."
+      "import_error": "Não foi possível importar a atividade. O resultado anterior foi preservado.",
+      "diagnosticReference": "Referência: {id}"
     },
     "replaceFitTitle": "Substituir resultado FIT?",
     "replaceFitMessage": "O resumo detalhado e as voltas do FIT serão removidos.",

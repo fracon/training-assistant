@@ -363,6 +363,7 @@ function createGarminActivityImporter({ db, fetchImpl = fetch, config = process.
       if (!link || link.identity_fingerprint !== preview.identity
           || link.connection_generation !== preview.generation) return reply.code(409).send({ code: 'connection_changed' });
       const confirmReplace = request.body?.confirm_replace === true;
+      let persistenceStage = 'result_update';
       const tx = db.transaction(() => {
           const authorization = authorizationError(request);
           if (authorization) return { error: authorization };
@@ -408,11 +409,24 @@ function createGarminActivityImporter({ db, fetchImpl = fetch, config = process.
               VALUES(?,?,?,?,?,?,1)`).run(request.user.id, current.id, preview.identity, preview.activityId,
               preview.fileHash, IMPORTER_VERSION);
           }
+          persistenceStage = 'replace_current_evidence';
           replaceCurrentEvidence(db, request.user.id, current.id, evidence);
+          persistenceStage = 'reconcile_shoe_mileage';
           reconcileShoeMileage(db, request.user.id, before, trainingFor(request));
           return { imported: true };
       });
-      const result = tx.immediate();
+      let result;
+      try {
+        result = tx.immediate();
+      } catch (error) {
+        const diagnosticId = crypto.randomUUID();
+        // Deliberately log only fixed stage and SQLite/error class metadata. No
+        // request body, identifiers, parameters, Garmin payload, or credentials.
+        console.error('[kinesis-garmin-import]', JSON.stringify({ diagnostic_id: diagnosticId,
+          stage: persistenceStage, code: typeof error?.code === 'string' ? error.code : 'unexpected',
+          error_type: typeof error?.name === 'string' ? error.name : 'Error' }));
+        return reply.code(500).send({ code: 'import_error', diagnostic_id: diagnosticId });
+      }
       if (result.error) return reply.code(result.error === 'session_expired' ? 401 : 409).send({ code: result.error });
       if (result.duplicate) { caches.delete(token); return { imported: false, duplicate: true, training: trainingFor(request) }; }
       caches.delete(token);

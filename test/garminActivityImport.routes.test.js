@@ -3,8 +3,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { buildServer } = require('../src/server');
-const { createDatabase } = require('../src/db/database');
+const { createDatabase, migrateDatabase } = require('../src/db/database');
 const { createSession, SESSION_COOKIE_NAME } = require('../src/auth/sessions');
+const { installLegacyEvidenceSchema } = require('./helpers/legacyEvidenceSchema');
 
 function zip(entries) {
   const locals = []; const centrals = []; let offset = 0;
@@ -39,10 +40,10 @@ function activityPage(items, { offset = 0, nextOffset = offset + items.length, h
     offset, next_offset: nextOffset, limit, has_more: hasMore, budget_exhausted: budgetExhausted });
 }
 
-async function setup({ rows = [{ activityId: 42, activityName: 'Morning run', startTimeLocal: '2026-11-02 07:00:00',
+async function setup({ db: providedDb, rows = [{ activityId: 42, activityName: 'Morning run', startTimeLocal: '2026-11-02 07:00:00',
   activityType: 'running', duration: 3500, distance: 10000, averageHR: null, maxHR: 181, calories: 501, elevationGain: 78 }], parse = async () => summary,
   originalFile = original, owner = 1, connectorFetch, garminConfig = {}, now, sessionResolver } = {}) {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = providedDb || createDatabase({ filename: ':memory:' });
   const calls = [];
   const defaultFetch = async (url, init) => {
     calls.push({ url, init });
@@ -73,6 +74,112 @@ async function setup({ rows = [{ activityId: 42, activityName: 'Morning run', st
     VALUES(1,1,?)`).run('a'.repeat(64));
   return { db, app, cookie, calls, close: async () => { await app.close(); db.close(); } };
 }
+
+test('confirmed Garmin replacement succeeds after normal migration repairs the persisted result-evidence key', async () => {
+  const db = createDatabase({ filename: ':memory:' });
+  installLegacyEvidenceSchema(db);
+  migrateDatabase(db);
+  const h = await setup({ db, rows: [
+    { activityId: 42, activityName: 'A', startTimeLocal: '2026-11-02 07:00:00', activityType: 'running', duration: 3500, distance: 10000 },
+    { activityId: 43, activityName: 'B', startTimeLocal: '2026-11-02 08:00:00', activityType: 'running', duration: 3600, distance: 11000 },
+  ] });
+  try {
+    db.prepare("INSERT INTO shoes(id,user_id,brand,model,mileage) VALUES('repair-shoe',1,'Kinesis','Run',0)").run();
+    db.prepare("UPDATE trainings SET completed=1,feedback_rpe=4,feedback_notas='keep me',feedback_shoe_id='repair-shoe' WHERE id=1").run();
+    for (const activity of [42,43,42]) {
+      const reviewed = await preview(h, activity, 1, activity === 42 ? 0 : 1);
+      assert.equal(reviewed.statusCode, 200, reviewed.body);
+      const imported = await h.app.inject({ method:'POST', url:'/api/trainings/1/garmin/activity-import', headers:{cookie:h.cookie},
+        payload:{preview_id:reviewed.json().preview_id,confirm_replace:true} });
+      assert.equal(imported.statusCode, 200, imported.body);
+    }
+    assert.deepEqual(db.prepare('SELECT result_data_source,fit_distance,feedback_rpe,feedback_notas,feedback_shoe_id FROM trainings WHERE id=1').get(),
+      { result_data_source:'garmin_connect',fit_distance:10,feedback_rpe:4,feedback_notas:'keep me',feedback_shoe_id:'repair-shoe' });
+    assert.deepEqual(db.prepare('SELECT activity_id,is_current FROM garmin_activity_imports ORDER BY activity_id').all(), [
+      {activity_id:'42',is_current:1},{activity_id:'43',is_current:0},
+    ]);
+    assert.equal(db.prepare("SELECT mileage FROM shoes WHERE id='repair-shoe'").get().mileage,10);
+    assert.equal(db.prepare('SELECT distance FROM training_shoe_mileage WHERE training_id=1').get().distance,10);
+    const app = await buildServer({ db, sessionCookieSecure:false });
+    await app.close();
+  } finally { await h.close(); }
+});
+
+test('unexpected persistence failures return a diagnostic reference and roll back the complete replacement', async () => {
+  const h = await setup({ rows: [
+    { activityId: 42, activityName: 'A', startTimeLocal: '2026-11-02 07:00:00', activityType: 'running', duration: 3500, distance: 10000 },
+    { activityId: 43, activityName: 'B', startTimeLocal: '2026-11-02 08:00:00', activityType: 'running', duration: 3600, distance: 11000 },
+  ] });
+  try {
+    h.db.prepare("INSERT INTO shoes(id,user_id,brand,model,mileage) VALUES('rollback-shoe',1,'Kinesis','Run',0)").run();
+    h.db.prepare("UPDATE trainings SET completed=1,feedback_rpe=4,feedback_notas='saved feedback',feedback_shoe_id='rollback-shoe' WHERE id=1").run();
+    const firstReview = await preview(h,42,1,0);
+    const first = await h.app.inject({ method:'POST', url:'/api/trainings/1/garmin/activity-import', headers:{cookie:h.cookie},
+      payload:{preview_id:firstReview.json().preview_id,confirm_replace:true} });
+    assert.equal(first.statusCode,200,first.body);
+    const before = h.db.prepare('SELECT fit_distance,fit_summary_json,result_data_source,feedback_rpe,feedback_notas,completed FROM trainings WHERE id=1').get();
+    const secondReview = await preview(h,43,1,1);
+    assert.equal(secondReview.statusCode,200,secondReview.body);
+    h.db.exec(`CREATE TRIGGER fail_result_evidence BEFORE INSERT ON training_result_evidence
+      BEGIN SELECT RAISE(ABORT,'synthetic evidence persistence failure'); END`);
+    const response = await h.app.inject({ method:'POST', url:'/api/trainings/1/garmin/activity-import', headers:{cookie:h.cookie},
+      payload:{preview_id:secondReview.json().preview_id,confirm_replace:true} });
+    assert.equal(response.statusCode,500);
+    assert.equal(response.json().code,'import_error');
+    assert.match(response.json().diagnostic_id,/^[a-f0-9-]{36}$/i);
+    assert.equal(response.json().message,undefined);
+    assert.deepEqual(h.db.prepare('SELECT fit_distance,fit_summary_json,result_data_source,feedback_rpe,feedback_notas,completed FROM trainings WHERE id=1').get(),before);
+    assert.deepEqual(h.db.prepare('SELECT activity_id,is_current FROM garmin_activity_imports ORDER BY activity_id').all(),[{activity_id:'42',is_current:1}]);
+    assert.equal(h.db.prepare('SELECT evidence_value FROM training_result_evidence WHERE is_current=1 AND evidence_type=\'garmin_activity\'').get().evidence_value,'a'.repeat(64)+':42');
+    assert.equal(h.db.prepare("SELECT mileage FROM shoes WHERE id='rollback-shoe'").get().mileage,10);
+    assert.equal(h.db.prepare('SELECT distance FROM training_shoe_mileage WHERE training_id=1').get().distance,10);
+  } finally { await h.close(); }
+});
+
+test('unexpected domain failures also return a safe diagnostic without partially replacing result or shoe ledger', async () => {
+  const h = await setup();
+  try {
+    h.db.prepare("INSERT INTO users(id,email,password_hash) VALUES(2,'other-owner@example.test','hash')").run();
+    h.db.prepare("INSERT INTO shoes(id,user_id,brand,model,mileage) VALUES('foreign-shoe',2,'Other','Shoe',9)").run();
+    h.db.prepare(`UPDATE trainings SET result_data_source='manual',fit_duration='0:54:00',fit_distance=9,
+      fit_avg_pace='6:00',completed=1,feedback_rpe=4,feedback_notas='keep',feedback_shoe_id='foreign-shoe' WHERE id=1`).run();
+    h.db.prepare('INSERT INTO training_shoe_mileage(training_id,user_id,shoe_id,distance) VALUES(1,1,?,9)').run('foreign-shoe');
+    const before=h.db.prepare('SELECT result_data_source,fit_distance,fit_avg_pace,feedback_rpe,feedback_notas,feedback_shoe_id,completed FROM trainings WHERE id=1').get();
+    const reviewed=await preview(h,42,1,0);
+    assert.equal(reviewed.statusCode,200,reviewed.body);
+    const response=await h.app.inject({method:'POST',url:'/api/trainings/1/garmin/activity-import',headers:{cookie:h.cookie},
+      payload:{preview_id:reviewed.json().preview_id,confirm_replace:true}});
+    assert.equal(response.statusCode,500);
+    assert.equal(response.json().code,'import_error');
+    assert.match(response.json().diagnostic_id,/^[a-f0-9-]{36}$/i);
+    assert.equal(response.json().message,undefined);
+    assert.deepEqual(h.db.prepare('SELECT result_data_source,fit_distance,fit_avg_pace,feedback_rpe,feedback_notas,feedback_shoe_id,completed FROM trainings WHERE id=1').get(),before);
+    assert.equal(h.db.prepare('SELECT COUNT(*) AS n FROM garmin_activity_imports').get().n,0);
+    assert.equal(h.db.prepare('SELECT COUNT(*) AS n FROM training_result_evidence WHERE is_current=1').get().n,0);
+    assert.equal(h.db.prepare('SELECT mileage FROM shoes WHERE id=?').get('foreign-shoe').mileage,9);
+    assert.equal(h.db.prepare('SELECT distance FROM training_shoe_mileage WHERE training_id=1').get().distance,9);
+  } finally { await h.close(); }
+});
+
+test('unexpected errors without driver metadata use safe diagnostic fallbacks', async () => {
+  const h=await setup();
+  const originalTransaction=h.db.transaction.bind(h.db);
+  try {
+    h.db.prepare("UPDATE trainings SET result_data_source='manual',fit_distance=8,fit_duration='0:48:00',feedback_rpe=3 WHERE id=1").run();
+    const reviewed=await preview(h,42,1,0);
+    h.db.transaction=()=>Object.assign(()=>{}, {
+      immediate(){throw Object.assign(new Error('must not reach client'),{code:null,name:null});},
+    });
+    const response=await h.app.inject({method:'POST',url:'/api/trainings/1/garmin/activity-import',headers:{cookie:h.cookie},
+      payload:{preview_id:reviewed.json().preview_id,confirm_replace:true}});
+    assert.equal(response.statusCode,500);
+    assert.equal(response.json().code,'import_error');
+    assert.match(response.json().diagnostic_id,/^[a-f0-9-]{36}$/i);
+    assert.equal(response.json().message,undefined);
+    assert.deepEqual(h.db.prepare('SELECT result_data_source,fit_distance,fit_duration,feedback_rpe FROM trainings WHERE id=1').get(),
+      {result_data_source:'manual',fit_distance:8,fit_duration:'0:48:00',feedback_rpe:3});
+  } finally { h.db.transaction=originalTransaction; await h.close(); }
+});
 
 async function preview(h, id = 42, trainingId = 1, sourceCursor = 0) {
   return h.app.inject({ method: 'POST', url: `/api/trainings/${trainingId}/garmin/activity-preview`, headers: { cookie: h.cookie }, payload: { activity_id: id, source_cursor: sourceCursor } });

@@ -919,6 +919,23 @@ is retired and replaced with the result atomically; historic entries remain
 available for a later A→B→A reactivation but do not block reuse. The original
 FIT bytes are parsed in memory and are not retained.
 
+The idempotent `2026-11-training-result-evidence-v2` migration repairs a
+persisted v1 table whose UNIQUE key omitted `source`, even though the current
+replacement UPSERT targets `(user_id, training_id, evidence_type,
+evidence_value, source)`. It transactionally rebuilds that known table shape
+with the five-column key, copying every evidence ID, value, source, current flag,
+and timestamp. This also removes the old stricter four-column key, which would
+otherwise block the same FIT evidence when its source changes. Before rebuilding
+it validates columns, foreign keys, current-identity uniqueness, and custom
+indexes; unknown or ambiguous schemas fail startup with an actionable error
+and full rollback. The marker is written only after the indexes are restored.
+The idempotent v3 follow-up repeats the schema check for databases where an
+early v2 marker exists but the stricter key remains. The inspected database had
+the v1 marker and source column, but its autoindex covered only the first four
+columns; schema metadata alone cannot establish when that drift was introduced.
+FIT upload, Garmin import, feedback, and shoe-mileage history are not backfilled
+or rewritten by these repairs.
+
 The activity list response carries the connector's actual next cursor and
 `has_more`/budget state. `budget_exhausted` means only that the current request
 used its five-page remote-call budget; it is not end-of-search. The UI offers

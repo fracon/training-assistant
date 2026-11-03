@@ -1014,7 +1014,10 @@ async function initTrainingResult() {
   };
   const setGarminActivityStatus = (key) => {
     garminActivityStatusKey = key || '';
-    garminActivityStatus.textContent = key ? t(`session.garminImport.${key === 'loadingMore' ? 'loadingMoreStatus' : key}`) : '';
+    const statusText = key ? t(`session.garminImport.${key === 'loadingMore' ? 'loadingMoreStatus' : key}`) : '';
+    const diagnosticId = key === 'import_error' ? garminActivityStatus.dataset.diagnosticId : '';
+    garminActivityStatus.textContent = statusText + (diagnosticId
+      ? ` ${t('session.garminImport.diagnosticReference').replace('{id}', diagnosticId)}` : '');
     garminActivityStatus.hidden = !key;
     const attention = key && !['searching', 'importing', 'imported'].includes(key);
     setFeedbackProgress(['searching', 'loadingMore'].includes(key) ? 'garminSearching' : ['downloading', 'importing'].includes(key) ? 'importingResult'
@@ -1103,10 +1106,13 @@ async function initTrainingResult() {
     garminActivityWindow.hidden = false;
   };
   const readGarminActivity = async (url, options = {}) => {
+    garminActivityStatus.removeAttribute('data-diagnostic-id');
     const response = await fetch(url, { credentials: 'same-origin', ...options,
       headers: { 'content-type': 'application/json', ...(options.headers || {}) } });
     const body = await response.json().catch(() => ({}));
-    if (!response.ok) { const error = new Error(body.code || 'import_error'); error.status = response.status; throw error; }
+    if (!response.ok) { const error = new Error(body.code || 'import_error'); error.status = response.status;
+      if (typeof body.diagnostic_id === 'string' && /^[a-f0-9-]{36}$/i.test(body.diagnostic_id)) garminActivityStatus.dataset.diagnosticId = body.diagnostic_id;
+      throw error; }
     return body;
   };
   const activityErrorKey = (error) => {

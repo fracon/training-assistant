@@ -141,6 +141,97 @@ function resolveDatabaseFile(cwd) {
   return path.join(cwd, 'data', 'database.sqlite');
 }
 
+function ensureTrainingResultEvidenceIdentity(db) {
+  const table = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='training_result_evidence'").get();
+  const requiredColumns = ['user_id', 'training_id', 'evidence_type', 'evidence_value', 'source'];
+  const columns = table ? db.prepare('PRAGMA table_info(training_result_evidence)').all() : [];
+  if (!table || requiredColumns.some((name) => !columns.some((column) => column.name === name))) {
+    throw new Error('Cannot repair training_result_evidence: required table or identity columns are missing. Restore the table from backup or run a reviewed schema repair.');
+  }
+  const indexes = db.prepare('PRAGMA index_list(training_result_evidence)').all();
+  const indexColumns = (index) => db.prepare(`PRAGMA index_xinfo("${index.name.replaceAll('"', '""')}")`).all()
+    .filter((column) => column.key === 1);
+  const isIdentityIndex = (index) => {
+    if (!index.unique || index.partial) return false;
+    const key = indexColumns(index);
+    return key.length === requiredColumns.length
+      && key.every((column, position) => column.name === requiredColumns[position] && column.coll === 'BINARY' && column.desc === 0);
+  };
+  const matchesIdentity = indexes.some(isIdentityIndex);
+  const legacyFourColumnKey = indexes.find((index) => index.unique && !index.partial
+    && JSON.stringify(indexColumns(index).map((column) => column.name))
+      === JSON.stringify(requiredColumns.slice(0, 4)));
+  const repairIndex = indexes.find((index) => index.name === 'idx_training_result_evidence_identity_v2');
+  if (repairIndex && !isIdentityIndex(repairIndex)) {
+    throw new Error('Cannot repair training_result_evidence: idx_training_result_evidence_identity_v2 exists with an incompatible definition. No evidence rows were changed; review the index and retry migration.');
+  }
+  const unsupportedUniqueIndexes = indexes.filter((index) => index.unique && !index.partial
+    && index !== legacyFourColumnKey && !isIdentityIndex(index));
+  if (unsupportedUniqueIndexes.length) {
+    throw new Error('Cannot repair training_result_evidence: it has an unrecognized UNIQUE constraint. No evidence rows were changed; review the index definition before retrying migration.');
+  }
+  if (legacyFourColumnKey) {
+    const expectedColumns = ['id','user_id','training_id','evidence_type','evidence_value','source','is_current','created_at'];
+    if (JSON.stringify(columns.map((column) => column.name)) !== JSON.stringify(expectedColumns)) {
+      throw new Error('Cannot safely rebuild training_result_evidence: its legacy columns differ from the known v1 schema. No evidence rows were changed; review the table and restore from backup if needed.');
+    }
+    const unexpectedIndexes = indexes.filter((index) => index.origin === 'c'
+      && !['idx_training_result_evidence_training','idx_training_result_evidence_current_identity','idx_training_result_evidence_identity_v2'].includes(index.name));
+    if (unexpectedIndexes.length) {
+      throw new Error('Cannot safely rebuild training_result_evidence: it has additional custom indexes. No evidence rows were changed; review those indexes before retrying migration.');
+    }
+    const foreignKeys = db.prepare('PRAGMA foreign_key_list(training_result_evidence)').all();
+    const hasRequiredForeignKeys = foreignKeys.some((key) => key.table === 'users' && key.from === 'user_id' && key.to === 'id' && key.on_delete === 'CASCADE')
+      && foreignKeys.some((key) => key.table === 'trainings' && key.from === 'training_id' && key.to === 'id' && key.on_delete === 'CASCADE');
+    if (!hasRequiredForeignKeys || db.prepare('PRAGMA foreign_key_check(training_result_evidence)').all().length) {
+      throw new Error('Cannot safely rebuild training_result_evidence: required ownership foreign keys or row references are invalid. No evidence rows were changed; review the table before retrying migration.');
+    }
+    const currentDuplicates = db.prepare(`SELECT COUNT(*) AS groups FROM (
+      SELECT 1 FROM training_result_evidence WHERE is_current=1
+      GROUP BY user_id,evidence_type,evidence_value HAVING COUNT(*) > 1
+    )`).get().groups;
+    if (currentDuplicates) {
+      throw new Error(`Cannot safely rebuild training_result_evidence: ${currentDuplicates} duplicate current identity group(s) prevent its uniqueness constraint. No evidence rows were changed; resolve the ambiguity and retry migration.`);
+    }
+    if (db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='training_result_evidence_repair_v1'").get()) {
+      throw new Error('Cannot safely rebuild training_result_evidence: a prior repair table exists. No evidence rows were changed; review it before retrying migration.');
+    }
+    db.exec(`DROP INDEX IF EXISTS idx_training_result_evidence_training;
+      DROP INDEX IF EXISTS idx_training_result_evidence_current_identity;
+      ALTER TABLE training_result_evidence RENAME TO training_result_evidence_repair_v1;
+      CREATE TABLE training_result_evidence (
+        id INTEGER PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        training_id INTEGER NOT NULL REFERENCES trainings(id) ON DELETE CASCADE,
+        evidence_type TEXT NOT NULL CHECK (evidence_type IN ('fit_sha256','fit_file_id','garmin_activity')),
+        evidence_value TEXT NOT NULL,
+        source TEXT NOT NULL CHECK (source IN ('fit_upload','garmin_connect')),
+        is_current INTEGER NOT NULL CHECK (is_current IN (0,1)),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(user_id,training_id,evidence_type,evidence_value,source)
+      );
+      INSERT INTO training_result_evidence
+        (id,user_id,training_id,evidence_type,evidence_value,source,is_current,created_at)
+        SELECT id,user_id,training_id,evidence_type,evidence_value,source,is_current,created_at
+        FROM training_result_evidence_repair_v1;
+      DROP TABLE training_result_evidence_repair_v1;
+      CREATE INDEX idx_training_result_evidence_training
+        ON training_result_evidence(user_id,training_id,is_current);
+      CREATE UNIQUE INDEX idx_training_result_evidence_current_identity
+        ON training_result_evidence(user_id,evidence_type,evidence_value) WHERE is_current=1;`);
+  } else if (!matchesIdentity) {
+    const duplicates = db.prepare(`SELECT COUNT(*) AS groups FROM (
+      SELECT 1 FROM training_result_evidence
+      GROUP BY user_id,training_id,evidence_type,evidence_value,source HAVING COUNT(*) > 1
+    )`).get().groups;
+    if (duplicates) {
+      throw new Error(`Cannot repair training_result_evidence: ${duplicates} duplicate identity group(s) prevent a unique index. No evidence rows were changed; resolve the ambiguity and retry migration.`);
+    }
+    db.exec(`CREATE UNIQUE INDEX idx_training_result_evidence_identity_v2
+      ON training_result_evidence(user_id,training_id,evidence_type,evidence_value,source)`);
+  }
+}
+
 function migrateDatabase(db) {
   const columns = db.pragma('table_info(users)');
   if (!columns.some((column) => column.name === 'role')) {
@@ -542,6 +633,27 @@ function migrateDatabase(db) {
       db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(resultEvidenceMarker);
     });
     addResultEvidence.immediate();
+  }
+  // V2 repairs the source-less key shape when first encountered. V3 repeats
+  // this idempotent check because early v2 builds could have marked the index
+  // as repaired without removing the legacy, stricter four-column constraint.
+  const evidenceRepairMarker = '2026-11-training-result-evidence-v2';
+  if (!db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(evidenceRepairMarker)) {
+    const repairEvidenceIdentity = db.transaction(() => {
+      if (db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(evidenceRepairMarker)) return;
+      ensureTrainingResultEvidenceIdentity(db);
+      db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(evidenceRepairMarker);
+    });
+    repairEvidenceIdentity.immediate();
+  }
+  const evidenceRepairFollowup = '2026-11-training-result-evidence-v3';
+  if (!db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(evidenceRepairFollowup)) {
+    const finishEvidenceRepair = db.transaction(() => {
+      if (db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(evidenceRepairFollowup)) return;
+      ensureTrainingResultEvidenceIdentity(db);
+      db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(evidenceRepairFollowup);
+    });
+    finishEvidenceRepair.immediate();
   }
   const garminV3 = '2026-10-garmin-session-publish-v3';
   if (!db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(garminV3)) {

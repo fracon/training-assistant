@@ -474,7 +474,8 @@
       "session_changed": "The session changed while the activity was being reviewed. Reload and review again.",
       "connection_changed": "The Garmin connection changed. Search and review again.",
       "import_in_progress": "An import for this session is already in progress.",
-      "import_error": "The activity could not be imported. The previous result was kept."
+      "import_error": "The activity could not be imported. The previous result was kept.",
+      "diagnosticReference": "Reference: {id}"
     },
     "replaceFitTitle": "Replace FIT result?",
     "replaceFitMessage": "The detailed FIT summary and lap data will be removed.",
