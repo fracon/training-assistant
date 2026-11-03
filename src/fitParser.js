@@ -1,6 +1,7 @@
 'use strict';
 
 const DefaultFitParser = require('fit-file-parser').default;
+const crypto = require('node:crypto');
 
 const DEFAULT_PARSER_OPTIONS = {
   force: false,
@@ -102,6 +103,24 @@ function formatDistance(distanceKm) {
 function toIso(value) {
   const date = value instanceof Date ? value : new Date(value);
   return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function stableFitFileIdentity(fileIds) {
+  if (!Array.isArray(fileIds)) return null;
+  const candidates = fileIds.filter((item) => item?.type === 'activity');
+  if (candidates.length !== 1) return null;
+  const file = candidates[0];
+  const manufacturer = typeof file.manufacturer === 'string' && /^[a-z0-9_]{1,64}$/i.test(file.manufacturer)
+    ? file.manufacturer.toLowerCase()
+    : Number.isSafeInteger(file.manufacturer) && file.manufacturer >= 0 ? String(file.manufacturer) : null;
+  const numeric = [file.product, file.serial_number];
+  const createdAt = timestampMilliseconds(file.time_created);
+  if (manufacturer === null || numeric.some((value) => !Number.isSafeInteger(value) || value < 0)
+      || numeric[1] === 0 || createdAt === null) return null;
+  const fileNumber = Number.isSafeInteger(file.number) && file.number >= 0 ? String(file.number) : '';
+  // This composite is a device file-creation identifier, not a universal
+  // activity ID. Hash it so device serials do not leave the parser boundary.
+  return crypto.createHash('sha256').update(`fit-file-id-v1:${manufacturer}:${numeric[0]}:${numeric[1]}:${createdAt}:${fileNumber}`).digest('hex');
 }
 
 function resolveStepType(lap) {
@@ -346,7 +365,7 @@ function summarize(data) {
     cumulative = view.cumulativeSeconds;
     return view;
   });
-  return {
+  const result = {
     activity: {
       sport,
       startTime: toIso(session.start_time),
@@ -364,6 +383,9 @@ function summarize(data) {
       resolveAscent(session, laps, records)
     ),
   };
+  const fileIdentity = stableFitFileIdentity(source.file_ids);
+  if (fileIdentity) result.fitFileIdentity = fileIdentity;
+  return result;
 }
 
 async function parseFitFile(buffer, deps = {}) {
@@ -402,4 +424,5 @@ module.exports = {
   normalizeCalories,
   resolveActivityTotals,
   resolveAscent,
+  stableFitFileIdentity,
 };

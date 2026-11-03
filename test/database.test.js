@@ -85,6 +85,35 @@ test('Garmin activity provenance migration is idempotent and enforces one curren
   db.close();
 });
 
+test('result evidence migration backfills only qualified Garmin IDs and preserves historic/current state idempotently', () => {
+  const db = createDatabase({ filename: ':memory:' });
+  db.prepare("INSERT INTO users(id,email,password_hash) VALUES(1,'result-evidence@example.test','hash')").run();
+  db.prepare("INSERT INTO trainings(id,user_id,dia,tipo,treino) VALUES(1,1,'2026-11-02','run','one'),(2,1,'2026-11-03','run','two')").run();
+  db.prepare(`INSERT INTO garmin_activity_imports(user_id,training_id,account_fingerprint,activity_id,file_sha256,importer_version,is_current)
+    VALUES(1,1,?,?,?,1,0),(1,2,?,?,?,1,1)`).run('a'.repeat(64),'91','b'.repeat(64),'c'.repeat(64),'92','d'.repeat(64));
+  db.prepare("DELETE FROM schema_migrations WHERE name='2026-11-training-result-evidence-v1'").run();
+  db.prepare('DROP TABLE training_result_evidence').run();
+  migrateDatabase(db);
+  const rows = db.prepare('SELECT training_id,evidence_type,evidence_value,source,is_current FROM training_result_evidence ORDER BY training_id').all();
+  assert.deepEqual(rows, [
+    { training_id: 1, evidence_type: 'garmin_activity', evidence_value: `${'a'.repeat(64)}:91`, source: 'garmin_connect', is_current: 0 },
+    { training_id: 2, evidence_type: 'garmin_activity', evidence_value: `${'c'.repeat(64)}:92`, source: 'garmin_connect', is_current: 1 },
+  ]);
+  assert.equal(rows.some((row) => ['fit_sha256','fit_file_id'].includes(row.evidence_type)), false,
+    'legacy imports receive no invented FIT identity');
+  const before = JSON.stringify(rows);
+  migrateDatabase(db);
+  assert.equal(JSON.stringify(db.prepare('SELECT training_id,evidence_type,evidence_value,source,is_current FROM training_result_evidence ORDER BY training_id').all()), before);
+  assert.throws(() => db.prepare(`INSERT INTO training_result_evidence(user_id,training_id,evidence_type,evidence_value,source,is_current)
+    VALUES(1,1,'garmin_activity',?,'garmin_connect',1)`).run(`${'c'.repeat(64)}:92`), /UNIQUE constraint failed/);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM schema_migrations WHERE name='2026-11-training-result-evidence-v1'").get().n, 1);
+  assert.deepEqual(db.prepare('PRAGMA foreign_key_list(training_result_evidence)').all().map((key) => [key.table,key.from,key.to,key.on_delete]).sort(), [
+    ['trainings','training_id','id','CASCADE'], ['users','user_id','id','CASCADE'],
+  ]);
+  assert.equal(db.prepare('PRAGMA index_list(training_result_evidence)').all().some((index) => index.name === 'idx_training_result_evidence_current_identity' && index.unique && index.partial), true);
+  db.close();
+});
+
 function replaceWithLegacyActivityImports(db, { rows = [], currentColumn = false, uniqueIdentity = true } = {}) {
   db.exec('DROP TABLE garmin_activity_imports');
   db.exec(`CREATE TABLE garmin_activity_imports (
@@ -467,6 +496,7 @@ test('initializeDatabase applies pragmas and creates the schema', () => {
     'sessions',
     'shoes',
     'training_cycles',
+    'training_result_evidence',
     'training_shoe_mileage',
     'trainings',
     'users',
@@ -1493,6 +1523,7 @@ test('migrateDatabase removes the obsolete workouts table from existing database
       'sessions',
       'shoes',
       'training_cycles',
+      'training_result_evidence',
       'training_shoe_mileage',
       'trainings',
       'users',

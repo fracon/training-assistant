@@ -433,6 +433,8 @@
       "searching": "Searching activities…",
       "downloading": "Downloading and reading the original activity file…",
       "none": "No running activities found in this date window. Sync your watch and search again, or use FIT/ZIP or manual entry.",
+      "emptyPageMore": "No runs in this part of the search. You can load more activities.",
+      "activity_evidence_conflict": "This FIT file or identified activity is already the current result in another session. The existing result was kept.",
       "choose": "Review",
       "previewHeading": "Review activity",
       "confirm": "Import activity",

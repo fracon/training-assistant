@@ -15,6 +15,7 @@ const {
   formatPace,
 } = require('./fitParser');
 const { FitUploadError, resolveFitBuffer } = require('./fitUpload');
+const { fitEvidence, findCurrentEvidenceConflict, replaceCurrentEvidence, fitSha256 } = require('./result-import-evidence');
 const { normalizeManualResults } = require('./manualResults');
 const {
   reconcileShoeMileage,
@@ -1147,6 +1148,7 @@ async function buildServer(options = {}) {
           );
           db.prepare('UPDATE garmin_activity_imports SET is_current=0 WHERE user_id=? AND training_id=? AND is_current=1')
             .run(request.user.id, id);
+          replaceCurrentEvidence(db, request.user.id, id, []);
           reconcileShoeMileage(
             db,
             request.user.id,
@@ -1236,6 +1238,7 @@ async function buildServer(options = {}) {
             filename: fileName,
           });
           const result = await parseFile(fitBuffer);
+          const evidence = fitEvidence({ fitSha256: fitSha256(fitBuffer), fitFileIdentity: result.fitFileIdentity, source: 'fit_upload' });
           const fitDuration =
             result.totals?.durationSeconds > 0
               ? (result.totals.durationLabel ??
@@ -1273,6 +1276,15 @@ async function buildServer(options = {}) {
               : before.feedback_rpe;
             const refused = conclusionRpeError(effectiveRpe);
             if (refused) return refused;
+            const evidenceConflict = findCurrentEvidenceConflict(db, request.user.id, id, evidence);
+            if (evidenceConflict) return 'activity_evidence_conflict';
+            const currentEvidence = db.prepare(`SELECT evidence_type,evidence_value FROM training_result_evidence
+              WHERE user_id=? AND training_id=? AND is_current=1`).all(request.user.id, id);
+            if (before.result_data_source === 'fit_upload' && before.fit_summary_json === fitSummaryJson
+                && before.feedback_rpe === effectiveRpe && before.completed === 1
+                && currentEvidence.length === evidence.length
+                && evidence.every((item) => currentEvidence.some((current) => current.evidence_type === item.type
+                  && current.evidence_value === item.value))) return null;
             db.prepare(
               `UPDATE trainings SET
             fit_duration = ?,
@@ -1302,6 +1314,7 @@ async function buildServer(options = {}) {
             );
             db.prepare('UPDATE garmin_activity_imports SET is_current=0 WHERE user_id=? AND training_id=? AND is_current=1')
               .run(request.user.id, id);
+            replaceCurrentEvidence(db, request.user.id, id, evidence);
             reconcileShoeMileage(
               db,
               request.user.id,
@@ -1311,6 +1324,7 @@ async function buildServer(options = {}) {
             return null;
           });
           const refused = saveFit();
+          if (refused === 'activity_evidence_conflict') return reply.code(409).send({ code: refused });
           if (refused) return reply.code(400).send({ error: refused });
 
           return {

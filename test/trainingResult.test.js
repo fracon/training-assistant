@@ -1856,10 +1856,10 @@ test('session locale namespace stays in parity across en-US and pt-BR', () => {
 
 test('fit upload error codes resolve through the real localized dictionaries with a safe fallback', () => {
   const lookup = (messages, key) => key.split('.').reduce((value, part) => value?.[part], messages);
-  const codes = ['invalid_file', 'invalid_zip', 'missing_fit', 'multiple_fit', 'encrypted_zip', 'unsafe_entry', 'too_many_entries', 'fit_too_large', 'zip_too_large', 'unsupported_type'];
+  const codes = ['activity_evidence_conflict', 'invalid_file', 'invalid_zip', 'missing_fit', 'multiple_fit', 'encrypted_zip', 'unsafe_entry', 'too_many_entries', 'fit_too_large', 'zip_too_large', 'unsupported_type'];
   for (const code of codes) {
     const key = fitUploadErrorMessage(code, (candidate) => candidate);
-    assert.match(key, /^session\.errors\./);
+    assert.match(key, /^session\.(errors|garminImport)\./);
     const english = lookup(en, key);
     const portuguese = lookup(pt, key);
     assert.equal(typeof english, 'string', `missing EN translation for ${code}`);

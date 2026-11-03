@@ -78,6 +78,14 @@ async function preview(h, id = 42, trainingId = 1, sourceCursor = 0) {
   return h.app.inject({ method: 'POST', url: `/api/trainings/${trainingId}/garmin/activity-preview`, headers: { cookie: h.cookie }, payload: { activity_id: id, source_cursor: sourceCursor } });
 }
 
+async function uploadFit(h, trainingId, filename, bytes, { confirmReplace = false } = {}) {
+  const form = new FormData();
+  form.append('file', new Blob([bytes]), filename);
+  form.append('feedback_rpe', '4');
+  if (confirmReplace) form.append('confirm_replace_manual', 'true');
+  return h.app.inject({ method: 'POST', url: `/api/trainings/${trainingId}/fit`, headers: { cookie: h.cookie }, payload: form });
+}
+
 test('activity search, original ZIP preview, confirmed import, provenance, feedback and shoe ledger share the canonical pipeline', async () => {
   const h = await setup();
   try {
@@ -307,6 +315,97 @@ test('FIT replacement of a Garmin result is explicit and retires the current bin
     assert.equal(h.db.prepare('SELECT is_current FROM garmin_activity_imports').get().is_current, 0);
     assert.equal(h.db.prepare('SELECT completed FROM trainings WHERE id=1').get().completed, 1);
     assert.equal(h.db.prepare('SELECT mileage FROM shoes WHERE id=?').get('shoe-fit').mileage, 10);
+  } finally { await h.close(); }
+});
+
+test('exact extracted FIT bytes are exclusive across upload and Garmin directions with no shoe mileage duplication', async () => {
+  for (const direction of ['fit-first', 'garmin-first']) {
+    const h = await setup();
+    try {
+      h.db.prepare(`INSERT INTO trainings(id,user_id,dia,tipo,treino) VALUES(2,1,'2026-11-03','run','second')`).run();
+      h.db.prepare("UPDATE trainings SET fit_duration='00:12',fit_distance=2,result_data_source='manual',completed=1,feedback_rpe=3,feedback_notas='keep prior result' WHERE id=2").run();
+      h.db.prepare(`INSERT INTO shoes(id,user_id,brand,model,mileage) VALUES('dedupe-shoe',1,'Kinesis','Run',0)`).run();
+      h.db.prepare("UPDATE trainings SET completed=1,feedback_rpe=4,feedback_shoe_id='dedupe-shoe' WHERE id=1").run();
+      if (direction === 'fit-first') {
+        const uploaded = await uploadFit(h, 1, 'activity.fit', Buffer.from('synthetic-fit-bytes'));
+        assert.equal(uploaded.statusCode, 200, uploaded.body);
+        const identical = await uploadFit(h, 1, 'same-activity.fit', Buffer.from('synthetic-fit-bytes'));
+        assert.equal(identical.statusCode, 200, 'same-session reimport is an idempotent no-op');
+        assert.equal(h.db.prepare("SELECT mileage FROM shoes WHERE id='dedupe-shoe'").get().mileage, 10);
+      } else {
+        const reviewed = await preview(h, 42, 1);
+        const imported = await h.app.inject({ method: 'POST', url: '/api/trainings/1/garmin/activity-import',
+          headers: { cookie: h.cookie }, payload: { preview_id: reviewed.json().preview_id } });
+        assert.equal(imported.statusCode, 200, imported.body);
+      }
+      const duplicate = direction === 'fit-first'
+        ? await (async () => {
+          const reviewed = await preview(h, 42, 2);
+          return h.app.inject({ method: 'POST', url: '/api/trainings/2/garmin/activity-import', headers: { cookie: h.cookie },
+            payload: { preview_id: reviewed.json().preview_id, confirm_replace: true } });
+        })()
+        : await uploadFit(h, 2, 'activity.zip', original, { confirmReplace: true });
+      assert.equal(duplicate.statusCode, 409, duplicate.body);
+      assert.equal(duplicate.json().code, 'activity_evidence_conflict');
+      assert.deepEqual(h.db.prepare('SELECT result_data_source,fit_distance,feedback_notas,completed FROM trainings WHERE id=2').get(),
+        { result_data_source: 'manual', fit_distance: 2, feedback_notas: 'keep prior result', completed: 1 });
+      assert.equal(h.db.prepare("SELECT mileage FROM shoes WHERE id='dedupe-shoe'").get().mileage, 10,
+        'the same 10 km FIT evidence never contributes twice');
+      assert.equal(h.db.prepare('SELECT COUNT(*) AS n FROM training_result_evidence WHERE evidence_type=\'fit_sha256\' AND is_current=1').get().n, 1);
+    } finally { await h.close(); }
+  }
+});
+
+test('different ZIP wrappers with the exact same extracted FIT cannot count in two sessions', async () => {
+  const h = await setup();
+  try {
+    h.db.prepare(`INSERT INTO trainings(id,user_id,dia,tipo,treino) VALUES(2,1,'2026-11-03','run','second')`).run();
+    const firstZip = zip([{ name: 'first/activity.fit', data: 'synthetic-fit-bytes' }]);
+    const secondZip = zip([{ name: 'renamed.fit', data: 'synthetic-fit-bytes' }, { name: 'notes.txt', data: 'other wrapper content' }]);
+    assert.notDeepEqual(firstZip, secondZip);
+    assert.equal((await uploadFit(h, 1, 'first.zip', firstZip)).statusCode, 200);
+    const conflict = await uploadFit(h, 2, 'second.zip', secondZip);
+    assert.equal(conflict.statusCode, 409);
+    assert.equal(conflict.json().code, 'activity_evidence_conflict');
+  } finally { await h.close(); }
+});
+
+test('stable FIT file ID catches rewritten bytes while metric similarity alone never blocks', async () => {
+  const stable = 'f'.repeat(64);
+  const h = await setup({ parse: async () => ({ ...summary, fitFileIdentity: stable }) });
+  try {
+    h.db.prepare(`INSERT INTO trainings(id,user_id,dia,tipo,treino) VALUES(2,1,'2026-11-03','run','second')`).run();
+    assert.equal((await uploadFit(h, 1, 'one.fit', Buffer.from('bytes-one'))).statusCode, 200);
+    const collision = await uploadFit(h, 2, 'renamed-export.fit', Buffer.from('bytes-two'));
+    assert.equal(collision.statusCode, 409);
+    assert.equal(collision.json().code, 'activity_evidence_conflict');
+  } finally { await h.close(); }
+
+  const similar = await setup();
+  try {
+    similar.db.prepare(`INSERT INTO trainings(id,user_id,dia,tipo,treino) VALUES(2,1,'2026-11-03','run','second')`).run();
+    assert.equal((await uploadFit(similar, 1, 'one.fit', Buffer.from('similar-one'))).statusCode, 200);
+    assert.equal((await uploadFit(similar, 2, 'two.fit', Buffer.from('similar-two'))).statusCode, 200,
+      'identical summary metrics are not an activity identity');
+  } finally { await similar.close(); }
+});
+
+test('concurrent FIT and Garmin confirmation serialize evidence exclusivity and shoe accounting', async () => {
+  const h = await setup();
+  try {
+    h.db.prepare(`INSERT INTO trainings(id,user_id,dia,tipo,treino) VALUES(2,1,'2026-11-03','run','second')`).run();
+    h.db.prepare(`INSERT INTO shoes(id,user_id,brand,model,mileage) VALUES('concurrent-shoe',1,'Kinesis','Run',0)`).run();
+    h.db.prepare("UPDATE trainings SET completed=1,feedback_rpe=4,feedback_shoe_id='concurrent-shoe' WHERE id IN (1,2)").run();
+    const reviewed = await preview(h, 42, 2);
+    const [fit, garmin] = await Promise.all([
+      uploadFit(h, 1, 'same.fit', Buffer.from('synthetic-fit-bytes')),
+      h.app.inject({ method: 'POST', url: '/api/trainings/2/garmin/activity-import', headers: { cookie: h.cookie },
+        payload: { preview_id: reviewed.json().preview_id } }),
+    ]);
+    assert.equal([fit.statusCode, garmin.statusCode].filter((status) => status === 200).length, 1);
+    assert.equal([fit.statusCode, garmin.statusCode].filter((status) => status === 409).length, 1);
+    assert.equal(h.db.prepare("SELECT mileage FROM shoes WHERE id='concurrent-shoe'").get().mileage, 10);
+    assert.equal(h.db.prepare('SELECT COUNT(*) AS n FROM training_shoe_mileage WHERE shoe_id=\'concurrent-shoe\'').get().n, 1);
   } finally { await h.close(); }
 });
 

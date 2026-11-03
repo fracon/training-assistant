@@ -2,6 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { createHash } = require('node:crypto');
 const { existsSync, mkdirSync, writeFileSync } = require('node:fs');
 const { spawn } = require('node:child_process');
 const { createServer } = require('node:http');
@@ -13,8 +14,8 @@ const { createDatabase } = require('../src/db/database');
 const { registerUser } = require('../src/auth/registration');
 const { createSession, SESSION_COOKIE_NAME } = require('../src/auth/sessions');
 
-function zipFit() {
-  const name = Buffer.from('activity.fit'); const data = Buffer.from('synthetic-running-fit');
+function zipFit(fitBytes = 'synthetic-running-fit') {
+  const name = Buffer.from('activity.fit'); const data = Buffer.from(fitBytes);
   const local = Buffer.alloc(30 + name.length + data.length);
   local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt32LE(data.length, 18);
   local.writeUInt32LE(data.length, 22); local.writeUInt16LE(name.length, 26); name.copy(local, 30); data.copy(local, 30 + name.length);
@@ -36,10 +37,11 @@ async function port() {
 test('Garmin activity result flow in Chrome stays explicit, localized, keyboard reachable and responsive', async (t) => {
   const chrome = findChrome(); assert.ok(chrome, 'Chrome is required for session UI verification');
   const db = createDatabase({ filename: ':memory:' });
-  const original = zipFit(); const calls = [];
+  const original = zipFit(); const conflictingOriginal = zipFit('conflicting-fit-bytes'); const calls = [];
+  let conflictOriginalForActivity42 = false;
   let holdFirstActivityPage = false; let releaseFirstActivityPage;
   let holdNextPage = false; let releaseNextPage;
-  let failNextPage = false; let emptyRefresh = false;
+  let failNextPage = false; let emptyRefresh = false; let filteredPageScenario = false;
   const summary = { activity: { sport: 'running', startTime: '2026-11-02T07:00:00Z', endTime: '2026-11-02T07:58:20Z' },
     totals: { durationSeconds: 3500, durationLabel: '58:20', distanceKm: 10, avgPaceSecondsPerKm: 350,
       avgPaceLabel: '5:50', avgHeartRate: null, maxHeartRate: 181, ascentMeters: 78, calories: 501 },
@@ -59,17 +61,24 @@ test('Garmin activity result flow in Chrome stays explicit, localized, keyboard 
         if (offset > 0 && holdNextPage) { await new Promise((resolve) => { releaseNextPage = resolve; }); holdNextPage = false; }
         if (offset > 0 && failNextPage) { failNextPage = false; return Response.json({ detail: { code: 'unavailable' } }, { status: 503 }); }
         if (offset === 0 && emptyRefresh) { emptyRefresh = false; return Response.json({ items: [], next_offset: 0, has_more: false, budget_exhausted: false }); }
-        const item = offset === 0
+        if (filteredPageScenario && offset === 0) return Response.json({ items: [{ activityId: 88, activityName: 'Synthetic cycling', source_cursor: 0,
+          startTimeLocal: '2026-11-02T07:00:00', activityType: 'cycling', duration: 3500, distance: 10000 }], next_offset: 20, has_more: true, budget_exhausted: false });
+        const item = filteredPageScenario && offset >= 30
+          ? { activityId: 44, activityName: 'Third synthetic run', source_cursor: offset,
+            startTimeLocal: '2026-10-31T18:10:00', activityType: 'running', duration: 1800, distance: 5000,
+            averageHR: 142, maxHR: 160, calories: 250, elevationGain: 12 }
+          : offset === 0
           ? { activityId: 42, activityName: 'Synthetic morning run', source_cursor: 0,
             startTimeLocal: '2026-11-02T07:00:00', activityType: 'running', duration: 3500, distance: 10000,
             averageHR: null, maxHR: 181, calories: 501, elevationGain: 78 }
           : { activityId: 43, activityName: 'Second synthetic activity with a deliberately long display name '.repeat(3), source_cursor: offset,
             startTimeLocal: '2026-11-01T18:10:00', activityType: 'running', duration: 1800, distance: 5000,
             averageHR: 142, maxHR: 160, calories: 250, elevationGain: 12 };
-        return Response.json({ items: [item], next_offset: offset === 0 ? 20 : offset + 1,
-          has_more: offset === 0, budget_exhausted: false });
+        return Response.json({ items: [item], next_offset: filteredPageScenario ? (offset === 0 ? 20 : offset + 10) : (offset === 0 ? 20 : offset + 1),
+          has_more: filteredPageScenario ? offset < 30 : offset === 0, budget_exhausted: false });
       }
-      if (url.endsWith('/original')) return new Response(original, { headers: { 'content-type': 'application/octet-stream' } });
+      if (url.endsWith('/original')) return new Response(url.includes('/activities/42/') && conflictOriginalForActivity42 ? conflictingOriginal : original,
+        { headers: { 'content-type': 'application/octet-stream' } });
       throw new Error('unexpected synthetic connector call');
     } });
   const user = await registerUser(db, { email: 'visual-import@example.test', password: 'synthetic-password-1', first_name: 'Rita', last_name: 'Runner' });
@@ -348,12 +357,65 @@ test('Garmin activity result flow in Chrome stays explicit, localized, keyboard 
     await waitFor("document.documentElement.lang==='pt-BR' && document.getElementById('garminActivityCandidates').textContent.includes('Corrida')", 'Portuguese candidate after miles reload');
     assert.equal(await evaluate("document.getElementById('garminActivityCandidates').textContent.includes('6.21 mi')"), true, 'language changes do not change distance units');
     await evaluate("document.getElementById('garminActivityBack').click(); true");
+    filteredPageScenario = true;
+    await evaluate("document.getElementById('garminActivityRefresh').click(); true");
+    await waitFor("document.getElementById('garminActivityStatus').textContent.includes('Nenhuma corrida nesta parte')", 'filtered empty page with continuation');
+    assert.equal(await evaluate("document.getElementById('garminActivityCandidates').hidden"), true, 'filtered empty pages keep the list container out of layout');
+    assert.equal(await evaluate("document.getElementById('garminActivityMore').hidden"), false, 'empty filtered page keeps the backend continuation action available');
+    await evaluate("document.getElementById('garminActivityMore').scrollIntoView({block:'center'});true"); await delay(100); await screenshot('pt-empty-filtered-page-desktop.png');
+    await evaluate("document.querySelector('.lang-switch [data-lang=\"en-US\"]').click();true");
+    await waitFor("document.documentElement.lang==='en-US' && document.getElementById('garminActivityStatus').textContent.includes('No runs in this part')", 'localized empty-page continuation in English');
+    await evaluate("document.getElementById('garminActivityMore').scrollIntoView({block:'center'});true"); await delay(100); await screenshot('en-empty-filtered-page-desktop.png');
+    await evaluate("document.querySelector('.lang-switch [data-lang=\"pt-BR\"]').click();true");
+    await waitFor("document.documentElement.lang==='pt-BR'", 'return to Portuguese without losing the cursor');
+    await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await evaluate("document.getElementById('garminActivityMore').scrollIntoView({block:'center'});true"); await delay(100); await screenshot('pt-empty-filtered-page-mobile.png');
+    await evaluate("document.getElementById('garminActivityMore').click(); true");
+    await waitFor("document.querySelector('[data-activity-id=\"43\"]') && !document.getElementById('garminActivityMore').hidden", 'running result on the next remote page');
+    assert.equal(await evaluate("document.getElementById('garminActivityCandidates').children.length"), 1, 'the following page appends the compatible run');
+    await evaluate("document.querySelector('[data-activity-id=\"43\"]').click(); true");
+    await waitFor("!document.getElementById('garminActivityPreview').hidden", 'preview from page after filtered empty response');
+    await evaluate("document.getElementById('garminActivityBack').click(); true");
+    await waitFor("document.getElementById('garminActivityPreview').hidden && !document.getElementById('garminActivityMore').hidden", 'preview return preserves the real continuation cursor');
+    await evaluate("document.querySelector('.lang-switch [data-lang=\"en-US\"]').click();true");
+    await waitFor("document.documentElement.lang==='en-US' && document.getElementById('garminActivityCandidates').textContent.includes('Running')", 'continuation remains visible after language change');
+    await evaluate("document.getElementById('garminActivityMore').click(); true");
+    await waitFor("document.querySelector('[data-activity-id=\"44\"]') && document.getElementById('garminActivityMore').hidden", 'final page closes continuation');
+    filteredPageScenario = false;
     emptyRefresh = true;
     await evaluate("document.getElementById('garminActivityRefresh').click(); true");
-    await waitFor("document.getElementById('garminActivityStatus').textContent.includes('Nenhuma corrida') || document.getElementById('garminActivityStatus').textContent.includes('No running activities found')", 'empty search result');
-    assert.equal(await evaluate("document.getElementById('garminActivityCandidates').hidden"), true, 'empty results do not leave an empty list container in layout');
-    assert.equal(await evaluate("document.getElementById('garminActivityMore').hidden"), true, 'empty result has no continuation action');
+    await waitFor("document.getElementById('garminActivityStatus').textContent.includes('No running activities found')", 'completed empty search result');
+    assert.equal(await evaluate("document.getElementById('garminActivityMore').hidden"), true, 'a completed empty search has no continuation');
     assert.equal(db.prepare('SELECT result_data_source FROM trainings WHERE id=1').get().result_data_source, 'garmin_connect', 'refreshing search never changes the imported result');
+    const otherTraining = db.prepare(`INSERT INTO trainings(user_id,dia,tipo,treino,detalhes,result_data_source)
+      VALUES(?,'2026-11-02','Corrida','Outra corrida','Resultado alheio','manual')`).run(user.id);
+    db.prepare(`INSERT INTO training_result_evidence(user_id,training_id,evidence_type,evidence_value,source,is_current)
+      VALUES(? ,?,'fit_sha256',?,'fit_upload',1)`).run(user.id, otherTraining.lastInsertRowid,
+      createHash('sha256').update('conflicting-fit-bytes').digest('hex'));
+    emptyRefresh = false; conflictOriginalForActivity42 = true;
+    await evaluate("document.getElementById('garminActivityRefresh').click();true");
+    await waitFor("document.querySelector('[data-activity-id=\"42\"]') && document.getElementById('garminActivityCandidates').hidden===false", 'candidate list for exact duplicate conflict');
+    await evaluate("document.querySelector('[data-activity-id=\"42\"]').click();true");
+    await waitFor("document.getElementById('garminActivityPreview').hidden===false", 'duplicate candidate preview');
+    await evaluate("document.getElementById('garminActivityConfirm').click();true");
+    await waitFor("document.querySelector('.confirm-card')!==null", 'duplicate conflict replacement confirmation');
+    await evaluate("document.getElementById('confirmOkBtn').click();true");
+    await waitFor("document.getElementById('garminActivityStatus').textContent.includes('already the current result in another session')", 'visible exact duplicate guidance');
+    assert.equal(db.prepare('SELECT result_data_source FROM trainings WHERE id=1').get().result_data_source, 'garmin_connect', 'exact duplicate leaves current result intact');
+    assert.equal(db.prepare('SELECT fit_distance FROM trainings WHERE id=?').get(otherTraining.lastInsertRowid).fit_distance, null, 'exact duplicate conflict has no partial write');
+    await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+    await evaluate("document.getElementById('garminActivityStatus').scrollIntoView({block:'center'});true"); await delay(100); await screenshot('en-duplicate-activity-conflict.png');
+    await evaluate("document.querySelector('.lang-switch [data-lang=\"pt-BR\"]').click();true");
+    await waitFor("document.documentElement.lang==='pt-BR' && document.getElementById('garminActivityStatus').textContent.includes('já é o resultado atual')", 'localized exact duplicate guidance in Portuguese');
+    await evaluate("document.getElementById('garminActivityStatus').scrollIntoView({block:'center'});true"); await delay(100); await screenshot('pt-duplicate-activity-conflict.png');
+    await evaluate("document.querySelector('.lang-switch [data-lang=\"en-US\"]').click();true");
+    await waitFor("document.documentElement.lang==='en-US' && document.getElementById('garminActivityStatus').textContent.includes('already the current result')", 'English duplicate guidance');
+    await command('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    await evaluate("document.getElementById('garminActivityStatus').scrollIntoView({block:'center'});true"); await delay(100); await screenshot('en-duplicate-activity-conflict-mobile.png');
+    await evaluate("document.querySelector('.lang-switch [data-lang=\"pt-BR\"]').click();true");
+    await waitFor("document.documentElement.lang==='pt-BR' && document.getElementById('garminActivityStatus').textContent.includes('já é o resultado atual')", 'Portuguese mobile duplicate guidance');
+    await evaluate("document.getElementById('garminActivityStatus').scrollIntoView({block:'center'});true"); await delay(100); await screenshot('pt-duplicate-activity-conflict-mobile.png');
+    await evaluate("document.getElementById('garminActivityStatus').scrollIntoView({block:'center'});true"); await delay(100); await screenshot('pt-duplicate-activity-conflict.png');
     await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
     const keyboard = await evaluate("(()=>{const b=document.getElementById('feedbackAccordionTrigger');b.focus();return document.activeElement.id})()");
     assert.equal(keyboard, 'feedbackAccordionTrigger', 'keyboard focus remains available on result summary');

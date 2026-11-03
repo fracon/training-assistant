@@ -261,6 +261,7 @@ export function fitDropzonePrimaryHtml({ files, translate }) {
 }
 
 const FIT_UPLOAD_ERROR_KEYS = {
+  activity_evidence_conflict: 'session.garminImport.activity_evidence_conflict',
   invalid_file: 'session.errors.fitInvalidFile',
   invalid_zip: 'session.errors.fitInvalidZip',
   missing_fit: 'session.errors.fitMissingInZip',
@@ -1002,7 +1003,7 @@ async function initTrainingResult() {
   let garminActivityReadId = 0;
   let garminActivityStatusKey = '';
   let garminActivityHasSearched = false;
-  let garminActivityHasMore = false;
+  let garminActivityCanContinue = false;
   const formatActivityStart = (value) => {
     const raw = String(value || '');
     const date = raw.length >= 10 ? formatLocalizedDate(raw.slice(0, 10), i18n.language) : raw;
@@ -1106,7 +1107,7 @@ async function initTrainingResult() {
     const allowed = ['session_expired','pilot_unavailable','connection_required','auth_required','rate_limited','connector_timeout','connector_unavailable',
       'connector_busy','connector_configuration_error','connector_invalid_response',
       'invalid_payload','invalid_fit','unsupported_activity','preview_expired','activity_already_linked',
-      'activity_not_found','confirm_replace','session_changed','connection_changed','import_in_progress','import_error'];
+      'activity_evidence_conflict','activity_not_found','confirm_replace','session_changed','connection_changed','import_in_progress','import_error'];
     if (['invalid_zip','unsafe_entry','encrypted_zip','too_many_entries','zip_too_large','fit_too_large',
       'missing_fit','multiple_fit','invalid_file','unsupported_type'].includes(error?.message)) return 'invalid_fit';
     return allowed.includes(error?.message) ? error.message : 'import_error';
@@ -1129,20 +1130,27 @@ async function initTrainingResult() {
     updateGarminActivityWindow();
     setGarminActivityStatus(append ? 'loadingMore' : 'searching');
     try {
-      const result = await readGarminActivity(`/api/trainings/${encodeURIComponent(requestedTrainingId)}/garmin/activities?offset=${append ? garminActivityNextOffset : 0}`);
+      const requestedOffset = append ? garminActivityNextOffset : 0;
+      if (append && !garminActivityCanContinue) return;
+      const result = await readGarminActivity(`/api/trainings/${encodeURIComponent(requestedTrainingId)}/garmin/activities?offset=${requestedOffset}`);
       if (readId !== garminActivityReadId || currentTrainingId !== requestedTrainingId) return;
       const refreshedItems = result.items || [];
       garminActivityCandidatesState = append ? [...garminActivityCandidatesState, ...refreshedItems] : refreshedItems;
       if (!garminActivityCandidatesState.some((candidate) => candidate.activity_id === selectedGarminActivity?.activity_id)) {
         selectedGarminActivity = null;
       }
-      garminActivityNextOffset = Number.isInteger(result.next_offset) ? result.next_offset : 0;
-      garminActivityHasMore = result.has_more === true;
+      const validContinuation = result.has_more === true && result.budget_exhausted !== true
+        && Number.isInteger(result.next_offset) && result.next_offset > requestedOffset;
+      if (Number.isInteger(result.next_offset) && result.next_offset >= requestedOffset) {
+        garminActivityNextOffset = result.next_offset;
+      }
+      garminActivityCanContinue = validContinuation;
       garminActivityHasSearched = true;
       updateGarminActivityWindow();
       renderGarminActivityCandidates();
-      setGarminActivityStatus(garminActivityCandidatesState.length ? '' : 'none');
-      garminActivityMore.hidden = !result.has_more || garminActivityCandidatesState.length === 0;
+      setGarminActivityStatus(garminActivityCandidatesState.length ? (refreshedItems.length ? '' : (validContinuation ? 'emptyPageMore' : ''))
+        : validContinuation ? 'emptyPageMore' : 'none');
+      garminActivityMore.hidden = !validContinuation;
       garminActivitySearch.hidden = true;
       garminActivityRefresh.hidden = false;
     } catch (error) {
@@ -1238,7 +1246,7 @@ async function initTrainingResult() {
     garminActivityGuidance.hidden = hasCurrentGarminActivity();
     garminActivitySearch.hidden = hasCurrentGarminActivity() || garminActivityHasSearched;
     garminActivityRefresh.hidden = !garminActivityHasSearched;
-    garminActivityMore.hidden = !garminActivityCandidatesState.length || !garminActivityHasMore;
+    garminActivityMore.hidden = !garminActivityCanContinue;
     garminActivityCandidates.hidden = garminActivityCandidatesState.length === 0;
     garminActivityPreviewId = null;
     setGarminActivityStatus('');
@@ -1270,7 +1278,7 @@ async function initTrainingResult() {
       garminActivityCandidates.hidden = false;
       garminActivitySearch.hidden = true;
       garminActivityRefresh.hidden = false;
-      garminActivityMore.hidden = !garminActivityHasMore;
+      garminActivityMore.hidden = !garminActivityCanContinue;
       requestAnimationFrame(() => garminActivityCandidates.querySelector(`[data-activity-id="${CSS.escape(String(training?.garmin_activity?.activity_id || ''))}"]`)?.focus()
         || garminActivityRefresh.focus());
     } else {

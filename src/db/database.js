@@ -515,6 +515,34 @@ function migrateDatabase(db) {
     });
     evolveActivityImportHistory.immediate();
   }
+  const resultEvidenceMarker = '2026-11-training-result-evidence-v1';
+  if (!db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(resultEvidenceMarker)) {
+    const addResultEvidence = db.transaction(() => {
+      db.exec(`CREATE TABLE IF NOT EXISTS training_result_evidence (
+        id INTEGER PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        training_id INTEGER NOT NULL REFERENCES trainings(id) ON DELETE CASCADE,
+        evidence_type TEXT NOT NULL CHECK (evidence_type IN ('fit_sha256','fit_file_id','garmin_activity')),
+        evidence_value TEXT NOT NULL,
+        source TEXT NOT NULL CHECK (source IN ('fit_upload','garmin_connect')),
+        is_current INTEGER NOT NULL CHECK (is_current IN (0,1)),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(user_id,training_id,evidence_type,evidence_value,source)
+      );
+      CREATE INDEX IF NOT EXISTS idx_training_result_evidence_training
+        ON training_result_evidence(user_id,training_id,is_current);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_training_result_evidence_current_identity
+        ON training_result_evidence(user_id,evidence_type,evidence_value) WHERE is_current=1;`);
+      // Only Garmin's account-qualified activity identifier is recoverable from
+      // legacy rows. FIT bytes and stable FIT file IDs are never inferred.
+      db.exec(`INSERT OR IGNORE INTO training_result_evidence
+        (user_id,training_id,evidence_type,evidence_value,source,is_current,created_at)
+        SELECT user_id,training_id,'garmin_activity',account_fingerprint || ':' || activity_id,
+          'garmin_connect',is_current,imported_at FROM garmin_activity_imports`);
+      db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(resultEvidenceMarker);
+    });
+    addResultEvidence.immediate();
+  }
   const garminV3 = '2026-10-garmin-session-publish-v3';
   if (!db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(garminV3)) {
     db.exec(`DROP INDEX IF EXISTS garmin_operation_identity_v2;

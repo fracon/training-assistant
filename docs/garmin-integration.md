@@ -897,8 +897,34 @@ across disconnect or account changes. Manual/FIT replacement also marks Garmin
 provenance historical; result deletion follows the existing training cascade.
 The session response exposes only the current activity ID and import time, not
 the account fingerprint. Manual FIT uploads do not yet supply a stable Garmin
-activity ID to compare, so a file hash match is not used to claim they are the
-same run; the user confirms any replacement.
+activity ID to compare, so the shared evidence table now records equality of
+the validated FIT bytes for both direct FIT/ZIP uploads and the extracted FIT
+inside Garmin's original ZIP. It also records a hash of the sole complete FIT
+`file_id` activity tuple (manufacturer, product, serial number, and creation
+time) when present. The tuple is useful when exporters rewrite bytes, but is
+not a universal activity ID and may be absent or changed by an exporter. Only
+exact byte hashes, this stable file-ID tuple, and the independently
+account-qualified Garmin activity identity can trigger an exclusivity conflict;
+similar metrics never do. A hash only proves identical bytes, so distinct FIT
+exports of the same execution can still evade this evidence.
+
+The idempotent `2026-11-training-result-evidence-v1` migration adds the shared
+current/history evidence table and indexes in one transaction. It backfills
+only account-qualified Garmin activity IDs from existing Garmin import rows,
+preserving each row's current/history state. It does not create FIT hashes or
+file IDs for old uploads because the FIT bytes are no longer available, and it
+does not infer current links from summaries. Thus deduplication is not
+retroactively complete for historical manual FIT/ZIP results. Current evidence
+is retired and replaced with the result atomically; historic entries remain
+available for a later A→B→A reactivation but do not block reuse. The original
+FIT bytes are parsed in memory and are not retained.
+
+The activity list response carries the connector's actual next cursor and
+`has_more`/budget state. The UI allows one explicit page request at a time and
+keeps the cursor on a recoverable failure. A filtered page with no running
+activities is announced as an intermediate page when a valid continuation
+exists; it does not trigger automatic page traversal. Only a completed search
+with no candidates is presented as no matches.
 
 Preview and the confirmation modal make no SQLite writes. After confirmation,
 Node rechecks the preview's owner/session, active state, connection identity and
@@ -924,3 +950,7 @@ The implementation has no webhook and does not receive data directly from the
 watch; Garmin Connect must first finish its normal watch synchronization.
 
 Synthetic Chrome review captures: [PT desktop preview](garmin-activity-import-screenshots/pt-review-desktop.png), [PT low window at 200% zoom](garmin-activity-import-screenshots/pt-review-low-height-zoom-200.png), and [EN mobile with feedback pending](garmin-activity-import-screenshots/en-imported-mobile.png). These show the UI against synthetic activity data and are not Garmin homologation evidence.
+
+The filtered-page continuation is also captured in [PT desktop](garmin-activity-import-screenshots/pt-empty-filtered-page-desktop.png), [PT mobile](garmin-activity-import-screenshots/pt-empty-filtered-page-mobile.png), and [EN desktop](garmin-activity-import-screenshots/en-empty-filtered-page-desktop.png). The empty filtered page and continuation are synthetic UI verification only.
+
+Cross-path exact-identity conflicts are captured in [PT desktop](garmin-activity-import-screenshots/pt-duplicate-activity-conflict.png), [EN desktop](garmin-activity-import-screenshots/en-duplicate-activity-conflict.png), [PT mobile](garmin-activity-import-screenshots/pt-duplicate-activity-conflict-mobile.png), and [EN mobile](garmin-activity-import-screenshots/en-duplicate-activity-conflict-mobile.png). The screenshots show the previous result retained after the explicit replacement was refused; they use synthetic FIT and Garmin transport data.

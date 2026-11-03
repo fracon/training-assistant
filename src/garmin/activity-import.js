@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 const { FitUploadError, resolveFitBuffer } = require('../fitUpload');
 const { normalizeCalories, formatDuration, formatPace } = require('../fitParser');
+const { fitEvidence, garminActivityEvidence, findCurrentEvidenceConflict, replaceCurrentEvidence, fitSha256 } = require('../result-import-evidence');
 const { reconcileShoeMileage } = require('../shoeMileage');
 const { SESSION_COOKIE_NAME, findActiveSession } = require('../auth/sessions');
 
@@ -289,11 +290,12 @@ function createGarminActivityImporter({ db, fetchImpl = fetch, config = process.
       const alreadyLinked = db.prepare(`SELECT training_id FROM garmin_activity_imports
         WHERE account_fingerprint=? AND activity_id=? AND is_current=1`).get(link.identity_fingerprint, id);
       let buffer;
+      let fitBuffer;
       let result;
       let parsing = false;
       try {
         buffer = await callConnector(request, `/activities/${encodeURIComponent(id)}/original`, { binary: true });
-        const fitBuffer = await resolveBuffer({ buffer, filename: 'activity.zip' });
+        fitBuffer = await resolveBuffer({ buffer, filename: 'activity.zip' });
         parsing = true;
         result = await parseFile(fitBuffer);
       } catch (error) {
@@ -319,11 +321,14 @@ function createGarminActivityImporter({ db, fetchImpl = fetch, config = process.
         fit_avg_hr: result.totals?.avgHeartRate ?? null, fit_max_hr: result.totals?.maxHeartRate ?? null,
         fit_elevation_gain: result.totals?.ascentMeters ?? null, fit_calories: normalizeCalories(result.totals?.calories) };
       const summary = JSON.stringify({ activity: result.activity, totals: { ...result.totals, calories: metrics.fit_calories }, laps: result.laps });
+      const fitHash = fitSha256(fitBuffer);
+      const fitIdentity = result.fitFileIdentity || null;
       const authorizedBeforePreview = rejectUnauthorized(request, reply);
       if (authorizedBeforePreview) return authorizedBeforePreview;
       caches.set(token, { userId: request.user.id, session: request.session.token, trainingId: training.id,
         activityId: id, identity: link.identity_fingerprint, generation: link.connection_generation,
         expected: resultFingerprint(latest), fileHash: crypto.createHash('sha256').update(buffer).digest('hex'),
+        fitHash, fitIdentity,
         metrics, summary, laps: result.laps, createdAt: now(), linkedTrainingId: alreadyLinked?.training_id || null,
         activity: { activity_id: id, name: typeof candidate.activityName === 'string' ? candidate.activityName.slice(0, 120) : '',
           start_time_local: candidate.startTimeLocal,
@@ -365,10 +370,16 @@ function createGarminActivityImporter({ db, fetchImpl = fetch, config = process.
               || latestLink.connection_generation !== preview.generation) return { error: 'session_changed' };
           if (resultFingerprint(current) !== preview.expected) return { error: 'session_changed' };
           if (current.result_data_source !== 'none' && !confirmReplace) return { error: 'confirm_replace' };
+          const evidence = [...fitEvidence({ fitSha256: preview.fitHash, fitFileIdentity: preview.fitIdentity, source: 'garmin_connect' }),
+            garminActivityEvidence({ accountFingerprint: preview.identity, activityId: preview.activityId })];
+          const evidenceConflict = findCurrentEvidenceConflict(db, request.user.id, current.id, evidence);
+          if (evidenceConflict) return { error: 'activity_evidence_conflict' };
           const linked = db.prepare(`SELECT training_id,file_sha256,is_current FROM garmin_activity_imports
             WHERE account_fingerprint=? AND activity_id=? AND is_current=1`).get(preview.identity, preview.activityId);
           if (linked && linked.training_id !== current.id) return { error: 'activity_already_linked' };
-          if (linked && linked.training_id === current.id && linked.is_current === 1 && linked.file_sha256 === preview.fileHash
+          if (linked && linked.training_id === current.id && linked.is_current === 1
+              && db.prepare(`SELECT 1 FROM training_result_evidence WHERE user_id=? AND training_id=?
+                AND evidence_type='fit_sha256' AND evidence_value=? AND is_current=1`).get(request.user.id, current.id, preview.fitHash)
               && current.result_data_source === 'garmin_connect' && current.fit_summary_json === preview.summary) return { duplicate: true };
           const before = current;
           const metrics = preview.metrics;
@@ -393,6 +404,7 @@ function createGarminActivityImporter({ db, fetchImpl = fetch, config = process.
               VALUES(?,?,?,?,?,?,1)`).run(request.user.id, current.id, preview.identity, preview.activityId,
               preview.fileHash, IMPORTER_VERSION);
           }
+          replaceCurrentEvidence(db, request.user.id, current.id, evidence);
           reconcileShoeMileage(db, request.user.id, before, trainingFor(request));
           return { imported: true };
       });
