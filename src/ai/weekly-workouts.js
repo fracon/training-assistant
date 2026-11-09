@@ -483,9 +483,7 @@ function validateWeeklyProposal(value, context, db, userId) {
       ].some(incompatibleRpe)
     )
       return { code: 'incompatible_rpe', path };
-    const sources = new Set(
-      (context.sources || []).map((source) => `${source.type}:${source.id}`),
-    );
+    const sources = new Set(evidenceReferences(context));
     if (item.evidence.length < 1)
       return { code: 'evidence', path: `${path}.evidence`, reason: 'evidence_empty' };
     if (item.evidence.some((source) => !sources.has(source)))
@@ -505,6 +503,20 @@ function validateWeeklyProposal(value, context, db, userId) {
   return null;
 }
 
+// References are constructed once from the execution snapshot, never inferred from IDs.
+function evidenceReferences(context) {
+  return [...new Set((context.sources || []).map((source) => `${source.type}:${source.id}`))];
+}
+function weeklyFormat(context) {
+  const refs = evidenceReferences(context);
+  const dynamic = structuredClone(schema);
+  // Conservative headroom for all existing enum values and schema strings.
+  const length = refs.reduce((sum, ref) => sum + ref.length, 0);
+  if (refs.length > 0 && refs.length <= 900 && length <= 15000) {
+    dynamic.properties.sessions.items.properties.evidence.items.enum = refs;
+  }
+  return { type: 'json_schema', name: 'weekly_workouts', strict: true, schema: dynamic };
+}
 function adaptPrompt(prompt, language) {
   const pt = language === 'pt-BR';
   const weatherStart = pt
@@ -1114,13 +1126,9 @@ function createWeeklyWorkoutAdapter(db) {
   return {
     version: VERSION,
     adaptPrompt: (prompt, context) =>
-      adaptPrompt(prompt, context.preferences.language),
-    format: {
-      type: 'json_schema',
-      name: 'weekly_workouts',
-      strict: true,
-      schema,
-    },
+      adaptPrompt(prompt, context.preferences.language) + `\nEvidence references (copy values literally into evidence; standalone IDs, unprefixed UUIDs and weekday:date combinations are invalid): ${JSON.stringify(evidenceReferences(context))}\n`,
+    format: { type: 'json_schema', name: 'weekly_workouts', strict: true, schema },
+    formatForContext: weeklyFormat,
     instructions:
       'Return only weekly-workouts-v3 JSON. Dates are ISO local calendar dates derived from weekStart and weekday, never row position. Emit only available weekdays, preserve exact location and selected period. Maintain coherent progression grounded in the active cycle, explicitly applied planning when present and real recent training. Consider current load, responses to quality sessions, subjective feedback, dated RPE, pain reports and owned shoe history from shared context. Define every session as ordered warmup/main/cooldown components with repetition and time/distance fields as the sole duration source, plus execution instruction and effort/breathing guidance per component. Bounds are repetitions 1–30, minutes 1–720, distance 50–100000 m, pace values 120–1800 seconds/km, recovery 0–30 minutes, and RPE 1–5. Recovery duration and guidance are required only for repeated main components. Keep weather within 1000 characters, notes/justification within 2000, and the complete materialized details for each session within 2000 characters. Prescribe Kinesis RPE 1–5 for every running stage and recovery; use optional evidence-supported HR/pace targets, and explicit duration/guidance for repeated recoveries. Use timed components if there is no evidence-based pace basis for estimating distance duration. Keep distance pace estimates separate from optional explicit pace targets; estimates never prescribe pace. On hills, prioritize effort/breathing over rigid pace. Do not put alternate durations/distances in guidance text. The backend derives all duration and import text fields from structured components. Use effort/respiration when HR/pace data are insufficient; never invent metrics or zones. Use only supplied weather records and the shared weatherLimitations; absent/unverified forecasts must be described as unavailable without inventing weather. Weather hour tuples are [UTC epoch seconds, local wall time with UTC offset, temperature Celsius, WMO code]. Acknowledge when no authorized independent second hourly source is configured; do not claim cross-source corroboration. Each session justification is a proposal-specific natural-language explanation; put source identifiers only in evidence. Distinguish recorded facts, user reports and planning; do not infer rest, recovery, illness, permanent limitations, races or missing history.',
     prepare(context, evidence = {}) {
@@ -1375,6 +1383,8 @@ module.exports = {
   materializePrescription,
   validateWeeklyProposal,
   adaptPrompt,
+  evidenceReferences,
+  weeklyFormat,
   hourlyUrl,
   hourlyJson,
   readHourlyForecast,
