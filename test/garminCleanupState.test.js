@@ -33,9 +33,16 @@ test('ambiguous or conflicting legacy cleanup remains untouched', () => {
     assert.equal(db.prepare('SELECT count(*) AS n FROM garmin_connection_cleanup').get().n, 0);
     db.prepare('UPDATE garmin_pilot_connections SET cleanup_pending=0 WHERE user_id=2').run();
     db.prepare("INSERT INTO garmin_connection_cleanup(user_id,connection_id,pending,preserve_identity) VALUES (1,'pilot',1,0)").run();
-    assert.equal(migrateCleanupState(db).code, 'garmin_legacy_cleanup_conflict');
+    assert.equal(migrateCleanupState(db).code, 'garmin_legacy_cleanup_owner_ambiguous');
     assert.equal(db.prepare('SELECT preserve_identity FROM garmin_cleanup_state WHERE id=1').get().preserve_identity, 1);
   } finally { db.close(); }
+  const conflict = fixture();
+  try {
+    conflict.prepare('INSERT INTO garmin_pilot_connections(user_id,cleanup_pending) VALUES (1,1)').run();
+    conflict.prepare("INSERT INTO garmin_connection_cleanup(user_id,connection_id,pending,preserve_identity) VALUES (1,'pilot',1,0)").run();
+    assert.equal(migrateCleanupState(conflict).code, 'garmin_legacy_cleanup_conflict');
+    assert.equal(conflict.prepare('SELECT pending FROM garmin_cleanup_state WHERE id=1').get().pending, 1);
+  } finally { conflict.close(); }
 });
 
 test('normal initialization migrates proven cleanup and preserves ambiguous cleanup', () => {
@@ -51,6 +58,8 @@ test('normal initialization migrates proven cleanup and preserves ambiguous clea
   } finally { db.close(); }
   const ambiguous = fixture();
   try {
+    initializeDatabase(ambiguous);
+    ambiguous.prepare('INSERT INTO garmin_pilot_connections(user_id,cleanup_pending) VALUES (1,1)').run();
     initializeDatabase(ambiguous);
     assert.equal(ambiguous.prepare('SELECT pending FROM garmin_cleanup_state WHERE id=1').get().pending, 1);
     assert.equal(ambiguous.prepare('SELECT count(*) AS n FROM garmin_connection_cleanup').get().n, 0);

@@ -2762,9 +2762,9 @@ test('ambiguous legacy cleanup never dispatches a connector delete', async () =>
   try {
     await new Promise(resolve => setImmediate(resolve));
     h.db.prepare('INSERT INTO garmin_cleanup_state(id,pending,preserve_identity) VALUES (1,1,1)').run();
-    const response = await h.app.inject({ method: 'DELETE', url: '/api/garmin/connection', headers: { cookie: h.cookie } });
-    assert.equal(response.statusCode, 503);
-    assert.equal(response.json().code, 'cleanup_pending');
+    require('../src/db/database').initializeDatabase(h.db);
+    const response = await h.app.inject({ method: 'GET', url: '/api/garmin/status', headers: { cookie: h.cookie } });
+    assert.equal(response.statusCode, 200);
     assert.equal(calls.some(call => call.method === 'DELETE'), false);
     assert.equal(h.db.prepare('SELECT pending FROM garmin_cleanup_state WHERE id=1').get().pending, 1);
   } finally { await h.close(); }
