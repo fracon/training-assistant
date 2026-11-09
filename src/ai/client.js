@@ -29,7 +29,7 @@ function buildPayload({ model, context, prompt, adapter, maxOutputTokens }) {
         ],
       },
     ],
-    text: { format: adapter.format },
+    text: { format: adapter.formatForContext ? adapter.formatForContext(context) : adapter.format },
     tools: [],
   };
 }

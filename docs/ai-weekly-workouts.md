@@ -380,3 +380,17 @@ That record is one sample, not a general model-quality claim. All other AI
 tests remain provider simulations. The evaluation did not change the local
 `.env`, primary database, production database, deployed container or live
 service.
+
+The structured weekly request exposes the execution's authorized `type:id`
+references in the adapted prompt and, when the catalog is nonempty and fits
+conservative schema limits, in the evidence item enum. Empty or larger catalogs
+use an unrestricted string schema with the complete catalog still in the prompt;
+the server always checks exact membership. The conservative cutoff (900 values
+and 15,000 characters) leaves room for the other schema enums and properties;
+OpenAI documents global limits of 1,000 enum values and 120,000 schema string
+characters, plus 15,000 characters for an enum with over 250 values:
+https://developers.openai.com/api/docs/guides/structured-outputs. No references
+are dropped. The external spreadsheet prompt does not use structured evidence
+and remains unchanged. Existing weekly proposal and trace formats retain v3;
+the persisted payload hash changes with the adapted request, while explicit
+idempotency keys continue to identify the original request.

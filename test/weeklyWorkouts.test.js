@@ -2411,8 +2411,13 @@ test('HTTP 200 completed weekly output rejected at evidence is captured only in 
  const config=readAiConfig({AI_ENABLED:'true',OPENAI_API_KEY:'synthetic-test-key',AI_RETRIES:'0'});
  const client=createResponsesClient({apiKey:'synthetic-test-key',timeoutMs:1000,fetchImpl:async(_url,options)=>{
   assert.equal(JSON.parse(options.body).store,false);
-  const context=JSON.parse(JSON.parse(options.body).input[0].content[0].text).context;
-  const rejected=proposal([session({date:context.resource.weekStart,location:'Porto, Portugal',period:'08_12',evidence:['training:synthetic-unknown']})]);rejected.weekStart=context.resource.weekStart;
+  const payload=JSON.parse(options.body);
+  const input=JSON.parse(payload.input[0].content[0].text);
+  const context=input.context;
+  const refs=context.sources.map(source=>`${source.type}:${source.id}`);
+  assert.deepEqual(payload.text.format.schema.properties.sessions.items.properties.evidence.items.enum, [...new Set(refs)]);
+  assert.ok(input.trainingPrompt.includes(JSON.stringify([...new Set(refs)])));
+  const rejected=proposal([session({date:context.resource.weekStart,location:'Porto, Portugal',period:'08_12',evidence:['28']})]);rejected.weekStart=context.resource.weekStart;
   return new Response(JSON.stringify({id:'resp_synthetic_evidence',status:'completed',usage:{input_tokens:20,output_tokens:30},output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(rejected)}]}]}),{status:200,headers:{'x-request-id':'req_synthetic_evidence'}});
  }});
  const app=await buildServer({db,sessionCookieSecure:false,aiConfig:config,weatherFetch:async()=>({ok:false,status:503,json:async()=>({})}),aiClient:client});const origin=await app.listen({port:0,host:'127.0.0.1'});t.after(async()=>{await app.close();db.close();});
@@ -2420,6 +2425,31 @@ test('HTTP 200 completed weekly output rejected at evidence is captured only in 
  const queued=await app.inject({method:'POST',url:'/api/ai/executions',headers:{cookie:adminCookie},payload:{purpose:'workouts',target_date:nextForecastMonday(),idempotency_key:'synthetic-evidence-trace'}});assert.equal(queued.statusCode,202);const id=queued.json().id;
  let result;for(let i=0;i<300;i++){result=await app.inject({method:'GET',url:`/api/ai/executions/${id}`,headers:{cookie:adminCookie}});if(result.json().state==='failed')break;await new Promise(resolve=>setTimeout(resolve,10));}
  assert.equal(result.json().state,'failed');assert.equal(result.json().response,null);assert.equal(JSON.stringify(result.json()).includes('synthetic-unknown'),false);
- const debug=await app.inject({method:'GET',url:`/api/ai/admin/executions/${id}`,headers:{cookie:adminCookie}});assert.equal(debug.statusCode,200);assert.equal(debug.json().response,null);assert.equal(debug.json().rawOutputs[0].output_text.includes('training:synthetic-unknown'),true);assert.deepEqual(debug.json().diagnostics[0].validation,{code:'evidence',path:'$.sessions[0].evidence',reason:'evidence_unknown_reference'});assert.equal(debug.json().diagnostics[0].providerStatus,'completed');assert.equal(debug.json().diagnostics[0].httpStatus,200);assert.equal(debug.json().diagnostics[0].requestId,'req_synthetic_evidence');
+ const debug=await app.inject({method:'GET',url:`/api/ai/admin/executions/${id}`,headers:{cookie:adminCookie}});assert.equal(debug.statusCode,200);assert.equal(debug.json().response,null);assert.equal(debug.json().rawOutputs[0].output_text.includes('\"28\"'),true);assert.deepEqual(debug.json().diagnostics[0].validation,{code:'evidence',path:'$.sessions[0].evidence',reason:'evidence_unknown_reference'});assert.equal(debug.json().diagnostics[0].providerStatus,'completed');assert.equal(debug.json().diagnostics[0].httpStatus,200);assert.equal(debug.json().diagnostics[0].requestId,'req_synthetic_evidence');
  assert.equal((await app.inject({method:'GET',url:`/api/ai/admin/executions/${id}`,headers:{cookie:userCookie}})).statusCode,403);
+});
+
+test('weekly evidence requires exact authorized typed references', () => {
+  const context = validationContext({ sources: [{ type: 'training', id: 28 }, { type: 'availability', id: 'friday' }, { type: 'cycle', id: 28 }] });
+  for (const value of ['28', '123e4567-e89b-12d3-a456-426614174000', 'friday:2026-11-13', 'training:29']) {
+    assert.deepEqual(weekly.validateWeeklyProposal(proposal([session({ evidence: [value] })]), context), {
+      code: 'evidence', path: '$.sessions[0].evidence', reason: 'evidence_unknown_reference',
+    });
+  }
+  for (const ref of weekly.evidenceReferences(context)) {
+    assert.equal(weekly.validateWeeklyProposal(proposal([session({ evidence: [ref] })]), context), null);
+  }
+  assert.equal(weekly.validateWeeklyProposal(proposal([session({ evidence: ['training:28', 'cycle:28', 'availability:friday'] })]), context), null);
+  assert.equal(weekly.validateWeeklyProposal(proposal([session({ evidence: ['training:28'] }), session({ evidence: ['cycle:28'] })]), context), null);
+  assert.deepEqual(weekly.validateWeeklyProposal(proposal([session({ evidence: ['training:28'] }), session({ evidence: ['training:29'] })]), context), { code: 'evidence', path: '$.sessions[1].evidence', reason: 'evidence_unknown_reference' });
+});
+
+test('weekly evidence schema uses the complete execution catalog within limits', () => {
+  const refs = [{type:'training',id:28},{type:'cycle',id:28},{type:'training',id:28}];
+  assert.deepEqual(weekly.evidenceReferences({sources:refs}), ['training:28','cycle:28']);
+  const items = context => weekly.weeklyFormat(context).schema.properties.sessions.items.properties.evidence.items;
+  assert.deepEqual(items({sources:refs}).enum, ['training:28','cycle:28']);
+  assert.equal(items({sources:[]}).enum, undefined);
+  assert.equal(items({sources:Array.from({length:901},(_,id)=>({type:'training',id}))}).enum, undefined);
+  assert.equal(items({sources:[{type:'training',id:'x'.repeat(15001)}]}).enum, undefined);
 });
