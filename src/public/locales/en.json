@@ -444,7 +444,15 @@
       "back": "Back to activities",
       "replaceNotice": "Importing this activity will replace the current result, shown below for comparison.",
       "importing": "Importing activity…",
-      "sports": { "running": "Running", "cycling": "Cycling", "walking": "Walking", "hiking": "Hiking", "trail_running": "Trail running", "treadmill_running": "Treadmill running", "indoor_running": "Indoor running" },
+      "sports": {
+        "running": "Running",
+        "cycling": "Cycling",
+        "walking": "Walking",
+        "hiking": "Hiking",
+        "trail_running": "Trail running",
+        "treadmill_running": "Treadmill running",
+        "indoor_running": "Indoor running"
+      },
       "replaceTitle": "Replace current result?",
       "replaceMessage": "The existing result will be replaced. Saved feedback, your selected shoe and its history will be preserved.",
       "imported": "Activity imported. Complete and save your feedback when ready.",
@@ -1724,7 +1732,30 @@
     "interpretationCorrectionLabel": "Your correction",
     "interpretationSaveCorrection": "Save correction",
     "interpretationSaved": "Interpretation updated.",
-    "interpretationOriginal": "Original interpretation"
+    "interpretationOriginal": "Original interpretation",
+    "trace": {
+      "heading": "Execution details",
+      "tabsLabel": "Trace tabs",
+      "request": "Request",
+      "response": "Response",
+      "attempt": "Attempt",
+      "noAttempt": "No attempt recorded",
+      "completed": "Execution completed with a validated response.",
+      "failed": "Failed",
+      "noOutput": "This attempt received no output text.",
+      "legacy": "Legacy trace without captured output.",
+      "expired": "Captured output has expired.",
+      "truncated": "Output truncated at the 65,536 byte limit.",
+      "copy": "Copy output",
+      "copied": "Output copied.",
+      "noError": "no error",
+      "reasons": {
+        "evidence_empty": "the evidence list is empty",
+        "evidence_unknown_reference": "evidence reference is absent from the supplied sources",
+        "invalid_json": "the text is not valid JSON",
+        "output_text_count": "the response does not contain exactly one text block"
+      }
+    }
   },
   "cyclePlanning": {
     "admin": "Administrator details",

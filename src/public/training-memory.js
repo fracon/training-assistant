@@ -32,6 +32,8 @@ async function initMemory() {
   let loaded = false;
   let errorKey = null;
   const debugLabels = [];
+  let selectedTrace=null;
+  let refreshTraceLabels=()=>{};
   let refreshResources = () => {};
   if (user.role !== 'admin') $('memoryDebug').remove();
   else $('memoryDebug').hidden = false;
@@ -450,7 +452,14 @@ async function initMemory() {
               undefined,
               'GET',
             );
-            $('contextPreview').value = JSON.stringify(result, null, 2);
+            selectedTrace=result;
+            const request={...result};for(const key of ['rawOutputs','rawOutputCaptureVersion','state','error','response','usage','estimatedCostUsd','costBasis','diagnostics','attempts','reservedTokens','reservedCostUsd'])delete request[key];
+            $('traceRequest').textContent=JSON.stringify(request,null,2);
+            $('traceStatus').textContent=`${t(`executionStates.${result.state}`)} · ${t('tokens')}: ${result.usage?.input+result.usage?.output || 0} · ${result.error || t('trace.noError')}`;
+            const select=$('traceAttempt');select.replaceChildren();
+            for(const item of result.diagnostics||[]){const option=document.createElement('option');option.value=String(item.attempt);option.textContent=`${t('trace.attempt')} ${item.attempt}`;select.append(option);}
+            if(!select.options.length){const option=document.createElement('option');option.value='';option.textContent=t('trace.noAttempt');select.append(option);}
+            renderTrace();$('executionTrace').hidden=false;
           } catch (e) {
             error(e);
           }
@@ -460,6 +469,24 @@ async function initMemory() {
     } catch (e) {
       error(e);
     }
+    function renderTrace(){
+      const attempt=Number($('traceAttempt').value);const diagnostic=selectedTrace?.diagnostics?.find(item=>item.attempt===attempt);const raw=selectedTrace?.rawOutputs?.find(item=>item.attempt===attempt);
+      const validation=diagnostic?.validation;
+      const parsing=diagnostic?.parse;
+      const reason=validation?.reason?t(`trace.reasons.${validation.reason}`):parsing?.code?t(`trace.reasons.${parsing.code}`):'';
+      const summary=selectedTrace?.state==='completed'?t('trace.completed'):[t('trace.failed'),diagnostic?.stage||'—',validation?.code||parsing?.code||selectedTrace?.error||'—',reason,validation?.path||parsing?.path||''].filter(Boolean).join(' · ');
+      $('traceDiagnosis').textContent=summary;
+      $('traceCopy').disabled=(!raw && !(selectedTrace?.state==='completed' && selectedTrace.response)) || raw?.expired;
+      if(raw?.expired || (raw && Date.parse(raw.expires_at)<=Date.now()))$('traceOutput').textContent=t('trace.expired');
+      else if(raw){$('traceOutput').textContent=raw.output_text+(raw.truncated?`\n\n${t('trace.truncated')}`:'');}
+      else if(selectedTrace?.state==='completed' && selectedTrace.response)$('traceOutput').textContent=JSON.stringify(selectedTrace.response,null,2);
+      else $('traceOutput').textContent=selectedTrace?.rawOutputCaptureVersion===0?t('trace.legacy'):t('trace.noOutput');
+    }
+    refreshTraceLabels=()=>{if(!selectedTrace)return;$('traceStatus').textContent=`${t(`executionStates.${selectedTrace.state}`)} · ${t('tokens')}: ${selectedTrace.usage?.input+selectedTrace.usage?.output || 0} · ${selectedTrace.error || t('trace.noError')}`;for(const option of $('traceAttempt').options)if(option.value)option.textContent=`${t('trace.attempt')} ${option.value}`;renderTrace();};
+    $('traceAttempt').addEventListener('change',renderTrace);
+    for(const [selected,other,panel,otherPanel] of [['traceRequestTab','traceResponseTab','traceRequestPanel','traceResponsePanel'],['traceResponseTab','traceRequestTab','traceResponsePanel','traceRequestPanel']])$(selected).addEventListener('click',()=>{$(selected).setAttribute('aria-selected','true');$(selected).removeAttribute('tabindex');$(other).setAttribute('aria-selected','false');$(other).tabIndex=-1;$(panel).hidden=false;$(otherPanel).hidden=true;});
+    for(const id of ['traceRequestTab','traceResponseTab'])$(id).addEventListener('keydown',event=>{if(event.key==='ArrowRight'||event.key==='ArrowLeft'){event.preventDefault();const target=id==='traceRequestTab'?'traceResponseTab':'traceRequestTab';$(target).focus();$(target).click();}});
+    $('traceCopy').addEventListener('click',async()=>{const raw=selectedTrace?.rawOutputs?.find(item=>item.attempt===Number($('traceAttempt').value));const copy=raw?.output_text ?? (selectedTrace?.state==='completed'?JSON.stringify(selectedTrace.response,null,2):null);if(copy)try{await navigator.clipboard.writeText(copy);showShellToast(i18n.messages,'memory.trace.copied');}catch{error(new Error());}});
     controls();
   }
   document.addEventListener('kinesis:preferences-changed', () => { if (memory) renderOverview(); });
@@ -469,6 +496,7 @@ async function initMemory() {
     if (errorKey) $('memoryError').textContent = t(errorKey);
     refreshResources();
     debugLabels.forEach((update) => update());
+    refreshTraceLabels();
   });
   await load();
 }

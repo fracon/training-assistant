@@ -86,6 +86,25 @@ function migrateAiDiagnostics(db) {
     db.prepare('INSERT INTO schema_migrations(name) VALUES(?)').run(marker);
   }).immediate();
 }
+function migrateAiRawOutputs(db) {
+  db.transaction(() => {
+    const marker = '2026-11-ai-raw-output-v1';
+    if (db.prepare('SELECT 1 FROM schema_migrations WHERE name=?').get(marker)) return;
+    if (!db.pragma('table_info(ai_executions)').some((column) => column.name === 'raw_output_capture_version'))
+      db.exec('ALTER TABLE ai_executions ADD COLUMN raw_output_capture_version INTEGER NOT NULL DEFAULT 0');
+    db.exec(`CREATE TABLE IF NOT EXISTS ai_execution_raw_outputs (
+      execution_id TEXT NOT NULL REFERENCES ai_executions(id) ON DELETE CASCADE,
+      attempt INTEGER NOT NULL CHECK(attempt > 0),
+      output_text TEXT,
+      output_bytes INTEGER NOT NULL,
+      truncated INTEGER NOT NULL CHECK(truncated IN (0,1)),
+      expired INTEGER NOT NULL DEFAULT 0 CHECK(expired IN (0,1)),
+      expires_at TEXT NOT NULL,
+      PRIMARY KEY(execution_id,attempt)
+    ); CREATE INDEX IF NOT EXISTS ai_raw_output_expiry ON ai_execution_raw_outputs(expires_at);`);
+    db.prepare('INSERT INTO schema_migrations(name) VALUES(?)').run(marker);
+  }).immediate();
+}
 function migrateWeeklyWorkouts(db) {
   db.transaction(() => {
     const marker = '2026-10-weekly-workouts-v1';
@@ -215,6 +234,7 @@ function migrateWorkoutInterpretationIdentity(db) {
 module.exports = {
   migrateAi,
   migrateAiDiagnostics,
+  migrateAiRawOutputs,
   migrateWeeklyWorkouts,
   migrateWeeklyAvailabilityRevision,
   migrateWorkoutAnalysis,

@@ -48,6 +48,20 @@
     <button id="copyPrompt" type="button" class="btn-secondary" disabled data-i18n="memory.copy">Copy prompt</button>
     <div class="field"><label class="field-label" for="contextPreview" data-i18n="memory.context">Selected context and provenance</label><textarea class="prompt-textarea" id="contextPreview" rows="8" readonly></textarea></div>
     <p id="usageSummary" class="field-hint"></p><div id="executionList" class="shoe-list"></div>
+    <section id="executionTrace" class="memory-trace" hidden aria-labelledby="traceHeading">
+      <h3 id="traceHeading" data-i18n="memory.trace.heading">Execution details</h3>
+      <p id="traceStatus" class="field-hint"></p>
+      <div class="trace-tabs" role="tablist" data-i18n-aria-label="memory.trace.tabsLabel" aria-label="Execution details">
+        <button type="button" role="tab" id="traceRequestTab" aria-controls="traceRequestPanel" aria-selected="true" data-i18n="memory.trace.request">Request</button>
+        <button type="button" role="tab" id="traceResponseTab" aria-controls="traceResponsePanel" aria-selected="false" tabindex="-1" data-i18n="memory.trace.response">Response</button>
+      </div>
+      <section id="traceRequestPanel" role="tabpanel" aria-labelledby="traceRequestTab"><pre id="traceRequest" class="prompt-textarea"></pre></section>
+      <section id="traceResponsePanel" role="tabpanel" aria-labelledby="traceResponseTab" hidden>
+        <p id="traceDiagnosis" class="field-hint"></p><label for="traceAttempt" data-i18n="memory.trace.attempt">Attempt</label>
+        <select id="traceAttempt"></select><button id="traceCopy" type="button" class="btn-secondary" data-i18n="memory.trace.copy">Copy output</button>
+        <pre id="traceOutput" class="prompt-textarea trace-output" tabindex="0"></pre>
+      </section>
+    </section>
   </details>
 </section></main>
 <script src="https://unpkg.com/lucide@latest"></script><script src="training-memory.js" type="module"></script>

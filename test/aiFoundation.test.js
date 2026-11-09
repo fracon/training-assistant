@@ -519,6 +519,7 @@ test('client uses store:false server-only key, bounded output, no tools, and san
       },
     });
   assert.deepEqual((await client(success)(payload)).value, { ok: true });
+  assert.equal((await client(success)(payload)).outputText, '{"ok":true}');
   assert.deepEqual((await client(success)(payload)).usage, {
     input: 100,
     output: 10,
@@ -572,6 +573,8 @@ test('client uses store:false server-only key, bounded output, no tools, and san
     },
   ])
     assert.ok((await client(raw)(payload)).error);
+  const malformed=await client({ ...success, output:[{type:'message',content:[{type:'output_text',text:'{bad json'}]}]})(payload);
+  assert.equal(malformed.outputText,'{bad json');assert.deepEqual(malformed.diagnostic.parse,{code:'invalid_json',path:'$'});
   assert.equal(
     (await client({ ...success, usage: null })(payload)).usage,
     null,
@@ -639,6 +642,31 @@ test('execution persistence, idempotency, private debug, usage reconciliation an
   assert.equal(s.list(1).length, 0);
   await s.stop();
   fixture.db.close();
+});
+test('failed domain output is captured privately per attempt, bounded, expiring, and leaves response null', async () => {
+  const fixture=setup();
+  const invalid={...operation,validate:()=>false,diagnose:()=>({code:'evidence',path:'$.sessions[0].evidence',reason:'evidence_unknown_reference'})};
+  const rejected=JSON.stringify({sessions:[{evidence:['synthetic:unknown']}]});
+  const s=service(fixture,{operations:{analysis:invalid},client:async()=>({value:{sessions:[{evidence:['synthetic:unknown']}]},outputText:rejected,usage:{input:10,output:20,cached:0},error:null})});
+  const queued=s.enqueue(1,body);const result=await wait(s,1,queued.id);
+  assert.equal(result.state,'failed');assert.equal(result.response,null);
+  const debug=s.get(1,queued.id,true);assert.equal(debug.rawOutputs[0].output_text,rejected);
+  assert.equal(debug.payload.store,false);assert.deepEqual(debug.diagnostics[0].validation,{code:'evidence',path:'$.sessions[0].evidence',reason:'evidence_unknown_reference'});
+  assert.equal(s.get(1,queued.id).rawOutputs,undefined);assert.equal(JSON.stringify(s.list(1)).includes(rejected),false);failure(()=>s.get(2,queued.id,true),'adminRequired');
+  const huge='🙂'.repeat(20000);
+  await s.stop();
+  const retry=service(fixture,{operations:{analysis:{...operation,validate:value=>value?.ok===true}},client:async()=>({value:{ok:true},outputText:'{"ok":true}',usage:{input:5,output:5,cached:0},error:null})});
+  const reservation=fixture.db.prepare('SELECT user_id,reserved_tokens,reserved_cost,configuration_json,created_at FROM ai_executions WHERE id=?').get(queued.id);const retryCount=JSON.parse(reservation.configuration_json).retries+1;const day=reservation.created_at.slice(0,10);
+  fixture.db.prepare("UPDATE ai_executions SET state='queued',settled=0,error_code=NULL WHERE id=?").run(queued.id);
+  fixture.db.prepare('UPDATE ai_usage SET tokens=?,cost=?,calls=? WHERE user_id=? AND day=?').run(reservation.reserved_tokens,reservation.reserved_cost,retryCount,reservation.user_id,day);
+  fixture.db.prepare('UPDATE ai_global_usage SET tokens=?,cost=?,calls=? WHERE day=?').run(reservation.reserved_tokens,reservation.reserved_cost,retryCount,day);await retry.dispatch(queued.id);
+  const recovered=retry.get(1,queued.id,true);assert.equal(recovered.state,'completed',JSON.stringify({error:recovered.error,diagnostics:recovered.diagnostics}));assert.deepEqual(recovered.response,{ok:true});assert.equal(recovered.rawOutputs.length,1);assert.equal(recovered.rawOutputs[0].attempt,1);assert.equal(recovered.rawOutputs[0].output_text,rejected);
+  await retry.stop();fixture.db.close();
+  const boundedFixture=setup();const boundedService=service(boundedFixture,{operations:{analysis:invalid},client:async()=>({value:{},outputText:huge,error:null,usage:null})});
+  const bounded=boundedService.enqueue(1,body);await wait(boundedService,1,bounded.id);
+  const output=boundedService.get(1,bounded.id,true).rawOutputs[0];assert.equal(output.output_bytes,Buffer.byteLength(huge));assert.equal(Buffer.byteLength(output.output_text)<=65536,true);assert.equal(output.truncated,1);assert.doesNotThrow(()=>JSON.parse(JSON.stringify(output.output_text)));
+  boundedFixture.db.prepare('UPDATE ai_execution_raw_outputs SET expires_at=?').run('2026-10-13T00:00:00.000Z');boundedService.cleanup();const expired=boundedService.get(1,bounded.id,true).rawOutputs[0];assert.equal(expired.expired,1);assert.equal(expired.output_text,null);assert.equal(expired.output_bytes,Buffer.byteLength(huge));
+  await boundedService.stop();boundedFixture.db.close();
 });
 test('queue rejects disabled or unregistered phases, malformed requests and every quota dimension', async () => {
   const fixture = setup();

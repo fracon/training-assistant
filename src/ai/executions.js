@@ -102,6 +102,8 @@ function createExecutionService({
         attempts: row.attempts,
         reservedTokens: row.reserved_tokens,
         reservedCostUsd: row.reserved_cost,
+        rawOutputCaptureVersion: row.raw_output_capture_version || 0,
+        rawOutputs: db.prepare('SELECT attempt,output_text,output_bytes,truncated,expired,expires_at FROM ai_execution_raw_outputs WHERE execution_id=? ORDER BY attempt').all(row.id),
       });
     return result;
   }
@@ -532,7 +534,7 @@ function createExecutionService({
         if (
           !db
             .prepare(
-              "UPDATE ai_executions SET state='running',attempts=attempts+1,error_code=NULL,updated_at=? WHERE id = ? AND state='queued'",
+              "UPDATE ai_executions SET state='running',attempts=attempts+1,error_code=NULL,raw_output_capture_version=1,updated_at=? WHERE id = ? AND state='queued'",
             )
             .run(now(), id).changes
         )
@@ -659,6 +661,27 @@ function createExecutionService({
           (valid ? 'completed' : 'provider_response'),
       validation,
     });
+    if (!valid) {
+      try {
+        db.prepare('UPDATE ai_executions SET raw_output_capture_version=1 WHERE id=?').run(id);
+        if (typeof response.outputText !== 'string') throw new Error('no output text');
+        const maxBytes = 65536;
+        let text = response.outputText;
+        let bytes = Buffer.byteLength(text, 'utf8');
+        let truncated = 0;
+        if (bytes > maxBytes) {
+          let bounded = '';
+          for (const character of text) {
+            if (Buffer.byteLength(bounded + character, 'utf8') > maxBytes) break;
+            bounded += character;
+          }
+          text = bounded; truncated = 1;
+        }
+        const expiresAt = new Date(Date.parse(now()) + 2 * 86400000).toISOString();
+        db.prepare(`INSERT OR REPLACE INTO ai_execution_raw_outputs(execution_id,attempt,output_text,output_bytes,truncated,expires_at) VALUES(?,?,?,?,?,?)`)
+          .run(id, row.attempts, text, bytes, truncated, expiresAt);
+      } catch { /* Auxiliary capture must not change the execution classification. */ }
+    }
     try {
       finish(row, valid ? 'completed' : 'failed', {
         value: valid ? response.value : null,
@@ -747,6 +770,7 @@ function createExecutionService({
     schedule();
   }
   function cleanup() {
+    db.prepare('UPDATE ai_execution_raw_outputs SET output_text=NULL,expired=1 WHERE expires_at <= ? AND expired=0').run(now());
     const cutoff = new Date(
       Date.parse(now()) - limits.AI_RETENTION_DAYS * 86400000,
     ).toISOString();

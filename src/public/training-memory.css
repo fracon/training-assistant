@@ -76,3 +76,12 @@
 .memory-interpretation-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .memory-interpretation-editor { display: grid; gap: 8px; }
 .memory-interpretation-editor summary { cursor: pointer; color: var(--accent-deep); font-weight: 600; }
+
+.trace-tabs { display:flex; gap:.35rem; border-bottom:1px solid var(--line); margin:.75rem 0; }
+.trace-tabs [role=tab] { border:0; border-bottom:2px solid transparent; background:transparent; color:var(--muted); padding:.55rem .75rem; cursor:pointer; }
+.trace-tabs [aria-selected=true] { color:var(--ink); border-bottom-color:var(--accent); }
+.trace-tabs [role=tab]:focus-visible,#traceCopy:focus-visible,#traceAttempt:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+.trace-output { max-height:18rem; overflow:auto; white-space:pre; overflow-wrap:normal; }
+#traceRequest { max-height:18rem; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; }
+.memory-trace,#traceResponsePanel { min-width:0; }
+#traceDiagnosis,#traceStatus { overflow-wrap:anywhere; }

@@ -724,6 +724,7 @@ test('initializeDatabase applies pragmas and creates the schema', () => {
   assert.deepEqual(objects, [
     'admin_audit_log',
     'ai_coach_availability',
+    'ai_execution_raw_outputs',
     'ai_executions',
     'ai_global_usage',
     'ai_interpretation_replacements',
@@ -1751,6 +1752,7 @@ test('migrateDatabase removes the obsolete workouts table from existing database
     [
       'admin_audit_log',
       'ai_coach_availability',
+      'ai_execution_raw_outputs',
       'ai_executions',
       'ai_global_usage',
       'ai_interpretation_replacements',
