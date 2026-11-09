@@ -487,6 +487,30 @@ test('every Garmin product mutation remains unavailable outside the configured p
   } finally { await h.close(); }
 });
 
+test('explicit multiuser mode routes each authenticated account to its own connector namespace', async () => {
+  const calls = [];
+  const h = await productApiHarness({ config: { GARMIN_ACCESS_MODE: 'multiuser', GARMIN_PILOT_USER_ID: '99' },
+    garminFetch: async (url, init = {}) => { calls.push({ url, method: init.method || 'GET' }); return Response.json({ status: 'disconnected' }); } });
+  try {
+    await h.app.inject({ method: 'POST', url: '/api/auth/register', payload: { email: 'second-multiuser@example.test', password: 'pilot-password', first_name: 'Second', last_name: 'Runner' } });
+    const cookie = await login(h.app, 'second-multiuser@example.test');
+    for (const [owner, userCookie] of [[1, h.cookie], [2, cookie]]) {
+      const response = await h.app.inject({ method: 'GET', url: '/api/garmin/status', headers: { cookie: userCookie } });
+      assert.equal(response.statusCode, 200, response.body);
+      assert.ok(calls.some(call => call.url.endsWith(`/connections/${owner}/pilot/status`)));
+    }
+    h.db.prepare('UPDATE users SET is_active=0 WHERE id=2').run();
+    assert.equal((await h.app.inject({ method: 'GET', url: '/api/garmin/status', headers: { cookie } })).statusCode, 401);
+  } finally { await h.close(); }
+});
+
+test('unknown Garmin access mode does not widen pilot access', async () => {
+  const h = await productApiHarness({ config: { GARMIN_ACCESS_MODE: 'invalid' } });
+  try {
+    assert.equal((await h.app.inject({ method: 'GET', url: '/api/garmin/status', headers: { cookie: h.cookie } })).statusCode, 404);
+  } finally { await h.close(); }
+});
+
 test('publish rejects a date changed after the confirmed preview without dispatching a mutation', async () => {
   const db = createDatabase({ filename: ':memory:' });
   const calls = [];

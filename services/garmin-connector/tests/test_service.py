@@ -390,6 +390,21 @@ class ConnectorTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             main._decrypt(link, key)
 
+    def test_explicit_multiuser_mode_keeps_owner_paths_separate(self):
+        with patch.dict(os.environ, {"GARMIN_ACCESS_MODE": "multiuser", "GARMIN_PILOT_USER_ID": "17"}):
+            first, key = main._connection("pilot", "17", "private-key")
+            second, _ = main._connection("pilot", "18", "private-key")
+            self.assertEqual(first.name, "17-pilot.bin")
+            self.assertEqual(second.name, "18-pilot.bin")
+            main._save_encrypted(first, key, b"synthetic-one")
+            self.assertEqual(main._decrypt(first, key), b"synthetic-one")
+            self.assertFalse(second.exists())
+            with self.assertRaises(Exception):
+                main._connection("17-pilot", "18", "private-key")
+        with patch.dict(os.environ, {"GARMIN_ACCESS_MODE": "invalid"}):
+            with self.assertRaises(Exception):
+                main._connection("pilot", "17", "private-key")
+
     def test_token_ciphertext_is_bound_to_its_owner_and_connection_path(self):
         key = b"k" * 32
         first = Path(self.temp.name, "17-pilot.bin")

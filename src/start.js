@@ -10,7 +10,7 @@ require('../scripts/garmin-local-config').applyRuntimeConfig({
   explicitEnv: explicitRuntimeEnv,
   variables: [
     'GARMIN_PILOT_USER_ID', 'KINESIS_GARMIN_SERVICE_TOKEN',
-    'GARMIN_CONNECTOR_PORT', 'GARMIN_CONNECTOR_URL', 'GARMIN_PILOT_ENABLED', 'GARMIN_STORE',
+    'GARMIN_CONNECTOR_PORT', 'GARMIN_CONNECTOR_URL', 'GARMIN_PILOT_ENABLED', 'GARMIN_ACCESS_MODE', 'GARMIN_STORE',
   ],
 });
 

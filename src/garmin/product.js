@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('node:crypto');
+const { findActiveSession, SESSION_COOKIE_NAME } = require('../auth/sessions');
 const { validatePrescription, prescriptionFingerprint, previewPrescription, paceBoundsMps } = require('../garmin-workout-contract');
 
 const CONNECTION = 'pilot';
@@ -19,6 +20,8 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
   const authInFlight = new Map();
   const connector = config.GARMIN_CONNECTOR_URL || 'http://127.0.0.1:8080';
   const pilotOwner = Number(config.GARMIN_PILOT_USER_ID);
+  const multiuser = config.GARMIN_ACCESS_MODE === 'multiuser';
+  const validMode = !config.GARMIN_ACCESS_MODE || config.GARMIN_ACCESS_MODE === 'pilot' || multiuser;
   let closing = false;
   const controllers = new Set();
   const connectionTails = new Map();
@@ -29,7 +32,7 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
 
   function eligible(request) {
     const owner = db.prepare('SELECT id, is_active FROM users WHERE id = ?').get(request.user.id);
-    if (config.GARMIN_PILOT_ENABLED !== 'true' || !pilotOwner || owner?.id !== pilotOwner || owner.is_active !== 1) return false;
+    if (config.GARMIN_PILOT_ENABLED !== 'true' || !validMode || (!multiuser && (!pilotOwner || owner?.id !== pilotOwner)) || owner?.id !== request.user.id || owner.is_active !== 1) return false;
     return true;
   }
 
@@ -46,13 +49,19 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
       throw error;
     };
     try {
+      const sessionValid = () => {
+        if (!multiuser) return true;
+        const session = findActiveSession(db, request.cookies?.[SESSION_COOKIE_NAME]);
+        return session?.token === request.session?.token && session?.userId === request.user.id;
+      };
+      if (!sessionValid()) fail('auth_required', 401);
       const target = new URL(connector);
       if (!['http:', 'https:'].includes(target.protocol) || target.username || target.password
           || !config.KINESIS_GARMIN_SERVICE_TOKEN) fail('connector_configuration_error');
       stage = 'connector_request';
       let response;
       try {
-        response = await fetchImpl(`${connector}/v1/connections/${pilotOwner}/${CONNECTION}${path}`, {
+        response = await fetchImpl(`${connector}/v1/connections/${multiuser ? request.user.id : pilotOwner}/${CONNECTION}${path}`, {
           ...options,
           headers: {
             'content-type': 'application/json',
@@ -74,6 +83,7 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
       let body;
       try { body = await response.json(); }
       catch { fail('connector_invalid_response', 502); }
+      if (!sessionValid()) fail('auth_required', 401);
       if (!response.ok) {
         const remoteCode = body?.detail?.code;
         if (remoteCode === 'service_auth_failed') fail('connector_auth_failed');
@@ -360,7 +370,7 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
     });
     app.delete('/api/garmin/connection', { preHandler: requireAuth }, async (request, reply) => {
       // Local cleanup must remain available after account deactivation.
-      if (request.user.id !== pilotOwner) return reply.code(404).send({ code: 'pilot_unavailable' });
+      if (!validMode || (multiuser ? !eligible(request) : request.user.id !== pilotOwner)) return reply.code(404).send({ code: 'pilot_unavailable' });
       const unresolved = db.prepare(`SELECT 1 FROM garmin_training_operations WHERE user_id = ?
         AND status IN ('publishing','workout_created','scheduling','outcome_unknown','reauth_required','failed') LIMIT 1`).get(request.user.id);
       if (unresolved) return reply.code(409).send({ code: 'operation_pending' });

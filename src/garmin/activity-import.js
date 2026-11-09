@@ -57,6 +57,8 @@ function activityDateInWindow(item, start, end) {
 function createGarminActivityImporter({ db, fetchImpl = fetch, config = process.env,
   parseFile, resolveBuffer = resolveFitBuffer, resolveSession = findActiveSession, now = () => Date.now() }) {
   const ownerId = Number(config.GARMIN_PILOT_USER_ID);
+  const multiuser = config.GARMIN_ACCESS_MODE === 'multiuser';
+  const validMode = !config.GARMIN_ACCESS_MODE || config.GARMIN_ACCESS_MODE === 'pilot' || multiuser;
   const connector = config.GARMIN_CONNECTOR_URL || 'http://127.0.0.1:8080';
   const caches = getCache(db);
   const remoteInFlight = new Set();
@@ -65,8 +67,8 @@ function createGarminActivityImporter({ db, fetchImpl = fetch, config = process.
     const current = resolveSession(db, request.cookies?.[SESSION_COOKIE_NAME]);
     if (!current || current.token !== request.session?.token || current.userId !== request.user?.id) return 'session_expired';
     const row = db.prepare('SELECT id, is_active FROM users WHERE id = ?').get(request.user.id);
-    if (config.GARMIN_PILOT_ENABLED !== 'true' || !Number.isSafeInteger(ownerId)
-        || ownerId <= 0 || row?.id !== ownerId || row.is_active !== 1) return 'pilot_unavailable';
+    if (config.GARMIN_PILOT_ENABLED !== 'true' || !validMode || row?.id !== request.user.id || row.is_active !== 1
+        || (!multiuser && (!Number.isSafeInteger(ownerId) || ownerId <= 0 || row.id !== ownerId))) return 'pilot_unavailable';
     return null;
   }
 
@@ -109,7 +111,7 @@ function createGarminActivityImporter({ db, fetchImpl = fetch, config = process.
         || !config.KINESIS_GARMIN_SERVICE_TOKEN) throw Object.assign(new Error('connector_configuration_error'), { statusCode: 503 });
     let response;
     try {
-      response = await fetchImpl(`${connector.replace(/\/+$/, '')}/v1/connections/${ownerId}/pilot${path}`, {
+      response = await fetchImpl(`${connector.replace(/\/+$/, '')}/v1/connections/${multiuser ? request.user.id : ownerId}/pilot${path}`, {
         method, redirect: 'error', signal: AbortSignal.timeout(90000),
         headers: { 'x-kinesis-service-key': config.KINESIS_GARMIN_SERVICE_TOKEN,
           ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
@@ -371,7 +373,7 @@ function createGarminActivityImporter({ db, fetchImpl = fetch, config = process.
           const current = trainingFor(request);
           const latestLink = db.prepare(`SELECT connection_generation,identity_fingerprint,cleanup_pending
             FROM garmin_pilot_connections WHERE user_id=?`).get(request.user.id);
-          if (!current || current.user_id !== ownerId || !latestLink
+          if (!current || current.user_id !== request.user.id || !latestLink
               || latestLink.cleanup_pending || latestLink.identity_fingerprint !== preview.identity
               || latestLink.connection_generation !== preview.generation) return { error: 'session_changed' };
           if (resultFingerprint(current) !== preview.expected) return { error: 'session_changed' };

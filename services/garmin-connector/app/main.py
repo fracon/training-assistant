@@ -454,14 +454,19 @@ def _private_service_failure(code: str, status: int, stage: str):
 
 def _connection(connection_id: str, owner_id: str, owner_header: str | None) -> tuple[Path, bytes]:
     pilot_owner = os.environ.get("GARMIN_PILOT_USER_ID", "")
-    if os.environ.get("GARMIN_PILOT_ENABLED") != "true" or not pilot_owner:
+    mode = os.environ.get("GARMIN_ACCESS_MODE", "")
+    multiuser = mode == "multiuser"
+    if (os.environ.get("GARMIN_PILOT_ENABLED") != "true"
+            or mode not in ("", "pilot", "multiuser") or (not multiuser and not pilot_owner)):
         _private_service_failure("service_configuration_error", 503, "configuration")
     expected = os.environ.get("KINESIS_GARMIN_SERVICE_TOKEN", "")
     if not expected or not secrets.compare_digest(expected, owner_header or ""):
         _private_service_failure("service_auth_failed", 401, "service_auth")
     if not ID_RE.fullmatch(connection_id) or not ID_RE.fullmatch(owner_id):
         raise HTTPException(400, detail={"code": "invalid_payload"})
-    if owner_id != pilot_owner:
+    if multiuser and (connection_id != "pilot" or not re.fullmatch(r"[1-9][0-9]{0,18}", owner_id)):
+        raise HTTPException(400, detail={"code": "invalid_payload"})
+    if not multiuser and owner_id != pilot_owner:
         raise HTTPException(403, detail={"code": "unsupported"})
     root = Path(os.environ.get("GARMIN_STORE", "/var/lib/kinesis-garmin"))
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
