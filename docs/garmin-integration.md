@@ -419,9 +419,16 @@ startup or FIT/ZIP import.
    up separately from the token volume. Restart Compose after changes.
 3. Confirm the host architecture with `uname -m` and `docker info --format
    '{{.Architecture}}'`. `scripts/deploy-zimaos.sh` pulls the existing Node image,
-   builds the Python image on that host architecture, then starts both. No CI
-   publishing pipeline was changed. Keep the connector image digest/tag with
-   deployment records; the Compose version is `0.29.1`.
+   builds the Python image on that host architecture, then starts both. Keep
+   the connector image digest/tag with deployment records; the Compose version
+   is `0.29.1`. The GitHub Actions
+   workflow also publishes `ghcr.io/fracon/training-assistant` and
+   `ghcr.io/fracon/kinesis-garmin-connector` with `latest` and matching
+   `sha-<short-commit>` tags. For an image-based deployment, select matching
+   SHA tags from a successful workflow run: the pushes are independent, so a
+   failed run can leave only one image updated. Verify both images can be
+   pulled using the same registry permissions as the ZimaOS installation;
+   package visibility or registry credentials must allow access to both.
 4. Check `docker compose ps` and `docker compose logs --tail=50
    garmin-connector`; logs must not contain request bodies. Health is local and
    does not contact Garmin.
