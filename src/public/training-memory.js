@@ -32,6 +32,9 @@ async function initMemory() {
   let loaded = false;
   let errorKey = null;
   const debugLabels = [];
+  let selectedTrace=null;
+  let refreshTraceLabels=()=>{};
+  let traceExpiryTimer=null;
   let refreshResources = () => {};
   if (user.role !== 'admin') $('memoryDebug').remove();
   else $('memoryDebug').hidden = false;
@@ -450,7 +453,17 @@ async function initMemory() {
               undefined,
               'GET',
             );
-            $('contextPreview').value = JSON.stringify(result, null, 2);
+            selectedTrace=result;
+            const request={...result};for(const key of ['rawOutputs','rawOutputCaptureVersion','state','error','response','usage','estimatedCostUsd','costBasis','diagnostics','attempts','reservedTokens','reservedCostUsd'])delete request[key];
+            $('traceRequest').textContent=JSON.stringify(request,null,2);
+            $('traceStatus').textContent=`${t(`executionStates.${result.state}`)} · ${t('tokens')}: ${result.usage?.input+result.usage?.output || 0} · ${result.error || t('trace.noError')}`;
+            const select=$('traceAttempt');select.replaceChildren();
+            const attempts=[...new Set([...(result.diagnostics||[]).map(item=>item.attempt),...(result.rawOutputs||[]).map(item=>item.attempt)])].sort((a,b)=>a-b);
+            for(const attempt of attempts){const option=document.createElement('option');option.value=String(attempt);option.textContent=`${t('trace.attempt')} ${attempt}`;select.append(option);}
+            if(!select.options.length){const option=document.createElement('option');option.value='';option.textContent=t('trace.noAttempt');select.append(option);}
+            else select.value=String(attempts.at(-1));
+            $('traceRequestTab').click();
+            renderTrace();$('executionTrace').hidden=false;
           } catch (e) {
             error(e);
           }
@@ -460,6 +473,39 @@ async function initMemory() {
     } catch (e) {
       error(e);
     }
+    function renderTrace(){
+      clearTimeout(traceExpiryTimer);
+      if(!selectedTrace)return;
+      const attempt=Number($('traceAttempt').value);const diagnostic=selectedTrace.diagnostics?.find(item=>item.attempt===attempt);const raw=selectedTrace.rawOutputs?.find(item=>item.attempt===attempt);
+      const successful=diagnostic?.stage==='completed'&&diagnostic.code==='completed'&&selectedTrace.response!==null&&selectedTrace.response!==undefined;
+      const expired=Boolean(raw)&&(raw.expired===1||!Number.isFinite(Date.parse(raw.expires_at))||Date.parse(raw.expires_at)<=Date.now());
+      const validation=diagnostic?.validation;const parsing=diagnostic?.parse;
+      const reason=validation?.reason?t(`trace.reasons.${validation.reason}`):parsing?.code?t(`trace.reasons.${parsing.code}`):'';
+      const status=successful?t(`executionStates.completed`):diagnostic?t('trace.failed'):t('trace.noAttemptInfo');
+      const stage=diagnostic?.stage==='completed'?'':diagnostic?.stage||'';
+      const code=validation?.code||parsing?.code||(diagnostic?.code==='completed'?'':diagnostic?.code||'');
+      const details=[status,stage,code,reason,validation?.path||parsing?.path||''].filter(Boolean);
+      $('traceDiagnosis').textContent=details.join(' · ');
+      let outputText=null;
+      if(raw&&expired)outputText=t('trace.expired');
+      else if(raw&&typeof raw.output_text==='string')outputText=raw.output_text+(raw.truncated?`\n\n${t('trace.truncated')}`:'');
+      else if(!raw&&successful)outputText=JSON.stringify(selectedTrace.response,null,2);
+      else if(!raw&&selectedTrace.rawOutputCaptureVersion===0)outputText=t('trace.legacy');
+      else outputText=t('trace.noOutput');
+      $('traceOutput').textContent=outputText;
+      $('traceCopy').disabled=Boolean(expired)||(raw?typeof raw.output_text!=='string':!successful);
+      if(raw&&!expired){
+        const remaining=Date.parse(raw.expires_at)-Date.now();
+        traceExpiryTimer=setTimeout(renderTrace,Math.max(1,remaining+1));
+      }
+    }
+    refreshTraceLabels=()=>{if(!selectedTrace)return;$('traceStatus').textContent=`${t(`executionStates.${selectedTrace.state}`)} · ${t('tokens')}: ${selectedTrace.usage?.input+selectedTrace.usage?.output || 0}`;for(const option of $('traceAttempt').options)if(option.value)option.textContent=`${t('trace.attempt')} ${option.value}`;renderTrace();};
+    $('traceAttempt').addEventListener('change',renderTrace);
+    for(const [selected,other,panel,otherPanel] of [['traceRequestTab','traceResponseTab','traceRequestPanel','traceResponsePanel'],['traceResponseTab','traceRequestTab','traceResponsePanel','traceRequestPanel']])$(selected).addEventListener('click',()=>{$(selected).setAttribute('aria-selected','true');$(selected).removeAttribute('tabindex');$(other).setAttribute('aria-selected','false');$(other).tabIndex=-1;$(panel).hidden=false;$(otherPanel).hidden=true;});
+    for(const id of ['traceRequestTab','traceResponseTab'])$(id).addEventListener('keydown',event=>{if(event.key==='ArrowRight'||event.key==='ArrowLeft'){event.preventDefault();const target=id==='traceRequestTab'?'traceResponseTab':'traceRequestTab';$(target).focus();$(target).click();}});
+    $('traceCopy').addEventListener('click',async()=>{const attempt=Number($('traceAttempt').value);const diagnostic=selectedTrace?.diagnostics?.find(item=>item.attempt===attempt);const raw=selectedTrace?.rawOutputs?.find(item=>item.attempt===attempt);const successful=diagnostic?.stage==='completed'&&diagnostic.code==='completed'&&selectedTrace?.response!==null&&selectedTrace?.response!==undefined;const expired=Boolean(raw)&&(raw.expired===1||!Number.isFinite(Date.parse(raw.expires_at))||Date.parse(raw.expires_at)<=Date.now());if(expired){renderTrace();return;}const copy=raw?(typeof raw.output_text==='string'?raw.output_text:null):successful?JSON.stringify(selectedTrace.response,null,2):null;if(typeof copy!=='string')return;try{await navigator.clipboard.writeText(copy);showShellToast(i18n.messages,'memory.trace.copied');}catch{error(new Error());}});
+    const refreshVisibleTrace=()=>{if(!document.hidden)renderTrace();};
+    document.addEventListener('visibilitychange',refreshVisibleTrace);window.addEventListener('focus',refreshVisibleTrace);
     controls();
   }
   document.addEventListener('kinesis:preferences-changed', () => { if (memory) renderOverview(); });
@@ -469,6 +515,7 @@ async function initMemory() {
     if (errorKey) $('memoryError').textContent = t(errorKey);
     refreshResources();
     debugLabels.forEach((update) => update());
+    refreshTraceLabels();
   });
   await load();
 }

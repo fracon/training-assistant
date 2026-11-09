@@ -11,7 +11,11 @@ function sanitizeDiagnostic(value={}) {
  if(Number.isSafeInteger(value.retryDelayMs) && value.retryDelayMs>=0 && value.retryDelayMs<=60000)out.retryDelayMs=value.retryDelayMs;
  if(Number.isInteger(value.httpStatus) && value.httpStatus>=100 && value.httpStatus<=599)out.httpStatus=value.httpStatus;
  for(const [key,pattern] of [['requestId',/^req_[A-Za-z0-9_-]{1,192}$/],['responseId',/^resp_[A-Za-z0-9_-]{1,192}$/],['clientRequestId',/^kin_[a-f\d-]{36}_[1-3]$/]])if(typeof value[key]==='string' && pattern.test(value[key]))out[key]=value[key];
- if(VALIDATION.includes(value.validation?.code) && typeof value.validation.path==='string' && value.validation.path.length<=160 && PATH.test(value.validation.path))out.validation={code:value.validation.code,path:value.validation.path};
+ if(VALIDATION.includes(value.validation?.code) && typeof value.validation.path==='string' && value.validation.path.length<=160 && PATH.test(value.validation.path)) {
+  out.validation={code:value.validation.code,path:value.validation.path};
+  if(['evidence_empty','evidence_unknown_reference'].includes(value.validation.reason))out.validation.reason=value.validation.reason;
+ }
+ if(['invalid_json','output_text_count'].includes(value.parse?.code) && value.parse.path==='$')out.parse={code:value.parse.code,path:'$'};
  return out;
 }
 function saveDiagnostic(db,id,attempt,diagnostic) {

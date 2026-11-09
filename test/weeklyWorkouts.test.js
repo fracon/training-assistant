@@ -5,8 +5,9 @@ const { createDatabase } = require('../src/db/database');
 const { AiError, hash } = require('../src/ai/memory');
 const { readAiConfig } = require('../src/ai/config');
 const { buildContext, tokenBound, projectContextForModel } = require('../src/ai/context');
-const { buildPayload } = require('../src/ai/client');
+const { buildPayload, createResponsesClient } = require('../src/ai/client');
 const { buildServer } = require('../src/server');
+const { createSession, SESSION_COOKIE_NAME } = require('../src/auth/sessions');
 const weekly = require('../src/ai/weekly-workouts');
 const { DAY_KEYS } = require('../src/availability');
 const { saveAvailabilityWeek } = require('../src/availability');
@@ -2400,4 +2401,25 @@ test('weekly forecast revalidates an owner deactivated or deleted while weather 
       db.close();
     }
   }
+});
+
+test('HTTP 200 completed weekly output rejected at evidence is captured only in authorized trace while response stays null',async(t)=>{
+ const db=createDatabase({filename:':memory:'});
+ db.prepare("INSERT INTO users(id,email,password_hash,role) VALUES(1,'trace-admin@example.invalid','synthetic','admin'),(2,'trace-user@example.invalid','synthetic','user')").run();
+ db.prepare("INSERT INTO training_cycles(id,user_id,objective,start_date,status) VALUES('trace-cycle',1,'Synthetic training goal',?, 'active')").run(nextForecastMonday());
+ saveAvailabilityWeek(db,1,DAY_KEYS.map(day=>({day,can_train:day==='monday',available_periods:day==='monday'?['08_12']:[],available_minutes:day==='monday'?90:null,location:day==='monday'?'Porto, Portugal':''})));
+ const config=readAiConfig({AI_ENABLED:'true',OPENAI_API_KEY:'synthetic-test-key',AI_RETRIES:'0'});
+ const client=createResponsesClient({apiKey:'synthetic-test-key',timeoutMs:1000,fetchImpl:async(_url,options)=>{
+  assert.equal(JSON.parse(options.body).store,false);
+  const context=JSON.parse(JSON.parse(options.body).input[0].content[0].text).context;
+  const rejected=proposal([session({date:context.resource.weekStart,location:'Porto, Portugal',period:'08_12',evidence:['training:synthetic-unknown']})]);rejected.weekStart=context.resource.weekStart;
+  return new Response(JSON.stringify({id:'resp_synthetic_evidence',status:'completed',usage:{input_tokens:20,output_tokens:30},output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(rejected)}]}]}),{status:200,headers:{'x-request-id':'req_synthetic_evidence'}});
+ }});
+ const app=await buildServer({db,sessionCookieSecure:false,aiConfig:config,weatherFetch:async()=>({ok:false,status:503,json:async()=>({})}),aiClient:client});const origin=await app.listen({port:0,host:'127.0.0.1'});t.after(async()=>{await app.close();db.close();});
+ const adminCookie=`${SESSION_COOKIE_NAME}=${createSession(db,1).token}`;const userCookie=`${SESSION_COOKIE_NAME}=${createSession(db,2).token}`;
+ const queued=await app.inject({method:'POST',url:'/api/ai/executions',headers:{cookie:adminCookie},payload:{purpose:'workouts',target_date:nextForecastMonday(),idempotency_key:'synthetic-evidence-trace'}});assert.equal(queued.statusCode,202);const id=queued.json().id;
+ let result;for(let i=0;i<300;i++){result=await app.inject({method:'GET',url:`/api/ai/executions/${id}`,headers:{cookie:adminCookie}});if(result.json().state==='failed')break;await new Promise(resolve=>setTimeout(resolve,10));}
+ assert.equal(result.json().state,'failed');assert.equal(result.json().response,null);assert.equal(JSON.stringify(result.json()).includes('synthetic-unknown'),false);
+ const debug=await app.inject({method:'GET',url:`/api/ai/admin/executions/${id}`,headers:{cookie:adminCookie}});assert.equal(debug.statusCode,200);assert.equal(debug.json().response,null);assert.equal(debug.json().rawOutputs[0].output_text.includes('training:synthetic-unknown'),true);assert.deepEqual(debug.json().diagnostics[0].validation,{code:'evidence',path:'$.sessions[0].evidence',reason:'evidence_unknown_reference'});assert.equal(debug.json().diagnostics[0].providerStatus,'completed');assert.equal(debug.json().diagnostics[0].httpStatus,200);assert.equal(debug.json().diagnostics[0].requestId,'req_synthetic_evidence');
+ assert.equal((await app.inject({method:'GET',url:`/api/ai/admin/executions/${id}`,headers:{cookie:userCookie}})).statusCode,403);
 });

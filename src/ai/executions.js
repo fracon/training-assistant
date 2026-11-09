@@ -14,6 +14,20 @@ const { RATES } = require('./config');
 const { buildPayload, createResponsesClient } = require('./client');
 const { retryDelayMs } = require('./retry-policy');
 const TERMINAL = ['completed', 'failed', 'uncertain', 'cancelled', 'outdated'];
+function truncateUtf8Text(value, maxBytes) {
+  const outputBytes = Buffer.byteLength(value, 'utf8');
+  if (outputBytes <= maxBytes)
+    return { text: value, outputBytes, truncated: 0 };
+  const characters = [];
+  let capturedBytes = 0;
+  for (const character of value) {
+    const characterBytes = Buffer.byteLength(character, 'utf8');
+    if (capturedBytes + characterBytes > maxBytes) break;
+    characters.push(character);
+    capturedBytes += characterBytes;
+  }
+  return { text: characters.join(''), outputBytes, truncated: 1 };
+}
 function createExecutionService({
   db,
   config,
@@ -102,6 +116,12 @@ function createExecutionService({
         attempts: row.attempts,
         reservedTokens: row.reserved_tokens,
         reservedCostUsd: row.reserved_cost,
+        rawOutputCaptureVersion: row.raw_output_capture_version || 0,
+        rawOutputs: db.prepare('SELECT attempt,output_text,output_bytes,truncated,expired,expires_at FROM ai_execution_raw_outputs WHERE execution_id=? ORDER BY attempt').all(row.id).map((output) => {
+          const expiresAt = Date.parse(output.expires_at);
+          const expired = output.expired === 1 || !Number.isFinite(expiresAt) || expiresAt <= Date.parse(now());
+          return expired ? { ...output, output_text: null, expired: 1 } : output;
+        }),
       });
     return result;
   }
@@ -532,7 +552,7 @@ function createExecutionService({
         if (
           !db
             .prepare(
-              "UPDATE ai_executions SET state='running',attempts=attempts+1,error_code=NULL,updated_at=? WHERE id = ? AND state='queued'",
+              "UPDATE ai_executions SET state='running',attempts=attempts+1,error_code=NULL,raw_output_capture_version=1,updated_at=? WHERE id = ? AND state='queued'",
             )
             .run(now(), id).changes
         )
@@ -659,6 +679,17 @@ function createExecutionService({
           (valid ? 'completed' : 'provider_response'),
       validation,
     });
+    if (!valid) {
+      try {
+        db.prepare('UPDATE ai_executions SET raw_output_capture_version=1 WHERE id=?').run(id);
+        if (typeof response.outputText !== 'string') throw new Error('no output text');
+        const maxBytes = 65536;
+        const { text, outputBytes, truncated } = truncateUtf8Text(response.outputText, maxBytes);
+        const expiresAt = new Date(Date.parse(now()) + 2 * 86400000).toISOString();
+        db.prepare(`INSERT OR REPLACE INTO ai_execution_raw_outputs(execution_id,attempt,output_text,output_bytes,truncated,expires_at) VALUES(?,?,?,?,?,?)`)
+          .run(id, row.attempts, text, outputBytes, truncated, expiresAt);
+      } catch { /* Auxiliary capture must not change the execution classification. */ }
+    }
     try {
       finish(row, valid ? 'completed' : 'failed', {
         value: valid ? response.value : null,
@@ -747,6 +778,7 @@ function createExecutionService({
     schedule();
   }
   function cleanup() {
+    db.prepare('UPDATE ai_execution_raw_outputs SET output_text=NULL,expired=1 WHERE expires_at <= ? AND expired=0').run(now());
     const cutoff = new Date(
       Date.parse(now()) - limits.AI_RETENTION_DAYS * 86400000,
     ).toISOString();
@@ -786,4 +818,4 @@ function createExecutionService({
     dispatch,
   };
 }
-module.exports = { createExecutionService, TERMINAL };
+module.exports = { createExecutionService, TERMINAL, truncateUtf8Text };

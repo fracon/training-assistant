@@ -687,3 +687,7 @@ schema migration, context-policy change, infrastructure change or version bump
 was needed. The complete diff against main and the UI batch were critiqued for
 contracts, ownership, compatibility, focus, responsive tables, missing data and
 regressions. This phase 0 UI was subsequently integrated through merged PR #67.
+
+### Raw output in administrative execution traces
+
+For parsing and domain-validation failures, Kinesis stores only the model's extracted `output_text`, keyed by execution and attempt. The provider envelope, request headers, credentials, and reasoning content are never retained. Captured text is capped at 65,536 UTF-8 bytes; truncation stops at a Unicode code-point boundary and the trace records original byte length plus a truncation flag. Raw output expires after 48 hours through the normal AI cleanup call. Expiration clears the payload and marks the raw-output row expired while preserving byte length, truncation state, attempt number, and expiry time; execution state and sanitized per-attempt diagnostics remain until ordinary execution retention removes the execution. Historical traces have no capture row and are displayed as legacy traces. Capture errors are auxiliary and never replace the original execution error. The existing OpenAI request continues to use `store: false`.

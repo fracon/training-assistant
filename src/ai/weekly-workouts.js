@@ -486,12 +486,10 @@ function validateWeeklyProposal(value, context, db, userId) {
     const sources = new Set(
       (context.sources || []).map((source) => `${source.type}:${source.id}`),
     );
-    if (
-      !Array.isArray(item.evidence) ||
-      item.evidence.length < 1 ||
-      item.evidence.some((source) => !sources.has(source))
-    )
-      return { code: 'evidence', path: `${path}.evidence` };
+    if (item.evidence.length < 1)
+      return { code: 'evidence', path: `${path}.evidence`, reason: 'evidence_empty' };
+    if (item.evidence.some((source) => !sources.has(source)))
+      return { code: 'evidence', path: `${path}.evidence`, reason: 'evidence_unknown_reference' };
     minutes.set(
       item.weekday,
       (minutes.get(item.weekday) || 0) + planned.durationMinutes,

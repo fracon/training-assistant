@@ -658,7 +658,15 @@
       "back": "Voltar às atividades",
       "replaceNotice": "Importar esta atividade substituirá o resultado atual, exibido abaixo para comparação.",
       "importing": "Importando atividade…",
-      "sports": { "running": "Corrida", "cycling": "Ciclismo", "walking": "Caminhada", "hiking": "Trilha", "trail_running": "Corrida em trilha", "treadmill_running": "Corrida na esteira", "indoor_running": "Corrida indoor" },
+      "sports": {
+        "running": "Corrida",
+        "cycling": "Ciclismo",
+        "walking": "Caminhada",
+        "hiking": "Trilha",
+        "trail_running": "Corrida em trilha",
+        "treadmill_running": "Corrida na esteira",
+        "indoor_running": "Corrida indoor"
+      },
       "replaceTitle": "Substituir resultado atual?",
       "replaceMessage": "O resultado existente será substituído. Feedback salvo, tênis selecionado e histórico serão preservados.",
       "imported": "Atividade importada. Complete e salve o feedback quando quiser.",
@@ -1724,7 +1732,32 @@
     "interpretationCorrectionLabel": "Sua correção",
     "interpretationSaveCorrection": "Salvar correção",
     "interpretationSaved": "Interpretação atualizada.",
-    "interpretationOriginal": "Interpretação original"
+    "interpretationOriginal": "Interpretação original",
+    "trace": {
+      "heading": "Detalhes da execução",
+      "tabsLabel": "Abas do trace",
+      "request": "Requisição",
+      "response": "Resposta",
+      "attempt": "Tentativa",
+      "noAttempt": "Nenhuma tentativa registrada",
+      "completed": "Execução concluída com resposta validada.",
+      "failed": "Falha",
+      "noOutput": "Esta tentativa não recebeu texto de saída.",
+      "legacy": "Trace antigo sem captura de saída.",
+      "expired": "A saída capturada expirou.",
+      "truncated": "Saída truncada no limite de 65.536 bytes.",
+      "copy": "Copiar saída",
+      "copied": "Saída copiada.",
+      "noError": "sem erro",
+      "reasons": {
+        "evidence_empty": "a lista de evidence está vazia",
+        "evidence_unknown_reference": "referência de evidence não existe nas fontes fornecidas",
+        "invalid_json": "o texto não contém JSON válido",
+        "output_text_count": "a resposta não contém exatamente um bloco de texto"
+      },
+      "outputTitle": "Saída do modelo",
+      "noAttemptInfo": "Não há diagnóstico salvo para esta tentativa."
+    }
   },
   "cyclePlanning": {
     "admin": "Detalhes administrativos",

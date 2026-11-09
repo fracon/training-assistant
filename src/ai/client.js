@@ -114,14 +114,19 @@ function createResponsesClient({
       .filter((item) => item?.type === 'output_text')
       .map((item) => item.text);
     let value = null;
+    let parse = null;
     try {
-      if (texts.length !== 1 || typeof texts[0] !== 'string') throw new Error();
+      if (texts.length !== 1 || typeof texts[0] !== 'string') {
+        parse = { code: 'output_text_count', path: '$' };
+        throw new Error();
+      }
       value = JSON.parse(texts[0]);
     } catch {
+      if (!parse && texts.length === 1 && typeof texts[0] === 'string') parse = { code: 'invalid_json', path: '$' };
       error = error || 'providerInvalidResponse';
     }
-    diagnostic=sanitizeDiagnostic({...diagnostic,outputTextCount:texts.length,outputTextBytes:texts.reduce((sum,text)=>sum+(typeof text==='string'?Buffer.byteLength(text):0),0),durationMs:Date.now()-started,code:error || 'completed',stage:error==='providerInvalidResponse'?'parsing':error?'provider_response':'completed'});
-    return { value, usage, error, diagnostic };
+    diagnostic=sanitizeDiagnostic({...diagnostic,parse,outputTextCount:texts.length,outputTextBytes:texts.reduce((sum,text)=>sum+(typeof text==='string'?Buffer.byteLength(text):0),0),durationMs:Date.now()-started,code:error || 'completed',stage:error==='providerInvalidResponse'?'parsing':error?'provider_response':'completed'});
+    return { value, usage, error, diagnostic, outputText: texts.length === 1 && typeof texts[0] === 'string' ? texts[0] : null };
   };
 }
 module.exports = { createResponsesClient, buildPayload, SAFETY_INSTRUCTIONS };
