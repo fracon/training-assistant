@@ -214,9 +214,9 @@ function createGarminActivityImporter({ db, fetchImpl = fetch, config = process.
           .filter(({ item }) => isRunningOrUnknown(item))
           .map(({ item }) => {
             const linked = db.prepare(`SELECT training_id FROM garmin_activity_imports
-              WHERE account_fingerprint=? AND activity_id=? AND is_current=1`).get(link.identity_fingerprint, String(item.activityId));
+              WHERE user_id=? AND account_fingerprint=? AND activity_id=? AND is_current=1`).get(request.user.id, link.identity_fingerprint, String(item.activityId));
             const historical = linked ? null : db.prepare(`SELECT training_id FROM garmin_activity_imports
-              WHERE account_fingerprint=? AND activity_id=? ORDER BY imported_at DESC LIMIT 1`).get(link.identity_fingerprint, String(item.activityId));
+              WHERE user_id=? AND account_fingerprint=? AND activity_id=? ORDER BY imported_at DESC LIMIT 1`).get(request.user.id, link.identity_fingerprint, String(item.activityId));
             const localDate = item.startTimeLocal.slice(0, 10);
             return { activity_id: String(item.activityId), source_cursor: item.source_cursor,
               name: typeof item.activityName === 'string' ? item.activityName.slice(0, 120) : '',
@@ -293,7 +293,7 @@ function createGarminActivityImporter({ db, fetchImpl = fetch, config = process.
       if (!candidate) return reply.code(404).send({ code: 'activity_not_found' });
       if (!isRunningOrUnknown(candidate)) return reply.code(422).send({ code: 'unsupported_activity' });
       const alreadyLinked = db.prepare(`SELECT training_id FROM garmin_activity_imports
-        WHERE account_fingerprint=? AND activity_id=? AND is_current=1`).get(link.identity_fingerprint, id);
+        WHERE user_id=? AND account_fingerprint=? AND activity_id=? AND is_current=1`).get(request.user.id, link.identity_fingerprint, id);
       let buffer;
       let fitBuffer;
       let result;
@@ -381,7 +381,7 @@ function createGarminActivityImporter({ db, fetchImpl = fetch, config = process.
           const evidenceConflict = findCurrentEvidenceConflict(db, request.user.id, current.id, evidence);
           if (evidenceConflict) return { error: 'activity_evidence_conflict' };
           const linked = db.prepare(`SELECT training_id,file_sha256,is_current FROM garmin_activity_imports
-            WHERE account_fingerprint=? AND activity_id=? AND is_current=1`).get(preview.identity, preview.activityId);
+            WHERE user_id=? AND account_fingerprint=? AND activity_id=? AND is_current=1`).get(request.user.id, preview.identity, preview.activityId);
           if (linked && linked.training_id !== current.id) return { error: 'activity_already_linked' };
           if (linked && linked.training_id === current.id && linked.is_current === 1
               && db.prepare(`SELECT 1 FROM training_result_evidence WHERE user_id=? AND training_id=?

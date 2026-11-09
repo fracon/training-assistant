@@ -607,6 +607,15 @@ function migrateDatabase(db) {
     });
     evolveActivityImportHistory.immediate();
   }
+  const ownerActivityMarker = '2026-11-garmin-activity-owner-v1';
+  if (!db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(ownerActivityMarker)) {
+    db.transaction(() => {
+      db.exec(`DROP INDEX IF EXISTS idx_garmin_activity_import_current_identity;
+        CREATE UNIQUE INDEX idx_garmin_activity_import_current_identity
+          ON garmin_activity_imports(user_id,account_fingerprint,activity_id) WHERE is_current=1;`);
+      db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(ownerActivityMarker);
+    }).immediate();
+  }
   const resultEvidenceMarker = '2026-11-training-result-evidence-v1';
   if (!db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(resultEvidenceMarker)) {
     const addResultEvidence = db.transaction(() => {

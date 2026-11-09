@@ -436,6 +436,67 @@ test('candidate paging advances across filtered-out activities without repeating
   } finally { await h.close(); }
 });
 
+test('activity search and preview never expose another owner’s matching Garmin history', async () => {
+  const h = await setup();
+  try {
+    h.db.prepare("INSERT INTO users(id,email,password_hash) VALUES(2,'other-owner@example.test','hash')").run();
+    h.db.prepare("INSERT INTO trainings(id,user_id,dia,tipo,treino) VALUES(2,2,'2026-11-02','run','private')").run();
+    h.db.prepare(`INSERT INTO garmin_activity_imports(user_id,training_id,account_fingerprint,activity_id,file_sha256,importer_version,is_current)
+      VALUES(2,2,?,'42',?,1,1)`).run('a'.repeat(64), 'b'.repeat(64));
+    const list = await h.app.inject({ method: 'GET', url: '/api/trainings/1/garmin/activities', headers: { cookie: h.cookie } });
+    assert.equal(list.statusCode, 200, list.body);
+    assert.equal(list.json().items[0].linked_training_id, null);
+    assert.equal(list.json().items[0].historical_training_id, null);
+    const review = await preview(h);
+    assert.equal(review.statusCode, 200, review.body);
+    assert.equal(review.json().linked_training_id, null);
+    h.db.prepare('UPDATE garmin_activity_imports SET is_current=0 WHERE user_id=2').run();
+    const historical = await h.app.inject({ method: 'GET', url: '/api/trainings/1/garmin/activities', headers: { cookie: h.cookie } });
+    assert.equal(historical.json().items[0].historical_training_id, null);
+  } finally { await h.close(); }
+});
+
+test('independent owners can import and replace the same Garmin activity after SQLite upgrade', async () => {
+  const h = await setup({ rows: [42, 43].map(activityId => ({ activityId, activityName: 'Synthetic run',
+    startTimeLocal: '2026-11-02 07:00:00', activityType: 'running', duration: 3500, distance: 10000 })) });
+  try {
+    h.db.exec(`DELETE FROM schema_migrations WHERE name='2026-11-garmin-activity-owner-v1';
+      DROP INDEX idx_garmin_activity_import_current_identity;
+      CREATE UNIQUE INDEX idx_garmin_activity_import_current_identity
+        ON garmin_activity_imports(account_fingerprint,activity_id) WHERE is_current=1;`);
+    h.db.prepare("INSERT INTO users(id,email,password_hash) VALUES(2,'history-owner@example.test','hash')").run();
+    h.db.prepare("INSERT INTO trainings(id,user_id,dia,tipo,treino,result_data_source,fit_distance) VALUES(2,2,'2026-11-02','run','private','garmin_connect',12)").run();
+    h.db.prepare(`INSERT INTO garmin_activity_imports(user_id,training_id,account_fingerprint,activity_id,file_sha256,importer_version,is_current)
+      VALUES(2,2,?,'42',?,1,1)`).run('a'.repeat(64), 'b'.repeat(64));
+    h.db.prepare(`INSERT INTO training_result_evidence(user_id,training_id,evidence_type,evidence_value,source,is_current)
+      VALUES(2,2,'garmin_activity',?,'garmin_connect',1)`).run('a'.repeat(64) + ':42');
+    h.db.prepare(`INSERT INTO training_result_evidence(user_id,training_id,evidence_type,evidence_value,source,is_current)
+      VALUES(2,2,'fit_sha256',?,'garmin_connect',1)`)
+      .run(require('node:crypto').createHash('sha256').update('synthetic-fit-bytes').digest('hex'));
+    const before = h.db.prepare('SELECT * FROM trainings WHERE id=2').get();
+    const history = h.db.prepare('SELECT * FROM garmin_activity_imports WHERE user_id=2').all();
+    const evidence = h.db.prepare('SELECT * FROM training_result_evidence WHERE user_id=2').all();
+    require('../src/db/database').initializeDatabase(h.db);
+    require('../src/db/database').initializeDatabase(h.db);
+    assert.deepEqual(h.db.prepare('SELECT * FROM garmin_activity_imports WHERE user_id=2').all(), history);
+    for (const [activity, cursor] of [[42, 0], [43, 1]]) {
+      const list = await h.app.inject({ method: 'GET', url: '/api/trainings/1/garmin/activities', headers: { cookie: h.cookie } });
+      assert.equal(list.statusCode, 200, list.body);
+      assert.equal(list.json().items.find(item => item.activity_id === String(activity)).linked_training_id, null);
+      const reviewed = await preview(h, activity, 1, cursor);
+      assert.equal(reviewed.statusCode, 200, reviewed.body);
+      assert.equal(reviewed.json().linked_training_id, null);
+      const result = await h.app.inject({ method: 'POST', url: '/api/trainings/1/garmin/activity-import', headers: { cookie: h.cookie },
+        payload: { preview_id: reviewed.json().preview_id, confirm_replace: true } });
+      assert.equal(result.statusCode, 200, result.body);
+      if (activity === 42) assert.equal(h.db.prepare("SELECT count(*) AS n FROM garmin_activity_imports WHERE activity_id='42' AND is_current=1").get().n, 2);
+    }
+    assert.deepEqual(h.db.prepare('SELECT * FROM trainings WHERE id=2').get(), before);
+    assert.deepEqual(h.db.prepare('SELECT * FROM garmin_activity_imports WHERE user_id=2').all(), history);
+    assert.deepEqual(h.db.prepare('SELECT * FROM training_result_evidence WHERE user_id=2').all(), evidence);
+  } finally { await h.close(); }
+});
+
 test('budget-exhausted pages preserve the real cursor and the global cursor limit ends safely', async () => {
   const requests = [];
   const connectorFetch = async (url, init) => {
