@@ -1370,7 +1370,25 @@ test('a local failure while queuing manual disconnect does not request owner-rev
     const response = await h.app.inject({ method: 'DELETE', url: '/api/garmin/connection', headers: { cookie: h.cookie } });
     assert.equal(response.statusCode, 503);
     assert.equal(response.json().code, 'unavailable');
+    assert.equal(h.db.prepare('SELECT count(*) AS n FROM garmin_pilot_connections WHERE user_id=1').get().n, 0);
     assert.equal(h.db.prepare('SELECT 1').get()['1'], 1);
+  } finally { await h.close(); }
+});
+
+test('a local failure after remote disconnect keeps both cleanup flags pending for retry', async () => {
+  const h = await productApiHarness({ garminFetch: async () => new Response(null, { status: 204 }) });
+  try {
+    h.db.exec(`CREATE TRIGGER fail_cleanup_confirmation BEFORE UPDATE OF cleanup_pending ON garmin_pilot_connections
+      WHEN NEW.cleanup_pending = 0 BEGIN SELECT RAISE(ABORT, 'synthetic failure'); END`);
+    const response = await h.app.inject({ method: 'DELETE', url: '/api/garmin/connection', headers: { cookie: h.cookie } });
+    assert.equal(response.statusCode, 503);
+    assert.equal(h.db.prepare('SELECT cleanup_pending FROM garmin_pilot_connections WHERE user_id=1').get().cleanup_pending, 1);
+    assert.equal(h.db.prepare("SELECT pending FROM garmin_connection_cleanup WHERE user_id=1 AND connection_id='pilot'").get().pending, 1);
+    h.db.exec('DROP TRIGGER fail_cleanup_confirmation');
+    const retried = await h.app.inject({ method: 'DELETE', url: '/api/garmin/connection', headers: { cookie: h.cookie } });
+    assert.equal(retried.statusCode, 200);
+    assert.equal(h.db.prepare('SELECT cleanup_pending FROM garmin_pilot_connections WHERE user_id=1').get().cleanup_pending, 0);
+    assert.equal(h.db.prepare("SELECT pending FROM garmin_connection_cleanup WHERE user_id=1 AND connection_id='pilot'").get().pending, 0);
   } finally { await h.close(); }
 });
 

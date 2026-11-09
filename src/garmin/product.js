@@ -125,22 +125,25 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
       return result;
     }
     const cleanup = async () => {
-      const cleanupState = db.prepare('SELECT pending,preserve_identity FROM garmin_connection_cleanup WHERE user_id=? AND connection_id=?').get(ownerId, connectionId);
-      const wasPending = Boolean(cleanupState?.pending);
-      const keepIdentity = wasPending ? Boolean(cleanupState.preserve_identity) && preserveIdentity : preserveIdentity;
-      if (!wasPending) {
-        db.prepare(`INSERT INTO garmin_pilot_connections
-          (user_id,connection_generation,identity_fingerprint,cleanup_pending) VALUES (?,2,NULL,1)
-          ON CONFLICT(user_id) DO UPDATE SET connection_generation=connection_generation+1,
-            identity_fingerprint=NULL,cleanup_pending=1,updated_at=datetime('now')`).run(ownerId);
-        db.prepare(`INSERT INTO garmin_connection_cleanup (user_id,connection_id,pending,preserve_identity) VALUES (?,?,1,0)
-          ON CONFLICT(user_id,connection_id) DO UPDATE SET pending=1,preserve_identity=0,updated_at=datetime('now')`).run(ownerId, connectionId);
-      } else if (!keepIdentity && cleanupState.preserve_identity) {
-        db.prepare(`UPDATE garmin_pilot_connections SET connection_generation=connection_generation+
-          CASE WHEN identity_fingerprint IS NULL THEN 0 ELSE 1 END,identity_fingerprint=NULL,
-          cleanup_pending=1,updated_at=datetime('now') WHERE user_id=?`).run(ownerId);
-        db.prepare(`UPDATE garmin_connection_cleanup SET preserve_identity=0,updated_at=datetime('now') WHERE user_id=? AND connection_id=?`).run(ownerId, connectionId);
-      }
+      const prepareCleanup = db.transaction(() => {
+        const cleanupState = db.prepare('SELECT pending,preserve_identity FROM garmin_connection_cleanup WHERE user_id=? AND connection_id=?').get(ownerId, connectionId);
+        const wasPending = Boolean(cleanupState?.pending);
+        const keepIdentity = wasPending ? Boolean(cleanupState.preserve_identity) && preserveIdentity : preserveIdentity;
+        if (!wasPending) {
+          db.prepare(`INSERT INTO garmin_pilot_connections
+            (user_id,connection_generation,identity_fingerprint,cleanup_pending) VALUES (?,2,NULL,1)
+            ON CONFLICT(user_id) DO UPDATE SET connection_generation=connection_generation+1,
+              identity_fingerprint=NULL,cleanup_pending=1,updated_at=datetime('now')`).run(ownerId);
+          db.prepare(`INSERT INTO garmin_connection_cleanup (user_id,connection_id,pending,preserve_identity) VALUES (?,?,1,0)
+            ON CONFLICT(user_id,connection_id) DO UPDATE SET pending=1,preserve_identity=0,updated_at=datetime('now')`).run(ownerId, connectionId);
+        } else if (!keepIdentity && cleanupState.preserve_identity) {
+          db.prepare(`UPDATE garmin_pilot_connections SET connection_generation=connection_generation+
+            CASE WHEN identity_fingerprint IS NULL THEN 0 ELSE 1 END,identity_fingerprint=NULL,
+            cleanup_pending=1,updated_at=datetime('now') WHERE user_id=?`).run(ownerId);
+          db.prepare(`UPDATE garmin_connection_cleanup SET preserve_identity=0,updated_at=datetime('now') WHERE user_id=? AND connection_id=?`).run(ownerId, connectionId);
+        }
+      });
+      prepareCleanup.immediate();
       const controller = new AbortController();
       controllers.add(controller);
       try {
@@ -154,8 +157,10 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
           confirmed = body?.status === 'disconnected';
         }
         if (confirmed) {
-          db.prepare(`UPDATE garmin_connection_cleanup SET pending=0,preserve_identity=0,updated_at=datetime('now') WHERE user_id=? AND connection_id=?`).run(ownerId, connectionId);
-          db.prepare(`UPDATE garmin_pilot_connections SET cleanup_pending=0,updated_at=datetime('now') WHERE user_id=?`).run(ownerId);
+          db.transaction(() => {
+            db.prepare(`UPDATE garmin_connection_cleanup SET pending=0,preserve_identity=0,updated_at=datetime('now') WHERE user_id=? AND connection_id=?`).run(ownerId, connectionId);
+            db.prepare(`UPDATE garmin_pilot_connections SET cleanup_pending=0,updated_at=datetime('now') WHERE user_id=?`).run(ownerId);
+          }).immediate();
           return true;
         }
       } catch { /* durable pending flag is retried by the local cleanup worker */ }
