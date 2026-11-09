@@ -1106,8 +1106,10 @@ def auth_cancel(owner_id: str, connection_id: str, body: AuthCancel,
 def status(owner_id: str, connection_id: str,
            x_kinesis_service_key: str | None = Header(default=None)):
     path, key = _connection(connection_id, owner_id, x_kinesis_service_key)
+    # Expiration may acquire locks for other owners; do it before taking this
+    # connection's lock so concurrent status requests cannot deadlock.
+    _expire_challenges()
     with _lock(str(path)):
-        _expire_challenges()
         if any(challenge["path"] == str(path) for challenge in _challenges.values()):
             return {"status": "mfa_required"}
     current = _states.get(str(path))

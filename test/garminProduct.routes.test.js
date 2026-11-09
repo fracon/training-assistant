@@ -511,6 +511,99 @@ test('unknown Garmin access mode does not widen pilot access', async () => {
   } finally { await h.close(); }
 });
 
+test('multiuser cleanup can remove connector credentials after the account is deleted mid-request', async () => {
+  let h; const calls = [];
+  h = await productApiHarness({ config: { GARMIN_ACCESS_MODE: 'multiuser' }, garminFetch: async (url, init = {}) => {
+    calls.push({ url, method: init.method });
+    if (url.endsWith('/auth/start')) {
+      h.db.prepare('DELETE FROM users WHERE id=1').run();
+      return Response.json({ status: 'connected', identity_fingerprint: 'a'.repeat(64) });
+    }
+    return new Response(null, { status: 204 });
+  } });
+  try {
+    const response = await h.app.inject({ method: 'POST', url: '/api/garmin/auth/start', headers: { cookie: h.cookie },
+      payload: { email: 'synthetic@example.test', password: 'synthetic' } });
+    assert.equal(response.statusCode, 401);
+    assert.equal(calls.filter(call => call.method === 'DELETE').length, 1);
+    assert.equal(h.db.prepare("SELECT pending FROM garmin_connection_cleanup WHERE user_id=1 AND connection_id='pilot'").get().pending, 0);
+  } finally { await h.close(); }
+});
+
+test('multiuser status rechecks the original session after the connector responds', async () => {
+  let h; let deletes = 0;
+  h = await productApiHarness({ config: { GARMIN_ACCESS_MODE: 'multiuser' }, garminFetch: async (_url, init = {}) => {
+    if (init.method === 'DELETE') { deletes += 1; return new Response(null, { status: 204 }); }
+    h.db.prepare('DELETE FROM sessions WHERE user_id=1').run();
+    return Response.json({ status: 'disconnected' });
+  } });
+  try {
+    const response = await h.app.inject({ method: 'GET', url: '/api/garmin/status', headers: { cookie: h.cookie } });
+    assert.equal(response.statusCode, 401);
+    assert.equal(response.json().code, 'auth_required');
+    assert.equal(deletes, 0, 'logging out must not delete a still-active owner’s Garmin connection');
+  } finally { await h.close(); }
+});
+
+test('pending cleanup blocks reconciliation for its owner', async () => {
+  const h = await productApiHarness({ config: { GARMIN_ACCESS_MODE: 'multiuser' } });
+  try {
+    h.db.prepare('INSERT INTO garmin_pilot_connections(user_id,cleanup_pending) VALUES(1,1)').run();
+    const response = await h.app.inject({ method: 'POST', url: '/api/garmin/operations/synthetic/reconcile', headers: { cookie: h.cookie } });
+    assert.equal(response.statusCode, 503);
+    assert.equal(response.json().code, 'cleanup_pending');
+  } finally { await h.close(); }
+});
+
+test('session revoked while waiting for cleanup cannot start a connector status request', async () => {
+  let release; let entered;
+  const gate = new Promise(resolve => { release = resolve; });
+  const started = new Promise(resolve => { entered = resolve; });
+  const calls = [];
+  const h = await productApiHarness({ config: { GARMIN_ACCESS_MODE: 'multiuser' }, garminFetch: async (url, init = {}) => {
+    calls.push({ url, method: init.method });
+    if (init.method === 'DELETE') { entered(); await gate; return new Response(null, { status: 204 }); }
+    return Response.json({ status: 'disconnected' });
+  } });
+  try {
+    h.db.prepare('INSERT INTO garmin_pilot_connections(user_id,cleanup_pending) VALUES(1,1)').run();
+    h.db.prepare("INSERT INTO garmin_connection_cleanup(user_id,connection_id,pending,preserve_identity) VALUES(1,'pilot',1,1)").run();
+    const pending = h.app.inject({ method: 'GET', url: '/api/garmin/status', headers: { cookie: h.cookie } });
+    await started;
+    h.db.prepare('DELETE FROM sessions WHERE user_id=1').run();
+    release();
+    const response = await pending;
+    assert.equal(response.statusCode, 401);
+    assert.equal(calls.filter(call => call.url.endsWith('/status')).length, 0);
+  } finally { release(); await h.close(); }
+});
+
+test('a closed Garmin worker refuses late cleanup callbacks and requests', async () => {
+  const db = createDatabase({ filename: ':memory:' });
+  const { createGarminProduct } = require('../src/garmin/product');
+  const hooks = {}; const routes = {}; let tick; let calls = 0;
+  const originalInterval = global.setInterval;
+  const originalClear = global.clearInterval;
+  global.setInterval = callback => { tick = callback; return { unref() {} }; };
+  global.clearInterval = () => {};
+  try {
+    db.prepare("INSERT INTO users(id,email,password_hash) VALUES(1,'closed@example.test','hash')").run();
+    const app = { addHook(name, handler) { hooks[name] = handler; } };
+    for (const method of ['get', 'post', 'put', 'delete']) app[method] = (url, _options, handler) => { routes[`${method} ${url}`] = handler; };
+    createGarminProduct({ db, config: { GARMIN_PILOT_ENABLED: 'true', GARMIN_PILOT_USER_ID: '1' },
+      fetchImpl: async () => { calls += 1; return new Response(null, { status: 204 }); } }).register(app, () => {});
+    await hooks.onClose();
+    db.prepare('INSERT INTO garmin_pilot_connections(user_id,cleanup_pending) VALUES(1,1)').run();
+    db.prepare("INSERT INTO garmin_connection_cleanup(user_id,connection_id,pending,preserve_identity) VALUES(1,'pilot',1,1)").run();
+    tick();
+    const reply = { status: null, code(status) { this.status = status; return this; }, send(body) { return body; } };
+    const result = await routes['get /api/garmin/status']({ user: { id: 1 } }, reply);
+    assert.equal(reply.status, 503);
+    assert.equal(result.code, 'cleanup_pending');
+    assert.equal(calls, 0);
+  } finally { global.setInterval = originalInterval; global.clearInterval = originalClear; db.close(); }
+});
+
 test('publish rejects a date changed after the confirmed preview without dispatching a mutation', async () => {
   const db = createDatabase({ filename: ':memory:' });
   const calls = [];

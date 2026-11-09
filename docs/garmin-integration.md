@@ -1,8 +1,7 @@
 # Garmin Connect integration contract
 
-Status (2026-10-31): **Phase 1 foundation implemented; pilot evidence is
-partial and full Garmin/device homologation remains pending. The pilot is
-restricted to the explicitly selected owner.** This
+Status: **The multiuser mode is under review; real two-account ZimaOS
+acceptance and full Garmin/device homologation remain pending.** This
 document separates library documentation, simulated tests, account evidence,
 and device evidence. Nothing in the first two categories is a substitute for
 the last two.
@@ -13,10 +12,11 @@ The project owner explicitly authorized an unofficial Garmin Connect
 integration, a private Python container in the Kinesis Compose deployment, and
 a proof of concept using the owner's Garmin account and Forerunner 55. This
 authorization covers the selected workout and the owner's own activity data
-only. It does not permit publishing another user's data, public connector
+only. Multiuser enablement is explicitly authorized by the owner; each user
+acts on their own account. It does not permit publishing another user's data, public connector
 access, sending FIT/GPS to OpenAI or another service, deleting preexisting
-Garmin records, paid OpenAI calls, or enabling the integration globally before
-homologation.
+Garmin records, or paid OpenAI calls. Real two-account and device acceptance
+remains separate from the synthetic validation.
 
 Node remains the product authorization and canonical database boundary. The
 connector has no public port, browser route, or SQLite mount; its HTTP API is
@@ -388,17 +388,20 @@ future user-initiated attempt without recording profile contents.
 
 | Variable | Used by | Scope |
 |---|---|---|
-| `GARMIN_PILOT_USER_ID` | Node authorization and Python connector | Temporary Phase 1 restriction; Kinesis `users.id`, not Garmin ID |
+| `GARMIN_PILOT_ENABLED` | Node and Python | Set to `true` to enable the integration; defaults to `false` |
+| `GARMIN_ACCESS_MODE` | Node and Python | `pilot` (default) restricts access; explicit `multiuser` enables active authenticated accounts |
+| `GARMIN_PILOT_USER_ID` | Node authorization and Python connector | Required in pilot mode; Kinesis `users.id`, not Garmin ID; ignored in multiuser mode |
 | `KINESIS_GARMIN_SERVICE_TOKEN` | Node → Python authentication | Internal operator secret, retained across updates |
 | `GARMIN_ENCRYPTION_KEY` | Python token/journal encryption | Internal operator secret, backed up separately from token storage |
 
-The local setup selects the first value and generates/persists the other two.
+The local setup selects the pilot account and generates/persists both secrets.
 End users will not configure any of them. For ZimaOS the operator supplies the
-three runtime settings once per installation and preserves both secrets during
-image updates. Future multi-user ownership should come from the authenticated
-Kinesis session; that path is not implemented. The #73 branch adds a web flow
-for the configured single pilot owner; it does not provide production
-multi-user “Connect Garmin” support.
+runtime settings once per installation and preserves both secrets during image
+updates. The feature stays disabled unless `GARMIN_PILOT_ENABLED=true`.
+Without `GARMIN_ACCESS_MODE`, pilot restrictions remain in effect. Only the
+exact value `multiuser` enables all authenticated active Kinesis users; unknown
+values fail closed. Restart both services after changing the mode. The terminal
+pilot CLI still requires an explicit `GARMIN_PILOT_USER_ID`.
 
 ## ZimaOS packaging and operation
 
@@ -444,6 +447,28 @@ checks below, back up the encrypted token volume and key, then deploy. Rollback
 to the preceding Compose/source revision and image tag. Restore matching token
 volume/key backups if the rollback changed the token format; this release uses
 the `KGC1` envelope. Do not restore a token backup from a different key.
+
+For the ZimaOS interface upgrade, first record both current image digests, the
+effective Compose network, the actual Garmin storage source and the Node data
+source from the existing containers' mount details. Back up SQLite consistently
+with the application stopped, and back up the complete Garmin storage (including
+`.bin` and `.ops` files); store the existing encryption key separately in the
+operator's secret manager. Preserve the storage source exactly: an installation
+using a bind mount must continue to use that same host path. Preserve ownership
+`10001:10001` and the shared bridge network; do not substitute a new volume.
+
+In ZimaOS, edit the existing stack, select matching Node and connector image
+tags from the same successful build, and retain its existing port, network and
+mount settings. To enable multiuser mode set `GARMIN_PILOT_ENABLED=true` and
+`GARMIN_ACCESS_MODE=multiuser` on both services, retain the same
+`KINESIS_GARMIN_SERVICE_TOKEN` on both and the same `GARMIN_ENCRYPTION_KEY` on
+the connector; `GARMIN_PILOT_USER_ID` is not required for the web flow. Apply
+the changes and restart both containers. Verify connector health and the existing
+connection before testing with synthetic data. Do not change the key or rename
+encrypted files. If rollback is needed, stop both services and restore the
+matching previous images, configuration, SQLite backup and Garmin storage backup
+with their original key and mount source. Real acceptance with two Garmin
+accounts on ZimaOS remains an operational task, separate from simulated tests.
 
 ## Automated evidence and go/no-go
 

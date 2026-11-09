@@ -134,10 +134,12 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
         const wasPending = Boolean(cleanupState?.pending);
         const keepIdentity = wasPending ? Boolean(cleanupState.preserve_identity) && preserveIdentity : preserveIdentity;
         if (!wasPending) {
-          db.prepare(`INSERT INTO garmin_pilot_connections
-            (user_id,connection_generation,identity_fingerprint,cleanup_pending) VALUES (?,2,NULL,1)
-            ON CONFLICT(user_id) DO UPDATE SET connection_generation=connection_generation+1,
-              identity_fingerprint=NULL,cleanup_pending=1,updated_at=datetime('now')`).run(ownerId);
+          if (db.prepare('SELECT 1 FROM users WHERE id=?').get(ownerId)) {
+            db.prepare(`INSERT INTO garmin_pilot_connections
+              (user_id,connection_generation,identity_fingerprint,cleanup_pending) VALUES (?,2,NULL,1)
+              ON CONFLICT(user_id) DO UPDATE SET connection_generation=connection_generation+1,
+                identity_fingerprint=NULL,cleanup_pending=1,updated_at=datetime('now')`).run(ownerId);
+          }
           db.prepare(`INSERT INTO garmin_connection_cleanup (user_id,connection_id,pending,preserve_identity) VALUES (?,?,1,0)
             ON CONFLICT(user_id,connection_id) DO UPDATE SET pending=1,preserve_identity=0,updated_at=datetime('now')`).run(ownerId, connectionId);
         } else if (!keepIdentity && cleanupState.preserve_identity) {
@@ -185,7 +187,8 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
         VALUES (?,?,NULL,1) ON CONFLICT(user_id) DO UPDATE SET cleanup_pending=1,updated_at=datetime('now')`)
         .run(ownerId, generation);
       db.prepare(`INSERT INTO garmin_connection_cleanup (user_id,connection_id,pending,preserve_identity) VALUES (?,?,1,1)
-        ON CONFLICT(user_id,connection_id) DO UPDATE SET pending=1,updated_at=datetime('now')`).run(ownerId, connectionId);
+        ON CONFLICT(user_id,connection_id) DO UPDATE SET preserve_identity=CASE WHEN pending=1 THEN preserve_identity ELSE 1 END,
+          pending=1,updated_at=datetime('now')`).run(ownerId, connectionId);
     });
     queue.immediate();
   }
@@ -210,7 +213,11 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
     const key = `${operation.ownerId}:${CONNECTION}`;
     const previous = connectionTails.get(key) || Promise.resolve();
     const task = previous.catch(() => {}).then(() => runOperation(db, fetchImpl, config,
-      operation, current, { shouldStop: () => closing, onOwnerIneligible: () => cleanupRevokedConnection(operation.ownerId, CONNECTION), controllers }));
+      operation, current, { shouldStop: () => closing, onOwnerIneligible: () => {
+        const preserveIdentity = multiuser && Boolean(db.prepare('SELECT 1 FROM users WHERE id=?').get(operation.ownerId));
+        if (preserveIdentity) queueUserDisconnect(operation.ownerId, CONNECTION);
+        return cleanupRevokedConnection(operation.ownerId, CONNECTION, { preserveIdentity });
+      }, controllers }));
     workerTasks.add(task);
     connectionTails.set(key, task);
     void task.finally(() => {
