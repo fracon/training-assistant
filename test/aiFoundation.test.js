@@ -18,7 +18,7 @@ const {
   contextIsCurrent,
   duration,
 } = require('../src/ai/context');
-const { createExecutionService } = require('../src/ai/executions');
+const { createExecutionService, truncateUtf8Text } = require('../src/ai/executions');
 const { getAvailabilitySnapshot } = require('../src/availability');
 const { renderPrompt } = require('../src/ai/prompt-service');
 const { createResponsesClient, buildPayload } = require('../src/ai/client');
@@ -664,9 +664,19 @@ test('failed domain output is captured privately per attempt, bounded, expiring,
   await retry.stop();fixture.db.close();
   const boundedFixture=setup();const boundedService=service(boundedFixture,{operations:{analysis:invalid},client:async()=>({value:{},outputText:huge,error:null,usage:null})});
   const bounded=boundedService.enqueue(1,body);await wait(boundedService,1,bounded.id);
-  const output=boundedService.get(1,bounded.id,true).rawOutputs[0];assert.equal(output.output_bytes,Buffer.byteLength(huge));assert.equal(Buffer.byteLength(output.output_text)<=65536,true);assert.equal(output.truncated,1);assert.doesNotThrow(()=>JSON.parse(JSON.stringify(output.output_text)));
-  boundedFixture.db.prepare('UPDATE ai_execution_raw_outputs SET expires_at=?').run('2026-10-13T00:00:00.000Z');boundedService.cleanup();const expired=boundedService.get(1,bounded.id,true).rawOutputs[0];assert.equal(expired.expired,1);assert.equal(expired.output_text,null);assert.equal(expired.output_bytes,Buffer.byteLength(huge));
+  const output=boundedService.get(1,bounded.id,true).rawOutputs[0];assert.equal(output.output_bytes,Buffer.byteLength(huge));assert.equal(Buffer.byteLength(output.output_text)<=65536,true);assert.equal(output.truncated,1);assert.equal(boundedService.get(1,bounded.id).state,'failed');assert.doesNotThrow(()=>JSON.parse(JSON.stringify(output.output_text)));
+  boundedFixture.db.prepare('UPDATE ai_execution_raw_outputs SET expires_at=?').run('2026-10-14T12:00:00.000Z');const beforeCleanup=boundedService.get(1,bounded.id,true).rawOutputs[0];assert.equal(beforeCleanup.expired,1);assert.equal(beforeCleanup.output_text,null);assert.equal(beforeCleanup.output_bytes,Buffer.byteLength(huge));
+  boundedService.cleanup();const expired=boundedService.get(1,bounded.id,true).rawOutputs[0];assert.equal(expired.expired,1);assert.equal(expired.output_text,null);assert.equal(expired.output_bytes,Buffer.byteLength(huge));
   await boundedService.stop();boundedFixture.db.close();
+});
+test('UTF-8 output truncation is linear, preserves ASCII prefixes and stops before split multibyte characters',()=>{
+  const maximum=65536;
+  const ascii=truncateUtf8Text('a'.repeat(80000),maximum);
+  assert.equal(ascii.text,'a'.repeat(maximum));assert.equal(ascii.outputBytes,80000);assert.equal(ascii.truncated,1);
+  const boundary=truncateUtf8Text('a'.repeat(maximum-1)+'éz',maximum);
+  assert.equal(boundary.text,'a'.repeat(maximum-1));assert.equal(Buffer.byteLength(boundary.text),maximum-1);assert.equal(boundary.outputBytes,maximum+2);assert.equal(boundary.truncated,1);
+  const exact=truncateUtf8Text('é'.repeat(maximum/2),maximum);
+  assert.equal(exact.text,'é'.repeat(maximum/2));assert.equal(exact.outputBytes,maximum);assert.equal(exact.truncated,0);
 });
 test('queue rejects disabled or unregistered phases, malformed requests and every quota dimension', async () => {
   const fixture = setup();

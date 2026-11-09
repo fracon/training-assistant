@@ -1754,7 +1754,9 @@
         "evidence_unknown_reference": "evidence reference is absent from the supplied sources",
         "invalid_json": "the text is not valid JSON",
         "output_text_count": "the response does not contain exactly one text block"
-      }
+      },
+      "outputTitle": "Model output",
+      "noAttemptInfo": "No diagnostic was saved for this attempt."
     }
   },
   "cyclePlanning": {

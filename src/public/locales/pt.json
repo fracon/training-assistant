@@ -1754,7 +1754,9 @@
         "evidence_unknown_reference": "referência de evidence não existe nas fontes fornecidas",
         "invalid_json": "o texto não contém JSON válido",
         "output_text_count": "a resposta não contém exatamente um bloco de texto"
-      }
+      },
+      "outputTitle": "Saída do modelo",
+      "noAttemptInfo": "Não há diagnóstico salvo para esta tentativa."
     }
   },
   "cyclePlanning": {

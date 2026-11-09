@@ -85,3 +85,8 @@
 #traceRequest { max-height:18rem; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; }
 .memory-trace,#traceResponsePanel { min-width:0; }
 #traceDiagnosis,#traceStatus { overflow-wrap:anywhere; }
+.trace-attempt-controls { display:grid; gap:.4rem; max-width:22rem; }
+.trace-output-header { display:flex; align-items:center; justify-content:space-between; gap:.875rem; border-top:1px solid var(--line); margin-top:1rem; padding-top:.875rem; }
+.trace-output-header h4 { margin:0; font-size:.95rem; }
+.trace-output-header button { flex:0 0 auto; }
+@media (max-width:560px) { .trace-output-header { flex-wrap:wrap; gap:.875rem; } }

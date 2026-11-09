@@ -57,8 +57,9 @@
       </div>
       <section id="traceRequestPanel" role="tabpanel" aria-labelledby="traceRequestTab"><pre id="traceRequest" class="prompt-textarea"></pre></section>
       <section id="traceResponsePanel" role="tabpanel" aria-labelledby="traceResponseTab" hidden>
-        <p id="traceDiagnosis" class="field-hint"></p><label for="traceAttempt" data-i18n="memory.trace.attempt">Attempt</label>
-        <select id="traceAttempt"></select><button id="traceCopy" type="button" class="btn-secondary" data-i18n="memory.trace.copy">Copy output</button>
+        <p id="traceDiagnosis" class="field-hint"></p>
+        <div class="trace-attempt-controls"><label for="traceAttempt" data-i18n="memory.trace.attempt">Attempt</label><select id="traceAttempt"></select></div>
+        <div class="trace-output-header"><h4 id="traceOutputTitle" data-i18n="memory.trace.outputTitle">Model output</h4><button id="traceCopy" type="button" class="btn-secondary" data-i18n="memory.trace.copy">Copy output</button></div>
         <pre id="traceOutput" class="prompt-textarea trace-output" tabindex="0"></pre>
       </section>
     </section>
