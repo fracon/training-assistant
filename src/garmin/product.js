@@ -23,9 +23,7 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
   const connectionTails = new Map();
   const workerTasks = new Set();
   let cleanupTimer = null;
-  let cleanupInFlight = null;
-  let cleanupPreservingIdentity = false;
-  let revocationArrivedDuringDisconnect = false;
+  const cleanupJobs = new Map();
 
   function eligible(request) {
     const owner = db.prepare('SELECT id, is_active FROM users WHERE id = ?').get(request.user.id);
@@ -106,38 +104,47 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
     }
   }
 
-  async function cleanupRevokedConnection({ preserveIdentity = false } = {}) {
-    if (cleanupInFlight) {
-      if (!preserveIdentity && cleanupPreservingIdentity) revocationArrivedDuringDisconnect = true;
-      const result = await cleanupInFlight;
-      if (revocationArrivedDuringDisconnect) {
-        revocationArrivedDuringDisconnect = false;
-        return cleanupRevokedConnection({ preserveIdentity: false });
+  function unresolvedLegacyCleanup() {
+    return Boolean(db.prepare('SELECT pending FROM garmin_cleanup_state WHERE id=1').get()?.pending);
+  }
+
+  async function cleanupRevokedConnection(ownerId, connectionId, { preserveIdentity = false } = {}) {
+    if (unresolvedLegacyCleanup()) {
+      console.warn('[kinesis-garmin] legacy cleanup owner is ambiguous; restore the pilot ownership evidence before retrying cleanup');
+      return false;
+    }
+    const key = `${ownerId}:${connectionId}`;
+    const existing = cleanupJobs.get(key);
+    if (existing) {
+      if (!preserveIdentity && existing.preserveIdentity) existing.revoked = true;
+      const result = await existing.promise;
+      if (existing.revoked) {
+        existing.revoked = false;
+        return cleanupRevokedConnection(ownerId, connectionId, { preserveIdentity: false });
       }
       return result;
     }
     const cleanup = async () => {
-      const cleanupState = db.prepare('SELECT pending,preserve_identity FROM garmin_cleanup_state WHERE id=1').get();
+      const cleanupState = db.prepare('SELECT pending,preserve_identity FROM garmin_connection_cleanup WHERE user_id=? AND connection_id=?').get(ownerId, connectionId);
       const wasPending = Boolean(cleanupState?.pending);
       const keepIdentity = wasPending ? Boolean(cleanupState.preserve_identity) && preserveIdentity : preserveIdentity;
       if (!wasPending) {
         db.prepare(`INSERT INTO garmin_pilot_connections
           (user_id,connection_generation,identity_fingerprint,cleanup_pending) VALUES (?,2,NULL,1)
           ON CONFLICT(user_id) DO UPDATE SET connection_generation=connection_generation+1,
-            identity_fingerprint=NULL,cleanup_pending=1,updated_at=datetime('now')`).run(pilotOwner);
-        db.prepare(`INSERT INTO garmin_cleanup_state (id,pending,preserve_identity) VALUES (1,1,?)
-          ON CONFLICT(id) DO UPDATE SET pending=1,preserve_identity=excluded.preserve_identity,updated_at=datetime('now')`)
-          .run(0);
+            identity_fingerprint=NULL,cleanup_pending=1,updated_at=datetime('now')`).run(ownerId);
+        db.prepare(`INSERT INTO garmin_connection_cleanup (user_id,connection_id,pending,preserve_identity) VALUES (?,?,1,0)
+          ON CONFLICT(user_id,connection_id) DO UPDATE SET pending=1,preserve_identity=0,updated_at=datetime('now')`).run(ownerId, connectionId);
       } else if (!keepIdentity && cleanupState.preserve_identity) {
         db.prepare(`UPDATE garmin_pilot_connections SET connection_generation=connection_generation+
           CASE WHEN identity_fingerprint IS NULL THEN 0 ELSE 1 END,identity_fingerprint=NULL,
-          cleanup_pending=1,updated_at=datetime('now') WHERE user_id=?`).run(pilotOwner);
-        db.prepare(`UPDATE garmin_cleanup_state SET preserve_identity=0,updated_at=datetime('now') WHERE id=1`).run();
+          cleanup_pending=1,updated_at=datetime('now') WHERE user_id=?`).run(ownerId);
+        db.prepare(`UPDATE garmin_connection_cleanup SET preserve_identity=0,updated_at=datetime('now') WHERE user_id=? AND connection_id=?`).run(ownerId, connectionId);
       }
       const controller = new AbortController();
       controllers.add(controller);
       try {
-        const response = await fetchImpl(`${connector}/v1/connections/${pilotOwner}/${CONNECTION}`, {
+        const response = await fetchImpl(`${connector}/v1/connections/${ownerId}/${connectionId}`, {
           method: 'DELETE', headers: { 'x-kinesis-service-key': config.KINESIS_GARMIN_SERVICE_TOKEN || '' },
           signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]),
         });
@@ -147,42 +154,44 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
           confirmed = body?.status === 'disconnected';
         }
         if (confirmed) {
-          db.prepare(`UPDATE garmin_cleanup_state SET pending=0,preserve_identity=0,updated_at=datetime('now') WHERE id=1`).run();
-          db.prepare(`UPDATE garmin_pilot_connections SET cleanup_pending=0,updated_at=datetime('now') WHERE user_id=?`).run(pilotOwner);
+          db.prepare(`UPDATE garmin_connection_cleanup SET pending=0,preserve_identity=0,updated_at=datetime('now') WHERE user_id=? AND connection_id=?`).run(ownerId, connectionId);
+          db.prepare(`UPDATE garmin_pilot_connections SET cleanup_pending=0,updated_at=datetime('now') WHERE user_id=?`).run(ownerId);
           return true;
         }
       } catch { /* durable pending flag is retried by the local cleanup worker */ }
       finally { controllers.delete(controller); }
       return false;
     };
-    cleanupPreservingIdentity = preserveIdentity;
-    cleanupInFlight = cleanup();
-    try { return await cleanupInFlight; }
-    finally { cleanupInFlight = null; cleanupPreservingIdentity = false; }
+    const job = { preserveIdentity, revoked: false, promise: null };
+    job.promise = cleanup();
+    cleanupJobs.set(key, job);
+    try { return await job.promise; }
+    finally { if (cleanupJobs.get(key) === job) cleanupJobs.delete(key); }
   }
 
-  function queueUserDisconnect() {
+  function queueUserDisconnect(ownerId, connectionId) {
     const queue = db.transaction(() => {
-      const generation = connectionGeneration(pilotOwner);
+      const generation = connectionGeneration(ownerId);
       db.prepare(`INSERT INTO garmin_pilot_connections (user_id,connection_generation,identity_fingerprint,cleanup_pending)
         VALUES (?,?,NULL,1) ON CONFLICT(user_id) DO UPDATE SET cleanup_pending=1,updated_at=datetime('now')`)
-        .run(pilotOwner, generation);
-      db.prepare(`INSERT INTO garmin_cleanup_state (id,pending,preserve_identity) VALUES (1,1,1)
-        ON CONFLICT(id) DO UPDATE SET pending=1,updated_at=datetime('now')`).run();
+        .run(ownerId, generation);
+      db.prepare(`INSERT INTO garmin_connection_cleanup (user_id,connection_id,pending,preserve_identity) VALUES (?,?,1,1)
+        ON CONFLICT(user_id,connection_id) DO UPDATE SET pending=1,updated_at=datetime('now')`).run(ownerId, connectionId);
     });
     queue.immediate();
   }
 
-  async function retryPendingCleanup() {
-    if (closing || !db.prepare('SELECT pending FROM garmin_cleanup_state WHERE id=1').get()?.pending) return;
-    return cleanupRevokedConnection({ preserveIdentity: Boolean(db.prepare('SELECT preserve_identity FROM garmin_cleanup_state WHERE id=1').get()?.preserve_identity) });
+  async function retryPendingCleanup(ownerId, connectionId) {
+    const state = db.prepare('SELECT pending,preserve_identity FROM garmin_connection_cleanup WHERE user_id=? AND connection_id=?').get(ownerId, connectionId);
+    if (closing || unresolvedLegacyCleanup() || !state?.pending) return;
+    return cleanupRevokedConnection(ownerId, connectionId, { preserveIdentity: Boolean(state.preserve_identity) });
   }
 
   function enqueueOperation(operation, current) {
     const key = `${operation.ownerId}:${CONNECTION}`;
     const previous = connectionTails.get(key) || Promise.resolve();
     const task = previous.catch(() => {}).then(() => runOperation(db, fetchImpl, config,
-      operation, current, { shouldStop: () => closing, onOwnerIneligible: cleanupRevokedConnection, controllers }));
+      operation, current, { shouldStop: () => closing, onOwnerIneligible: () => cleanupRevokedConnection(operation.ownerId, CONNECTION), controllers }));
     workerTasks.add(task);
     connectionTails.set(key, task);
     void task.finally(() => {
@@ -209,7 +218,7 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
       if (request.url.startsWith('/api/garmin/')) reply.header('cache-control', 'no-store');
       return payload;
     });
-    cleanupTimer = setInterval(() => { void retryPendingCleanup(); }, 30000);
+    cleanupTimer = setInterval(() => { void retryPendingCleanup(pilotOwner, CONNECTION); }, 30000);
     cleanupTimer.unref?.();
     app.addHook('onClose', async () => {
       closing = true;
@@ -217,12 +226,13 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
       for (const controller of controllers) controller.abort();
       await Promise.allSettled([...workerTasks]);
     });
-    void retryPendingCleanup();
+    void retryPendingCleanup(pilotOwner, CONNECTION);
     app.get('/api/garmin/status', { preHandler: requireAuth }, async (request, reply) => {
       if (!eligible(request)) return reply.code(404).send({ code: 'pilot_unavailable' });
+      if (unresolvedLegacyCleanup()) return reply.code(503).send({ code: 'cleanup_pending' });
       try {
-        if (db.prepare('SELECT pending FROM garmin_cleanup_state WHERE id=1').get()?.pending
-            && !await retryPendingCleanup()) return reply.code(503).send({ code: 'cleanup_pending' });
+        if (db.prepare('SELECT pending FROM garmin_connection_cleanup WHERE user_id=? AND connection_id=?').get(request.user.id, CONNECTION)?.pending
+            && !await retryPendingCleanup(request.user.id, CONNECTION)) return reply.code(503).send({ code: 'cleanup_pending' });
         const result = await remote(request, '/status');
         if (!eligible(request)) return reply.code(404).send({ code: 'pilot_unavailable' });
         const capabilities = result.status === 'connected' ? await remote(request, '/capabilities') : null;
@@ -244,8 +254,9 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
     });
     app.post('/api/garmin/auth/start', { preHandler: requireAuth }, async (request, reply) => {
       if (!eligible(request)) return reply.code(404).send({ code: 'pilot_unavailable' });
-      if (db.prepare('SELECT pending FROM garmin_cleanup_state WHERE id=1').get()?.pending
-          && !await retryPendingCleanup()) return reply.code(503).send({ code: 'cleanup_pending' });
+      if (unresolvedLegacyCleanup()) return reply.code(503).send({ code: 'cleanup_pending' });
+      if (db.prepare('SELECT pending FROM garmin_connection_cleanup WHERE user_id=? AND connection_id=?').get(request.user.id, CONNECTION)?.pending
+          && !await retryPendingCleanup(request.user.id, CONNECTION)) return reply.code(503).send({ code: 'cleanup_pending' });
       if (authInFlight.has(request.user.id)) return reply.code(409).send({ code: 'auth_required' });
       const body = request.body || {};
       if (typeof body.email !== 'string' || body.email.length < 3 || body.email.length > 254 || typeof body.password !== 'string' || body.password.length < 1 || body.password.length > 1024) return reply.code(400).send({ code: 'invalid_payload' });
@@ -257,12 +268,12 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
       try {
         const result = await remote(request, '/auth/start', { method: 'POST', body: JSON.stringify(body) });
         if (authAttempts.get(request.user.id) !== attempt) {
-          await cleanupRevokedConnection();
+          await cleanupRevokedConnection(request.user.id, CONNECTION);
           return reply.code(409).send({ code: 'auth_required' });
         }
         if (!eligible(request)) {
           challenges.delete(result.challenge_id);
-          await cleanupRevokedConnection();
+          await cleanupRevokedConnection(request.user.id, CONNECTION);
           return reply.code(401).send({ code: 'auth_required' });
         }
         if (result.status === 'mfa_required' && typeof result.challenge_id === 'string') challenges.set(result.challenge_id, { owner: request.user.id, session: request.session.token, expires: now() + Math.min(300000, result.expires_in * 1000), generation: connectionGeneration(request.user.id), attempt });
@@ -272,7 +283,7 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
         }
         return result.status === 'mfa_required' ? { status: result.status, challenge_id: result.challenge_id, expires_in: result.expires_in } : { status: result.status };
       } catch (error) {
-        if (!eligible(request)) await cleanupRevokedConnection();
+        if (!eligible(request)) await cleanupRevokedConnection(request.user.id, CONNECTION);
         return reply.code(error.statusCode || 503).send({ code: safeCode(error), diagnostic_id: diagnosticIdFor(error, 'auth_start') });
       }
       };
@@ -299,12 +310,12 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
         const result = await remote(request, '/auth/finish', { method: 'POST', body: JSON.stringify({ challenge_id: id, code }) });
         if (!eligible(request)) {
           challenges.delete(id);
-          await cleanupRevokedConnection();
+          await cleanupRevokedConnection(request.user.id, CONNECTION);
           return reply.code(401).send({ code: 'auth_required' });
         }
         if (challenge.attempt !== authAttempts.get(request.user.id)) {
           challenges.delete(id);
-          await cleanupRevokedConnection();
+          await cleanupRevokedConnection(request.user.id, CONNECTION);
           return reply.code(409).send({ code: 'auth_required' });
         }
         if (result.status === 'connected') challenges.delete(id);
@@ -314,7 +325,7 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
         }
         return { status: result.status };
       } catch (error) {
-        if (!eligible(request)) { challenges.delete(id); await cleanupRevokedConnection(); }
+        if (!eligible(request)) { challenges.delete(id); await cleanupRevokedConnection(request.user.id, CONNECTION); }
         return reply.code(error.statusCode || 503).send({ code: safeCode(error), diagnostic_id: diagnosticIdFor(error, 'auth_finish') });
       }
       };
@@ -333,26 +344,27 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
       challenges.delete(id);
       try {
         const result = await remote(request, '/auth/cancel', { method: 'POST', body: JSON.stringify({ challenge_id: id }) });
-        if (!eligible(request)) { await cleanupRevokedConnection(); return reply.code(401).send({ code: 'auth_required' }); }
+        if (!eligible(request)) { await cleanupRevokedConnection(request.user.id, CONNECTION); return reply.code(401).send({ code: 'auth_required' }); }
         return result;
       } catch (error) {
-        if (!eligible(request)) await cleanupRevokedConnection();
+        if (!eligible(request)) await cleanupRevokedConnection(request.user.id, CONNECTION);
         return reply.code(error.statusCode || 503).send({ code: safeCode(error), diagnostic_id: diagnosticIdFor(error, 'auth_cancel') });
       }
     });
     app.delete('/api/garmin/connection', { preHandler: requireAuth }, async (request, reply) => {
       // Local cleanup must remain available after account deactivation.
       if (request.user.id !== pilotOwner) return reply.code(404).send({ code: 'pilot_unavailable' });
+      if (unresolvedLegacyCleanup()) return reply.code(503).send({ code: 'cleanup_pending' });
       const unresolved = db.prepare(`SELECT 1 FROM garmin_training_operations WHERE user_id = ?
         AND status IN ('publishing','workout_created','scheduling','outcome_unknown','reauth_required','failed') LIMIT 1`).get(request.user.id);
       if (unresolved) return reply.code(409).send({ code: 'operation_pending' });
       authAttempts.set(request.user.id, (authAttempts.get(request.user.id) || 0) + 1);
       challenges.forEach((challenge, id) => { if (challenge.owner === request.user.id) challenges.delete(id); });
       try {
-        queueUserDisconnect();
-        const disconnected = await cleanupRevokedConnection({ preserveIdentity: true });
+        queueUserDisconnect(request.user.id, CONNECTION);
+        const disconnected = await cleanupRevokedConnection(request.user.id, CONNECTION, { preserveIdentity: true });
         if (!eligible(request)) {
-          if (!disconnected) await cleanupRevokedConnection();
+          if (!disconnected) await cleanupRevokedConnection(request.user.id, CONNECTION);
           return reply.code(401).send({ code: 'auth_required' });
         }
         if (!disconnected) {
@@ -363,7 +375,7 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
         }
         return { status: 'disconnected', connection_generation: connectionGeneration(request.user.id) };
       } catch (error) {
-        if (!eligible(request)) await cleanupRevokedConnection();
+        if (!eligible(request)) await cleanupRevokedConnection(request.user.id, CONNECTION);
         return reply.code(error.statusCode || 503).send({ code: safeCode(error), diagnostic_id: diagnosticIdFor(error, 'disconnect') });
       }
     });

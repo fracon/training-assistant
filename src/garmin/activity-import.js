@@ -59,7 +59,7 @@ function createGarminActivityImporter({ db, fetchImpl = fetch, config = process.
   const ownerId = Number(config.GARMIN_PILOT_USER_ID);
   const connector = config.GARMIN_CONNECTOR_URL || 'http://127.0.0.1:8080';
   const caches = getCache(db);
-  let remoteInFlight = false;
+  const remoteInFlight = new Set();
 
   function authorizationError(request) {
     const current = resolveSession(db, request.cookies?.[SESSION_COOKIE_NAME]);
@@ -92,10 +92,11 @@ function createGarminActivityImporter({ db, fetchImpl = fetch, config = process.
   }
 
   async function callConnector(request, path, { binary = false, method = 'GET', body } = {}) {
-    if (remoteInFlight) throw Object.assign(new Error('connector_busy'), { statusCode: 409 });
-    remoteInFlight = true;
+    const owner = request.user.id;
+    if (remoteInFlight.has(owner)) throw Object.assign(new Error('connector_busy'), { statusCode: 409 });
+    remoteInFlight.add(owner);
     try { return await requestConnector(request, path, { binary, method, body }); }
-    finally { remoteInFlight = false; }
+    finally { remoteInFlight.delete(owner); }
   }
 
   async function requestConnector(request, path, { binary = false, method = 'GET', body } = {}) {

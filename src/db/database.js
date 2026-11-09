@@ -434,6 +434,7 @@ function migrateDatabase(db) {
       CREATE INDEX IF NOT EXISTS garmin_cleanup_pending_v1 ON garmin_pilot_connections(cleanup_pending);`);
     db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(garminV2);
   }
+  require('../garmin/cleanup-state').migrateCleanupState(db);
   const activityImportMarker = '2026-11-garmin-activity-import-v1';
   if (!db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(activityImportMarker)) {
     const initializeActivityImports = db.transaction(() => {

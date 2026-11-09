@@ -158,7 +158,7 @@ test('status tolerates a disconnected connector without a training snapshot and 
     assert.equal(local.json().operation, null);
     const revoked = await h.app.inject({ method: 'POST', url: '/api/garmin/auth/start', headers: { cookie: h.cookie }, payload: { email: 'garmin@example.test', password: 'transient' } });
     assert.equal(revoked.statusCode, 401);
-    assert.equal(h.db.prepare('SELECT pending FROM garmin_cleanup_state WHERE id=1').get().pending, 1);
+    assert.equal(h.db.prepare("SELECT pending FROM garmin_connection_cleanup WHERE user_id=1 AND connection_id='pilot'").get().pending, 1);
   } finally { await h.close(); }
 });
 
@@ -329,7 +329,7 @@ test('authentication errors revalidate revoked eligibility and request internal 
       if (action === 'disconnect') response = await h.app.inject({ method: 'DELETE', url: '/api/garmin/connection', headers: { cookie: h.cookie } });
       assert.ok(revoked);
       assert.ok([401, 503].includes(response.statusCode));
-      assert.equal(h.db.prepare('SELECT pending FROM garmin_cleanup_state WHERE id=1').get().pending, 0);
+      assert.equal(h.db.prepare("SELECT pending FROM garmin_connection_cleanup WHERE user_id=1 AND connection_id='pilot'").get().pending, 0);
     } finally { await h.close(); }
   }
 });
@@ -431,7 +431,7 @@ test('MFA failure after owner revocation discards the challenge and invokes inte
     const finish = await h.app.inject({ method: 'POST', url: '/api/garmin/auth/finish', headers: { cookie: h.cookie }, payload: { challenge_id: started.json().challenge_id, code: '333333' } });
     assert.equal(finish.statusCode, 401);
     assert.equal(cleanupCalls, 1);
-    const state = h.db.prepare('SELECT pending FROM garmin_cleanup_state WHERE id=1').get();
+    const state = h.db.prepare("SELECT pending FROM garmin_connection_cleanup WHERE user_id=1 AND connection_id='pilot'").get();
     assert.equal(state.pending, 0);
   } finally { await h.close(); }
 });
@@ -1363,7 +1363,7 @@ test('a local failure while queuing manual disconnect does not request owner-rev
   const h = await productApiHarness();
   const originalPrepare = h.db.prepare.bind(h.db);
   h.db.prepare = (sql) => {
-    if (String(sql).includes('INSERT INTO garmin_cleanup_state')) throw new Error('synthetic local persistence failure');
+    if (String(sql).includes('INSERT INTO garmin_connection_cleanup')) throw new Error('synthetic local persistence failure');
     return originalPrepare(sql);
   };
   try {
@@ -1435,7 +1435,7 @@ test('owner revocation racing a user disconnect invalidates preserved identity a
     assert.equal(deleteCalls, 2, 'the revocation cleanup runs after the user cleanup instead of being coalesced away');
     assert.deepEqual(h.db.prepare('SELECT connection_generation,identity_fingerprint,cleanup_pending FROM garmin_pilot_connections WHERE user_id=1').get(),
       { connection_generation: 2, identity_fingerprint: null, cleanup_pending: 0 });
-    assert.deepEqual(h.db.prepare('SELECT pending,preserve_identity FROM garmin_cleanup_state WHERE id=1').get(), { pending: 0, preserve_identity: 0 });
+    assert.deepEqual(h.db.prepare("SELECT pending,preserve_identity FROM garmin_connection_cleanup WHERE user_id=1 AND connection_id='pilot'").get(), { pending: 0, preserve_identity: 0 });
   } finally { releaseAuth(); releaseDisconnect(); await h.close(); }
 });
 
@@ -1471,7 +1471,7 @@ test('disconnect retries a durable cleanup and coalesces concurrent confirmation
     const failed = await h.app.inject({ method: 'DELETE', url: '/api/garmin/connection', headers: { cookie: h.cookie } });
     assert.equal(failed.statusCode, 503);
     assert.equal(failed.json().code, 'cleanup_pending');
-    assert.equal(h.db.prepare('SELECT pending FROM garmin_cleanup_state WHERE id=1').get().pending, 1);
+    assert.equal(h.db.prepare("SELECT pending FROM garmin_connection_cleanup WHERE user_id=1 AND connection_id='pilot'").get().pending, 1);
     assert.equal(h.db.prepare('SELECT cleanup_pending FROM garmin_pilot_connections WHERE user_id=1').get().cleanup_pending, 1);
     const first = h.app.inject({ method: 'DELETE', url: '/api/garmin/connection', headers: { cookie: h.cookie } });
     await started;
@@ -1481,7 +1481,7 @@ test('disconnect retries a durable cleanup and coalesces concurrent confirmation
     assert.equal((await first).statusCode, 200);
     assert.equal((await second).statusCode, 200);
     assert.equal(calls, 2, 'the retry is the only additional remote DELETE despite concurrent requests');
-    assert.equal(h.db.prepare('SELECT pending FROM garmin_cleanup_state WHERE id=1').get().pending, 0);
+    assert.equal(h.db.prepare("SELECT pending FROM garmin_connection_cleanup WHERE user_id=1 AND connection_id='pilot'").get().pending, 0);
     assert.equal(h.db.prepare('SELECT connection_generation FROM garmin_pilot_connections WHERE user_id=1').get().connection_generation, 1);
   } finally { release?.(); await h.close(); }
 });
@@ -1500,7 +1500,7 @@ test('status and authentication recover after a persisted disconnect cleanup wit
       // Let the server's startup recovery finish before staging this durable
       // pending condition, so this request owns and proves the retry.
       await new Promise((resolve) => setImmediate(resolve));
-      h.db.prepare('INSERT INTO garmin_cleanup_state (id,pending,preserve_identity) VALUES (1,1,1) ON CONFLICT(id) DO UPDATE SET pending=1,preserve_identity=1').run();
+      h.db.prepare("INSERT INTO garmin_connection_cleanup (user_id,connection_id,pending,preserve_identity) VALUES (1,'pilot',1,1) ON CONFLICT(user_id,connection_id) DO UPDATE SET pending=1,preserve_identity=1").run();
       if (action === 'status') {
         const response = await h.app.inject({ method: 'GET', url: '/api/garmin/status', headers: { cookie: h.cookie } });
         assert.equal(response.statusCode, 200);
@@ -1509,7 +1509,7 @@ test('status and authentication recover after a persisted disconnect cleanup wit
           payload: { email: 'synthetic@example.test', password: 'synthetic-only' } });
         assert.equal(response.statusCode, 200);
       }
-      assert.equal(h.db.prepare('SELECT pending FROM garmin_cleanup_state WHERE id=1').get().pending, 0);
+      assert.equal(h.db.prepare("SELECT pending FROM garmin_connection_cleanup WHERE user_id=1 AND connection_id='pilot'").get().pending, 0);
       assert.equal(calls[0].method, 'DELETE');
       assert.equal(calls.filter((call) => call.method === 'DELETE').length, 1);
     } finally { await h.close(); }
@@ -1525,14 +1525,14 @@ test('status and authentication refuse to proceed while persisted disconnect cle
     } });
     try {
       await new Promise((resolve) => setImmediate(resolve));
-      h.db.prepare('INSERT INTO garmin_cleanup_state (id,pending,preserve_identity) VALUES (1,1,1) ON CONFLICT(id) DO UPDATE SET pending=1,preserve_identity=1').run();
+      h.db.prepare("INSERT INTO garmin_connection_cleanup (user_id,connection_id,pending,preserve_identity) VALUES (1,'pilot',1,1) ON CONFLICT(user_id,connection_id) DO UPDATE SET pending=1,preserve_identity=1").run();
       const response = action === 'status'
         ? await h.app.inject({ method: 'GET', url: '/api/garmin/status', headers: { cookie: h.cookie } })
         : await h.app.inject({ method: 'POST', url: '/api/garmin/auth/start', headers: { cookie: h.cookie }, payload: { email: 'synthetic@example.test', password: 'synthetic-only' } });
       assert.equal(response.statusCode, 503);
       assert.equal(response.json().code, 'cleanup_pending');
       assert.equal(deletes, 1);
-      assert.equal(h.db.prepare('SELECT pending FROM garmin_cleanup_state WHERE id=1').get().pending, 1);
+      assert.equal(h.db.prepare("SELECT pending FROM garmin_connection_cleanup WHERE user_id=1 AND connection_id='pilot'").get().pending, 1);
     } finally { await h.close(); }
   }
 });
@@ -2020,7 +2020,7 @@ test('failed token cleanup survives restart and retries without requiring an act
   h.db.prepare('UPDATE users SET is_active=0 WHERE id=1').run();
   release(Response.json({ status: 'connected', identity_fingerprint: 'c'.repeat(64) }));
   assert.equal((await pending).statusCode, 401);
-  assert.equal(h.db.prepare('SELECT pending FROM garmin_cleanup_state WHERE id=1').get().pending, 1);
+  assert.equal(h.db.prepare("SELECT pending FROM garmin_connection_cleanup WHERE user_id=1 AND connection_id='pilot'").get().pending, 1);
   await h.app.close();
 
   const recovered = await buildServer({ db: h.db, sessionCookieSecure: false,
@@ -2028,7 +2028,7 @@ test('failed token cleanup survives restart and retries without requiring an act
     garminFetch: async (_url, init) => { if (init.method === 'DELETE') { cleanupCalls += 1; return new Response(null, { status: 204 }); } return Response.json({ status: 'disconnected' }); },
   });
   await new Promise((resolve) => setTimeout(resolve, 20));
-  assert.equal(h.db.prepare('SELECT pending FROM garmin_cleanup_state WHERE id=1').get().pending, 0);
+  assert.equal(h.db.prepare("SELECT pending FROM garmin_connection_cleanup WHERE user_id=1 AND connection_id='pilot'").get().pending, 0);
   assert.equal(cleanupCalls, 2);
   await recovered.close(); h.db.close();
 });
@@ -2733,4 +2733,21 @@ test('prescription and publication routes reject invalid states and source ident
   response = await h.app.inject({ method: 'POST', url: '/api/trainings/1/garmin/publish', headers: { cookie: h.cookie }, payload: snapshot });
   assert.equal(response.statusCode, 202);
   await h.close();
+});
+
+test('ambiguous legacy cleanup never dispatches a connector delete', async () => {
+  const calls = [];
+  const h = await productApiHarness({ garminFetch: async (url, init = {}) => {
+    calls.push({ url, method: init.method || 'GET' });
+    return Response.json({ status: 'disconnected' });
+  } });
+  try {
+    await new Promise(resolve => setImmediate(resolve));
+    h.db.prepare('INSERT INTO garmin_cleanup_state(id,pending,preserve_identity) VALUES (1,1,1)').run();
+    const response = await h.app.inject({ method: 'DELETE', url: '/api/garmin/connection', headers: { cookie: h.cookie } });
+    assert.equal(response.statusCode, 503);
+    assert.equal(response.json().code, 'cleanup_pending');
+    assert.equal(calls.some(call => call.method === 'DELETE'), false);
+    assert.equal(h.db.prepare('SELECT pending FROM garmin_cleanup_state WHERE id=1').get().pending, 1);
+  } finally { await h.close(); }
 });
