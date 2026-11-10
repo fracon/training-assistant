@@ -3,10 +3,11 @@
 const { createHash } = require('node:crypto');
 const PROFILE_FIELDS = ['experience'];
 class AiError extends Error {
-  constructor(code, status = 400) {
+  constructor(code, status = 400, details = {}) {
     super(code);
     this.code = code;
     this.status = status;
+    Object.assign(this, details);
   }
 }
 function hash(value) {

@@ -81,7 +81,7 @@ function registerAiRoutes(
         if (error instanceof AiError)
           return reply
             .code(error.status)
-            .send({ error: error.code, errors: [error.code] });
+            .send({ error: error.code, errors: [error.code], ...(error.executionId ? { execution_id: error.executionId } : {}) });
         logUnexpectedError(error, request);
         return reply
           .code(500)

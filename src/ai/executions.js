@@ -270,7 +270,7 @@ function createExecutionService({
           AND (state IN ('queued','running') OR (state='cancelled' AND settled=0))
           AND json_extract(configuration_json,'$.requestHash')=? LIMIT 1`)
           .get(userId, body.purpose, body.resource_id ?? null, requestHash);
-        if (equivalent) throw new AiError('generationInProgress', 409);
+        if (equivalent) throw new AiError('generationInProgress', 409, { executionId: equivalent.id });
         const id = randomUUID();
         if (
           body.purpose === 'workouts' &&

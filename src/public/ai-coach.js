@@ -903,6 +903,17 @@ function setupAiCoachPage(user) {
         weeklyReadAgain.hidden = true;
       }
       syncWeeklyActions();
+      if (codes.includes('generationInProgress')) {
+        if (sessionStorage.getItem('kinesis-weekly-request-key') === idempotencyKey)
+          sessionStorage.removeItem('kinesis-weekly-request-key');
+        if (typeof error.executionId === 'string') {
+          abortWeeklyRead();
+          activeExecutionId = error.executionId;
+          weeklyHistoryState = 'ready';
+          weeklyReadFailureCount = 0;
+          void refreshWeeklyExecution(error.executionId);
+        }
+      }
     } finally {
       actionPending = false;
       generateBtn.disabled = false;
@@ -1051,6 +1062,7 @@ function setupAiCoachPage(user) {
       actionPending = false;
       if (!applicationStatusUnknown)
         weeklyApply.disabled = Boolean(currentProposal?.application);
+      updateValidation();
     }
   });
   weeklyReadAgain.addEventListener('click', async () => {
@@ -1098,6 +1110,7 @@ function setupAiCoachPage(user) {
           actionPending = false;
           weeklyReadPending = false;
           weeklyApply.disabled = Boolean(currentProposal?.application);
+          updateValidation();
         }
       } else {
         syncWeeklyActions();
@@ -1141,6 +1154,7 @@ function setupAiCoachPage(user) {
       weeklyReadPending = false;
       actionPending = false;
       weeklyReadAgain.disabled = false;
+      updateValidation();
     }
   });
   weeklyCancel.addEventListener('click', async () => {
@@ -1159,6 +1173,7 @@ function setupAiCoachPage(user) {
     } finally {
       actionPending = false;
       weeklyCancel.disabled = false;
+      updateValidation();
     }
   });
   if (isAdmin)
