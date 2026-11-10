@@ -99,7 +99,7 @@ function readCyclePlanningSummary(db,userId,cycleId,service,config,asOf=new Date
       if(proposal.execution.response?.start<asOf)proposal.execution.outdated=true;
       if(proposalIsUsable(db,userId,cycleId,proposal,version,asOf)){selected=proposal;break;}
     }
-    return { ...summarizeCyclePlanning(cycle,appliedView,proposals,config.enabled,selected), cycleStatus: cycle.status };
+    return { ...summarizeCyclePlanning(cycle,appliedView,proposals,config.enabled,selected), cycleStatus: cycle.status, hasPlanningHistory: Boolean(appliedView || rows.length) };
   })();
 }
 function applyCyclePlan(db,userId,cycleId,proposalId,body,service,now=new Date().toISOString()) {

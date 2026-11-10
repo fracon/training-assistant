@@ -18,7 +18,7 @@ test('production cycle adapter HTTP generation/poll/apply is scoped, atomic and 
  const tokens=[null,createSession(db,1).token,createSession(db,2).token];
  const send=(method,url,payload,user=1)=>app.inject({method,url,payload,headers:user?{cookie:`${SESSION_COOKIE_NAME}=${tokens[user]}`}:{}});
  const listed=await send('GET','/api/cycles');assert.equal(listed.statusCode,200);
- assert.deepEqual(listed.json().cycles[0].planningSummary,{status:'none',secondary:null,available:true,canGenerate:true,cycleStatus:'active'});
+ assert.deepEqual(listed.json().cycles[0].planningSummary,{status:'none',secondary:null,available:true,canGenerate:true,cycleStatus:'active',hasPlanningHistory:false});
  assert.equal(JSON.stringify(listed.json()).includes('Synthetic planning recommendation'),false);
  assert.equal(listed.json().cycles.some(c=>c.id==='private'),false);
  db.prepare("INSERT INTO cycle_plan_proposals(id,user_id,cycle_id,sequence,base_version,plan_json,created_at) VALUES('broken-summary',1,'cycle',1,0,'{','2026-10-24T00:00:00.000Z')").run();

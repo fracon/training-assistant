@@ -54,7 +54,7 @@ test('cycles.html wires the shell, lucide and the full page', () => {
 
 test('completed cycles hide planning generation while history actions remain available', () => {
   const source = readFileSync(join(publicDir, 'cycles.js'), 'utf8');
-  assert.match(source, /summary\?\.cycleStatus === 'completed' && status === 'none'/);
+  assert.match(source, /summary\?\.cycleStatus === 'completed' && summary\.hasPlanningHistory === false/);
   assert.match(source, /button\.hidden = !actionKey/);
   assert.match(source, /proposal_ready: 'reviewProposal'.*applied_current: 'viewPlan'/s);
 });
