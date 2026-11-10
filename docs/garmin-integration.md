@@ -230,7 +230,7 @@ runtime secret shared with Node. Locally both secrets are generated once by
 restarts. The private parent and local token store are mode 0700; records are
 mode 0600, and replacement is atomic. The connector runs as UID/GID 10001.
 
-Back up the encrypted token store (including `.ops`) and encryption key
+Back up the encrypted token store (including `.ops` and `.auth`) and encryption key
 separately using the operator's protected backup system. A restore requires
 both. Locally, protect `.kinesis-private/garmin-pilot.json` and the adjacent
 store separately under the same policy; never put this directory in Git or an
@@ -403,6 +403,14 @@ exact value `multiuser` enables all authenticated active Kinesis users; unknown
 values fail closed. Restart both services after changing the mode. The terminal
 pilot CLI still requires an explicit `GARMIN_PILOT_USER_ID`.
 
+The encrypted `.auth` sidecar stores the current authentication fence for each
+owner and connection. An interrupted authentication stays blocked in SQLite;
+the next status request advances the fence and reconciles a proven remote
+identity before releasing it. If the connector or identity is unavailable,
+the block remains and the user can retry the status request. Back up and restore
+the SQLite database and all connector files as a matched set; do not delete or
+rename a fence file during recovery.
+
 ## ZimaOS packaging and operation
 
 The host Compose stack retains the existing public mapping `8081:3000` for
@@ -452,7 +460,7 @@ For the ZimaOS interface upgrade, first record both current image digests, the
 effective Compose network, the actual Garmin storage source and the Node data
 source from the existing containers' mount details. Back up SQLite consistently
 with the application stopped, and back up the complete Garmin storage (including
-`.bin` and `.ops` files); store the existing encryption key separately in the
+`.bin`, `.ops` and `.auth` files); store the existing encryption key separately in the
 operator's secret manager. Preserve the storage source exactly: an installation
 using a bind mount must continue to use that same host path. Preserve ownership
 `10001:10001` and the shared bridge network; do not substitute a new volume.

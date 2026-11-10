@@ -1,6 +1,7 @@
 """Synthetic upstream for Node-to-connector tests; never contacts Garmin."""
 import sys
 import io
+import json
 import os
 import tempfile
 import time
@@ -35,6 +36,10 @@ class SyntheticGarmin(FakeGarmin):
     def __init__(self, owner):
         super().__init__(result=("needs_mfa", {"owner": owner}))
         self.owner = owner
+        self.account = "a"
+
+    def dump_tokens(self, token_dir):
+        Path(token_dir, "garmin_tokens.json").write_text(json.dumps({"di_token": "synthetic-" + self.account}))
 
     def upload_running_workout(self, workout):
         result = super().upload_running_workout(workout)
@@ -51,9 +56,16 @@ class SyntheticGarmin(FakeGarmin):
 def synthetic_client(path, key, **options):
     owner = path.name.split("-")[0]
     client = clients.setdefault(owner, SyntheticGarmin(owner))
-    client.get_user_profile = lambda: {"userData": {"id": int(owner) + 10000}}
+    if options.get("email"):
+        email = options["email"]
+        client.account = "b" if "account-b" in email else "a"
+        client.result = None if "direct" in email else ("needs_mfa", {"owner": owner})
+    client.get_user_profile = lambda: {"userData": {"id": int(owner) + (20000 if client.account == "b" else 10000)}}
     client.client._run_request = lambda *_args, **_kwargs: SyntheticDownload()
     if options.get("restore", True):
+        if path.exists():
+            stored = json.loads(main._decrypt(path, key))
+            client.account = "b" if stored.get("di_token") == "synthetic-b" else "a"
         client.client.is_authenticated = True
     with tempfile.TemporaryDirectory() as directory:
         token_dir = Path(directory)

@@ -71,6 +71,7 @@ test('Garmin login progress and disconnect confirmation work in PT/EN Chrome', {
     garminConfig: { GARMIN_PILOT_ENABLED: 'true', GARMIN_ACCESS_MODE: 'multiuser',
       KINESIS_GARMIN_SERVICE_TOKEN: 'synthetic-service-token-'.repeat(2), GARMIN_CONNECTOR_URL: 'http://connector.invalid' },
     garminFetch: async (url, init = {}) => {
+      if (url.endsWith('/auth/fence')) return Response.json({ status: 'fenced' });
       if (url.endsWith('/status')) {
         const snapshot = connected;
         if (holdStatus) { holdStatus = false; statusEntered(); await new Promise((resolve) => { releaseStatus = resolve; }); }

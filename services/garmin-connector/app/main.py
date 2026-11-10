@@ -66,6 +66,11 @@ class AuthCancel(StrictModel):
     challenge_id: str = Field(min_length=20, max_length=100)
 
 
+class AuthFence(StrictModel):
+    expected: uuid.UUID | None = None
+    attempt: uuid.UUID
+
+
 class ActivityQuery(StrictModel):
     start: date
     end: date
@@ -843,6 +848,19 @@ def _decrypt(path: Path, key: bytes) -> bytes:
     return AESGCM(key).decrypt(data[4:16], data[16:], path.name.encode())
 
 
+def _auth_fence(path: Path, key: bytes) -> str | None:
+    fence_path = path.with_suffix('.auth')
+    if not fence_path.exists():
+        return None
+    value = json.loads(_decrypt(fence_path, key))
+    return str(uuid.UUID(value['attempt']))
+
+
+def _check_auth_fence(path: Path, key: bytes, attempt: str | None) -> None:
+    if _auth_fence(path, key) != attempt:
+        raise HTTPException(status_code=409, detail={'code': 'auth_required'})
+
+
 @contextmanager
 def _client(path: Path, key: bytes, *, email: str | None = None,
             password: str | None = None, restore: bool = True,
@@ -972,11 +990,28 @@ def health() -> dict[str, str]:
     return {"status": "ok", "contract": "v1"}
 
 
-@app.post("/v1/connections/{owner_id}/{connection_id}/auth/start")
-def auth_start(owner_id: str, connection_id: str, body: AuthStart,
+@app.post('/v1/connections/{owner_id}/{connection_id}/auth/fence')
+def auth_fence(owner_id: str, connection_id: str, body: AuthFence,
                x_kinesis_service_key: str | None = Header(default=None)):
     path, key = _connection(connection_id, owner_id, x_kinesis_service_key)
     with _lock(str(path)):
+        current = _auth_fence(path, key)
+        attempt = str(body.attempt)
+        expected = str(body.expected) if body.expected else None
+        if current != attempt:
+            if current != expected:
+                raise HTTPException(status_code=409, detail={'code': 'auth_required'})
+            _save_encrypted(path.with_suffix('.auth'), key, json.dumps({'attempt': attempt}).encode())
+        return {'status': 'fenced'}
+
+
+@app.post("/v1/connections/{owner_id}/{connection_id}/auth/start")
+def auth_start(owner_id: str, connection_id: str, body: AuthStart,
+               x_kinesis_service_key: str | None = Header(default=None),
+               x_kinesis_auth_attempt: str | None = Header(default=None)):
+    path, key = _connection(connection_id, owner_id, x_kinesis_service_key)
+    with _lock(str(path)):
+        _check_auth_fence(path, key, x_kinesis_auth_attempt)
         previous_state = _previous_connection_state(owner_id, connection_id, path)
         _remove_connection_challenges(owner_id, connection_id)
         _states[str(path)] = "authenticating"
@@ -1012,6 +1047,7 @@ def auth_start(owner_id: str, connection_id: str, body: AuthStart,
                 stage = "persist_session"
                 operation = "persist_tokens"
                 try:
+                    _check_auth_fence(path, key, x_kinesis_auth_attempt)
                     _persist_tokens(client, token_dir, token_file, path, key)
                 except Exception:
                     failure_code = "persistence_error"
@@ -1031,9 +1067,11 @@ def auth_start(owner_id: str, connection_id: str, body: AuthStart,
 
 @app.post("/v1/connections/{owner_id}/{connection_id}/auth/finish")
 def auth_finish(owner_id: str, connection_id: str, body: AuthFinish,
-                x_kinesis_service_key: str | None = Header(default=None)):
+                x_kinesis_service_key: str | None = Header(default=None),
+                x_kinesis_auth_attempt: str | None = Header(default=None)):
     path, key = _connection(connection_id, owner_id, x_kinesis_service_key)
     with _lock(str(path)):
+        _check_auth_fence(path, key, x_kinesis_auth_attempt)
         challenge = _challenges.get(body.challenge_id)
         if not challenge or challenge["owner"] != owner_id or challenge["connection"] != connection_id:
             raise HTTPException(400, detail={"code": "auth_required"})
@@ -1063,6 +1101,7 @@ def auth_finish(owner_id: str, connection_id: str, body: AuthFinish,
                 stage = "persist_session"
                 operation = "persist_tokens"
                 try:
+                    _check_auth_fence(path, key, x_kinesis_auth_attempt)
                     _persist_tokens(client, token_dir, token_file, path, key)
                 except Exception:
                     failure_code = "persistence_error"
@@ -1127,9 +1166,11 @@ def status(owner_id: str, connection_id: str,
 
 @app.delete("/v1/connections/{owner_id}/{connection_id}")
 def disconnect(owner_id: str, connection_id: str,
-               x_kinesis_service_key: str | None = Header(default=None)):
-    path, _ = _connection(connection_id, owner_id, x_kinesis_service_key)
+               x_kinesis_service_key: str | None = Header(default=None),
+               x_kinesis_auth_attempt: str | None = Header(default=None)):
+    path, key = _connection(connection_id, owner_id, x_kinesis_service_key)
     with _lock(str(path)):
+        _check_auth_fence(path, key, x_kinesis_auth_attempt)
         path.unlink(missing_ok=True)
         _states[str(path)] = "disconnected"
         _remove_connection_challenges(owner_id, connection_id)

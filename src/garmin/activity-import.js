@@ -87,9 +87,9 @@ function createGarminActivityImporter({ db, fetchImpl = fetch, config = process.
   }
 
   function connection(request) {
-    const row = db.prepare(`SELECT connection_generation,identity_fingerprint,cleanup_pending
+    const row = db.prepare(`SELECT connection_generation,identity_fingerprint,cleanup_pending,auth_attempt
       FROM garmin_pilot_connections WHERE user_id=?`).get(request.user.id);
-    if (!row?.identity_fingerprint || row.cleanup_pending) return null;
+    if (!row?.identity_fingerprint || row.cleanup_pending || row.auth_attempt) return null;
     return row;
   }
 
@@ -371,10 +371,10 @@ function createGarminActivityImporter({ db, fetchImpl = fetch, config = process.
           const authorization = authorizationError(request);
           if (authorization) return { error: authorization };
           const current = trainingFor(request);
-          const latestLink = db.prepare(`SELECT connection_generation,identity_fingerprint,cleanup_pending
+          const latestLink = db.prepare(`SELECT connection_generation,identity_fingerprint,cleanup_pending,auth_attempt
             FROM garmin_pilot_connections WHERE user_id=?`).get(request.user.id);
           if (!current || current.user_id !== request.user.id || !latestLink
-              || latestLink.cleanup_pending || latestLink.identity_fingerprint !== preview.identity
+              || latestLink.cleanup_pending || latestLink.auth_attempt || latestLink.identity_fingerprint !== preview.identity
               || latestLink.connection_generation !== preview.generation) return { error: 'session_changed' };
           if (resultFingerprint(current) !== preview.expected) return { error: 'session_changed' };
           if (current.result_data_source !== 'none' && !confirmReplace) return { error: 'confirm_replace' };

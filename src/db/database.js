@@ -435,6 +435,12 @@ function migrateDatabase(db) {
     db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(garminV2);
   }
   require('../garmin/cleanup-state').migrateCleanupState(db);
+  const cleanupFenceColumns = db.prepare('PRAGMA table_info(garmin_connection_cleanup)').all().map(row => row.name);
+  if (!cleanupFenceColumns.includes('auth_fence')) db.exec('ALTER TABLE garmin_connection_cleanup ADD COLUMN auth_fence TEXT');
+  const authTransitionColumns = db.prepare('PRAGMA table_info(garmin_pilot_connections)').all().map(row => row.name);
+  if (!authTransitionColumns.includes('auth_attempt')) db.exec('ALTER TABLE garmin_pilot_connections ADD COLUMN auth_attempt TEXT');
+  if (!authTransitionColumns.includes('auth_fence')) db.exec('ALTER TABLE garmin_pilot_connections ADD COLUMN auth_fence TEXT');
+  if (!authTransitionColumns.includes('auth_expected')) db.exec('ALTER TABLE garmin_pilot_connections ADD COLUMN auth_expected TEXT');
   const activityImportMarker = '2026-11-garmin-activity-import-v1';
   if (!db.prepare('SELECT 1 FROM schema_migrations WHERE name = ?').get(activityImportMarker)) {
     const initializeActivityImports = db.transaction(() => {

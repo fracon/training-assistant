@@ -50,6 +50,7 @@ test('Garmin activity result flow in Chrome stays explicit, localized, keyboard 
   const app = await buildServer({ db, sessionCookieSecure: false, parseFitFile: async () => summary,
     garminConfig: { GARMIN_PILOT_ENABLED: 'true', GARMIN_ACCESS_MODE: 'multiuser', KINESIS_GARMIN_SERVICE_TOKEN: 'synthetic-browser-token', GARMIN_CONNECTOR_URL: 'http://connector.invalid' },
     garminFetch: async (url, init = {}) => {
+      if (url.endsWith('/auth/fence')) return Response.json({ status: 'fenced' });
       calls.push({ url, init });
       if (url.endsWith('/status')) return Response.json({ status: calls.some((call) => call.url.endsWith('/auth/start')) ? 'connected' : 'disconnected',
         ...(calls.some((call) => call.url.endsWith('/auth/start')) ? { identity_fingerprint: 'a'.repeat(64) } : {}) });
