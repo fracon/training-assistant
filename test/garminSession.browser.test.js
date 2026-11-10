@@ -54,8 +54,9 @@ test('Garmin editor and send states preserve drafts and block conflicting action
   const updateGate = new Promise((resolve) => { releaseUpdate = resolve; });
   const updateEntered = new Promise((resolve) => { signalUpdateEntered = resolve; });
   const app = await buildServer({ db, sessionCookieSecure: false,
-    garminConfig: { GARMIN_PILOT_ENABLED: 'true', GARMIN_PILOT_USER_ID: String(owner.id), KINESIS_GARMIN_SERVICE_TOKEN: 'synthetic-service-token-'.repeat(2), GARMIN_CONNECTOR_URL: 'http://connector.invalid' },
+    garminConfig: { GARMIN_PILOT_ENABLED: 'true', GARMIN_ACCESS_MODE: 'multiuser', KINESIS_GARMIN_SERVICE_TOKEN: 'synthetic-service-token-'.repeat(2), GARMIN_CONNECTOR_URL: 'http://connector.invalid' },
     garminFetch: async (url, init = {}) => {
+      if (url.endsWith('/auth/fence')) return Response.json({ status: 'fenced' });
       remoteCalls.push(url);
       if (url.endsWith('/status')) {
         await statusGate;

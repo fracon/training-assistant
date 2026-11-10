@@ -57,16 +57,18 @@ function activityDateInWindow(item, start, end) {
 function createGarminActivityImporter({ db, fetchImpl = fetch, config = process.env,
   parseFile, resolveBuffer = resolveFitBuffer, resolveSession = findActiveSession, now = () => Date.now() }) {
   const ownerId = Number(config.GARMIN_PILOT_USER_ID);
+  const multiuser = config.GARMIN_ACCESS_MODE === 'multiuser';
+  const validMode = !config.GARMIN_ACCESS_MODE || config.GARMIN_ACCESS_MODE === 'pilot' || multiuser;
   const connector = config.GARMIN_CONNECTOR_URL || 'http://127.0.0.1:8080';
   const caches = getCache(db);
-  let remoteInFlight = false;
+  const remoteInFlight = new Set();
 
   function authorizationError(request) {
     const current = resolveSession(db, request.cookies?.[SESSION_COOKIE_NAME]);
     if (!current || current.token !== request.session?.token || current.userId !== request.user?.id) return 'session_expired';
     const row = db.prepare('SELECT id, is_active FROM users WHERE id = ?').get(request.user.id);
-    if (config.GARMIN_PILOT_ENABLED !== 'true' || !Number.isSafeInteger(ownerId)
-        || ownerId <= 0 || row?.id !== ownerId || row.is_active !== 1) return 'pilot_unavailable';
+    if (config.GARMIN_PILOT_ENABLED !== 'true' || !validMode || row?.id !== request.user.id || row.is_active !== 1
+        || (!multiuser && (!Number.isSafeInteger(ownerId) || ownerId <= 0 || row.id !== ownerId))) return 'pilot_unavailable';
     return null;
   }
 
@@ -85,17 +87,18 @@ function createGarminActivityImporter({ db, fetchImpl = fetch, config = process.
   }
 
   function connection(request) {
-    const row = db.prepare(`SELECT connection_generation,identity_fingerprint,cleanup_pending
+    const row = db.prepare(`SELECT connection_generation,identity_fingerprint,cleanup_pending,auth_attempt
       FROM garmin_pilot_connections WHERE user_id=?`).get(request.user.id);
-    if (!row?.identity_fingerprint || row.cleanup_pending) return null;
+    if (!row?.identity_fingerprint || row.cleanup_pending || row.auth_attempt) return null;
     return row;
   }
 
   async function callConnector(request, path, { binary = false, method = 'GET', body } = {}) {
-    if (remoteInFlight) throw Object.assign(new Error('connector_busy'), { statusCode: 409 });
-    remoteInFlight = true;
+    const owner = request.user.id;
+    if (remoteInFlight.has(owner)) throw Object.assign(new Error('connector_busy'), { statusCode: 409 });
+    remoteInFlight.add(owner);
     try { return await requestConnector(request, path, { binary, method, body }); }
-    finally { remoteInFlight = false; }
+    finally { remoteInFlight.delete(owner); }
   }
 
   async function requestConnector(request, path, { binary = false, method = 'GET', body } = {}) {
@@ -108,7 +111,7 @@ function createGarminActivityImporter({ db, fetchImpl = fetch, config = process.
         || !config.KINESIS_GARMIN_SERVICE_TOKEN) throw Object.assign(new Error('connector_configuration_error'), { statusCode: 503 });
     let response;
     try {
-      response = await fetchImpl(`${connector.replace(/\/+$/, '')}/v1/connections/${ownerId}/pilot${path}`, {
+      response = await fetchImpl(`${connector.replace(/\/+$/, '')}/v1/connections/${multiuser ? request.user.id : ownerId}/pilot${path}`, {
         method, redirect: 'error', signal: AbortSignal.timeout(90000),
         headers: { 'x-kinesis-service-key': config.KINESIS_GARMIN_SERVICE_TOKEN,
           ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
@@ -213,9 +216,9 @@ function createGarminActivityImporter({ db, fetchImpl = fetch, config = process.
           .filter(({ item }) => isRunningOrUnknown(item))
           .map(({ item }) => {
             const linked = db.prepare(`SELECT training_id FROM garmin_activity_imports
-              WHERE account_fingerprint=? AND activity_id=? AND is_current=1`).get(link.identity_fingerprint, String(item.activityId));
+              WHERE user_id=? AND account_fingerprint=? AND activity_id=? AND is_current=1`).get(request.user.id, link.identity_fingerprint, String(item.activityId));
             const historical = linked ? null : db.prepare(`SELECT training_id FROM garmin_activity_imports
-              WHERE account_fingerprint=? AND activity_id=? ORDER BY imported_at DESC LIMIT 1`).get(link.identity_fingerprint, String(item.activityId));
+              WHERE user_id=? AND account_fingerprint=? AND activity_id=? ORDER BY imported_at DESC LIMIT 1`).get(request.user.id, link.identity_fingerprint, String(item.activityId));
             const localDate = item.startTimeLocal.slice(0, 10);
             return { activity_id: String(item.activityId), source_cursor: item.source_cursor,
               name: typeof item.activityName === 'string' ? item.activityName.slice(0, 120) : '',
@@ -292,7 +295,7 @@ function createGarminActivityImporter({ db, fetchImpl = fetch, config = process.
       if (!candidate) return reply.code(404).send({ code: 'activity_not_found' });
       if (!isRunningOrUnknown(candidate)) return reply.code(422).send({ code: 'unsupported_activity' });
       const alreadyLinked = db.prepare(`SELECT training_id FROM garmin_activity_imports
-        WHERE account_fingerprint=? AND activity_id=? AND is_current=1`).get(link.identity_fingerprint, id);
+        WHERE user_id=? AND account_fingerprint=? AND activity_id=? AND is_current=1`).get(request.user.id, link.identity_fingerprint, id);
       let buffer;
       let fitBuffer;
       let result;
@@ -368,10 +371,10 @@ function createGarminActivityImporter({ db, fetchImpl = fetch, config = process.
           const authorization = authorizationError(request);
           if (authorization) return { error: authorization };
           const current = trainingFor(request);
-          const latestLink = db.prepare(`SELECT connection_generation,identity_fingerprint,cleanup_pending
+          const latestLink = db.prepare(`SELECT connection_generation,identity_fingerprint,cleanup_pending,auth_attempt
             FROM garmin_pilot_connections WHERE user_id=?`).get(request.user.id);
-          if (!current || current.user_id !== ownerId || !latestLink
-              || latestLink.cleanup_pending || latestLink.identity_fingerprint !== preview.identity
+          if (!current || current.user_id !== request.user.id || !latestLink
+              || latestLink.cleanup_pending || latestLink.auth_attempt || latestLink.identity_fingerprint !== preview.identity
               || latestLink.connection_generation !== preview.generation) return { error: 'session_changed' };
           if (resultFingerprint(current) !== preview.expected) return { error: 'session_changed' };
           if (current.result_data_source !== 'none' && !confirmReplace) return { error: 'confirm_replace' };
@@ -380,7 +383,7 @@ function createGarminActivityImporter({ db, fetchImpl = fetch, config = process.
           const evidenceConflict = findCurrentEvidenceConflict(db, request.user.id, current.id, evidence);
           if (evidenceConflict) return { error: 'activity_evidence_conflict' };
           const linked = db.prepare(`SELECT training_id,file_sha256,is_current FROM garmin_activity_imports
-            WHERE account_fingerprint=? AND activity_id=? AND is_current=1`).get(preview.identity, preview.activityId);
+            WHERE user_id=? AND account_fingerprint=? AND activity_id=? AND is_current=1`).get(request.user.id, preview.identity, preview.activityId);
           if (linked && linked.training_id !== current.id) return { error: 'activity_already_linked' };
           if (linked && linked.training_id === current.id && linked.is_current === 1
               && db.prepare(`SELECT 1 FROM training_result_evidence WHERE user_id=? AND training_id=?

@@ -390,6 +390,21 @@ class ConnectorTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             main._decrypt(link, key)
 
+    def test_explicit_multiuser_mode_keeps_owner_paths_separate(self):
+        with patch.dict(os.environ, {"GARMIN_ACCESS_MODE": "multiuser", "GARMIN_PILOT_USER_ID": "17"}):
+            first, key = main._connection("pilot", "17", "private-key")
+            second, _ = main._connection("pilot", "18", "private-key")
+            self.assertEqual(first.name, "17-pilot.bin")
+            self.assertEqual(second.name, "18-pilot.bin")
+            main._save_encrypted(first, key, b"synthetic-one")
+            self.assertEqual(main._decrypt(first, key), b"synthetic-one")
+            self.assertFalse(second.exists())
+            with self.assertRaises(Exception):
+                main._connection("17-pilot", "18", "private-key")
+        with patch.dict(os.environ, {"GARMIN_ACCESS_MODE": "invalid"}):
+            with self.assertRaises(Exception):
+                main._connection("pilot", "17", "private-key")
+
     def test_token_ciphertext_is_bound_to_its_owner_and_connection_path(self):
         key = b"k" * 32
         first = Path(self.temp.name, "17-pilot.bin")
@@ -401,6 +416,25 @@ class ConnectorTests(unittest.TestCase):
         first.write_bytes(second.read_bytes())
         with self.assertRaises(Exception):
             main._decrypt(first, key)
+
+    def test_persistent_auth_fence_rejects_late_authentication_and_disconnect(self):
+        old, new = str(uuid.uuid4()), str(uuid.uuid4())
+        fence = f"{self.prefix}/auth/fence"
+        self.assertEqual(self.client.post(fence, headers=self.headers, json={"attempt": old}).status_code, 200)
+        self.assertEqual(self.client.post(fence, headers=self.headers, json={"expected": old, "attempt": new}).status_code, 200)
+        path = Path(self.temp.name, "17-pilot.bin")
+        main._save_encrypted(path, b"k" * 32, b'{"di_token":"new-synthetic"}')
+        before = path.read_bytes()
+        main._locks.clear()  # A restarted process reloads the encrypted fence.
+        stale_headers = {**self.headers, "X-Kinesis-Auth-Attempt": old}
+        late_login = self.client.post(f"{self.prefix}/auth/start", headers=stale_headers,
+                                      json={"email": "synthetic@example.test", "password": "synthetic"})
+        self.assertEqual(late_login.status_code, 409)
+        self.assertEqual(self.client.delete(self.prefix, headers=stale_headers).status_code, 409)
+        self.assertEqual(path.read_bytes(), before)
+        self.assertEqual(self.client.post(fence, headers=self.headers, json={"expected": None, "attempt": old}).status_code, 409)
+        self.assertEqual(self.client.post(fence, headers=self.headers, json={"expected": old, "attempt": new}).status_code, 200)
+        self.assertEqual(self.client.delete(self.prefix, headers={**self.headers, "X-Kinesis-Auth-Attempt": new}).status_code, 200)
 
     def test_bad_key_configuration(self):
         with patch.dict(os.environ, {"GARMIN_ENCRYPTION_KEY": "not-base64"}):

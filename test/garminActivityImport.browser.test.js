@@ -48,8 +48,9 @@ test('Garmin activity result flow in Chrome stays explicit, localized, keyboard 
       avgPaceLabel: '5:50', avgHeartRate: null, maxHeartRate: 181, ascentMeters: 78, calories: 501 },
     laps: [{ lap: 1, durationLabel: '58:20', distanceKm: 10, avgHeartRate: null }] };
   const app = await buildServer({ db, sessionCookieSecure: false, parseFitFile: async () => summary,
-    garminConfig: { GARMIN_PILOT_ENABLED: 'true', GARMIN_PILOT_USER_ID: '1', KINESIS_GARMIN_SERVICE_TOKEN: 'synthetic-browser-token', GARMIN_CONNECTOR_URL: 'http://connector.invalid' },
+    garminConfig: { GARMIN_PILOT_ENABLED: 'true', GARMIN_ACCESS_MODE: 'multiuser', KINESIS_GARMIN_SERVICE_TOKEN: 'synthetic-browser-token', GARMIN_CONNECTOR_URL: 'http://connector.invalid' },
     garminFetch: async (url, init = {}) => {
+      if (url.endsWith('/auth/fence')) return Response.json({ status: 'fenced' });
       calls.push({ url, init });
       if (url.endsWith('/status')) return Response.json({ status: calls.some((call) => call.url.endsWith('/auth/start')) ? 'connected' : 'disconnected',
         ...(calls.some((call) => call.url.endsWith('/auth/start')) ? { identity_fingerprint: 'a'.repeat(64) } : {}) });

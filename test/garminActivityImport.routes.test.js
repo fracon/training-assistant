@@ -193,6 +193,121 @@ async function uploadFit(h, trainingId, filename, bytes, { confirmReplace = fals
   return h.app.inject({ method: 'POST', url: `/api/trainings/${trainingId}/fit`, headers: { cookie: h.cookie }, payload: form });
 }
 
+test('restart retries one owner cleanup while another pilot reads, publishes and imports independently', async () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'kinesis-garmin-isolation-'));
+  const databaseFile = path.join(directory, 'database.sqlite');
+  const h = await setup({ db: createDatabase({ filename: databaseFile }) });
+  let appA; let restarted; let finalServer; let releaseDelete;
+  let initialClosed = false;
+  let deleteStartedResolve;
+  const deleteStarted = new Promise(resolve => { deleteStartedResolve = resolve; });
+  const blockedDelete = new Promise(resolve => { releaseDelete = resolve; });
+  const calls = [];
+  const fileB = path.join(directory, 'synthetic-b.enc');
+  const fileA = path.join(directory, 'synthetic-a.enc');
+  fs.writeFileSync(fileB, 'synthetic-b-ciphertext');
+  fs.writeFileSync(fileA, 'synthetic-a-ciphertext');
+  try {
+    await h.app.inject({ method: 'POST', url: '/api/auth/register', payload: {
+      email: 'cleanup-a@example.test', password: 'pilot-password', first_name: 'A', last_name: 'Runner',
+    } });
+    const loginA = await h.app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: 'cleanup-a@example.test', password: 'pilot-password' } });
+    const cookieA = [].concat(loginA.headers['set-cookie'])[0].split(';')[0];
+    h.db.prepare('INSERT INTO garmin_pilot_connections(user_id,connection_generation,identity_fingerprint) VALUES (2,1,?)').run('b'.repeat(64));
+    const config = owner => ({ GARMIN_PILOT_ENABLED: 'true', GARMIN_PILOT_USER_ID: String(owner),
+      KINESIS_GARMIN_SERVICE_TOKEN: 'synthetic-token'.repeat(4), GARMIN_CONNECTOR_URL: 'http://connector.invalid' });
+    appA = await buildServer({ db: h.db, sessionCookieSecure: false, garminConfig: config(2),
+      garminFetch: async () => new Response(null, { status: 503 }) });
+    const failed = await appA.inject({ method: 'DELETE', url: '/api/garmin/connection', headers: { cookie: cookieA } });
+    assert.equal(failed.statusCode, 503);
+    assert.equal(h.db.prepare('SELECT cleanup_pending FROM garmin_pilot_connections WHERE user_id=2').get().cleanup_pending, 1);
+    assert.equal(h.db.prepare("SELECT pending FROM garmin_connection_cleanup WHERE user_id=2 AND connection_id='pilot'").get().pending, 1);
+    const blockedPublish = await appA.inject({ method: 'POST', url: '/api/trainings/3/garmin/publish', headers: { cookie: cookieA }, payload: {} });
+    assert.equal(blockedPublish.statusCode, 503);
+    assert.equal(blockedPublish.json().code, 'cleanup_pending');
+    await appA.close(); appA = null;
+    await h.app.close();
+    h.db.close(); initialClosed = true;
+    h.db = createDatabase({ filename: databaseFile });
+    const fetchMock = async (url, init = {}) => {
+      calls.push({ url, method: init.method || 'GET' });
+      if (url.endsWith('/2/pilot') && init.method === 'DELETE') {
+        deleteStartedResolve(); await blockedDelete;
+        if (fs.existsSync(fileA)) fs.unlinkSync(fileA);
+        return new Response(null, { status: 204 });
+      }
+      assert.match(url, /\/1\/pilot\//);
+      if (url.endsWith('/status')) return Response.json({ status: 'connected' });
+      if (url.endsWith('/capabilities')) return Response.json({ devices: [], running_catalog_status: 'available' });
+      if (url.endsWith('/workouts')) return Response.json({ workout_id: 42 });
+      if (url.endsWith('/workouts/schedule')) return Response.json({ scheduled: true, scheduled_workout_id: 77 });
+      if (url.endsWith('/activities')) return activityPage([{ activityId: 42, activityName: 'Run',
+        startTimeLocal: '2026-11-02 07:00:00', activityType: 'running', duration: 3500, distance: 10000 }]);
+      if (url.endsWith('/original')) return new Response(original);
+      throw new Error('unexpected connector request');
+    };
+    restarted = await buildServer({ db: h.db, sessionCookieSecure: false, parseFitFile: async () => summary,
+      garminConfig: config(1), garminFetch: fetchMock });
+    await deleteStarted;
+    const request = (method, url, payload) => restarted.inject({ method, url, headers: { cookie: h.cookie }, ...(payload ? { payload } : {}) });
+    assert.equal((await request('GET', '/api/garmin/status')).statusCode, 200);
+    const prescription = { version: 1, sport: 'running', name: 'Synthetic', steps: [
+      { id: 'run', kind: 'run', end: { type: 'time', value: 600 }, target: { type: 'none' } },
+    ] };
+    const saved = await request('PUT', '/api/trainings/1/garmin/prescription', { expected_revision: null,
+      expected_training_date: '2026-11-02', expected_connection_generation: 1, prescription });
+    assert.equal(saved.statusCode, 200, saved.body);
+    const published = await request('POST', '/api/trainings/1/garmin/publish', { fingerprint: saved.json().fingerprint,
+      expected_date: '2026-11-02', expected_revision: 1, expected_connection_generation: 1 });
+    assert.equal(published.statusCode, 202, published.body);
+    for (let i = 0; i < 100 && h.db.prepare('SELECT status FROM garmin_training_operations WHERE operation_id=?').get(published.json().operation_id).status !== 'scheduled'; i++) {
+      await new Promise(resolve => setImmediate(resolve));
+    }
+    assert.equal(h.db.prepare('SELECT status FROM garmin_training_operations WHERE operation_id=?').get(published.json().operation_id).status, 'scheduled');
+    h.db.prepare("INSERT INTO trainings(id,user_id,dia,tipo,treino) VALUES(2,1,'2026-11-02','run','import')").run();
+    const found = await request('GET', '/api/trainings/2/garmin/activities');
+    assert.equal(found.statusCode, 200, found.body);
+    const previewed = await request('POST', '/api/trainings/2/garmin/activity-preview', { activity_id: 42, source_cursor: 0 });
+    assert.equal(previewed.statusCode, 200, previewed.body);
+    const imported = await request('POST', '/api/trainings/2/garmin/activity-import', { preview_id: previewed.json().preview_id });
+    assert.equal(imported.statusCode, 200, imported.body);
+    const before = h.db.prepare('SELECT * FROM garmin_pilot_connections WHERE user_id=1').get();
+    const importedBefore = h.db.prepare('SELECT * FROM garmin_activity_imports WHERE user_id=1').all();
+    h.db.exec(`CREATE TRIGGER synthetic_cleanup_failure BEFORE UPDATE OF cleanup_pending ON garmin_pilot_connections
+      WHEN NEW.user_id=2 AND NEW.cleanup_pending=0 BEGIN SELECT RAISE(ABORT, 'synthetic failure'); END`);
+    releaseDelete();
+    await restarted.close(); restarted = null;
+    assert.equal(h.db.prepare('SELECT cleanup_pending FROM garmin_pilot_connections WHERE user_id=2').get().cleanup_pending, 1);
+    assert.equal(h.db.prepare("SELECT pending FROM garmin_connection_cleanup WHERE user_id=2 AND connection_id='pilot'").get().pending, 1);
+    h.db.exec('DROP TRIGGER synthetic_cleanup_failure');
+    h.db.close();
+    h.db = createDatabase({ filename: databaseFile });
+    finalServer = await buildServer({ db: h.db, sessionCookieSecure: false, parseFitFile: async () => summary,
+      garminConfig: config(1), garminFetch: fetchMock });
+    for (let i = 0; i < 100 && h.db.prepare('SELECT cleanup_pending FROM garmin_pilot_connections WHERE user_id=2').get().cleanup_pending; i++) {
+      await new Promise(resolve => setImmediate(resolve));
+    }
+    assert.equal(h.db.prepare('SELECT cleanup_pending FROM garmin_pilot_connections WHERE user_id=2').get().cleanup_pending, 0);
+    assert.equal(h.db.prepare("SELECT pending FROM garmin_connection_cleanup WHERE user_id=2 AND connection_id='pilot'").get().pending, 0);
+    assert.deepEqual(h.db.prepare('SELECT * FROM garmin_pilot_connections WHERE user_id=1').get(), before);
+    assert.deepEqual(h.db.prepare('SELECT * FROM garmin_activity_imports WHERE user_id=1').all(), importedBefore);
+    assert.equal(fs.readFileSync(fileB, 'utf8'), 'synthetic-b-ciphertext');
+    assert.equal(fs.existsSync(fileA), false);
+    assert.equal(calls.filter(call => call.method === 'DELETE').length, 2);
+  } finally {
+    releaseDelete?.();
+    if (appA) await appA.close();
+    if (restarted) await restarted.close();
+    if (finalServer) await finalServer.close();
+    if (!initialClosed) await h.app.close();
+    h.db.close();
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test('activity search, original ZIP preview, confirmed import, provenance, feedback and shoe ledger share the canonical pipeline', async () => {
   const h = await setup();
   try {
@@ -318,6 +433,67 @@ test('candidate paging advances across filtered-out activities without repeating
     assert.equal(response.json().has_more, true);
     assert.equal(response.json().next_offset, 10);
     assert.equal(response.json().budget_exhausted, false);
+  } finally { await h.close(); }
+});
+
+test('activity search and preview never expose another owner’s matching Garmin history', async () => {
+  const h = await setup();
+  try {
+    h.db.prepare("INSERT INTO users(id,email,password_hash) VALUES(2,'other-owner@example.test','hash')").run();
+    h.db.prepare("INSERT INTO trainings(id,user_id,dia,tipo,treino) VALUES(2,2,'2026-11-02','run','private')").run();
+    h.db.prepare(`INSERT INTO garmin_activity_imports(user_id,training_id,account_fingerprint,activity_id,file_sha256,importer_version,is_current)
+      VALUES(2,2,?,'42',?,1,1)`).run('a'.repeat(64), 'b'.repeat(64));
+    const list = await h.app.inject({ method: 'GET', url: '/api/trainings/1/garmin/activities', headers: { cookie: h.cookie } });
+    assert.equal(list.statusCode, 200, list.body);
+    assert.equal(list.json().items[0].linked_training_id, null);
+    assert.equal(list.json().items[0].historical_training_id, null);
+    const review = await preview(h);
+    assert.equal(review.statusCode, 200, review.body);
+    assert.equal(review.json().linked_training_id, null);
+    h.db.prepare('UPDATE garmin_activity_imports SET is_current=0 WHERE user_id=2').run();
+    const historical = await h.app.inject({ method: 'GET', url: '/api/trainings/1/garmin/activities', headers: { cookie: h.cookie } });
+    assert.equal(historical.json().items[0].historical_training_id, null);
+  } finally { await h.close(); }
+});
+
+test('independent owners can import and replace the same Garmin activity after SQLite upgrade', async () => {
+  const h = await setup({ rows: [42, 43].map(activityId => ({ activityId, activityName: 'Synthetic run',
+    startTimeLocal: '2026-11-02 07:00:00', activityType: 'running', duration: 3500, distance: 10000 })) });
+  try {
+    h.db.exec(`DELETE FROM schema_migrations WHERE name='2026-11-garmin-activity-owner-v1';
+      DROP INDEX idx_garmin_activity_import_current_identity;
+      CREATE UNIQUE INDEX idx_garmin_activity_import_current_identity
+        ON garmin_activity_imports(account_fingerprint,activity_id) WHERE is_current=1;`);
+    h.db.prepare("INSERT INTO users(id,email,password_hash) VALUES(2,'history-owner@example.test','hash')").run();
+    h.db.prepare("INSERT INTO trainings(id,user_id,dia,tipo,treino,result_data_source,fit_distance) VALUES(2,2,'2026-11-02','run','private','garmin_connect',12)").run();
+    h.db.prepare(`INSERT INTO garmin_activity_imports(user_id,training_id,account_fingerprint,activity_id,file_sha256,importer_version,is_current)
+      VALUES(2,2,?,'42',?,1,1)`).run('a'.repeat(64), 'b'.repeat(64));
+    h.db.prepare(`INSERT INTO training_result_evidence(user_id,training_id,evidence_type,evidence_value,source,is_current)
+      VALUES(2,2,'garmin_activity',?,'garmin_connect',1)`).run('a'.repeat(64) + ':42');
+    h.db.prepare(`INSERT INTO training_result_evidence(user_id,training_id,evidence_type,evidence_value,source,is_current)
+      VALUES(2,2,'fit_sha256',?,'garmin_connect',1)`)
+      .run(require('node:crypto').createHash('sha256').update('synthetic-fit-bytes').digest('hex'));
+    const before = h.db.prepare('SELECT * FROM trainings WHERE id=2').get();
+    const history = h.db.prepare('SELECT * FROM garmin_activity_imports WHERE user_id=2').all();
+    const evidence = h.db.prepare('SELECT * FROM training_result_evidence WHERE user_id=2').all();
+    require('../src/db/database').initializeDatabase(h.db);
+    require('../src/db/database').initializeDatabase(h.db);
+    assert.deepEqual(h.db.prepare('SELECT * FROM garmin_activity_imports WHERE user_id=2').all(), history);
+    for (const [activity, cursor] of [[42, 0], [43, 1]]) {
+      const list = await h.app.inject({ method: 'GET', url: '/api/trainings/1/garmin/activities', headers: { cookie: h.cookie } });
+      assert.equal(list.statusCode, 200, list.body);
+      assert.equal(list.json().items.find(item => item.activity_id === String(activity)).linked_training_id, null);
+      const reviewed = await preview(h, activity, 1, cursor);
+      assert.equal(reviewed.statusCode, 200, reviewed.body);
+      assert.equal(reviewed.json().linked_training_id, null);
+      const result = await h.app.inject({ method: 'POST', url: '/api/trainings/1/garmin/activity-import', headers: { cookie: h.cookie },
+        payload: { preview_id: reviewed.json().preview_id, confirm_replace: true } });
+      assert.equal(result.statusCode, 200, result.body);
+      if (activity === 42) assert.equal(h.db.prepare("SELECT count(*) AS n FROM garmin_activity_imports WHERE activity_id='42' AND is_current=1").get().n, 2);
+    }
+    assert.deepEqual(h.db.prepare('SELECT * FROM trainings WHERE id=2').get(), before);
+    assert.deepEqual(h.db.prepare('SELECT * FROM garmin_activity_imports WHERE user_id=2').all(), history);
+    assert.deepEqual(h.db.prepare('SELECT * FROM training_result_evidence WHERE user_id=2').all(), evidence);
   } finally { await h.close(); }
 });
 

@@ -100,6 +100,7 @@ function runtimeConfig(options = {}) {
     || `http://127.0.0.1:${values.GARMIN_CONNECTOR_PORT || '8080'}`;
   values.GARMIN_PILOT_ENABLED = Object.prototype.hasOwnProperty.call(explicit, 'GARMIN_PILOT_ENABLED')
     ? explicit.GARMIN_PILOT_ENABLED : (privateConfig ? 'true' : 'false');
+  values.GARMIN_ACCESS_MODE = explicit.GARMIN_ACCESS_MODE || '';
   values.GARMIN_STORE = explicit.GARMIN_STORE || STORE_DIR;
   return values;
 }
@@ -112,7 +113,7 @@ function applyRuntimeConfig(options = {}) {
   const values = runtimeConfig(options);
   const names = options.variables || [
     'GARMIN_PILOT_USER_ID', 'KINESIS_GARMIN_SERVICE_TOKEN', 'GARMIN_CONNECTOR_PORT',
-    'DATABASE_FILE', 'GARMIN_CONNECTOR_URL', 'GARMIN_PILOT_ENABLED', 'GARMIN_STORE',
+    'DATABASE_FILE', 'GARMIN_CONNECTOR_URL', 'GARMIN_PILOT_ENABLED', 'GARMIN_ACCESS_MODE', 'GARMIN_STORE',
   ];
   for (const name of names) {
     if (values[name] !== undefined) process.env[name] = values[name];

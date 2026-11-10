@@ -13,6 +13,7 @@ function connectorEnvironment(config, baseEnv = process.env) {
     LANG: baseEnv.LANG || 'C.UTF-8',
     TMPDIR: baseEnv.TMPDIR || os.tmpdir(),
     GARMIN_PILOT_ENABLED: config.GARMIN_PILOT_ENABLED,
+    GARMIN_ACCESS_MODE: config.GARMIN_ACCESS_MODE,
     GARMIN_PILOT_USER_ID: config.GARMIN_PILOT_USER_ID,
     KINESIS_GARMIN_SERVICE_TOKEN: config.KINESIS_GARMIN_SERVICE_TOKEN,
     GARMIN_ENCRYPTION_KEY: config.GARMIN_ENCRYPTION_KEY,
