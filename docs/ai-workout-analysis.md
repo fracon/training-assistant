@@ -1,7 +1,7 @@
 # Contextual workout analysis (issue #65)
 
-Status: implemented in the dedicated issue #65 branch, pending its PR merge.
-The preceding phases are integrated through #67, #69 and #70. This is a focused
+Status: integrated through merged PR #71. The preceding phases are integrated
+through #67, #69 and #70. This is a focused
 analysis of one already recorded workout in the existing Training Result page;
 it is not a chatbot, medical assessment, automatic training change, or required
 step for saving a result.

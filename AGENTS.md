@@ -8,8 +8,7 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.30.2` on the issue #74
-branch); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.34.0`); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
@@ -190,20 +189,39 @@ onboarding record of the account is preserved.
 - The admin page reuses the Administration sidebar group, shared modal/focus
   and confirmation patterns, escaped DOM text, and the PT/EN locale contract.
 
-## Garmin Connect Phase 1 pilot
+## Garmin Connect integration
+
+Status: the integration is implemented and merged through #72 (connector
+foundation), #73 (structured workout publishing), #74 (activity result import),
+#81 (connector image on GHCR) and #86 (multiuser access). It stays disabled
+unless the operator sets `GARMIN_PILOT_ENABLED=true`. `GARMIN_ACCESS_MODE`
+selects who may use it: `pilot` (the default when unset) restricts it to the
+account in `GARMIN_PILOT_USER_ID`; only the exact value `multiuser` enables it
+for every active authenticated account, each acting only on its own Garmin
+connection. Any other value fails closed. Node and the connector must run with
+the same mode. The owner authorized multiuser enablement; real two-account
+ZimaOS acceptance and Garmin/device homologation remain pending and are tracked
+in `docs/garmin-integration.md`. Existing persisted names
+(`garmin_pilot_connections`, `npm run garmin:pilot`, `.kinesis-private/garmin-pilot.json`)
+are stable identifiers, not a statement of scope.
+
 
 - The owner explicitly authorized an unofficial Garmin Connect integration,
   one private Python adapter container in the ZimaOS Compose deployment, and a
-  controlled proof of concept on the owner's Garmin account/Forerunner 55 only.
-  Do not extend this to other users, public connector access, remote deletion of
+  controlled proof of concept on the owner's Garmin account/Forerunner 55, later
+  extended by explicit owner authorization to the opt-in multiuser mode. Never
+  add public connector access, cross-account access, remote deletion of
   preexisting records, OpenAI/third-party FIT or GPS processing, paid AI calls,
-  or global enablement before homologation.
+  or enablement that bypasses the operator's `GARMIN_PILOT_ENABLED` and
+  `GARMIN_ACCESS_MODE` settings.
 - Node remains the product authorization and canonical SQLite owner. The
   Python adapter is private on the Compose network, has no published port or
   Cloudflare route, and never mounts SQLite. Kinesis starts and accepts current
   FIT/ZIP imports when Python is unavailable. `GARMIN_PILOT_ENABLED` defaults
-  to `false`; owner identity is configured locally and the pilot CLI rechecks
-  that the account exists and is active before authentication.
+  to `false`. In pilot mode the owner identity is configured; in multiuser mode
+  it is the authenticated session's current user row. The terminal CLI always
+  requires an explicit `GARMIN_PILOT_USER_ID` and rechecks that the account
+  exists and is active before authentication.
 - Tokens have one custodian: the Python connector's named volume. Persist only
   AES-GCM ciphertext, with a separate runtime key; keep temp plaintext token
   stores mode 0600 in mode 0700 ephemeral directories and remove them after use.
@@ -256,24 +274,30 @@ onboarding record of the account is preserved.
   encryption key to the browser. Local
   configuration, venv, Python caches and coverage files must be Git-ignored and
   excluded from Docker build context.
-- `GARMIN_PILOT_USER_ID` is temporarily the selected Kinesis account ID for
-  the single-owner terminal and web pilot. Node revalidates that owner and
-  active state for every web request and around remote mutations. The web flow
-  remains a pilot, not production multi-user support. `KINESIS_GARMIN_SERVICE_TOKEN` authenticates
+- `GARMIN_PILOT_USER_ID` is the selected Kinesis account ID in pilot mode and
+  for the terminal CLI; the multiuser web flow ignores it. Node revalidates the
+  owner (configured or session user), its active state, and the connection
+  fence for every web request and around remote mutations. Connector routes are
+  keyed by the Kinesis owner ID, and activity identity, cleanup state and the
+  encrypted `.auth` authentication fence are scoped per owner/connection; never
+  let one account's recovery, cleanup or identity affect another's.
+  `KINESIS_GARMIN_SERVICE_TOKEN` authenticates
   Node-to-Python requests; `GARMIN_ENCRYPTION_KEY` encrypts Python token and
   operation-journal storage. Local setup creates the latter two once; in
-  ZimaOS the operator supplies all three as runtime config and preserves the
-  secrets through updates. End users do not configure these values. Production
-  multi-user identity from the authenticated Kinesis session remains future
-  work; the issue #73 “Connect Garmin” panel is only the restricted pilot UI.
+  ZimaOS the operator supplies the runtime config (`GARMIN_PILOT_ENABLED`,
+  `GARMIN_ACCESS_MODE`, and in pilot mode `GARMIN_PILOT_USER_ID`) and preserves
+  both secrets through updates. End users do not configure these values; they
+  connect their own account from the “Connect Garmin” panel.
 - Keep the ZimaOS Compose boundary unchanged: Node owns authorization/SQLite
   and public port `8081:3000`; Python remains a separate non-public container
-  without SQLite or a Cloudflare route. Local execution is an additional pilot
-  workflow, not a replacement for this production packaging.
+  without SQLite or a Cloudflare route. Both images are published to GHCR
+  (`ghcr.io/fracon/training-assistant`, `ghcr.io/fracon/kinesis-garmin-connector`);
+  Compose keeps a local build fallback for the connector. Local execution is an
+  additional development workflow, not a replacement for this packaging.
 - Library methods are not evidence of Garmin account or device support. Record
   documentation, mock tests, live account results, and Forerunner 55 results
-  separately in `docs/garmin-integration.md`. The #73 browser flow still needs
-  owner acceptance; #74 activity import remains separate. No Garmin credentials or personal FIT/GPS
+  separately in `docs/garmin-integration.md`. Owner acceptance of the browser
+  flows (issue #76) and real two-account acceptance remain pending. No Garmin credentials or personal FIT/GPS
   files belong in Git, tests, issue/PR text, or CI.
 - `get_workout_types()['workoutSportTypes']` uses the pinned library's
   `SportTypeModel` fields `sportTypeId`, `sportTypeKey`, and `displayOrder`;
@@ -388,7 +412,7 @@ onboarding record of the account is preserved.
   every other entered value. Arrow keys and Space must operate the group, the
   focus ring is drawn on the emoji label, and the RPE transitions respect
   `prefers-reduced-motion`.
-- The public page/menu label is “Solicitar Treinos” (PT) / “Request Workouts” (EN); onboarding access actions remain “Planejar com IA” / “Plan with AI”. The page retains its free external prompt for explicit administrator use and adds an explicit weekly AI proposal for all users through the shared persisted execution pipeline. Keep the `ai-coach` route, module, API/database names, and `aiCoach` locale namespace as stable technical identifiers. The presentation rename must not rewrite any weekly, macrocycle, or workout-feedback prompt templates, including their titles, examples, instructions, or “coach” wording; keep prompt copy separate from presentation strings if a translation key is shared.
+- The public page/menu label is “Solicitar Treinos” (PT) / “Request Workouts” (EN); the welcome tour's workouts action reads “Solicitar treinos” / “Request workouts”. The page retains its free external prompt for explicit administrator use and adds an explicit weekly AI proposal for all users through the shared persisted execution pipeline. Keep the `ai-coach` route, module, API/database names, and `aiCoach` locale namespace as stable technical identifiers. The presentation rename must not rewrite any weekly, macrocycle, or workout-feedback prompt templates, including their titles, examples, instructions, or “coach” wording; keep prompt copy separate from presentation strings if a translation key is shared.
 - The Training Result page also has a separate, informational “How to create a
   workout” guide. Its declarative catalog lives in
   `src/public/shared/workout-creation-guidance.js` and is rendered by
@@ -426,12 +450,17 @@ onboarding record of the account is preserved.
 
 ## Onboarding architecture and contract
 
-The frontend onboarding experience is implemented by `src/public/shared/onboarding.js`,
-the dashboard markup/styles/scripts (`home.html`, `home.css`, `home.js`), shared
-shell menu logic in `shell.js`, locale dictionaries, and the backend routes in
+The frontend onboarding experience is a narrated welcome tour video implemented
+by `src/public/shared/onboarding.js` (scene/cue script, progress and tour
+helpers), the generated media manifest `src/public/shared/onboarding-tour-media.js`,
+the assets in `src/public/assets/onboarding/tour/`, the dashboard
+markup/styles/scripts (`home.html`, `home.css`, `home.js`), shared shell menu
+logic in `shell.js`, locale dictionaries, and the backend routes in
 `src/server.js`. The backend owns persistence and calculates progress; the
 frontend renders and navigates but must never infer completion from a click,
-visited page, or slide.
+visited page, or video playback. The videos are produced offline by
+`scripts/onboarding-tour/build.mjs` (see its README); the application never runs
+that build.
 
 ### API and stored state
 
@@ -451,8 +480,9 @@ visited page, or slide.
   onboarding fields; do not add stored step counters or completion booleans.
 - `welcome_dismissed: true` changes `new` to `active`; there is no separate
   persisted welcome-dismissed boolean. Other statuses are not promoted by that
-  update. `guide_hidden` stores only the user's checklist presentation
-  preference. Both fields are user-scoped.
+  update. `guide_hidden` stored the removed checklist's presentation
+  preference; the API still accepts and returns it for compatibility, but the
+  tour neither reads nor writes it. Both fields are user-scoped.
 - `steps.shoes` is true when the user owns at least one shoe; `steps.cycle` is
   true when the user owns an active cycle; `steps.trainings` is true when the
   user owns at least one planned training. `completed`, `total` (3), `complete`,
@@ -461,52 +491,62 @@ visited page, or slide.
 
 ### Presentation, navigation, and accessibility
 
-- A genuinely new (`new`) account receives the three-slide PT/EN welcome
-  automatically. Existing (`active`) accounts do not. “Agora não” / “Not now” persists
-  `welcome_dismissed`; it does not block access to the app. The three primary
-  actions link to existing shoes and cycle flows. The workout-plan slide opens
-  Planejar com IA/import when an active cycle exists; otherwise it directs the user to
-  create the required cycle first. Explicitly opening the setup guide does not
-  open the welcome dialog.
-- The checklist is shown normally only while incomplete and not hidden. A
-  completed or hidden checklist remains hidden and absent from the dashboard
-  layout (`hidden` keeps it out of layout and keyboard navigation); there is no
-  permanent completion card or dashboard reopen bar. The user menu's **Guia de
-  configuração / Setup guide** opens it on demand, including for completed and
-  active accounts. Opening it is transient: it changes no progress, status,
-  welcome preference, or guide-hidden preference. Hiding it closes it and may
-  persist only `guide_hidden=true`.
-- In the dashboard, the shared shell requests opening through the local
-  `kinesis:open-setup-guide` event. From another page it navigates to
-  `/home.html?openSetupGuide=1`. `onboarding.js` consumes exactly the value `1`
-  and removes that parameter with `history.replaceState`, preserving other
-  query parameters and the hash. Do not persist this transient signal or cause
-  a reload/reopen after it has been consumed.
-- The shell exposes the setup-guide action only in the authenticated user menu;
-  it closes the menu when activated. It must not know dashboard card internals.
-  The dashboard owns rendering, focus, scrolling, and hiding. Focus the guide
-  heading only after the guide is visible; respect reduced-motion preferences.
-  When hiding from an explicit menu action, return focus to a stable visible
-  control. No hidden control may remain in the tab order.
-- Keep the welcome dialog's accessible name/description synchronized to the
-  active slide. Preserve initial focus, Tab/Shift+Tab containment, Escape,
-  focus restoration, and background `inert`. Programmatically focused
-  non-interactive headings may suppress their own outline, but never remove
-  visible focus styling from interactive controls. CSS must not override the
-  browser's `[hidden]` behavior for onboarding elements.
-- Resolve translated strings at action time. Dynamically rendered checklist,
-  dialog, and menu content must update on language changes without duplicate
-  listeners or stale/unused DOM, CSS, or translation keys.
+- The welcome tour replaces the former three-slide welcome and the dashboard
+  checklist entirely; neither may be restored alongside it. It is one shared
+  `.modal-backdrop`/`.modal-card` dialog with a native-controls `<video>`
+  (VP9/Opus WebM plus H.264/AAC MP4 fallback), a default-on WebVTT `captions`
+  track, a poster, a `<details>` transcript, and a footer rendered only when
+  there is a next setup step. The footer holds exactly one call to action
+  derived from backend progress (`onboardingNextAction`: shoes → cycles →
+  Solicitar Treinos when an active cycle is loaded, otherwise cycles). A
+  complete setup has no footer. Do not add a progress counter or a redundant
+  “Not now” button: the header close button, Escape and the backdrop close it.
+- A genuinely new (`new`) account receives the tour automatically. Existing
+  (`active`) accounts do not. Closing it by the close button, Escape, or the
+  backdrop persists `welcome_dismissed` only for a `new`
+  account; the call to action records that dismissal before navigating. A
+  failed write keeps the dialog open and shows the shared toast.
+- The video never autoplays and loads its sources only when the dialog opens.
+  Narration, captions and transcript come from the same
+  `home.onboarding.tour.cues.*` strings listed by `TOUR_SCENES`; changing a
+  cue requires rebuilding the videos so captions stay byte-equal to the
+  dictionary. The media language follows the application language. A language
+  change while open swaps video, captions and poster, keeps the dialog open,
+  and resumes at the same relative point of the same scene (`mapTourTime`).
+- The user menu's **Tour de boas-vindas / Welcome tour** opens it on demand for
+  any account, including completed ones. Opening it explicitly is transient:
+  for an `active` account it writes nothing. In the dashboard the shell
+  requests opening through the local `kinesis:open-setup-guide` event; from
+  another page it navigates to `/home.html?openSetupGuide=1`. `onboarding.js`
+  consumes exactly the value `1` and removes that parameter with
+  `history.replaceState`, preserving other query parameters and the hash. Do
+  not persist this transient signal or cause a reload/reopen after it has been
+  consumed. The shell must not know dashboard dialog internals.
+- The dialog uses `createDialogFocusTrap`: initial focus on its heading,
+  Tab/Shift+Tab containment, Escape, background `inert`, and focus restoration
+  to the opener when still visible, otherwise to the account control. The
+  programmatically focused heading may suppress its own outline, but never
+  remove visible focus styling from interactive controls. CSS must not override
+  the browser's `[hidden]` behavior. Under `prefers-reduced-motion` the dialog
+  does not animate; the video still requires an explicit play.
+- Resolve translated strings at action time. Dynamically rendered transcript,
+  progress, action, and menu content must update on language changes without
+  duplicate listeners or stale/unused DOM, CSS, or translation keys.
 
 ## Testing and verification
 
 Use the existing `node:test` suites. Onboarding behavior is covered primarily
-by `test/onboarding.test.js` and `test/onboarding.routes.test.js`, with shared
+by `test/onboarding.test.js` (progress, tour session, call to action, language
+time mapping, caption/dictionary equality, manifest hashes, markup and hidden
+CSS), `test/onboardingTour.browser.test.js` (real Chrome: automatic tour,
+media/captions loading, language switch mid-video, focus containment,
+dismissal persistence, menu opening from any page, mobile and reduced-height
+viewports, reduced motion) and `test/onboarding.routes.test.js`, with shared
 menu integration in `test/shell.test.js`; run the relevant frontend/browser
 tests whenever those behaviors change. Test both PT and EN, ownership, new and
-existing accounts, incomplete/hidden/completed states, transient navigation,
-focus and keyboard behavior, and ensure `[hidden]` elements are not visible or
-focusable when changing onboarding UI.
+existing accounts, incomplete/completed states, transient navigation, focus and
+keyboard behavior, and ensure `[hidden]` elements are not visible or focusable
+when changing onboarding UI.
 
 Account administration and activity behavior is covered by
 `test/adminUsers.test.js` (domain), `test/adminUsers.routes.test.js` (HTTP),
@@ -588,14 +628,14 @@ Resolved threads are not a substitute for validation. Distinguish local test
 results from checks published on GitHub, and do not promise that one Codex pass
 will find every issue.
 
-## Garmin structured workout pilot (#73)
+## Garmin structured workout publishing (#73)
 
-The Garmin Connect product surface is an opt-in, single-owner pilot layered on
-the private Python connector. Node owns authentication, ownership, active
+The Garmin Connect product surface is an operator opt-in feature (pilot or
+multiuser access mode) layered on the private Python connector. Node owns authentication, ownership, active
 account checks, SQLite, structured prescription revisions, and publication
-operation state. Browsers call only Node. The pilot owner comes from operator
-configuration and is never accepted from a request body; administrators gain
-no cross-account access. Password and MFA input are transient and tokens stay
+operation state. Browsers call only Node. The owner is the configured pilot
+account or, in multiuser mode, the authenticated session user; it is never
+accepted from a request body, and administrators gain no cross-account access. Password and MFA input are transient and tokens stay
 encrypted in the connector's private store.
 
 Planned-session prose remains canonical and untouched. Structured Garmin
@@ -605,8 +645,7 @@ for conversion, or map RPE to a physiological target. Preview is read-only.
 Publishing is an explicit confirmed action; durable operations are scoped to
 owner/session/revision/fingerprint, and uncertain outcomes must never be
 automatically repeated. A Garmin Connect schedule is not proof of delivery to
-a watch. This pilot does not implement multi-user production integration.
-While a durable send/update/reschedule is active, failed with remote effects,
+a watch. While a durable send/update/reschedule is active, failed with remote effects,
 or awaiting reconciliation, disable editing and every new mutation for that
 snapshot. Present one localized operation state based on its persisted status,
 stage, action, and confirmed remote IDs; never pair a generic publish-failed
@@ -742,8 +781,11 @@ See [`docs/ai-weekly-workouts.md`](docs/ai-weekly-workouts.md).
 The approved [plan](docs/ai-integration-plan.md) is integrated in main through
 PRs #66/#68. Phase 0 (#62) is integrated through merged PR #67 (`648d6a0`).
 Phase 1 (#63) is integrated through merged PR #69. Phase 2 (#64) is integrated
-through merged PR #70. Phase 3 (#65) is implemented on its dedicated branch
-and awaits its PR; see [docs/ai-workout-analysis.md](docs/ai-workout-analysis.md).
+through merged PR #70. Phase 3 (#65) is integrated through merged PR #71; see
+[docs/ai-workout-analysis.md](docs/ai-workout-analysis.md). Later fixes add
+admin raw-output traces (#84), weekly evidence references (#85), duplicate
+generation and completed-cycle rules (#87), and the raw-output expiry repair
+(#88), described below.
 Read the plan and [foundation contract](docs/ai-foundation.md) in full before
 changing this service. Update README, AGENTS, the plan and affected configuration,
 API/privacy documentation with delivered behavior and honest branch status.
@@ -847,7 +889,7 @@ with optimistic versions. Do not restore generic manual memory CRUD.
   and mocked providers. Model-quality evaluation is separate, controlled and
   cost-recorded; a mock is never evidence of real model quality or access.
 
-## Cycle planning (issue #63, branch implementation)
+## Cycle planning (issue #63)
 
 The free macrocycle prompt (`GET /api/cycles/:id/prompt`) requires the existing
 `requireAuth` + `requireAdmin` chain and owner-scoped cycle lookup. Authentication
@@ -1019,6 +1061,27 @@ and invalid setting names; never secrets or invalid values. Keep explicit
 `AI_ENABLED=true` opt-in and document restart after dotenv changes. Readiness
 is not verification of provider credentials and must not trigger paid calls.
 
+Administrative raw-output traces (#84, repaired by #88): for parsing and
+domain-validation failures only, `ai_execution_raw_outputs` keeps the model's
+extracted `output_text` per execution and attempt, capped at 65,536 UTF-8 bytes
+at a code-point boundary with the original byte length and a truncation flag.
+Never retain the provider envelope, headers, credentials or reasoning. Rows
+expire after 48 hours through the ordinary AI cleanup, which clears the text and
+sets `expired = 1` while keeping length, truncation, attempt and expiry. Only a
+current admin sees them, for their own executions; ordinary execution/polling
+responses never include raw output. A capture failure never replaces the
+original execution error. The idempotent `2026-11-ai-raw-output-expired-v1`
+repair adds a missing `expired` column without touching existing rows.
+
+Duplicate generations and completed cycles (#87): enqueueing refuses an
+equivalent request — same owner, purpose, resource and request hash — while
+another is queued, running, or cancelled but not yet settled, with `409
+generationInProgress` and the existing `execution_id`; the UI follows that
+execution instead of starting a paid call, including across browser tabs.
+Cycle generation requires an owned, active cycle (`resourceNotFound`,
+`cycleNotActive`). A completed cycle without planning history shows no planning
+card action; completed cycles with history keep read-only access.
+
 ## Golden rules
 
 ## GOLDEN RULE — DESIGN SYSTEM FIRST / VISUAL CONSISTENCY
@@ -1082,10 +1145,19 @@ including overflow; functional tests alone do not replace visual inspection.
 8. **Git workflow:** develop on a task-appropriate branch, not directly on
    `main`; test, inspect `git diff --check`, and commit descriptively only after
    required verification passes.
+9. **100% coverage gate:** `npm run test:coverage` must report exactly 100%
+   Statements, Branches, Functions, and Lines before any commit, push, or PR.
+   Every new or changed backend branch — including idempotent migrations and
+   schema repairs — ships with the test that exercises it. Never lower the
+   threshold, add exclusions or `c8 ignore` comments, or move code out of the
+   instrumented paths to pass. If the gate is already below 100% on `main`, add
+   the missing tests before committing anything else.
 
 ## Garmin activity result import (#74)
 
-The phase 3 activity import remains a restricted single-owner pilot. Use
+The activity import follows the same operator opt-in and access mode as the
+rest of the Garmin integration (pilot or multiuser, each owner on its own
+connection). Use
 `src/garmin/activity-import.js` for Node authorization, candidate search, preview,
 and confirmed import; the Python connector's allowlisted activities and ORIGINAL
 routes remain private. Never accept a Garmin owner, connection, URL, account

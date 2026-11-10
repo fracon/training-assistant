@@ -2,7 +2,20 @@
 
 A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, request and review weekly AI proposals, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized training-request prompts for use with an external AI.
 
-Current application version: **0.30.2** (active beta development; Garmin activity result import is an opt-in single-owner pilot).
+Current application version: **0.34.0** (active beta development). The Garmin Connect integration is opt-in per installation, in single-account `pilot` mode (default) or `multiuser` mode; see [Garmin Connect integration](#garmin-connect-integration).
+
+## Welcome tour
+
+New accounts are greeted on the dashboard by a narrated welcome tour: a short
+motion graphic with sound effects, played in Portuguese or English according to
+the application language, with captions on by default and a full transcript.
+It walks through shoes, cycles and cycle planning, Request Workouts, the
+calendar, recording FIT/ZIP or manual results with realized effort, workout
+analysis and training memory, and ends with the next setup step for the
+account. It never autoplays, and it can be reopened at any time from the user
+menu (**Welcome tour / Tour de boas-vindas**). The videos are produced offline
+with local neural speech (Piper) and synthesized sound; see
+[`scripts/onboarding-tour/README.md`](scripts/onboarding-tour/README.md).
 
 ## AI integration: cycle planning and weekly proposals
 
@@ -14,8 +27,18 @@ presentation, and a dismissible localized result modal after application.
 Applied proposals no longer remain in the review area or reopen a result modal
 after reload. Weekly delivery is integrated through PR #70. Version **0.24.0**
 adds contextual workout analysis (#65), described in the
-[workout analysis contract](docs/ai-workout-analysis.md); it is implemented on
-its dedicated open PR and is not integrated until that PR merges.
+[workout analysis contract](docs/ai-workout-analysis.md); it is integrated
+through PR #71.
+
+An equivalent AI request (same account, purpose, resource and inputs) cannot
+be started twice: while one is queued, running, or cancelled but not yet
+settled, the API answers `409 generationInProgress` with the existing
+execution ID and the page follows that execution instead of making another
+paid call, also across browser tabs. Cycle generation requires an active cycle;
+a completed cycle without planning history shows no planning action.
+Administrators can inspect, for their own executions only, the model's raw text
+output from parsing or validation failures (capped at 64 KiB and cleared after
+48 hours); see the [foundation contract](docs/ai-foundation.md#raw-output-in-administrative-execution-traces).
 
 Saving an active cycle confirms its registration and opens **Cycle planning /
 Planejamento do ciclo** using the ID returned by the backend. **Generate plan /
@@ -217,11 +240,17 @@ AI training assistants are only as good as the data you give them. Exporting wor
 - **Reversible account suspension** — deactivating a regular account ends its sessions immediately and blocks sign-in while keeping every training, cycle, shoe, and preference record. The state is a database-constrained `users.is_active` column, activation restores the login without restoring revoked sessions, and a correct password on a suspended account is refused with a localized message.
 - **Secure sessions** — 256-bit random session tokens stored in SQLite, delivered as `HttpOnly` / `Secure` / `SameSite=Lax` cookies with server-side expiry.
 - **Server-side route gating** — unauthenticated visitors are redirected to the login page by Fastify itself; the training tool is never rendered without a valid session.
-- **User dropdown menu** — the authenticated user badge opens **Setup guide**, **Training memory**, **Change Password**, and **Preferences**. Logout remains a separate topbar action.
+- **User dropdown menu** — the authenticated user badge opens **Welcome tour**, **Training memory**, **Change Password**, and **Preferences**. Logout remains a separate topbar action.
 - **Secure change password flow** — a dedicated modal with client-side validation that accumulates every problem into a robust grouped error box (the only error surface — no stray inline hints), backed by hardened `scrypt` verification of the current password before re-hashing and storing the new one.
 - **Global route guards** — the Training Calendar is strictly gated: users without an active Training Cycle are redirected to the Cycles page by the server, and cycle-dependent navigation is disabled in the shell as a second line of defense.
-- **New-user onboarding** — the first-visit welcome and three-step setup checklist are available in English and Brazilian Portuguese. The guide can be reopened from the user dropdown without changing progress or presentation preferences.
+- **New-user onboarding** — a narrated welcome tour video with sound effects and captions, in English or Brazilian Portuguese following the application language. It can be reopened from the user dropdown without changing progress or presentation preferences.
 - **One-click logout** — invalidates the session on the server and clears the cookie.
+
+### Garmin Connect (opt-in)
+- **Connect your own account** — when the operator enables the integration, the session page's **Garmin Connect** panel connects the signed-in user's Garmin account (password and MFA are transient; tokens stay encrypted in the private connector). In `multiuser` mode every active account can connect its own Garmin account; in `pilot` mode only the configured account can.
+- **Publish structured workouts** — build warm-up, running/repeat/recovery blocks and cool-down for a planned session, review locally, then explicitly publish and schedule it in Garmin Connect; later updates and reschedules are explicit, confirmed, and reconcile uncertain outcomes instead of repeating them.
+- **Import results** — search the session's date window in Garmin Connect, preview the original FIT parsed locally, and import it after confirmation, with laps, provenance and shoe mileage updated atomically.
+- Garmin delivery to a watch is not guaranteed by a Garmin Connect schedule; see [Garmin Connect integration](#garmin-connect-integration).
 
 ### User Preferences Module
 
@@ -523,36 +552,27 @@ continues to receive only a planned training location/date.
 ### New-user onboarding
 
 While a newly registered account has onboarding status `new`, the dashboard
-automatically shows a three-slide welcome modal: add shoes, create a cycle, and
-prepare workouts. Its primary links lead to
-the existing shoe and cycle flows. The workout-planning slide opens Planejar
-com IA / Plan with AI or
-spreadsheet import when a cycle exists; otherwise it directs the user to create
-the required cycle first. The welcome is not a required tour. “Not now” persists
-dismissal by changing
-`onboarding_status` from `new` to `active` through the presentation endpoint.
+automatically opens the narrated **welcome tour** (see [Welcome tour](#welcome-tour)):
+one accessible dialog with a ~75-second video in the application language,
+captions on by default, and a transcript. It replaces the former three-slide
+welcome and dashboard checklist. The video never autoplays. When a setup step
+is pending, a footer offers a single action for the account's backend-derived
+next step: add shoes, create a cycle, then Request Workouts once an active
+cycle exists; a complete setup shows no footer. Closing it (the close button,
+Escape, or the backdrop) persists dismissal by changing `onboarding_status`
+from `new` to `active` through the presentation endpoint; the action records the
+same dismissal before navigating. Steps are calculated from data owned by the
+signed-in user (at least one shoe, an active cycle, at least one planned
+training); watching the video or choosing an action never completes a step.
+Existing accounts do not receive the tour automatically.
 
-The compact checklist appears automatically while incomplete and not hidden by
-the saved preference. Its steps are calculated from data owned by the signed-in
-user: at least one shoe row, an active cycle, and at least one planned training
-row. Seeing a screen or choosing an action does not complete a step. Newly
-registered users start with status `new`; existing rows with the historical
-`legacy` value are migrated idempotently to `active`. Existing accounts do not
-receive the welcome retroactively. Only `new` accounts receive it automatically.
-
-When the three steps are complete, or the user hides the checklist, it is absent
-from the normal dashboard layout. The user can open **Setup guide** / **Guia de
-configuração** from the account menu on any authenticated page. On the dashboard
-the shell sends a page-local event; elsewhere it navigates to
-`/home.html?openSetupGuide=1`. The dashboard consumes that exact signal and
-removes it from the URL while preserving other query parameters and the hash.
-This opening is transient: it changes no progress, onboarding status, or saved
-presentation preference. An explicitly opened guide can show all completed
-steps for any signed-in account; opening the guide does not open the welcome modal.
-“Hide guide” saves only the per-user
-hidden preference; it does not change step data. An incomplete checklist appears
-automatically only while `guide_hidden` is false; after completion it remains
-absent unless explicitly opened from the menu.
+The user can reopen **Welcome tour** / **Tour de boas-vindas** from the account
+menu on any authenticated page. On the dashboard the shell sends a page-local
+event; elsewhere it navigates to `/home.html?openSetupGuide=1`. The dashboard
+consumes that exact signal and removes it from the URL while preserving other
+query parameters and the hash. Reopening is transient and writes nothing for an
+existing account. Switching language while the tour is open swaps the video,
+captions and transcript and resumes at the same point of the same scene.
 
 The backend contract, persisted fields, derived response fields, and migration
 defaults are documented under [Onboarding API](#onboarding-api).
@@ -644,13 +664,13 @@ Then open <http://127.0.0.1:3000> — you'll land on the login page. Create an a
 
 > **The 100% Rule:** `npm run test:coverage` enforces 100% Statements, Branches, Functions, and Lines for the files instrumented by c8 (`src/**`, excluding `src/public/**` and `src/start.js`, plus `scripts/admin-prompts.js`, `scripts/admin-runtime.js`, and `scripts/admin-commands.js`). Frontend behavior remains test-mandatory when it changes, but `src/public/**` is not included in that instrumentation percentage.
 
-### Garmin structured workout pilot
+### Garmin structured workouts
 
-The issue #73 pilot adds an explicit structure editor and publish/schedule
-confirmation on an owned planned-session page. It stores a versioned
-prescription separately from the original prose and remains restricted to the
-operator-selected `GARMIN_PILOT_USER_ID`; it is not a production multi-user
-connection flow. Locally, run `npm run dev` and `npm run garmin:connector`.
+The structure editor and publish/schedule confirmation live on an owned
+planned-session page. They store a versioned prescription separately from the
+original prose and are available to the accounts allowed by
+`GARMIN_ACCESS_MODE` (see [Garmin Connect integration](#garmin-connect-integration)).
+Locally, run `npm run dev` and `npm run garmin:connector`.
 See [`docs/garmin-integration.md`](docs/garmin-integration.md) for supported
 steps, recovery semantics, evidence, and the required owner walkthrough.
 
@@ -812,7 +832,7 @@ read the collection.
 ## Usage
 
 1. Open **Sign In**. Create an account through **Register** (first name, last name, email, and password of at least 8 characters) or sign in to an existing account.
-2. A new account is offered the optional PT/EN welcome carousel. Use its actions to register shoes, create a cycle, then prepare workouts with Planejar com IA / Plan with AI or import an Excel plan. You may skip it and use the application freely; the dashboard checklist tracks data actually saved.
+2. A new account is offered the optional PT/EN narrated welcome tour. Its action leads to the next setup step (register shoes, create a cycle, then Request Workouts or import an Excel plan). You may skip it and use the application freely; setup progress reflects data actually saved.
 3. Open the **Calendar**, choose a planned training, and enter conditions, shoes, perceived effort (RPE 1–5), and feedback on its result page. A realized RPE from 1 to 5 is required to save a completed result, request analysis, preview an administrator prompt, or upload a result; the other feedback is optional.
 4. Choose **Import FIT or ZIP file** for activity data, or **Enter data manually** for aggregate distance and duration (with optional heart rate, elevation, and calories). A FIT/ZIP upload is persisted when its upload request succeeds.
 5. **Save and back to calendar** saves any pending manual result and complete feedback, then returns to the calendar. **Analyze workout** is a separate explicit AI action after that persistence succeeds.
@@ -976,7 +996,7 @@ columns are `users.onboarding_status` and `users.onboarding_guide_hidden`:
 
 - `welcome_dismissed: true` changes only status `new` to `active`; no separate
   dismissed boolean is stored, and other statuses remain unchanged.
-- `guide_hidden` stores the per-user presentation preference as integer 0/1.
+- `guide_hidden` stores the per-user presentation preference of the removed dashboard checklist as integer 0/1. It remains accepted and returned for compatibility; the welcome tour neither reads nor writes it.
 - Neither preference stores progress; progress is recalculated from owned data.
 - Registration explicitly creates users with status `new`. New schemas default
   to `active`; the idempotent migration adds the status column to older schemas
@@ -1125,7 +1145,7 @@ for browser imports and synchronous Node 24 consumers. The backend and root
 package remain CommonJS. See the [module boundary](docs/ai-foundation.md#explicit-module-boundary)
 for the preserved consumers and Docker layout.
 
-Shared code lives in `src/public/shared/`: `shell.js` injects the authenticated shell and user menu; `onboarding.js` owns welcome/checklist state and the transient guide signal; `i18n.js` and `locales/` provide PT/EN; `theme.css` owns tokens and shared controls; `api.js`, validators, date, units, preferences, and supporting modules are reused by pages. `src/trainingImport.js` normalizes SheetJS workbook data on the backend.
+Shared code lives in `src/public/shared/`: `shell.js` injects the authenticated shell and user menu; `onboarding.js` owns the welcome tour script, progress and the transient tour signal (`onboarding-tour-media.js` is its generated media manifest); `i18n.js` and `locales/` provide PT/EN; `theme.css` owns tokens and shared controls; `api.js`, validators, date, units, preferences, and supporting modules are reused by pages. `src/trainingImport.js` normalizes SheetJS workbook data on the backend.
 
 ## Project Structure
 
@@ -1195,7 +1215,7 @@ GitHub main ──push──▶ Self-Hosted Runner (Docker on ZimaOS)
                      https://your-domain.com
 ```
 
-- **App:** Node.js 24 / Fastify running in a Docker container (`node:24-alpine` base, non-root user); the private pilot adds a separate Python 3.12 container, built locally by Compose for the ZimaOS host architecture.
+- **App:** Node.js 24 / Fastify running in a Docker container (`node:24-alpine` base, non-root user); the optional Garmin integration adds a separate private Python 3.12 connector container, published to GHCR as `ghcr.io/fracon/kinesis-garmin-connector` (Compose can also build it locally).
 - **Host:** ZimaOS, orchestrated with Docker Compose.
 - **Exposure:** Cloudflare Zero Trust Tunnel — no open inbound ports on the router; Cloudflare handles the public HTTPS layer.
 
@@ -1278,25 +1298,37 @@ Tunnel public hostname configuration:
 
 ---
 
-## Private Garmin connector (Phase 1 pilot)
+## Garmin Connect integration
 
 An unofficial, private Python connector is packaged alongside Kinesis in
 `docker-compose.yml`; only Kinesis is published on host port `8081` to
 container port `3000`. The Garmin service has no host port or Cloudflare route,
 does not mount SQLite, and does not block Kinesis or existing FIT/ZIP imports.
-The pilot feature flag is off by default. The owner-only authorization scope,
-token encryption, internal API, ZimaOS operation, evidence status, and real
+The token encryption, internal API, ZimaOS operation, evidence status, and real
 account/device acceptance steps are in [docs/garmin-integration.md](docs/garmin-integration.md).
 
-The issue #73 branch adds a browser-based session publishing pilot for the one
-explicitly selected Kinesis account. Its explicit update action replaces the
+The integration is off unless the operator enables it, and the access mode
+decides who can use it:
+
+| Setting | Effect |
+|---|---|
+| `GARMIN_PILOT_ENABLED=true` | Turns the integration on (default `false`). Set it on both services. |
+| `GARMIN_ACCESS_MODE=pilot` (default) | Only the account in `GARMIN_PILOT_USER_ID` (a Kinesis `users.id`) can connect. |
+| `GARMIN_ACCESS_MODE=multiuser` | Every active signed-in account can connect and use **its own** Garmin account; `GARMIN_PILOT_USER_ID` is not needed for the web flow. |
+| any other value | Fails closed: the integration stays unavailable. |
+
+Each account only ever sees and changes its own Garmin connection; admins get
+no cross-account access. Restart both services after changing the mode. Real
+two-account acceptance on ZimaOS and Garmin/device homologation are still
+pending (issue #76 tracks owner acceptance).
+
+The session page publishes structured workouts to Garmin Connect. Its explicit update action replaces the
 tracked Garmin workout in place; reschedule moves only the linked Kinesis-created
 calendar occurrence. Both require a fresh saved preview and confirmation, reuse
 the same workout/occurrence IDs, and preserve uncertain outcomes for explicit
 reconciliation. Updating a workout also affects every Garmin calendar date that
-uses that workout, which the confirmation states. It is not a production multi-user
-“Connect Garmin” integration. Existing terminal commands remain diagnostic
-tools. For local development, prepare once (Python 3.12+, dedicated
+uses that workout, which the confirmation states. The terminal commands below
+remain diagnostic tools for a single configured account. For local development, prepare once (Python 3.12+, dedicated
 virtualenv, hash-locked packages, private generated config, and explicit account
 confirmation):
 
@@ -1343,15 +1375,17 @@ the Garmin session.
 
 For ZimaOS, retain the existing two-container Compose deployment: Node exposes
 `8081:3000`; Python has no published port or Cloudflare route, and its encrypted
-token volume and runtime key remain separate. The operator configures the
-three deployment variables once per installation and preserves the secrets
-across image updates; end users will not configure them. The Kinesis account
-owner ID is a temporary Phase 1 restriction. Production multi-user identity
-from the authenticated Kinesis session is future work, not delivered here.
+token volume and runtime key remain separate. Both images are published to
+GHCR (`ghcr.io/fracon/training-assistant` and
+`ghcr.io/fracon/kinesis-garmin-connector`). The operator configures the
+deployment variables once per installation and preserves
+`KINESIS_GARMIN_SERVICE_TOKEN` and `GARMIN_ENCRYPTION_KEY` across image updates;
+end users never configure them. Back up SQLite and the complete Garmin store
+(`.bin`, `.ops`, `.auth`) together, with the key stored separately; the upgrade
+and rollback steps are in the [ZimaOS section of the contract](docs/garmin-integration.md#zimaos-packaging-and-operation).
 
-This phase has not been homologated; mocks and documented library methods do
-not prove real Garmin account or Forerunner 55 behavior and do not release
-issues #73/#74.
+Mocks and documented library methods do not prove real Garmin account or
+Forerunner 55 behavior; those results are recorded separately in the contract.
 
 ## Verifying With Real Files
 
@@ -1375,7 +1409,7 @@ node scripts/tryRealFit.js path/to/activity.fit
 
 ## Garmin structured workout editor (#73)
 
-The Garmin Connect pilot extends the terminal flow with a
+The Garmin Connect integration provides a
 session editor organized into warm-up, running blocks, and cool-down. New and
 edited prescriptions use a versioned structured contract, with independent time
 duration or distance and an optional none/pace/absolute-HR target per step.
@@ -1386,16 +1420,15 @@ blocks before they can be saved as a new prescription. The preview shows the
 effective recovery count and does not estimate time for distance-based steps.
 
 “Save and review” stores only in Kinesis. Garmin is changed only after the
-separate “Publish and schedule” action and confirmation. The editor remains
-restricted to the configured pilot owner; it does not enable multi-user
-production access, auto-convert workout prose, invoke AI, or import activities
-automatically. Device delivery still requires separate Garmin Connect/watch
+separate “Publish and schedule” action and confirmation. The editor is
+available to the accounts allowed by `GARMIN_ACCESS_MODE`; it does not
+auto-convert workout prose, invoke AI, or import activities automatically. Device delivery still requires separate Garmin Connect/watch
 verification. See [the Garmin contract](docs/garmin-integration.md#structured-workout-editor-v3).
 
 ## Garmin activity result import (#74)
 
-The result and feedback accordion can search the configured pilot owner's
-Garmin Connect account, show bounded candidates, download and parse the
+The result and feedback accordion can search the signed-in owner's connected
+Garmin Connect account (when the access mode allows that account), show bounded candidates, download and parse the
 original FIT locally, and import only after explicit review and confirmation.
 Activity identity is qualified by the connected Garmin account and remote
 activity ID; dates provide an uncertain suggestion only. Imports reuse the
@@ -1408,7 +1441,7 @@ Locally, run `npm run dev` and `npm run garmin:connector` in separate terminals
 after `npm run garmin:setup`. After updating application code, restart both
 processes; the Node startup runs pending SQLite migrations automatically. Do not
 rerun setup to repair schema. The browser uses the same connection/MFA flow as
-the structured workout pilot. Preview state is short-lived in process memory;
+structured workout publishing. Preview state is short-lived in process memory;
 after reload or restart, search and review the activity again. No real Garmin
 account or watch was contacted for the implementation tests; owner acceptance
 remains tracked in issue #76. See [the activity import contract](docs/garmin-integration.md#activity-result-import-issue-74).

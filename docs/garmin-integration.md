@@ -1,7 +1,8 @@
 # Garmin Connect integration contract
 
-Status: **The multiuser mode is under review; real two-account ZimaOS
-acceptance and full Garmin/device homologation remain pending.** This
+Status: **Pilot and multiuser access modes are implemented and merged (#86);
+real two-account ZimaOS acceptance and full Garmin/device homologation remain
+pending.** This
 document separates library documentation, simulated tests, account evidence,
 and device evidence. Nothing in the first two categories is a substitute for
 the last two.

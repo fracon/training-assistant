@@ -1,5 +1,5 @@
 function focusableElements(dialog) {
-  return [...dialog.querySelectorAll('button, a[href], input, select, textarea, [tabindex]')]
+  return [...dialog.querySelectorAll('button, a[href], input, select, textarea, summary, video[controls], audio[controls], [tabindex]')]
     .filter((element) => {
       if (element.disabled || element.hidden || element.getAttribute('tabindex') === '-1') return false;
       return !element.closest('[hidden]') && getComputedStyle(element).display !== 'none';
