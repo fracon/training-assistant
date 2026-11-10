@@ -74,6 +74,9 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
   };
   let proposalWeekStart = null;
   let simulatedProviderCalls = 0;
+  let holdNextProvider = false;
+  let releaseHeldProvider = null;
+  let heldProviderStarted = null;
   const app = await buildServer({
     db,
     sessionCookieSecure: false,
@@ -151,6 +154,11 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     },
     aiClient: async (payload) => {
       simulatedProviderCalls++;
+      if (holdNextProvider) {
+        holdNextProvider = false;
+        heldProviderStarted?.();
+        await new Promise((resolve) => { releaseHeldProvider = resolve; });
+      }
       if (simulatedProviderCalls === 1) await delay(38_000);
       const context = JSON.parse(payload.input[0].content[0].text).context;
       if (simulatedProviderCalls === 2)
@@ -217,6 +225,7 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       '--no-sandbox',
       '--disable-gpu',
       '--disable-dev-shm-usage',
+      '--disable-popup-blocking',
       '--no-first-run',
       '--remote-allow-origins=*',
       `--remote-debugging-port=${debugPort}`,
@@ -2034,6 +2043,7 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     ).run(1, cycleId, duplicate.date, duplicate.period, duplicate.type, duplicate.workout, duplicate.details, duplicate.targetHr, duplicate.rpe, duplicate.weather, duplicate.notes, duplicate.location, 'Resultado sintético preservado').lastInsertRowid;
     await evaluate(`(()=>{
       const originalFetch=window.fetch.bind(window);
+      window.__realFetch=originalFetch;
       const nativeSetTimeout=window.setTimeout.bind(window);
       const nativeRandom=Math.random;
       window.__generationPosts=0;
@@ -2427,6 +2437,7 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     assert.equal(await evaluate(`document.querySelectorAll('.weekly-proposal-card').length`), 0);
     await evaluate(`(()=>{
       const originalFetch=window.fetch.bind(window);
+      window.__realFetch=originalFetch;
       window.__retryWaitReads=0;
       window.__retryWaitHeld=false;
       window.__retryWaitAborted=false;
@@ -2480,6 +2491,103 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     await delay(2100);
     assert.equal(await evaluate(`window.__definitiveReadCount`), 1, 'a definitive 404 stops polling');
     assert.equal(await evaluate(`window.__syntheticGenerationPosts`), 2, 'each new request is an explicit single POST');
+    await evaluate('window.fetch=window.__realFetch');
+    await command('Page.reload');
+    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+15000;const check=()=>{const b=document.getElementById('generateBtn');if(document.readyState==='complete'&&b&&!b.disabled){resolve(true);return}if(Date.now()>end){reject(new Error('First tab did not recover its persisted completed state after reload'))}else setTimeout(check,25)};check()})`);
+    await evaluate(`document.querySelector('[data-nav-id="ai-coach"]').setAttribute('aria-describedby','unrelated-description')`);
+    const secondTarget = await (await fetch(`${debugUrl}/json/new?about:blank`, { method: 'PUT' })).json();
+    const secondSocket = new WebSocket(secondTarget.webSocketDebuggerUrl);
+    await new Promise((resolve, reject) => {
+      secondSocket.addEventListener('open', resolve, { once: true });
+      secondSocket.addEventListener('error', reject, { once: true });
+    });
+    let secondCommandId = 0;
+    const secondPending = new Map();
+    secondSocket.addEventListener('message', (event) => {
+      const message = JSON.parse(event.data);
+      if (!message.id || !secondPending.has(message.id)) return;
+      const handlers = secondPending.get(message.id);
+      secondPending.delete(message.id);
+      if (message.error) handlers.reject(new Error(message.error.message));
+      else handlers.resolve(message.result);
+    });
+    const secondCommand = (method, params = {}) => new Promise((resolve, reject) => {
+      const id = ++secondCommandId;
+      secondPending.set(id, { resolve, reject });
+      secondSocket.send(JSON.stringify({ id, method, params }));
+    });
+    const evaluateSecond = async (expression) => {
+      const result = await secondCommand('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
+      if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text);
+      return result.result.value;
+    };
+    await secondCommand('Network.enable');
+    await secondCommand('Page.enable');
+    await secondCommand('Runtime.enable');
+    await secondCommand('Page.addScriptToEvaluateOnNewDocument', { source: `(()=>{const real=window.fetch.bind(window);window.__executionReads=[];window.__duplicateConflict=null;window.__executionListSnapshot=null;window.fetch=async(input,init={})=>{const url=typeof input==='string'?input:input.url;const path=new URL(url,location.href).pathname;const method=(init.method||input.method||'GET').toUpperCase();const response=await real(input,init);if(path==='/api/ai/executions'&&method==='GET')window.__executionListSnapshot=await response.clone().json();if(path==='/api/ai/executions'&&method==='POST'&&response.status===409)window.__duplicateConflict=await response.clone().json();if(/^\\/api\\/ai\\/executions\\/[^/]+$/.test(path)&&method!=='POST')window.__executionReads.push(path.split('/').pop());return response}})()` });
+    await secondCommand('Network.setCookie', { url: baseUrl, name: 'ta_session', value: cookie });
+    await secondCommand('Page.navigate', { url: `${baseUrl}/ai-coach.html` });
+    await evaluateSecond(`new Promise((resolve,reject)=>{const end=Date.now()+15000;const check=()=>{if(document.readyState==='complete'&&document.querySelectorAll('#availabilityGrid .day-row').length===7){resolve(true);return}if(Date.now()>end){reject(new Error('Second authenticated AI Coach tab did not load'))}else setTimeout(check,25)};check()})`);
+    const oldSelection = await evaluateSecond(`new Promise((resolve,reject)=>{const end=Date.now()+5000;const check=()=>{if(window.__executionListSnapshot&&window.__executionReads.length){resolve({latest:window.__executionListSnapshot.executions.find(x=>x.purpose==='workouts')?.id,reads:window.__executionReads.slice()});return}if(Date.now()>end){reject(new Error('The second tab did not load its previous weekly execution'))}else setTimeout(check,25)};check()})`);
+    const expectedOldExecution = db.prepare("SELECT id,state,settled FROM ai_executions WHERE user_id=1 AND purpose='workouts' ORDER BY created_at DESC LIMIT 1").get();
+    assert.equal(expectedOldExecution.state,'completed');
+    assert.equal(expectedOldExecution.settled,1);
+    assert.equal(oldSelection.latest,expectedOldExecution.id,'the second tab begins with the older completed execution selected');
+    assert.ok(oldSelection.reads.includes(expectedOldExecution.id),'the second tab read the selected completed execution before submitting');
+    let heldStart;
+    const providerStarted = new Promise((resolve) => { heldStart = resolve; });
+    heldProviderStarted = heldStart;
+    holdNextProvider = true;
+    const callsBeforeDuplicate = simulatedProviderCalls;
+    await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{const b=document.getElementById('generateBtn');if(b&&!b.disabled){resolve(true);return}if(Date.now()>end){reject(new Error('First tab generation is still disabled before the concurrency scenario: '+JSON.stringify({disabled:b?.disabled,status:document.getElementById('weeklyProposalStatus')?.textContent,error:document.getElementById('weeklyProposalError')?.textContent})));return}setTimeout(check,25)};check()})`);
+    await evaluate(`document.getElementById('generateBtn').click()`);
+    await Promise.race([providerStarted, delay(10000).then(() => { throw new Error('The simulated provider was not called by the first tab'); })]);
+    await evaluateSecond(`document.getElementById('generateBtn').click()`);
+    await evaluateSecond(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{if(window.__duplicateConflict){resolve(true);return}if(Date.now()>end){reject(new Error('Second tab did not receive the equivalent-generation conflict'));return}setTimeout(check,25)};check()})`);
+    const duplicateConflict = await evaluateSecond(`window.__duplicateConflict`);
+    const conflictId = duplicateConflict.execution_id;
+    assert.equal(duplicateConflict.error, 'generationInProgress');
+    assert.equal(conflictId, db.prepare("SELECT id FROM ai_executions WHERE user_id=1 AND purpose='workouts' AND state='running' ORDER BY created_at DESC LIMIT 1").get().id);
+    assert.equal(await evaluateSecond(`sessionStorage.getItem('kinesis-weekly-request-key')`), null, 'the rejected attempt removes only its own key');
+    await evaluateSecond(`new Promise((resolve,reject)=>{const end=Date.now()+5000;const check=()=>{if(window.__executionReads.includes(${JSON.stringify(conflictId)})){resolve(true);return}if(Date.now()>end){reject(new Error('The rejected tab did not follow the competing execution ID'));return}setTimeout(check,25)};check()})`);
+    assert.equal(simulatedProviderCalls, callsBeforeDuplicate + 1, 'both tabs caused exactly one provider call');
+    const runningId = conflictId;
+    releaseHeldProvider();releaseHeldProvider=null;heldProviderStarted=null;
+    for(let attempt=0;attempt<500 && db.prepare('SELECT settled FROM ai_executions WHERE id=?').get(runningId)?.settled!==1;attempt++) await delay(10);
+    assert.equal(db.prepare('SELECT state FROM ai_executions WHERE id=?').get(runningId).state,'completed');
+    await evaluateSecond(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{const b=document.getElementById('generateBtn');if(b&&!b.disabled){b.click();resolve(true);return}if(Date.now()>end){reject(new Error('Second tab did not re-enable generation after the shared run completed'));return}setTimeout(check,25)};check()})`);
+    await evaluateSecond(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{if(window.__executionReads.length>1){resolve(true);return}if(Date.now()>end){reject(new Error('Second tab did not start its next request'));return}setTimeout(check,25)};check()})`);
+    const retryId = db.prepare("SELECT id FROM ai_executions WHERE user_id=1 AND purpose='workouts' ORDER BY created_at DESC LIMIT 1").get().id;
+    for(let attempt=0;attempt<500 && db.prepare('SELECT settled FROM ai_executions WHERE id=?').get(retryId)?.settled!==1;attempt++) await delay(10);
+    assert.equal(db.prepare('SELECT state FROM ai_executions WHERE id=?').get(retryId).state,'completed');
+    await evaluateSecond(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{const b=document.getElementById('generateBtn');if(b&&!b.disabled){resolve(true);return}if(Date.now()>end){reject(new Error('Second tab did not restore generation after rendering the completed retry'))}else setTimeout(check,25)};check()})`);
+
+    heldProviderStarted = () => {};
+    holdNextProvider = true;
+    const cancelStarted = new Promise((resolve) => { heldProviderStarted = resolve; });
+    await evaluateSecond(`document.getElementById('generateBtn').click()`);
+    await Promise.race([cancelStarted, delay(10000).then(() => { throw new Error('The simulated provider was not called by the cancellation scenario'); })]);
+    const cancelId = db.prepare("SELECT id FROM ai_executions WHERE user_id=1 AND purpose='workouts' AND state='running' ORDER BY created_at DESC LIMIT 1").get().id;
+    await evaluateSecond(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{const b=document.getElementById('weeklyCancel');if(b&&!b.hidden&&!b.disabled){resolve(true);return}if(Date.now()>end){reject(new Error('Cancel action did not become available while provider was pending'))}else setTimeout(check,25)};check()})`);
+    await evaluateSecond(`document.getElementById('weeklyCancel').click()`);
+    for(let attempt=0;attempt<200 && db.prepare('SELECT state FROM ai_executions WHERE id=?').get(cancelId)?.state!=='cancelled';attempt++) await delay(10);
+    assert.equal(db.prepare('SELECT state FROM ai_executions WHERE id=?').get(cancelId)?.state,'cancelled','the browser cancel control reaches the server');
+    await delay(250);
+    const cancelUi = await evaluateSecond(`(()=>({status:document.getElementById('weeklyProposalStatus').textContent.trim(),generateDisabled:document.getElementById('generateBtn').disabled,cancelHidden:document.getElementById('weeklyCancel').hidden,error:document.getElementById('weeklyProposalError').textContent.trim()}))()`);
+    assert.equal(cancelUi.status,'A solicitação local foi cancelada. A cobrança do provedor pode já ter ocorrido.',JSON.stringify(cancelUi));
+    const whileCancelled = await evaluateSecond(`window.fetch('/api/ai/executions',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({purpose:'workouts',target_date:${JSON.stringify(proposalWeekStart)},optional_context:'',idempotency_key:'cancel-pending-duplicate'})}).then(async r=>({status:r.status,...await r.json()}))`);
+    assert.equal(whileCancelled.status,409);assert.equal(whileCancelled.error,'generationInProgress');assert.equal(whileCancelled.execution_id,cancelId,'a visible cancellation does not release the unsettled provider reservation');
+    releaseHeldProvider();releaseHeldProvider=null;heldProviderStarted=null;
+    for(let attempt=0;attempt<500 && db.prepare('SELECT settled FROM ai_executions WHERE id=?').get(cancelId)?.settled!==1;attempt++) await delay(10);
+    assert.equal(db.prepare('SELECT state FROM ai_executions WHERE id=?').get(cancelId).state,'cancelled');
+    const afterCancel = await evaluateSecond(`window.fetch('/api/ai/executions',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({purpose:'workouts',target_date:${JSON.stringify(proposalWeekStart)},optional_context:'',idempotency_key:'after-cancel-provider-ended'})}).then(async r=>({status:r.status,...await r.json()}))`);
+    assert.equal(afterCancel.status,202,'a new equivalent request is accepted after provider settlement');
+    const afterCancelId = afterCancel.id || afterCancel.execution_id;
+    for(let attempt=0;attempt<500 && db.prepare('SELECT settled FROM ai_executions WHERE id=?').get(afterCancelId)?.settled!==1;attempt++) await delay(10);
+    assert.equal(db.prepare('SELECT settled FROM ai_executions WHERE id=?').get(afterCancelId)?.settled,1,'the accepted retry finishes before unrelated browser checks');
+    await fetch(`${debugUrl}/json/close/${secondTarget.id}`);
+    secondSocket.close();
+    db.prepare('DELETE FROM ai_executions WHERE id IN (?,?,?,?)').run(runningId,retryId,cancelId,afterCancelId);
     await command('Emulation.setDeviceMetricsOverride', {
       width: 1280,
       height: 800,
@@ -2506,6 +2614,7 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     db.prepare(
       "UPDATE users SET role='user' WHERE email='availability-browser@example.test'",
     ).run();
+    const providerCallsBeforeFinalReload = simulatedProviderCalls;
     const regularReload = new Promise((resolve) => {
       const listener = (event) => {
         if (JSON.parse(event.data).method === 'Page.loadEventFired') {
@@ -2543,7 +2652,7 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     assert.equal(await evaluate(`document.querySelectorAll('.weekly-proposal-card').length`), 0);
     assert.equal(
       simulatedProviderCalls,
-      3,
+      providerCallsBeforeFinalReload,
       'reload recovers the latest applied execution without replaying any provider call',
     );
     await evaluate(
@@ -2562,6 +2671,7 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       ),
     );
   } finally {
+    releaseHeldProvider?.();
     socket?.close();
     chromeProcess.kill('SIGTERM');
     if (chromeProcess.exitCode === null)
