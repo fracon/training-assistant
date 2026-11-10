@@ -105,6 +105,36 @@ function migrateAiRawOutputs(db) {
     db.prepare('INSERT INTO schema_migrations(name) VALUES(?)').run(marker);
   }).immediate();
 }
+function repairAiRawOutputExpiry(db) {
+  db.transaction(() => {
+    const marker = '2026-11-ai-raw-output-expired-v1';
+    db.exec(`CREATE TABLE IF NOT EXISTS ai_execution_raw_outputs (
+      execution_id TEXT NOT NULL REFERENCES ai_executions(id) ON DELETE CASCADE,
+      attempt INTEGER NOT NULL CHECK(attempt > 0),
+      output_text TEXT,
+      output_bytes INTEGER NOT NULL,
+      truncated INTEGER NOT NULL CHECK(truncated IN (0,1)),
+      expired INTEGER NOT NULL DEFAULT 0 CHECK(expired IN (0,1)),
+      expires_at TEXT NOT NULL,
+      PRIMARY KEY(execution_id,attempt)
+    )`);
+    if (
+      !db
+        .pragma('table_info(ai_execution_raw_outputs)')
+        .some((column) => column.name === 'expired')
+    )
+      db.exec(
+        'ALTER TABLE ai_execution_raw_outputs ADD COLUMN expired INTEGER NOT NULL DEFAULT 0 CHECK(expired IN (0,1))',
+      );
+    db.exec(
+      'CREATE INDEX IF NOT EXISTS ai_raw_output_expiry ON ai_execution_raw_outputs(expires_at)',
+    );
+    if (
+      !db.prepare('SELECT 1 FROM schema_migrations WHERE name=?').get(marker)
+    )
+      db.prepare('INSERT INTO schema_migrations(name) VALUES(?)').run(marker);
+  }).immediate();
+}
 function migrateWeeklyWorkouts(db) {
   db.transaction(() => {
     const marker = '2026-10-weekly-workouts-v1';
@@ -235,6 +265,7 @@ module.exports = {
   migrateAi,
   migrateAiDiagnostics,
   migrateAiRawOutputs,
+  repairAiRawOutputExpiry,
   migrateWeeklyWorkouts,
   migrateWeeklyAvailabilityRevision,
   migrateWorkoutAnalysis,
