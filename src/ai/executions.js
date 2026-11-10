@@ -265,12 +265,12 @@ function createExecutionService({
             throw new AiError('idempotencyConflict', 409);
           return get(userId, prior.id);
         }
-        if (body.purpose === 'analysis') {
-          const activeAnalysis = db.prepare(`SELECT id FROM ai_executions
-            WHERE user_id=? AND purpose='analysis' AND resource_id=? AND state IN ('queued','running')
-            ORDER BY created_at DESC,id LIMIT 1`).get(userId, String(body.resource_id));
-          if (activeAnalysis) return get(userId, activeAnalysis.id);
-        }
+        const equivalent = db.prepare(`SELECT id FROM ai_executions
+          WHERE user_id=? AND purpose=? AND COALESCE(resource_id,'')=COALESCE(?,'')
+          AND (state IN ('queued','running') OR (state='cancelled' AND settled=0))
+          AND json_extract(configuration_json,'$.requestHash')=? LIMIT 1`)
+          .get(userId, body.purpose, body.resource_id ?? null, requestHash);
+        if (equivalent) throw new AiError('generationInProgress', 409);
         const id = randomUUID();
         if (
           body.purpose === 'workouts' &&
@@ -284,6 +284,11 @@ function createExecutionService({
         if (!config.enabled) throw new AiError('aiUnavailable', 503);
         const operation = operations[body.purpose];
         if (!operation) throw new AiError('phaseNotAvailable', 409);
+        if (body.purpose === 'cycle') {
+          const cycle = db.prepare('SELECT status FROM training_cycles WHERE id=? AND user_id=?').get(body.resource_id, userId);
+          if (!cycle) throw new AiError('resourceNotFound', 404);
+          if (cycle.status !== 'active') throw new AiError('cycleNotActive');
+        }
         const context = buildContext(db, userId, {
           purpose: body.purpose,
           resourceId: body.resource_id ?? null,

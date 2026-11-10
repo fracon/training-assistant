@@ -314,8 +314,11 @@ test('analysis execution cancels a queued record locally and reuses one active r
   const active = service.enqueue(1, { purpose: 'analysis', resource_id: '101', idempotency_key: 'analysis-active-02' });
   for (let attempt = 0; attempt < 100 && providerCalls === 0; attempt += 1) await delay(2);
   assert.equal(providerCalls, 1);
-  const duplicate = service.enqueue(1, { purpose: 'analysis', resource_id: '101', idempotency_key: 'analysis-active-03' });
-  assert.equal(duplicate.id, active.id, 'a second action while this session is processing reads the same run');
+  assert.throws(
+    () => service.enqueue(1, { purpose: 'analysis', resource_id: '101', idempotency_key: 'analysis-active-03' }),
+    (error) => error.code === 'generationInProgress' && error.status === 409,
+    'a second action while this session is processing receives a stable conflict',
+  );
   releaseProvider({ value: result(providerContext), usage: { input: 300, output: 120, cached: 0 }, error: null });
   assert.equal((await waitFor(service, active.id)).state, 'completed');
   assert.equal(providerCalls, 1);

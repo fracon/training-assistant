@@ -806,7 +806,8 @@ function setupAiCoachPage(user) {
       availabilityLoadState !== 'ready' ||
       weeklyHistoryState !== 'ready' ||
       weeklyReadUnavailable ||
-      actionPending
+      actionPending ||
+      (activeExecutionId && ['queued', 'running'].includes(lastExecutionState))
     )
       return;
     const validation = updateValidation();
@@ -880,6 +881,8 @@ function setupAiCoachPage(user) {
       const codes = error.codes || [];
       weeklyError.textContent = codes.includes('availabilityNeedsReview')
         ? t('aiCoach.availabilityReview')
+        : codes.includes('generationInProgress')
+          ? t('aiCoach.generationInProgress')
         : codes.includes('weeklyAvailabilityConflict')
           ? t('aiCoach.weeklyAvailabilityConflict')
         : codes.some((code) =>
@@ -1648,6 +1651,8 @@ function setupAiCoachPage(user) {
       !availabilityReady ||
       weeklyHistoryState !== 'ready' ||
       weeklyReadUnavailable ||
+      actionPending ||
+      (activeExecutionId && ['queued', 'running'].includes(lastExecutionState)) ||
       !validation.valid;
     generateBtn.setAttribute(
       'aria-disabled',
@@ -1655,6 +1660,8 @@ function setupAiCoachPage(user) {
         !availabilityReady ||
           weeklyHistoryState !== 'ready' ||
           weeklyReadUnavailable ||
+          actionPending ||
+          (activeExecutionId && ['queued', 'running'].includes(lastExecutionState)) ||
           !validation.valid,
       ),
     );
