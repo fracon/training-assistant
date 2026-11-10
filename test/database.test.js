@@ -2254,3 +2254,43 @@ test('a fresh database already carries the activity state and the audit action',
   );
   db.close();
 });
+
+test('AI raw-output expiry repair adds a missing expired column, preserves rows, and is idempotent', () => {
+  const { repairAiRawOutputExpiry } = require('../src/ai/schema');
+  const marker = '2026-11-ai-raw-output-expired-v1';
+  const db = createDatabase({ filename: ':memory:' });
+  try {
+    // Recreate the table as an earlier release left it: no `expired` column.
+    db.pragma('foreign_keys = OFF');
+    db.exec(`DROP TABLE ai_execution_raw_outputs;
+      CREATE TABLE ai_execution_raw_outputs (
+        execution_id TEXT NOT NULL REFERENCES ai_executions(id) ON DELETE CASCADE,
+        attempt INTEGER NOT NULL CHECK(attempt > 0),
+        output_text TEXT,
+        output_bytes INTEGER NOT NULL,
+        truncated INTEGER NOT NULL CHECK(truncated IN (0,1)),
+        expires_at TEXT NOT NULL,
+        PRIMARY KEY(execution_id,attempt)
+      );`);
+    db.prepare('INSERT INTO ai_execution_raw_outputs (execution_id, attempt, output_text, output_bytes, truncated, expires_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .run('legacy-execution', 1, '{"synthetic":true}', 18, 0, '2026-12-01T00:00:00.000Z');
+    db.pragma('foreign_keys = ON');
+    db.prepare('DELETE FROM schema_migrations WHERE name = ?').run(marker);
+    const columns = () => db.pragma('table_info(ai_execution_raw_outputs)').map((column) => column.name);
+    assert.equal(columns().includes('expired'), false);
+
+    repairAiRawOutputExpiry(db);
+    assert.equal(columns().includes('expired'), true, 'the missing column is added');
+    assert.deepEqual(db.prepare('SELECT execution_id, attempt, output_text, output_bytes, truncated, expired, expires_at FROM ai_execution_raw_outputs').all(), [{
+      execution_id: 'legacy-execution', attempt: 1, output_text: '{"synthetic":true}', output_bytes: 18, truncated: 0, expired: 0, expires_at: '2026-12-01T00:00:00.000Z',
+    }], 'existing rows are preserved and default to not expired');
+    assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'ai_raw_output_expiry'").get());
+    assert.throws(() => db.prepare('UPDATE ai_execution_raw_outputs SET expired = 2').run(), /CHECK constraint failed/);
+
+    repairAiRawOutputExpiry(db);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM schema_migrations WHERE name = ?').get(marker).n, 1, 'a rerun records the marker once');
+    assert.equal(columns().filter((name) => name === 'expired').length, 1, 'a rerun does not add the column twice');
+  } finally {
+    db.close();
+  }
+});
