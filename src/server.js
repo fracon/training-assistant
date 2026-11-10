@@ -407,6 +407,7 @@ async function buildServer(options = {}) {
           canGenerate: false,
         };
       }
+      planningSummary.cycleStatus = cycle.status;
       return { ...cycle, planningSummary };
     };
 

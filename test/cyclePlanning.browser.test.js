@@ -4,6 +4,7 @@ const {mkdtempSync,rmSync,writeFileSync,readFileSync}=require('node:fs');const {
 const {buildServer}=require('../src/server');const {createSession,SESSION_COOKIE_NAME}=require('../src/auth/sessions');const {readAiConfig}=require('../src/ai/config');const {fixture,planFor}=require('./fixtures/ai/cycle-planning.cjs');
 test('Chrome cycle planning PT/EN desktop/mobile: recovered generation, proposal, apply, focus, errors and own admin debug',async()=>{
  const db=fixture();let release=null,calls=0;
+ db.prepare("INSERT INTO training_cycles(id,user_id,objective,status,created_at) VALUES ('completed-empty-1',1,'Completed without plan','completed','2000-01-01'),('completed-empty-2',2,'Completed without plan','completed','2000-01-01')").run();
  const config=readAiConfig({AI_ENABLED:'true',OPENAI_API_KEY:'synthetic-key'});
  const app=await buildServer({db,sessionCookieSecure:false,aiConfig:config,aiClient:async(payload)=>{
   calls++;await new Promise(r=>release=r);return {value:planFor(JSON.parse(payload.input[0].content[0].text).context),usage:{input:50,output:100,cached:0},error:null};
@@ -195,15 +196,18 @@ test('Chrome cycle planning PT/EN desktop/mobile: recovered generation, proposal
   db.prepare("UPDATE training_cycles SET status='completed' WHERE id='private'").run();
   await command('Page.navigate',{url:origin+'/cycles.html'});await wait("!!document.querySelector('[data-action=planning]') && !document.getElementById('addCycleBtn').disabled");
   assert.equal(await evaluate("!!document.querySelector('[data-action=planning]')"),true);
+  assert.equal(await evaluate("document.querySelector('[data-cycle-id=\"completed-empty-2\"] [data-action=planning]').hidden"),true,'a completed cycle without a saved plan has no planning action after reload');
   const inactiveBefore=JSON.stringify(db.prepare("SELECT * FROM training_cycles WHERE id='private'").get());
   await evaluate("document.querySelector('[data-action=planning]').click()");
   await wait("document.getElementById('cyclePlanningContent').textContent.includes('Planejamento aplicado')");
+  assert.equal(await evaluate("document.getElementById('cyclePlanningGenerate').hidden"),true,'a completed cycle with history stays view-only');
+  assert.equal(await evaluate("document.querySelector('[data-cycle-id=\"private\"] [data-action=planning]').hidden"),false,'saved planning remains accessible from the completed cycle card');
   assert.equal(calls,paidBeforeManual);assert.equal(JSON.stringify(db.prepare("SELECT * FROM training_cycles WHERE id='private'").get()),inactiveBefore);
   await evaluate("document.getElementById('cyclePlanningModal').click()");await wait("document.getElementById('cyclePlanningModal').hidden");
   assert.equal(await evaluate('document.activeElement.dataset.action'),'planning');
   await evaluate("document.getElementById('addCycleBtn').click()");await capture('cycle-reference-390');
   await evaluate("document.getElementById('cycleObjective').value='New synthetic cycle';document.getElementById('cycleForm').requestSubmit()");
-  await wait("document.getElementById('cycleModal').classList.contains('hidden') && document.querySelectorAll('.cycle-card').length===2");
+  await wait("document.getElementById('cycleModal').classList.contains('hidden') && document.querySelectorAll('.cycle-card').length===3");
   assert.equal(promptRequests,promptsBeforeManual);assert.equal(calls,paidBeforeManual);
   assert.equal(await evaluate("!!document.querySelector('[data-action=prompt]') || !!document.getElementById('promptModal')"),false);
   await evaluate("document.querySelector('[data-action=edit]').click();document.getElementById('cyclePrimaryGoal').value='Edited synthetic goal';document.getElementById('cycleForm').requestSubmit()");

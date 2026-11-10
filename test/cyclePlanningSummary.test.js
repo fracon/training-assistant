@@ -110,7 +110,7 @@ test('planning summary preserves applied-plan compatibility and distinguishes un
  applyCyclePlan(db,1,'cycle',proposal.id,{expected_version:0},service);
  assert.equal(readCyclePlanningSummary(db,1,'cycle',service,config).status,'applied_current');
  const disabled={...config,enabled:false};
- assert.deepEqual(readCyclePlanningSummary(db,1,'cycle',service,disabled),{status:'applied_current',secondary:'unavailable',available:false,canGenerate:false});
+ assert.deepEqual(readCyclePlanningSummary(db,1,'cycle',service,disabled),{status:'applied_current',secondary:'unavailable',available:false,canGenerate:false,cycleStatus:'active',hasPlanningHistory:true});
  const applied=JSON.parse(db.prepare('SELECT plan_json FROM cycle_plan_versions WHERE id=?').get(proposal.id).plan_json);
  applied.phases[0].intensity='RPE 9/10';
  db.prepare('UPDATE cycle_plan_versions SET plan_json=? WHERE id=?').run(JSON.stringify(applied),proposal.id);

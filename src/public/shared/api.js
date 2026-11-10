@@ -21,6 +21,7 @@ export async function requestJson(url, body, method = 'POST') {
     if (Array.isArray(payload.errors) && payload.errors.length > 0) {
       error.codes = payload.errors;
     }
+    if (typeof payload.execution_id === 'string') error.executionId = payload.execution_id;
     throw error;
   }
   return payload;

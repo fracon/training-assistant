@@ -36,6 +36,7 @@ let promptOrigin = null;
 let promptCopyTimer = null;
 function planningActionKey(summary) {
   const status=summary?.status;
+  if (summary?.cycleStatus === 'completed' && summary.hasPlanningHistory === false) return null;
   if (status==='none' && summary.canGenerate===false) return null;
   return ({
     none: 'generate', pending: 'viewProgress', failed: 'viewDetails',
@@ -65,6 +66,7 @@ function renderPlanningIndicator(card, summary, messages) {
   secondary.hidden=!secondaryKey;
   secondary.textContent=secondaryKey?t(messages,`cyclePlanning.cardStatus.secondary.${planningSecondaryKey(secondaryKey)}`):'';
   const actionKey=planningActionKey(summary);
+  button.hidden = !actionKey;
   const action=actionKey?t(messages,`cyclePlanning.cardStatus.actions.${actionKey}`):t(messages,'cyclePlanning.open');
   button.setAttribute('aria-label',action);
   tooltip.textContent=action;

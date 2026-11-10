@@ -180,6 +180,11 @@ test('HTTP asynchronous contract survives polling/reload with mock-only register
   });
   assert.equal(created.statusCode, 202);
   const id = created.json().id;
+  const duplicate = await send('POST', '/api/ai/executions', {
+    purpose: 'cycle', resource_id: 'cycle', idempotency_key: 'synthetic-cycle-other-tab',
+  });
+  assert.equal(duplicate.statusCode, 409);
+  assert.deepEqual(duplicate.json(), { error: 'generationInProgress', errors: ['generationInProgress'], execution_id: id });
   const recoveredByKey = await send('GET', '/api/ai/executions?idempotency_key=synthetic-cycle');
   assert.deepEqual(recoveredByKey.json().executions.map((item) => item.id), [id],
     'exact owner-scoped recovery finds an execution by its idempotency key');

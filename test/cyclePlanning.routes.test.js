@@ -18,7 +18,7 @@ test('production cycle adapter HTTP generation/poll/apply is scoped, atomic and 
  const tokens=[null,createSession(db,1).token,createSession(db,2).token];
  const send=(method,url,payload,user=1)=>app.inject({method,url,payload,headers:user?{cookie:`${SESSION_COOKIE_NAME}=${tokens[user]}`}:{}});
  const listed=await send('GET','/api/cycles');assert.equal(listed.statusCode,200);
- assert.deepEqual(listed.json().cycles[0].planningSummary,{status:'none',secondary:null,available:true,canGenerate:true});
+ assert.deepEqual(listed.json().cycles[0].planningSummary,{status:'none',secondary:null,available:true,canGenerate:true,cycleStatus:'active',hasPlanningHistory:false});
  assert.equal(JSON.stringify(listed.json()).includes('Synthetic planning recommendation'),false);
  assert.equal(listed.json().cycles.some(c=>c.id==='private'),false);
  db.prepare("INSERT INTO cycle_plan_proposals(id,user_id,cycle_id,sequence,base_version,plan_json,created_at) VALUES('broken-summary',1,'cycle',1,0,'{','2026-10-24T00:00:00.000Z')").run();
@@ -29,6 +29,13 @@ test('production cycle adapter HTTP generation/poll/apply is scoped, atomic and 
  assert.equal((await send('GET','/api/cycles/private/planning')).statusCode,404);
  assert.equal((await send('GET','/api/cycles/cycle/planning',null,2)).statusCode,404);
  assert.equal((await send('POST','/api/ai/executions',{purpose:'analysis',resource_id:'cycle',idempotency_key:'wrong-purpose'})).statusCode,409);
+ const missingCycle=await send('POST','/api/ai/executions',{purpose:'cycle',resource_id:'missing',idempotency_key:'missing-cycle'});
+ assert.equal(missingCycle.statusCode,404);assert.equal(missingCycle.json().error,'resourceNotFound');
+ db.prepare("UPDATE training_cycles SET status='completed' WHERE id='cycle'").run();
+ const completedList=await send('GET','/api/cycles');assert.equal(completedList.json().cycles[0].planningSummary.cycleStatus,'completed');
+ const completedGeneration=await send('POST','/api/ai/executions',{purpose:'cycle',resource_id:'cycle',idempotency_key:'completed-cycle'});
+ assert.equal(completedGeneration.statusCode,400);assert.equal(completedGeneration.json().error,'cycleNotActive');assert.equal(calls,0);
+ db.prepare("UPDATE training_cycles SET status='active' WHERE id='cycle'").run();
  const response=await send('POST','/api/ai/executions',{purpose:'cycle',resource_id:'cycle',idempotency_key:'http-planning'});assert.equal(response.statusCode,202);const id=response.json().id;
  let overview;for(let i=0;i<100;i++){overview=(await send('GET','/api/cycles/cycle/planning')).json();if(overview.proposals[0]?.execution.state==='completed')break;await delay(10);}
  assert.equal(overview.applied,null);assert.equal(overview.proposals[0].execution.response.cycleId,'cycle');
