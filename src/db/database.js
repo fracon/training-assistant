@@ -1132,6 +1132,7 @@ function migrateDatabase(db) {
   require('../ai/schema').migrateAi(db);
   require('../ai/schema').migrateAiDiagnostics(db);
   require('../ai/schema').migrateAiRawOutputs(db);
+  require('../ai/schema').repairAiRawOutputExpiry(db);
   require('../ai/schema').migrateWeeklyWorkouts(db);
   require('../ai/schema').migrateWeeklyAvailabilityRevision(db);
   require('../ai/schema').migrateWorkoutAnalysis(db);
