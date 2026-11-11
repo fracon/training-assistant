@@ -94,8 +94,11 @@ export function memorySummary(memory) {
     const delta = recentEffort - previousEffort;
     trend = Math.abs(delta) < 0.25 ? 'flat' : delta > 0 ? 'up' : 'down';
   }
+  // Only reports inside the summarized weeks: an older analyzed workout keeps
+  // its dated report on its own card, never as a current alert.
+  const periodStart = lastFour[0].weekStart;
   const concerns = [...(memory.recent || []), ...(memory.task?.session ? [memory.task.session] : [])]
-    .filter((session) => session.priority === 'concern')
+    .filter((session) => session.priority === 'concern' && session.date >= periodStart && session.date <= memory.asOf)
     .sort((a, b) => b.date.localeCompare(a.date));
   return {
     series,
@@ -115,7 +118,11 @@ export function memoryQuality(memory) {
   const needsReview = configured.some((day) => day.canTrain && (day.periods.length !== 1 || day.minutes == null || !day.location));
   items.push({ key: 'availability', ok: configured.length === 7 && !needsReview, href: '/ai-coach.html' });
   items.push({ key: 'cycle', ok: Boolean(memory.cycle), href: '/cycles.html' });
-  const sessions = [...(memory.recent || [])].filter((session) => session.date <= memory.asOf);
+  // The analyzed session is the analysis task's resource, kept out of `recent`;
+  // it is still a recent workout when it falls in the recent period.
+  const recentFrom = memory.ranges?.detailedFrom ?? '';
+  const analyzed = memory.task?.session && memory.task.session.date >= recentFrom ? [memory.task.session] : [];
+  const sessions = [...(memory.recent || []), ...analyzed].filter((session) => session.date <= memory.asOf);
   const withoutEffort = sessions.filter((session) => session.actual?.completed && !Number.isInteger(session.report?.feedback_rpe));
   items.push({ key: 'effort', ok: !withoutEffort.length, count: withoutEffort.length, href: withoutEffort[0]?.href ?? '/calendar.html' });
   const withoutResult = sessions.filter((session) => !session.actual?.completed && session.date < memory.asOf);

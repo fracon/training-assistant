@@ -71,6 +71,13 @@ test('the summary reports volume, consistency, effort trend and concerns, and fl
     weekly: [{ weekStart: '2026-10-26', distanceKm: 50, durationSeconds: 18000, completed: 10, planned: 10, averageRpe: 1, rpeReports: 1 }],
     recent: [session('2026-11-02', { rpe: 5 })] });
   assert.equal(across.effort.recent, 3, 'one report of 1 and one of 5 average 3, not 1.36');
+  // An old analyzed workout's discomfort is not a current alert (Codex review on #96).
+  const oldConcern = memorySummary({ asOf: '2026-11-11', omissions: { budget: {} }, recent: [],
+    task: { session: session('2025-01-15', { priority: 'concern', included: false }) } });
+  assert.equal(oldConcern.concerns.count, 0);
+  const currentConcern = memorySummary({ asOf: '2026-11-11', omissions: { budget: {} }, recent: [],
+    task: { session: session('2026-11-09', { priority: 'concern' }) } });
+  assert.equal(currentConcern.concerns.count, 1);
   // Omitted weekly totals make the summary partial too: those weeks are unknown, not zero.
   assert.equal(memorySummary({ asOf: '2026-11-11', omissions: { budget: { weekly: 3 } } }).partial, true);
   const empty = memorySummary({ asOf: '2026-11-11', omissions: { budget: { recent: 2 } } });
@@ -102,6 +109,13 @@ test('the quality checklist names what to fix and where', async () => {
   assert.equal(memoryQuality({ ...complete, appliedPlan: null }).at(-1).state, 'none');
   assert.equal(memoryQuality({ ...complete, appliedPlan: { compatibilityError: 'x' } }).at(-1).state, 'incompatible');
   assert.equal(memoryQuality({ ...complete, purpose: 'cycle' }).some((item) => item.key === 'plan'), false);
+  // The analyzed workout counts as recent when inside the recent period, once (Codex review on #96).
+  const analysisTab = { ...complete, purpose: 'analysis', ranges: { detailedFrom: '2026-10-29' }, recent: [],
+    task: { session: session('2026-11-09', { rpe: null, href: '/r?id=9' }) } };
+  const effortItem = memoryQuality(analysisTab).find((item) => item.key === 'effort');
+  assert.deepEqual([effortItem.ok, effortItem.count, effortItem.href], [false, 1, '/r?id=9']);
+  const oldAnalysis = memoryQuality({ ...analysisTab, task: { session: session('2025-01-15', { rpe: null }) } });
+  assert.equal(oldAnalysis.find((item) => item.key === 'effort').ok, true, 'an old analyzed workout is not a recent gap');
   const bare = memoryQuality({ purpose: 'cycle', asOf: '2026-11-11' });
   assert.equal(bare.find((item) => item.key === 'effort').href, '/calendar.html');
 });
