@@ -1,7 +1,7 @@
 'use strict';
 const { userToday } = require('../time-zone');
 const { AiError, activeOwner, exactKeys, hash } = require('./memory');
-const { contextIsCurrent } = require('./context');
+const { appliedPlanIsCurrent } = require('./context');
 const { validatePlan, rpeIssue } = require('./cycle-plan-schema');
 function ownCycle(db,userId,cycleId) {
   activeOwner(db,userId);
@@ -12,7 +12,7 @@ function ownCycle(db,userId,cycleId) {
 function appliedPlan(db,userId,cycleId) {
   const row=db.prepare('SELECT * FROM cycle_plan_versions WHERE user_id=? AND cycle_id=? ORDER BY version DESC LIMIT 1').get(userId,cycleId);
   if (!row) return null;
-  return { id:row.id,version:row.version,plan:JSON.parse(row.plan_json),appliedAt:row.applied_at,cycleHash:row.cycle_hash,contextHash:row.context_hash,fingerprint:JSON.parse(row.fingerprint_json) };
+  return { id:row.id,version:row.version,plan:JSON.parse(row.plan_json),appliedAt:row.applied_at,cycleHash:row.cycle_hash,contextHash:row.context_hash,fingerprint:JSON.parse(row.fingerprint_json),sourcesJson:row.sources_json };
 }
 function proposalIsUsable(db,userId,cycleId,proposal,baseVersion,asOf) {
   if (!proposal || proposal.applied || proposal.baseVersion!==baseVersion ||
@@ -67,7 +67,7 @@ function readCyclePlanning(db,userId,cycleId,service,config,asOf=userToday(db,us
       ...(row.plan_json && rpeIssue(JSON.parse(row.plan_json)) ? {compatibilityError:'planningRpeIncompatible'} : {}),
       applied: Boolean(db.prepare('SELECT 1 FROM cycle_plan_versions WHERE id=? AND user_id=?').get(row.id,userId)),
     };});
-    const appliedView=applied && {id:applied.id,version:applied.version,plan:applied.plan,appliedAt:applied.appliedAt,...(rpeIssue(applied.plan)?{compatibilityError:'planningRpeIncompatible'}:{}),outdated:!contextIsCurrent(db,userId,applied.fingerprint,config)};
+    const appliedView=applied && {id:applied.id,version:applied.version,plan:applied.plan,appliedAt:applied.appliedAt,...(rpeIssue(applied.plan)?{compatibilityError:'planningRpeIncompatible'}:{}),outdated:!appliedPlanIsCurrent(db,userId,cycleId,applied.sourcesJson)};
     const selectedProposal=proposals.find((proposal)=>proposalIsUsable(db,userId,cycleId,proposal,appliedView?.version || 0,asOf));
     const summary=summarizeCyclePlanning(cycle,appliedView,proposals,config.enabled,selectedProposal);
     return { available:config.enabled,canGenerate:cycle.status==='active',cycleRevision:cycle.planning_revision,
@@ -78,7 +78,7 @@ function readCyclePlanningSummary(db,userId,cycleId,service,config,asOf=userToda
   return db.transaction(()=>{
     const cycle=ownCycle(db,userId,cycleId);
     const applied=appliedPlan(db,userId,cycleId);
-    const appliedView=applied && {id:applied.id,version:applied.version,plan:applied.plan,appliedAt:applied.appliedAt,...(rpeIssue(applied.plan)?{compatibilityError:'planningRpeIncompatible'}:{}),outdated:!contextIsCurrent(db,userId,applied.fingerprint,config)};
+    const appliedView=applied && {id:applied.id,version:applied.version,plan:applied.plan,appliedAt:applied.appliedAt,...(rpeIssue(applied.plan)?{compatibilityError:'planningRpeIncompatible'}:{}),outdated:!appliedPlanIsCurrent(db,userId,cycleId,applied.sourcesJson)};
     const rows=db.prepare(`SELECT p.id,p.sequence,p.base_version,p.execution_id,p.plan_json,
       e.state,e.error_code,CASE WHEN v.id IS NULL THEN 0 ELSE 1 END AS applied
       FROM cycle_plan_proposals p

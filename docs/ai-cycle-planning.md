@@ -120,6 +120,40 @@ columns using SQLite affinities and null-safe `IS`: e.g. numeric form string
 change and reversal still advance the revision twice. There is no migration,
 revision rollback, historical snapshot rewrite or automatic freshness repair.
 
+### Applied-plan freshness: the plan basis (issue #102)
+
+An applied macrocycle is built from its **basis**: the cycle definition (goal,
+targets, dates — the `cycle` source of the planned cycle), the weekly
+availability (every `availability` source) and the optional prior experience
+(the `profile` source). `appliedPlanIsCurrent` (`src/ai/context.js`) compares
+only those entries of the source versions recorded in
+`cycle_plan_versions.sources_json` with the current rows. The plan is outdated
+when one of them changed, was added or was removed. Executing the plan — results,
+RPE, feedback notes, weather/terrain, discomfort reports, shoes, sessions applied
+from weekly proposals, display preferences — never outdates it. Before #102 the
+whole-context hash in `fingerprint_json` was compared, so any training activity
+outdated the plan.
+
+- The same rule feeds the planning modal and card (`readCyclePlanning`,
+  `readCyclePlanningSummary`), the dashboard pending item (`planState`) and the
+  `appliedPlan.outdated` flag in later workout/analysis contexts. Weekly
+  proposals and workout analyses keep the strict whole-context freshness.
+- Discomfort reports deliberately do not outdate the plan: they reach weekly
+  generation through the recent-report context, where short-term adjustment
+  belongs.
+- No migration: every applied version already records `sources_json`. A version
+  whose sources hold no `cycle` entry for its cycle, unreadable sources or a
+  missing cycle stays outdated. The context policy version is not part of the
+  basis, so plans applied under an earlier policy are judged by their sources.
+- Availability recorded before it carried a `revision` hashed the same row
+  without that column; that historical version is also accepted, because equal
+  values and `updated_at` mean the day was not edited.
+- A real cycle edit followed by its reversal still advances `planning_revision`
+  and `updated_at`, so the plan stays outdated, as before.
+- `appliedPlan.outdated` is part of later contexts: a weekly proposal or
+  analysis generated before this fix whose context recorded `outdated: true`
+  for a plan that is now current reads as outdated once and can be regenerated.
+
 The save lock prevents duplicate submits. A form revision token suppresses late
 errors/transitions after close or another form opens. Late acknowledged writes
 still update their own cards; closing cannot undo a write already submitted.
@@ -352,10 +386,10 @@ An existing database may already have the v1 marker while its original
 `2026-10-cycle-plan-fingerprint-v1` migration checks the actual columns on every
 initialization, adds the missing column transactionally, and is safe to rerun.
 Existing plan rows and JSON are preserved. Rows with no historical fingerprint
-receive `{}` and are conservatively considered outdated by the existing context
-freshness check; they remain readable and idempotently applied, but that missing
-metadata cannot certify them as current. New applications persist the complete
-fingerprint. No plan is rewritten or deleted by this repair.
+receive `{}`; they remain readable and idempotently applied. Since #102 their
+freshness comes from the recorded basis sources (`sources_json`), not from the
+fingerprint, so a repaired row whose basis is unchanged is current. New
+applications persist the complete fingerprint. No plan is rewritten or deleted by this repair.
 
 No existing cycle, profile, training, session or historical execution is rewritten.
 Every actual stored-value change increments its revision, even in the same

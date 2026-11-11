@@ -393,7 +393,7 @@ async function buildServer(options = {}) {
     });
     // One owner-scoped read for the dashboard's next-workout and pending cards.
     app.get('/api/dashboard', { preHandler: requireAuth }, async (request) =>
-      dashboardSummary(db, request.user.id, aiConfig));
+      dashboardSummary(db, request.user.id));
     // Monthly completed distance of one year beside the previous one.
     app.get('/api/dashboard/volume', { preHandler: requireAuth }, async (request, reply) => {
       const today = userToday(db, request.user.id);

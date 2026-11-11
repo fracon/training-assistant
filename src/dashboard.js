@@ -1,6 +1,6 @@
 'use strict';
 const { userToday } = require('./time-zone');
-const { contextIsCurrent } = require('./ai/context');
+const { appliedPlanIsCurrent } = require('./ai/context');
 const { rpeIssue } = require('./ai/cycle-plan-schema');
 
 const PENDING_WINDOW_DAYS = 14;
@@ -55,13 +55,13 @@ function nextWorkout(db, userId, today, shoes) {
 
 // State of the active cycle's applied plan: whether the AI can still use it
 // (current), it must be regenerated (outdated/incompatible) or there is none.
-function planState(db, userId, config) {
+function planState(db, userId) {
   const cycle = db.prepare("SELECT id FROM training_cycles WHERE user_id = ? AND status = 'active' ORDER BY id LIMIT 1").get(userId);
   if (!cycle) return null;
-  const applied = db.prepare('SELECT plan_json, fingerprint_json FROM cycle_plan_versions WHERE user_id = ? AND cycle_id = ? ORDER BY version DESC LIMIT 1').get(userId, cycle.id);
+  const applied = db.prepare('SELECT plan_json, sources_json FROM cycle_plan_versions WHERE user_id = ? AND cycle_id = ? ORDER BY version DESC LIMIT 1').get(userId, cycle.id);
   if (!applied) return 'none';
   if (rpeIssue(JSON.parse(applied.plan_json))) return 'incompatible';
-  return contextIsCurrent(db, userId, JSON.parse(applied.fingerprint_json), config) ? 'current' : 'outdated';
+  return appliedPlanIsCurrent(db, userId, cycle.id, applied.sources_json) ? 'current' : 'outdated';
 }
 
 // What needs the athlete now, most urgent first. The page shows the first few.
@@ -93,13 +93,13 @@ function pending(db, userId, today, plan, shoes) {
 
 // What the dashboard's next-workout and pending cards need, read for one
 // account in one transaction, on the account's civil date.
-function dashboardSummary(db, userId, config, today = userToday(db, userId)) {
+function dashboardSummary(db, userId, today = userToday(db, userId)) {
   return db.transaction(() => {
     const shoes = db.prepare("SELECT brand, model, mileage, target_mileage FROM shoes WHERE user_id = ? AND status = 'active' ORDER BY mileage, id").all(userId);
     return {
       today,
       nextWorkout: nextWorkout(db, userId, today, shoes),
-      pending: pending(db, userId, today, planState(db, userId, config), shoes),
+      pending: pending(db, userId, today, planState(db, userId), shoes),
     };
   })();
 }

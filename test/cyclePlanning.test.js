@@ -149,7 +149,7 @@ test('migration from a phase-0 database preserves cycles and records without inv
  assert.equal(db.prepare('SELECT COUNT(*) n FROM cycle_plan_versions').get().n,0);db.close();
 });
 
-test('fingerprint repair migration preserves old applied plans and marks missing freshness data outdated',async()=>{
+test('fingerprint repair migration preserves old applied plans; freshness comes from the recorded basis sources',async()=>{
  const db=fixture();const {service,config}=harness(db);const proposal=enqueue(service);await complete(service,proposal.id);
  applyCyclePlan(db,1,'cycle',proposal.id,{expected_version:0},service);
  const before=db.prepare('SELECT id,user_id,cycle_id,version,plan_json,context_hash,cycle_hash,sources_json,applied_at FROM cycle_plan_versions WHERE id=?').get(proposal.id);
@@ -161,9 +161,70 @@ test('fingerprint repair migration preserves old applied plans and marks missing
  assert.equal(after.fingerprint_json,'{}');
  assert.equal(db.prepare("SELECT COUNT(*) n FROM schema_migrations WHERE name='2026-10-cycle-plan-fingerprint-v1'").get().n,1);
  const view=readCyclePlanning(db,1,'cycle',service,config);
- assert.equal(view.applied.version,1);assert.equal(view.applied.outdated,true);
+ assert.equal(view.applied.version,1);assert.equal(view.applied.outdated,false);
  assert.deepEqual(applyCyclePlan(db,1,'cycle',proposal.id,{expected_version:0},service),{appliedVersion:1,alreadyApplied:true});
  assert.equal(db.prepare('SELECT COUNT(*) n FROM cycle_plan_versions WHERE cycle_id=?').get('cycle').n,1);
+ await service.stop();db.close();
+});
+
+test('an applied plan is outdated only by its basis: the cycle, availability and prior experience, never by executing it',async()=>{
+ const db=fixture();const {service,config}=harness(db);
+ db.prepare("INSERT INTO ai_coach_availability(user_id,day_key,can_train,available_periods,available_minutes,location) VALUES(1,'monday',1,'[\"before_08\"]',60,'Synthetic place')").run();
+ const proposal=enqueue(service);await complete(service,proposal.id);
+ applyCyclePlan(db,1,'cycle',proposal.id,{expected_version:0},service);
+ const outdated=()=>readCyclePlanning(db,1,'cycle',service,config).applied.outdated;
+ const reset=db.transaction((rows)=>{for(const [sql,...args] of rows)db.prepare(sql).run(...args);});
+ assert.equal(outdated(),false);
+ // Executing the plan: results, feedback, discomfort, weather/terrain, new sessions, shoes, preferences.
+ const done=db.prepare("INSERT INTO trainings(user_id,dia,tipo,treino,completed,feedback_rpe,fit_distance,fit_duration) VALUES(1,?,'Run','Synthetic session',1,3,8,'45:00')").run(today).lastInsertRowid;
+ reset([["UPDATE trainings SET feedback_notas='Felt good',feedback_weather='hot',feedback_terrain='trail' WHERE id=?",done],
+  ["UPDATE trainings SET feedback_has_pain='yes',feedback_pain='Synthetic discomfort',feedback_rpe=5 WHERE id=?",done],
+  ["INSERT INTO trainings(user_id,dia,tipo,treino) VALUES(1,?,'Run','Planned synthetic session')",future(3)],
+  ["INSERT INTO shoes(id,user_id,brand,model) VALUES('s1',1,'Synthetic','Pair')"],
+  ["UPDATE users SET distance_unit='mi' WHERE id=1"]]);
+ assert.equal(outdated(),false,'executing the plan keeps it current');
+ assert.equal(readCyclePlanning(db,1,'cycle',service,config).summary.status,'applied_current');
+ // The basis: availability, prior experience and the cycle definition.
+ db.prepare("UPDATE ai_coach_availability SET available_minutes=90 WHERE user_id=1 AND day_key='monday'").run();
+ assert.equal(outdated(),true,'availability change');
+ db.prepare("UPDATE ai_coach_availability SET available_minutes=60 WHERE user_id=1 AND day_key='monday'").run();
+ assert.equal(outdated(),false,'availability restored');
+ db.prepare("INSERT INTO ai_coach_availability(user_id,day_key,can_train,available_periods,available_minutes,location) VALUES(1,'friday',0,'[]',NULL,'')").run();
+ assert.equal(outdated(),true,'a newly configured day');
+ db.prepare("DELETE FROM ai_coach_availability WHERE user_id=1 AND day_key='friday'").run();
+ require('../src/ai/memory').saveProfile(db,1,{fields:{experience:'Synthetic running experience'},expected_version:0});
+ assert.equal(outdated(),true,'prior experience change');
+ db.prepare("UPDATE ai_profiles SET fields_json='{}' WHERE user_id=1").run();
+ assert.equal(outdated(),false,'experience restored');
+ updateCycle(db,'cycle',1,{primary_goal:'Changed synthetic goal'});
+ assert.equal(outdated(),true,'cycle edit');
+ await service.stop();db.close();
+});
+
+test('an applied plan without a recorded cycle basis, with unreadable sources or without its cycle stays outdated',async()=>{
+ const {appliedPlanIsCurrent}=require('../src/ai/context');
+ const db=fixture();const {service}=harness(db);const proposal=enqueue(service);await complete(service,proposal.id);
+ applyCyclePlan(db,1,'cycle',proposal.id,{expected_version:0},service);
+ const {sources_json:sources}=db.prepare('SELECT sources_json FROM cycle_plan_versions WHERE id=?').get(proposal.id);
+ assert.equal(appliedPlanIsCurrent(db,1,'cycle',sources),true);
+ assert.equal(appliedPlanIsCurrent(db,1,'cycle','[]'),false,'no basis recorded');
+ assert.equal(appliedPlanIsCurrent(db,1,'cycle',JSON.stringify(JSON.parse(sources).filter((ref)=>ref.type!=='cycle'))),false,'no cycle basis');
+ assert.equal(appliedPlanIsCurrent(db,1,'cycle','not json'),false,'unreadable sources');
+ assert.equal(appliedPlanIsCurrent(db,1,'other-cycle',sources),false,'another cycle');
+ // Availability recorded before it carried a revision: the same row without it.
+ db.prepare("INSERT INTO ai_coach_availability(user_id,day_key,can_train,available_periods,available_minutes,location) VALUES(1,'monday',1,'[\"before_08\"]',60,'Synthetic place')").run();
+ const {hash}=require('../src/ai/memory');
+ const day=()=>db.prepare("SELECT day_key,can_train,available_periods,available_minutes,location,revision,updated_at FROM ai_coach_availability WHERE user_id=1 AND day_key='monday'").get();
+ const withDay=(version)=>JSON.stringify([...JSON.parse(sources),{type:'availability',id:'monday',version}]);
+ const {revision,...legacy}=day();assert.equal(revision,1);
+ assert.equal(appliedPlanIsCurrent(db,1,'cycle',withDay(hash(day()))),true,'current availability format');
+ assert.equal(appliedPlanIsCurrent(db,1,'cycle',withDay(hash(legacy))),true,'historical availability format');
+ assert.equal(appliedPlanIsCurrent(db,1,'cycle',withDay('other')),false,'edited availability');
+ const recorded=withDay(hash(legacy));
+ db.prepare("UPDATE ai_coach_availability SET day_key='friday' WHERE user_id=1").run();
+ assert.equal(appliedPlanIsCurrent(db,1,'cycle',recorded),false,'another day with the same count');
+ db.pragma('foreign_keys = OFF');db.prepare("DELETE FROM training_cycles WHERE id='cycle'").run();db.pragma('foreign_keys = ON');
+ assert.equal(appliedPlanIsCurrent(db,1,'cycle',sources),false,'the cycle no longer exists');
  await service.stop();db.close();
 });
 

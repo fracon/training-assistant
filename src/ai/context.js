@@ -73,6 +73,21 @@ function duration(value) {
 function source(type, row) {
   return { type, id: String(row.id), version: hash(row) };
 }
+// Weekly availability in week order, with the columns its source version hashes.
+function readAvailability(db, userId) {
+  return db
+    .prepare(
+      'SELECT day_key,can_train,available_periods,available_minutes,location,revision,updated_at FROM ai_coach_availability WHERE user_id = ? ORDER BY day_key',
+    )
+    .all(userId)
+    .sort((a, b) => DAY_ORDER.indexOf(a.day_key) - DAY_ORDER.indexOf(b.day_key));
+}
+function availabilitySource(row) {
+  return { type: 'availability', id: row.day_key, version: hash(row) };
+}
+function profileSource(profile) {
+  return { type: 'profile', id: 'self', version: hash(profile) };
+}
 function trainingView(row) {
   const metricKeys = [
     'fit_distance',
@@ -294,7 +309,7 @@ function buildContext(
     if (typeof taskNotes === 'string' && taskNotes.trim())
       context.taskNotes = { authority: 'user_report', text: taskNotes.trim() };
   }
-  addReference({ type: 'profile', id: 'self', version: hash(context.profile) });
+  addReference(profileSource(context.profile));
   addReference({
     type: 'preferences',
     id: 'self',
@@ -370,12 +385,7 @@ function buildContext(
         version: applied.version,
         executionId: applied.id,
         appliedAt: applied.applied_at,
-        outdated: !contextIsCurrent(
-          db,
-          userId,
-          JSON.parse(applied.fingerprint_json),
-          config,
-        ),
+        outdated: !appliedPlanIsCurrent(db, userId, applied.cycle_id, applied.sources_json),
         start: plan.start,
         end: plan.end,
         architecture: [],
@@ -462,19 +472,9 @@ function buildContext(
         reason: 'context_budget',
       });
   }
-  const availability = db
-    .prepare(
-      'SELECT day_key,can_train,available_periods,available_minutes,location,revision,updated_at FROM ai_coach_availability WHERE user_id = ? ORDER BY day_key',
-    )
-    .all(userId)
-    .sort((a, b) => DAY_ORDER.indexOf(a.day_key) - DAY_ORDER.indexOf(b.day_key));
+  const availability = readAvailability(db, userId);
   if (availability.length !== 7)
     context.gaps.push('Weekly availability is incomplete.');
-  const availabilitySource = (row) => ({
-    type: 'availability',
-    id: row.day_key,
-    version: hash(row),
-  });
   // Configured availability is small and essential to every task: it is always
   // selected whole, in week order. Missing days stay missing.
   for (const row of availability) {
@@ -770,7 +770,54 @@ function contextIsCurrent(db, userId, context, config) {
     throw error;
   }
 }
+// An applied macrocycle depends only on its basis: the cycle definition (goal,
+// targets, dates), the weekly availability and the optional prior experience.
+// It is outdated when one of those differs from the versions recorded when it
+// was applied. Executing the plan (results, feedback, discomfort, shoes, newly
+// planned sessions) does not outdate it. A version without a recorded cycle
+// basis stays outdated.
+function planBasis(sources, cycleId) {
+  return new Map(
+    sources
+      .filter(
+        (ref) =>
+          (ref.type === 'cycle' && ref.id === cycleId) ||
+          ref.type === 'profile' ||
+          ref.type === 'availability',
+      )
+      .map((ref) => [`${ref.type}:${ref.id}`, ref.version]),
+  );
+}
+function appliedPlanIsCurrent(db, userId, cycleId, sourcesJson) {
+  cycleId = String(cycleId);
+  let stored;
+  try {
+    stored = planBasis(JSON.parse(sourcesJson), cycleId);
+  } catch {
+    return false;
+  }
+  if (!stored.has(`cycle:${cycleId}`)) return false;
+  const cycle = db
+    .prepare('SELECT * FROM training_cycles WHERE id = ? AND user_id = ?')
+    .get(cycleId, userId);
+  if (!cycle) return false;
+  const current = new Map([
+    [`cycle:${cycleId}`, [source('cycle', cycle).version]],
+    ['profile:self', [profileSource({ fields: readMemory(db, userId).profile.fields }).version]],
+    // Plans applied before availability carried a revision recorded the same
+    // row without it; the same values and timestamp mean the day is unchanged.
+    ...readAvailability(db, userId).map((row) => {
+      const { revision, ...legacy } = row;
+      return [`availability:${row.day_key}`, [availabilitySource(row).version, hash(legacy)]];
+    }),
+  ]);
+  return (
+    stored.size === current.size &&
+    [...stored].every(([key, version]) => current.get(key)?.includes(version))
+  );
+}
 module.exports = {
+  appliedPlanIsCurrent,
   POLICY_VERSION,
   ANALYSIS_POLICY_VERSION,
   TRAINING_COLUMNS,
