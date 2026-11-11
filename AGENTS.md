@@ -8,7 +8,7 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.37.0`); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.37.1`); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
@@ -906,7 +906,10 @@ with optimistic versions. Do not restore generic manual memory CRUD.
 - Runtime-only Compose environment wiring is authorized under golden rule 3;
   never bake the key into Dockerfile/image or change ports/privileges/CI.
 - Tests: `aiFoundation.test.js`, `aiFoundation.routes.test.js`,
-  `aiFoundation.browser.test.js`, `aiMemoryOverview.test.js`, existing prompt/result/coach/shell/onboarding
+  `aiFoundation.browser.test.js`, `aiMemoryOverview.test.js`, `aiMemoryPurposes.test.js`,
+  `memoryInsights.test.js`, `timeZone.test.js`, `trainingMemoryPurpose.browser.test.js`,
+  `trainingMemoryLayout.browser.test.js` (see [the review record](docs/training-memory.md)),
+  existing prompt/result/coach/shell/onboarding
   suites, then npm test and 100% c8 in all four metrics. Use synthetic fixtures
   and mocked providers. Model-quality evaluation is separate, controlled and
   cost-recorded; a mock is never evidence of real model quality or access.
