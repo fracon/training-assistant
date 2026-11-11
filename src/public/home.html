@@ -25,25 +25,7 @@
       </section>
 
       <div class="dashboard-grid vertical">
-        <section id="nextWorkoutCard" class="card-section dash-next" aria-labelledby="nextWorkoutTitle">
-          <header class="section-header">
-            <h2 id="nextWorkoutTitle" data-i18n="home.next.title">Next workout</h2>
-            <a class="card-action" href="/calendar.html" data-i18n-aria-label="home.actions.goToTrainings">
-              <i data-lucide="external-link" aria-hidden="true"></i>
-            </a>
-          </header>
-          <div id="nextWorkoutBody" class="next-workout" aria-live="polite"></div>
-        </section>
-
-        <section id="pendingCard" class="card-section dash-pending" aria-labelledby="pendingTitle" hidden>
-          <header class="section-header">
-            <h2 id="pendingTitle" data-i18n="home.pending.title">To do</h2>
-            <span id="pendingTotal" class="pending-total"></span>
-          </header>
-          <ul id="pendingList" class="pending-list" role="list"></ul>
-        </section>
-
-        <section class="card-section dash-cycle" aria-labelledby="cycleOverviewTitle">
+        <section class="card-section" aria-labelledby="cycleOverviewTitle">
           <header class="section-header">
             <h2 id="cycleOverviewTitle" data-i18n="home.cycle.title">Current Training Cycle</h2>
             <a class="card-action" href="/cycles.html" data-i18n-aria-label="home.actions.goToCycles">
@@ -68,8 +50,6 @@
               <span id="cycleTarget"></span>
             </p>
             <p id="cycleWeek" class="cycle-week"></p>
-            <p id="cyclePhase" class="cycle-phase" hidden></p>
-            <p id="cyclePlanNotice" class="cycle-plan-notice" hidden></p>
             <div id="cycleProgressRow" class="cycle-progress hidden">
               <progress id="cycleProgressBar" class="cycle-progress-bar" max="100" value="0"
                 aria-label="Training cycle progress" data-i18n-aria-label="home.cycle.progressAria"></progress>
@@ -78,7 +58,7 @@
           </div>
         </section>
 
-        <section class="card-section dash-half" aria-labelledby="weeklyMetricsTitle">
+        <section class="card-section" aria-labelledby="weeklyMetricsTitle">
           <header class="section-header">
             <h2 id="weeklyMetricsTitle" data-i18n="home.metrics.title">This Week</h2>
             <a class="card-action" href="/calendar.html" data-i18n-aria-label="home.actions.goToTrainings">
@@ -91,8 +71,6 @@
               <div id="weekTrackerDays" class="week-tracker-days" role="list"
                 data-i18n-aria-label="home.metrics.trackerAria"></div>
             </div>
-
-            <p id="weeklyProgress" class="weekly-progress" hidden></p>
 
             <div class="metrics-grid">
               <div class="metric-tile">
@@ -107,7 +85,7 @@
           </div>
         </section>
 
-        <section class="card-section dash-half" aria-labelledby="shoesOverviewTitle">
+        <section class="card-section" aria-labelledby="shoesOverviewTitle">
           <header class="section-header">
             <h2 id="shoesOverviewTitle" data-i18n="home.shoes.title">My Shoes</h2>
             <a class="card-action" href="/shoes.html" data-i18n-aria-label="home.actions.goToShoes">
@@ -122,6 +100,24 @@
           </div>
 
           <ul id="shoesList" class="shoes-list hidden" role="list"></ul>
+        </section>
+
+        <section id="nextWorkoutCard" class="card-section next-card" aria-labelledby="nextWorkoutTitle">
+          <header class="section-header">
+            <h2 id="nextWorkoutTitle" data-i18n="home.next.title">Next workout</h2>
+            <a id="nextWorkoutAction" class="card-action" href="/calendar.html" data-i18n-aria-label="home.actions.goToTrainings">
+              <i data-lucide="external-link" aria-hidden="true"></i>
+            </a>
+          </header>
+          <div id="nextWorkoutBody" class="next-workout" aria-live="polite"></div>
+        </section>
+
+        <section id="pendingCard" class="card-section pending-card" aria-labelledby="pendingTitle" hidden>
+          <header class="section-header">
+            <h2 id="pendingTitle" data-i18n="home.pending.title">To do</h2>
+            <span id="pendingTotal" class="pending-total"></span>
+          </header>
+          <ul id="pendingList" class="pending-list" role="list"></ul>
         </section>
       </div>
 

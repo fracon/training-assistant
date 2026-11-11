@@ -41,14 +41,14 @@ test('weeks start on Monday or Sunday by preference', () => {
   assert.equal(weekStart('2026-11-08', 'Monday'), '2026-11-02');
 });
 
-test('an empty account has no next or last workout, an empty week and nothing pending', (t) => {
+test('an empty account has no next workout and nothing pending', (t) => {
   const { db } = fixture(t);
   const summary = dashboardSummary(db, 1, config, today);
-  assert.deepEqual(summary, { today, nextWorkout: null, lastWorkout: null, week: { start: '2026-11-09', planned: 0, completed: 0, distanceKm: 0, previousDistanceKm: 0 }, cycle: null, pending: [] });
+  assert.deepEqual(summary, { today, nextWorkout: null, pending: [] });
   assert.equal(typeof dashboardSummary(db, 1, config).today, 'string', 'today defaults to the account date');
 });
 
-test('the next workout carries its plan, shoe and watch-account schedule; the last workout its result', (t) => {
+test('the next workout carries its plan, shoe and watch-account schedule', (t) => {
   const { db, training } = fixture(t);
   training({ dia: '2026-11-09', treino: 'Intervals', completed: 1, feedback_rpe: 5, fit_distance: 8 });
   const next = training({ dia: today, treino: 'Easy run', detalhes: '40 min easy', tenis: '  Pegasus  ' });
@@ -57,10 +57,8 @@ test('the next workout carries its plan, shoe and watch-account schedule; the la
   let summary = dashboardSummary(db, 1, config, today);
   assert.equal(summary.nextWorkout.id, next);
   assert.equal(summary.nextWorkout.name, 'Easy run');
-  assert.equal(summary.nextWorkout.details, '40 min easy');
   assert.deepEqual(summary.nextWorkout.shoe, { name: 'Pegasus', source: 'planned' });
   assert.equal(summary.nextWorkout.watch, null);
-  assert.deepEqual(summary.lastWorkout, { id: 1, date: '2026-11-09', name: 'Intervals', distanceKm: 8, duration: null, rpe: 5, href: '/training-result.html?id=1' });
   // Without a planned shoe the least-used active pair is suggested; the name falls back to the type.
   db.prepare("UPDATE trainings SET tenis=NULL, treino=NULL WHERE id=?").run(next);
   db.prepare("INSERT INTO shoes(user_id,brand,model,mileage,target_mileage,status) VALUES (1,'Asics','Novablast',120,800,'active'),(1,'Nike','Pegasus',410,700,'active'),(1,'Old','Retired',5,700,'retired')").run();
@@ -86,37 +84,22 @@ test('the next workout carries its plan, shoe and watch-account schedule; the la
   assert.equal(dashboardSummary(db, 1, config, today).nextWorkout.shoe, null);
 });
 
-test('the week counts planned, completed and distance, with the previous week for comparison', (t) => {
-  const { db, training } = fixture(t);
-  training({ dia: '2026-11-03', completed: 1, fit_distance: 10 });
-  training({ dia: '2026-11-08', completed: 1, fit_distance: 6 });
-  training({ dia: '2026-11-09', completed: 1, fit_distance: 8 });
-  training({ dia: '2026-11-10', completed: 1, fit_distance: null, feedback_rpe: 3 });
-  training({ dia: '2026-11-14' });
-  assert.deepEqual(dashboardSummary(db, 1, config, today).week, { start: '2026-11-09', planned: 3, completed: 2, distanceKm: 8, previousDistanceKm: 16 });
-  db.prepare("UPDATE users SET first_day_of_week='Sunday' WHERE id=1").run();
-  assert.deepEqual(dashboardSummary(db, 1, config, today).week, { start: '2026-11-08', planned: 4, completed: 3, distanceKm: 14, previousDistanceKm: 10 });
-});
-
-test('the cycle reports the current phase and whether its applied plan is current, outdated or incompatible', (t) => {
+test('an outdated or incompatible applied cycle plan is pending; a current or missing one is not', (t) => {
   const { db } = fixture(t);
   db.prepare("INSERT INTO training_cycles(id,user_id,objective,status,start_date,target_date) VALUES ('c',1,'Half','active','2026-10-01','2026-12-20')").run();
-  assert.deepEqual(dashboardSummary(db, 1, config, today).cycle, { planState: 'none', phase: null });
+  assert.deepEqual(dashboardSummary(db, 1, config, today).pending, [], 'a cycle without a plan');
   const context = buildContext(db, 1, { purpose: 'cycle', resourceId: 'c', asOf: today, config });
   const fingerprint = { hash: context.hash, asOf: today, purpose: 'cycle', resource: { id: 'c' }, policyVersion: POLICY_VERSION };
   applyPlan(db, plan([['Base', '2026-10-01', '2026-11-01'], ['Build', '2026-11-02', '2026-12-01'], ['Taper', '2026-12-02', '2026-12-20']]), fingerprint);
-  assert.deepEqual(dashboardSummary(db, 1, config, today).cycle, { planState: 'current', phase: { name: 'Build', objective: 'Build objective', start: '2026-11-02', end: '2026-12-01' } });
   assert.deepEqual(dashboardSummary(db, 1, config, today).pending, []);
   db.prepare("UPDATE training_cycles SET objective='Changed' WHERE id='c'").run();
   let summary = dashboardSummary(db, 1, config, today);
-  assert.equal(summary.cycle.planState, 'outdated');
   assert.deepEqual(summary.pending, [{ key: 'plan', state: 'outdated', href: '/cycles.html' }]);
   const incompatible = plan([['Base', '2026-12-01', '2026-12-20']]);
   incompatible.phases[0].intensity = 'Hold RPE 8/10.';
   applyPlan(db, incompatible, fingerprint);
   summary = dashboardSummary(db, 1, config, today);
-  assert.deepEqual(summary.cycle, { planState: 'incompatible', phase: null });
-  assert.equal(summary.pending[0].state, 'incompatible');
+  assert.deepEqual(summary.pending, [{ key: 'plan', state: 'incompatible', href: '/cycles.html' }]);
 });
 
 test('pending lists missing results and effort, a ready proposal, hypotheses and a worn shoe, most urgent first', (t) => {

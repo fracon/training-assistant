@@ -7,6 +7,7 @@ const { launchChrome } = require('./helpers/chrome.cjs');
 
 const PT = require('../src/public/locales/pt.json').home;
 const EN = require('../src/public/locales/en.json').home;
+const EN_PERIOD = require('../src/public/locales/en.json').aiCoach.periods['08_12'];
 
 // Synthetic forecast so no request leaves the machine.
 const weatherFetch = async (url) => {
@@ -44,28 +45,33 @@ function seed(db, userId) {
   training.run(userId, 'c', iso(-3), null, 'Intervalado', 'Tiros', null, null, null, 1, 5, 8, '45:00');
   training.run(userId, 'c', iso(-2), null, 'Rodagem', 'Rodagem leve', null, null, null, 0, null, null, null);
   training.run(userId, 'c', iso(-1), null, 'Rodagem', 'Trote', null, null, null, 1, null, 6, '33:00');
-  const next = training.run(userId, 'c', iso(0), 'Antes das 08h', 'Longão', 'Longão progressivo', '60 min progressivo', '3', 'São Paulo, SP', 0, null, null, null).lastInsertRowid;
+  const next = training.run(userId, 'c', iso(0), '08_12', 'Longão', 'Longão progressivo', '60 min progressivo', '3', 'São Paulo, SP', 0, null, null, null).lastInsertRowid;
   db.prepare("INSERT INTO shoes(user_id,brand,model,mileage,target_mileage,status) VALUES (?,'Asics','Novablast',99,900,'active'),(?,'Adidas','Adios',190,200,'active')").run(userId, userId);
   return { next };
 }
 
-const view = `(() => ({
-  when: document.querySelector('.next-when')?.textContent,
-  name: document.querySelector('.next-name')?.textContent,
-  facts: [...document.querySelectorAll('.next-fact')].map((fact) => fact.textContent),
-  action: (() => { const a = document.querySelector('.next-actions a'); return a && { text: a.textContent, href: a.getAttribute('href') }; })(),
-  last: document.querySelector('.next-last')?.textContent,
-  pendingHidden: document.getElementById('pendingCard').hidden,
-  pending: [...document.querySelectorAll('.pending-text')].map((item) => item.textContent),
-  more: document.querySelector('.pending-more')?.textContent ?? null,
-  total: document.getElementById('pendingTotal').textContent,
-  wide: document.getElementById('nextWorkoutCard').classList.contains('is-wide'),
-  phase: document.getElementById('cyclePhase').hidden ? null : document.getElementById('cyclePhase').textContent,
-  notice: document.getElementById('cyclePlanNotice').hidden ? null : document.getElementById('cyclePlanNotice').textContent,
-  week: document.getElementById('weeklyProgress').hidden ? null : document.getElementById('weeklyProgress').textContent,
-  empty: document.querySelector('.next-empty')?.textContent ?? null,
-  offscreen: [...document.querySelectorAll('main *')].filter((element) => element.getBoundingClientRect().right > innerWidth + 1).map((element) => element.className).slice(0, 4),
-}))()`;
+const view = `(() => {
+  const body = document.getElementById('nextWorkoutBody');
+  const action = document.getElementById('nextWorkoutAction');
+  const inside = (card) => [...card.querySelectorAll('*')].filter((element) => element.getBoundingClientRect().right > card.getBoundingClientRect().right + 1).map((element) => element.className);
+  const grid = document.querySelector('.dashboard-grid');
+  return {
+    order: [...grid.children].map((card) => card.id || card.getAttribute('aria-labelledby')),
+    name: body.querySelector('.next-name')?.textContent ?? null,
+    when: body.querySelector('.next-when')?.textContent ?? null,
+    meta: [...body.querySelectorAll('.next-meta')].map((line) => line.textContent),
+    tiles: [...body.querySelectorAll('.metric-tile')].map((tile) => [tile.querySelector('.metric-label').textContent, tile.querySelector('.metric-value').textContent]),
+    buttons: body.querySelectorAll('.btn-primary, .btn-secondary').length,
+    action: { href: action.getAttribute('href'), label: action.getAttribute('aria-label') },
+    pendingHidden: document.getElementById('pendingCard').hidden,
+    pending: [...document.querySelectorAll('.pending-text')].map((item) => item.textContent),
+    more: document.querySelector('.pending-more')?.textContent ?? null,
+    total: document.getElementById('pendingTotal').textContent,
+    wide: document.getElementById('nextWorkoutCard').classList.contains('is-wide'),
+    empty: body.querySelector('.empty-state')?.textContent.trim() ?? null,
+    overflow: [...inside(document.getElementById('nextWorkoutCard')), ...inside(document.getElementById('pendingCard'))],
+  };
+})()`;
 
 async function open(browser, origin, cookie, width, mobile) {
   const { command, wait } = browser;
@@ -76,7 +82,7 @@ async function open(browser, origin, cookie, width, mobile) {
   await wait("document.body.classList.contains('shell-mounted') && document.getElementById('nextWorkoutBody').childElementCount > 0");
 }
 
-test('Chrome: the dashboard shows the next workout, pending items, cycle phase and week progress in PT/EN on desktop and phone', async (t) => {
+test('Chrome: the next-workout and pending row follows the existing widgets in PT/EN on desktop and phone', async (t) => {
   const { db, origin, account } = await setup(t);
   const athlete = await account('dash-browser@example.test');
   const { next } = seed(db, athlete.id);
@@ -85,56 +91,50 @@ test('Chrome: the dashboard shows the next workout, pending items, cycle phase a
 
   for (const [width, mobile] of [[1280, false], [390, true]]) {
     await open(browser, origin, athlete.cookie, width, mobile);
-    await wait("document.querySelectorAll('.next-fact').length >= 4");
+    await wait("document.querySelectorAll('#nextWorkoutBody .metric-tile').length === 2");
     const pt = await evaluate(view);
-    assert.equal(pt.when, `${PT.next.today} · Antes das 08h`);
+    assert.deepEqual(pt.order.slice(-2), ['nextWorkoutCard', 'pendingCard'], 'the new row comes after the existing widgets');
     assert.equal(pt.name, 'Longão progressivo');
-    assert.ok(pt.facts.includes(PT.next.targetRpe.replace('{value}', '3')));
-    assert.ok(pt.facts.some((fact) => fact.startsWith('24')), 'the forecast for the session is shown');
-    assert.ok(pt.facts.includes(PT.next.shoeSuggested.replace('{name}', 'Asics Novablast')));
-    assert.deepEqual(pt.action, { text: PT.next.record, href: `/training-result.html?id=${next}` });
-    assert.ok(pt.last.includes('Trote'));
+    assert.equal(pt.when, PT.next.today);
+    assert.deepEqual(pt.meta, ['08h–12h · São Paulo, SP', PT.next.shoeSuggested.replace('{name}', 'Asics Novablast')]);
+    assert.deepEqual(pt.tiles, [[PT.next.targetRpe, 'RPE 3'], [PT.next.forecast, '24 °C, Parcialmente nublado']]);
+    assert.equal(pt.buttons, 0, 'the card navigates through its header action only');
+    assert.deepEqual(pt.action, { href: `/training-result.html?id=${next}`, label: PT.next.open });
     assert.equal(pt.pendingHidden, false);
-    assert.deepEqual(pt.pending, [
-      PT.pending.items.results.replace('{count}', '1'),
-      PT.pending.items.effort.replace('{count}', '1'),
-      PT.pending.items.plan_outdated,
-    ]);
-    assert.equal(pt.more, PT.pending.more.replace('{count}', '1'));
+    assert.deepEqual(pt.pending, [PT.pending.items.results_one, PT.pending.items.effort_one, PT.pending.items.plan_outdated]);
+    assert.equal(pt.more, PT.pending.more_one);
     assert.equal(pt.total, '4');
     assert.equal(pt.wide, false);
-    assert.equal(pt.phase, PT.cycle.phase.replace('{name}', 'Construção').replace('{objective}', 'Construção objetivo'));
-    assert.equal(pt.notice, PT.cycle.planOutdated);
-    assert.ok(pt.week.startsWith(PT.metrics.progress.split('{')[0]) || /\d/.test(pt.week));
-    assert.deepEqual(pt.offscreen, [], `${width}px: nothing leaves the screen`);
+    assert.deepEqual(pt.overflow, [], `${width}px: the new cards keep their content inside`);
   }
 
-  // Language switch re-renders every card in place.
+  // Language switch re-renders both cards in place.
   await evaluate(`document.querySelector('.lang-switch [data-lang="en-US"]').click()`);
-  await wait(`document.querySelector('.next-when')?.textContent.startsWith(${JSON.stringify(EN.next.today)})`);
+  await wait(`document.querySelector('.next-when')?.textContent === ${JSON.stringify(EN.next.today)}`);
   const en = await evaluate(view);
-  assert.equal(en.action.text, EN.next.record);
-  assert.equal(en.pending[2], EN.pending.items.plan_outdated);
-  assert.equal(en.notice, EN.cycle.planOutdated);
+  assert.equal(en.meta[0], `${EN_PERIOD} · São Paulo, SP`);
+  assert.equal(en.action.label, EN.next.open);
+  assert.deepEqual(en.pending, [EN.pending.items.results_one, EN.pending.items.effort_one, EN.pending.items.plan_outdated]);
+  assert.equal(en.more, EN.pending.more_one);
 
   // A forecast that arrives while a link is focused keeps that link focused.
   const held = await browser.intercept(`${origin}/api/weather*`);
   await browser.command('Page.navigate', { url: `${origin}/home.html` });
   const paused = await held.next;
-  await wait("document.querySelector('.next-actions a') !== null && document.querySelectorAll('.next-fact').length === 3");
-  await evaluate("document.querySelector('.next-actions a').focus()");
+  await wait("document.querySelector('.pending-item') !== null && document.querySelectorAll('#nextWorkoutBody .metric-tile').length === 1");
+  await evaluate("document.getElementById('nextWorkoutAction').focus()");
   await held.release(paused);
-  await wait("document.querySelectorAll('.next-fact').length === 4");
-  assert.equal(await evaluate("document.activeElement === document.querySelector('.next-actions a')"), true);
+  await wait("document.querySelectorAll('#nextWorkoutBody .metric-tile').length === 2");
+  assert.equal(await evaluate("document.activeElement.id"), 'nextWorkoutAction');
 
   // A language switch rebuilds the pending list without losing the focused item.
   await evaluate("document.querySelector('.pending-item').focus()");
   await evaluate(`document.querySelector('.lang-switch [data-lang="pt-BR"]').click()`);
-  await wait(`document.querySelector('.pending-text')?.textContent === ${JSON.stringify(PT.pending.items.results.replace('{count}', '1'))}`);
+  await wait(`document.querySelector('.pending-text')?.textContent === ${JSON.stringify(PT.pending.items.results_one)}`);
   assert.equal(await evaluate("document.activeElement === document.querySelector('.pending-item')"), true);
 
   // Pending items are keyboard reachable with a visible focus ring.
-  await evaluate("document.querySelector('.next-last-link').focus()");
+  await evaluate("document.getElementById('nextWorkoutAction').focus()");
   await key('Tab', 'Tab', 9);
   const focus = await evaluate("(() => { const style = getComputedStyle(document.activeElement); return { pending: document.activeElement.classList.contains('pending-item'), ring: style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) > 0 }; })()");
   assert.deepEqual(focus, { pending: true, ring: true });
@@ -147,17 +147,18 @@ test('Chrome: an empty account gets a request-workouts call to action, no pendin
   const { command, evaluate, wait } = browser;
   await open(browser, origin, empty.cookie, 1280, false);
   const state = await evaluate(view);
-  assert.equal(state.empty, PT.next.empty);
-  assert.equal(await evaluate("document.querySelector('#nextWorkoutBody .btn-primary').getAttribute('href')"), '/ai-coach.html');
+  assert.equal(await evaluate("document.querySelector('#nextWorkoutBody .empty-state h3').textContent"), PT.next.emptyTitle);
+  assert.equal(await evaluate("document.querySelector('#nextWorkoutBody .empty-state .btn-primary').getAttribute('href')"), '/ai-coach.html',
+    'the empty state is the same structure as the cycle and shoe cards');
+  assert.deepEqual(state.action, { href: '/calendar.html', label: PT.actions.goToTrainings });
   assert.equal(state.pendingHidden, true);
   assert.equal(state.wide, true, 'the next-workout card takes the row when nothing is pending');
-  assert.equal(state.week, null);
 
   const failing = await browser.intercept(`${origin}/api/dashboard`);
   await command('Page.navigate', { url: `${origin}/home.html` });
   const paused = await failing.next;
   await command('Fetch.failRequest', { requestId: paused.requestId, errorReason: 'Failed' });
   await failing.close();
-  await wait(`document.querySelector('.next-empty')?.textContent === ${JSON.stringify(PT.dashboardError)}`);
+  await wait(`document.querySelector('#nextWorkoutBody .empty-state')?.textContent === ${JSON.stringify(PT.dashboardError)}`);
   assert.equal(await evaluate("document.getElementById('pendingCard').hidden"), true);
 });

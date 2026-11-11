@@ -443,16 +443,19 @@ are stable identifiers, not a statement of scope.
   (`treino`) + Description (`detalhes`)**. Calendar drag-and-drop rescheduling
   persists through its dedicated endpoint. Keep the shared Snackbar behavior
   for import feedback; do not restore a permanent inline banner.
-- The home dashboard reads `GET /api/dashboard` (`src/dashboard.js`), one
-  owner-scoped read on the account's civil date: next and last workout, week
-  progress, applied cycle-plan phase/state, and prioritized pending items
-  (sessions with no result and recorded results without a valid effort —
-  including imports left open until their RPE — in 14 days, unapplied weekly proposal, outdated
-  or incompatible plan, pending hypotheses, shoe ≥ 90% of target). A watch
-  schedule is shown only as “scheduled in the watch account”, never as
-  delivered. The next workout's forecast reuses `/api/weather` (planned
-  location/date only) and the shared `shared/weather.js` labels. Covered by
-  `test/dashboard.test.js` and `test/dashboard.browser.test.js`.
+- The home dashboard's last row (after cycle, week and shoes, which keep
+  their own reads) is fed by `GET /api/dashboard` (`src/dashboard.js`), one
+  owner-scoped read on the account's civil date: the next workout and
+  prioritized pending items (sessions with no result and recorded results
+  without a valid effort — including imports left open until their RPE — in
+  14 days, unapplied weekly proposal, outdated or incompatible plan, pending
+  hypotheses, shoe ≥ 90% of target). The next-workout card reuses the cycle
+  card's title/badge/muted-line rules, the metric tiles and the shared
+  `.empty-state`; it navigates only through its header action. Canonical period
+  IDs are shown through `aiCoach.periods`. A watch schedule is shown only as
+  “scheduled in the watch account”, never as delivered. The forecast reuses
+  `/api/weather` (planned location/date only) and `shared/weather.js`. Covered
+  by `test/dashboard.test.js` and `test/dashboard.browser.test.js`.
 - Distances and temperatures are stored in canonical metric units and converted
   for display/prompt generation through `src/public/shared/units.js`. Displayed
   dates use the shared locale-aware date formatter. Date inputs use the shared

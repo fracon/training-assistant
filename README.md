@@ -555,20 +555,13 @@ continues to receive only a planned training location/date.
 
 ### Home Dashboard
 
-The dashboard reads one owner-scoped summary from `GET /api/dashboard` (`src/dashboard.js`), computed on the account's civil date:
-
-- **Next workout** — the first open session from today on: date, period, name, target RPE/HR, the planned shoe (or the least-worn active one as a suggestion), whether the workout is scheduled in the connected watch account (a schedule there is not proof of delivery to the device), and a shortcut to record its result. When the session has a location, the page asks the existing `/api/weather` lookup for that planned location/date only, using the shared `src/public/shared/weather.js` labels. The last completed workout is linked underneath. Without a next session it offers Request Workouts.
-- **Pending** — what needs the athlete, most urgent first: sessions without any result in the last 14 days, recorded results without a valid realized effort (including an imported result deliberately left open until its effort is reported), an unapplied weekly proposal for the current or a later week, an outdated or RPE-incompatible applied cycle plan, AI hypotheses awaiting review, and a shoe at ≥ 90% of its target. The card shows three items plus a “+N” count and disappears when nothing is pending, letting the next-workout card take the whole row.
-- **Cycle phase and plan state** — the cycle card names the applied plan's current phase and warns when that plan is outdated or incompatible.
-- **Week progress** — completed versus planned sessions this week and the distance delta against the previous week, following the week-start preference.
-- On phones the cards stack in one column and the quote hero moves to the end of the page.
-
 - **Current cycle overview** — cycle title, primary goal, target date, progress, and localized metadata render independently.
 - **Weekly tracker first** — the “This Week” card places the week tracker above accumulated distance/time tiles. Its order follows the account's Monday/Sunday week-start preference. Active days use compact pills with a Lucide `sport-shoe` icon.
 - **Card navigation** — subtle Lucide `external-link` actions link the cycle card to `/cycles.html` and the weekly card to `/calendar.html`.
 - **Responsive weekly metrics** — completed workout distance and duration are read from the calendar API (`fit_distance`/`fit_duration`), normalized, summed, and formatted in dashboard units.
 - **Shoe Rotation widget** — tracks active shoes and renders a dynamic “traffic light” progress bar (green → yellow → red) showing each pair's mileage against its useful lifespan, so runners know at a glance when it is time to replace their gear. Wear level uses the per-shoe target mileage (defaulting to 500 km / 300 mi), distances respect the dashboard unit preference, and the bar turns yellow at 75% and red at 90% of usable life.
 - **Accessible quote hero** — the dashboard can request a generic running image through the optional Unsplash API proxy. The server caches the result in memory for 20 minutes, registers the required download event, hotlinks the returned image, and renders photographer/Unsplash attribution. Without a key or if the request fails, it uses a bundled local image. The browser makes a daily ZenQuotes request for the quote where available; failures use localized bundled quotes. Neither request includes workout data or user-entered training context, though network providers may see the requester’s connection metadata. Loading text, quote text, and author each have dark semitransparent contrast backdrops for legibility over bright photos.
+- **Next workout and pending** — a row after the existing widgets, fed by one owner-scoped read, `GET /api/dashboard` (`src/dashboard.js`), on the account's civil date. *Next workout* follows the cycle card's structure: the session name with a Today/Tomorrow/date badge, a muted line with the weekday, translated period and location, the planned shoe (or the least-worn active one as a suggestion), whether it is scheduled in the connected watch account (a schedule there is not proof of delivery to the device), and metric tiles for target effort/HR and the forecast. The forecast reuses `/api/weather` for the planned location/date only, with the shared `src/public/shared/weather.js` labels. Its header action opens the session; without one, it shows the same empty state as the cycle and shoe cards, pointing to Request Workouts. *Pending* lists, most urgent first: sessions without any result in the last 14 days, recorded results without a valid realized effort (including an imported result deliberately left open until its effort is reported), an unapplied weekly proposal for the current or a later week, an outdated or RPE-incompatible applied cycle plan, AI hypotheses awaiting review, and a shoe at ≥ 90% of its target. It shows three items plus a “+N” count and disappears when nothing is pending, letting the next-workout card take the whole row.
 
 ### New-user onboarding
 
@@ -950,7 +943,7 @@ in [AI foundation API contracts](docs/ai-foundation.md#api-and-service-contract)
 | `POST /api/trainings/:id/fit` | Session | Upload and persist FIT or single-FIT ZIP result; requires a realized RPE |
 | `DELETE /api/trainings/:id` | Session | Delete an owned training |
 | `POST /api/fit/parse` | Session | Parse a FIT upload and return analysis data |
-| `GET /api/dashboard` | Session | Owner-scoped next workout, last workout, week, cycle-plan state and pending items for the dashboard |
+| `GET /api/dashboard` | Session | Owner-scoped next workout and pending items for the dashboard |
 | `GET /api/weather` | Session | Resolve planned location and date through Open-Meteo |
 | `GET /api/cycles` | Session | List owned cycles with minimal `planningSummary` (`status`, `secondary`, `available`, `canGenerate`); no plan/prompt/context/debug content |
 | `GET /api/cycles/active` | Session | Read active cycle |
@@ -1154,7 +1147,7 @@ Every primary flow is a standalone page (no single-page hacks, no overlapping la
 | Login | `src/public/login.html` · `src/public/login.css` · `src/public/login.js` | Sign-in form only |
 | Register | `src/public/register.html` · `src/public/register.css` · `src/public/register.js` | Sign-up form with aggregated validation errors and success toast |
 | Training result | `src/public/training-result.html` · `src/public/training-result.css` · `src/public/training-result.js` | Contextual FIT/ZIP and manual result capture, gated behind a session |
-| Home | `src/public/home.html` · `src/public/home.css` · `src/public/home.js` | Authenticated dashboard with onboarding, next workout, pending items, cycle phase, weekly metrics, tracker, and quote hero |
+| Home | `src/public/home.html` · `src/public/home.css` · `src/public/home.js` | Authenticated dashboard with onboarding, cycle, weekly metrics, tracker, shoes, next workout, pending items, and quote hero |
 | Calendar | `src/public/calendar.html` · `src/public/calendar.css` · `src/public/calendar.js` | Monthly training calendar and deduplicating Excel import |
 | Solicitar Treinos / Request Workouts | `src/public/ai-coach.html` · `src/public/ai-coach.css` · `src/public/ai-coach.js` | Local prompt builder for weekly training requests |
 | Training memory | `src/public/training-memory.html` · `src/public/training-memory.css` · `src/public/training-memory.js` · `src/public/shared/memory-insights.js` | Per-task view of the AI context (cycle, weekly workouts, analysis), summary and memory-quality checklist, source correction links and optional prior experience; separate own admin diagnostics |

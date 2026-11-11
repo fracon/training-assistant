@@ -785,7 +785,7 @@ function setupHomePage() {
     return true;
   }
 
-  // ── Next workout, pending items, cycle phase and week progress ──────────────
+  // ── Next workout and pending items ──────────────────────────────────────
   const make = (tag, className, text) => {
     const element = document.createElement(tag);
     if (className) element.className = className;
@@ -793,14 +793,12 @@ function setupHomePage() {
     return element;
   };
   const language = () => (i18n ? i18n.language : DEFAULT_DISPLAY_LANGUAGE);
-  const shortDate = (iso) => formatLocalizedDate(iso, language());
-  function whenLabel(iso) {
-    const today = state.dashboard.today;
-    if (iso === today) return t('home.next.today');
-    const tomorrow = new Date(Date.parse(`${today}T00:00:00Z`) + 86400000).toISOString().slice(0, 10);
-    if (iso === tomorrow) return t('home.next.tomorrow');
-    const weekday = formatWeekday(iso, language());
-    return `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)} · ${shortDate(iso)}`;
+  const PERIOD_IDS = new Set(['before_08', '08_12', '12_14', '14_18', 'after_18']);
+  // Canonical period IDs are translated; imported free text is shown as written.
+  const periodLabel = (period) => (PERIOD_IDS.has(period) ? t(`aiCoach.periods.${period}`) : period);
+  const plural = (key, count) => t(`${key}_${count === 1 ? 'one' : 'other'}`, { count });
+  function addDaysIso(iso, days) {
+    return new Date(Date.parse(`${iso}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
   }
   // Rebuilding a card must not drop keyboard focus: the focused link is found
   // again in the new markup by its class and destination.
@@ -813,6 +811,22 @@ function setupHomePage() {
       .find((element) => element.className === match.className && element.getAttribute('href') === match.href);
     same?.focus({ preventScroll: true });
   }
+  function metricTile(label, value) {
+    const tile = make('div', 'metric-tile');
+    tile.append(make('span', 'metric-label', label), make('span', 'metric-value', value));
+    return tile;
+  }
+  function emptyState(title, text, cta) {
+    const box = make('div', 'empty-state');
+    if (title) box.append(make('h3', null, title));
+    box.append(make('p', null, text));
+    if (cta) {
+      const link = make('a', 'btn-primary', cta.label);
+      link.href = cta.href;
+      box.append(link);
+    }
+    return box;
+  }
   function renderNextWorkout() {
     const body = document.getElementById('nextWorkoutBody');
     if (!body) return;
@@ -820,47 +834,40 @@ function setupHomePage() {
   }
   function buildNextWorkout(body) {
     body.replaceChildren();
-    if (state.dashboardFailed) { body.append(make('p', 'next-empty', t('home.dashboardError'))); return; }
-    const summary = state.dashboard;
-    if (!summary) return;
-    const next = summary.nextWorkout;
-    if (!next) {
-      body.append(make('p', 'next-empty', t('home.next.empty')));
-      const cta = make('a', 'btn-primary', t('home.next.emptyCta')); cta.href = '/ai-coach.html';
-      body.append(cta);
-    } else {
-      const when = make('p', 'next-when', whenLabel(next.date));
-      if (next.period) when.append(` · ${next.period}`);
-      body.append(when, make('h3', 'next-name', next.name));
-      if (next.details) body.append(make('p', 'next-details', next.details));
-      const facts = make('ul', 'next-facts');
-      const fact = (text, extra = '') => facts.append(make('li', `next-fact${extra}`, text));
-      if (next.targetRpe != null && next.targetRpe !== '') fact(t('home.next.targetRpe', { value: next.targetRpe }));
-      if (next.targetHr) fact(t('home.next.targetHr', { value: next.targetHr }));
-      if (next.location) fact(next.location);
-      const weather = state.weather?.key === `${next.id}:${next.date}` ? state.weather.value : null;
-      const weatherText = formatWeatherAutofill(weather, (key) => t(key), state.temperatureUnit);
-      if (weatherText) fact(weatherText);
-      if (next.shoe) fact(t(next.shoe.source === 'planned' ? 'home.next.shoePlanned' : 'home.next.shoeSuggested', { name: next.shoe.name }));
-      if (next.watch === 'scheduled') fact(t('home.next.watchScheduled'), ' is-scheduled');
-      if (facts.childElementCount) body.append(facts);
-      const actions = make('div', 'next-actions');
-      const today = next.date === summary.today;
-      const action = make('a', today ? 'btn-primary' : 'btn-secondary', t(today ? 'home.next.record' : 'home.next.view'));
-      action.href = next.href;
-      actions.append(action);
-      body.append(actions);
+    const action = document.getElementById('nextWorkoutAction');
+    const next = state.dashboard?.nextWorkout ?? null;
+    if (action) {
+      action.href = next ? next.href : '/calendar.html';
+      action.setAttribute('aria-label', t(next ? 'home.next.open' : 'home.actions.goToTrainings'));
     }
-    const last = summary.lastWorkout;
-    if (last) {
-      const line = make('p', 'next-last');
-      const parts = [t('home.next.last', { date: shortDate(last.date), name: last.name })];
-      if (last.distanceKm != null) parts.push(formatDistance(last.distanceKm, state.distanceUnit));
-      if (last.rpe != null) parts.push(t('home.next.lastRpe', { value: last.rpe }));
-      line.append(`${parts.join(' · ')} `);
-      const link = make('a', 'next-last-link', t('home.next.analyze')); link.href = last.href;
-      line.append(link);
-      body.append(line);
+    if (state.dashboardFailed) { body.append(emptyState(null, t('home.dashboardError'))); return; }
+    if (!state.dashboard) return;
+    if (!next) {
+      body.append(emptyState(t('home.next.emptyTitle'), t('home.next.emptyText'), { label: t('home.next.emptyCta'), href: '/ai-coach.html' }));
+      return;
+    }
+    const today = state.dashboard.today;
+    const relative = next.date === today ? t('home.next.today')
+      : next.date === addDaysIso(today, 1) ? t('home.next.tomorrow') : null;
+    const header = make('div', 'next-header');
+    header.append(make('h3', 'next-name', next.name), make('span', 'next-when', relative ?? formatLocalizedDate(next.date, language())));
+    body.append(header);
+    const weekday = formatWeekday(next.date, language());
+    const when = [relative ? null : `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)}`, next.period ? periodLabel(next.period) : null, next.location]
+      .filter(Boolean);
+    if (when.length) body.append(make('p', 'next-meta', when.join(' · ')));
+    if (next.shoe) body.append(make('p', 'next-meta', t(next.shoe.source === 'planned' ? 'home.next.shoePlanned' : 'home.next.shoeSuggested', { name: next.shoe.name })));
+    if (next.watch === 'scheduled') body.append(make('p', 'next-meta', t('home.next.watchScheduled')));
+    const tiles = [];
+    if (next.targetRpe != null && next.targetRpe !== '') tiles.push(metricTile(t('home.next.targetRpe'), `RPE ${next.targetRpe}`));
+    if (next.targetHr) tiles.push(metricTile(t('home.next.targetHr'), String(next.targetHr)));
+    const weather = state.weather?.key === `${next.id}:${next.date}` ? state.weather.value : null;
+    const weatherText = formatWeatherAutofill(weather, (key) => t(key), state.temperatureUnit);
+    if (weatherText) tiles.push(metricTile(t('home.next.forecast'), weatherText));
+    if (tiles.length) {
+      const grid = make('div', 'metrics-grid');
+      grid.append(...tiles);
+      body.append(grid);
     }
   }
   // Loads the forecast once per planned session and date, only when a location is saved.
@@ -877,6 +884,12 @@ function setupHomePage() {
     if (value) renderNextWorkout();
   }
   const PENDING_VISIBLE = 3;
+  function pendingText(item) {
+    if (item.key === 'plan') return t(`home.pending.items.plan_${item.state}`);
+    if (item.key === 'proposal') return t('home.pending.items.proposal', { date: formatLocalizedDate(item.weekStart, language()) });
+    if (item.key === 'shoe') return t('home.pending.items.shoe', { name: item.name, percent: item.percent });
+    return plural(`home.pending.items.${item.key}`, item.count);
+  }
   function renderPending() {
     const card = document.getElementById('pendingCard');
     const list = document.getElementById('pendingList');
@@ -892,45 +905,23 @@ function setupHomePage() {
   function buildPending(list, items) {
     list.replaceChildren();
     for (const item of items.slice(0, PENDING_VISIBLE)) {
-      const key = item.key === 'plan' ? `plan_${item.state}` : item.key;
-      const text = t(`home.pending.items.${key}`, { count: item.count, name: item.name, percent: item.percent, date: item.weekStart ? shortDate(item.weekStart) : '' });
-      const li = make('li', 'pending-row');
-      const link = make('a', `pending-item pending-${item.key}`); link.href = item.href;
-      link.append(make('span', 'pending-dot'), make('span', 'pending-text', text));
+      const li = make('li');
+      const link = make('a', `pending-item pending-${item.key}`);
+      link.href = item.href;
+      const icon = make('i');
+      icon.setAttribute('data-lucide', 'chevron-right');
+      icon.setAttribute('aria-hidden', 'true');
+      link.append(make('span', 'pending-text', pendingText(item)), icon);
       li.append(link);
       list.append(li);
     }
-    if (items.length > PENDING_VISIBLE) list.append(make('li', 'pending-more', t('home.pending.more', { count: items.length - PENDING_VISIBLE })));
-  }
-  function renderCyclePlan() {
-    const phase = document.getElementById('cyclePhase');
-    const notice = document.getElementById('cyclePlanNotice');
-    if (!phase || !notice) return;
-    const plan = state.dashboard?.cycle;
-    phase.hidden = !plan?.phase;
-    phase.textContent = plan?.phase ? t('home.cycle.phase', { name: plan.phase.name, objective: plan.phase.objective }) : '';
-    const stateKey = plan?.planState === 'outdated' ? 'home.cycle.planOutdated' : plan?.planState === 'incompatible' ? 'home.cycle.planIncompatible' : null;
-    notice.hidden = !stateKey;
-    notice.textContent = stateKey ? t(stateKey) : '';
-  }
-  function renderWeekProgress() {
-    const line = document.getElementById('weeklyProgress');
-    if (!line) return;
-    const week = state.dashboard?.week;
-    if (!week || !week.planned) { line.hidden = true; line.textContent = ''; return; }
-    const parts = [t('home.metrics.progress', { completed: week.completed, planned: week.planned })];
-    if (week.previousDistanceKm > 0) {
-      const change = Math.round(((week.distanceKm - week.previousDistanceKm) / week.previousDistanceKm) * 100);
-      parts.push(t('home.metrics.delta', { delta: `${change > 0 ? '+' : ''}${change}%` }));
-    }
-    line.textContent = parts.join(' · ');
-    line.hidden = false;
+    const hidden = items.length - PENDING_VISIBLE;
+    if (hidden > 0) list.append(make('li', 'pending-more', plural('home.pending.more', hidden)));
+    if (typeof globalThis.lucide?.createIcons === 'function') globalThis.lucide.createIcons({ nodes: [list] });
   }
   function renderDashboard() {
     renderNextWorkout();
     renderPending();
-    renderCyclePlan();
-    renderWeekProgress();
   }
   async function loadDashboard() {
     const summary = await fetchDashboard();
@@ -1015,7 +1006,6 @@ function setupHomePage() {
       renderMetrics();
       renderShoesWidget();
     }
-    if (distanceChanged) renderNextWorkout();
     if (event.detail?.temperature_unit === 'C' || event.detail?.temperature_unit === 'F') {
       state.temperatureUnit = event.detail.temperature_unit;
       renderNextWorkout();
@@ -1023,7 +1013,6 @@ function setupHomePage() {
     if (weekChanged) {
       state.firstDay = next;
       loadMetrics();
-      loadDashboard();
     }
   });
 
