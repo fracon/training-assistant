@@ -3,6 +3,7 @@ const test=require('node:test');const assert=require('node:assert/strict');
 const {setTimeout:delay}=require('node:timers/promises');
 const {buildServer}=require('../src/server');
 const {readAiConfig}=require('../src/ai/config');
+const {buildContext}=require('../src/ai/context');
 const {createSession,SESSION_COOKIE_NAME}=require('../src/auth/sessions');
 const {fixture,planFor,future}=require('./fixtures/ai/cycle-planning.cjs');
 const {launchChrome}=require('./helpers/chrome.cjs');
@@ -112,6 +113,14 @@ test('Chrome saved-cycle flow: explicit generation, defer, no-op edits, stale pl
 test('Chrome persistence boundaries: closed save, failed reads, unavailable AI, stale responses and lost-generation acknowledgement',async(t)=>{
  const db=fixture();db.prepare('DELETE FROM training_cycles').run();
  db.prepare("INSERT INTO training_cycles(id,user_id,objective,status,target_date) VALUES('history',2,'Historical cycle','completed',?)").run(future(28));
+ db.prepare("UPDATE training_cycles SET status='active' WHERE id='history'").run();
+ const historicalContext=buildContext(db,2,{purpose:'cycle',resourceId:'history'});
+ const historicalPlan=planFor(historicalContext),historicalJson=JSON.stringify(historicalPlan),createdAt=new Date().toISOString();
+ db.prepare('INSERT INTO cycle_plan_proposals(id,user_id,cycle_id,sequence,base_version,plan_json,created_at) VALUES(?,?,?,?,?,?,?)')
+  .run('history-plan',2,'history',1,0,historicalJson,createdAt);
+ db.prepare('INSERT INTO cycle_plan_versions(id,user_id,cycle_id,version,plan_json,context_hash,cycle_hash,fingerprint_json,sources_json,applied_at) VALUES(?,?,?,?,?,?,?,?,?,?)')
+  .run('history-plan',2,'history',1,historicalJson,historicalContext.hash,'synthetic-cycle-hash','{}',JSON.stringify(historicalContext.sources),createdAt);
+ db.prepare("UPDATE training_cycles SET status='completed' WHERE id='history'").run();
  let calls=0,release=null;
  const config=readAiConfig({AI_ENABLED:'true',OPENAI_API_KEY:'synthetic-key'});
  const app=await buildServer({db,sessionCookieSecure:false,aiConfig:config,aiClient:async(payload)=>{calls++;await new Promise(r=>release=r);return {value:planFor(JSON.parse(payload.input[0].content[0].text).context),usage:{input:10,output:20,cached:0},error:null};}});

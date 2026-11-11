@@ -71,7 +71,8 @@ function readCyclePlanning(db,userId,cycleId,service,config,asOf=userToday(db,us
     const selectedProposal=proposals.find((proposal)=>proposalIsUsable(db,userId,cycleId,proposal,appliedView?.version || 0,asOf));
     const summary=summarizeCyclePlanning(cycle,appliedView,proposals,config.enabled,selectedProposal);
     return { available:config.enabled,canGenerate:cycle.status==='active',cycleRevision:cycle.planning_revision,
-      applied:appliedView,proposals,selectedProposalId:selectedProposal?.id || null,summary };
+      applied:appliedView,proposals,selectedProposalId:selectedProposal?.id || null,
+      summary:{...summary,cycleStatus:cycle.status,hasPlanningHistory:Boolean(appliedView || proposals.length)} };
   })();
 }
 function readCyclePlanningSummary(db,userId,cycleId,service,config,asOf=userToday(db,userId)) {

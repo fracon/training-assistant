@@ -412,11 +412,17 @@ async function buildServer(options = {}) {
           aiConfig,
         );
       } catch {
+        const hasPlanningHistory = db.prepare(`SELECT EXISTS (
+          SELECT 1 FROM cycle_plan_versions WHERE user_id=? AND cycle_id=?
+          UNION ALL
+          SELECT 1 FROM cycle_plan_proposals WHERE user_id=? AND cycle_id=?
+        ) AS has_history`).get(userId, cycle.id, userId, cycle.id).has_history === 1;
         planningSummary = {
           status: 'read_error',
           secondary: null,
           available: Boolean(aiConfig.enabled),
           canGenerate: false,
+          hasPlanningHistory,
         };
       }
       planningSummary.cycleStatus = cycle.status;

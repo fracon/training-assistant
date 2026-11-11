@@ -232,6 +232,10 @@
   position: relative;
 }
 
+.cycle-card-actions > [data-action="planning"][hidden] {
+  display: none !important;
+}
+
 .cycle-card-actions .custom-tooltip {
   position: absolute;
   bottom: 110%;

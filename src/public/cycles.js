@@ -36,7 +36,8 @@ let promptOrigin = null;
 let promptCopyTimer = null;
 function planningActionKey(summary) {
   const status=summary?.status;
-  if (summary?.cycleStatus === 'completed' && summary.hasPlanningHistory === false) return null;
+  if (summary?.cycleStatus === 'completed')
+    return summary.hasPlanningHistory ? 'viewPlan' : null;
   if (status==='none' && summary.canGenerate===false) return null;
   return ({
     none: 'generate', pending: 'viewProgress', failed: 'viewDetails',
