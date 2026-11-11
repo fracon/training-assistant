@@ -1647,7 +1647,7 @@
       "invalidFields": "Some fields are invalid.",
       "invalidVersion": "Reload the saved information before saving."
     },
-    "experienceHint": "Background from before your Kinesis history: how long you have run, previous consistency or races completed. Optional, up to 2,000 characters.",
+    "experienceHint": "Helps the AI calibrate your starting point: how long you have been running, races and times, typical weekly volume, past injuries. E.g. “Running for 3 years, about 25 km a week; 10 km in 52 min in 2025.”",
     "cycle": "Goals and target event",
     "cycleOrigin": "Source: current cycle",
     "cycleEmpty": "No active cycle. Create or activate a cycle to include your goal.",
@@ -1674,7 +1674,7 @@
     "period": "Period / target date",
     "yes": "Yes",
     "no": "No",
-    "asOf": "Context as of",
+    "asOf": "Data through",
     "loading": "Loading your context…",
     "legacyNotice": "Earlier supplemental fields and observations are archived, unchanged and excluded from new contexts. They are not confirmed facts or current restrictions.",
     "legacyDownload": "Download my archived records",
@@ -1688,7 +1688,7 @@
       "feedback_pain": "Discomfort report",
       "feedback_has_pain": "Discomfort reported"
     },
-    "shortSubtitle": "Your goals, routine and recorded training history.",
+    "shortSubtitle": "What the AI knows about you and your training, with the source of each detail.",
     "howItWorks": "How your context is assembled",
     "editCycle": "Edit cycle",
     "editAvailability": "Edit availability",
@@ -1710,8 +1710,8 @@
     "effort": "Average RPE",
     "tableHint": "Scroll the table to see all columns.",
     "totalsHint": "Distance and duration use recorded results only. Missing metrics are counted separately; reference sessions are not added again.",
-    "interpretations": "Reusable interpretations",
-    "interpretationsOrigin": "Items produced by workout analyses. Interpretations are not measured metrics.",
+    "interpretations": "Coach hypotheses",
+    "interpretationsOrigin": "Conclusions from workout analyses. Confirm, correct or dismiss them: the AI only uses what you keep.",
     "interpretationsEmpty": "There are no workout-analysis interpretations yet.",
     "interpretationKinds": {
       "pattern": "Pattern",
@@ -1815,7 +1815,76 @@
       "unverified": "Saved. Context selection will be checked when the memory refreshes."
     },
     "analyzed": "Analyzed workout",
-    "analyzedOrigin": "Source: the session, result and feedback the AI analyzes"
+    "analyzedOrigin": "Source: the session, result and feedback the AI analyzes",
+    "stats": {
+      "label": "Summary of the last 4 weeks",
+      "volume": "Volume",
+      "volumeSub": "in the last 4 weeks",
+      "consistency": "Consistency",
+      "consistencySub": "{completed} of {planned} workouts done",
+      "consistencyEmpty": "No workouts planned in the period",
+      "effort": "Average effort",
+      "effortValue": "RPE {value}",
+      "effortTrend": {
+        "up": "Up over the last 2 weeks",
+        "down": "Down over the last 2 weeks",
+        "flat": "Steady over the last 2 weeks",
+        "none": "Not enough reports to compare"
+      },
+      "alerts": "Discomfort",
+      "alertsNone": "No recent reports",
+      "alertsSub": "Latest on {date}",
+      "partial": "Part of the history (recent sessions or weekly totals) was left out of the context; these numbers may be incomplete.",
+      "chartLabel": "Volume per week: {weeks}"
+    },
+    "quality": {
+      "title": "Memory quality",
+      "intro": "The more complete your memory, the more accurate the AI suggestions.",
+      "score": "{done} of {total} in order",
+      "items": {
+        "availability": {
+          "ok": "Availability set for all 7 days",
+          "todo": "Review your weekly availability",
+          "action": "Review"
+        },
+        "cycle": {
+          "ok": "Active cycle with a goal",
+          "todo": "Create a cycle with your goal",
+          "action": "Create cycle"
+        },
+        "effort": {
+          "ok": "Recent workouts have their effort recorded",
+          "todo": "{count} recent workout(s) without perceived effort",
+          "action": "Record"
+        },
+        "results": {
+          "ok": "No recent workout without a result",
+          "todo": "{count} past workout(s) without a result",
+          "action": "Record"
+        },
+        "experience": {
+          "ok": "Previous experience provided",
+          "todo": "Tell us about your previous running experience",
+          "action": "Fill in"
+        },
+        "plan": {
+          "ok": "Cycle plan applied and current",
+          "none": "No plan applied to the cycle",
+          "outdated": "Cycle plan is outdated",
+          "incompatible": "Plan uses an incompatible effort scale",
+          "action": "Open cycles"
+        }
+      }
+    },
+    "statusDone": "Done",
+    "statusPlanned": "Planned",
+    "rpeChip": "RPE {value}",
+    "weeklyRow": "{sessions} workouts · RPE {rpe}",
+    "weeklyMissing": "{count} without metrics",
+    "availabilityLocation": "Location: {location}",
+    "experienceCount": "{count} of {max} characters",
+    "unsaved": "Unsaved changes",
+    "diagnostics": "Administrator diagnostics"
   },
   "cyclePlanning": {
     "admin": "Administrator details",

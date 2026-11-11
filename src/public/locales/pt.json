@@ -1647,7 +1647,7 @@
       "invalidFields": "Há campos inválidos.",
       "invalidVersion": "Recarregue as informações salvas antes de salvar."
     },
-    "experienceHint": "Contexto anterior ao seu histórico no Kinesis: há quanto tempo corre, regularidade anterior ou provas concluídas. Opcional, até 2.000 caracteres.",
+    "experienceHint": "Ajuda a IA a calibrar o ponto de partida: há quanto tempo corre, provas e tempos, volume semanal típico, lesões passadas. Ex.: “Corro há 3 anos, cerca de 25 km por semana; 10 km em 52 min em 2025.”",
     "cycle": "Objetivos e prova-alvo",
     "cycleOrigin": "Origem: ciclo atual",
     "cycleEmpty": "Nenhum ciclo ativo. Crie ou ative um ciclo para incluir seu objetivo.",
@@ -1674,7 +1674,7 @@
     "period": "Período / data-alvo",
     "yes": "Sim",
     "no": "Não",
-    "asOf": "Contexto em",
+    "asOf": "Dados até",
     "loading": "Carregando seu contexto…",
     "legacyNotice": "Campos complementares e observações anteriores estão arquivados, preservados e excluídos dos novos contextos. Não são fatos confirmados nem restrições atuais.",
     "legacyDownload": "Baixar meus registros arquivados",
@@ -1688,7 +1688,7 @@
       "feedback_pain": "Relato de desconforto",
       "feedback_has_pain": "Desconforto relatado"
     },
-    "shortSubtitle": "Seus objetivos, rotina e histórico de treinos registrados.",
+    "shortSubtitle": "O que a IA sabe sobre você e seus treinos, com a origem de cada informação.",
     "howItWorks": "Como seu contexto é reunido",
     "editCycle": "Editar ciclo",
     "editAvailability": "Editar disponibilidade",
@@ -1710,8 +1710,8 @@
     "effort": "RPE médio",
     "tableHint": "Role a tabela para consultar todas as colunas.",
     "totalsHint": "Distância e duração usam apenas resultados registrados. Métricas ausentes são contadas à parte; sessões de referência não são somadas novamente.",
-    "interpretations": "Interpretações reutilizáveis",
-    "interpretationsOrigin": "Itens produzidos por análises de treino. Interpretações não são métricas medidas.",
+    "interpretations": "Hipóteses do treinador",
+    "interpretationsOrigin": "Conclusões das análises de treino. Confirme, corrija ou descarte: a IA usa apenas o que você mantém.",
     "interpretationsEmpty": "Ainda não há interpretações de análises.",
     "interpretationKinds": {
       "pattern": "Padrão",
@@ -1815,7 +1815,76 @@
       "unverified": "Salvo. A seleção para o contexto será verificada ao atualizar a memória."
     },
     "analyzed": "Treino analisado",
-    "analyzedOrigin": "Origem: a sessão, o resultado e o feedback que a IA analisa"
+    "analyzedOrigin": "Origem: a sessão, o resultado e o feedback que a IA analisa",
+    "stats": {
+      "label": "Resumo das últimas 4 semanas",
+      "volume": "Volume",
+      "volumeSub": "nas últimas 4 semanas",
+      "consistency": "Consistência",
+      "consistencySub": "{completed} de {planned} treinos realizados",
+      "consistencyEmpty": "Nenhum treino planejado no período",
+      "effort": "Esforço médio",
+      "effortValue": "RPE {value}",
+      "effortTrend": {
+        "up": "Subiu nas últimas 2 semanas",
+        "down": "Caiu nas últimas 2 semanas",
+        "flat": "Estável nas últimas 2 semanas",
+        "none": "Relatos insuficientes para comparar"
+      },
+      "alerts": "Desconforto",
+      "alertsNone": "Nenhum relato recente",
+      "alertsSub": "Último em {date}",
+      "partial": "Parte do histórico (sessões recentes ou totais semanais) ficou fora do contexto; estes números podem estar incompletos.",
+      "chartLabel": "Volume por semana: {weeks}"
+    },
+    "quality": {
+      "title": "Qualidade da memória",
+      "intro": "Quanto mais completa a memória, mais precisas as sugestões da IA.",
+      "score": "{done} de {total} em ordem",
+      "items": {
+        "availability": {
+          "ok": "Disponibilidade dos 7 dias configurada",
+          "todo": "Revise sua disponibilidade semanal",
+          "action": "Revisar"
+        },
+        "cycle": {
+          "ok": "Ciclo ativo com objetivo",
+          "todo": "Crie um ciclo com seu objetivo",
+          "action": "Criar ciclo"
+        },
+        "effort": {
+          "ok": "Treinos recentes com esforço registrado",
+          "todo": "{count} treino(s) recente(s) sem esforço percebido",
+          "action": "Registrar"
+        },
+        "results": {
+          "ok": "Nenhum treino recente sem resultado",
+          "todo": "{count} treino(s) passado(s) sem resultado",
+          "action": "Registrar"
+        },
+        "experience": {
+          "ok": "Experiência anterior informada",
+          "todo": "Conte sua experiência anterior com corrida",
+          "action": "Preencher"
+        },
+        "plan": {
+          "ok": "Planejamento do ciclo aplicado e atual",
+          "none": "Nenhum planejamento aplicado ao ciclo",
+          "outdated": "Planejamento do ciclo desatualizado",
+          "incompatible": "Planejamento com escala de esforço incompatível",
+          "action": "Abrir ciclos"
+        }
+      }
+    },
+    "statusDone": "Concluído",
+    "statusPlanned": "Planejado",
+    "rpeChip": "RPE {value}",
+    "weeklyRow": "{sessions} treinos · RPE {rpe}",
+    "weeklyMissing": "{count} sem métricas",
+    "availabilityLocation": "Local: {location}",
+    "experienceCount": "{count} de {max} caracteres",
+    "unsaved": "Alterações não salvas",
+    "diagnostics": "Diagnóstico do administrador"
   },
   "cyclePlanning": {
     "admin": "Detalhes administrativos",

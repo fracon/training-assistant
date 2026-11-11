@@ -130,7 +130,7 @@ function memoryOverview(db, userId, config, asOf = null, { purpose = 'cycle', re
       weekly: context.weekly.map((row) => ({
         weekStart: row.weekStart, planned: row.planned, completed: row.completed,
         distanceKm: row.distanceKm, durationSeconds: row.durationSeconds,
-        missingResults: row.missingResults, averageRpe: row.averageRpe,
+        missingResults: row.missingResults, averageRpe: row.averageRpe, rpeReports: row.rpeCount,
         href: `/calendar.html`,
       })),
       comparables: context.comparables.map(session),

@@ -27,6 +27,7 @@
   </div>
   <div id="memoryPurposePanel" role="tabpanel" aria-labelledby="purposeTab-cycle">
   <p id="purposeTask" class="memory-task"></p>
+  <div id="memoryInsights" class="memory-insights"></div>
   <div id="selectionNotice" class="field-hint memory-selection" hidden></div>
   <div id="memoryError" class="form-error hidden" role="alert" tabindex="-1"></div>
   <button id="reloadMemory" class="btn-secondary memory-recovery" type="button" hidden data-i18n="memory.retry">Try again</button>
@@ -37,13 +38,13 @@
     <h2 id="profileHeading" data-i18n="memory.profile">Previous running experience</h2>
     <p class="field-hint" id="experienceHint" data-i18n="memory.experienceHint">Optional background from before your Kinesis history.</p>
     <form id="profileForm" novalidate>
-      <div class="field"><label class="field-label" for="experience" data-i18n="memory.experience">Previous running experience (optional)</label><textarea class="prompt-textarea" id="experience" maxlength="2000" rows="3" aria-describedby="experienceHint"></textarea></div>
-      <p id="profileSource" class="field-hint"></p>
-      <div class="form-actions"><button class="btn-primary" type="submit" disabled data-i18n="memory.saveProfile">Save experience</button></div>
+      <div class="field"><label class="field-label" for="experience" data-i18n="memory.experience">Previous running experience (optional)</label><textarea class="prompt-textarea" id="experience" maxlength="2000" rows="4" aria-describedby="experienceHint experienceCount"></textarea></div>
+      <div class="memory-profile-meta"><p id="profileSource" class="field-hint"></p><p id="experienceCount" class="field-hint memory-counter"></p></div>
+      <div class="form-actions"><span id="experienceUnsaved" class="memory-unsaved" role="status" hidden data-i18n="memory.unsaved">Unsaved changes</span><button class="btn-primary" type="submit" disabled data-i18n="memory.saveProfile">Save experience</button></div>
     </form>
   </section>
   <p id="legacyNotice" class="field-hint" hidden><span data-i18n="memory.legacyNotice">Previous supplemental records are archived and excluded from new contexts.</span> <a class="btn-secondary" href="/api/ai/memory/legacy" download="kinesis-legacy-memory.json" data-i18n="memory.legacyDownload">Download my archived records</a></p>
-  <details id="memoryDebug" class="shoe-card memory-section" hidden aria-labelledby="debugHeading">
+  <details id="memoryDebug" class="shoe-card memory-section memory-diagnostics" hidden aria-labelledby="debugHeading">
     <summary id="debugHeading" data-i18n="memory.debug">Administrator: own prompt and context</summary>
     <p class="field-hint" data-i18n="memory.debugHint">Free local preview. No model request is sent.</p>
     <form id="previewForm" novalidate>

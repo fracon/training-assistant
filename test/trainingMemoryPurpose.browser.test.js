@@ -145,6 +145,25 @@ test('Chrome: training memory shows each AI task context through accessible tabs
   await wait("document.getElementById('purposeTask').textContent.includes('Tiros') && document.getElementById('memoryError').classList.contains('hidden')");
   assert.deepEqual((await evaluate(state)).selected, ['analysis']);
 
+  // Summary tiles, the quality checklist and the experience editor cues.
+  const insights = await evaluate(`({
+    labels: [...document.querySelectorAll('.memory-stat-label')].map((label) => label.textContent),
+    concerns: document.querySelector('.memory-stat-alert .memory-stat-value')?.textContent,
+    experience: (() => { const item = document.querySelector('[data-quality="experience"]'); return item && { ok: item.classList.contains('is-ok'), href: item.querySelector('a')?.getAttribute('href') }; })(),
+    counter: document.getElementById('experienceCount').textContent,
+    unsaved: document.getElementById('experienceUnsaved').hidden,
+  })`);
+  assert.deepEqual(insights.labels, [PT.stats.volume, PT.stats.consistency, PT.stats.effort, PT.stats.alerts]);
+  assert.equal(insights.concerns, '1', 'the reported discomfort is counted');
+  assert.deepEqual(insights.experience, { ok: false, href: '#experience' });
+  assert.equal(insights.counter, PT.experienceCount.replace('{count}', '0').replace('{max}', '2000'));
+  assert.equal(insights.unsaved, true);
+  await evaluate("const field = document.getElementById('experience'); field.value = 'Corro há 2 anos.'; field.dispatchEvent(new Event('input', { bubbles: true }))");
+  assert.equal(await evaluate("document.getElementById('experienceUnsaved').hidden"), false);
+  assert.equal(await evaluate("document.getElementById('experienceCount').textContent"), PT.experienceCount.replace('{count}', '16').replace('{max}', '2000'));
+  await evaluate("document.getElementById('profileForm').requestSubmit()");
+  await wait("document.getElementById('experienceUnsaved').hidden && document.querySelector('[data-quality=\"experience\"]').classList.contains('is-ok')");
+
   // Language changes rerender the selected task in place.
   await evaluate(`document.querySelector('.lang-switch [data-lang="en-US"]').click()`);
   await wait("document.documentElement.lang === 'en-US'");
