@@ -44,8 +44,10 @@ test('weekly structured schema exposes the same numeric bounds as domain validat
 
 test('weekly model projection handles absent evidence and keeps full execution-only fields out of provider context', () => {
   assert.equal(projectContextForModel(null), null);
-  const cycle = { purpose: 'cycle', hash: 'kept' };
-  assert.equal(projectContextForModel(cycle), cycle);
+  // Every purpose sends the model the same compact projection: no snapshot hash.
+  const cycle = { purpose: 'cycle', hash: 'internal' };
+  assert.deepEqual(projectContextForModel(cycle), { purpose: 'cycle' });
+  assert.equal(cycle.hash, 'internal');
   const noWeather = projectContextForModel({
     purpose: 'workouts', weather: 'not-an-array', hash: 'internal',
     sources: [{ type: 'weather', id: 'monday:2026-10-26', version: 'internal' }],

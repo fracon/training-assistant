@@ -1,6 +1,7 @@
 'use strict';
 
 const { createHash } = require('node:crypto');
+const { userToday } = require('../time-zone');
 const PROFILE_FIELDS = ['experience'];
 class AiError extends Error {
   constructor(code, status = 400, details = {}) {
@@ -16,7 +17,7 @@ function hash(value) {
 function activeOwner(db, userId) {
   const user = db
     .prepare(
-      'SELECT id, role, is_active, preferred_lang, distance_unit, temperature_unit FROM users WHERE id = ?',
+      'SELECT id, role, is_active, preferred_lang, distance_unit, temperature_unit, time_zone FROM users WHERE id = ?',
     )
     .get(userId);
   if (!user || user.is_active !== 1)
@@ -86,7 +87,7 @@ function saveProfile(db, userId, body, now = new Date().toISOString()) {
           authority: 'user_report',
           source: 'prior_experience_editor',
           state: 'current',
-          observedOn: now.slice(0, 10),
+          observedOn: userToday(db, userId, new Date(now)),
           updatedAt: now,
         };
       db.prepare(

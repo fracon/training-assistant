@@ -3,8 +3,13 @@
 const { AiError, hash, readMemory, activeOwner, date } = require('./memory');
 const { readAiConfig } = require('./config');
 const { rpeIssue } = require('./cycle-plan-schema');
-const POLICY_VERSION = 'training-context-v5';
-const ANALYSIS_POLICY_VERSION = 'training-analysis-context-v1';
+const { localDate } = require('../time-zone');
+const POLICY_VERSION = 'training-context-v6';
+const ANALYSIS_POLICY_VERSION = 'training-analysis-context-v2';
+// Conservative token estimate for budgeting: one token per three UTF-8 bytes.
+// Real JSON/PT-BR text averages closer to four, so this overestimates.
+const BYTES_PER_TOKEN = 3;
+const DAY_ORDER = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 const TRAINING_COLUMNS = `id, dia, tipo, treino, detalhes, fc_alvo, rpe, completed, training_cycle_id,
   fit_distance, fit_duration, fit_avg_pace, fit_avg_hr, fit_max_hr, fit_elevation_gain, fit_calories,
   result_data_source, tenis, periodo, location, previsao, observacoes, feedback_shoe, feedback_shoe_id, has_smartwatch, fit_summary_json, feedback_rpe, feedback_notas, feedback_weather, feedback_terrain,
@@ -12,17 +17,31 @@ const TRAINING_COLUMNS = `id, dia, tipo, treino, detalhes, fc_alvo, rpe, complet
 function dayOffset(day, days) {
   return new Date(Date.parse(day) + days * 86400000).toISOString().slice(0, 10);
 }
+// What the model receives. The stored snapshot keeps every field and source
+// version (freshness and interpretation evidence depend on them); the model
+// needs neither the version hashes nor empty planned/recorded/reported fields,
+// whose absence is already listed in each session's `gaps`.
+const SESSION_AUTHORITIES = new Set(['planned', 'recorded_fact', 'user_report']);
+function compactForModel(value) {
+  if (Array.isArray(value)) return value.map(compactForModel);
+  if (!value || typeof value !== 'object') return value;
+  if (typeof value.type === 'string' && Object.hasOwn(value, 'id') &&
+      Object.hasOwn(value, 'version'))
+    return { type: value.type, id: value.id };
+  const session = SESSION_AUTHORITIES.has(value.authority);
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([, item]) => !session || (item !== null && item !== undefined && item !== ''))
+      .map(([key, item]) => [key, compactForModel(item)]),
+  );
+}
 function projectContextForModel(context) {
-  if (context?.purpose === 'analysis') {
-    const result = { ...context };
-    delete result._freshnessExecutionId;
-    return result;
-  }
-  if (!context || context.purpose !== 'workouts') return context;
+  if (!context || typeof context !== 'object') return context;
   const result = { ...context };
+  delete result._freshnessExecutionId;
   delete result.hash;
-  const limitations = new Set();
-  if (Array.isArray(context.weather))
+  if (context.purpose === 'workouts' && Array.isArray(context.weather)) {
+    const limitations = new Set();
     result.weather = context.weather.map((evidence) => {
       for (const item of evidence?.limitations || [])
         if (typeof item === 'string') limitations.add(item);
@@ -35,26 +54,16 @@ function projectContextForModel(context) {
           .map((key) => [key, evidence[key]]),
       );
     });
-  if (limitations.size) result.weatherLimitations = [...limitations];
-  const stripSourceVersions = (value) => {
-    if (Array.isArray(value)) return value.map(stripSourceVersions);
-    if (!value || typeof value !== 'object') return value;
-    if (typeof value.type === 'string' && Object.hasOwn(value, 'id') &&
-        Object.hasOwn(value, 'version'))
-      return { type: value.type, id: value.id };
-    return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [key, stripSourceVersions(item)]),
-    );
-  };
-  return stripSourceVersions(result);
+    if (limitations.size) result.weatherLimitations = [...limitations];
+  }
+  return compactForModel(result);
 }
 
-// A conservative byte upper bound, not a claim to be the model's tokenizer.
-// Workouts retain the complete evidence in the execution snapshot, while the
-// budget uses the smaller model projection that omits owner/query bindings.
+// Estimated model tokens of the projection the model receives. A
+// conservative estimate, not the model's tokenizer.
 function tokenBound(value) {
   const bounded = projectContextForModel(value);
-  return Buffer.byteLength(JSON.stringify(bounded), 'utf8');
+  return Math.ceil(Buffer.byteLength(JSON.stringify(bounded), 'utf8') / BYTES_PER_TOKEN);
 }
 function duration(value) {
   if (typeof value !== 'string' || !/^\d+(?::[0-5]\d){1,2}$/.test(value))
@@ -137,7 +146,7 @@ function buildContext(
   {
     purpose,
     resourceId = null,
-    asOf = new Date().toISOString().slice(0, 10),
+    asOf = null,
     config = readAiConfig(),
     taskDate = null,
     weather = [],
@@ -147,8 +156,10 @@ function buildContext(
 ) {
   if (!['cycle', 'workouts', 'analysis'].includes(purpose))
     throw new AiError('invalidPurpose');
-  date(asOf);
   const user = activeOwner(db, userId);
+  // "Today" is the athlete's civil date in their stored time zone (UTC when unknown).
+  if (asOf === null || asOf === undefined) asOf = localDate(user.time_zone);
+  date(asOf);
   const memory = readMemory(db, userId);
   const cycle = db
     .prepare(
@@ -455,7 +466,8 @@ function buildContext(
     .prepare(
       'SELECT day_key,can_train,available_periods,available_minutes,location,revision,updated_at FROM ai_coach_availability WHERE user_id = ? ORDER BY day_key',
     )
-    .all(userId);
+    .all(userId)
+    .sort((a, b) => DAY_ORDER.indexOf(a.day_key) - DAY_ORDER.indexOf(b.day_key));
   if (availability.length !== 7)
     context.gaps.push('Weekly availability is incomplete.');
   const availabilitySource = (row) => ({
@@ -463,12 +475,12 @@ function buildContext(
     id: row.day_key,
     version: hash(row),
   });
-  // Configured availability is essential for workouts. Missing days stay missing.
-  if (purpose === 'workouts')
-    for (const row of availability) {
-      context.availability.push(row);
-      addReference(availabilitySource(row));
-    }
+  // Configured availability is small and essential to every task: it is always
+  // selected whole, in week order. Missing days stay missing.
+  for (const row of availability) {
+    context.availability.push(row);
+    addReference(availabilitySource(row));
+  }
   if (tokenBound(context) > budget)
     throw new AiError('criticalContextTooLarge', 413);
   for (const row of recent.filter((row) => recentPriority(row) < 4)) {
@@ -486,9 +498,6 @@ function buildContext(
         reason: 'context_budget',
       });
   }
-  if (purpose !== 'workouts')
-    for (const row of availability)
-      select('availability', row, [availabilitySource(row)]);
   if (purpose === 'cycle') {
     context.previousCycles = [];
     for (const previous of db
@@ -720,6 +729,9 @@ function buildContext(
       { reason: 'selection_omissions', count: context.omissions.length },
       ...context.omissions.slice(0, 3),
     ];
+  // Selection is by priority (concerns and hard efforts first); presentation
+  // and the model read the selected sessions newest first.
+  context.recent.sort((a, b) => b.date.localeCompare(a.date) || Number(b.source.id) - Number(a.source.id));
   const snapshot = { ...context, hash: hash(context) };
   if (tokenBound(snapshot) > budget) throw new AiError('contextTooLarge', 413);
   return snapshot;

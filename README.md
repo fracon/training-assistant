@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, request and review weekly AI proposals, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized training-request prompts for use with an external AI.
 
-Current application version: **0.34.0** (active beta development). The Garmin Connect integration is opt-in per installation, in single-account `pilot` mode (default) or `multiuser` mode; see [Garmin Connect integration](#garmin-connect-integration).
+Current application version: **0.35.0** (active beta development). The Garmin Connect integration is opt-in per installation, in single-account `pilot` mode (default) or `multiuser` mode; see [Garmin Connect integration](#garmin-connect-integration).
 
 ## Welcome tour
 

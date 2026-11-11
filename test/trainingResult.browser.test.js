@@ -95,7 +95,8 @@ test('the session page requires a realized RPE before saving, generating or uplo
       assert.ok(saved.feedback_rpe >= 1 && saved.feedback_rpe <= 5);
       assert.equal(request.context.resource.report.authority, 'user_report');
       assert.equal(request.context.resource.report.feedback_rpe, saved.feedback_rpe, 'the analysis context reads the persisted realized effort');
-      assert.equal(request.context.resource.report.feedback_notas, saved.feedback_notas, 'the analysis context reads the persisted feedback notes');
+      // The model projection omits empty (null or '') report fields.
+      assert.equal(request.context.resource.report.feedback_notas ?? null, saved.feedback_notas || null, 'the analysis context reads the persisted feedback notes');
       if (request.context.resource.actual.result_data_source === 'fit_upload')
         assert.ok(request.context.resource.actual.fitLaps.length > 0, 'the simulated provider receives bounded, decoded FIT lap evidence');
       const evidence = [`${request.context.resource.source.type}:${request.context.resource.source.id}`];
@@ -245,6 +246,8 @@ test('the session page requires a realized RPE before saving, generating or uplo
       ({ method, url }) => !['GET', 'HEAD'].includes(method)
         && url.startsWith(origin)
         && !url.startsWith(`${origin}/api/users/me/language`)
+        // The shell keeps the account time zone in step with the browser.
+        && !url.startsWith(`${origin}/api/users/me/time-zone`)
     );
     const waitFor = async (expression, description, timeoutMs = 15000) => {
       // A poll that spans a navigation sees its execution context destroyed;

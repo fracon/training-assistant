@@ -218,6 +218,9 @@ for (const purpose of ['workouts', 'analysis']) {
   });t.after(()=>service.stop());
   const proposal=enqueue(service);assert.equal((await complete(service,proposal.id)).state,'completed');
   applyCyclePlan(db,1,'cycle',proposal.id,{expected_version:0},service);
+  // A tight (estimated-token) budget leaves room for reports and the plan's
+  // architecture but not for its optional phase and adaptation prose.
+  config.limits.AI_CONTEXT_TOKENS=3000;
   const args={purpose,resourceId:purpose==='analysis'?requested:null,config};
   const context=buildContext(db,1,args);
   const report=context.recent.find(r=>r.source.id===String(recent));
@@ -277,4 +280,15 @@ test('saving identical canonical cycle values keeps planning fresh, including nu
  updateCycle(db,'cycle',1,{primary_goal:'Changed'});updateCycle(db,'cycle',1,{primary_goal:before.primary_goal});
  assert.equal(db.prepare("SELECT planning_revision FROM training_cycles WHERE id='cycle'").get().planning_revision,before.planning_revision+2);
  assert.equal(readCyclePlanning(db,1,'cycle',service,config).applied.outdated,true);
+});
+
+test('applying a plan uses the athlete civil date, like generation and planning reads (Codex review on #94)',async(t)=>{
+ const db=fixture();const {service}=harness(db);t.after(async()=>{await service.stop();db.close();});
+ const proposal=enqueue(service);assert.equal((await complete(service,proposal.id)).state,'completed');
+ assert.equal(JSON.parse(db.prepare('SELECT plan_json FROM cycle_plan_proposals WHERE id=?').get(proposal.id).plan_json).start,today);
+ // 01:30 UTC on the next day is still "today" in São Paulo (UTC-3).
+ const lateEvening=`${future(1)}T01:30:00.000Z`;
+ assert.throws(()=>applyCyclePlan(db,1,'cycle',proposal.id,{expected_version:0},service,lateEvening),/planningOutdated/,'an account without a zone keeps the UTC cutoff');
+ db.prepare("UPDATE users SET time_zone='America/Sao_Paulo' WHERE id=1").run();
+ assert.equal(applyCyclePlan(db,1,'cycle',proposal.id,{expected_version:0},service,lateEvening).appliedVersion,1);
 });

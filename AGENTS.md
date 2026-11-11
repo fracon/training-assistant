@@ -8,7 +8,7 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.34.0`); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.35.0`); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
@@ -796,14 +796,23 @@ changing this service. Update README, AGENTS, the plan and affected configuratio
 API/privacy documentation with delivered behavior and honest branch status.
 
 Context selection priorities and explicit module boundaries are defined in the
-[foundation contract](docs/ai-foundation.md#context-extension-training-context-v5).
+[foundation contract](docs/ai-foundation.md#context-extension-training-context-v5),
+corrected by [training-context-v6](docs/ai-foundation.md#context-correction-training-context-v6-issue-90).
 Keep complete recent discomfort/RPE 4–5 reports ahead of optional planning;
 refuse insufficient mandatory budgets rather than silently dropping reports.
 Applied plan identity/provenance stays mandatory; select its architecture and
 prose through the shared budget path after recent reports and availability,
 recording omissions. Do not let optional planning cause mandatory-context refusal.
 Do not duplicate requested sessions in recent/upcoming/comparables or count
-references as extra totals. Include final metadata in the byte bound.
+references as extra totals. Include final metadata in the budget. The budget
+(`AI_CONTEXT_TOKENS`) and input reservation count estimated model tokens (one per
+three UTF-8 bytes of the model projection), never raw bytes: a byte bound starved
+the context (#90). Every configured availability day is mandatory for every
+purpose, in week order. Recent sessions are selected by priority and stored
+newest first. The model projection drops snapshot hashes, source versions and
+empty session fields; the stored snapshot keeps them. "Today" (`asOf`) is the
+account's civil date in `users.time_zone` (UTC when absent), kept in step with the
+browser by the shell through `PUT /api/users/me/time-zone`.
 `src/public/shared/package.json` scopes shared JS as ES modules; the root,
 backend and legacy `public/form-state.js` remain CommonJS-compatible. Do not
 remove that scope, introduce top-level await into synchronous shared imports,

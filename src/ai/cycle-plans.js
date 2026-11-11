@@ -1,4 +1,5 @@
 'use strict';
+const { userToday } = require('../time-zone');
 const { AiError, activeOwner, exactKeys, hash } = require('./memory');
 const { contextIsCurrent } = require('./context');
 const { validatePlan, rpeIssue } = require('./cycle-plan-schema');
@@ -53,7 +54,7 @@ function summarizeCyclePlanning(cycle,applied,proposals,available,selected) {
   else status='none';
   return { status,secondary,available:Boolean(available),canGenerate:Boolean(available && cycle.status==='active') };
 }
-function readCyclePlanning(db,userId,cycleId,service,config,asOf=new Date().toISOString().slice(0,10)) {
+function readCyclePlanning(db,userId,cycleId,service,config,asOf=userToday(db,userId)) {
   return db.transaction(()=>{
     const cycle=ownCycle(db,userId,cycleId);
     const applied=appliedPlan(db,userId,cycleId);
@@ -73,7 +74,7 @@ function readCyclePlanning(db,userId,cycleId,service,config,asOf=new Date().toIS
       applied:appliedView,proposals,selectedProposalId:selectedProposal?.id || null,summary };
   })();
 }
-function readCyclePlanningSummary(db,userId,cycleId,service,config,asOf=new Date().toISOString().slice(0,10)) {
+function readCyclePlanningSummary(db,userId,cycleId,service,config,asOf=userToday(db,userId)) {
   return db.transaction(()=>{
     const cycle=ownCycle(db,userId,cycleId);
     const applied=appliedPlan(db,userId,cycleId);
@@ -121,7 +122,8 @@ function applyCyclePlan(db,userId,cycleId,proposalId,body,service,now=new Date()
     const context=JSON.parse(row.context_json);
     const plan=JSON.parse(proposal.plan_json);
     if (rpeIssue(plan)) throw new AiError('planningRpeIncompatible',409);
-    if (plan.start < now.slice(0,10)) throw new AiError('planningOutdated',409);
+    // Same cutoff as generation and planning reads: the athlete's civil date.
+    if (plan.start < userToday(db,userId,new Date(now))) throw new AiError('planningOutdated',409);
     if (context.resource.id!==cycleId || !validatePlan(plan,context)) throw new AiError('invalidPlanningResponse',409);
     db.prepare('INSERT INTO cycle_plan_versions(id,user_id,cycle_id,version,plan_json,context_hash,cycle_hash,fingerprint_json,sources_json,applied_at) VALUES (?,?,?,?,?,?,?,?,?,?)').run(proposal.id,userId,cycleId,version+1,proposal.plan_json,context.hash,hash(cycle),JSON.stringify({hash:context.hash,asOf:context.asOf,purpose:context.purpose,resource:{id:cycleId},policyVersion:context.policyVersion}),JSON.stringify(context.sources),now);
     return {appliedVersion:version+1,alreadyApplied:false};

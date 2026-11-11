@@ -24,7 +24,7 @@ function fixture(t) {
 test('recent discomfort and RPE survive the default budget under seven verbose upcoming sessions', (t) => {
   const { db, config, session, args } = fixture(t);
   session(1, '2026-10-13', '', 'yes', 'Synthetic dated discomfort', 5);
-  for (let id = 2; id <= 8; id++) session(id, `2026-10-${13 + id}`, 'x'.repeat(340));
+  for (let id = 2; id <= 8; id++) session(id, `2026-10-${13 + id}`, 'x'.repeat(6000));
   const context = buildContext(db, 1, args);
   assert.equal(context.recent.length, 1, `upcoming=${context.upcoming.length}, recent=${context.recent.length}`);
   assert.equal(context.recent[0].report.feedback_pain, 'Synthetic dated discomfort');
@@ -38,8 +38,8 @@ for (const purpose of ['cycle', 'workouts', 'analysis']) {
   test(`${purpose} protects recent reports, required sources and configured workout availability before future prose`, (t) => {
     const { db, config, session, args } = fixture(t);
     session(1, '2026-10-12', '', 'yes', 'Synthetic reported discomfort', 5);
-    session(2, '2026-10-13', 'x'.repeat(18000), 'no', null, 4);
-    for (let id = 3; id <= 9; id++) session(id, `2026-10-${12 + id}`, 'x'.repeat(5000));
+    session(2, '2026-10-13', 'x'.repeat(54000), 'no', null, 4);
+    for (let id = 3; id <= 9; id++) session(id, `2026-10-${12 + id}`, 'x'.repeat(15000));
     const days = require('../src/availability').DAY_KEYS;
     for (const day of days) db.prepare(`INSERT INTO ai_coach_availability
       (user_id,day_key,can_train,available_periods,available_minutes,location)
@@ -55,7 +55,8 @@ for (const purpose of ['cycle', 'workouts', 'analysis']) {
     assert.equal(context.recent.find((r) => r.source.id === '2').planned.detalhes, undefined);
     assert.equal(context.cycle.id, 'cycle');
     assert.ok(context.sources.some((r) => r.type === 'cycle' && r.id === 'cycle'));
-    if (purpose === 'workouts') assert.equal(context.availability.length, 7);
+    // Availability is mandatory for every purpose, whole and in week order.
+    assert.deepEqual(context.availability.map((row) => row.day_key), days);
     if (purpose === 'analysis') assert.equal(context.resource.source.id, '1');
     if (purpose === 'cycle') assert.equal(context.resource.id, 'cycle');
     assert.ok(context.omissions.length);
@@ -65,16 +66,37 @@ for (const purpose of ['cycle', 'workouts', 'analysis']) {
   });
 }
 
+test('upcoming sessions try full detail, then compact planning, then an explicit whole-record omission', (t) => {
+  const { db, config, session, args } = fixture(t);
+  config.limits.AI_CONTEXT_TOKENS = 3000;
+  for (let id = 1; id <= 60; id++) session(id, '2026-10-20', 'x'.repeat(900));
+  const context = buildContext(db, 1, args);
+  assert.ok(context.upcoming.length > 0 && context.upcoming.length < 60);
+  // Earliest sessions keep full detail, the next falls back to compact planning,
+  // and the rest are omitted whole and counted.
+  assert.ok(context.upcoming[0].planned.detalhes);
+  assert.equal(context.upcoming.at(-1).planned.detalhes, undefined);
+  assert.ok(tokenBound(context) <= config.limits.AI_CONTEXT_TOKENS);
+  assert.equal(context.omissions[0].reason, 'selection_omissions');
+  assert.ok(context.omissions.some((item) => item.type === 'upcoming' && item.reason === 'context_budget'));
+  assert.ok(context.omissions[0].count >= 60 - context.upcoming.length, 'every omitted upcoming session is counted');
+});
+
 test('an oversubscribed recent list retains concern/effort reports before newer low-priority planning details', (t) => {
   const { session, db, args, config } = fixture(t);
-  session(1, '2026-10-01', 'x'.repeat(9000), 'yes', 'Whole dated report', 2);
-  session(2, '2026-10-02', 'x'.repeat(9000), 'no', null, 5);
-  session(3, '2026-10-03', 'x'.repeat(9000), null, null, 4);
-  for (let id = 4; id <= 20; id++) session(id, '2026-10-13', 'x'.repeat(9000), 'no', null, 2);
+  session(1, '2026-10-01', 'x'.repeat(27000), 'yes', 'Whole dated report', 2);
+  session(2, '2026-10-02', 'x'.repeat(27000), 'no', null, 5);
+  session(3, '2026-10-03', 'x'.repeat(27000), null, null, 4);
+  // Compact sessions are small, so oversubscribing the default budget takes many.
+  for (let id = 4; id <= 240; id++) session(id, '2026-10-13', 'x'.repeat(27000), 'no', null, 2);
   const context = buildContext(db, 1, args);
-  assert.deepEqual(context.recent.slice(0, 3).map((r) => r.source.id), ['1', '2', '3']);
-  assert.equal(context.recent[0].report.feedback_pain, 'Whole dated report');
-  assert.ok(context.recent.length < 20);
+  const ids = context.recent.map((r) => r.source.id);
+  for (const id of ['1', '2', '3']) assert.ok(ids.includes(id), `report ${id} is retained`);
+  // Selected by priority, presented newest first.
+  assert.deepEqual(ids.slice(-3), ['3', '2', '1']);
+  assert.ok(context.recent.every((r, i, all) => i === 0 || all[i - 1].date >= r.date));
+  assert.equal(context.recent.find((r) => r.source.id === '1').report.feedback_pain, 'Whole dated report');
+  assert.ok(context.recent.length < 240);
   assert.ok(context.recent.length >= 3);
   assert.ok(context.recent.every((r) => r.planned.detalhes === undefined));
   assert.ok(context.omissions.some((r) => r.reason === 'selection_omissions'));
@@ -85,9 +107,9 @@ test('an oversubscribed recent list retains concern/effort reports before newer 
 
 test('whole reports and requested resources fail explicitly when required material cannot fit', (t) => {
   const { db, session, args } = fixture(t);
-  session(1, '2026-10-13', '', 'yes', 'full report '.repeat(2000), 5);
+  session(1, '2026-10-13', '', 'yes', 'full report '.repeat(6000), 5);
   assert.throws(() => buildContext(db, 1, args), (e) => e.status === 413 && e.code === 'criticalContextTooLarge');
-  db.prepare("UPDATE trainings SET feedback_pain=NULL,feedback_has_pain='no',feedback_rpe=2,detalhes=? WHERE id=1").run('Essential requested details '.repeat(2000));
+  db.prepare("UPDATE trainings SET feedback_pain=NULL,feedback_has_pain='no',feedback_rpe=2,detalhes=? WHERE id=1").run('Essential requested details '.repeat(6000));
   assert.throws(() => buildContext(db, 1, { ...args, purpose: 'analysis', resourceId: 1 }), (e) => e.status === 413);
 });
 
@@ -98,12 +120,13 @@ test('no-pain, missing feedback and dated descriptions retain their original val
   session(3, '2026-10-13', '');
   session(4, '2026-10-01', '', null, 'Earlier dated report', 1);
   const context = buildContext(db, 1, args);
-  assert.deepEqual(context.recent.map((r) => r.source.id), ['4', '1', '3', '2']);
-  assert.equal(context.recent[0].report.feedback_has_pain, null);
-  assert.equal(context.recent[0].report.observedOn, '2026-10-01');
-  assert.equal(context.recent[1].report.feedback_has_pain, 'no');
-  assert.equal(context.recent[2].report.feedback_rpe, null);
-  assert.ok(context.recent[2].gaps.includes('feedback_has_pain'));
+  assert.deepEqual(context.recent.map((r) => r.source.id), ['3', '2', '1', '4']);
+  const byId = (id) => context.recent.find((r) => r.source.id === id);
+  assert.equal(byId('4').report.feedback_has_pain, null);
+  assert.equal(byId('4').report.observedOn, '2026-10-01');
+  assert.equal(byId('1').report.feedback_has_pain, 'no');
+  assert.equal(byId('3').report.feedback_rpe, null);
+  assert.ok(byId('3').gaps.includes('feedback_has_pain'));
   assert.equal(context.currentRestrictions, undefined);
   assert.ok(context.gaps[0].includes('do not establish resolution'));
 });
@@ -155,7 +178,7 @@ test('lower-priority equipment is omitted explicitly after report and provenance
   const { db, config, session, args } = fixture(t);
   config.limits.AI_CONTEXT_TOKENS = 4000;
   session(1, '2026-10-13', '', 'yes', 'Priority report', 5);
-  for (let i = 0; i < 20; i++) db.prepare("INSERT INTO shoes(user_id,brand,model) VALUES (1,'Synthetic',?)").run(`Shoe ${i}`);
+  for (let i = 0; i < 20; i++) db.prepare("INSERT INTO shoes(user_id,brand,model) VALUES (1,'Synthetic',?)").run(`Shoe ${i} ${'x'.repeat(600)}`);
   const context = buildContext(db, 1, args);
   assert.equal(context.recent[0].report.feedback_pain, 'Priority report');
   assert.ok(context.shoes.length < 20);
@@ -250,7 +273,7 @@ test('an interpretation omitted by the context budget leaves no selected depende
   const leafEvidence = [{ type: 'interpretation', id: grandchild.id, version: hash(grandchild) }];
   insert.run('budget-leaf', 'Leaf conclusion.', JSON.stringify(leafEvidence), 'budget-leaf-key', 'budget-leaf-hash', 'budget-leaf-content', '2026-10-29T00:00:00.000Z', '2026-10-29T00:00:00.000Z');
   let bounded = null;
-  for (let budget = 3000; budget <= 20000 && !bounded; budget += 100) {
+  for (let budget = 1000; budget <= 20000 && !bounded; budget += 25) {
     const candidateConfig = structuredClone(config);
     candidateConfig.limits.AI_CONTEXT_TOKENS = budget;
     try {
@@ -266,7 +289,7 @@ test('an interpretation omitted by the context budget leaves no selected depende
   assert.ok(bounded.sources.filter((ref) => ref.type === 'interpretation').every((ref) => selectedIds.has(ref.id)));
   assert.ok(bounded.omissions.some((item) => item.type === 'interpretation' && item.reason === 'context_budget'));
   let fullyBlocked = null;
-  for (let budget = 3000; budget <= 20000 && !fullyBlocked; budget += 100) {
+  for (let budget = 1000; budget <= 20000 && !fullyBlocked; budget += 25) {
     const candidateConfig = structuredClone(config);
     candidateConfig.limits.AI_CONTEXT_TOKENS = budget;
     try {
