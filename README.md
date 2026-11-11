@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, request and review weekly AI proposals, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized training-request prompts for use with an external AI.
 
-Current application version: **0.39.0** (active beta development). The Garmin Connect integration is opt-in per installation, in single-account `pilot` mode (default) or `multiuser` mode; see [Garmin Connect integration](#garmin-connect-integration).
+Current application version: **0.39.1** (active beta development). The Garmin Connect integration is opt-in per installation, in single-account `pilot` mode (default) or `multiuser` mode; see [Garmin Connect integration](#garmin-connect-integration).
 
 ## Welcome tour
 
@@ -74,8 +74,9 @@ bodies nor credentials enter generic logs. Known usage remains accounted for eve
 when a proposal cannot be saved. See the [failure diagnosis contract](docs/ai-cycle-planning.md#failure-diagnostics-and-provider-correlation).
 The cycle-planning schema also has an idempotent repair migration for existing
 databases whose earlier planning migration omitted the applied-plan freshness
-fingerprint. Existing plans are preserved; plans without that historical
-fingerprint are reported outdated instead of being treated as current. Unexpected
+fingerprint. Existing plans are preserved. An applied plan is outdated only when its basis
+changes — the cycle definition, the weekly availability or the prior experience —
+never by recording results, feedback, discomfort or new sessions (#102). Unexpected
 AI-route failures log only a sanitized code/stack location, never SQL text or
 request values.
 

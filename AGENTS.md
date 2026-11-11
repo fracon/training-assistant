@@ -8,7 +8,7 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.39.0`); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.39.1`); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
@@ -1044,8 +1044,15 @@ freshness; edit followed by reversal still increments twice. Never reset histori
 revisions or mark an outdated plan current just because it is kept.
 The idempotent `2026-10-cycle-plan-fingerprint-v1` repair adds a missing
 `cycle_plan_versions.fingerprint_json` to databases that already recorded the
-older planning migration. Preserve existing versions; a missing historical
-fingerprint means outdated, never infer freshness. AI route unexpected-error logs
+older planning migration. Preserve existing versions. Applied-plan freshness
+(#102) is `appliedPlanIsCurrent`: only the plan basis — the planned cycle's
+`cycle` source, every `availability` source and the `profile` (experience)
+source recorded in `sources_json` — is compared with the current rows, also for
+the dashboard pending item and `appliedPlan.outdated` in later contexts.
+Executing the plan (results, feedback, discomfort, shoes, new sessions) never
+outdates it; weekly proposals and analyses keep whole-context freshness. No basis
+recorded means outdated. The pre-revision availability hash is accepted as a
+historical format; never infer freshness otherwise. AI route unexpected-error logs
 must omit messages, SQL, request values, prompts, provider bodies, account IDs and
 credentials while retaining a bounded stack location for diagnosis.
 Regeneration is a separate proposal, never an implicit write to applied versions.
