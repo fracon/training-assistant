@@ -110,3 +110,4 @@
 .memory-phases li { margin: .2rem 0; }
 .memory-phase-current { font-weight: 700; color: var(--accent-deep); }
 @media (max-width: 560px) { .memory-tabs [role=tab] { padding: .55rem .6rem; } }
+.memory-tabs [aria-disabled=true] { cursor: progress; opacity: .6; }

@@ -51,6 +51,11 @@ async function initMemory() {
     $('refreshMemoryVersion').disabled = busy;
     for (const action of document.querySelectorAll('[data-memory-action]'))
       action.disabled = busy;
+    // Task tabs wait for a write to settle: its completion updates this task's data.
+    for (const tab of document.querySelectorAll('#purposeTabs [role=tab]')) {
+      if (mutating) tab.setAttribute('aria-disabled', 'true');
+      else tab.removeAttribute('aria-disabled');
+    }
     if (user.role === 'admin')
       $('previewForm').querySelector('[type=submit]').disabled =
         !resources || busy;
@@ -327,7 +332,7 @@ async function initMemory() {
           const body = { expected_version: item.version };
           if (action === 'correct') body.text = textValue;
           const saved = await requestJson(`/api/ai/interpretations/${encodeURIComponent(item.id)}/${action}`, body);
-          memory.interpretations = memory.interpretations.map((entry) => entry.id === item.id ? {
+          if (memory) memory.interpretations = memory.interpretations.map((entry) => entry.id === item.id ? {
             ...entry,
             disposition: saved.interpretation.disposition,
             correction_text: saved.interpretation.correction,
@@ -338,16 +343,17 @@ async function initMemory() {
             inclusion: saved.interpretation.disposition === 'dismissed' ? 'dismissed' : 'unverified',
             text: saved.interpretation.disposition === 'corrected' ? saved.interpretation.correction : saved.interpretation.text,
           } : entry);
-          loaded = true; clearError();
-          renderOverview();
+          clearError();
+          if (memory) { loaded = true; renderOverview(); }
           if (document.activeElement === document.body) {
             const equivalent = [...root.querySelectorAll('[data-memory-action]')]
               .find((control) => control.dataset.memoryAction === `${interpretationId}:${focusAction}`);
             (equivalent || root.querySelector(`[data-memory-item="${CSS.escape(interpretationId)}"]`))?.focus();
           }
           showShellToast(i18n.messages, 'memory.interpretationSaved');
-          // The follow-up read is numbered like any load: if another tab was
-          // selected meanwhile, its own read wins and this reply is dropped.
+          // The write is settled: tabs may change again. The follow-up read is
+          // numbered like any load, so a tab selected meanwhile keeps its own read.
+          mutating = false; controls();
           const seq = ++loadSeq;
           try {
             const fresh = await requestJson(memoryUrl(), undefined, 'GET');
@@ -471,9 +477,8 @@ async function initMemory() {
         },
         'PUT',
       );
-      memory.profile = saved.profile;
       if ($('experience').value === submitted) dirty.delete('experience');
-      renderOverview();
+      if (memory) { memory.profile = saved.profile; renderOverview(); }
     });
   });
   if (user.role === 'admin') {
@@ -616,6 +621,7 @@ async function initMemory() {
   // Purpose tabs: roving tabindex, arrows/Home/End, and a fresh read per task.
   const tabs = [...document.querySelectorAll('#purposeTabs [role=tab]')];
   function selectPurpose(tab, focus = false) {
+    if (mutating) return;
     for (const item of tabs) {
       const selected = item === tab;
       item.setAttribute('aria-selected', String(selected));

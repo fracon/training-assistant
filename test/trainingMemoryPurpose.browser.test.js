@@ -29,7 +29,8 @@ async function setup(t) {
   db.prepare(`INSERT INTO workout_analysis_versions(id,user_id,training_id,sequence,adapter_version,context_json,state,language,created_at)
     VALUES ('analysis',1,1,1,'workout-analysis-v1','{}','completed','pt-BR',?)`).run(`${day(-1)}T10:00:00.000Z`);
   db.prepare(`INSERT INTO ai_interpretations(id,user_id,training_id,analysis_id,kind,text,evidence_json,evidence_key,evidence_hash,content_hash,disposition,created_at,updated_at)
-    VALUES ('race','1',1,'analysis','pattern','Synthetic hypothesis','[]','[]','h','c','pending',?,?)`).run(`${day(-1)}T11:00:00.000Z`, `${day(-1)}T11:00:00.000Z`);
+    VALUES ('race','1',1,'analysis','pattern','Synthetic hypothesis','[]','[]','h','c','pending',?,?),
+      ('lock','1',1,'analysis','pattern','Second hypothesis','[]','[]','h2','c2','pending',?,?)`).run(`${day(-1)}T11:00:00.000Z`, `${day(-1)}T11:00:00.000Z`, `${day(-1)}T11:00:00.000Z`, `${day(-1)}T11:00:00.000Z`);
   const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: 'tabs@example.test', password: 'tabs-secret-1' } });
   const cookie = [].concat(login.headers['set-cookie'])[0].split(';')[0].split('=')[1];
   return { origin, cookie };
@@ -116,6 +117,19 @@ test('Chrome: training memory shows each AI task context through accessible tabs
   assert.ok(view.headings.includes(PT.plan), 'the workouts view stays rendered after the late cycle reply');
   await evaluate("document.getElementById('purposeTab-analysis').click()");
   await wait("document.getElementById('purposeTask').textContent.includes('Tiros')");
+
+  // Tabs wait while a write is in flight, so its completion always finds its own task.
+  await evaluate("document.getElementById('purposeTab-cycle').click()");
+  await wait("!!document.querySelector('[data-memory-action=\\'lock:confirm\\']') && document.getElementById('purposeTask').textContent.includes('Meia maratona')");
+  const write = await browser.intercept(`${origin}/api/ai/interpretations/lock/confirm`);
+  await evaluate("document.querySelector('[data-memory-action=\\'lock:confirm\\']').click()");
+  const heldWrite = await write.next;
+  assert.equal(await evaluate("document.getElementById('purposeTab-analysis').getAttribute('aria-disabled')"), 'true');
+  await evaluate("document.getElementById('purposeTab-analysis').click()");
+  assert.deepEqual((await evaluate(state)).selected, ['cycle'], 'a tab cannot be selected mid-write');
+  await write.release(heldWrite);
+  await wait("document.getElementById('purposeTab-analysis').getAttribute('aria-disabled') === null && !document.querySelector('[data-memory-action=\\'lock:confirm\\']')");
+  assert.equal(await evaluate("document.getElementById('memoryError').classList.contains('hidden')"), true, 'the committed decision reports no error');
 
   // A failed tab load never leaves the previous task's context under the new tab.
   await evaluate("document.getElementById('purposeTab-cycle').click()");
