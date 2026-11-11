@@ -363,7 +363,7 @@ test('the transient setup-guide URL signal is consumed while preserving query an
 test('tour narration, captions and transcript share one localized script in both languages', async () => {
   const { TOUR_SCENES, tourCueKey, tourMediaLanguage } = await onboardingModule();
   const { translate } = await import(pathToFileURL(publicPath('shared/i18n.js')));
-  assert.deepEqual(TOUR_SCENES.map((scene) => scene.id), ['intro', 'shoes', 'cycle', 'request', 'calendar', 'result', 'insights', 'outro']);
+  assert.deepEqual(TOUR_SCENES.map((scene) => scene.id), ['intro', 'shoes', 'cycle', 'request', 'calendar', 'watch', 'result', 'insights', 'outro']);
   assert.equal(tourMediaLanguage('pt-BR'), 'pt');
   assert.equal(tourMediaLanguage('en-US'), 'en');
   assert.equal(tourMediaLanguage('fr-FR'), 'en');

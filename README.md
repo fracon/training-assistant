@@ -10,11 +10,14 @@ New accounts are greeted on the dashboard by a narrated welcome tour: a short
 motion graphic with sound effects, played in Portuguese or English according to
 the application language, with captions on by default and a full transcript.
 It walks through shoes, cycles and cycle planning, Request Workouts, the
-calendar, recording FIT/ZIP or manual results with realized effort, workout
-analysis and training memory, and ends with the next setup step for the
-account. It never autoplays, and it can be reopened at any time from the user
-menu (**Welcome tour / Tour de boas-vindas**). The videos are produced offline
-with local neural speech (Piper) and synthesized sound; see
+calendar, a connected watch (described without naming a brand, since more
+watch makers are planned), recording results from the watch, a FIT file or by
+hand with realized effort, workout analysis and training memory, and ends with
+the next setup step for the account. It never autoplays, and it can be reopened
+at any time from the user menu (**Welcome tour / Tour de boas-vindas**). The
+videos are produced offline with HyperFrames from real Kinesis screens of a
+synthetic account, local neural speech (Kokoro) with word timings from
+whisper.cpp, and a few quiet synthesized effects; see
 [`scripts/onboarding-tour/README.md`](scripts/onboarding-tour/README.md).
 
 ## AI integration: cycle planning and weekly proposals

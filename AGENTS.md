@@ -459,8 +459,12 @@ logic in `shell.js`, locale dictionaries, and the backend routes in
 `src/server.js`. The backend owns persistence and calculates progress; the
 frontend renders and navigates but must never infer completion from a click,
 visited page, or video playback. The videos are produced offline by
-`scripts/onboarding-tour/build.mjs` (see its README); the application never runs
-that build.
+`scripts/onboarding-tour/build.mjs` (HyperFrames, real screens of a synthetic
+account, local Kokoro narration with whisper.cpp word timings; see its README);
+the application never runs that build. The tour presents watch connectivity
+generically (a connected watch receives workouts and returns results) without
+naming Garmin or any other brand, because more watch makers are planned; the
+Garmin integration itself stays documented in its own sections.
 
 ### API and stored state
 

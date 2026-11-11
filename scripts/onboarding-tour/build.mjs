@@ -1,40 +1,44 @@
 #!/usr/bin/env node
 // Builds the narrated welcome tour videos (PT and EN) for the dashboard.
 //
-//   node scripts/onboarding-tour/build.mjs --piper <piper binary> --voices <dir> [--lang pt,en] [--work <dir>]
+//   node scripts/onboarding-tour/build.mjs --python <venv python> --kokoro <model dir> \
+//     --whisper-model <ggml model> [--lang pt,en] [--work <dir>] [--preview]
 //
-// Requires ffmpeg (libvpx-vp9, libopus, libopenh264, aac), Google Chrome and
-// a local Piper TTS install with the pt_BR-faber-medium and en_US-ryan-high
-// voices. Nothing is sent to an external service: speech is synthesized
-// locally and the frames are rendered by a headless Chrome on 127.0.0.1.
-// See scripts/onboarding-tour/README.md.
+// Pipeline per language (see README.md):
+//   1. Kokoro (local neural TTS) speaks each narration cue.
+//   2. whisper.cpp measures when every word is said, so moves land on words.
+//   3. capture.mjs photographs real Kinesis screens from a synthetic account.
+//   4. compose.mjs writes a HyperFrames project; HyperFrames renders it.
+//   5. ffmpeg encodes the WebM/MP4 pair, the poster, and the WebVTT captions.
+// Nothing is sent to an external service except Google Fonts (DM Sans) and the
+// GSAP/Lucide CDN scripts the pages and compositions load while rendering.
 import { createHash } from 'node:crypto';
-import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, createReadStream } from 'node:fs';
-import { createServer } from 'node:http';
-import { once } from 'node:events';
-import { join, dirname, extname, resolve } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join, dirname, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { setTimeout as delay } from 'node:timers/promises';
 import { TOUR_SCENES, tourCueKey } from '../../src/public/shared/onboarding.js';
-import { buildTimeline, FPS } from './timeline.mjs';
-import { TOUR_STRINGS } from './strings.mjs';
+import { buildTimeline } from './timeline.mjs';
 import { RATE, mixTour, readMonoWav, trimSilence, writeStereoWav } from './audio.mjs';
+import { captureScreens } from './capture.mjs';
+import { composeProject } from './compose.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '../..');
 const OUT_DIR = join(ROOT, 'src/public/assets/onboarding/tour');
 const MANIFEST = join(ROOT, 'src/public/shared/onboarding-tour-media.js');
 const PUBLIC_PREFIX = '/assets/onboarding/tour';
+const HYPERFRAMES = ['-y', 'hyperframes@0.9.31'];
 
 const VOICES = {
-  pt: { model: 'pt_BR-faber-medium.onnx', lengthScale: '1.0' },
-  en: { model: 'en_US-ryan-high.onnx', lengthScale: '1.0' },
+  pt: { voice: 'pm_santa', lang: 'pt-br', whisper: 'pt' },
+  en: { voice: 'am_michael', lang: 'en-us', whisper: 'en' },
 };
 // Spoken spellings only; captions and the transcript keep the written text.
+// "Kinésis" gives the Portuguese voice an open, stressed é (ki-NÉ-zis).
 const RESPELL = {
-  pt: [[/\bKinesis\b/g, 'Kinésis'], [/\bIA\b/g, 'I A'], [/\bFIT\b/g, 'fít'], [/\bZIP\b/g, 'zíp']],
+  pt: [[/\bKinesis\b/g, 'Kinésis'], [/\bIA\b/g, 'I A'], [/\bFIT\b/g, 'fít']],
   en: [[/\bAI\b/g, 'A.I.']],
 };
 
@@ -47,8 +51,8 @@ function args() {
     out[key] = argv[i + 1];
     i += 1;
   }
-  if (!out.piper || !out.voices) {
-    console.error('Usage: build.mjs --piper <piper binary> --voices <voice dir> [--lang pt,en] [--work <dir>]');
+  if (!out.python || !out.kokoro || !out['whisper-model']) {
+    console.error('Usage: build.mjs --python <venv python> --kokoro <model dir> --whisper-model <ggml model> [--lang pt,en] [--work <dir>] [--preview]');
     process.exit(2);
   }
   return out;
@@ -61,18 +65,38 @@ function lookup(messages, key) {
 }
 
 const sha = (value) => createHash('sha256').update(value).digest('hex');
+const run = (cmd, argv, opts = {}) => execFileSync(cmd, argv, { stdio: ['ignore', 'ignore', 'inherit'], ...opts });
 
-function synthesize(options, lang, text, work) {
+// Speaks every cue of one language and returns { samples, words } per cue key.
+function narrate(options, lang, cueText, work) {
   const voice = VOICES[lang];
-  const spoken = RESPELL[lang].reduce((acc, [pattern, replacement]) => acc.replace(pattern, replacement), text);
-  const id = sha(`${voice.model}|${voice.lengthScale}|${spoken}`).slice(0, 16);
-  const raw = join(work, `tts-${id}.raw.wav`);
-  const wav = join(work, `tts-${id}.wav`);
-  if (!existsSync(wav)) {
-    execFileSync(options.piper, ['-m', join(options.voices, voice.model), '--length-scale', voice.lengthScale, '-f', raw], { input: spoken, stdio: ['pipe', 'ignore', 'ignore'] });
-    execFileSync('ffmpeg', ['-v', 'error', '-y', '-i', raw, '-ac', '1', '-ar', String(RATE), '-c:a', 'pcm_s16le', wav]);
+  const dir = join(work, 'tts'); mkdirSync(dir, { recursive: true });
+  const jobs = Object.entries(cueText).map(([key, text]) => {
+    const spoken = RESPELL[lang].reduce((acc, [pattern, replacement]) => acc.replace(pattern, replacement), text);
+    return { key, id: sha(`kokoro-v1.0|${voice.voice}|${spoken}`).slice(0, 16), text: spoken, voice: voice.voice, lang: voice.lang };
+  });
+  run(options.python, ['-I', join(HERE, 'kokoro_tts.py'), join(options.kokoro, 'kokoro-v1.0.onnx'), join(options.kokoro, 'voices-v1.0.bin'), dir],
+    { input: JSON.stringify(jobs), stdio: ['pipe', 'ignore', 'ignore'] });
+  const clips = {};
+  for (const job of jobs) {
+    const wav = join(dir, `${job.id}.48k.wav`);
+    if (!existsSync(wav)) run('ffmpeg', ['-v', 'error', '-y', '-i', join(dir, `${job.id}.wav`), '-ac', '1', '-ar', String(RATE), '-c:a', 'pcm_s16le', wav]);
+    const samples = trimSilence(readMonoWav(wav));
+    // Word timings are measured on the trimmed clip, exactly as it is mixed.
+    const trimmed = join(dir, `${job.id}.trim.wav`);
+    writeStereoWav(trimmed, samples, samples);
+    const base = join(dir, `${job.id}.words`);
+    if (!existsSync(`${base}.json`)) {
+      const mono16 = join(dir, `${job.id}.16k.wav`);
+      run('ffmpeg', ['-v', 'error', '-y', '-i', trimmed, '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', mono16]);
+      run('whisper-cli', ['-m', options['whisper-model'], '-l', voice.whisper, '-ml', '1', '-sow', '-oj', '-of', base, '-np', '-f', mono16]);
+    }
+    const words = JSON.parse(readFileSync(`${base}.json`, 'utf8')).transcription
+      .map((seg) => ({ text: seg.text.trim(), start: seg.offsets.from / 1000, end: seg.offsets.to / 1000 }))
+      .filter((w) => w.text && /[\p{L}\p{N}]/u.test(w.text));
+    clips[job.key] = { samples, words, heard: words.map((w) => w.text).join(' ') };
   }
-  return trimSilence(readMonoWav(wav));
+  return clips;
 }
 
 function vttTime(seconds) {
@@ -95,9 +119,9 @@ function wrapCaption(text) {
   return best.text;
 }
 
-function buildVtt(timeline, messages) {
+function buildVtt(timeline, cueText) {
   const cues = timeline.scenes.flatMap((scene) => scene.cues.map((cue) => ({
-    start: scene.start + cue.start, end: scene.start + cue.end, text: lookup(messages, tourCueKey(cue.key)),
+    start: scene.start + cue.start, end: scene.start + cue.end, text: cueText[cue.key],
   })));
   const lines = ['WEBVTT', ''];
   cues.forEach((cue, i) => {
@@ -108,76 +132,29 @@ function buildVtt(timeline, messages) {
   return lines.join('\n');
 }
 
-const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.png': 'image/png' };
-async function serveStatic() {
-  const server = createServer((req, res) => {
-    const path = decodeURIComponent(new URL(req.url, 'http://x').pathname);
-    const file = path === '/logo-mark.png' ? join(ROOT, 'src/public/assets/brand/logo-mark.png') : join(HERE, path.replace(/^\/+/, ''));
-    if (!file.startsWith(HERE) && !file.endsWith('logo-mark.png')) { res.writeHead(403).end(); return; }
-    if (!existsSync(file)) { res.writeHead(404).end(); return; }
-    res.writeHead(200, { 'content-type': TYPES[extname(file)] ?? 'application/octet-stream' });
-    createReadStream(file).pipe(res);
-  });
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
-  return server;
+// DM Sans (the Kinesis typeface), latin subset, fetched once into the work dir.
+async function dmSans(work) {
+  const file = join(work, 'dm-sans.woff2');
+  if (existsSync(file)) return file;
+  const css = await (await fetch('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,100..1000&display=swap', {
+    headers: { 'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36' },
+  })).text();
+  const latin = css.split('@font-face').find((block) => /unicode-range:\s*U\+0000-00FF/.test(block));
+  const url = latin?.match(/url\((https:[^)]+\.woff2)\)/)?.[1];
+  if (!url) throw new Error('Could not find the DM Sans latin font file.');
+  writeFileSync(file, Buffer.from(await (await fetch(url)).arrayBuffer()));
+  return file;
 }
 
-async function launchChrome() {
-  const probe = createServer(); probe.listen(0, '127.0.0.1'); await once(probe, 'listening');
-  const port = probe.address().port; await new Promise((r) => probe.close(r));
-  const profile = join(tmpdir(), `kinesis-tour-chrome-${process.pid}`);
-  const child = spawn('/usr/bin/google-chrome', ['--headless=new', '--no-sandbox', '--disable-gpu', '--hide-scrollbars', '--font-render-hinting=none', '--force-color-profile=srgb', '--no-first-run', '--remote-allow-origins=*', `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`, 'about:blank'], { stdio: 'ignore' });
-  for (let i = 0; i < 200; i += 1) { try { if ((await fetch(`http://127.0.0.1:${port}/json/version`)).ok) break; } catch {} await delay(50); }
-  const target = await (await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, { method: 'PUT' })).json();
-  const socket = new WebSocket(target.webSocketDebuggerUrl); await once(socket, 'open');
-  let sequence = 0; const pending = new Map();
-  socket.addEventListener('message', (event) => {
-    const m = JSON.parse(event.data); const p = pending.get(m.id); if (!p) return;
-    pending.delete(m.id); m.error ? p.reject(new Error(m.error.message)) : p.resolve(m.result);
-  });
-  const command = (method, params = {}) => new Promise((res, rej) => { const id = ++sequence; pending.set(id, { resolve: res, reject: rej }); socket.send(JSON.stringify({ id, method, params })); });
-  const evaluate = async (expression) => {
-    const r = await command('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
-    if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
-    return r.result.value;
-  };
-  const close = async () => { socket.close(); child.kill('SIGTERM'); await once(child, 'exit'); rmSync(profile, { recursive: true, force: true }); };
-  return { command, evaluate, close };
+function hyperframes(dir, argv) {
+  execFileSync('npx', [...HYPERFRAMES, ...argv], { cwd: dir, stdio: 'inherit', env: { ...process.env, HYPERFRAMES_NO_TELEMETRY: '1', DO_NOT_TRACK: '1' } });
 }
 
-async function renderFrames(browser, url, payload, frameDir, frameCount, times = null) {
-  const { command, evaluate } = browser;
-  await command('Page.enable');
-  await command('Emulation.setDeviceMetricsOverride', { width: 1280, height: 720, deviceScaleFactor: 1, mobile: false });
-  await command('Page.navigate', { url });
-  for (let i = 0; i < 200 && !(await evaluate('Boolean(window.tourReady)').catch(() => false)); i += 1) await delay(50);
-  const fonts = await evaluate('document.fonts.load("700 20px \\"DM Sans\\"").then(() => document.fonts.ready).then(() => document.fonts.check("700 20px \\"DM Sans\\""))');
-  if (!fonts) throw new Error('DM Sans did not load; the frames would use a fallback font.');
-  await evaluate(`window.TOUR = ${JSON.stringify(payload)}; window.init(); Promise.all([...document.images].map((img) => img.decode())).then(() => true)`);
-  mkdirSync(frameDir, { recursive: true });
-  if (times) {
-    for (const [name, time] of times) {
-      await evaluate(`window.renderAt(${time})`);
-      const shot = await command('Page.captureScreenshot', { format: 'png' });
-      writeFileSync(join(frameDir, `${name}.png`), Buffer.from(shot.data, 'base64'));
-    }
-    return;
-  }
-  for (let frame = 0; frame < frameCount; frame += 1) {
-    await evaluate(`window.renderAt(${frame / FPS})`);
-    const shot = await command('Page.captureScreenshot', { format: 'png' });
-    writeFileSync(join(frameDir, `${String(frame).padStart(5, '0')}.png`), Buffer.from(shot.data, 'base64'));
-    if (frame % 300 === 0) process.stdout.write(`  frame ${frame}/${frameCount}\n`);
-  }
-}
-
-function encode(frameDir, audio, lang, duration) {
+function encode(rendered, lang, duration) {
   const base = join(OUT_DIR, `kinesis-tour-${lang}`);
-  const frames = ['-framerate', String(FPS), '-i', join(frameDir, '%05d.png')];
-  const common = ['-v', 'error', '-y', ...frames, '-i', audio, '-t', duration.toFixed(3), '-map', '0:v', '-map', '1:a'];
-  execFileSync('ffmpeg', [...common, '-c:v', 'libvpx-vp9', '-crf', '36', '-b:v', '0', '-row-mt', '1', '-deadline', 'good', '-cpu-used', '2', '-pix_fmt', 'yuv420p', '-c:a', 'libopus', '-b:a', '96k', `${base}.webm`], { stdio: 'inherit' });
-  execFileSync('ffmpeg', [...common, '-c:v', 'libopenh264', '-b:v', '900k', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', `${base}.mp4`], { stdio: 'inherit' });
+  const common = ['-v', 'error', '-y', '-i', rendered, '-t', duration.toFixed(3), '-vf', 'scale=1280:720:flags=lanczos'];
+  run('ffmpeg', [...common, '-c:v', 'libvpx-vp9', '-crf', '34', '-b:v', '0', '-row-mt', '1', '-deadline', 'good', '-cpu-used', '2', '-pix_fmt', 'yuv420p', '-c:a', 'libopus', '-b:a', '96k', `${base}.webm`]);
+  run('ffmpeg', [...common, '-c:v', 'libopenh264', '-b:v', '1100k', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', `${base}.mp4`]);
 }
 
 function versioned(file) {
@@ -190,63 +167,60 @@ async function main() {
   const work = resolve(options.work ?? join(tmpdir(), 'kinesis-tour-work'));
   mkdirSync(work, { recursive: true });
   mkdirSync(OUT_DIR, { recursive: true });
-  const server = await serveStatic();
-  const browser = await launchChrome();
+  const fontFile = await dmSans(work);
   const manifest = existsSync(join(work, 'manifest.json')) ? JSON.parse(readFileSync(join(work, 'manifest.json'), 'utf8')) : {};
-  try {
-    for (const lang of languages) {
-      console.log(`[${lang}] narration`);
-      const messages = JSON.parse(readFileSync(join(ROOT, `src/public/locales/${lang}.json`), 'utf8'));
-      const clips = {};
-      for (const scene of TOUR_SCENES) for (const cue of scene.cues) clips[cue] = synthesize(options, lang, lookup(messages, tourCueKey(cue)), work);
-      const durations = Object.fromEntries(Object.entries(clips).map(([key, samples]) => [key, samples.length / RATE]));
-      const timeline = buildTimeline(TOUR_SCENES, durations);
-      console.log(`[${lang}] ${timeline.duration.toFixed(2)}s`);
+  for (const lang of languages) {
+    const messages = JSON.parse(readFileSync(join(ROOT, `src/public/locales/${lang}.json`), 'utf8'));
+    const cueText = Object.fromEntries(TOUR_SCENES.flatMap((scene) => scene.cues).map((cue) => [cue, lookup(messages, tourCueKey(cue))]));
 
-      const narration = timeline.scenes.flatMap((scene) => scene.cues.map((cue) => ({ time: scene.start + cue.start, samples: clips[cue.key] })));
-      const sounds = timeline.scenes.flatMap((scene) => scene.beats.sounds.map((s) => ({ ...s, time: scene.start + s.time })));
-      if (options.preview) {
-        const times = timeline.scenes.flatMap((scene) => [0.35, 0.6, 0.97].map((f) => [`${scene.id}-${Math.round(f * 100)}`, scene.start + scene.length * f]));
-        const dir = join(work, `preview-${lang}`);
-        await renderFrames(browser, `http://127.0.0.1:${server.address().port}/scene.html`, { lang, strings: TOUR_STRINGS[lang], timeline, logo: '/logo-mark.png' }, dir, 0, times);
-        console.log(`[${lang}] preview frames in ${dir}`);
-        continue;
-      }
-      const [left, right] = mixTour({ duration: timeline.duration, narration, sounds });
-      const mixed = join(work, `mix-${lang}.wav`); const normalized = join(work, `mix-${lang}-norm.wav`);
-      writeStereoWav(mixed, left, right);
-      execFileSync('ffmpeg', ['-v', 'error', '-y', '-i', mixed, '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11', '-ar', String(RATE), normalized]);
+    console.log(`[${lang}] narration`);
+    const clips = narrate(options, lang, cueText, join(work, lang));
+    for (const [key, clip] of Object.entries(clips)) console.log(`  ${key}: ${clip.heard}`);
+    const timeline = buildTimeline(TOUR_SCENES, Object.fromEntries(Object.entries(clips).map(([key, clip]) => [key, clip.samples.length / RATE])));
+    console.log(`[${lang}] ${timeline.duration.toFixed(2)}s`);
 
-      writeFileSync(join(OUT_DIR, `kinesis-tour-${lang}.vtt`), buildVtt(timeline, messages));
+    console.log(`[${lang}] screens`);
+    const shots = await captureScreens(lang, join(work, lang, 'shots'));
+    for (const [id, shot] of Object.entries(shots)) if (!shot.lang.startsWith(lang)) throw new Error(`${id} was captured in ${shot.lang}`);
 
-      console.log(`[${lang}] frames`);
-      const frameDir = join(work, `frames-${lang}`);
-      rmSync(frameDir, { recursive: true, force: true });
-      const frameCount = Math.ceil(timeline.duration * FPS);
-      const payload = { lang, strings: TOUR_STRINGS[lang], timeline, logo: '/logo-mark.png' };
-      await renderFrames(browser, `http://127.0.0.1:${server.address().port}/scene.html`, payload, frameDir, frameCount);
-
-      console.log(`[${lang}] encode`);
-      encode(frameDir, normalized, lang, timeline.duration);
-      const posterFrame = join(frameDir, `${String(Math.round(3.2 * FPS)).padStart(5, '0')}.png`);
-      execFileSync('ffmpeg', ['-v', 'error', '-y', '-i', posterFrame, '-q:v', '3', join(OUT_DIR, `kinesis-tour-${lang}-poster.jpg`)]);
-
-      manifest[lang] = {
-        duration: Number(timeline.duration.toFixed(3)),
-        webm: versioned(`kinesis-tour-${lang}.webm`),
-        mp4: versioned(`kinesis-tour-${lang}.mp4`),
-        captions: versioned(`kinesis-tour-${lang}.vtt`),
-        poster: versioned(`kinesis-tour-${lang}-poster.jpg`),
-        scenes: timeline.scenes.map((s) => ({ id: s.id, start: Number(s.start.toFixed(3)), end: Number(s.end.toFixed(3)) })),
-      };
-      writeFileSync(join(work, 'manifest.json'), JSON.stringify(manifest, null, 2));
+    console.log(`[${lang}] compose`);
+    const project = join(work, lang, 'video');
+    rmSync(project, { recursive: true, force: true });
+    const words = Object.fromEntries(Object.entries(clips).map(([key, clip]) => [key, clip.words]));
+    const { sounds } = composeProject({ lang, dir: project, timeline, words, cueText, shots, fontFile, logoFile: join(ROOT, 'src/public/assets/brand/logo-mark.png') });
+    const narration = timeline.scenes.flatMap((scene) => scene.cues.map((cue) => ({ time: scene.start + cue.start, samples: clips[cue.key].samples })));
+    const [left, right] = mixTour({ duration: timeline.duration, narration, sounds });
+    const mixed = join(work, lang, 'mix.wav');
+    writeStereoWav(mixed, left, right);
+    run('ffmpeg', ['-v', 'error', '-y', '-i', mixed, '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11', '-ar', String(RATE), join(project, 'assets/narration.wav')]);
+    hyperframes(project, ['check']);
+    if (options.preview) {
+      console.log(`[${lang}] project ready for review in ${project}`);
+      continue;
     }
-  } finally {
-    await browser.close();
-    server.close();
+
+    console.log(`[${lang}] render`);
+    const rendered = join(work, lang, 'render.mp4');
+    hyperframes(project, ['render', '--quality', 'delivery', '-o', rendered]);
+
+    console.log(`[${lang}] encode`);
+    encode(rendered, lang, timeline.duration);
+    writeFileSync(join(OUT_DIR, `kinesis-tour-${lang}.vtt`), buildVtt(timeline, cueText));
+    const intro = timeline.scenes[0];
+    run('ffmpeg', ['-v', 'error', '-y', '-ss', String(intro.end - 0.45), '-i', rendered, '-frames:v', '1', '-vf', 'scale=1280:720:flags=lanczos', '-q:v', '3', join(OUT_DIR, `kinesis-tour-${lang}-poster.jpg`)]);
+
+    manifest[lang] = {
+      duration: Number(timeline.duration.toFixed(3)),
+      webm: versioned(`kinesis-tour-${lang}.webm`),
+      mp4: versioned(`kinesis-tour-${lang}.mp4`),
+      captions: versioned(`kinesis-tour-${lang}.vtt`),
+      poster: versioned(`kinesis-tour-${lang}-poster.jpg`),
+      scenes: timeline.scenes.map((s) => ({ id: s.id, start: Number(s.start.toFixed(3)), end: Number(s.end.toFixed(3)) })),
+    };
+    writeFileSync(join(work, 'manifest.json'), JSON.stringify(manifest, null, 2));
   }
-  const ordered = Object.fromEntries(['pt', 'en'].filter((l) => manifest[l]).map((l) => [l, manifest[l]]));
   if (options.preview) return;
+  const ordered = Object.fromEntries(['pt', 'en'].filter((l) => manifest[l]).map((l) => [l, manifest[l]]));
   writeFileSync(MANIFEST, `// Generated by scripts/onboarding-tour/build.mjs. Do not edit by hand.\n// Media, captions and scene boundaries of the narrated welcome tour.\nexport const TOUR_MEDIA = ${JSON.stringify(ordered, null, 2)};\n`);
   console.log(`Wrote ${MANIFEST}`);
 }
