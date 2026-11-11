@@ -1620,6 +1620,24 @@
         "shoe": "{name} at {percent}% of its target mileage"
       }
     },
+    "volume": {
+      "title": "Monthly volume",
+      "previousYear": "Previous year",
+      "nextYear": "Next year",
+      "total": "Total in {year}",
+      "sessions_one": "1 workout",
+      "sessions_other": "{count} workouts",
+      "best": "Best month",
+      "noBest": "No workouts this year",
+      "average": "Monthly average",
+      "overMonths_one": "over 1 month",
+      "overMonths_other": "over {count} months",
+      "month": "{month}: {distance}",
+      "monthPartial": "{month} (partial): {distance}",
+      "chart": "Volume by month",
+      "empty": "No completed workout with a recorded distance yet.",
+      "error": "The monthly volume could not be loaded. Reload the page to try again."
+    },
     "dashboardError": "This card could not be loaded. Reload the page to try again."
   },
   "memory": {

@@ -7,6 +7,7 @@ const {
   dateLocale,
   formatDate,
   formatDateInput,
+  formatMonth,
   formatWeekday,
   parseLocalizedDate,
 } = require('../src/public/shared/date.js');
@@ -44,4 +45,12 @@ test('formatWeekday follows the active locale and rejects invalid values', () =>
   assert.equal(formatWeekday('2026-09-05', 'pt-BR'), 'sábado');
   assert.equal(formatWeekday('2026-09-05', 'en-US'), 'Saturday');
   assert.equal(formatWeekday('junk', 'pt-BR'), '');
+});
+
+test('formatMonth names a calendar month in the active locale, long or short, and rejects invalid months', () => {
+  assert.equal(formatMonth(3, 'pt-BR'), 'março');
+  assert.equal(formatMonth(3, 'pt-BR', 'short'), 'mar');
+  assert.equal(formatMonth(5, 'en-US'), 'May');
+  assert.equal(formatMonth(9, 'en-US', 'short'), 'Sep');
+  for (const value of [0, 13, 1.5, '3', null]) assert.equal(formatMonth(value, 'pt-BR'), '');
 });

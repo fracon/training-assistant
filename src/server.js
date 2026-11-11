@@ -60,8 +60,8 @@ const {
   isSupportedTemperatureUnit,
   normalizeTemperatureUnit,
 } = require('./auth/preferences');
-const { isValidTimeZone } = require('./time-zone');
-const { dashboardSummary } = require('./dashboard');
+const { isValidTimeZone, userToday } = require('./time-zone');
+const { dashboardSummary, monthlyVolume, volumeYear } = require('./dashboard');
 const XLSX = require('xlsx');
 const { parseRows, trainingSignature } = require('./trainingImport');
 const { resolveTrainingWeather } = require('./weather');
@@ -391,9 +391,16 @@ async function buildServer(options = {}) {
       client: options.aiClient,
       weatherFetch: options.weatherFetch,
     });
-    // One owner-scoped read for the dashboard's next-workout, pending, week and cycle cards.
+    // One owner-scoped read for the dashboard's next-workout and pending cards.
     app.get('/api/dashboard', { preHandler: requireAuth }, async (request) =>
       dashboardSummary(db, request.user.id, aiConfig));
+    // Monthly completed distance of one year beside the previous one.
+    app.get('/api/dashboard/volume', { preHandler: requireAuth }, async (request, reply) => {
+      const today = userToday(db, request.user.id);
+      const year = volumeYear(request.query?.year, today);
+      if (year === null) return reply.code(400).send({ error: 'Invalid year.', code: 'invalidYear' });
+      return monthlyVolume(db, request.user.id, year, today);
+    });
     const cycleWithPlanningSummary = (cycle, userId) => {
       let planningSummary;
       try {

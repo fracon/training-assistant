@@ -119,6 +119,23 @@
           </header>
           <ul id="pendingList" class="pending-list" role="list"></ul>
         </section>
+
+        <section id="volumeCard" class="card-section volume-card" aria-labelledby="volumeTitle">
+          <header class="section-header">
+            <h2 id="volumeTitle" data-i18n="home.volume.title">Monthly volume</h2>
+            <div class="volume-nav">
+              <button id="volumePrev" type="button" class="btn-icon" data-i18n-aria-label="home.volume.previousYear" aria-label="Previous year" disabled>
+                <i data-lucide="chevron-left" aria-hidden="true"></i>
+              </button>
+              <span id="volumeYear" class="volume-year"></span>
+              <button id="volumeNext" type="button" class="btn-icon" data-i18n-aria-label="home.volume.nextYear" aria-label="Next year" disabled>
+                <i data-lucide="chevron-right" aria-hidden="true"></i>
+              </button>
+            </div>
+          </header>
+          <div id="volumeBody" class="volume-body"></div>
+          <div id="volumeTooltip" class="custom-tooltip volume-tooltip" aria-hidden="true" hidden></div>
+        </section>
       </div>
 
     </div>

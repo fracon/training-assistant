@@ -59,3 +59,13 @@ export function formatWeekday(value, language = EN_LOCALE) {
     timeZone: 'UTC',
   }).format(date);
 }
+
+// Name of a calendar month (1–12) in the active language: "março"/"March", or
+// the short form without a trailing period: "mar"/"Mar".
+export function formatMonth(month, language = EN_LOCALE, style = 'long') {
+  if (!Number.isInteger(month) || month < 1 || month > 12) return '';
+  return new Intl.DateTimeFormat(dateLocale(language), {
+    month: style === 'short' ? 'short' : 'long',
+    timeZone: 'UTC',
+  }).format(new Date(Date.UTC(2000, month - 1, 1))).replace(/\.$/, '');
+}

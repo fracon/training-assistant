@@ -104,4 +104,41 @@ function dashboardSummary(db, userId, config, today = userToday(db, userId)) {
   })();
 }
 
-module.exports = { dashboardSummary, weekStart };
+// Completed distance per civil month of `year`, for the monthly volume card.
+// Training dates are civil dates already; the account's time zone only decides
+// which year and month are current. Kilometres throughout.
+function monthlyVolume(db, userId, year, today = userToday(db, userId)) {
+  return db.transaction(() => {
+    const months = Array(12).fill(0);
+    const rows = db.prepare(`SELECT CAST(substr(dia, 6, 2) AS INTEGER) AS month, SUM(fit_distance) AS distance, COUNT(*) AS sessions
+      FROM trainings WHERE user_id = ? AND completed = 1 AND fit_distance > 0 AND dia >= ? AND dia <= ?
+      GROUP BY month`).all(userId, `${year}-01-01`, `${year}-12-31`);
+    let sessions = 0;
+    for (const row of rows) { months[row.month - 1] = row.distance; sessions += row.sessions; }
+    const first = db.prepare(`SELECT MIN(substr(dia, 1, 4)) AS year FROM trainings
+      WHERE user_id = ? AND completed = 1 AND fit_distance > 0`).get(userId).year;
+    const currentYear = Number(today.slice(0, 4));
+    return {
+      year,
+      today,
+      currentMonth: year === currentYear ? Number(today.slice(5, 7)) : null,
+      firstYear: Math.min(first ? Number(first) : currentYear, currentYear),
+      lastYear: currentYear,
+      months: months.map((distanceKm, index) => ({ month: index + 1, distanceKm })),
+      totalKm: months.reduce((total, value) => total + value, 0),
+      sessions,
+    };
+  })();
+}
+
+// The year query parameter: absent means the account's current year; anything
+// else must be a four-digit year no later than it.
+function volumeYear(value, today) {
+  const currentYear = Number(today.slice(0, 4));
+  if (value === undefined) return currentYear;
+  if (typeof value !== 'string' || !/^\d{4}$/.test(value)) return null;
+  const year = Number(value);
+  return year >= 1900 && year <= currentYear ? year : null;
+}
+
+module.exports = { dashboardSummary, monthlyVolume, volumeYear, weekStart };
