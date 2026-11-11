@@ -1,7 +1,8 @@
-import { fetchActiveCycle, fetchCalendarTrainings, fetchShoes, fetchHeroImage, fetchOnboarding, updateOnboardingPresentation } from './shared/api.js';
+import { fetchActiveCycle, fetchCalendarTrainings, fetchShoes, fetchHeroImage, fetchOnboarding, updateOnboardingPresentation, fetchDashboard, fetchWeather } from './shared/api.js';
+import { formatWeatherAutofill } from './shared/weather.js';
 import { initShell, getShellI18n, getUserPreferences, showShellToast } from './shared/shell.js';
 import { translate } from './shared/i18n.js';
-import { formatDate as formatLocalizedDate } from './shared/date.js';
+import { formatDate as formatLocalizedDate, formatWeekday } from './shared/date.js';
 import { formatDistance } from './shared/units.js';
 import { consumeSetupGuideSignal, onboardingNextAction, createTourSession, mapTourTime, tourMediaLanguage, TOUR_SCENES, tourCueKey } from './shared/onboarding.js';
 import { TOUR_MEDIA } from './shared/onboarding-tour-media.js';
@@ -496,6 +497,9 @@ function setupHomePage() {
     heroCredit: null,
     onboarding: null,
     cycleLoaded: false,
+    dashboard: null,
+    dashboardFailed: false,
+    weather: null,
   };
 
   let i18n = null;
@@ -781,7 +785,145 @@ function setupHomePage() {
     return true;
   }
 
+  // ── Next workout, pending items, cycle phase and week progress ──────────────
+  const make = (tag, className, text) => {
+    const element = document.createElement(tag);
+    if (className) element.className = className;
+    if (text != null) element.textContent = text;
+    return element;
+  };
+  const language = () => (i18n ? i18n.language : DEFAULT_DISPLAY_LANGUAGE);
+  const shortDate = (iso) => formatLocalizedDate(iso, language());
+  function whenLabel(iso) {
+    const today = state.dashboard.today;
+    if (iso === today) return t('home.next.today');
+    const tomorrow = new Date(Date.parse(`${today}T00:00:00Z`) + 86400000).toISOString().slice(0, 10);
+    if (iso === tomorrow) return t('home.next.tomorrow');
+    const weekday = formatWeekday(iso, language());
+    return `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)} · ${shortDate(iso)}`;
+  }
+  function renderNextWorkout() {
+    const body = document.getElementById('nextWorkoutBody');
+    if (!body) return;
+    body.replaceChildren();
+    if (state.dashboardFailed) { body.append(make('p', 'next-empty', t('home.dashboardError'))); return; }
+    const summary = state.dashboard;
+    if (!summary) return;
+    const next = summary.nextWorkout;
+    if (!next) {
+      body.append(make('p', 'next-empty', t('home.next.empty')));
+      const cta = make('a', 'btn-primary', t('home.next.emptyCta')); cta.href = '/ai-coach.html';
+      body.append(cta);
+    } else {
+      const when = make('p', 'next-when', whenLabel(next.date));
+      if (next.period) when.append(` · ${next.period}`);
+      body.append(when, make('h3', 'next-name', next.name));
+      if (next.details) body.append(make('p', 'next-details', next.details));
+      const facts = make('ul', 'next-facts');
+      const fact = (text, extra = '') => facts.append(make('li', `next-fact${extra}`, text));
+      if (next.targetRpe != null && next.targetRpe !== '') fact(t('home.next.targetRpe', { value: next.targetRpe }));
+      if (next.targetHr) fact(t('home.next.targetHr', { value: next.targetHr }));
+      if (next.location) fact(next.location);
+      const weather = state.weather?.key === `${next.id}:${next.date}` ? state.weather.value : null;
+      const weatherText = formatWeatherAutofill(weather, (key) => t(key), state.temperatureUnit);
+      if (weatherText) fact(weatherText);
+      if (next.shoe) fact(t(next.shoe.source === 'planned' ? 'home.next.shoePlanned' : 'home.next.shoeSuggested', { name: next.shoe.name }));
+      if (next.watch === 'scheduled') fact(t('home.next.watchScheduled'), ' is-scheduled');
+      if (facts.childElementCount) body.append(facts);
+      const actions = make('div', 'next-actions');
+      const today = next.date === summary.today;
+      const action = make('a', today ? 'btn-primary' : 'btn-secondary', t(today ? 'home.next.record' : 'home.next.view'));
+      action.href = next.href;
+      actions.append(action);
+      body.append(actions);
+    }
+    const last = summary.lastWorkout;
+    if (last) {
+      const line = make('p', 'next-last');
+      const parts = [t('home.next.last', { date: shortDate(last.date), name: last.name })];
+      if (last.distanceKm != null) parts.push(formatDistance(last.distanceKm, state.distanceUnit));
+      if (last.rpe != null) parts.push(t('home.next.lastRpe', { value: last.rpe }));
+      line.append(`${parts.join(' · ')} `);
+      const link = make('a', 'next-last-link', t('home.next.analyze')); link.href = last.href;
+      line.append(link);
+      body.append(line);
+    }
+  }
+  // Loads the forecast once per planned session and date, only when a location is saved.
+  async function loadNextWeather() {
+    const next = state.dashboard?.nextWorkout;
+    if (!next?.location) return;
+    const key = `${next.id}:${next.date}`;
+    if (state.weather?.key === key) return;
+    state.weather = { key, value: null };
+    const value = await fetchWeather(next.location, next.date);
+    if (state.weather?.key !== key) return;
+    state.weather = { key, value };
+    renderNextWorkout();
+  }
+  const PENDING_VISIBLE = 3;
+  function renderPending() {
+    const card = document.getElementById('pendingCard');
+    const list = document.getElementById('pendingList');
+    const nextCard = document.getElementById('nextWorkoutCard');
+    if (!card || !list) return;
+    const items = state.dashboard?.pending ?? [];
+    card.hidden = items.length === 0;
+    nextCard?.classList.toggle('is-wide', items.length === 0);
+    list.replaceChildren();
+    for (const item of items.slice(0, PENDING_VISIBLE)) {
+      const key = item.key === 'plan' ? `plan_${item.state}` : item.key;
+      const text = t(`home.pending.items.${key}`, { count: item.count, name: item.name, percent: item.percent, date: item.weekStart ? shortDate(item.weekStart) : '' });
+      const li = make('li', 'pending-row');
+      const link = make('a', `pending-item pending-${item.key}`); link.href = item.href;
+      link.append(make('span', 'pending-dot'), make('span', 'pending-text', text));
+      li.append(link);
+      list.append(li);
+    }
+    if (items.length > PENDING_VISIBLE) list.append(make('li', 'pending-more', t('home.pending.more', { count: items.length - PENDING_VISIBLE })));
+    const total = document.getElementById('pendingTotal');
+    if (total) total.textContent = items.length ? String(items.length) : '';
+  }
+  function renderCyclePlan() {
+    const phase = document.getElementById('cyclePhase');
+    const notice = document.getElementById('cyclePlanNotice');
+    if (!phase || !notice) return;
+    const plan = state.dashboard?.cycle;
+    phase.hidden = !plan?.phase;
+    phase.textContent = plan?.phase ? t('home.cycle.phase', { name: plan.phase.name, objective: plan.phase.objective }) : '';
+    const stateKey = plan?.planState === 'outdated' ? 'home.cycle.planOutdated' : plan?.planState === 'incompatible' ? 'home.cycle.planIncompatible' : null;
+    notice.hidden = !stateKey;
+    notice.textContent = stateKey ? t(stateKey) : '';
+  }
+  function renderWeekProgress() {
+    const line = document.getElementById('weeklyProgress');
+    if (!line) return;
+    const week = state.dashboard?.week;
+    if (!week || !week.planned) { line.hidden = true; line.textContent = ''; return; }
+    const parts = [t('home.metrics.progress', { completed: week.completed, planned: week.planned })];
+    if (week.previousDistanceKm > 0) {
+      const change = Math.round(((week.distanceKm - week.previousDistanceKm) / week.previousDistanceKm) * 100);
+      parts.push(t('home.metrics.delta', { delta: `${change > 0 ? '+' : ''}${change}%` }));
+    }
+    line.textContent = parts.join(' · ');
+    line.hidden = false;
+  }
+  function renderDashboard() {
+    renderNextWorkout();
+    renderPending();
+    renderCyclePlan();
+    renderWeekProgress();
+  }
+  async function loadDashboard() {
+    const summary = await fetchDashboard();
+    state.dashboard = summary;
+    state.dashboardFailed = summary === null;
+    renderDashboard();
+    void loadNextWeather();
+  }
+
   function render() {
+    renderDashboard();
     renderCycle();
     renderMetrics();
     renderWeekTracker();
@@ -855,9 +997,15 @@ function setupHomePage() {
       renderMetrics();
       renderShoesWidget();
     }
+    if (distanceChanged) renderNextWorkout();
+    if (event.detail?.temperature_unit === 'C' || event.detail?.temperature_unit === 'F') {
+      state.temperatureUnit = event.detail.temperature_unit;
+      renderNextWorkout();
+    }
     if (weekChanged) {
       state.firstDay = next;
       loadMetrics();
+      loadDashboard();
     }
   });
 
@@ -872,6 +1020,7 @@ function setupHomePage() {
       state.temperatureUnit = preferences.temperature_unit;
       loadHeroImage();
       loadHeroQuote();
+      loadDashboard();
       loadCycle();
       loadMetrics();
       loadShoes();

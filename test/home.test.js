@@ -1026,7 +1026,8 @@ test('applyCycleVisibility tolerates missing containers without throwing', () =>
 
 test('home.js keeps the dashboard wiring declarative and reactive', () => {
   const js = readHomeJs();
-  assert.match(js, /import \{ fetchActiveCycle, fetchCalendarTrainings, fetchShoes, fetchHeroImage, fetchOnboarding, updateOnboardingPresentation \} from '\.\/shared\/api\.js'/);
+  assert.match(js, /import \{ fetchActiveCycle, fetchCalendarTrainings, fetchShoes, fetchHeroImage, fetchOnboarding, updateOnboardingPresentation, fetchDashboard, fetchWeather \} from '\.\/shared\/api\.js'/);
+  assert.match(js, /import \{ formatWeatherAutofill \} from '\.\/shared\/weather\.js'/);
   assert.match(js, /import \{ initShell, getShellI18n, getUserPreferences, showShellToast \} from '\.\/shared\/shell\.js'/);
   assert.match(js, /initShell\(\{ active: 'dashboard' \}\)/);
   assert.match(js, /new AbortController\(\)/);
@@ -1133,16 +1134,22 @@ test('home.css places weekly widgets side-by-side with equal-height responsive t
   assert.match(css, /\.hero-credit a:hover,\s*\n\.hero-credit a:focus-visible \{[^}]*text-decoration:\s*underline/);
   assert.match(
     css,
-    /\.dashboard-grid \{[^}]*display:\s*grid;\s*\n\s*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);\s*\n\s*align-items:\s*stretch/,
-    'the widget container uses equal-height desktop grid tracks'
+    /\.dashboard-grid \{[^}]*display:\s*grid;\s*\n\s*grid-template-columns:\s*repeat\(6,\s*minmax\(0,\s*1fr\)\);\s*\n\s*align-items:\s*stretch/,
+    'the widget container uses equal-height six-track desktop grid (2/3 + 1/3 and halves)'
   );
   assert.match(
     css,
     /\.dashboard-grid \.card-section \{[^}]*width:\s*auto;[^}]*height:\s*100%/,
     'each widget card fills its grid track height'
   );
-  assert.match(css, /\.dashboard-grid > \.card-section:first-child \{[^}]*grid-column:\s*1 \/ -1/);
-  assert.match(css, /@media \(max-width: 760px\) \{[\s\S]*?\.dashboard-grid \{\s*grid-template-columns:\s*1fr;/);
+  // Next workout (2/3) beside pending (1/3), the cycle across the row, week and shoes as halves.
+  assert.match(css, /\.dashboard-grid > \.dash-next \{ grid-column: span 4; \}/);
+  assert.match(css, /\.dashboard-grid > \.dash-next\.is-wide \{ grid-column: 1 \/ -1; \}/);
+  assert.match(css, /\.dashboard-grid > \.dash-pending \{ grid-column: span 2; \}/);
+  assert.match(css, /\.dashboard-grid > \.dash-cycle \{ grid-column: 1 \/ -1; \}/);
+  assert.match(css, /\.dashboard-grid > \.dash-half \{ grid-column: span 3; \}/);
+  assert.match(css, /@media \(max-width: 760px\) \{[\s\S]*?\.dashboard-grid \{\s*grid-template-columns:\s*minmax\(0, 1fr\);/);
+  assert.match(css, /\.home-page > \.dashboard-grid \{ min-width: 0; \}/, 'the phone column never grows past the viewport');
   assert.match(
     css,
     /\.metrics-grid \{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/,

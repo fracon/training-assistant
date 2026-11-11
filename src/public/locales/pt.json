@@ -1537,13 +1537,18 @@
         "many": "{count} dias restantes",
         "today": "Hoje",
         "over": "Encerrado"
-      }
+      },
+      "phase": "Fase atual: {name} · {objective}",
+      "planOutdated": "Planejamento desatualizado: gere um novo em Ciclos de Treino.",
+      "planIncompatible": "Planejamento com escala de esforço incompatível: gere um novo em Ciclos de Treino."
     },
     "metrics": {
       "title": "Esta Semana",
       "distance": "Distância Total",
       "time": "Tempo Total",
-      "trackerAria": "Treinos por dia, de segunda a domingo"
+      "trackerAria": "Treinos por dia, de segunda a domingo",
+      "progress": "{completed} de {planned} treinos realizados",
+      "delta": "{delta} vs. semana passada"
     },
     "onboarding": {
       "tourTitle": "Boas-vindas ao Kinesis",
@@ -1588,7 +1593,39 @@
       "fri": "Sex",
       "sat": "Sáb",
       "sun": "Dom"
-    }
+    },
+    "next": {
+      "title": "Próximo treino",
+      "today": "Hoje",
+      "tomorrow": "Amanhã",
+      "empty": "Nenhum treino agendado.",
+      "emptyCta": "Solicitar treinos",
+      "view": "Ver treino",
+      "record": "Registrar resultado",
+      "targetRpe": "Esforço-alvo: RPE {value}",
+      "targetHr": "FC-alvo: {value}",
+      "shoePlanned": "Tênis: {name}",
+      "shoeSuggested": "Tênis sugerido: {name}",
+      "watchScheduled": "Agendado na conta do relógio",
+      "last": "Último: {date} · {name}",
+      "lastRpe": "RPE {value}",
+      "analyze": "Ver e analisar"
+    },
+    "pending": {
+      "title": "Pendências",
+      "more": "+{count} pendência(s)",
+      "total": "{count}",
+      "items": {
+        "results": "{count} treino(s) sem resultado",
+        "effort": "{count} treino(s) sem esforço registrado",
+        "proposal": "Proposta da semana de {date} pronta para revisar",
+        "plan_outdated": "Planejamento do ciclo desatualizado",
+        "plan_incompatible": "Planejamento com escala de esforço incompatível",
+        "hypotheses": "{count} hipótese(s) do treinador para revisar",
+        "shoe": "{name} com {percent}% da quilometragem-alvo"
+      }
+    },
+    "dashboardError": "Não foi possível carregar este cartão. Recarregue a página para tentar de novo."
   },
   "memory": {
     "pageTitle": "Memória de treinamento - Kinesis",

@@ -265,6 +265,17 @@ export function saveManualTrainingResults(id, fields = {}) {
   return requestJson(`/api/trainings/${id}/manual-results`, fields, 'PUT');
 }
 
+// One owner-scoped summary for the dashboard cards; null when it cannot be read.
+export async function fetchDashboard() {
+  try {
+    const response = await fetch('/api/dashboard', { headers: { accept: 'application/json' } });
+    if (!response.ok) return null;
+    return response.json();
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchWeather(location, date) {
   try {
     const params = new URLSearchParams({ location, date });
