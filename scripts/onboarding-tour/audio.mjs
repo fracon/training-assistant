@@ -1,40 +1,45 @@
-// Sound for the tour: the narration plus a few quiet, synthesized effects.
-// Following the motion-graphics guide used for this video, there is no music
-// bed and no whooshes: only a soft tick when an item lands or a value counts,
-// and one chime at the end, all about 20 dB under the voice.
-import { readFileSync, writeFileSync } from 'node:fs';
+// Sound for the tour: the narration, a few sound effects with a visible cause
+// on screen, and an optional music bed mixed later by build.mjs. Effects come
+// from the Pixabay-licensed library bundled with the HyperFrames media skill
+// (free for commercial use, no attribution required); they are decoded at
+// build time and never committed. Each effect is placed so its peak lands one
+// frame after the picture, at a fixed level well under the voice.
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 export const RATE = 48000;
-const EFFECT_GAIN = 0.1; // about -20 dB relative to the narration
+const FRAME = 1 / 30;
 
-const buffer = (seconds) => new Float32Array(Math.ceil(seconds * RATE));
-
-function tone(out, { start = 0, freq, freqEnd = freq, dur, gain = 1, attack = 0.002, decay = dur }) {
-  let phase = 0;
-  const offset = Math.floor(start * RATE);
-  const n = Math.min(out.length - offset, Math.ceil(dur * RATE));
-  for (let i = 0; i < n; i += 1) {
-    const t = i / RATE;
-    phase += (2 * Math.PI * freq * Math.pow(freqEnd / freq, t / dur)) / RATE;
-    out[offset + i] += Math.sin(phase) * Math.min(1, t / attack) * Math.exp(-t / (decay / 4.6)) * gain;
-  }
-  return out;
-}
-
-function bell(out, start, freq, gain, decay = 1.4) {
-  tone(out, { start, freq, dur: decay, gain, decay });
-  tone(out, { start, freq: freq * 2.01, dur: decay * 0.6, gain: gain * 0.35, decay: decay * 0.6 });
-  tone(out, { start, freq: freq * 3.98, dur: decay * 0.3, gain: gain * 0.12, decay: decay * 0.3 });
-}
-
+// name -> [file, gain]. Gains are relative to a peak-normalized effect.
 export const SFX = {
-  tick: () => tone(buffer(0.06), { freq: 2600, freqEnd: 2300, dur: 0.05, gain: 0.5, decay: 0.03 }),
-  chime: () => {
-    const out = buffer(3);
-    [659.25, 783.99, 1046.5].forEach((f, i) => bell(out, i * 0.08, f, 0.5, 2.4));
-    return out;
-  },
+  whoosh1: ['whoosh-short.mp3', 0.16],
+  whoosh2: ['whoosh.mp3', 0.12],
+  whoosh3: ['whoosh-cinematic.mp3', 0.1],
+  pop: ['pop.mp3', 0.2],
+  click: ['click.mp3', 0.26],
+  clickSoft: ['click-soft.mp3', 0.22],
+  notify: ['notification.mp3', 0.2],
+  riser: ['riser.mp3', 0.14],
+  chime: ['chime.mp3', 0.26],
 };
+
+// Decodes each effect once to 48 kHz mono and records where its peak is.
+export function loadSfx(libraryDir, workDir) {
+  mkdirSync(workDir, { recursive: true });
+  const bank = {};
+  for (const [name, [file, gain]] of Object.entries(SFX)) {
+    const source = join(libraryDir, file);
+    if (!existsSync(source)) throw new Error(`Sound effect ${source} not found; pass --sfx <HyperFrames media-use sfx folder>.`);
+    const wav = join(workDir, `${file}.wav`);
+    if (!existsSync(wav)) execFileSync('ffmpeg', ['-v', 'error', '-y', '-i', source, '-ac', '1', '-ar', String(RATE), '-c:a', 'pcm_s16le', wav]);
+    const samples = readMonoWav(wav);
+    let peak = 0; let at = 0;
+    for (let i = 0; i < samples.length; i += 1) if (Math.abs(samples[i]) > peak) { peak = Math.abs(samples[i]); at = i; }
+    bank[name] = { samples, scale: peak > 0 ? gain / peak : 0, peakOffset: at / RATE };
+  }
+  return bank;
+}
 
 export function readMonoWav(path) {
   const data = readFileSync(path);
@@ -77,23 +82,25 @@ export function writeStereoWav(path, left, right) {
   writeFileSync(path, data);
 }
 
-// Mixes narration and effects. `narration` is [{ time, samples }] and
-// `sounds` is [{ time, sfx }], both in absolute seconds.
-export function mixTour({ duration, narration, sounds }) {
-  const left = buffer(duration); const right = buffer(duration);
+// Mixes narration and effects. `narration` is [{ time, samples }]; `sounds` is
+// [{ time, sfx }] where `time` is when the picture happens (the effect's peak
+// lands one frame later).
+export function mixTour({ duration, narration, sounds, bank }) {
+  const length = Math.ceil(duration * RATE);
+  const left = new Float32Array(length); const right = new Float32Array(length);
   for (const clip of narration) {
     const off = Math.floor(clip.time * RATE);
-    for (let i = 0; i < clip.samples.length && off + i < left.length; i += 1) {
+    for (let i = 0; i < clip.samples.length && off + i < length; i += 1) {
       left[off + i] += clip.samples[i]; right[off + i] += clip.samples[i];
     }
   }
   for (const { time, sfx } of sounds) {
-    const make = SFX[sfx];
-    if (!make) throw new Error(`Unknown sound effect ${sfx}`);
-    const clip = make();
-    const off = Math.floor(time * RATE);
-    for (let i = 0; i < clip.length && off + i < left.length; i += 1) {
-      left[off + i] += clip[i] * EFFECT_GAIN; right[off + i] += clip[i] * EFFECT_GAIN;
+    const effect = bank[sfx];
+    if (!effect) throw new Error(`Unknown sound effect ${sfx}`);
+    const off = Math.round((time + FRAME - effect.peakOffset) * RATE);
+    for (let i = Math.max(0, -off); i < effect.samples.length && off + i < length; i += 1) {
+      const v = effect.samples[i] * effect.scale;
+      left[off + i] += v; right[off + i] += v;
     }
   }
   return [left, right];

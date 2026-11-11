@@ -1564,7 +1564,7 @@
           "shoes2": "A cada resultado registrado, o Kinesis soma a rodagem do par que você usou.",
           "cycle1": "Em seguida, crie um ciclo com o seu objetivo e uma data-alvo.",
           "cycle2": "Pode ser uma prova ou uma meta pessoal, como correr dez quilômetros.",
-          "cycle3": "Se quiser, gere com IA um planejamento com as fases do ciclo.",
+          "cycle3": "Se quiser, gere um planejamento com as fases do ciclo.",
           "request1": "Em Solicitar Treinos, informe seus dias, horários e o tempo disponível.",
           "request2": "O Kinesis prepara uma proposta semanal, com a previsão do tempo, para você revisar e aplicar.",
           "request3": "Prefere montar o plano por conta própria? Também dá para importar uma planilha.",

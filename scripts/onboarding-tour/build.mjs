@@ -2,7 +2,8 @@
 // Builds the narrated welcome tour videos (PT and EN) for the dashboard.
 //
 //   node scripts/onboarding-tour/build.mjs --python <venv python> --kokoro <model dir> \
-//     --whisper-model <ggml model> [--lang pt,en] [--work <dir>] [--preview]
+//     --whisper-model <ggml model> [--music <file> [--music-start <s>]] [--sfx <dir>]
+//     [--lang pt,en] [--work <dir>] [--preview]
 //
 // Pipeline per language (see README.md):
 //   1. Kokoro (local neural TTS) speaks each narration cue.
@@ -20,7 +21,8 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { TOUR_SCENES, tourCueKey } from '../../src/public/shared/onboarding.js';
 import { buildTimeline } from './timeline.mjs';
-import { RATE, mixTour, readMonoWav, trimSilence, writeStereoWav } from './audio.mjs';
+import { RATE, loadSfx, mixTour, readMonoWav, trimSilence, writeStereoWav } from './audio.mjs';
+import { homedir } from 'node:os';
 import { captureScreens } from './capture.mjs';
 import { composeProject } from './compose.mjs';
 
@@ -38,12 +40,12 @@ const VOICES = {
 // Spoken spellings only; captions and the transcript keep the written text.
 // "Kinésis" gives the Portuguese voice an open, stressed é (ki-NÉ-zis).
 const RESPELL = {
-  pt: [[/\bKinesis\b/g, 'Kinésis'], [/\bIA\b/g, 'I A'], [/\bFIT\b/g, 'fít']],
-  en: [[/\bAI\b/g, 'A.I.']],
+  pt: [[/\bKinesis\b/g, 'Kinésis'], [/\bFIT\b/g, 'fít']],
+  en: [],
 };
 
 function args() {
-  const out = { lang: 'pt,en' };
+  const out = { lang: 'pt,en', sfx: join(homedir(), '.claude/skills/media-use/audio/assets/sfx'), 'music-start': '0' };
   const argv = process.argv.slice(2);
   for (let i = 0; i < argv.length; i += 1) {
     const key = argv[i].replace(/^--/, '');
@@ -52,7 +54,7 @@ function args() {
     i += 1;
   }
   if (!out.python || !out.kokoro || !out['whisper-model']) {
-    console.error('Usage: build.mjs --python <venv python> --kokoro <model dir> --whisper-model <ggml model> [--lang pt,en] [--work <dir>] [--preview]');
+    console.error('Usage: build.mjs --python <venv python> --kokoro <model dir> --whisper-model <ggml model> [--music <file> [--music-start <s>]] [--sfx <dir>] [--lang pt,en] [--work <dir>] [--preview]');
     process.exit(2);
   }
   return out;
@@ -146,6 +148,26 @@ async function dmSans(work) {
   return file;
 }
 
+// Voice and effects, plus the optional music bed: about -18 dB under the voice,
+// ducked further while the narrator speaks, faded in and out, then normalized
+// to -16 LUFS with a -1.5 dBTP ceiling.
+function finalMix(options, mixed, duration, target) {
+  const norm = 'loudnorm=I=-16:TP=-1.5:LRA=11';
+  if (!options.music) {
+    run('ffmpeg', ['-v', 'error', '-y', '-i', mixed, '-af', norm, '-ar', String(RATE), target]);
+    return;
+  }
+  const d = duration.toFixed(3);
+  const graph = [
+    '[0:a]asplit=2[voice][key]',
+    `[1:a]aresample=${RATE},aformat=channel_layouts=stereo,atrim=0:${d},asetpts=N/SR/TB,volume=0.13,afade=t=in:d=1.2,afade=t=out:st=${(duration - 3).toFixed(3)}:d=3[bed]`,
+    '[bed][key]sidechaincompress=threshold=0.02:ratio=4:attack=30:release=600[ducked]',
+    `[voice][ducked]amix=inputs=2:normalize=0:duration=first,${norm}[out]`,
+  ].join(';');
+  run('ffmpeg', ['-v', 'error', '-y', '-i', mixed, '-stream_loop', '-1', '-ss', options['music-start'], '-i', options.music,
+    '-filter_complex', graph, '-map', '[out]', '-ar', String(RATE), target]);
+}
+
 function hyperframes(dir, argv) {
   execFileSync('npx', [...HYPERFRAMES, ...argv], { cwd: dir, stdio: 'inherit', env: { ...process.env, HYPERFRAMES_NO_TELEMETRY: '1', DO_NOT_TRACK: '1' } });
 }
@@ -168,6 +190,7 @@ async function main() {
   mkdirSync(work, { recursive: true });
   mkdirSync(OUT_DIR, { recursive: true });
   const fontFile = await dmSans(work);
+  const bank = loadSfx(options.sfx, join(work, 'sfx'));
   const manifest = existsSync(join(work, 'manifest.json')) ? JSON.parse(readFileSync(join(work, 'manifest.json'), 'utf8')) : {};
   for (const lang of languages) {
     const messages = JSON.parse(readFileSync(join(ROOT, `src/public/locales/${lang}.json`), 'utf8'));
@@ -189,10 +212,10 @@ async function main() {
     const words = Object.fromEntries(Object.entries(clips).map(([key, clip]) => [key, clip.words]));
     const { sounds } = composeProject({ lang, dir: project, timeline, words, cueText, shots, fontFile, logoFile: join(ROOT, 'src/public/assets/brand/logo-mark.png') });
     const narration = timeline.scenes.flatMap((scene) => scene.cues.map((cue) => ({ time: scene.start + cue.start, samples: clips[cue.key].samples })));
-    const [left, right] = mixTour({ duration: timeline.duration, narration, sounds });
+    const [left, right] = mixTour({ duration: timeline.duration, narration, sounds, bank });
     const mixed = join(work, lang, 'mix.wav');
     writeStereoWav(mixed, left, right);
-    run('ffmpeg', ['-v', 'error', '-y', '-i', mixed, '-af', 'loudnorm=I=-16:TP=-1.5:LRA=11', '-ar', String(RATE), join(project, 'assets/narration.wav')]);
+    finalMix(options, mixed, timeline.duration, join(project, 'assets/narration.wav'));
     hyperframes(project, ['check']);
     if (options.preview) {
       console.log(`[${lang}] project ready for review in ${project}`);

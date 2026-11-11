@@ -25,12 +25,20 @@ build; it only serves the files.
 5. **Delivery** — ffmpeg encodes 1280×720 VP9/Opus WebM and H.264/AAC MP4, a
    poster, and the WebVTT captions; the manifest URLs carry content hashes.
 
-The video follows a few motion-graphics rules: one idea per screen with one
-short headline, real screens with zooms into the part that matters, moves
-anchored to spoken words, text inside the title-safe area, no music bed and no
-whooshes: only a quiet tick when something lands and one chime at the end,
-about 20 dB under the voice. The watch scene is a generic watch, deliberately
-without a brand, because more watch makers are planned.
+The video follows the HyperFrames motion and sound guidance: one idea per
+screen with one short headline, real screens with zooms into the part that
+matters, a cursor that clicks the control the narrator names, moves anchored to
+spoken words, and text inside the title-safe area. The narration never says
+"AI"; it talks about the planning itself. The watch scene is a generic watch,
+deliberately without a brand, because more watch makers are planned.
+
+Sound: every effect has a visible cause and peaks one frame after its picture —
+a soft whoosh on each cut (three takes in rotation), a pop when a control is
+highlighted, a click when the cursor presses, a soft click and pop when a
+workout is dragged, a notification when it reaches the watch, and one riser into
+the closing chime. A music bed sits about 18 dB under the voice and ducks further
+while the narrator speaks. The final mix is normalized to -16 LUFS with a
+-1.5 dBTP ceiling; check it with `npx hyperframes@0.9.31 audio <video> --json`.
 
 ## Sources of truth
 
@@ -43,7 +51,7 @@ without a brand, because more watch makers are planned.
 | Scene timing | `timeline.mjs` (follows the measured narration) |
 | Screens and zoom targets | `SHOTS` in `capture.mjs` |
 | Scenes, camera moves, highlights | `compose.mjs` (word anchors per scene; English equivalents in `EN_WORDS`) |
-| Effects and mix | `audio.mjs` |
+| Effects, levels and mix | `audio.mjs` (effects), `finalMix` in `build.mjs` (music bed, ducking, loudness) |
 
 Changing a sentence in a locale file and rebuilding keeps voice, captions,
 moves and effects aligned. If a cue no longer contains an anchor word, the move
@@ -74,6 +82,18 @@ falls back to the word's position in the text; update the anchor in
   install -m 755 build/bin/whisper-cli ~/.local/bin/ && sh ./models/download-ggml-model.sh small
   ```
 
+- Sound effects: the Pixabay-licensed library bundled with the HyperFrames
+  media skill (`npx hyperframes@0.9.31 skills`), read from
+  `~/.claude/skills/media-use/audio/assets/sfx` (override with `--sfx <dir>`).
+  The Pixabay Content License allows commercial use without attribution; the
+  raw files are not committed, only the mixed result.
+- Music bed (optional, `--music <file>`): the current videos use the HeyGen
+  catalog track "Astral Generated Music: 05ca2a0c" ("light upbeat professional
+  corporate background, warm and optimistic"), retrieved with a free HeyGen
+  sign-in (`npx hyperframes@0.9.31 auth login`) under HeyGen's terms. Keep the
+  file outside the repository and pass its path; `--music-start <s>` skips into
+  the track. Without `--music` the video has voice and effects only.
+
 Speech is synthesized and transcribed locally; no narration text is sent to a
 cloud service. Set `HYPERFRAMES_NO_TELEMETRY=1` (the build does) to keep the
 HyperFrames CLI from sending usage events.
@@ -81,7 +101,7 @@ HyperFrames CLI from sending usage events.
 ## Build
 
 ```sh
-ARGS="--python $HOME/.venvs/kokoro/bin/python --kokoro $HOME/kokoro --whisper-model $HOME/.local/src/whisper.cpp/models/ggml-small.bin --work /tmp/tour"
+ARGS="--music $HOME/kokoro/tour-music.mp3 --python $HOME/.venvs/kokoro/bin/python --kokoro $HOME/kokoro --whisper-model $HOME/.local/src/whisper.cpp/models/ggml-small.bin --work /tmp/tour"
 
 # Review: narration, screens and the HyperFrames project, checked but not rendered.
 node scripts/onboarding-tour/build.mjs $ARGS --preview

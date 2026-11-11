@@ -61,7 +61,14 @@ const openResult = (target, source = null) => `(async () => {
 const SHOTS = [
   { id: 'home', path: '/home.html', boxes: {} },
   { id: 'shoes', path: '/shoes.html', boxes: { card: '.shoe-card, [data-shoe-id], .card', list: 'all:.shoe-card, [data-shoe-id]' } },
-  { id: 'cycles', path: '/cycles.html', boxes: { card: '.cycle-card, .card', planning: '[data-action="planning"], .cycle-planning-btn, .btn-icon' } },
+  // A regular account sees four card actions; planning is the last one.
+  { id: 'cycles', path: '/cycles.html', boxes: { card: '.cycle-card, .card', planning: '[data-action="planning"]', actions: 'all:.cycle-card .btn-icon' } },
+  { id: 'planning', path: '/cycles.html', prepare: `(async () => {
+    document.querySelector('[data-action="planning"]').click();
+    for (let i = 0; i < 60 && (document.getElementById('cyclePlanningModal').hidden || document.getElementById('cyclePlanningGenerate').disabled); i += 1) await new Promise((r) => setTimeout(r, 100));
+    await new Promise((r) => setTimeout(r, 500));
+    return true;
+  })()`, boxes: { modal: '#cyclePlanningModal .modal-card', generate: '#cyclePlanningGenerate' } },
   { id: 'request', path: '/ai-coach.html', boxes: { availability: '.availability-fieldset', days: 'all:.availability-grid' } },
   { id: 'generate', path: '/ai-coach.html', prepare: `(async () => { document.getElementById('generateBtn')?.scrollIntoView({ block: 'center' }); await new Promise((r) => setTimeout(r, 400)); return true; })()`, boxes: { generate: '#generateBtn' } },
   { id: 'calendar', path: '/calendar.html', boxes: { chips: 'all:.training-chip', first: '.training-chip', cells: 'each:.day-cell', chipList: 'each:.training-chip', import: '#importBtn' } },

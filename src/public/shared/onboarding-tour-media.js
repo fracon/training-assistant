@@ -2,10 +2,10 @@
 // Media, captions and scene boundaries of the narrated welcome tour.
 export const TOUR_MEDIA = {
   "pt": {
-    "duration": 84.272,
-    "webm": "/assets/onboarding/tour/kinesis-tour-pt.webm?v=7e23111926",
-    "mp4": "/assets/onboarding/tour/kinesis-tour-pt.mp4?v=8c87d3f67c",
-    "captions": "/assets/onboarding/tour/kinesis-tour-pt.vtt?v=770922a985",
+    "duration": 83.897,
+    "webm": "/assets/onboarding/tour/kinesis-tour-pt.webm?v=4670988158",
+    "mp4": "/assets/onboarding/tour/kinesis-tour-pt.mp4?v=6b9b15fc06",
+    "captions": "/assets/onboarding/tour/kinesis-tour-pt.vtt?v=d8c9ce17f0",
     "poster": "/assets/onboarding/tour/kinesis-tour-pt-poster.jpg?v=58364dfa34",
     "scenes": [
       {
@@ -21,45 +21,45 @@ export const TOUR_MEDIA = {
       {
         "id": "cycle",
         "start": 15.72,
-        "end": 28.624
+        "end": 28.249
       },
       {
         "id": "request",
-        "start": 28.624,
-        "end": 45.325
+        "start": 28.249,
+        "end": 44.95
       },
       {
         "id": "calendar",
-        "start": 45.325,
-        "end": 52.182
+        "start": 44.95,
+        "end": 51.807
       },
       {
         "id": "watch",
-        "start": 52.182,
-        "end": 56.682
+        "start": 51.807,
+        "end": 56.307
       },
       {
         "id": "result",
-        "start": 56.682,
-        "end": 69.009
+        "start": 56.307,
+        "end": 68.634
       },
       {
         "id": "insights",
-        "start": 69.009,
-        "end": 78.321
+        "start": 68.634,
+        "end": 77.946
       },
       {
         "id": "outro",
-        "start": 78.321,
-        "end": 84.272
+        "start": 77.946,
+        "end": 83.897
       }
     ]
   },
   "en": {
-    "duration": 83.152,
-    "webm": "/assets/onboarding/tour/kinesis-tour-en.webm?v=b903d86320",
-    "mp4": "/assets/onboarding/tour/kinesis-tour-en.mp4?v=51c069ea0c",
-    "captions": "/assets/onboarding/tour/kinesis-tour-en.vtt?v=abad22da88",
+    "duration": 82.034,
+    "webm": "/assets/onboarding/tour/kinesis-tour-en.webm?v=aacf607472",
+    "mp4": "/assets/onboarding/tour/kinesis-tour-en.mp4?v=423e5974a8",
+    "captions": "/assets/onboarding/tour/kinesis-tour-en.vtt?v=74954dfda8",
     "poster": "/assets/onboarding/tour/kinesis-tour-en-poster.jpg?v=ab593ae30c",
     "scenes": [
       {
@@ -75,37 +75,37 @@ export const TOUR_MEDIA = {
       {
         "id": "cycle",
         "start": 13.974,
-        "end": 27.932
+        "end": 26.814
       },
       {
         "id": "request",
-        "start": 27.932,
-        "end": 43.366
+        "start": 26.814,
+        "end": 42.247
       },
       {
         "id": "calendar",
-        "start": 43.366,
-        "end": 50.248
+        "start": 42.247,
+        "end": 49.129
       },
       {
         "id": "watch",
-        "start": 50.248,
-        "end": 54.748
+        "start": 49.129,
+        "end": 53.629
       },
       {
         "id": "result",
-        "start": 54.748,
-        "end": 67.843
+        "start": 53.629,
+        "end": 66.725
       },
       {
         "id": "insights",
-        "start": 67.843,
-        "end": 77.731
+        "start": 66.725,
+        "end": 76.613
       },
       {
         "id": "outro",
-        "start": 77.731,
-        "end": 83.152
+        "start": 76.613,
+        "end": 82.034
       }
     ]
   }

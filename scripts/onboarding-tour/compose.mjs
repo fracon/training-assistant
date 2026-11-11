@@ -96,7 +96,19 @@ function stageScene(sceneId, length, headline, plan) {
   rings.forEach((r, i) => {
     tl.push(`tl.fromTo('#${sceneId}-ring${i}', { opacity: 0, scale: 1.08 }, { opacity: 1, scale: 1, duration: 0.35, ease: 'expo.out' }, ${fix(r.at)});`);
     if (r.until) tl.push(`tl.to('#${sceneId}-ring${i}', { opacity: 0, duration: 0.2, ease: 'power2.in' }, ${fix(r.until)});`);
-    sounds.push({ time: r.at + 0.033, sfx: 'tick' });
+    sounds.push({ time: r.at, sfx: r.click ? 'click' : 'pop' });
+  });
+  // A cursor travels to each "click" ring and presses it. It lives outside the
+  // camera, so its position is the box centre under the camera state in effect.
+  const camAt = (t) => [camera[0], ...moves.filter((m) => m.at + 0.02 <= t)].at(-1).state;
+  const clicks = rings.filter((r) => r.click);
+  clicks.forEach((r) => {
+    const st = camAt(r.at - 0.9);
+    const px = fix(st.x + (r.box.x + r.box.w / 2) * st.scale); const py = fix(st.y + (r.box.y + r.box.h / 2) * st.scale);
+    tl.push(`tl.fromTo('#${sceneId}-cursor', { x: ${fix(px + 170)}, y: ${fix(py + 120)}, opacity: 0, scale: 1 }, { x: ${fix(px - 9)}, y: ${fix(py - 5)}, opacity: 1, duration: 0.7, ease: 'power3.out', immediateRender: false }, ${fix(r.at - 0.85)});`);
+    tl.push(`tl.to('#${sceneId}-cursor', { scale: 0.86, duration: 0.07, ease: 'power2.in' }, ${fix(r.at - 0.07)});`);
+    tl.push(`tl.to('#${sceneId}-cursor', { scale: 1, duration: 0.14, ease: 'power2.out' }, ${fix(r.at)});`);
+    tl.push(`tl.to('#${sceneId}-cursor', { opacity: 0, duration: 0.2, ease: 'power2.in' }, ${fix(r.at + 0.6)});`);
   });
   covers.forEach((c, i) => {
     tl.push(`tl.set('#${sceneId}-cover${i}', { opacity: 0 }, 0);`);
@@ -108,7 +120,7 @@ function stageScene(sceneId, length, headline, plan) {
     tl.push(`tl.to('#${sceneId}-ghost${i}', { scale: 1.06, boxShadow: '0 18px 36px rgba(60,53,42,0.28)', duration: 0.25, ease: 'power2.out' }, ${fix(g.lift)});`);
     tl.push(`tl.to('#${sceneId}-ghost${i}', { x: ${g.to.x - g.from.x}, y: ${g.to.y - g.from.y}, duration: 0.7, ease: 'power2.inOut' }, ${fix(g.lift + 0.2)});`);
     tl.push(`tl.to('#${sceneId}-ghost${i}', { scale: 1, boxShadow: '0 0 0 rgba(60,53,42,0)', duration: 0.3, ease: 'expo.out' }, ${fix(g.lift + 0.9)});`);
-    sounds.push({ time: g.lift + 0.92, sfx: 'tick' });
+    sounds.push({ time: g.lift, sfx: 'clickSoft' }, { time: g.lift + 0.9, sfx: 'pop' });
   });
   return { sounds, html: `<template>
   <style>
@@ -122,6 +134,7 @@ function stageScene(sceneId, length, headline, plan) {
     .shot { position: absolute; left: 0; top: 0; width: ${W}px; height: ${H}px; }
     .ring { position: absolute; border-radius: 14px; box-shadow: 0 0 0 4px ${TOKENS.accent}, 0 0 0 12px rgba(111,144,112,0.22); }
     .crop { position: absolute; background-size: ${W}px ${H}px; background-repeat: no-repeat; border-radius: 10px; }
+    .cursor { position: absolute; left: 0; top: 0; width: 44px; height: 44px; transform-origin: 6px 4px; filter: drop-shadow(0 4px 8px rgba(60,53,42,0.35)); opacity: 0; }
   </style>
   <div id="root" data-composition-id="${sceneId}" data-width="${W}" data-height="${H}">
     ${headlineMarkup(`${sceneId}-head`, headline, length)}
@@ -133,6 +146,7 @@ function stageScene(sceneId, length, headline, plan) {
           ${ghostEls}
           ${ringEls}
         </div>
+        ${rings.some((r) => r.click) ? `<svg id="${sceneId}-cursor" class="cursor" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l14 8-6.2 1.6L9.6 19z" fill="#fdfbf6" stroke="#3c352a" stroke-width="1.6" stroke-linejoin="round"/></svg>` : ''}
       </div>
     </div>
     ${extra}
@@ -152,7 +166,7 @@ function introScene(scene, at, strings) {
   const tag = strings.tagline.map((w, i) => `<span class="tw" id="intro-t${i}">${esc(w)}</span>`).join(' ');
   const kinesisAt = at('intro1', 'kinesis');
   const tagAt = strings.taglineAnchors.map((w) => at('intro2', w));
-  const sounds = [...tagAt.map((t) => ({ time: t + 0.033, sfx: 'tick' }))];
+  const sounds = [...tagAt.map((t) => ({ time: t, sfx: 'clickSoft' }))];
   return { sounds, html: `<template>
   <style>
     ${FONT_FACE}
@@ -185,7 +199,7 @@ function watchScene(scene, at, strings, shots) {
   const chip = shots.calendar.boxes.first;
   const land = at('watch1', 'direto') ?? 1.5;
   const go = Math.max(0.6, land - 0.9);
-  const sounds = [{ time: land + 0.033, sfx: 'tick' }];
+  const sounds = [{ time: land, sfx: 'notify' }];
   const s = strings.watch;
   const face = 420;
   const cx = W / 2 + 180; const cy = 640;
@@ -245,7 +259,7 @@ function outroScene(scene, at, strings) {
   const o = strings.outro;
   const closeAt = at('outro2', o.closing.split(' ')[0]);
   const checks = o.steps.map((_, i) => fix(0.12 + i * 0.3));
-  const sounds = [...checks.map((t) => ({ time: t + 0.033, sfx: 'tick' })), { time: closeAt, sfx: 'chime' }];
+  const sounds = [...checks.map((t) => ({ time: t, sfx: 'pop' })), { time: closeAt - 0.3, sfx: 'riser' }, { time: closeAt, sfx: 'chime' }];
   const stepHtml = o.steps.map((label, i) => `<li class="step" id="outro-s${i}"><span class="check">✓</span>${esc(label)}</li>`).join('');
   return { sounds, html: `<template>
   <style>
@@ -292,13 +306,19 @@ function screenPlan(id, at, shots, cueAt) {
     case 'cycle': {
       const card = pad(b('cycles', 'card'), 24);
       const planning = b('cycles', 'planning');
+      const actions = b('cycles', 'actions');
+      const modal = b('planning', 'modal');
+      const generate = b('planning', 'generate');
+      const press = at('cycle3', 'planejamento');
       return {
-        shots: [{ id: 'cycles' }],
+        shots: [{ id: 'cycles' }, { id: 'planning', at: press + 0.25 }],
         camera: [{ state: cam(null) }, { at: at('cycle1', 'objetivo') - 0.3, state: cam(card, 0.8) },
           { at: at('cycle2', 'meta') - 0.3, state: cam({ ...card, w: card.w * 0.6, h: card.h * 0.6 }, 0.85, 2.6), duration: 1.1 },
-          { at: cueAt('cycle3') - 0.1, state: cam(pad(union([planning, b('cycles', 'card')]), 20), 0.85) }],
+          { at: cueAt('cycle3') - 0.1, state: cam({ x: card.x, y: card.y + card.h * 0.3, w: card.w * 0.62, h: card.h * 0.7 }, 0.92, 2.2), duration: 0.8 },
+          { at: press + 0.3, state: cam(pad({ x: modal.x, y: modal.y + modal.h * 0.45, w: modal.w, h: modal.h * 0.55 }, 20), 0.92, 1.6), duration: 0.7 }],
         rings: [{ box: pad(b('cycles', 'card'), 8), at: at('cycle1', 'data'), until: cueAt('cycle3') - 0.15 },
-          { box: pad(planning, 8), at: at('cycle3', 'ia') }],
+          { box: pad(planning, 6), at: press, until: press + 0.45, click: true },
+          { box: pad(generate, 8), at: at('cycle3', 'fases') }],
       };
     }
     case 'request': {
@@ -314,7 +334,7 @@ function screenPlan(id, at, shots, cueAt) {
           { at: cueAt('request3') - 0.25, state: cam(pad(imp, 360), 0.9), duration: 0.6 },
           { at: at('request3', 'planilha') - 0.35, state: cam(pad(imp, 160), 0.9), duration: 0.7 }],
         rings: [{ box: pad(b('request', 'days'), 6), at: at('request1', 'tempo'), until: cueAt('request2') - 0.25 },
-          { box: pad(generate, 8), at: at('request2', 'proposta'), until: cueAt('request3') - 0.25 },
+          { box: pad(generate, 8), at: at('request2', 'proposta'), until: cueAt('request3') - 0.25, click: true },
           { box: pad(imp, 8), at: at('request3', 'montar') }],
       };
     }
@@ -354,7 +374,7 @@ function screenPlan(id, at, shots, cueAt) {
         shots: [{ id: 'analysis' }, { id: 'memory', at: cueAt('insights2') - 0.2 }],
         camera: [{ state: cam(null) }, { at: at('insights1', 'analise') - 0.4, state: cam(pad(generate, 220), 0.9) },
           { at: cueAt('insights2') - 0.25, state: cam(pad(area, 10), 0.95, 1.3), duration: 0.6 }],
-        rings: [{ box: pad(generate, 8), at: at('insights1', 'analise'), until: cueAt('insights2') - 0.25 },
+        rings: [{ box: pad(generate, 8), at: at('insights1', 'analise'), until: cueAt('insights2') - 0.25, click: true },
           ...sections.slice(0, 2).map((s, i) => ({ box: pad(s, 6), at: at('insights2', i === 0 ? 'historico' : 'informacao') }))],
       };
     }
@@ -365,7 +385,7 @@ function screenPlan(id, at, shots, cueAt) {
 
 // English anchors for the same moves, keyed by the Portuguese word used above.
 const EN_WORDS = {
-  tenis: 'shoes', rodagem: 'mileage', objetivo: 'goal', data: 'date', ia: 'ai', dias: 'days', tempo: 'long', meta: 'personal', montar: 'build', revisar: 'review',
+  tenis: 'shoes', planejamento: 'plan', fases: 'phases', rodagem: 'mileage', objetivo: 'goal', data: 'date', dias: 'days', tempo: 'long', meta: 'personal', montar: 'build', revisar: 'review',
   proposta: 'proposal', planilha: 'spreadsheet', calend: 'calendar', arrast: 'drag', direto: 'straight',
   import: 'import', relogio: 'watch', fit: 'fit', esforco: 'effort', analise: 'analysis', historico: 'history',
   informacao: 'detail',
@@ -384,7 +404,7 @@ export function composeProject({ lang, dir, timeline, words, cueText, shots, fon
 
   const sounds = [];
   const hosts = [];
-  for (const scene of timeline.scenes) {
+  for (const [index, scene] of timeline.scenes.entries()) {
     const clock = wordClock(scene, words, cueText);
     const at = (key, word, which) => clock(key, lang === 'en' ? (EN_WORDS[word] ?? word) : word, which);
     const cueAt = (key) => scene.cues.find((c) => c.key === key).start;
@@ -395,6 +415,8 @@ export function composeProject({ lang, dir, timeline, words, cueText, shots, fon
     else built = stageScene(scene.id, scene.length, strings.headlines[scene.id], screenPlan(scene.id, at, shots, cueAt));
     writeFileSync(join(dir, 'compositions', `${scene.id}.html`), built.html);
     sounds.push(...built.sounds.map((s) => ({ ...s, time: fix(scene.start + s.time) })));
+    // A soft whoosh on every cut, rotating three takes so it never repeats back to back.
+    if (index > 0) sounds.push({ time: fix(scene.start + 0.05), sfx: `whoosh${(index % 3) + 1}` });
     hosts.push(`<div id="${scene.id}" data-composition-id="${scene.id}" data-composition-src="compositions/${scene.id}.html" data-start="${fix(scene.start)}" data-duration="${fix(scene.length)}" data-track-index="1" data-track-kind="graphics" data-width="${W}" data-height="${H}"></div>`);
   }
   const duration = fix(timeline.duration);

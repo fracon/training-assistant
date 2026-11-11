@@ -18,7 +18,7 @@ the next setup step for the account. It never autoplays, and it can be reopened
 at any time from the user menu (**Welcome tour / Tour de boas-vindas**). The
 videos are produced offline with HyperFrames from real Kinesis screens of a
 synthetic account, local neural speech (Kokoro) with word timings from
-whisper.cpp, and a few quiet synthesized effects; see
+whisper.cpp, licensed sound effects and a music bed under the voice; see
 [`scripts/onboarding-tour/README.md`](scripts/onboarding-tour/README.md).
 
 ## AI integration: cycle planning and weekly proposals
