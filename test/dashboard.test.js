@@ -156,6 +156,18 @@ test('pending lists missing results and effort, a ready proposal, hypotheses and
   assert.ok(!keys.includes('proposal'), 'only the latest weekly execution counts');
 });
 
+test('an imported result left open without effort asks for the effort, not for a result', (t) => {
+  const { db, training } = fixture(t);
+  const imported = training({ dia: '2026-11-10', fit_distance: 7 });
+  const today_ = training({ dia: today, fit_distance: 5 });
+  db.prepare("UPDATE trainings SET result_data_source='garmin_connect' WHERE id IN (?,?)").run(imported, today_);
+  const outOfRange = training({ dia: '2026-11-09', completed: 1 });
+  db.prepare('UPDATE trainings SET feedback_rpe=9 WHERE id=?').run(outOfRange);
+  assert.deepEqual(dashboardSummary(db, 1, config, today).pending, [
+    { key: 'effort', count: 3, href: `/training-result.html?id=${today_}` },
+  ]);
+});
+
 test('GET /api/dashboard requires a session and reads only the signed-in account', async (t) => {
   const db = createDatabase({ filename: ':memory:' });
   const app = await buildServer({ db, sessionCookieSecure: false });

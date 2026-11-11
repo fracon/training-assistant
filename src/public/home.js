@@ -802,9 +802,23 @@ function setupHomePage() {
     const weekday = formatWeekday(iso, language());
     return `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)} · ${shortDate(iso)}`;
   }
+  // Rebuilding a card must not drop keyboard focus: the focused link is found
+  // again in the new markup by its class and destination.
+  function keepFocusWithin(container, render) {
+    const focused = container.contains(document.activeElement) ? document.activeElement : null;
+    const match = focused && { className: focused.className, href: focused.getAttribute('href') };
+    render();
+    if (!match) return;
+    const same = [...container.querySelectorAll('a, button')]
+      .find((element) => element.className === match.className && element.getAttribute('href') === match.href);
+    same?.focus({ preventScroll: true });
+  }
   function renderNextWorkout() {
     const body = document.getElementById('nextWorkoutBody');
     if (!body) return;
+    keepFocusWithin(body, () => buildNextWorkout(body));
+  }
+  function buildNextWorkout(body) {
     body.replaceChildren();
     if (state.dashboardFailed) { body.append(make('p', 'next-empty', t('home.dashboardError'))); return; }
     const summary = state.dashboard;
@@ -859,7 +873,8 @@ function setupHomePage() {
     const value = await fetchWeather(next.location, next.date);
     if (state.weather?.key !== key) return;
     state.weather = { key, value };
-    renderNextWorkout();
+    // A failed lookup changes nothing on screen.
+    if (value) renderNextWorkout();
   }
   const PENDING_VISIBLE = 3;
   function renderPending() {
@@ -870,6 +885,11 @@ function setupHomePage() {
     const items = state.dashboard?.pending ?? [];
     card.hidden = items.length === 0;
     nextCard?.classList.toggle('is-wide', items.length === 0);
+    keepFocusWithin(list, () => buildPending(list, items));
+    const total = document.getElementById('pendingTotal');
+    if (total) total.textContent = items.length ? String(items.length) : '';
+  }
+  function buildPending(list, items) {
     list.replaceChildren();
     for (const item of items.slice(0, PENDING_VISIBLE)) {
       const key = item.key === 'plan' ? `plan_${item.state}` : item.key;
@@ -881,8 +901,6 @@ function setupHomePage() {
       list.append(li);
     }
     if (items.length > PENDING_VISIBLE) list.append(make('li', 'pending-more', t('home.pending.more', { count: items.length - PENDING_VISIBLE })));
-    const total = document.getElementById('pendingTotal');
-    if (total) total.textContent = items.length ? String(items.length) : '';
   }
   function renderCyclePlan() {
     const phase = document.getElementById('cyclePhase');

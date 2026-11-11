@@ -117,6 +117,22 @@ test('Chrome: the dashboard shows the next workout, pending items, cycle phase a
   assert.equal(en.pending[2], EN.pending.items.plan_outdated);
   assert.equal(en.notice, EN.cycle.planOutdated);
 
+  // A forecast that arrives while a link is focused keeps that link focused.
+  const held = await browser.intercept(`${origin}/api/weather*`);
+  await browser.command('Page.navigate', { url: `${origin}/home.html` });
+  const paused = await held.next;
+  await wait("document.querySelector('.next-actions a') !== null && document.querySelectorAll('.next-fact').length === 3");
+  await evaluate("document.querySelector('.next-actions a').focus()");
+  await held.release(paused);
+  await wait("document.querySelectorAll('.next-fact').length === 4");
+  assert.equal(await evaluate("document.activeElement === document.querySelector('.next-actions a')"), true);
+
+  // A language switch rebuilds the pending list without losing the focused item.
+  await evaluate("document.querySelector('.pending-item').focus()");
+  await evaluate(`document.querySelector('.lang-switch [data-lang="pt-BR"]').click()`);
+  await wait(`document.querySelector('.pending-text')?.textContent === ${JSON.stringify(PT.pending.items.results.replace('{count}', '1'))}`);
+  assert.equal(await evaluate("document.activeElement === document.querySelector('.pending-item')"), true);
+
   // Pending items are keyboard reachable with a visible focus ring.
   await evaluate("document.querySelector('.next-last-link').focus()");
   await key('Tab', 'Tab', 9);

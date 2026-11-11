@@ -446,7 +446,8 @@ are stable identifiers, not a statement of scope.
 - The home dashboard reads `GET /api/dashboard` (`src/dashboard.js`), one
   owner-scoped read on the account's civil date: next and last workout, week
   progress, applied cycle-plan phase/state, and prioritized pending items
-  (missing results and efforts in 14 days, unapplied weekly proposal, outdated
+  (sessions with no result and recorded results without a valid effort —
+  including imports left open until their RPE — in 14 days, unapplied weekly proposal, outdated
   or incompatible plan, pending hypotheses, shoe ≥ 90% of target). A watch
   schedule is shown only as “scheduled in the watch account”, never as
   delivered. The next workout's forecast reuses `/api/weather` (planned

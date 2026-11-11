@@ -87,11 +87,14 @@ function cyclePlan(db, userId, today, config) {
 function pending(db, userId, today, cycle, shoes) {
   const items = [];
   const from = addDays(today, -PENDING_WINDOW_DAYS);
+  // A recorded result without a valid effort stays open on purpose (an imported
+  // Garmin activity, for one): it needs the effort, not another result.
   const results = db.prepare(`SELECT id FROM trainings WHERE user_id = ? AND dia >= ? AND dia < ? AND completed = 0
-    ORDER BY dia DESC, id DESC`).all(userId, from, today).map((row) => row.id);
+    AND result_data_source = 'none' ORDER BY dia DESC, id DESC`).all(userId, from, today).map((row) => row.id);
   if (results.length) items.push({ key: 'results', count: results.length, href: trainingHref(results[0]) });
-  const effort = db.prepare(`SELECT id FROM trainings WHERE user_id = ? AND dia >= ? AND dia <= ? AND completed = 1
-    AND feedback_rpe IS NULL ORDER BY dia DESC, id DESC`).all(userId, from, today).map((row) => row.id);
+  const effort = db.prepare(`SELECT id FROM trainings WHERE user_id = ? AND dia >= ? AND dia <= ?
+    AND (completed = 1 OR result_data_source <> 'none') AND (feedback_rpe IS NULL OR feedback_rpe NOT BETWEEN 1 AND 5)
+    ORDER BY dia DESC, id DESC`).all(userId, from, today).map((row) => row.id);
   if (effort.length) items.push({ key: 'effort', count: effort.length, href: trainingHref(effort[0]) });
   const latest = db.prepare(`SELECT e.state, p.week_start, p.applied_at FROM ai_executions e
     LEFT JOIN weekly_workout_proposals p ON p.execution_id = e.id AND p.user_id = e.user_id
