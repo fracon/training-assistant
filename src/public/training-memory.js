@@ -11,6 +11,7 @@ import { createDatePicker } from './shared/datepicker.js';
 import { formatDistance, formatPaceFromMetric } from './shared/units.js';
 import { BREATHING_LABEL_KEYS, MUSCLE_LABEL_KEYS, ENERGY_LABEL_KEYS } from './shared/analysis-prompts.js';
 import { copyPromptText, DAY_DB_KEYS } from './shared/workout-prompts.js';
+import { memorySummary, memoryQuality } from './shared/memory-insights.js';
 
 async function initMemory() {
   const user = await initShell();
@@ -24,8 +25,15 @@ async function initMemory() {
       ? createDatePicker($('previewDate'), { getLanguage: () => i18n.language })
       : null;
   const dirty = new Set();
+  // Character count and an unsaved-changes cue for prior experience.
+  function renderExperienceMeta() {
+    const field = $('experience');
+    $('experienceCount').textContent = translate(i18n.messages, 'memory.experienceCount', { count: field.value.length, max: field.maxLength });
+    const saved = memory?.profile?.fields?.experience?.value ?? '';
+    $('experienceUnsaved').hidden = !dirty.has('experience') || field.value === saved;
+  }
   for (const field of fields)
-    $(field).addEventListener('input', () => dirty.add(field));
+    $(field).addEventListener('input', () => { dirty.add(field); renderExperienceMeta(); });
   let memory = null;
   let busy = false;
   // A write in flight (experience or interpretation). A tab load never clears it.
@@ -98,6 +106,77 @@ async function initMemory() {
         : t('task.analysisNone');
     $('purposeTask').textContent = text;
   }
+  // Headline numbers and the memory-quality checklist, from the received projection only.
+  function renderInsights(date) {
+    const root = $('memoryInsights');
+    const make = (tag, className, text) => {
+      const element = document.createElement(tag);
+      if (className) element.className = className;
+      if (text != null) element.textContent = text;
+      return element;
+    };
+    const tr = (key, params) => translate(i18n.messages, `memory.${key}`, params);
+    const unit = getUserPreferences().distance_unit;
+    const summary = memorySummary(memory);
+    const stats = make('section', 'memory-stats');
+    stats.setAttribute('aria-label', tr('stats.label'));
+    const tile = (label, value, sub, extra = null, tone = '') => {
+      const card = make('div', `memory-stat${tone ? ` memory-stat-${tone}` : ''}`);
+      card.append(make('p', 'memory-stat-label', label), make('p', 'memory-stat-value', value));
+      if (extra) card.append(extra);
+      card.append(make('p', 'memory-stat-sub', sub));
+      stats.append(card);
+    };
+    // Weekly volume bars: decorative; the same numbers are in the accessible label.
+    const max = Math.max(...summary.series.map((week) => week.distanceKm), 0);
+    const chart = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    chart.setAttribute('viewBox', `0 0 ${summary.series.length * 14} 32`);
+    chart.setAttribute('class', 'memory-spark');
+    chart.setAttribute('role', 'img');
+    chart.setAttribute('aria-label', tr('stats.chartLabel', { weeks: summary.series.map((week) => `${date(week.weekStart)} ${formatDistance(week.distanceKm, unit)}`).join(', ') }));
+    summary.series.forEach((week, index) => {
+      const height = max ? Math.max(2, Math.round((week.distanceKm / max) * 30)) : 2;
+      const bar = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      bar.setAttribute('x', String(index * 14 + 2)); bar.setAttribute('y', String(32 - height));
+      bar.setAttribute('width', '10'); bar.setAttribute('height', String(height)); bar.setAttribute('rx', '2');
+      bar.setAttribute('class', index === summary.series.length - 1 ? 'memory-spark-current' : '');
+      chart.append(bar);
+    });
+    tile(tr('stats.volume'), formatDistance(summary.volume.distanceKm, unit), tr('stats.volumeSub'), chart);
+    const consistency = summary.consistency;
+    tile(tr('stats.consistency'), consistency.ratio === null ? '—' : `${Math.round(consistency.ratio * 100)}%`,
+      consistency.planned ? tr('stats.consistencySub', consistency) : tr('stats.consistencyEmpty'));
+    const effort = summary.effort.recent;
+    tile(tr('stats.effort'), effort === null ? '—' : tr('stats.effortValue', { value: effort.toFixed(1) }), tr(`stats.effortTrend.${summary.effort.trend ?? 'none'}`));
+    const concerns = summary.concerns;
+    tile(tr('stats.alerts'), String(concerns.count),
+      concerns.latest ? tr('stats.alertsSub', { date: date(concerns.latest.date) }) : tr('stats.alertsNone'), null, concerns.count ? 'alert' : '');
+    root.replaceChildren(stats);
+    if (summary.partial) root.append(make('p', 'field-hint memory-stats-partial', tr('stats.partial')));
+    const items = memoryQuality(memory);
+    const quality = make('section', 'shoe-card memory-section memory-quality');
+    const heading = make('h2', '', tr('quality.title')); heading.id = 'memory-quality';
+    quality.setAttribute('aria-labelledby', heading.id);
+    const header = make('header', 'memory-card-header');
+    header.append(heading, make('span', 'memory-quality-score', tr('quality.score', { done: items.filter((item) => item.ok).length, total: items.length })));
+    quality.append(header, make('p', 'field-hint', tr('quality.intro')));
+    const list = make('ul', 'memory-quality-list');
+    for (const item of items) {
+      const row = make('li', `memory-quality-item ${item.ok ? 'is-ok' : 'is-todo'}`);
+      row.dataset.quality = item.key;
+      const icon = make('span', 'memory-quality-icon', item.ok ? '✓' : '!'); icon.setAttribute('aria-hidden', 'true');
+      const textKey = item.key === 'plan' ? (item.ok ? 'ok' : item.state) : item.ok ? 'ok' : 'todo';
+      row.append(icon, make('span', 'memory-quality-text', tr(`quality.items.${item.key}.${textKey}`, { count: item.count })));
+      if (!item.ok) {
+        const action = make('a', 'memory-source', tr(`quality.items.${item.key}.action`));
+        action.href = item.href; action.dataset.memoryLink = `quality:${item.key}`;
+        row.append(action);
+      }
+      list.append(row);
+    }
+    quality.append(list);
+    root.append(quality);
+  }
   // States what was left out, with counts, only when something was.
   function renderOmissions() {
     const notice = $('selectionNotice');
@@ -116,7 +195,8 @@ async function initMemory() {
   }
   function renderOverview() {
     const root = $('memoryOverview');
-    const focusedKey = root.contains(document.activeElement) ? document.activeElement.dataset.memoryLink : null;
+    const scope = [root, $('memoryInsights')];
+    const focusedKey = scope.some((element) => element.contains(document.activeElement)) ? document.activeElement.dataset.memoryLink : null;
     const focusedAction = root.contains(document.activeElement) ? document.activeElement.dataset.memoryAction : null;
     const focusedInterpretationId = root.contains(document.activeElement)
       ? document.activeElement.closest('[data-memory-item]')?.dataset.memoryItem : null;
@@ -152,18 +232,8 @@ async function initMemory() {
       const item = node('div', 'memory-metric');
       item.append(node('dt', '', label), node('dd', '', value)); parent.append(item);
     };
-    const table = (parent, caption, headings) => {
-      const wrap = node('div', 'memory-table-wrap');
-      wrap.tabIndex = 0; wrap.setAttribute('role', 'region'); wrap.setAttribute('aria-label', caption);
-      wrap.dataset.memoryLink = `table:${parent.getAttribute('aria-labelledby')}`;
-      const table = node('table', 'memory-table');
-      table.append(node('caption', 'visually-hidden', caption));
-      const head = node('thead'); const row = node('tr');
-      for (const heading of headings) { const cell = node('th', '', heading); cell.scope = 'col'; row.append(cell); }
-      head.append(row); const body = node('tbody'); table.append(head, body); wrap.append(table); parent.append(wrap);
-      return body;
-    };
     renderTask(date);
+    renderInsights(date);
     renderOmissions();
     const cycle = section('cycle', 'cycleOrigin', '/cycles.html', top);
     if (memory.cycle) {
@@ -182,18 +252,24 @@ async function initMemory() {
       const days = getUserPreferences().first_day_of_week === 'Sunday' ? [DAY_DB_KEYS[6], ...DAY_DB_KEYS.slice(0, 6)] : DAY_DB_KEYS;
       const rows = [...memory.availability].sort((a, b) => days.indexOf(a.day) - days.indexOf(b.day));
       const sameUpdate = new Set(rows.map((row) => row.updatedAt)).size === 1;
-      const body = table(availability, t('availability'), ['day', 'time', 'maximum', 'location'].map(t));
+      const locations = new Set(rows.filter((row) => row.canTrain).map((row) => row.location));
+      const dayList = node('ul', 'memory-days');
+      dayList.setAttribute('aria-label', t('availability'));
       for (const row of rows) {
-        const tr = node('tr'); tr.dataset.day = row.day;
-        const day = node('th', '', translate(i18n.messages, `aiCoach.days.${row.day}`)); day.scope = 'row'; tr.append(day);
-        const periods = row.periods.map((period) => translate(i18n.messages, `aiCoach.periods.${period}`)).join(', ');
-        tr.append(node('td', '', row.canTrain ? periods || t('unknown') : t('unavailable')),
-          node('td', '', row.canTrain ? row.minutes == null ? t('unknown') : `${row.minutes} ${t('minutes')}` : '—'),
-          node('td', '', row.canTrain ? row.location || t('unknown') : '—'));
-        if (row.periods.length > 1) day.append(node('span', 'field-hint memory-row-note', t('availabilityReview')));
-        if (!sameUpdate) day.append(node('span', 'field-hint memory-row-note', `${t('updated')}: ${date(row.updatedAt)}`));
-        body.append(tr);
+        const item = node('li', `memory-day${row.canTrain ? '' : ' is-off'}`); item.dataset.day = row.day;
+        item.append(node('strong', 'memory-day-name', translate(i18n.messages, `aiCoach.days.${row.day}`)));
+        if (row.canTrain) {
+          const periods = row.periods.map((period) => translate(i18n.messages, `aiCoach.periods.${period}`)).join(', ');
+          item.append(node('span', 'memory-day-period', periods || t('unknown')),
+            node('span', 'memory-day-minutes', row.minutes == null ? t('unknown') : `${row.minutes} ${t('minutes')}`));
+          if (locations.size > 1) item.append(node('span', 'memory-day-location', row.location || t('unknown')));
+        } else item.append(node('span', 'memory-day-period', t('unavailable')));
+        if (row.periods.length > 1) item.append(node('span', 'field-hint memory-row-note', t('availabilityReview')));
+        if (!sameUpdate) item.append(node('span', 'field-hint memory-row-note', `${t('updated')}: ${date(row.updatedAt)}`));
+        dayList.append(item);
       }
+      availability.append(dayList);
+      if (locations.size === 1) paragraph(availability, translate(i18n.messages, 'memory.availabilityLocation', { location: [...locations][0] || t('unknown') })).classList.add('memory-day-place');
       paragraph(availability, t('durationHint'), true);
       if (sameUpdate) paragraph(availability, `${t('updated')}: ${date(rows[0].updatedAt)}`, true).classList.add('memory-updated');
     }
@@ -219,33 +295,53 @@ async function initMemory() {
         }
       }
     }
+    // Coach hypotheses come right after the goals and plan: they are what the
+    // athlete is asked to confirm, correct or dismiss.
+    const interpretationCard = section('interpretations', 'interpretationsOrigin', '/calendar.html');
     // One dated session: planned name, priority badge, recorded metrics, dated
     // reports, optional planned details and the link to its source.
     const sessionArticle = (row, key) => {
       const article = node('article', 'memory-session');
-      const title = node('h3', '', `${date(row.date)} · ${row.planned.treino || row.planned.tipo || t('unknown')}`);
+      const head = node('div', 'memory-session-head');
+      const titleBlock = node('div', 'memory-session-title');
+      titleBlock.append(node('p', 'memory-session-date', date(row.date)));
+      const title = node('h3', '', row.planned.treino || row.planned.tipo || t('unknown'));
       if (row.priority) title.append(' ', node('span', `memory-badge memory-badge-${row.priority}`, translate(i18n.messages, `memory.priority.${row.priority}`)));
-      article.append(title);
-      paragraph(article, row.actual.completed ? t('completed') : t('planned'), true);
+      titleBlock.append(title);
+      const side = node('div', 'memory-session-side');
+      side.append(node('span', `memory-status ${row.actual.completed ? 'is-done' : 'is-planned'}`, t(row.actual.completed ? 'statusDone' : 'statusPlanned')));
+      link(side, row.href, t('openSession'), `${key}:${row.href}`);
+      head.append(titleBlock, side);
+      article.append(head);
       const actual = row.actual;
-      const metrics = node('dl', 'memory-metrics');
-      if (actual.fit_distance != null) metric(metrics, t('distance'), formatDistance(actual.fit_distance, getUserPreferences().distance_unit));
-      if (actual.fit_duration) metric(metrics, t('duration'), actual.fit_duration);
-      if (actual.fit_avg_pace) metric(metrics, t('pace'), formatPaceFromMetric(actual.fit_avg_pace, getUserPreferences().distance_unit));
-      for (const [field, label, unit] of [['fit_avg_hr', 'session.manualAvgHr', 'bpm'], ['fit_max_hr', 'session.manualMaxHr', 'bpm'], ['fit_elevation_gain', 'session.manualElevation', 'm'], ['fit_calories', 'session.resultCalories', 'kcal']])
-        if (actual[field] != null) metric(metrics, translate(i18n.messages, label), `${actual[field]} ${unit}`);
-      if (metrics.childElementCount) article.append(metrics);
+      const unit = getUserPreferences().distance_unit;
+      const chips = node('ul', 'memory-chips');
+      const chip = (label, value, extra = '') => {
+        const item = node('li', `memory-chip${extra}`);
+        item.append(node('span', 'memory-chip-label', label), document.createTextNode(` ${value}`));
+        chips.append(item);
+      };
+      if (Number.isInteger(row.report.feedback_rpe)) {
+        const item = node('li', `memory-chip memory-rpe memory-rpe-${row.report.feedback_rpe}`, translate(i18n.messages, 'memory.rpeChip', { value: row.report.feedback_rpe }));
+        chips.append(item);
+      }
+      if (actual.fit_distance != null) chip(t('distance'), formatDistance(actual.fit_distance, unit));
+      if (actual.fit_duration) chip(t('duration'), actual.fit_duration);
+      if (actual.fit_avg_pace) chip(t('pace'), formatPaceFromMetric(actual.fit_avg_pace, unit));
+      for (const [field, label, suffix] of [['fit_avg_hr', 'session.manualAvgHr', 'bpm'], ['fit_max_hr', 'session.manualMaxHr', 'bpm'], ['fit_elevation_gain', 'session.manualElevation', 'm'], ['fit_calories', 'session.resultCalories', 'kcal']])
+        if (actual[field] != null) chip(translate(i18n.messages, label), `${actual[field]} ${suffix}`);
+      if (chips.childElementCount) article.append(chips);
       const report = row.report;
       const feedback = node('div', 'memory-feedback');
-      for (const field of ['feedback_rpe', 'feedback_notas', 'feedback_breathing', 'feedback_muscle', 'feedback_energy', 'feedback_pain'])
+      for (const field of ['feedback_pain', 'feedback_notas', 'feedback_breathing', 'feedback_muscle', 'feedback_energy'])
         if (report[field] != null && report[field] !== '') {
           const labels = { feedback_breathing: BREATHING_LABEL_KEYS, feedback_muscle: MUSCLE_LABEL_KEYS, feedback_energy: ENERGY_LABEL_KEYS };
           const labelKey = labels[field]?.[report[field]];
           const value = labelKey ? translate(i18n.messages, labelKey) : report[field];
-          paragraph(feedback, `${t(`feedback.${field}`)}: ${value}`);
+          paragraph(feedback, `${t(`feedback.${field}`)}: ${value}`).classList.toggle('memory-feedback-alert', field === 'feedback_pain');
         }
       if (report.feedback_has_pain === 'yes' || report.feedback_has_pain === 'no')
-        paragraph(feedback, `${t('feedback.feedback_has_pain')}: ${t(report.feedback_has_pain)}`);
+        paragraph(feedback, `${t('feedback.feedback_has_pain')}: ${t(report.feedback_has_pain)}`).classList.toggle('memory-feedback-alert', report.feedback_has_pain === 'yes');
       if (feedback.childElementCount) {
         feedback.prepend(node('p', 'field-hint', `${t('reportedOn')}: ${date(row.report.observedOn || row.date)}`));
         article.append(feedback);
@@ -259,7 +355,6 @@ async function initMemory() {
         details.append(summary, node('p', '', row.planned.detalhes)); article.append(details);
       }
       if (row.includedInAggregates) paragraph(article, t('includedInAggregates'), true);
-      link(article, row.href, t('openSession'), `${key}:${row.href}`);
       return article;
     };
     // The analysis tab shows the analyzed session itself: it is the task's
@@ -280,16 +375,26 @@ async function initMemory() {
     paragraph(weekly, `${date(memory.ranges.aggregateFrom)} → ${date(memory.ranges.aggregateTo)}`, true);
     if (!memory.weekly.length) { weekly.classList.add('memory-empty'); paragraph(weekly, t('aggregatesEmpty')); }
     else {
-      weekly.append(node('p', 'field-hint memory-scroll-hint', t('tableHint')));
-      const body = table(weekly, t('weekly'), ['week', 'sessions', 'distance', 'duration', 'effort', 'missingResults'].map(t));
+      const unit = getUserPreferences().distance_unit;
+      const max = Math.max(...memory.weekly.map((row) => row.distanceKm), 0);
+      const weeks = node('ol', 'memory-weeks');
+      weeks.setAttribute('aria-label', t('weekly'));
       for (const row of memory.weekly) {
-        const tr = node('tr'); const heading = node('th', '', date(row.weekStart)); heading.scope = 'row'; tr.append(heading);
-        for (const value of [`${row.completed}/${row.planned}`, formatDistance(row.distanceKm, getUserPreferences().distance_unit), `${Math.round(row.durationSeconds / 60)} ${t('minutes')}`, row.averageRpe === null ? t('unknown') : row.averageRpe.toFixed(1), row.missingResults]) tr.append(node('td', '', value));
-        body.append(tr);
+        const item = node('li', 'memory-week');
+        item.append(node('span', 'memory-week-label', date(row.weekStart)));
+        const bar = node('span', 'memory-week-bar'); bar.setAttribute('aria-hidden', 'true');
+        const fill = node('span', 'memory-week-fill'); fill.style.width = `${max ? Math.max(2, (row.distanceKm / max) * 100) : 0}%`;
+        bar.append(fill);
+        item.append(bar, node('strong', 'memory-week-value', formatDistance(row.distanceKm, unit)));
+        const detail = translate(i18n.messages, 'memory.weeklyRow', { sessions: `${row.completed}/${row.planned}`, rpe: row.averageRpe === null ? t('unknown') : row.averageRpe.toFixed(1) });
+        item.append(node('span', 'memory-week-detail', row.missingResults ? `${detail} · ${translate(i18n.messages, 'memory.weeklyMissing', { count: row.missingResults })}` : detail));
+        weeks.append(item);
       }
+      weekly.append(weeks);
       paragraph(weekly, t('totalsHint'), true);
     }
-    const shoes = section('shoes', 'shoesOrigin', '/shoes.html');
+    const pair = node('div', 'memory-pair'); root.append(pair);
+    const shoes = section('shoes', 'shoesOrigin', '/shoes.html', pair);
     if (!memory.shoes.length) paragraph(shoes, t('shoesEmpty'));
     else {
       const list = node('dl', 'memory-facts'); shoes.append(list);
@@ -302,7 +407,7 @@ async function initMemory() {
       }
     }
     if (memory.purpose === 'cycle') {
-      const previous = section('previousCycles', 'previousCyclesOrigin', '/cycles.html');
+      const previous = section('previousCycles', 'previousCyclesOrigin', '/cycles.html', pair);
       if (!memory.previousCycles.length) paragraph(previous, t('previousCyclesEmpty'));
       else {
         const list = node('dl', 'memory-facts'); previous.append(list);
@@ -310,7 +415,6 @@ async function initMemory() {
           metric(list, row.objective, `${translate(i18n.messages, `cycles.status.${row.status}`)} · ${date(row.startDate)} → ${date(row.targetDate)}`);
       }
     }
-    const interpretationCard = section('interpretations', 'interpretationsOrigin', '/calendar.html');
     if (!memory.interpretations?.length) paragraph(interpretationCard, t('interpretationsEmpty'));
     for (const item of memory.interpretations || []) {
       const article = node('article', 'memory-session memory-interpretation');
@@ -404,7 +508,8 @@ async function initMemory() {
       ? `${t('authorities.user_report')} · ${t('updated')}: ${date(updated)}`
       : t('profileEmpty');
     $('memoryStatus').textContent = `${t('asOf')}: ${date(memory.asOf)}`;
-    if (focusedKey) [...root.querySelectorAll('[data-memory-link]')].find((a) => a.dataset.memoryLink === focusedKey)?.focus();
+    renderExperienceMeta();
+    if (focusedKey) [...document.querySelectorAll('#memoryInsights [data-memory-link], #memoryOverview [data-memory-link]')].find((a) => a.dataset.memoryLink === focusedKey)?.focus();
     if (focusedAction) {
       const equivalent = [...root.querySelectorAll('[data-memory-action]')].find((a) => a.dataset.memoryAction === focusedAction);
       if (equivalent) equivalent.focus();
@@ -479,6 +584,7 @@ async function initMemory() {
       );
       if ($('experience').value === submitted) dirty.delete('experience');
       if (memory) { memory.profile = saved.profile; renderOverview(); }
+      renderExperienceMeta();
     });
   });
   if (user.role === 'admin') {
@@ -636,6 +742,7 @@ async function initMemory() {
     memory = null;
     loaded = false;
     $('memoryOverview').replaceChildren();
+    $('memoryInsights').replaceChildren();
     $('selectionNotice').hidden = true;
     $('purposeTask').textContent = t('loading');
     void load({ switching: true });
@@ -655,6 +762,7 @@ async function initMemory() {
     previewPicker?.refresh();
     if (memory) renderOverview();
     if (errorKey) $('memoryError').textContent = t(errorKey);
+    renderExperienceMeta();
     refreshResources();
     debugLabels.forEach((update) => update());
     refreshTraceLabels();

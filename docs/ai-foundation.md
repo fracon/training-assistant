@@ -250,6 +250,34 @@ property of the built context: it is never hashed, stored or sent to a model.
 The notice appears only when something was left out. Each tab load is numbered
 and a reply for a previously selected tab is ignored.
 
+### Redesign (issue #92)
+
+The page keeps the same projection and contracts; only the presentation changed,
+using existing tokens, cards, status pills and buttons (no new library).
+
+- **Summary.** Four tiles above the content: volume of the last four weeks
+  (with a small hand-drawn SVG bar chart whose numbers are also in its
+  accessible label), consistency (done / planned), average effort with its
+  two-week trend, and recent discomfort reports. They are computed by
+  `src/public/shared/memory-insights.js` from the received projection only
+  (weekly totals plus detailed recent sessions, never double counting an
+  analyzed session already in the totals), and are flagged as possibly
+  incomplete when recent sessions were left out of the context.
+- **Memory quality.** An actionable checklist (availability, active cycle,
+  recent effort, past results, prior experience and, outside cycle planning,
+  the applied plan's state), each item linking to where it is fixed.
+- **Lists instead of tables.** Availability is a labelled day list in the
+  preferred week order, and weekly totals are a labelled list with
+  proportional bars. Neither scrolls horizontally on phones. The goals and
+  availability cards share one height, with their "Updated" lines aligned.
+- **Sessions.** Compact cards with the date, name, priority badge, status pill
+  and source link in the header, then metric pills and an RPE pill toned by
+  level. Dated reports stay visible, with discomfort emphasized, and planned
+  details stay behind a disclosure.
+- **Coach hypotheses** (interpretations) follow the goals and plan.
+- **Prior experience** shows examples, a character count and an
+  unsaved-changes cue. The administrator diagnostics have a distinct dashed card.
+
 ### Compatibility with the first PR #67 implementation
 
 A read-only inspection of the configured local `data/database.sqlite` on

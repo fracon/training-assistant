@@ -264,17 +264,20 @@ test('training memory Chrome PT/EN desktop/mobile, ownership, keyboard, loading,
     await evaluate("document.dispatchEvent(new Event('app:languagechange'))");
     assert.equal(await evaluate("document.querySelector('.memory-planning').open"),true);
     assert.equal(await evaluate("document.activeElement.tagName"),'SUMMARY');
-    assert.equal(await evaluate("document.querySelector('.memory-table tbody tr').dataset.day"),'monday');
+    // Availability is a compact day list ordered by the preferred week start.
+    assert.equal(await evaluate("document.querySelector('.memory-day').dataset.day"),'monday');
     await evaluate("import('./shared/shell.js').then(m=>m.saveUserPreferences({...m.getUserPreferences(),first_day_of_week:'Sunday'}))");
-    assert.equal(await evaluate("document.querySelector('.memory-table tbody tr').dataset.day"),'sunday');
+    assert.equal(await evaluate("document.querySelector('.memory-day').dataset.day"),'sunday');
     await evaluate("import('./shared/shell.js').then(m=>m.saveUserPreferences({...m.getUserPreferences(),first_day_of_week:'Monday'}))");
-    assert.equal(await evaluate("document.querySelectorAll('.memory-table caption').length>=2"),true);
-    await evaluate("document.querySelector('[data-memory-link=\"table:memory-weekly\"]').focus();document.dispatchEvent(new Event('app:languagechange'))");
-    assert.equal(await evaluate('document.activeElement.dataset.memoryLink'),'table:memory-weekly');
-    const tableScroll = await evaluate("(()=>{const region=document.querySelector('[data-memory-link=\"table:memory-weekly\"]');region.scrollLeft=0;return {before:region.scrollLeft,max:region.scrollWidth-region.clientWidth};})()");
-    assert.ok(tableScroll.max>0);
-    for (const type of ['keyDown','keyUp']) await command('Input.dispatchKeyEvent',{type,key:'ArrowRight',code:'ArrowRight',windowsVirtualKeyCode:39});
-    await waitFor("document.querySelector('[data-memory-link=\"table:memory-weekly\"]').scrollLeft>0");
+    // Day and week lists are labelled lists, never tables that need horizontal scrolling.
+    assert.equal(await evaluate("document.querySelectorAll('.memory-table').length"),0);
+    assert.equal(await evaluate("!!document.querySelector('ul.memory-days[aria-label]') && !!document.querySelector('ol.memory-weeks[aria-label]')"),true);
+    // A focused source link survives a language rerender.
+    await evaluate("document.querySelector('[data-memory-link=\"weekly\"]').focus();document.dispatchEvent(new Event('app:languagechange'))");
+    assert.equal(await evaluate('document.activeElement.dataset.memoryLink'),'weekly');
+    // Summary and quality are rendered from the same projection.
+    assert.equal(await evaluate("document.querySelectorAll('#memoryInsights .memory-stat').length"),4);
+    assert.ok(await evaluate("document.querySelectorAll('#memoryInsights .memory-quality-item').length>=5"));
     assert.equal(await evaluate("document.getElementById('memoryDebug').open"),false);
     assert.equal(await evaluate("document.getElementById('previewDate').getBoundingClientRect().height"),0);
     await evaluate("document.querySelector('#memoryDebug > summary').click()");
@@ -358,7 +361,7 @@ test('training memory Chrome PT/EN desktop/mobile, ownership, keyboard, loading,
     await reopenMemory();
     await waitFor("!document.querySelector('#profileForm [type=submit]').disabled");
     assert.equal(await evaluate("document.querySelectorAll('.memory-row-note').length"),8);
-    assert.equal(await evaluate("document.querySelector('[data-day=sunday] td').textContent"),'Indisponível');
+    assert.equal(await evaluate("document.querySelector('.memory-day[data-day=sunday] .memory-day-period').textContent"),'Indisponível');
     // A real conflict exposes version recovery, without a permanent refresh action.
     db.prepare('UPDATE ai_profiles SET version=version+1 WHERE user_id=1').run();
     await evaluate("document.getElementById('profileForm').requestSubmit()");
