@@ -1026,7 +1026,7 @@ test('applyCycleVisibility tolerates missing containers without throwing', () =>
 
 test('home.js keeps the dashboard wiring declarative and reactive', () => {
   const js = readHomeJs();
-  assert.match(js, /import \{ fetchActiveCycle, fetchCalendarTrainings, fetchShoes, fetchHeroImage, fetchOnboarding, updateOnboardingPresentation, fetchDashboard, fetchWeather \} from '\.\/shared\/api\.js'/);
+  assert.match(js, /import \{ fetchActiveCycle, fetchCalendarTrainings, fetchShoes, fetchHeroImage, fetchOnboarding, updateOnboardingPresentation, fetchDashboard, fetchWeather, fetchMonthlyVolume \} from '\.\/shared\/api\.js'/);
   assert.match(js, /import \{ weatherLabelKey \} from '\.\/shared\/weather\.js'/);
   assert.match(js, /import \{ initShell, getShellI18n, getUserPreferences, showShellToast \} from '\.\/shared\/shell\.js'/);
   assert.match(js, /initShell\(\{ active: 'dashboard' \}\)/);

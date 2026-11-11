@@ -96,7 +96,7 @@ test('Chrome: the next-workout and pending row follows the existing widgets in P
     await open(browser, origin, athlete.cookie, width, mobile);
     await wait("document.querySelectorAll('#nextWorkoutBody .metric-tile').length === 3");
     const pt = await evaluate(view);
-    assert.deepEqual(pt.order.slice(-2), ['nextWorkoutCard', 'pendingCard'], 'the new row comes after the existing widgets');
+    assert.deepEqual(pt.order.slice(-3), ['nextWorkoutCard', 'pendingCard', 'volumeCard'], 'the new rows come after the existing widgets');
     assert.equal(pt.name, 'Longão progressivo');
     assert.equal(pt.when, PT.next.today);
     assert.deepEqual(pt.meta, ['Longão · 08h–12h · São Paulo, SP']);
@@ -169,4 +169,118 @@ test('Chrome: an empty account gets a request-workouts call to action, no pendin
   await failing.close();
   await wait(`document.querySelector('#nextWorkoutBody .empty-state')?.textContent === ${JSON.stringify(PT.dashboardError)}`);
   assert.equal(await evaluate("document.getElementById('pendingCard').hidden"), true);
+});
+
+test('Chrome: the monthly volume shows the selected year, navigates by year and keyboard, and shows a custom tooltip in PT/EN', async (t) => {
+  const { db, origin, account } = await setup(t);
+  const runner = await account('dash-volume@example.test');
+  const today = new Date().toISOString().slice(0, 10);
+  const year = Number(today.slice(0, 4));
+  const month = Number(today.slice(5, 7));
+  const add = db.prepare("INSERT INTO trainings(user_id,dia,tipo,completed,feedback_rpe,fit_distance) VALUES (?,?,'Run',1,2,?)");
+  add.run(runner.id, today, 10);
+  add.run(runner.id, `${year - 1}-01-01`, 4);
+  add.run(runner.id, `${year - 1}-03-10`, 12);
+  add.run(runner.id, `${year - 2}-06-15`, 3);
+  const browser = await launchChrome(t);
+  const { evaluate, wait, key } = browser;
+  const read = `(() => ({
+    year: document.getElementById('volumeYear').textContent,
+    prevDisabled: document.getElementById('volumePrev').disabled,
+    nextDisabled: document.getElementById('volumeNext').disabled,
+    tiles: [...document.querySelectorAll('.volume-summary .metric-tile')].map((tile) => [...tile.children].map((child) => child.textContent)),
+    tilesTop: new Set([...document.querySelectorAll('.volume-summary .metric-tile')].map((tile) => Math.round(tile.getBoundingClientRect().top))).size,
+    months: document.querySelectorAll('.volume-month').length,
+    bars: document.querySelectorAll('.volume-bar').length,
+    partial: [...document.querySelectorAll('.volume-month')].findIndex((button) => button.classList.contains('is-partial')) + 1,
+    tabStops: [...document.querySelectorAll('.volume-month')].filter((button) => button.tabIndex === 0).length,
+    labels: [...document.querySelectorAll('.volume-month-label')].map((label) => label.textContent),
+    pageOverflow: document.getElementById('volumeCard').scrollWidth > document.getElementById('volumeCard').clientWidth,
+  }))()`;
+  const { formatMonth } = require('../src/public/shared/date.js');
+  const monthName = (value, language) => {
+    const name = formatMonth(value, language);
+    return `${name.charAt(0).toUpperCase()}${name.slice(1)}`;
+  };
+  const tiles = (dict, yearValue, total, sessions, best, bestMonth, language, average, months) => [
+    [dict.volume.total.replace('{year}', yearValue), total, (sessions === 1 ? dict.volume.sessions_one : dict.volume.sessions_other).replace('{count}', sessions)],
+    [dict.volume.best, best, monthName(bestMonth, language)],
+    [dict.volume.average, average, (months === 1 ? dict.volume.overMonths_one : dict.volume.overMonths_other).replace('{count}', months)],
+  ];
+
+  for (const [width, mobile] of [[1280, false], [390, true]]) {
+    await open(browser, origin, runner.cookie, width, mobile);
+    await wait("document.querySelectorAll('.volume-month').length === 12");
+    const pt = await evaluate(read);
+    assert.equal(pt.year, String(year));
+    assert.deepEqual([pt.prevDisabled, pt.nextDisabled], [false, true], 'history before, nothing after the current year');
+    assert.deepEqual(pt.tiles, tiles(PT, year, '10 km', 1, '10 km', month, 'pt-BR', `${Math.round(10 / month)} km`, month));
+    assert.equal(pt.tilesTop, 1, 'the three tiles share the first row');
+    assert.deepEqual([pt.months, pt.bars], [12, 12], 'one bar per month, no other year');
+    assert.equal(pt.partial, month, 'the running month is marked partial');
+    assert.equal(pt.tabStops, 1, 'one tab stop for the whole chart');
+    assert.equal(pt.labels[0], 'jan');
+    assert.equal(pt.pageOverflow, false, `${width}px: the chart scrolls inside the card, never the page`);
+  }
+
+  // Keyboard: focus lands on the running month, arrows move, the tooltip follows focus.
+  await browser.command('Emulation.setFocusEmulationEnabled', { enabled: true });
+  await evaluate("document.querySelector('.volume-month[tabindex=\"0\"]').focus()");
+  const tooltip = "(() => { const tip = document.getElementById('volumeTooltip'); return tip.hidden ? null : tip.textContent; })()";
+  assert.equal(await evaluate(tooltip), PT.volume.monthPartial.replace('{month}', monthName(month, 'pt-BR')).replace('{distance}', '10.0 km'));
+  assert.equal(await evaluate('document.activeElement.getAttribute("aria-label")'), await evaluate(tooltip), 'screen readers get the same value');
+  await key('Home', 'Home', 36);
+  assert.equal(await evaluate("[...document.querySelectorAll('.volume-month')].indexOf(document.activeElement)"), 0);
+  assert.match(await evaluate(tooltip), /^Janeiro: /);
+  await key('ArrowRight', 'ArrowRight', 39);
+  assert.match(await evaluate(tooltip), /^Fevereiro: /);
+  const header = await evaluate("(() => { const tip = document.getElementById('volumeTooltip').getBoundingClientRect(); const head = document.querySelector('#volumeCard .section-header').getBoundingClientRect(); return tip.top >= head.bottom; })()");
+  assert.equal(header, true, 'the tooltip never covers the year controls');
+  await key('Escape', 'Escape', 27);
+  assert.equal(await evaluate(tooltip), null);
+  assert.equal(await evaluate("getComputedStyle(document.activeElement).outlineStyle"), 'solid');
+
+  // Hover shows the same custom tooltip; never a native title.
+  await evaluate("document.activeElement.blur(); document.querySelectorAll('.volume-month')[5].dispatchEvent(new MouseEvent('mouseenter'))");
+  assert.match(await evaluate(tooltip), /^Junho: /);
+  assert.equal(await evaluate("document.querySelectorAll('#volumeCard [title]').length"), 0);
+
+  // Previous years: a closed year has no running month; the first year stops the navigation.
+  await evaluate("document.getElementById('volumePrev').click()");
+  await wait(`document.getElementById('volumeYear').textContent === '${year - 1}'`);
+  const last = await evaluate(read);
+  assert.deepEqual(last.tiles, tiles(PT, year - 1, '16 km', 2, '12 km', 3, 'pt-BR', '1 km', 12), 'a closed year averages twelve months');
+  assert.equal(last.partial, 0);
+  await evaluate("document.getElementById('volumePrev').click()");
+  await wait(`document.getElementById('volumeYear').textContent === '${year - 2}'`);
+  assert.deepEqual(await evaluate("[document.getElementById('volumePrev').disabled, document.getElementById('volumeNext').disabled]"), [true, false]);
+
+  // English re-renders in place.
+  await evaluate(`document.querySelector('.lang-switch [data-lang="en-US"]').click()`);
+  await wait(`document.querySelector('.volume-month-label')?.textContent === 'Jan'`);
+  assert.deepEqual((await evaluate(read)).tiles, tiles(EN, year - 2, '3 km', 1, '3 km', 6, 'en-US', '0 km', 12));
+});
+
+test('Chrome: the monthly volume has an empty state, an error state and follows the distance unit', async (t) => {
+  const { db, origin, account } = await setup(t);
+  const empty = await account('dash-volume-empty@example.test');
+  const browser = await launchChrome(t);
+  const { command, evaluate, wait } = browser;
+  await open(browser, origin, empty.cookie, 1280, false);
+  await wait("document.querySelector('#volumeBody .empty-state') !== null");
+  assert.equal(await evaluate("document.querySelector('#volumeBody .empty-state').textContent"), PT.volume.empty);
+  assert.deepEqual(await evaluate("[document.getElementById('volumePrev').disabled, document.getElementById('volumeNext').disabled]"), [true, true]);
+
+  db.prepare("INSERT INTO trainings(user_id,dia,tipo,completed,feedback_rpe,fit_distance) VALUES (?,?,'Run',1,2,16.09344)").run(empty.id, new Date().toISOString().slice(0, 10));
+  db.prepare("UPDATE users SET distance_unit='mi' WHERE id=?").run(empty.id);
+  await open(browser, origin, empty.cookie, 1280, false);
+  await wait("document.querySelectorAll('.volume-month').length === 12");
+  assert.equal(await evaluate("document.querySelector('.volume-summary .metric-value').textContent"), '10 mi');
+
+  const failing = await browser.intercept(`${origin}/api/dashboard/volume*`);
+  await command('Page.navigate', { url: `${origin}/home.html` });
+  const paused = await failing.next;
+  await command('Fetch.failRequest', { requestId: paused.requestId, errorReason: 'Failed' });
+  await failing.close();
+  await wait(`document.querySelector('#volumeBody .empty-state')?.textContent === ${JSON.stringify(PT.volume.error)}`);
 });

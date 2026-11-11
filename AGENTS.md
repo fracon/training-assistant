@@ -8,7 +8,7 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.38.0`); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.39.0`); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
@@ -459,6 +459,16 @@ are stable identifiers, not a statement of scope.
   “scheduled in the watch account”, never as delivered. The forecast reuses
   `/api/weather` (planned location/date only) and `shared/weather.js`. Covered
   by `test/dashboard.test.js` and `test/dashboard.browser.test.js`.
+- The monthly volume card (last dashboard row) reads
+  `GET /api/dashboard/volume?year=YYYY` (`monthlyVolume`/`volumeYear` in
+  `src/dashboard.js`): owner-scoped SQLite sums of `fit_distance` for completed
+  sessions with a positive distance, per civil month of `dia`, for the
+  selected year only (the owner chose no previous-year comparison). The
+  account's time zone only decides the current year and month. Kilometres are
+  stored and returned; conversion happens only on display. The chart has one
+  tab stop with arrow/Home/End navigation, a single card-level custom tooltip
+  whose text is also each column's accessible name, and scrolls inside the
+  card on narrow screens.
 - Distances and temperatures are stored in canonical metric units and converted
   for display/prompt generation through `src/public/shared/units.js`. Displayed
   dates use the shared locale-aware date formatter. Date inputs use the shared

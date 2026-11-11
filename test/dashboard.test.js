@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const { createDatabase } = require('../src/db/database');
 const { readAiConfig } = require('../src/ai/config');
 const { buildContext, POLICY_VERSION } = require('../src/ai/context');
-const { dashboardSummary, weekStart } = require('../src/dashboard');
+const { dashboardSummary, monthlyVolume, volumeYear, weekStart } = require('../src/dashboard');
 const { buildServer } = require('../src/server');
 
 const today = '2026-11-11'; // Wednesday
@@ -167,4 +167,68 @@ test('GET /api/dashboard requires a session and reads only the signed-in account
   const response = await app.inject({ method: 'GET', url: '/api/dashboard', headers: { cookie } });
   assert.equal(response.statusCode, 200);
   assert.equal(response.json().nextWorkout, null);
+});
+
+test('monthly volume sums completed distance per month of the selected year', (t) => {
+  const { db, training } = fixture(t);
+  training({ dia: '2026-01-05', completed: 1, fit_distance: 10 });
+  training({ dia: '2026-01-20', completed: 1, fit_distance: 5.5 });
+  training({ dia: '2026-11-11', completed: 1, fit_distance: 8 });
+  training({ dia: '2026-03-01', completed: 0, fit_distance: 9 }); // open session
+  training({ dia: '2026-03-02', completed: 1, fit_distance: null }); // no distance
+  training({ dia: '2026-03-03', completed: 1, fit_distance: 0 });
+  training({ user_id: 2, dia: '2026-01-05', completed: 1, fit_distance: 99 });
+  training({ dia: '2025-12-31', completed: 1, fit_distance: 12 });
+  training({ dia: '2024-06-01', completed: 1, fit_distance: 7 });
+  const volume = monthlyVolume(db, 1, 2026, today);
+  assert.equal(volume.months.length, 12);
+  assert.deepEqual(volume.months[0], { month: 1, distanceKm: 15.5 });
+  assert.deepEqual(volume.months[2], { month: 3, distanceKm: 0 }, 'months without completed distance are zero');
+  assert.deepEqual(volume.months[10], { month: 11, distanceKm: 8 });
+  assert.equal(volume.months[11].distanceKm, 0, 'another year never leaks in');
+  assert.equal(volume.totalKm, 23.5);
+  assert.equal(volume.sessions, 3, 'only completed sessions with a distance');
+  assert.equal(volume.currentMonth, 11);
+  assert.deepEqual([volume.firstYear, volume.lastYear], [2024, 2026]);
+  const past = monthlyVolume(db, 1, 2025, today);
+  assert.deepEqual([past.totalKm, past.currentMonth], [12, null], 'a closed year has no running month');
+  assert.equal(typeof monthlyVolume(db, 1, 2026).today, 'string', 'today defaults to the account date');
+});
+
+test('monthly volume of an empty account is twelve zeros and its history starts at the current year', (t) => {
+  const { db } = fixture(t);
+  const empty = monthlyVolume(db, 1, 2026, today);
+  assert.deepEqual(empty.months.map((month) => month.distanceKm), Array(12).fill(0));
+  assert.deepEqual([empty.totalKm, empty.sessions, empty.firstYear, empty.lastYear], [0, 0, 2026, 2026]);
+});
+
+test('the volume year is the current one by default and otherwise a four-digit year up to it', () => {
+  assert.equal(volumeYear(undefined, today), 2026);
+  assert.equal(volumeYear('2025', today), 2025);
+  assert.equal(volumeYear('2026', today), 2026);
+  for (const value of ['2027', '1899', '26', '2025.0', ' 2025', '', 'abc', ['2025']]) assert.equal(volumeYear(value, today), null, String(value));
+});
+
+test('GET /api/dashboard/volume requires a session, validates the year and reads only the signed-in account', async (t) => {
+  const db = createDatabase({ filename: ':memory:' });
+  const app = await buildServer({ db, sessionCookieSecure: false });
+  t.after(async () => { await app.close(); db.close(); });
+  assert.equal((await app.inject({ method: 'GET', url: '/api/dashboard/volume' })).statusCode, 401);
+  for (const email of ['vol@example.test', 'other-vol@example.test'])
+    await app.inject({ method: 'POST', url: '/api/auth/register', payload: { email, password: 'dash-secret-1', first_name: 'V', last_name: 'R' } });
+  const year = new Date().getUTCFullYear();
+  db.prepare('INSERT INTO trainings(user_id,dia,tipo,completed,fit_distance) VALUES (2,?,?,1,42),(1,?,?,1,5)').run(`${year - 1}-06-01`, 'Run', `${year - 1}-06-02`, 'Run');
+  const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: 'vol@example.test', password: 'dash-secret-1' } });
+  const cookie = [].concat(login.headers['set-cookie'])[0].split(';')[0];
+  const read = (query = '') => app.inject({ method: 'GET', url: `/api/dashboard/volume${query}`, headers: { cookie } });
+  const current = await read();
+  assert.equal(current.statusCode, 200);
+  assert.ok([year, year - 1, year + 1].includes(current.json().year), 'the account year');
+  const last = (await read(`?year=${year - 1}`)).json();
+  assert.equal(last.totalKm, 5, 'another account\'s distance is never counted');
+  for (const query of ['?year=abc', `?year=${year + 2}`, '?year=1800']) {
+    const response = await read(query);
+    assert.equal(response.statusCode, 400, query);
+    assert.equal(response.json().code, 'invalidYear');
+  }
 });

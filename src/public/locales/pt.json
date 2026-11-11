@@ -1620,6 +1620,24 @@
         "shoe": "{name} com {percent}% da quilometragem-alvo"
       }
     },
+    "volume": {
+      "title": "Volume mensal",
+      "previousYear": "Ano anterior",
+      "nextYear": "Próximo ano",
+      "total": "Total em {year}",
+      "sessions_one": "1 treino",
+      "sessions_other": "{count} treinos",
+      "best": "Melhor mês",
+      "noBest": "Sem treinos neste ano",
+      "average": "Média mensal",
+      "overMonths_one": "em 1 mês",
+      "overMonths_other": "em {count} meses",
+      "month": "{month}: {distance}",
+      "monthPartial": "{month} (parcial): {distance}",
+      "chart": "Volume por mês",
+      "empty": "Nenhum treino concluído com distância registrada ainda.",
+      "error": "Não foi possível carregar o volume mensal. Recarregue a página para tentar de novo."
+    },
     "dashboardError": "Não foi possível carregar este cartão. Recarregue a página para tentar de novo."
   },
   "memory": {

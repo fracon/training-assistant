@@ -1,9 +1,9 @@
-import { fetchActiveCycle, fetchCalendarTrainings, fetchShoes, fetchHeroImage, fetchOnboarding, updateOnboardingPresentation, fetchDashboard, fetchWeather } from './shared/api.js';
+import { fetchActiveCycle, fetchCalendarTrainings, fetchShoes, fetchHeroImage, fetchOnboarding, updateOnboardingPresentation, fetchDashboard, fetchWeather, fetchMonthlyVolume } from './shared/api.js';
 import { weatherLabelKey } from './shared/weather.js';
 import { mainStageRpe } from './shared/weekly-prescription-display.js';
 import { initShell, getShellI18n, getUserPreferences, showShellToast } from './shared/shell.js';
 import { translate } from './shared/i18n.js';
-import { formatDate as formatLocalizedDate, formatWeekday } from './shared/date.js';
+import { formatDate as formatLocalizedDate, formatMonth, formatWeekday } from './shared/date.js';
 import { formatDistance, formatTemperature } from './shared/units.js';
 import { consumeSetupGuideSignal, onboardingNextAction, createTourSession, mapTourTime, tourMediaLanguage, TOUR_SCENES, tourCueKey } from './shared/onboarding.js';
 import { TOUR_MEDIA } from './shared/onboarding-tour-media.js';
@@ -501,6 +501,8 @@ function setupHomePage() {
     dashboard: null,
     dashboardFailed: false,
     weather: null,
+    volume: null,
+    volumeFailed: false,
   };
 
   let i18n = null;
@@ -945,6 +947,7 @@ function setupHomePage() {
   function renderDashboard() {
     renderNextWorkout();
     renderPending();
+    renderVolume();
   }
   async function loadDashboard() {
     const summary = await fetchDashboard();
@@ -953,6 +956,132 @@ function setupHomePage() {
     renderDashboard();
     void loadNextWeather();
   }
+
+  // ── Monthly volume, year over year ──────────────────────────────────────
+  let volumeRequest = 0;
+  let volumeFocus = null;
+  const volumeDistance = (km, decimals = 0) => formatDistance(km, state.distanceUnit, decimals);
+  function volumeMonthText(volume, entry) {
+    const month = formatMonth(entry.month, language());
+    return t(entry.month === volume.currentMonth ? 'home.volume.monthPartial' : 'home.volume.month', {
+      month: `${month.charAt(0).toUpperCase()}${month.slice(1)}`,
+      distance: volumeDistance(entry.distanceKm, 1),
+    });
+  }
+  function hideVolumeTooltip() {
+    const tooltip = document.getElementById('volumeTooltip');
+    if (tooltip) tooltip.hidden = true;
+  }
+  // One tooltip for the card, placed above the bar it describes and kept inside the card.
+  function showVolumeTooltip(button) {
+    const tooltip = document.getElementById('volumeTooltip');
+    const card = document.getElementById('volumeCard');
+    if (!tooltip || !card) return;
+    tooltip.textContent = button.dataset.tooltip;
+    tooltip.hidden = false;
+    const cardBox = card.getBoundingClientRect();
+    const box = button.getBoundingClientRect();
+    const width = tooltip.offsetWidth;
+    const left = Math.min(Math.max(box.left - cardBox.left + box.width / 2 - width / 2, 8), cardBox.width - width - 8);
+    tooltip.style.left = `${left}px`;
+    // Above the bar itself, but never over the card header and its year controls.
+    const barTop = (button.querySelector('.volume-bar') ?? button).getBoundingClientRect().top;
+    const floor = document.getElementById('volumeBody').getBoundingClientRect().top - cardBox.top;
+    tooltip.style.top = `${Math.max(barTop - cardBox.top - tooltip.offsetHeight - 8, floor)}px`;
+  }
+  function moveVolumeFocus(buttons, index) {
+    buttons.forEach((button, position) => { button.tabIndex = position === index ? 0 : -1; });
+    buttons[index].focus();
+  }
+  function renderVolume() {
+    const body = document.getElementById('volumeBody');
+    if (!body) return;
+    const volume = state.volume;
+    const prev = document.getElementById('volumePrev');
+    const next = document.getElementById('volumeNext');
+    const yearLabel = document.getElementById('volumeYear');
+    hideVolumeTooltip();
+    body.replaceChildren();
+    if (prev) prev.disabled = !volume || volume.year <= volume.firstYear;
+    if (next) next.disabled = !volume || volume.year >= volume.lastYear;
+    if (yearLabel) yearLabel.textContent = volume ? String(volume.year) : '';
+    if (state.volumeFailed) { body.append(emptyState(null, t('home.volume.error'))); return; }
+    if (!volume) return;
+    if (volume.totalKm === 0 && volume.firstYear === volume.lastYear) { body.append(emptyState(null, t('home.volume.empty'))); return; }
+
+    // First row: three tiles with the same label, value, detail structure.
+    const summary = make('div', 'metrics-grid volume-summary');
+    summary.append(metricTile(t('home.volume.total', { year: volume.year }), volumeDistance(volume.totalKm),
+      t(volume.sessions === 1 ? 'home.volume.sessions_one' : 'home.volume.sessions_other', { count: volume.sessions })));
+    const best = volume.months.reduce((top, entry) => (entry.distanceKm > top.distanceKm ? entry : top));
+    const bestName = formatMonth(best.month, language());
+    summary.append(metricTile(t('home.volume.best'), best.distanceKm > 0 ? volumeDistance(best.distanceKm) : '—',
+      best.distanceKm > 0 ? `${bestName.charAt(0).toUpperCase()}${bestName.slice(1)}` : t('home.volume.noBest')));
+    // Months elapsed: up to the running month this year, all twelve for a closed year.
+    const elapsed = volume.currentMonth ?? 12;
+    summary.append(metricTile(t('home.volume.average'), volumeDistance(volume.totalKm / elapsed),
+      t(elapsed === 1 ? 'home.volume.overMonths_one' : 'home.volume.overMonths_other', { count: elapsed })));
+
+    const max = Math.max(...volume.months.map((entry) => entry.distanceKm));
+    const scroller = make('div', 'volume-scroll');
+    const chart = make('div', 'volume-chart');
+    chart.setAttribute('role', 'group');
+    chart.setAttribute('aria-label', t('home.volume.chart'));
+    const buttons = [];
+    const focusIndex = volumeFocus?.year === volume.year ? volumeFocus.index : (volume.currentMonth ?? 12) - 1;
+    for (const entry of volume.months) {
+      const index = entry.month - 1;
+      const button = make('button', `volume-month${entry.month === volume.currentMonth ? ' is-partial' : ''}`);
+      button.type = 'button';
+      button.tabIndex = index === focusIndex ? 0 : -1;
+      button.dataset.tooltip = volumeMonthText(volume, entry);
+      button.setAttribute('aria-label', button.dataset.tooltip);
+      const bars = make('span', 'volume-bars');
+      bars.setAttribute('aria-hidden', 'true');
+      const bar = make('span', 'volume-bar');
+      bar.style.height = `${max > 0 ? Math.max((entry.distanceKm / max) * 100, entry.distanceKm > 0 ? 2 : 0) : 0}%`;
+      bars.append(bar);
+      const label = make('span', 'volume-month-label', formatMonth(entry.month, language(), 'short'));
+      label.setAttribute('aria-hidden', 'true');
+      button.append(bars, label);
+      button.addEventListener('mouseenter', () => showVolumeTooltip(button));
+      button.addEventListener('mouseleave', () => { if (document.activeElement !== button) hideVolumeTooltip(); });
+      button.addEventListener('focus', () => { volumeFocus = { year: volume.year, index }; showVolumeTooltip(button); });
+      button.addEventListener('blur', hideVolumeTooltip);
+      button.addEventListener('keydown', (event) => {
+        const target = { ArrowLeft: index - 1, ArrowRight: index + 1, Home: 0, End: 11 }[event.key];
+        if (event.key === 'Escape') { hideVolumeTooltip(); return; }
+        if (target === undefined) return;
+        event.preventDefault();
+        moveVolumeFocus(buttons, Math.min(Math.max(target, 0), 11));
+      });
+      buttons.push(button);
+      chart.append(button);
+    }
+    scroller.append(chart);
+    // Focusing a bar may scroll it into view: a visible tooltip follows the
+    // focused bar; one dismissed with Escape stays closed.
+    scroller.addEventListener('scroll', () => {
+      if (document.getElementById('volumeTooltip')?.hidden) return;
+      if (buttons.includes(document.activeElement)) showVolumeTooltip(document.activeElement);
+      else hideVolumeTooltip();
+    });
+
+    body.append(summary, scroller);
+  }
+  async function loadVolume(year) {
+    const request = ++volumeRequest;
+    const volume = await fetchMonthlyVolume(year);
+    if (request !== volumeRequest) return;
+    const hadFocus = document.getElementById('volumeBody')?.contains(document.activeElement);
+    state.volume = volume ?? state.volume;
+    state.volumeFailed = volume === null && !state.volume;
+    renderVolume();
+    if (hadFocus) document.querySelector('.volume-month[tabindex="0"]')?.focus({ preventScroll: true });
+  }
+  document.getElementById('volumePrev')?.addEventListener('click', () => { if (state.volume) loadVolume(state.volume.year - 1); });
+  document.getElementById('volumeNext')?.addEventListener('click', () => { if (state.volume) loadVolume(state.volume.year + 1); });
+  window.addEventListener('resize', hideVolumeTooltip);
 
   function render() {
     renderDashboard();
@@ -1028,6 +1157,7 @@ function setupHomePage() {
       state.distanceUnit = nextDistance;
       renderMetrics();
       renderShoesWidget();
+      renderVolume();
     }
     if (event.detail?.temperature_unit === 'C' || event.detail?.temperature_unit === 'F') {
       state.temperatureUnit = event.detail.temperature_unit;
@@ -1051,6 +1181,7 @@ function setupHomePage() {
       loadHeroImage();
       loadHeroQuote();
       loadDashboard();
+      loadVolume();
       loadCycle();
       loadMetrics();
       loadShoes();

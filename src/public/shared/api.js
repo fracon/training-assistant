@@ -276,6 +276,19 @@ export async function fetchDashboard() {
   }
 }
 
+// Monthly completed distance of `year` (the account's current year when absent)
+// beside the previous year; null on any failure.
+export async function fetchMonthlyVolume(year) {
+  try {
+    const query = year ? `?year=${encodeURIComponent(year)}` : '';
+    const response = await fetch(`/api/dashboard/volume${query}`, { headers: { accept: 'application/json' } });
+    if (!response.ok) return null;
+    return response.json();
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchWeather(location, date) {
   try {
     const params = new URLSearchParams({ location, date });
