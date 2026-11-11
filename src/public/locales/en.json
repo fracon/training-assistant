@@ -1679,7 +1679,6 @@
     "legacyNotice": "Earlier supplemental fields and observations are archived, unchanged and excluded from new contexts. They are not confirmed facts or current restrictions.",
     "legacyDownload": "Download my archived records",
     "selectionHint": "This overview uses the same bounded source selection as AI context. The context actually sent will vary with the task and available budget. Viewing or updating memory makes no paid requests.",
-    "selectionLimited": "Some records were omitted by the history window or context budget. Consult the original screens for the full history.",
     "feedback": {
       "feedback_rpe": "Reported RPE (1–5)",
       "feedback_notas": "Notes",
@@ -1726,9 +1725,6 @@
       "dismissed": "Dismissed",
       "superseded": "Superseded"
     },
-    "interpretationIncluded": "Sources are current: selected for future contexts.",
-    "interpretationNotSelected": "Not selected currently: sources may have changed or the item did not fit the context budget.",
-    "interpretationSelectionUnverified": "Saved. Context selection will be checked when the memory refreshes.",
     "interpretationConfirm": "Confirm",
     "interpretationCorrect": "Correct",
     "interpretationDiscard": "Discard",
@@ -1760,6 +1756,63 @@
       },
       "outputTitle": "Model output",
       "noAttemptInfo": "No diagnostic was saved for this attempt."
+    },
+    "purposeTabsLabel": "Context by AI task",
+    "purposeTabs": {
+      "cycle": "Cycle planning",
+      "workouts": "Weekly workouts",
+      "analysis": "Workout analysis"
+    },
+    "task": {
+      "cycle": "What the AI uses to plan the cycle “{objective}”.",
+      "cycleNone": "No active cycle: planning uses an active cycle as its goal.",
+      "workouts": "What the AI uses to propose the workouts for the week of {date}.",
+      "analysis": "What the AI uses to analyze the workout of {date} · {name}.",
+      "analysisNone": "Complete a workout with its perceived effort to see the analysis context.",
+      "weatherNote": "The weather forecast is looked up when generating and is not shown here."
+    },
+    "plan": "Applied planning",
+    "planOrigin": "Source: applied cycle planning",
+    "planEmpty": "No planning applied to the active cycle.",
+    "planVersion": "Version {version} · applied on {date}",
+    "planOutdated": "Outdated: the cycle or its records changed after it was applied. Generate a new plan whenever you want to update it.",
+    "planIncompatible": "This plan uses an incompatible effort scale and is not used by the AI. Generate a new plan.",
+    "currentPhase": "Current phase",
+    "phases": "Cycle phases",
+    "indicators": "Tracked indicators",
+    "openPlanning": "Open cycles",
+    "shoes": "Shoes",
+    "shoesOrigin": "Source: Shoe Rotation",
+    "shoesEmpty": "No shoes registered.",
+    "openShoes": "Open shoes",
+    "shoeMileage": "{mileage} of {target}",
+    "previousCycles": "Previous cycles",
+    "previousCyclesOrigin": "Source: completed or cancelled cycles",
+    "previousCyclesEmpty": "No previous cycles.",
+    "openCycles": "Open cycles",
+    "priority": {
+      "concern": "Reported discomfort",
+      "high_effort": "High effort"
+    },
+    "omitted": {
+      "intro": "Left out of this context by its size limit: {items}.",
+      "recent": "{count} recent sessions",
+      "upcoming": "{count} upcoming sessions",
+      "weekly": "{count} weeks of totals",
+      "comparables": "{count} reference sessions",
+      "shoes": "{count} shoes",
+      "interpretation": "{count} interpretations",
+      "previousCycles": "{count} previous cycles",
+      "planning": "{count} parts of the applied plan",
+      "historical": "Workouts older than {weeks} weeks ({count}) only count as references.",
+      "reduced": "{count} sessions appear without their planned workout details to fit the context."
+    },
+    "interpretationInclusion": {
+      "used": "Used by the AI for this task.",
+      "dismissed": "Dismissed: not used by the AI.",
+      "superseded": "Replaced by a more recent analysis.",
+      "not_current": "Outside this task’s context: its source workout changed or is outside the period considered.",
+      "unverified": "Saved. Context selection will be checked when the memory refreshes."
     }
   },
   "cyclePlanning": {

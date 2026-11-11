@@ -28,6 +28,11 @@ async function initMemory() {
     $(field).addEventListener('input', () => dirty.add(field));
   let memory = null;
   let busy = false;
+  // Which AI task's context is shown. Each load is numbered so a slower reply
+  // for a previously selected task never replaces the current one.
+  let purpose = 'cycle';
+  let loadSeq = 0;
+  const memoryUrl = () => `/api/ai/memory?purpose=${encodeURIComponent(purpose)}`;
   let resources = null;
   let loaded = false;
   let errorKey = null;
@@ -72,6 +77,36 @@ async function initMemory() {
       input.removeAttribute('aria-describedby');
     }
   }
+  // One sentence naming the task whose context is shown.
+  function renderTask(date) {
+    const task = memory.task;
+    let text;
+    if (memory.purpose === 'cycle')
+      text = memory.cycle && task.cycleId ? translate(i18n.messages, 'memory.task.cycle', { objective: memory.cycle.objective }) : t('task.cycleNone');
+    else if (memory.purpose === 'workouts')
+      text = `${translate(i18n.messages, 'memory.task.workouts', { date: date(task.weekStart) })} ${t('task.weatherNote')}`;
+    else
+      text = task.session
+        ? translate(i18n.messages, 'memory.task.analysis', { date: date(task.session.date), name: task.session.planned.treino || task.session.planned.tipo || t('unknown') })
+        : t('task.analysisNone');
+    $('purposeTask').textContent = text;
+  }
+  // States what was left out, with counts, only when something was.
+  function renderOmissions() {
+    const notice = $('selectionNotice');
+    const omissions = memory.omissions;
+    const counts = { ...omissions.budget };
+    let planning = 0;
+    for (const key of ['architecture', 'phases', 'indicators', 'adaptations', 'uncertainties']) { planning += counts[key] || 0; delete counts[key]; }
+    if (planning) counts.planning = planning;
+    const items = Object.entries(counts).map(([key, count]) => translate(i18n.messages, `memory.omitted.${key}`, { count }));
+    const lines = [];
+    if (items.length) lines.push(translate(i18n.messages, 'memory.omitted.intro', { items: items.join(', ') }));
+    if (omissions.reducedDetails) lines.push(translate(i18n.messages, 'memory.omitted.reduced', { count: omissions.reducedDetails }));
+    if (omissions.historical) lines.push(translate(i18n.messages, 'memory.omitted.historical', { count: omissions.historical, weeks: Math.round((Date.parse(memory.asOf) - Date.parse(memory.ranges.aggregateFrom)) / 604800000) }));
+    notice.replaceChildren(...lines.map((line) => { const p = document.createElement('p'); p.textContent = line; return p; }));
+    notice.hidden = !lines.length;
+  }
   function renderOverview() {
     const root = $('memoryOverview');
     const focusedKey = root.contains(document.activeElement) ? document.activeElement.dataset.memoryLink : null;
@@ -100,8 +135,8 @@ async function initMemory() {
       card.setAttribute('aria-labelledby', h.id);
       header.append(h);
       if (key !== 'interpretations') {
-        const action = key === 'cycle' ? 'editCycle' : key === 'availability' ? 'editAvailability' : 'openCalendar';
-        link(header, href, t(action), key);
+        const actions = { cycle: 'editCycle', availability: 'editAvailability', plan: 'openPlanning', shoes: 'openShoes', previousCycles: 'openCycles' };
+        link(header, href, t(actions[key] ?? 'openCalendar'), key);
       }
       card.append(header); paragraph(card, t(origin), true);
       parent.append(card); return card;
@@ -121,6 +156,8 @@ async function initMemory() {
       head.append(row); const body = node('tbody'); table.append(head, body); wrap.append(table); parent.append(wrap);
       return body;
     };
+    renderTask(date);
+    renderOmissions();
     const cycle = section('cycle', 'cycleOrigin', '/cycles.html', top);
     if (memory.cycle) {
       paragraph(cycle, memory.cycle.objective);
@@ -153,6 +190,28 @@ async function initMemory() {
       paragraph(availability, t('durationHint'), true);
       if (sameUpdate) paragraph(availability, `${t('updated')}: ${date(rows[0].updatedAt)}`, true);
     }
+    if (memory.purpose !== 'cycle') {
+      const plan = section('plan', 'planOrigin', '/cycles.html');
+      const applied = memory.appliedPlan;
+      if (!applied) paragraph(plan, t('planEmpty'));
+      else {
+        paragraph(plan, translate(i18n.messages, 'memory.planVersion', { version: applied.version, date: date(applied.appliedAt) }), true);
+        if (applied.compatibilityError) paragraph(plan, t('planIncompatible'));
+        else {
+          if (applied.outdated) paragraph(plan, t('planOutdated'), true);
+          const facts = node('dl', 'memory-facts'); plan.append(facts);
+          metric(facts, t('period'), `${date(applied.start)} → ${date(applied.end)}`);
+          if (applied.currentPhase) metric(facts, t('currentPhase'), `${applied.currentPhase.name} · ${applied.currentPhase.objective}`);
+          if (applied.architecture.length) {
+            const list = node('ol', 'memory-phases');
+            for (const phase of applied.architecture) list.append(node('li', applied.currentPhase && phase.start === applied.currentPhase.start && phase.name === applied.currentPhase.name ? 'memory-phase-current' : '', `${phase.name} · ${date(phase.start)} → ${date(phase.end)}`));
+            metric(facts, t('phases'), '');
+            facts.lastElementChild.querySelector('dd').append(list);
+          }
+          if (applied.indicators?.length) metric(facts, t('indicators'), applied.indicators.join(' · '));
+        }
+      }
+    }
     for (const [key, rows] of [['recent', memory.recent], ['upcoming', memory.upcoming], ['comparables', memory.comparables]]) {
       const card = section(key, 'sessionOrigin', '/calendar.html');
       if (key !== 'comparables') paragraph(card, key === 'recent'
@@ -162,6 +221,7 @@ async function initMemory() {
       for (const row of rows) {
         const article = node('article', 'memory-session');
         const title = node('h3', '', `${date(row.date)} · ${row.planned.treino || row.planned.tipo || t('unknown')}`);
+        if (row.priority) title.append(' ', node('span', `memory-badge memory-badge-${row.priority}`, translate(i18n.messages, `memory.priority.${row.priority}`)));
         article.append(title);
         paragraph(article, row.actual.completed ? t('completed') : t('planned'), true);
         const actual = row.actual;
@@ -212,6 +272,27 @@ async function initMemory() {
       }
       paragraph(weekly, t('totalsHint'), true);
     }
+    const shoes = section('shoes', 'shoesOrigin', '/shoes.html');
+    if (!memory.shoes.length) paragraph(shoes, t('shoesEmpty'));
+    else {
+      const list = node('dl', 'memory-facts'); shoes.append(list);
+      for (const shoe of memory.shoes) {
+        const unit = getUserPreferences().distance_unit;
+        const mileage = shoe.targetMileage
+          ? translate(i18n.messages, 'memory.shoeMileage', { mileage: formatDistance(shoe.mileage ?? 0, unit), target: formatDistance(shoe.targetMileage, unit) })
+          : formatDistance(shoe.mileage ?? 0, unit);
+        metric(list, `${shoe.brand} ${shoe.model}`, mileage);
+      }
+    }
+    if (memory.purpose === 'cycle') {
+      const previous = section('previousCycles', 'previousCyclesOrigin', '/cycles.html');
+      if (!memory.previousCycles.length) paragraph(previous, t('previousCyclesEmpty'));
+      else {
+        const list = node('dl', 'memory-facts'); previous.append(list);
+        for (const row of memory.previousCycles)
+          metric(list, row.objective, `${translate(i18n.messages, `cycles.status.${row.status}`)} · ${date(row.startDate)} → ${date(row.targetDate)}`);
+      }
+    }
     const interpretationCard = section('interpretations', 'interpretationsOrigin', '/calendar.html');
     if (!memory.interpretations?.length) paragraph(interpretationCard, t('interpretationsEmpty'));
     for (const item of memory.interpretations || []) {
@@ -224,9 +305,7 @@ async function initMemory() {
         paragraph(article, `${t('interpretationCorrectionLabel')}: ${item.correction_text}`);
       } else paragraph(article, item.text, false);
       paragraph(article, t(`interpretationStates.${item.disposition}`), true);
-      paragraph(article, item.current === true
-        ? t('interpretationIncluded')
-        : item.current === false ? t('interpretationNotSelected') : t('interpretationSelectionUnverified'), true);
+      paragraph(article, translate(i18n.messages, `memory.interpretationInclusion.${item.inclusion}`), true);
       link(article, item.href, t('openSession'), `interpretation:${item.href}`);
       const call = async (action, textValue, focusAction = action === 'confirm' ? 'correct' : action) => {
         if (busy) return;
@@ -243,7 +322,8 @@ async function initMemory() {
             originalText: saved.interpretation.text,
             version: saved.interpretation.version,
             updated_at: saved.interpretation.updatedAt,
-            current: saved.interpretation.disposition === 'dismissed' ? false : null,
+            // Membership is unknown until the memory is read again; never shown as used.
+            inclusion: saved.interpretation.disposition === 'dismissed' ? 'dismissed' : 'unverified',
             text: saved.interpretation.disposition === 'corrected' ? saved.interpretation.correction : saved.interpretation.text,
           } : entry);
           loaded = true; clearError();
@@ -255,7 +335,7 @@ async function initMemory() {
           }
           showShellToast(i18n.messages, 'memory.interpretationSaved');
           try {
-            memory = await requestJson('/api/ai/memory', undefined, 'GET');
+            memory = await requestJson(memoryUrl(), undefined, 'GET');
             loaded = true; clearError(); renderOverview();
           } catch { error({ codes: ['memoryReadFailed'] }, false, true); }
         } catch (e) { error(e, false); }
@@ -297,7 +377,6 @@ async function initMemory() {
       }
       interpretationCard.append(article);
     }
-    $('selectionNotice').hidden = !memory.selectionLimited;
     $('legacyNotice').hidden = !memory.legacyAvailable;
     const updated = memory.profile.fields.experience?.updatedAt;
     $('profileSource').textContent = updated
@@ -327,8 +406,9 @@ async function initMemory() {
       controls();
     }
   }
-  async function load() {
-    if (busy) return;
+  async function load({ switching = false } = {}) {
+    if (busy && !switching) return;
+    const seq = ++loadSeq;
     const trigger = document.activeElement;
     const recoverFocus = trigger === $('reloadMemory') || trigger === $('refreshMemoryVersion');
     busy = true;
@@ -336,7 +416,9 @@ async function initMemory() {
     clearError();
     $('memoryStatus').textContent = t('loading');
     try {
-      memory = await requestJson('/api/ai/memory', undefined, 'GET');
+      const result = await requestJson(memoryUrl(), undefined, 'GET');
+      if (seq !== loadSeq) return;
+      memory = result;
       loaded = true;
       for (const field of fields)
           if (!dirty.has(field))
@@ -345,10 +427,13 @@ async function initMemory() {
       if (recoverFocus && document.activeElement === document.body)
         (trigger === $('refreshMemoryVersion') ? $('experience') : document.querySelector('.memory-header h1')).focus();
     } catch (e) {
-      error(e, true, true);
+      // A failure of a superseded read is not shown over the current task.
+      if (seq === loadSeq) error(e, !switching, true);
     } finally {
-      busy = false;
-      controls();
+      if (seq === loadSeq) {
+        busy = false;
+        controls();
+      }
     }
   }
   for (const id of ['reloadMemory', 'refreshMemoryVersion'])
@@ -507,6 +592,30 @@ async function initMemory() {
     const refreshVisibleTrace=()=>{if(!document.hidden)renderTrace();};
     document.addEventListener('visibilitychange',refreshVisibleTrace);window.addEventListener('focus',refreshVisibleTrace);
     controls();
+  }
+  // Purpose tabs: roving tabindex, arrows/Home/End, and a fresh read per task.
+  const tabs = [...document.querySelectorAll('#purposeTabs [role=tab]')];
+  function selectPurpose(tab, focus = false) {
+    for (const item of tabs) {
+      const selected = item === tab;
+      item.setAttribute('aria-selected', String(selected));
+      item.tabIndex = selected ? 0 : -1;
+    }
+    $('memoryPurposePanel').setAttribute('aria-labelledby', tab.id);
+    if (focus) tab.focus();
+    if (purpose === tab.dataset.purpose) return;
+    purpose = tab.dataset.purpose;
+    void load({ switching: true });
+  }
+  for (const tab of tabs) {
+    tab.addEventListener('click', () => selectPurpose(tab));
+    tab.addEventListener('keydown', (event) => {
+      const index = tabs.indexOf(tab);
+      const target = { ArrowRight: tabs[(index + 1) % tabs.length], ArrowLeft: tabs[(index + tabs.length - 1) % tabs.length], Home: tabs[0], End: tabs.at(-1) }[event.key];
+      if (!target) return;
+      event.preventDefault();
+      selectPurpose(target, true);
+    });
   }
   document.addEventListener('kinesis:preferences-changed', () => { if (memory) renderOverview(); });
   document.addEventListener('app:languagechange', () => {

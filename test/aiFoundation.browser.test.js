@@ -323,7 +323,7 @@ test('training memory Chrome PT/EN desktop/mobile, ownership, keyboard, loading,
     db.prepare("UPDATE training_cycles SET primary_goal='Synthetic corrected goal' WHERE id='cycle'").run();
     await reopenMemory();
     await waitFor("document.getElementById('memoryOverview').textContent.includes('Synthetic corrected goal')");
-    await evaluate(`(()=>{const original=window.fetch.bind(window);window.__failMemoryGet=false;window.__memoryGetCalls=0;window.fetch=(input,init)=>{if(String(input)==='/api/ai/memory'&&(!init?.method||init.method==='GET'))window.__memoryGetCalls++;if(window.__failMemoryGet&&String(input)==='/api/ai/memory'&&(!init?.method||init.method==='GET')){window.__failMemoryGet=false;return Promise.reject(new TypeError('synthetic memory refresh failure'))}return original(input,init)}})()`);
+    await evaluate(`(()=>{const original=window.fetch.bind(window);window.__failMemoryGet=false;window.__memoryGetCalls=0;window.fetch=(input,init)=>{if(String(input).startsWith('/api/ai/memory?purpose=')&&(!init?.method||init.method==='GET'))window.__memoryGetCalls++;if(window.__failMemoryGet&&String(input).startsWith('/api/ai/memory?purpose=')&&(!init?.method||init.method==='GET')){window.__failMemoryGet=false;return Promise.reject(new TypeError('synthetic memory refresh failure'))}return original(input,init)}})()`);
     assert.equal(await evaluate("!!document.querySelector('[data-memory-action=\"memory-confirm:confirm\"]')"),true,'the pending synthetic interpretation exposes its confirm action');
     assert.equal(await evaluate("document.querySelector('[data-memory-action=\"memory-confirm:confirm\"]').disabled"),false,'memory actions are ready after the persisted overview loads');
     await evaluate("window.__failMemoryGet=true;document.querySelector('[data-memory-action=\"memory-confirm:confirm\"]').click()");
@@ -364,7 +364,7 @@ test('training memory Chrome PT/EN desktop/mobile, ownership, keyboard, loading,
     await evaluate("document.getElementById('profileForm').requestSubmit()");
     await waitFor("document.getElementById('refreshMemoryVersion').hidden===false");
     // Hold a real reload and move focus: the refresh must not take focus away.
-    await command('Fetch.enable',{patterns:[{urlPattern:origin+'/api/ai/memory',requestStage:'Request'}]});
+    await command('Fetch.enable',{patterns:[{urlPattern:origin+'/api/ai/memory?purpose=*',requestStage:'Request'}]});
     const pausedLoad = new Promise((resolve) => {
       const handler = (event) => { const message=JSON.parse(event.data); if(message.method==='Fetch.requestPaused') {socket.removeEventListener('message',handler);resolve(message.params.requestId);} };
       socket.addEventListener('message',handler);
@@ -425,7 +425,8 @@ test('training memory Chrome PT/EN desktop/mobile, ownership, keyboard, loading,
     );
     assert.equal(
       await evaluate(`document.querySelectorAll('#memoryOverview section').length`),
-      7,
+      9,
+      'cycle planning view: goals, availability, recent, upcoming, references, totals, shoes, previous cycles, interpretations',
     );
     for(const language of ['en-US','pt-BR']) {
       await evaluate(`document.querySelector(".lang-switch [data-lang='${language}']").click()`);

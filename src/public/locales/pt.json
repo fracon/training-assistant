@@ -1679,7 +1679,6 @@
     "legacyNotice": "Campos complementares e observações anteriores estão arquivados, preservados e excluídos dos novos contextos. Não são fatos confirmados nem restrições atuais.",
     "legacyDownload": "Baixar meus registros arquivados",
     "selectionHint": "Esta visão usa a mesma seleção limitada de fontes do contexto da IA. O contexto efetivamente enviado varia conforme a tarefa e o orçamento disponível. Consultar ou atualizar a memória não faz chamadas pagas.",
-    "selectionLimited": "Alguns registros foram omitidos pela janela histórica ou pelo orçamento de contexto. Consulte o histórico completo nas telas de origem.",
     "feedback": {
       "feedback_rpe": "RPE relatado (1–5)",
       "feedback_notas": "Notas",
@@ -1726,9 +1725,6 @@
       "dismissed": "Descartada",
       "superseded": "Substituída"
     },
-    "interpretationIncluded": "Fontes atuais: selecionada para contextos futuros.",
-    "interpretationNotSelected": "Não selecionada atualmente: as fontes podem ter mudado ou o item não coube no contexto.",
-    "interpretationSelectionUnverified": "Salvo. A seleção para o contexto será verificada ao atualizar a memória.",
     "interpretationConfirm": "Confirmar",
     "interpretationCorrect": "Corrigir",
     "interpretationDiscard": "Descartar",
@@ -1760,6 +1756,63 @@
       },
       "outputTitle": "Saída do modelo",
       "noAttemptInfo": "Não há diagnóstico salvo para esta tentativa."
+    },
+    "purposeTabsLabel": "Contexto por tarefa da IA",
+    "purposeTabs": {
+      "cycle": "Planejamento do ciclo",
+      "workouts": "Treinos semanais",
+      "analysis": "Análise de treino"
+    },
+    "task": {
+      "cycle": "O que a IA usa para planejar o ciclo «{objective}».",
+      "cycleNone": "Sem ciclo ativo: o planejamento usa um ciclo ativo como objetivo.",
+      "workouts": "O que a IA usa para propor os treinos da semana de {date}.",
+      "analysis": "O que a IA usa para analisar o treino de {date} · {name}.",
+      "analysisNone": "Conclua um treino com o esforço percebido para ver o contexto de análise.",
+      "weatherNote": "A previsão do tempo é consultada no momento da geração e não aparece aqui."
+    },
+    "plan": "Planejamento aplicado",
+    "planOrigin": "Origem: planejamento do ciclo aplicado",
+    "planEmpty": "Nenhum planejamento aplicado ao ciclo ativo.",
+    "planVersion": "Versão {version} · aplicada em {date}",
+    "planOutdated": "Desatualizado: o ciclo ou os registros mudaram desde a aplicação. Gere um novo planejamento quando quiser atualizá-lo.",
+    "planIncompatible": "Este planejamento usa uma escala de esforço incompatível e não é usado pela IA. Gere um novo planejamento.",
+    "currentPhase": "Fase atual",
+    "phases": "Fases do ciclo",
+    "indicators": "Indicadores acompanhados",
+    "openPlanning": "Abrir ciclos",
+    "shoes": "Tênis",
+    "shoesOrigin": "Origem: Rotação de Tênis",
+    "shoesEmpty": "Nenhum tênis cadastrado.",
+    "openShoes": "Abrir tênis",
+    "shoeMileage": "{mileage} de {target}",
+    "previousCycles": "Ciclos anteriores",
+    "previousCyclesOrigin": "Origem: ciclos concluídos ou cancelados",
+    "previousCyclesEmpty": "Nenhum ciclo anterior.",
+    "openCycles": "Abrir ciclos",
+    "priority": {
+      "concern": "Desconforto relatado",
+      "high_effort": "Esforço alto"
+    },
+    "omitted": {
+      "intro": "Ficaram fora deste contexto por limite de tamanho: {items}.",
+      "recent": "{count} sessões recentes",
+      "upcoming": "{count} próximas sessões",
+      "weekly": "{count} semanas de totais",
+      "comparables": "{count} sessões de referência",
+      "shoes": "{count} tênis",
+      "interpretation": "{count} interpretações",
+      "previousCycles": "{count} ciclos anteriores",
+      "planning": "{count} partes do planejamento aplicado",
+      "historical": "Treinos com mais de {weeks} semanas ({count}) entram apenas como referência.",
+      "reduced": "{count} sessões aparecem sem os detalhes do treino planejado para caber no contexto."
+    },
+    "interpretationInclusion": {
+      "used": "Usada pela IA nesta tarefa.",
+      "dismissed": "Descartada: não é usada pela IA.",
+      "superseded": "Substituída por uma análise mais recente.",
+      "not_current": "Fora do contexto desta tarefa: o treino de origem mudou ou está fora do período considerado.",
+      "unverified": "Salvo. A seleção para o contexto será verificada ao atualizar a memória."
     }
   },
   "cyclePlanning": {

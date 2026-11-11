@@ -35,7 +35,10 @@ test('canonical corrections refresh the overview and next context; legacy data a
   assert.equal(overview.upcoming[0].planned.treino,'Upcoming');
   assert.equal(overview.weekly[0].distanceKm,10);
   assert.equal(overview.comparables[0].planned.treino,'Older');
-  for(const field of ['hash','sources','configuration','payload','policyVersion','omissions']) assert.equal(field in overview,false);
+  for(const field of ['hash','sources','configuration','payload','policyVersion']) assert.equal(field in overview,false);
+  // Omissions are a quantified summary, never the stored list of source references.
+  assert.deepEqual(Object.keys(overview.omissions).sort(),['budget','budgetTotal','historical','incompatiblePlan','phasesOutsideWindow','reducedDetails']);
+  assert.equal(overview.recent[0].priority,'concern');
   assert.equal(JSON.stringify(overview).includes('Private'),false);
   db.prepare("UPDATE training_cycles SET primary_goal='Corrected goal' WHERE id='own'").run();
   db.prepare("UPDATE ai_coach_availability SET location='Corrected place',available_minutes=90 WHERE user_id=1").run();

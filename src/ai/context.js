@@ -723,6 +723,17 @@ function buildContext(
       count: olderCount,
       reason: 'historical_cutoff_except_comparables',
     });
+  // A complete, quantified account of what was left out, computed before the
+  // stored list is bounded below. It travels beside the snapshot (non-enumerable:
+  // never hashed, stored or sent to the model) for the training memory view.
+  const omissionSummary = { budget: {}, reducedDetails: 0, historical: 0, phasesOutsideWindow: 0, incompatiblePlan: false };
+  for (const item of context.omissions) {
+    if (item.reason === 'context_budget') omissionSummary.budget[item.type] = (omissionSummary.budget[item.type] || 0) + 1;
+    else if (item.reason === 'planning_details_omitted') omissionSummary.reducedDetails += 1;
+    else if (item.reason === 'historical_cutoff_except_comparables') omissionSummary.historical += item.count;
+    else if (item.reason === 'phase_details_outside_task_window') omissionSummary.phasesOutsideWindow += item.count;
+    else if (item.reason === 'incompatible_rpe_scale') omissionSummary.incompatiblePlan = true;
+  }
   // Bound omission reporting too, without concealing the number of excluded items.
   if (context.omissions.length > 5)
     context.omissions = [
@@ -734,6 +745,7 @@ function buildContext(
   context.recent.sort((a, b) => b.date.localeCompare(a.date) || Number(b.source.id) - Number(a.source.id));
   const snapshot = { ...context, hash: hash(context) };
   if (tokenBound(snapshot) > budget) throw new AiError('contextTooLarge', 413);
+  Object.defineProperty(snapshot, 'omissionSummary', { value: omissionSummary, enumerable: false });
   return snapshot;
 }
 function contextIsCurrent(db, userId, context, config) {
