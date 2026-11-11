@@ -2539,6 +2539,9 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     heldProviderStarted = heldStart;
     holdNextProvider = true;
     const callsBeforeDuplicate = simulatedProviderCalls;
+    // Every execution this two-tab scenario creates is removed afterwards, so the
+    // final reload recovers the earlier applied proposal and nothing newer.
+    const executionsBeforeScenario = new Set(db.prepare("SELECT id FROM ai_executions WHERE user_id=1 AND purpose='workouts'").all().map((row) => row.id));
     await evaluate(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{const b=document.getElementById('generateBtn');if(b&&!b.disabled){resolve(true);return}if(Date.now()>end){reject(new Error('First tab generation is still disabled before the concurrency scenario: '+JSON.stringify({disabled:b?.disabled,status:document.getElementById('weeklyProposalStatus')?.textContent,error:document.getElementById('weeklyProposalError')?.textContent})));return}setTimeout(check,25)};check()})`);
     await evaluate(`document.getElementById('generateBtn').click()`);
     await Promise.race([providerStarted, delay(10000).then(() => { throw new Error('The simulated provider was not called by the first tab'); })]);
@@ -2557,7 +2560,13 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     assert.equal(db.prepare('SELECT state FROM ai_executions WHERE id=?').get(runningId).state,'completed');
     await evaluateSecond(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{const b=document.getElementById('generateBtn');if(b&&!b.disabled){b.click();resolve(true);return}if(Date.now()>end){reject(new Error('Second tab did not re-enable generation after the shared run completed'));return}setTimeout(check,25)};check()})`);
     await evaluateSecond(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{if(window.__executionReads.length>1){resolve(true);return}if(Date.now()>end){reject(new Error('Second tab did not start its next request'));return}setTimeout(check,25)};check()})`);
-    const retryId = db.prepare("SELECT id FROM ai_executions WHERE user_id=1 AND purpose='workouts' ORDER BY created_at DESC LIMIT 1").get().id;
+    // Under load the retry may not be inserted yet: wait for an id that is not the running one.
+    let retryId = runningId;
+    for (let attempt = 0; attempt < 500 && retryId === runningId; attempt++) {
+      retryId = db.prepare("SELECT id FROM ai_executions WHERE user_id=1 AND purpose='workouts' ORDER BY created_at DESC, id LIMIT 1").get().id;
+      if (retryId === runningId) await delay(10);
+    }
+    assert.notEqual(retryId, runningId, 'the second tab started a new execution');
     for(let attempt=0;attempt<500 && db.prepare('SELECT settled FROM ai_executions WHERE id=?').get(retryId)?.settled!==1;attempt++) await delay(10);
     assert.equal(db.prepare('SELECT state FROM ai_executions WHERE id=?').get(retryId).state,'completed');
     await evaluateSecond(`new Promise((resolve,reject)=>{const end=Date.now()+8000;const check=()=>{const b=document.getElementById('generateBtn');if(b&&!b.disabled){resolve(true);return}if(Date.now()>end){reject(new Error('Second tab did not restore generation after rendering the completed retry'))}else setTimeout(check,25)};check()})`);
@@ -2587,7 +2596,12 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     assert.equal(db.prepare('SELECT settled FROM ai_executions WHERE id=?').get(afterCancelId)?.settled,1,'the accepted retry finishes before unrelated browser checks');
     await fetch(`${debugUrl}/json/close/${secondTarget.id}`);
     secondSocket.close();
-    db.prepare('DELETE FROM ai_executions WHERE id IN (?,?,?,?)').run(runningId,retryId,cancelId,afterCancelId);
+    for (const id of [runningId, retryId, cancelId, afterCancelId]) assert.ok(!executionsBeforeScenario.has(id));
+    const scenarioIds = db.prepare("SELECT id FROM ai_executions WHERE user_id=1 AND purpose='workouts'").all().map((row) => row.id).filter((id) => !executionsBeforeScenario.has(id));
+    for (const id of scenarioIds) db.prepare('DELETE FROM ai_executions WHERE id=?').run(id);
+    const newest = db.prepare(`SELECT p.applied_at FROM ai_executions e LEFT JOIN weekly_workout_proposals p ON p.execution_id=e.id
+      WHERE e.user_id=1 AND e.purpose='workouts' ORDER BY e.created_at DESC, e.id LIMIT 1`).get();
+    assert.ok(newest?.applied_at, 'after cleanup the newest weekly execution is the applied one');
     await command('Emulation.setDeviceMetricsOverride', {
       width: 1280,
       height: 800,

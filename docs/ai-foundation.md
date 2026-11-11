@@ -222,6 +222,34 @@ already in aggregate totals). These are presentation metadata from the existing
 context, not a second computation or new snapshot policy. Context v3, prompt
 bytes, immutable snapshots, execution controls and ownership remain unchanged.
 
+### Views by AI task (issue #91)
+
+The page shows, in accessible tabs, the context each AI task would send for
+its own resource, read through the same `buildContext` call the task makes:
+
+- **Cycle planning** uses the active cycle (and its previous cycles); it never
+  reads the applied plan, as before.
+- **Weekly workouts** uses next week (the Monday after the account's today).
+  Weather evidence is looked up at generation time and is stated, not shown.
+- **Workout analysis** uses the most recent completed session, or an owned
+  `resource_id`; another account's session answers 404 like every resource.
+
+Each view adds what the selection already held but the page did not show: the
+applied plan (version, applied date, outdated or incompatible state, phases with
+the current one marked, indicators), shoes and previous cycles. Sessions keep
+their chronological order with a `priority` badge (`concern` for reported
+discomfort, `high_effort` for RPE 4–5), a presentation of the selection rank,
+never a restriction. Interpretations state their `inclusion` for this task:
+`used`, `not_current`, `dismissed`, `superseded`, or `unverified` after a local
+action until the memory is read again.
+
+Omissions are quantified from the complete list before it is bounded for
+storage (`budget` counts by kind, `reducedDetails`, `historical`,
+`phasesOutsideWindow`, `incompatiblePlan`). That summary is a non-enumerable
+property of the built context: it is never hashed, stored or sent to a model.
+The notice appears only when something was left out. Each tab load is numbered
+and a reply for a previously selected tab is ignored.
+
 ### Compatibility with the first PR #67 implementation
 
 A read-only inspection of the configured local `data/database.sqlite` on
@@ -462,7 +490,7 @@ are allowlisted, with no `user_id`, arbitrary model or arbitrary prompt option.
 
 | Method/path | Contract |
 | --- | --- |
-| `GET /api/ai/memory` | Readable owner overview: `asOf`, `profile`, `cycle`, `availability`, `recent`, `upcoming`, `weekly`, `comparables`, `ranges`, `selectionLimited`, `legacyAvailable`; no technical payload/hash |
+| `GET /api/ai/memory?purpose=cycle\|workouts\|analysis[&resource_id=<owned training>]` | Readable owner projection of the selection that purpose's task sends: `purpose`, `task`, `asOf`, `profile`, `cycle`, `appliedPlan`, `previousCycles`, `availability`, `recent`, `upcoming`, `weekly`, `comparables`, `shoes`, `interpretations` (with `inclusion`), quantified `omissions`, `ranges`, `legacyAvailable`; no technical payload/hash. `resource_id` is accepted only for `analysis` |
 | `PUT /api/ai/profile` | `{fields:{experience?},expected_version}`; strings <=2000 chars |
 | `GET /api/ai/memory/legacy` | Owner-only read-only archive `{fields,entries}`; excluded from new contexts |
 | `GET /api/ai/context?purpose=...&resource_id=...&as_of=...` | Administrator's own technical context only; ordinary users receive 403 and use the overview |

@@ -9,7 +9,10 @@
 .memory-page summary { cursor: pointer; color: var(--accent-deep); font-weight: 600; line-height: 1.5; }
 .memory-page summary:focus-visible, .memory-source:focus-visible { outline: 2px solid var(--accent-deep); outline-offset: 3px; border-radius: 4px; }
 .memory-selection { padding: .75rem 1rem; border-left: 3px solid var(--accent-deep); background: var(--card); margin-bottom: 1rem !important; }
-.memory-summary-grid { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: 1rem; align-items: start; }
+.memory-summary-grid { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: 1rem; align-items: stretch; }
+/* Side-by-side cards share one height; their "Updated" line sits on the shared baseline. */
+.memory-summary-grid .memory-section { display: flex; flex-direction: column; }
+.memory-summary-grid .memory-updated { margin-top: auto; padding-top: .75rem; }
 .memory-section { margin-top: 1rem; min-width: 0; padding: 1.2rem 1.3rem; border-radius: 18px; }
 .memory-section:hover { box-shadow: none; }
 .memory-summary-grid .memory-section { margin-top: 0; }
@@ -90,3 +93,21 @@
 .trace-output-header h4 { margin:0; font-size:.95rem; }
 .trace-output-header button { flex:0 0 auto; }
 @media (max-width:560px) { .trace-output-header { flex-wrap:wrap; gap:.875rem; } }
+
+/* Purpose tabs: same tab treatment as the execution trace on this page. */
+.memory-tabs { display: flex; flex-wrap: wrap; gap: .35rem; border-bottom: 1px solid var(--line); margin: .5rem 0 1rem; }
+.memory-tabs [role=tab] { border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); padding: .6rem .85rem; cursor: pointer; font: inherit; font-weight: 600; }
+.memory-tabs [role=tab]:hover { color: var(--ink); }
+.memory-tabs [aria-selected=true] { color: var(--ink); border-bottom-color: var(--accent); }
+.memory-tabs [role=tab]:focus-visible { outline: 2px solid var(--accent-deep); outline-offset: 2px; border-radius: 4px; }
+.memory-task { margin-bottom: 1rem !important; color: var(--ink); max-width: 80ch; }
+.memory-selection p + p { margin-top: .35rem; }
+/* Priority badges reuse the cycle status pill: token colors on a 12% tint. */
+.memory-badge { display: inline-block; vertical-align: middle; margin-left: .35rem; font-size: .7rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: .15rem .55rem; border-radius: 999px; }
+.memory-badge-concern { background: rgba(165, 73, 47, .12); color: var(--danger); }
+.memory-badge-high_effort { background: rgba(76, 110, 81, .12); color: var(--accent-deep); }
+.memory-phases { margin: .25rem 0 0; padding-left: 1.2rem; }
+.memory-phases li { margin: .2rem 0; }
+.memory-phase-current { font-weight: 700; color: var(--accent-deep); }
+@media (max-width: 560px) { .memory-tabs [role=tab] { padding: .55rem .6rem; } }
+.memory-tabs [aria-disabled=true] { cursor: progress; opacity: .6; }

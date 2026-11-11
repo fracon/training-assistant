@@ -101,7 +101,16 @@ function registerAiRoutes(
       service,
     ),
   );
-  route('get', '/api/ai/memory', (r) => memoryOverview(db, r.user.id, config));
+  route('get', '/api/ai/memory', (r) => {
+    exactKeys(r.query, ['purpose', 'resource_id']);
+    const resourceId = r.query.resource_id;
+    if (resourceId !== undefined && (r.query.purpose !== 'analysis' || !/^[1-9]\d{0,15}$/.test(resourceId)))
+      throw new AiError('invalidFields');
+    return memoryOverview(db, r.user.id, config, null, {
+      purpose: r.query.purpose ?? 'cycle',
+      resourceId: resourceId === undefined ? null : Number(resourceId),
+    });
+  });
   route('put', '/api/ai/profile', (r) => saveProfile(db, r.user.id, r.body));
   route('get', '/api/ai/memory/legacy', (r) => readLegacyMemory(db, r.user.id));
   route('get', '/api/ai/context', (r) => {
