@@ -1834,7 +1834,7 @@
       "alerts": "Desconforto",
       "alertsNone": "Nenhum relato recente",
       "alertsSub": "Último em {date}",
-      "partial": "Parte das sessões recentes ficou fora do contexto; estes números podem estar incompletos.",
+      "partial": "Parte do histórico (sessões recentes ou totais semanais) ficou fora do contexto; estes números podem estar incompletos.",
       "chartLabel": "Volume por semana: {weeks}"
     },
     "quality": {

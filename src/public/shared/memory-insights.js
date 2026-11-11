@@ -34,9 +34,10 @@ export function weeklySeries(memory, weeks = 6) {
     week.durationSeconds += row.durationSeconds || 0;
     week.completed += row.completed || 0;
     week.planned += row.planned || 0;
-    if (Number.isFinite(row.averageRpe) && row.completed) {
-      week.rpeSum += row.averageRpe * row.completed;
-      week.rpeCount += row.completed;
+    // Weighted by the number of RPE reports, never by sessions without one.
+    if (Number.isFinite(row.averageRpe) && row.rpeReports > 0) {
+      week.rpeSum += row.averageRpe * row.rpeReports;
+      week.rpeCount += row.rpeReports;
     }
   }
   const sessions = [...(memory.recent || [])];
@@ -67,18 +68,20 @@ export function weeklySeries(memory, weeks = 6) {
       completed: week.completed,
       planned: week.planned,
       averageRpe: week.rpeCount ? week.rpeSum / week.rpeCount : null,
+      rpeReports: week.rpeCount,
     };
   });
 }
 
 function averageRpe(weeks) {
   let sum = 0; let count = 0;
-  for (const week of weeks) if (week.averageRpe !== null) { sum += week.averageRpe * week.completed; count += week.completed; }
+  for (const week of weeks) if (week.averageRpe !== null) { sum += week.averageRpe * week.rpeReports; count += week.rpeReports; }
   return count ? sum / count : null;
 }
 
 // The four headline numbers. `partial` marks a summary built from a selection
-// that had to leave recent sessions out.
+// that had to leave recent sessions or weekly totals out: those weeks are
+// unknown, not zero.
 export function memorySummary(memory) {
   const series = weeklySeries(memory, 6);
   const lastFour = series.slice(-4);
@@ -100,7 +103,7 @@ export function memorySummary(memory) {
     consistency: { completed, planned, ratio: planned ? completed / planned : null },
     effort: { recent: recentEffort, previous: previousEffort, trend },
     concerns: { count: concerns.length, latest: concerns[0] ?? null },
-    partial: Boolean(memory.omissions?.budget?.recent),
+    partial: Boolean(memory.omissions?.budget?.recent || memory.omissions?.budget?.weekly),
   };
 }
 

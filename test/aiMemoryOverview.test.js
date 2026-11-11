@@ -34,6 +34,7 @@ test('canonical corrections refresh the overview and next context; legacy data a
   assert.equal(overview.recent[0].href,'/training-result.html?id=1');
   assert.equal(overview.upcoming[0].planned.treino,'Upcoming');
   assert.equal(overview.weekly[0].distanceKm,10);
+  assert.equal(overview.weekly[0].rpeReports,1,'weekly totals carry how many RPE reports their average uses');
   assert.equal(overview.comparables[0].planned.treino,'Older');
   for(const field of ['hash','sources','configuration','payload','policyVersion']) assert.equal(field in overview,false);
   // Omissions are a quantified summary, never the stored list of source references.

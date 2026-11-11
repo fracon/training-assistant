@@ -25,8 +25,8 @@ test('the weekly series joins aggregated weeks with detailed recent sessions wit
   const { weeklySeries } = await load();
   const memory = {
     asOf: '2026-11-11',
-    weekly: [{ weekStart: '2026-10-19', distanceKm: 20, durationSeconds: 7200, completed: 2, planned: 3, averageRpe: 3 },
-      { weekStart: '2026-10-26', distanceKm: 10, durationSeconds: 3600, completed: 1, planned: 1, averageRpe: null }],
+    weekly: [{ weekStart: '2026-10-19', distanceKm: 20, durationSeconds: 7200, completed: 2, planned: 3, averageRpe: 3, rpeReports: 2 },
+      { weekStart: '2026-10-26', distanceKm: 10, durationSeconds: 3600, completed: 1, planned: 1, averageRpe: null, rpeReports: 0 }],
     recent: [session('2026-10-30'), session('2026-11-09', { rpe: 5 }), session('2026-11-11', { completed: false }), session('2026-11-20')],
     task: { session: session('2026-10-20', { included: true }) },
   };
@@ -45,7 +45,7 @@ test('the summary reports volume, consistency, effort trend and concerns, and fl
   const { memorySummary } = await load();
   const memory = {
     asOf: '2026-11-11',
-    weekly: [{ weekStart: '2026-10-19', distanceKm: 20, durationSeconds: 7200, completed: 2, planned: 2, averageRpe: 2 }],
+    weekly: [{ weekStart: '2026-10-19', distanceKm: 20, durationSeconds: 7200, completed: 2, planned: 2, averageRpe: 2, rpeReports: 2 }],
     recent: [session('2026-10-27', { rpe: 2 }), session('2026-11-03', { rpe: 4 }), session('2026-11-09', { rpe: 4, priority: 'concern' }),
       session('2026-11-05', { priority: 'concern' }), session('2026-11-10', { completed: false })],
     omissions: { budget: {} },
@@ -61,6 +61,18 @@ test('the summary reports volume, consistency, effort trend and concerns, and fl
   assert.equal(flat.effort.trend, 'flat');
   const down = memorySummary({ ...memory, weekly: [], recent: [session('2026-10-27', { rpe: 4 }), session('2026-11-09', { rpe: 2 })] });
   assert.equal(down.effort.trend, 'down');
+  // Effort is weighted by RPE reports, never by completed sessions without one (Codex review on #96).
+  const sparse = memorySummary({ asOf: '2026-11-11', omissions: { budget: {} },
+    weekly: [{ weekStart: '2026-10-26', distanceKm: 50, durationSeconds: 18000, completed: 10, planned: 10, averageRpe: 1, rpeReports: 1 }],
+    recent: [session('2026-11-02', { rpe: 5 })] });
+  assert.equal(sparse.effort.previous, 1);
+  assert.equal(sparse.effort.recent, 5);
+  const across = memorySummary({ asOf: '2026-11-03', omissions: { budget: {} },
+    weekly: [{ weekStart: '2026-10-26', distanceKm: 50, durationSeconds: 18000, completed: 10, planned: 10, averageRpe: 1, rpeReports: 1 }],
+    recent: [session('2026-11-02', { rpe: 5 })] });
+  assert.equal(across.effort.recent, 3, 'one report of 1 and one of 5 average 3, not 1.36');
+  // Omitted weekly totals make the summary partial too: those weeks are unknown, not zero.
+  assert.equal(memorySummary({ asOf: '2026-11-11', omissions: { budget: { weekly: 3 } } }).partial, true);
   const empty = memorySummary({ asOf: '2026-11-11', omissions: { budget: { recent: 2 } } });
   assert.deepEqual(empty.consistency, { completed: 0, planned: 0, ratio: null });
   assert.equal(empty.effort.trend, null);

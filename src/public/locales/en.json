@@ -1834,7 +1834,7 @@
       "alerts": "Discomfort",
       "alertsNone": "No recent reports",
       "alertsSub": "Latest on {date}",
-      "partial": "Some recent sessions were left out of the context; these numbers may be incomplete.",
+      "partial": "Part of the history (recent sessions or weekly totals) was left out of the context; these numbers may be incomplete.",
       "chartLabel": "Volume per week: {weeks}"
     },
     "quality": {
