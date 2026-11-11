@@ -267,12 +267,12 @@ export function buildUserMenu() {
   const setupGuide = el('button', 'user-menu-item');
   setupGuide.type = 'button';
   setupGuide.id = 'userSetupGuide';
-  const setupGuideIcon = icon('list-checks');
+  const setupGuideIcon = icon('circle-play');
   setupGuideIcon.setAttribute('aria-hidden', 'true');
   setupGuide.appendChild(setupGuideIcon);
   const setupGuideLabel = el('span');
   setupGuideLabel.setAttribute('data-i18n', 'shell.setupGuide');
-  setupGuideLabel.textContent = 'Setup guide';
+  setupGuideLabel.textContent = 'Welcome tour';
   setupGuide.appendChild(setupGuideLabel);
   dropdown.appendChild(setupGuide);
   const memory = el('a', 'user-menu-item');

@@ -3,7 +3,7 @@
 Status: phase 0 is integrated through merged [PR #67](https://github.com/fracon/training-assistant/pull/67),
 merge `648d6a0`, following #66/#68. Cycle planning (#63) is integrated via
 merged PR #69; weekly workout delivery (#64) via merged PR #70. Contextual
-workout analysis (#65) is implemented in its dedicated open PR; see
+workout analysis (#65) via merged PR #71; see
 [workout analysis](ai-workout-analysis.md). See [cycle planning](ai-cycle-planning.md)
 for phase 1 and [weekly workouts](ai-weekly-workouts.md) for phase 2.
 Cycle goals may be noncompetitive; the target date is a goal deadline, not a
@@ -688,6 +688,16 @@ was needed. The complete diff against main and the UI batch were critiqued for
 contracts, ownership, compatibility, focus, responsive tables, missing data and
 regressions. This phase 0 UI was subsequently integrated through merged PR #67.
 
+### Equivalent requests and inactive cycles (#87)
+
+Enqueueing refuses a request equivalent to one already queued, running, or
+cancelled but not yet settled — same owner, purpose, resource and request hash —
+with `409 generationInProgress` and the existing `execution_id`, so a second tab
+or a retried click follows the first execution instead of reserving quota for a
+second paid call. Cycle generation additionally requires an owned, active cycle
+(`404 resourceNotFound`, `cycleNotActive`). A completed cycle without planning
+history shows no planning action on its card.
+
 ### Raw output in administrative execution traces
 
-For parsing and domain-validation failures, Kinesis stores only the model's extracted `output_text`, keyed by execution and attempt. The provider envelope, request headers, credentials, and reasoning content are never retained. Captured text is capped at 65,536 UTF-8 bytes; truncation stops at a Unicode code-point boundary and the trace records original byte length plus a truncation flag. Raw output expires after 48 hours through the normal AI cleanup call. Expiration clears the payload and marks the raw-output row expired while preserving byte length, truncation state, attempt number, and expiry time; execution state and sanitized per-attempt diagnostics remain until ordinary execution retention removes the execution. Historical traces have no capture row and are displayed as legacy traces. Capture errors are auxiliary and never replace the original execution error. The existing OpenAI request continues to use `store: false`.
+For parsing and domain-validation failures, Kinesis stores only the model's extracted `output_text`, keyed by execution and attempt. The provider envelope, request headers, credentials, and reasoning content are never retained. Captured text is capped at 65,536 UTF-8 bytes; truncation stops at a Unicode code-point boundary and the trace records original byte length plus a truncation flag. Raw output expires after 48 hours through the normal AI cleanup call. Databases created by an earlier build without the `expired` column are repaired idempotently by `2026-11-ai-raw-output-expired-v1` (#88), preserving existing rows as not expired. Expiration clears the payload and marks the raw-output row expired while preserving byte length, truncation state, attempt number, and expiry time; execution state and sanitized per-attempt diagnostics remain until ordinary execution retention removes the execution. Historical traces have no capture row and are displayed as legacy traces. Capture errors are auxiliary and never replace the original execution error. The existing OpenAI request continues to use `store: false`.

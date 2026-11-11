@@ -87,7 +87,7 @@ restriction. This does not restrict AI planning to administrators.
 
 ## Guided creation and editing
 
-This owner-approved experience is implemented on the PR #69 branch, pending merge:
+This owner-approved experience is integrated through merged PR #69:
 **save registration → cycle planning → separately requested weekly workouts**.
 The card/modal label is **Planejamento do ciclo / Cycle planning**. The existing
 card icon and corrected CRUD modal remain; there is no wizard or new visual system.

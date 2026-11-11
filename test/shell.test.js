@@ -533,7 +533,7 @@ test('buildUserMenu nests the chevron in the badge and ships authenticated menu 
     'the item has a visible fallback string'
   );
   assert.match(js, /setupGuide\.id = 'userSetupGuide';/);
-  assert.match(js, /const setupGuideIcon = icon\('list-checks'\);/);
+  assert.match(js, /const setupGuideIcon = icon\('circle-play'\);/);
   assert.match(js, /setupGuideIcon\.setAttribute\('aria-hidden', 'true'\);/, 'the guide icon is decorative');
   assert.match(js, /setupGuideLabel\.setAttribute\('data-i18n', 'shell\.setupGuide'\)/);
 
@@ -783,7 +783,7 @@ test('the user menu injects a clickable dropdown and the change-password item op
     assert.deepEqual(
       dropdown.children.map((item) => item.id),
       ['userSetupGuide', 'userTrainingMemory', 'userChangePassword', 'userPreferences'],
-      'DOM and natural keyboard order is Setup guide, Training memory, Change Password, then Preferences'
+      'DOM and natural keyboard order is Welcome tour, Training memory, Change Password, then Preferences'
     );
 
     assert.ok(menu.className === 'user-menu', 'the wrapper renders as .user-menu');
@@ -813,10 +813,10 @@ test('the user menu injects a clickable dropdown and the change-password item op
     assert.equal(preferences.children[1].textContent, 'Preferences');
     assert.equal(setupGuide.tag, 'button');
     assert.equal(setupGuide.className, 'user-menu-item');
-    assert.equal(setupGuide.children[0].attrs['data-lucide'], 'list-checks');
+    assert.equal(setupGuide.children[0].attrs['data-lucide'], 'circle-play');
     assert.equal(setupGuide.children[0].attrs['aria-hidden'], 'true');
     assert.equal(setupGuide.children[1].attrs['data-i18n'], 'shell.setupGuide');
-    assert.equal(setupGuide.children[1].textContent, 'Setup guide');
+    assert.equal(setupGuide.children[1].textContent, 'Welcome tour');
 
     wireUserMenu();
 
@@ -987,8 +987,8 @@ test('the change-password menu item links to the modal label through the shell n
 });
 
 test('the setup-guide account menu label is localized', () => {
-  assert.equal(en.shell.setupGuide, 'Setup guide');
-  assert.equal(pt.shell.setupGuide, 'Guia de configuração');
+  assert.equal(en.shell.setupGuide, 'Welcome tour');
+  assert.equal(pt.shell.setupGuide, 'Tour de boas-vindas');
 });
 
 test('reapplyPasswordErrors re-renders visible errors in the new language', () => {

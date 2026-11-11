@@ -51,8 +51,7 @@ their live-provider validation.
 
 Current status: documentation is integrated via PRs #66/#68; phase 0 through
 merged PR #67 (`648d6a0`); phase 1 through merged PR #69; and phase 2 through
-merged PR #70. Phase 3 (#65) is implemented on its dedicated open PR and is
-pending merge. Historical notes below retain the status that applied when they
+merged PR #70. Phase 3 (#65) is integrated through merged PR #71. Historical notes below retain the status that applied when they
 were written.
 Owner-approved direction: 2026-10-14; memory correction approved 2026-10-15 (#68).
 Baseline reviewed: main application version 0.19.6.

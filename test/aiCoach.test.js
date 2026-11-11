@@ -1228,13 +1228,11 @@ test('Request Workouts locale dictionaries retain translated page, form, prompt 
   );
   assert.equal(messages.shell.nav.requestWorkouts, 'Solicitar Treinos');
   assert.equal(enMessages.shell.nav.requestWorkouts, 'Request Workouts');
-  assert.equal(messages.home.onboarding.aiAction, 'Planejar com IA');
-  assert.equal(enMessages.home.onboarding.aiAction, 'Plan with AI');
-  assert.equal(messages.home.onboarding.planText, messages.aiCoach.subtitle);
-  assert.equal(
-    enMessages.home.onboarding.planText,
-    enMessages.aiCoach.subtitle,
-  );
+  // The welcome tour's workouts action uses the public page name.
+  assert.equal(messages.home.onboarding.planAction, 'Solicitar treinos');
+  assert.equal(enMessages.home.onboarding.planAction, 'Request workouts');
+  assert.equal(messages.home.onboarding.aiAction, undefined);
+  assert.equal(enMessages.home.onboarding.aiAction, undefined);
   assert.equal(messages.aiCoach.periods['08_12'], '08h–12h');
   assert.equal(enMessages.aiCoach.periods['08_12'], '08:00–12:00');
   assert.equal(messages.aiCoach.durationPlaceholder, 'Ex.: 60');

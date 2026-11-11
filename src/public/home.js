@@ -3,13 +3,17 @@ import { initShell, getShellI18n, getUserPreferences, showShellToast } from './s
 import { translate } from './shared/i18n.js';
 import { formatDate as formatLocalizedDate } from './shared/date.js';
 import { formatDistance } from './shared/units.js';
-import { calculateOnboardingProgress, renderOnboardingStepStates, onboardingPresentation, consumeSetupGuideSignal, onboardingPlanActions, onboardingSlideNavigation, updateOnboardingDialogA11y, trapOnboardingFocus, createWelcomeSession, backgroundInertTargets } from './shared/onboarding.js';
+import { consumeSetupGuideSignal, onboardingNextAction, createTourSession, mapTourTime, tourMediaLanguage, TOUR_SCENES, tourCueKey } from './shared/onboarding.js';
+import { TOUR_MEDIA } from './shared/onboarding-tour-media.js';
+import { createDialogFocusTrap } from './shared/dialog-focus.js';
 
 export const ZENQUOTES_URL = 'https://zenquotes.io/api/today';
 export const QUOTE_TIMEOUT_MS = 3000;
 export const DAY_MS = 86400000;
 export const DEFAULT_DISPLAY_LANGUAGE = 'en-US';
 export const SUPPORTED_WEEK_STARTS = ['Monday', 'Sunday'];
+export const TOUR_CAPTION_LABELS = { pt: 'Português (Brasil)', en: 'English' };
+export const TOUR_CAPTION_LANGUAGES = { pt: 'pt-BR', en: 'en' };
 
 // Static Unsplash image URLs avoid the retired source.unsplash.com proxy. Every
 // selected photo is a curated running/runner/marathon image; Math.random still
@@ -470,19 +474,13 @@ function setupHomePage() {
   const weekTrackerDays = document.getElementById('weekTrackerDays');
   const shoesEmpty = document.getElementById('shoesEmpty');
   const shoesList = document.getElementById('shoesList');
-  const onboardingGuide = document.getElementById('onboardingGuide');
-  const onboardingEyebrow = document.getElementById('onboardingEyebrow');
-  const onboardingProgress = document.getElementById('onboardingProgress');
-  const onboardingWelcome = document.getElementById('onboardingWelcome');
-  const onboardingDialog = onboardingWelcome?.querySelector('[role="dialog"]');
-  const onboardingHide = document.getElementById('onboardingHide');
-  const onboardingPrevious = document.getElementById('onboardingPrevious');
-  const onboardingNext = document.getElementById('onboardingNext');
-  const onboardingLater = document.getElementById('onboardingLater');
-  const onboardingPlanPrerequisite = document.getElementById('onboardingPlanPrerequisite');
-  const onboardingWelcomeSlides = [...document.querySelectorAll('[data-onboarding-welcome-slide]')];
-  const onboardingSlideControls = [...document.querySelectorAll('[data-onboarding-slide-control]')];
-  const onboardingWelcomeActions = [...document.querySelectorAll('[data-onboarding-action]')];
+  const onboardingTour = document.getElementById('onboardingTour');
+  const onboardingTourTitle = document.getElementById('onboardingTourTitle');
+  const onboardingTourVideo = document.getElementById('onboardingTourVideo');
+  const onboardingTourTranscript = document.getElementById('onboardingTourTranscript');
+  const onboardingTourFooter = document.getElementById('onboardingTourFooter');
+  const onboardingTourAction = document.getElementById('onboardingTourAction');
+  const onboardingTourClose = document.getElementById('onboardingTourClose');
 
   const state = {
     cycle: null,
@@ -501,52 +499,18 @@ function setupHomePage() {
   };
 
   let i18n = null;
-  let welcomeReturnFocus = null;
-  let welcomeWasOpen = false;
-  let guideExplicitlyOpen = false;
+  let tourOpen = false;
+  let tourClosing = false;
+  let tourReturnFocus = null;
+  let tourMediaKey = null;
   let guideOpenPending = consumeSetupGuideSignal(window.location.href, (url) => {
     window.history.replaceState(window.history.state, '', url);
   });
-  const welcomeSession = createWelcomeSession();
-
-  function focusSetupGuide() {
-    window.requestAnimationFrame(() => {
-      if (!onboardingGuide || onboardingGuide.hidden) return;
-      const title = onboardingGuide.querySelector('#onboardingTitle');
-      if (!title) return;
-      const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-      onboardingGuide.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth', block: 'start' });
-      title.focus({ preventScroll: true });
-    });
-  }
-
-  function requestSetupGuide() {
-    welcomeSession.suppressAutomatic();
-    guideOpenPending = true;
-    if (!state.onboarding) return false;
-    guideOpenPending = false;
-    guideExplicitlyOpen = true;
-    renderOnboarding();
-    if (onboardingGuide.hidden) return false;
-    focusSetupGuide();
-    return true;
-  }
-
-  function focusWelcomeTitle() {
-    const title = onboardingWelcomeSlides[welcomeSession.slide]?.querySelector('h2');
-    title?.focus();
-  }
-  let inertBackgroundElements = new Set();
-
-  function setWelcomeBackgroundInert(inert) {
-    if (inert) {
-      inertBackgroundElements = new Set(backgroundInertTargets(document.body.children, onboardingWelcome));
-      for (const element of inertBackgroundElements) element.setAttribute('inert', '');
-      return;
-    }
-    for (const element of inertBackgroundElements) element.removeAttribute('inert');
-    inertBackgroundElements.clear();
-  }
+  const tourSession = createTourSession();
+  // Escape in a fullscreen video only leaves fullscreen; it never closes the tour.
+  const tourTrap = onboardingTour
+    ? createDialogFocusTrap(onboardingTour, () => { if (!document.fullscreenElement) closeTour(); })
+    : null;
 
   function t(key, params) {
     return translate(i18n ? i18n.messages : {}, key, params);
@@ -669,89 +633,115 @@ function setupHomePage() {
     }
   }
 
-  function renderWelcomeCarousel() {
-    const welcomeSlide = welcomeSession.setSlide(welcomeSession.slide, onboardingWelcomeSlides.length);
-    const navigation = onboardingSlideNavigation(welcomeSlide, onboardingWelcomeSlides.length);
-    const progressLabel = t('home.onboarding.stepProgress', {
-      current: welcomeSlide + 1,
-      total: onboardingWelcomeSlides.length,
-    });
-    for (const [index, slide] of onboardingWelcomeSlides.entries()) {
-      const active = index === welcomeSlide;
-      slide.hidden = !active;
-      slide.setAttribute('aria-hidden', String(!active));
-      const step = slide.querySelector('.onboarding-welcome-step');
-      if (step) step.textContent = progressLabel;
+  // Loads (or swaps) the language version of the tour. A switch while the
+  // video is open keeps the viewer at the same point of the same scene and
+  // resumes playback if it was playing.
+  function loadTourMedia() {
+    if (!onboardingTourVideo) return;
+    const key = tourMediaLanguage(i18n?.language);
+    const media = TOUR_MEDIA[key];
+    if (!media || key === tourMediaKey) return;
+    const previous = TOUR_MEDIA[tourMediaKey];
+    const resumeAt = previous ? mapTourTime(previous.scenes, media.scenes, onboardingTourVideo.currentTime) : 0;
+    const resume = Boolean(previous) && !onboardingTourVideo.paused && !onboardingTourVideo.ended;
+    tourMediaKey = key;
+    // Captions start off; if the viewer turned them on, keep them on in the new language.
+    const captionsOn = [...onboardingTourVideo.textTracks].some((textTrack) => textTrack.mode === 'showing');
+    onboardingTourVideo.pause();
+    onboardingTourVideo.querySelectorAll('source, track').forEach((node) => node.remove());
+    const fallback = onboardingTourVideo.firstElementChild;
+    for (const [src, type] of [[media.webm, 'video/webm; codecs="vp9, opus"'], [media.mp4, 'video/mp4']]) {
+      const source = document.createElement('source');
+      source.src = src;
+      source.type = type;
+      onboardingTourVideo.insertBefore(source, fallback);
     }
-    const activeTitle = onboardingWelcomeSlides[welcomeSlide]?.querySelector('h2');
-    updateOnboardingDialogA11y(onboardingDialog, onboardingWelcomeSlides[welcomeSlide]);
-    onboardingPrevious.hidden = navigation.isFirst;
-    onboardingNext.hidden = navigation.isLast;
-    for (const [index, control] of onboardingSlideControls.entries()) {
-      control.setAttribute('aria-current', index === welcomeSlide ? 'step' : 'false');
+    const track = document.createElement('track');
+    track.kind = 'captions';
+    track.src = media.captions;
+    track.srclang = TOUR_CAPTION_LANGUAGES[key];
+    track.label = TOUR_CAPTION_LABELS[key];
+    onboardingTourVideo.insertBefore(track, fallback);
+    track.track.mode = captionsOn ? 'showing' : 'disabled';
+    onboardingTourVideo.poster = media.poster;
+    onboardingTourVideo.load();
+    if (resumeAt > 0 || resume) {
+      onboardingTourVideo.addEventListener('loadedmetadata', () => {
+        onboardingTourVideo.currentTime = resumeAt;
+        if (resume) onboardingTourVideo.play().catch(() => {});
+      }, { once: true });
     }
+  }
 
-    const hasCycle = state.cycleLoaded && Boolean(state.cycle);
-    if (onboardingPlanPrerequisite) onboardingPlanPrerequisite.hidden = hasCycle || welcomeSlide !== 2;
-    const planAction = onboardingWelcomeActions.find((action) => action.closest('[data-onboarding-welcome-slide="2"]'));
-    const planSecondary = document.querySelector('.onboarding-welcome-action-secondary');
-    const planActions = onboardingPlanActions(hasCycle);
-    if (planAction) {
-      planAction.href = planActions.primaryHref;
-      planAction.dataset.i18n = `home.onboarding.${planActions.primaryKey}`;
-      planAction.textContent = t(planAction.dataset.i18n);
+  function renderTourTranscript() {
+    if (!onboardingTourTranscript) return;
+    onboardingTourTranscript.textContent = '';
+    for (const scene of TOUR_SCENES) {
+      const item = document.createElement('li');
+      item.textContent = scene.cues.map((cue) => t(tourCueKey(cue))).join(' ');
+      onboardingTourTranscript.appendChild(item);
     }
-    if (planSecondary) {
-      planSecondary.hidden = !planActions.secondaryHref;
-      planSecondary.href = planActions.secondaryHref ?? '/cycles.html';
-      planSecondary.textContent = t('home.onboarding.importAction');
-    }
+  }
+
+  // The footer exists only to offer the next setup step; a complete setup
+  // shows just the video, and the header button closes the dialog.
+  function renderTourFooter() {
+    if (!state.onboarding || !onboardingTourFooter || !onboardingTourAction) return;
+    const action = onboardingNextAction(state.onboarding, state.cycleLoaded && Boolean(state.cycle));
+    onboardingTourFooter.hidden = !action;
+    if (!action) return;
+    onboardingTourAction.href = action.href;
+    onboardingTourAction.textContent = t(action.key);
+  }
+
+  function openTour() {
+    tourReturnFocus = document.activeElement;
+    tourOpen = true;
+    onboardingTour.hidden = false;
+    tourTrap?.activate();
+    renderTourTranscript();
+    renderTourFooter();
+    loadTourMedia();
+    window.requestAnimationFrame(() => onboardingTourTitle?.focus({ preventScroll: true }));
+  }
+
+  function hideTour() {
+    tourOpen = false;
+    onboardingTourVideo?.pause();
+    onboardingTour.hidden = true;
+    tourTrap?.deactivate();
+    // The menu item that opened the tour is hidden again by then, so fall back
+    // to a stable visible topbar control (the account badge is hidden on phones).
+    const visible = (element) => element?.isConnected && element !== document.body && element.getClientRects().length > 0;
+    const target = visible(tourReturnFocus)
+      ? tourReturnFocus
+      : ['userBadge', 'feedbackTrigger', 'logoutBtn'].map((id) => document.getElementById(id)).find(visible);
+    target?.focus?.();
+    tourReturnFocus = null;
   }
 
   function renderOnboarding() {
-    const onboarding = state.onboarding;
-    if (onboarding) {
-      const presentation = onboardingPresentation(onboarding, guideExplicitlyOpen);
-      const progress = calculateOnboardingProgress(onboarding);
-      if (onboardingEyebrow) {
-        onboardingEyebrow.textContent = t(progress.complete
-          ? 'home.onboarding.setupComplete'
-          : 'home.onboarding.nextStep');
-      }
-      if (onboardingProgress) onboardingProgress.textContent = t('home.onboarding.progress', { completed: progress.completed });
-      onboardingGuide.hidden = !presentation.guideVisible;
-      renderOnboardingStepStates(onboardingGuide, progress.steps, progress.nextStep);
+    if (!onboardingTour) return;
+    const shouldOpen = Boolean(state.onboarding) && !guideOpenPending && tourSession.shouldOpen(state.onboarding);
+    if (shouldOpen && !tourOpen) openTour();
+    else if (!shouldOpen && tourOpen) hideTour();
+    else if (tourOpen) {
+      renderTourTranscript();
+      renderTourFooter();
+      loadTourMedia();
     }
-    renderWelcomeCarousel();
-    const shouldOpen = !guideOpenPending && !guideExplicitlyOpen && welcomeSession.ensureAutomatic(onboarding);
-    if (shouldOpen && !welcomeWasOpen) {
-      welcomeReturnFocus = document.activeElement;
-      onboardingWelcome.hidden = false;
-      onboardingWelcome.setAttribute('aria-hidden', 'false');
-      setWelcomeBackgroundInert(true);
-      renderWelcomeCarousel();
-      focusWelcomeTitle();
-    } else if (!shouldOpen && welcomeWasOpen) {
-      onboardingWelcome.hidden = true;
-      onboardingWelcome.setAttribute('aria-hidden', 'true');
-      setWelcomeBackgroundInert(false);
-      if (welcomeReturnFocus && typeof welcomeReturnFocus.focus === 'function') welcomeReturnFocus.focus();
-      welcomeReturnFocus = null;
-    } else {
-      onboardingWelcome.hidden = !shouldOpen;
-      onboardingWelcome.setAttribute('aria-hidden', String(!shouldOpen));
-    }
-    welcomeWasOpen = shouldOpen;
   }
 
+  // Persists the dismissal only for a genuinely new account; an existing
+  // account reopening the tour from the menu changes nothing on the server.
   async function dismissWelcome() {
     if (!state.onboarding) return false;
+    if (state.onboarding.status !== 'new') return true;
     try {
       const response = await updateOnboardingPresentation({ welcome_dismissed: true });
       const next = response?.onboarding;
       if (!next?.status || !next.steps) throw new Error('Invalid onboarding response.');
       state.onboarding = next;
-      renderOnboarding();
       return true;
     } catch {
       showShellToast(i18n?.messages ?? {}, 'home.onboarding.saveError', 'error');
@@ -759,31 +749,36 @@ function setupHomePage() {
     }
   }
 
-  function closeWelcome() {
-    dismissWelcome();
-  }
-
-  async function followWelcomeAction(event) {
-    event.preventDefault();
-    const destination = event.currentTarget.getAttribute('href');
-    if (await dismissWelcome()) window.location.href = destination;
-  }
-
-  async function hideGuide() {
-    if (!state.onboarding) return;
+  async function closeTour() {
+    if (!tourOpen || tourClosing) return false;
+    tourClosing = true;
     try {
-      const response = await updateOnboardingPresentation({ guide_hidden: true });
-      const next = response?.onboarding;
-      if (!next?.status || !next.steps) throw new Error('Invalid onboarding response.');
-      state.onboarding = next;
-      guideExplicitlyOpen = false;
+      if (!(await dismissWelcome())) return false;
+      tourSession.close();
       renderOnboarding();
-      window.requestAnimationFrame(() => {
-        if (onboardingGuide.hidden) document.getElementById('userBadge')?.focus();
-      });
-    } catch {
-      showShellToast(i18n?.messages ?? {}, 'home.onboarding.saveError', 'error');
+      return true;
+    } finally {
+      tourClosing = false;
     }
+  }
+
+  async function followTourAction(event) {
+    event.preventDefault();
+    const destination = onboardingTourAction.getAttribute('href');
+    if (tourClosing) return;
+    onboardingTourVideo?.pause();
+    tourClosing = true;
+    const dismissed = await dismissWelcome().finally(() => { tourClosing = false; });
+    if (dismissed) window.location.href = destination;
+  }
+
+  function requestSetupGuide() {
+    tourSession.requestExplicit();
+    guideOpenPending = true;
+    if (!state.onboarding) return false;
+    guideOpenPending = false;
+    renderOnboarding();
+    return true;
   }
 
   function render() {
@@ -798,7 +793,7 @@ function setupHomePage() {
     state.cycle = await fetchActiveCycle();
     state.cycleLoaded = true;
     renderCycle();
-    renderWelcomeCarousel();
+    if (tourOpen) renderTourFooter();
   }
 
   async function loadMetrics() {
@@ -841,46 +836,13 @@ function setupHomePage() {
     if (state.quoteSource === 'fallback' && i18n) {
       renderQuote(randomFallbackQuote(i18n.messages));
     }
-    renderOnboarding();
   });
 
-  onboardingLater?.addEventListener('click', closeWelcome);
-  onboardingWelcome?.addEventListener('click', (event) => {
-    if (event.target.dataset.onboardingDismiss === 'true') closeWelcome();
+  onboardingTourClose?.addEventListener('click', () => { closeTour(); });
+  onboardingTour?.addEventListener('click', (event) => {
+    if (event.target === onboardingTour) closeTour();
   });
-  onboardingPrevious?.addEventListener('click', () => {
-    welcomeSession.setSlide(onboardingSlideNavigation(welcomeSession.slide, onboardingWelcomeSlides.length).previous, onboardingWelcomeSlides.length);
-    renderWelcomeCarousel();
-    focusWelcomeTitle();
-  });
-  onboardingNext?.addEventListener('click', () => {
-    welcomeSession.setSlide(onboardingSlideNavigation(welcomeSession.slide, onboardingWelcomeSlides.length).next, onboardingWelcomeSlides.length);
-    renderWelcomeCarousel();
-    focusWelcomeTitle();
-  });
-  onboardingSlideControls.forEach((control) => {
-    control.addEventListener('click', () => {
-      welcomeSession.setSlide(Number(control.dataset.onboardingSlideControl), onboardingWelcomeSlides.length);
-      renderWelcomeCarousel();
-      focusWelcomeTitle();
-    });
-  });
-  onboardingWelcomeActions.forEach((action) => action.addEventListener('click', followWelcomeAction));
-  document.addEventListener('keydown', (event) => {
-    if (!welcomeWasOpen) return;
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      closeWelcome();
-      return;
-    }
-    if (event.key !== 'Tab') return;
-    trapOnboardingFocus(
-      event,
-      onboardingDialog,
-      onboardingWelcomeSlides[welcomeSession.slide]?.querySelector('h2')
-    );
-  });
-  onboardingHide?.addEventListener('click', hideGuide);
+  onboardingTourAction?.addEventListener('click', followTourAction);
   document.addEventListener('kinesis:open-setup-guide', requestSetupGuide);
 
   document.addEventListener('kinesis:preferences-changed', (event) => {
