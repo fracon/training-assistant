@@ -498,7 +498,7 @@ Garmin integration itself stays documented in its own sections.
 - The welcome tour replaces the former three-slide welcome and the dashboard
   checklist entirely; neither may be restored alongside it. It is one shared
   `.modal-backdrop`/`.modal-card` dialog with a native-controls `<video>`
-  (VP9/Opus WebM plus H.264/AAC MP4 fallback), a default-on WebVTT `captions`
+  (VP9/Opus WebM plus H.264/AAC MP4 fallback), an off-by-default WebVTT `captions`
   track, a poster, a `<details>` transcript, and a footer rendered only when
   there is a next setup step. The footer holds exactly one call to action
   derived from backend progress (`onboardingNextAction`: shoes → cycles →
@@ -514,7 +514,8 @@ Garmin integration itself stays documented in its own sections.
   Narration, captions and transcript come from the same
   `home.onboarding.tour.cues.*` strings listed by `TOUR_SCENES`; changing a
   cue requires rebuilding the videos so captions stay byte-equal to the
-  dictionary. The media language follows the application language. A language
+  dictionary. Captions start off; a viewer who turns them on keeps them
+  on when the language changes while the dialog is open. The media language follows the application language. A language
   change while open swaps video, captions and poster, keeps the dialog open,
   and resumes at the same relative point of the same scene (`mapTourTime`).
 - The user menu's **Tour de boas-vindas / Welcome tour** opens it on demand for

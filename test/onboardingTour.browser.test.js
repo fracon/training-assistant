@@ -88,7 +88,7 @@ test('Chrome: a new account gets the narrated tour, can switch language mid-vide
   assert.equal(opened.title, PT.tourTitle);
   assert.equal(opened.videoLabel, PT.videoLabel);
   assert.deepEqual(opened.sources, ['/assets/onboarding/tour/kinesis-tour-pt.webm', '/assets/onboarding/tour/kinesis-tour-pt.mp4']);
-  assert.deepEqual(opened.track, { kind: 'captions', srclang: 'pt-BR', label: 'Português (Brasil)', isDefault: true, src: '/assets/onboarding/tour/kinesis-tour-pt.vtt' });
+  assert.deepEqual(opened.track, { kind: 'captions', srclang: 'pt-BR', label: 'Português (Brasil)', isDefault: false, src: '/assets/onboarding/tour/kinesis-tour-pt.vtt' });
   assert.equal(opened.poster, '/assets/onboarding/tour/kinesis-tour-pt-poster.jpg');
   assert.equal(opened.transcript.length, TOUR_SCENES.length);
   assert.equal(opened.transcript[0], `${PT.tour.cues.intro1} ${PT.tour.cues.intro2}`);
@@ -100,12 +100,14 @@ test('Chrome: a new account gets the narrated tour, can switch language mid-vide
   assert.equal(presentationWrites, 0, 'opening the tour writes nothing');
   assert.equal(await evaluate("document.getElementById('onboardingTourVideo').autoplay"), false);
 
-  // The real media and captions load from the server.
-  await wait("document.getElementById('onboardingTourVideo').readyState >= 1 && document.getElementById('onboardingTourVideo').textTracks[0]?.cues?.length > 0");
-  const media = await evaluate("(() => { const v = document.getElementById('onboardingTourVideo'); return { duration: v.duration, cues: v.textTracks[0].cues.length, mode: v.textTracks[0].mode, first: v.textTracks[0].cues[0].text }; })()");
+  // The real media loads from the server; captions are available but off until the viewer turns them on.
+  await wait("document.getElementById('onboardingTourVideo').readyState >= 1");
+  assert.equal(await evaluate("document.getElementById('onboardingTourVideo').textTracks[0].mode"), 'disabled', 'captions are off by default');
+  await evaluate("document.getElementById('onboardingTourVideo').textTracks[0].mode = 'showing'");
+  await wait("document.getElementById('onboardingTourVideo').textTracks[0]?.cues?.length > 0");
+  const media = await evaluate("(() => { const v = document.getElementById('onboardingTourVideo'); return { duration: v.duration, cues: v.textTracks[0].cues.length, first: v.textTracks[0].cues[0].text }; })()");
   assert.ok(Math.abs(media.duration - TOUR_MEDIA.pt.duration) < 0.5, 'the Portuguese video duration matches the manifest');
   assert.equal(media.cues, TOUR_SCENES.flatMap((scene) => scene.cues).length);
-  assert.equal(media.mode, 'showing', 'captions are on by default');
   assert.equal(media.first, PT.tour.cues.intro1);
 
   // Keyboard containment: Shift+Tab from the first control wraps to the last.
@@ -123,7 +125,8 @@ test('Chrome: a new account gets the narrated tour, can switch language mid-vide
   const switched = await evaluate(tourState);
   assert.equal(switched.open, true, 'a language change keeps the tour open');
   assert.equal(switched.title, EN.tourTitle);
-  assert.deepEqual(switched.track, { kind: 'captions', srclang: 'en', label: 'English', isDefault: true, src: '/assets/onboarding/tour/kinesis-tour-en.vtt' });
+  assert.deepEqual(switched.track, { kind: 'captions', srclang: 'en', label: 'English', isDefault: false, src: '/assets/onboarding/tour/kinesis-tour-en.vtt' });
+  assert.equal(await evaluate("document.getElementById('onboardingTourVideo').textTracks[0].mode"), 'showing', 'captions the viewer turned on stay on in the new language');
   assert.equal(switched.transcript[1], `${EN.tour.cues.shoes1} ${EN.tour.cues.shoes2}`);
   assert.deepEqual(switched.action, { text: EN.shoesAction, href: '/shoes.html' });
   const resumed = await evaluate("document.getElementById('onboardingTourVideo').currentTime");

@@ -645,6 +645,8 @@ function setupHomePage() {
     const resumeAt = previous ? mapTourTime(previous.scenes, media.scenes, onboardingTourVideo.currentTime) : 0;
     const resume = Boolean(previous) && !onboardingTourVideo.paused && !onboardingTourVideo.ended;
     tourMediaKey = key;
+    // Captions start off; if the viewer turned them on, keep them on in the new language.
+    const captionsOn = [...onboardingTourVideo.textTracks].some((textTrack) => textTrack.mode === 'showing');
     onboardingTourVideo.pause();
     onboardingTourVideo.querySelectorAll('source, track').forEach((node) => node.remove());
     const fallback = onboardingTourVideo.firstElementChild;
@@ -659,8 +661,8 @@ function setupHomePage() {
     track.src = media.captions;
     track.srclang = TOUR_CAPTION_LANGUAGES[key];
     track.label = TOUR_CAPTION_LABELS[key];
-    track.default = true;
     onboardingTourVideo.insertBefore(track, fallback);
+    track.track.mode = captionsOn ? 'showing' : 'disabled';
     onboardingTourVideo.poster = media.poster;
     onboardingTourVideo.load();
     if (resumeAt > 0 || resume) {

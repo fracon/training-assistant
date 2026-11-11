@@ -8,7 +8,8 @@ Current application version: **0.34.0** (active beta development). The Garmin Co
 
 New accounts are greeted on the dashboard by a narrated welcome tour: a short
 motion graphic with sound effects, played in Portuguese or English according to
-the application language, with captions on by default and a full transcript.
+the application language, with optional captions (off until the viewer turns
+them on in the player) and a full transcript.
 It walks through shoes, cycles and cycle planning, Request Workouts, the
 calendar, a connected watch (described without naming a brand, since more
 watch makers are planned), recording results from the watch, a FIT file or by
@@ -556,8 +557,8 @@ continues to receive only a planned training location/date.
 
 While a newly registered account has onboarding status `new`, the dashboard
 automatically opens the narrated **welcome tour** (see [Welcome tour](#welcome-tour)):
-one accessible dialog with a ~75-second video in the application language,
-captions on by default, and a transcript. It replaces the former three-slide
+one accessible dialog with a ~85-second video in the application language,
+optional captions (off until turned on in the player), and a transcript. It replaces the former three-slide
 welcome and dashboard checklist. The video never autoplays. When a setup step
 is pending, a footer offers a single action for the account's backend-derived
 next step: add shoes, create a cycle, then Request Workouts once an active
