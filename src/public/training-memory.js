@@ -432,6 +432,7 @@ async function initMemory() {
     controls();
     clearError();
     $('memoryStatus').textContent = t('loading');
+    $('memoryPurposePanel').setAttribute('aria-busy', 'true');
     try {
       const result = await requestJson(memoryUrl(), undefined, 'GET');
       if (seq !== loadSeq) return;
@@ -449,6 +450,8 @@ async function initMemory() {
     } finally {
       if (seq === loadSeq) {
         busy = mutating;
+        $('memoryPurposePanel').removeAttribute('aria-busy');
+        if (!memory) $('purposeTask').textContent = '';
         controls();
       }
     }
@@ -622,6 +625,13 @@ async function initMemory() {
     if (focus) tab.focus();
     if (purpose === tab.dataset.purpose) return;
     purpose = tab.dataset.purpose;
+    // The previous task's context must never sit under the newly selected tab:
+    // clear it now; it is replaced on success, or by the error and retry on failure.
+    memory = null;
+    loaded = false;
+    $('memoryOverview').replaceChildren();
+    $('selectionNotice').hidden = true;
+    $('purposeTask').textContent = t('loading');
     void load({ switching: true });
   }
   for (const tab of tabs) {

@@ -117,6 +117,20 @@ test('Chrome: training memory shows each AI task context through accessible tabs
   await evaluate("document.getElementById('purposeTab-analysis').click()");
   await wait("document.getElementById('purposeTask').textContent.includes('Tiros')");
 
+  // A failed tab load never leaves the previous task's context under the new tab.
+  await evaluate("document.getElementById('purposeTab-cycle').click()");
+  await wait("document.getElementById('purposeTask').textContent.includes('Meia maratona')");
+  await evaluate(`(() => { const original = window.fetch.bind(window); let failOnce = true; window.fetch = (input, init) => {
+    if (failOnce && String(input).startsWith('/api/ai/memory?purpose=analysis')) { failOnce = false; return Promise.reject(new TypeError('synthetic tab failure')); }
+    return original(input, init); }; })()`);
+  await evaluate("document.getElementById('purposeTab-analysis').click()");
+  await wait("!document.getElementById('memoryError').classList.contains('hidden')");
+  const failed = await evaluate(`({ task: document.getElementById('purposeTask').textContent, sections: document.querySelectorAll('#memoryOverview section').length, notice: document.getElementById('selectionNotice').hidden, retry: !document.getElementById('reloadMemory').hidden, busy: document.getElementById('memoryPurposePanel').getAttribute('aria-busy'), save: document.querySelector('#profileForm [type=submit]').disabled })`);
+  assert.deepEqual(failed, { task: '', sections: 0, notice: true, retry: true, busy: null, save: true });
+  await evaluate("document.getElementById('reloadMemory').click()");
+  await wait("document.getElementById('purposeTask').textContent.includes('Tiros') && document.getElementById('memoryError').classList.contains('hidden')");
+  assert.deepEqual((await evaluate(state)).selected, ['analysis']);
+
   // Language changes rerender the selected task in place.
   await evaluate(`document.querySelector('.lang-switch [data-lang="en-US"]').click()`);
   await wait("document.documentElement.lang === 'en-US'");
