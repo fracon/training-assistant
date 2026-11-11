@@ -436,6 +436,35 @@
   stroke-width: 2.2;
 }
 
+/* On a phone the seven pills share the card width; the filled pill already
+   marks a training day, so the decorative shoe icon gives way to the label. */
+@media (max-width: 480px) {
+  .week-tracker-days {
+    gap: 0.25rem;
+  }
+
+  .week-day {
+    padding: 0 0.1rem;
+    font-size: 0.72rem;
+    letter-spacing: 0;
+  }
+
+  .week-day.has-training svg {
+    display: none;
+  }
+}
+
+@media (max-width: 360px) {
+  .week-tracker-days {
+    gap: 0.15rem;
+  }
+
+  .week-day {
+    padding: 0;
+    font-size: 0.62rem;
+  }
+}
+
 /* ── Shoe rotation widget ────────────────────────────────────── */
 
 .shoes-list {
@@ -509,7 +538,7 @@
 
 @media (max-width: 760px) {
   .dashboard-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .dashboard-grid > .card-section:first-child,

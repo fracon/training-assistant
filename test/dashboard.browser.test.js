@@ -112,6 +112,28 @@ test('Chrome: the next-workout and pending row follows the existing widgets in P
     assert.equal(pt.total, '4');
     assert.equal(pt.wide, false);
     assert.deepEqual(pt.overflow, [], `${width}px: the new cards keep their content inside`);
+    await wait("document.querySelectorAll('.week-day').length === 7 && document.querySelector('.week-day.has-training')");
+    const week = await evaluate(`(() => {
+      const cards = [...document.querySelector('.dashboard-grid').children].filter((card) => !card.hidden);
+      const days = [...document.querySelectorAll('.week-day')];
+      const text = (day) => { const range = document.createRange(); range.selectNodeContents(day); return range.getBoundingClientRect().width; };
+      return {
+        cardsInside: cards.every((card) => card.getBoundingClientRect().right <= innerWidth),
+        days: days.length,
+        labelsInside: days.every((day) => text(day) <= day.getBoundingClientRect().width),
+        // Lucide comes from a CDN the tests do not load: probe the icon rule with an svg of our own.
+        iconShown: (() => {
+          const icon = document.querySelector('.week-day.has-training').appendChild(document.createElementNS('http://www.w3.org/2000/svg', 'svg'));
+          const shown = getComputedStyle(icon).display !== 'none';
+          icon.remove();
+          return shown;
+        })(),
+      };
+    })()`);
+    assert.equal(week.cardsInside, true, `${width}px: every card fits the viewport`);
+    assert.equal(week.days, 7);
+    assert.equal(week.labelsInside, true, `${width}px: every weekday label fits its pill`);
+    assert.equal(week.iconShown, !mobile, `${width}px: the shoe icon marks training days only when there is room`);
   }
 
   // Language switch re-renders both cards in place.
@@ -214,7 +236,7 @@ test('Chrome: the monthly volume shows the selected year, navigates by year and 
     const pt = await evaluate(read);
     assert.equal(pt.year, String(year));
     assert.deepEqual([pt.prevDisabled, pt.nextDisabled], [false, true], 'history before, nothing after the current year');
-    assert.deepEqual(pt.tiles, tiles(PT, year, '10 km', 1, '10 km', month, 'pt-BR', `${Math.round(10 / month)} km`, month));
+    assert.deepEqual(pt.tiles, tiles(PT, year, '10 km', 1, '10 km', month, 'pt-BR', `${(10 / month).toFixed(1)} km`, month));
     assert.equal(pt.tilesTop, 1, 'the three tiles share the first row');
     assert.deepEqual([pt.months, pt.bars], [12, 12], 'one bar per month, no other year');
     assert.equal(pt.partial, month, 'the running month is marked partial');
@@ -249,7 +271,7 @@ test('Chrome: the monthly volume shows the selected year, navigates by year and 
   await evaluate("document.getElementById('volumePrev').click()");
   await wait(`document.getElementById('volumeYear').textContent === '${year - 1}'`);
   const last = await evaluate(read);
-  assert.deepEqual(last.tiles, tiles(PT, year - 1, '16 km', 2, '12 km', 3, 'pt-BR', '1 km', 12), 'a closed year averages twelve months');
+  assert.deepEqual(last.tiles, tiles(PT, year - 1, '16 km', 2, '12 km', 3, 'pt-BR', '1.3 km', 12), 'a closed year averages twelve months');
   assert.equal(last.partial, 0);
   await evaluate("document.getElementById('volumePrev').click()");
   await wait(`document.getElementById('volumeYear').textContent === '${year - 2}'`);
@@ -258,7 +280,7 @@ test('Chrome: the monthly volume shows the selected year, navigates by year and 
   // English re-renders in place.
   await evaluate(`document.querySelector('.lang-switch [data-lang="en-US"]').click()`);
   await wait(`document.querySelector('.volume-month-label')?.textContent === 'Jan'`);
-  assert.deepEqual((await evaluate(read)).tiles, tiles(EN, year - 2, '3 km', 1, '3 km', 6, 'en-US', '0 km', 12));
+  assert.deepEqual((await evaluate(read)).tiles, tiles(EN, year - 2, '3 km', 1, '3 km', 6, 'en-US', '0.3 km', 12));
 });
 
 test('Chrome: the monthly volume has an empty state, an error state and follows the distance unit', async (t) => {
