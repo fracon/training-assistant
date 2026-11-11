@@ -1,9 +1,10 @@
 import { fetchActiveCycle, fetchCalendarTrainings, fetchShoes, fetchHeroImage, fetchOnboarding, updateOnboardingPresentation, fetchDashboard, fetchWeather } from './shared/api.js';
-import { formatWeatherAutofill } from './shared/weather.js';
+import { weatherLabelKey } from './shared/weather.js';
+import { mainStageRpe } from './shared/weekly-prescription-display.js';
 import { initShell, getShellI18n, getUserPreferences, showShellToast } from './shared/shell.js';
 import { translate } from './shared/i18n.js';
 import { formatDate as formatLocalizedDate, formatWeekday } from './shared/date.js';
-import { formatDistance } from './shared/units.js';
+import { formatDistance, formatTemperature } from './shared/units.js';
 import { consumeSetupGuideSignal, onboardingNextAction, createTourSession, mapTourTime, tourMediaLanguage, TOUR_SCENES, tourCueKey } from './shared/onboarding.js';
 import { TOUR_MEDIA } from './shared/onboarding-tour-media.js';
 import { createDialogFocusTrap } from './shared/dialog-focus.js';
@@ -811,9 +812,10 @@ function setupHomePage() {
       .find((element) => element.className === match.className && element.getAttribute('href') === match.href);
     same?.focus({ preventScroll: true });
   }
-  function metricTile(label, value) {
+  function metricTile(label, value, note) {
     const tile = make('div', 'metric-tile');
     tile.append(make('span', 'metric-label', label), make('span', 'metric-value', value));
+    if (note) tile.append(make('span', 'metric-note', note));
     return tile;
   }
   function emptyState(title, text, cta) {
@@ -826,6 +828,22 @@ function setupHomePage() {
       box.append(link);
     }
     return box;
+  }
+  // The main stage's RPE as Kinesis wrote it in the session, else the session's
+  // single target when it is a number on the 1–5 scale.
+  function targetRpe(next) {
+    const fromStages = mainStageRpe(next.details);
+    if (fromStages) return fromStages;
+    const value = Number(String(next.targetRpe ?? '').trim());
+    return Number.isInteger(value) && value >= 1 && value <= 5 ? { min: value, max: value } : null;
+  }
+  // "2 - Fácil" → "Fácil": the scale's own name for a level.
+  const rpeName = (value) => t(`session.rpeLabel${value}`).replace(/^\d+\s*-\s*/, '');
+  function rpeTile(rpe) {
+    const same = rpe.min === rpe.max;
+    return metricTile(t('home.next.targetRpe'),
+      same ? `RPE ${rpe.min}/5` : `RPE ${rpe.min}–${rpe.max}/5`,
+      same ? rpeName(rpe.min) : t('home.next.rpeRange', { from: rpeName(rpe.min), to: rpeName(rpe.max) }));
   }
   function renderNextWorkout() {
     const body = document.getElementById('nextWorkoutBody');
@@ -853,17 +871,22 @@ function setupHomePage() {
     header.append(make('h3', 'next-name', next.name), make('span', 'next-when', relative ?? formatLocalizedDate(next.date, language())));
     body.append(header);
     const weekday = formatWeekday(next.date, language());
-    const when = [relative ? null : `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)}`, next.period ? periodLabel(next.period) : null, next.location]
-      .filter(Boolean);
+    const when = [
+      relative ? null : `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)}`,
+      next.type && next.type !== next.name ? next.type : null,
+      next.period ? periodLabel(next.period) : null,
+      next.location,
+    ].filter(Boolean);
     if (when.length) body.append(make('p', 'next-meta', when.join(' · ')));
-    if (next.shoe) body.append(make('p', 'next-meta', t(next.shoe.source === 'planned' ? 'home.next.shoePlanned' : 'home.next.shoeSuggested', { name: next.shoe.name })));
     if (next.watch === 'scheduled') body.append(make('p', 'next-meta', t('home.next.watchScheduled')));
+    // One row of tiles that always fills the card: forecast, effort, shoe.
     const tiles = [];
-    if (next.targetRpe != null && next.targetRpe !== '') tiles.push(metricTile(t('home.next.targetRpe'), `RPE ${next.targetRpe}`));
-    if (next.targetHr) tiles.push(metricTile(t('home.next.targetHr'), String(next.targetHr)));
     const weather = state.weather?.key === `${next.id}:${next.date}` ? state.weather.value : null;
-    const weatherText = formatWeatherAutofill(weather, (key) => t(key), state.temperatureUnit);
-    if (weatherText) tiles.push(metricTile(t('home.next.forecast'), weatherText));
+    if (typeof weather?.temperature_c === 'number')
+      tiles.push(metricTile(t('home.next.forecast'), formatTemperature(weather.temperature_c, state.temperatureUnit), t(weatherLabelKey(weather.weather_code))));
+    const rpe = targetRpe(next);
+    if (rpe) tiles.push(rpeTile(rpe));
+    if (next.shoe) tiles.push(metricTile(t('home.next.shoe'), next.shoe.model || next.shoe.name, next.shoe.model ? next.shoe.brand : null));
     if (tiles.length) {
       const grid = make('div', 'metrics-grid');
       grid.append(...tiles);

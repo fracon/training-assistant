@@ -1598,10 +1598,9 @@
       "emptyText": "Solicite os treinos da semana para vê-los aqui.",
       "emptyCta": "Solicitar treinos",
       "targetRpe": "Esforço-alvo",
-      "targetHr": "FC-alvo",
+      "rpeRange": "{from} a {to}",
       "forecast": "Previsão",
-      "shoePlanned": "Tênis: {name}",
-      "shoeSuggested": "Tênis sugerido: {name}",
+      "shoe": "Tênis sugerido",
       "watchScheduled": "Agendado na conta do relógio"
     },
     "pending": {

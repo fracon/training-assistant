@@ -23,7 +23,7 @@ const trainingHref = (id) => `/training-result.html?id=${encodeURIComponent(id)}
 // workout is scheduled in the connected watch account. A schedule there is not
 // proof of delivery to the device, so it is reported as "scheduled" only.
 function nextWorkout(db, userId, today, shoes) {
-  const row = db.prepare(`SELECT id, dia, periodo, tipo, treino, rpe, fc_alvo, location, tenis
+  const row = db.prepare(`SELECT id, dia, periodo, tipo, treino, detalhes, rpe, location, tenis
     FROM trainings WHERE user_id = ? AND completed = 0 AND dia >= ? ORDER BY dia, id LIMIT 1`).get(userId, today);
   if (!row) return null;
   const operation = db.prepare(`SELECT status, scheduled_date, prescription_revision FROM garmin_training_operations
@@ -32,19 +32,24 @@ function nextWorkout(db, userId, today, shoes) {
   const scheduled = operation?.status === 'scheduled' && operation.scheduled_date === row.dia &&
     (!prescription || prescription.revision === operation.prescription_revision);
   const planned = typeof row.tenis === 'string' && row.tenis.trim() ? row.tenis.trim() : null;
+  const pair = (shoe, source) => ({ name: `${shoe.brand} ${shoe.model}`.trim(), brand: shoe.brand, model: shoe.model, source });
+  // A planned shoe is free text; it gets brand and model when it names an active pair.
+  const plannedPair = planned && shoes.find((shoe) => `${shoe.brand} ${shoe.model}`.trim().toLowerCase() === planned.toLowerCase());
   const leastUsed = shoes[0];
   return {
     id: row.id,
     date: row.dia,
     period: row.periodo,
+    type: row.tipo,
     name: row.treino || row.tipo,
+    details: row.detalhes,
     targetRpe: row.rpe,
-    targetHr: row.fc_alvo,
     location: row.location,
     href: trainingHref(row.id),
     watch: scheduled ? 'scheduled' : null,
-    shoe: planned ? { name: planned, source: 'planned' }
-      : leastUsed ? { name: `${leastUsed.brand} ${leastUsed.model}`.trim(), source: 'least_used' } : null,
+    shoe: plannedPair ? pair(plannedPair, 'planned')
+      : planned ? { name: planned, brand: null, model: null, source: 'planned' }
+        : leastUsed ? pair(leastUsed, 'least_used') : null,
   };
 }
 

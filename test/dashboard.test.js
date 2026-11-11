@@ -57,13 +57,16 @@ test('the next workout carries its plan, shoe and watch-account schedule', (t) =
   let summary = dashboardSummary(db, 1, config, today);
   assert.equal(summary.nextWorkout.id, next);
   assert.equal(summary.nextWorkout.name, 'Easy run');
-  assert.deepEqual(summary.nextWorkout.shoe, { name: 'Pegasus', source: 'planned' });
+  assert.deepEqual(summary.nextWorkout.shoe, { name: 'Pegasus', brand: null, model: null, source: 'planned' }, 'free text that names no active pair');
   assert.equal(summary.nextWorkout.watch, null);
   // Without a planned shoe the least-used active pair is suggested; the name falls back to the type.
   db.prepare("UPDATE trainings SET tenis=NULL, treino=NULL WHERE id=?").run(next);
   db.prepare("INSERT INTO shoes(user_id,brand,model,mileage,target_mileage,status) VALUES (1,'Asics','Novablast',120,800,'active'),(1,'Nike','Pegasus',410,700,'active'),(1,'Old','Retired',5,700,'retired')").run();
   summary = dashboardSummary(db, 1, config, today);
-  assert.deepEqual(summary.nextWorkout.shoe, { name: 'Asics Novablast', source: 'least_used' });
+  assert.deepEqual(summary.nextWorkout.shoe, { name: 'Asics Novablast', brand: 'Asics', model: 'Novablast', source: 'least_used' });
+  db.prepare("UPDATE trainings SET tenis=' nike pegasus ' WHERE id=?").run(next);
+  assert.deepEqual(dashboardSummary(db, 1, config, today).nextWorkout.shoe, { name: 'Nike Pegasus', brand: 'Nike', model: 'Pegasus', source: 'planned' }, 'a planned shoe naming an active pair');
+  db.prepare("UPDATE trainings SET tenis=NULL WHERE id=?").run(next);
   assert.equal(summary.nextWorkout.name, 'Run');
   // Scheduled in the watch account only for the current date and prescription revision.
   db.pragma('foreign_keys = OFF');

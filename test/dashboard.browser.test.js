@@ -45,7 +45,8 @@ function seed(db, userId) {
   training.run(userId, 'c', iso(-3), null, 'Intervalado', 'Tiros', null, null, null, 1, 5, 8, '45:00');
   training.run(userId, 'c', iso(-2), null, 'Rodagem', 'Rodagem leve', null, null, null, 0, null, null, null);
   training.run(userId, 'c', iso(-1), null, 'Rodagem', 'Trote', null, null, null, 1, null, 6, '33:00');
-  const next = training.run(userId, 'c', iso(0), '08_12', 'Longão', 'Longão progressivo', '60 min progressivo', '3', 'São Paulo, SP', 0, null, null, null).lastInsertRowid;
+  const next = training.run(userId, 'c', iso(0), '08_12', 'Longão', 'Longão progressivo',
+    'Aquecimento: 10 min\nEsforço: Muito leve; RPE 1/5\nPrincipal: 60 min\nEsforço: Progressivo; RPE 2/5\nDesaquecimento: 10 min\nEsforço: Muito leve; RPE 1/5', null, 'São Paulo, SP', 0, null, null, null).lastInsertRowid;
   db.prepare("INSERT INTO shoes(user_id,brand,model,mileage,target_mileage,status) VALUES (?,'Asics','Novablast',99,900,'active'),(?,'Adidas','Adios',190,200,'active')").run(userId, userId);
   return { next };
 }
@@ -60,7 +61,9 @@ const view = `(() => {
     name: body.querySelector('.next-name')?.textContent ?? null,
     when: body.querySelector('.next-when')?.textContent ?? null,
     meta: [...body.querySelectorAll('.next-meta')].map((line) => line.textContent),
-    tiles: [...body.querySelectorAll('.metric-tile')].map((tile) => [tile.querySelector('.metric-label').textContent, tile.querySelector('.metric-value').textContent]),
+    tiles: [...body.querySelectorAll('.metric-tile')].map((tile) => [tile.querySelector('.metric-label').textContent, tile.querySelector('.metric-value').textContent, tile.querySelector('.metric-note')?.textContent].filter((text) => text !== undefined)),
+    tileRow: (() => { const tops = [...body.querySelectorAll('.metric-tile')].map((tile) => Math.round(tile.getBoundingClientRect().top)); return innerWidth > 760 ? new Set(tops).size === 1 : new Set(tops).size === tops.length; })(),
+    labelsAligned: (() => { const tops = [...body.querySelectorAll('.metric-label')].map((label) => Math.round(label.getBoundingClientRect().top)); return innerWidth <= 760 || new Set(tops).size === 1; })(),
     buttons: body.querySelectorAll('.btn-primary, .btn-secondary').length,
     action: { href: action.getAttribute('href'), label: action.getAttribute('aria-label') },
     pendingHidden: document.getElementById('pendingCard').hidden,
@@ -91,13 +94,16 @@ test('Chrome: the next-workout and pending row follows the existing widgets in P
 
   for (const [width, mobile] of [[1280, false], [390, true]]) {
     await open(browser, origin, athlete.cookie, width, mobile);
-    await wait("document.querySelectorAll('#nextWorkoutBody .metric-tile').length === 2");
+    await wait("document.querySelectorAll('#nextWorkoutBody .metric-tile').length === 3");
     const pt = await evaluate(view);
     assert.deepEqual(pt.order.slice(-2), ['nextWorkoutCard', 'pendingCard'], 'the new row comes after the existing widgets');
     assert.equal(pt.name, 'Longão progressivo');
     assert.equal(pt.when, PT.next.today);
-    assert.deepEqual(pt.meta, ['08h–12h · São Paulo, SP', PT.next.shoeSuggested.replace('{name}', 'Asics Novablast')]);
-    assert.deepEqual(pt.tiles, [[PT.next.targetRpe, 'RPE 3'], [PT.next.forecast, '24 °C, Parcialmente nublado']]);
+    assert.deepEqual(pt.meta, ['Longão · 08h–12h · São Paulo, SP']);
+    assert.deepEqual(pt.tiles, [[PT.next.forecast, '24 °C', 'Parcialmente nublado'], [PT.next.targetRpe, 'RPE 2/5', 'Fácil'], [PT.next.shoe, 'Novablast', 'Asics']],
+      'the main stage effort comes from the session the plan wrote');
+    assert.equal(pt.tileRow, true, 'the tiles share one row');
+    assert.equal(pt.labelsAligned, true, 'their labels line up');
     assert.equal(pt.buttons, 0, 'the card navigates through its header action only');
     assert.deepEqual(pt.action, { href: `/training-result.html?id=${next}`, label: PT.next.open });
     assert.equal(pt.pendingHidden, false);
@@ -112,7 +118,9 @@ test('Chrome: the next-workout and pending row follows the existing widgets in P
   await evaluate(`document.querySelector('.lang-switch [data-lang="en-US"]').click()`);
   await wait(`document.querySelector('.next-when')?.textContent === ${JSON.stringify(EN.next.today)}`);
   const en = await evaluate(view);
-  assert.equal(en.meta[0], `${EN_PERIOD} · São Paulo, SP`);
+  assert.equal(en.meta[0], `Longão · ${EN_PERIOD} · São Paulo, SP`);
+  assert.deepEqual(en.tiles.map(([label]) => label), [EN.next.forecast, EN.next.targetRpe, EN.next.shoe]);
+  assert.equal(en.tiles[1][2], 'Easy');
   assert.equal(en.action.label, EN.next.open);
   assert.deepEqual(en.pending, [EN.pending.items.results_one, EN.pending.items.effort_one, EN.pending.items.plan_outdated]);
   assert.equal(en.more, EN.pending.more_one);
@@ -121,10 +129,10 @@ test('Chrome: the next-workout and pending row follows the existing widgets in P
   const held = await browser.intercept(`${origin}/api/weather*`);
   await browser.command('Page.navigate', { url: `${origin}/home.html` });
   const paused = await held.next;
-  await wait("document.querySelector('.pending-item') !== null && document.querySelectorAll('#nextWorkoutBody .metric-tile').length === 1");
+  await wait("document.querySelector('.pending-item') !== null && document.querySelectorAll('#nextWorkoutBody .metric-tile').length === 2");
   await evaluate("document.getElementById('nextWorkoutAction').focus()");
   await held.release(paused);
-  await wait("document.querySelectorAll('#nextWorkoutBody .metric-tile').length === 2");
+  await wait("document.querySelectorAll('#nextWorkoutBody .metric-tile').length === 3");
   assert.equal(await evaluate("document.activeElement.id"), 'nextWorkoutAction');
 
   // A language switch rebuilds the pending list without losing the focused item.

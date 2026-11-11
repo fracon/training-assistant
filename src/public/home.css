@@ -530,12 +530,31 @@
   grid-column: 1 / -1;
 }
 
+/* One row whose tiles share the width, however many there are. */
 .next-card .metrics-grid {
   margin-top: 0.9rem;
+  grid-template-columns: none;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
 }
 
 .next-card .metric-value {
   font-size: 1.05rem;
+}
+
+/* Every tile reads label, value, detail, top-aligned so the rows line up. */
+/* The detail is information (rain, effort name, brand): ink and weight like the value. */
+.next-card .metric-note {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .next-card .metrics-grid {
+    grid-auto-flow: row;
+  }
 }
 
 /* ── Pending ─────────────────────────────────────────────────── */

@@ -450,8 +450,11 @@ are stable identifiers, not a statement of scope.
   without a valid effort — including imports left open until their RPE — in
   14 days, unapplied weekly proposal, outdated or incompatible plan, pending
   hypotheses, shoe ≥ 90% of target). The next-workout card reuses the cycle
-  card's title/badge/muted-line rules, the metric tiles and the shared
-  `.empty-state`; it navigates only through its header action. Canonical period
+  card's title/badge/muted-line rules, one row of metric tiles (forecast,
+  target effort, suggested shoe) and the shared `.empty-state`; it navigates
+  only through its header action. Target effort is the main stage's RPE read
+  by `mainStageRpe` from the materialized `; RPE n/5` marker, never from other
+  free text. Canonical period
   IDs are shown through `aiCoach.periods`. A watch schedule is shown only as
   “scheduled in the watch account”, never as delivered. The forecast reuses
   `/api/weather` (planned location/date only) and `shared/weather.js`. Covered

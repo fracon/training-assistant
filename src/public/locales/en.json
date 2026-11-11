@@ -1598,10 +1598,9 @@
       "emptyText": "Request this week's workouts to see them here.",
       "emptyCta": "Request workouts",
       "targetRpe": "Target effort",
-      "targetHr": "Target HR",
+      "rpeRange": "{from} to {to}",
       "forecast": "Forecast",
-      "shoePlanned": "Shoes: {name}",
-      "shoeSuggested": "Suggested shoes: {name}",
+      "shoe": "Suggested shoes",
       "watchScheduled": "Scheduled in your watch account"
     },
     "pending": {
