@@ -61,6 +61,7 @@ const {
   normalizeTemperatureUnit,
 } = require('./auth/preferences');
 const { isValidTimeZone } = require('./time-zone');
+const { dashboardSummary } = require('./dashboard');
 const XLSX = require('xlsx');
 const { parseRows, trainingSignature } = require('./trainingImport');
 const { resolveTrainingWeather } = require('./weather');
@@ -390,6 +391,9 @@ async function buildServer(options = {}) {
       client: options.aiClient,
       weatherFetch: options.weatherFetch,
     });
+    // One owner-scoped read for the dashboard's next-workout, pending, week and cycle cards.
+    app.get('/api/dashboard', { preHandler: requireAuth }, async (request) =>
+      dashboardSummary(db, request.user.id, aiConfig));
     const cycleWithPlanningSummary = (cycle, userId) => {
       let planningSummary;
       try {

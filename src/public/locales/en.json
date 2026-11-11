@@ -1588,7 +1588,39 @@
       "fri": "Fri",
       "sat": "Sat",
       "sun": "Sun"
-    }
+    },
+    "next": {
+      "title": "Next workout",
+      "today": "Today",
+      "tomorrow": "Tomorrow",
+      "open": "Open next workout",
+      "emptyTitle": "No workout scheduled",
+      "emptyText": "Request this week's workouts to see them here.",
+      "emptyCta": "Request workouts",
+      "targetRpe": "Target effort",
+      "rpeRange": "{from} to {to}",
+      "forecast": "Forecast",
+      "shoe": "Suggested shoes",
+      "watchScheduled": "Scheduled in your watch account"
+    },
+    "pending": {
+      "title": "To do",
+      "more_one": "+1 more",
+      "more_other": "+{count} more",
+      "items": {
+        "results_one": "1 workout without a result",
+        "results_other": "{count} workouts without a result",
+        "effort_one": "1 workout without recorded effort",
+        "effort_other": "{count} workouts without recorded effort",
+        "proposal": "Proposal for the week of {date} ready to review",
+        "plan_outdated": "Cycle plan is outdated",
+        "plan_incompatible": "Plan uses an incompatible effort scale",
+        "hypotheses_one": "1 hypothesis to review",
+        "hypotheses_other": "{count} hypotheses to review",
+        "shoe": "{name} at {percent}% of its target mileage"
+      }
+    },
+    "dashboardError": "This card could not be loaded. Reload the page to try again."
   },
   "memory": {
     "pageTitle": "Training memory - Kinesis",

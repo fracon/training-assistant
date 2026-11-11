@@ -123,3 +123,18 @@ test('weekly justification presentation removes only recognized technical refere
     'Continuidade do ciclo e treino, com cautela. UUID.',
   );
 });
+
+test('the main stage RPE is read from the materialized details as a value or a range', async () => {
+  const { mainStageRpe } = await displayPromise;
+  const stages = (...main) => [
+    'Aquecimento: 5 min', 'Esforço: Muito leve; RPE 1/5',
+    ...main.flatMap((effort) => ['Principal: 10 min', `Esforço: ${effort}`]),
+    'Desaquecimento: 5 min', 'Esforço: Muito leve; RPE 1/5',
+  ].join('\n');
+  assert.deepEqual(mainStageRpe(stages('Leve; RPE 2/5')), { min: 2, max: 2 }, 'warm-up and cool-down do not count');
+  assert.deepEqual(mainStageRpe(stages('Forte; RPE 4/5', 'Moderado; RPE 2/5', 'Forte; RPE 4/5')), { min: 2, max: 4 });
+  assert.equal(mainStageRpe(stages('Steady around RPE 3')), null, 'only the materialized "; RPE n/5" marker counts');
+  assert.equal(mainStageRpe(stages('Leve', 'Muito forte; RPE 9/5')), null, 'nothing outside the 1–5 scale');
+  assert.equal(mainStageRpe('40 min leve'), null, 'free text has no stages');
+  assert.equal(mainStageRpe(null), null);
+});

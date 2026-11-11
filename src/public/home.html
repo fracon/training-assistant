@@ -101,6 +101,24 @@
 
           <ul id="shoesList" class="shoes-list hidden" role="list"></ul>
         </section>
+
+        <section id="nextWorkoutCard" class="card-section next-card" aria-labelledby="nextWorkoutTitle">
+          <header class="section-header">
+            <h2 id="nextWorkoutTitle" data-i18n="home.next.title">Next workout</h2>
+            <a id="nextWorkoutAction" class="card-action" href="/calendar.html" data-i18n-aria-label="home.actions.goToTrainings">
+              <i data-lucide="external-link" aria-hidden="true"></i>
+            </a>
+          </header>
+          <div id="nextWorkoutBody" class="next-workout" aria-live="polite"></div>
+        </section>
+
+        <section id="pendingCard" class="card-section pending-card" aria-labelledby="pendingTitle" hidden>
+          <header class="section-header">
+            <h2 id="pendingTitle" data-i18n="home.pending.title">To do</h2>
+            <span id="pendingTotal" class="pending-total"></span>
+          </header>
+          <ul id="pendingList" class="pending-list" role="list"></ul>
+        </section>
       </div>
 
     </div>

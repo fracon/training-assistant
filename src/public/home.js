@@ -1,8 +1,10 @@
-import { fetchActiveCycle, fetchCalendarTrainings, fetchShoes, fetchHeroImage, fetchOnboarding, updateOnboardingPresentation } from './shared/api.js';
+import { fetchActiveCycle, fetchCalendarTrainings, fetchShoes, fetchHeroImage, fetchOnboarding, updateOnboardingPresentation, fetchDashboard, fetchWeather } from './shared/api.js';
+import { weatherLabelKey } from './shared/weather.js';
+import { mainStageRpe } from './shared/weekly-prescription-display.js';
 import { initShell, getShellI18n, getUserPreferences, showShellToast } from './shared/shell.js';
 import { translate } from './shared/i18n.js';
-import { formatDate as formatLocalizedDate } from './shared/date.js';
-import { formatDistance } from './shared/units.js';
+import { formatDate as formatLocalizedDate, formatWeekday } from './shared/date.js';
+import { formatDistance, formatTemperature } from './shared/units.js';
 import { consumeSetupGuideSignal, onboardingNextAction, createTourSession, mapTourTime, tourMediaLanguage, TOUR_SCENES, tourCueKey } from './shared/onboarding.js';
 import { TOUR_MEDIA } from './shared/onboarding-tour-media.js';
 import { createDialogFocusTrap } from './shared/dialog-focus.js';
@@ -496,6 +498,9 @@ function setupHomePage() {
     heroCredit: null,
     onboarding: null,
     cycleLoaded: false,
+    dashboard: null,
+    dashboardFailed: false,
+    weather: null,
   };
 
   let i18n = null;
@@ -781,7 +786,176 @@ function setupHomePage() {
     return true;
   }
 
+  // ── Next workout and pending items ──────────────────────────────────────
+  const make = (tag, className, text) => {
+    const element = document.createElement(tag);
+    if (className) element.className = className;
+    if (text != null) element.textContent = text;
+    return element;
+  };
+  const language = () => (i18n ? i18n.language : DEFAULT_DISPLAY_LANGUAGE);
+  const PERIOD_IDS = new Set(['before_08', '08_12', '12_14', '14_18', 'after_18']);
+  // Canonical period IDs are translated; imported free text is shown as written.
+  const periodLabel = (period) => (PERIOD_IDS.has(period) ? t(`aiCoach.periods.${period}`) : period);
+  const plural = (key, count) => t(`${key}_${count === 1 ? 'one' : 'other'}`, { count });
+  function addDaysIso(iso, days) {
+    return new Date(Date.parse(`${iso}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
+  }
+  // Rebuilding a card must not drop keyboard focus: the focused link is found
+  // again in the new markup by its class and destination.
+  function keepFocusWithin(container, render) {
+    const focused = container.contains(document.activeElement) ? document.activeElement : null;
+    const match = focused && { className: focused.className, href: focused.getAttribute('href') };
+    render();
+    if (!match) return;
+    const same = [...container.querySelectorAll('a, button')]
+      .find((element) => element.className === match.className && element.getAttribute('href') === match.href);
+    same?.focus({ preventScroll: true });
+  }
+  function metricTile(label, value, note) {
+    const tile = make('div', 'metric-tile');
+    tile.append(make('span', 'metric-label', label), make('span', 'metric-value', value));
+    if (note) tile.append(make('span', 'metric-note', note));
+    return tile;
+  }
+  function emptyState(title, text, cta) {
+    const box = make('div', 'empty-state');
+    if (title) box.append(make('h3', null, title));
+    box.append(make('p', null, text));
+    if (cta) {
+      const link = make('a', 'btn-primary', cta.label);
+      link.href = cta.href;
+      box.append(link);
+    }
+    return box;
+  }
+  // The main stage's RPE as Kinesis wrote it in the session, else the session's
+  // single target when it is a number on the 1–5 scale.
+  function targetRpe(next) {
+    const fromStages = mainStageRpe(next.details);
+    if (fromStages) return fromStages;
+    const value = Number(String(next.targetRpe ?? '').trim());
+    return Number.isInteger(value) && value >= 1 && value <= 5 ? { min: value, max: value } : null;
+  }
+  // "2 - Fácil" → "Fácil": the scale's own name for a level.
+  const rpeName = (value) => t(`session.rpeLabel${value}`).replace(/^\d+\s*-\s*/, '');
+  function rpeTile(rpe) {
+    const same = rpe.min === rpe.max;
+    return metricTile(t('home.next.targetRpe'),
+      same ? `RPE ${rpe.min}/5` : `RPE ${rpe.min}–${rpe.max}/5`,
+      same ? rpeName(rpe.min) : t('home.next.rpeRange', { from: rpeName(rpe.min), to: rpeName(rpe.max) }));
+  }
+  function renderNextWorkout() {
+    const body = document.getElementById('nextWorkoutBody');
+    if (!body) return;
+    keepFocusWithin(body, () => buildNextWorkout(body));
+  }
+  function buildNextWorkout(body) {
+    body.replaceChildren();
+    const action = document.getElementById('nextWorkoutAction');
+    const next = state.dashboard?.nextWorkout ?? null;
+    if (action) {
+      action.href = next ? next.href : '/calendar.html';
+      action.setAttribute('aria-label', t(next ? 'home.next.open' : 'home.actions.goToTrainings'));
+    }
+    if (state.dashboardFailed) { body.append(emptyState(null, t('home.dashboardError'))); return; }
+    if (!state.dashboard) return;
+    if (!next) {
+      body.append(emptyState(t('home.next.emptyTitle'), t('home.next.emptyText'), { label: t('home.next.emptyCta'), href: '/ai-coach.html' }));
+      return;
+    }
+    const today = state.dashboard.today;
+    const relative = next.date === today ? t('home.next.today')
+      : next.date === addDaysIso(today, 1) ? t('home.next.tomorrow') : null;
+    const header = make('div', 'next-header');
+    header.append(make('h3', 'next-name', next.name), make('span', 'next-when', relative ?? formatLocalizedDate(next.date, language())));
+    body.append(header);
+    const weekday = formatWeekday(next.date, language());
+    const when = [
+      relative ? null : `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)}`,
+      next.type && next.type !== next.name ? next.type : null,
+      next.period ? periodLabel(next.period) : null,
+      next.location,
+    ].filter(Boolean);
+    if (when.length) body.append(make('p', 'next-meta', when.join(' · ')));
+    if (next.watch === 'scheduled') body.append(make('p', 'next-meta', t('home.next.watchScheduled')));
+    // One row of tiles that always fills the card: forecast, effort, shoe.
+    const tiles = [];
+    const weather = state.weather?.key === `${next.id}:${next.date}` ? state.weather.value : null;
+    if (typeof weather?.temperature_c === 'number')
+      tiles.push(metricTile(t('home.next.forecast'), formatTemperature(weather.temperature_c, state.temperatureUnit), t(weatherLabelKey(weather.weather_code))));
+    const rpe = targetRpe(next);
+    if (rpe) tiles.push(rpeTile(rpe));
+    if (next.shoe) tiles.push(metricTile(t('home.next.shoe'), next.shoe.model || next.shoe.name, next.shoe.model ? next.shoe.brand : null));
+    if (tiles.length) {
+      const grid = make('div', 'metrics-grid');
+      grid.append(...tiles);
+      body.append(grid);
+    }
+  }
+  // Loads the forecast once per planned session and date, only when a location is saved.
+  async function loadNextWeather() {
+    const next = state.dashboard?.nextWorkout;
+    if (!next?.location) return;
+    const key = `${next.id}:${next.date}`;
+    if (state.weather?.key === key) return;
+    state.weather = { key, value: null };
+    const value = await fetchWeather(next.location, next.date);
+    if (state.weather?.key !== key) return;
+    state.weather = { key, value };
+    // A failed lookup changes nothing on screen.
+    if (value) renderNextWorkout();
+  }
+  const PENDING_VISIBLE = 3;
+  function pendingText(item) {
+    if (item.key === 'plan') return t(`home.pending.items.plan_${item.state}`);
+    if (item.key === 'proposal') return t('home.pending.items.proposal', { date: formatLocalizedDate(item.weekStart, language()) });
+    if (item.key === 'shoe') return t('home.pending.items.shoe', { name: item.name, percent: item.percent });
+    return plural(`home.pending.items.${item.key}`, item.count);
+  }
+  function renderPending() {
+    const card = document.getElementById('pendingCard');
+    const list = document.getElementById('pendingList');
+    const nextCard = document.getElementById('nextWorkoutCard');
+    if (!card || !list) return;
+    const items = state.dashboard?.pending ?? [];
+    card.hidden = items.length === 0;
+    nextCard?.classList.toggle('is-wide', items.length === 0);
+    keepFocusWithin(list, () => buildPending(list, items));
+    const total = document.getElementById('pendingTotal');
+    if (total) total.textContent = items.length ? String(items.length) : '';
+  }
+  function buildPending(list, items) {
+    list.replaceChildren();
+    for (const item of items.slice(0, PENDING_VISIBLE)) {
+      const li = make('li');
+      const link = make('a', `pending-item pending-${item.key}`);
+      link.href = item.href;
+      const icon = make('i');
+      icon.setAttribute('data-lucide', 'chevron-right');
+      icon.setAttribute('aria-hidden', 'true');
+      link.append(make('span', 'pending-text', pendingText(item)), icon);
+      li.append(link);
+      list.append(li);
+    }
+    const hidden = items.length - PENDING_VISIBLE;
+    if (hidden > 0) list.append(make('li', 'pending-more', plural('home.pending.more', hidden)));
+    if (typeof globalThis.lucide?.createIcons === 'function') globalThis.lucide.createIcons({ nodes: [list] });
+  }
+  function renderDashboard() {
+    renderNextWorkout();
+    renderPending();
+  }
+  async function loadDashboard() {
+    const summary = await fetchDashboard();
+    state.dashboard = summary;
+    state.dashboardFailed = summary === null;
+    renderDashboard();
+    void loadNextWeather();
+  }
+
   function render() {
+    renderDashboard();
     renderCycle();
     renderMetrics();
     renderWeekTracker();
@@ -855,6 +1029,10 @@ function setupHomePage() {
       renderMetrics();
       renderShoesWidget();
     }
+    if (event.detail?.temperature_unit === 'C' || event.detail?.temperature_unit === 'F') {
+      state.temperatureUnit = event.detail.temperature_unit;
+      renderNextWorkout();
+    }
     if (weekChanged) {
       state.firstDay = next;
       loadMetrics();
@@ -872,6 +1050,7 @@ function setupHomePage() {
       state.temperatureUnit = preferences.temperature_unit;
       loadHeroImage();
       loadHeroQuote();
+      loadDashboard();
       loadCycle();
       loadMetrics();
       loadShoes();

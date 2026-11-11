@@ -1588,7 +1588,39 @@
       "fri": "Sex",
       "sat": "Sáb",
       "sun": "Dom"
-    }
+    },
+    "next": {
+      "title": "Próximo treino",
+      "today": "Hoje",
+      "tomorrow": "Amanhã",
+      "open": "Abrir próximo treino",
+      "emptyTitle": "Nenhum treino agendado",
+      "emptyText": "Solicite os treinos da semana para vê-los aqui.",
+      "emptyCta": "Solicitar treinos",
+      "targetRpe": "Esforço-alvo",
+      "rpeRange": "{from} a {to}",
+      "forecast": "Previsão",
+      "shoe": "Tênis sugerido",
+      "watchScheduled": "Agendado na conta do relógio"
+    },
+    "pending": {
+      "title": "Pendências",
+      "more_one": "+1 pendência",
+      "more_other": "+{count} pendências",
+      "items": {
+        "results_one": "1 treino sem resultado",
+        "results_other": "{count} treinos sem resultado",
+        "effort_one": "1 treino sem esforço registrado",
+        "effort_other": "{count} treinos sem esforço registrado",
+        "proposal": "Proposta da semana de {date} pronta para revisar",
+        "plan_outdated": "Planejamento do ciclo desatualizado",
+        "plan_incompatible": "Planejamento com escala de esforço incompatível",
+        "hypotheses_one": "1 hipótese para revisar",
+        "hypotheses_other": "{count} hipóteses para revisar",
+        "shoe": "{name} com {percent}% da quilometragem-alvo"
+      }
+    },
+    "dashboardError": "Não foi possível carregar este cartão. Recarregue a página para tentar de novo."
   },
   "memory": {
     "pageTitle": "Memória de treinamento - Kinesis",

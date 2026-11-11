@@ -1026,7 +1026,8 @@ test('applyCycleVisibility tolerates missing containers without throwing', () =>
 
 test('home.js keeps the dashboard wiring declarative and reactive', () => {
   const js = readHomeJs();
-  assert.match(js, /import \{ fetchActiveCycle, fetchCalendarTrainings, fetchShoes, fetchHeroImage, fetchOnboarding, updateOnboardingPresentation \} from '\.\/shared\/api\.js'/);
+  assert.match(js, /import \{ fetchActiveCycle, fetchCalendarTrainings, fetchShoes, fetchHeroImage, fetchOnboarding, updateOnboardingPresentation, fetchDashboard, fetchWeather \} from '\.\/shared\/api\.js'/);
+  assert.match(js, /import \{ weatherLabelKey \} from '\.\/shared\/weather\.js'/);
   assert.match(js, /import \{ initShell, getShellI18n, getUserPreferences, showShellToast \} from '\.\/shared\/shell\.js'/);
   assert.match(js, /initShell\(\{ active: 'dashboard' \}\)/);
   assert.match(js, /new AbortController\(\)/);
@@ -1090,7 +1091,7 @@ test('home.css lays out the cycle header, objective subtitle and compact progres
   const css = readHomeCss();
   assert.match(
     css,
-    /\.cycle-card \.cycle-header \{[^}]*display:\s*flex;\s*\n\s*align-items:\s*center;\s*\n\s*justify-content:\s*space-between/,
+    /\.cycle-card \.cycle-header,\s*\n\.next-card \.next-header \{[^}]*display:\s*flex;\s*\n\s*align-items:\s*center;\s*\n\s*justify-content:\s*space-between/,
     'the header row pinches the countdown chip to the right side'
   );
   assert.match(
@@ -1100,12 +1101,12 @@ test('home.css lays out the cycle header, objective subtitle and compact progres
   );
   assert.match(
     css,
-    /\.cycle-card \.cycle-objective \{[^}]*color:\s*var\(--muted\);/,
+    /\.cycle-card \.cycle-objective,\s*\n\.next-card \.next-meta \{[^}]*color:\s*var\(--muted\);/,
     'the objective renders as a muted subtitle beneath the name'
   );
   assert.match(
     css,
-    /\.cycle-card \.cycle-objective \{[^}]*margin:\s*0 0 0\.25rem;/,
+    /\.cycle-card \.cycle-objective,\s*\n\.next-card \.next-meta \{[^}]*margin:\s*0 0 0\.25rem;/,
     'the objective keeps a compact gap before the target metadata'
   );
   assert.match(
@@ -1113,7 +1114,7 @@ test('home.css lays out the cycle header, objective subtitle and compact progres
     /\.cycle-card \.cycle-target \{[^}]*margin:\s*0 0 0\.25rem;/,
     'the target metadata keeps compact spacing before progress details'
   );
-  assert.match(css, /\.cycle-card \.days-left \{[^}]*white-space:\s*nowrap/);
+  assert.match(css, /\.cycle-card \.days-left,\s*\n\.next-card \.next-when \{[^}]*white-space:\s*nowrap/);
 });
 
 test('home.css places weekly widgets side-by-side with equal-height responsive tracks', () => {
@@ -1143,6 +1144,10 @@ test('home.css places weekly widgets side-by-side with equal-height responsive t
   );
   assert.match(css, /\.dashboard-grid > \.card-section:first-child \{[^}]*grid-column:\s*1 \/ -1/);
   assert.match(css, /@media \(max-width: 760px\) \{[\s\S]*?\.dashboard-grid \{\s*grid-template-columns:\s*1fr;/);
+  // The next-workout and pending row comes after the existing widgets; alone, the next workout spans it.
+  assert.match(css, /\.dashboard-grid > \.next-card\.is-wide \{\s*grid-column:\s*1 \/ -1;/);
+  assert.match(css, /\.cycle-card h3\.cycle-name,\s*\n\.next-card h3\.next-name \{/, 'the next workout reuses the cycle card title');
+  assert.match(css, /\.cycle-card \.days-left,\s*\n\.next-card \.next-when \{/, 'and its badge');
   assert.match(
     css,
     /\.metrics-grid \{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\);/,

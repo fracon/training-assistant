@@ -63,6 +63,18 @@ export function parseMaterializedPrescription(details = '') {
   return phases;
 }
 
+// Kinesis RPE (1–5) of the main stages, as Kinesis materializes them
+// ("Esforço: …; RPE n/5"): { min, max } (equal when the main set is uniform) or null.
+export function mainStageRpe(details) {
+  const values = unique(
+    parseMaterializedPrescription(details)
+      .filter((phase) => phase.phase === 'main')
+      .map((phase) => phase.effort.match(/;\s*RPE ([1-5])\/5/)?.[1])
+      .map(Number),
+  ).sort((left, right) => left - right);
+  return values.length ? { min: values[0], max: values.at(-1) } : null;
+}
+
 export function summarizePrescription(
   details,
   {
