@@ -41,7 +41,7 @@ startup does not make a provider call. Reload the cycle page after restart.
 | `AI_DAILY_TOKENS_USER` / `AI_DAILY_TOKENS_GLOBAL` | 100000 / 500000 | 1000–10000000 / 1000–100000000 |
 | `AI_DAILY_CALLS_USER` / `AI_DAILY_CALLS_GLOBAL` | 10 / 100 | 1–100 / 1–1000; reserve maximum retry attempts |
 | `AI_DAILY_USD_USER` / `AI_DAILY_USD_GLOBAL` | 2 / 20 | Positive, at most 1000 USD |
-| `AI_CONTEXT_TOKENS` | 12000 | 1000–24000 conservative UTF-8 byte bound, not an exact tokenizer |
+| `AI_CONTEXT_TOKENS` | 12000 | 1000–32000 estimated model tokens of the context the model receives (one token per three UTF-8 bytes: conservative, not an exact tokenizer; see training-context-v6) |
 | `AI_DETAIL_DAYS` | 14 | 7–28 |
 | `AI_HISTORY_WEEKS` | 12 | 8–12 |
 | `AI_RETENTION_DAYS` | 90 | 7–365 for terminal execution/debug and usage retention |
@@ -97,10 +97,10 @@ million tokens, including a possible input cache-write ceiling:
 | gpt-6-astra | 20 | 2 | 25 | 75 |
 
 These are local conservative estimates, not provider invoices or promised
-prices. Input reservation uses UTF-8 bytes for the complete payload plus 1,024 tokens
-of protocol overhead, plus output
-allowance, with the larger input/cache-write rate. Requests above 50,000 input
-bytes are refused. Known usage reconciles input, cached input and output (noncached input
+prices. Input reservation estimates the complete payload at one token per three
+UTF-8 bytes, plus 1,024 tokens of protocol overhead, plus output
+allowance, with the larger input/cache-write rate. Requests above 50,000
+estimated input tokens are refused. Known usage reconciles input, cached input and output (noncached input
 retains the conservative input/cache-write ceiling);
 unknown outcomes retain the full reservation. Review rates against official
 pricing before enabling a functional phase. Do not enable paid tools or a
@@ -292,11 +292,12 @@ rest days, diagnoses or evidence of recovery.
 Every selected source retains its content hash, even when its planning prose
 is omitted. Reductions and exclusions are recorded in `omissions`, bounded to
 a count and examples for large sets; a nonempty omission list also marks the
-ordinary overview as selection-limited. Optional additions reserve 1,024 bytes
-for final metadata. The final serialized snapshot, including provenance,
-omissions, gaps and SHA-256 hash, must fit `AI_CONTEXT_TOKENS` (a conservative
-UTF-8 byte bound); otherwise return 413 `contextTooLarge`. Nothing oversized or
-silently truncated is sent. Increasing the default was not the solution.
+ordinary overview as selection-limited. Optional additions reserve 1,024
+estimated tokens for final metadata. The final snapshot's model projection,
+including provenance, omissions and gaps, must fit `AI_CONTEXT_TOKENS`
+estimated tokens; otherwise return 413 `contextTooLarge`. Nothing oversized or
+silently truncated is sent. (Until training-context-v6 this bound was counted in
+bytes; see below for why that starved the context.)
 
 Aggregates are calculated locally from canonical completed-session metrics,
 with missing-result counts and no overlap with detailed recent dates. Requested
@@ -341,6 +342,47 @@ immutable and are marked outdated under v5, without automatic paid regeneration.
 This corrects v4's unconditional inclusion of applied planning details. Weekly
 delivery is implemented separately with its own versioned output adapter;
 contextual workout analysis is implemented on the current issue #65 branch.
+
+### Context correction: training-context-v6 (issue #90)
+
+Measured on a synthetic account with 16 weeks of completed sessions, seven
+configured days, a shoe, an active cycle and five sessions in the next ten
+days: under v5 the cycle context held only the 7 recent sessions. Upcoming
+sessions, all weekly totals, comparables and shoes were omitted, and only four
+availability days survived, in English alphabetical order, so the memory view
+claimed some days were unconfigured. The cause was the budget: `AI_CONTEXT_TOKENS`
+was compared with UTF-8 **bytes** (about 3,000 real tokens), and every selected
+session carried null fields and 64-character source versions.
+
+v6 (`training-context-v6`, analysis `training-analysis-context-v2`) keeps the
+priority rules above and changes:
+
+- **Unit.** The budget and the input reservation use estimated tokens: one per
+  three UTF-8 bytes of the model projection (real JSON/PT-BR text averages
+  closer to four, so this overestimates). The default value (12000) and the
+  environment variable are unchanged; the accepted range grows to 32000.
+- **Model projection.** Every purpose sends the model the same compact
+  projection: no snapshot hash, no source versions (`type:id` only, which is
+  what adapters cite), and no null or empty fields inside planned / recorded /
+  reported session views, whose absence is already listed in each session's
+  `gaps`. The stored snapshot keeps every field and version: freshness and
+  interpretation evidence are unchanged.
+- **Availability.** All configured days are mandatory for every purpose, in
+  week order (Monday to Sunday), selected before optional material. Missing days
+  stay missing and keep the incomplete-availability gap.
+- **Order.** Recent sessions are still selected by priority (explicit concerns,
+  then RPE 5 to 1) but are stored and shown newest first.
+- **Local date.** `asOf` defaults to the account's civil date in
+  `users.time_zone` (IANA, nullable, idempotent column migration; UTC when
+  absent or invalid). The shell stores the browser's zone through
+  `PUT /api/users/me/time-zone` when it differs; cycle planning reads use the
+  same date.
+
+With the same account, v6 selects 7 recent sessions, 5 upcoming sessions, 11
+weekly totals, 3 comparables, the shoe and all seven days, using about 4,800 of
+the 12,000 estimated tokens; only history beyond `AI_HISTORY_WEEKS` is omitted.
+v5 and earlier snapshots stay immutable and become outdated, without automatic
+paid regeneration.
 
 ### Applied-planning RPE compatibility on the issue #63 branch
 

@@ -218,6 +218,9 @@ for (const purpose of ['workouts', 'analysis']) {
   });t.after(()=>service.stop());
   const proposal=enqueue(service);assert.equal((await complete(service,proposal.id)).state,'completed');
   applyCyclePlan(db,1,'cycle',proposal.id,{expected_version:0},service);
+  // A tight (estimated-token) budget leaves room for reports and the plan's
+  // architecture but not for its optional phase and adaptation prose.
+  config.limits.AI_CONTEXT_TOKENS=3000;
   const args={purpose,resourceId:purpose==='analysis'?requested:null,config};
   const context=buildContext(db,1,args);
   const report=context.recent.find(r=>r.source.id===String(recent));

@@ -1,4 +1,5 @@
 'use strict';
+const { userToday } = require('../time-zone');
 const { AiError, activeOwner, exactKeys, hash } = require('./memory');
 const { contextIsCurrent } = require('./context');
 const { validatePlan, rpeIssue } = require('./cycle-plan-schema');
@@ -53,7 +54,7 @@ function summarizeCyclePlanning(cycle,applied,proposals,available,selected) {
   else status='none';
   return { status,secondary,available:Boolean(available),canGenerate:Boolean(available && cycle.status==='active') };
 }
-function readCyclePlanning(db,userId,cycleId,service,config,asOf=new Date().toISOString().slice(0,10)) {
+function readCyclePlanning(db,userId,cycleId,service,config,asOf=userToday(db,userId)) {
   return db.transaction(()=>{
     const cycle=ownCycle(db,userId,cycleId);
     const applied=appliedPlan(db,userId,cycleId);
@@ -73,7 +74,7 @@ function readCyclePlanning(db,userId,cycleId,service,config,asOf=new Date().toIS
       applied:appliedView,proposals,selectedProposalId:selectedProposal?.id || null,summary };
   })();
 }
-function readCyclePlanningSummary(db,userId,cycleId,service,config,asOf=new Date().toISOString().slice(0,10)) {
+function readCyclePlanningSummary(db,userId,cycleId,service,config,asOf=userToday(db,userId)) {
   return db.transaction(()=>{
     const cycle=ownCycle(db,userId,cycleId);
     const applied=appliedPlan(db,userId,cycleId);

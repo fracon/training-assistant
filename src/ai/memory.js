@@ -16,7 +16,7 @@ function hash(value) {
 function activeOwner(db, userId) {
   const user = db
     .prepare(
-      'SELECT id, role, is_active, preferred_lang, distance_unit, temperature_unit FROM users WHERE id = ?',
+      'SELECT id, role, is_active, preferred_lang, distance_unit, temperature_unit, time_zone FROM users WHERE id = ?',
     )
     .get(userId);
   if (!user || user.is_active !== 1)

@@ -950,6 +950,25 @@ function toggleLabelSync(shellRoot, collapsed) {
   }
 }
 
+// Keeps the account's stored IANA zone in step with this browser, so the
+// server's "today" (AI context, planning dates) is the athlete's own day. It
+// runs before page scripts request data and never blocks the page on failure.
+async function syncTimeZone(user) {
+  let zone = null;
+  try { zone = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { return; }
+  if (!zone || zone === user.time_zone) return;
+  try {
+    const response = await fetch('/api/users/me/time-zone', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ time_zone: zone }),
+    });
+    if (response.ok) user.time_zone = zone;
+  } catch {
+    /* offline or refused: the server keeps its previous zone (UTC by default) */
+  }
+}
+
 export async function initShell({ active } = {}) {
   document.body.classList.add('shell-loading');
   const user = await currentUser();
@@ -973,6 +992,7 @@ export async function initShell({ active } = {}) {
   });
 
   setUserBadge(user);
+  await syncTimeZone(user);
   wireLogout();
   // The user menu wires up before any page-specific guard runs, so a guard
   // failure can never leave the account trigger unbound.

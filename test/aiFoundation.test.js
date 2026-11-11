@@ -1013,7 +1013,8 @@ test('context refuses a budget exhausted by omission metadata rather than droppi
       "INSERT INTO trainings(user_id,dia,tipo,detalhes) VALUES (1,'2026-10-12','Run',?)",
     ).run('Synthetic '.repeat(200));
   let refused = false;
-  for (let budget = 1000; budget < 2500; budget += 10) {
+  // Budgets are estimated tokens (one per three UTF-8 bytes).
+  for (let budget = 300; budget < 2500; budget += 5) {
     config.limits.AI_CONTEXT_TOKENS = budget;
     try {
       buildContext(db, 1, { purpose: 'cycle', asOf: '2026-10-14', config });
@@ -1076,7 +1077,7 @@ test('oversized paid request is rejected before quota reservation or network act
   const fixture = setup();
   const s = service(fixture, {
     operations: {
-      analysis: { ...operation, instructions: 'Synthetic '.repeat(6000) },
+      analysis: { ...operation, instructions: 'Synthetic '.repeat(16000) },
     },
   });
   failure(() => s.enqueue(1, body), 'inputTooLarge');

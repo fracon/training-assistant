@@ -223,6 +223,7 @@ test('/api/me serves the authenticated profile from the session cookie', async (
       first_day_of_week: 'Monday',
       distance_unit: 'km',
       temperature_unit: 'C',
+      time_zone: null,
       role: 'user',
     },
   });

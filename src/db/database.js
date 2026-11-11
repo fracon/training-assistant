@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS users (
   first_day_of_week TEXT NOT NULL DEFAULT 'Monday',
   distance_unit TEXT NOT NULL DEFAULT 'km',
   temperature_unit TEXT NOT NULL DEFAULT 'C',
+  time_zone TEXT,
   onboarding_status TEXT NOT NULL DEFAULT 'active',
   onboarding_guide_hidden INTEGER NOT NULL DEFAULT 0,
   is_active       INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
@@ -248,6 +249,10 @@ function migrateDatabase(db) {
     db.exec(
       "ALTER TABLE users ADD COLUMN first_day_of_week TEXT NOT NULL DEFAULT 'Monday'",
     );
+  }
+  // Nullable IANA zone; absent means UTC, the behavior before the column existed.
+  if (!columns.some((column) => column.name === 'time_zone')) {
+    db.exec('ALTER TABLE users ADD COLUMN time_zone TEXT');
   }
   if (!columns.some((column) => column.name === 'distance_unit')) {
     db.exec(

@@ -60,6 +60,7 @@ const {
   isSupportedTemperatureUnit,
   normalizeTemperatureUnit,
 } = require('./auth/preferences');
+const { isValidTimeZone } = require('./time-zone');
 const XLSX = require('xlsx');
 const { parseRows, trainingSignature } = require('./trainingImport');
 const { resolveTrainingWeather } = require('./weather');
@@ -602,6 +603,22 @@ async function buildServer(options = {}) {
           request.user.id,
         );
         return { first_day_of_week: firstDay };
+      },
+    );
+
+    // The browser reports its IANA zone so "today" (AI context windows, cycle
+    // planning dates) follows the athlete's calendar, not the server's UTC.
+    app.put(
+      '/api/users/me/time-zone',
+      { preHandler: requireAuth },
+      async (request, reply) => {
+        const body = request.body;
+        if (!body || typeof body !== 'object' || Array.isArray(body) ||
+            Object.keys(body).length !== 1 || !isValidTimeZone(body.time_zone)) {
+          return reply.code(400).send({ error: 'Unsupported time zone.' });
+        }
+        db.prepare('UPDATE users SET time_zone = ? WHERE id = ?').run(body.time_zone, request.user.id);
+        return { time_zone: body.time_zone };
       },
     );
 
