@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, request and review weekly AI proposals, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized training-request prompts for use with an external AI.
 
-Current application version: **0.37.0** (active beta development). The Garmin Connect integration is opt-in per installation, in single-account `pilot` mode (default) or `multiuser` mode; see [Garmin Connect integration](#garmin-connect-integration).
+Current application version: **0.37.1** (active beta development). The Garmin Connect integration is opt-in per installation, in single-account `pilot` mode (default) or `multiuser` mode; see [Garmin Connect integration](#garmin-connect-integration).
 
 ## Welcome tour
 
@@ -153,13 +153,22 @@ technical prompt for either role. AI planning remains
 available to authorized owners of either role. External PT/EN prompt output is
 unchanged.
 
-The account menu opens **Training memory / Memória de treinamento**: a bounded
-view of current cycle goals, saved availability, dated sessions/feedback and
-canonical weekly aggregates, with dates, sources and correction links. The
-memory UI groups goals/routine, dated session feedback and supporting history;
-availability and totals use compact tables, while long planning details and
-administrator debug expand on demand. Context loads automatically on opening;
-“Tentar novamente / Try again” appears only after a loading failure. See the [presentation contract](docs/ai-foundation.md#memory-presentation-on-the-pr-67-branch). Recent
+The account menu opens **Training memory / Memória de treinamento**: what the
+AI knows, shown per AI task in three tabs (cycle planning, weekly workouts,
+workout analysis). Each tab projects exactly the selection that task sends to
+the model, with dates, sources and correction links. The page opens with a
+summary of the last four weeks (volume, consistency, average effort and its
+trend, discomfort reports) and a memory-quality checklist that links each gap
+to where it is fixed. Below come goals and availability (a day list), the
+applied plan with its current phase, coach hypotheses to confirm, correct or
+dismiss, session cards, weekly totals as bars, shoes and previous cycles.
+Long planning details and administrator diagnostics expand on demand. Context
+loads automatically on opening; “Tentar novamente / Try again” appears only
+after a loading failure. See [views by AI task](docs/ai-foundation.md#views-by-ai-task-issue-91)
+and the [redesign](docs/ai-foundation.md#redesign-issue-92); the review record is
+[docs/training-memory.md](docs/training-memory.md). The context
+budget counts estimated model tokens; see
+[training-context-v6](docs/ai-foundation.md#context-correction-training-context-v6-issue-90). Recent
 discomfort/effort reports take priority over optional planning detail under the
 context budget, including when an applied cycle plan has extensive detail. Plan
 identity and provenance remain available; optional architecture/phase text is
@@ -1139,7 +1148,7 @@ Every primary flow is a standalone page (no single-page hacks, no overlapping la
 | Home | `src/public/home.html` · `src/public/home.css` · `src/public/home.js` | Authenticated dashboard with onboarding, cycle, weekly metrics, tracker, and quote hero |
 | Calendar | `src/public/calendar.html` · `src/public/calendar.css` · `src/public/calendar.js` | Monthly training calendar and deduplicating Excel import |
 | Solicitar Treinos / Request Workouts | `src/public/ai-coach.html` · `src/public/ai-coach.css` · `src/public/ai-coach.js` | Local prompt builder for weekly training requests |
-| Training memory | `src/public/training-memory.html` · `src/public/training-memory.css` · `src/public/training-memory.js` | Consolidated canonical context, source correction links and optional prior experience; separate own admin debug |
+| Training memory | `src/public/training-memory.html` · `src/public/training-memory.css` · `src/public/training-memory.js` · `src/public/shared/memory-insights.js` | Per-task view of the AI context (cycle, weekly workouts, analysis), summary and memory-quality checklist, source correction links and optional prior experience; separate own admin diagnostics |
 | Cycles | `src/public/cycles.html` · `src/public/cycles.css` · `src/public/cycles.js` | Training-cycle management and long-term planning proposals |
 | Shoes | `src/public/shoes.html` · `src/public/shoes.css` · `src/public/shoes.js` | Shoe rotation and mileage management |
 | Administration → Users | `src/public/admin-users.html` · `src/public/admin-users.css` · `src/public/admin-users.js` | Admin-only account list with create, edit, activate/deactivate, and delete |

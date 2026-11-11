@@ -181,6 +181,13 @@ task/budget; this overview is not a guarantee that every displayed record is sen
 
 ### Memory presentation on the PR #67 branch
 
+> Superseded in part: the page now shows per-task tabs
+> ([views by AI task](#views-by-ai-task-issue-91)) and the
+> [redesign](#redesign-issue-92) replaced the availability and weekly tables
+> with lists, added the summary and quality checklist, and moved coach
+> hypotheses up. The behavioral rules below (loading, recovery, focus,
+> disclosures, prior experience, admin isolation) still apply.
+
 Integrated in main through PR #67. The page uses the dashboard's
 1,080px content width, theme tokens and card spacing, with existing shared
 controls and native keyboard-accessible disclosures. No new visual library,
