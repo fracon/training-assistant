@@ -1813,7 +1813,9 @@
       "superseded": "Replaced by a more recent analysis.",
       "not_current": "Outside this task’s context: its source workout changed or is outside the period considered.",
       "unverified": "Saved. Context selection will be checked when the memory refreshes."
-    }
+    },
+    "analyzed": "Analyzed workout",
+    "analyzedOrigin": "Source: the session, result and feedback the AI analyzes"
   },
   "cyclePlanning": {
     "admin": "Administrator details",

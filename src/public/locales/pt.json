@@ -1813,7 +1813,9 @@
       "superseded": "Substituída por uma análise mais recente.",
       "not_current": "Fora do contexto desta tarefa: o treino de origem mudou ou está fora do período considerado.",
       "unverified": "Salvo. A seleção para o contexto será verificada ao atualizar a memória."
-    }
+    },
+    "analyzed": "Treino analisado",
+    "analyzedOrigin": "Origem: a sessão, o resultado e o feedback que a IA analisa"
   },
   "cyclePlanning": {
     "admin": "Detalhes administrativos",

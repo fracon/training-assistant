@@ -26,6 +26,10 @@ async function setup(t) {
   db.pragma('foreign_keys = OFF');
   db.prepare("INSERT INTO cycle_plan_versions(id,user_id,cycle_id,version,plan_json,context_hash,cycle_hash,fingerprint_json,sources_json,applied_at) VALUES ('p',1,'c',1,?,'h','h','{}','[]',?)").run(JSON.stringify(plan), `${day(-39)}T10:00:00.000Z`);
   db.pragma('foreign_keys = ON');
+  db.prepare(`INSERT INTO workout_analysis_versions(id,user_id,training_id,sequence,adapter_version,context_json,state,language,created_at)
+    VALUES ('analysis',1,1,1,'workout-analysis-v1','{}','completed','pt-BR',?)`).run(`${day(-1)}T10:00:00.000Z`);
+  db.prepare(`INSERT INTO ai_interpretations(id,user_id,training_id,analysis_id,kind,text,evidence_json,evidence_key,evidence_hash,content_hash,disposition,created_at,updated_at)
+    VALUES ('race','1',1,'analysis','pattern','Synthetic hypothesis','[]','[]','h','c','pending',?,?)`).run(`${day(-1)}T11:00:00.000Z`, `${day(-1)}T11:00:00.000Z`);
   const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email: 'tabs@example.test', password: 'tabs-secret-1' } });
   const cookie = [].concat(login.headers['set-cookie'])[0].split(';')[0].split('=')[1];
   return { origin, cookie };
@@ -75,6 +79,13 @@ test('Chrome: training memory shows each AI task context through accessible tabs
   await key('End', 'End', 35);
   await wait("document.getElementById('purposeTask').textContent.includes('Tiros')");
   assert.deepEqual((await evaluate(state)).selected, ['analysis']);
+  // The analyzed session itself is shown with its results and reports, not only named.
+  const analyzed = await evaluate(`(() => { const card = document.getElementById('memory-analyzed')?.closest('section'); return card && { text: card.textContent, badge: card.querySelector('.memory-badge')?.textContent, href: card.querySelector('a[href^="/training-result.html"]:not(.memory-card-header a)')?.getAttribute('href') }; })()`);
+  assert.ok(analyzed, 'the analysis tab has an analyzed-workout section');
+  assert.ok(analyzed.text.includes('Canela') && analyzed.text.includes('8.00 km'), 'its discomfort report and recorded distance are visible');
+  assert.equal(analyzed.badge, PT.priority.concern);
+  assert.equal(analyzed.href, '/training-result.html?id=1');
+  assert.ok((await evaluate(state)).headings.includes(PT.analyzed));
   await key('Home', 'Home', 36);
   await wait("document.getElementById('purposeTab-cycle').getAttribute('aria-selected') === 'true' && document.getElementById('purposeTask').textContent.includes('Meia maratona')");
 
@@ -89,6 +100,22 @@ test('Chrome: training memory shows each AI task context through accessible tabs
   view = await evaluate(state);
   assert.deepEqual(view.selected, ['analysis']);
   assert.ok(view.task.includes('Tiros'), 'the late workouts reply was ignored');
+
+  // A follow-up read after an interpretation decision cannot overwrite a tab chosen meanwhile.
+  await evaluate("document.getElementById('purposeTab-cycle').click()");
+  await wait("document.getElementById('purposeTask').textContent.includes('Meia maratona') && !!document.querySelector('[data-memory-action=\\'race:confirm\\']')");
+  const refresh = await browser.intercept(`${origin}/api/ai/memory?purpose=cycle*`);
+  await evaluate("document.querySelector('[data-memory-action=\\'race:confirm\\']').click()");
+  const heldRefresh = await refresh.next;
+  await evaluate("document.getElementById('purposeTab-workouts').click()");
+  await wait("document.getElementById('purposeTask').textContent.includes('" + PT.task.workouts.split('{')[0] + "')");
+  await refresh.release(heldRefresh);
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  view = await evaluate(state);
+  assert.deepEqual(view.selected, ['workouts']);
+  assert.ok(view.headings.includes(PT.plan), 'the workouts view stays rendered after the late cycle reply');
+  await evaluate("document.getElementById('purposeTab-analysis').click()");
+  await wait("document.getElementById('purposeTask').textContent.includes('Tiros')");
 
   // Language changes rerender the selected task in place.
   await evaluate(`document.querySelector('.lang-switch [data-lang="en-US"]').click()`);

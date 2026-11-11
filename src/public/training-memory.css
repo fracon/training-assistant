@@ -9,7 +9,10 @@
 .memory-page summary { cursor: pointer; color: var(--accent-deep); font-weight: 600; line-height: 1.5; }
 .memory-page summary:focus-visible, .memory-source:focus-visible { outline: 2px solid var(--accent-deep); outline-offset: 3px; border-radius: 4px; }
 .memory-selection { padding: .75rem 1rem; border-left: 3px solid var(--accent-deep); background: var(--card); margin-bottom: 1rem !important; }
-.memory-summary-grid { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: 1rem; align-items: start; }
+.memory-summary-grid { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: 1rem; align-items: stretch; }
+/* Side-by-side cards share one height; their "Updated" line sits on the shared baseline. */
+.memory-summary-grid .memory-section { display: flex; flex-direction: column; }
+.memory-summary-grid .memory-updated { margin-top: auto; padding-top: .75rem; }
 .memory-section { margin-top: 1rem; min-width: 0; padding: 1.2rem 1.3rem; border-radius: 18px; }
 .memory-section:hover { box-shadow: none; }
 .memory-summary-grid .memory-section { margin-top: 0; }

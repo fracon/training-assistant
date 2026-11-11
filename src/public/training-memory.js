@@ -28,6 +28,8 @@ async function initMemory() {
     $(field).addEventListener('input', () => dirty.add(field));
   let memory = null;
   let busy = false;
+  // A write in flight (experience or interpretation). A tab load never clears it.
+  let mutating = false;
   // Which AI task's context is shown. Each load is numbered so a slower reply
   // for a previously selected task never replaces the current one.
   let purpose = 'cycle';
@@ -122,7 +124,7 @@ async function initMemory() {
       if (text != null) element.textContent = text;
       return element;
     };
-    const paragraph = (parent, value, hint = false) => parent.append(node('p', hint ? 'field-hint' : '', value));
+    const paragraph = (parent, value, hint = false) => { const p = node('p', hint ? 'field-hint' : '', value); parent.append(p); return p; };
     const link = (parent, href, label, key) => {
       const a = node('a', 'memory-source', label);
       a.dataset.memoryLink = key; a.href = href; parent.append(a);
@@ -166,7 +168,7 @@ async function initMemory() {
         if (value) metric(goals, translate(i18n.messages, `cycles.${key}`), value);
       if (memory.cycle.status) metric(goals, t('status'), translate(i18n.messages, `cycles.status.${memory.cycle.status}`));
       metric(goals, t('period'), `${date(memory.cycle.startDate)} → ${date(memory.cycle.targetDate)}`);
-      paragraph(cycle, `${t('updated')}: ${date(memory.cycle.updatedAt)}`, true);
+      paragraph(cycle, `${t('updated')}: ${date(memory.cycle.updatedAt)}`, true).classList.add('memory-updated');
     } else paragraph(cycle, t('cycleEmpty'));
     const availability = section('availability', 'availabilityOrigin', '/ai-coach.html', top);
     if (!memory.availability.length) paragraph(availability, t('availabilityEmpty'));
@@ -188,7 +190,7 @@ async function initMemory() {
         body.append(tr);
       }
       paragraph(availability, t('durationHint'), true);
-      if (sameUpdate) paragraph(availability, `${t('updated')}: ${date(rows[0].updatedAt)}`, true);
+      if (sameUpdate) paragraph(availability, `${t('updated')}: ${date(rows[0].updatedAt)}`, true).classList.add('memory-updated');
     }
     if (memory.purpose !== 'cycle') {
       const plan = section('plan', 'planOrigin', '/cycles.html');
@@ -212,52 +214,62 @@ async function initMemory() {
         }
       }
     }
+    // One dated session: planned name, priority badge, recorded metrics, dated
+    // reports, optional planned details and the link to its source.
+    const sessionArticle = (row, key) => {
+      const article = node('article', 'memory-session');
+      const title = node('h3', '', `${date(row.date)} · ${row.planned.treino || row.planned.tipo || t('unknown')}`);
+      if (row.priority) title.append(' ', node('span', `memory-badge memory-badge-${row.priority}`, translate(i18n.messages, `memory.priority.${row.priority}`)));
+      article.append(title);
+      paragraph(article, row.actual.completed ? t('completed') : t('planned'), true);
+      const actual = row.actual;
+      const metrics = node('dl', 'memory-metrics');
+      if (actual.fit_distance != null) metric(metrics, t('distance'), formatDistance(actual.fit_distance, getUserPreferences().distance_unit));
+      if (actual.fit_duration) metric(metrics, t('duration'), actual.fit_duration);
+      if (actual.fit_avg_pace) metric(metrics, t('pace'), formatPaceFromMetric(actual.fit_avg_pace, getUserPreferences().distance_unit));
+      for (const [field, label, unit] of [['fit_avg_hr', 'session.manualAvgHr', 'bpm'], ['fit_max_hr', 'session.manualMaxHr', 'bpm'], ['fit_elevation_gain', 'session.manualElevation', 'm'], ['fit_calories', 'session.resultCalories', 'kcal']])
+        if (actual[field] != null) metric(metrics, translate(i18n.messages, label), `${actual[field]} ${unit}`);
+      if (metrics.childElementCount) article.append(metrics);
+      const report = row.report;
+      const feedback = node('div', 'memory-feedback');
+      for (const field of ['feedback_rpe', 'feedback_notas', 'feedback_breathing', 'feedback_muscle', 'feedback_energy', 'feedback_pain'])
+        if (report[field] != null && report[field] !== '') {
+          const labels = { feedback_breathing: BREATHING_LABEL_KEYS, feedback_muscle: MUSCLE_LABEL_KEYS, feedback_energy: ENERGY_LABEL_KEYS };
+          const labelKey = labels[field]?.[report[field]];
+          const value = labelKey ? translate(i18n.messages, labelKey) : report[field];
+          paragraph(feedback, `${t(`feedback.${field}`)}: ${value}`);
+        }
+      if (report.feedback_has_pain === 'yes' || report.feedback_has_pain === 'no')
+        paragraph(feedback, `${t('feedback.feedback_has_pain')}: ${t(report.feedback_has_pain)}`);
+      if (feedback.childElementCount) {
+        feedback.prepend(node('p', 'field-hint', `${t('reportedOn')}: ${date(row.report.observedOn || row.date)}`));
+        article.append(feedback);
+      }
+      if (row.planned.detalhes) {
+        const details = node('details', 'memory-planning');
+        const detailKey = `details:${key}:${row.href}`;
+        details.dataset.memoryDisclosure = detailKey;
+        details.open = opened.has(detailKey);
+        const summary = node('summary', '', t('planningDetails')); summary.dataset.memoryLink = detailKey;
+        details.append(summary, node('p', '', row.planned.detalhes)); article.append(details);
+      }
+      if (row.includedInAggregates) paragraph(article, t('includedInAggregates'), true);
+      link(article, row.href, t('openSession'), `${key}:${row.href}`);
+      return article;
+    };
+    // The analysis tab shows the analyzed session itself: it is the task's
+    // resource, so the selection keeps it out of the recent list.
+    if (memory.purpose === 'analysis' && memory.task.session) {
+      const analyzed = section('analyzed', 'analyzedOrigin', '/calendar.html');
+      analyzed.append(sessionArticle(memory.task.session, 'analyzed'));
+    }
     for (const [key, rows] of [['recent', memory.recent], ['upcoming', memory.upcoming], ['comparables', memory.comparables]]) {
       const card = section(key, 'sessionOrigin', '/calendar.html');
       if (key !== 'comparables') paragraph(card, key === 'recent'
         ? `${date(memory.ranges.detailedFrom)} → ${date(memory.asOf)}`
         : `${date(memory.asOf)} → ${date(memory.ranges.plannedTo)}`, true);
       if (!rows.length) { card.classList.add('memory-empty'); paragraph(card, t('sessionsEmpty')); }
-      for (const row of rows) {
-        const article = node('article', 'memory-session');
-        const title = node('h3', '', `${date(row.date)} · ${row.planned.treino || row.planned.tipo || t('unknown')}`);
-        if (row.priority) title.append(' ', node('span', `memory-badge memory-badge-${row.priority}`, translate(i18n.messages, `memory.priority.${row.priority}`)));
-        article.append(title);
-        paragraph(article, row.actual.completed ? t('completed') : t('planned'), true);
-        const actual = row.actual;
-        const metrics = node('dl', 'memory-metrics');
-        if (actual.fit_distance != null) metric(metrics, t('distance'), formatDistance(actual.fit_distance, getUserPreferences().distance_unit));
-        if (actual.fit_duration) metric(metrics, t('duration'), actual.fit_duration);
-        if (actual.fit_avg_pace) metric(metrics, t('pace'), formatPaceFromMetric(actual.fit_avg_pace, getUserPreferences().distance_unit));
-        for (const [field, label, unit] of [['fit_avg_hr', 'session.manualAvgHr', 'bpm'], ['fit_max_hr', 'session.manualMaxHr', 'bpm'], ['fit_elevation_gain', 'session.manualElevation', 'm'], ['fit_calories', 'session.resultCalories', 'kcal']])
-          if (actual[field] != null) metric(metrics, translate(i18n.messages, label), `${actual[field]} ${unit}`);
-        if (metrics.childElementCount) article.append(metrics);
-        const report = row.report;
-        const feedback = node('div', 'memory-feedback');
-        for (const field of ['feedback_rpe', 'feedback_notas', 'feedback_breathing', 'feedback_muscle', 'feedback_energy', 'feedback_pain'])
-          if (report[field] != null && report[field] !== '') {
-            const labels = { feedback_breathing: BREATHING_LABEL_KEYS, feedback_muscle: MUSCLE_LABEL_KEYS, feedback_energy: ENERGY_LABEL_KEYS };
-            const labelKey = labels[field]?.[report[field]];
-            const value = labelKey ? translate(i18n.messages, labelKey) : report[field];
-            paragraph(feedback, `${t(`feedback.${field}`)}: ${value}`);
-          }
-        if (report.feedback_has_pain === 'yes' || report.feedback_has_pain === 'no')
-          paragraph(feedback, `${t('feedback.feedback_has_pain')}: ${t(report.feedback_has_pain)}`);
-        if (feedback.childElementCount) {
-          feedback.prepend(node('p', 'field-hint', `${t('reportedOn')}: ${date(row.report.observedOn || row.date)}`));
-          article.append(feedback);
-        }
-        if (row.planned.detalhes) {
-          const details = node('details', 'memory-planning');
-          const detailKey = `details:${key}:${row.href}`;
-          details.dataset.memoryDisclosure = detailKey;
-          details.open = opened.has(detailKey);
-          const summary = node('summary', '', t('planningDetails')); summary.dataset.memoryLink = detailKey;
-          details.append(summary, node('p', '', row.planned.detalhes)); article.append(details);
-        }
-        if (row.includedInAggregates) paragraph(article, t('includedInAggregates'), true);
-        link(article, row.href, t('openSession'), `${key}:${row.href}`); card.append(article);
-      }
+      for (const row of rows) card.append(sessionArticle(row, key));
     }
     const weekly = section('weekly', 'weeklyOrigin', '/calendar.html');
     paragraph(weekly, `${date(memory.ranges.aggregateFrom)} → ${date(memory.ranges.aggregateTo)}`, true);
@@ -310,7 +322,7 @@ async function initMemory() {
       const call = async (action, textValue, focusAction = action === 'confirm' ? 'correct' : action) => {
         if (busy) return;
         const interpretationId = item.id;
-        busy = true; controls();
+        busy = true; mutating = true; controls();
         try {
           const body = { expected_version: item.version };
           if (action === 'correct') body.text = textValue;
@@ -334,13 +346,16 @@ async function initMemory() {
             (equivalent || root.querySelector(`[data-memory-item="${CSS.escape(interpretationId)}"]`))?.focus();
           }
           showShellToast(i18n.messages, 'memory.interpretationSaved');
+          // The follow-up read is numbered like any load: if another tab was
+          // selected meanwhile, its own read wins and this reply is dropped.
+          const seq = ++loadSeq;
           try {
-            memory = await requestJson(memoryUrl(), undefined, 'GET');
-            loaded = true; clearError(); renderOverview();
-          } catch { error({ codes: ['memoryReadFailed'] }, false, true); }
+            const fresh = await requestJson(memoryUrl(), undefined, 'GET');
+            if (seq === loadSeq) { memory = fresh; loaded = true; clearError(); renderOverview(); }
+          } catch { if (seq === loadSeq) error({ codes: ['memoryReadFailed'] }, false, true); }
         } catch (e) { error(e, false); }
         finally {
-          busy = false; controls();
+          busy = false; mutating = false; controls();
           if (document.activeElement === document.body || !document.activeElement?.isConnected) {
             const equivalent = [...root.querySelectorAll('[data-memory-action]')]
               .find((control) => control.dataset.memoryAction === `${interpretationId}:${focusAction}`);
@@ -394,6 +409,7 @@ async function initMemory() {
   async function mutate(action) {
     if (busy) return;
     busy = true;
+    mutating = true;
     controls();
     clearError();
     try {
@@ -403,6 +419,7 @@ async function initMemory() {
       error(e);
     } finally {
       busy = false;
+      mutating = false;
       controls();
     }
   }
@@ -431,7 +448,7 @@ async function initMemory() {
       if (seq === loadSeq) error(e, !switching, true);
     } finally {
       if (seq === loadSeq) {
-        busy = false;
+        busy = mutating;
         controls();
       }
     }
