@@ -122,7 +122,8 @@ function applyCyclePlan(db,userId,cycleId,proposalId,body,service,now=new Date()
     const context=JSON.parse(row.context_json);
     const plan=JSON.parse(proposal.plan_json);
     if (rpeIssue(plan)) throw new AiError('planningRpeIncompatible',409);
-    if (plan.start < now.slice(0,10)) throw new AiError('planningOutdated',409);
+    // Same cutoff as generation and planning reads: the athlete's civil date.
+    if (plan.start < userToday(db,userId,new Date(now))) throw new AiError('planningOutdated',409);
     if (context.resource.id!==cycleId || !validatePlan(plan,context)) throw new AiError('invalidPlanningResponse',409);
     db.prepare('INSERT INTO cycle_plan_versions(id,user_id,cycle_id,version,plan_json,context_hash,cycle_hash,fingerprint_json,sources_json,applied_at) VALUES (?,?,?,?,?,?,?,?,?,?)').run(proposal.id,userId,cycleId,version+1,proposal.plan_json,context.hash,hash(cycle),JSON.stringify({hash:context.hash,asOf:context.asOf,purpose:context.purpose,resource:{id:cycleId},policyVersion:context.policyVersion}),JSON.stringify(context.sources),now);
     return {appliedVersion:version+1,alreadyApplied:false};

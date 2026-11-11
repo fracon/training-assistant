@@ -1,6 +1,7 @@
 'use strict';
 
 const { createHash } = require('node:crypto');
+const { userToday } = require('../time-zone');
 const PROFILE_FIELDS = ['experience'];
 class AiError extends Error {
   constructor(code, status = 400, details = {}) {
@@ -86,7 +87,7 @@ function saveProfile(db, userId, body, now = new Date().toISOString()) {
           authority: 'user_report',
           source: 'prior_experience_editor',
           state: 'current',
-          observedOn: now.slice(0, 10),
+          observedOn: userToday(db, userId, new Date(now)),
           updatedAt: now,
         };
       db.prepare(

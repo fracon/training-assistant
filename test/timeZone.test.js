@@ -119,3 +119,12 @@ test('Chrome: the shell stores the browser time zone once and leaves a matching 
   assert.equal(db.prepare('SELECT time_zone FROM users').get().time_zone, 'America/Sao_Paulo');
   assert.equal(writes, 1, 'the second visit already matches and writes nothing');
 });
+
+test('prior experience is dated with the athlete civil date', (t) => {
+  const { saveProfile } = require('../src/ai/memory');
+  const db = createDatabase({ filename: ':memory:' });
+  t.after(() => db.close());
+  db.prepare("INSERT INTO users(id,email,password_hash,time_zone) VALUES (1,'exp@example.invalid','x','America/Sao_Paulo')").run();
+  const saved = saveProfile(db, 1, { fields: { experience: 'Two 10 km races.' }, expected_version: 0 }, '2026-11-12T01:30:00.000Z');
+  assert.equal(saved.profile.fields.experience.observedOn, '2026-11-11');
+});
