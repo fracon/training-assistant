@@ -1142,6 +1142,7 @@ function migrateDatabase(db) {
   require('../ai/schema').migrateWeeklyAvailabilityRevision(db);
   require('../ai/schema').migrateWorkoutAnalysis(db);
   require('../ai/schema').migrateWorkoutInterpretationIdentity(db);
+  require('../ai/schema').migrateWorkoutStructureSuggestions(db);
   require('../ai/cycle-plan-migration').migrateCyclePlans(db);
 }
 

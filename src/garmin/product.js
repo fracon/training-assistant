@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 const { findActiveSession, SESSION_COOKIE_NAME } = require('../auth/sessions');
 const { validatePrescription, prescriptionFingerprint, previewPrescription, paceBoundsMps } = require('../garmin-workout-contract');
+const { readSuggestion, acceptSuggestion, dismissSuggestion } = require('../ai/structure-suggestions');
 
 const CONNECTION = 'pilot';
 const activeJobsByDatabase = new WeakMap();
@@ -512,7 +513,7 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
       if (!eligible(request)) return reply.code(404).send({ code: 'pilot_unavailable' });
       const training = current(request, Number(request.params.id));
       if (!training) return reply.code(404).send({ code: 'not_found' });
-      const saved = db.prepare('SELECT revision, prescription_json, fingerprint FROM garmin_workout_prescriptions WHERE user_id = ? AND training_id = ?').get(request.user.id, training.id);
+      const saved = db.prepare('SELECT revision, prescription_json, fingerprint, source, suggestion_id FROM garmin_workout_prescriptions WHERE user_id = ? AND training_id = ?').get(request.user.id, training.id);
       let operation = db.prepare('SELECT operation_id, connection_generation, prescription_revision, status, stage, action, workout_id, occurrence_id, scheduled_date, error_code, updated_at FROM garmin_training_operations WHERE user_id = ? AND training_id = ? ORDER BY rowid DESC LIMIT 1').get(request.user.id, training.id);
       if (operation?.status === 'scheduled' && (operation.scheduled_date !== training.dia || operation.prescription_revision !== saved?.revision)) {
         db.prepare(`UPDATE garmin_training_operations SET status = 'outdated', updated_at = datetime('now') WHERE operation_id = ? AND user_id = ?`).run(operation.operation_id, request.user.id);
@@ -520,7 +521,11 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
       }
       const value = saved ? JSON.parse(saved.prescription_json) : null;
       return { connection_generation: connectionGeneration(request.user.id), training_date: training.dia,
-        prescription: saved ? { revision: saved.revision, value, fingerprint: saved.fingerprint, preview: previewPrescription(value) } : null,
+        prescription: saved ? { revision: saved.revision, value, fingerprint: saved.fingerprint, preview: previewPrescription(value),
+          source: saved.source, suggestion_id: saved.suggestion_id } : null,
+        // A pending AI suggestion is a draft: it is never publishable until
+        // an explicit save accepts it into the canonical prescription.
+        suggestion: training.completed === 1 ? null : readSuggestion(db, request.user.id, training.id),
         operation: operation || null };
     });
     app.put('/api/trainings/:id/garmin/prescription', { preHandler: requireAuth }, async (request, reply) => {
@@ -534,25 +539,45 @@ function createGarminProduct({ db, fetchImpl = fetch, config = process.env, now 
       const fingerprint = prescriptionFingerprint(prescription);
       const expectedRevision = request.body?.expected_revision;
       const expectedDate = request.body?.expected_training_date;
+      const suggestionId = request.body?.suggestion_id;
+      const expectedSuggestionRevision = request.body?.expected_suggestion_revision;
+      if ((suggestionId === undefined) !== (expectedSuggestionRevision === undefined)) return reply.code(400).send({ code: 'invalid_payload' });
       if (!(expectedRevision === null || (Number.isSafeInteger(expectedRevision) && expectedRevision > 0))
           || expectedDate !== training.dia || request.body?.expected_connection_generation !== connectionGeneration(request.user.id)) return reply.code(409).send({ code: 'session_changed' });
       const save = db.transaction(() => {
         const latest = current(request, training.id);
         if (!eligible(request) || !latest || latest.dia !== expectedDate || latest.completed === 1
             || connectionGeneration(request.user.id) !== request.body.expected_connection_generation) return null;
-        const old = db.prepare('SELECT revision, fingerprint FROM garmin_workout_prescriptions WHERE user_id = ? AND training_id = ?').get(request.user.id, training.id);
+        const old = db.prepare('SELECT revision, fingerprint, source, suggestion_id FROM garmin_workout_prescriptions WHERE user_id = ? AND training_id = ?').get(request.user.id, training.id);
         if ((old?.revision ?? null) !== expectedRevision) return null;
+        // Accepting names the exact pending suggestion; a save that names none
+        // keeps the existing provenance (edits are visible by fingerprint).
+        if (suggestionId !== undefined
+            && !acceptSuggestion(db, request.user.id, training.id, suggestionId, expectedSuggestionRevision, new Date(now()).toISOString())) return { conflict: 'suggestion_changed' };
+        const source = suggestionId !== undefined ? 'ai_suggestion' : old?.source ?? 'manual';
+        const sourceSuggestion = suggestionId !== undefined ? suggestionId : old?.suggestion_id ?? null;
         const revision = old ? old.revision + (old.fingerprint === fingerprint ? 0 : 1) : 1;
-        db.prepare(`INSERT INTO garmin_workout_prescriptions (user_id, training_id, revision, prescription_json, fingerprint)
-          VALUES (?, ?, ?, ?, ?) ON CONFLICT(user_id, training_id) DO UPDATE SET revision = excluded.revision,
-          prescription_json = excluded.prescription_json, fingerprint = excluded.fingerprint, updated_at = datetime('now')`).run(request.user.id, training.id, revision, JSON.stringify(prescription), fingerprint);
+        db.prepare(`INSERT INTO garmin_workout_prescriptions (user_id, training_id, revision, prescription_json, fingerprint, source, suggestion_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(user_id, training_id) DO UPDATE SET revision = excluded.revision,
+          prescription_json = excluded.prescription_json, fingerprint = excluded.fingerprint, source = excluded.source,
+          suggestion_id = excluded.suggestion_id, updated_at = datetime('now')`).run(request.user.id, training.id, revision, JSON.stringify(prescription), fingerprint, source, sourceSuggestion);
         if (old && old.fingerprint !== fingerprint) db.prepare(`UPDATE garmin_training_operations SET status = 'outdated', updated_at = datetime('now') WHERE user_id = ? AND training_id = ? AND status = 'scheduled'`).run(request.user.id, training.id);
         return { revision, generation: connectionGeneration(request.user.id) };
       });
       const savedResult = save();
       if (savedResult === null) return reply.code(409).send({ code: 'session_changed' });
+      if (savedResult.conflict) return reply.code(409).send({ code: savedResult.conflict });
       return { revision: savedResult.revision, fingerprint, preview: previewPrescription(prescription), date: training.dia,
         connection_generation: savedResult.generation };
+    });
+    app.post('/api/trainings/:id/garmin/suggestion/dismiss', { preHandler: requireAuth }, async (request, reply) => {
+      if (!eligible(request)) return reply.code(404).send({ code: 'pilot_unavailable' });
+      const training = current(request, Number(request.params.id));
+      if (!training) return reply.code(404).send({ code: 'not_found' });
+      const dismissed = dismissSuggestion(db, request.user.id, training.id, request.body, new Date(now()).toISOString());
+      if (dismissed === null) return reply.code(400).send({ code: 'invalid_payload' });
+      if (!dismissed) return reply.code(409).send({ code: 'suggestion_changed' });
+      return { dismissed: true };
     });
     app.post('/api/trainings/:id/garmin/publish', { preHandler: requireAuth }, async (request, reply) => {
       if (!eligible(request)) return reply.code(404).send({ code: 'pilot_unavailable' });

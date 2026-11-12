@@ -194,8 +194,40 @@ reduces or widens anything: `step_duration_limit`, `repetition_count_invalid`
 `expanded_steps_limit`, `total_duration_limit` and `distance_limit`. For v3
 sessions, free-text HR (`hr_text_unstructured`) is not parsed and a single
 pace value (`point_pace_target`) is not widened into a range; the step keeps
-no target and is flagged for review. Persistence and the editor flow belong
-to issues #108 and #109.
+no target and is flagged for review.
+
+### AI-suggested structure persistence (issue #108)
+
+Applying a proposal also records one reviewable structure per session in
+`training_structure_suggestions`, inside the same immediate transaction that
+inserts the calendar rows. Each row copies its provenance: owner, session,
+`execution_id` (`ON DELETE SET NULL`, so AI cleanup keeps the draft), the
+index of the session in the hash-verified response, `response_hash`,
+`adapter_version`, `converter_version`, compatibility (`ready`,
+`needs_review`, `incompatible`), the converted prescription and fingerprint
+(both `NULL` only when incompatible), stable issue codes, a hash of the saved
+`details`, a revision and the decision time. Status is `pending_review`,
+`accepted`, `dismissed` or `superseded`; a partial unique index keeps at most
+one pending suggestion per session.
+
+- New sessions receive their suggestion with the insert's own row ID. A
+  session ignored as a duplicate of an existing planned session is bound only
+  when exactly one existing row has the canonical signature; ambiguous,
+  completed and intra-proposal duplicates receive none. Binding never uses
+  title or position.
+- A later generation never overwrites: an older pending suggestion becomes
+  `superseded`, and the canonical prescription is untouched. The application
+  summary adds `structures { suggested, incompatible, conflicts }`, where a
+  conflict means the session already had a pending suggestion or a saved
+  prescription. Replaying an applied proposal writes nothing.
+- Reads report `conflict` only when a saved prescription differs from the
+  suggestion, and `details_changed` when the session guidance was edited
+  after binding.
+- `garmin_workout_prescriptions` gains `source` (`manual` by default,
+  `ai_suggestion`) and `suggestion_id`; existing rows stay `manual`. The
+  routes are documented in
+  [`garmin-integration.md`](garmin-integration.md#ai-suggested-structure-issue-78).
+  The editor review flow belongs to issue #109.
 
 The v3 adapter is intentionally incompatible with saved v1/v2 proposals;
 `configuration_json.adapterVersion` must match the registered version on review

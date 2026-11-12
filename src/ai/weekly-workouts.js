@@ -5,6 +5,7 @@ const { PERIOD_KEYS, DAY_KEYS } = require('../availability');
 const { convertCelsius, formatPaceFromMetric } = require('../public/shared/units.js');
 const { geocodeLocation } = require('../weather');
 const { incompatibleRpe } = require('./cycle-plan-rpe');
+const { recordSuggestion } = require('./structure-suggestions');
 const enLocale = require('../public/locales/en.json');
 const ptLocale = require('../public/locales/pt.json');
 const {
@@ -12,10 +13,7 @@ const {
   normalizeTrainingDetails,
   trainingSignature,
 } = require('../trainingImport');
-const VERSION = 'weekly-workouts-v4';
-// v3 executions stay readable and applicable; new generations use v4.
-const LEGACY_VERSION = 'weekly-workouts-v3';
-const SUPPORTED_VERSIONS = [LEGACY_VERSION, VERSION];
+const { VERSION, LEGACY_VERSION, SUPPORTED_VERSIONS } = require('./weekly-versions');
 // The Garmin structured-workout contract caps a timed step at 7200 s, so v4
 // asks the model for consecutive main blocks instead of one longer component.
 const MAX_V4_COMPONENT_MINUTES = 120;
@@ -1448,10 +1446,38 @@ function applyWeeklyProposal(
       if (!cycle) throw new AiError('resourceNotFound', 409);
       const existing = db
         .prepare(
-          'SELECT dia,treino,detalhes,completed,result_data_source FROM trainings WHERE user_id=? AND dia BETWEEN ? AND ?',
+          'SELECT id,dia,treino,detalhes,completed,result_data_source FROM trainings WHERE user_id=? AND dia BETWEEN ? AND ?',
         )
         .all(userId, proposal.week_start, addIsoDays(proposal.week_start, 6));
       const signatures = new Set(existing.map(trainingSignature));
+      // Pre-existing sessions by signature. A duplicate is bound to an
+      // existing session only when exactly one planned row matches; never
+      // by title or position.
+      const existingBySignature = new Map();
+      for (const training of existing) {
+        const key = trainingSignature(training);
+        existingBySignature.set(key, [...(existingBySignature.get(key) || []), training]);
+      }
+      const responseHash = hash(execution.response);
+      const appliedAt = now();
+      const structures = { suggested: 0, incompatible: 0, conflicts: 0 };
+      const suggest = (trainingId, index, item, details) => {
+        const recorded = recordSuggestion(db, {
+          userId,
+          trainingId,
+          executionId,
+          sessionIndex: index,
+          responseHash,
+          version,
+          session: execution.response.sessions[index],
+          name: item.workout,
+          details,
+          now: appliedAt,
+        });
+        structures.suggested++;
+        if (recorded.compatibility === 'incompatible') structures.incompatible++;
+        if (recorded.conflict) structures.conflicts++;
+      };
       const materializedSessions = execution.response.sessions.map((item) => {
         return materializePrescription(
           item,
@@ -1464,7 +1490,7 @@ function applyWeeklyProposal(
       );
       const added = [];
       let ignored = 0;
-      for (const item of materializedSessions) {
+      for (const [index, item] of materializedSessions.entries()) {
         const normalizedDate = normalizeDia(item.date);
         const details = normalizeTrainingDetails(item.details);
         const signature = trainingSignature({
@@ -1474,6 +1500,11 @@ function applyWeeklyProposal(
         });
         if (signatures.has(signature)) {
           ignored++;
+          const matches = existingBySignature.get(signature) || [];
+          if (matches.length === 1 && matches[0].completed !== 1) {
+            existingBySignature.delete(signature);
+            suggest(matches[0].id, index, item, details);
+          }
           continue;
         }
         signatures.add(signature);
@@ -1508,6 +1539,7 @@ function applyWeeklyProposal(
           item.location,
         );
         added.push(result.lastInsertRowid);
+        suggest(result.lastInsertRowid, index, item, details);
       }
       const application = {
         executionId,
@@ -1515,10 +1547,11 @@ function applyWeeklyProposal(
         addedIds: added,
         added: added.length,
         ignored,
+        structures,
       };
       db.prepare(
         'UPDATE weekly_workout_proposals SET applied_at=?,application_json=? WHERE execution_id=? AND user_id=?',
-      ).run(now(), JSON.stringify(application), executionId, userId);
+      ).run(appliedAt, JSON.stringify(application), executionId, userId);
       return { ...application, alreadyApplied: false };
     })
     .immediate();

@@ -744,6 +744,22 @@ not part of the stable request key. The product adapter lives under
 `src/garmin/` so the mandatory `npm run test:coverage` 100% gate includes it;
 do not place backend product code in `scripts/` to avoid coverage.
 
+## AI-suggested workout structure (#78)
+
+Weekly application stores one reviewable draft per session in
+`training_structure_suggestions` (`2026-11-ai-workout-structure-v1`), bound to
+the inserted row ID (or a single unambiguous planned duplicate) and the exact
+execution/response hash/session index, never title or position. A draft is not
+canonical and never publishable: only `PUT …/garmin/prescription` naming
+`suggestion_id` + `expected_suggestion_revision` accepts it, in the same
+transaction, recording `source = ai_suggestion`; `POST
+…/garmin/suggestion/dismiss` is the explicit keep-current decision. A newer
+generation supersedes a pending draft and never overwrites a saved
+prescription. Incompatible conversions are stored with their issue codes and no
+prescription. No route here calls Garmin or AI. Covered by
+`structureSuggestions.routes.test.js` and `workoutStructure.test.js`; see
+`docs/ai-weekly-workouts.md` and `docs/garmin-integration.md`.
+
 ## Solicitar Treinos weekly availability
 
 Weekly proposal generation and application reuse the existing AI execution,

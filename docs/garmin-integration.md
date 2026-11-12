@@ -831,6 +831,35 @@ converter test is not proof that every accepted structure reaches a device.
 The connection remains restricted to the configured pilot owner. No multi-user
 production integration is delivered by this editor.
 
+## AI-suggested structure (issue #78)
+
+Weekly AI application (`weekly-workouts-v4`, and completed v3 proposals) also
+stores, per session, a reviewable structure draft in
+`training_structure_suggestions` (idempotent migration
+`2026-11-ai-workout-structure-v1`). It is never the canonical prescription and
+is never publishable on its own; generating, applying, reading or dismissing it
+makes no Garmin call. The contract and conversion rules are in
+[`ai-weekly-workouts.md`](ai-weekly-workouts.md#ai-suggested-structure-persistence-issue-108).
+
+- `GET /api/trainings/:id/garmin` adds `suggestion` (the pending draft or
+  `null`; always `null` for a completed session) and the canonical
+  prescription's `source` (`manual` or `ai_suggestion`) and `suggestion_id`.
+- `PUT /api/trainings/:id/garmin/prescription` accepts, together, the optional
+  `suggestion_id` and `expected_suggestion_revision`. In the same transaction
+  as the existing revision/date/connection checks, it moves that exact pending
+  suggestion to `accepted` and records `source = ai_suggestion`; a stale,
+  decided, foreign or unknown suggestion answers `409 suggestion_changed` and
+  writes nothing. Supplying only one of the two answers `400
+  invalid_payload`. A save that names no suggestion keeps the existing
+  provenance; edits are visible because the saved fingerprint differs from the
+  suggestion's.
+- `POST /api/trainings/:id/garmin/suggestion/dismiss` takes exactly
+  `{ suggestion_id, expected_revision }` and is the explicit "keep current"
+  decision (`400 invalid_payload`, `409 suggestion_changed`).
+- These routes keep the existing gate: they require the Garmin feature to be
+  enabled for the account, but not a connected Garmin account. Publishing still
+  requires the saved canonical prescription and its own confirmation.
+
 ## Activity result import (issue #74)
 
 The session's **Result and feedback / Resultado e feedback** source selector has

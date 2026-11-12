@@ -6,7 +6,7 @@
 // into a pace/HR target. Anything that cannot be represented faithfully is
 // reported as an issue with a stable code instead of being adapted silently.
 const { validatePrescription } = require('../garmin-workout-contract');
-const { VERSION, LEGACY_VERSION } = require('./weekly-workouts');
+const { VERSION, LEGACY_VERSION } = require('./weekly-versions');
 
 const CONVERTER_VERSION = 1;
 const MAX_STEP_SECONDS = 7200;
