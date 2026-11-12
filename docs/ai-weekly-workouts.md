@@ -227,7 +227,8 @@ one pending suggestion per session.
   `ai_suggestion`) and `suggestion_id`; existing rows stay `manual`. The
   routes are documented in
   [`garmin-integration.md`](garmin-integration.md#ai-suggested-structure-issue-78).
-  The editor review flow belongs to issue #109.
+  The editor review flow is described in
+  [`garmin-integration.md`](garmin-integration.md#review-in-the-editor-issue-109).
 
 The v3 adapter is intentionally incompatible with saved v1/v2 proposals;
 `configuration_json.adapterVersion` must match the registered version on review

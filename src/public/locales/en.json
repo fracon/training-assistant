@@ -139,7 +139,10 @@
     "copied": "Copied!",
     "shoesSectionTitle": "SHOES AVAILABLE FOR ROTATION",
     "shoesFallback": "No specific shoes registered; use standard rotation.",
-    "shoesTarget": "Target: {target} km"
+    "shoesTarget": "Target: {target} km",
+    "weeklyApplyStructuresSuggested": "Workout structures suggested for review: {count}. Open each workout to check them; nothing was sent to Garmin.",
+    "weeklyApplyStructuresIncompatible": "{count} must be built manually.",
+    "weeklyApplyStructuresConflicts": "{count} differ from a structure already saved, which was kept."
   },
   "calendar": {
     "title": "Workouts",
@@ -388,7 +391,8 @@
       "garminReauthenticationRequired": "Reconnect your Garmin account",
       "garminAuthenticationNeedsAttention": "Garmin sign-in needs attention",
       "garminOperationNeedsAttention": "Workout operation needs attention",
-      "garminStructureOutdated": "Saved structure needs updating"
+      "garminStructureOutdated": "Saved structure needs updating",
+      "garminSuggestionPending": "AI-suggested structure to review"
     },
     "realizedRpeLabel": "Realized RPE (1 to 5)",
     "rpeLabel1": "1 - Very Easy",
@@ -1039,7 +1043,42 @@
       "repeatRun": "Run interval",
       "repeatRecovery": "Recovery",
       "legacyRepeatRecoveryRequired": "This older group has no recovery defined. Add a positive recovery or convert the repetitions to simple blocks.",
-      "convertRepeatToBlocks": "Convert to simple blocks"
+      "convertRepeatToBlocks": "Convert to simple blocks",
+      "suggestionTitle": "AI-suggested structure — review before sending",
+      "suggestionReady": "The editor below was filled from the AI suggestion. Check stages, targets, units and totals and adjust anything; Save and review accepts it. Sending to Garmin Connect is still a separate confirmation.",
+      "suggestionNeedsReview": "The editor below was filled from the AI suggestion, but some parts need your attention. Adjust them, then Save and review accepts it. Sending to Garmin Connect is still a separate confirmation.",
+      "suggestionIncompatible": "This suggestion cannot be turned into a watch workout as it was generated, and nothing was converted automatically. Build the structure manually in the editor below.",
+      "suggestionConflict": "A new AI-suggested structure differs from the saved one. Keep the current structure or review the new suggestion.",
+      "suggestionReviewing": "You are reviewing the new AI suggestion. Save and review replaces the saved structure; sending to Garmin Connect is still a separate confirmation.",
+      "suggestionOrigin": "Suggested on {date}.",
+      "suggestionDetailsChanged": "This workout's guidance was edited after the suggestion. Compare them before accepting.",
+      "suggestionIssuesTitle": "Needs your attention",
+      "suggestionCompare": "Compare with the original guidance",
+      "suggestionGuidanceEmpty": "This workout has no saved guidance.",
+      "suggestionReview": "Review new suggestion",
+      "suggestionDismiss": "Dismiss suggestion",
+      "suggestionKeepCurrent": "Keep current structure",
+      "suggestionDismissing": "Dismissing…",
+      "suggestionDismissFailed": "The suggestion could not be dismissed. Try again.",
+      "suggestionChanged": "The suggestion changed in the meantime and was reloaded. Your edits in the editor were kept.",
+      "suggestionReviewConfirm": "Replace the structure in the editor with the new suggestion? Unsaved edits will be lost.",
+      "suggestionReviewConfirmAction": "Replace in editor",
+      "connectToPublishHelp": "The structure is saved in Kinesis. Connect your Garmin account to send it.",
+      "suggestionIssue": {
+        "name_invalid": "Workout name: use 1 to 32 letters, numbers or simple punctuation.",
+        "step_duration_limit": "{step}: lasts longer than 120 minutes, the limit for one watch step.",
+        "repetition_count_invalid": "{step}: has {actual} repetitions; a watch repeat group allows at most {maximum}.",
+        "zero_recovery": "{step}: repetitions without recovery time cannot be sent as a repeat group.",
+        "expanded_steps_limit": "The workout would have {actual} watch steps; the limit is {maximum}.",
+        "total_duration_limit": "The total duration exceeds the 24-hour limit.",
+        "distance_limit": "The total distance exceeds the 100 km limit.",
+        "hr_text_unstructured": "{step}: the heart-rate target was free text and was not converted. Set it in the editor if you want it.",
+        "point_pace_target": "{step}: the pace target was a single value and was not widened into a range. Set a range in the editor if you want it.",
+        "generic": "{step}: this part cannot be represented as suggested."
+      },
+      "suggestionStepWorkout": "Workout",
+      "suggestionStepRun": "Main block {number}",
+      "suggestionSameAsSaved": "The AI suggestion matches the saved structure. Dismiss it to keep the current structure."
     }
   },
   "terrain": {

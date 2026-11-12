@@ -860,6 +860,45 @@ makes no Garmin call. The contract and conversion rules are in
   enabled for the account, but not a connected Garmin account. Publishing still
   requires the saved canonical prescription and its own confirmation.
 
+### Review in the editor (issue #109)
+
+The training-result page reuses the existing structure editor; there is no
+second editor. A pending suggestion shows the localized notice “AI-suggested
+structure — review before sending” / “Estrutura sugerida pela IA — revise antes
+de enviar” above the editor and review, with its origin date (shared date
+formatter), a `details_changed` warning, per-block issue messages, and a
+collapsible comparison with the saved guidance text.
+
+- Without a saved structure, a `ready` or `needs_review` suggestion pre-fills
+  the editor unless the form already has local edits; an `incompatible` one
+  fills nothing and explains why. **Save and review** sends the suggestion ID
+  and revision, so the existing local-only save is the explicit acceptance.
+  **Dismiss suggestion** discards it and returns an untouched editor to its
+  empty state.
+- With a saved structure, the saved review stays in place. A differing
+  suggestion offers **Review new suggestion** (confirmation first when the
+  editor has unsaved edits) and **Keep current structure** (dismiss); an
+  identical one offers only the latter. Reviewing then saving replaces the
+  saved structure through the usual revision checks.
+- `suggestion_changed` keeps local edits, reloads the suggestion state and
+  shows a localized message. Status reads never replace dirty form state.
+- The structure no longer depends on a Garmin connection: when disconnected,
+  the panel is shown if a suggestion is pending or a structure is saved, the
+  send actions stay disabled and the action help says to connect Garmin to
+  send. With nothing saved and no suggestion, the disconnected panel stays
+  hidden as before. The feature-enabled gate is unchanged.
+- The Garmin accordion summary reads “AI-suggested structure to review” while a
+  suggestion is pending. The Request Workouts result dialog adds the counts of
+  suggested, incompatible and conflicting structures and states that nothing
+  was sent to Garmin.
+- Focus: reviewing moves focus to the notice heading; keep/dismiss moves it to
+  the saved review heading or the workout name, or to the Garmin section header
+  when the panel closes. All controls are native buttons/`details` with the
+  shared focus ring. Covered by `structureSuggestion.browser.test.js` (EN
+  desktop, PT mobile 390 px, reduced height 480 px, keyboard Tab/Enter,
+  offline acceptance, conflict review and keep, incompatible dismissal) and
+  `aiCoach.browser.test.js` (result dialog counts).
+
 ## Activity result import (issue #74)
 
 The session's **Result and feedback / Resultado e feedback** source selector has

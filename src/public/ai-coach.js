@@ -260,6 +260,7 @@ function setupAiCoachPage(user) {
   const applyResultTitle = document.getElementById('weeklyApplyResultTitle');
   const applyResultMessage = document.getElementById('weeklyApplyResultMessage');
   const applyResultIgnored = document.getElementById('weeklyApplyResultIgnored');
+  const applyResultStructures = document.getElementById('weeklyApplyResultStructures');
   const applyResultClose = document.getElementById('weeklyApplyResultClose');
   const applyResultOk = document.getElementById('weeklyApplyResultOk');
   let activeExecutionId = null,
@@ -308,11 +309,29 @@ function setupAiCoachPage(user) {
           String(applyResult.ignored),
         );
       }
+      // Structures are drafts for review on each workout page; nothing was
+      // sent to Garmin and a saved structure was never replaced.
+      const structures = applyResult.structures;
+      const parts = structures
+        ? [
+            ['suggested', 'weeklyApplyStructuresSuggested'],
+            ['incompatible', 'weeklyApplyStructuresIncompatible'],
+            ['conflicts', 'weeklyApplyStructuresConflicts'],
+          ]
+            .filter(([field]) => Number(structures[field]) > 0)
+            .map(([field, key]) =>
+              t(`aiCoach.${key}`).replace('{count}', String(structures[field])),
+            )
+        : [];
+      applyResultStructures.hidden = parts.length === 0;
+      applyResultStructures.textContent = parts.join(' ');
     } else if (applyResult.kind === 'unknown') {
       applyResultTitle.textContent = t('aiCoach.weeklyApplyUnknownTitle');
       applyResultMessage.textContent = t('aiCoach.weeklyApplyUnknownMessage');
       applyResultIgnored.hidden = true;
       applyResultIgnored.textContent = '';
+      applyResultStructures.hidden = true;
+      applyResultStructures.textContent = '';
     } else {
       applyResultTitle.textContent = t('aiCoach.weeklyApplyErrorTitle');
       applyResultMessage.textContent = t(
@@ -322,6 +341,8 @@ function setupAiCoachPage(user) {
       );
       applyResultIgnored.hidden = true;
       applyResultIgnored.textContent = '';
+      applyResultStructures.hidden = true;
+      applyResultStructures.textContent = '';
     }
   }
 
@@ -994,7 +1015,7 @@ function setupAiCoachPage(user) {
       renderWeeklyProposal(currentProposal);
       sessionStorage.removeItem('kinesis-weekly-request-key');
       showApplyResult(
-        { kind: 'success', ignored: Number(applied.ignored) || 0 },
+        { kind: 'success', ignored: Number(applied.ignored) || 0, structures: applied.structures || null },
         document.getElementById('aiCoachTitle'),
       );
     } catch (error) {
@@ -1013,6 +1034,7 @@ function setupAiCoachPage(user) {
           {
             kind: 'success',
             ignored: Number(persisted.application.ignored) || 0,
+            structures: persisted.application.structures || null,
           },
           document.getElementById('aiCoachTitle'),
         );
@@ -1042,6 +1064,7 @@ function setupAiCoachPage(user) {
           {
             kind: 'success',
             ignored: Number(currentProposal.application.ignored) || 0,
+            structures: currentProposal.application.structures || null,
           },
           document.getElementById('aiCoachTitle'),
         );
@@ -1086,6 +1109,7 @@ function setupAiCoachPage(user) {
               {
                 kind: 'success',
                 ignored: Number(proposal.application.ignored) || 0,
+                structures: proposal.application.structures || null,
               },
               document.getElementById('aiCoachTitle'),
             );

@@ -2330,6 +2330,10 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     await waitForText('#weeklyApplyResultTitle', 'Workouts added');
     assert.equal(await evaluate(`document.getElementById('weeklyApplyResultMessage').textContent`), 'Your workouts were added to the calendar.');
     assert.equal(await evaluate(`document.getElementById('weeklyApplyResultIgnored').textContent`), '1 existing workout was skipped.');
+    // The completed duplicate receives no structure; each new session has one
+    // to review, and the dialog says nothing was sent to Garmin.
+    assert.equal(await evaluate(`document.getElementById('weeklyApplyResultStructures').textContent`),
+      'Workout structures suggested for review: 2. Open each workout to check them; nothing was sent to Garmin.');
     assert.equal(await evaluate(`document.getElementById('weeklyApplyResultModal').hidden`), false);
     assert.equal(await evaluate(`document.activeElement.id`), 'weeklyApplyResultOk');
     assert.equal(await evaluate(`document.querySelectorAll('.weekly-proposal-card').length`), 0);

@@ -756,8 +756,15 @@ transaction, recording `source = ai_suggestion`; `POST
 …/garmin/suggestion/dismiss` is the explicit keep-current decision. A newer
 generation supersedes a pending draft and never overwrites a saved
 prescription. Incompatible conversions are stored with their issue codes and no
-prescription. No route here calls Garmin or AI. Covered by
-`structureSuggestions.routes.test.js` and `workoutStructure.test.js`; see
+prescription. No route here calls Garmin or AI. The training-result page
+reviews the draft in the existing editor (no second editor): a localized
+“AI-suggested structure — review before sending” notice, comparison with the
+saved guidance, per-block issues, explicit Review/Keep/Dismiss actions, and
+Save and review as the acceptance. The structure panel is shown without a
+Garmin connection whenever a suggestion is pending or a structure is saved;
+sending still requires the connection. Never pre-fill over dirty form state.
+Covered by `structureSuggestions.routes.test.js`, `workoutStructure.test.js`
+and `structureSuggestion.browser.test.js`; see
 `docs/ai-weekly-workouts.md` and `docs/garmin-integration.md`.
 
 ## Solicitar Treinos weekly availability
