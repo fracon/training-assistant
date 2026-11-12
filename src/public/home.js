@@ -1019,7 +1019,7 @@ function setupHomePage() {
       best.distanceKm > 0 ? `${bestName.charAt(0).toUpperCase()}${bestName.slice(1)}` : t('home.volume.noBest')));
     // Months elapsed: up to the running month this year, all twelve for a closed year.
     const elapsed = volume.currentMonth ?? 12;
-    summary.append(metricTile(t('home.volume.average'), volumeDistance(volume.totalKm / elapsed),
+    summary.append(metricTile(t('home.volume.average'), volumeDistance(volume.totalKm / elapsed, 1),
       t(elapsed === 1 ? 'home.volume.overMonths_one' : 'home.volume.overMonths_other', { count: elapsed })));
 
     const max = Math.max(...volume.months.map((entry) => entry.distanceKm));
