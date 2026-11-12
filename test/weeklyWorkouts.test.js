@@ -29,11 +29,25 @@ test('weekly structured schema exposes the same numeric bounds as domain validat
     return [integer.minimum, integer.maximum];
   };
   assert.deepEqual(integerBounds('repetitions'), [1, 30]);
-  assert.deepEqual(integerBounds('minutes'), [1, 720]);
+  assert.deepEqual(integerBounds('minutes'), [1, weekly.MAX_V4_COMPONENT_MINUTES]);
+  assert.equal(weekly.MAX_V4_COMPONENT_MINUTES, 120);
   assert.deepEqual(integerBounds('distanceMeters'), [50, 100000]);
   assert.deepEqual(integerBounds('paceSecondsPerKm'), [120, 1800]);
-  assert.deepEqual(integerBounds('paceTargetSecondsPerKm'), [120, 1800]);
   assert.deepEqual(integerBounds('recoveryMinutes'), [0, 30]);
+  const target = step.properties.target.properties;
+  const bounds = (spec) => {
+    const integer = spec.anyOf.find((part) => part.type === 'integer');
+    return [integer.minimum, integer.maximum];
+  };
+  assert.deepEqual(target.type.enum, ['none', 'heart_rate', 'pace']);
+  assert.deepEqual(bounds(target.lowerBpm), [40, 230]);
+  assert.deepEqual(bounds(target.upperBpm), [40, 230]);
+  assert.deepEqual(bounds(target.fasterSecondsPerKm), [120, 1800]);
+  assert.deepEqual(bounds(target.slowerSecondsPerKm), [120, 1800]);
+  assert.deepEqual(
+    step.properties.recoveryTarget.anyOf.map((part) => part.type),
+    ['object', 'null'],
+  );
   assert.deepEqual(integerBounds('rpe'), [1, 5]);
   assert.deepEqual(integerBounds('recoveryRpe'), [1, 5]);
   assert.equal(
@@ -220,6 +234,30 @@ function availability(
     updated_at: '2026-10-24',
   };
 }
+const NO_TARGET = {
+  type: 'none',
+  lowerBpm: null,
+  upperBpm: null,
+  fasterSecondsPerKm: null,
+  slowerSecondsPerKm: null,
+};
+const hrTarget = (lowerBpm, upperBpm) => ({ ...NO_TARGET, type: 'heart_rate', lowerBpm, upperBpm });
+const paceTarget = (fasterSecondsPerKm, slowerSecondsPerKm) => ({
+  ...NO_TARGET,
+  type: 'pace',
+  fasterSecondsPerKm,
+  slowerSecondsPerKm,
+});
+// weekly-workouts-v3 component shape, kept for the compatibility tests.
+function legacyStep(step) {
+  const { target: _target, recoveryTarget: _recoveryTarget, ...rest } = step;
+  return { ...rest, targetHr: '', paceTargetSecondsPerKm: null };
+}
+function legacySession(overrides = {}) {
+  const value = session(overrides);
+  value.prescription = value.prescription.map(legacyStep);
+  return value;
+}
 function session(overrides = {}) {
   const { durationMinutes = 60, targetHr: _targetHr, rpe: _rpe, ...fields } = overrides;
   const mainMinutes = Math.max(1, durationMinutes - 20);
@@ -253,13 +291,14 @@ function session(overrides = {}) {
     instruction: 'Run relaxed with a smooth, controlled form.',
     effort: 'Conversational effort with calm breathing.',
     rpe: null,
-    targetHr: '',
-    paceTargetSecondsPerKm: null,
+    target: NO_TARGET,
     recoveryGuidance:
       component.repetitions > 1 && component.recoveryMinutes !== null
         ? 'Jog easily between repetitions.'
         : null,
     recoveryRpe: null,
+    recoveryTarget:
+      component.phase === 'main' && component.repetitions > 1 ? NO_TARGET : null,
     ...component,
   }));
   return {
@@ -311,8 +350,12 @@ test('weekly adapter retains training guidance and replaces context duplication 
     assert.match(first, /structured|estruturada/i);
     assert.match(first, /effort\/breathing|esforço\/respiração/i);
     assert.match(first, /paceSecondsPerKm/);
-    assert.match(first, /paceTargetSecondsPerKm/);
-    assert.match(first, /weekly-workouts-v3/);
+    assert.match(first, /recoveryTarget/);
+    assert.match(first, /heart_rate/);
+    assert.match(first, /weekly-workouts-v4/);
+    assert.doesNotMatch(first, /weekly-workouts-v3|paceTargetSecondsPerKm|targetHr/);
+    assert.match(first, /minutes 1–120|minutes 1–120 por componente/);
+    assert.match(first, /consecutive main components of at most 120 min|componentes principais consecutivos de até 120 min/);
     assert.match(first, /RPE Kinesis de 1 a 5 em cada etapa|Kinesis RPE from 1 to 5 for every running stage/);
     assert.match(first, /Não converta FC média\/máxima observada|Do not convert observed average\/maximum HR/);
     assert.match(first, /IDs somente em evidence|IDs only in evidence/);
@@ -332,10 +375,10 @@ test('weekly adapter retains training guidance and replaces context duplication 
     'instruction',
     'effort',
     'rpe',
-    'targetHr',
-    'paceTargetSecondsPerKm',
+    'target',
     'recoveryGuidance',
     'recoveryRpe',
+    'recoveryTarget',
   ])
     assert.ok(componentKeys.includes(key), `${key} is part of the component contract`);
   assert.equal(
@@ -406,10 +449,10 @@ test('weekly proposal validates dates from weekday, one preferred period, cumula
   );
   assert.equal(
     weekly.validateWeeklyProposal(
-      proposal([sessionStep({ targetHr: 'easy' })]),
+      proposal([sessionStep({ target: hrTarget(160, 150) })]),
       context,
     ).code,
-    'unit',
+    'prescription_target',
   );
   assert.equal(
     weekly.validateWeeklyProposal(
@@ -580,8 +623,7 @@ test('weekly prescription localizes Portuguese labels and rejects invalid struct
       step.phase === 'main'
         ? 'Trote muito leve até recuperar a respiração.'
         : null,
-    targetHr: step.phase === 'main' ? '150-160 bpm' : '',
-    paceTargetSecondsPerKm: step.phase === 'main' ? 300 : null,
+    target: step.phase === 'main' ? hrTarget(150, 160) : NO_TARGET,
   }));
   const portuguese = weekly.materializePrescription(distance, 'pt-BR');
   assert.match(portuguese.value.workout, /Corrida/);
@@ -590,8 +632,18 @@ test('weekly prescription localizes Portuguese labels and rejects invalid struct
   assert.match(portuguese.value.details, /Duração estimada/);
   assert.match(portuguese.value.details, /estimativa de 2 min por repetição/);
   assert.match(portuguese.value.details, /ritmo não é meta/);
-  assert.match(portuguese.value.details, /FC alvo: 150-160 bpm/);
-  assert.match(portuguese.value.details, /ritmo-alvo 5:00 min\/km/);
+  assert.match(portuguese.value.details, /FC alvo: 150–160 bpm/);
+  const paced = weekly.materializePrescription(
+    {
+      ...distance,
+      prescription: distance.prescription.map((step) =>
+        step.phase === 'main' ? { ...step, target: paceTarget(300, 315) } : step,
+      ),
+    },
+    'pt-BR',
+  );
+  assert.match(paced.value.details, /ritmo-alvo 5:00–5:15 min\/km/);
+  assert.doesNotMatch(paced.value.details, /min\/km min\/km/);
   assert.doesNotMatch(portuguese.value.details, /min each at|recovery between repeats|Execution:|Effort:/);
   assert.match(portuguese.value.details, /respiração ritmada/);
   assert.match(portuguese.value.details, /Trote muito leve/);
@@ -650,12 +702,12 @@ test('weekly prescription localizes Portuguese labels and rejects invalid struct
       session({
         prescription: distance.prescription.map((step) =>
           step.phase === 'main'
-            ? { ...step, paceTargetSecondsPerKm: 1 }
+            ? { ...step, target: paceTarget(1, 1) }
             : step,
         ),
       }),
     ).error,
-    'prescription_pace_target',
+    'prescription_target',
   );
   assert.equal(
     weekly.materializePrescription(
@@ -765,7 +817,7 @@ test('weekly component RPE stays on 1–5 and distance estimate never becomes a 
     ...distance,
     prescription: distance.prescription.map((step) =>
       step.phase === 'main'
-        ? { ...step, paceTargetSecondsPerKm: 330 }
+        ? { ...step, target: paceTarget(330, 330) }
         : step,
     ),
   });
@@ -777,11 +829,19 @@ test('weekly component RPE stays on 1–5 and distance estimate never becomes a 
   uniform.prescription = uniform.prescription.map((step) => ({
     ...step,
     rpe: 3,
-    targetHr: '120-140 bpm',
+    target: hrTarget(120, 140),
   }));
   const summary = weekly.materializePrescription(uniform).value;
   assert.equal(summary.rpe, 3);
-  assert.equal(summary.targetHr, '120-140 bpm');
+  assert.equal(summary.targetHr, '120–140 bpm');
+  assert.deepEqual(
+    summary.prescription.map((step) => step.targetHr),
+    ['120–140 bpm', '120–140 bpm', '120–140 bpm'],
+    'v4 display steps expose the same per-step HR text as v3',
+  );
+  const single = session();
+  single.prescription = single.prescription.map((step) => ({ ...step, target: hrTarget(140, 140) }));
+  assert.equal(weekly.materializePrescription(single).value.targetHr, '140 bpm');
   const context = validationContext();
   for (const invalidStep of [
     { ...distance.prescription[0], instruction: 'RPE 8/10 in the warmup.' },
@@ -824,7 +884,7 @@ test('weekly validation covers every invariant failure and optional context bran
     [proposal([session({ sessionKind: 'unknown' })]), base, 'session_kind'],
     [proposal([session({ sessionKind: '' })]), base, 'session_kind'],
     [proposal([session({ justification: '' })]), base, 'required'],
-    [proposal([sessionStep({ targetHr: '1'.repeat(81) })]), base, 'text_length'],
+    [proposal([sessionStep({ instruction: 'i'.repeat(241) })]), base, 'text_length'],
     [proposal([session({ weather: 'w'.repeat(1001) })]), base, 'text_length'],
     [proposal([session({ notes: 'n'.repeat(2001) })]), base, 'text_length'],
     [
@@ -832,7 +892,33 @@ test('weekly validation covers every invariant failure and optional context bran
       base,
       'text_length',
     ],
-    [proposal([sessionStep({ targetHr: 'easy' })]), base, 'unit'],
+    [proposal([sessionStep({ target: { ...NO_TARGET, lowerBpm: 140 } })]), base, 'prescription_target'],
+    [proposal([sessionStep({ target: { ...hrTarget(140, 150), fasterSecondsPerKm: 300 } })]), base, 'prescription_target'],
+    [proposal([sessionStep({ target: hrTarget(39, 150) })]), base, 'prescription_target'],
+    [proposal([sessionStep({ target: hrTarget(140, 231) })]), base, 'prescription_target'],
+    [proposal([sessionStep({ target: { ...paceTarget(300, 330), upperBpm: 150 } })]), base, 'prescription_target'],
+    [proposal([sessionStep({ target: paceTarget(330, 300) })]), base, 'prescription_target'],
+    [proposal([sessionStep({ target: paceTarget(300, 1801) })]), base, 'prescription_target'],
+    [proposal([sessionStep({ target: { ...NO_TARGET, type: 'power' } })]), base, 'prescription_target'],
+    [proposal([sessionStep({ recoveryTarget: NO_TARGET })]), base, 'prescription_target'],
+    [
+      proposal([sessionStep({ repetitions: 3, recoveryMinutes: 1, recoveryGuidance: 'Walk.', recoveryTarget: null })]),
+      base,
+      'prescription_target',
+    ],
+    [
+      proposal([sessionStep({ repetitions: 3, recoveryMinutes: 1, recoveryGuidance: 'Walk.', recoveryTarget: hrTarget(150, 140) })]),
+      base,
+      'prescription_target',
+    ],
+    [proposal([sessionStep({ minutes: 121 })]), base, 'prescription_value'],
+    [proposal([sessionStep({ target: null })]), base, 'shape'],
+    [proposal([sessionStep({ target: { type: 'none' } })]), base, 'shape'],
+    [proposal([sessionStep({ target: { ...NO_TARGET, lowerBpm: '140' } })]), base, 'shape'],
+    [proposal([sessionStep({ target: { ...NO_TARGET, type: 1 } })]), base, 'shape'],
+    [proposal([sessionStep({ target: [] })]), base, 'shape'],
+    [proposal([sessionStep({ recoveryTarget: 'none' })]), base, 'shape'],
+    [proposal([sessionStep({ targetHr: '' })]), base, 'shape'],
     [proposal([session({ type: 'RPE 8/10' })]), base, 'shape'],
     [proposal([session({ details: 'RPE 8/10' })]), base, 'shape'],
     [proposal([sessionStep({ instruction: 'RPE 8/10' })]), base, 'incompatible_rpe'],
