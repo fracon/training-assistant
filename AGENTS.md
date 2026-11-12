@@ -468,7 +468,11 @@ are stable identifiers, not a statement of scope.
   stored and returned; conversion happens only on display. The chart has one
   tab stop with arrow/Home/End navigation, a single card-level custom tooltip
   whose text is also each column's accessible name, and scrolls inside the
-  card on narrow screens.
+  card on narrow screens. Its monthly average shows one decimal.
+- The phone dashboard is one `minmax(0, 1fr)` column, never wider than the
+  viewport. Up to 480px the *This week* pills hide the decorative shoe icon and
+  tighten gap/type (another step up to 360px); `dashboard.browser.test.js`
+  checks that every card fits and every weekday label fits its pill.
 - Distances and temperatures are stored in canonical metric units and converted
   for display/prompt generation through `src/public/shared/units.js`. Displayed
   dates use the shared locale-aware date formatter. Date inputs use the shared

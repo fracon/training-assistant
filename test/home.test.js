@@ -1143,7 +1143,7 @@ test('home.css places weekly widgets side-by-side with equal-height responsive t
     'each widget card fills its grid track height'
   );
   assert.match(css, /\.dashboard-grid > \.card-section:first-child \{[^}]*grid-column:\s*1 \/ -1/);
-  assert.match(css, /@media \(max-width: 760px\) \{[\s\S]*?\.dashboard-grid \{\s*grid-template-columns:\s*1fr;/);
+  assert.match(css, /@media \(max-width: 760px\) \{[\s\S]*?\.dashboard-grid \{\s*grid-template-columns:\s*minmax\(0,\s*1fr\);/);
   // The next-workout and pending row comes after the existing widgets; alone, the next workout spans it.
   assert.match(css, /\.dashboard-grid > \.next-card\.is-wide \{\s*grid-column:\s*1 \/ -1;/);
   assert.match(css, /\.cycle-card h3\.cycle-name,\s*\n\.next-card h3\.next-name \{/, 'the next workout reuses the cycle card title');
