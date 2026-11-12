@@ -54,6 +54,14 @@ function summarizeCyclePlanning(cycle,applied,proposals,available,selected) {
   else status='none';
   return { status,secondary,available:Boolean(available),canGenerate:Boolean(available && cycle.status==='active') };
 }
+// A cycle has planning history once it holds an applied version or any proposal.
+function hasPlanningHistory(db,userId,cycleId) {
+  return db.prepare(`SELECT EXISTS (
+    SELECT 1 FROM cycle_plan_versions WHERE user_id=? AND cycle_id=?
+    UNION ALL
+    SELECT 1 FROM cycle_plan_proposals WHERE user_id=? AND cycle_id=?
+  ) AS has_history`).get(userId,cycleId,userId,cycleId).has_history===1;
+}
 function readCyclePlanning(db,userId,cycleId,service,config,asOf=userToday(db,userId)) {
   return db.transaction(()=>{
     const cycle=ownCycle(db,userId,cycleId);
@@ -71,7 +79,8 @@ function readCyclePlanning(db,userId,cycleId,service,config,asOf=userToday(db,us
     const selectedProposal=proposals.find((proposal)=>proposalIsUsable(db,userId,cycleId,proposal,appliedView?.version || 0,asOf));
     const summary=summarizeCyclePlanning(cycle,appliedView,proposals,config.enabled,selectedProposal);
     return { available:config.enabled,canGenerate:cycle.status==='active',cycleRevision:cycle.planning_revision,
-      applied:appliedView,proposals,selectedProposalId:selectedProposal?.id || null,summary };
+      applied:appliedView,proposals,selectedProposalId:selectedProposal?.id || null,
+      summary:{...summary,cycleStatus:cycle.status,hasPlanningHistory:hasPlanningHistory(db,userId,cycleId)} };
   })();
 }
 function readCyclePlanningSummary(db,userId,cycleId,service,config,asOf=userToday(db,userId)) {
@@ -100,7 +109,7 @@ function readCyclePlanningSummary(db,userId,cycleId,service,config,asOf=userToda
       if(proposal.execution.response?.start<asOf)proposal.execution.outdated=true;
       if(proposalIsUsable(db,userId,cycleId,proposal,version,asOf)){selected=proposal;break;}
     }
-    return { ...summarizeCyclePlanning(cycle,appliedView,proposals,config.enabled,selected), cycleStatus: cycle.status, hasPlanningHistory: Boolean(appliedView || rows.length) };
+    return { ...summarizeCyclePlanning(cycle,appliedView,proposals,config.enabled,selected), cycleStatus: cycle.status, hasPlanningHistory: hasPlanningHistory(db, userId, cycleId) };
   })();
 }
 function applyCyclePlan(db,userId,cycleId,proposalId,body,service,now=new Date().toISOString()) {
@@ -129,4 +138,4 @@ function applyCyclePlan(db,userId,cycleId,proposalId,body,service,now=new Date()
     return {appliedVersion:version+1,alreadyApplied:false};
   }).immediate();
 }
-module.exports={ownCycle,appliedPlan,proposalIsUsable,summarizeCyclePlanning,readCyclePlanning,readCyclePlanningSummary,applyCyclePlan};
+module.exports={ownCycle,hasPlanningHistory,appliedPlan,proposalIsUsable,summarizeCyclePlanning,readCyclePlanning,readCyclePlanningSummary,applyCyclePlan};

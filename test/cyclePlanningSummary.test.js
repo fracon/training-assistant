@@ -12,7 +12,7 @@ async function waitFor(service,id,state){for(let i=0;i<100;i++){if(service.get(1
 test('cycle planning summary distinguishes empty, unavailable and inactive without exposing artifacts',async(t)=>{
  const db=fixture();const {config,service}=harness(db);t.after(async()=>{await service.stop();db.close();});
  const initial=readCyclePlanning(db,1,'cycle',service,config);
- assert.deepEqual(initial.summary,{status:'none',secondary:null,available:true,canGenerate:true});
+ assert.deepEqual(initial.summary,{status:'none',secondary:null,available:true,canGenerate:true,cycleStatus:'active',hasPlanningHistory:false});
  assert.equal(JSON.stringify(initial.summary).includes('Synthetic planning recommendation'),false);
  const unavailable=structuredClone(config);unavailable.enabled=false;
  assert.equal(readCyclePlanning(db,1,'cycle',service,unavailable).summary.status,'unavailable');
