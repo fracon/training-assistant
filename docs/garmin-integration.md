@@ -881,7 +881,11 @@ collapsible comparison with the saved guidance text.
   identical one offers only the latter. Reviewing then saving replaces the
   saved structure through the usual revision checks.
 - `suggestion_changed` keeps local edits, reloads the suggestion state and
-  shows a localized message. Status reads never replace dirty form state.
+  shows a localized message in the editor. Whenever a compatible pending
+  suggestion is not the one loaded in the editor — including a replacement
+  generated before the first save — **Review new suggestion** loads it,
+  asking for confirmation first when the editor has unsaved edits. Status
+  reads never replace dirty form state.
 - The structure no longer depends on a Garmin connection: when disconnected,
   the panel is shown if a suggestion is pending or a structure is saved, the
   send actions stay disabled and the action help says to connect Garmin to

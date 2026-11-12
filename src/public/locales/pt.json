@@ -248,7 +248,8 @@
       },
       "suggestionStepWorkout": "Treino",
       "suggestionStepRun": "Bloco principal {number}",
-      "suggestionSameAsSaved": "A sugestão da IA é igual à estrutura salva. Descarte-a para manter a estrutura atual."
+      "suggestionSameAsSaved": "A sugestão da IA é igual à estrutura salva. Descarte-a para manter a estrutura atual.",
+      "suggestionNotLoaded": "Há uma nova sugestão da IA. Suas edições no editor foram mantidas e não são a sugestão; revise-a para carregá-la no editor."
     }
   },
   "aiCoach": {

@@ -154,6 +154,35 @@ test('AI-suggested structure is reviewed, accepted and dismissed explicitly in t
     await wait("!document.getElementById('garminPrescriptionPanel').hidden && !document.getElementById('garminPreview').hidden");
     assert.equal(await evaluate("document.getElementById('garminSuggestion').hidden"), true);
 
+    // 1b. A newer generation supersedes the draft while the athlete edits it
+    // before the first save: the edits are kept and the replacement can still
+    // be loaded explicitly (Codex review on #110).
+    const superseded = addTraining(session('2026-11-06', [step('warmup', { minutes: 10 }), step('main', { minutes: 35 }), step('cooldown', { minutes: 10 })]));
+    await open(superseded);
+    await wait("!document.getElementById('garminSuggestion').hidden && document.getElementById('garminWorkoutName').value==='Easy run'");
+    await evaluate("(()=>{const input=document.querySelector('#garminRunBlocks [data-end-value]');input.value='37:00';input.dispatchEvent(new Event('input',{bubbles:true}))})()");
+    const replacement = session('2026-11-06', [step('warmup', { minutes: 10 }), step('main', { minutes: 45 }), step('cooldown', { minutes: 10 })]);
+    const replacementPlan = weekly.materializePrescription(replacement, 'en-US').value;
+    recordSuggestion(db, { userId: owner.id, trainingId: superseded, executionId: null, sessionIndex: 0, responseHash: 'synthetic-2',
+      version: weekly.VERSION, session: replacement, name: replacementPlan.workout, details: replacementPlan.details, now: '2026-11-01T09:00:00.000Z' });
+    await evaluate("document.getElementById('garminPrescriptionSave').click()");
+    await wait("document.getElementById('garminEditorActionStatus').hidden===false && !document.getElementById('garminSuggestionReview').hidden");
+    assert.equal(await evaluate("document.getElementById('garminEditorActionStatus').textContent"),
+      'The suggestion changed in the meantime and was reloaded. Your edits in the editor were kept.');
+    assert.equal(await evaluate("document.querySelector('#garminRunBlocks [data-end-value]').value"), '37:00', 'local edits are kept');
+    assert.match(await evaluate("document.getElementById('garminSuggestionStatus').textContent"), /^A new AI suggestion is available/);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM garmin_workout_prescriptions WHERE training_id=?').get(superseded).n, 0);
+    await evaluate("document.getElementById('garminSuggestionReview').click()");
+    await wait("document.querySelector('.confirm-card') !== null");
+    await evaluate("document.getElementById('confirmOkBtn').click()");
+    await wait("document.querySelector('#garminRunBlocks [data-end-value]').value==='45:00' && document.getElementById('garminSuggestionReview').hidden");
+    assert.match(await evaluate("document.getElementById('garminSuggestionStatus').textContent"), /^The editor below was filled from the AI suggestion/);
+    await evaluate("document.getElementById('garminPrescriptionSave').click()");
+    await wait("!document.getElementById('garminPreview').hidden && document.getElementById('garminSuggestion').hidden");
+    const replacementRow = db.prepare("SELECT id FROM training_structure_suggestions WHERE training_id=? AND status='accepted'").get(superseded);
+    assert.deepEqual(db.prepare('SELECT source,suggestion_id FROM garmin_workout_prescriptions WHERE training_id=?').get(superseded),
+      { source: 'ai_suggestion', suggestion_id: replacementRow.id }, 'the replacement, not the superseded draft, is accepted');
+
     // 2. EN desktop conflict: the saved structure wins until an explicit choice.
     await open(conflicting);
     await wait("!document.getElementById('garminSuggestion').hidden && !document.getElementById('garminPreview').hidden");

@@ -1078,7 +1078,8 @@
       },
       "suggestionStepWorkout": "Workout",
       "suggestionStepRun": "Main block {number}",
-      "suggestionSameAsSaved": "The AI suggestion matches the saved structure. Dismiss it to keep the current structure."
+      "suggestionSameAsSaved": "The AI suggestion matches the saved structure. Dismiss it to keep the current structure.",
+      "suggestionNotLoaded": "A new AI suggestion is available. Your edits in the editor were kept and are not the suggestion; review it to load it into the editor."
     }
   },
   "terrain": {

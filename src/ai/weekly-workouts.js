@@ -518,8 +518,15 @@ function materializePrescription(session, language = 'en-US', version = VERSION)
         ? `${estimated ? 'Duração estimada' : 'Duração calculada'}: ${durationMinutes} min${estimated ? ' (estimativa arredondada para cima pelo ritmo informado; não é meta de ritmo)' : ''}.`
       : `${estimated ? 'Estimated duration' : 'Calculated duration'}: ${durationMinutes} min${estimated ? ' (rounded up using the supplied pace; not a pace target)' : ''}.`,
   );
-  const heartRates = steps.map((step) =>
-    legacy ? step.targetHr : heartRateText(step.target),
+  // Like the global RPE, a v4 global HR exists only when every running stage
+  // and every repeated recovery share it; a recovery without an HR target
+  // breaks the agreement. v3 keeps its historical work-only derivation.
+  const heartRates = steps.flatMap((step) =>
+    legacy
+      ? [step.targetHr]
+      : step.phase === 'main' && step.repetitions > 1
+        ? [heartRateText(step.target), heartRateText(step.recoveryTarget)]
+        : [heartRateText(step.target)],
   );
   return {
     value: {

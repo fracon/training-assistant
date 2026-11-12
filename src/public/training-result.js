@@ -1837,8 +1837,13 @@ async function initTrainingResult() {
     refreshGarminAccordionSummary();
     if (!suggestion) return;
     const saved = garminSavedRevision !== null;
+    // The editor holds other content (kept local edits) while a compatible
+    // suggestion is pending: it can be loaded explicitly, even before the
+    // first save.
+    const notLoaded = Boolean(suggestion.value) && garminSuggestionInForm?.id !== suggestion.id;
     const statusKey = garminSuggestionReviewing ? 'suggestionReviewing'
       : saved ? (suggestion.conflict ? 'suggestionConflict' : 'suggestionSameAsSaved')
+        : notLoaded ? 'suggestionNotLoaded'
         : suggestion.compatibility === 'incompatible' ? 'suggestionIncompatible'
           : suggestion.compatibility === 'needs_review' ? 'suggestionNeedsReview' : 'suggestionReady';
     document.getElementById('garminSuggestionStatus').textContent = garminText(statusKey);
@@ -1857,7 +1862,7 @@ async function initTrainingResult() {
     document.getElementById('garminSuggestionIssuesTitle').textContent = garminText('suggestionIssuesTitle');
     const guidance = String(training?.detalhes ?? '').trim();
     document.getElementById('garminSuggestionGuidance').textContent = guidance || garminText('suggestionGuidanceEmpty');
-    garminSuggestionReview.hidden = !saved || !suggestion.conflict || !suggestion.value || garminSuggestionReviewing;
+    garminSuggestionReview.hidden = !notLoaded || (saved && !suggestion.conflict);
     garminSuggestionDismiss.textContent = garminText(garminSuggestionBusy ? 'suggestionDismissing'
       : saved ? 'suggestionKeepCurrent' : 'suggestionDismiss');
     const busy = garminSuggestionBusy || garminPending;
@@ -3040,7 +3045,7 @@ async function initTrainingResult() {
       } else if (error.message === 'suggestion_changed') {
         // Keep local edits; reload only the suggestion state.
         garminFormDirty = true;
-        setGarminOperationMessage('suggestionChanged');
+        showGarminEditorActionMessage('suggestionChanged');
         void refreshGarminStatus();
       } else if (error.status === 409) setGarminOperationMessage('revisionConflict');
       else if (error.status === 422 || error.message === 'unsupported') setGarminOperationMessage('unsupported');
@@ -3064,8 +3069,11 @@ async function initTrainingResult() {
     }
     fillGarminPrescription(suggestion.value);
     garminSuggestionInForm = { id: suggestion.id, revision: suggestion.revision };
-    garminSuggestionReviewing = true;
+    // "Reviewing" means replacing a saved structure; before the first save the
+    // loaded suggestion reads like any pre-filled one.
+    garminSuggestionReviewing = garminSavedRevision !== null;
     garminEditingRequested = true;
+    document.getElementById('garminEditorActionStatus').hidden = true;
     garminPreview.hidden = true;
     garminEditorView.hidden = false;
     renderGarminSuggestion();

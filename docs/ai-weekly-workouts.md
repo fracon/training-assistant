@@ -165,7 +165,10 @@ persists nothing new and does not touch the training-result editor.
   `target pace 5:00–5:20 min/km`, recovery targets appended to the recovery
   line), so the shared prescription summary keeps working. The display
   projection exposes a derived per-step `targetHr` string; the global
-  `fc_alvo` column is still derived only when every component agrees. v4 also
+  `fc_alvo` column is still derived only when every component agrees,
+  including each repeated recovery's `recoveryTarget` (a recovery without an
+  HR target breaks the agreement, as recovery RPE already does). v3 keeps its
+  historical work-only derivation. v4 also
   drops the duplicated `min/km min/km` suffix that v3 prints after a pace
   target.
 - Completed v3 executions remain readable and applicable: review, validation

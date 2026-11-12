@@ -392,3 +392,17 @@ test('weekly-workouts-v4 still caps the whole session at 720 minutes across spli
   const value = session([step('warmup', { minutes: 110 }), ...blocks, step('cooldown', { minutes: 110 })], 'long');
   assert.deepEqual(weekly.materializePrescription(value), { error: 'prescription_value' });
 });
+
+test('the v4 global heart rate counts repeated recoveries, while v3 keeps its work-only derivation', () => {
+  const repeats = (recoveryTarget) => session([
+    step('warmup', { minutes: 10, target: hr(140, 150) }),
+    step('main', { repetitions: 4, minutes: 3, target: hr(140, 150), recoveryMinutes: 2, recoveryTarget }),
+    step('cooldown', { minutes: 10, target: hr(140, 150) }),
+  ], 'intervals');
+  assert.equal(weekly.materializePrescription(repeats(hr(110, 120))).value.targetHr, '', 'a different recovery target is not uniform');
+  assert.equal(weekly.materializePrescription(repeats(NONE)).value.targetHr, '', 'a recovery without HR target is not uniform');
+  assert.equal(weekly.materializePrescription(repeats(hr(140, 150))).value.targetHr, '140–150 bpm');
+  const v3 = legacy(repeats(NONE));
+  v3.prescription = v3.prescription.map((item) => ({ ...item, targetHr: '140-150 bpm' }));
+  assert.equal(weekly.materializePrescription(v3, 'en-US', weekly.LEGACY_VERSION).value.targetHr, '140-150 bpm');
+});
