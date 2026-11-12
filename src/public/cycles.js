@@ -36,8 +36,12 @@ let promptOrigin = null;
 let promptCopyTimer = null;
 function planningActionKey(summary) {
   const status=summary?.status;
-  if (summary?.cycleStatus === 'completed')
-    return summary.hasPlanningHistory ? 'viewPlan' : null;
+  // A completed cycle is read-only: no action without history, and
+  // "View plan" only when a plan was actually applied.
+  if (summary?.cycleStatus === 'completed') {
+    if (!summary.hasPlanningHistory) return null;
+    return status?.startsWith('applied_') ? 'viewPlan' : 'viewDetails';
+  }
   if (status==='none' && summary.canGenerate===false) return null;
   return ({
     none: 'generate', pending: 'viewProgress', failed: 'viewDetails',

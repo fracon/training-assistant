@@ -206,6 +206,12 @@ test('Chrome cycle planning PT/EN desktop/mobile: recovered generation, proposal
   db.prepare("UPDATE training_cycles SET status='completed' WHERE id='private'").run();
   await command('Page.navigate',{url:origin+'/cycles.html'});await wait("!!document.querySelector('[data-action=planning]') && !document.getElementById('addCycleBtn').disabled");
   assert.equal(await evaluate("!!document.querySelector('[data-action=planning]')"),true);
+  // A completed cycle whose only history is a proposal without a plan is not a saved plan.
+  db.prepare("INSERT INTO training_cycles(id,user_id,objective,status,created_at) VALUES ('completed-failed-2',2,'Completed after a failed attempt','completed','2000-01-02')").run();
+  const failedColumns=db.prepare('PRAGMA table_info(ai_executions)').all().map(column=>column.name);
+  const failedValues=failedColumns.map(name=>({id:"'completed-failed-attempt'",idempotency_key:"'completed-failed-attempt'",resource_id:"'completed-failed-2'",state:"'failed'",error_code:"'providerError'",response_json:'NULL',settled:'1'})[name]||name);
+  db.prepare(`INSERT INTO ai_executions(${failedColumns.join(',')}) SELECT ${failedValues.join(',')} FROM ai_executions WHERE user_id=2 AND purpose='cycle' LIMIT 1`).run();
+  db.prepare("INSERT INTO cycle_plan_proposals(id,user_id,cycle_id,execution_id,sequence,base_version,created_at) VALUES ('completed-failed-attempt',2,'completed-failed-2','completed-failed-attempt',1,0,?)").run(new Date().toISOString());
   for(const available of [true,false]) {
    config.enabled=available;
    for(const language of ['pt-BR','en-US'])for(const width of [1280,390]) {
@@ -232,6 +238,9 @@ test('Chrome cycle planning PT/EN desktop/mobile: recovered generation, proposal
     assert.equal(await evaluate("(()=>{const button=document.querySelector('[data-cycle-id=\"completed-empty-2\"] [data-action=planning]');button.focus();return document.activeElement===button;})()"),false);
     assert.equal(await evaluate("document.querySelector('[data-cycle-id=\"private\"] [data-action=planning]').hidden"),false);
     assert.equal(await evaluate("document.querySelector('[data-cycle-id=\"private\"] [data-action=planning]').getAttribute('aria-label')"),actionLabel);
+    assert.equal(apiCycles.find(cycle=>cycle.id==='completed-failed-2').planningSummary.hasPlanningHistory,true);
+    assert.equal(await evaluate("document.querySelector('[data-cycle-id=\"completed-failed-2\"] [data-action=planning]').hidden"),false);
+    assert.equal(await evaluate("document.querySelector('[data-cycle-id=\"completed-failed-2\"] [data-action=planning]').getAttribute('aria-label')"),language==='pt-BR'?'Ver detalhes':'View details','history without an applied plan is not labelled as a plan');
     const beforeOpen=calls;
     await evaluate("document.querySelector('[data-cycle-id=\"private\"] [data-action=planning]').click()");
     await wait(`document.getElementById('cyclePlanningContent').textContent.includes('${language==='pt-BR'?'Planejamento aplicado':'Applied plan'}')`);
@@ -242,6 +251,9 @@ test('Chrome cycle planning PT/EN desktop/mobile: recovered generation, proposal
     assert.equal(await evaluate("document.activeElement.getAttribute('aria-label')"),actionLabel,'closing restores focus to the read-only card action');
    }
   }
+  db.prepare("DELETE FROM training_cycles WHERE id='completed-failed-2'").run();
+  await command('Page.navigate',{url:origin+'/cycles.html'});
+  await wait("!document.querySelector('[data-cycle-id=\"completed-failed-2\"]') && document.querySelector('[data-cycle-id=\"private\"] [data-action=planning]')?.getAttribute('aria-label')==='View plan' && !document.getElementById('addCycleBtn').disabled");
   config.enabled=false;
   await evaluate("document.querySelector('.lang-switch [data-lang=\"pt-BR\"]').click()");
   await wait("document.documentElement.lang==='pt-BR'");

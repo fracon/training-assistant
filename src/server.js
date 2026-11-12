@@ -3,7 +3,7 @@
 const path = require('node:path');
 const { registerAiRoutes } = require('./ai/routes');
 const { readAiConfig } = require('./ai/config');
-const { readCyclePlanningSummary } = require('./ai/cycle-plans');
+const { readCyclePlanningSummary, hasPlanningHistory } = require('./ai/cycle-plans');
 const Fastify = require('fastify');
 const multipart = require('@fastify/multipart');
 const fastifyStatic = require('@fastify/static');
@@ -412,17 +412,12 @@ async function buildServer(options = {}) {
           aiConfig,
         );
       } catch {
-        const hasPlanningHistory = db.prepare(`SELECT EXISTS (
-          SELECT 1 FROM cycle_plan_versions WHERE user_id=? AND cycle_id=?
-          UNION ALL
-          SELECT 1 FROM cycle_plan_proposals WHERE user_id=? AND cycle_id=?
-        ) AS has_history`).get(userId, cycle.id, userId, cycle.id).has_history === 1;
         planningSummary = {
           status: 'read_error',
           secondary: null,
           available: Boolean(aiConfig.enabled),
           canGenerate: false,
-          hasPlanningHistory,
+          hasPlanningHistory: hasPlanningHistory(db, userId, cycle.id),
         };
       }
       planningSummary.cycleStatus = cycle.status;

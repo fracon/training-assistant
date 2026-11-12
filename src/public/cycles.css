@@ -232,7 +232,8 @@
   position: relative;
 }
 
-.cycle-card-actions > [data-action="planning"][hidden] {
+/* .btn-icon sets display, so hidden card actions need an explicit rule. */
+.cycle-card-actions > .btn-icon[hidden] {
   display: none !important;
 }
 

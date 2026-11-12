@@ -19,7 +19,7 @@ COPY package*.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY src ./src
 COPY scripts/admin-bootstrap.js scripts/admin-promote.js scripts/admin-commands.js scripts/admin-runtime.js scripts/admin-prompts.js scripts/garmin-pilot.js scripts/garmin-local-config.js ./scripts/
-LABEL org.opencontainers.image.version="0.39.2"
+LABEL org.opencontainers.image.version="0.39.3"
 
 USER node
 
