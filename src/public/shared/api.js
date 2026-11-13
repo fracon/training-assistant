@@ -203,6 +203,39 @@ export async function fetchAdminFeedback(query = {}) {
   return payload;
 }
 
+async function readAdminJson(url, fallback) {
+  const response = await fetch(url, { headers: { accept: 'application/json' } });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok)
+    throw Object.assign(new Error(payload.error || fallback), {
+      status: response.status,
+      codes: payload.errors,
+    });
+  return payload;
+}
+
+export function fetchAdminAiAccounts() {
+  return readAdminJson('/api/admin/ai/accounts', 'Could not load accounts.');
+}
+
+export function fetchAdminAiExecutions(accountId, query = {}) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value !== undefined && value !== '') params.set(key, value);
+  }
+  return readAdminJson(
+    `/api/admin/ai/accounts/${encodeURIComponent(accountId)}/executions${params.toString() ? `?${params}` : ''}`,
+    'Could not load AI executions.',
+  );
+}
+
+export function fetchAdminAiExecution(id) {
+  return readAdminJson(
+    `/api/admin/ai/executions/${encodeURIComponent(id)}`,
+    'Could not load the AI execution.',
+  );
+}
+
 export function updateAdminFeedback(id, payload) {
   return requestJson(`/api/admin/feedback/${id}`, payload, 'PATCH');
 }

@@ -328,6 +328,9 @@ sanitized errors. Ordinary users receive the product result, not debug payloads.
 Enforce the current database role and ownership in the backend, not only the UI.
 Admin debug grants no cross-user training access. Keep credential values out of
 debug entirely. Avoid introducing a broad administration dashboard in this plan.
+(Later owner decision, issue #113: the read-only, audited Administration >
+Prompt history is the single cross-account exception; see
+[ai-foundation.md](ai-foundation.md#administration-prompt-history-issue-113).)
 
 Phase 0 must not prematurely remove existing prompt workflows. Each functional
 phase introduces its replacement user flow and keeps the admin debug action.

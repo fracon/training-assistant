@@ -278,19 +278,11 @@ test('training memory Chrome PT/EN desktop/mobile, ownership, keyboard, loading,
     // Summary and quality are rendered from the same projection.
     assert.equal(await evaluate("document.querySelectorAll('#memoryInsights .memory-stat').length"),4);
     assert.ok(await evaluate("document.querySelectorAll('#memoryInsights .memory-quality-item').length>=5"));
-    assert.equal(await evaluate("document.getElementById('memoryDebug').open"),false);
-    assert.equal(await evaluate("document.getElementById('previewDate').getBoundingClientRect().height"),0);
-    await evaluate("document.querySelector('#memoryDebug > summary').click()");
+    // The administrator prompt/context section moved to Administration >
+    // Prompt history (issue #113); training memory is the athlete view only.
+    assert.equal(await evaluate("document.getElementById('memoryDebug')"),null);
+    assert.equal(await evaluate("document.getElementById('previewForm')"),null);
     await command('Emulation.clearDeviceMetricsOverride');
-    await evaluate(
-      `document.querySelector('#previewForm [type=submit]').click()`,
-    );
-    await waitFor(`document.getElementById('promptPreview').value.length>100`);
-    assert.ok(
-      (
-        await evaluate(`document.getElementById('contextPreview').value`)
-      ).includes('training-context-v6'),
-    );
     assert.equal(
       requests.some((r) => r.url.includes('api.openai.com')),
       false,
@@ -379,25 +371,13 @@ test('training memory Chrome PT/EN desktop/mobile, ownership, keyboard, loading,
     await waitFor("!document.querySelector('#profileForm [type=submit]').disabled");
     await command('Fetch.disable');
     assert.equal(await evaluate('document.activeElement.id'),'experience');
-    await evaluate("document.getElementById('memoryDebug').open=true");
-    // The remaining admin DatePicker keeps the reviewed keyboard/month behavior.
-    await evaluate("document.getElementById('previewPurpose').value='workouts';document.getElementById('previewPurpose').dispatchEvent(new Event('change'));document.getElementById('previewDate').focus()");
     const key = async (key,code,windowsVirtualKeyCode) => {for(const type of ['keyDown','keyUp']) await command('Input.dispatchKeyEvent',{type,key,code,windowsVirtualKeyCode});};
-    await key('Enter','Enter',13);
-    assert.equal(await evaluate("document.getElementById('previewDate').getAttribute('aria-expanded')"),'true');
-    for(const action of ['previous','next']) {
-      await evaluate(`document.querySelector('#previewDate-calendar-popup [data-calendar-action="${action}"]').focus()`);
-      await key('Enter','Enter',13);
-      assert.equal(await evaluate('document.activeElement.dataset.calendarAction'),action);
-    }
-    await key('Escape','Escape',27);
-    assert.equal(await evaluate('document.activeElement.id'),'previewDate');
     // Source links remain keyboard controls and point at established pages.
     await evaluate("document.querySelector('#memoryOverview a').focus()");
     await key('Tab','Tab',9);
     assert.equal(await evaluate("document.activeElement.tagName"),'A');
     const memoryStyles = await evaluate(
-      `(()=>{const i=getComputedStyle(document.querySelector('#previewDate'));const b=getComputedStyle(document.querySelector('#profileForm button'));return {inputFont:i.fontFamily,inputRadius:i.borderRadius,buttonRadius:b.borderRadius}})()`,
+      `(()=>{const i=getComputedStyle(document.querySelector('#experience'));const b=getComputedStyle(document.querySelector('#profileForm button'));return {inputFont:i.fontFamily,inputRadius:i.borderRadius,buttonRadius:b.borderRadius}})()`,
     );
     await command('Page.navigate', { url: origin + '/shoes.html' });
     await waitFor(
@@ -472,7 +452,7 @@ test('training memory Chrome PT/EN desktop/mobile, ownership, keyboard, loading,
           await command('Emulation.setDeviceMetricsOverride',{width,height:900,deviceScaleFactor:1,mobile:width===390});
           await delay(350);
           assert.equal(await evaluate('document.documentElement.scrollWidth>innerWidth'),false);
-          assert.equal(await evaluate("!!document.getElementById('memoryDebug')"),roleCase==='admin-empty');
+          assert.equal(await evaluate("!!document.getElementById('memoryDebug')"),false);
           const shot=await command('Page.captureScreenshot',{format:'png'});
           writeFileSync(`/tmp/kinesis-memory-${roleCase}-${language}-${width}.png`,Buffer.from(shot.data,'base64'));
         }

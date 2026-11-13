@@ -30,6 +30,20 @@ export function formatDate(value, language = EN_LOCALE) {
   }).format(date);
 }
 
+// An instant (ISO timestamp) shown as a local date and time in the viewer's
+// time zone, using the same locale rules as formatDate.
+export function formatDateTime(value, language = EN_LOCALE) {
+  const date = value instanceof Date ? value : new Date(typeof value === 'string' ? value : NaN);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Intl.DateTimeFormat(dateLocale(language), {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+}
+
 export function parseLocalizedDate(value, language = EN_LOCALE) {
   const text = String(value ?? '').trim();
   const match = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(text);

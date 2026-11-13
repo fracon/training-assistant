@@ -222,7 +222,8 @@
       "shoes": "Shoe Rotation",
       "administration": "Administration",
       "users": "Users",
-      "feedback": "Feedbacks"
+      "feedback": "Feedbacks",
+      "aiHistory": "Prompt history"
     },
     "soon": "Soon",
     "noCycle": "No active cycle",
@@ -1250,6 +1251,92 @@
       "resolved": "Resolved"
     }
   },
+  "aiHistory": {
+    "pageTitle": "Prompt history - Kinesis",
+    "title": "Prompt history",
+    "subtitle": "Read-only history of the AI requests sent for every account.",
+    "auditNotice": "Opening an execution that belongs to another account is recorded in the audit log.",
+    "account": "Account",
+    "accountOption": "{name} · {count} executions",
+    "purpose": "Purpose",
+    "allPurposes": "All purposes",
+    "state": "State",
+    "allStates": "All states",
+    "loadingAccounts": "Loading accounts…",
+    "loading": "Loading executions…",
+    "loadError": "The history could not be loaded.",
+    "retry": "Try again",
+    "noAccounts": "No accounts found.",
+    "empty": "No execution matches these filters.",
+    "loadMore": "Load more",
+    "viewAccessible": "View execution details",
+    "detail": "Execution details",
+    "close": "Close",
+    "detailLoading": "Loading execution…",
+    "detailError": "The execution could not be loaded.",
+    "notFound": "This execution no longer exists.",
+    "audited": "This view was recorded in the audit log.",
+    "ownExecution": "Your own execution: not recorded in the audit log.",
+    "inactive": "Inactive",
+    "admin": "Administrator",
+    "fields": {
+      "account": "Account",
+      "created": "Created",
+      "attempts": "Attempts",
+      "tokens": "Tokens charged",
+      "cost": "Estimated cost",
+      "version": "Prompt version",
+      "error": "Error",
+      "resource": "Resource"
+    },
+    "tokensValue": "{count} tokens",
+    "noError": "no error",
+    "sections": {
+      "prompt": "External prompt",
+      "context": "Selected context and provenance",
+      "payload": "Payload sent to the provider",
+      "configuration": "Configuration"
+    },
+    "copyPrompt": "Copy prompt",
+    "promptCopied": "Prompt copied.",
+    "copyError": "The text could not be copied.",
+    "purposes": {
+      "cycle": "Cycle planning",
+      "workouts": "Weekly workouts",
+      "analysis": "Workout analysis"
+    },
+    "states": {
+      "queued": "Queued",
+      "running": "Running",
+      "completed": "Completed",
+      "failed": "Failed",
+      "uncertain": "Provider outcome uncertain",
+      "cancelled": "Cancelled locally",
+      "outdated": "Sources changed"
+    },
+    "trace": {
+      "tabsLabel": "Trace tabs",
+      "request": "Request",
+      "response": "Response",
+      "attempt": "Attempt",
+      "noAttempt": "No attempt recorded",
+      "failed": "Failed",
+      "noOutput": "This attempt received no output text.",
+      "legacy": "Legacy trace without captured output.",
+      "expired": "Captured output has expired.",
+      "truncated": "Output truncated at the 65,536 byte limit.",
+      "copy": "Copy output",
+      "copied": "Output copied.",
+      "reasons": {
+        "evidence_empty": "the evidence list is empty",
+        "evidence_unknown_reference": "evidence reference is absent from the supplied sources",
+        "invalid_json": "the text is not valid JSON",
+        "output_text_count": "the response does not contain exactly one text block"
+      },
+      "outputTitle": "Model output",
+      "noAttemptInfo": "No diagnostic was saved for this attempt."
+    }
+  },
   "shoes": {
     "title": "Shoes",
     "pageTitle": "Shoes - Kinesis",
@@ -1694,34 +1781,8 @@
     "updated": "Updated",
     "profileEmpty": "No previous experience supplied. This is optional.",
     "saved": "Information saved.",
-    "debug": "Administrator: own prompt and context",
-    "debugHint": "Free local preview. No model request is sent.",
-    "purpose": "Purpose",
-    "resource": "Saved cycle / workout",
-    "weekDate": "Week starting Monday",
-    "preview": "Preview locally",
-    "prompt": "External prompt",
-    "copy": "Copy prompt",
-    "copied": "Prompt copied.",
-    "context": "Selected context and provenance",
-    "usage": "Recorded consumption",
-    "tokens": "tokens",
     "authorities": {
       "user_report": "Reported by you"
-    },
-    "purposes": {
-      "cycle": "Cycle",
-      "workouts": "Weekly workouts",
-      "analysis": "Workout analysis"
-    },
-    "executionStates": {
-      "queued": "Queued. You can close this window and return to Cycle planning to follow along.",
-      "running": "Running",
-      "completed": "Completed",
-      "failed": "Failed",
-      "uncertain": "Provider outcome uncertain",
-      "cancelled": "Cancelled locally",
-      "outdated": "Sources changed"
     },
     "errors": {
       "generic": "Unable to complete this action. Your entered values were kept. Try again.",
@@ -1822,31 +1883,6 @@
     "interpretationSaveCorrection": "Save correction",
     "interpretationSaved": "Interpretation updated.",
     "interpretationOriginal": "Original interpretation",
-    "trace": {
-      "heading": "Execution details",
-      "tabsLabel": "Trace tabs",
-      "request": "Request",
-      "response": "Response",
-      "attempt": "Attempt",
-      "noAttempt": "No attempt recorded",
-      "completed": "Execution completed with a validated response.",
-      "failed": "Failed",
-      "noOutput": "This attempt received no output text.",
-      "legacy": "Legacy trace without captured output.",
-      "expired": "Captured output has expired.",
-      "truncated": "Output truncated at the 65,536 byte limit.",
-      "copy": "Copy output",
-      "copied": "Output copied.",
-      "noError": "no error",
-      "reasons": {
-        "evidence_empty": "the evidence list is empty",
-        "evidence_unknown_reference": "evidence reference is absent from the supplied sources",
-        "invalid_json": "the text is not valid JSON",
-        "output_text_count": "the response does not contain exactly one text block"
-      },
-      "outputTitle": "Model output",
-      "noAttemptInfo": "No diagnostic was saved for this attempt."
-    },
     "purposeTabsLabel": "Context by AI task",
     "purposeTabs": {
       "cycle": "Cycle planning",
@@ -1973,8 +2009,7 @@
     "weeklyMissing": "{count} without metrics",
     "availabilityLocation": "Location: {location}",
     "experienceCount": "{count} of {max} characters",
-    "unsaved": "Unsaved changes",
-    "diagnostics": "Administrator diagnostics"
+    "unsaved": "Unsaved changes"
   },
   "cyclePlanning": {
     "admin": "Administrator details",

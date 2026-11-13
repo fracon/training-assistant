@@ -28,6 +28,38 @@ function truncateUtf8Text(value, maxBytes) {
   }
   return { text: characters.join(''), outputBytes, truncated: 1 };
 }
+// The exact protected trace of one execution: what was sent, configured,
+// charged and captured. Shared by the owner-scoped admin debug read and the
+// cross-account administration history (issue #113); callers decide access.
+function executionDebugFields(db, row, nowIso) {
+  return {
+    context: JSON.parse(row.context_json),
+    diagnostics: JSON.parse(row.diagnostics_json),
+    usage: row.usage_json ? JSON.parse(row.usage_json) : null,
+    estimatedCostUsd: row.charged_cost,
+    costBasis: row.usage_json
+      ? 'reported_usage_estimate'
+      : !row.settled
+        ? 'reservation_pending'
+        : row.charged_tokens === 0
+          ? 'known_unbilled'
+          : 'reserved_unknown_usage',
+    externalPrompt: row.external_prompt,
+    payload: JSON.parse(row.payload_json),
+    configuration: JSON.parse(row.configuration_json),
+    inputHash: row.input_hash,
+    promptVersion: row.prompt_version,
+    attempts: row.attempts,
+    reservedTokens: row.reserved_tokens,
+    reservedCostUsd: row.reserved_cost,
+    rawOutputCaptureVersion: row.raw_output_capture_version || 0,
+    rawOutputs: db.prepare('SELECT attempt,output_text,output_bytes,truncated,expired,expires_at FROM ai_execution_raw_outputs WHERE execution_id=? ORDER BY attempt').all(row.id).map((output) => {
+      const expiresAt = Date.parse(output.expires_at);
+      const expired = output.expired === 1 || !Number.isFinite(expiresAt) || expiresAt <= Date.parse(nowIso);
+      return expired ? { ...output, output_text: null, expired: 1 } : output;
+    }),
+  };
+}
 function createExecutionService({
   db,
   config,
@@ -97,34 +129,7 @@ function createExecutionService({
       error: row.error_code,
       response: row.response_json ? JSON.parse(row.response_json) : null,
     };
-    if (debug)
-      Object.assign(result, {
-        context,
-        diagnostics: JSON.parse(row.diagnostics_json),
-        usage: row.usage_json ? JSON.parse(row.usage_json) : null,
-        estimatedCostUsd: row.charged_cost,
-        costBasis: row.usage_json
-          ? 'reported_usage_estimate'
-          : !row.settled
-            ? 'reservation_pending'
-            : row.charged_tokens === 0
-              ? 'known_unbilled'
-              : 'reserved_unknown_usage',
-        externalPrompt: row.external_prompt,
-        payload: JSON.parse(row.payload_json),
-        configuration: JSON.parse(row.configuration_json),
-        inputHash: row.input_hash,
-        promptVersion: row.prompt_version,
-        attempts: row.attempts,
-        reservedTokens: row.reserved_tokens,
-        reservedCostUsd: row.reserved_cost,
-        rawOutputCaptureVersion: row.raw_output_capture_version || 0,
-        rawOutputs: db.prepare('SELECT attempt,output_text,output_bytes,truncated,expired,expires_at FROM ai_execution_raw_outputs WHERE execution_id=? ORDER BY attempt').all(row.id).map((output) => {
-          const expiresAt = Date.parse(output.expires_at);
-          const expired = output.expired === 1 || !Number.isFinite(expiresAt) || expiresAt <= Date.parse(now());
-          return expired ? { ...output, output_text: null, expired: 1 } : output;
-        }),
-      });
+    if (debug) Object.assign(result, executionDebugFields(db, row, now()));
     return result;
   }
   function list(userId) {
@@ -881,4 +886,4 @@ function createExecutionService({
     dispatch,
   };
 }
-module.exports = { createExecutionService, TERMINAL, truncateUtf8Text };
+module.exports = { createExecutionService, executionDebugFields, TERMINAL, truncateUtf8Text };

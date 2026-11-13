@@ -7,10 +7,9 @@ import {
 import { requestJson } from './shared/api.js';
 import { translate } from './shared/i18n.js';
 import { formatDate } from './shared/date.js';
-import { createDatePicker } from './shared/datepicker.js';
 import { formatDistance, formatPaceFromMetric } from './shared/units.js';
 import { BREATHING_LABEL_KEYS, MUSCLE_LABEL_KEYS, ENERGY_LABEL_KEYS } from './shared/analysis-prompts.js';
-import { copyPromptText, DAY_DB_KEYS } from './shared/workout-prompts.js';
+import { DAY_DB_KEYS } from './shared/workout-prompts.js';
 import { memorySummary, memoryQuality } from './shared/memory-insights.js';
 
 async function initMemory() {
@@ -20,10 +19,6 @@ async function initMemory() {
   const i18n = getShellI18n();
   const t = (key) => translate(i18n.messages, `memory.${key}`);
   const fields = ['experience'];
-  const previewPicker =
-    user.role === 'admin'
-      ? createDatePicker($('previewDate'), { getLanguage: () => i18n.language })
-      : null;
   const dirty = new Set();
   // Character count and an unsaved-changes cue for prior experience.
   function renderExperienceMeta() {
@@ -43,16 +38,8 @@ async function initMemory() {
   let purpose = 'cycle';
   let loadSeq = 0;
   const memoryUrl = () => `/api/ai/memory?purpose=${encodeURIComponent(purpose)}`;
-  let resources = null;
   let loaded = false;
   let errorKey = null;
-  const debugLabels = [];
-  let selectedTrace=null;
-  let refreshTraceLabels=()=>{};
-  let traceExpiryTimer=null;
-  let refreshResources = () => {};
-  if (user.role !== 'admin') $('memoryDebug').remove();
-  else $('memoryDebug').hidden = false;
   function controls() {
     $('profileForm').querySelector('[type=submit]').disabled = !loaded || busy;
     $('reloadMemory').disabled = busy;
@@ -64,9 +51,6 @@ async function initMemory() {
       if (mutating) tab.setAttribute('aria-disabled', 'true');
       else tab.removeAttribute('aria-disabled');
     }
-    if (user.role === 'admin')
-      $('previewForm').querySelector('[type=submit]').disabled =
-        !resources || busy;
   }
   function error(error, focus = true, retryLoad = false) {
     const code = error?.codes?.[0];
@@ -587,143 +571,6 @@ async function initMemory() {
       renderExperienceMeta();
     });
   });
-  if (user.role === 'admin') {
-    function renderResources() {
-      const purpose = $('previewPurpose').value;
-      const selected = $('previewResource').value;
-      $('previewResource').replaceChildren();
-      for (const row of purpose === 'analysis'
-        ? resources.trainings
-        : resources.cycles) {
-        const option = document.createElement('option');
-        option.value = row.id;
-        option.textContent =
-          purpose === 'analysis'
-            ? `${formatDate(row.dia, i18n.language)} · ${row.treino || row.tipo}`
-            : row.objective;
-        $('previewResource').append(option);
-      }
-      if (
-        [...$('previewResource').options].some(
-          (option) => option.value === selected,
-        )
-      )
-        $('previewResource').value = selected;
-      $('previewResource').disabled = purpose === 'workouts';
-      $('previewDate').closest('.field').hidden = purpose !== 'workouts';
-    }
-    refreshResources = () => {
-      if (resources) renderResources();
-    };
-    $('previewPurpose').addEventListener('change', () => {
-      if (resources) renderResources();
-    });
-    $('previewForm').addEventListener('submit', (event) => {
-      event.preventDefault();
-      mutate(async () => {
-        const purpose = $('previewPurpose').value;
-        const result = await requestJson('/api/ai/admin/preview', {
-          purpose,
-          ...(purpose === 'workouts'
-            ? { target_date: previewPicker.getValue() }
-            : { resource_id: $('previewResource').value }),
-        });
-        $('promptPreview').value = result.prompt;
-        $('contextPreview').value = JSON.stringify(result.context, null, 2);
-        $('copyPrompt').disabled = false;
-      });
-    });
-    $('copyPrompt').addEventListener('click', async () => {
-      if (await copyPromptText($('promptPreview').value))
-        showShellToast(i18n.messages, 'memory.copied');
-      else error(new Error());
-    });
-    try {
-      const [cycles, trainings, usage, executions] = await Promise.all([
-        requestJson('/api/cycles', undefined, 'GET'),
-        requestJson('/api/calendar/trainings', undefined, 'GET'),
-        requestJson('/api/ai/admin/usage', undefined, 'GET'),
-        requestJson('/api/ai/executions', undefined, 'GET'),
-      ]);
-      resources = { cycles: cycles.cycles, trainings: trainings.trainings };
-      renderResources();
-      const usageLabel = () => {
-        $('usageSummary').textContent =
-          `${t('usage')}: ${usage.usage.reduce((sum, row) => sum + row.tokens, 0)} ${t('tokens')}`;
-      };
-      debugLabels.push(usageLabel);
-      usageLabel();
-      for (const execution of executions.executions) {
-        const button = document.createElement('button');
-        button.className = 'btn-secondary';
-        button.type = 'button';
-        const label = () => {
-          button.textContent = `${t(`purposes.${execution.purpose}`)} · ${formatDate(execution.created_at.slice(0, 10), i18n.language)} · ${t(`executionStates.${execution.state}`)}`;
-        };
-        debugLabels.push(label);
-        label();
-        button.addEventListener('click', async () => {
-          try {
-            const result = await requestJson(
-              `/api/ai/admin/executions/${encodeURIComponent(execution.id)}`,
-              undefined,
-              'GET',
-            );
-            selectedTrace=result;
-            const request={...result};for(const key of ['rawOutputs','rawOutputCaptureVersion','state','error','response','usage','estimatedCostUsd','costBasis','diagnostics','attempts','reservedTokens','reservedCostUsd'])delete request[key];
-            $('traceRequest').textContent=JSON.stringify(request,null,2);
-            $('traceStatus').textContent=`${t(`executionStates.${result.state}`)} · ${t('tokens')}: ${result.usage?.input+result.usage?.output || 0} · ${result.error || t('trace.noError')}`;
-            const select=$('traceAttempt');select.replaceChildren();
-            const attempts=[...new Set([...(result.diagnostics||[]).map(item=>item.attempt),...(result.rawOutputs||[]).map(item=>item.attempt)])].sort((a,b)=>a-b);
-            for(const attempt of attempts){const option=document.createElement('option');option.value=String(attempt);option.textContent=`${t('trace.attempt')} ${attempt}`;select.append(option);}
-            if(!select.options.length){const option=document.createElement('option');option.value='';option.textContent=t('trace.noAttempt');select.append(option);}
-            else select.value=String(attempts.at(-1));
-            $('traceRequestTab').click();
-            renderTrace();$('executionTrace').hidden=false;
-          } catch (e) {
-            error(e);
-          }
-        });
-        $('executionList').append(button);
-      }
-    } catch (e) {
-      error(e);
-    }
-    function renderTrace(){
-      clearTimeout(traceExpiryTimer);
-      if(!selectedTrace)return;
-      const attempt=Number($('traceAttempt').value);const diagnostic=selectedTrace.diagnostics?.find(item=>item.attempt===attempt);const raw=selectedTrace.rawOutputs?.find(item=>item.attempt===attempt);
-      const successful=diagnostic?.stage==='completed'&&diagnostic.code==='completed'&&selectedTrace.response!==null&&selectedTrace.response!==undefined;
-      const expired=Boolean(raw)&&(raw.expired===1||!Number.isFinite(Date.parse(raw.expires_at))||Date.parse(raw.expires_at)<=Date.now());
-      const validation=diagnostic?.validation;const parsing=diagnostic?.parse;
-      const reason=validation?.reason?t(`trace.reasons.${validation.reason}`):parsing?.code?t(`trace.reasons.${parsing.code}`):'';
-      const status=successful?t(`executionStates.completed`):diagnostic?t('trace.failed'):t('trace.noAttemptInfo');
-      const stage=diagnostic?.stage==='completed'?'':diagnostic?.stage||'';
-      const code=validation?.code||parsing?.code||(diagnostic?.code==='completed'?'':diagnostic?.code||'');
-      const details=[status,stage,code,reason,validation?.path||parsing?.path||''].filter(Boolean);
-      $('traceDiagnosis').textContent=details.join(' · ');
-      let outputText=null;
-      if(raw&&expired)outputText=t('trace.expired');
-      else if(raw&&typeof raw.output_text==='string')outputText=raw.output_text+(raw.truncated?`\n\n${t('trace.truncated')}`:'');
-      else if(!raw&&successful)outputText=JSON.stringify(selectedTrace.response,null,2);
-      else if(!raw&&selectedTrace.rawOutputCaptureVersion===0)outputText=t('trace.legacy');
-      else outputText=t('trace.noOutput');
-      $('traceOutput').textContent=outputText;
-      $('traceCopy').disabled=Boolean(expired)||(raw?typeof raw.output_text!=='string':!successful);
-      if(raw&&!expired){
-        const remaining=Date.parse(raw.expires_at)-Date.now();
-        traceExpiryTimer=setTimeout(renderTrace,Math.max(1,remaining+1));
-      }
-    }
-    refreshTraceLabels=()=>{if(!selectedTrace)return;$('traceStatus').textContent=`${t(`executionStates.${selectedTrace.state}`)} · ${t('tokens')}: ${selectedTrace.usage?.input+selectedTrace.usage?.output || 0}`;for(const option of $('traceAttempt').options)if(option.value)option.textContent=`${t('trace.attempt')} ${option.value}`;renderTrace();};
-    $('traceAttempt').addEventListener('change',renderTrace);
-    for(const [selected,other,panel,otherPanel] of [['traceRequestTab','traceResponseTab','traceRequestPanel','traceResponsePanel'],['traceResponseTab','traceRequestTab','traceResponsePanel','traceRequestPanel']])$(selected).addEventListener('click',()=>{$(selected).setAttribute('aria-selected','true');$(selected).removeAttribute('tabindex');$(other).setAttribute('aria-selected','false');$(other).tabIndex=-1;$(panel).hidden=false;$(otherPanel).hidden=true;});
-    for(const id of ['traceRequestTab','traceResponseTab'])$(id).addEventListener('keydown',event=>{if(event.key==='ArrowRight'||event.key==='ArrowLeft'){event.preventDefault();const target=id==='traceRequestTab'?'traceResponseTab':'traceRequestTab';$(target).focus();$(target).click();}});
-    $('traceCopy').addEventListener('click',async()=>{const attempt=Number($('traceAttempt').value);const diagnostic=selectedTrace?.diagnostics?.find(item=>item.attempt===attempt);const raw=selectedTrace?.rawOutputs?.find(item=>item.attempt===attempt);const successful=diagnostic?.stage==='completed'&&diagnostic.code==='completed'&&selectedTrace?.response!==null&&selectedTrace?.response!==undefined;const expired=Boolean(raw)&&(raw.expired===1||!Number.isFinite(Date.parse(raw.expires_at))||Date.parse(raw.expires_at)<=Date.now());if(expired){renderTrace();return;}const copy=raw?(typeof raw.output_text==='string'?raw.output_text:null):successful?JSON.stringify(selectedTrace.response,null,2):null;if(typeof copy!=='string')return;try{await navigator.clipboard.writeText(copy);showShellToast(i18n.messages,'memory.trace.copied');}catch{error(new Error());}});
-    const refreshVisibleTrace=()=>{if(!document.hidden)renderTrace();};
-    document.addEventListener('visibilitychange',refreshVisibleTrace);window.addEventListener('focus',refreshVisibleTrace);
-    controls();
-  }
   // Purpose tabs: roving tabindex, arrows/Home/End, and a fresh read per task.
   const tabs = [...document.querySelectorAll('#purposeTabs [role=tab]')];
   function selectPurpose(tab, focus = false) {
@@ -759,13 +606,9 @@ async function initMemory() {
   }
   document.addEventListener('kinesis:preferences-changed', () => { if (memory) renderOverview(); });
   document.addEventListener('app:languagechange', () => {
-    previewPicker?.refresh();
     if (memory) renderOverview();
     if (errorKey) $('memoryError').textContent = t(errorKey);
     renderExperienceMeta();
-    refreshResources();
-    debugLabels.forEach((update) => update());
-    refreshTraceLabels();
   });
   await load();
 }

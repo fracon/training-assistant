@@ -90,6 +90,13 @@ export const ADMIN_NAV_GROUP = {
       href: '/admin-feedback.html',
       disabled: false,
     },
+    {
+      id: 'admin-ai-history',
+      icon: 'scroll-text',
+      labelKey: 'shell.nav.aiHistory',
+      href: '/admin-ai-history.html',
+      disabled: false,
+    },
   ],
 };
 
