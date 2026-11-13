@@ -8,7 +8,7 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.40.0`); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.40.1`); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
@@ -1156,7 +1156,19 @@ sets `expired = 1` while keeping length, truncation, attempt and expiry. Only a
 current admin sees them, for their own executions; ordinary execution/polling
 responses never include raw output. A capture failure never replaces the
 original execution error. The idempotent `2026-11-ai-raw-output-expired-v1`
-repair adds a missing `expired` column without touching existing rows.
+repair adds a missing `expired` column without touching existing rows, and
+`2026-11-ai-raw-output-capture-repair-v1` (#111) likewise adds a missing
+`ai_executions.raw_output_capture_version` even when the v1 marker exists.
+
+Dispatch failures never stop the server (#111). A claim that throws (before
+any network request) settles the execution as `failed`/`aiUnavailable` with
+its reservation released as known unbilled; if that settlement also fails,
+the execution is skipped for the rest of the process so it cannot become a
+polling loop, and restart revalidates it. A rejection after the request may
+have reached the provider leaves the persisted state for restart recovery to
+classify and is never replayed. Both only log a bounded
+`ai_dispatch_unexpected_error` with code locations, never messages, SQL,
+payloads or identifiers. Covered by `aiDispatchResilience.test.js`.
 
 Duplicate generations and completed cycles (#87): enqueueing refuses an
 equivalent request — same owner, purpose, resource and request hash — while

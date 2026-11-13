@@ -49,6 +49,8 @@ function createExecutionService({
   let scheduled = false;
   const inFlight = new Map();
   const retryTimers = new Map();
+  // Executions whose claim failed in this process (issue #111).
+  const blockedDispatch = new Set();
   function clearRetry(id) {
     const timer = retryTimers.get(id);
     if (timer !== undefined) {
@@ -573,8 +575,54 @@ function createExecutionService({
       })
       .immediate();
   }
+  // Issue #111: an unexpected dispatch failure must never stop the server.
+  // Log only bounded code locations, never messages, SQL, prompts, payloads,
+  // account identifiers or credentials (same contract as AI route errors).
+  function logDispatchError(error, stage) {
+    const frames =
+      typeof error?.stack === 'string'
+        ? error.stack
+            .split('\n')
+            .slice(1, 8)
+            .map((frame) => frame.trim().slice(0, 240))
+        : [];
+    console.error(
+      `[Kinesis] ${JSON.stringify({
+        event: 'ai_dispatch_unexpected_error',
+        stage,
+        errorName: /^[A-Za-z][A-Za-z0-9]{0,39}$/.test(error?.name || '')
+          ? error.name
+          : 'Error',
+        frames,
+      })}`,
+    );
+  }
+  // The claim failed before any network request, so nothing was billed.
+  // Settle the execution as unavailable when the database allows it; either
+  // way this process never selects it again, so a persistent failure cannot
+  // become a polling loop. A restart revalidates it from scratch.
+  function abandonBeforeDispatch(id, error) {
+    logDispatchError(error, 'claim');
+    blockedDispatch.add(id);
+    try {
+      // The failed claim transaction rolled back, so the row is still queued.
+      finish(db.prepare('SELECT * FROM ai_executions WHERE id = ?').get(id), 'failed', {
+        error: 'aiUnavailable',
+        knownUnbilled: true,
+        diagnostic: { stage: 'lifecycle', code: 'aiUnavailable' },
+      });
+    } catch (settleError) {
+      logDispatchError(settleError, 'settle');
+    }
+  }
   async function dispatch(id) {
-    const row = claim(id);
+    let row;
+    try {
+      row = claim(id);
+    } catch (error) {
+      abandonBeforeDispatch(id, error);
+      return;
+    }
     if (!row) return;
     const operation = operations[row.purpose];
     const cfg = JSON.parse(row.configuration_json);
@@ -733,7 +781,12 @@ function createExecutionService({
       )
       .all();
     for (const row of rows) {
-      if (retryTimers.has(row.id) || inFlight.has(row.id)) continue;
+      if (
+        retryTimers.has(row.id) ||
+        inFlight.has(row.id) ||
+        blockedDispatch.has(row.id)
+      )
+        continue;
       if (Date.parse(row.updated_at) > Date.parse(now())) {
         scheduleRetry(row.id, row.updated_at);
         continue;
@@ -743,10 +796,15 @@ function createExecutionService({
         (job) => job.userId === row.user_id,
       ).length;
       if (activeForUser >= limits.AI_CONCURRENCY_USER) continue;
-      const task = dispatch(row.id).finally(() => {
-        inFlight.delete(row.id);
-        schedule();
-      });
+      // A failure after the request may have reached the provider stays in
+      // its persisted state (restart recovery classifies it as uncertain);
+      // it is only logged here and never replayed.
+      const task = dispatch(row.id)
+        .catch((error) => logDispatchError(error, 'dispatch'))
+        .finally(() => {
+          inFlight.delete(row.id);
+          schedule();
+        });
       inFlight.set(row.id, { task, userId: row.user_id });
     }
   }

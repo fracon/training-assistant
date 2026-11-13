@@ -135,6 +135,27 @@ function repairAiRawOutputExpiry(db) {
       db.prepare('INSERT INTO schema_migrations(name) VALUES(?)').run(marker);
   }).immediate();
 }
+// Issue #111: a database can carry the 2026-11-ai-raw-output-v1 marker
+// without ai_executions.raw_output_capture_version (recorded by an
+// intermediate build). Like the #88 expiry repair, check the column itself
+// instead of trusting the marker; existing rows keep their values.
+function repairAiRawOutputCaptureVersion(db) {
+  db.transaction(() => {
+    const marker = '2026-11-ai-raw-output-capture-repair-v1';
+    if (
+      !db
+        .pragma('table_info(ai_executions)')
+        .some((column) => column.name === 'raw_output_capture_version')
+    )
+      db.exec(
+        'ALTER TABLE ai_executions ADD COLUMN raw_output_capture_version INTEGER NOT NULL DEFAULT 0',
+      );
+    if (
+      !db.prepare('SELECT 1 FROM schema_migrations WHERE name=?').get(marker)
+    )
+      db.prepare('INSERT INTO schema_migrations(name) VALUES(?)').run(marker);
+  }).immediate();
+}
 function migrateWeeklyWorkouts(db) {
   db.transaction(() => {
     const marker = '2026-10-weekly-workouts-v1';
@@ -307,6 +328,7 @@ module.exports = {
   migrateAiDiagnostics,
   migrateAiRawOutputs,
   repairAiRawOutputExpiry,
+  repairAiRawOutputCaptureVersion,
   migrateWeeklyWorkouts,
   migrateWeeklyAvailabilityRevision,
   migrateWorkoutAnalysis,
