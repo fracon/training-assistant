@@ -1118,3 +1118,23 @@ select.input-control {
   .garmin-publish-long { display: none; }
   .garmin-publish-short { display: inline; }
 }
+
+/* AI-suggested structure (issue #78): a reviewable draft above the editor.
+   Reuses the validation-summary shape with the accent border, since it is
+   guidance to review rather than an error. */
+.garmin-suggestion { display: grid; gap: .75rem; margin-block-end: 1.25rem; padding: .9rem 1rem; color: var(--ink); background: var(--bg); border-inline-start: 3px solid var(--accent); border-radius: 6px; }
+.garmin-suggestion[hidden], .garmin-suggestion [hidden] { display: none; }
+.garmin-suggestion h3 { font-size: 1.05rem; line-height: 1.35; }
+.garmin-suggestion h3:focus { outline: none; }
+.garmin-suggestion h3:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+.garmin-suggestion-status, .garmin-suggestion-origin, .garmin-suggestion-guidance { line-height: 1.5; }
+.garmin-suggestion-origin { color: var(--muted); font-size: .95rem; }
+.garmin-suggestion-warning, .garmin-suggestion-issues-title { color: var(--danger); font-weight: 600; line-height: 1.45; }
+.garmin-suggestion-issues { display: grid; gap: .4rem; }
+.garmin-suggestion-issues ul { display: grid; gap: .3rem; margin: 0; padding-inline-start: 1.1rem; line-height: 1.45; }
+.garmin-suggestion-compare summary { cursor: pointer; color: var(--accent-deep); font-weight: 600; }
+.garmin-suggestion-compare summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+.garmin-suggestion-guidance { margin-block-start: .5rem; white-space: pre-line; overflow-wrap: anywhere; color: var(--ink); }
+.garmin-suggestion-action-status { color: var(--danger); font-size: .95rem; line-height: 1.5; }
+.garmin-suggestion-action-status:empty { display: none; }
+@media (max-width: 600px) { .garmin-suggestion-actions button { flex: 1 1 auto; } }

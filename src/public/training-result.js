@@ -1807,6 +1807,86 @@ async function initTrainingResult() {
   let garminWarmupDraftEnabled = false;
   let garminCooldownDraftEnabled = false;
   let garminOptionalDraft = { warmup: null, cooldown: null };
+  // AI-suggested structure (issue #78). The pending suggestion is a draft from
+  // the local read; it is accepted only by the explicit Save and review that
+  // names it, and dismissed only by its own button.
+  const garminSuggestionSection = document.getElementById('garminSuggestion');
+  const garminSuggestionReview = document.getElementById('garminSuggestionReview');
+  const garminSuggestionDismiss = document.getElementById('garminSuggestionDismiss');
+  const garminSuggestionActionStatus = document.getElementById('garminSuggestionActionStatus');
+  const GARMIN_SUGGESTION_ISSUES = ['name_invalid', 'step_duration_limit', 'repetition_count_invalid', 'zero_recovery',
+    'expanded_steps_limit', 'total_duration_limit', 'distance_limit', 'hr_text_unstructured', 'point_pace_target'];
+  let garminSuggestion = null;
+  let garminSuggestionInForm = null;
+  let garminSuggestionReviewing = false;
+  let garminSuggestionBusy = false;
+  let garminSuggestionMessageKey = '';
+  // The structure does not depend on a Garmin connection (issue #78): a
+  // pending suggestion or a saved structure stays reviewable and editable
+  // offline. Sending still requires the connection.
+  const garminOfflineStructure = () => Boolean(garminSuggestion) || garminSavedRevision !== null;
+  const garminSuggestionStepLabel = (issue) => {
+    if (issue.step_id === 'warmup') return garminText('warmupName');
+    if (issue.step_id === 'cooldown') return garminText('cooldownName');
+    const number = /^run-(\d+)$/.exec(issue.step_id || '')?.[1];
+    return number ? garminText('suggestionStepRun', { number }) : garminText('suggestionStepWorkout');
+  };
+  const renderGarminSuggestion = () => {
+    const suggestion = garminSuggestion;
+    garminSuggestionSection.hidden = !suggestion;
+    refreshGarminAccordionSummary();
+    if (!suggestion) return;
+    const saved = garminSavedRevision !== null;
+    // The editor holds other content (kept local edits) while a compatible
+    // suggestion is pending: it can be loaded explicitly, even before the
+    // first save.
+    const notLoaded = Boolean(suggestion.value) && garminSuggestionInForm?.id !== suggestion.id;
+    const statusKey = garminSuggestionReviewing ? 'suggestionReviewing'
+      : saved ? (suggestion.conflict ? 'suggestionConflict' : 'suggestionSameAsSaved')
+        : notLoaded ? 'suggestionNotLoaded'
+        : suggestion.compatibility === 'incompatible' ? 'suggestionIncompatible'
+          : suggestion.compatibility === 'needs_review' ? 'suggestionNeedsReview' : 'suggestionReady';
+    document.getElementById('garminSuggestionStatus').textContent = garminText(statusKey);
+    document.getElementById('garminSuggestionOrigin').textContent = garminText('suggestionOrigin', {
+      date: formatLocalizedDate(String(suggestion.origin.created_at).slice(0, 10), i18n.language) });
+    document.getElementById('garminSuggestionDetailsChanged').hidden = !suggestion.details_changed;
+    const issues = document.getElementById('garminSuggestionIssues');
+    issues.replaceChildren(...suggestion.issues.map((issue) => {
+      const item = document.createElement('li');
+      const key = GARMIN_SUGGESTION_ISSUES.includes(issue.code) ? issue.code : 'generic';
+      item.textContent = garminText(`suggestionIssue.${key}`, {
+        step: garminSuggestionStepLabel(issue), actual: issue.actual ?? '', maximum: issue.maximum ?? '' });
+      return item;
+    }));
+    document.getElementById('garminSuggestionIssuesGroup').hidden = suggestion.issues.length === 0;
+    document.getElementById('garminSuggestionIssuesTitle').textContent = garminText('suggestionIssuesTitle');
+    const guidance = String(training?.detalhes ?? '').trim();
+    document.getElementById('garminSuggestionGuidance').textContent = guidance || garminText('suggestionGuidanceEmpty');
+    garminSuggestionReview.hidden = !notLoaded || (saved && !suggestion.conflict);
+    garminSuggestionDismiss.textContent = garminText(garminSuggestionBusy ? 'suggestionDismissing'
+      : saved ? 'suggestionKeepCurrent' : 'suggestionDismiss');
+    const busy = garminSuggestionBusy || garminPending;
+    garminSuggestionDismiss.disabled = busy;
+    garminSuggestionReview.disabled = busy;
+    garminSuggestionDismiss.toggleAttribute('aria-busy', garminSuggestionBusy);
+    garminSuggestionActionStatus.textContent = garminSuggestionMessageKey ? garminText(garminSuggestionMessageKey) : '';
+  };
+  // Applies the suggestion from a local read without replacing local edits.
+  const applyGarminSuggestion = (suggestion) => {
+    if (!suggestion || (garminSuggestionInForm && garminSuggestionInForm.id !== suggestion.id)) {
+      garminSuggestionInForm = null;
+      garminSuggestionReviewing = false;
+    }
+    if (garminSuggestion?.id !== suggestion?.id) garminSuggestionMessageKey = '';
+    garminSuggestion = suggestion;
+    if (suggestion && !garminSuggestionInForm && garminSavedRevision === null
+        && !garminFormDirty && !garminEditingRequested && training?.completed !== 1) {
+      if (suggestion.value) fillGarminPrescription(suggestion.value);
+      garminSuggestionInForm = { id: suggestion.id, revision: suggestion.revision };
+      garminEditorView.hidden = false;
+    }
+    renderGarminSuggestion();
+  };
   const refreshGarminAccordionSummary = () => {
     const operation = garminCurrentOperation;
     let key = 'garminLoading';
@@ -1834,6 +1914,7 @@ async function initTrainingResult() {
         : operation.action === 'reschedule' ? 'garminRescheduling' : 'garminSending';
     } else if (operation?.status === 'failed') key = 'garminOperationNeedsAttention';
     else if (operation?.status === 'outdated') key = 'garminStructureOutdated';
+    else if (garminSuggestion) key = 'garminSuggestionPending';
     else if (garminConnectionKnown && !garminConnected && garminConnectionMessage === 'disconnected') {
       key = operation?.status === 'scheduled' ? 'garminDisconnectedPreviouslySent' : 'garminDisconnected';
     } else if (operation?.status === 'scheduled') key = 'garminSentScheduled';
@@ -1887,6 +1968,7 @@ async function initTrainingResult() {
         }
       }
       garminConnectionGeneration = local.connection_generation || garminConnectionGeneration;
+      applyGarminSuggestion(local.suggestion || null);
       if (local.operation) { garminDispatchUncertain = false; renderGarminOperation(local.operation); }
       else if (garminDispatchUncertain) {
         garminDispatchUncertain = false;
@@ -1918,7 +2000,7 @@ async function initTrainingResult() {
       garminConnectButton.hidden = connected || garminAuthForm.hidden === false;
       garminDisconnectButton.hidden = !connected;
       garminAuthForm.hidden = connected || !garminAuthForm.dataset.open;
-      garminPanel.hidden = !connected || training?.completed === 1;
+      garminPanel.hidden = training?.completed === 1 || (!connected && !garminOfflineStructure());
       if (state.operation) renderGarminOperation(state.operation);
       if (state.prescription && !garminFormDirty && !garminEditingRequested) {
         fillGarminPrescription(state.prescription.value);
@@ -1944,7 +2026,7 @@ async function initTrainingResult() {
         garminConnectionRetry.hidden = true;
         garminConnectButton.hidden = garminAuthForm.hidden === false;
         garminDisconnectButton.hidden = true;
-        garminPanel.hidden = true;
+        garminPanel.hidden = training?.completed === 1 || !garminOfflineStructure();
       } else if (error.message === 'cleanup_pending') {
         garminConnectionKnown = true;
         garminConnected = false;
@@ -1962,7 +2044,7 @@ async function initTrainingResult() {
         setGarminConnectionMessage(garminConnectionKnown ? 'connectionRefreshFailed' : 'connectError');
         garminStatusUnavailable = true;
         garminConnectionRetry.hidden = false;
-        if (!garminConnectionKnown) garminPanel.hidden = !garminFingerprint;
+        if (!garminConnectionKnown) garminPanel.hidden = !(garminFingerprint || garminOfflineStructure()) || training?.completed === 1;
       }
       if (garminPreviewModel) renderGarminPreview(garminPreviewModel);
     }
@@ -2336,6 +2418,18 @@ async function initTrainingResult() {
     garminWarmupDraftEnabled = Boolean(warmup);
     garminCooldownDraftEnabled = Boolean(cooldown);
     garminOptionalDraft = { warmup: warmup ? structuredClone(warmup) : null, cooldown: cooldown ? structuredClone(cooldown) : null };
+    renderGarminEditor();
+    garminFormDirty = false;
+  };
+  // Returns the editor to its initial empty structure (used when a suggestion
+  // that filled it is dismissed before anything was saved or edited).
+  const resetGarminEditor = () => {
+    garminOriginalPrescription = null;
+    document.getElementById('garminWorkoutName').value = '';
+    garminEditorSteps = [{ id: 'run-1', kind: 'run', end: { type: 'time', value: 1800 }, target: { type: 'none' } }];
+    garminWarmupDraftEnabled = false;
+    garminCooldownDraftEnabled = false;
+    garminOptionalDraft = { warmup: null, cooldown: null };
     renderGarminEditor();
     garminFormDirty = false;
   };
@@ -2731,6 +2825,7 @@ async function initTrainingResult() {
     document.getElementById('garminPublishButton').hidden = Boolean(canUpdate || operationNeedsReconciliation);
     const dateChanged = Boolean(canUpdate && garminCurrentOperation.scheduled_date !== (preview.date || training.dia));
     const helpKey = operationNeedsReconciliation ? 'reconcileActionHelp'
+      : garminConnectionKnown && !garminConnected ? 'connectToPublishHelp'
       : canUpdate && !dateChanged && garminCurrentOperation.prescription_revision === garminSavedRevision ? 'alreadyScheduledHelp'
       : !garminCurrentOperation || !canUpdate ? 'publishActionHelp'
       : dateChanged && garminCurrentOperation.prescription_revision !== garminSavedRevision ? 'updateAndRescheduleActionHelp'
@@ -2754,6 +2849,7 @@ async function initTrainingResult() {
     else if (garminOperationMessageKey) setGarminOperationMessage(garminOperationMessageKey);
     if (garminPreviewModel) renderGarminPreview(garminPreviewModel);
     renderGarminEditor(true);
+    renderGarminSuggestion();
   });
   function formatDuration(seconds) {
     const total = Math.max(0, Number(seconds) || 0);
@@ -2796,7 +2892,7 @@ async function initTrainingResult() {
     const destination = document.getElementById('garminDestination');
     destination.hidden = true;
     destination.textContent = '';
-    garminPanel.hidden = true;
+    garminPanel.hidden = training?.completed === 1 || !garminOfflineStructure();
     garminAuthForm.dataset.open = '';
     garminAuthForm.hidden = true;
     garminConnectButton.hidden = false;
@@ -2917,12 +3013,20 @@ async function initTrainingResult() {
     setGarminOperationMessage('savingReview');
     const prescriptionError = document.getElementById('garminPrescriptionError');
     prescriptionError.hidden = true;
+    const acceptedSuggestion = garminSuggestionInForm;
     try {
       const prescription = garminPrescriptionFromForm();
       const saved = await garminFetch(`/api/trainings/${currentTrainingId}/garmin/prescription`, { method: 'PUT', body: JSON.stringify({
         expected_revision: garminSavedRevision, expected_training_date: training.dia,
         expected_connection_generation: garminConnectionGeneration, prescription,
+        ...(acceptedSuggestion ? { suggestion_id: acceptedSuggestion.id, expected_suggestion_revision: acceptedSuggestion.revision } : {}),
       }) });
+      if (acceptedSuggestion) {
+        garminSuggestion = null;
+        garminSuggestionInForm = null;
+        garminSuggestionReviewing = false;
+        garminSuggestionMessageKey = '';
+      }
       garminSavedRevision = saved.revision;
       garminFingerprint = saved.fingerprint;
       garminConnectionGeneration = saved.connection_generation;
@@ -2938,6 +3042,11 @@ async function initTrainingResult() {
     } catch (error) {
       if (error.message === 'invalid_prescription') {
         showGarminContractDiagnostic(error.diagnostic);
+      } else if (error.message === 'suggestion_changed') {
+        // Keep local edits; reload only the suggestion state.
+        garminFormDirty = true;
+        showGarminEditorActionMessage('suggestionChanged');
+        void refreshGarminStatus();
       } else if (error.status === 409) setGarminOperationMessage('revisionConflict');
       else if (error.status === 422 || error.message === 'unsupported') setGarminOperationMessage('unsupported');
       else setGarminOperationMessage('saveFailed');
@@ -2947,7 +3056,61 @@ async function initTrainingResult() {
       saveButton.disabled = false;
       saveButton.textContent = garminText('preview');
       if (garminPreviewModel) renderGarminPreview(garminPreviewModel);
+      renderGarminSuggestion();
     }
+  });
+  garminSuggestionReview.addEventListener('click', async () => {
+    const suggestion = garminSuggestion;
+    if (!suggestion?.value || garminSuggestionBusy || garminPending) return;
+    if (garminFormDirty) {
+      const confirmed = await showConfirm({ title: garminText('suggestionReview'), message: garminText('suggestionReviewConfirm'),
+        confirmLabel: garminText('suggestionReviewConfirmAction'), cancelLabel: t('shell.confirm.no') });
+      if (!confirmed || garminSuggestion !== suggestion) return;
+    }
+    fillGarminPrescription(suggestion.value);
+    garminSuggestionInForm = { id: suggestion.id, revision: suggestion.revision };
+    // "Reviewing" means replacing a saved structure; before the first save the
+    // loaded suggestion reads like any pre-filled one.
+    garminSuggestionReviewing = garminSavedRevision !== null;
+    garminEditingRequested = true;
+    document.getElementById('garminEditorActionStatus').hidden = true;
+    garminPreview.hidden = true;
+    garminEditorView.hidden = false;
+    renderGarminSuggestion();
+    document.getElementById('garminSuggestionTitle').focus();
+  });
+  garminSuggestionDismiss.addEventListener('click', async () => {
+    const suggestion = garminSuggestion;
+    if (!suggestion || garminSuggestionBusy || garminPending) return;
+    garminSuggestionBusy = true;
+    garminSuggestionMessageKey = '';
+    renderGarminSuggestion();
+    let focusTarget = null;
+    try {
+      await garminFetch(`/api/trainings/${encodeURIComponent(currentTrainingId)}/garmin/suggestion/dismiss`, {
+        method: 'POST', body: JSON.stringify({ suggestion_id: suggestion.id, expected_revision: suggestion.revision }) });
+      const heldInForm = garminSuggestionInForm?.id === suggestion.id;
+      garminSuggestion = null;
+      garminSuggestionInForm = null;
+      garminSuggestionReviewing = false;
+      if (garminSavedRevision !== null) {
+        // Keep current: leave any review of the new suggestion and return to the saved structure.
+        if (heldInForm) { garminFormDirty = false; garminEditingRequested = false; }
+        focusTarget = 'garminPreviewTitle';
+      } else {
+        if (heldInForm && !garminFormDirty) resetGarminEditor();
+        focusTarget = 'garminWorkoutName';
+      }
+    } catch (error) {
+      garminSuggestionMessageKey = error.message === 'suggestion_changed' ? 'suggestionChanged' : 'suggestionDismissFailed';
+    } finally {
+      garminSuggestionBusy = false;
+      renderGarminSuggestion();
+    }
+    if (!focusTarget) { garminSuggestionDismiss.focus(); if (garminSuggestionMessageKey === 'suggestionChanged') void refreshGarminStatus(); return; }
+    await refreshGarminStatus();
+    const target = document.getElementById(focusTarget);
+    (target && !target.closest('[hidden]') ? target : garminAccordionTrigger).focus();
   });
   const performGarminAction = async (action) => {
     if (garminPending || garminDispatchUncertain || garminOperationNeedsResolution()

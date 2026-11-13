@@ -213,7 +213,43 @@
       "repeatRun": "Corrida",
       "repeatRecovery": "Recuperação",
       "legacyRepeatRecoveryRequired": "Este grupo antigo não define recuperação. Informe uma recuperação positiva ou converta as repetições em blocos simples.",
-      "convertRepeatToBlocks": "Converter em blocos simples"
+      "convertRepeatToBlocks": "Converter em blocos simples",
+      "suggestionTitle": "Estrutura sugerida pela IA — revise antes de enviar",
+      "suggestionReady": "O editor abaixo foi preenchido com a sugestão da IA. Confira etapas, alvos, unidades e totais e ajuste o que quiser; Salvar e revisar aceita a sugestão. O envio ao Garmin Connect continua sendo uma confirmação separada.",
+      "suggestionNeedsReview": "O editor abaixo foi preenchido com a sugestão da IA, mas algumas partes precisam da sua atenção. Ajuste-as; Salvar e revisar aceita a sugestão. O envio ao Garmin Connect continua sendo uma confirmação separada.",
+      "suggestionIncompatible": "Esta sugestão não pode virar um treino de relógio como foi gerada, e nada foi convertido automaticamente. Monte a estrutura manualmente no editor abaixo.",
+      "suggestionConflict": "Uma nova estrutura sugerida pela IA é diferente da estrutura salva. Mantenha a estrutura atual ou revise a nova sugestão.",
+      "suggestionReviewing": "Você está revisando a nova sugestão da IA. Salvar e revisar substitui a estrutura salva; o envio ao Garmin Connect continua sendo uma confirmação separada.",
+      "suggestionOrigin": "Sugerida em {date}.",
+      "suggestionDetailsChanged": "A orientação deste treino foi editada depois da sugestão. Compare as duas antes de aceitar.",
+      "suggestionIssuesTitle": "Precisa da sua atenção",
+      "suggestionCompare": "Comparar com a orientação original",
+      "suggestionGuidanceEmpty": "Este treino não tem orientação salva.",
+      "suggestionReview": "Revisar nova sugestão",
+      "suggestionDismiss": "Descartar sugestão",
+      "suggestionKeepCurrent": "Manter estrutura atual",
+      "suggestionDismissing": "Descartando…",
+      "suggestionDismissFailed": "Não foi possível descartar a sugestão. Tente novamente.",
+      "suggestionChanged": "A sugestão mudou nesse meio-tempo e foi recarregada. Suas edições no editor foram mantidas.",
+      "suggestionReviewConfirm": "Substituir a estrutura do editor pela nova sugestão? Edições não salvas serão perdidas.",
+      "suggestionReviewConfirmAction": "Substituir no editor",
+      "connectToPublishHelp": "A estrutura está salva no Kinesis. Conecte sua conta Garmin para enviá-la.",
+      "suggestionIssue": {
+        "name_invalid": "Nome do treino: use de 1 a 32 letras, números ou pontuação simples.",
+        "step_duration_limit": "{step}: dura mais de 120 minutos, o limite de uma etapa no relógio.",
+        "repetition_count_invalid": "{step}: tem {actual} repetições; um grupo de repetições no relógio aceita no máximo {maximum}.",
+        "zero_recovery": "{step}: repetições sem tempo de recuperação não podem ser enviadas como grupo de repetições.",
+        "expanded_steps_limit": "O treino teria {actual} etapas no relógio; o limite é {maximum}.",
+        "total_duration_limit": "A duração total passa do limite de 24 horas.",
+        "distance_limit": "A distância total passa do limite de 100 km.",
+        "hr_text_unstructured": "{step}: o alvo de FC estava em texto livre e não foi convertido. Defina-o no editor se quiser usá-lo.",
+        "point_pace_target": "{step}: o ritmo-alvo era um valor único e não foi transformado em faixa. Defina uma faixa no editor se quiser usá-la.",
+        "generic": "{step}: esta parte não pode ser representada como foi sugerida."
+      },
+      "suggestionStepWorkout": "Treino",
+      "suggestionStepRun": "Bloco principal {number}",
+      "suggestionSameAsSaved": "A sugestão da IA é igual à estrutura salva. Descarte-a para manter a estrutura atual.",
+      "suggestionNotLoaded": "Há uma nova sugestão da IA. Suas edições no editor foram mantidas e não são a sugestão; revise-a para carregá-la no editor."
     }
   },
   "aiCoach": {
@@ -353,7 +389,10 @@
     "copied": "Copiado!",
     "shoesSectionTitle": "TÊNIS DISPONÍVEIS PARA ROTAÇÃO",
     "shoesFallback": "Nenhum tênis específico cadastrado; use a rotação padrão.",
-    "shoesTarget": "Alvo: {target} km"
+    "shoesTarget": "Alvo: {target} km",
+    "weeklyApplyStructuresSuggested": "Estruturas de treino sugeridas para revisão: {count}. Abra cada treino para conferi-las; nada foi enviado à Garmin.",
+    "weeklyApplyStructuresIncompatible": "{count} precisam ser montadas manualmente.",
+    "weeklyApplyStructuresConflicts": "{count} diferem de uma estrutura já salva, que foi mantida."
   },
   "calendar": {
     "title": "Treinos",
@@ -602,7 +641,8 @@
       "garminReauthenticationRequired": "Conecte novamente sua conta Garmin",
       "garminAuthenticationNeedsAttention": "O acesso à Garmin precisa de atenção",
       "garminOperationNeedsAttention": "O envio do treino precisa de atenção",
-      "garminStructureOutdated": "A estrutura salva precisa ser atualizada"
+      "garminStructureOutdated": "A estrutura salva precisa ser atualizada",
+      "garminSuggestionPending": "Estrutura sugerida pela IA para revisar"
     },
     "realizedRpeLabel": "RPE realizado (1 a 5)",
     "rpeLabel1": "1 - Muito Fácil",

@@ -13,6 +13,7 @@ const { buildServer } = require('../src/server');
 const { createDatabase } = require('../src/db/database');
 const { readAiConfig } = require('../src/ai/config');
 const { materializePrescription } = require('../src/ai/weekly-workouts');
+const NO_TARGET = { type: 'none', lowerBpm: null, upperBpm: null, fasterSecondsPerKm: null, slowerSecondsPerKm: null };
 
 function findChrome() {
   return [
@@ -46,15 +47,15 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     'Observação contextual longa. '.repeat(30);
   const makeSession = (date, weekday) => {
     const simple = [
-      { phase: 'warmup', repetitions: 1, minutes: 5, distanceMeters: null, instruction: 'Run gently and loosen up.', effort: 'Conversational breathing.', rpe: 1, targetHr: '', paceTargetSecondsPerKm: null, paceSecondsPerKm: null, recoveryMinutes: null, recoveryGuidance: null, recoveryRpe: null },
-      { phase: 'main', repetitions: 1, minutes: 35, distanceMeters: null, instruction: 'Run continuously with relaxed form.', effort: 'Comfortable effort; speak in full sentences.', rpe: weekday === 'friday' ? null : 2, targetHr: '', paceTargetSecondsPerKm: null, paceSecondsPerKm: null, recoveryMinutes: null, recoveryGuidance: null, recoveryRpe: null },
-      { phase: 'cooldown', repetitions: 1, minutes: 5, distanceMeters: null, instruction: 'Ease down gradually.', effort: 'Very easy breathing.', rpe: 1, targetHr: '', paceTargetSecondsPerKm: null, paceSecondsPerKm: null, recoveryMinutes: null, recoveryGuidance: null, recoveryRpe: null },
+      { phase: 'warmup', repetitions: 1, minutes: 5, distanceMeters: null, instruction: 'Run gently and loosen up.', effort: 'Conversational breathing.', rpe: 1, target: NO_TARGET, paceSecondsPerKm: null, recoveryMinutes: null, recoveryGuidance: null, recoveryRpe: null, recoveryTarget: null },
+      { phase: 'main', repetitions: 1, minutes: 35, distanceMeters: null, instruction: 'Run continuously with relaxed form.', effort: 'Comfortable effort; speak in full sentences.', rpe: weekday === 'friday' ? null : 2, target: NO_TARGET, paceSecondsPerKm: null, recoveryMinutes: null, recoveryGuidance: null, recoveryRpe: null, recoveryTarget: null },
+      { phase: 'cooldown', repetitions: 1, minutes: 5, distanceMeters: null, instruction: 'Ease down gradually.', effort: 'Very easy breathing.', rpe: 1, target: NO_TARGET, paceSecondsPerKm: null, recoveryMinutes: null, recoveryGuidance: null, recoveryRpe: null, recoveryTarget: null },
     ];
     const intervals = [
-      { phase: 'warmup', repetitions: 1, minutes: 8, distanceMeters: null, instruction: 'Start with easy jogging and relaxed strides.', effort: 'Conversational breathing.', rpe: 1, targetHr: '115–125 bpm', paceTargetSecondsPerKm: null, paceSecondsPerKm: null, recoveryMinutes: null, recoveryGuidance: null, recoveryRpe: null },
-      { phase: 'main', repetitions: 4, minutes: 3, distanceMeters: null, instruction: 'Run each surge strong and controlled.', effort: 'Firm effort with short phrases.', rpe: 3, targetHr: '145–155 bpm', paceTargetSecondsPerKm: null, paceSecondsPerKm: null, recoveryMinutes: 2, recoveryGuidance: 'Jog until breathing settles.', recoveryRpe: 2 },
-      { phase: 'main', repetitions: 2, minutes: 4, distanceMeters: null, instruction: 'Lift the effort smoothly and hold form.', effort: 'Hard but controlled; no sprinting.', rpe: 4, targetHr: '155–165 bpm', paceTargetSecondsPerKm: null, paceSecondsPerKm: null, recoveryMinutes: 2, recoveryGuidance: 'Float easily before the next block.', recoveryRpe: 2 },
-      { phase: 'cooldown', repetitions: 1, minutes: 7, distanceMeters: null, instruction: 'Ease down with relaxed steps.', effort: 'Very easy breathing.', rpe: 1, targetHr: '120–130 bpm', paceTargetSecondsPerKm: null, paceSecondsPerKm: null, recoveryMinutes: null, recoveryGuidance: null, recoveryRpe: null },
+      { phase: 'warmup', repetitions: 1, minutes: 8, distanceMeters: null, instruction: 'Start with easy jogging and relaxed strides.', effort: 'Conversational breathing.', rpe: 1, target: { type: 'heart_rate', lowerBpm: 115, upperBpm: 125, fasterSecondsPerKm: null, slowerSecondsPerKm: null }, paceSecondsPerKm: null, recoveryMinutes: null, recoveryGuidance: null, recoveryRpe: null, recoveryTarget: null },
+      { phase: 'main', repetitions: 4, minutes: 3, distanceMeters: null, instruction: 'Run each surge strong and controlled.', effort: 'Firm effort with short phrases.', rpe: 3, target: { type: 'heart_rate', lowerBpm: 145, upperBpm: 155, fasterSecondsPerKm: null, slowerSecondsPerKm: null }, paceSecondsPerKm: null, recoveryMinutes: 2, recoveryGuidance: 'Jog until breathing settles.', recoveryRpe: 2, recoveryTarget: NO_TARGET },
+      { phase: 'main', repetitions: 2, minutes: 4, distanceMeters: null, instruction: 'Lift the effort smoothly and hold form.', effort: 'Hard but controlled; no sprinting.', rpe: 4, target: { type: 'heart_rate', lowerBpm: 155, upperBpm: 165, fasterSecondsPerKm: null, slowerSecondsPerKm: null }, paceSecondsPerKm: null, recoveryMinutes: 2, recoveryGuidance: 'Float easily before the next block.', recoveryRpe: 2, recoveryTarget: NO_TARGET },
+      { phase: 'cooldown', repetitions: 1, minutes: 7, distanceMeters: null, instruction: 'Ease down with relaxed steps.', effort: 'Very easy breathing.', rpe: 1, target: { type: 'heart_rate', lowerBpm: 120, upperBpm: 130, fasterSecondsPerKm: null, slowerSecondsPerKm: null }, paceSecondsPerKm: null, recoveryMinutes: null, recoveryGuidance: null, recoveryRpe: null, recoveryTarget: null },
     ];
     return {
       date,
@@ -176,7 +177,7 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       if (simulatedProviderCalls >= 3)
         sessions[0].justification = 'Current simulated request marker.';
       const value = {
-        schemaVersion: 'weekly-workouts-v3',
+        schemaVersion: 'weekly-workouts-v4',
         weekStart: proposalWeekStart,
         sessions,
       };
@@ -2329,6 +2330,10 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
     await waitForText('#weeklyApplyResultTitle', 'Workouts added');
     assert.equal(await evaluate(`document.getElementById('weeklyApplyResultMessage').textContent`), 'Your workouts were added to the calendar.');
     assert.equal(await evaluate(`document.getElementById('weeklyApplyResultIgnored').textContent`), '1 existing workout was skipped.');
+    // The completed duplicate receives no structure; each new session has one
+    // to review, and the dialog says nothing was sent to Garmin.
+    assert.equal(await evaluate(`document.getElementById('weeklyApplyResultStructures').textContent`),
+      'Workout structures suggested for review: 2. Open each workout to check them; nothing was sent to Garmin.');
     assert.equal(await evaluate(`document.getElementById('weeklyApplyResultModal').hidden`), false);
     assert.equal(await evaluate(`document.activeElement.id`), 'weeklyApplyResultOk');
     assert.equal(await evaluate(`document.querySelectorAll('.weekly-proposal-card').length`), 0);

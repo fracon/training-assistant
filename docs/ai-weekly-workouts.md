@@ -12,7 +12,9 @@ availability controls, then offers an explicit paid weekly generation action.
 It uses the phase 0/#69 execution service, quotas, atomic reservations,
 Responses client, bounded 429-only retry, cancellation, diagnostics, context
 freshness and durable recovery. The operation is registered as
-`weekly-workouts-v3`; each proposal points to its execution. On reload, the page
+`weekly-workouts-v4` (completed `weekly-workouts-v3` executions remain
+readable and applicable; see [weekly-workouts-v4](#weekly-workouts-v4-structured-targets-issue-107));
+each proposal points to its execution. On reload, the page
 reads the user's latest weekly execution and retrieves the same persisted
 proposal. In-page progress polling follows the persisted execution state at the
 normal 1.8-second interval and continues for as long as the backend reports
@@ -139,6 +141,97 @@ fallback is shown; observed average or maximum HR is never promoted to a
 target. The preserved synthetic live sample had no numeric observed HR
 readings and no prescribed HR reference in its shared context, so its generated
 proposal correctly had no numeric target.
+
+### weekly-workouts-v4: structured targets (issue #107)
+
+v4 is the first step of issue #78 (pre-filling the Garmin structured workout
+from the weekly generation). It changes only the component contract; it
+persists nothing new and does not touch the training-result editor.
+
+- `targetHr` (free text) and `paceTargetSecondsPerKm` (one value) are replaced
+  by a structured `target` on every component and a `recoveryTarget` on
+  repeated main components (`null` elsewhere). Both are
+  `{ type, lowerBpm, upperBpm, fasterSecondsPerKm, slowerSecondsPerKm }`:
+  `none` keeps all four values `null`; `heart_rate` uses only
+  `lowerBpm ≤ upperBpm` (40–230); `pace` uses only
+  `fasterSecondsPerKm ≤ slowerSecondsPerKm` (120–1800 s/km) as a range. The
+  strict schema declares the bounds; the cross-field rules are
+  domain-validated (`prescription_target`). RPE is never turned into a target.
+- A timed component lasts at most 120 minutes, the Garmin contract's per-step
+  limit (7200 s). The model splits a longer continuous run into consecutive
+  main components with the same effort and target; the session total stays
+  capped at 720 minutes. Distance components are unaffected.
+- Materialized `details` keep the v3 line format (`Target HR: 140–150 bpm`,
+  `target pace 5:00–5:20 min/km`, recovery targets appended to the recovery
+  line), so the shared prescription summary keeps working. The display
+  projection exposes a derived per-step `targetHr` string; the global
+  `fc_alvo` column is still derived only when every component agrees,
+  including each repeated recovery's `recoveryTarget` (a recovery without an
+  HR target breaks the agreement, as recovery RPE already does). v3 keeps its
+  historical work-only derivation. v4 also
+  drops the duplicated `min/km min/km` suffix that v3 prints after a pace
+  target.
+- Completed v3 executions remain readable and applicable: review, validation
+  and application use the version stored in `configuration_json`, and v3
+  materialization is byte-identical to the previous release so pending
+  proposals keep their deduplication signatures. Only the current version is
+  accepted from the provider. A v3 execution still queued at upgrade fails at
+  dispatch as `adapterUnavailable` without billing, as with earlier version
+  changes. v1/v2 remain incompatible.
+- The external PT/EN prompts are unchanged byte for byte; only the adapter's
+  structured-output and instruction text changes. The schema adds about 27%
+  to the structured output in a dense full-week estimate (seven sessions, five
+  components each, roughly 1,800 tokens); the recorded real samples used
+  1,862 and 3,427 output tokens against `AI_MAX_OUTPUT_TOKENS=8192`. This is
+  an estimate, not a new paid evaluation.
+
+`src/ai/workout-structure.js` converts one validated session literally into
+the canonical Garmin prescription (contract v3): warm-up/cool-down keep their
+ids, main components become `run-N` steps or `repeat` groups with a timed
+recovery and `skip_last_rest_step: true` (the narrative counts N−1
+recoveries), minutes become seconds, and pace targets are stored in
+`min_per_km`. It returns `ready`, `needs_review` (warnings) or `incompatible`
+(no prescription) with stable issue codes and never splits, truncates,
+reduces or widens anything: `step_duration_limit`, `repetition_count_invalid`
+(more than 20), `zero_recovery`, `name_invalid`, and the contract's own
+`expanded_steps_limit`, `total_duration_limit` and `distance_limit`. For v3
+sessions, free-text HR (`hr_text_unstructured`) is not parsed and a single
+pace value (`point_pace_target`) is not widened into a range; the step keeps
+no target and is flagged for review.
+
+### AI-suggested structure persistence (issue #108)
+
+Applying a proposal also records one reviewable structure per session in
+`training_structure_suggestions`, inside the same immediate transaction that
+inserts the calendar rows. Each row copies its provenance: owner, session,
+`execution_id` (`ON DELETE SET NULL`, so AI cleanup keeps the draft), the
+index of the session in the hash-verified response, `response_hash`,
+`adapter_version`, `converter_version`, compatibility (`ready`,
+`needs_review`, `incompatible`), the converted prescription and fingerprint
+(both `NULL` only when incompatible), stable issue codes, a hash of the saved
+`details`, a revision and the decision time. Status is `pending_review`,
+`accepted`, `dismissed` or `superseded`; a partial unique index keeps at most
+one pending suggestion per session.
+
+- New sessions receive their suggestion with the insert's own row ID. A
+  session ignored as a duplicate of an existing planned session is bound only
+  when exactly one existing row has the canonical signature; ambiguous,
+  completed and intra-proposal duplicates receive none. Binding never uses
+  title or position.
+- A later generation never overwrites: an older pending suggestion becomes
+  `superseded`, and the canonical prescription is untouched. The application
+  summary adds `structures { suggested, incompatible, conflicts }`, where a
+  conflict means the session already had a pending suggestion or a saved
+  prescription. Replaying an applied proposal writes nothing.
+- Reads report `conflict` only when a saved prescription differs from the
+  suggestion, and `details_changed` when the session guidance was edited
+  after binding.
+- `garmin_workout_prescriptions` gains `source` (`manual` by default,
+  `ai_suggestion`) and `suggestion_id`; existing rows stay `manual`. The
+  routes are documented in
+  [`garmin-integration.md`](garmin-integration.md#ai-suggested-structure-issue-78).
+  The editor review flow is described in
+  [`garmin-integration.md`](garmin-integration.md#review-in-the-editor-issue-109).
 
 The v3 adapter is intentionally incompatible with saved v1/v2 proposals;
 `configuration_json.adapterVersion` must match the registered version on review

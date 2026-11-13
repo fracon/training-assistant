@@ -261,6 +261,47 @@ function migrateWorkoutInterpretationIdentity(db) {
     db.prepare('INSERT INTO schema_migrations(name) VALUES(?)').run(marker);
   }).immediate();
 }
+// Issue #78: an AI-suggested structured workout is a draft bound to the exact
+// generation (execution, response hash, session index). It is never the
+// canonical prescription; garmin_workout_prescriptions only records whether
+// the canonical value originated from an accepted suggestion.
+function migrateWorkoutStructureSuggestions(db) {
+  db.transaction(() => {
+    const marker = '2026-11-ai-workout-structure-v1';
+    if (db.prepare('SELECT 1 FROM schema_migrations WHERE name=?').get(marker)) return;
+    db.exec(`CREATE TABLE IF NOT EXISTS training_structure_suggestions (
+      id INTEGER PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      training_id INTEGER NOT NULL REFERENCES trainings(id) ON DELETE CASCADE,
+      execution_id TEXT REFERENCES ai_executions(id) ON DELETE SET NULL,
+      session_index INTEGER NOT NULL CHECK(session_index >= 0),
+      response_hash TEXT NOT NULL,
+      adapter_version TEXT NOT NULL,
+      converter_version INTEGER NOT NULL CHECK(converter_version > 0),
+      status TEXT NOT NULL CHECK(status IN ('pending_review','accepted','dismissed','superseded')),
+      compatibility TEXT NOT NULL CHECK(compatibility IN ('ready','needs_review','incompatible')),
+      prescription_json TEXT,
+      fingerprint TEXT,
+      issues_json TEXT NOT NULL,
+      details_hash TEXT NOT NULL,
+      revision INTEGER NOT NULL DEFAULT 1 CHECK(revision > 0),
+      created_at TEXT NOT NULL,
+      decided_at TEXT,
+      CHECK((compatibility = 'incompatible') = (prescription_json IS NULL)),
+      CHECK((prescription_json IS NULL) = (fingerprint IS NULL))
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS training_structure_pending
+      ON training_structure_suggestions(user_id,training_id) WHERE status = 'pending_review';
+    CREATE INDEX IF NOT EXISTS training_structure_owner
+      ON training_structure_suggestions(user_id,training_id,id);`);
+    const columns = db.pragma('table_info(garmin_workout_prescriptions)').map((column) => column.name);
+    if (!columns.includes('source'))
+      db.exec("ALTER TABLE garmin_workout_prescriptions ADD COLUMN source TEXT NOT NULL DEFAULT 'manual' CHECK(source IN ('manual','ai_suggestion'))");
+    if (!columns.includes('suggestion_id'))
+      db.exec('ALTER TABLE garmin_workout_prescriptions ADD COLUMN suggestion_id INTEGER REFERENCES training_structure_suggestions(id) ON DELETE SET NULL');
+    db.prepare('INSERT INTO schema_migrations(name) VALUES(?)').run(marker);
+  }).immediate();
+}
 module.exports = {
   migrateAi,
   migrateAiDiagnostics,
@@ -270,4 +311,5 @@ module.exports = {
   migrateWeeklyAvailabilityRevision,
   migrateWorkoutAnalysis,
   migrateWorkoutInterpretationIdentity,
+  migrateWorkoutStructureSuggestions,
 };

@@ -89,6 +89,25 @@
         <button id="garminDisconnectButton" type="button" class="btn-secondary" hidden data-i18n="garmin.product.disconnect">Disconnect</button>
         <p id="garminDisconnectHelp" class="garmin-field-help" hidden data-i18n="garmin.product.disconnectResolveHelp">Verify the pending workout operation before disconnecting.</p>
         <div id="garminPrescriptionPanel" hidden>
+          <section id="garminSuggestion" class="garmin-suggestion" hidden aria-labelledby="garminSuggestionTitle">
+            <h3 id="garminSuggestionTitle" tabindex="-1" data-i18n="garmin.product.suggestionTitle">AI-suggested structure — review before sending</h3>
+            <p id="garminSuggestionStatus" class="garmin-suggestion-status"></p>
+            <p id="garminSuggestionOrigin" class="garmin-suggestion-origin"></p>
+            <p id="garminSuggestionDetailsChanged" class="garmin-suggestion-warning" hidden data-i18n="garmin.product.suggestionDetailsChanged">This workout's guidance was edited after the suggestion. Compare them before accepting.</p>
+            <div id="garminSuggestionIssuesGroup" class="garmin-suggestion-issues" hidden>
+              <p id="garminSuggestionIssuesTitle" class="garmin-suggestion-issues-title"></p>
+              <ul id="garminSuggestionIssues" aria-labelledby="garminSuggestionIssuesTitle"></ul>
+            </div>
+            <details id="garminSuggestionCompare" class="garmin-suggestion-compare">
+              <summary data-i18n="garmin.product.suggestionCompare">Compare with the original guidance</summary>
+              <div id="garminSuggestionGuidance" class="garmin-suggestion-guidance"></div>
+            </details>
+            <div class="garmin-actions garmin-suggestion-actions">
+              <button id="garminSuggestionReview" type="button" class="btn-primary" hidden data-i18n="garmin.product.suggestionReview">Review new suggestion</button>
+              <button id="garminSuggestionDismiss" type="button" class="btn-secondary" data-i18n="garmin.product.suggestionDismiss">Dismiss suggestion</button>
+            </div>
+            <p id="garminSuggestionActionStatus" class="garmin-suggestion-action-status" role="status" aria-live="polite"></p>
+          </section>
           <div id="garminEditorView" class="garmin-editor-view">
             <h3 data-i18n="garmin.product.prescription">Workout structure</h3>
             <p data-i18n="garmin.product.proseNote">The original workout description stays unchanged. Confirm the structure below; it is not inferred from prose.</p>

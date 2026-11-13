@@ -8,7 +8,7 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.39.3`); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.40.0`); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
@@ -744,11 +744,34 @@ not part of the stable request key. The product adapter lives under
 `src/garmin/` so the mandatory `npm run test:coverage` 100% gate includes it;
 do not place backend product code in `scripts/` to avoid coverage.
 
+## AI-suggested workout structure (#78)
+
+Weekly application stores one reviewable draft per session in
+`training_structure_suggestions` (`2026-11-ai-workout-structure-v1`), bound to
+the inserted row ID (or a single unambiguous planned duplicate) and the exact
+execution/response hash/session index, never title or position. A draft is not
+canonical and never publishable: only `PUT …/garmin/prescription` naming
+`suggestion_id` + `expected_suggestion_revision` accepts it, in the same
+transaction, recording `source = ai_suggestion`; `POST
+…/garmin/suggestion/dismiss` is the explicit keep-current decision. A newer
+generation supersedes a pending draft and never overwrites a saved
+prescription. Incompatible conversions are stored with their issue codes and no
+prescription. No route here calls Garmin or AI. The training-result page
+reviews the draft in the existing editor (no second editor): a localized
+“AI-suggested structure — review before sending” notice, comparison with the
+saved guidance, per-block issues, explicit Review/Keep/Dismiss actions, and
+Save and review as the acceptance. The structure panel is shown without a
+Garmin connection whenever a suggestion is pending or a structure is saved;
+sending still requires the connection. Never pre-fill over dirty form state.
+Covered by `structureSuggestions.routes.test.js`, `workoutStructure.test.js`
+and `structureSuggestion.browser.test.js`; see
+`docs/ai-weekly-workouts.md` and `docs/garmin-integration.md`.
+
 ## Solicitar Treinos weekly availability
 
 Weekly proposal generation and application reuse the existing AI execution,
 quota, reservation, Responses client, context, diagnostics and recovery system;
-do not add another job pipeline. The weekly-workouts-v3 delivery adapter is
+do not add another job pipeline. The weekly-workouts-v4 delivery adapter (v3 executions stay readable/applicable) is
 versioned independently from byte-preserved PT/EN external prompts. It retains
 training guidance while sending shared athlete context only once. Structured
 warmup/main/cooldown components derive duration and persisted details; each
@@ -809,7 +832,7 @@ See [`docs/ai-weekly-workouts.md`](docs/ai-weekly-workouts.md).
 - The idempotent `2026-09-structured-ai-coach-availability-v1` migration does not derive periods or duration from old free text. The earlier AI Coach availability form was transient and did not persist these values; missing structured records must remain unconfigured and be reviewed. On first use the frontend presents missing rows as unchecked/unavailable defaults, without clearing `needsReview`; explicit unavailable rows remain unavailable after persistence.
 - Initial availability defaults are presentation-only: they are never eligible for persistence or prompt generation until the authenticated GET has completed successfully. A failed load keeps save/generate blocked, preserves local edits, and may be retried; late responses from older load attempts must not replace a newer result.
 - Applying a weekday setup is an explicit one-time copy from Monday to Tuesday–Friday. It never changes weekends or links records.
-- The administrator-only external prompt continues to preserve its existing PT/EN wording and 12-column XLSX/XLS import contract. Its browser/research instructions apply only to that free prompt; the weekly paid adapter replaces conflicting Excel/research delivery instructions with backend-supplied hourly evidence and structured `weekly-workouts-v3` output. It derives duration/details from ordered timed/distance prescription components with per-stage execution/effort, optional targets and explicit repeated recovery guidance; pace estimates are distinct from targets, global FC/RPE are derived only when uniform, and free-text guidance is not parsed as a duration source. It previews persisted notes, binds forecasts to an exact revisioned availability snapshot, validates timezone identity and epoch-hour coverage through DST, and never substitutes a daily maximum. Unreliable weather remains explicitly unavailable and never blocks planning. No second provider or paid search is configured. RPE is explicitly the Kinesis 1–5 scale in both adapter and backend validation. Existing v1/v2 proposals are incompatible with v3 and cannot be applied under the changed schema; old snapshots/calendar data remain untouched.
+- The administrator-only external prompt continues to preserve its existing PT/EN wording and 12-column XLSX/XLS import contract. Its browser/research instructions apply only to that free prompt; the weekly paid adapter replaces conflicting Excel/research delivery instructions with backend-supplied hourly evidence and structured `weekly-workouts-v4` output (structured HR/pace target ranges, timed components of at most 120 minutes; completed v3 proposals still apply with byte-identical materialization; `src/ai/workout-structure.js` converts sessions literally into the Garmin prescription contract for issue #78, reporting incompatibilities instead of adapting). It derives duration/details from ordered timed/distance prescription components with per-stage execution/effort, optional targets and explicit repeated recovery guidance; pace estimates are distinct from targets, global FC/RPE are derived only when uniform, and free-text guidance is not parsed as a duration source. It previews persisted notes, binds forecasts to an exact revisioned availability snapshot, validates timezone identity and epoch-hour coverage through DST, and never substitutes a daily maximum. Unreliable weather remains explicitly unavailable and never blocks planning. No second provider or paid search is configured. RPE is explicitly the Kinesis 1–5 scale in both adapter and backend validation. Existing v1/v2 proposals are incompatible with v3 and cannot be applied under the changed schema; old snapshots/calendar data remain untouched.
 
 ## OpenAI foundation and future phases
 
