@@ -3,7 +3,7 @@
 const path = require('node:path');
 const { registerAiRoutes } = require('./ai/routes');
 const { readAiConfig } = require('./ai/config');
-const { readCyclePlanningSummary } = require('./ai/cycle-plans');
+const { readCyclePlanningSummary, hasPlanningHistory } = require('./ai/cycle-plans');
 const Fastify = require('fastify');
 const multipart = require('@fastify/multipart');
 const fastifyStatic = require('@fastify/static');
@@ -417,6 +417,7 @@ async function buildServer(options = {}) {
           secondary: null,
           available: Boolean(aiConfig.enabled),
           canGenerate: false,
+          hasPlanningHistory: hasPlanningHistory(db, userId, cycle.id),
         };
       }
       planningSummary.cycleStatus = cycle.status;

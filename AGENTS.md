@@ -1165,7 +1165,12 @@ generationInProgress` and the existing `execution_id`; the UI follows that
 execution instead of starting a paid call, including across browser tabs.
 Cycle generation requires an owned, active cycle (`resourceNotFound`,
 `cycleNotActive`). A completed cycle without planning history shows no planning
-card action; completed cycles with history keep read-only access.
+card action; completed cycles with history keep read-only access, labelled
+`View plan` only when a plan was applied (otherwise `View details`). History
+(`hasPlanningHistory` in `cycle-plans.js`) is any applied version or proposal,
+and list and detail responses both carry it with `cycleStatus`. Hidden card
+actions need the explicit `.cycle-card-actions > .btn-icon[hidden]` rule,
+because `.btn-icon` sets `display`.
 
 ## Golden rules
 
