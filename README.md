@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, request and review weekly AI proposals, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized training-request prompts for use with an external AI.
 
-Current application version: **0.40.1** (active beta development). The Garmin Connect integration is opt-in per installation, in single-account `pilot` mode (default) or `multiuser` mode; see [Garmin Connect integration](#garmin-connect-integration).
+Current application version: **0.41.0** (active beta development). The Garmin Connect integration is opt-in per installation, in single-account `pilot` mode (default) or `multiuser` mode; see [Garmin Connect integration](#garmin-connect-integration).
 
 ## Welcome tour
 
@@ -846,6 +846,19 @@ note, and permanently delete records. Feedback author snapshots survive account
 deletion while the nullable account reference is cleared; regular users cannot
 read the collection.
 
+### Prompt history
+
+**Administration → Prompt history / Histórico de prompts** shows, account by
+account, every AI request Kinesis sent: purpose, state, attempts, tokens and
+estimated cost, with filters by purpose and state. Opening an execution shows
+the exact external prompt, selected context, provider payload, configuration,
+response and per-attempt diagnostics. This page is the one deliberate exception
+to account ownership for administrators: it is read-only, the lists carry
+metadata only, and every opened execution that belongs to another account is
+recorded in the administration audit log (identities, execution ID and purpose
+only — never the prompt or context). Training memory no longer has an
+administrator section.
+
 ## Usage
 
 1. Open **Sign In**. Create an account through **Register** (first name, last name, email, and password of at least 8 characters) or sign in to an existing account.
@@ -967,6 +980,9 @@ in [AI foundation API contracts](docs/ai-foundation.md#api-and-service-contract)
 | `GET /api/admin/feedback/:id` | Admin | Read one feedback record |
 | `PATCH /api/admin/feedback/:id` | Admin | Update triage status or internal note |
 | `DELETE /api/admin/feedback/:id` | Admin | Permanently delete one feedback record |
+| `GET /api/admin/ai/accounts` | Admin | Accounts with AI execution counts (prompt history) |
+| `GET /api/admin/ai/accounts/:id/executions` | Admin | One account's AI executions, metadata only, filtered and paginated |
+| `GET /api/admin/ai/executions/:id` | Admin | Full AI execution trace of any account; audited when it belongs to another account |
 | `GET /api/admin/users/:id` | Admin | Read one account for editing |
 | `POST /api/admin/users` | Admin | Create a regular user account (password only, never a confirmation field) |
 | `PUT /api/admin/users/:id` | Admin | Update permitted identity fields (name, surname, email) |

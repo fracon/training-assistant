@@ -8,7 +8,7 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.40.1`); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.41.0`); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
@@ -188,6 +188,39 @@ onboarding record of the account is preserved.
   Only admins can list, inspect, triage, or delete feedback.
 - The admin page reuses the Administration sidebar group, shared modal/focus
   and confirmation patterns, escaped DOM text, and the PT/EN locale contract.
+
+## Administration prompt history (#113)
+
+Administration > Prompt history (`/admin-ai-history.html`, gated in
+`src/server.js` like the other admin pages, item `admin-ai-history` in
+`ADMIN_NAV_GROUP`) is the **only** place where administrator status crosses
+account ownership, by explicit owner decision. Keep the exception this narrow:
+
+- `src/admin/ai-history.js` owns three read-only endpoints behind
+  `requireAuth` then `requireAdmin`, all `Cache-Control: no-store`:
+  `GET /api/admin/ai/accounts`, `GET /api/admin/ai/accounts/:id/executions`
+  (allowlisted `purpose`, `state`, `page`, `limit`) and
+  `GET /api/admin/ai/executions/:id`. Never add a write, cancel, apply,
+  regenerate or dispatch action for another account, and never widen the
+  ordinary `/api/ai/*` routes (including `GET /api/ai/admin/executions/:id`),
+  which stay owner-scoped.
+- Lists return metadata only. Prompt, context, payload, configuration,
+  response, diagnostics and raw output leave only through the single-execution
+  detail, which reuses `executionDebugFields` from `src/ai/executions.js`.
+- The detail re-reads the actor's role and activity, reads the execution and,
+  for another account's execution, inserts one `ai_execution_viewed` row in
+  `admin_audit_log` inside one immediate transaction: no trace is returned
+  without its committed audit row. The row copies identities and stores only
+  `{"execution_id","purpose"}` — never prompt, context, payload or response.
+  One's own executions and list reads are not audited. Migration
+  `2026-11-admin-ai-execution-view-v1` rebuilds the audit table's `CHECK`
+  copying every row.
+- Training memory has no administrator section; do not restore it. The trace
+  tabs, attempt selector and raw-output expiry live on this page, which reuses
+  the Feedbacks list pattern, the shared modal with `createDialogFocusTrap`
+  (heading focus, containment, Escape/backdrop, focus back to the row action),
+  custom tooltips, `formatDateTime` from `shared/date.js` and the `aiHistory`
+  PT/EN namespace.
 
 ## Garmin Connect integration
 
@@ -594,6 +627,13 @@ while the password is verified, through a held verification),
 `test/language.test.js` (`translateApiError` prefers a stable code), and
 `test/database.test.js` (the activity migration).
 
+Administration prompt history is covered by `test/adminAiHistory.test.js`
+(domain, HTTP authorization, audit atomicity and the audit migration),
+`test/adminAiHistory.browser.test.js` (real Chrome: PT/EN, desktop/mobile,
+admin-only navigation, account switching, cross-account audit, focus and
+keyboard containment) and the trace scenarios of
+`test/aiDiagnostics.browser.test.js`.
+
 The realized-RPE conclusion contract is covered by
 `test/trainingSession.routes.test.js` (the three completion writes, the exact
 refusal message, the stored-value fallback for an omitted RPE, explicit
@@ -935,7 +975,9 @@ with optimistic versions. Do not restore generic manual memory CRUD.
   No generic logs contain prompts, context, responses, keys or provider errors.
 - Persist source versions, exact protected debug payloads, configuration, state,
   usage/cost ceilings and sanitized errors. Admin debug is current-role checked
-  and restricted to its own data. Keep ordinary users' existing prompt flows.
+  and restricted to its own data; the only cross-account read is the audited,
+  read-only Administration prompt history (#113). Keep ordinary users' existing
+  prompt flows.
 - Reserve user/global cost/tokens/calls transactionally before network dispatch;
   never keep a transaction open during network calls. Recheck account activity,
   ownership and source versions before dispatch/access/application. Deletion or

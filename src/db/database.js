@@ -1134,6 +1134,53 @@ function migrateDatabase(db) {
     );
   });
   initializeAccountActivity();
+
+  // Administration AI prompt history (issue #113). An administrator reading
+  // another account's AI execution trace is recorded with copied identities
+  // and only the execution ID and purpose — never the prompt, context, payload
+  // or response. SQLite cannot alter a CHECK constraint, so the trail is rebuilt
+  // with the new action inside the marker guard, copying every existing row.
+  const aiViewMarker = '2026-11-admin-ai-execution-view-v1';
+  const initializeAiExecutionViewAudit = db.transaction(() => {
+    if (
+      db
+        .prepare('SELECT 1 FROM schema_migrations WHERE name = ?')
+        .get(aiViewMarker)
+    )
+      return;
+    const auditSql = db
+      .prepare(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'admin_audit_log'",
+      )
+      .get().sql;
+    if (!auditSql.includes('ai_execution_viewed')) {
+      db.exec(`
+        CREATE TABLE admin_audit_log_ai_view (
+          id INTEGER PRIMARY KEY,
+          actor_user_id INTEGER,
+          actor_email TEXT NOT NULL DEFAULT '',
+          target_user_id INTEGER,
+          target_email TEXT NOT NULL DEFAULT '',
+          action TEXT NOT NULL CHECK (action IN (
+            'account_created', 'account_updated', 'account_role_changed', 'account_deleted',
+            'account_activity_changed', 'ai_execution_viewed'
+          )),
+          details TEXT NOT NULL DEFAULT '{}',
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO admin_audit_log_ai_view
+          (id, actor_user_id, actor_email, target_user_id, target_email, action, details, created_at)
+        SELECT id, actor_user_id, actor_email, target_user_id, target_email, action, details, created_at
+          FROM admin_audit_log;
+        DROP TABLE admin_audit_log;
+        ALTER TABLE admin_audit_log_ai_view RENAME TO admin_audit_log;
+      `);
+    }
+    db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(
+      aiViewMarker,
+    );
+  });
+  initializeAiExecutionViewAudit();
   require('../ai/schema').migrateAi(db);
   require('../ai/schema').migrateAiDiagnostics(db);
   require('../ai/schema').migrateAiRawOutputs(db);

@@ -81,6 +81,12 @@ const {
   updateFeedback,
 } = require('./feedback');
 const {
+  AiHistoryError,
+  getAiExecution,
+  listAiAccounts,
+  listAiExecutions,
+} = require('./admin/ai-history');
+const {
   ShoeError,
   createShoe,
   getShoesByUserId,
@@ -214,7 +220,7 @@ function adminPageAliasTarget(rawUrl) {
   } catch {
     return null;
   }
-  for (const page of ['/admin-users.html', '/admin-feedback.html']) {
+  for (const page of ['/admin-users.html', '/admin-feedback.html', '/admin-ai-history.html']) {
     if (rawPath !== page && path.posix.normalize(decodedPath) === page)
       return page;
   }
@@ -357,6 +363,13 @@ async function buildServer(options = {}) {
     if (!session) return reply.redirect('/login.html');
     if (session.user.role !== 'admin') return reply.redirect('/home.html');
     return reply.sendFile('admin-feedback.html');
+  });
+
+  app.get('/admin-ai-history.html', async (request, reply) => {
+    const session = sessionOf(request);
+    if (!session) return reply.redirect('/login.html');
+    if (session.user.role !== 'admin') return reply.redirect('/home.html');
+    return reply.sendFile('admin-ai-history.html');
   });
 
   app.get('/login.html', async (request, reply) => {
@@ -1669,6 +1682,50 @@ async function buildServer(options = {}) {
           return deleteFeedback(db, request.params.id);
         } catch (error) {
           return feedbackFailure(reply, error);
+        }
+      },
+    );
+
+    // Administration AI prompt history (issue #113): the one read-only,
+    // audited exception that lets an administrator read another account's AI
+    // executions. Lists carry metadata only; the detail writes the audit row.
+    const aiHistoryFailure = (reply, error) => {
+      if (error instanceof AiHistoryError)
+        return reply
+          .code(error.status)
+          .send({ error: error.message, errors: [error.code] });
+      throw error;
+    };
+    const noStore = (reply) => reply.header('Cache-Control', 'no-store');
+    app.get(
+      '/api/admin/ai/accounts',
+      { preHandler: adminPreHandler },
+      async (request, reply) => {
+        noStore(reply);
+        return listAiAccounts(db);
+      },
+    );
+    app.get(
+      '/api/admin/ai/accounts/:id/executions',
+      { preHandler: adminPreHandler },
+      async (request, reply) => {
+        noStore(reply);
+        try {
+          return listAiExecutions(db, request.params.id, request.query);
+        } catch (error) {
+          return aiHistoryFailure(reply, error);
+        }
+      },
+    );
+    app.get(
+      '/api/admin/ai/executions/:id',
+      { preHandler: adminPreHandler },
+      async (request, reply) => {
+        noStore(reply);
+        try {
+          return getAiExecution(db, request.user, request.params.id);
+        } catch (error) {
+          return aiHistoryFailure(reply, error);
         }
       },
     );

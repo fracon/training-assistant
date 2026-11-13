@@ -170,7 +170,9 @@ account. All other corrections navigate to their existing source screen.
 | Prior experience | `ai_profiles.fields_json.experience` only | `PUT /api/ai/profile`; optional editor on memory page |
 
 The page reuses shell, dashboard width/card rhythm, shared forms/buttons, Snackbar, date and
-unit formatters and the existing DatePicker in admin preview. `memoryOverview`
+unit formatters. Since issue #113 it has no administrator section: execution
+traces live in Administration > Prompt history (see
+[below](#administration-prompt-history-issue-113)). `memoryOverview`
 projects `buildContext`'s bounded cycle-purpose selection in a read transaction;
 it does not create an independent registry or send a model request. Source links
 remain regular keyboard-accessible links. Each item shows source and relevant
@@ -538,6 +540,9 @@ are allowlisted, with no `user_id`, arbitrary model or arbitrary prompt option.
 | `POST /api/ai/admin/preview` | Admin-owned `{purpose,resource_id?,target_date?,optional_context?}` -> exact external prompt/context/version; free and nonpersistent |
 | `GET /api/ai/admin/executions/:id` | Admin-owned exact payload/context/configuration/usage/error |
 | `GET /api/ai/admin/usage` | Admin-owned usage and sanitized configuration availability |
+| `GET /api/admin/ai/accounts` | Admin only (#113): every account with execution count and latest execution time |
+| `GET /api/admin/ai/accounts/:id/executions?purpose=&state=&page=&limit=` | Admin only (#113): one account's executions, metadata only (no prompt/context/payload/response) |
+| `GET /api/admin/ai/executions/:id` | Admin only (#113): full trace of any account's execution; audited when the owner is another account |
 
 On the #64 branch, weekly availability GET responses also expose a per-day
 source revision. Migration `2026-10-weekly-availability-revision-v1` adds it
@@ -806,3 +811,46 @@ history shows no planning action on its card.
 ### Raw output in administrative execution traces
 
 For parsing and domain-validation failures, Kinesis stores only the model's extracted `output_text`, keyed by execution and attempt. The provider envelope, request headers, credentials, and reasoning content are never retained. Captured text is capped at 65,536 UTF-8 bytes; truncation stops at a Unicode code-point boundary and the trace records original byte length plus a truncation flag. Raw output expires after 48 hours through the normal AI cleanup call. Databases created by an earlier build without the `expired` column are repaired idempotently by `2026-11-ai-raw-output-expired-v1` (#88), preserving existing rows as not expired. Expiration clears the payload and marks the raw-output row expired while preserving byte length, truncation state, attempt number, and expiry time; execution state and sanitized per-attempt diagnostics remain until ordinary execution retention removes the execution. Historical traces have no capture row and are displayed as legacy traces. Capture errors are auxiliary and never replace the original execution error. The existing OpenAI request continues to use `store: false`.
+
+### Administration prompt history (issue #113)
+
+Administration > Prompt history (`/admin-ai-history.html`, Administration
+sidebar group) replaces the former collapsed "Administrator: own prompt and
+context" section of Training memory, which showed only the administrator's own
+executions and a free local preview. The owner deliberately authorized a narrow
+exception to "admin status never bypasses ownership" for this page only:
+
+- `src/admin/ai-history.js` serves three read-only endpoints under
+  `/api/admin/ai/` behind `requireAuth` then `requireAdmin`, with
+  `Cache-Control: no-store`. Nothing there cancels, applies, regenerates or
+  dispatches work; the ordinary `/api/ai/*` routes, including
+  `GET /api/ai/admin/executions/:id`, stay owner-scoped.
+- The account list and the per-account execution list carry metadata only
+  (purpose, resource ID, state, error code, prompt version, attempts, tokens,
+  cost, timestamps). The prompt, context, payload, configuration, response,
+  diagnostics and raw output are returned only by the single-execution detail,
+  which reuses the same `executionDebugFields` projection as the owner-scoped
+  admin debug read, including raw-output expiry masking.
+- The detail re-reads the actor's role and activity, reads the execution and,
+  when its owner is another account, inserts one `admin_audit_log` row with the
+  action `ai_execution_viewed` — all in one immediate transaction, so a trace is
+  returned only together with its committed audit row. The row copies the actor
+  and target identities and stores only `{"execution_id","purpose"}`; it never
+  copies the prompt, context, payload or response. Reading one's own execution
+  is not audited, as before, and list reads are not audited.
+- The idempotent migration `2026-11-admin-ai-execution-view-v1` rebuilds
+  `admin_audit_log` to extend its `CHECK` with that action, copying every
+  existing row. Execution rows still cascade with their account; the audit
+  record outlives it.
+- The free local preview (`POST /api/ai/admin/preview`) was removed from
+  Training memory; it remains available to administrators from the training
+  result and Request Workouts pages. `GET /api/ai/admin/usage` is unchanged.
+
+The page reuses the shell, the Feedbacks list/row/icon-action pattern, the
+shared modal with `createDialogFocusTrap` (heading focus, Tab containment,
+Escape, backdrop, focus restored to the triggering row action), custom
+tooltips, the shared `formatDateTime` formatter and PT/EN dictionaries
+(`aiHistory`). The request/response trace tabs, attempt selector and live
+raw-output expiry moved from Training memory unchanged in behavior. Covered by
+`adminAiHistory.test.js` (domain, HTTP, migration), `adminAiHistory.browser.test.js`
+and the trace scenarios in `aiDiagnostics.browser.test.js`.

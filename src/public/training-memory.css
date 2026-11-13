@@ -60,21 +60,8 @@
 .memory-interpretation-editor { display: grid; gap: 8px; }
 .memory-interpretation-editor summary { cursor: pointer; color: var(--accent-deep); font-weight: 600; }
 
-.trace-tabs { display:flex; gap:.35rem; border-bottom:1px solid var(--line); margin:.75rem 0; }
-.trace-tabs [role=tab] { border:0; border-bottom:2px solid transparent; background:transparent; color:var(--muted); padding:.55rem .75rem; cursor:pointer; }
-.trace-tabs [aria-selected=true] { color:var(--ink); border-bottom-color:var(--accent); }
-.trace-tabs [role=tab]:focus-visible,#traceCopy:focus-visible,#traceAttempt:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
-.trace-output { max-height:18rem; overflow:auto; white-space:pre; overflow-wrap:normal; }
-#traceRequest { max-height:18rem; overflow:auto; white-space:pre-wrap; overflow-wrap:anywhere; }
-.memory-trace,#traceResponsePanel { min-width:0; }
-#traceDiagnosis,#traceStatus { overflow-wrap:anywhere; }
-.trace-attempt-controls { display:grid; gap:.4rem; max-width:22rem; }
-.trace-output-header { display:flex; align-items:center; justify-content:space-between; gap:.875rem; border-top:1px solid var(--line); margin-top:1rem; padding-top:.875rem; }
-.trace-output-header h4 { margin:0; font-size:.95rem; }
-.trace-output-header button { flex:0 0 auto; }
-@media (max-width:560px) { .trace-output-header { flex-wrap:wrap; gap:.875rem; } }
 
-/* Purpose tabs: same tab treatment as the execution trace on this page. */
+/* Purpose tabs: the tab treatment shared with the administration execution trace. */
 .memory-tabs { display: flex; flex-wrap: wrap; gap: .35rem; border-bottom: 1px solid var(--line); margin: .5rem 0 1rem; }
 .memory-tabs [role=tab] { border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); padding: .6rem .85rem; cursor: pointer; font: inherit; font-weight: 600; }
 .memory-tabs [role=tab]:hover { color: var(--ink); }
@@ -151,7 +138,6 @@
 .memory-profile-meta #profileSource { margin: 0; }
 .memory-counter { margin: 0 !important; }
 .memory-unsaved { align-self: center; margin-right: auto; font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: .2rem .6rem; border-radius: 999px; background: rgba(165, 73, 47, .12); color: var(--danger); }
-.memory-diagnostics { background: transparent; border: 1px dashed var(--line-strong); box-shadow: none; }
 @media (max-width: 900px) {
   .memory-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .memory-pair { grid-template-columns: minmax(0, 1fr); }

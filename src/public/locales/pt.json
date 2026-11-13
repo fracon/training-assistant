@@ -472,7 +472,8 @@
       "shoes": "Rotação de Tênis",
       "administration": "Administração",
       "users": "Usuários",
-      "feedback": "Feedbacks"
+      "feedback": "Feedbacks",
+      "aiHistory": "Histórico de prompts"
     },
     "soon": "Em breve",
     "noCycle": "Nenhum ciclo ativo",
@@ -1250,6 +1251,92 @@
       "resolved": "Resolvido"
     }
   },
+  "aiHistory": {
+    "pageTitle": "Histórico de prompts - Kinesis",
+    "title": "Histórico de prompts",
+    "subtitle": "Histórico somente leitura das solicitações de IA enviadas para cada conta.",
+    "auditNotice": "Abrir uma execução de outra conta fica registrado no log de auditoria.",
+    "account": "Conta",
+    "accountOption": "{name} · {count} execuções",
+    "purpose": "Finalidade",
+    "allPurposes": "Todas as finalidades",
+    "state": "Estado",
+    "allStates": "Todos os estados",
+    "loadingAccounts": "Carregando contas…",
+    "loading": "Carregando execuções…",
+    "loadError": "Não foi possível carregar o histórico.",
+    "retry": "Tentar novamente",
+    "noAccounts": "Nenhuma conta encontrada.",
+    "empty": "Nenhuma execução corresponde a estes filtros.",
+    "loadMore": "Carregar mais",
+    "viewAccessible": "Ver detalhes da execução",
+    "detail": "Detalhes da execução",
+    "close": "Fechar",
+    "detailLoading": "Carregando execução…",
+    "detailError": "Não foi possível carregar a execução.",
+    "notFound": "Esta execução não existe mais.",
+    "audited": "Esta consulta foi registrada no log de auditoria.",
+    "ownExecution": "Execução da sua própria conta: não é registrada na auditoria.",
+    "inactive": "Inativa",
+    "admin": "Administrador",
+    "fields": {
+      "account": "Conta",
+      "created": "Criada em",
+      "attempts": "Tentativas",
+      "tokens": "Tokens cobrados",
+      "cost": "Custo estimado",
+      "version": "Versão do prompt",
+      "error": "Erro",
+      "resource": "Recurso"
+    },
+    "tokensValue": "{count} tokens",
+    "noError": "sem erro",
+    "sections": {
+      "prompt": "Prompt externo",
+      "context": "Contexto selecionado e origem",
+      "payload": "Payload enviado ao provedor",
+      "configuration": "Configuração"
+    },
+    "copyPrompt": "Copiar prompt",
+    "promptCopied": "Prompt copiado.",
+    "copyError": "Não foi possível copiar o texto.",
+    "purposes": {
+      "cycle": "Planejamento do ciclo",
+      "workouts": "Treinos semanais",
+      "analysis": "Análise do treino"
+    },
+    "states": {
+      "queued": "Na fila",
+      "running": "Em execução",
+      "completed": "Concluída",
+      "failed": "Falhou",
+      "uncertain": "Resultado do provedor incerto",
+      "cancelled": "Cancelada localmente",
+      "outdated": "Fontes alteradas"
+    },
+    "trace": {
+      "tabsLabel": "Abas do trace",
+      "request": "Requisição",
+      "response": "Resposta",
+      "attempt": "Tentativa",
+      "noAttempt": "Nenhuma tentativa registrada",
+      "failed": "Falha",
+      "noOutput": "Esta tentativa não recebeu texto de saída.",
+      "legacy": "Trace antigo sem captura de saída.",
+      "expired": "A saída capturada expirou.",
+      "truncated": "Saída truncada no limite de 65.536 bytes.",
+      "copy": "Copiar saída",
+      "copied": "Saída copiada.",
+      "reasons": {
+        "evidence_empty": "a lista de evidence está vazia",
+        "evidence_unknown_reference": "referência de evidence não existe nas fontes fornecidas",
+        "invalid_json": "o texto não contém JSON válido",
+        "output_text_count": "a resposta não contém exatamente um bloco de texto"
+      },
+      "outputTitle": "Saída do modelo",
+      "noAttemptInfo": "Não há diagnóstico salvo para esta tentativa."
+    }
+  },
   "shoes": {
     "title": "Tênis",
     "pageTitle": "Tênis - Kinesis",
@@ -1694,34 +1781,8 @@
     "updated": "Atualizado",
     "profileEmpty": "Experiência anterior não informada. Este complemento é opcional.",
     "saved": "Informações salvas.",
-    "debug": "Administrador: próprio prompt e contexto",
-    "debugHint": "Prévia local gratuita. Nenhuma solicitação é enviada ao modelo.",
-    "purpose": "Finalidade",
-    "resource": "Ciclo / treino salvo",
-    "weekDate": "Semana iniciando na segunda-feira",
-    "preview": "Gerar prévia local",
-    "prompt": "Prompt externo",
-    "copy": "Copiar prompt",
-    "copied": "Prompt copiado.",
-    "context": "Contexto selecionado e origem",
-    "usage": "Consumo registrado",
-    "tokens": "tokens",
     "authorities": {
       "user_report": "Relatado por você"
-    },
-    "purposes": {
-      "cycle": "Ciclo",
-      "workouts": "Treinos semanais",
-      "analysis": "Análise do treino"
-    },
-    "executionStates": {
-      "queued": "Na fila. Você pode fechar esta janela e voltar ao Planejamento do ciclo para acompanhar.",
-      "running": "Em execução",
-      "completed": "Concluída",
-      "failed": "Falhou",
-      "uncertain": "Resultado no provedor incerto",
-      "cancelled": "Cancelada localmente",
-      "outdated": "Fontes alteradas"
     },
     "errors": {
       "generic": "Não foi possível concluir esta ação. Os valores digitados foram preservados. Tente novamente.",
@@ -1822,31 +1883,6 @@
     "interpretationSaveCorrection": "Salvar correção",
     "interpretationSaved": "Interpretação atualizada.",
     "interpretationOriginal": "Interpretação original",
-    "trace": {
-      "heading": "Detalhes da execução",
-      "tabsLabel": "Abas do trace",
-      "request": "Requisição",
-      "response": "Resposta",
-      "attempt": "Tentativa",
-      "noAttempt": "Nenhuma tentativa registrada",
-      "completed": "Execução concluída com resposta validada.",
-      "failed": "Falha",
-      "noOutput": "Esta tentativa não recebeu texto de saída.",
-      "legacy": "Trace antigo sem captura de saída.",
-      "expired": "A saída capturada expirou.",
-      "truncated": "Saída truncada no limite de 65.536 bytes.",
-      "copy": "Copiar saída",
-      "copied": "Saída copiada.",
-      "noError": "sem erro",
-      "reasons": {
-        "evidence_empty": "a lista de evidence está vazia",
-        "evidence_unknown_reference": "referência de evidence não existe nas fontes fornecidas",
-        "invalid_json": "o texto não contém JSON válido",
-        "output_text_count": "a resposta não contém exatamente um bloco de texto"
-      },
-      "outputTitle": "Saída do modelo",
-      "noAttemptInfo": "Não há diagnóstico salvo para esta tentativa."
-    },
     "purposeTabsLabel": "Contexto por tarefa da IA",
     "purposeTabs": {
       "cycle": "Planejamento do ciclo",
@@ -1973,8 +2009,7 @@
     "weeklyMissing": "{count} sem métricas",
     "availabilityLocation": "Local: {location}",
     "experienceCount": "{count} de {max} caracteres",
-    "unsaved": "Alterações não salvas",
-    "diagnostics": "Diagnóstico do administrador"
+    "unsaved": "Alterações não salvas"
   },
   "cyclePlanning": {
     "admin": "Detalhes administrativos",

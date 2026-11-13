@@ -7,6 +7,7 @@ const {
   dateLocale,
   formatDate,
   formatDateInput,
+  formatDateTime,
   formatMonth,
   formatWeekday,
   parseLocalizedDate,
@@ -53,4 +54,13 @@ test('formatMonth names a calendar month in the active locale, long or short, an
   assert.equal(formatMonth(5, 'en-US'), 'May');
   assert.equal(formatMonth(9, 'en-US', 'short'), 'Sep');
   for (const value of [0, 13, 1.5, '3', null]) assert.equal(formatMonth(value, 'pt-BR'), '');
+});
+
+test('formatDateTime shows an instant in local time with the locale date order', () => {
+  const instant = new Date(2026, 10, 13, 9, 5);
+  assert.equal(formatDateTime(instant.toISOString(), 'pt-BR'), '13/11/2026, 09:05');
+  assert.match(formatDateTime(instant, 'en-US'), /^11\/13\/2026, 09:05 AM$/);
+  assert.equal(formatDateTime('not a date', 'pt-BR'), '');
+  assert.equal(formatDateTime(undefined, 'en-US'), '');
+  assert.equal(formatDateTime(null), '');
 });

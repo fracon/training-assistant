@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="/assets/brand/favicon.png?v=5" type="image/png">
+  <title data-i18n="aiHistory.pageTitle">Prompt history - Kinesis</title>
+  <link rel="stylesheet" href="shared/shell.css">
+  <link rel="stylesheet" href="shared/components.css">
+  <link rel="stylesheet" href="admin-ai-history.css">
+</head>
+<body>
+  <main id="appView">
+    <section class="ai-history-page" aria-labelledby="aiHistoryTitle">
+      <header class="ai-history-header">
+        <h1 id="aiHistoryTitle" data-i18n="aiHistory.title">Prompt history</h1>
+        <p data-i18n="aiHistory.subtitle">Read-only history of the AI requests sent for every account.</p>
+        <p class="field-hint ai-history-audit-notice" data-i18n="aiHistory.auditNotice">Opening an execution that belongs to another account is recorded in the audit log.</p>
+      </header>
+      <div class="ai-history-filters">
+        <div class="field ai-history-account-field">
+          <label class="field-label" for="aiHistoryAccount" data-i18n="aiHistory.account">Account</label>
+          <select id="aiHistoryAccount" disabled></select>
+        </div>
+        <div class="field">
+          <label class="field-label" for="aiHistoryPurpose" data-i18n="aiHistory.purpose">Purpose</label>
+          <select id="aiHistoryPurpose"><option value="" data-i18n="aiHistory.allPurposes">All purposes</option><option value="cycle" data-i18n="aiHistory.purposes.cycle">Cycle planning</option><option value="workouts" data-i18n="aiHistory.purposes.workouts">Weekly workouts</option><option value="analysis" data-i18n="aiHistory.purposes.analysis">Workout analysis</option></select>
+        </div>
+        <div class="field">
+          <label class="field-label" for="aiHistoryState" data-i18n="aiHistory.state">State</label>
+          <select id="aiHistoryState"><option value="" data-i18n="aiHistory.allStates">All states</option><option value="queued" data-i18n="aiHistory.states.queued">Queued</option><option value="running" data-i18n="aiHistory.states.running">Running</option><option value="completed" data-i18n="aiHistory.states.completed">Completed</option><option value="failed" data-i18n="aiHistory.states.failed">Failed</option><option value="uncertain" data-i18n="aiHistory.states.uncertain">Provider outcome uncertain</option><option value="cancelled" data-i18n="aiHistory.states.cancelled">Cancelled locally</option><option value="outdated" data-i18n="aiHistory.states.outdated">Sources changed</option></select>
+        </div>
+      </div>
+      <div id="aiHistoryLoading" class="ai-history-state" role="status" aria-live="polite"></div>
+      <div id="aiHistoryError" class="ai-history-state hidden" role="alert"><span data-i18n="aiHistory.loadError">The history could not be loaded.</span> <button id="aiHistoryRetry" class="btn-secondary" type="button" data-i18n="aiHistory.retry">Try again</button></div>
+      <div id="aiHistoryEmpty" class="ai-history-state hidden"></div>
+      <ul id="aiHistoryList" class="ai-history-list"></ul>
+      <button id="aiHistoryLoadMore" class="btn-secondary ai-history-load-more hidden" type="button" data-i18n="aiHistory.loadMore">Load more</button>
+    </section>
+  </main>
+  <div id="aiExecutionModal" class="modal-backdrop hidden">
+    <div class="modal-card ai-execution-card" role="dialog" aria-modal="true" aria-labelledby="aiExecutionTitle">
+      <header class="modal-header"><h2 id="aiExecutionTitle" tabindex="-1" data-i18n="aiHistory.detail">Execution details</h2><button id="aiExecutionClose" class="modal-close" type="button" data-i18n-aria-label="aiHistory.close" aria-label="Close"><i data-lucide="x"></i></button></header>
+      <div class="ai-execution-body">
+        <p id="aiExecutionStatus" class="ai-history-state" role="status" aria-live="polite"></p>
+        <div id="aiExecutionContent" hidden>
+          <dl id="aiExecutionMeta" class="ai-execution-meta"></dl>
+          <p id="aiExecutionAudit" class="field-hint ai-execution-audit"></p>
+          <div class="trace-tabs" role="tablist" data-i18n-aria-label="aiHistory.trace.tabsLabel" aria-label="Trace tabs">
+            <button type="button" role="tab" id="traceRequestTab" aria-controls="traceRequestPanel" aria-selected="true" data-i18n="aiHistory.trace.request">Request</button>
+            <button type="button" role="tab" id="traceResponseTab" aria-controls="traceResponsePanel" aria-selected="false" tabindex="-1" data-i18n="aiHistory.trace.response">Response</button>
+          </div>
+          <section id="traceRequestPanel" class="trace-panel" role="tabpanel" aria-labelledby="traceRequestTab">
+            <details class="ai-execution-section" data-section="prompt">
+              <summary data-i18n="aiHistory.sections.prompt">External prompt</summary>
+              <div class="ai-execution-section-actions"><button id="aiExecutionCopyPrompt" type="button" class="btn-secondary" data-i18n="aiHistory.copyPrompt">Copy prompt</button></div>
+              <pre id="aiExecutionPrompt" class="prompt-textarea ai-execution-pre" tabindex="0"></pre>
+            </details>
+            <details class="ai-execution-section" data-section="context">
+              <summary data-i18n="aiHistory.sections.context">Selected context and provenance</summary>
+              <pre id="aiExecutionContext" class="prompt-textarea ai-execution-pre" tabindex="0"></pre>
+            </details>
+            <details class="ai-execution-section" data-section="payload">
+              <summary data-i18n="aiHistory.sections.payload">Payload sent to the provider</summary>
+              <pre id="aiExecutionPayload" class="prompt-textarea ai-execution-pre" tabindex="0"></pre>
+            </details>
+            <details class="ai-execution-section" data-section="configuration">
+              <summary data-i18n="aiHistory.sections.configuration">Configuration</summary>
+              <pre id="aiExecutionConfiguration" class="prompt-textarea ai-execution-pre" tabindex="0"></pre>
+            </details>
+          </section>
+          <section id="traceResponsePanel" class="trace-panel" role="tabpanel" aria-labelledby="traceResponseTab" hidden>
+            <p id="traceDiagnosis" class="field-hint"></p>
+            <div class="field trace-attempt-controls"><label class="field-label" for="traceAttempt" data-i18n="aiHistory.trace.attempt">Attempt</label><select id="traceAttempt"></select></div>
+            <div class="trace-output-header"><h3 id="traceOutputTitle" data-i18n="aiHistory.trace.outputTitle">Model output</h3><button id="traceCopy" type="button" class="btn-secondary" data-i18n="aiHistory.trace.copy">Copy output</button></div>
+            <pre id="traceOutput" class="prompt-textarea ai-execution-pre trace-output" tabindex="0"></pre>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="shared/shell.js" type="module"></script>
+  <script src="admin-ai-history.js" type="module"></script>
+</body>
+</html>

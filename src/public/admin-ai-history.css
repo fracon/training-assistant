@@ -1,0 +1,101 @@
+@import url('./shared/theme.css');
+/* Administration > Prompt history. Same page rhythm, list rows, icon actions
+   and custom tooltip as Administration > Feedbacks; badge geometry from
+   Administration > Users; trace tabs moved from the former training-memory
+   administrator section. */
+.ai-history-page { max-width: 900px; margin: 0 auto; padding: 1.4rem 1rem 2rem; }
+.ai-history-header h1 { margin: 0 0 .2rem; font-size: 1.45rem; }
+.ai-history-header p { margin: 0 0 .4rem; color: var(--muted); font-size: .86rem; }
+.ai-history-header .ai-history-audit-notice { margin-bottom: 1.2rem; }
+/* Same auxiliary text as Administration > Users. */
+.field-hint { margin: 0; font-size: .78rem; color: var(--muted); opacity: .8; }
+.ai-history-filters { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); gap: .75rem; align-items: end; margin-bottom: 1rem; }
+.ai-history-filters .field { margin: 0; min-width: 0; }
+.ai-history-filters select { width: 100%; min-width: 0; }
+.ai-history-list { display: flex; flex-direction: column; gap: .65rem; list-style: none; margin: 0; padding: 0; }
+.ai-history-row { display: flex; align-items: center; justify-content: space-between; gap: .75rem; border: 1px solid var(--line); border-radius: 14px; background: var(--card); padding: .85rem 1rem; min-width: 0; }
+.ai-history-row-main { min-width: 0; display: flex; flex-direction: column; gap: .35rem; }
+.ai-history-row-top { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.ai-history-meta { margin: 0; color: var(--muted); font-size: .76rem; overflow-wrap: anywhere; }
+.ai-history-meta .ai-history-error-code { color: var(--danger); }
+.ai-history-badge {
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  padding: .2rem .6rem;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  color: var(--muted);
+  background: transparent;
+}
+.ai-history-badge.state-completed { border-color: transparent; background: rgba(85, 121, 79, .12); color: var(--ok); }
+.ai-history-badge.state-failed,
+.ai-history-badge.state-uncertain,
+.ai-history-badge.account-inactive { border-color: transparent; background: rgba(165, 73, 47, .12); color: var(--danger); }
+.ai-history-row-actions { display: flex; align-items: center; flex-shrink: 0; }
+.ai-history-row-actions .btn-icon { position: relative; width: 40px; height: 40px; }
+.ai-history-row-actions .btn-icon svg { width: 18px; height: 18px; }
+.ai-history-row-actions .btn-icon:focus-visible { outline: 2px solid var(--accent-deep); outline-offset: 2px; }
+.ai-history-row-actions .custom-tooltip {
+  position: absolute;
+  bottom: 110%;
+  right: 0;
+  transform: translateY(4px);
+  z-index: 50;
+  width: max-content;
+  max-width: 220px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--card);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, .15);
+  font-size: .75rem;
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .15s ease, transform .15s ease;
+}
+.ai-history-row-actions .btn-icon:hover .custom-tooltip,
+.ai-history-row-actions .btn-icon:focus-visible .custom-tooltip { opacity: 1; transform: translateY(0); }
+.ai-history-state { padding: 3rem 1rem; color: var(--muted); text-align: center; }
+.ai-history-state:empty { display: none; }
+.ai-history-state.hidden, .ai-history-load-more.hidden { display: none; }
+.ai-history-load-more { display: block; margin: 1rem auto 0; }
+
+.ai-execution-card { display: flex; flex-direction: column; max-width: 860px; max-height: calc(100vh - 2rem); min-width: 0; overflow: hidden; }
+.ai-execution-card .modal-header { flex-shrink: 0; }
+.ai-execution-card h2:focus { outline: none; }
+/* The scroll area clips overflow, so it keeps room for focus rings at its edges. */
+.ai-execution-body { min-width: 0; overflow-y: auto; padding: 6px; margin: -6px; }
+.ai-execution-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: .75rem 1rem; margin: 0; padding-bottom: .9rem; border-bottom: 1px solid var(--line); }
+.ai-execution-meta div { min-width: 0; }
+.ai-execution-meta dt { margin: 0 0 .15rem; color: var(--muted); font-size: .72rem; font-weight: 700; letter-spacing: .02em; }
+.ai-execution-meta dd { margin: 0; font-size: .86rem; overflow-wrap: anywhere; display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; }
+.ai-execution-audit { margin: .75rem 0 0; overflow-wrap: anywhere; }
+.trace-tabs { display: flex; gap: .35rem; border-bottom: 1px solid var(--line); margin: .75rem 0; }
+.trace-tabs [role=tab] { border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); padding: .55rem .75rem; cursor: pointer; font: inherit; font-weight: 600; }
+.trace-tabs [aria-selected=true] { color: var(--ink); border-bottom-color: var(--accent); }
+/* Selects and the read-only blocks keep the shared field focus ring from theme.css. */
+.trace-tabs [role=tab]:focus-visible, .ai-execution-card .btn-secondary:focus-visible, .ai-execution-section summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.trace-panel { min-width: 0; }
+.ai-execution-section { border: 1px solid var(--line); border-radius: 12px; padding: .7rem .9rem; margin-bottom: .6rem; min-width: 0; }
+.ai-execution-section summary { cursor: pointer; font-weight: 600; color: var(--accent-deep); }
+.ai-execution-section[open] summary { margin-bottom: .6rem; }
+.ai-execution-section-actions { display: flex; justify-content: flex-end; margin-bottom: .5rem; }
+.ai-execution-pre { margin: 0; max-height: 18rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; min-height: 0; }
+.trace-output { white-space: pre; overflow-wrap: normal; }
+#traceDiagnosis { overflow-wrap: anywhere; }
+.trace-attempt-controls { max-width: 22rem; }
+.trace-output-header { display: flex; align-items: center; justify-content: space-between; gap: .875rem; border-top: 1px solid var(--line); margin: 1rem 0 .6rem; padding-top: .875rem; }
+.trace-output-header h3 { margin: 0; font-size: .95rem; }
+.trace-output-header button { flex: 0 0 auto; }
+@media (max-width: 600px) {
+  .ai-history-filters { grid-template-columns: minmax(0, 1fr); }
+  .trace-output-header { flex-wrap: wrap; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ai-history-row-actions .custom-tooltip { transition: none; }
+}
