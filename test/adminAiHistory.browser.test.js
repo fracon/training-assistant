@@ -107,6 +107,22 @@ test('Chrome PT/EN desktop/mobile: prompt history lists accounts, audits cross-a
       assert.equal(await evaluate("document.querySelector('#aiHistoryList').closest('[inert]') !== null || document.getElementById('appView').inert"), true);
       // Sections start collapsed; opening one stays inside the card on a phone.
       assert.equal(await evaluate("[...document.querySelectorAll('.ai-execution-section')].every((section) => !section.open)"), true);
+      // Collapsed contents are skipped by the trap: Shift+Tab from the close
+      // button wraps to the last visible summary, and Tab wraps back.
+      await evaluate("document.getElementById('aiExecutionClose').focus()");
+      await key('Tab', 'Tab', 9, 8);
+      assert.equal(await evaluate("document.activeElement.closest('details')?.dataset.section + ':' + document.activeElement.tagName"), 'configuration:SUMMARY');
+      await key('Tab', 'Tab', 9);
+      assert.equal(await evaluate('document.activeElement.id'), 'aiExecutionClose');
+      // An opened section's content becomes reachable in order.
+      await evaluate("document.querySelector('.ai-execution-section[data-section=\"prompt\"]').open = true; document.querySelector('.ai-execution-section[data-section=\"prompt\"] summary').focus()");
+      await key('Tab', 'Tab', 9);
+      assert.equal(await evaluate('document.activeElement.id'), 'aiExecutionCopyPrompt');
+      await key('Tab', 'Tab', 9);
+      assert.equal(await evaluate('document.activeElement.id'), 'aiExecutionPrompt');
+      await key('Tab', 'Tab', 9);
+      assert.equal(await evaluate("document.activeElement.closest('details')?.dataset.section"), 'context');
+      await evaluate("document.querySelector('.ai-execution-section[data-section=\"prompt\"]').open = false");
       await evaluate("document.querySelector('.ai-execution-section[data-section=\"context\"]').open = true");
       assert.equal(await evaluate("document.getElementById('aiExecutionContext').scrollWidth <= document.getElementById('aiExecutionContext').clientWidth + 1"), true);
       assert.equal(await evaluate('document.documentElement.scrollWidth > innerWidth'), false);

@@ -1,7 +1,22 @@
+// The content of a closed <details> is not rendered, yet neither [hidden] nor
+// its computed display says so. Only the closed element's own <summary> stays
+// reachable; anything else inside it (at any nesting level) is skipped.
+function hiddenByClosedDetails(element) {
+  let details = element.closest('details:not([open])');
+  while (details) {
+    const summary = element.closest('summary');
+    const ownSummary = summary && summary.parentElement === details && details.querySelector(':scope > summary') === summary;
+    if (!ownSummary) return true;
+    details = details.parentElement?.closest('details:not([open])') ?? null;
+  }
+  return false;
+}
+
 function focusableElements(dialog) {
   return [...dialog.querySelectorAll('button, a[href], input, select, textarea, summary, video[controls], audio[controls], [tabindex]')]
     .filter((element) => {
       if (element.disabled || element.hidden || element.getAttribute('tabindex') === '-1') return false;
+      if (hiddenByClosedDetails(element)) return false;
       return !element.closest('[hidden]') && getComputedStyle(element).display !== 'none';
     });
 }

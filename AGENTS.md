@@ -220,7 +220,9 @@ account ownership, by explicit owner decision. Keep the exception this narrow:
   the Feedbacks list pattern, the shared modal with `createDialogFocusTrap`
   (heading focus, containment, Escape/backdrop, focus back to the row action),
   custom tooltips, `formatDateTime` from `shared/date.js` and the `aiHistory`
-  PT/EN namespace.
+  PT/EN namespace. Its trace sections are collapsed `<details>`, so the shared
+  trap skips anything inside a closed `<details>` except that element's own
+  `<summary>`; keep that rule in `dialog-focus.js` for every dialog.
 
 ## Garmin Connect integration
 
