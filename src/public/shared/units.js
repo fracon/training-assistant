@@ -70,3 +70,71 @@ export function formatPaceFromMetric(value, unit = 'km') {
   const rounded = Math.round(seconds);
   return `${Math.floor(rounded / 60)}:${String(rounded % 60).padStart(2, '0')} min/mi`;
 }
+
+// Body measurements (issue #80). Storage is always kilograms and centimetres;
+// the account's `body_unit` preference only chooses kg/cm or lb/feet-inches.
+export const KG_TO_LB = 2.20462262;
+export const CM_PER_INCH = 2.54;
+
+export function normalizeBodyUnit(unit) {
+  return unit === 'imperial' ? 'imperial' : 'metric';
+}
+
+export function weightFromKg(valueKg, unit = 'metric') {
+  if (valueKg === null || valueKg === undefined || valueKg === '') return null;
+  const kilograms = Number(valueKg);
+  if (!Number.isFinite(kilograms)) return null;
+  return normalizeBodyUnit(unit) === 'imperial' ? kilograms * KG_TO_LB : kilograms;
+}
+
+export function weightToKg(value, unit = 'metric') {
+  const text = String(value ?? '').trim();
+  if (text === '') return null;
+  const weight = Number(text);
+  if (!Number.isFinite(weight)) return null;
+  return normalizeBodyUnit(unit) === 'imperial' ? weight / KG_TO_LB : weight;
+}
+
+export function weightUnitLabel(unit = 'metric') {
+  return normalizeBodyUnit(unit) === 'imperial' ? 'lb' : 'kg';
+}
+
+export function formatWeight(valueKg, unit = 'metric', decimals = 1) {
+  const value = weightFromKg(valueKg, unit);
+  if (value === null) return '';
+  return `${value.toFixed(decimals)} ${weightUnitLabel(unit)}`;
+}
+
+// Imperial heights are typed as whole feet plus inches (one decimal).
+export function heightFromCm(valueCm, unit = 'metric') {
+  if (valueCm === null || valueCm === undefined || valueCm === '') return null;
+  const centimetres = Number(valueCm);
+  if (!Number.isFinite(centimetres)) return null;
+  if (normalizeBodyUnit(unit) !== 'imperial') return { cm: Math.round(centimetres * 10) / 10 };
+  const totalInches = Math.round((centimetres / CM_PER_INCH) * 10) / 10;
+  const feet = Math.floor(totalInches / 12);
+  return { feet, inches: Math.round((totalInches - feet * 12) * 10) / 10 };
+}
+
+export function heightToCm(value, unit = 'metric') {
+  const read = (part) => {
+    const text = String(part ?? '').trim();
+    if (text === '') return null;
+    const number = Number(text);
+    return Number.isFinite(number) ? number : NaN;
+  };
+  if (normalizeBodyUnit(unit) !== 'imperial') {
+    const cm = read(value?.cm);
+    return cm === null || Number.isNaN(cm) ? null : cm;
+  }
+  const feet = read(value?.feet);
+  const inches = read(value?.inches) ?? 0;
+  if (feet === null || Number.isNaN(feet) || Number.isNaN(inches)) return null;
+  return (feet * 12 + inches) * CM_PER_INCH;
+}
+
+export function formatHeight(valueCm, unit = 'metric') {
+  const height = heightFromCm(valueCm, unit);
+  if (!height) return '';
+  return 'cm' in height ? `${height.cm} cm` : `${height.feet} ft ${height.inches} in`;
+}

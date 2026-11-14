@@ -128,7 +128,10 @@ test('a failure after the provider request is logged and never replayed', async 
   const bare = JSON.parse(logged(errors)[1].replace('[Kinesis] ', ''));
   assert.deepEqual([bare.errorName, bare.frames], ['Error', []]);
   assert.doesNotMatch(logged(errors)[1], /private|value/);
-  // The service keeps working for later executions.
+  // The service keeps working for later executions. The failing service is
+  // stopped first: its pump scans every queued row, so it could otherwise
+  // claim the next execution and leave it running.
+  await service.stop();
   const healthy = setup(db, async (payload) => ({ value: planFor(JSON.parse(payload.input[0].content[0].text).context), usage: { input: 10, output: 20, cached: 0 }, error: null }));
   t.after(() => healthy.stop());
   db.prepare("UPDATE ai_executions SET state='failed',settled=1 WHERE state='running'").run();

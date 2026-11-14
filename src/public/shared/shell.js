@@ -26,7 +26,7 @@ export const VERSION_ENDPOINT = '/api/version';
 export const VERSION_FALLBACK_LABEL = 'v-.-.-';
 
 // Sidebar order: Home first, then cycles, then request workouts, then
-// review/log workouts. Ids and hrefs stay stable for route matching. Items
+// review/log workouts, shoes and the weight log. Ids and hrefs stay stable for route matching. Items
 // in CYCLE_DEPENDENT_ITEMS are dynamically disabled when no active training
 // cycle exists.
 const NAV_ITEMS = [
@@ -63,6 +63,15 @@ const NAV_ITEMS = [
     icon: 'footprints',
     labelKey: 'shell.nav.shoes',
     href: '/shoes.html',
+    disabled: false,
+  },
+  // Weight log (issue #80): a recurring tool, so it lives in the sidebar; the
+  // one-time anamnesis stays in the account menu.
+  {
+    id: 'weight',
+    icon: 'weight',
+    labelKey: 'shell.nav.weight',
+    href: '/weight.html',
     disabled: false,
   },
 ];
@@ -282,6 +291,15 @@ export function buildUserMenu() {
   setupGuideLabel.textContent = 'Welcome tour';
   setupGuide.appendChild(setupGuideLabel);
   dropdown.appendChild(setupGuide);
+  const anamnesis = el('a', 'user-menu-item');
+  anamnesis.id = 'userAnamnesis';
+  anamnesis.href = '/anamnesis.html';
+  anamnesis.appendChild(icon('clipboard-list'));
+  const anamnesisLabel = el('span');
+  anamnesisLabel.setAttribute('data-i18n', 'shell.anamnesis');
+  anamnesisLabel.textContent = 'My running profile';
+  anamnesis.appendChild(anamnesisLabel);
+  dropdown.appendChild(anamnesis);
   const memory = el('a', 'user-menu-item');
   memory.id = 'userTrainingMemory';
   memory.href = '/training-memory.html';
@@ -673,6 +691,10 @@ export function openPreferencesModal(messages = shellI18n.messages) {
     { value: 'C', labelKey: 'preferences.temperature.celsius' },
     { value: 'F', labelKey: 'preferences.temperature.fahrenheit' },
   ], userPreferences.temperature_unit));
+  form.appendChild(buildPreferenceGroup('body_unit', 'preferences.bodyLabel', [
+    { value: 'metric', labelKey: 'preferences.body.metric' },
+    { value: 'imperial', labelKey: 'preferences.body.imperial' },
+  ], userPreferences.body_unit));
   const actions = el('div', 'form-actions');
   const submit = el('button', 'btn-primary');
   submit.type = 'submit';
@@ -711,6 +733,7 @@ export function wirePreferencesForm(form, messages = shellI18n.messages) {
       first_day_of_week: form.elements.first_day_of_week.value,
       distance_unit: form.elements.distance_unit.value,
       temperature_unit: form.elements.temperature_unit.value,
+      body_unit: form.elements.body_unit.value,
     };
     submit.disabled = true;
     submitLabel.textContent = translate(activeMessages, 'preferences.saving');
@@ -996,6 +1019,7 @@ export async function initShell({ active } = {}) {
     first_day_of_week: user.first_day_of_week,
     distance_unit: user.distance_unit,
     temperature_unit: user.temperature_unit,
+    body_unit: user.body_unit,
   });
 
   setUserBadge(user);

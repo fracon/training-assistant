@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="/assets/brand/favicon.png?v=5" type="image/png">
+  <title data-i18n="anamnesis.pageTitle">My running profile - Kinesis</title>
+  <link rel="stylesheet" href="shared/shell.css"><link rel="stylesheet" href="shared/components.css">
+  <link rel="stylesheet" href="shoes.css"><link rel="stylesheet" href="anamnesis.css">
+</head>
+<body>
+<main id="appView"><section class="shoes-page anamnesis-page" aria-labelledby="anamnesisTitle">
+  <header class="shoes-header anamnesis-header">
+    <div class="shoes-header-text">
+      <h1 id="anamnesisTitle" tabindex="-1" data-i18n="anamnesis.title">My running profile</h1>
+      <p class="shoes-subtitle" data-i18n="anamnesis.subtitle">Tell us how you run today so planning fits you.</p>
+    </div>
+    <span id="anamnesisStatus" class="anamnesis-badge" hidden></span>
+  </header>
+  <p id="anamnesisLoading" class="field-hint" role="status" aria-live="polite" data-i18n="anamnesis.loading">Loading your running profile…</p>
+  <div id="anamnesisLoadError" class="form-error anamnesis-load-error" role="alert" hidden>
+    <span data-i18n="anamnesis.errors.load">Your running profile could not be loaded.</span>
+    <button id="anamnesisRetry" type="button" class="btn-secondary" data-i18n="anamnesis.actions.retry">Try again</button>
+  </div>
+
+  <section id="anamnesisWizard" class="shoe-card anamnesis-card" hidden aria-labelledby="anamnesisStepTitle">
+    <ol id="anamnesisSteps" class="anamnesis-steps" data-i18n-aria-label="anamnesis.progressLabel" aria-label="Profile steps"></ol>
+    <p id="anamnesisProgress" class="field-hint anamnesis-progress"></p>
+    <h2 id="anamnesisStepTitle" tabindex="-1"></h2>
+    <p id="anamnesisStepIntro" class="field-hint anamnesis-step-intro"></p>
+    <form id="anamnesisForm" novalidate>
+      <div id="anamnesisStepFields" class="anamnesis-fields"></div>
+      <div id="anamnesisFormError" class="form-error" role="alert" tabindex="-1" hidden></div>
+      <button id="anamnesisReloadExperience" type="button" class="btn-secondary anamnesis-recovery" data-i18n="anamnesis.actions.reloadExperience" hidden>Reload saved version</button>
+      <div class="form-actions anamnesis-actions">
+        <button id="anamnesisBack" type="button" class="btn-secondary" data-i18n="anamnesis.actions.back">Back</button>
+        <button id="anamnesisCancel" type="button" class="btn-secondary" data-i18n="anamnesis.actions.cancel" hidden>Cancel</button>
+        <button id="anamnesisNext" type="submit" class="btn-primary"></button>
+      </div>
+    </form>
+  </section>
+
+  <section id="anamnesisReview" class="anamnesis-review" hidden aria-labelledby="anamnesisReviewTitle">
+    <h2 id="anamnesisReviewTitle" tabindex="-1" data-i18n="anamnesis.steps.review.title">Review</h2>
+    <p id="anamnesisReviewIntro" class="field-hint" data-i18n="anamnesis.steps.review.intro"></p>
+    <div id="anamnesisSummary" class="anamnesis-summary"></div>
+    <div id="anamnesisReviewError" class="form-error" role="alert" hidden></div>
+    <div id="anamnesisReviewActions" class="form-actions anamnesis-actions">
+      <button id="anamnesisComplete" type="button" class="btn-primary" data-i18n="anamnesis.actions.complete">Complete profile</button>
+    </div>
+    <section class="shoe-card anamnesis-card anamnesis-sources" aria-labelledby="anamnesisSourcesTitle">
+      <h3 id="anamnesisSourcesTitle" data-i18n="anamnesis.review.sourcesTitle">Information kept on other screens</h3>
+      <p class="field-hint" data-i18n="anamnesis.review.sourcesHint"></p>
+      <ul class="anamnesis-source-list">
+        <li><span data-i18n="anamnesis.review.sources.cycles">Goals, races and target dates</span><a href="/cycles.html" data-i18n="anamnesis.review.openCycles">Training Cycles</a></li>
+        <li><span data-i18n="anamnesis.review.sources.availability">Days, times and available time</span><a href="/ai-coach.html" data-i18n="anamnesis.review.openAvailability">Request Workouts</a></li>
+        <li><span data-i18n="anamnesis.review.sources.preferences">Units, language and week start</span><button id="anamnesisOpenPreferences" type="button" class="anamnesis-link-button" data-i18n="anamnesis.review.openPreferences">Preferences</button></li>
+        <li><span data-i18n="anamnesis.review.sources.weight">Weight over time</span><a href="/weight.html" data-i18n="anamnesis.review.openWeight">Weight log</a></li>
+        <li><span data-i18n="anamnesis.review.sources.memory">Training history and reports</span><a href="/training-memory.html" data-i18n="anamnesis.review.openMemory">Training memory</a></li>
+      </ul>
+    </section>
+  </section>
+
+  <section id="anamnesisPrivacy" class="shoe-card anamnesis-card" hidden aria-labelledby="anamnesisPrivacyTitle">
+    <h2 id="anamnesisPrivacyTitle" data-i18n="anamnesis.privacy.title">Privacy and your data</h2>
+    <p data-i18n="anamnesis.privacy.stored"></p>
+    <p data-i18n="anamnesis.privacy.ai"></p>
+    <p data-i18n="anamnesis.privacy.admin"></p>
+    <p data-i18n="anamnesis.privacy.control"></p>
+    <div class="form-actions anamnesis-data-actions">
+      <a id="anamnesisExport" class="btn-secondary" href="/api/anamnesis/export" download="kinesis-anamnesis.json" data-i18n="anamnesis.actions.export">Download my answers</a>
+      <button id="anamnesisDelete" type="button" class="btn-secondary anamnesis-danger" data-i18n="anamnesis.actions.delete">Delete profile and weight log</button>
+    </div>
+  </section>
+</section></main>
+<script src="https://unpkg.com/lucide@latest"></script><script src="anamnesis.js" type="module"></script>
+</body></html>

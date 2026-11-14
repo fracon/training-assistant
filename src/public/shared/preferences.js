@@ -4,12 +4,14 @@ export const DEFAULT_USER_PREFERENCES = Object.freeze({
   first_day_of_week: 'Monday',
   distance_unit: 'km',
   temperature_unit: 'C',
+  body_unit: 'metric',
 });
 
 const SUPPORTED = {
   first_day_of_week: ['Monday', 'Sunday'],
   distance_unit: ['km', 'mi'],
   temperature_unit: ['C', 'F'],
+  body_unit: ['metric', 'imperial'],
 };
 
 export function normalizeUserPreferences(values = {}) {

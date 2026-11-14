@@ -378,6 +378,16 @@ test('NAV_ITEMS includes cycles between dashboard and ai-coach', () => {
   );
 });
 
+test('shell.js NAV_ITEMS ends with the weight log after shoes, and the anamnesis stays in the account menu', () => {
+  const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
+  const block = js.slice(js.indexOf('const NAV_ITEMS = ['), js.indexOf('];', js.indexOf('const NAV_ITEMS = [')));
+  assert.deepEqual([...block.matchAll(/id:\s*'([^']+)'/g)].map((match) => match[1]), ['dashboard', 'cycles', 'ai-coach', 'calendar', 'shoes', 'weight']);
+  assert.match(block, /id:\s*'weight',\s*icon:\s*'weight',\s*labelKey:\s*'shell\.nav\.weight',\s*href:\s*'\/weight\.html',\s*disabled:\s*false/);
+  assert.doesNotMatch(block, /anamnesis\.html/);
+  assert.equal(en.shell.nav.weight, 'Weight Log');
+  assert.equal(pt.shell.nav.weight, 'Registro de Peso');
+});
+
 test('shell.js NAV_ITEMS array includes cycles with repeat icon', () => {
   const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
   assert.match(js, /id:\s*'cycles'/, 'cycles nav item exists');
@@ -782,9 +792,12 @@ test('the user menu injects a clickable dropdown and the change-password item op
     const setupGuide = registry.get('userSetupGuide');
     assert.deepEqual(
       dropdown.children.map((item) => item.id),
-      ['userSetupGuide', 'userTrainingMemory', 'userChangePassword', 'userPreferences'],
-      'DOM and natural keyboard order is Welcome tour, Training memory, Change Password, then Preferences'
+      ['userSetupGuide', 'userAnamnesis', 'userTrainingMemory', 'userChangePassword', 'userPreferences'],
+      'DOM and natural keyboard order is Welcome tour, running profile, Training memory, Change Password, then Preferences'
     );
+    const anamnesis = registry.get('userAnamnesis');
+    assert.equal(anamnesis.tag, 'a');
+    assert.equal(anamnesis.href, '/anamnesis.html');
 
     assert.ok(menu.className === 'user-menu', 'the wrapper renders as .user-menu');
     assert.equal(badge.tag, 'button', 'the badge renders as a button');

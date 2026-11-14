@@ -8,12 +8,12 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.41.0`); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.42.0`); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
 home dashboard, contextual training result, calendar, Solicitar Treinos
-(`ai-coach`), cycles, shoes, training memory,
+(`ai-coach`), cycles, shoes, weight log, anamnesis, training memory,
 and the admin-only administration page. Shared frontend responsibilities live under
 `src/public/shared/`: `shell.js` injects navigation and account controls;
 `onboarding.js` contains onboarding state/presentation helpers;
@@ -188,6 +188,63 @@ onboarding record of the account is preserved.
   Only admins can list, inspect, triage, or delete feedback.
 - The admin page reuses the Administration sidebar group, shared modal/focus
   and confirmation patterns, escaped DOM text, and the PT/EN locale contract.
+
+## Athlete anamnesis (#80)
+
+Issue #80 holds the owner-approved specification (2026-11-13). PR 1 (this
+contract) delivers the questionnaire, the weight log page and the anamnesis
+page; PR 2 adds AI context
+integration, the `409 anamnesisRequired` gate for AI cycle/weekly generation
+(all accounts, generation only), the post-signup redirect, the dashboard
+pending item and the training-memory source.
+
+- `src/anamnesis.js` owns the versioned `anamnesis-v1` questionnaire. The
+  definition is served by `GET /api/anamnesis` and rendered generically by
+  `anamnesis.js`; validation lives only in the backend (100% coverage). Do not
+  add questions that duplicate cycles (goals, races, dates), availability,
+  preferences, account name, session feedback or `ai_profiles.experience`,
+  which the page edits through the existing `PUT /api/ai/profile`.
+- Each item stores an explicit `answered`/`unknown`/`declined` status;
+  `not_applicable` is server-only (follow-ups of zero runs a week) and is
+  removed when the parent changes, so stale answers never reappear. A "no"
+  never keeps details. Nothing is pre-selected.
+- Writes take `expected_revision` (`409 anamnesisConflict`). A completed
+  anamnesis stays completed: an edit that would leave it incomplete is refused
+  with `anamnesisIncomplete` and the missing keys. Errors carry `field`.
+- Weight is a dated log (`body_weight_entries`, one per civil date, 20–400 kg,
+  no future dates, at most 1000). The `weight` item records only the choice; a
+  completed "answered" weight keeps at least one entry (`weightRequired`).
+- The log has its own page, `/weight.html` (`weight.js`/`weight.css`, sidebar
+  item `weight` after shoes, `weightLog` PT/EN namespace), read through
+  `GET /api/body-weights` (`listWeights`: entries, civil today and the
+  anamnesis `status`/`weight_status`, only to explain them). The anamnesis
+  stays in the account menu and never shows a second log: the weight question
+  records the first entry and, once one exists, shows the latest with a link
+  to the page. Logging never changes the weight answer; a declined answer is
+  only explained there.
+  `users.body_unit` (`metric`/`imperial`) is optional in the preferences PATCH
+  and only changes display through `shared/units.js`.
+- `sensitive_ai_consent` (with its first-grant date) is stored now and unused
+  until PR 2; without it, no health answer, height or weight may reach AI.
+- Owner-scoped routes only, `Cache-Control: no-store`; no admin read. Delete
+  erases answers, consent and the weight log (experience notes stay in
+  training memory); account deletion cascades. Migration
+  `2026-11-athlete-anamnesis-v1`. No answer in logs, URLs or fixtures.
+- Numeric answers (year of birth, height, weight, runs, distances, race
+  year) are number inputs with the backend limits, and race times are hours,
+  minutes and seconds like the manual result. Each field shows a localized
+  valid example as placeholder (`anamnesis.placeholders`). An open step saves
+  against the revision it was rendered from, so another tab's save is a
+  conflict; a pending weight-log value is converted, never reinterpreted,
+  when `body_unit` changes.
+- A preference change re-renders the open step from the unsaved draft
+  (`captureStep`/`restoreStep`), converting height, weight and distances to
+  the new units; it never falls back to the last saved answers. A step whose
+  answers saved but whose experience notes failed is retried against the new
+  revision without logging its weight again; a `memoryConflict` offers
+  "Reload saved version", which keeps the typed notes (as Training memory).
+- Covered by `test/anamnesis.test.js`, `test/anamnesis.browser.test.js` and
+  `test/weight.browser.test.js`.
 
 ## Administration prompt history (#113)
 

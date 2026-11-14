@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS users (
   onboarding_status TEXT NOT NULL DEFAULT 'active',
   onboarding_guide_hidden INTEGER NOT NULL DEFAULT 0,
   is_active       INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
+  body_unit      TEXT    NOT NULL DEFAULT 'metric' CHECK (body_unit IN ('metric', 'imperial')),
   created_at     TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -1181,6 +1182,56 @@ function migrateDatabase(db) {
     );
   });
   initializeAiExecutionViewAudit();
+
+  // Athlete anamnesis (issue #80). One owner-scoped questionnaire row and a
+  // dated body-weight log, both removed with the account. `users.body_unit`
+  // only chooses how body measurements are shown; storage is always metric.
+  // Existing accounts receive the metric default; no other row is rewritten.
+  const anamnesisMarker = '2026-11-athlete-anamnesis-v1';
+  const initializeAnamnesis = db.transaction(() => {
+    if (
+      db
+        .prepare('SELECT 1 FROM schema_migrations WHERE name = ?')
+        .get(anamnesisMarker)
+    )
+      return;
+    if (
+      !db
+        .pragma('table_info(users)')
+        .some((column) => column.name === 'body_unit')
+    ) {
+      db.exec(
+        "ALTER TABLE users ADD COLUMN body_unit TEXT NOT NULL DEFAULT 'metric' CHECK (body_unit IN ('metric', 'imperial'))",
+      );
+    }
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS athlete_anamnesis (
+        user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        questionnaire_version TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('draft', 'completed')),
+        answers_json TEXT NOT NULL DEFAULT '{}',
+        sensitive_ai_consent INTEGER NOT NULL DEFAULT 0 CHECK (sensitive_ai_consent IN (0, 1)),
+        sensitive_ai_consent_at TEXT,
+        revision INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        completed_at TEXT
+      );
+      CREATE TABLE IF NOT EXISTS body_weight_entries (
+        id INTEGER PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        measured_on TEXT NOT NULL,
+        weight_kg REAL NOT NULL CHECK (weight_kg >= 20 AND weight_kg <= 400),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE (user_id, measured_on)
+      );
+    `);
+    db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(
+      anamnesisMarker,
+    );
+  });
+  initializeAnamnesis();
   require('../ai/schema').migrateAi(db);
   require('../ai/schema').migrateAiDiagnostics(db);
   require('../ai/schema').migrateAiRawOutputs(db);
