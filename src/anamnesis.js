@@ -1,7 +1,8 @@
 'use strict';
 
-// Athlete anamnesis (issue #80, PR 1): a versioned, owner-scoped questionnaire
-// plus a dated body-weight log. Nothing here calls AI or another service.
+// Athlete anamnesis (issue #80): a versioned, owner-scoped questionnaire plus a
+// dated body-weight log. Nothing here calls AI or another service; PR 2 adds
+// the read-only projection that AI contexts select (`anamnesisContext`).
 //
 // Every questionnaire item stores an explicit status:
 //   answered        a value (a negative answer is `answered` with "no")
@@ -15,7 +16,7 @@
 // (preferences), name (account) and free-text experience (`ai_profiles`).
 
 const { userToday } = require('./time-zone');
-const { readMemory } = require('./ai/memory');
+const { readMemory, hash } = require('./ai/memory');
 
 const QUESTIONNAIRE_VERSION = 'anamnesis-v1';
 const STATUSES = ['answered', 'unknown', 'declined', 'not_applicable'];
@@ -404,6 +405,109 @@ function exportAnamnesis(db, userId, now = new Date().toISOString()) {
   };
 }
 
+/* ── AI context projection (issue #80, PR 2) ────────────────── */
+
+function anamnesisStatus(db, userId) {
+  return { status: readRow(db, userId)?.status ?? 'not_started' };
+}
+
+// AI cycle and weekly generation require a completed anamnesis.
+function anamnesisCompleted(db, userId) {
+  return anamnesisStatus(db, userId).status === 'completed';
+}
+
+// Weight entries older than the latest by at most this many days describe the
+// recent change; older history stays out of the context.
+const WEIGHT_TREND_DAYS = 56;
+
+function addDays(day, amount) {
+  const result = new Date(`${day}T00:00:00.000Z`);
+  result.setUTCDate(result.getUTCDate() + amount);
+  return result.toISOString().slice(0, 10);
+}
+
+// "I don't know" and "I'd rather not say" reach the model only as not informed.
+function contextValue(item, answer) {
+  if (!answer || answer.status === 'unknown' || answer.status === 'declined') return 'not_informed';
+  if (answer.status === 'not_applicable') return 'not_applicable';
+  const value = answer.value;
+  if (item.type === 'multi') return value.other_text ? { options: value.options, otherText: value.other_text } : { options: value.options };
+  if (item.type === 'yes_no') return value.details ? { answer: value.answer, details: value.details } : { answer: value.answer };
+  if (item.type === 'races')
+    return value.map((race) => ({
+      distance: race.distance,
+      distanceKm: race.distance === 'other' ? race.distance_km : RACE_DISTANCES[race.distance],
+      timeSeconds: race.time_seconds,
+      year: race.year,
+    }));
+  return value;
+}
+
+function weightContext(db, userId) {
+  const entries = publicWeights(db, userId);
+  if (!entries.length) return 'not_informed';
+  const [latest] = entries;
+  const from = addDays(latest.measured_on, -WEIGHT_TREND_DAYS);
+  const earliest = entries.filter((entry) => entry.measured_on >= from).at(-1);
+  return {
+    latestKg: latest.weight_kg,
+    measuredOn: latest.measured_on,
+    ...(earliest.id === latest.id ? {} : { changeSince: { kg: earliest.weight_kg, measuredOn: earliest.measured_on } }),
+  };
+}
+
+// The minimum a completed anamnesis contributes to an AI context, or null when
+// it is not completed. Without the separate consent no health answer, height
+// or weight is included, not even as "not informed". `basisVersion` versions
+// the answers and consent but not the weight log, so logging a weight never
+// outdates an applied cycle plan; the weights still take part in the whole
+// context hash of proposals and analyses.
+function anamnesisContext(db, userId) {
+  const row = readRow(db, userId);
+  if (!row || row.status !== 'completed') return null;
+  const definition = questionnaire(Number(row.completed_at.slice(0, 4)));
+  const answers = JSON.parse(row.answers_json);
+  const consent = row.sensitive_ai_consent === 1;
+  const item = (key) => itemsOf(definition).find((candidate) => candidate.key === key);
+  const value = (key) => contextValue(item(key), answers[key]);
+  const projection = {
+    authority: 'user_report',
+    questionnaireVersion: row.questionnaire_version,
+    completedOn: row.completed_at.slice(0, 10),
+    updatedOn: row.updated_at.slice(0, 10),
+    sensitiveDataShared: consent,
+    about: { birthYear: value('birth_year'), motivations: value('motivations') },
+    experience: {
+      runningExperience: value('running_experience'),
+      recentConsistency: value('recent_consistency'),
+      selfReportedBase: {
+        note: 'Self-reported by the athlete when answering. Measured sessions in this context take precedence.',
+        runsPerWeek: value('runs_per_week'),
+        weeklyDistanceKm: value('weekly_distance_km'),
+        longestRunKm: value('longest_run_km'),
+      },
+      raceResults: value('race_results'),
+    },
+    routine: {
+      strengthTraining: value('strength_training'),
+      otherActivities: value('other_activities'),
+      heartRateDevice: value('hr_device'),
+    },
+  };
+  if (consent) {
+    projection.body = { heightCm: value('height_cm'), weight: answers.weight?.status === 'answered' ? 'answered' : 'not_informed' };
+    projection.health = {
+      currentPain: value('current_pain'),
+      injuriesLast12Months: value('injuries_12_months'),
+      professionalRestriction: value('professional_restriction'),
+      healthConditions: value('health_conditions'),
+    };
+  }
+  const basisVersion = hash(projection);
+  if (consent) projection.body.weight = answers.weight?.status === 'answered' ? weightContext(db, userId) : 'not_informed';
+  return { projection, basisVersion };
+}
+
 /* ── Body-weight log ─────────────────────────────────────────── */
 
 function weightId(value) {
@@ -499,6 +603,9 @@ module.exports = {
   QUESTIONNAIRE_VERSION,
   RACE_DISTANCES,
   addWeight,
+  anamnesisCompleted,
+  anamnesisContext,
+  anamnesisStatus,
   completeAnamnesis,
   deleteAnamnesis,
   deleteWeight,

@@ -1,5 +1,6 @@
 'use strict';
 
+const { withCompletedAnamnesis } = require('./helpers/anamnesis.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -97,7 +98,7 @@ async function postParts(app, parts, cookie) {
 }
 
 async function authenticatedApp(options = {}) {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ ...options, db, sessionCookieSecure: false });
   await app.inject({
     method: 'POST',
@@ -336,7 +337,7 @@ test('POST /api/fit/parse tolerates an empty form payload', async () => {
 });
 
 test('authenticated uploads render the prompt in the user preferred language', async () => {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db, parseFitFile: stubParse(), sessionCookieSecure: false });
 
   await app.inject({
@@ -386,7 +387,7 @@ test('authenticated uploads render the prompt in the user preferred language', a
 });
 
 test('GET /api/hero-image returns the mocked Unsplash payload for an authenticated user', async () => {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({
     db,
     sessionCookieSecure: false,
@@ -433,7 +434,7 @@ test('the default parser rejects garbage uploads end-to-end', async () => {
 });
 
 test('POST /api/auth/register creates a user and never exposes the hash', async () => {
-  const db = await createDatabase({ filename: ':memory:' });
+  const db = await withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db });
 
   const response = await app.inject({
@@ -470,7 +471,7 @@ test('POST /api/auth/register creates a user and never exposes the hash', async 
 });
 
 test('POST /api/auth/register validates fields and duplicates', async () => {
-  const db = await createDatabase({ filename: ':memory:' });
+  const db = await withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db });
 
   const missing = await app.inject({
@@ -513,7 +514,7 @@ test('POST /api/auth/register validates fields and duplicates', async () => {
 });
 
 test('unexpected registration failures surface as HTTP 500', async () => {
-  const db = await createDatabase({ filename: ':memory:' });
+  const db = await withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db });
   await db.close();
 

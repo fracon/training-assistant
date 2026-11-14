@@ -206,7 +206,7 @@ async function initMemory() {
       card.setAttribute('aria-labelledby', h.id);
       header.append(h);
       if (key !== 'interpretations') {
-        const actions = { cycle: 'editCycle', availability: 'editAvailability', plan: 'openPlanning', shoes: 'openShoes', previousCycles: 'openCycles' };
+        const actions = { cycle: 'editCycle', availability: 'editAvailability', plan: 'openPlanning', shoes: 'openShoes', previousCycles: 'openCycles', anamnesis: 'editAnamnesis' };
         link(header, href, t(actions[key] ?? 'openCalendar'), key);
       }
       card.append(header); paragraph(card, t(origin), true);
@@ -257,6 +257,16 @@ async function initMemory() {
       paragraph(availability, t('durationHint'), true);
       if (sameUpdate) paragraph(availability, `${t('updated')}: ${date(rows[0].updatedAt)}`, true).classList.add('memory-updated');
     }
+    // The anamnesis is a source like the others: origin, date and a link to
+    // correct it; its answers are not repeated here.
+    const anamnesis = section('anamnesis', 'anamnesisOrigin', memory.anamnesis.href);
+    if (memory.anamnesis.used) {
+      paragraph(anamnesis, t('anamnesisUsed'));
+      const facts = node('dl', 'memory-facts'); anamnesis.append(facts);
+      metric(facts, t('anamnesisCompleted'), date(memory.anamnesis.completedOn));
+      metric(facts, t('anamnesisSensitive'), t(memory.anamnesis.sensitiveDataShared ? 'anamnesisShared' : 'anamnesisNotShared'));
+      paragraph(anamnesis, `${t('updated')}: ${date(memory.anamnesis.updatedOn)}`, true).classList.add('memory-updated');
+    } else paragraph(anamnesis, t(memory.anamnesis.status === 'draft' ? 'anamnesisDraft' : 'anamnesisNotStarted'));
     if (memory.purpose !== 'cycle') {
       const plan = section('plan', 'planOrigin', '/cycles.html');
       const applied = memory.appliedPlan;

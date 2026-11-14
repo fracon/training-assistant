@@ -4,6 +4,7 @@ const { sanitizeDiagnostic, saveDiagnostic } = require('./diagnostics');
 const { randomUUID } = require('node:crypto');
 const { AiError, hash, activeOwner, exactKeys } = require('./memory');
 const { buildContext, contextIsCurrent, tokenBound } = require('./context');
+const { anamnesisCompleted } = require('../anamnesis');
 const { availabilitySnapshotMatches } = require('../availability');
 const {
   renderPrompt,
@@ -278,6 +279,10 @@ function createExecutionService({
           AND json_extract(configuration_json,'$.requestHash')=? LIMIT 1`)
           .get(userId, body.purpose, body.resource_id ?? null, requestHash);
         if (equivalent) throw new AiError('generationInProgress', 409, { executionId: equivalent.id });
+        // Issue #80: generating a plan needs the completed anamnesis, for every
+        // account (admins included). Analysis and the free prompt are not gated.
+        if (['cycle', 'workouts'].includes(body.purpose) && !anamnesisCompleted(db, userId))
+          throw new AiError('anamnesisRequired', 409);
         const id = randomUUID();
         if (
           body.purpose === 'workouts' &&

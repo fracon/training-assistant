@@ -1,5 +1,6 @@
 'use strict';
 
+const { withCompletedAnamnesis } = require('./helpers/anamnesis.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } = require('node:fs');
@@ -67,7 +68,7 @@ test('the session page requires a realized RPE before saving, generating or uplo
   const chrome = findChrome();
   assert.ok(chrome, 'Chrome is required for the session browser verification.');
 
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   let providerCalls = 0;
   let invalidNextProviderResponse = false;
   let holdNextFitParse = false;

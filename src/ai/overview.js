@@ -2,6 +2,7 @@
 const { buildContext } = require('./context');
 const { readMemory, AiError } = require('./memory');
 const { userToday } = require('../time-zone');
+const { anamnesisStatus } = require('../anamnesis');
 
 const PURPOSES = ['cycle', 'workouts', 'analysis'];
 
@@ -91,6 +92,15 @@ function memoryOverview(db, userId, config, asOf = null, { purpose = 'cycle', re
           ? { session: context.resource ? session(context.resource) : null }
           : { cycleId: task.resourceId },
       profile,
+      // Whether this task's context carries the anamnesis, and in what form.
+      anamnesis: {
+        ...anamnesisStatus(db, userId),
+        used: Boolean(context.anamnesis),
+        completedOn: context.anamnesis?.completedOn ?? null,
+        updatedOn: context.anamnesis?.updatedOn ?? null,
+        sensitiveDataShared: context.anamnesis?.sensitiveDataShared ?? false,
+        href: '/anamnesis.html',
+      },
       legacyAvailable,
       ranges: context.ranges,
       cycle: context.cycle && {

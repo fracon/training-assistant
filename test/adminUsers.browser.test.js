@@ -1,5 +1,6 @@
 'use strict';
 
+const { withCompletedAnamnesis } = require('./helpers/anamnesis.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { existsSync, mkdtempSync, rmSync } = require('node:fs');
@@ -42,7 +43,7 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
   const chrome = findChrome();
   assert.ok(chrome, 'Chrome is required for administration browser verification.');
 
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db, sessionCookieSecure: false });
   const admin = await makeAccount(db, {
     email: 'admin@example.test', firstName: 'Ada', lastName: 'Admin', role: 'admin',

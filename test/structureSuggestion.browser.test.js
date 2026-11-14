@@ -1,5 +1,6 @@
 'use strict';
 
+const { withCompletedAnamnesis } = require('./helpers/anamnesis.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { existsSync, mkdtempSync, rmSync, writeFileSync } = require('node:fs');
@@ -36,7 +37,7 @@ const session = (date, prescription, sessionKind = 'easy') => ({ date, weekday: 
 
 test('AI-suggested structure is reviewed, accepted and dismissed explicitly in the existing editor, PT/EN desktop and mobile', async () => {
   assert.ok(chrome, 'Chrome is required for the suggestion UI verification.');
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const owner = await registerUser(db, { email: 'suggestion-ui@example.test', password: 'Synthetic-only-1', first_name: 'Test', last_name: 'Runner' });
   db.prepare("UPDATE users SET distance_unit = 'km' WHERE id = ?").run(owner.id);
   const addTraining = (value, language = 'en-US') => {

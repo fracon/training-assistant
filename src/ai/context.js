@@ -4,6 +4,7 @@ const { AiError, hash, readMemory, activeOwner, date } = require('./memory');
 const { readAiConfig } = require('./config');
 const { rpeIssue } = require('./cycle-plan-schema');
 const { localDate } = require('../time-zone');
+const { anamnesisContext } = require('../anamnesis');
 const POLICY_VERSION = 'training-context-v6';
 const ANALYSIS_POLICY_VERSION = 'training-analysis-context-v2';
 // Conservative token estimate for budgeting: one token per three UTF-8 bytes.
@@ -167,6 +168,9 @@ function buildContext(
     weather = [],
     taskNotes = '',
     freshnessExecutionId = null,
+    // A freshness rebuild includes the anamnesis only when the stored context
+    // had it, so contexts built before the source existed keep their hash.
+    includeAnamnesis = true,
   },
 ) {
   if (!['cycle', 'workouts', 'analysis'].includes(purpose))
@@ -315,6 +319,13 @@ function buildContext(
     id: 'self',
     version: hash(context.preferences),
   });
+  // Completed anamnesis (issue #80): a user report, consent-aware. Absent
+  // (not completed or not requested) it adds no key, reference or gap.
+  const anamnesis = includeAnamnesis ? anamnesisContext(db, userId) : null;
+  if (anamnesis) {
+    context.anamnesis = anamnesis.projection;
+    addReference({ type: 'anamnesis', id: 'self', version: anamnesis.basisVersion });
+  }
   // Mandatory context is never silently truncated; a too-small budget refuses dispatch.
   if (cycle) {
     context.cycle = {
@@ -763,6 +774,7 @@ function contextIsCurrent(db, userId, context, config) {
         weather: context.weather || [],
         taskNotes: context.taskNotes?.text || '',
         freshnessExecutionId: context._freshnessExecutionId || null,
+        includeAnamnesis: Object.hasOwn(context, 'anamnesis'),
       }).hash === context.hash
     );
   } catch (error) {
@@ -771,7 +783,8 @@ function contextIsCurrent(db, userId, context, config) {
   }
 }
 // An applied macrocycle depends only on its basis: the cycle definition (goal,
-// targets, dates), the weekly availability and the optional prior experience.
+// targets, dates), the weekly availability, the optional prior experience and,
+// for plans that recorded it, the anamnesis answers (never the weight log).
 // It is outdated when one of those differs from the versions recorded when it
 // was applied. Executing the plan (results, feedback, discomfort, shoes, newly
 // planned sessions) does not outdate it. A version without a recorded cycle
@@ -783,6 +796,7 @@ function planBasis(sources, cycleId) {
         (ref) =>
           (ref.type === 'cycle' && ref.id === cycleId) ||
           ref.type === 'profile' ||
+          ref.type === 'anamnesis' ||
           ref.type === 'availability',
       )
       .map((ref) => [`${ref.type}:${ref.id}`, ref.version]),
@@ -811,6 +825,12 @@ function appliedPlanIsCurrent(db, userId, cycleId, sourcesJson) {
       return [`availability:${row.day_key}`, [availabilitySource(row).version, hash(legacy)]];
     }),
   ]);
+  // Plans applied before the anamnesis was a source never depend on it; one
+  // that recorded it is outdated when it changes or is no longer completed.
+  if (stored.has('anamnesis:self')) {
+    const anamnesis = anamnesisContext(db, userId);
+    if (anamnesis) current.set('anamnesis:self', [anamnesis.basisVersion]);
+  }
   return (
     stored.size === current.size &&
     [...stored].every(([key, version]) => current.get(key)?.includes(version))

@@ -142,7 +142,9 @@
     "shoesTarget": "Target: {target} km",
     "weeklyApplyStructuresSuggested": "Workout structures suggested for review: {count}. Open each workout to check them; nothing was sent to Garmin.",
     "weeklyApplyStructuresIncompatible": "{count} must be built manually.",
-    "weeklyApplyStructuresConflicts": "{count} differ from a structure already saved, which was kept."
+    "weeklyApplyStructuresConflicts": "{count} differ from a structure already saved, which was kept.",
+    "anamnesisNotice": "To generate workouts with AI, first finish your running profile. It takes about 5 minutes and personalizes the proposal.",
+    "openAnamnesis": "Open running profile"
   },
   "calendar": {
     "title": "Workouts",
@@ -240,7 +242,9 @@
       "yes": "Delete",
       "no": "Cancel"
     },
-    "anamnesis": "My running profile"
+    "anamnesis": "My running profile",
+    "anamnesisLock": "Finish your running profile to unlock every Kinesis screen. It takes about 5 minutes.",
+    "anamnesisLockTitle": "Menu locked"
   },
   "login": {
     "title": "Sign In - Kinesis",
@@ -2016,7 +2020,17 @@
     "weeklyMissing": "{count} without metrics",
     "availabilityLocation": "Location: {location}",
     "experienceCount": "{count} of {max} characters",
-    "unsaved": "Unsaved changes"
+    "unsaved": "Unsaved changes",
+    "anamnesis": "Running profile",
+    "anamnesisOrigin": "Source: your running profile (self-reported answers)",
+    "editAnamnesis": "Open running profile",
+    "anamnesisUsed": "Included in this task's context.",
+    "anamnesisCompleted": "Completed on",
+    "anamnesisSensitive": "Health, height and weight",
+    "anamnesisShared": "Shared with AI",
+    "anamnesisNotShared": "Not shared with AI",
+    "anamnesisNotStarted": "Not answered yet. Cycle planning and AI workout generation need a completed running profile.",
+    "anamnesisDraft": "In progress. Finish your running profile to plan the cycle and generate workouts with AI."
   },
   "cyclePlanning": {
     "admin": "Administrator details",
@@ -2134,7 +2148,8 @@
       "providerFailed": "A valid plan could not be obtained. Your cycle and saved plan were preserved. Contact the installation operator before trying again.",
       "resultPersistenceFailed": "The response was received, but the proposal could not be saved. Your cycle and applied plan were preserved. Unsaved content cannot be recovered; usage may have occurred. Contact the installation operator.",
       "restartOutcomeUncertain": "We could not confirm whether generation finished before the server restarted; usage may have occurred. Reopen to check this execution. Generating again starts a new request.",
-      "providerTimeout": "We could not confirm whether generation finished. The service may have processed the request and usage may have occurred. Reopen to check this execution; generating again starts a new request. There will be no automatic retry."
+      "providerTimeout": "We could not confirm whether generation finished. The service may have processed the request and usage may have occurred. Reopen to check this execution; generating again starts a new request. There will be no automatic retry.",
+      "anamnesisRequired": "To generate the cycle plan with AI, first finish your running profile."
     },
     "states": {
       "queued": "Queued. You can close this window and return to follow along.",
@@ -2164,7 +2179,10 @@
     "editedHint": "Your changes were saved. You can organize the preparation into phases and priorities using the available information. Weekly workouts are requested separately.",
     "editedOutdatedHint": "Your changes were saved. The existing plan was created with earlier information. You can generate a new proposal now or keep the current version for now. Applying a new proposal is a separate choice.",
     "editedCurrentHint": "Your changes were saved and the applied plan is current. You can review it here. Weekly workouts are requested separately.",
-    "savedUnavailableHint": "Your cycle is saved. AI planning is currently unavailable. You can finish here and return through Cycle planning later. Weekly workouts are requested separately."
+    "savedUnavailableHint": "Your cycle is saved. AI planning is currently unavailable. You can finish here and return through Cycle planning later. Weekly workouts are requested separately.",
+    "anamnesisRequired": "AI planning needs a completed running profile.",
+    "anamnesisNotice": "To generate the cycle plan with AI, first finish your running profile. It takes about 5 minutes and personalizes the plan.",
+    "openAnamnesis": "Open running profile"
   },
   "anamnesis": {
     "pageTitle": "My running profile - Kinesis",
@@ -2447,6 +2465,21 @@
       "injuries_12_months": "e.g. plantar fasciitis in March, treated with physiotherapy",
       "professional_restriction": "e.g. avoid hard sessions until my next cardiology check-up",
       "health_conditions": "e.g. asthma controlled with medication"
+    },
+    "gate": {
+      "welcome": {
+        "title": "Welcome to Kinesis!",
+        "text": "Before you start, tell us how you run today. The running profile is the basis of every AI plan and analysis and takes about 5 minutes. Kinesis unlocks as soon as you finish it."
+      },
+      "required": {
+        "title": "Finish your running profile to continue",
+        "text": "The running profile is the basis of every AI plan and analysis. Finish it to unlock Kinesis; it takes about 5 minutes and you can review your answers whenever you like."
+      },
+      "done": {
+        "title": "Running profile completed!",
+        "text": "All set: Kinesis is unlocked. You can review your answers here at any time."
+      },
+      "continue": "Continue to the dashboard"
     }
   },
   "weightLog": {
@@ -2475,8 +2508,7 @@
     "openAnamnesis": "Open running profile",
     "notes": {
       "answered": "Your running profile uses the latest entry as your current weight.",
-      "declined": "In your running profile you chose not to share your weight, so these entries are not used for planning. You can change that answer in the profile.",
-      "unanswered": "Answer your running profile so planning can take your weight into account."
+      "declined": "In your running profile you chose not to share your weight, so these entries are not used for planning. You can change that answer in the profile."
     },
     "toasts": {
       "saved": "Weight logged.",

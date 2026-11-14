@@ -1,6 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { completeAnamnesis, withCompletedAnamnesis } = require('./helpers/anamnesis.cjs');
 const { buildServer } = require('../src/server');
 const { createDatabase } = require('../src/db/database');
 const { createSession, SESSION_COOKIE_NAME } = require('../src/auth/sessions');
@@ -17,7 +18,7 @@ test('unexpected AI error diagnostics bound malformed metadata and never echo er
   assert.doesNotMatch(logs[0],/sensitive request payload/);
 });
 async function fixture(t, extra = {}) {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   for (let i = 1; i <= 3; i++)
     db.prepare(
       "INSERT INTO users(id,email,password_hash,role) VALUES (?,?,'synthetic',?)",
@@ -173,6 +174,18 @@ test('HTTP asynchronous contract survives polling/reload with mock-only register
     ).statusCode,
     409,
   );
+  // Issue #80: cycle generation needs the completed anamnesis, also for an
+  // administrator, and the refusal creates no execution.
+  db.prepare('DELETE FROM athlete_anamnesis WHERE user_id = 1').run();
+  const refused = await send('POST', '/api/ai/executions', {
+    purpose: 'cycle',
+    resource_id: 'cycle',
+    idempotency_key: 'synthetic-cycle',
+  });
+  assert.equal(refused.statusCode, 409);
+  assert.deepEqual(refused.json(), { error: 'anamnesisRequired', errors: ['anamnesisRequired'] });
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM ai_executions').get().n, 0);
+  completeAnamnesis(db, 1);
   const created = await send('POST', '/api/ai/executions', {
     purpose: 'cycle',
     resource_id: 'cycle',

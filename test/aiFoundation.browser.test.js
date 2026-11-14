@@ -1,4 +1,5 @@
 'use strict';
+const { withCompletedAnamnesis } = require('./helpers/anamnesis.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { existsSync, mkdtempSync, rmSync, writeFileSync } = require('node:fs');
@@ -26,7 +27,7 @@ test('training memory Chrome PT/EN desktop/mobile, ownership, keyboard, loading,
     '/usr/bin/chromium-browser',
   ].find(existsSync);
   assert.ok(chrome);
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   db.prepare(
     "INSERT INTO users(id,email,password_hash,role) VALUES (1,'synthetic-admin@example.invalid','synthetic','admin'),(2,'synthetic-user@example.invalid','synthetic','user'),(3,'synthetic-new-admin@example.invalid','synthetic','admin')",
   ).run();
@@ -408,8 +409,8 @@ test('training memory Chrome PT/EN desktop/mobile, ownership, keyboard, loading,
     );
     assert.equal(
       await evaluate(`document.querySelectorAll('#memoryOverview section').length`),
-      9,
-      'cycle planning view: goals, availability, recent, upcoming, references, totals, shoes, previous cycles, interpretations',
+      10,
+      'cycle planning view: goals, availability, anamnesis, recent, upcoming, references, totals, shoes, previous cycles, interpretations',
     );
     for(const language of ['en-US','pt-BR']) {
       await evaluate(`document.querySelector(".lang-switch [data-lang='${language}']").click()`);

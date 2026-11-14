@@ -2,6 +2,7 @@
 const { userToday } = require('../time-zone');
 const { AiError, activeOwner, exactKeys, hash } = require('./memory');
 const { appliedPlanIsCurrent } = require('./context');
+const { anamnesisCompleted } = require('../anamnesis');
 const { validatePlan, rpeIssue } = require('./cycle-plan-schema');
 function ownCycle(db,userId,cycleId) {
   activeOwner(db,userId);
@@ -78,7 +79,7 @@ function readCyclePlanning(db,userId,cycleId,service,config,asOf=userToday(db,us
     const appliedView=applied && {id:applied.id,version:applied.version,plan:applied.plan,appliedAt:applied.appliedAt,...(rpeIssue(applied.plan)?{compatibilityError:'planningRpeIncompatible'}:{}),outdated:!appliedPlanIsCurrent(db,userId,cycleId,applied.sourcesJson)};
     const selectedProposal=proposals.find((proposal)=>proposalIsUsable(db,userId,cycleId,proposal,appliedView?.version || 0,asOf));
     const summary=summarizeCyclePlanning(cycle,appliedView,proposals,config.enabled,selectedProposal);
-    return { available:config.enabled,canGenerate:cycle.status==='active',cycleRevision:cycle.planning_revision,
+    return { available:config.enabled,canGenerate:cycle.status==='active',anamnesisRequired:!anamnesisCompleted(db,userId),cycleRevision:cycle.planning_revision,
       applied:appliedView,proposals,selectedProposalId:selectedProposal?.id || null,
       summary:{...summary,cycleStatus:cycle.status,hasPlanningHistory:hasPlanningHistory(db,userId,cycleId)} };
   })();

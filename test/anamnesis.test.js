@@ -370,7 +370,14 @@ test('the anamnesis API is authenticated, owner-scoped, uncached and reports fie
   assert.equal((await call(null, 'GET', '/anamnesis.html')).headers.location, '/login.html');
   assert.equal((await call(owner, 'GET', '/anamnesis.html')).statusCode, 200);
   assert.equal((await call(null, 'GET', '/weight.html')).headers.location, '/login.html');
-  assert.equal((await call(owner, 'GET', '/weight.html')).statusCode, 200);
+  // Owner decision (2026-11-14): until the anamnesis is completed every other
+  // page leads to it, the session user says why, and no cycle can be created.
+  const pages = ['/', '/home.html', '/training-result.html', '/calendar.html', '/ai-coach.html', '/weight.html', '/training-memory.html', '/cycles.html', '/admin-users.html', '/admin-feedback.html', '/admin-ai-history.html'];
+  for (const page of pages) assert.equal((await call(owner, 'GET', page)).headers.location, '/anamnesis.html', page);
+  assert.equal((await call(owner, 'GET', '/api/me')).json().user.anamnesis_status, 'not_started');
+  const cycleBody = { objective: 'Synthetic', start_date: '2026-01-01', target_date: '2026-03-01' };
+  assert.deepEqual((await call(owner, 'POST', '/api/cycles', cycleBody)).json(), { error: 'anamnesisRequired', errors: ['anamnesisRequired'] });
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM training_cycles').get().n, 0);
 
   const read = await call(owner, 'GET', '/api/anamnesis');
   assert.equal(read.statusCode, 200);
@@ -383,6 +390,13 @@ test('the anamnesis API is authenticated, owner-scoped, uncached and reports fie
   assert.deepEqual(invalid.json(), { error: 'An answer is invalid.', errors: ['outOfRange'], field: 'birth_year' });
   const completed = await call(owner, 'POST', '/api/anamnesis/complete', { expected_revision: 1 });
   assert.equal(completed.json().anamnesis.status, 'completed');
+  // Once completed nothing leads back to it.
+  assert.equal((await call(owner, 'GET', '/weight.html')).statusCode, 200);
+  assert.equal((await call(owner, 'GET', '/')).headers.location, '/home.html');
+  assert.equal((await call(owner, 'GET', '/calendar.html')).headers.location, '/cycles.html');
+  assert.equal((await call(owner, 'GET', '/admin-users.html')).headers.location, '/home.html');
+  assert.equal((await call(owner, 'GET', '/api/me')).json().user.anamnesis_status, 'completed');
+  assert.equal((await call(owner, 'POST', '/api/cycles', cycleBody)).statusCode, 201);
   // Another account sees nothing of it.
   assert.equal((await call(other, 'GET', '/api/anamnesis')).json().anamnesis.status, 'not_started');
 

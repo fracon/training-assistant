@@ -1,4 +1,5 @@
 'use strict';
+const { withCompletedAnamnesis } = require('./helpers/anamnesis.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
@@ -11,7 +12,7 @@ const PT = require('../src/public/locales/pt.json').home.onboarding;
 const EN = require('../src/public/locales/en.json').home.onboarding;
 
 async function setup(t) {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db, sessionCookieSecure: false, unsplashFetch: async () => { throw new Error('No external hero request in browser tests.'); } });
   const origin = (await app.listen({ port: 0, host: '127.0.0.1' })).replace(/\/$/, '');
   t.after(async () => { await app.close(); db.close(); });

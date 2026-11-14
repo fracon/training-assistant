@@ -3,6 +3,7 @@
 // Administration AI prompt history (issue #113): cross-account, read-only,
 // audited access to AI executions; domain, HTTP routes and the audit migration.
 
+const { withCompletedAnamnesis } = require('./helpers/anamnesis.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -66,7 +67,7 @@ function auditRows(db) {
 }
 
 function fixture() {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const admin = addUser(db, { email: 'admin@example.test', first: 'Ada', last: 'Admin', role: 'admin' });
   const athlete = addUser(db, { email: 'zed@example.test', first: 'Zed', last: 'Runner' });
   const quiet = addUser(db, { email: 'amy@example.test' });
@@ -238,7 +239,7 @@ const OLD_AUDIT_TABLE = `CREATE TABLE admin_audit_log (
 )`;
 
 test('the audit migration extends the action list and keeps every existing row', () => {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const marker = "SELECT COUNT(*) AS count FROM schema_migrations WHERE name = '2026-11-admin-ai-execution-view-v1'";
   assert.equal(db.prepare(marker).get().count, 1);
   // Simulate a database from before the migration: the old CHECK and a trail.

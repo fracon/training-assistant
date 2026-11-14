@@ -1,5 +1,6 @@
 'use strict';
 
+const { withCompletedAnamnesis } = require('./helpers/anamnesis.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { existsSync, mkdtempSync, rmSync, writeFileSync } = require('node:fs');
@@ -22,7 +23,7 @@ const freePort = async () => {
 
 test('Garmin login progress and disconnect confirmation work in PT/EN Chrome', { timeout: 60000 }, async () => {
   assert.ok(chrome, 'Chrome is required for Garmin connection verification.');
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const owner = await registerUser(db, { email: 'garmin-connection-ui@example.test', password: 'Synthetic-only-1', first_name: 'Test', last_name: 'Runner' });
   db.prepare("UPDATE users SET preferred_lang='pt-BR' WHERE id=?").run(owner.id);
   db.prepare('INSERT INTO trainings (user_id,dia,tipo,treino) VALUES (?,?,?,?)').run(owner.id, '2026-11-02', 'Run', 'Synthetic');

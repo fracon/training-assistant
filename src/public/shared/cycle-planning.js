@@ -24,6 +24,13 @@ export function createCyclePlanning({ i18n, user, onSummaryChange = () => {}, on
   const trap=createDialogFocusTrap(modal,close);
   const el=(tag,text,className)=>{const n=document.createElement(tag);if(text!=null)n.textContent=text;if(className)n.className=className;return n;};
   function showError(e, read=false, focus=true) {
+    // Issue #80: generation needs the completed anamnesis. The notice with its
+    // link replaces the generic error, also when another tab reset it.
+    if(!read && e?.codes?.[0]==='anamnesisRequired' && state){
+      state.anamnesisRequired=true;render();
+      if(focus)content.querySelector('.cycle-planning-anamnesis a')?.focus();
+      return;
+    }
     if (read) readFailed=true;
     const running=Boolean(pendingProposal());
     errorCode=read ? (running ? 'progressLoadError' : saved ? 'savedLoadError' : 'loadError') : e?.codes?.[0] || 'generic';
@@ -74,24 +81,33 @@ export function createCyclePlanning({ i18n, user, onSummaryChange = () => {}, on
     const candidate=execution?.state==='completed' && !proposal.applied;
     const conflict=candidate && proposal.baseVersion!==(state.applied?.version || 0);
     const ready=candidate && state.selectedProposalId===proposal.id && !proposal.compatibilityError && !execution.outdated && !conflict && state.canGenerate;
+    const needsAnamnesis=Boolean(state.anamnesisRequired && state.available && state.canGenerate);
     generate.textContent=t(state.proposals.length?'regenerate':'generate');
-    generate.hidden=readFailed || !state.available || !state.canGenerate || Boolean(running) || Boolean(saved && current && !ready);
+    generate.hidden=readFailed || needsAnamnesis || !state.available || !state.canGenerate || Boolean(running) || Boolean(saved && current && !ready);
     generate.className=ready?'btn btn-secondary':'btn btn-primary';
     generate.disabled=readFailed || busy || !state.available || !state.canGenerate || running;
     apply.hidden=!ready || readFailed;apply.disabled=readFailed || busy;
-    later.className=!readFailed && (!state.available || !state.canGenerate || (saved && current && !ready)) && !ready ? 'btn btn-primary' : 'btn btn-secondary';
+    later.className=!readFailed && (needsAnamnesis || !state.available || !state.canGenerate || (saved && current && !ready)) && !ready ? 'btn btn-primary' : 'btn btn-secondary';
+    if(needsAnamnesis && !running)later.textContent=t('done');
     if(running)later.textContent=t('close');
     cancel.hidden=!running;cancel.disabled=busy;
     debug.hidden=user.role!=='admin' || !execution;
     document.getElementById('cyclePlanningAdmin').hidden=debug.hidden;
     const statusProposal=runningProposal || proposal || latest;
     const statusExecution=statusProposal?.execution;
-    const statusMessage=readFailed?t(busy?'loading':errorCode==='progressLoadError'?'progressLoadFailed':'loadFailed'):errorCode?error.textContent:busy?t('loading'):!state.available?t('unavailable'):!state.canGenerate?t('inactiveCycle'):state.applied?t(state.applied.compatibilityError?'appliedNeedsReview':state.applied.outdated?'appliedNeedsReview':'applied'):proposal?.compatibilityError?t('proposalIncompatible'):candidate && (execution.outdated || conflict)?t('proposalOutdated'):statusExecution?.error==='providerRateLimited' && running?t('retryWaiting'):statusExecution?.state==='queued'?(statusExecution?.error==='providerRateLimited'?t('retryWaiting'):t('states.queued')):statusExecution?.state==='running'?t('states.running'):statusExecution?t(`states.${statusExecution.state}`):t(saved?'readyToPlan':'manualIndependent');
-    const statusKind=readFailed || errorCode?'failed':busy || running?'processing':state.applied?(state.applied.compatibilityError || state.applied.outdated?'review':'applied'):proposal?.compatibilityError || (candidate && (execution.outdated || conflict))?'review':candidate?'proposal':statusExecution?.state==='failed' || statusExecution?.state==='uncertain'?'failed':'information';
+    const statusMessage=readFailed?t(busy?'loading':errorCode==='progressLoadError'?'progressLoadFailed':'loadFailed'):errorCode?error.textContent:busy?t('loading'):!state.available?t('unavailable'):!state.canGenerate?t('inactiveCycle'):needsAnamnesis && !running?t('anamnesisRequired'):state.applied?t(state.applied.compatibilityError?'appliedNeedsReview':state.applied.outdated?'appliedNeedsReview':'applied'):proposal?.compatibilityError?t('proposalIncompatible'):candidate && (execution.outdated || conflict)?t('proposalOutdated'):statusExecution?.error==='providerRateLimited' && running?t('retryWaiting'):statusExecution?.state==='queued'?(statusExecution?.error==='providerRateLimited'?t('retryWaiting'):t('states.queued')):statusExecution?.state==='running'?t('states.running'):statusExecution?t(`states.${statusExecution.state}`):t(saved?'readyToPlan':'manualIndependent');
+    const statusKind=readFailed || errorCode?'failed':busy || running?'processing':needsAnamnesis?'review':state.applied?(state.applied.compatibilityError || state.applied.outdated?'review':'applied'):proposal?.compatibilityError || (candidate && (execution.outdated || conflict))?'review':candidate?'proposal':statusExecution?.state==='failed' || statusExecution?.state==='uncertain'?'failed':'information';
     status.dataset.state=statusKind;
     // Avoid rewriting the polite live region on every polling response.
     if(status.textContent!==statusMessage)status.textContent=statusMessage;
+    const focusedNotice=content.querySelector('.cycle-planning-anamnesis a')===document.activeElement;
     content.replaceChildren();
+    if(needsAnamnesis) {
+      const notice=el('p',null,'field-hint cycle-planning-anamnesis');
+      const link=el('a',t('openAnamnesis'));link.href='/anamnesis.html';
+      notice.append(el('span',t('anamnesisNotice')),' ',link);content.append(notice);
+      if(focusedNotice)link.focus();
+    }
     if(candidate) {
       if(proposal.baseVersion!==(state.applied?.version || 0))content.append(el('p',t('proposalConflict'),'field-hint'));
       if(execution.outdated)content.append(el('p',t('outdated'),'field-hint'));

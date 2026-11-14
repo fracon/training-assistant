@@ -1,5 +1,6 @@
 'use strict';
 
+const { withCompletedAnamnesis } = require('./helpers/anamnesis.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
@@ -78,7 +79,7 @@ function httpRequest(base, path, { method, headers, body }) {
 }
 
 async function setup({ maxFileSizeBytes } = {}) {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({
     db,
     sessionCookieSecure: false,
@@ -161,7 +162,7 @@ test('spreadsheet import requires an authenticated session', async () => {
 });
 
 test('import rejects requests without an active training cycle', async () => {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db, sessionCookieSecure: false });
 
   await app.inject({ method: 'POST', url: '/api/auth/register', payload: REGISTER_PAYLOAD });
@@ -460,7 +461,7 @@ test('import rejects sheets whose required columns are missing', async () => {
 });
 
 test('import expects multipart requests', async () => {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db, sessionCookieSecure: false });
 
   await app.inject({ method: 'POST', url: '/api/auth/register', payload: REGISTER_PAYLOAD });

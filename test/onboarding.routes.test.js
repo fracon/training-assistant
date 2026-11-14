@@ -1,5 +1,6 @@
 'use strict';
 
+const { withCompletedAnamnesis } = require('./helpers/anamnesis.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { buildServer } = require('../src/server');
@@ -18,7 +19,7 @@ async function userSession(app, email, firstName = 'Runner') {
 }
 
 test('onboarding is derived from owned data and presentation preferences', async () => {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db, sessionCookieSecure: false });
   const cookie = await userSession(app, 'new-onboarding@example.com');
 
@@ -64,7 +65,7 @@ test('onboarding is derived from owned data and presentation preferences', async
 });
 
 test('existing accounts are active, stay out of the first-visit welcome, and cannot see other users data', async () => {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db, sessionCookieSecure: false });
   const firstCookie = await userSession(app, 'existing-onboarding@example.com', 'Existing');
   db.prepare("UPDATE users SET onboarding_status = 'active' WHERE email = ?").run('existing-onboarding@example.com');

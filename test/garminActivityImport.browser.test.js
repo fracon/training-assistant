@@ -1,5 +1,6 @@
 'use strict';
 
+const { withCompletedAnamnesis } = require('./helpers/anamnesis.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createHash } = require('node:crypto');
@@ -36,7 +37,7 @@ async function port() {
 
 test('Garmin activity result flow in Chrome stays explicit, localized, keyboard reachable and responsive', async (t) => {
   const chrome = findChrome(); assert.ok(chrome, 'Chrome is required for session UI verification');
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const original = zipFit(); const conflictingOriginal = zipFit('conflicting-fit-bytes'); const calls = [];
   let conflictOriginalForActivity42 = false;
   let holdFirstActivityPage = false; let releaseFirstActivityPage;

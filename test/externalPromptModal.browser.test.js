@@ -1,5 +1,6 @@
 'use strict';
 
+const { withCompletedAnamnesis } = require('./helpers/anamnesis.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { existsSync, mkdirSync, writeFileSync } = require('node:fs');
@@ -31,7 +32,7 @@ async function freePort() {
 test('the three external prompt screens share the approved modal in Chrome across PT/EN and viewport sizes', async (t) => {
   const chrome = findChrome();
   assert.ok(chrome, 'Chrome is required for shared prompt modal comparison.');
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   let providerCalls = 0;
   const app = await buildServer({
     db,

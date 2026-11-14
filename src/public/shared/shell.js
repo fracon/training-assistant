@@ -18,6 +18,7 @@ export { showConfirm } from './confirm-modal.js';
 
 const SIDEBAR_STORAGE_KEY = 'training-assistant:sidebar-collapsed';
 const CYCLE_DEPENDENT_ITEMS = ['ai-coach', 'calendar'];
+const ANAMNESIS_PATH = '/anamnesis.html';
 const CYCLE_REDIRECT_TO = '/cycles.html';
 
 export const FOOTER_ELEMENT_TAG = 'footer';
@@ -197,6 +198,8 @@ function buildNavItem(item, activeId) {
     entry.addEventListener('click', (event) => {
       if (!entry.classList.contains('disabled')) return;
       event.preventDefault();
+      // Locked by the pending anamnesis, not by the missing cycle.
+      if (entry.dataset.anamnesisLocked) return;
       window.location.href = CYCLE_REDIRECT_TO;
     });
   }
@@ -1006,6 +1009,13 @@ export async function initShell({ active } = {}) {
     window.location.replace('/login.html');
     return null;
   }
+  // Owner decision (2026-11-14, issue #80): until the anamnesis is completed
+  // it is the only page; every other one is sent there (also server-side).
+  const anamnesisPending = typeof user.anamnesis_status === 'string' && user.anamnesis_status !== 'completed';
+  if (anamnesisPending && window.location.pathname !== ANAMNESIS_PATH) {
+    window.location.replace(ANAMNESIS_PATH);
+    return null;
+  }
 
   const shellRoot = buildLayout(active ?? null, user);
   syncToggleState(shellRoot, readSidebarCollapsed());
@@ -1055,6 +1065,7 @@ export async function initShell({ active } = {}) {
   }
 
   window.addEventListener('kinesis:cycle-changed', () => refreshCycleGuard(shellRoot));
+  if (anamnesisPending) applyAnamnesisLock(shellRoot);
 
   // The footer only carries the app version; resolve it without blocking
   // the shell mount and degrade gracefully when unreachable.
@@ -1091,6 +1102,57 @@ export async function initShell({ active } = {}) {
   document.body.classList.remove('shell-loading');
   document.body.classList.add('shell-mounted');
   return user;
+}
+
+// While the anamnesis is pending every navigation entry is disabled and
+// described by one note; completing it releases them (keeping the cycle guard).
+export function applyAnamnesisLock(shellRoot = document) {
+  const nav = shellRoot.querySelector('.sidebar-nav');
+  if (!nav || nav.querySelector('#anamnesisLockNote')) return;
+  // A small card, not a .sidebar-label: that class keeps one clipped line.
+  const note = el('div', 'nav-lock-note');
+  note.id = 'anamnesisLockNote';
+  note.setAttribute('role', 'note');
+  const lockIcon = icon('lock');
+  lockIcon.setAttribute('aria-hidden', 'true');
+  const text = el('div', 'nav-lock-text');
+  const title = el('strong', 'nav-lock-title');
+  title.setAttribute('data-i18n', 'shell.anamnesisLockTitle');
+  title.textContent = translate(shellI18n.messages, 'shell.anamnesisLockTitle');
+  const detail = el('span', 'nav-lock-detail');
+  detail.setAttribute('data-i18n', 'shell.anamnesisLock');
+  detail.textContent = translate(shellI18n.messages, 'shell.anamnesisLock');
+  text.append(title, detail);
+  note.append(lockIcon, text);
+  nav.prepend(note);
+  nav.classList.add('is-anamnesis-locked');
+  refreshIcons();
+  for (const navEntry of nav.querySelectorAll('.nav-item')) {
+    navEntry.dataset.anamnesisLocked = '1';
+    navEntry.classList.add('disabled');
+    navEntry.setAttribute('aria-disabled', 'true');
+    navEntry.removeAttribute('href');
+    addDescribedBy(navEntry, note.id);
+  }
+}
+
+export function releaseAnamnesisLock(shellRoot = document) {
+  const nav = shellRoot.querySelector('.sidebar-nav');
+  const note = nav?.querySelector('#anamnesisLockNote');
+  if (!note) return;
+  const items = [...NAV_ITEMS, ...ADMIN_NAV_GROUP.items];
+  for (const navEntry of nav.querySelectorAll('.nav-item[data-anamnesis-locked]')) {
+    delete navEntry.dataset.anamnesisLocked;
+    removeDescribedBy(navEntry, note.id);
+    const cycleGuarded = navEntry.querySelector('.cycle-guard-badge:not(.hidden)');
+    if (cycleGuarded) continue;
+    navEntry.classList.remove('disabled');
+    navEntry.removeAttribute('aria-disabled');
+    const item = items.find((candidate) => candidate.id === navEntry.dataset.navId);
+    if (item) navEntry.href = item.href;
+  }
+  note.remove();
+  nav.classList.remove('is-anamnesis-locked');
 }
 
 export function applyCycleGuard(shellRoot) {

@@ -1,4 +1,5 @@
 'use strict';
+const { withCompletedAnamnesis } = require('./helpers/anamnesis.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createDatabase } = require('../src/db/database');
@@ -10,7 +11,7 @@ const { buildServer } = require('../src/server');
 const asOf = '2026-11-11'; // a Wednesday
 
 function fixture(t) {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   t.after(() => db.close());
   db.prepare("INSERT INTO users(id,email,password_hash) VALUES (1,'purpose@example.invalid','x'),(2,'other@example.invalid','x')").run();
   const config = readAiConfig({});
@@ -133,7 +134,7 @@ test('omissions are counted by kind, including budget cuts, reduced details and 
 });
 
 test('GET /api/ai/memory validates the purpose and only accepts an owned session for analysis', async (t) => {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db, sessionCookieSecure: false });
   t.after(async () => { await app.close(); db.close(); });
   await app.inject({ method: 'POST', url: '/api/auth/register', payload: { email: 'route@example.test', password: 'route-secret-1', first_name: 'R', last_name: 'T' } });

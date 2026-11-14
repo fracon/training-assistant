@@ -1,6 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { completeAnamnesis } = require('./helpers/anamnesis.cjs');
 const { createDatabase, initializeDatabase } = require('../src/db/database');
 const { readAiConfig, LIMITS, MODELS } = require('../src/ai/config');
 const {
@@ -1031,6 +1032,7 @@ test('context refuses a budget exhausted by omission metadata rather than droppi
 
 test('weekly executions have no resource ID, use stable idempotency and immutable paid adapter versions', async () => {
   const fixture = setup();
+  completeAnamnesis(fixture.db);
   for (const day of [
     'monday',
     'tuesday',
@@ -1530,6 +1532,7 @@ test('restart respects a reduced per-user concurrency limit for already reserved
 
 test('prompt-only source changes invalidate a weekly execution even when detailed context was omitted', async () => {
   const f = setup({ AI_CONTEXT_TOKENS: '5000' });
+  completeAnamnesis(f.db);
   for (const day of [
     'monday',
     'tuesday',

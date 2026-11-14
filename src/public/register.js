@@ -97,7 +97,9 @@ form.addEventListener('submit', async (event) => {
       const session = await signIn(payload.email.trim(), payload.password);
       syncStoredLanguageFromUser(session?.user);
       showToast(i18n.t('register.toastSuccess'));
-      setTimeout(() => window.location.replace('/'), REDIRECT_DELAY_MS);
+      // Issue #80: a new account starts with the anamnesis, which offers
+      // "Answer later"; the dashboard and its welcome tour follow.
+      setTimeout(() => window.location.replace('/anamnesis.html?welcome=1'), REDIRECT_DELAY_MS);
     } catch {
       window.location.replace('/login.html?registered=1');
     }

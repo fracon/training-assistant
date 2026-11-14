@@ -1,4 +1,5 @@
 'use strict';
+const { completeAnamnesis, withCompletedAnamnesis } = require('./helpers/anamnesis.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { buildServer } = require('../src/server');
@@ -18,13 +19,15 @@ const weatherFetch = async (url) => {
 };
 
 async function setup(t) {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db, sessionCookieSecure: false, weatherFetch, unsplashFetch: async () => { throw new Error('No hero image in tests.'); } });
   const origin = (await app.listen({ port: 0, host: '127.0.0.1' })).replace(/\/$/, '');
   t.after(async () => { await app.close(); db.close(); });
   const account = async (email) => {
     await app.inject({ method: 'POST', url: '/api/auth/register', payload: { email, password: 'dash-secret-1', first_name: 'D', last_name: 'B', preferred_lang: 'pt-BR' } });
     db.prepare("UPDATE users SET onboarding_status='active', time_zone='UTC' WHERE email=?").run(email);
+    // Every page but the anamnesis needs it completed (issue #80).
+    completeAnamnesis(db, db.prepare('SELECT id FROM users WHERE email=?').get(email).id);
     const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email, password: 'dash-secret-1' } });
     return { id: db.prepare('SELECT id FROM users WHERE email=?').get(email).id, cookie: [].concat(login.headers['set-cookie'])[0].split(';')[0].split('=')[1] };
   };

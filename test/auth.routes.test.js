@@ -1,5 +1,6 @@
 'use strict';
 
+const { withCompletedAnamnesis } = require('./helpers/anamnesis.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { readFileSync } = require('node:fs');
@@ -33,7 +34,7 @@ async function registerAndLogin(app, payload = REGISTER_PAYLOAD) {
 }
 
 test('login issues an http-only session cookie backed by a database row', async () => {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db });
 
   const { login } = await registerAndLogin(app);
@@ -71,7 +72,7 @@ test('login issues an http-only session cookie backed by a database row', async 
 });
 
 test('login omits the Secure flag when explicitly configured for plain HTTP', async () => {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db, sessionCookieSecure: false });
   const { login } = await registerAndLogin(app);
 
@@ -84,7 +85,7 @@ test('login omits the Secure flag when explicitly configured for plain HTTP', as
 });
 
 test('login rejects missing credentials with 400', async () => {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db });
 
   const empty = await app.inject({ method: 'POST', url: '/api/auth/login', payload: {} });
@@ -103,7 +104,7 @@ test('login rejects missing credentials with 400', async () => {
 });
 
 test('login never reveals whether the email exists', async () => {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db });
   await app.inject({ method: 'POST', url: '/api/auth/register', payload: REGISTER_PAYLOAD });
 
@@ -131,7 +132,7 @@ test('login never reveals whether the email exists', async () => {
 });
 
 test('a suspended account is refused with a stable code and no session', async () => {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db });
   const { cookiePair } = await registerAndLogin(app);
   const row = db.prepare('SELECT id FROM users WHERE email = ?').get('rafael@example.com');
@@ -188,7 +189,7 @@ test('the sign-in page explains a refused login by its stable code', async () =>
 });
 
 test('unexpected login failures surface as HTTP 500', async () => {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db });
   await db.close();
 
@@ -203,7 +204,7 @@ test('unexpected login failures surface as HTTP 500', async () => {
 });
 
 async function requireAuthScenario() {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db });
   const { cookiePair } = await registerAndLogin(app);
   return { db, app, cookiePair };
@@ -227,6 +228,7 @@ test('/api/me serves the authenticated profile from the session cookie', async (
       body_unit: 'metric',
       time_zone: null,
       role: 'user',
+      anamnesis_status: 'completed',
     },
   });
 
@@ -260,7 +262,7 @@ test('/api/me rejects requests without or with invalid cookies', async () => {
 });
 
 test('/api/me rejects expired sessions', async () => {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db, sessionTtlMs: 1 });
   const { cookiePair } = await registerAndLogin(app);
 
@@ -306,7 +308,7 @@ test('logout deletes the session row and clears the cookie', async () => {
 });
 
 test('logout succeeds even without a session cookie', async () => {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db });
 
   const logout = await app.inject({ method: 'POST', url: '/api/auth/logout' });
@@ -319,7 +321,7 @@ test('logout succeeds even without a session cookie', async () => {
 });
 
 test('anonymous visitors hitting protected paths are redirected to the login page', async () => {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db });
 
   for (const url of ['/', '/home.html', '/training-result.html', '/cycles.html']) {
@@ -333,7 +335,7 @@ test('anonymous visitors hitting protected paths are redirected to the login pag
 });
 
 test('GET /training-result.html serves the tool to authenticated users', async () => {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db });
   const { cookiePair } = await registerAndLogin(app);
 
@@ -356,7 +358,7 @@ test('GET /training-result.html serves the tool to authenticated users', async (
 });
 
 test('GET /cycles.html serves the cycles page to authenticated users', async () => {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db });
   const { cookiePair } = await registerAndLogin(app);
 
@@ -376,7 +378,7 @@ test('GET /cycles.html serves the cycles page to authenticated users', async () 
 });
 
 test('non-calendar pages ship the user menu bundle, immune to the cycle guard', async () => {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db });
   const { cookiePair } = await registerAndLogin(app);
 
@@ -414,7 +416,7 @@ test('non-calendar pages ship the user menu bundle, immune to the cycle guard', 
 });
 
 test('GET / routes authenticated users to the home dashboard regardless of cycle state', async () => {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db });
   const { cookiePair } = await registerAndLogin(app);
 
@@ -449,7 +451,7 @@ test('GET / routes authenticated users to the home dashboard regardless of cycle
 });
 
 test('GET /home.html is gated and serves the dashboard to authenticated users', async () => {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db });
   const { cookiePair } = await registerAndLogin(app);
 
@@ -474,7 +476,7 @@ test('GET /home.html is gated and serves the dashboard to authenticated users', 
 });
 
 test('GET /login.html serves sign-in anonymously and redirects sessions home', async () => {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db });
   const { cookiePair } = await registerAndLogin(app);
 
@@ -512,7 +514,7 @@ test('GET /login.html serves sign-in anonymously and redirects sessions home', a
 });
 
 test('GET /register.html serves sign-up anonymously and redirects sessions home', async () => {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db });
   const { cookiePair } = await registerAndLogin(app);
 
@@ -615,7 +617,7 @@ test('auth routes are absent when no database is provided', async () => {
 });
 
 test('registration captures the preferred language selection', async () => {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db });
 
   const register = await app.inject({
@@ -636,7 +638,7 @@ test('registration captures the preferred language selection', async () => {
 });
 
 test('registration defaults unknown or missing languages to en-US', async () => {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db });
 
   const junk = await app.inject({
@@ -652,7 +654,7 @@ test('registration defaults unknown or missing languages to en-US', async () => 
 });
 
 async function languageScenario() {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db, sessionCookieSecure: false });
   const { cookiePair } = await registerAndLogin(app);
   return { db, app, cookiePair };
@@ -750,14 +752,14 @@ test('language updates require an authenticated session', async () => {
 });
 
 async function calendarScenario() {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db, sessionCookieSecure: false });
   const { cookiePair } = await registerAndLogin(app);
   return { db, app, cookiePair };
 }
 
 test('registration captures the first day of week preference', async () => {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db });
 
   const register = await app.inject({
@@ -788,7 +790,7 @@ test('registration captures the first day of week preference', async () => {
 
 test('registration defaults unknown or missing week starts to Monday', async () => {
   for (const first_day_of_week of [undefined, 'Funday', '']) {
-    const db = createDatabase({ filename: ':memory:' });
+    const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
     const app = await buildServer({ db });
 
     const response = await app.inject({

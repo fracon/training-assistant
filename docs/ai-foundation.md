@@ -854,3 +854,27 @@ tooltips, the shared `formatDateTime` formatter and PT/EN dictionaries
 raw-output expiry moved from Training memory unchanged in behavior. Covered by
 `adminAiHistory.test.js` (domain, HTTP, migration), `adminAiHistory.browser.test.js`
 and the trace scenarios in `aiDiagnostics.browser.test.js`.
+
+### Athlete anamnesis source (issue #80)
+
+A completed anamnesis is an additional, optional context source for every
+purpose, without a policy version change:
+
+- `context.anamnesis` is the minimal, consent-aware projection built by
+  `anamnesisContext` in `src/anamnesis.js` (`authority: user_report`), with
+  the reference `{ type: 'anamnesis', id: 'self', version: basisVersion }`.
+  Without the sensitive-data consent, health answers, height and weight are
+  absent; with it, the latest weight, its date and the change within 56 days
+  are included. Unanswered-by-choice items are `not_informed`.
+- A context built without a completed anamnesis has no `anamnesis` key,
+  reference or gap, so snapshots from before the source keep their hash;
+  `contextIsCurrent` passes `includeAnamnesis` only for snapshots that had
+  it. `basisVersion` excludes the weight log, and `appliedPlanIsCurrent`
+  compares it only for plans whose recorded sources include it.
+- `buildPayload` adds `ANAMNESIS_INSTRUCTIONS` only when the context has the
+  anamnesis (no nutrition advice, no body judgement, no weight-loss promises,
+  health answers are not diagnoses).
+- Cycle and weekly generation are refused with `409 anamnesisRequired`
+  until the anamnesis is completed; analysis and the admin preview are not.
+  By owner decision (2026-11-14) the anamnesis is also the entry gate of the
+  application: no other page or cycle creation is available before it.
