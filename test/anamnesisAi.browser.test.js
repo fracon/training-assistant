@@ -116,9 +116,10 @@ test('Chrome PT/EN desktop/mobile: the anamnesis gates Kinesis until it is compl
     saveAnamnesis(db, userId, { answers: ANSWERS, expected_revision: readAnamnesis(db, userId).anamnesis.revision });
     await command('Page.reload');
     await wait("!document.getElementById('anamnesisReview').hidden && !document.getElementById('anamnesisReviewActions').hidden");
-    assert.equal(await evaluate("document.getElementById('anamnesisDataActions').hidden"), false, 'answers and a weight are stored');
+    assert.equal(await evaluate("getComputedStyle(document.getElementById('anamnesisDataActions')).display"), 'none', 'a first anamnesis still being answered has nothing to download or erase');
     await evaluate("document.getElementById('anamnesisComplete').click()");
     await wait("!document.getElementById('anamnesisContinueActions').hidden");
+    assert.equal(await evaluate("document.getElementById('anamnesisDataActions').hidden"), false, 'available once completed');
     assert.equal(await evaluate("document.getElementById('anamnesisWelcomeTitle').textContent"), a.gate.done.title);
     assert.equal(await evaluate("document.getElementById('anamnesisLockNote')"), null);
     assert.equal(await evaluate("document.querySelector('.sidebar-nav .nav-item[data-nav-id=\"shoes\"]').getAttribute('href')"), '/shoes.html');
