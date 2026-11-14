@@ -71,6 +71,7 @@
 .anamnesis-consent { padding-top: 1rem; border-top: 1px solid var(--line); }
 .anamnesis-consent-choice { align-items: flex-start; min-width: 0; }
 .anamnesis-consent-choice input { margin-top: .2rem; }
+.anamnesis-recovery { margin-top: .6rem; }
 .anamnesis-actions { display: flex; justify-content: flex-end; gap: .6rem; flex-wrap: wrap; margin-top: 1.2rem; }
 .anamnesis-actions [hidden] { display: none; }
 .anamnesis-races { display: flex; flex-direction: column; gap: .75rem; margin-bottom: .6rem; }

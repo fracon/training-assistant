@@ -2360,7 +2360,8 @@
       "export": "Download my answers",
       "delete": "Delete profile and weight log",
       "retry": "Try again",
-      "start": "Start"
+      "start": "Start",
+      "reloadExperience": "Reload saved version"
     },
     "review": {
       "sourcesTitle": "Information kept on other screens",
@@ -2402,7 +2403,7 @@
       "raceIncomplete": "Fill in distance, time and year for each result.",
       "anamnesisConflict": "Your answers changed in another session. Reload the page to continue.",
       "anamnesisIncomplete": "Some questions are still unanswered.",
-      "memoryConflict": "Your experience notes changed in another session. Reload the page to continue.",
+      "memoryConflict": "Your experience notes changed in another session. Reload the saved version: the text you typed is kept and, when you save, replaces the other session's version.",
       "weightDateExists": "A weight is already logged for this date.",
       "weightOutOfRange": "Enter a weight between {min} and {max}.",
       "invalidWeight": "Enter a valid weight.",

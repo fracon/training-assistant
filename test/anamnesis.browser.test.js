@@ -201,5 +201,80 @@ test('Chrome PT/EN desktop/mobile: the anamnesis guides, validates, resumes, com
   await wait(`document.getElementById('anamnesisStatus').textContent === ${JSON.stringify(en.anamnesis.status.not_started)}`);
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM athlete_anamnesis').get().n, 0);
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM body_weight_entries').get().n, 0);
+
+  // Unsaved answers survive a preference change, converted to the new units.
+  const setPreferences = async (values) => {
+    await evaluate("document.getElementById('userBadge').click();document.getElementById('userPreferences').click()");
+    await wait("!!document.querySelector('#preferencesForm input[name=\"body_unit\"]')");
+    await evaluate(`${Object.entries(values).map(([name, value]) => `document.querySelector('#preferencesForm input[name="${name}"][value="${value}"]').click()`).join(';')};document.getElementById('preferencesSubmit').click()`);
+  };
+  await evaluate(fill([['q-birth_year', '1985'], ['q-height_cm', '172'], ['q-weight', '70']]));
+  await evaluate("document.getElementById('q-weight-date').dataset.iso = '2026-01-20'");
+  await evaluate(pick('q-motivations', 'health'));
+  await setPreferences({ body_unit: 'imperial', distance_unit: 'mi' });
+  await wait("!!document.getElementById('q-height_cm-inches')");
+  assert.deepEqual(await evaluate("['q-birth_year','q-height_cm','q-height_cm-inches','q-weight'].map((id)=>document.getElementById(id).value)"), ['1985', '5', '7.7', '154.3']);
+  assert.equal(await evaluate("document.querySelector('input[name=\"q-motivations\"][value=\"health\"]').checked"), true);
+  assert.equal(await evaluate("document.getElementById('q-weight-date').dataset.iso"), '2026-01-20');
+  // The weight is logged but the answers fail on the network: retrying the
+  // step saves the answers without logging the same weight twice.
+  let failNextPut = true;
+  socket.addEventListener('message', (event) => {
+    const message = JSON.parse(event.data);
+    if (message.method !== 'Fetch.requestPaused') return;
+    const { requestId, request } = message.params;
+    if (failNextPut && request.method === 'PUT') {
+      failNextPut = false;
+      command('Fetch.failRequest', { requestId, errorReason: 'ConnectionFailed' });
+    } else command('Fetch.continueRequest', { requestId });
+  });
+  await command('Fetch.enable', { patterns: [{ urlPattern: '*/api/anamnesis' }] });
+  await evaluate("document.getElementById('anamnesisNext').click()");
+  await wait("!document.getElementById('anamnesisFormError').hidden");
+  assert.equal(await evaluate("document.getElementById('anamnesisFormError').textContent"), en.anamnesis.errors.generic);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM body_weight_entries').get().n, 1);
+  await evaluate("document.getElementById('anamnesisNext').click()");
+  await wait(`document.getElementById('anamnesisStepTitle').textContent === ${JSON.stringify(en.anamnesis.steps.experience.title)}`);
+  await command('Fetch.disable');
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM body_weight_entries').get().n, 1);
+  const about = JSON.parse(db.prepare('SELECT answers_json FROM athlete_anamnesis').get().answers_json);
+  assert.equal(about.birth_year.value, 1985);
+  assert.ok(Math.abs(about.height_cm.value - 172) < 0.5, `height kept as ${about.height_cm.value} cm`);
+  assert.ok(Math.abs(db.prepare("SELECT weight_kg FROM body_weight_entries WHERE measured_on = '2026-01-20'").get().weight_kg - 70) < 0.05);
+
+  // Distances follow a distance-unit change; a race row and its values stay.
+  await evaluate(`${pick('q-running_experience', 'over_5_years')};${pick('q-recent_consistency', 'regular')}`);
+  await evaluate(fill([['q-runs_per_week', '3'], ['q-weekly_distance_km', '12.4']]));
+  await evaluate(pick('q-longest_run_km-status', 'unknown'));
+  await evaluate("document.querySelector('[data-key=\"race_results\"] > .btn-secondary').click()");
+  await evaluate("{const s=document.getElementById('q-race-1-distance');s.value='other';s.dispatchEvent(new Event('change'));}");
+  await evaluate(fill([['q-race-1-km', '6.2'], ['q-race-1-minutes', '31'], ['q-race-1-seconds', '5'], ['q-race-1-year', '2025']]));
+  await evaluate(fill([['q-experience-notes', 'Synthetic notes typed in this tab']]));
+  await setPreferences({ distance_unit: 'km' });
+  await wait("/km/.test(document.querySelector('[data-key=\"weekly_distance_km\"] label').textContent)");
+  assert.deepEqual(await evaluate("['q-runs_per_week','q-weekly_distance_km','q-race-1-distance','q-race-1-km','q-race-1-minutes','q-race-1-year','q-experience-notes'].map((id)=>document.getElementById(id).value)"),
+    ['3', '20', 'other', '9.98', '31', '2025', 'Synthetic notes typed in this tab']);
+  assert.equal(await evaluate("document.getElementById('q-race-1-km').closest('.field').hidden"), false);
+  assert.equal(await evaluate("document.querySelector('input[name=\"q-longest_run_km-status\"]').checked"), true);
+  assert.equal(await evaluate("document.getElementById('q-longest_run_km').disabled"), true);
+
+  // The notes changed in another session: the answers are saved, the notes
+  // conflict, and reloading the saved version keeps the typed text so the
+  // same step can be saved again instead of failing with a stale revision.
+  await evaluate("(async()=>{const r=await (await fetch('/api/anamnesis')).json();const w=await fetch('/api/ai/profile',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({fields:{experience:'Notes from another session'},expected_version:r.experience.version})});if(!w.ok)throw Error('other session save failed');})()");
+  await evaluate("document.getElementById('anamnesisNext').click()");
+  await wait("!document.getElementById('anamnesisReloadExperience').hidden");
+  assert.equal(await evaluate("document.getElementById('anamnesisFormError').textContent"), en.anamnesis.errors.memoryConflict);
+  await evaluate("document.getElementById('anamnesisReloadExperience').scrollIntoView({block:'center'})");
+  await capture('anamnesis-notes-conflict-en-US-390');
+  assert.equal(JSON.parse(db.prepare('SELECT answers_json FROM athlete_anamnesis').get().answers_json).runs_per_week.value, 3);
+  await evaluate("document.getElementById('anamnesisReloadExperience').click()");
+  await wait("document.getElementById('anamnesisReloadExperience').hidden");
+  assert.equal(await evaluate('document.activeElement.id'), 'q-experience-notes');
+  assert.equal(await evaluate("document.getElementById('q-experience-notes').value"), 'Synthetic notes typed in this tab');
+  await evaluate("document.getElementById('anamnesisNext').click()");
+  await wait(`document.getElementById('anamnesisStepTitle').textContent === ${JSON.stringify(en.anamnesis.steps.routine.title)}`);
+  assert.match(db.prepare('SELECT fields_json FROM ai_profiles WHERE user_id = ?').get(owner).fields_json, /Synthetic notes typed in this tab/);
+  assert.equal(db.prepare('SELECT COUNT(*) AS n FROM body_weight_entries').get().n, 1);
   assert.deepEqual(exceptions, []);
 });

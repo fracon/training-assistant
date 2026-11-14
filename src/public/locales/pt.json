@@ -2360,7 +2360,8 @@
       "export": "Baixar minhas respostas",
       "delete": "Apagar anamnese e registros de peso",
       "retry": "Tentar novamente",
-      "start": "Começar"
+      "start": "Começar",
+      "reloadExperience": "Recarregar versão salva"
     },
     "review": {
       "sourcesTitle": "Informações que ficam em outras telas",
@@ -2402,7 +2403,7 @@
       "raceIncomplete": "Preencha distância, tempo e ano de cada resultado.",
       "anamnesisConflict": "Suas respostas mudaram em outra sessão. Recarregue a página para continuar.",
       "anamnesisIncomplete": "Ainda há perguntas sem resposta.",
-      "memoryConflict": "As observações sobre experiência mudaram em outra sessão. Recarregue a página para continuar.",
+      "memoryConflict": "As observações sobre experiência mudaram em outra sessão. Recarregue a versão salva: o texto que você digitou é mantido e, ao salvar, substitui a versão da outra sessão.",
       "weightDateExists": "Já existe um peso registrado nesta data.",
       "weightOutOfRange": "Informe um peso entre {min} e {max}.",
       "invalidWeight": "Informe um peso válido.",

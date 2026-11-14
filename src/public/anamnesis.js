@@ -44,6 +44,12 @@ let busy = false;
 // Revision of the answers the open step was rendered from: the step is saved
 // against what it shows, so another tab's change is a conflict, not overwritten.
 let editingRevision = 0;
+// Units the open step was rendered with, so a preference change can convert
+// what was typed instead of discarding or reinterpreting it.
+let stepUnits = null;
+// The weight this step already logged, so retrying the step after a later
+// failure does not log it twice.
+let stepWeightSaved = null;
 
 function t(key, params) { return translate(i18n.messages, `anamnesis.${key}`, params); }
 function prefs() { return getUserPreferences(); }
@@ -590,6 +596,11 @@ function racesField(item, answer) {
   };
   if (answer?.status === 'answered') answer.value.forEach((race) => addRow(race));
   add.addEventListener('click', () => addRow().focus());
+  field.setRowCount = (count) => {
+    while (rows.length < count) addRow();
+    while (rows.length > count) rows.pop().element.remove();
+    sync();
+  };
   field.element.append(list, add, noneRow);
   sync();
   field.collect = () => {
@@ -664,6 +675,9 @@ function renderStep(index, { focus = true } = {}) {
   container.textContent = '';
   stepDatePicker = null;
   editingRevision = data.anamnesis.revision;
+  stepUnits = { body: prefs().body_unit, distance: prefs().distance_unit };
+  stepWeightSaved = null;
+  $('anamnesisReloadExperience').hidden = true;
   fields = step.items.map((item) => buildField(item, data.anamnesis.answers[item.key]));
   for (const field of fields) container.appendChild(field.element);
   if (step.id === 'experience') container.appendChild(experienceNotes());
@@ -682,6 +696,118 @@ function renderStep(index, { focus = true } = {}) {
   next.textContent = mode === 'edit' ? t('actions.save') : t('actions.next');
   refreshIcons();
   if (focus) $('anamnesisStepTitle').focus();
+}
+
+/* ── Unsaved step state across preference changes ───────────── */
+
+const RACE_PARTS = ['distance', 'km', 'hours', 'minutes', 'seconds', 'year'];
+const DISTANCE_IDS = ['q-weekly_distance_km', 'q-longest_run_km'];
+
+function racePart(row, part) {
+  return row.querySelector(`[id^="q-race-"][id$="-${part}"]`);
+}
+
+function heightCm(units) {
+  const feet = $('q-height_cm');
+  if (!feet) return null;
+  const inches = $('q-height_cm-inches');
+  const value = units.body === 'imperial'
+    ? heightToCm({ feet: feet.value, inches: inches?.value ?? '' }, 'imperial')
+    : heightToCm({ cm: feet.value }, 'metric');
+  return value;
+}
+
+function roundedDisplay(value) {
+  return String(Math.round(value * 10) / 10);
+}
+
+// What the person typed but has not saved yet, with measurements kept in
+// canonical units so a unit change converts them.
+function captureStep() {
+  const root = $('anamnesisStepFields');
+  const values = {};
+  const checked = {};
+  for (const control of root.querySelectorAll('input, select, textarea')) {
+    if (control.closest('.anamnesis-race')) continue;
+    if (control.type === 'checkbox' || control.type === 'radio') checked[control.id || `${control.name}|${control.value}`] = control.checked;
+    else if (control.id && control.id !== 'q-weight-date') values[control.id] = control.value;
+  }
+  const races = [...root.querySelectorAll('.anamnesis-race')].map((row) => {
+    const race = Object.fromEntries(RACE_PARTS.map((part) => [part, racePart(row, part).value]));
+    const km = readNumber(racePart(row, 'km'));
+    race.kmCanonical = km === null || Number.isNaN(km) ? null : convertDistanceToKm(km, stepUnits.distance);
+    return race;
+  });
+  const distances = {};
+  for (const id of DISTANCE_IDS) {
+    const input = $(id);
+    const value = input ? readNumber(input) : null;
+    if (value !== null && !Number.isNaN(value)) distances[id] = convertDistanceToKm(value, stepUnits.distance);
+  }
+  const weightInput = $('q-weight');
+  const weight = weightInput ? readNumber(weightInput) : null;
+  return {
+    units: stepUnits,
+    values,
+    checked,
+    races,
+    distances,
+    heightCm: $('q-height_cm') ? heightCm(stepUnits) : null,
+    heightTyped: Boolean($('q-height_cm')?.value || $('q-height_cm-inches')?.value),
+    weightKg: weight === null || Number.isNaN(weight) ? null : weightToKg(weight, stepUnits.body),
+    weightDate: stepDatePicker?.getValue() || null,
+    weightSaved: stepWeightSaved,
+  };
+}
+
+function restoreStep(draft) {
+  const root = $('anamnesisStepFields');
+  const bodyChanged = draft.units.body !== stepUnits.body;
+  const distanceChanged = draft.units.distance !== stepUnits.distance;
+  const converted = new Set([
+    ...(bodyChanged ? ['q-height_cm', 'q-height_cm-inches', 'q-weight'] : []),
+    ...(distanceChanged ? DISTANCE_IDS : []),
+  ]);
+  for (const [id, value] of Object.entries(draft.values)) {
+    const control = $(id);
+    if (control && !converted.has(id)) control.value = value;
+  }
+  if (bodyChanged) {
+    if (draft.heightCm !== null) {
+      const shown = heightFromCm(draft.heightCm, stepUnits.body);
+      if (stepUnits.body === 'imperial') {
+        $('q-height_cm').value = String(shown.feet);
+        $('q-height_cm-inches').value = String(shown.inches);
+      } else $('q-height_cm').value = String(shown.cm);
+    } else if (draft.heightTyped && $('q-height_cm')) {
+      // Text that is not a height cannot be converted; keep it visible.
+      $('q-height_cm').value = draft.values['q-height_cm'] ?? '';
+    }
+    if ($('q-weight')) $('q-weight').value = draft.weightKg === null ? draft.values['q-weight'] ?? '' : roundedDisplay(weightFromKg(draft.weightKg, stepUnits.body));
+  }
+  if (distanceChanged)
+    for (const id of DISTANCE_IDS)
+      if ($(id)) $(id).value = id in draft.distances ? roundedDisplay(convertDistanceFromKm(draft.distances[id], stepUnits.distance)) : draft.values[id] ?? '';
+  const racesField = fields.find((field) => field.key === 'race_results');
+  if (racesField) {
+    racesField.setRowCount(draft.races.length);
+    root.querySelectorAll('.anamnesis-race').forEach((row, index) => {
+      const race = draft.races[index];
+      for (const part of RACE_PARTS) racePart(row, part).value = race[part];
+      if (distanceChanged && race.kmCanonical !== null)
+        racePart(row, 'km').value = String(Math.round(convertDistanceFromKm(race.kmCanonical, stepUnits.distance) * 100) / 100);
+      racePart(row, 'distance').dispatchEvent(new Event('change'));
+    });
+  }
+  for (const control of root.querySelectorAll('input[type="checkbox"], input[type="radio"]')) {
+    const key = control.id || `${control.name}|${control.value}`;
+    if (key in draft.checked) control.checked = draft.checked[key];
+  }
+  for (const control of root.querySelectorAll('input[type="checkbox"], input[type="radio"]'))
+    control.dispatchEvent(new Event('change', { bubbles: true }));
+  if (draft.weightDate) stepDatePicker?.setValue(draft.weightDate);
+  stepWeightSaved = draft.weightSaved;
+  $('q-runs_per_week')?.dispatchEvent(new Event('input'));
 }
 
 function experienceNotes() {
@@ -721,6 +847,7 @@ async function saveStep(event) {
   event.preventDefault();
   if (busy) return;
   $('anamnesisFormError').hidden = true;
+  $('anamnesisReloadExperience').hidden = true;
   const answers = {};
   let weight = null;
   let firstInvalid = null;
@@ -744,9 +871,11 @@ async function saveStep(event) {
   busy = true;
   $('anamnesisNext').disabled = true;
   try {
-    if (weight) {
+    const weightKey = weight && JSON.stringify(weight);
+    if (weight && weightKey !== stepWeightSaved) {
       try {
         const created = await api('POST', '/api/body-weights', weight);
+        stepWeightSaved = weightKey;
         data.weights = [created.weight, ...data.weights].sort((a, b) => b.measured_on.localeCompare(a.measured_on));
       } catch (error) {
         const field = fields.find((item) => item.key === 'weight');
@@ -761,6 +890,9 @@ async function saveStep(event) {
       ...(consent === undefined ? {} : { sensitive_ai_consent: consent }),
     });
     data.anamnesis = saved.anamnesis;
+    // These answers are now saved as shown, so a retry (for example after
+    // the experience notes fail) saves against this revision.
+    editingRevision = saved.anamnesis.revision;
     if (notes !== null && notes !== data.experience.value) {
       const profile = await api('PUT', '/api/ai/profile', { fields: { experience: notes }, expected_version: data.experience.version });
       data.experience = { value: profile.profile.fields.experience?.value ?? notes, version: profile.profile.version };
@@ -778,11 +910,31 @@ async function saveStep(event) {
       field.focus();
     } else {
       showFormError(error.code);
+      // Like Training memory: reload the saved version without losing the text.
+      $('anamnesisReloadExperience').hidden = error.code !== 'memoryConflict';
       $('anamnesisFormError').focus?.();
     }
   } finally {
     busy = false;
     $('anamnesisNext').disabled = false;
+  }
+}
+
+// Reads the experience notes saved elsewhere, keeping the typed text, so the
+// next save is made against the current version.
+async function reloadExperience() {
+  if (busy) return;
+  busy = true;
+  try {
+    const fresh = await api('GET', '/api/anamnesis');
+    data.experience = fresh.experience;
+    $('anamnesisFormError').hidden = true;
+    $('anamnesisReloadExperience').hidden = true;
+    $('q-experience-notes')?.focus();
+  } catch (error) {
+    showFormError(error.code);
+  } finally {
+    busy = false;
   }
 }
 
@@ -934,6 +1086,7 @@ async function initAnamnesis() {
   $('anamnesisCancel').addEventListener('click', () => showReview());
   $('anamnesisComplete').addEventListener('click', complete);
   $('anamnesisRetry').addEventListener('click', () => load());
+  $('anamnesisReloadExperience').addEventListener('click', reloadExperience);
   $('anamnesisDelete').addEventListener('click', deleteEverything);
   $('anamnesisOpenPreferences').addEventListener('click', () => openPreferencesModal());
   document.addEventListener('app:languagechange', () => {
@@ -945,8 +1098,10 @@ async function initAnamnesis() {
   });
   document.addEventListener('kinesis:preferences-changed', () => {
     if (!data) return;
-    if (mode === 'review') renderSummary();
-    else renderStep(stepIndex, { focus: false });
+    if (mode === 'review') { renderSummary(); return; }
+    const draft = captureStep();
+    renderStep(stepIndex, { focus: false });
+    restoreStep(draft);
   });
   await load();
 }

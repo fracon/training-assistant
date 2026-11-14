@@ -237,6 +237,12 @@ pending item and the training-memory source.
   against the revision it was rendered from, so another tab's save is a
   conflict; a pending weight-log value is converted, never reinterpreted,
   when `body_unit` changes.
+- A preference change re-renders the open step from the unsaved draft
+  (`captureStep`/`restoreStep`), converting height, weight and distances to
+  the new units; it never falls back to the last saved answers. A step whose
+  answers saved but whose experience notes failed is retried against the new
+  revision without logging its weight again; a `memoryConflict` offers
+  "Reload saved version", which keeps the typed notes (as Training memory).
 - Covered by `test/anamnesis.test.js`, `test/anamnesis.browser.test.js` and
   `test/weight.browser.test.js`.
 
