@@ -256,9 +256,12 @@ AI integration (PR 2):
 - Freshness without mass invalidation: `buildContext` adds no key, reference
   or gap without a completed anamnesis, and `contextIsCurrent` rebuilds with
   `includeAnamnesis` only when the stored snapshot had it, so contexts and
-  proposals from before keep their hash. The reference version
-  (`basisVersion`) covers answers and consent but never the weight log, and
-  `appliedPlanIsCurrent` compares it only for plans that recorded it: older
+  proposals from before keep their hash. The reference carries two
+  versions: `version` covers everything projected, weights included, so an
+  interpretation citing `anamnesis:self` stops entering contexts when its
+  weight evidence changes; `basis` (`basisVersion`) covers answers and
+  consent but never the weight log, and `appliedPlanIsCurrent` compares
+  only `basis`, only for plans that recorded it: older
   plans never become outdated in bulk, a weigh-in never outdates a plan, and
   an edit, a revoked consent or an erased anamnesis outdates exactly the
   plans that used it. Nothing regenerates automatically. The policy version

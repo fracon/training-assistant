@@ -458,10 +458,11 @@ function weightContext(db, userId) {
 
 // The minimum a completed anamnesis contributes to an AI context, or null when
 // it is not completed. Without the separate consent no health answer, height
-// or weight is included, not even as "not informed". `basisVersion` versions
-// the answers and consent but not the weight log, so logging a weight never
-// outdates an applied cycle plan; the weights still take part in the whole
-// context hash of proposals and analyses.
+// or weight is included, not even as "not informed". `version` covers
+// everything the model receives, weights included, so an interpretation citing
+// `anamnesis:self` stops being current when its weight evidence changes.
+// `basisVersion` versions the answers and consent but not the weight log, so
+// logging a weight never outdates an applied cycle plan.
 function anamnesisContext(db, userId) {
   const row = readRow(db, userId);
   if (!row || row.status !== 'completed') return null;
@@ -505,7 +506,7 @@ function anamnesisContext(db, userId) {
   }
   const basisVersion = hash(projection);
   if (consent) projection.body.weight = answers.weight?.status === 'answered' ? weightContext(db, userId) : 'not_informed';
-  return { projection, basisVersion };
+  return { projection, basisVersion, version: hash(projection) };
 }
 
 /* ── Body-weight log ─────────────────────────────────────────── */

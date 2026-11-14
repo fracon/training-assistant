@@ -156,8 +156,10 @@ test('contexts carry the completed anamnesis while older snapshots stay current'
   assert.equal(contextIsCurrent(db, 1, before, config), true);
   const after = cycleContext(db);
   assert.deepEqual(after.anamnesis, anamnesisContext(db, 1).projection);
-  assert.deepEqual(after.sources.find((ref) => ref.type === 'anamnesis'), { type: 'anamnesis', id: 'self', version: anamnesisContext(db, 1).basisVersion });
+  const current = anamnesisContext(db, 1);
+  assert.deepEqual(after.sources.find((ref) => ref.type === 'anamnesis'), { type: 'anamnesis', id: 'self', version: current.version, basis: current.basisVersion });
   assert.equal(projectContextForModel(after).anamnesis.about.birthYear, YEAR - 40);
+  assert.deepEqual(projectContextForModel(after).sources.find((ref) => ref.type === 'anamnesis'), { type: 'anamnesis', id: 'self' }, 'the model never sees versions');
   assert.equal(Object.hasOwn(cycleContext(db, { includeAnamnesis: false }), 'anamnesis'), false);
   assert.equal(contextIsCurrent(db, 1, after, config), true);
   for (const purpose of ['workouts', 'analysis']) assert.ok(buildContext(db, 1, { purpose, config }).anamnesis, purpose);
@@ -168,6 +170,29 @@ test('contexts carry the completed anamnesis while older snapshots stay current'
   const edited = cycleContext(db);
   deleteAnamnesis(db, 1);
   assert.equal(contextIsCurrent(db, 1, edited, config), false, 'erasing the anamnesis outdates what used it');
+  db.close();
+});
+
+test('an interpretation citing the anamnesis stops being current when its weight evidence changes', () => {
+  const db = setup();
+  completeWith(db, ANSWERS, { sensitive_ai_consent: true });
+  db.prepare("UPDATE body_weight_entries SET weight_kg = 80 WHERE measured_on = '2026-02-10'").run();
+  const training = db.prepare("INSERT INTO trainings(user_id,dia,tipo,treino,completed,feedback_rpe) VALUES (1,'2026-01-05','Run','Synthetic run',1,3)").run().lastInsertRowid;
+  db.prepare(`INSERT INTO workout_analysis_versions(id,user_id,training_id,sequence,adapter_version,context_json,state,language,created_at)
+    VALUES ('synthetic-analysis',1,?,1,'workout-analysis-v1','{}','completed','en-US','2026-03-01T10:00:00.000Z')`).run(training);
+  const cited = buildContext(db, 1, { purpose: 'workouts', config }).sources.find((ref) => ref.type === 'anamnesis');
+  db.prepare(`INSERT INTO ai_interpretations
+    (id,user_id,training_id,analysis_id,kind,text,evidence_json,evidence_key,evidence_hash,content_hash,disposition,created_at,updated_at)
+    VALUES ('synthetic-interpretation',1,?,'synthetic-analysis','pattern','Synthetic weight-based hypothesis.',?,'key','hash','content','pending','2026-03-01T10:00:00.000Z','2026-03-01T10:00:00.000Z')`)
+    .run(training, JSON.stringify([{ type: 'anamnesis', id: 'self', version: cited.version }]));
+  const selected = () => (buildContext(db, 1, { purpose: 'workouts', config }).interpretations || []).map((item) => item.source.id);
+  assert.deepEqual(selected(), ['synthetic-interpretation']);
+  const basis = anamnesisContext(db, 1).basisVersion;
+  // Correcting the weight from 80 kg to 70 kg changes the evidence the
+  // interpretation relied on, while the applied-plan basis stays the same.
+  db.prepare("UPDATE body_weight_entries SET weight_kg = 70 WHERE measured_on = '2026-02-10'").run();
+  assert.equal(anamnesisContext(db, 1).basisVersion, basis);
+  assert.deepEqual(selected(), [], 'the stale weight-based interpretation is excluded');
   db.close();
 });
 

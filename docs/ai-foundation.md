@@ -862,15 +862,19 @@ purpose, without a policy version change:
 
 - `context.anamnesis` is the minimal, consent-aware projection built by
   `anamnesisContext` in `src/anamnesis.js` (`authority: user_report`), with
-  the reference `{ type: 'anamnesis', id: 'self', version: basisVersion }`.
+  the reference `{ type: 'anamnesis', id: 'self', version, basis }`.
+  `version` hashes the whole projection, weights included, so an
+  interpretation citing `anamnesis:self` leaves later contexts when its
+  weight evidence changes; `basis` (`basisVersion`) excludes the weight log.
+  The model projection keeps only type and id.
   Without the sensitive-data consent, health answers, height and weight are
   absent; with it, the latest weight, its date and the change within 56 days
   are included. Unanswered-by-choice items are `not_informed`.
 - A context built without a completed anamnesis has no `anamnesis` key,
   reference or gap, so snapshots from before the source keep their hash;
   `contextIsCurrent` passes `includeAnamnesis` only for snapshots that had
-  it. `basisVersion` excludes the weight log, and `appliedPlanIsCurrent`
-  compares it only for plans whose recorded sources include it.
+  it. `appliedPlanIsCurrent` compares `basis` only for plans whose recorded
+  sources include it, so a weigh-in never outdates an applied plan.
 - `buildPayload` adds `ANAMNESIS_INSTRUCTIONS` only when the context has the
   anamnesis (no nutrition advice, no body judgement, no weight-loss promises,
   health answers are not diagnoses).

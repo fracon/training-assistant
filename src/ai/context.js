@@ -324,7 +324,10 @@ function buildContext(
   const anamnesis = includeAnamnesis ? anamnesisContext(db, userId) : null;
   if (anamnesis) {
     context.anamnesis = anamnesis.projection;
-    addReference({ type: 'anamnesis', id: 'self', version: anamnesis.basisVersion });
+    // Evidence freshness matches `version` (weights included); applied-plan
+    // freshness compares only `basis`, which never follows the weight log.
+    // The model projection keeps just type and id.
+    addReference({ type: 'anamnesis', id: 'self', version: anamnesis.version, basis: anamnesis.basisVersion });
   }
   // Mandatory context is never silently truncated; a too-small budget refuses dispatch.
   if (cycle) {
@@ -799,7 +802,7 @@ function planBasis(sources, cycleId) {
           ref.type === 'anamnesis' ||
           ref.type === 'availability',
       )
-      .map((ref) => [`${ref.type}:${ref.id}`, ref.version]),
+      .map((ref) => [`${ref.type}:${ref.id}`, ref.type === 'anamnesis' ? ref.basis : ref.version]),
   );
 }
 function appliedPlanIsCurrent(db, userId, cycleId, sourcesJson) {
