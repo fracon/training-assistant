@@ -49,6 +49,7 @@ test('login issues an http-only session cookie backed by a database row', async 
       first_day_of_week: 'Monday',
       distance_unit: 'km',
       temperature_unit: 'C',
+      body_unit: 'metric',
       role: 'user',
     },
   });
@@ -223,6 +224,7 @@ test('/api/me serves the authenticated profile from the session cookie', async (
       first_day_of_week: 'Monday',
       distance_unit: 'km',
       temperature_unit: 'C',
+      body_unit: 'metric',
       time_zone: null,
       role: 'user',
     },
@@ -855,6 +857,7 @@ test('authenticated users can update all dashboard preferences', async () => {
     first_day_of_week: 'Sunday',
     distance_unit: 'mi',
     temperature_unit: 'F',
+    body_unit: 'metric',
   });
   assert.deepEqual(
     db.prepare('SELECT first_day_of_week, distance_unit, temperature_unit FROM users WHERE email = ?')

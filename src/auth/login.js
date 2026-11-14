@@ -46,6 +46,7 @@ function publicUser(row) {
     first_day_of_week: row.first_day_of_week,
     distance_unit: row.distance_unit,
     temperature_unit: row.temperature_unit,
+    body_unit: row.body_unit,
     role: row.role,
   };
 }
@@ -66,7 +67,7 @@ function openSessionForVerifiedAccount(db, userId, sessionOptions) {
     const current = db
       .prepare(
         `SELECT id, email, first_name, last_name, preferred_lang, first_day_of_week,
-                distance_unit, temperature_unit, role, is_active
+                distance_unit, temperature_unit, body_unit, role, is_active
          FROM users WHERE id = ?`
       )
       .get(userId);

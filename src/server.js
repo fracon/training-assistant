@@ -58,6 +58,8 @@ const {
   isSupportedDistanceUnit,
   normalizeDistanceUnit,
   isSupportedTemperatureUnit,
+  isSupportedBodyUnit,
+  normalizeBodyUnit,
   normalizeTemperatureUnit,
 } = require('./auth/preferences');
 const { isValidTimeZone, userToday } = require('./time-zone');
@@ -80,6 +82,17 @@ const {
   listFeedback,
   updateFeedback,
 } = require('./feedback');
+const {
+  AnamnesisError,
+  addWeight,
+  completeAnamnesis,
+  deleteAnamnesis,
+  deleteWeight,
+  exportAnamnesis,
+  readAnamnesis,
+  saveAnamnesis,
+  updateWeight,
+} = require('./anamnesis');
 const {
   AiHistoryError,
   getAiExecution,
@@ -330,6 +343,11 @@ async function buildServer(options = {}) {
       return reply.redirect('/login.html');
     }
     return reply.sendFile('ai-coach.html');
+  });
+
+  app.get('/anamnesis.html', async (request, reply) => {
+    if (!sessionOf(request)) return reply.redirect('/login.html');
+    return reply.sendFile('anamnesis.html');
   });
 
   app.get('/training-memory.html', async (request, reply) => {
@@ -655,10 +673,14 @@ async function buildServer(options = {}) {
         const firstDay = body.first_day_of_week;
         const distanceUnit = body.distance_unit;
         const temperatureUnit = body.temperature_unit;
+        // body_unit is optional so clients that predate it keep working; when
+        // absent the stored value is kept.
+        const bodyUnit = body.body_unit;
         if (
           !isSupportedWeekStart(firstDay) ||
           !isSupportedDistanceUnit(distanceUnit) ||
-          !isSupportedTemperatureUnit(temperatureUnit)
+          !isSupportedTemperatureUnit(temperatureUnit) ||
+          (bodyUnit !== undefined && !isSupportedBodyUnit(bodyUnit))
         ) {
           return reply.code(400).send({ error: 'Unsupported preference.' });
         }
@@ -666,13 +688,16 @@ async function buildServer(options = {}) {
           first_day_of_week: normalizeWeekStart(firstDay),
           distance_unit: normalizeDistanceUnit(distanceUnit),
           temperature_unit: normalizeTemperatureUnit(temperatureUnit),
+          body_unit:
+            bodyUnit === undefined ? request.user.body_unit : normalizeBodyUnit(bodyUnit),
         };
         db.prepare(
-          'UPDATE users SET first_day_of_week = ?, distance_unit = ?, temperature_unit = ? WHERE id = ?',
+          'UPDATE users SET first_day_of_week = ?, distance_unit = ?, temperature_unit = ?, body_unit = ? WHERE id = ?',
         ).run(
           normalized.first_day_of_week,
           normalized.distance_unit,
           normalized.temperature_unit,
+          normalized.body_unit,
           request.user.id,
         );
         return normalized;
@@ -1685,6 +1710,38 @@ async function buildServer(options = {}) {
         }
       },
     );
+
+    // Athlete anamnesis and weight log (issue #80). Owner-scoped only: there is
+    // no administrative read. Responses are never cached and never logged.
+    const anamnesisFailure = (reply, error) => {
+      if (error instanceof AnamnesisError)
+        return reply.code(error.status).send({
+          error: error.message,
+          errors: [error.code],
+          ...error.extra,
+        });
+      throw error;
+    };
+    const anamnesisRoute = (method, url, handler, status = 200) =>
+      app[method](url, { preHandler: requireAuth }, async (request, reply) => {
+        reply.header('Cache-Control', 'no-store');
+        try {
+          return reply.code(status).send(handler(request, reply));
+        } catch (error) {
+          return anamnesisFailure(reply, error);
+        }
+      });
+    anamnesisRoute('get', '/api/anamnesis', (r) => readAnamnesis(db, r.user.id));
+    anamnesisRoute('put', '/api/anamnesis', (r) => saveAnamnesis(db, r.user.id, r.body));
+    anamnesisRoute('post', '/api/anamnesis/complete', (r) => completeAnamnesis(db, r.user.id, r.body));
+    anamnesisRoute('delete', '/api/anamnesis', (r) => deleteAnamnesis(db, r.user.id));
+    anamnesisRoute('get', '/api/anamnesis/export', (r, reply) => {
+      reply.header('Content-Disposition', 'attachment; filename="kinesis-anamnesis.json"');
+      return exportAnamnesis(db, r.user.id);
+    });
+    anamnesisRoute('post', '/api/body-weights', (r) => addWeight(db, r.user.id, r.body), 201);
+    anamnesisRoute('patch', '/api/body-weights/:id', (r) => updateWeight(db, r.user.id, r.params.id, r.body));
+    anamnesisRoute('delete', '/api/body-weights/:id', (r) => deleteWeight(db, r.user.id, r.params.id));
 
     // Administration AI prompt history (issue #113): the one read-only,
     // audited exception that lets an administrator read another account's AI

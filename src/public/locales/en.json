@@ -238,7 +238,8 @@
     "confirm": {
       "yes": "Delete",
       "no": "Cancel"
-    }
+    },
+    "anamnesis": "My running profile"
   },
   "login": {
     "title": "Sign In - Kinesis",
@@ -304,6 +305,11 @@
     "temperature": {
       "celsius": "Celsius (°C)",
       "fahrenheit": "Fahrenheit (°F)"
+    },
+    "bodyLabel": "Body measurements",
+    "body": {
+      "metric": "Metric (kg, cm)",
+      "imperial": "Imperial (lb, feet and inches)"
     },
     "save": "Save Preferences",
     "saving": "Saving…",
@@ -2158,5 +2164,260 @@
     "editedOutdatedHint": "Your changes were saved. The existing plan was created with earlier information. You can generate a new proposal now or keep the current version for now. Applying a new proposal is a separate choice.",
     "editedCurrentHint": "Your changes were saved and the applied plan is current. You can review it here. Weekly workouts are requested separately.",
     "savedUnavailableHint": "Your cycle is saved. AI planning is currently unavailable. You can finish here and return through Cycle planning later. Weekly workouts are requested separately."
+  },
+  "anamnesis": {
+    "pageTitle": "My running profile - Kinesis",
+    "title": "My running profile",
+    "subtitle": "Tell us how you run today so planning fits you. It takes about 5 minutes.",
+    "status": {
+      "not_started": "Not started",
+      "draft": "Draft",
+      "completed": "Completed"
+    },
+    "completedOn": "Completed on {date}",
+    "answersTitle": "Your answers",
+    "progress": "Step {current} of {total}",
+    "progressLabel": "Profile steps",
+    "loading": "Loading your running profile…",
+    "steps": {
+      "about": {
+        "title": "About you",
+        "intro": "Basic details help calibrate progression and recovery. You may decline any of them."
+      },
+      "experience": {
+        "title": "Experience",
+        "intro": "Your current base decides where planning starts. Answer with what is usual for you; it is fine not to know."
+      },
+      "routine": {
+        "title": "Routine",
+        "intro": "Other activities and the devices you use affect your weekly load and how intensity is guided."
+      },
+      "health": {
+        "title": "Health",
+        "intro": "These answers are sensitive and optional. They help avoid unsuitable suggestions but do not replace a health professional's assessment. Every question accepts \"I'd rather not say\"."
+      },
+      "review": {
+        "title": "Review",
+        "intro": "Check your answers. You can edit any step before completing."
+      }
+    },
+    "items": {
+      "birth_year": {
+        "label": "Year of birth",
+        "hint": "We only use the year to estimate your age."
+      },
+      "height_cm": {
+        "label": "Height"
+      },
+      "weight": {
+        "label": "Current weight",
+        "hint": "It goes to your weight log, which you can update whenever you like."
+      },
+      "motivations": {
+        "label": "Why do you run?",
+        "hint": "Choose every option that applies.",
+        "options": {
+          "health": "Health",
+          "weight_loss": "Lose weight",
+          "performance": "Improve performance",
+          "race": "Prepare for a race",
+          "wellbeing": "Well-being and stress",
+          "social": "Social",
+          "other": "Another reason"
+        },
+        "otherText": "Which other reason? (optional)"
+      },
+      "running_experience": {
+        "label": "How long have you been running?",
+        "options": {
+          "never": "I don't run yet",
+          "under_6_months": "Less than 6 months",
+          "six_to_24_months": "6 months to 2 years",
+          "two_to_5_years": "2 to 5 years",
+          "over_5_years": "More than 5 years"
+        }
+      },
+      "recent_consistency": {
+        "label": "How was your training over the last 3 months?",
+        "options": {
+          "stopped": "I was not running",
+          "irregular": "Irregular",
+          "regular": "Regular"
+        }
+      },
+      "runs_per_week": {
+        "label": "How many runs per week over the last 4 weeks?",
+        "hint": "The usual number. If you did not run, enter 0."
+      },
+      "weekly_distance_km": {
+        "label": "Usual weekly volume ({unit})"
+      },
+      "longest_run_km": {
+        "label": "Longest run in the last 3 months ({unit})"
+      },
+      "race_results": {
+        "label": "Race results",
+        "hint": "Optional. Up to 5 recent results help estimate paces more safely."
+      },
+      "strength_training": {
+        "label": "Do you do strength training?",
+        "options": {
+          "none": "No",
+          "occasional": "Occasionally",
+          "weekly_1": "Once a week",
+          "weekly_2_plus": "Twice a week or more"
+        }
+      },
+      "other_activities": {
+        "label": "Do you practise other physical activities?",
+        "detailsLabel": "Which ones and how often? (optional)"
+      },
+      "hr_device": {
+        "label": "How do you measure heart rate?",
+        "options": {
+          "chest_strap": "Chest strap",
+          "wrist_watch": "Wrist watch",
+          "none": "I don't measure it"
+        }
+      },
+      "current_pain": {
+        "label": "Do you currently feel pain or discomfort when running?",
+        "detailsLabel": "Where and since when? (optional)"
+      },
+      "injuries_12_months": {
+        "label": "Have you had injuries in the last 12 months?",
+        "detailsLabel": "Which injuries? (optional)"
+      },
+      "professional_restriction": {
+        "label": "Has a health professional recommended limits on physical activity?",
+        "detailsLabel": "Which recommendation? (optional)"
+      },
+      "health_conditions": {
+        "label": "Do you have a health condition relevant to exercise?",
+        "hint": "For example, heart, respiratory or joint conditions.",
+        "detailsLabel": "Which condition? (optional)"
+      }
+    },
+    "answers": {
+      "unknown": "I don't know",
+      "declined": "I'd rather not say",
+      "notApplicable": "Not applicable",
+      "notAnswered": "Not answered yet",
+      "yes": "Yes",
+      "no": "No",
+      "none": "None"
+    },
+    "height": {
+      "cm": "Height (cm)",
+      "feet": "Feet",
+      "inches": "Inches"
+    },
+    "weight": {
+      "value": "Weight ({unit})",
+      "date": "Measurement date",
+      "latest": "Latest entry: {weight} on {date}",
+      "newEntry": "Log a new weight (optional)"
+    },
+    "races": {
+      "add": "Add result",
+      "remove": "Remove result",
+      "row": "Result {n}",
+      "distance": "Distance",
+      "otherDistance": "Other",
+      "otherKm": "Distance ({unit})",
+      "time": "Time (hh:mm:ss)",
+      "year": "Year",
+      "none": "I have no results to share",
+      "distances": {
+        "5k": "5 km",
+        "10k": "10 km",
+        "21k": "Half marathon",
+        "42k": "Marathon"
+      }
+    },
+    "experienceNotes": {
+      "label": "Notes about your experience (optional)",
+      "hint": "This is the same field as in Training memory: changing it here changes it there too."
+    },
+    "consent": {
+      "label": "Use my health, height and weight answers in AI requests",
+      "hint": "Optional and off by default. Without this permission, no health answer or body measurement is sent to the AI. You can turn it off at any time.",
+      "on": "Allowed",
+      "off": "Not allowed",
+      "summary": "AI use of health, height and weight"
+    },
+    "actions": {
+      "back": "Back",
+      "next": "Save and continue",
+      "save": "Save",
+      "cancel": "Cancel",
+      "complete": "Complete profile",
+      "edit": "Edit",
+      "export": "Download my answers",
+      "delete": "Delete profile and weight log",
+      "retry": "Try again",
+      "start": "Start"
+    },
+    "review": {
+      "sourcesTitle": "Information kept on other screens",
+      "sourcesHint": "So we never ask twice, this information comes from its own screen. Correct it there.",
+      "sources": {
+        "cycles": "Goals, races and target dates",
+        "availability": "Days, times and available time",
+        "preferences": "Units, language and week start",
+        "memory": "Training history and reports"
+      },
+      "openCycles": "Training Cycles",
+      "openAvailability": "Request Workouts",
+      "openPreferences": "Preferences",
+      "openMemory": "Training memory",
+      "missing": "Answer the pending questions to complete."
+    },
+    "weightLog": {
+      "title": "Weight log",
+      "hint": "Update it whenever you like. We make no judgement about weight and do not calculate BMI.",
+      "empty": "No weight logged.",
+      "add": "Log weight",
+      "edit": "Edit entry of {date}",
+      "delete": "Delete entry of {date}",
+      "deleteTitle": "Delete weight entry",
+      "deleteConfirm": "Delete the entry of {date}?",
+      "listLabel": "Logged weights"
+    },
+    "privacy": {
+      "title": "Privacy and your data",
+      "stored": "Your answers are stored in Kinesis and only you can see and change them.",
+      "ai": "When you ask the AI for planning, non-sensitive answers may be part of the request. Health, height and weight answers are included only if you give the permission in the Health step.",
+      "admin": "Administrators of this installation can audit requests already sent to the AI, and every such review is recorded.",
+      "control": "You can download or delete everything at any time. Deleting your account also deletes this data.",
+      "deleteTitle": "Delete running profile",
+      "deleteConfirm": "Delete every answer, the AI permission and the whole weight log? This cannot be undone. Your experience notes in Training memory are kept."
+    },
+    "toasts": {
+      "saved": "Answers saved.",
+      "completed": "Running profile completed.",
+      "deleted": "Running profile deleted.",
+      "weightSaved": "Weight logged.",
+      "weightDeleted": "Weight entry deleted."
+    },
+    "errors": {
+      "required": "Answer this question or choose one of the alternatives.",
+      "outOfRange": "Enter a value between {min} and {max}.",
+      "invalidAnswer": "This value is not valid.",
+      "textTooLong": "The text is too long.",
+      "timeFormat": "Use the hh:mm:ss format, for example 0:52:30.",
+      "raceIncomplete": "Fill in distance, time and year for each result.",
+      "anamnesisConflict": "Your answers changed in another session. Reload the page to continue.",
+      "anamnesisIncomplete": "Some questions are still unanswered.",
+      "memoryConflict": "Your experience notes changed in another session. Reload the page to continue.",
+      "weightDateExists": "A weight is already logged for this date.",
+      "weightOutOfRange": "Enter a weight between {min} and {max}.",
+      "invalidWeight": "Enter a valid weight.",
+      "invalidWeightDate": "Choose a valid date.",
+      "weightDateOutOfRange": "The date cannot be in the future.",
+      "weightRequired": "Keep at least one weight entry or choose \"I'd rather not say\" in the profile.",
+      "load": "Your running profile could not be loaded.",
+      "generic": "Could not save. Please try again."
+    }
   }
 }

@@ -488,7 +488,8 @@
     "confirm": {
       "yes": "Excluir",
       "no": "Cancelar"
-    }
+    },
+    "anamnesis": "Minha anamnese"
   },
   "login": {
     "title": "Entrar - Kinesis",
@@ -554,6 +555,11 @@
     "temperature": {
       "celsius": "Celsius (°C)",
       "fahrenheit": "Fahrenheit (°F)"
+    },
+    "bodyLabel": "Medidas corporais",
+    "body": {
+      "metric": "Métrico (kg, cm)",
+      "imperial": "Imperial (lb, pés e polegadas)"
     },
     "save": "Guardar preferências",
     "saving": "A guardar…",
@@ -2158,5 +2164,260 @@
     "editedOutdatedHint": "As alterações foram salvas. O planejamento existente foi criado com informações anteriores. Você pode gerar uma nova proposta agora ou continuar com a versão atual por enquanto. Aplicar uma nova proposta é uma escolha separada.",
     "editedCurrentHint": "As alterações foram salvas e o planejamento aplicado está atualizado. Você pode consultá-lo aqui. Os treinos semanais são solicitados separadamente.",
     "savedUnavailableHint": "Seu ciclo está salvo. O planejamento por IA está indisponível no momento. Você pode concluir esta etapa e retomar depois pelo Planejamento do ciclo. Os treinos semanais são solicitados separadamente."
+  },
+  "anamnesis": {
+    "pageTitle": "Minha anamnese - Kinesis",
+    "title": "Minha anamnese",
+    "subtitle": "Conte como você corre hoje para que o planejamento seja feito sob medida. Leva cerca de 5 minutos.",
+    "status": {
+      "not_started": "Não iniciada",
+      "draft": "Rascunho",
+      "completed": "Concluída"
+    },
+    "completedOn": "Concluída em {date}",
+    "answersTitle": "Suas respostas",
+    "progress": "Etapa {current} de {total}",
+    "progressLabel": "Etapas da anamnese",
+    "loading": "Carregando sua anamnese…",
+    "steps": {
+      "about": {
+        "title": "Sobre você",
+        "intro": "Dados básicos ajudam a calibrar a progressão e a recuperação. Você pode preferir não informar qualquer um deles."
+      },
+      "experience": {
+        "title": "Experiência",
+        "intro": "Sua base atual define por onde o planejamento começa. Responda com o que é habitual para você; se não souber, tudo bem."
+      },
+      "routine": {
+        "title": "Rotina",
+        "intro": "Outras atividades e os equipamentos que você usa influenciam a carga da semana e o tipo de orientação de intensidade."
+      },
+      "health": {
+        "title": "Saúde",
+        "intro": "Estas respostas são sensíveis e opcionais. Elas ajudam a evitar sugestões inadequadas, mas não substituem a avaliação de um profissional de saúde. Toda pergunta aceita \"Prefiro não informar\"."
+      },
+      "review": {
+        "title": "Revisão",
+        "intro": "Confira suas respostas. Você pode editar qualquer etapa antes de concluir."
+      }
+    },
+    "items": {
+      "birth_year": {
+        "label": "Ano de nascimento",
+        "hint": "Usamos só o ano para estimar sua idade."
+      },
+      "height_cm": {
+        "label": "Altura"
+      },
+      "weight": {
+        "label": "Peso atual",
+        "hint": "Fica no seu registro de peso, que você pode atualizar quando quiser."
+      },
+      "motivations": {
+        "label": "Por que você corre?",
+        "hint": "Escolha todas as opções que se aplicam.",
+        "options": {
+          "health": "Saúde",
+          "weight_loss": "Perder peso",
+          "performance": "Melhorar o desempenho",
+          "race": "Preparar uma prova",
+          "wellbeing": "Bem-estar e estresse",
+          "social": "Convívio social",
+          "other": "Outro motivo"
+        },
+        "otherText": "Qual outro motivo? (opcional)"
+      },
+      "running_experience": {
+        "label": "Há quanto tempo você corre?",
+        "options": {
+          "never": "Ainda não corro",
+          "under_6_months": "Menos de 6 meses",
+          "six_to_24_months": "De 6 meses a 2 anos",
+          "two_to_5_years": "De 2 a 5 anos",
+          "over_5_years": "Mais de 5 anos"
+        }
+      },
+      "recent_consistency": {
+        "label": "Como foram seus treinos nos últimos 3 meses?",
+        "options": {
+          "stopped": "Estive parado",
+          "irregular": "Irregulares",
+          "regular": "Regulares"
+        }
+      },
+      "runs_per_week": {
+        "label": "Quantas corridas por semana, nas últimas 4 semanas?",
+        "hint": "O número habitual. Se não correu, informe 0."
+      },
+      "weekly_distance_km": {
+        "label": "Volume semanal habitual ({unit})"
+      },
+      "longest_run_km": {
+        "label": "Maior distância corrida nos últimos 3 meses ({unit})"
+      },
+      "race_results": {
+        "label": "Resultados de prova",
+        "hint": "Opcional. Até 5 resultados recentes ajudam a estimar ritmos com mais segurança."
+      },
+      "strength_training": {
+        "label": "Você faz treino de força?",
+        "options": {
+          "none": "Não faço",
+          "occasional": "Ocasionalmente",
+          "weekly_1": "1 vez por semana",
+          "weekly_2_plus": "2 vezes ou mais por semana"
+        }
+      },
+      "other_activities": {
+        "label": "Pratica outras atividades físicas?",
+        "detailsLabel": "Quais e com que frequência? (opcional)"
+      },
+      "hr_device": {
+        "label": "Como você mede a frequência cardíaca?",
+        "options": {
+          "chest_strap": "Cinta peitoral",
+          "wrist_watch": "Relógio no pulso",
+          "none": "Não meço"
+        }
+      },
+      "current_pain": {
+        "label": "Você sente dor ou desconforto ao correr atualmente?",
+        "detailsLabel": "Onde e desde quando? (opcional)"
+      },
+      "injuries_12_months": {
+        "label": "Teve lesões nos últimos 12 meses?",
+        "detailsLabel": "Quais lesões? (opcional)"
+      },
+      "professional_restriction": {
+        "label": "Algum profissional de saúde recomendou restrições à atividade física?",
+        "detailsLabel": "Qual recomendação? (opcional)"
+      },
+      "health_conditions": {
+        "label": "Tem alguma condição de saúde relevante para o exercício?",
+        "hint": "Por exemplo, condições cardíacas, respiratórias ou articulares.",
+        "detailsLabel": "Qual condição? (opcional)"
+      }
+    },
+    "answers": {
+      "unknown": "Não sei",
+      "declined": "Prefiro não informar",
+      "notApplicable": "Não se aplica",
+      "notAnswered": "Ainda não respondido",
+      "yes": "Sim",
+      "no": "Não",
+      "none": "Nenhum"
+    },
+    "height": {
+      "cm": "Altura (cm)",
+      "feet": "Pés",
+      "inches": "Polegadas"
+    },
+    "weight": {
+      "value": "Peso ({unit})",
+      "date": "Data da medição",
+      "latest": "Último registro: {weight} em {date}",
+      "newEntry": "Registrar um novo peso (opcional)"
+    },
+    "races": {
+      "add": "Adicionar resultado",
+      "remove": "Remover resultado",
+      "row": "Resultado {n}",
+      "distance": "Distância",
+      "otherDistance": "Outra",
+      "otherKm": "Distância ({unit})",
+      "time": "Tempo (hh:mm:ss)",
+      "year": "Ano",
+      "none": "Não tenho resultados para informar",
+      "distances": {
+        "5k": "5 km",
+        "10k": "10 km",
+        "21k": "Meia maratona",
+        "42k": "Maratona"
+      }
+    },
+    "experienceNotes": {
+      "label": "Observações sobre sua experiência (opcional)",
+      "hint": "É o mesmo campo da Memória de treinamento: alterar aqui também altera lá."
+    },
+    "consent": {
+      "label": "Usar minhas respostas de saúde, altura e peso nas solicitações à IA",
+      "hint": "Opcional e desligado por padrão. Sem esta permissão, nenhuma resposta de saúde nem medida corporal é enviada à IA. Você pode desligar quando quiser.",
+      "on": "Permitido",
+      "off": "Não permitido",
+      "summary": "Uso de saúde, altura e peso pela IA"
+    },
+    "actions": {
+      "back": "Voltar",
+      "next": "Salvar e continuar",
+      "save": "Salvar",
+      "cancel": "Cancelar",
+      "complete": "Concluir anamnese",
+      "edit": "Editar",
+      "export": "Baixar minhas respostas",
+      "delete": "Apagar anamnese e registros de peso",
+      "retry": "Tentar novamente",
+      "start": "Começar"
+    },
+    "review": {
+      "sourcesTitle": "Informações que ficam em outras telas",
+      "sourcesHint": "Para não perguntar duas vezes, estas informações vêm das telas de origem. Corrija-as lá.",
+      "sources": {
+        "cycles": "Objetivos, provas e datas-alvo",
+        "availability": "Dias, horários e tempo disponível",
+        "preferences": "Unidades, idioma e início da semana",
+        "memory": "Histórico de treinos e relatos"
+      },
+      "openCycles": "Ciclos de Treino",
+      "openAvailability": "Solicitar Treinos",
+      "openPreferences": "Preferências",
+      "openMemory": "Memória de treinamento",
+      "missing": "Responda as perguntas pendentes para concluir."
+    },
+    "weightLog": {
+      "title": "Registro de peso",
+      "hint": "Atualize sempre que quiser. Não fazemos julgamentos sobre peso nem calculamos IMC.",
+      "empty": "Nenhum peso registrado.",
+      "add": "Registrar peso",
+      "edit": "Editar registro de {date}",
+      "delete": "Apagar registro de {date}",
+      "deleteTitle": "Apagar registro de peso",
+      "deleteConfirm": "Apagar o registro de {date}?",
+      "listLabel": "Pesos registrados"
+    },
+    "privacy": {
+      "title": "Privacidade e seus dados",
+      "stored": "Suas respostas ficam guardadas no Kinesis e só você pode vê-las e alterá-las.",
+      "ai": "Quando você pede um planejamento à IA, as respostas não sensíveis podem compor a solicitação. Respostas de saúde, altura e peso só entram se você der a permissão da etapa Saúde.",
+      "admin": "Administradores desta instalação podem auditar as solicitações já enviadas à IA, e cada consulta fica registrada.",
+      "control": "Você pode baixar ou apagar tudo a qualquer momento. Apagar a conta também apaga estes dados.",
+      "deleteTitle": "Apagar anamnese",
+      "deleteConfirm": "Apagar todas as respostas, a permissão de uso pela IA e todo o registro de peso? Esta ação não pode ser desfeita. Sua observação sobre experiência na Memória de treinamento é mantida."
+    },
+    "toasts": {
+      "saved": "Respostas salvas.",
+      "completed": "Anamnese concluída.",
+      "deleted": "Anamnese apagada.",
+      "weightSaved": "Peso registrado.",
+      "weightDeleted": "Registro de peso apagado."
+    },
+    "errors": {
+      "required": "Responda esta pergunta ou escolha uma das alternativas.",
+      "outOfRange": "Informe um valor entre {min} e {max}.",
+      "invalidAnswer": "Este valor não é válido.",
+      "textTooLong": "O texto está longo demais.",
+      "timeFormat": "Use o formato hh:mm:ss, por exemplo 0:52:30.",
+      "raceIncomplete": "Preencha distância, tempo e ano de cada resultado.",
+      "anamnesisConflict": "Suas respostas mudaram em outra sessão. Recarregue a página para continuar.",
+      "anamnesisIncomplete": "Ainda há perguntas sem resposta.",
+      "memoryConflict": "As observações sobre experiência mudaram em outra sessão. Recarregue a página para continuar.",
+      "weightDateExists": "Já existe um peso registrado nesta data.",
+      "weightOutOfRange": "Informe um peso entre {min} e {max}.",
+      "invalidWeight": "Informe um peso válido.",
+      "invalidWeightDate": "Escolha uma data válida.",
+      "weightDateOutOfRange": "A data não pode estar no futuro.",
+      "weightRequired": "Mantenha ao menos um registro de peso ou escolha \"Prefiro não informar\" na anamnese.",
+      "load": "Não foi possível carregar sua anamnese.",
+      "generic": "Não foi possível salvar. Tente novamente."
+    }
   }
 }

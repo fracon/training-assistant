@@ -8,7 +8,7 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.41.0`); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.42.0`); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
@@ -188,6 +188,40 @@ onboarding record of the account is preserved.
   Only admins can list, inspect, triage, or delete feedback.
 - The admin page reuses the Administration sidebar group, shared modal/focus
   and confirmation patterns, escaped DOM text, and the PT/EN locale contract.
+
+## Athlete anamnesis (#80)
+
+Issue #80 holds the owner-approved specification (2026-11-13). PR 1 (this
+contract) delivers the questionnaire, weight log and page; PR 2 adds AI context
+integration, the `409 anamnesisRequired` gate for AI cycle/weekly generation
+(all accounts, generation only), the post-signup redirect, the dashboard
+pending item and the training-memory source.
+
+- `src/anamnesis.js` owns the versioned `anamnesis-v1` questionnaire. The
+  definition is served by `GET /api/anamnesis` and rendered generically by
+  `anamnesis.js`; validation lives only in the backend (100% coverage). Do not
+  add questions that duplicate cycles (goals, races, dates), availability,
+  preferences, account name, session feedback or `ai_profiles.experience`,
+  which the page edits through the existing `PUT /api/ai/profile`.
+- Each item stores an explicit `answered`/`unknown`/`declined` status;
+  `not_applicable` is server-only (follow-ups of zero runs a week) and is
+  removed when the parent changes, so stale answers never reappear. A "no"
+  never keeps details. Nothing is pre-selected.
+- Writes take `expected_revision` (`409 anamnesisConflict`). A completed
+  anamnesis stays completed: an edit that would leave it incomplete is refused
+  with `anamnesisIncomplete` and the missing keys. Errors carry `field`.
+- Weight is a dated log (`body_weight_entries`, one per civil date, 20–400 kg,
+  no future dates, at most 1000). The `weight` item records only the choice; a
+  completed "answered" weight keeps at least one entry (`weightRequired`).
+  `users.body_unit` (`metric`/`imperial`) is optional in the preferences PATCH
+  and only changes display through `shared/units.js`.
+- `sensitive_ai_consent` (with its first-grant date) is stored now and unused
+  until PR 2; without it, no health answer, height or weight may reach AI.
+- Owner-scoped routes only, `Cache-Control: no-store`; no admin read. Delete
+  erases answers, consent and the weight log (experience notes stay in
+  training memory); account deletion cascades. Migration
+  `2026-11-athlete-anamnesis-v1`. No answer in logs, URLs or fixtures.
+- Covered by `test/anamnesis.test.js` and `test/anamnesis.browser.test.js`.
 
 ## Administration prompt history (#113)
 

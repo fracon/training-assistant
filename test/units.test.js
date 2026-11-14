@@ -36,3 +36,33 @@ test('unit labels normalize unsupported preferences to metric defaults', () => {
   assert.equal(units.temperaturePromptUnit('K'), '°C');
   assert.equal(units.temperaturePromptUnit('F'), '°F');
 });
+
+test('body measurements convert between metric storage and the imperial preference', async () => {
+  const units = await import('../src/public/shared/units.js');
+  assert.equal(units.normalizeBodyUnit('imperial'), 'imperial');
+  assert.equal(units.normalizeBodyUnit('anything'), 'metric');
+  assert.equal(units.weightFromKg(70, 'metric'), 70);
+  assert.ok(Math.abs(units.weightFromKg(70, 'imperial') - 154.32) < 0.01);
+  assert.equal(units.weightFromKg('x', 'metric'), null);
+  assert.ok(Math.abs(units.weightToKg('154.32', 'imperial') - 70) < 0.01);
+  assert.equal(units.weightToKg('72.5', 'metric'), 72.5);
+  assert.equal(units.weightToKg('', 'metric'), null);
+  assert.equal(units.weightToKg('abc', 'metric'), null);
+  assert.equal(units.formatWeight(72.44, 'metric'), '72.4 kg');
+  assert.equal(units.formatWeight(70, 'imperial'), '154.3 lb');
+  assert.equal(units.formatWeight(null, 'metric'), '');
+  assert.equal(units.weightUnitLabel('imperial'), 'lb');
+  assert.deepEqual(units.heightFromCm(178, 'metric'), { cm: 178 });
+  assert.deepEqual(units.heightFromCm(177.8, 'imperial'), { feet: 5, inches: 10 });
+  assert.equal(units.heightFromCm('x', 'imperial'), null);
+  assert.equal(units.heightToCm({ cm: '178' }, 'metric'), 178);
+  assert.equal(units.heightToCm({ cm: '' }, 'metric'), null);
+  assert.equal(units.heightToCm({ cm: 'abc' }, 'metric'), null);
+  assert.ok(Math.abs(units.heightToCm({ feet: '5', inches: '10' }, 'imperial') - 177.8) < 0.001);
+  assert.ok(Math.abs(units.heightToCm({ feet: '6', inches: '' }, 'imperial') - 182.88) < 0.001);
+  assert.equal(units.heightToCm({ feet: '', inches: '4' }, 'imperial'), null);
+  assert.equal(units.heightToCm({ feet: '5', inches: 'x' }, 'imperial'), null);
+  assert.equal(units.formatHeight(177.8, 'imperial'), '5 ft 10 in');
+  assert.equal(units.formatHeight(178, 'metric'), '178 cm');
+  assert.equal(units.formatHeight(undefined, 'metric'), '');
+});

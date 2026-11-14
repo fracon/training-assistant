@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, request and review weekly AI proposals, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized training-request prompts for use with an external AI.
 
-Current application version: **0.41.0** (active beta development). The Garmin Connect integration is opt-in per installation, in single-account `pilot` mode (default) or `multiuser` mode; see [Garmin Connect integration](#garmin-connect-integration).
+Current application version: **0.42.0** (active beta development). The Garmin Connect integration is opt-in per installation, in single-account `pilot` mode (default) or `multiuser` mode; see [Garmin Connect integration](#garmin-connect-integration).
 
 ## Welcome tour
 
@@ -845,6 +845,27 @@ or external telemetry is collected. Administrators review feedback under
 note, and permanently delete records. Feedback author snapshots survive account
 deletion while the nullable account reference is cleared; regular users cannot
 read the collection.
+
+### Running profile (anamnesis)
+
+**Account menu → My running profile / Minha anamnese** is a short, five-step
+questionnaire (about you, experience, routine, health, review) that tells
+planning how the athlete runs today. It never asks again what Kinesis already
+keeps elsewhere (goals and races in cycles, availability in Request Workouts,
+units and language in preferences); the review links to those screens.
+
+- Every question stores an explicit state — answered, "I don't know", "I'd
+  rather not say" or not applicable — and nothing is pre-selected. Drafts are
+  saved at each step and resume after a reload; a completed profile is edited
+  step by step and never silently turns back into a draft.
+- Height is one answer; weight is a dated **weight log** the athlete keeps
+  updating on the same page. Storage is metric; the new **Body measurements**
+  preference shows kg/cm or lb/feet-inches. No BMI or weight judgement is shown.
+- Health answers are optional and sensitive. A separate permission, off by
+  default and revocable, decides whether health, height and weight may later
+  reach AI requests. The athlete can download or delete everything at any time.
+- Nothing here calls AI yet: using the profile in planning, and requiring it
+  before AI cycle/weekly generation, is the second delivery of issue #80.
 
 ### Prompt history
 
