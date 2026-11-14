@@ -4,6 +4,7 @@
 // navigation, account switching, the audited cross-account detail dialog,
 // PT/EN, desktop/mobile, keyboard containment and focus restoration.
 
+const { withCompletedAnamnesis } = require('./helpers/anamnesis.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { buildServer } = require('../src/server');
@@ -41,7 +42,7 @@ function addExecution(db, userId, id, purpose, state, createdAt, prompt) {
 }
 
 test('Chrome PT/EN desktop/mobile: prompt history lists accounts, audits cross-account detail and keeps focus', async (t) => {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const admin = addUser(db, 'history-admin@example.test', 'Ada', 'admin');
   const athlete = addUser(db, 'history-athlete-with-a-long-address@example.test', 'Zed');
   const regular = addUser(db, 'history-regular@example.test', 'Rui', 'user', 0);

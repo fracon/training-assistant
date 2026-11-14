@@ -7,6 +7,7 @@ const {
   exactKeys,
 } = require('./memory');
 const { buildContext } = require('./context');
+const { anamnesisCompleted } = require('../anamnesis');
 const { memoryOverview } = require('./overview');
 const { readAiConfig } = require('./config');
 const { createExecutionService } = require('./executions');
@@ -145,6 +146,9 @@ function registerAiRoutes(
           .get(r.user.id)
       )
         throw new AiError('resourceNotFound', 404);
+      // Checked again inside the enqueue transaction; refusing here avoids a
+      // weather lookup for a generation that cannot start.
+      if (!anamnesisCompleted(db, r.user.id)) throw new AiError('anamnesisRequired', 409);
       const availability = getAvailabilityWeek(db, r.user.id);
       if (
         availability.needsReview ||

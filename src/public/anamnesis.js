@@ -6,6 +6,8 @@ import {
   showConfirm,
   openPreferencesModal,
   refreshIcons,
+  applyAnamnesisLock,
+  releaseAnamnesisLock,
 } from './shared/shell.js';
 import { translate } from './shared/i18n.js';
 import { formatDate } from './shared/date.js';
@@ -47,6 +49,11 @@ let editingRevision = 0;
 // Units the open step was rendered with, so a preference change can convert
 // what was typed instead of discarding or reinterpreting it.
 let stepUnits = null;
+// Arrived from registration (`?welcome=1`, consumed once like the tour's
+// transient parameter): the opening card greets instead of only requiring.
+let welcome = false;
+// Completed in this visit: the card offers the way into the application.
+let justCompleted = false;
 // The weight this step already logged, so retrying the step after a later
 // failure does not log it twice.
 let stepWeightSaved = null;
@@ -345,9 +352,13 @@ function weightField(item, answer) {
     const current = el('p', 'anamnesis-latest');
     const text = el('span');
     bind(text, () => t('weight.latest', { weight: formatWeight(latest.weight_kg, prefs().body_unit), date: formatDate(latest.measured_on, i18n.language) }));
-    const link = el('a', '', { href: '/weight.html' });
-    bind(link, () => t('weight.updateLink'));
-    current.append(text, ' ', link);
+    current.append(text);
+    // The weight log opens once the anamnesis is completed.
+    if (data.anamnesis.status === 'completed') {
+      const link = el('a', '', { href: '/weight.html' });
+      bind(link, () => t('weight.updateLink'));
+      current.append(' ', link);
+    }
     field.element.appendChild(current);
     const alternative = statusAlternatives(field, item, answer, []);
     field.collect = () => ({ answer: { status: alternative() ? 'declined' : 'answered' } });
@@ -938,6 +949,23 @@ async function reloadExperience() {
   }
 }
 
+// Owner decision (2026-11-14): until the anamnesis is completed it is the only
+// page. The card says why (or welcomes a new account), the shell navigation is
+// locked, and completing it unlocks Kinesis from here.
+function renderGate() {
+  const completed = data.anamnesis.status === 'completed';
+  const card = $('anamnesisWelcome');
+  card.hidden = completed && !justCompleted;
+  const key = completed ? 'done' : welcome ? 'welcome' : 'required';
+  $('anamnesisWelcomeTitle').setAttribute('data-i18n', `anamnesis.gate.${key}.title`);
+  $('anamnesisWelcomeTitle').textContent = t(`gate.${key}.title`);
+  $('anamnesisWelcomeText').setAttribute('data-i18n', `anamnesis.gate.${key}.text`);
+  $('anamnesisWelcomeText').textContent = t(`gate.${key}.text`);
+  $('anamnesisContinueActions').hidden = !completed;
+  if (completed) releaseAnamnesisLock();
+  else applyAnamnesisLock();
+}
+
 /* ── Review and summary ──────────────────────────────────────── */
 
 function showReview({ focus = true } = {}) {
@@ -959,6 +987,8 @@ function renderSummary() {
     : t('steps.review.intro');
   if (completed) $('anamnesisReviewIntro').removeAttribute('data-i18n');
   $('anamnesisReviewActions').hidden = completed;
+  // Those screens open only after the anamnesis is completed.
+  $('anamnesisSources').hidden = !completed;
   const heading = completed ? 'answersTitle' : 'steps.review.title';
   $('anamnesisReviewTitle').setAttribute('data-i18n', `anamnesis.${heading}`);
   $('anamnesisReviewTitle').textContent = t(heading);
@@ -1014,6 +1044,8 @@ async function complete() {
   try {
     const saved = await api('POST', '/api/anamnesis/complete', { expected_revision: data.anamnesis.revision });
     data.anamnesis = saved.anamnesis;
+    justCompleted = true;
+    renderGate();
     renderStatus();
     renderSummary();
     showShellToast(i18n.messages, 'anamnesis.toasts.completed');
@@ -1028,6 +1060,8 @@ async function complete() {
 }
 
 function renderStatus() {
+  // Download and erase only when something is stored: answers or weights.
+  $('anamnesisDataActions').hidden = data.anamnesis.status === 'not_started' && data.weights.length === 0;
   const badge = $('anamnesisStatus');
   badge.hidden = false;
   badge.className = `anamnesis-badge status-${data.anamnesis.status}`;
@@ -1067,6 +1101,8 @@ async function load({ focusTitle = false } = {}) {
   }
   $('anamnesisLoading').hidden = true;
   $('anamnesisPrivacy').hidden = false;
+  justCompleted = false;
+  renderGate();
   renderStatus();
   const incomplete = firstIncompleteStep();
   if (data.anamnesis.status === 'completed' || incomplete === -1) showReview({ focus: focusTitle });
@@ -1081,6 +1117,13 @@ async function initAnamnesis() {
   const user = await initShell();
   if (!user) return;
   i18n = getShellI18n();
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('welcome') === '1') {
+    welcome = true;
+    params.delete('welcome');
+    const query = params.toString();
+    history.replaceState(history.state, '', `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`);
+  }
   $('anamnesisForm').addEventListener('submit', saveStep);
   $('anamnesisBack').addEventListener('click', () => { if (!busy && stepIndex > 0) renderStep(stepIndex - 1); });
   $('anamnesisCancel').addEventListener('click', () => showReview());

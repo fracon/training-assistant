@@ -22,6 +22,7 @@ import {
 } from './shared/shell.js';
 import { translate } from './shared/i18n.js';
 import {
+  requestJson,
   fetchAiCoachAvailability,
   saveAiCoachAvailability,
   fetchAiExecutions,
@@ -286,7 +287,10 @@ function setupAiCoachPage(user) {
     promptCopiedTimer = null,
     promptCopyStatusKey = '',
     applyResult = null,
-    applyResultReturnFocus = null;
+    applyResultReturnFocus = null,
+    // Issue #80: weekly AI generation needs the completed anamnesis. Unknown
+    // (status read failed) does not block; the backend refuses anyway.
+    anamnesisRequired = false;
   const promptFocusTrap = isAdmin
     ? createDialogFocusTrap(promptModal, closeExternalPrompt)
     : null;
@@ -897,9 +901,14 @@ function setupAiCoachPage(user) {
       clearTimeout(pollTimer);
       void refreshWeeklyExecution(result.id);
     } catch (error) {
+      const codes = error.codes || [];
+      if (codes.includes('anamnesisRequired')) {
+        sessionStorage.removeItem('kinesis-weekly-request-key');
+        showAnamnesisNotice(true);
+        return;
+      }
       weeklySection.hidden = false;
       weeklyError.hidden = false;
-      const codes = error.codes || [];
       weeklyError.textContent = codes.includes('availabilityNeedsReview')
         ? t('aiCoach.availabilityReview')
         : codes.includes('generationInProgress')
@@ -1669,10 +1678,27 @@ function setupAiCoachPage(user) {
     }
   }
 
+  function showAnamnesisNotice(focus = false) {
+    anamnesisRequired = true;
+    const notice = document.getElementById('anamnesisNotice');
+    notice.hidden = false;
+    updateValidation();
+    if (focus) notice.querySelector('a')?.focus();
+  }
+  async function loadAnamnesisStatus() {
+    try {
+      const { status } = await requestJson('/api/anamnesis/status', undefined, 'GET');
+      if (status !== 'completed') showAnamnesisNotice();
+    } catch {
+      /* Unknown: generation stays available and the backend decides. */
+    }
+  }
+
   renderDayRows();
   lastAvailabilitySnapshot = currentAvailabilitySnapshot();
   lastLoadedAvailabilitySnapshot = lastAvailabilitySnapshot;
   void loadAvailability();
+  void loadAnamnesisStatus();
 
   function updateValidation() {
     const disponibilidade = readFormFields();
@@ -1687,6 +1713,7 @@ function setupAiCoachPage(user) {
     });
     const availabilityReady = availabilityLoadState === 'ready';
     generateBtn.disabled =
+      anamnesisRequired ||
       !availabilityReady ||
       weeklyHistoryState !== 'ready' ||
       weeklyReadUnavailable ||
@@ -1696,7 +1723,8 @@ function setupAiCoachPage(user) {
     generateBtn.setAttribute(
       'aria-disabled',
       String(
-        !availabilityReady ||
+        anamnesisRequired ||
+          !availabilityReady ||
           weeklyHistoryState !== 'ready' ||
           weeklyReadUnavailable ||
           actionPending ||

@@ -314,6 +314,29 @@ body.shell-mounted {
   cursor: not-allowed;
 }
 
+/* Why the navigation is unavailable while the anamnesis is pending (#80).
+   It wraps (unlike .sidebar-label) and is hidden in the collapsed rail. */
+.nav-lock-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  margin: 0 0 0.5rem;
+  padding: 0.65rem 0.7rem;
+  border: 1px solid rgba(111, 144, 112, 0.35);
+  border-radius: 12px;
+  background: rgba(111, 144, 112, 0.1);
+  color: var(--ink);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.nav-lock-note svg { flex-shrink: 0; width: 16px; height: 16px; margin-top: 0.1rem; color: var(--accent-deep); }
+.nav-lock-text { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+.nav-lock-title { font-size: 0.8rem; font-weight: 700; color: var(--accent-deep); }
+.nav-lock-detail { font-size: 0.76rem; font-weight: 500; line-height: 1.4; color: var(--muted); }
+.app-shell.collapsed .nav-lock-note { display: none; }
+/* The lock is the reason now; the missing-cycle chips would only confuse. */
+.sidebar-nav.is-anamnesis-locked .cycle-guard-badge { display: none; }
+
 .nav-label {
   font-size: inherit;
 }

@@ -392,7 +392,9 @@
     "shoesTarget": "Alvo: {target} km",
     "weeklyApplyStructuresSuggested": "Estruturas de treino sugeridas para revisão: {count}. Abra cada treino para conferi-las; nada foi enviado à Garmin.",
     "weeklyApplyStructuresIncompatible": "{count} precisam ser montadas manualmente.",
-    "weeklyApplyStructuresConflicts": "{count} diferem de uma estrutura já salva, que foi mantida."
+    "weeklyApplyStructuresConflicts": "{count} diferem de uma estrutura já salva, que foi mantida.",
+    "anamnesisNotice": "Para gerar treinos com IA, conclua antes a sua anamnese. Ela leva cerca de 5 minutos e personaliza a proposta.",
+    "openAnamnesis": "Abrir anamnese"
   },
   "calendar": {
     "title": "Treinos",
@@ -490,7 +492,9 @@
       "yes": "Excluir",
       "no": "Cancelar"
     },
-    "anamnesis": "Minha anamnese"
+    "anamnesis": "Minha anamnese",
+    "anamnesisLock": "Conclua sua anamnese para liberar todas as telas do Kinesis. Leva cerca de 5 minutos.",
+    "anamnesisLockTitle": "Menu bloqueado"
   },
   "login": {
     "title": "Entrar - Kinesis",
@@ -2016,7 +2020,17 @@
     "weeklyMissing": "{count} sem métricas",
     "availabilityLocation": "Local: {location}",
     "experienceCount": "{count} de {max} caracteres",
-    "unsaved": "Alterações não salvas"
+    "unsaved": "Alterações não salvas",
+    "anamnesis": "Anamnese",
+    "anamnesisOrigin": "Origem: sua anamnese (respostas autodeclaradas)",
+    "editAnamnesis": "Abrir anamnese",
+    "anamnesisUsed": "Incluída no contexto desta tarefa.",
+    "anamnesisCompleted": "Concluída em",
+    "anamnesisSensitive": "Saúde, altura e peso",
+    "anamnesisShared": "Compartilhados com a IA",
+    "anamnesisNotShared": "Não compartilhados com a IA",
+    "anamnesisNotStarted": "Ainda não respondida. Planejar o ciclo e gerar treinos com IA exige a anamnese concluída.",
+    "anamnesisDraft": "Em andamento. Conclua a anamnese para planejar o ciclo e gerar treinos com IA."
   },
   "cyclePlanning": {
     "admin": "Detalhes administrativos",
@@ -2134,7 +2148,8 @@
       "providerFailed": "Não foi possível obter um planejamento válido. Seu ciclo e o planejamento salvo foram preservados. Consulte o responsável pela instalação antes de tentar novamente.",
       "resultPersistenceFailed": "O planejamento foi recebido, mas a proposta não pôde ser salva. Seu ciclo e o plano aplicado foram preservados. O conteúdo não salvo não poderá ser recuperado; pode ter ocorrido consumo. Consulte o responsável pela instalação.",
       "restartOutcomeUncertain": "Não foi possível confirmar se a geração terminou antes da reinicialização; pode ter ocorrido consumo. Reabra para consultar esta execução. Gerar novamente inicia uma nova solicitação.",
-      "providerTimeout": "Não foi possível confirmar se a geração terminou. O serviço pode ter processado a solicitação e pode ter ocorrido consumo. Reabra para consultar esta execução; gerar novamente inicia uma nova solicitação. Não haverá repetição automática."
+      "providerTimeout": "Não foi possível confirmar se a geração terminou. O serviço pode ter processado a solicitação e pode ter ocorrido consumo. Reabra para consultar esta execução; gerar novamente inicia uma nova solicitação. Não haverá repetição automática.",
+      "anamnesisRequired": "Para gerar o planejamento do ciclo com IA, conclua antes a sua anamnese."
     },
     "states": {
       "queued": "Na fila. Você pode fechar esta janela e voltar para acompanhar.",
@@ -2164,7 +2179,10 @@
     "editedHint": "As alterações foram salvas. Você pode organizar a preparação em fases e prioridades com os dados disponíveis. Os treinos semanais são solicitados separadamente.",
     "editedOutdatedHint": "As alterações foram salvas. O planejamento existente foi criado com informações anteriores. Você pode gerar uma nova proposta agora ou continuar com a versão atual por enquanto. Aplicar uma nova proposta é uma escolha separada.",
     "editedCurrentHint": "As alterações foram salvas e o planejamento aplicado está atualizado. Você pode consultá-lo aqui. Os treinos semanais são solicitados separadamente.",
-    "savedUnavailableHint": "Seu ciclo está salvo. O planejamento por IA está indisponível no momento. Você pode concluir esta etapa e retomar depois pelo Planejamento do ciclo. Os treinos semanais são solicitados separadamente."
+    "savedUnavailableHint": "Seu ciclo está salvo. O planejamento por IA está indisponível no momento. Você pode concluir esta etapa e retomar depois pelo Planejamento do ciclo. Os treinos semanais são solicitados separadamente.",
+    "anamnesisRequired": "Planejar com IA exige a anamnese concluída.",
+    "anamnesisNotice": "Para gerar o planejamento do ciclo com IA, conclua antes a sua anamnese. Ela leva cerca de 5 minutos e personaliza o plano.",
+    "openAnamnesis": "Abrir anamnese"
   },
   "anamnesis": {
     "pageTitle": "Minha anamnese - Kinesis",
@@ -2447,6 +2465,21 @@
       "injuries_12_months": "Ex.: fascite plantar em março, tratada com fisioterapia",
       "professional_restriction": "Ex.: evitar treinos intensos até a próxima avaliação cardiológica",
       "health_conditions": "Ex.: asma controlada com medicação"
+    },
+    "gate": {
+      "welcome": {
+        "title": "Boas-vindas ao Kinesis!",
+        "text": "Antes de começar, conte como você corre hoje. A anamnese é a base de todo planejamento e análise com IA e leva cerca de 5 minutos. O Kinesis é liberado assim que você concluí-la."
+      },
+      "required": {
+        "title": "Responda à sua anamnese para continuar",
+        "text": "A anamnese é a base de todo planejamento e análise com IA. Conclua-a para liberar o Kinesis; leva cerca de 5 minutos e você pode revisar as respostas quando quiser."
+      },
+      "done": {
+        "title": "Anamnese concluída!",
+        "text": "Tudo pronto: o Kinesis está liberado. Você pode revisar suas respostas aqui a qualquer momento."
+      },
+      "continue": "Continuar para o painel"
     }
   },
   "weightLog": {
@@ -2475,8 +2508,7 @@
     "openAnamnesis": "Abrir anamnese",
     "notes": {
       "answered": "Sua anamnese usa o registro mais recente como peso atual.",
-      "declined": "Na sua anamnese você escolheu não informar o peso, então estes registros não são usados no planejamento. Você pode mudar essa resposta na anamnese.",
-      "unanswered": "Responda à anamnese para que o planejamento possa considerar seu peso."
+      "declined": "Na sua anamnese você escolheu não informar o peso, então estes registros não são usados no planejamento. Você pode mudar essa resposta na anamnese."
     },
     "toasts": {
       "saved": "Peso registrado.",

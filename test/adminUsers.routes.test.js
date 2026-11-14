@@ -1,5 +1,6 @@
 'use strict';
 
+const { withCompletedAnamnesis } = require('./helpers/anamnesis.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -22,7 +23,7 @@ async function makeAccount(db, { email, firstName, lastName = 'Tester', role = '
 }
 
 async function setup({ admins = 1, users = 2 } = {}) {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db, sessionCookieSecure: false });
 
   const adminAccounts = [];

@@ -85,6 +85,8 @@ const {
 const {
   AnamnesisError,
   addWeight,
+  anamnesisCompleted,
+  anamnesisStatus,
   completeAnamnesis,
   deleteAnamnesis,
   deleteWeight,
@@ -306,25 +308,36 @@ async function buildServer(options = {}) {
       now: options.garminNow }).register(app, requireAuth);
   }
 
+  // Owner decision (2026-11-14, issue #80): the completed anamnesis is the
+  // basis of every AI analysis, so until it exists every application page
+  // leads to it and nothing else can be done. The shell applies the same rule
+  // to pages served without a route of their own.
+  const needsAnamnesis = (session) => !anamnesisCompleted(options.db, session.user.id);
+
   app.get('/', async (request, reply) => {
     const session = sessionOf(request);
     if (!session) {
       return reply.redirect('/login.html');
     }
+    if (needsAnamnesis(session)) return reply.redirect('/anamnesis.html');
     return reply.redirect('/home.html');
   });
 
   app.get('/home.html', async (request, reply) => {
-    if (!sessionOf(request)) {
+    const session = sessionOf(request);
+    if (!session) {
       return reply.redirect('/login.html');
     }
+    if (needsAnamnesis(session)) return reply.redirect('/anamnesis.html');
     return reply.sendFile('home.html');
   });
 
   app.get('/training-result.html', async (request, reply) => {
-    if (!sessionOf(request)) {
+    const session = sessionOf(request);
+    if (!session) {
       return reply.redirect('/login.html');
     }
+    if (needsAnamnesis(session)) return reply.redirect('/anamnesis.html');
     return reply.sendFile('training-result.html');
   });
 
@@ -333,6 +346,7 @@ async function buildServer(options = {}) {
     if (!session) {
       return reply.redirect('/login.html');
     }
+    if (needsAnamnesis(session)) return reply.redirect('/anamnesis.html');
     if (!getActiveCycle(options.db, session.user.id)) {
       return reply.redirect('/cycles.html');
     }
@@ -340,9 +354,11 @@ async function buildServer(options = {}) {
   });
 
   app.get('/ai-coach.html', async (request, reply) => {
-    if (!sessionOf(request)) {
+    const session = sessionOf(request);
+    if (!session) {
       return reply.redirect('/login.html');
     }
+    if (needsAnamnesis(session)) return reply.redirect('/anamnesis.html');
     return reply.sendFile('ai-coach.html');
   });
 
@@ -352,19 +368,25 @@ async function buildServer(options = {}) {
   });
 
   app.get('/weight.html', async (request, reply) => {
-    if (!sessionOf(request)) return reply.redirect('/login.html');
+    const session = sessionOf(request);
+    if (!session) return reply.redirect('/login.html');
+    if (needsAnamnesis(session)) return reply.redirect('/anamnesis.html');
     return reply.sendFile('weight.html');
   });
 
   app.get('/training-memory.html', async (request, reply) => {
-    if (!sessionOf(request)) return reply.redirect('/login.html');
+    const session = sessionOf(request);
+    if (!session) return reply.redirect('/login.html');
+    if (needsAnamnesis(session)) return reply.redirect('/anamnesis.html');
     return reply.sendFile('training-memory.html');
   });
 
   app.get('/cycles.html', async (request, reply) => {
-    if (!sessionOf(request)) {
+    const session = sessionOf(request);
+    if (!session) {
       return reply.redirect('/login.html');
     }
+    if (needsAnamnesis(session)) return reply.redirect('/anamnesis.html');
     return reply.sendFile('cycles.html');
   });
 
@@ -376,6 +398,7 @@ async function buildServer(options = {}) {
     if (!session) {
       return reply.redirect('/login.html');
     }
+    if (needsAnamnesis(session)) return reply.redirect('/anamnesis.html');
     if (session.user.role !== 'admin') {
       return reply.redirect('/home.html');
     }
@@ -385,6 +408,7 @@ async function buildServer(options = {}) {
   app.get('/admin-feedback.html', async (request, reply) => {
     const session = sessionOf(request);
     if (!session) return reply.redirect('/login.html');
+    if (needsAnamnesis(session)) return reply.redirect('/anamnesis.html');
     if (session.user.role !== 'admin') return reply.redirect('/home.html');
     return reply.sendFile('admin-feedback.html');
   });
@@ -392,6 +416,7 @@ async function buildServer(options = {}) {
   app.get('/admin-ai-history.html', async (request, reply) => {
     const session = sessionOf(request);
     if (!session) return reply.redirect('/login.html');
+    if (needsAnamnesis(session)) return reply.redirect('/anamnesis.html');
     if (session.user.role !== 'admin') return reply.redirect('/home.html');
     return reply.sendFile('admin-ai-history.html');
   });
@@ -513,8 +538,9 @@ async function buildServer(options = {}) {
       return { status: 'ok' };
     });
 
+    // The shell sends an account without a completed anamnesis to it.
     app.get('/api/me', { preHandler: requireAuth }, async (request) => {
-      return { user: request.user };
+      return { user: { ...request.user, anamnesis_status: anamnesisStatus(db, request.user.id).status } };
     });
 
     app.get(
@@ -1481,6 +1507,9 @@ async function buildServer(options = {}) {
       '/api/cycles',
       { preHandler: requireAuth },
       async (request, reply) => {
+        // A cycle cannot be created before the anamnesis (issue #80).
+        if (!anamnesisCompleted(db, request.user.id))
+          return reply.code(409).send({ error: 'anamnesisRequired', errors: ['anamnesisRequired'] });
         try {
           const cycle = createCycle(db, request.user.id, request.body);
           return reply
@@ -1738,6 +1767,7 @@ async function buildServer(options = {}) {
         }
       });
     anamnesisRoute('get', '/api/anamnesis', (r) => readAnamnesis(db, r.user.id));
+    anamnesisRoute('get', '/api/anamnesis/status', (r) => anamnesisStatus(db, r.user.id));
     anamnesisRoute('put', '/api/anamnesis', (r) => saveAnamnesis(db, r.user.id, r.body));
     anamnesisRoute('post', '/api/anamnesis/complete', (r) => completeAnamnesis(db, r.user.id, r.body));
     anamnesisRoute('delete', '/api/anamnesis', (r) => deleteAnamnesis(db, r.user.id));

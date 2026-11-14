@@ -1,5 +1,6 @@
 'use strict';
 
+const { withCompletedAnamnesis } = require('./helpers/anamnesis.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
@@ -454,7 +455,7 @@ test('browser CSS keeps the hidden tour dialog out of layout', () => {
 test('authenticated training-result guidance and feedback shoes render by canonical source in desktop and mobile Chrome', async () => {
   const chrome = findChrome();
   assert.ok(chrome, 'Chrome is required for authenticated result-page validation.');
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db, sessionCookieSecure: false, unsplashFetch: async () => { throw new Error('No external hero request in browser tests.'); } });
   try {
     const email = 'result-browser@example.com';
@@ -551,7 +552,7 @@ test('authenticated training-result guidance and feedback shoes render by canoni
 test('authenticated result shoe options retranslate live without refetching or changing selection', async () => {
   const chrome = findChrome();
   assert.ok(chrome, 'Chrome is required for live feedback-shoe language validation.');
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db, sessionCookieSecure: false, unsplashFetch: async () => { throw new Error('No external hero request in browser tests.'); } });
   let shoeListRequests = 0;
   const languageChangeSnapshots = [];
@@ -681,7 +682,7 @@ test('authenticated result shoe options retranslate live without refetching or c
 test('authenticated workout creation guide is independent, localized, and non-mutating', async () => {
   const chrome = findChrome();
   assert.ok(chrome, 'Chrome is required for workout creation guide validation.');
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db, sessionCookieSecure: false, unsplashFetch: async () => { throw new Error('No external hero request in browser tests.'); } });
   try {
     const email = 'creation-guide-browser@example.com';
@@ -770,7 +771,7 @@ test('authenticated workout creation guide is independent, localized, and non-mu
 test('workout creation guide localizes while training data is still loading', async () => {
   const chrome = findChrome();
   assert.ok(chrome, 'Chrome is required for delayed initialization validation.');
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db, sessionCookieSecure: false, unsplashFetch: async () => { throw new Error('No external hero request in browser tests.'); } });
   let delayedTrainingId = null;
   let delayedTrainingRequest = true;
@@ -839,7 +840,7 @@ test('workout creation guide localizes while training data is still loading', as
 test('creation and import platform guides keep a visible keyboard focus ring', async () => {
   const chrome = findChrome();
   assert.ok(chrome, 'Chrome is required for platform focus validation.');
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db, sessionCookieSecure: false, unsplashFetch: async () => { throw new Error('No external hero request in browser tests.'); } });
   try {
     const email = 'platform-focus-browser@example.com';

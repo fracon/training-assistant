@@ -13,6 +13,7 @@
 // `verifyPassword` when it is required. `node --test` runs every suite in its own
 // process, so the stub cannot leak into another file.
 
+const { withCompletedAnamnesis } = require('./helpers/anamnesis.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -83,7 +84,7 @@ function sessionCount(db) {
 }
 
 test('a suspension committed while the password is verified refuses the login', async (t) => {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   t.after(() => db.close());
   const password = 'super-secret-1';
   const userId = await seedAccount(db, { email: 'rafael@example.com', password });
@@ -124,7 +125,7 @@ test('a suspension committed while the password is verified refuses the login', 
 });
 
 test('the suspended race answers over HTTP without a session cookie', async (t) => {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   t.after(() => db.close());
   const app = await buildServer({ db, sessionCookieSecure: false });
   t.after(() => app.close());
@@ -155,7 +156,7 @@ test('the suspended race answers over HTTP without a session cookie', async (t) 
 });
 
 test('reactivation after the race signs in again without reviving the old token', async (t) => {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   t.after(() => db.close());
   const password = 'super-secret-1';
   const email = 'rafael@example.com';
@@ -197,7 +198,7 @@ test('reactivation after the race signs in again without reviving the old token'
 });
 
 test('a wrong password still fails generically while the verification is held', async (t) => {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   t.after(() => db.close());
   await seedAccount(db, { email: 'rafael@example.com', password: 'super-secret-1' });
 
@@ -216,7 +217,7 @@ test('a wrong password still fails generically while the verification is held', 
 });
 
 test('an account removed while the password is verified fails like an unknown one', async (t) => {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   t.after(() => db.close());
   await seedAccount(db, { email: 'ghost@example.com', password: 'super-secret-1' });
 

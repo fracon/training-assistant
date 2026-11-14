@@ -1,4 +1,5 @@
 'use strict';
+const { withCompletedAnamnesis } = require('./helpers/anamnesis.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { buildServer } = require('../src/server');
@@ -13,7 +14,7 @@ const VIEWPORTS = [
 ];
 
 async function setup(t) {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db, sessionCookieSecure: false, unsplashFetch: async () => { throw new Error('No hero image in tests.'); } });
   const origin = (await app.listen({ port: 0, host: '127.0.0.1' })).replace(/\/$/, '');
   t.after(async () => { await app.close(); db.close(); });

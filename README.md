@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, request and review weekly AI proposals, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized training-request prompts for use with an external AI.
 
-Current application version: **0.42.0** (active beta development). The Garmin Connect integration is opt-in per installation, in single-account `pilot` mode (default) or `multiuser` mode; see [Garmin Connect integration](#garmin-connect-integration).
+Current application version: **0.43.0** (active beta development). The Garmin Connect integration is opt-in per installation, in single-account `pilot` mode (default) or `multiuser` mode; see [Garmin Connect integration](#garmin-connect-integration).
 
 ## Welcome tour
 
@@ -868,8 +868,19 @@ units and language in preferences); the review links to those screens.
 - Health answers are optional and sensitive. A separate permission, off by
   default and revocable, decides whether health, height and weight may later
   reach AI requests. The athlete can download or delete everything at any time.
-- Nothing here calls AI yet: using the profile in planning, and requiring it
-  before AI cycle/weekly generation, is the second delivery of issue #80.
+- The profile is required before using Kinesis, for every account: until it
+  is completed, signing in or opening any page leads to it, the navigation
+  is locked, and creating a cycle or generating with AI is refused. New
+  accounts land on it after signing up; completing it unlocks everything and
+  offers the way to the dashboard, where the welcome tour opens.
+- AI requests receive the completed profile as self-reported context
+  (measured sessions take precedence). Health answers, height and weight are
+  included only with the separate permission. The model is instructed never
+  to give nutrition or diet advice, judge body weight or shape, or promise
+  weight loss. Training memory shows the profile as a source with its date.
+- Editing the profile outdates only the plans and proposals generated with
+  it; logging a weight never outdates a plan, and nothing is regenerated
+  automatically.
 
 ### Prompt history
 

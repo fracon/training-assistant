@@ -1,5 +1,6 @@
 'use strict';
 
+const { withCompletedAnamnesis } = require('./helpers/anamnesis.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { existsSync, mkdtempSync, rmSync } = require('node:fs');
@@ -45,7 +46,7 @@ async function waitForPage(command, baseUrl, pathname) {
 test('feedback browser flows keep async state, PT/EN forms, focus, filters, and mobile layout coherent', async (t) => {
   const chrome = findChrome();
   assert.ok(chrome, 'Chrome is required for feedback browser verification.');
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db, sessionCookieSecure: false });
   const admin = await registerUser(db, { email: 'feedback-browser-admin@example.test', password: 'browser-secret-1', first_name: 'Ada', last_name: 'Admin' });
   db.prepare('UPDATE users SET role = ? WHERE id = ?').run('admin', admin.id);

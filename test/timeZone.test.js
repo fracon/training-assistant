@@ -1,5 +1,6 @@
 'use strict';
 
+const { withCompletedAnamnesis } = require('./helpers/anamnesis.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { buildServer } = require('../src/server');
@@ -21,7 +22,7 @@ test('time zones are validated as IANA names and "today" follows the zone, with 
   assert.equal(localDate('Not/AZone', instant), '2026-11-12');
   assert.equal(typeof localDate('UTC'), 'string');
 
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   t.after(() => db.close());
   db.prepare("INSERT INTO users(id,email,password_hash,time_zone) VALUES (1,'zone@example.invalid','x','America/Sao_Paulo'),(2,'utc@example.invalid','x',NULL)").run();
   assert.equal(userToday(db, 1, instant), '2026-11-11');
@@ -31,7 +32,7 @@ test('time zones are validated as IANA names and "today" follows the zone, with 
 });
 
 test('the AI context defaults "today" to the account time zone and an explicit date still wins', (t) => {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   t.after(() => db.close());
   db.prepare("INSERT INTO users(id,email,password_hash,time_zone) VALUES (1,'ctx@example.invalid','x','Pacific/Kiritimati')").run();
   const config = readAiConfig({});
@@ -72,7 +73,7 @@ test('the model projection drops empty session fields, snapshot hashes and sourc
 });
 
 test('PUT /api/users/me/time-zone stores a valid IANA zone for the signed-in account only', async (t) => {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db, sessionCookieSecure: false });
   t.after(async () => { await app.close(); db.close(); });
   const anonymous = await app.inject({ method: 'PUT', url: '/api/users/me/time-zone', payload: { time_zone: 'UTC' } });
@@ -96,7 +97,7 @@ test('PUT /api/users/me/time-zone stores a valid IANA zone for the signed-in acc
 
 test('Chrome: the shell stores the browser time zone once and leaves a matching zone untouched', async (t) => {
   const { launchChrome } = require('./helpers/chrome.cjs');
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const app = await buildServer({ db, sessionCookieSecure: false, unsplashFetch: async () => { throw new Error('No hero image in tests.'); } });
   const origin = (await app.listen({ port: 0, host: '127.0.0.1' })).replace(/\/$/, '');
   t.after(async () => { await app.close(); db.close(); });
@@ -122,7 +123,7 @@ test('Chrome: the shell stores the browser time zone once and leaves a matching 
 
 test('prior experience is dated with the athlete civil date', (t) => {
   const { saveProfile } = require('../src/ai/memory');
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   t.after(() => db.close());
   db.prepare("INSERT INTO users(id,email,password_hash,time_zone) VALUES (1,'exp@example.invalid','x','America/Sao_Paulo')").run();
   const saved = saveProfile(db, 1, { fields: { experience: 'Two 10 km races.' }, expected_version: 0 }, '2026-11-12T01:30:00.000Z');

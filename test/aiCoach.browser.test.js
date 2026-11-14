@@ -13,6 +13,7 @@ const { buildServer } = require('../src/server');
 const { createDatabase } = require('../src/db/database');
 const { readAiConfig } = require('../src/ai/config');
 const { materializePrescription } = require('../src/ai/weekly-workouts');
+const { completeAnamnesis, withCompletedAnamnesis } = require('./helpers/anamnesis.cjs');
 const NO_TARGET = { type: 'none', lowerBpm: null, upperBpm: null, fasterSecondsPerKm: null, slowerSecondsPerKm: null };
 
 function findChrome() {
@@ -41,7 +42,7 @@ function addIsoDays(date, amount) {
 test('authenticated AI Coach availability works in PT/EN on desktop/mobile with keyboard controls', async (t) => {
   const chrome = findChrome();
   assert.ok(chrome, 'Chrome is required for AI Coach browser verification.');
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const expectedSessionNotes =
     '<img src=x onerror="alert(1)">\nSessão sem pressa · café ☕\n' +
     'Observação contextual longa. '.repeat(30);
@@ -202,6 +203,9 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
   db.prepare(
     "UPDATE users SET role = 'admin' WHERE email = 'availability-browser@example.test'",
   ).run();
+  // Weekly AI generation needs a completed anamnesis (issue #80); its notice
+  // is covered by anamnesisAi.browser.test.js.
+  completeAnamnesis(db);
   const login = await app.inject({
     method: 'POST',
     url: '/api/auth/login',

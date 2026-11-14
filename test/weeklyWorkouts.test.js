@@ -1,6 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { completeAnamnesis } = require('./helpers/anamnesis.cjs');
 const { createDatabase } = require('../src/db/database');
 const { AiError, hash } = require('../src/ai/memory');
 const { readAiConfig } = require('../src/ai/config');
@@ -2204,6 +2205,7 @@ test('authenticated weekly execution recovers the same owner proposal and applie
   db.prepare(
     "INSERT INTO training_cycles(id,user_id,objective,status) VALUES('weekly-route-cycle',?,'Base fitness','active')",
   ).run(owner);
+  completeAnamnesis(db, owner);
   for (const day of DAY_KEYS) {
     const canTrain = day === 'monday';
     db.prepare(
@@ -2443,6 +2445,7 @@ test('weekly forecast revalidates an owner deactivated or deleted while weather 
       db.prepare(
         "INSERT INTO training_cycles(id,user_id,objective,status) VALUES('pending-cycle',?,'Base','active')",
       ).run(userId);
+      completeAnamnesis(db, userId);
       for (const day of DAY_KEYS) {
         const monday = day === 'monday';
         db.prepare(`INSERT INTO ai_coach_availability
@@ -2495,6 +2498,7 @@ test('HTTP 200 completed weekly output rejected at evidence is captured only in 
  const db=createDatabase({filename:':memory:'});
  db.prepare("INSERT INTO users(id,email,password_hash,role) VALUES(1,'trace-admin@example.invalid','synthetic','admin'),(2,'trace-user@example.invalid','synthetic','user')").run();
  db.prepare("INSERT INTO training_cycles(id,user_id,objective,start_date,status) VALUES('trace-cycle',1,'Synthetic training goal',?, 'active')").run(nextForecastMonday());
+ completeAnamnesis(db,1);
  saveAvailabilityWeek(db,1,DAY_KEYS.map(day=>({day,can_train:day==='monday',available_periods:day==='monday'?['08_12']:[],available_minutes:day==='monday'?90:null,location:day==='monday'?'Porto, Portugal':''})));
  const config=readAiConfig({AI_ENABLED:'true',OPENAI_API_KEY:'synthetic-test-key',AI_RETRIES:'0'});
  const client=createResponsesClient({apiKey:'synthetic-test-key',timeoutMs:1000,fetchImpl:async(_url,options)=>{

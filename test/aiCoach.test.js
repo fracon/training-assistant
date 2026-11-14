@@ -1277,7 +1277,7 @@ test('AI Coach runtime keeps language change, structured data and async prompt w
   assert.match(js, /async function handleGenerate/);
   assert.match(
     js,
-    /generateBtn\.disabled\s*=\s*!availabilityReady\s*\|\|\s*weeklyHistoryState\s*!==\s*'ready'/,
+    /generateBtn\.disabled\s*=\s*anamnesisRequired\s*\|\|\s*!availabilityReady\s*\|\|\s*weeklyHistoryState\s*!==\s*'ready'/,
   );
   assert.match(js, /function t\(key\)/);
   assert.doesNotMatch(

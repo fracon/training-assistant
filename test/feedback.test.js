@@ -1,5 +1,6 @@
 'use strict';
 
+const { withCompletedAnamnesis } = require('./helpers/anamnesis.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createDatabase } = require('../src/db/database');
@@ -13,7 +14,7 @@ const {
 const PASSWORD = 'feedback-password';
 
 async function setup() {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const author = await registerUser(db, { email: 'author@example.test', password: PASSWORD, first_name: 'A', last_name: 'User' });
   const admin = await registerUser(db, { email: 'admin@example.test', password: PASSWORD, first_name: 'An', last_name: 'Admin' });
   db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(admin.id);
@@ -114,7 +115,7 @@ test('feedback creation does not disguise unexpected persistence failures', asyn
 });
 
 async function setupServer() {
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const author = await registerUser(db, { email: 'route-author@example.test', password: PASSWORD, first_name: 'A', last_name: 'User' });
   const admin = await registerUser(db, { email: 'route-admin@example.test', password: PASSWORD, first_name: 'An', last_name: 'Admin' });
   db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(admin.id);

@@ -103,11 +103,11 @@ test('Chrome PT/EN desktop/mobile: the anamnesis guides, validates, resumes, com
       await evaluate("document.getElementById('anamnesisBack').click()");
       await wait("document.getElementById('q-birth_year')?.value === '1990'");
       assert.equal(await evaluate("document.querySelector('input[name=\"q-height_cm-status\"]').checked"), true);
-      // With an entry, the question shows the latest weight and links to the
-      // Weight log instead of offering a second way to log one.
+      // With an entry, the question shows the latest weight instead of offering
+      // a second way to log one. The Weight log link appears once completed:
+      // until then that page leads back here.
       assert.match(await evaluate("document.querySelector('.anamnesis-latest').textContent"), /71[.,]5/);
-      assert.equal(await evaluate("document.querySelector('.anamnesis-latest a').getAttribute('href')"), '/weight.html');
-      assert.equal(await evaluate("document.querySelector('.anamnesis-latest a').textContent"), a.weight.updateLink);
+      assert.equal(await evaluate("document.querySelector('.anamnesis-latest a')"), null);
       assert.equal(await evaluate("document.getElementById('q-weight')"), null);
       assert.equal(await evaluate("document.querySelector('[data-key=\"weight\"]').tagName"), 'FIELDSET');
       await evaluate("document.querySelector('[data-key=\"weight\"]').scrollIntoView({block:'center'})");
@@ -169,6 +169,14 @@ test('Chrome PT/EN desktop/mobile: the anamnesis guides, validates, resumes, com
       assert.equal(db.prepare('SELECT status FROM athlete_anamnesis WHERE user_id = ?').get(owner).status, 'completed');
       assert.equal(await evaluate('document.documentElement.scrollWidth > innerWidth'), false);
       await capture(`anamnesis-completed-${language}-${width}`);
+
+      // Once completed, the weight question links to the Weight log.
+      await evaluate("document.querySelector('#anamnesisSummary button[data-step=\"about\"]').click()");
+      await wait("!!document.querySelector('.anamnesis-latest a')");
+      assert.equal(await evaluate("document.querySelector('.anamnesis-latest a').getAttribute('href')"), '/weight.html');
+      assert.equal(await evaluate("document.querySelector('.anamnesis-latest a').textContent"), a.weight.updateLink);
+      await evaluate("document.getElementById('anamnesisCancel').click()");
+      await wait("!document.getElementById('anamnesisReview').hidden");
 
       // Editing one step from the summary saves in place and returns to it.
       await evaluate("document.querySelector('#anamnesisSummary button[data-step=\"routine\"]').click()");

@@ -8,7 +8,7 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.42.0`); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.43.0`); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
@@ -191,12 +191,9 @@ onboarding record of the account is preserved.
 
 ## Athlete anamnesis (#80)
 
-Issue #80 holds the owner-approved specification (2026-11-13). PR 1 (this
-contract) delivers the questionnaire, the weight log page and the anamnesis
-page; PR 2 adds AI context
-integration, the `409 anamnesisRequired` gate for AI cycle/weekly generation
-(all accounts, generation only), the post-signup redirect, the dashboard
-pending item and the training-memory source.
+Issue #80 holds the owner-approved specification (2026-11-13). PR 1 delivered
+the questionnaire, the weight log page and the anamnesis page; PR 2 (#80, AI
+integration) is described at the end of this section.
 
 - `src/anamnesis.js` owns the versioned `anamnesis-v1` questionnaire. The
   definition is served by `GET /api/anamnesis` and rendered generically by
@@ -224,8 +221,9 @@ pending item and the training-memory source.
   only explained there.
   `users.body_unit` (`metric`/`imperial`) is optional in the preferences PATCH
   and only changes display through `shared/units.js`.
-- `sensitive_ai_consent` (with its first-grant date) is stored now and unused
-  until PR 2; without it, no health answer, height or weight may reach AI.
+- `sensitive_ai_consent` (with its first-grant date) decides whether health
+  answers, height and weight reach AI; without it they are left out entirely,
+  not even sent as "not informed".
 - Owner-scoped routes only, `Cache-Control: no-store`; no admin read. Delete
   erases answers, consent and the weight log (experience notes stay in
   training memory); account deletion cascades. Migration
@@ -245,6 +243,69 @@ pending item and the training-memory source.
   "Reload saved version", which keeps the typed notes (as Training memory).
 - Covered by `test/anamnesis.test.js`, `test/anamnesis.browser.test.js` and
   `test/weight.browser.test.js`.
+
+AI integration (PR 2):
+
+- `anamnesisContext` (`src/anamnesis.js`) projects only a **completed**
+  anamnesis as `context.anamnesis` (`authority: user_report`) with the
+  reference `anamnesis:self`. "I don't know"/"I'd rather not say" become
+  `not_informed`, zero-run follow-ups `not_applicable`; the self-reported
+  base is labelled as yielding to measured sessions. With consent it adds
+  height, the latest weight with its date and the change within 56 days, and
+  the health answers. Drafts, other accounts and erased data never appear.
+- Freshness without mass invalidation: `buildContext` adds no key, reference
+  or gap without a completed anamnesis, and `contextIsCurrent` rebuilds with
+  `includeAnamnesis` only when the stored snapshot had it, so contexts and
+  proposals from before keep their hash. The reference carries two
+  versions: `version` covers everything projected, weights included, so an
+  interpretation citing `anamnesis:self` stops entering contexts when its
+  weight evidence changes; `basis` (`basisVersion`) covers answers and
+  consent but never the weight log, and `appliedPlanIsCurrent` compares
+  only `basis`, only for plans that recorded it: older
+  plans never become outdated in bulk, a weigh-in never outdates a plan, and
+  an edit, a revoked consent or an erased anamnesis outdates exactly the
+  plans that used it. Nothing regenerates automatically. The policy version
+  is unchanged.
+- `buildPayload` appends `ANAMNESIS_INSTRUCTIONS` (no nutrition, diet,
+  calorie or supplement advice; no judgement of weight, shape or BMI; no
+  weight-loss promises or targets; health answers are reports, not
+  diagnoses; conservative training and a health professional when relevant)
+  only when the context carries the anamnesis, so other payloads are byte
+  identical. Adapter versions and external PT/EN prompts are unchanged.
+- **Entry gate (owner decision 2026-11-14, superseding "block only AI"):**
+  until the anamnesis is completed it is the only page, for every account
+  including administrators. `src/server.js` redirects `/` and every routed
+  application page (home, training result, calendar, Request Workouts,
+  cycles, weight log, training memory, administration) to
+  `/anamnesis.html`; `GET /api/me` carries `anamnesis_status` and
+  `initShell` sends any other page (including statically served ones such
+  as shoes) there too. On the anamnesis page the shell locks every sidebar
+  entry (`applyAnamnesisLock`: disabled, no `href`, described by the
+  `#anamnesisLockNote` note) and `releaseAnamnesisLock` restores them on
+  completion, keeping the cycle guard. There is no "answer later": the page
+  shows a welcome (`?welcome=1` from registration, consumed with
+  `history.replaceState`) or a "required" card, and after completion a
+  "Continue to the dashboard" action; the welcome tour then opens on the
+  dashboard for a `new` account. Links that would only bounce back (weight
+  log, other sources) are hidden until completion. `POST /api/cycles`
+  refuses with `409 anamnesisRequired`. Login, registration, logout,
+  preferences, language and feedback stay available.
+- `POST /api/ai/executions` refuses `cycle` and `workouts` with `409
+  anamnesisRequired` until the anamnesis is completed, inside the enqueue
+  transaction (after the equivalent-request check) and, for weekly, before
+  the weather lookup. Workout analysis and the administrator's free prompt
+  preview are not gated. `GET /api/anamnesis/status` (owner-scoped,
+  no-store) and `readCyclePlanning().anamnesisRequired` let Request Workouts
+  and the cycle-planning modal show a localized notice with a link (and no
+  generation) when the anamnesis disappears after the page loaded, for
+  example erased in another tab; a 409 shows the same notice.
+- Training memory shows the anamnesis source (origin, completion date,
+  whether sensitive data is shared, link) for every task tab.
+- Completing or editing the anamnesis never calls AI, generates a plan or
+  mutates Garmin. Tests: `test/anamnesisAi.test.js`,
+  `test/anamnesisAi.browser.test.js`; suites whose synthetic accounts open
+  application pages or generate complete a minimal anamnesis through
+  `test/helpers/anamnesis.cjs`.
 
 ## Administration prompt history (#113)
 

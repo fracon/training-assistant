@@ -1,4 +1,5 @@
 'use strict';
+const { completeAnamnesis } = require('./helpers/anamnesis.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createDatabase, initializeDatabase } = require('../src/db/database');
@@ -78,6 +79,7 @@ test(`policy upgrade keeps persisted ${previousPolicy} snapshots intact and refu
   const db=createDatabase({filename:':memory:'});
   db.prepare("INSERT INTO users(id,email,password_hash,role) VALUES (1,'snapshot@example.invalid','synthetic','admin')").run();
   db.prepare("INSERT INTO training_cycles(id,user_id,objective,status) VALUES ('cycle',1,'Synthetic target','active')").run();
+  completeAnamnesis(db);
   const config=readAiConfig({AI_ENABLED:'true',OPENAI_API_KEY:'synthetic-test-key'});
   let calls=0;
   const adapter={version:'synthetic-v1',adaptPrompt:(p)=>p,instructions:'Synthetic only',format:{type:'json_object'},validate:()=>true};

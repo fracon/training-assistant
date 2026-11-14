@@ -10,7 +10,7 @@ const assert = require('node:assert/strict');
 const { buildServer } = require('../src/server');
 const { createDatabase } = require('../src/db/database');
 const { SESSION_COOKIE_NAME, createSession } = require('../src/auth/sessions');
-const { saveAnamnesis } = require('../src/anamnesis');
+const { completeAnamnesis } = require('./helpers/anamnesis.cjs');
 const { launchChrome } = require('./helpers/chrome.cjs');
 const en = require('../src/public/locales/en.json');
 const pt = require('../src/public/locales/pt.json');
@@ -44,6 +44,8 @@ test('Chrome PT/EN desktop/mobile: the weight log has its own page and keeps the
       const w = messages.weightLog;
       db.prepare('DELETE FROM athlete_anamnesis').run();
       db.prepare('DELETE FROM body_weight_entries').run();
+      // The page opens only after the anamnesis is completed (issue #80).
+      completeAnamnesis(db, owner);
       db.prepare("UPDATE users SET preferred_lang = ?, body_unit = 'metric' WHERE id = ?").run(language, owner);
       await command('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: width === 390 });
       await open(language);
@@ -55,7 +57,7 @@ test('Chrome PT/EN desktop/mobile: the weight log has its own page and keeps the
       assert.equal(await evaluate("document.getElementById('weightTitle').textContent"), w.title);
       assert.equal(await evaluate("document.getElementById('weightLoadError').getBoundingClientRect().height"), 0);
       assert.equal(await evaluate("document.getElementById('weightEmpty').hidden"), false);
-      assert.equal(await evaluate("document.getElementById('weightAnamnesisNoteText').textContent"), w.notes.unanswered);
+      assert.equal(await evaluate("document.getElementById('weightAnamnesisNote').hidden"), true);
       assert.deepEqual(await evaluate("(()=>{const e=document.getElementById('weightValue');return [e.type,e.placeholder,e.min,e.max];})()"), ['number', w.placeholder.metric, '20', '400']);
 
       // An empty value is explained on the field.
@@ -103,8 +105,7 @@ test('Chrome PT/EN desktop/mobile: the weight log has its own page and keeps the
       await capture(`weight-list-${language}-${width}`);
 
       // A completed anamnesis that shares the weight keeps the last entry.
-      saveAnamnesis(db, owner, { answers: { weight: { status: 'answered' } }, expected_revision: 0 });
-      db.prepare("UPDATE athlete_anamnesis SET status = 'completed'").run();
+      db.prepare(`UPDATE athlete_anamnesis SET answers_json = '{"weight":{"status":"answered"}}'`).run();
       await open(language);
       assert.equal(await evaluate("document.getElementById('weightAnamnesisNoteText').textContent"), w.notes.answered);
       assert.equal(await evaluate("document.querySelector('#weightAnamnesisNote a').getAttribute('href')"), '/anamnesis.html');

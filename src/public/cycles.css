@@ -587,6 +587,9 @@
 .cycle-planning-state[data-state="processing"] { border-color: var(--line-strong); background: var(--bg); color: var(--ink); }
 .cycle-planning-state[data-state="failed"] { border-color: rgba(165, 73, 47, .4); background: #f9ece6; color: var(--danger); }
 .cycle-planning-content, .cycle-plan-section, .cycle-plan-phase { display: grid; gap: .9rem; min-width: 0; }
+/* Issue #80: AI planning needs the completed anamnesis; the notice links to it. */
+.cycle-planning-anamnesis a { color: var(--accent-deep); font-weight: 600; }
+.cycle-planning-anamnesis a:focus-visible { outline: 2px solid var(--accent-deep); outline-offset: 2px; }
 .cycle-planning-content { align-content: start; }
 .cycle-plan-section, .cycle-plan-phase { padding-top: 1rem; border-top: 1px solid var(--line); }
 .cycle-planning-body :is(p, h3, h4, h5, ul) { margin: 0; }

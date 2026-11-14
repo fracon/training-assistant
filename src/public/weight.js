@@ -80,12 +80,12 @@ function renderForm() {
 }
 
 // How the anamnesis answered the weight question, never changed from here.
+// The page opens only after the anamnesis is completed (issue #80).
 function renderNote() {
-  const { status, weight_status: weightStatus } = data.anamnesis;
+  const { weight_status: weightStatus } = data.anamnesis;
   let key = null;
   if (weightStatus === 'declined') key = 'notes.declined';
   else if (weightStatus === 'answered') key = 'notes.answered';
-  else if (status !== 'completed') key = 'notes.unanswered';
   $('weightAnamnesisNote').hidden = !key;
   $('weightAnamnesisNoteText').textContent = key ? t(key) : '';
 }

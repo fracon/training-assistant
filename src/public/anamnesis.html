@@ -16,6 +16,11 @@
     </div>
     <span id="anamnesisStatus" class="anamnesis-badge" hidden></span>
   </header>
+  <section id="anamnesisWelcome" class="shoe-card anamnesis-card anamnesis-welcome" hidden aria-labelledby="anamnesisWelcomeTitle">
+    <h2 id="anamnesisWelcomeTitle"></h2>
+    <p id="anamnesisWelcomeText"></p>
+    <div id="anamnesisContinueActions" class="anamnesis-data-actions" hidden><a id="anamnesisContinue" class="btn-primary" href="/home.html" data-i18n="anamnesis.gate.continue">Continue to the dashboard</a></div>
+  </section>
   <p id="anamnesisLoading" class="field-hint" role="status" aria-live="polite" data-i18n="anamnesis.loading">Loading your running profile…</p>
   <div id="anamnesisLoadError" class="form-error anamnesis-load-error" role="alert" hidden>
     <span data-i18n="anamnesis.errors.load">Your running profile could not be loaded.</span>
@@ -47,7 +52,7 @@
     <div id="anamnesisReviewActions" class="form-actions anamnesis-actions">
       <button id="anamnesisComplete" type="button" class="btn-primary" data-i18n="anamnesis.actions.complete">Complete profile</button>
     </div>
-    <section class="shoe-card anamnesis-card anamnesis-sources" aria-labelledby="anamnesisSourcesTitle">
+    <section id="anamnesisSources" class="shoe-card anamnesis-card anamnesis-sources" aria-labelledby="anamnesisSourcesTitle">
       <h3 id="anamnesisSourcesTitle" data-i18n="anamnesis.review.sourcesTitle">Information kept on other screens</h3>
       <p class="field-hint" data-i18n="anamnesis.review.sourcesHint"></p>
       <ul class="anamnesis-source-list">
@@ -66,7 +71,7 @@
     <p data-i18n="anamnesis.privacy.ai"></p>
     <p data-i18n="anamnesis.privacy.admin"></p>
     <p data-i18n="anamnesis.privacy.control"></p>
-    <div class="form-actions anamnesis-data-actions">
+    <div id="anamnesisDataActions" class="form-actions anamnesis-data-actions" hidden>
       <a id="anamnesisExport" class="btn-secondary" href="/api/anamnesis/export" download="kinesis-anamnesis.json" data-i18n="anamnesis.actions.export">Download my answers</a>
       <button id="anamnesisDelete" type="button" class="btn-secondary anamnesis-danger" data-i18n="anamnesis.actions.delete">Delete profile and weight log</button>
     </div>

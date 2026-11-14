@@ -1,5 +1,6 @@
 'use strict';
 
+const { withCompletedAnamnesis } = require('./helpers/anamnesis.cjs');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { existsSync, mkdtempSync, rmSync } = require('node:fs');
@@ -23,7 +24,7 @@ const freePort = async () => {
 
 test('Garmin editor and send states preserve drafts and block conflicting actions in PT/EN desktop and mobile Chrome', async (t) => {
   assert.ok(chrome, 'Chrome is required for Garmin UI verification.');
-  const db = createDatabase({ filename: ':memory:' });
+  const db = withCompletedAnamnesis(createDatabase({ filename: ':memory:' }));
   const owner = await registerUser(db, { email: 'garmin-ui@example.test', password: 'Synthetic-only-1', first_name: 'Test', last_name: 'Runner' });
   db.prepare("UPDATE users SET distance_unit = 'km' WHERE id = ?").run(owner.id);
   db.prepare('INSERT INTO trainings (user_id,dia,tipo,treino,detalhes) VALUES (?,?,?,?,?)').run(owner.id, '2026-11-02', 'Run', 'Intervals', 'structured workout');
