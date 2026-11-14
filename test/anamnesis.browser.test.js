@@ -2,7 +2,8 @@
 
 // Athlete anamnesis page (issue #80) in real Chrome: step errors and focus,
 // resume after reload, conditional follow-ups, a language switch that keeps
-// typed answers, review/completion/editing, the weight log and erasure, in PT
+// typed answers, review/completion/editing, the link to the Weight log, a
+// conflict with another tab and erasure, in PT
 // and EN, desktop and mobile. Synthetic data only.
 
 const test = require('node:test');
@@ -17,7 +18,7 @@ const pt = require('../src/public/locales/pt.json');
 const fill = (pairs) => `(()=>{${pairs.map(([id, value]) => `{const e=document.getElementById(${JSON.stringify(id)});e.value=${JSON.stringify(value)};e.dispatchEvent(new Event('input',{bubbles:true}));}`).join('')}})()`;
 const pick = (name, value) => `document.querySelector('input[name="${name}"][value="${value}"]').click()`;
 
-test('Chrome PT/EN desktop/mobile: the anamnesis guides, validates, resumes, completes and keeps the weight log', async (t) => {
+test('Chrome PT/EN desktop/mobile: the anamnesis guides, validates, resumes, completes and links to the weight log', async (t) => {
   const db = createDatabase({ filename: ':memory:' });
   const owner = Number(db.prepare(
     "INSERT INTO users (email, password_hash, first_name, onboarding_status, preferred_lang) VALUES ('anamnesis@example.test', 'unused', 'Ana', 'active', 'pt-BR')",
@@ -50,12 +51,13 @@ test('Chrome PT/EN desktop/mobile: the anamnesis guides, validates, resumes, com
       // No answer is pre-selected, health or otherwise.
       assert.equal(await evaluate("document.querySelectorAll('#anamnesisStepFields input:checked').length"), 0);
       // Numeric answers are number inputs with the backend limits and a valid example.
-      assert.deepEqual(await evaluate("['q-birth_year','q-height_cm','q-weight','weightValue'].map((id)=>{const e=document.getElementById(id);return [e.type,e.placeholder,e.min!=='',e.max!==''];})"), [
+      assert.deepEqual(await evaluate("['q-birth_year','q-height_cm','q-weight'].map((id)=>{const e=document.getElementById(id);return [e.type,e.placeholder,e.min!=='',e.max!==''];})"), [
         ['number', a.placeholders.birth_year, true, true],
         ['number', a.placeholders.height_cm, true, true],
         ['number', a.placeholders.weight.metric, true, true],
-        ['number', a.placeholders.weight.metric, true, true],
       ]);
+      // The weight log lives on its own page, not here.
+      assert.equal(await evaluate("document.getElementById('weightList')"), null);
       assert.equal(await evaluate("document.getElementById('q-motivations-other').placeholder"), a.placeholders.motivations);
 
       // An empty step is refused field by field, focusing the first question.
@@ -101,7 +103,15 @@ test('Chrome PT/EN desktop/mobile: the anamnesis guides, validates, resumes, com
       await evaluate("document.getElementById('anamnesisBack').click()");
       await wait("document.getElementById('q-birth_year')?.value === '1990'");
       assert.equal(await evaluate("document.querySelector('input[name=\"q-height_cm-status\"]').checked"), true);
+      // With an entry, the question shows the latest weight and links to the
+      // Weight log instead of offering a second way to log one.
       assert.match(await evaluate("document.querySelector('.anamnesis-latest').textContent"), /71[.,]5/);
+      assert.equal(await evaluate("document.querySelector('.anamnesis-latest a').getAttribute('href')"), '/weight.html');
+      assert.equal(await evaluate("document.querySelector('.anamnesis-latest a').textContent"), a.weight.updateLink);
+      assert.equal(await evaluate("document.getElementById('q-weight')"), null);
+      assert.equal(await evaluate("document.querySelector('[data-key=\"weight\"]').tagName"), 'FIELDSET');
+      await evaluate("document.querySelector('[data-key=\"weight\"]').scrollIntoView({block:'center'})");
+      await capture(`anamnesis-weight-link-${language}-${width}`);
       await evaluate("document.getElementById('anamnesisNext').click()");
       await wait(`document.getElementById('anamnesisStepTitle').textContent === ${JSON.stringify(a.steps.experience.title)}`);
 
@@ -169,58 +179,15 @@ test('Chrome PT/EN desktop/mobile: the anamnesis guides, validates, resumes, com
       await wait("!document.getElementById('anamnesisReview').hidden");
       assert.match(db.prepare('SELECT answers_json FROM athlete_anamnesis').get().answers_json, /weekly_2_plus/);
 
-      // Weight log: the last entry of a completed "answered" weight is kept.
-      await evaluate("document.querySelector('#weightList button[data-action=\"delete\"]').click()");
-      await wait("!!document.getElementById('confirmOkBtn')");
-      await evaluate("document.getElementById('confirmOkBtn').click()");
-      await wait(`document.querySelector('.toast.visible')?.textContent.includes(${JSON.stringify(a.errors.weightRequired)})`);
-      assert.equal(db.prepare('SELECT COUNT(*) AS n FROM body_weight_entries').get().n, 1);
-      // A dated entry is added, then corrected through the same form.
-      await evaluate(fill([['weightValue', '70.2']]));
-      await evaluate("document.getElementById('weightDate').dataset.iso = '2026-01-05'");
-      await evaluate("document.getElementById('weightSubmit').click()");
-      await wait("document.querySelectorAll('#weightList li').length === 2");
-      assert.equal(db.prepare("SELECT weight_kg FROM body_weight_entries WHERE measured_on = '2026-01-05'").get().weight_kg, 70.2);
-      await evaluate("document.querySelectorAll('#weightList button[data-action=\"edit\"]')[1].click()");
-      assert.equal(await evaluate('document.activeElement.id'), 'weightValue');
-      assert.equal(await evaluate("document.getElementById('weightValue').value"), '70.2');
-      await evaluate(fill([['weightValue', '69.8']]));
-      await evaluate("document.getElementById('weightSubmit').click()");
-      await wait("document.activeElement?.dataset.action === 'edit'");
-      assert.equal(db.prepare("SELECT weight_kg FROM body_weight_entries WHERE measured_on = '2026-01-05'").get().weight_kg, 69.8);
-      // The same date twice is explained on the date field.
-      await evaluate(fill([['weightValue', '68']]));
-      await evaluate("document.getElementById('weightDate').dataset.iso = '2026-01-05'");
-      await evaluate("document.getElementById('weightSubmit').click()");
-      await wait(`document.getElementById('weightDateError').textContent === ${JSON.stringify(a.errors.weightDateExists)}`);
-      assert.equal(await evaluate('document.activeElement.id'), 'weightDate');
+      assert.equal(await evaluate("document.querySelector('.anamnesis-source-list a[href=\"/weight.html\"]')?.textContent"), a.review.openWeight);
     }
   }
 
-  // A pending weight-log edit keeps its meaning when the body unit changes:
-  // 71.5 kg shown as 157.6 lb is saved back as ~71.5 kg, not as 157.6 kg or 71.5 lb.
-  await evaluate("document.querySelectorAll('#weightList button[data-action=\"edit\"]')[0].click()");
-  assert.equal(await evaluate("document.getElementById('weightValue').value"), '71.5');
-  await evaluate("document.getElementById('anamnesisOpenPreferences').click()");
-  await wait("!!document.querySelector('#preferencesForm input[name=\"body_unit\"][value=\"imperial\"]')");
-  await evaluate("document.querySelector('#preferencesForm input[name=\"body_unit\"][value=\"imperial\"]').click();document.getElementById('preferencesSubmit').click()");
-  await wait("/lb/.test(document.getElementById('weightValueLabel').textContent)");
-  assert.equal(await evaluate("document.getElementById('weightValue').value"), '157.6');
-  assert.equal(await evaluate("document.getElementById('weightValue').placeholder"), en.anamnesis.placeholders.weight.imperial);
-  await evaluate("document.getElementById('weightSubmit').click()");
-  await wait("document.activeElement?.dataset.action === 'edit'");
-  const kept = db.prepare('SELECT weight_kg FROM body_weight_entries ORDER BY measured_on DESC LIMIT 1').get().weight_kg;
-  assert.ok(Math.abs(kept - 71.5) < 0.05, `weight kept as ${kept} kg`);
-
-  // An open step keeps the revision it was rendered from: a weight-log
-  // refresh must not let it silently overwrite another tab's save.
+  // An open step saves against the revision it was rendered from, so another
+  // tab's save is a conflict, never silently overwritten.
   await evaluate("document.querySelector('#anamnesisSummary button[data-step=\"routine\"]').click()");
   await wait("!document.getElementById('anamnesisWizard').hidden");
   await evaluate("(async()=>{const r=await (await fetch('/api/anamnesis')).json();const w=await fetch('/api/anamnesis',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({answers:{strength_training:{status:'answered',value:'occasional'}},expected_revision:r.anamnesis.revision})});if(!w.ok)throw Error('other tab save failed');})()");
-  await evaluate(fill([['weightValue', '150']]));
-  await evaluate("document.getElementById('weightDate').dataset.iso = '2026-01-10'");
-  await evaluate("document.getElementById('weightSubmit').click()");
-  await wait("document.querySelectorAll('#weightList li').length === 3 && !document.getElementById('weightSubmit').disabled");
   await evaluate(`${pick('q-strength_training', 'weekly_1')};document.getElementById('anamnesisNext').click()`);
   await wait("!document.getElementById('anamnesisFormError').hidden");
   assert.equal(await evaluate("document.getElementById('anamnesisFormError').textContent"), en.anamnesis.errors.anamnesisConflict);

@@ -858,9 +858,13 @@ units and language in preferences); the review links to those screens.
   rather not say" or not applicable — and nothing is pre-selected. Drafts are
   saved at each step and resume after a reload; a completed profile is edited
   step by step and never silently turns back into a draft.
-- Height is one answer; weight is a dated **weight log** the athlete keeps
-  updating on the same page. Storage is metric; the new **Body measurements**
-  preference shows kg/cm or lb/feet-inches. No BMI or weight judgement is shown.
+- Height is one answer. Weight is kept in the **Weight log / Registro de
+  Peso**, its own sidebar page for adding, correcting and deleting dated
+  entries. The profile only asks the weight question: it records the first
+  entry and, once there is one, shows the latest with a link to the log.
+  Storage is metric; the new **Body measurements** preference shows kg/cm or
+  lb/feet-inches. No BMI or weight judgement is shown. Logging a weight never
+  changes an "I'd rather not say" answer; the log only explains it.
 - Health answers are optional and sensitive. A separate permission, off by
   default and revocable, decides whether health, height and weight may later
   reach AI requests. The athlete can download or delete everything at any time.

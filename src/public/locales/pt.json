@@ -470,6 +470,7 @@
       "requestWorkouts": "Solicitar Treinos",
       "workouts": "Treinos",
       "shoes": "Rotação de Tênis",
+      "weight": "Registro de Peso",
       "administration": "Administração",
       "users": "Usuários",
       "feedback": "Feedbacks",
@@ -2316,7 +2317,7 @@
       "value": "Peso ({unit})",
       "date": "Data da medição",
       "latest": "Último registro: {weight} em {date}",
-      "newEntry": "Registrar um novo peso (opcional)"
+      "updateLink": "Atualizar no Registro de peso"
     },
     "races": {
       "add": "Adicionar resultado",
@@ -2368,24 +2369,15 @@
         "cycles": "Objetivos, provas e datas-alvo",
         "availability": "Dias, horários e tempo disponível",
         "preferences": "Unidades, idioma e início da semana",
-        "memory": "Histórico de treinos e relatos"
+        "memory": "Histórico de treinos e relatos",
+        "weight": "Peso ao longo do tempo"
       },
       "openCycles": "Ciclos de Treino",
       "openAvailability": "Solicitar Treinos",
       "openPreferences": "Preferências",
       "openMemory": "Memória de treinamento",
-      "missing": "Responda as perguntas pendentes para concluir."
-    },
-    "weightLog": {
-      "title": "Registro de peso",
-      "hint": "Atualize sempre que quiser. Não fazemos julgamentos sobre peso nem calculamos IMC.",
-      "empty": "Nenhum peso registrado.",
-      "add": "Registrar peso",
-      "edit": "Editar registro de {date}",
-      "delete": "Apagar registro de {date}",
-      "deleteTitle": "Apagar registro de peso",
-      "deleteConfirm": "Apagar o registro de {date}?",
-      "listLabel": "Pesos registrados"
+      "missing": "Responda as perguntas pendentes para concluir.",
+      "openWeight": "Registro de peso"
     },
     "privacy": {
       "title": "Privacidade e seus dados",
@@ -2399,9 +2391,7 @@
     "toasts": {
       "saved": "Respostas salvas.",
       "completed": "Anamnese concluída.",
-      "deleted": "Anamnese apagada.",
-      "weightSaved": "Peso registrado.",
-      "weightDeleted": "Registro de peso apagado."
+      "deleted": "Anamnese apagada."
     },
     "errors": {
       "required": "Responda esta pergunta ou escolha uma das alternativas.",
@@ -2418,7 +2408,6 @@
       "invalidWeight": "Informe um peso válido.",
       "invalidWeightDate": "Escolha uma data válida.",
       "weightDateOutOfRange": "A data não pode estar no futuro.",
-      "weightRequired": "Mantenha ao menos um registro de peso ou escolha \"Prefiro não informar\" na anamnese.",
       "load": "Não foi possível carregar sua anamnese.",
       "generic": "Não foi possível salvar. Tente novamente."
     },
@@ -2457,6 +2446,53 @@
       "injuries_12_months": "Ex.: fascite plantar em março, tratada com fisioterapia",
       "professional_restriction": "Ex.: evitar treinos intensos até a próxima avaliação cardiológica",
       "health_conditions": "Ex.: asma controlada com medicação"
+    }
+  },
+  "weightLog": {
+    "pageTitle": "Registro de peso - Kinesis",
+    "title": "Registro de peso",
+    "subtitle": "Acompanhe seu peso ao longo do tempo. Não fazemos julgamentos sobre peso nem calculamos IMC.",
+    "loading": "Carregando seu registro de peso…",
+    "formTitle": "Novo registro",
+    "value": "Peso ({unit})",
+    "date": "Data da medição",
+    "placeholder": {
+      "metric": "Ex.: 68,5",
+      "imperial": "Ex.: 151"
+    },
+    "add": "Registrar peso",
+    "save": "Salvar",
+    "cancel": "Cancelar",
+    "retry": "Tentar novamente",
+    "historyTitle": "Histórico",
+    "empty": "Nenhum peso registrado ainda.",
+    "listLabel": "Pesos registrados",
+    "edit": "Editar registro de {date}",
+    "delete": "Apagar registro de {date}",
+    "deleteTitle": "Apagar registro de peso",
+    "deleteConfirm": "Apagar o registro de {date}?",
+    "openAnamnesis": "Abrir anamnese",
+    "notes": {
+      "answered": "Sua anamnese usa o registro mais recente como peso atual.",
+      "declined": "Na sua anamnese você escolheu não informar o peso, então estes registros não são usados no planejamento. Você pode mudar essa resposta na anamnese.",
+      "unanswered": "Responda à anamnese para que o planejamento possa considerar seu peso."
+    },
+    "toasts": {
+      "saved": "Peso registrado.",
+      "updated": "Registro de peso atualizado.",
+      "deleted": "Registro de peso apagado."
+    },
+    "errors": {
+      "load": "Não foi possível carregar seu registro de peso.",
+      "invalidWeight": "Informe um peso válido.",
+      "weightOutOfRange": "Informe um peso entre {min} e {max}.",
+      "invalidWeightDate": "Escolha uma data válida.",
+      "weightDateOutOfRange": "A data não pode estar no futuro.",
+      "weightDateExists": "Já existe um peso registrado nesta data.",
+      "weightLimit": "O registro chegou ao limite de entradas. Apague registros antigos para continuar.",
+      "weightNotFound": "Este registro não existe mais. Recarregue a página.",
+      "weightRequired": "Este é o único registro e sua anamnese concluída informa o peso. Para apagá-lo, escolha \"Prefiro não informar\" na anamnese.",
+      "generic": "Não foi possível salvar. Tente novamente."
     }
   }
 }

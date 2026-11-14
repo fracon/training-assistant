@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="/assets/brand/favicon.png?v=5" type="image/png">
+  <title data-i18n="weightLog.pageTitle">Weight log - Kinesis</title>
+  <link rel="stylesheet" href="shared/shell.css"><link rel="stylesheet" href="shared/components.css">
+  <link rel="stylesheet" href="shoes.css"><link rel="stylesheet" href="weight.css">
+</head>
+<body>
+<main id="appView"><section class="shoes-page weight-page" aria-labelledby="weightTitle">
+  <header class="shoes-header">
+    <div class="shoes-header-text">
+      <h1 id="weightTitle" tabindex="-1" data-i18n="weightLog.title">Weight log</h1>
+      <p class="shoes-subtitle" data-i18n="weightLog.subtitle">Follow your weight over time.</p>
+    </div>
+  </header>
+  <p id="weightLoading" class="field-hint" role="status" aria-live="polite" data-i18n="weightLog.loading">Loading your weight log…</p>
+  <div id="weightLoadError" class="form-error weight-load-error" role="alert" hidden>
+    <span data-i18n="weightLog.errors.load">Your weight log could not be loaded.</span>
+    <button id="weightRetry" type="button" class="btn-secondary" data-i18n="weightLog.retry">Try again</button>
+  </div>
+
+  <section id="weightFormCard" class="shoe-card weight-card" hidden aria-labelledby="weightFormTitle">
+    <h2 id="weightFormTitle" data-i18n="weightLog.formTitle">New entry</h2>
+    <form id="weightForm" class="weight-form" novalidate>
+      <div class="field"><label class="field-label" for="weightValue" id="weightValueLabel"></label><input id="weightValue" type="number" step="0.1" inputmode="decimal" autocomplete="off" aria-describedby="weightValueError"><p id="weightValueError" class="field-error" hidden></p></div>
+      <div class="field"><label class="field-label" for="weightDate" data-i18n="weightLog.date">Measurement date</label><input id="weightDate" type="text" autocomplete="off" aria-describedby="weightDateError"><p id="weightDateError" class="field-error" hidden></p></div>
+      <div class="form-actions">
+        <button id="weightCancel" type="button" class="btn-secondary" data-i18n="weightLog.cancel" hidden>Cancel</button>
+        <button id="weightSubmit" type="submit" class="btn-primary" data-i18n="weightLog.add">Log weight</button>
+      </div>
+    </form>
+    <p id="weightAnamnesisNote" class="field-hint weight-note" hidden><span id="weightAnamnesisNoteText"></span> <a href="/anamnesis.html" data-i18n="weightLog.openAnamnesis">Open running profile</a></p>
+  </section>
+
+  <section id="weightHistory" class="shoe-card weight-card" hidden aria-labelledby="weightHistoryTitle">
+    <h2 id="weightHistoryTitle" data-i18n="weightLog.historyTitle">History</h2>
+    <p id="weightEmpty" class="field-hint" data-i18n="weightLog.empty" hidden>No weight logged yet.</p>
+    <ul id="weightList" class="weight-list" data-i18n-aria-label="weightLog.listLabel" aria-label="Logged weights"></ul>
+  </section>
+</section></main>
+<script src="https://unpkg.com/lucide@latest"></script><script src="weight.js" type="module"></script>
+</body></html>

@@ -39,17 +39,11 @@ let stepIndex = 0;
 let mode = 'wizard'; // 'wizard' | 'edit' (one step from the summary) | 'review'
 let fields = [];
 let bindings = [];
-let weightPicker = null;
 let stepDatePicker = null;
-let editingWeight = null;
 let busy = false;
-// Revision of the answers the open step was rendered from. A weight-log
-// refresh may advance `data.anamnesis`, but the step must still be saved
+// Revision of the answers the open step was rendered from: the step is saved
 // against what it shows, so another tab's change is a conflict, not overwritten.
 let editingRevision = 0;
-// Unit of the number typed in the weight-log form, so a body-unit change while
-// it holds a value converts it instead of reinterpreting it.
-let weightLogUnit = null;
 
 function t(key, params) { return translate(i18n.messages, `anamnesis.${key}`, params); }
 function prefs() { return getUserPreferences(); }
@@ -333,21 +327,33 @@ function rangeParams(item) {
   return { min: item.min, max: item.max };
 }
 
+// The weight question records the first entry of the weight log. Once the log
+// has entries, the anamnesis only shows the latest one and links to the
+// Weight log page, which is the single place to add or correct weights.
 function weightField(item, answer) {
-  const field = baseField(item);
-  bind(field.label, () => t('items.weight.label'));
   const latest = data.weights[0];
+  // With an entry the question is only a choice, so it is a group.
+  const field = baseField(item, { group: Boolean(latest) });
+  bind(field.label, () => t('items.weight.label'));
   if (latest) {
     const current = el('p', 'anamnesis-latest');
-    bind(current, () => t('weight.latest', { weight: formatWeight(latest.weight_kg, prefs().body_unit), date: formatDate(latest.measured_on, i18n.language) }));
+    const text = el('span');
+    bind(text, () => t('weight.latest', { weight: formatWeight(latest.weight_kg, prefs().body_unit), date: formatDate(latest.measured_on, i18n.language) }));
+    const link = el('a', '', { href: '/weight.html' });
+    bind(link, () => t('weight.updateLink'));
+    current.append(text, ' ', link);
     field.element.appendChild(current);
+    const alternative = statusAlternatives(field, item, answer, []);
+    field.collect = () => ({ answer: { status: alternative() ? 'declined' : 'answered' } });
+    field.finish();
+    return field;
   }
   const row = el('div', 'anamnesis-inline');
   const valuePart = el('div', 'field');
   const valueInput = weightLimits(numberInput('q-weight'), prefs().body_unit);
   bindPlaceholder(valueInput, () => t(`placeholders.weight.${prefs().body_unit}`));
   const valueLabel = el('label', 'field-hint', { for: valueInput.id });
-  bind(valueLabel, () => (latest ? t('weight.newEntry') : t('weight.value', { unit: weightUnitLabel(prefs().body_unit) })));
+  bind(valueLabel, () => t('weight.value', { unit: weightUnitLabel(prefs().body_unit) }));
   valuePart.append(valueLabel, valueInput);
   const datePart = el('div', 'field');
   const dateInput = el('input', '', { id: 'q-weight-date', type: 'text', autocomplete: 'off' });
@@ -365,7 +371,7 @@ function weightField(item, answer) {
   field.collect = () => {
     if (alternative()) return { answer: { status: 'declined' } };
     const typed = readNumber(valueInput);
-    if (typed === null) return latest ? { answer: { status: 'answered' } } : { missing: true };
+    if (typed === null) return { missing: true };
     const kg = Number.isNaN(typed) ? null : weightToKg(typed, prefs().body_unit);
     if (kg === null) return { error: 'invalidWeight' };
     if (kg < WEIGHT_RANGE_KG.min || kg > WEIGHT_RANGE_KG.max) return { error: 'weightOutOfRange', params: weightRange() };
@@ -742,7 +748,6 @@ async function saveStep(event) {
       try {
         const created = await api('POST', '/api/body-weights', weight);
         data.weights = [created.weight, ...data.weights].sort((a, b) => b.measured_on.localeCompare(a.measured_on));
-        renderWeights();
       } catch (error) {
         const field = fields.find((item) => item.key === 'weight');
         field.showError(error.code, error.code === 'weightOutOfRange' ? weightRange() : undefined);
@@ -877,158 +882,6 @@ function renderStatus() {
   badge.textContent = t(`status.${data.anamnesis.status}`);
 }
 
-/* ── Weight log ──────────────────────────────────────────────── */
-
-function renderWeights() {
-  const unit = prefs().body_unit;
-  const input = $('weightValue');
-  // A pending value keeps its meaning when the body unit changes.
-  const typed = readNumber(input);
-  if (weightLogUnit && weightLogUnit !== unit && typed !== null && !Number.isNaN(typed))
-    input.value = String(Math.round(weightFromKg(weightToKg(typed, weightLogUnit), unit) * 10) / 10);
-  weightLogUnit = unit;
-  weightLimits(input, unit);
-  input.placeholder = t(`placeholders.weight.${unit}`);
-  $('weightValueLabel').textContent = t('weight.value', { unit: weightUnitLabel(unit) });
-  const list = $('weightList');
-  const focused = list.contains(document.activeElement) ? `${document.activeElement.dataset.id}:${document.activeElement.dataset.action}` : null;
-  list.textContent = '';
-  $('weightEmpty').hidden = data.weights.length > 0;
-  for (const entry of data.weights) {
-    const item = el('li', 'anamnesis-weight-row');
-    const date = formatDate(entry.measured_on, i18n.language);
-    const text = el('span');
-    text.textContent = `${date} · ${formatWeight(entry.weight_kg, prefs().body_unit)}`;
-    const actions = el('div', 'anamnesis-weight-actions');
-    for (const [action, icon, key] of [['edit', 'pencil', 'weightLog.edit'], ['delete', 'trash-2', 'weightLog.delete']]) {
-      const button = el('button', `btn-icon${action === 'delete' ? ' anamnesis-danger' : ''}`, { type: 'button', 'data-id': String(entry.id), 'data-action': action, 'aria-label': t(key, { date }) });
-      button.innerHTML = `<i data-lucide="${icon}"></i>`;
-      const tooltip = el('span', 'custom-tooltip', { 'aria-hidden': 'true' });
-      tooltip.textContent = t(key, { date });
-      button.appendChild(tooltip);
-      button.addEventListener('click', () => (action === 'edit' ? startWeightEdit(entry, button) : removeWeight(entry, button)));
-      actions.appendChild(button);
-    }
-    item.append(text, actions);
-    list.appendChild(item);
-  }
-  if (focused) list.querySelector(`button[data-id="${focused.split(':')[0]}"][data-action="${focused.split(':')[1]}"]`)?.focus();
-  refreshIcons();
-}
-
-function weightFieldError(id, code, params) {
-  const error = $(`${id}Error`);
-  error.textContent = t(`errors.${knownError(code) ? code : 'generic'}`, params);
-  error.hidden = false;
-  $(id).setAttribute('aria-invalid', 'true');
-  $(id).focus();
-}
-
-function clearWeightErrors() {
-  for (const id of ['weightValue', 'weightDate']) {
-    $(`${id}Error`).hidden = true;
-    $(id).removeAttribute('aria-invalid');
-  }
-}
-
-function startWeightEdit(entry, trigger) {
-  editingWeight = { entry, trigger };
-  $('weightValue').value = String(Math.round(weightFromKg(entry.weight_kg, prefs().body_unit) * 10) / 10);
-  weightPicker?.setValue(entry.measured_on);
-  $('weightSubmit').setAttribute('data-i18n', 'anamnesis.actions.save');
-  $('weightSubmit').textContent = t('actions.save');
-  $('weightCancel').hidden = false;
-  $('weightValue').focus();
-}
-
-function stopWeightEdit({ restore = false } = {}) {
-  // A re-render (language or unit change) may have replaced the original
-  // button; fall back to the same row's edit action.
-  const id = editingWeight?.entry.id;
-  const trigger = editingWeight?.trigger?.isConnected
-    ? editingWeight.trigger
-    : $('weightList').querySelector(`button[data-id="${id}"][data-action="edit"]`);
-  editingWeight = null;
-  $('weightValue').value = '';
-  weightPicker?.setValue(data.today);
-  $('weightSubmit').setAttribute('data-i18n', 'anamnesis.weightLog.add');
-  $('weightSubmit').textContent = t('weightLog.add');
-  $('weightCancel').hidden = true;
-  clearWeightErrors();
-  if (restore && trigger?.isConnected) trigger.focus();
-}
-
-async function submitWeight(event) {
-  event.preventDefault();
-  if (busy) return;
-  clearWeightErrors();
-  const typed = readNumber($('weightValue'));
-  if (typed === null || Number.isNaN(typed)) return weightFieldError('weightValue', 'invalidWeight');
-  const kg = weightToKg(typed, prefs().body_unit);
-  if (kg < WEIGHT_RANGE_KG.min || kg > WEIGHT_RANGE_KG.max) return weightFieldError('weightValue', 'weightOutOfRange', weightRange());
-  const body = { measured_on: weightPicker?.getValue() || data.today, weight_kg: Math.round(kg * 100) / 100 };
-  busy = true;
-  $('weightSubmit').disabled = true;
-  try {
-    if (editingWeight) {
-      const id = editingWeight.entry.id;
-      const saved = await api('PATCH', `/api/body-weights/${id}`, body);
-      data.weights = data.weights.map((entry) => (entry.id === id ? saved.weight : entry));
-    } else {
-      const saved = await api('POST', '/api/body-weights', body);
-      data.weights = [saved.weight, ...data.weights];
-    }
-    data.weights.sort((a, b) => b.measured_on.localeCompare(a.measured_on) || b.id - a.id);
-    const wasEditing = Boolean(editingWeight);
-    stopWeightEdit({ restore: wasEditing });
-    renderWeights();
-    await refreshAnamnesis();
-    showShellToast(i18n.messages, 'anamnesis.toasts.weightSaved');
-  } catch (error) {
-    weightFieldError(error.field === 'measured_on' ? 'weightDate' : 'weightValue', error.code, error.code === 'weightOutOfRange' ? weightRange() : undefined);
-  } finally {
-    busy = false;
-    $('weightSubmit').disabled = false;
-  }
-}
-
-async function removeWeight(entry, trigger) {
-  if (busy) return;
-  const date = formatDate(entry.measured_on, i18n.language);
-  const confirmed = await showConfirm({ title: t('weightLog.deleteTitle'), message: t('weightLog.deleteConfirm', { date }), confirmLabel: t('weightLog.deleteTitle'), cancelLabel: t('actions.cancel') });
-  if (!confirmed) { trigger.focus(); return; }
-  busy = true;
-  try {
-    await api('DELETE', `/api/body-weights/${entry.id}`);
-    const index = data.weights.findIndex((item) => item.id === entry.id);
-    data.weights = data.weights.filter((item) => item.id !== entry.id);
-    if (editingWeight?.entry.id === entry.id) stopWeightEdit();
-    renderWeights();
-    await refreshAnamnesis();
-    showShellToast(i18n.messages, 'anamnesis.toasts.weightDeleted');
-    const next = $('weightList').querySelectorAll('button[data-action="delete"]')[Math.min(index, data.weights.length - 1)];
-    (next || $('weightValue')).focus();
-  } catch (error) {
-    showShellToast(i18n.messages, `anamnesis.errors.${knownError(error.code) ? error.code : 'generic'}`, 'error', 4000);
-    trigger.focus();
-  } finally {
-    busy = false;
-  }
-}
-
-// The weight log can satisfy or stop satisfying the weight question, so the
-// questionnaire's derived missing list is re-read after a log change.
-async function refreshAnamnesis() {
-  try {
-    const fresh = await api('GET', '/api/anamnesis');
-    data.anamnesis = fresh.anamnesis;
-    renderStatus();
-    if (mode === 'review') renderSummary();
-  } catch {
-    /* The log change itself succeeded; the summary refreshes on the next load. */
-  }
-}
-
 /* ── Data controls ───────────────────────────────────────────── */
 
 async function deleteEverything() {
@@ -1061,10 +914,8 @@ async function load({ focusTitle = false } = {}) {
     return;
   }
   $('anamnesisLoading').hidden = true;
-  for (const id of ['weightLog', 'anamnesisPrivacy']) $(id).hidden = false;
-  stopWeightEdit();
+  $('anamnesisPrivacy').hidden = false;
   renderStatus();
-  renderWeights();
   const incomplete = firstIncompleteStep();
   if (data.anamnesis.status === 'completed' || incomplete === -1) showReview({ focus: focusTitle });
   else {
@@ -1078,32 +929,22 @@ async function initAnamnesis() {
   const user = await initShell();
   if (!user) return;
   i18n = getShellI18n();
-  const cancel = el('button', 'btn-secondary', { id: 'weightCancel', type: 'button', 'data-i18n': 'anamnesis.actions.cancel' });
-  cancel.textContent = t('actions.cancel');
-  cancel.hidden = true;
-  cancel.addEventListener('click', () => stopWeightEdit({ restore: true }));
-  $('weightSubmit').before(cancel);
-  weightPicker = createDatePicker($('weightDate'), { getLanguage: () => i18n.language, getWeekStart: () => prefs().first_day_of_week });
   $('anamnesisForm').addEventListener('submit', saveStep);
   $('anamnesisBack').addEventListener('click', () => { if (!busy && stepIndex > 0) renderStep(stepIndex - 1); });
   $('anamnesisCancel').addEventListener('click', () => showReview());
   $('anamnesisComplete').addEventListener('click', complete);
   $('anamnesisRetry').addEventListener('click', () => load());
-  $('weightForm').addEventListener('submit', submitWeight);
   $('anamnesisDelete').addEventListener('click', deleteEverything);
   $('anamnesisOpenPreferences').addEventListener('click', () => openPreferencesModal());
   document.addEventListener('app:languagechange', () => {
     if (!data) return;
     bindings.forEach((update) => update());
     renderStatus();
-    renderWeights();
     if (mode === 'review') renderSummary();
-    weightPicker?.refresh();
     stepDatePicker?.refresh();
   });
   document.addEventListener('kinesis:preferences-changed', () => {
     if (!data) return;
-    renderWeights();
     if (mode === 'review') renderSummary();
     else renderStep(stepIndex, { focus: false });
   });

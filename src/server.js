@@ -89,6 +89,7 @@ const {
   deleteAnamnesis,
   deleteWeight,
   exportAnamnesis,
+  listWeights,
   readAnamnesis,
   saveAnamnesis,
   updateWeight,
@@ -348,6 +349,11 @@ async function buildServer(options = {}) {
   app.get('/anamnesis.html', async (request, reply) => {
     if (!sessionOf(request)) return reply.redirect('/login.html');
     return reply.sendFile('anamnesis.html');
+  });
+
+  app.get('/weight.html', async (request, reply) => {
+    if (!sessionOf(request)) return reply.redirect('/login.html');
+    return reply.sendFile('weight.html');
   });
 
   app.get('/training-memory.html', async (request, reply) => {
@@ -1739,6 +1745,7 @@ async function buildServer(options = {}) {
       reply.header('Content-Disposition', 'attachment; filename="kinesis-anamnesis.json"');
       return exportAnamnesis(db, r.user.id);
     });
+    anamnesisRoute('get', '/api/body-weights', (r) => listWeights(db, r.user.id));
     anamnesisRoute('post', '/api/body-weights', (r) => addWeight(db, r.user.id, r.body), 201);
     anamnesisRoute('patch', '/api/body-weights/:id', (r) => updateWeight(db, r.user.id, r.params.id, r.body));
     anamnesisRoute('delete', '/api/body-weights/:id', (r) => deleteWeight(db, r.user.id, r.params.id));

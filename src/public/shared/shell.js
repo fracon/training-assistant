@@ -26,7 +26,7 @@ export const VERSION_ENDPOINT = '/api/version';
 export const VERSION_FALLBACK_LABEL = 'v-.-.-';
 
 // Sidebar order: Home first, then cycles, then request workouts, then
-// review/log workouts. Ids and hrefs stay stable for route matching. Items
+// review/log workouts, shoes and the weight log. Ids and hrefs stay stable for route matching. Items
 // in CYCLE_DEPENDENT_ITEMS are dynamically disabled when no active training
 // cycle exists.
 const NAV_ITEMS = [
@@ -63,6 +63,15 @@ const NAV_ITEMS = [
     icon: 'footprints',
     labelKey: 'shell.nav.shoes',
     href: '/shoes.html',
+    disabled: false,
+  },
+  // Weight log (issue #80): a recurring tool, so it lives in the sidebar; the
+  // one-time anamnesis stays in the account menu.
+  {
+    id: 'weight',
+    icon: 'weight',
+    labelKey: 'shell.nav.weight',
+    href: '/weight.html',
     disabled: false,
   },
 ];

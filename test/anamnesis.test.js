@@ -20,6 +20,7 @@ const {
   deleteAnamnesis,
   deleteWeight,
   exportAnamnesis,
+  listWeights,
   questionnaire,
   readAnamnesis,
   saveAnamnesis,
@@ -236,6 +237,13 @@ test('the weight answer is satisfied by the log, and a completed answer keeps on
   assert.deepEqual(readAnamnesis(db, owner).anamnesis.missing, []);
   completeAnamnesis(db, owner, { expected_revision: 1 }, NOW);
   rejects(() => deleteWeight(db, owner, String(entry.id)), 409, 'weightRequired');
+  // The weight log page reads the log and how the question was answered.
+  assert.deepEqual(listWeights(db, owner), {
+    weights: readAnamnesis(db, owner).weights,
+    today: readAnamnesis(db, owner).today,
+    anamnesis: { status: 'completed', weight_status: 'answered' },
+  });
+  assert.deepEqual(listWeights(db, other).anamnesis, { status: 'not_started', weight_status: null });
   const second = addWeight(db, owner, { measured_on: '2026-02-10', weight_kg: 79 }).weight;
   assert.deepEqual(deleteWeight(db, owner, entry.id), { id: entry.id });
   rejects(() => deleteWeight(db, owner, second.id), 409, 'weightRequired');
@@ -245,11 +253,16 @@ test('the weight answer is satisfied by the log, and a completed answer keeps on
   assert.deepEqual(readAnamnesis(db, other).weights, []);
   // Switching the answer to "rather not say" releases the last entry.
   save(db, owner, { weight: { status: 'declined' } });
+  assert.deepEqual(listWeights(db, owner).anamnesis, { status: 'completed', weight_status: 'declined' });
   deleteWeight(db, owner, second.id);
   assert.deepEqual(readAnamnesis(db, owner).weights, []);
   // A draft keeps no such guard, and an account without an anamnesis neither.
   const loose = addWeight(db, other, { measured_on: '2026-03-01', weight_kg: 60 }).weight;
   deleteWeight(db, other, loose.id);
+  save(db, other, { weight: { status: 'answered' } });
+  assert.deepEqual(listWeights(db, other).anamnesis, { status: 'draft', weight_status: 'answered' });
+  save(db, other, { weight: null });
+  assert.deepEqual(listWeights(db, other).anamnesis, { status: 'draft', weight_status: null });
   save(db, other, { weight: { status: 'answered' } });
   const draftEntry = addWeight(db, other, { measured_on: '2026-03-02', weight_kg: 61 }).weight;
   deleteWeight(db, other, draftEntry.id);
@@ -352,10 +365,12 @@ async function serverSetup() {
 
 test('the anamnesis API is authenticated, owner-scoped, uncached and reports field errors', async () => {
   const { app, db, owner, other, call } = await serverSetup();
-  for (const [method, url] of [['GET', '/api/anamnesis'], ['PUT', '/api/anamnesis'], ['POST', '/api/anamnesis/complete'], ['DELETE', '/api/anamnesis'], ['GET', '/api/anamnesis/export'], ['POST', '/api/body-weights'], ['PATCH', '/api/body-weights/1'], ['DELETE', '/api/body-weights/1']])
+  for (const [method, url] of [['GET', '/api/anamnesis'], ['PUT', '/api/anamnesis'], ['POST', '/api/anamnesis/complete'], ['DELETE', '/api/anamnesis'], ['GET', '/api/anamnesis/export'], ['GET', '/api/body-weights'], ['POST', '/api/body-weights'], ['PATCH', '/api/body-weights/1'], ['DELETE', '/api/body-weights/1']])
     assert.equal((await call(null, method, url, method === 'GET' || method === 'DELETE' ? undefined : {})).statusCode, 401, `${method} ${url}`);
   assert.equal((await call(null, 'GET', '/anamnesis.html')).headers.location, '/login.html');
   assert.equal((await call(owner, 'GET', '/anamnesis.html')).statusCode, 200);
+  assert.equal((await call(null, 'GET', '/weight.html')).headers.location, '/login.html');
+  assert.equal((await call(owner, 'GET', '/weight.html')).statusCode, 200);
 
   const read = await call(owner, 'GET', '/api/anamnesis');
   assert.equal(read.statusCode, 200);
@@ -376,6 +391,11 @@ test('the anamnesis API is authenticated, owner-scoped, uncached and reports fie
   const id = weight.json().weight.id;
   assert.equal((await call(other, 'PATCH', `/api/body-weights/${id}`, { weight_kg: 50 })).statusCode, 404);
   assert.equal((await call(owner, 'PATCH', `/api/body-weights/${id}`, { weight_kg: 69 })).json().weight.weight_kg, 69);
+  const log = await call(owner, 'GET', '/api/body-weights');
+  assert.equal(log.headers['cache-control'], 'no-store');
+  assert.deepEqual(log.json().weights.map((entry) => entry.weight_kg), [69]);
+  assert.deepEqual(log.json().anamnesis, { status: 'completed', weight_status: 'declined' });
+  assert.deepEqual((await call(other, 'GET', '/api/body-weights')).json().weights, []);
   const exported = await call(owner, 'GET', '/api/anamnesis/export');
   assert.match(exported.headers['content-disposition'], /attachment; filename="kinesis-anamnesis\.json"/);
   assert.equal(exported.json().weights[0].weight_kg, 69);

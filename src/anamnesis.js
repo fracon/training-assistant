@@ -275,6 +275,20 @@ function readAnamnesis(db, userId) {
   };
 }
 
+// The weight log page reads the log on its own. It also learns how the
+// anamnesis answered the weight question, only to explain that a declined
+// answer keeps the log out of planning and that a completed answered one
+// keeps its last entry; the log never changes that answer.
+function listWeights(db, userId) {
+  const row = readRow(db, userId);
+  const answers = row ? JSON.parse(row.answers_json) : {};
+  return {
+    weights: publicWeights(db, userId),
+    today: userToday(db, userId),
+    anamnesis: { status: row ? row.status : 'not_started', weight_status: answers.weight?.status ?? null },
+  };
+}
+
 function expectedRevision(value) {
   if (!Number.isInteger(value) || value < 0)
     throw new AnamnesisError(400, 'invalidRevision', 'The expected revision is invalid.');
@@ -489,6 +503,7 @@ module.exports = {
   deleteAnamnesis,
   deleteWeight,
   exportAnamnesis,
+  listWeights,
   questionnaire,
   readAnamnesis,
   saveAnamnesis,

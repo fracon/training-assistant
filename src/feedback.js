@@ -5,7 +5,7 @@ const FEEDBACK_STATUSES = ['new', 'in_progress', 'resolved'];
 const FEEDBACK_PATHS = new Set([
   '/home.html', '/training-result.html', '/calendar.html', '/ai-coach.html',
   '/cycles.html', '/shoes.html', '/admin-users.html', '/admin-feedback.html',
-  '/admin-ai-history.html', '/anamnesis.html',
+  '/admin-ai-history.html', '/anamnesis.html', '/weight.html',
 ]);
 const MAX_DESCRIPTION_LENGTH = 5000;
 const MAX_INTERNAL_NOTE_LENGTH = 5000;

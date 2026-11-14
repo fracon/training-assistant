@@ -220,6 +220,7 @@
       "requestWorkouts": "Request Workouts",
       "workouts": "Workouts",
       "shoes": "Shoe Rotation",
+      "weight": "Weight Log",
       "administration": "Administration",
       "users": "Users",
       "feedback": "Feedbacks",
@@ -2316,7 +2317,7 @@
       "value": "Weight ({unit})",
       "date": "Measurement date",
       "latest": "Latest entry: {weight} on {date}",
-      "newEntry": "Log a new weight (optional)"
+      "updateLink": "Update in the Weight log"
     },
     "races": {
       "add": "Add result",
@@ -2368,24 +2369,15 @@
         "cycles": "Goals, races and target dates",
         "availability": "Days, times and available time",
         "preferences": "Units, language and week start",
-        "memory": "Training history and reports"
+        "memory": "Training history and reports",
+        "weight": "Weight over time"
       },
       "openCycles": "Training Cycles",
       "openAvailability": "Request Workouts",
       "openPreferences": "Preferences",
       "openMemory": "Training memory",
-      "missing": "Answer the pending questions to complete."
-    },
-    "weightLog": {
-      "title": "Weight log",
-      "hint": "Update it whenever you like. We make no judgement about weight and do not calculate BMI.",
-      "empty": "No weight logged.",
-      "add": "Log weight",
-      "edit": "Edit entry of {date}",
-      "delete": "Delete entry of {date}",
-      "deleteTitle": "Delete weight entry",
-      "deleteConfirm": "Delete the entry of {date}?",
-      "listLabel": "Logged weights"
+      "missing": "Answer the pending questions to complete.",
+      "openWeight": "Weight log"
     },
     "privacy": {
       "title": "Privacy and your data",
@@ -2399,9 +2391,7 @@
     "toasts": {
       "saved": "Answers saved.",
       "completed": "Running profile completed.",
-      "deleted": "Running profile deleted.",
-      "weightSaved": "Weight logged.",
-      "weightDeleted": "Weight entry deleted."
+      "deleted": "Running profile deleted."
     },
     "errors": {
       "required": "Answer this question or choose one of the alternatives.",
@@ -2418,7 +2408,6 @@
       "invalidWeight": "Enter a valid weight.",
       "invalidWeightDate": "Choose a valid date.",
       "weightDateOutOfRange": "The date cannot be in the future.",
-      "weightRequired": "Keep at least one weight entry or choose \"I'd rather not say\" in the profile.",
       "load": "Your running profile could not be loaded.",
       "generic": "Could not save. Please try again."
     },
@@ -2457,6 +2446,53 @@
       "injuries_12_months": "e.g. plantar fasciitis in March, treated with physiotherapy",
       "professional_restriction": "e.g. avoid hard sessions until my next cardiology check-up",
       "health_conditions": "e.g. asthma controlled with medication"
+    }
+  },
+  "weightLog": {
+    "pageTitle": "Weight log - Kinesis",
+    "title": "Weight log",
+    "subtitle": "Follow your weight over time. We make no judgements about weight and do not calculate BMI.",
+    "loading": "Loading your weight log…",
+    "formTitle": "New entry",
+    "value": "Weight ({unit})",
+    "date": "Measurement date",
+    "placeholder": {
+      "metric": "e.g. 68.5",
+      "imperial": "e.g. 151"
+    },
+    "add": "Log weight",
+    "save": "Save",
+    "cancel": "Cancel",
+    "retry": "Try again",
+    "historyTitle": "History",
+    "empty": "No weight logged yet.",
+    "listLabel": "Logged weights",
+    "edit": "Edit entry from {date}",
+    "delete": "Delete entry from {date}",
+    "deleteTitle": "Delete weight entry",
+    "deleteConfirm": "Delete the entry from {date}?",
+    "openAnamnesis": "Open running profile",
+    "notes": {
+      "answered": "Your running profile uses the latest entry as your current weight.",
+      "declined": "In your running profile you chose not to share your weight, so these entries are not used for planning. You can change that answer in the profile.",
+      "unanswered": "Answer your running profile so planning can take your weight into account."
+    },
+    "toasts": {
+      "saved": "Weight logged.",
+      "updated": "Weight entry updated.",
+      "deleted": "Weight entry deleted."
+    },
+    "errors": {
+      "load": "Your weight log could not be loaded.",
+      "invalidWeight": "Enter a valid weight.",
+      "weightOutOfRange": "Enter a weight between {min} and {max}.",
+      "invalidWeightDate": "Choose a valid date.",
+      "weightDateOutOfRange": "The date cannot be in the future.",
+      "weightDateExists": "A weight is already logged for this date.",
+      "weightLimit": "The log has reached its entry limit. Delete old entries to continue.",
+      "weightNotFound": "This entry no longer exists. Reload the page.",
+      "weightRequired": "This is the only entry and your completed running profile shares your weight. To delete it, choose \"I'd rather not say\" in the profile.",
+      "generic": "Could not save. Please try again."
     }
   }
 }
