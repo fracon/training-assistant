@@ -43,6 +43,13 @@ let weightPicker = null;
 let stepDatePicker = null;
 let editingWeight = null;
 let busy = false;
+// Revision of the answers the open step was rendered from. A weight-log
+// refresh may advance `data.anamnesis`, but the step must still be saved
+// against what it shows, so another tab's change is a conflict, not overwritten.
+let editingRevision = 0;
+// Unit of the number typed in the weight-log form, so a body-unit change while
+// it holds a value converts it instead of reinterpreting it.
+let weightLogUnit = null;
 
 function t(key, params) { return translate(i18n.messages, `anamnesis.${key}`, params); }
 function prefs() { return getUserPreferences(); }
@@ -123,17 +130,38 @@ function formatSeconds(total) {
   return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
-function parseTime(text) {
-  const match = /^(?:(\d{1,3}):)?([0-5]?\d):([0-5]\d)$/.exec(String(text).trim());
-  if (!match) return null;
-  return Number(match[1] || 0) * 3600 + Number(match[2]) * 60 + Number(match[3]);
-}
-
 function parseNumber(text) {
   const normalized = String(text ?? '').trim().replace(',', '.');
   if (normalized === '') return null;
   const number = Number(normalized);
   return Number.isFinite(number) ? number : NaN;
+}
+
+// A number input reports text it cannot parse as an empty value with
+// `validity.badInput`; that is an invalid answer, never a missing one.
+function readNumber(input) {
+  if (input.validity?.badInput) return NaN;
+  return parseNumber(input.value);
+}
+
+function isBlank(input) {
+  return input.value.trim() === '' && !input.validity?.badInput;
+}
+
+function hasText(key) {
+  return t(key) !== `anamnesis.${key}`;
+}
+
+// Placeholders show a valid example and follow the language like `bind`.
+function bindPlaceholder(input, render) {
+  bindings.push(() => { input.placeholder = render(); });
+  input.placeholder = render();
+  return input;
+}
+
+function examplePlaceholder(input, key) {
+  if (hasText(key)) bindPlaceholder(input, () => t(key));
+  return input;
 }
 
 /* ── Field builders ──────────────────────────────────────────── */
@@ -148,7 +176,7 @@ function baseField(item, { group = false } = {}) {
   wrapper.appendChild(label);
   const hintKey = `items.${item.key}.hint`;
   let hint = null;
-  if (t(hintKey) !== `anamnesis.${hintKey}`) {
+  if (hasText(hintKey)) {
     hint = el('p', 'field-hint', { id: `q-${item.key}-hint` });
     bind(hint, () => t(hintKey));
     wrapper.appendChild(hint);
@@ -223,8 +251,12 @@ function statusAlternatives(field, item, answer, valueInputs) {
   return () => boxes.find((box) => box.checked)?.value ?? null;
 }
 
-function numberInput(id, value, inputmode = 'decimal') {
-  const input = el('input', '', { id, type: 'text', inputmode, autocomplete: 'off' });
+// Numeric answers use the shared number input (as in Shoes and the result
+// page); limits mirror the backend, which still validates every value.
+function numberInput(id, value, { step = '0.1', min, max } = {}) {
+  const input = el('input', '', { id, type: 'number', step, inputmode: step === '1' ? 'numeric' : 'decimal', autocomplete: 'off' });
+  if (min !== undefined) input.min = String(min);
+  if (max !== undefined) input.max = String(max);
   if (value !== null && value !== undefined) input.value = String(value);
   return input;
 }
@@ -236,8 +268,8 @@ function valueField(item, answer) {
   let inputs;
   if (item.type === 'height' && prefs().body_unit === 'imperial') {
     const current = answer?.status === 'answered' ? heightFromCm(answer.value, 'imperial') : null;
-    const feet = numberInput(`q-${item.key}`, current?.feet, 'numeric');
-    const inches = numberInput(`q-${item.key}-inches`, current?.inches);
+    const feet = examplePlaceholder(numberInput(`q-${item.key}`, current?.feet, { step: '1', min: 3, max: 8 }), 'placeholders.feet');
+    const inches = examplePlaceholder(numberInput(`q-${item.key}-inches`, current?.inches, { min: 0, max: 11.9 }), 'placeholders.inches');
     const row = el('div', 'anamnesis-inline');
     for (const [input, key] of [[feet, 'height.feet'], [inches, 'height.inches']]) {
       const part = el('div', 'field');
@@ -255,7 +287,11 @@ function valueField(item, answer) {
       if (item.type === 'distance') shown = Math.round(convertDistanceFromKm(answer.value, unit) * 10) / 10;
       else shown = answer.value;
     }
-    const input = numberInput(`q-${item.key}`, shown, item.type === 'integer' ? 'numeric' : 'decimal');
+    const limits = item.type === 'distance'
+      ? { min: 0, max: Math.ceil(convertDistanceFromKm(item.max, unit)) }
+      : { min: item.min, max: item.max };
+    const input = numberInput(`q-${item.key}`, shown, { step: item.type === 'distance' ? '0.1' : '1', ...limits });
+    examplePlaceholder(input, item.type === 'distance' ? `placeholders.${item.key}.${unit}` : `placeholders.${item.key}`);
     if (item.type === 'height') bind(field.label, () => t('height.cm'));
     field.label.setAttribute('for', input.id);
     field.element.appendChild(input);
@@ -267,7 +303,8 @@ function valueField(item, answer) {
   field.collect = () => {
     const status = alternative();
     if (status) return { answer: { status } };
-    if (inputs.every((input) => input.value.trim() === '')) return { missing: true };
+    if (inputs.every(isBlank)) return { missing: true };
+    if (inputs.some((input) => input.validity?.badInput)) return { error: 'invalidAnswer' };
     let value;
     if (item.type === 'height') {
       value = heightToCm(prefs().body_unit === 'imperial'
@@ -275,7 +312,7 @@ function valueField(item, answer) {
         : { cm: inputs[0].value.replace(',', '.') }, prefs().body_unit);
       if (value === null) return { error: 'invalidAnswer' };
     } else {
-      value = parseNumber(inputs[0].value);
+      value = readNumber(inputs[0]);
       if (Number.isNaN(value)) return { error: 'invalidAnswer' };
       if (item.type === 'distance') value = convertDistanceToKm(value, unit);
       if (item.type === 'integer' && !Number.isInteger(value)) return { error: 'invalidAnswer' };
@@ -307,8 +344,9 @@ function weightField(item, answer) {
   }
   const row = el('div', 'anamnesis-inline');
   const valuePart = el('div', 'field');
-  const valueInput = numberInput('q-weight');
-  const valueLabel = el('label', latest ? 'field-hint' : 'field-hint', { for: valueInput.id });
+  const valueInput = weightLimits(numberInput('q-weight'), prefs().body_unit);
+  bindPlaceholder(valueInput, () => t(`placeholders.weight.${prefs().body_unit}`));
+  const valueLabel = el('label', 'field-hint', { for: valueInput.id });
   bind(valueLabel, () => (latest ? t('weight.newEntry') : t('weight.value', { unit: weightUnitLabel(prefs().body_unit) })));
   valuePart.append(valueLabel, valueInput);
   const datePart = el('div', 'field');
@@ -326,7 +364,7 @@ function weightField(item, answer) {
   const alternative = statusAlternatives(field, item, answer, [valueInput, dateInput]);
   field.collect = () => {
     if (alternative()) return { answer: { status: 'declined' } };
-    const typed = parseNumber(valueInput.value);
+    const typed = readNumber(valueInput);
     if (typed === null) return latest ? { answer: { status: 'answered' } } : { missing: true };
     const kg = Number.isNaN(typed) ? null : weightToKg(typed, prefs().body_unit);
     if (kg === null) return { error: 'invalidWeight' };
@@ -335,6 +373,12 @@ function weightField(item, answer) {
   };
   field.finish();
   return field;
+}
+
+function weightLimits(input, unit) {
+  input.min = String(Math.floor(weightFromKg(WEIGHT_RANGE_KG.min, unit)));
+  input.max = String(Math.ceil(weightFromKg(WEIGHT_RANGE_KG.max, unit)));
+  return input;
 }
 
 function weightRange() {
@@ -381,6 +425,7 @@ function yesNoField(item, answer) {
   const details = el('div', 'field anamnesis-details');
   const textarea = el('textarea', 'prompt-textarea', { id: `q-${item.key}-details`, rows: '3', maxlength: '500' });
   textarea.value = answer?.status === 'answered' ? answer.value.details ?? '' : '';
+  examplePlaceholder(textarea, `placeholders.${item.key}`);
   const detailsLabel = el('label', 'field-hint', { for: textarea.id });
   bind(detailsLabel, () => t(`items.${item.key}.detailsLabel`));
   details.append(detailsLabel, textarea);
@@ -416,6 +461,7 @@ function multiField(item, answer) {
   const other = el('div', 'field anamnesis-details');
   const otherInput = el('input', '', { id: `q-${item.key}-other`, type: 'text', maxlength: '120', autocomplete: 'off' });
   otherInput.value = answer?.status === 'answered' ? answer.value.other_text ?? '' : '';
+  examplePlaceholder(otherInput, `placeholders.${item.key}`);
   const otherLabel = el('label', 'field-hint', { for: otherInput.id });
   bind(otherLabel, () => t(`items.${item.key}.otherText`));
   other.append(otherLabel, otherInput);
@@ -465,10 +511,19 @@ function racesField(item, answer) {
     });
     void options;
     select.value = race?.distance ?? '5k';
-    const otherKm = numberInput(`q-race-${index}-km`, race?.distance === 'other' ? Math.round(convertDistanceFromKm(race.distance_km, prefs().distance_unit) * 100) / 100 : null);
-    const time = el('input', '', { id: `q-race-${index}-time`, type: 'text', inputmode: 'numeric', autocomplete: 'off', placeholder: '0:52:30' });
-    if (race) time.value = formatSeconds(race.time_seconds);
-    const year = numberInput(`q-race-${index}-year`, race?.year, 'numeric');
+    const distanceUnit = prefs().distance_unit;
+    const otherKm = numberInput(`q-race-${index}-km`, race?.distance === 'other' ? Math.round(convertDistanceFromKm(race.distance_km, distanceUnit) * 100) / 100 : null, { step: '0.01', min: 0 });
+    examplePlaceholder(otherKm, `placeholders.raceDistance.${distanceUnit}`);
+    // Time is entered as hours, minutes and seconds, like the manual result.
+    const [hours, minutes, seconds] = [['hours', { max: 168 }], ['minutes', { max: 59 }], ['seconds', { max: 59 }]].map(([unitKey, limits]) =>
+      examplePlaceholder(numberInput(`q-race-${index}-${unitKey}`, null, { step: '1', min: 0, ...limits }), `placeholders.race.${unitKey}`));
+    if (race) {
+      hours.value = String(Math.floor(race.time_seconds / 3600));
+      minutes.value = String(Math.floor((race.time_seconds % 3600) / 60));
+      seconds.value = String(race.time_seconds % 60);
+    }
+    const year = numberInput(`q-race-${index}-year`, race?.year, { step: '1', min: 1950, max: Number(data.today.slice(0, 4)) });
+    bindPlaceholder(year, () => t('placeholders.race.year', { year: Number(data.today.slice(0, 4)) - 1 }));
     const part = (input, labelKey, params) => {
       const wrapper = el('div', 'field');
       const label = el('label', 'field-hint', { for: input.id });
@@ -476,12 +531,18 @@ function racesField(item, answer) {
       wrapper.append(label, input);
       return wrapper;
     };
-    const otherPart = part(otherKm, 'races.otherKm', () => ({ unit: prefs().distance_unit }));
+    const otherPart = part(otherKm, 'races.otherKm', () => ({ unit: distanceUnit }));
+    const time = el('fieldset', 'anamnesis-race-time');
+    const timeLegend = el('legend', 'field-hint');
+    bind(timeLegend, () => t('races.time'));
+    const timeInputs = el('div', 'anamnesis-duration');
+    timeInputs.append(part(hours, 'races.hours'), part(minutes, 'races.minutes'), part(seconds, 'races.seconds'));
+    time.append(timeLegend, timeInputs);
     const remove = el('button', 'btn-secondary anamnesis-race-remove', { type: 'button' });
     bind(remove, () => t('races.remove'));
     const grid = el('div', 'anamnesis-race-grid');
-    grid.append(part(select, 'races.distance'), otherPart, part(time, 'races.time'), part(year, 'races.year'));
-    row.append(title, grid, remove);
+    grid.append(part(select, 'races.distance'), otherPart, part(year, 'races.year'));
+    row.append(title, grid, time, remove);
     const syncOther = () => { otherPart.hidden = select.value !== 'other'; };
     select.addEventListener('change', syncOther);
     syncOther();
@@ -490,14 +551,16 @@ function racesField(item, answer) {
       number: index,
       renderTitle() { title.textContent = t('races.row', { n: entry.number }); },
       collect() {
-        const seconds = parseTime(time.value);
-        const yearValue = parseNumber(year.value);
-        if (!time.value.trim() || yearValue === null) return { error: 'raceIncomplete' };
-        if (seconds === null) return { error: 'timeFormat' };
+        const timeParts = [hours, minutes, seconds];
+        const yearValue = readNumber(year);
+        if (timeParts.every(isBlank) || yearValue === null) return { error: 'raceIncomplete' };
+        // A blank hours or minutes box means zero (a 5 km in 24:10).
+        const [h, m, s] = timeParts.map((input) => (isBlank(input) ? 0 : readNumber(input)));
+        if (![h, m, s].every(Number.isInteger) || h < 0 || m < 0 || m > 59 || s < 0 || s > 59) return { error: 'timeFormat' };
         if (!Number.isInteger(yearValue)) return { error: 'invalidAnswer' };
-        const race = { distance: select.value, time_seconds: seconds, year: yearValue };
+        const race = { distance: select.value, time_seconds: h * 3600 + m * 60 + s, year: yearValue };
         if (select.value === 'other') {
-          const km = parseNumber(otherKm.value);
+          const km = readNumber(otherKm);
           if (km === null) return { error: 'raceIncomplete' };
           if (Number.isNaN(km)) return { error: 'invalidAnswer' };
           race.distance_km = Math.round(convertDistanceToKm(km, prefs().distance_unit) * 1000) / 1000;
@@ -507,7 +570,7 @@ function racesField(item, answer) {
       focus() { select.focus(); },
     };
     bindings.push(() => entry.renderTitle());
-    [select, otherKm, time, year].forEach(field.describe);
+    [select, otherKm, hours, minutes, seconds, year].forEach(field.describe);
     remove.addEventListener('click', () => {
       rows.splice(rows.indexOf(entry), 1);
       row.remove();
@@ -570,7 +633,7 @@ function renderStepList(current) {
 function syncDependents() {
   const runs = fields.find((field) => field.key === 'runs_per_week');
   if (!runs) return;
-  const value = parseNumber(runs.inputs[0].value);
+  const value = readNumber(runs.inputs[0]);
   const notApplicable = value === 0 && !runs.inputs[0].disabled;
   for (const field of fields) {
     if (field.item.dependsOn !== 'runs_per_week') continue;
@@ -594,6 +657,7 @@ function renderStep(index, { focus = true } = {}) {
   const container = $('anamnesisStepFields');
   container.textContent = '';
   stepDatePicker = null;
+  editingRevision = data.anamnesis.revision;
   fields = step.items.map((item) => buildField(item, data.anamnesis.answers[item.key]));
   for (const field of fields) container.appendChild(field.element);
   if (step.id === 'experience') container.appendChild(experienceNotes());
@@ -618,6 +682,7 @@ function experienceNotes() {
   const wrapper = el('div', 'field anamnesis-item');
   const textarea = el('textarea', 'prompt-textarea', { id: 'q-experience-notes', rows: '4', maxlength: '2000', 'aria-describedby': 'q-experience-notes-hint' });
   textarea.value = data.experience.value;
+  examplePlaceholder(textarea, 'placeholders.experienceNotes');
   const label = el('label', 'field-label', { for: textarea.id });
   bind(label, () => t('experienceNotes.label'));
   const hint = el('p', 'field-hint', { id: 'q-experience-notes-hint' });
@@ -687,7 +752,7 @@ async function saveStep(event) {
     }
     const saved = await api('PUT', '/api/anamnesis', {
       answers,
-      expected_revision: data.anamnesis.revision,
+      expected_revision: editingRevision,
       ...(consent === undefined ? {} : { sensitive_ai_consent: consent }),
     });
     data.anamnesis = saved.anamnesis;
@@ -815,7 +880,16 @@ function renderStatus() {
 /* ── Weight log ──────────────────────────────────────────────── */
 
 function renderWeights() {
-  $('weightValueLabel').textContent = t('weight.value', { unit: weightUnitLabel(prefs().body_unit) });
+  const unit = prefs().body_unit;
+  const input = $('weightValue');
+  // A pending value keeps its meaning when the body unit changes.
+  const typed = readNumber(input);
+  if (weightLogUnit && weightLogUnit !== unit && typed !== null && !Number.isNaN(typed))
+    input.value = String(Math.round(weightFromKg(weightToKg(typed, weightLogUnit), unit) * 10) / 10);
+  weightLogUnit = unit;
+  weightLimits(input, unit);
+  input.placeholder = t(`placeholders.weight.${unit}`);
+  $('weightValueLabel').textContent = t('weight.value', { unit: weightUnitLabel(unit) });
   const list = $('weightList');
   const focused = list.contains(document.activeElement) ? `${document.activeElement.dataset.id}:${document.activeElement.dataset.action}` : null;
   list.textContent = '';
@@ -868,7 +942,12 @@ function startWeightEdit(entry, trigger) {
 }
 
 function stopWeightEdit({ restore = false } = {}) {
-  const trigger = editingWeight?.trigger;
+  // A re-render (language or unit change) may have replaced the original
+  // button; fall back to the same row's edit action.
+  const id = editingWeight?.entry.id;
+  const trigger = editingWeight?.trigger?.isConnected
+    ? editingWeight.trigger
+    : $('weightList').querySelector(`button[data-id="${id}"][data-action="edit"]`);
   editingWeight = null;
   $('weightValue').value = '';
   weightPicker?.setValue(data.today);
@@ -883,7 +962,7 @@ async function submitWeight(event) {
   event.preventDefault();
   if (busy) return;
   clearWeightErrors();
-  const typed = parseNumber($('weightValue').value);
+  const typed = readNumber($('weightValue'));
   if (typed === null || Number.isNaN(typed)) return weightFieldError('weightValue', 'invalidWeight');
   const kg = weightToKg(typed, prefs().body_unit);
   if (kg < WEIGHT_RANGE_KG.min || kg > WEIGHT_RANGE_KG.max) return weightFieldError('weightValue', 'weightOutOfRange', weightRange());

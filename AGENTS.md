@@ -221,6 +221,13 @@ pending item and the training-memory source.
   erases answers, consent and the weight log (experience notes stay in
   training memory); account deletion cascades. Migration
   `2026-11-athlete-anamnesis-v1`. No answer in logs, URLs or fixtures.
+- Numeric answers (year of birth, height, weight, runs, distances, race
+  year) are number inputs with the backend limits, and race times are hours,
+  minutes and seconds like the manual result. Each field shows a localized
+  valid example as placeholder (`anamnesis.placeholders`). An open step saves
+  against the revision it was rendered from, even after a weight-log refresh;
+  a pending weight-log value is converted, never reinterpreted, when
+  `body_unit` changes.
 - Covered by `test/anamnesis.test.js` and `test/anamnesis.browser.test.js`.
 
 ## Administration prompt history (#113)

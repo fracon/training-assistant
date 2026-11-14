@@ -11,6 +11,21 @@
 .anamnesis-card h2:focus, .anamnesis-review h2:focus, .anamnesis-page h1:focus { outline: none; }
 .anamnesis-card p { overflow-wrap: anywhere; }
 .field-hint { margin: 0; font-size: .78rem; color: var(--muted); opacity: .8; }
+/* theme.css styles text inputs only; numeric answers get the same shared
+   field treatment (as Shoes and Cycles do for their number inputs). */
+.anamnesis-page input[type="number"] {
+  width: 100%;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--bg);
+  padding: 0.55rem 0.65rem;
+  font: inherit;
+  font-size: 0.92rem;
+  font-weight: 500;
+  color: inherit;
+}
+.anamnesis-page input[type="number"]:focus-visible { outline: 2px solid var(--accent-deep); outline-offset: 1px; }
+.anamnesis-page input::placeholder, .anamnesis-page textarea::placeholder { color: var(--muted); opacity: .75; }
 .anamnesis-load-error { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap; }
 /* Every container given a display value here must still honour [hidden]. */
 .anamnesis-page [hidden] { display: none !important; }
@@ -45,7 +60,7 @@
 .anamnesis-item { border: 0; padding: 0; margin: 0; min-width: 0; }
 .anamnesis-item > legend { padding: 0; margin-bottom: .45rem; }
 .anamnesis-item[hidden], .anamnesis-details[hidden], .anamnesis-race .field[hidden] { display: none; }
-.anamnesis-item input[type="text"], .anamnesis-item select { max-width: 20rem; }
+.anamnesis-item input[type="text"], .anamnesis-item input[type="number"], .anamnesis-item select { max-width: 20rem; }
 .anamnesis-inline { display: flex; flex-wrap: wrap; gap: .75rem; }
 .anamnesis-inline .field { flex: 1 1 9rem; max-width: 14rem; }
 .anamnesis-alternatives { margin-top: .5rem; }
@@ -60,7 +75,12 @@
 .anamnesis-race { border: 1px solid var(--line); border-radius: 12px; padding: .75rem .85rem; display: flex; flex-direction: column; gap: .6rem; }
 .anamnesis-race-title { margin: 0; font-size: .82rem; font-weight: 600; }
 .anamnesis-race-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: .6rem; }
-.anamnesis-race-grid input, .anamnesis-race-grid select { max-width: none; width: 100%; }
+.anamnesis-race-grid input, .anamnesis-race-grid select, .anamnesis-duration input { max-width: none; width: 100%; }
+.anamnesis-race-time { border: 0; padding: 0; margin: 0; min-width: 0; }
+.anamnesis-race-time > legend { padding: 0; margin-bottom: .35rem; }
+/* Same three-column hours/minutes/seconds layout as the manual result. */
+.anamnesis-duration { display: grid; grid-template-columns: repeat(3, minmax(0, 7rem)); gap: .6rem; }
+.anamnesis-duration .field { margin: 0; }
 .anamnesis-race-remove, .anamnesis-races + .btn-secondary { align-self: flex-start; }
 
 .anamnesis-review { display: flex; flex-direction: column; gap: .8rem; }
@@ -120,7 +140,8 @@
 
 @media (max-width: 600px) {
   .anamnesis-answers > div { grid-template-columns: minmax(0, 1fr); gap: .15rem; }
-  .anamnesis-item input[type="text"], .anamnesis-item select { max-width: none; }
+  .anamnesis-item input[type="text"], .anamnesis-item input[type="number"], .anamnesis-item select { max-width: none; }
+  .anamnesis-duration { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .anamnesis-actions { justify-content: stretch; }
   .anamnesis-actions .btn-primary, .anamnesis-actions .btn-secondary { flex: 1 1 auto; }
 }

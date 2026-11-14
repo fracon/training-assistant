@@ -2325,7 +2325,7 @@
       "distance": "Distance",
       "otherDistance": "Other",
       "otherKm": "Distance ({unit})",
-      "time": "Time (hh:mm:ss)",
+      "time": "Time",
       "year": "Year",
       "none": "I have no results to share",
       "distances": {
@@ -2333,7 +2333,10 @@
         "10k": "10 km",
         "21k": "Half marathon",
         "42k": "Marathon"
-      }
+      },
+      "hours": "Hours",
+      "minutes": "Minutes",
+      "seconds": "Seconds"
     },
     "experienceNotes": {
       "label": "Notes about your experience (optional)",
@@ -2405,7 +2408,7 @@
       "outOfRange": "Enter a value between {min} and {max}.",
       "invalidAnswer": "This value is not valid.",
       "textTooLong": "The text is too long.",
-      "timeFormat": "Use the hh:mm:ss format, for example 0:52:30.",
+      "timeFormat": "Enter a valid time: whole hours, minutes and seconds, with minutes and seconds from 0 to 59.",
       "raceIncomplete": "Fill in distance, time and year for each result.",
       "anamnesisConflict": "Your answers changed in another session. Reload the page to continue.",
       "anamnesisIncomplete": "Some questions are still unanswered.",
@@ -2418,6 +2421,42 @@
       "weightRequired": "Keep at least one weight entry or choose \"I'd rather not say\" in the profile.",
       "load": "Your running profile could not be loaded.",
       "generic": "Could not save. Please try again."
+    },
+    "placeholders": {
+      "birth_year": "e.g. 1990",
+      "height_cm": "e.g. 172",
+      "feet": "e.g. 5",
+      "inches": "e.g. 8",
+      "weight": {
+        "metric": "e.g. 68.5",
+        "imperial": "e.g. 151"
+      },
+      "motivations": "e.g. keeping up with my kids",
+      "runs_per_week": "e.g. 3",
+      "weekly_distance_km": {
+        "km": "e.g. 25",
+        "mi": "e.g. 15"
+      },
+      "longest_run_km": {
+        "km": "e.g. 12",
+        "mi": "e.g. 8"
+      },
+      "raceDistance": {
+        "km": "e.g. 15",
+        "mi": "e.g. 10"
+      },
+      "race": {
+        "hours": "e.g. 0",
+        "minutes": "e.g. 52",
+        "seconds": "e.g. 30",
+        "year": "e.g. {year}"
+      },
+      "experienceNotes": "e.g. I ran from 18 to 25 and came back in 2024 after a 5-year break.",
+      "other_activities": "e.g. swimming twice a week and cycling on Sundays",
+      "current_pain": "e.g. right knee pain for 2 weeks, worse on downhills",
+      "injuries_12_months": "e.g. plantar fasciitis in March, treated with physiotherapy",
+      "professional_restriction": "e.g. avoid hard sessions until my next cardiology check-up",
+      "health_conditions": "e.g. asthma controlled with medication"
     }
   }
 }

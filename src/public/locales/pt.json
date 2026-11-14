@@ -2325,7 +2325,7 @@
       "distance": "Distância",
       "otherDistance": "Outra",
       "otherKm": "Distância ({unit})",
-      "time": "Tempo (hh:mm:ss)",
+      "time": "Tempo",
       "year": "Ano",
       "none": "Não tenho resultados para informar",
       "distances": {
@@ -2333,7 +2333,10 @@
         "10k": "10 km",
         "21k": "Meia maratona",
         "42k": "Maratona"
-      }
+      },
+      "hours": "Horas",
+      "minutes": "Minutos",
+      "seconds": "Segundos"
     },
     "experienceNotes": {
       "label": "Observações sobre sua experiência (opcional)",
@@ -2405,7 +2408,7 @@
       "outOfRange": "Informe um valor entre {min} e {max}.",
       "invalidAnswer": "Este valor não é válido.",
       "textTooLong": "O texto está longo demais.",
-      "timeFormat": "Use o formato hh:mm:ss, por exemplo 0:52:30.",
+      "timeFormat": "Informe um tempo válido: horas, minutos e segundos inteiros, com minutos e segundos de 0 a 59.",
       "raceIncomplete": "Preencha distância, tempo e ano de cada resultado.",
       "anamnesisConflict": "Suas respostas mudaram em outra sessão. Recarregue a página para continuar.",
       "anamnesisIncomplete": "Ainda há perguntas sem resposta.",
@@ -2418,6 +2421,42 @@
       "weightRequired": "Mantenha ao menos um registro de peso ou escolha \"Prefiro não informar\" na anamnese.",
       "load": "Não foi possível carregar sua anamnese.",
       "generic": "Não foi possível salvar. Tente novamente."
+    },
+    "placeholders": {
+      "birth_year": "Ex.: 1990",
+      "height_cm": "Ex.: 172",
+      "feet": "Ex.: 5",
+      "inches": "Ex.: 8",
+      "weight": {
+        "metric": "Ex.: 68,5",
+        "imperial": "Ex.: 151"
+      },
+      "motivations": "Ex.: acompanhar meus filhos",
+      "runs_per_week": "Ex.: 3",
+      "weekly_distance_km": {
+        "km": "Ex.: 25",
+        "mi": "Ex.: 15"
+      },
+      "longest_run_km": {
+        "km": "Ex.: 12",
+        "mi": "Ex.: 8"
+      },
+      "raceDistance": {
+        "km": "Ex.: 15",
+        "mi": "Ex.: 10"
+      },
+      "race": {
+        "hours": "Ex.: 0",
+        "minutes": "Ex.: 52",
+        "seconds": "Ex.: 30",
+        "year": "Ex.: {year}"
+      },
+      "experienceNotes": "Ex.: corri dos 18 aos 25 anos e voltei em 2024, depois de uma pausa de 5 anos.",
+      "other_activities": "Ex.: natação 2x por semana e ciclismo aos domingos",
+      "current_pain": "Ex.: dor no joelho direito há 2 semanas, pior nas descidas",
+      "injuries_12_months": "Ex.: fascite plantar em março, tratada com fisioterapia",
+      "professional_restriction": "Ex.: evitar treinos intensos até a próxima avaliação cardiológica",
+      "health_conditions": "Ex.: asma controlada com medicação"
     }
   }
 }

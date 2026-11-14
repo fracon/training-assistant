@@ -49,6 +49,14 @@ test('Chrome PT/EN desktop/mobile: the anamnesis guides, validates, resumes, com
       assert.equal(await evaluate("document.getElementById('anamnesisLoadError').getBoundingClientRect().height"), 0);
       // No answer is pre-selected, health or otherwise.
       assert.equal(await evaluate("document.querySelectorAll('#anamnesisStepFields input:checked').length"), 0);
+      // Numeric answers are number inputs with the backend limits and a valid example.
+      assert.deepEqual(await evaluate("['q-birth_year','q-height_cm','q-weight','weightValue'].map((id)=>{const e=document.getElementById(id);return [e.type,e.placeholder,e.min!=='',e.max!==''];})"), [
+        ['number', a.placeholders.birth_year, true, true],
+        ['number', a.placeholders.height_cm, true, true],
+        ['number', a.placeholders.weight.metric, true, true],
+        ['number', a.placeholders.weight.metric, true, true],
+      ]);
+      assert.equal(await evaluate("document.getElementById('q-motivations-other').placeholder"), a.placeholders.motivations);
 
       // An empty step is refused field by field, focusing the first question.
       await evaluate("document.getElementById('anamnesisNext').click()");
@@ -61,7 +69,7 @@ test('Chrome PT/EN desktop/mobile: the anamnesis guides, validates, resumes, com
       await capture(`anamnesis-errors-${language}-${width}`);
 
       // Out-of-range input is explained; "rather not say" disables the value.
-      await evaluate(fill([['q-birth_year', '1800'], ['q-weight', '71,5']]));
+      await evaluate(fill([['q-birth_year', '1800'], ['q-weight', '71.5']]));
       await evaluate(`${pick('q-height_cm-status', 'declined')};${pick('q-motivations', 'weight_loss')};${pick('q-motivations', 'other')}`);
       assert.equal(await evaluate("document.getElementById('q-height_cm').disabled"), true);
       assert.equal(await evaluate("document.getElementById('q-motivations-other').closest('.anamnesis-details').hidden"), false);
@@ -75,6 +83,7 @@ test('Chrome PT/EN desktop/mobile: the anamnesis guides, validates, resumes, com
       await wait(`document.documentElement.lang === '${other}'`);
       assert.equal(await stepTitle(), otherMessages.anamnesis.steps.about.title);
       assert.equal(await evaluate("document.getElementById('q-birth_year').value"), '1800');
+      assert.equal(await evaluate("document.getElementById('q-birth_year').placeholder"), otherMessages.anamnesis.placeholders.birth_year);
       assert.equal(await evaluate("document.getElementById('anamnesisProgress').textContent"), otherMessages.anamnesis.progress.replace('{current}', '1').replace('{total}', '5'));
       await evaluate(`document.querySelector('.lang-switch [data-lang="${language}"]').click()`);
       await wait(`document.documentElement.lang === '${language}'`);
@@ -103,7 +112,27 @@ test('Chrome PT/EN desktop/mobile: the anamnesis guides, validates, resumes, com
       await evaluate(fill([['q-runs_per_week', '2'], ['q-weekly_distance_km', '12']]));
       assert.equal(await evaluate("document.querySelector('[data-key=\"weekly_distance_km\"]').hidden"), false);
       await evaluate(pick('q-longest_run_km-status', 'unknown'));
-      await evaluate(pick('q-race_results-none', 'none'));
+      assert.deepEqual(await evaluate("['q-runs_per_week','q-weekly_distance_km'].map((id)=>[document.getElementById(id).type,document.getElementById(id).placeholder])"), [
+        ['number', a.placeholders.runs_per_week],
+        ['number', a.placeholders.weekly_distance_km.km],
+      ]);
+      // A race time is hours, minutes and seconds; minutes above 59 are refused.
+      await evaluate("document.querySelector('[data-key=\"race_results\"] > .btn-secondary').click()");
+      assert.equal(await evaluate('document.activeElement.id'), 'q-race-1-distance');
+      assert.deepEqual(await evaluate("['hours','minutes','seconds','year'].map((k)=>{const e=document.getElementById('q-race-1-'+k);return [e.type,e.placeholder];})"), [
+        ['number', a.placeholders.race.hours],
+        ['number', a.placeholders.race.minutes],
+        ['number', a.placeholders.race.seconds],
+        ['number', a.placeholders.race.year.replace('{year}', String(new Date().getFullYear() - 1))],
+      ]);
+      await evaluate(fill([['q-race-1-minutes', '75'], ['q-race-1-seconds', '10'], ['q-race-1-year', '2025']]));
+      await evaluate("document.getElementById('anamnesisNext').click()");
+      await wait("!document.getElementById('q-race_results-error').hidden");
+      assert.equal(await evaluate("document.getElementById('q-race_results-error').textContent"), a.errors.timeFormat);
+      assert.equal(await evaluate("document.getElementById('q-race-1-minutes').getAttribute('aria-invalid')"), 'true');
+      assert.equal(await evaluate('document.documentElement.scrollWidth > innerWidth'), false);
+      await capture(`anamnesis-race-${language}-${width}`);
+      await evaluate(fill([['q-race-1-minutes', '24']]));
       await evaluate(fill([['q-experience-notes', 'Synthetic notes from the anamnesis']]));
       await evaluate("document.getElementById('anamnesisNext').click()");
       await wait(`document.getElementById('anamnesisStepTitle').textContent === ${JSON.stringify(a.steps.routine.title)}`);
@@ -122,6 +151,7 @@ test('Chrome PT/EN desktop/mobile: the anamnesis guides, validates, resumes, com
       await wait("!document.getElementById('anamnesisReview').hidden");
       assert.equal(await evaluate('document.activeElement.id'), 'anamnesisReviewTitle');
       assert.match(await evaluate("document.getElementById('anamnesisSummary').textContent"), /Synthetic knee discomfort/);
+      assert.match(await evaluate("document.getElementById('anamnesisSummary').textContent"), /0:24:10 · 2025/);
       await evaluate("document.getElementById('anamnesisComplete').click()");
       await wait(`document.getElementById('anamnesisStatus').textContent === ${JSON.stringify(a.status.completed)}`);
       assert.equal(await evaluate("document.getElementById('anamnesisReviewTitle').textContent"), a.answersTitle);
@@ -166,6 +196,36 @@ test('Chrome PT/EN desktop/mobile: the anamnesis guides, validates, resumes, com
       assert.equal(await evaluate('document.activeElement.id'), 'weightDate');
     }
   }
+
+  // A pending weight-log edit keeps its meaning when the body unit changes:
+  // 71.5 kg shown as 157.6 lb is saved back as ~71.5 kg, not as 157.6 kg or 71.5 lb.
+  await evaluate("document.querySelectorAll('#weightList button[data-action=\"edit\"]')[0].click()");
+  assert.equal(await evaluate("document.getElementById('weightValue').value"), '71.5');
+  await evaluate("document.getElementById('anamnesisOpenPreferences').click()");
+  await wait("!!document.querySelector('#preferencesForm input[name=\"body_unit\"][value=\"imperial\"]')");
+  await evaluate("document.querySelector('#preferencesForm input[name=\"body_unit\"][value=\"imperial\"]').click();document.getElementById('preferencesSubmit').click()");
+  await wait("/lb/.test(document.getElementById('weightValueLabel').textContent)");
+  assert.equal(await evaluate("document.getElementById('weightValue').value"), '157.6');
+  assert.equal(await evaluate("document.getElementById('weightValue').placeholder"), en.anamnesis.placeholders.weight.imperial);
+  await evaluate("document.getElementById('weightSubmit').click()");
+  await wait("document.activeElement?.dataset.action === 'edit'");
+  const kept = db.prepare('SELECT weight_kg FROM body_weight_entries ORDER BY measured_on DESC LIMIT 1').get().weight_kg;
+  assert.ok(Math.abs(kept - 71.5) < 0.05, `weight kept as ${kept} kg`);
+
+  // An open step keeps the revision it was rendered from: a weight-log
+  // refresh must not let it silently overwrite another tab's save.
+  await evaluate("document.querySelector('#anamnesisSummary button[data-step=\"routine\"]').click()");
+  await wait("!document.getElementById('anamnesisWizard').hidden");
+  await evaluate("(async()=>{const r=await (await fetch('/api/anamnesis')).json();const w=await fetch('/api/anamnesis',{method:'PUT',headers:{'content-type':'application/json'},body:JSON.stringify({answers:{strength_training:{status:'answered',value:'occasional'}},expected_revision:r.anamnesis.revision})});if(!w.ok)throw Error('other tab save failed');})()");
+  await evaluate(fill([['weightValue', '150']]));
+  await evaluate("document.getElementById('weightDate').dataset.iso = '2026-01-10'");
+  await evaluate("document.getElementById('weightSubmit').click()");
+  await wait("document.querySelectorAll('#weightList li').length === 3 && !document.getElementById('weightSubmit').disabled");
+  await evaluate(`${pick('q-strength_training', 'weekly_1')};document.getElementById('anamnesisNext').click()`);
+  await wait("!document.getElementById('anamnesisFormError').hidden");
+  assert.equal(await evaluate("document.getElementById('anamnesisFormError').textContent"), en.anamnesis.errors.anamnesisConflict);
+  assert.match(db.prepare('SELECT answers_json FROM athlete_anamnesis').get().answers_json, /"occasional"/);
+  await evaluate("document.getElementById('anamnesisCancel').click()");
 
   // Erasing removes answers and weights after confirmation.
   await evaluate("document.getElementById('anamnesisDelete').click()");
