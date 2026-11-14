@@ -1060,8 +1060,9 @@ async function complete() {
 }
 
 function renderStatus() {
-  // Download and erase only when something is stored: answers or weights.
-  $('anamnesisDataActions').hidden = data.anamnesis.status === 'not_started' && data.weights.length === 0;
+  // Download and erase only once the anamnesis is completed: while the first
+  // one is still being answered there is nothing finished to export or erase.
+  $('anamnesisDataActions').hidden = data.anamnesis.status !== 'completed';
   const badge = $('anamnesisStatus');
   badge.hidden = false;
   badge.className = `anamnesis-badge status-${data.anamnesis.status}`;

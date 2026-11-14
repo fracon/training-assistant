@@ -8,7 +8,7 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.43.0`); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.43.1`); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
@@ -287,7 +287,8 @@ AI integration (PR 2):
   `history.replaceState`) or a "required" card, and after completion a
   "Continue to the dashboard" action; the welcome tour then opens on the
   dashboard for a `new` account. Links that would only bounce back (weight
-  log, other sources) are hidden until completion. `POST /api/cycles`
+  log, other sources) and the download/erase actions are hidden until
+  completion, also while a first anamnesis is being answered. `POST /api/cycles`
   refuses with `409 anamnesisRequired`. Login, registration, logout,
   preferences, language and feedback stay available.
 - `POST /api/ai/executions` refuses `cycle` and `workouts` with `409
