@@ -269,11 +269,8 @@ function createCycleFormFlow({ i18n, planning, onSaved }) {
   const form = document.getElementById('cycleForm');
   const save = document.getElementById('cycleSaveBtn');
   let revision = 0, saving = false, trigger = null;
-  const trap = createDialogFocusTrap(modal, () => {
-    const picker = modal.querySelector('input[aria-expanded="true"]');
-    if (picker) { picker.datePicker.destroy();return; }
-    close();
-  });
+  // The shared trap closes an open DatePicker before the dialog.
+  const trap = createDialogFocusTrap(modal, () => close());
   function close(restore = true) {
     if (modal.classList.contains('hidden')) return;
     revision++;

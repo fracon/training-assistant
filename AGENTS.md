@@ -8,7 +8,7 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.44.5`); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.44.6`); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
@@ -663,7 +663,13 @@ are stable identifiers, not a statement of scope.
 - Distances and temperatures are stored in canonical metric units and converted
   for display/prompt generation through `src/public/shared/units.js`. Displayed
   dates use the shared locale-aware date formatter. Date inputs use the shared
-  DatePicker component, not raw text or uncontrolled native date inputs.
+  DatePicker component, not raw text or uncontrolled native date inputs. Its
+  popup is `position: fixed`, moved into the open `.modal-backdrop` so no
+  scrolling card clips it, and corrected against the real containing block
+  (`#appView` keeps a transform from its entrance animation). It always opens
+  on the selected date's month, and inside a `createDialogFocusTrap` dialog
+  Escape closes an open picker first, returning focus to its field, before
+  closing the dialog (`personalRecords.browser.test.js`).
 
 ## Onboarding architecture and contract
 

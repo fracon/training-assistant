@@ -48,6 +48,9 @@ Migration `2026-11-personal-records-v1` creates `personal_records` and
 the current declared race answer separately from automatically copied marks; it cascades
 also when the anamnesis is erased. Existing questionnaire answers are captured
 before historical results are compared. Rerunning the migration preserves data.
+Synchronization keeps the order in which the athlete answered race results:
+editing one distance never moves the others, and a distance added from Records
+or a session follows the answered ones.
 
 An explicitly answered race question (including an empty list) receives the
 current best time per standard distance automatically. Other distances remain

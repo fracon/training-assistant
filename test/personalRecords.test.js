@@ -383,3 +383,43 @@ test('the latest explicit declaration wins in both directions and only replaces 
   assert.equal(readRecords(db,1).records[0].manual,null);
   assert.deepEqual([best(db).origin,best(db).time_seconds],['session',1440]);
 });
+
+test('synchronization keeps the order in which the athlete answered race results', (t) => {
+  const db=setup(t);
+  anam(db,[race('5k'),race('other',5400,2023),race('10k',3300,2023)]);
+  const order=()=>readAnamnesis(db,1).anamnesis.answers.race_results.value.map((item)=>item.distance);
+  saveRecord(db,1,'5k',{time_seconds:1620});
+  assert.deepEqual(order(),['5k','other','10k']);
+  // Editing another distance in the anamnesis keeps the 5 km declaration in place.
+  anam(db,readAnamnesis(db,1).anamnesis.answers.race_results.value.map((item)=>item.distance==='10k'?{...item,time_seconds:3240}:item));
+  assert.deepEqual(order(),['5k','other','10k']);
+  assert.equal(readRecords(db,1).records[0].manual.time_seconds,1620);
+  // A new distance follows the answered ones.
+  saveRecord(db,1,'42k',{time_seconds:15000});
+  assert.deepEqual(order(),['5k','other','10k','42k']);
+});
+
+test('order preservation handles repeated declarations, session-only distances and a missing current answer', (t) => {
+  const db=setup(t);
+  // Two 5 km answers stay together in their place when another distance changes.
+  anam(db,[race('5k',1500,2024),race('5k',1560,2023),race('10k',3300,2023)]);
+  anam(db,readAnamnesis(db,1).anamnesis.answers.race_results.value.map((item)=>item.distance==='10k'?{...item,time_seconds:3240}:item));
+  const order=()=>readAnamnesis(db,1).anamnesis.answers.race_results.value.map((item)=>`${item.distance}:${item.time_seconds}`);
+  assert.deepEqual(order(),['5k:1500','10k:3240']);
+  // Repeated unchanged declarations of one distance are restored once, in place.
+  captureAnamnesisRecords(db,1,answer([race('5k',1500),race('5k',1560),race('10k',3000)]),answer([race('5k',1500),race('5k',1560),race('10k',3240)]));
+  assert.deepEqual(JSON.parse(db.prepare('SELECT answer_json FROM anamnesis_record_sources WHERE user_id=1').get().answer_json).value.map((item)=>item.distance),['5k','5k','10k']);
+  syncAnamnesisRecords(db,1);
+  assert.deepEqual(order(),['5k:1500','10k:3000']);
+  anam(db,readAnamnesis(db,1).anamnesis.answers.race_results.value.map((item)=>item.distance==='10k'?{...item,time_seconds:3240}:item));
+  // A distance proven only by a session follows the declared ones.
+  session(db,21.1,'1:50:00');
+  syncAnamnesisRecords(db,1);
+  assert.deepEqual(order(),['5k:1500','10k:3240','21k:6600']);
+  // Defensive: a stored answer without race results (direct database edit) is rebuilt in declaration order.
+  const answers=JSON.parse(db.prepare('SELECT answers_json FROM athlete_anamnesis WHERE user_id=1').get().answers_json);
+  delete answers.race_results;
+  db.prepare('UPDATE athlete_anamnesis SET answers_json=? WHERE user_id=1').run(JSON.stringify(answers));
+  syncAnamnesisRecords(db,1);
+  assert.deepEqual(order(),['5k:1500','10k:3240','21k:6600']);
+});

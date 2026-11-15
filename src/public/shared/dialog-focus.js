@@ -47,6 +47,10 @@ export function createDialogFocusTrap(dialog, onEscape) {
     if (!active) return;
     if (event.key === 'Escape') {
       event.preventDefault();
+      // Escape closes the innermost layer first: an open DatePicker inside
+      // the dialog closes (returning focus to its field), the dialog stays.
+      const picker = dialog.querySelector('input[aria-expanded="true"]')?.datePicker;
+      if (picker) { picker.destroy(); return; }
       onEscape?.();
       return;
     }

@@ -108,6 +108,8 @@ test('Chrome: records preserve source data and manual drafts in a localized, acc
  for(const [lang,messages] of [['pt-BR',pt],['en-US',en]]) for(const [width,height] of [[1280,800],[390,844],[390,600]]){
   db.prepare('UPDATE users SET preferred_lang=? WHERE id=1').run(lang);
   await command('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:width===390});
+  // A dated manual record: the reused picker must open on that month.
+  saveRecord(db,1,'21k',{time_seconds:7500,achieved_on:'2025-01-01',race_name:'Original race'});
   await command('Page.navigate',{url:origin+'/records.html'});
   await wait("document.querySelectorAll('#recordsList > section').length===4");
   await click('[data-focus-key="21k-edit"]');
@@ -125,6 +127,18 @@ test('Chrome: records preserve source data and manual drafts in a localized, acc
     corners:[[r.left+4,r.top+4],[r.right-4,r.top+4],[r.left+4,r.bottom-4],[r.right-4,r.bottom-4]].every(([x,y])=>p.contains(document.elementFromPoint(x,y)))};})()`);
   assert.deepEqual(visibility,{inside:true,visible:true,corners:true},`${lang} ${width}x${height}`);
   await capture(`records-calendar-${lang}-${width}-${height}`);
+  assert.equal(await evaluate("document.querySelector('#recordDate-calendar-popup .is-selected')?.dataset.date"),'2025-01-01','opens on the selected month');
+  // Escape closes only the calendar: the modal, typed values and focus stay.
+  const typedMinutes=await evaluate("document.getElementById('recordMinutes').value");
+  await evaluate("document.getElementById('recordMinutes').value='3'");
+  await evaluate("document.querySelector('#recordDate-calendar-popup .is-selected').focus()");
+  await key('Escape','Escape',27);
+  assert.equal(await evaluate("document.getElementById('recordDate-calendar-popup').hidden"),true);
+  assert.equal(await evaluate("document.getElementById('recordFormCard').hidden"),false);
+  assert.equal(await evaluate('document.activeElement.id'),'recordDate');
+  assert.equal(await evaluate("document.getElementById('recordMinutes').value"),'3');
+  await evaluate(`document.getElementById('recordMinutes').value=${JSON.stringify(typedMinutes)}`);
+  await mouseClick('#recordDate');
   await mouseClick('#recordDate-calendar-popup [data-date]');
   assert.equal(await evaluate("document.getElementById('recordDate-calendar-popup').classList.contains('hidden')"),true);
   assert.ok(await evaluate("document.getElementById('recordDate').dataset.iso"));
@@ -158,6 +172,20 @@ test('Chrome: records preserve source data and manual drafts in a localized, acc
   await command('Page.navigate',{url:origin+'/'+page+'.html'});
   await wait("document.body.classList.contains('shell-mounted') && !!document.querySelector('.field-hint')");
   assert.deepEqual(await evaluate("(()=>{const s=getComputedStyle(document.querySelector('.field-hint'));return [s.opacity,s.lineHeight]})()"),[opacity,'normal'],page);
+ }
+ // Outside a modal the calendar opens attached to its field, even though the
+ // page container keeps a transform from its entrance animation.
+ await command('Emulation.setDeviceMetricsOverride',{width:1280,height:800,deviceScaleFactor:1,mobile:false});
+ await command('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'no-preference'}]});
+ for(const [page,id] of [['weight','weightDate'],['ai-coach','targetDateDisplay']]){
+  await command('Page.navigate',{url:origin+'/'+page+'.html'});
+  await wait(`document.body.classList.contains('shell-mounted') && !!document.getElementById('${id}')?.closest('.date-picker')`);
+  await wait("getComputedStyle(document.getElementById('appView')).transform!=='none'");
+  await evaluate(`document.getElementById('${id}').scrollIntoView({block:'center'});document.getElementById('${id}').click()`);
+  await wait(`!document.getElementById('${id}-calendar-popup').hidden`);
+  const gap=await evaluate(`(()=>{const p=document.getElementById('${id}-calendar-popup').getBoundingClientRect(),i=document.getElementById('${id}').getBoundingClientRect();
+   return {left:Math.round(Math.abs(p.left-i.left)),attached:Math.abs(p.top-i.bottom-6)<=1||Math.abs(i.top-p.bottom-6)<=1}})()`);
+  assert.deepEqual(gap,{left:0,attached:true},page);
  }
  await command('Page.navigate',{url:origin+'/training-memory.html'});
  await wait("!!document.getElementById('memory-personalRecords')");

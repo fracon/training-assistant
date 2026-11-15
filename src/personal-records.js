@@ -91,17 +91,25 @@ function captureAnamnesisRecords(db, userId, answer, previous) {
   const stored = db.prepare('SELECT answer_json FROM anamnesis_record_sources WHERE user_id=?').get(userId);
   if (stored && answer?.status === 'answered' && previous?.status === 'answered') {
     const original = stored.answer_json ? JSON.parse(stored.answer_json) : null;
-    let races = [...answer.value];
+    const declared = (distance) => (original?.status === 'answered' ? original.value.filter((race) => race.distance === distance) : []);
+    const unchanged = new Set();
     for (const distance of Object.keys(DISTANCES)) {
       const before = previous.value.filter((race) => race.distance === distance);
       const submitted = answer.value.filter((race) => race.distance === distance);
-      if (JSON.stringify(before) === JSON.stringify(submitted)) {
-        races = races.filter((race) => race.distance !== distance);
-        if (original?.status === 'answered') races.push(...original.value.filter((race) => race.distance === distance));
-      } else {
-        db.prepare('DELETE FROM personal_records WHERE user_id=? AND distance=?').run(userId, distance);
-      }
+      if (JSON.stringify(before) === JSON.stringify(submitted)) unchanged.add(distance);
+      else db.prepare('DELETE FROM personal_records WHERE user_id=? AND distance=?').run(userId, distance);
     }
+    // Keep the athlete's order: an unchanged distance keeps its declaration in
+    // the position where it was answered instead of moving to the end.
+    const races = [];
+    const placed = new Set();
+    for (const race of answer.value) {
+      if (!unchanged.has(race.distance)) { races.push(race); continue; }
+      if (placed.has(race.distance)) continue;
+      placed.add(race.distance);
+      races.push(...declared(race.distance));
+    }
+    for (const distance of unchanged) if (!placed.has(distance)) races.push(...declared(distance));
     answer = { status: 'answered', value: races };
   }
   db.prepare(`INSERT INTO anamnesis_record_sources(user_id,answer_json) VALUES (?,?)
@@ -124,8 +132,18 @@ function syncAnamnesisRecords(db, userId, now = new Date().toISOString()) {
     const previous = answers.race_results?.value?.find((race) => race.distance === record.distance);
     races.push({ distance: record.distance, distance_km: record.distance_km, time_seconds: best.time_seconds, year: best.year ?? previous?.year ?? null });
   }
-  const order = (distance) => { const index = answer.value.findIndex((race) => race.distance === distance); return index < 0 ? answer.value.length : index; };
-  races.sort((a, b) => order(a.distance) - order(b.distance));
+  // Keep the order the athlete sees in the anamnesis; new distances follow
+  // their declaration order, after the answered ones. The sort is stable.
+  const current = answers.race_results?.value ?? [];
+  const same = (a, b) => a.distance === b.distance &&
+    (a.distance !== 'other' || (a.distance_km === b.distance_km && a.time_seconds === b.time_seconds));
+  const order = (race) => {
+    const shown = current.findIndex((item) => same(item, race));
+    if (shown >= 0) return shown;
+    const index = answer.value.findIndex((item) => same(item, race));
+    return current.length + (index < 0 ? answer.value.length : index);
+  };
+  races.sort((a, b) => order(a) - order(b));
   const next = { status: 'answered', value: races };
   if (JSON.stringify(answers.race_results) === JSON.stringify(next)) return;
   answers.race_results = next;
