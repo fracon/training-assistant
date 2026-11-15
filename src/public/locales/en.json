@@ -2542,19 +2542,17 @@
     },
     "loading": "Loading records…",
     "retry": "Try again",
-    "empty": "No record yet.",
-    "formTitle": "Add or edit a manual record",
+    "formTitle": "Personal record",
     "distance": "Distance",
     "hours": "Hours",
     "minutes": "Minutes",
     "seconds": "Seconds",
     "date": "Record date (optional)",
-    "clearDate": "Clear date",
     "race": "Race name (optional)",
     "save": "Save record",
     "cancel": "Cancel",
-    "edit": "Edit manual record",
-    "add": "Add manual record",
+    "edit": "Update record",
+    "add": "Add record",
     "remove": "Remove manual record",
     "removeConfirm": "Remove the manual {distance} record? Other sources will still be considered.",
     "origin": {
@@ -2576,6 +2574,6 @@
       "invalidDate": "Enter a valid date between 1950 and today.",
       "invalidRaceName": "Race name must be at most 120 characters."
     },
-    "openAnamnesis": "Edit in running profile"
+    "time": "Time"
   }
 }

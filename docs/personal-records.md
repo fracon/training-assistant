@@ -9,7 +9,11 @@ selected from the athlete's original anamnesis answers, one editable manual
 record per distance and all eligible stored session results. Manual records
 remain editable even when another source wins. Ties prefer the manual record,
 then the original anamnesis answer, then sessions in date/ID order. The page
-shows the winning source and a session link where available. Editing/removing
+shows the winning source and a session link where available. Updating a record
+opens the form with the current best time, regardless of origin. Empty distances
+remain visible without placeholder marks. The form reuses the anamnesis duration
+layout and synchronizes new best times automatically; no link to edit the
+anamnesis or separate clear-date action is shown. Editing/removing
 an anamnesis source uses the questionnaire; session sources use the result page.
 
 ## Measured result eligibility

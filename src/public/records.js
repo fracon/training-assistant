@@ -37,15 +37,15 @@ function render() {
       const date = best.achieved_on ? formatDate(best.achieved_on, i18n.language) : best.year ? t('year', { year: best.year }) : t('unknownDate');
       card.append(element('p', `${t(`origin.${best.origin}`)} · ${date}`, 'record-source'));
       if (best.race_name) card.append(element('p', best.race_name));
-      if (best.training_id || best.origin === 'anamnesis') {
-        const link = element('a', t(best.training_id ? 'openSession' : 'openAnamnesis'));
-        link.href = best.training_id ? `/training-result.html?id=${best.training_id}` : '/anamnesis.html';
+      if (best.training_id) {
+        const link = element('a', t('openSession'));
+        link.href = `/training-result.html?id=${best.training_id}`;
         card.append(link);
       }
-    } else card.append(element('p', t('empty'), 'field-hint'));
+    }
     if (record.manual && best?.origin !== 'manual') card.append(element('p', t('manualTime', { time: time(record.manual.time_seconds) }), 'record-source'));
     const actions = element('div', '', 'record-actions');
-    const edit = action(t(record.manual ? 'edit' : 'add'), (button) => editRecord(record, button));
+    const edit = action(t(best ? 'edit' : 'add'), (button) => editRecord(record, button));
     edit.setAttribute('aria-label', `${edit.textContent} · ${name}`);
     edit.dataset.focusKey = `${record.distance}-edit`;
     actions.append(edit);
@@ -89,12 +89,13 @@ function editRecord(record, button) {
   clearError();
   $('recordFormCard').hidden = false;
   $('recordDistance').value = record.distance;
-  const seconds = record.manual?.time_seconds;
+  const current = record.best;
+  const seconds = current?.time_seconds;
   ['Hours', 'Minutes', 'Seconds'].forEach((part, index) => {
     $(`record${part}`).value = seconds === undefined ? '' : [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60][index];
   });
-  picker.setValue(record.manual?.achieved_on || '');
-  $('recordRace').value = record.manual?.race_name || '';
+  picker.setValue(current?.achieved_on || '');
+  $('recordRace').value = current?.race_name || '';
   $('recordHours').focus();
 }
 function closeForm({ restore = true } = {}) {
@@ -157,7 +158,6 @@ async function init() {
   picker = createDatePicker($('recordDate'), { getLanguage: () => i18n.language, getWeekStart: () => getUserPreferences().first_day_of_week });
   $('recordForm').addEventListener('submit', submit);
   $('recordCancel').addEventListener('click', () => { if (!busy) closeForm(); });
-  $('recordClearDate').addEventListener('click', () => picker.setValue(''));
   $('recordDistance').addEventListener('change', () => {
     const record = data.records.find((row) => row.distance === $('recordDistance').value);
     editRecord(record, $('recordsList').querySelector(`[data-focus-key="${record.distance}-edit"]`));

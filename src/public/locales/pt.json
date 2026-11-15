@@ -2542,19 +2542,17 @@
     },
     "loading": "Carregando recordes…",
     "retry": "Tentar novamente",
-    "empty": "Nenhuma marca registrada.",
-    "formTitle": "Registrar ou editar marca manual",
+    "formTitle": "Recorde pessoal",
     "distance": "Distância",
     "hours": "Horas",
     "minutes": "Minutos",
     "seconds": "Segundos",
     "date": "Data da marca (opcional)",
-    "clearDate": "Limpar data",
     "race": "Nome da prova (opcional)",
-    "save": "Salvar marca",
+    "save": "Salvar recorde",
     "cancel": "Cancelar",
-    "edit": "Editar marca manual",
-    "add": "Adicionar marca manual",
+    "edit": "Atualizar recorde",
+    "add": "Adicionar recorde",
     "remove": "Remover marca manual",
     "removeConfirm": "Remover a marca manual de {distance}? As outras fontes continuam sendo consideradas.",
     "origin": {
@@ -2576,6 +2574,6 @@
       "invalidDate": "Informe uma data válida entre 1950 e hoje.",
       "invalidRaceName": "O nome da prova deve ter até 120 caracteres."
     },
-    "openAnamnesis": "Editar na anamnese"
+    "time": "Tempo"
   }
 }

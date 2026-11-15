@@ -32,9 +32,14 @@ test('Chrome: personal records PT/EN desktop/mobile, manual editing, source link
    assert.equal(await evaluate("document.querySelector('#recordsList section .record-value').textContent"),'0:25:00');
    assert.equal(await evaluate("[...document.querySelectorAll('#recordsList a')].find(link=>link.href.includes('training-result')).getAttribute('href')"),`/training-result.html?id=${id}`);
    assert.equal(await evaluate('document.documentElement.scrollWidth <= window.innerWidth'),true);
+   assert.equal(await evaluate("document.querySelectorAll('#recordsList > section')[2].querySelector('.record-value, .record-source, .field-hint')"),null);
    await capture(`records-${lang}-${width}`);
    await evaluate("document.querySelector('[data-focus-key=\"5k-edit\"]').click()");
    assert.equal(await evaluate('document.activeElement.id'),'recordHours');
+   assert.equal(await evaluate("document.getElementById('recordMinutes').value"),'25');
+   assert.equal(await evaluate("document.querySelector('#recordsList a[href=\"/anamnesis.html\"]')"),null);
+   assert.equal(await evaluate("document.querySelector('[data-focus-key=\"5k-edit\"]').textContent"),messages.records.edit);
+   for (const part of ['Hours','Minutes','Seconds']) await fill('record'+part,'');
    await evaluate("document.getElementById('recordSave').click()");
    await wait("!document.getElementById('recordError').hidden");
    assert.equal(await evaluate('document.activeElement.id'),'recordHours');
@@ -49,8 +54,7 @@ test('Chrome: personal records PT/EN desktop/mobile, manual editing, source link
    assert.equal(readAnamnesis(db,1).anamnesis.answers.race_results.value[0].time_seconds,1450);
    await evaluate("document.querySelector('[data-focus-key=\"5k-edit\"]').click()");
    await fill('recordMinutes','23');
-   await evaluate("document.getElementById('recordDate').dataset.iso='2025-02-01'");
-   await evaluate("document.getElementById('recordClearDate').click()");
+   assert.equal(await evaluate("document.getElementById('recordClearDate')"),null);
    assert.equal(await evaluate("document.getElementById('recordDate').dataset.iso"),'');
    const other = lang === 'en-US' ? 'pt-BR' : 'en-US';
    await evaluate(`document.querySelector('[data-lang="${other}"]').click()`);
