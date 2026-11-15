@@ -647,3 +647,10 @@
 @media (prefers-reduced-motion: reduce) {
   .cycle-planning-card, .cycle-planning-modal button, .cycle-card-actions .custom-tooltip { animation: none; transition: none; }
 }
+
+/* Optional athlete report in the planning modal (issue #119). */
+.modal-card .cycle-planning-notes { margin: 0; padding-top: 1rem; border-top: 1px solid var(--line); }
+/* Supporting text, not the modal's lead hint (which is enlarged above). */
+.cycle-planning-body .cycle-planning-notes .field-hint { color: var(--muted); font-size: .82rem; line-height: 1.5; }
+.modal-card .cycle-planning-notes[hidden] { display: none; }
+.cycle-planning-notes textarea { resize: vertical; min-height: 72px; }

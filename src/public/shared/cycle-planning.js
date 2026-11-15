@@ -15,6 +15,9 @@ export function createCyclePlanning({ i18n, user, onSummaryChange = () => {}, on
   const debug = document.getElementById('cyclePlanningDebug');
   const later = document.getElementById('cyclePlanningLater');
   const retry = document.getElementById('cyclePlanningRetry');
+  // Optional athlete report sent with a generation (issue #119).
+  const notesField = document.getElementById('cyclePlanningNotesField');
+  const notes = document.getElementById('cyclePlanningNotes');
   const pendingKeys = new Map();
   let cycleId=null, trigger=null, state=null, generation=0, readSequence=0, timer=null, busy=false, errorCode=null, saved=null, readFailed=false;
   const t = (key) => translate(i18n.messages,`cyclePlanning.${key}`);
@@ -75,7 +78,7 @@ export function createCyclePlanning({ i18n, user, onSummaryChange = () => {}, on
     later.className='btn btn-secondary';
     retry.hidden=!readFailed;retry.disabled=busy;retry.className='btn btn-primary';retry.textContent=t('retryLoad');
     generate.hidden=!state || readFailed;
-    if(!state){status.textContent=t(readFailed && !busy?'loadFailed':'loading');status.dataset.state=readFailed?'failed':'processing';generate.textContent=t('generate');document.getElementById('cyclePlanningActions').dataset.actionCount=String([...document.querySelectorAll('#cyclePlanningActions button')].filter((button)=>!button.hidden).length);return;}
+    if(!state){notesField.hidden=true;status.textContent=t(readFailed && !busy?'loadFailed':'loading');status.dataset.state=readFailed?'failed':'processing';generate.textContent=t('generate');document.getElementById('cyclePlanningActions').dataset.actionCount=String([...document.querySelectorAll('#cyclePlanningActions button')].filter((button)=>!button.hidden).length);return;}
     const latest=latestProposal();const proposal=selectedProposal();const execution=proposal?.execution;
     const runningProposal=pendingProposal();const running=Boolean(runningProposal);
     const candidate=execution?.state==='completed' && !proposal.applied;
@@ -86,6 +89,7 @@ export function createCyclePlanning({ i18n, user, onSummaryChange = () => {}, on
     generate.hidden=readFailed || needsAnamnesis || !state.available || !state.canGenerate || Boolean(running) || Boolean(saved && current && !ready);
     generate.className=ready?'btn btn-secondary':'btn btn-primary';
     generate.disabled=readFailed || busy || !state.available || !state.canGenerate || running;
+    notesField.hidden=generate.hidden;notes.disabled=generate.disabled;
     apply.hidden=!ready || readFailed;apply.disabled=readFailed || busy;
     later.className=!readFailed && (needsAnamnesis || !state.available || !state.canGenerate || (saved && current && !ready)) && !ready ? 'btn btn-primary' : 'btn btn-secondary';
     if(needsAnamnesis && !running)later.textContent=t('done');
@@ -169,9 +173,12 @@ export function createCyclePlanning({ i18n, user, onSummaryChange = () => {}, on
     // Keep the key after a lost response; a deliberate generation after a known result gets a new one.
     const id=cycleId;
     onGenerationRequested(id);
-    const key=pendingKeys.get(id) || crypto.randomUUID();pendingKeys.set(id,key);
-    await requestJson('/api/ai/executions',{purpose:'cycle',resource_id:id,idempotency_key:key});
-    if(pendingKeys.get(id)===key)pendingKeys.delete(id);
+    // A changed report is a different request, so it never reuses the key.
+    const report=notes.value.trim();
+    const pending=pendingKeys.get(id);
+    const key=pending?.report===report ? pending.key : crypto.randomUUID();pendingKeys.set(id,{key,report});
+    await requestJson('/api/ai/executions',{purpose:'cycle',resource_id:id,idempotency_key:key,...(report?{optional_context:report}:{})});
+    if(pendingKeys.get(id)?.key===key){pendingKeys.delete(id);notes.value='';}
   }));
   apply.addEventListener('click',()=>action(async()=>{
     const proposal=selectedProposal();
@@ -199,6 +206,7 @@ export function createCyclePlanning({ i18n, user, onSummaryChange = () => {}, on
   return {close,async open(id,button,options={}){
     clearTimeout(timer);
     modal.dataset.cycleId=String(id);
+    if(cycleId!==id)notes.value='';
     cycleId=id;trigger=button;generation++;state=null;busy=false;errorCode=null;saved=options.saved || null;readFailed=false;
     onOpen(id);
     document.getElementById('cyclePlanningAdmin').hidden=true;

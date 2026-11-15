@@ -2038,6 +2038,9 @@
     "recordsEmpty": "Nenhuma marca selecionada."
   },
   "cyclePlanning": {
+    "notesLabel": "Como você está agora? (opcional)",
+    "notesPlaceholder": "Ex.: recuperado da última prova, sem dores, quero voltar a treinos de qualidade e longos de 17–24 km.",
+    "notesHint": "Enviado somente nesta geração. A IA pesa o seu relato junto com as sessões registradas.",
     "admin": "Detalhes administrativos",
     "proposalIncompatible": "Proposta incompatível. Gere uma nova proposta para revisão.",
     "proposalOutdated": "Esta proposta está desatualizada. Você pode gerar um novo planejamento com as alterações salvas.",

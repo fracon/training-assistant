@@ -487,3 +487,28 @@ are dropped. The external spreadsheet prompt does not use structured evidence
 and remains unchanged. Existing weekly proposal and trace formats retain v3;
 the persisted payload hash changes with the adapted request, while explicit
 idempotency keys continue to identify the original request.
+
+## Athlete reports and requests (#119)
+
+The athlete's optional context for the week used to reach the model only as
+`context.taskNotes` deep in the JSON context: the adapted prompt dropped the
+"Additional context for this week" section, and the instructions told the
+model to ignore notes and not to infer recovery. A reported case (a marathon
+with cramps a week earlier, a 75-minute run tolerated with RPE 2 and no pain,
+and a request for quality sessions and 17–24 km long runs) received three easy
+runs with a shorter long run.
+
+Now the report leads the adapted prompt under "Athlete report for this week"
+(dated with the context `asOf`), and cycle and weekly payloads append
+`ATHLETE_REPORT_INSTRUCTIONS`: explicit requests are honored when evidence does
+not contradict them, with the dose adjusted, and any refusal cites the dated
+evidence and the criterion to honor it; a completed session with a realized
+RPE and no pain report counts as tolerated; load does not drop below what was
+recently tolerated without a recorded concern; hard efforts lose weight with
+time and later tolerated sessions; applied planning guides but does not
+override the current dated state; pain, injury, professional restrictions and
+worsening symptoms still prevail. Recovery is refused only as an inference
+from missing data. Section boundaries use the template's own headings, so text
+typed in the report cannot move them. The `weekly-workouts-v4` schema and the
+external prompt bytes are unchanged; executions record `guidanceVersion:
+athlete-reports-v1`. A real-model evaluation needs explicit authorization.

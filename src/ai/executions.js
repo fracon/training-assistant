@@ -248,7 +248,8 @@ function createExecutionService({
       throw new AiError('invalidIdempotencyKey');
     if (!['cycle', 'workouts', 'analysis'].includes(body.purpose))
       throw new AiError('invalidPurpose');
-    if (body.purpose !== 'workouts' && body.optional_context)
+    // Weekly workouts and cycle planning accept the athlete's report (#119).
+    if (body.purpose === 'analysis' && body.optional_context)
       throw new AiError('invalidFields');
     if (body.purpose === 'workouts' && body.resource_id != null)
       throw new AiError('invalidFields');
@@ -344,6 +345,8 @@ function createExecutionService({
           reasoning: 'medium',
           maxOutputTokens: limits.AI_MAX_OUTPUT_TOKENS,
           adapterVersion: operation.version,
+          // Instruction revision layered on the unchanged output schema (#119).
+          ...(['cycle', 'workouts'].includes(body.purpose) ? { guidanceVersion: 'athlete-reports-v1' } : {}),
           rate,
           rateVersion: '2026-10-14-conservative-ceiling',
           requestHash,
