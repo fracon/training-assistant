@@ -185,6 +185,33 @@ test('Chrome cycle planning PT/EN desktop/mobile: recovered generation, proposal
   assert.ok((await evaluate("document.getElementById('cyclePlanningContent').textContent")).includes('Geração cancelada localmente'));
   await command('Fetch.disable');socket.removeEventListener('message',holdPoll);
   release();release=null;await delay(50);await key('Escape','Escape',27);
+  // Issue #119: a generation response that arrives after the dialog was closed
+  // and reopened never clears a newer report typed in the new opening.
+  await open();
+  await evaluate("document.getElementById('cyclePlanningNotes').value='First synthetic report'");
+  let heldPost=null;let resolvePost;const postPaused=new Promise(r=>resolvePost=r);
+  const holdPost=(event)=>{const m=JSON.parse(event.data);if(m.method==='Fetch.requestPaused' && !heldPost){heldPost=m.params.requestId;resolvePost();}};
+  socket.addEventListener('message',holdPost);
+  await command('Fetch.enable',{patterns:[{urlPattern:origin+'/api/ai/executions',requestStage:'Request'}]});
+  const postBefore=calls;
+  await evaluate("document.getElementById('cyclePlanningGenerate').click()");
+  await postPaused;
+  await key('Escape','Escape',27);await wait("document.getElementById('cyclePlanningModal').hidden");
+  await open();
+  await evaluate("document.getElementById('cyclePlanningNotes').value='Second synthetic report'");
+  await command('Fetch.continueRequest',{requestId:heldPost});
+  for(let i=0;i<200 && calls===postBefore;i++)await delay(10);
+  assert.equal(calls,postBefore+1);
+  assert.ok(lastPrompt.includes('\nFirst synthetic report\n\n'));
+  await delay(200);
+  assert.equal(await evaluate("document.getElementById('cyclePlanningNotes').value"),'Second synthetic report');
+  await command('Fetch.disable');socket.removeEventListener('message',holdPost);
+  release();release=null;await delay(50);await key('Escape','Escape',27);await wait("document.getElementById('cyclePlanningModal').hidden");
+  // Reopening after a stale response clears only the report that was already sent.
+  await evaluate("document.getElementById('cyclePlanningNotes').value='First synthetic report'");
+  await open();
+  assert.equal(await evaluate("document.getElementById('cyclePlanningNotes').value"),'');
+  await key('Escape','Escape',27);await wait("document.getElementById('cyclePlanningModal').hidden");
   // Invalid dates produce an actionable localized error without starting a call.
   db.prepare("UPDATE training_cycles SET target_date='bad' WHERE id='private'").run();await open();const before=calls;await evaluate("document.getElementById('cyclePlanningGenerate').click()");await wait("!document.getElementById('cyclePlanningError').hidden");assert.equal(calls,before);assert.equal(await evaluate('document.activeElement.id'),'cyclePlanningError');
   assert.equal(await evaluate("document.getElementById('cyclePlanningError').textContent"),require('../src/public/locales/pt.json').cyclePlanning.errors.planningTargetDateInvalid);

@@ -1389,7 +1389,9 @@ the athlete's statements are reports to weigh. The weekly report leads the
 adapted prompt under its own heading and the cycle accepts the same optional
 report (`optional_context`, at most 2000 characters, analysis still refuses
 it) from an optional field in the planning modal, sent with that generation
-only and cleared after it. `context.taskNotes` is absent when empty, so older
+only and cleared after it; a response that arrives after the modal was closed
+or reopened never clears a newer report (only the already sent text is cleared
+on reopening). `context.taskNotes` is absent when empty, so older
 contexts keep their hash; output schemas, adapter versions and external PT/EN
 prompt bytes are unchanged, and executions record `guidanceVersion:
 athlete-reports-v1`. Context selection is unchanged on purpose (a v7 policy

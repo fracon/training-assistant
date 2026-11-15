@@ -19,6 +19,9 @@ export function createCyclePlanning({ i18n, user, onSummaryChange = () => {}, on
   const notesField = document.getElementById('cyclePlanningNotesField');
   const notes = document.getElementById('cyclePlanningNotes');
   const pendingKeys = new Map();
+  // Reports already sent whose response arrived after the dialog moved on:
+  // reopening that cycle with the same unsent-looking text clears it.
+  const sentReports = new Map();
   let cycleId=null, trigger=null, state=null, generation=0, readSequence=0, timer=null, busy=false, errorCode=null, saved=null, readFailed=false;
   const t = (key) => translate(i18n.messages,`cyclePlanning.${key}`);
   const latestProposal = () => state?.proposals?.[0] || null;
@@ -171,14 +174,20 @@ export function createCyclePlanning({ i18n, user, onSummaryChange = () => {}, on
   }
   generate.addEventListener('click',()=>action(async()=>{
     // Keep the key after a lost response; a deliberate generation after a known result gets a new one.
-    const id=cycleId;
+    const id=cycleId;const token=generation;
     onGenerationRequested(id);
     // A changed report is a different request, so it never reuses the key.
     const report=notes.value.trim();
     const pending=pendingKeys.get(id);
     const key=pending?.report===report ? pending.key : crypto.randomUUID();pendingKeys.set(id,{key,report});
     await requestJson('/api/ai/executions',{purpose:'cycle',resource_id:id,idempotency_key:key,...(report?{optional_context:report}:{})});
-    if(pendingKeys.get(id)?.key===key){pendingKeys.delete(id);notes.value='';}
+    if(pendingKeys.get(id)?.key===key){
+      pendingKeys.delete(id);
+      // A stale response (the dialog was closed or reopened meanwhile) never
+      // touches the shared field, which may hold a newer unsent report.
+      if(token===generation && cycleId===id)notes.value='';
+      else if(report)sentReports.set(id,report);
+    }
   }));
   apply.addEventListener('click',()=>action(async()=>{
     const proposal=selectedProposal();
@@ -206,7 +215,8 @@ export function createCyclePlanning({ i18n, user, onSummaryChange = () => {}, on
   return {close,async open(id,button,options={}){
     clearTimeout(timer);
     modal.dataset.cycleId=String(id);
-    if(cycleId!==id)notes.value='';
+    if(cycleId!==id || (sentReports.has(id) && notes.value.trim()===sentReports.get(id)))notes.value='';
+    sentReports.delete(id);
     cycleId=id;trigger=button;generation++;state=null;busy=false;errorCode=null;saved=options.saved || null;readFailed=false;
     onOpen(id);
     document.getElementById('cyclePlanningAdmin').hidden=true;

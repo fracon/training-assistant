@@ -1299,7 +1299,10 @@ It summarizes current backend artifacts and makes no additional paid call.
 
 The planning modal offers an optional "How are you now?" field (PT/EN, at most
 2000 characters) sent as `optional_context` with that generation only and
-cleared after it; a changed report never reuses a pending idempotency key.
+cleared after it; a changed report never reuses a pending idempotency key. A
+response that arrives after the modal was closed or reopened never clears the
+field, which may hold a newer report; reopening that cycle clears only the text
+that was already sent.
 The report becomes `context.taskNotes` (absent when empty, so older contexts
 keep their hash), leads the adapted prompt as "Current athlete report", and is
 weighed under the shared `ATHLETE_REPORT_INSTRUCTIONS` described in
