@@ -1,24 +1,20 @@
-@import url('./shared/theme.css');
-.records-page { max-width: 960px; margin: 0 auto; padding: 1.4rem 1rem 2rem; display: flex; flex-direction: column; gap: 1rem; }
+.records-page { max-width: 720px; margin: 0 auto; padding: 1.4rem 1rem 2rem; display: flex; flex-direction: column; gap: 1rem; }
 .records-page h1 { margin: 0 0 .25rem; font-size: 1.45rem; }
 .records-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
 .record-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
-.record-source, .field-hint { color: var(--muted); font-size: .82rem; line-height: 1.5; }
+.record-source { color: var(--muted); font-size: .82rem; line-height: 1.5; }
 .record-value { font-size: 1.45rem; margin: .5rem 0; font-weight: 700; }
 .record-manual { border-top: 1px solid var(--line); padding-top: .75rem; margin-top: .75rem; }
 .records-page a { color: var(--accent-deep); }
 .records-page h2 { margin: 0; font-size: 1.1rem; }
-#recordFormCard[hidden], .records-page [hidden] { display: none !important; }
+#recordFormCard[hidden], #recordForm [hidden], .records-page [hidden] { display: none !important; }
 #recordForm { display: flex; flex-direction: column; gap: 1rem; }
 #recordForm .field { margin: 0; }
-#recordForm input[type="number"] { width: 100%; border: 1px solid var(--line-strong); border-radius: 10px; background: var(--bg); padding: .55rem .65rem; font: inherit; color: inherit; }
-#recordForm input:focus-visible { outline: 2px solid var(--accent-deep); outline-offset: 1px; }
 #recordForm .form-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5rem; padding-top: 1rem; border-top: 1px solid var(--line); }
 #recordFormTitle:focus { outline: none; }
 #recordClearDate { align-self: flex-start; margin-top: .35rem; }
 @media (max-width: 600px) { .records-grid { grid-template-columns: 1fr; } }
 .records-page p { margin: .35rem 0; }
-#recordsStatus:empty { display: none; }
 .record-manual .record-actions { margin-top: .35rem; }
 
 .records-load-error { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap; }

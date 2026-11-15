@@ -10,21 +10,6 @@
 .anamnesis-card h2 { margin: 0 0 .35rem; font-size: 1.1rem; }
 .anamnesis-card h2:focus, .anamnesis-review h2:focus, .anamnesis-page h1:focus { outline: none; }
 .anamnesis-card p { overflow-wrap: anywhere; }
-.field-hint { margin: 0; font-size: .78rem; color: var(--muted); opacity: .8; }
-/* theme.css styles text inputs only; numeric answers get the same shared
-   field treatment (as Shoes and Cycles do for their number inputs). */
-.anamnesis-page input[type="number"] {
-  width: 100%;
-  border: 1px solid var(--line-strong);
-  border-radius: 10px;
-  background: var(--bg);
-  padding: 0.55rem 0.65rem;
-  font: inherit;
-  font-size: 0.92rem;
-  font-weight: 500;
-  color: inherit;
-}
-.anamnesis-page input[type="number"]:focus-visible { outline: 2px solid var(--accent-deep); outline-offset: 1px; }
 .anamnesis-page input::placeholder, .anamnesis-page textarea::placeholder { color: var(--muted); opacity: .75; }
 .anamnesis-load-error { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap; }
 /* Every container given a display value here must still honour [hidden]. */

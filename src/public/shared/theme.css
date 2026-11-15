@@ -166,6 +166,7 @@ textarea::placeholder {
 .grid { display: grid; gap: 0.7rem; }
 .grid-2x2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
+input[type="number"],
 input[type="text"],
 input[type="email"],
 input[type="password"],
@@ -190,6 +191,7 @@ select {
   padding-right: 1.9rem;
 }
 
+input[type="number"]:focus-visible,
 input[type="text"]:focus-visible,
 input[type="email"]:focus-visible,
 input[type="password"]:focus-visible,

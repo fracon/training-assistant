@@ -77,7 +77,7 @@ test('existing results match only proven whole distances with bounded tolerance;
   assert.equal(best(db).origin,'manual');
 });
 
-test('anamnesis originals survive synchronization, unrelated edits and deletion of automatic sources', (t) => {
+test('manual declarations replace anamnesis values without reviving corrected values on removal', (t) => {
   const db=setup(t);
   syncAnamnesisRecords(db,1);
   anam(db,[race(),race('other',2000)]);
@@ -94,9 +94,9 @@ test('anamnesis originals survive synchronization, unrelated edits and deletion 
   assert.equal(current.status,'draft');
   anam(db,current.answers.race_results.value.map(r=>r.distance === 'other' ? r : (({distance_km,...rest})=>rest)(r)));
   deleteRecord(db,1,'5k');
-  assert.equal(best(db).time_seconds,1500);
+  assert.equal(best(db),null);
   const races=readAnamnesis(db,1).anamnesis.answers.race_results.value;
-  assert.equal(races.find(r=>r.distance==='5k').time_seconds,1500);
+  assert.equal(races.some(r=>r.distance==='5k'),false);
   assert.ok(races.some(r=>r.distance==='other'));
   saveRecord(db,1,'10k',{time_seconds:3000,achieved_on:'2025-01-01'});
   assert.equal(readAnamnesis(db,1).anamnesis.answers.race_results.value.find(r=>r.distance==='10k').year,2025);
@@ -107,8 +107,8 @@ test('anamnesis originals survive synchronization, unrelated edits and deletion 
   // An explicit edit is a new self-report; an unchanged automatic field is not.
   saveRecord(db,1,'5k',{time_seconds:1400});
   anam(db,[race('5k',1300),race('10k',3200)]);
-  assert.equal(best(db).origin,'anamnesis');
-  deleteRecord(db,1,'5k'); assert.equal(best(db).time_seconds,1300);
+  assert.equal(best(db).origin,'manual');
+  deleteRecord(db,1,'5k'); assert.equal(best(db),null);
   deleteAnamnesis(db,1); assert.equal(best(db),null);
   assert.equal(db.prepare('SELECT COUNT(*) n FROM anamnesis_record_sources').get().n,0);
   saveRecord(db,1,'5k',{time_seconds:1200});
@@ -184,7 +184,7 @@ test('records API gates pages, authenticates, scopes data and synchronizes manua
   assert.equal((await call('DELETE',`/api/trainings/${id}`)).statusCode,200);
   assert.equal(readAnamnesis(db,1).anamnesis.answers.race_results.value[0].time_seconds,1400);
   assert.equal((await call('DELETE','/api/records/5k')).statusCode,200);
-  assert.equal(readAnamnesis(db,1).anamnesis.answers.race_results.value[0].time_seconds,1500);
+  assert.equal(readAnamnesis(db,1).anamnesis.answers.race_results.value.some(r=>r.distance==='5k'),false);
   assert.ok(anamnesisContext(db,1).projection.experience.raceResults);
 });
 
@@ -235,11 +235,12 @@ test('FIT upload updates the anamnesis in the result transaction and refusal lea
 test('AI record projection never exposes a draft anamnesis and falls back to independent sources', (t)=>{
  const db=setup(t);
  anam(db,[race('5k',1200)]);
+ assert.deepEqual(recordsContext(db,1).records,[]);
  saveRecord(db,1,'5k',{time_seconds:1400});
- assert.equal(best(db).time_seconds,1200);
+ assert.equal(best(db).time_seconds,1400);
  assert.equal(recordsContext(db,1).records[0].timeSeconds,1400);
  db.prepare("UPDATE athlete_anamnesis SET status='completed',completed_at='2026-01-01T00:00:00Z' WHERE user_id=1").run();
- assert.equal(recordsContext(db,1).records[0].timeSeconds,1200);
+ assert.equal(recordsContext(db,1).records[0].timeSeconds,1400);
 });
 
 
@@ -329,4 +330,33 @@ test('editing feedback does not scan result history or touch questionnaire times
  assert.equal(response.statusCode,200);
  const after=readAnamnesis(db,1).anamnesis;
  assert.equal(after.revision,before.revision); assert.equal(after.updated_at,before.updated_at);
+});
+
+
+test('slower manual correction replaces the declaration; sessions compete and removal never revives the old answer', (t)=>{
+ const db=setup(t); anam(db,[race('5k',1500,2024),race('other',4000)]);
+ anam(db,[race('5k',1200,2023)],2);
+ const otherBefore=readAnamnesis(db,2).anamnesis;
+ const before=readAnamnesis(db,1).anamnesis;
+ saveRecord(db,1,'5k',{time_seconds:1620});
+ const read=()=>readAnamnesis(db,1).anamnesis;
+ const mark=()=>read().answers.race_results.value.find(r=>r.distance==='5k');
+ assert.equal(best(db).time_seconds,1620); assert.equal(best(db).origin,'manual');
+ assert.equal(mark().time_seconds,1620); assert.equal(mark().year,2024);
+ assert.equal(read().status,'draft'); assert.ok(read().revision>before.revision);
+ assert.equal(read().updated_at,before.updated_at);
+ assert.equal(read().answers.race_results.value.find(r=>r.distance==='other').time_seconds,4000);
+ const original=()=>JSON.parse(db.prepare('SELECT answer_json FROM anamnesis_record_sources WHERE user_id=1').get().answer_json);
+ assert.equal(original().value.find(r=>r.distance==='5k').time_seconds,1620);
+ assert.throws(()=>saveAnamnesis(db,1,{expected_revision:before.revision,answers:{race_results:answer([])}}),/changed in another session/);
+ const id=session(db,5,'26:00'); syncAnamnesisRecords(db,1);
+ assert.equal(best(db).origin,'session'); assert.equal(mark().time_seconds,1560);
+ deleteRecord(db,1,'5k'); assert.equal(mark().time_seconds,1560);
+ assert.equal(original().value.some(r=>r.distance==='5k'),false);
+ db.prepare('DELETE FROM trainings WHERE id=?').run(id); syncAnamnesisRecords(db,1);
+ assert.equal(best(db),null); assert.equal(mark(),undefined);
+ assert.deepEqual(readAnamnesis(db,2).anamnesis,otherBefore);
+ // Idempotent removal without a manual must not erase an independent anamnesis answer.
+ anam(db,[race('10k',3000)]); deleteRecord(db,1,'10k');
+ assert.equal(readRecords(db,1).records[1].best.time_seconds,3000);
 });

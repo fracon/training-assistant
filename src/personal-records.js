@@ -56,7 +56,7 @@ function readRecords(db, userId, includeDraftAnamnesis = true, includeSessions =
   const candidates = manual.map((row) => ({ ...row, year: row.achieved_on ? Number(row.achieved_on.slice(0, 4)) : null, origin: 'manual', training_id: null }));
   if (answer?.status === 'answered' && (includeDraftAnamnesis || source.status === 'completed')) {
     for (const race of answer.value) {
-      if (Object.hasOwn(DISTANCES, race.distance)) candidates.push({
+      if (Object.hasOwn(DISTANCES, race.distance) && !manual.some((row) => row.distance === race.distance)) candidates.push({
         distance: race.distance, time_seconds: race.time_seconds, achieved_on: null,
         year: race.year, race_name: null, origin: 'anamnesis', training_id: null,
       });
@@ -85,8 +85,8 @@ function readRecords(db, userId, includeDraftAnamnesis = true, includeSessions =
   return { records, today };
 }
 
-// Keep the athlete's original answer separate from the automatically derived
-// answer, so deleting/correcting a source cannot preserve its own copied mark.
+// Keep explicit athlete declarations separate from automatically derived
+// answers, so a session cannot preserve its own copied mark.
 function captureAnamnesisRecords(db, userId, answer, previous) {
   const stored = db.prepare('SELECT answer_json FROM anamnesis_record_sources WHERE user_id=?').get(userId);
   if (stored && answer?.status === 'answered' && previous?.status === 'answered') {
@@ -143,6 +143,24 @@ function validateRecord(body, today) {
   return { time: body.time_seconds, date, name: name === null ? null : name.trim() || null };
 }
 
+// A manual write is a new declaration, not another historical candidate.
+// This source is changed only by explicit athlete edits, never by sessions.
+function replaceDeclaration(db, userId, distance, value) {
+  const source = db.prepare('SELECT answer_json FROM anamnesis_record_sources WHERE user_id=?').get(userId);
+  const answer = source?.answer_json ? JSON.parse(source.answer_json) : null;
+  if (answer?.status !== 'answered') return;
+  const index = answer.value.findIndex((race) => race.distance === distance);
+  const races = answer.value.filter((race) => race.distance !== distance);
+  if (value) {
+    const row = db.prepare('SELECT answers_json FROM athlete_anamnesis WHERE user_id=?').get(userId);
+    const previous = JSON.parse(row.answers_json).race_results?.value?.find((race) => race.distance === distance);
+    races.splice(index < 0 ? races.length : index, 0, { distance, distance_km: DISTANCES[distance], time_seconds: value.time,
+      year: value.date ? Number(value.date.slice(0, 4)) : previous?.year ?? null });
+  }
+  db.prepare('UPDATE anamnesis_record_sources SET answer_json=? WHERE user_id=?')
+    .run(JSON.stringify({ status: 'answered', value: races }), userId);
+}
+
 function saveRecord(db, userId, distance, body) {
   if (!Object.hasOwn(DISTANCES, distance)) throw new RecordError('invalidDistance');
   const value = validateRecord(body, userToday(db, userId));
@@ -150,6 +168,7 @@ function saveRecord(db, userId, distance, body) {
     db.prepare(`INSERT INTO personal_records(user_id,distance,time_seconds,achieved_on,race_name) VALUES (?,?,?,?,?)
       ON CONFLICT(user_id,distance) DO UPDATE SET time_seconds=excluded.time_seconds,
         achieved_on=excluded.achieved_on,race_name=excluded.race_name`).run(userId, distance, value.time, value.date, value.name);
+    replaceDeclaration(db, userId, distance, value);
     syncAnamnesisRecords(db, userId);
     return readRecords(db, userId);
   }).immediate();
@@ -158,7 +177,8 @@ function saveRecord(db, userId, distance, body) {
 function deleteRecord(db, userId, distance) {
   if (!Object.hasOwn(DISTANCES, distance)) throw new RecordError('invalidDistance');
   return db.transaction(() => {
-    db.prepare('DELETE FROM personal_records WHERE user_id=? AND distance=?').run(userId, distance);
+    const removed = db.prepare('DELETE FROM personal_records WHERE user_id=? AND distance=?').run(userId, distance).changes;
+    if (removed) replaceDeclaration(db, userId, distance, null);
     syncAnamnesisRecords(db, userId);
     return readRecords(db, userId);
   }).immediate();

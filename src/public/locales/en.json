@@ -2552,12 +2552,12 @@
     "seconds": "Seconds",
     "date": "Record date (optional)",
     "race": "Race name (optional)",
-    "save": "Save record",
+    "save": "Save time",
     "cancel": "Cancel",
     "edit": "Edit manual record",
     "add": "Add manual record",
     "remove": "Remove manual record",
-    "removeConfirm": "Remove the manual {distance} record? Other sources will still be considered.",
+    "removeConfirm": "Remove the manual {distance} time? Your running profile will use the best session, if any, or have no time at this distance. The earlier value will not be restored.",
     "origin": {
       "manual": "Manual record",
       "anamnesis": "From running profile",
@@ -2580,7 +2580,7 @@
     "time": "Time",
     "clearDate": "Remove date",
     "empty": "No record yet.",
-    "syncNote": "New best times automatically update your running profile.",
-    "savedOther": "Manual time saved. The record remains {time}, from: {origin}."
+    "syncNote": "Adding or updating a manual time automatically updates your running profile.",
+    "savedOther": "Manual time saved. The {distance} record remains {time}, recorded in a session."
   }
 }

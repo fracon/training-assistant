@@ -26,11 +26,18 @@ test('Chrome: records preserve source data and manual drafts in a localized, acc
  const click=async(selector)=>evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`);
  const manual=()=>db.prepare("SELECT * FROM personal_records WHERE user_id=1 AND distance='21k'").get();
  for(const [lang,messages] of [['pt-BR',pt],['en-US',en]]) for(const width of [1280,390]){
+  db.prepare("UPDATE athlete_anamnesis SET status='draft' WHERE user_id=1").run();
+  saveAnamnesis(db,1,{expected_revision:readAnamnesis(db,1).anamnesis.revision,answers:{race_results:{status:'answered',value:[{distance:'5k',time_seconds:1500,year:2024}]}}});
+  db.prepare("UPDATE athlete_anamnesis SET status='completed' WHERE user_id=1").run();
   db.prepare('UPDATE users SET preferred_lang=? WHERE id=1').run(lang);
   await command('Emulation.setDeviceMetricsOverride',{width,height:800,deviceScaleFactor:1,mobile:width===390});
+  await command('Page.navigate',{url:origin+'/shoes.html'});
+  await wait("document.querySelector('.shoes-header-text h1') && document.body.classList.contains('shell-mounted')");
+  const expectedPageSizing=await evaluate("(()=>{const s=getComputedStyle(document.querySelector('.shoes-page'));return [s.maxWidth,s.paddingLeft,s.paddingRight]})()");
   await command('Page.navigate',{url:origin+'/records.html'});
   await wait("document.querySelectorAll('#recordsList > section').length===4");
   assert.equal(await evaluate("document.querySelector('#recordsList .record-value').textContent"),'25:00');
+  assert.deepEqual(await evaluate("(()=>{const s=getComputedStyle(document.querySelector('.records-page'));return [s.maxWidth,s.paddingLeft,s.paddingRight]})()"),expectedPageSizing);
   assert.equal(await evaluate("document.querySelector('#recordsList a[href=\"/anamnesis.html\"]')"),null);
   assert.equal(await evaluate("document.querySelectorAll('#recordsList > section')[1].textContent.includes("+JSON.stringify(messages.records.empty)+")"),true);
   const positions=await evaluate("[...document.querySelectorAll('#recordsList > section')].map(e=>Math.round(e.getBoundingClientRect().top))");
@@ -47,10 +54,21 @@ test('Chrome: records preserve source data and manual drafts in a localized, acc
   assert.equal(manual().time_seconds,7500,'saving cannot copy the faster session');
   assert.equal(manual().race_name,'Original race');
   assert.equal(await evaluate('document.activeElement.dataset.focusKey'),'21k-edit');
-  assert.equal(await evaluate("document.getElementById('recordsStatus').textContent.includes('1:58:20')"),true);
+  assert.equal(await evaluate("document.getElementById('recordsStatus')"),null);
+  assert.equal(await evaluate("document.querySelector('.toast-text').textContent.includes('1:58:20')"),true);
+  assert.equal(await evaluate("document.querySelectorAll('[data-i18n=\"records.syncNote\"]').length"),1);
   await click('[data-focus-key="21k-edit"]');
+  assert.equal(await evaluate("document.getElementById('recordClearDate').hidden"),false);
   await click('#recordClearDate');
   assert.equal(await evaluate("document.getElementById('recordDate').dataset.iso"),'');
+  assert.equal(await evaluate("document.getElementById('recordClearDate').hidden"),true);
+  await click('#recordDate');
+  await click('#recordDate-calendar-popup [data-date]');
+  assert.equal(await evaluate("document.getElementById('recordClearDate').hidden"),false);
+  await click('#recordClearDate');
+  assert.deepEqual(await evaluate("[...document.querySelectorAll('#recordForm input')].map(e=>e.id)"),['recordHours','recordMinutes','recordSeconds','recordDate','recordRace']);
+  assert.equal(await evaluate("Math.abs(document.getElementById('recordHours').getBoundingClientRect().height-document.getElementById('recordRace').getBoundingClientRect().height)<0.1"),true);
+  assert.equal(await evaluate("Number(getComputedStyle(document.querySelector('.duration-group legend')).fontWeight)>Number(getComputedStyle(document.querySelector('.duration-fields label')).fontWeight)"),true);
   await fill('recordRace','Draft <race>');
   // Re-render during language change without permitting focus outside the modal.
   await evaluate("document.dispatchEvent(new CustomEvent('app:languagechange'))");
@@ -66,15 +84,19 @@ test('Chrome: records preserve source data and manual drafts in a localized, acc
   assert.equal(await evaluate('document.activeElement.dataset.focusKey'),'21k-edit');
   await click('[data-focus-key="5k-edit"]');
   assert.equal(await evaluate("document.getElementById('recordMinutes').value"),'');
+  assert.equal(await evaluate("document.getElementById('recordClearDate').hidden"),true);
   await click('#recordSave'); await wait("!document.getElementById('recordError').hidden");
   assert.equal(await evaluate('document.activeElement.id'),'recordHours');
   await fill('recordMinutes','27'); await click('#recordSave');
   await wait("document.getElementById('recordFormCard').hidden");
-  assert.equal(await evaluate("document.querySelector('#recordsList .record-value').textContent"),'25:00');
-  assert.equal(await evaluate("document.getElementById('recordsStatus').textContent.includes('25:00')"),true);
+  assert.equal(await evaluate("document.querySelector('#recordsList .record-value').textContent"),'27:00');
+  assert.equal(await evaluate("document.querySelector('.toast-text').textContent"),messages.records.saved);
+  assert.equal(readAnamnesis(db,1).anamnesis.answers.race_results.value.find(r=>r.distance==='5k').time_seconds,1620);
   await click('[data-focus-key="5k-remove"]'); await wait("!!document.getElementById('confirmOkBtn')");
   await click('#confirmOkBtn'); await wait("!document.querySelector('[data-focus-key=\"5k-remove\"]')");
-  assert.equal(readAnamnesis(db,1).anamnesis.answers.race_results.value.find(r=>r.distance==='5k').time_seconds,1500);
+  assert.equal(readAnamnesis(db,1).anamnesis.answers.race_results.value.some(r=>r.distance==='5k'),false);
+  assert.equal(await evaluate("document.getElementById('recordsStatus')"),null);
+  assert.equal(await evaluate("document.querySelector('#recordsList > section:first-child .record-value')"),null);
   assert.equal(await evaluate('document.documentElement.scrollWidth <= window.innerWidth'),true);
  }
  await command('Emulation.setDeviceMetricsOverride',{width:390,height:430,deviceScaleFactor:1,mobile:true});

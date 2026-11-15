@@ -4,18 +4,21 @@ Available at `/records.html` after completing the running profile (anamnesis),
 with PT/EN navigation and forms. The page follows the shared
 shell, cards, inputs, date picker, confirmation dialog and focus conventions.
 
-Each distance (5 km, 10 km, 21.0975 km and 42.195 km) has one current best time,
-selected from the athlete's original anamnesis answers, one editable manual
-record per distance and all eligible stored session results. Manual records
-remain editable even when another source wins. Ties prefer the manual record,
-then the original anamnesis answer, then sessions in date/ID order. The page
-shows the winning source and a session link where available. The manual-record action edits only its own source, never a copied session or
-anamnesis mark. It opens a shared modal named for its fixed distance. Empty distances
-remain visible with a muted empty-state message. The form reuses the anamnesis duration
-layout and synchronizes new best times automatically. Session sources link to
-their result page, and an optional date can be cleared. Records never presents
-a link asking the athlete to correct the anamnesis. Editing/removing
-an anamnesis source uses the questionnaire; session sources use the result page.
+Each distance (5 km, 10 km, 21.0975 km and 42.195 km) has one current best time.
+The current athlete declaration is the manual mark when present; otherwise it is
+the anamnesis declaration. Eligible sessions compete with that declaration by
+actual time. A manual mark replaces the earlier anamnesis declaration even when
+it is slower: it can correct a mistaken time without leaving Recordes.
+
+The manual-record action edits only that source, never a copied session. It
+opens a shared modal named for its fixed distance. Fields are ordered as time,
+optional date, optional race name. The clear-date action is visible only when
+a date exists. The page uses the same 720 px width as Shoes and Weight log,
+with a 2×2 grid on desktop and one column on mobile. Numeric/text inputs and
+duration-label hierarchy use shared styles. Saving is announced once through
+the shared toast; there is no persistent status line. The synchronization notice
+appears once above the grid. Session sources link to their result page; there
+is no link asking the athlete to correct the anamnesis.
 
 ## Measured result eligibility
 
@@ -35,7 +38,7 @@ unrecorded split. GPS/record processing and automatic FIT downloads are not adde
 
 Migration `2026-11-personal-records-v1` creates `personal_records` and
 `anamnesis_record_sources`, with account deletion cascades. The latter retains
-the original race answer separately from automatically copied marks; it cascades
+the current declared race answer separately from automatically copied marks; it cascades
 also when the anamnesis is erased. Existing questionnaire answers are captured
 before historical results are compared. Rerunning the migration preserves data.
 
@@ -50,11 +53,16 @@ When synchronizing a record without a date, preserve the existing questionnaire
 year for that distance. Only a nonempty incoming year replaces it; no date or
 year is fabricated on the independently stored record.
 
-Original self-reports are preserved when a questionnaire save sends back an
-unchanged automatically copied field. Explicit edits become new self-reports.
-A correction or deletion recalculates from surviving sources, so an automatic
-copy cannot become evidence for itself. Actual changes increment the anamnesis
-revision, preserving optimistic conflict detection in an already-open tab.
+Unchanged automatically copied fields never become declarations. An explicit
+manual save replaces the declared answer for that distance inside the same
+transaction, preserving the existing year when no date is supplied. The old
+anamnesis time stops competing, including when the new manual time is slower.
+When the manual mark is removed, its corresponding declaration is removed too:
+the anamnesis then shows the best remaining session, or no mark at that distance.
+The corrected old value is never restored. Removing a nonexistent manual mark
+is a no-op and does not erase an independent anamnesis answer. Other questions
+and distances are preserved; revision conflicts and account ownership remain.
+A session can update the displayed best time but never the declared source.
 
 Manual record writes, result writes (manual, FIT and Garmin import), rescheduling
 and session deletion synchronize inside the same transaction. Migration also
@@ -69,7 +77,7 @@ Authenticated, owner-scoped, `Cache-Control: no-store` endpoints:
 - `PUT /api/records/:distance`: exact fields `time_seconds`, optional
   `achieved_on` (civil ISO date from 1950 through today) and optional `race_name`
   (up to 120 characters). Unknown fields are refused.
-- `DELETE /api/records/:distance`: removes that manual source only, idempotently.
+- `DELETE /api/records/:distance`: removes the manual mark and its superseded declaration, idempotently.
 
 New cycle contexts contain the current personal records with distance, time,
 origin and known date/year. Missing dates are explicit. Instructions tell the
@@ -78,12 +86,12 @@ current fitness. The `records:self` source versions that selection. Training Mem
 same record selection only for the cycle task. The model receives the four
 standard distances once, in personalRecords; the anamnesis model projection
 retains only other-distance race results. New proposals become outdated when record evidence changes. Applied plans
-compare only declared marks (manual and original anamnesis), never session
+compare only declared marks (manual and current anamnesis declaration), never session
 improvements or automatic questionnaire copies; older
 snapshots/plans without this source retain their existing freshness rules.
 Draft anamnesis answers never enter the AI record projection.
 Anamnesis evidence versions include synchronized marks, but its plan basis uses
-the original answers. Automatic synchronization increments the concurrency
+the declared answers. Automatic synchronization increments the concurrency
 revision without changing the answer-edit timestamp. Feedback-only PATCH writes
 do not scan record history.
 Nothing generates AI output, applies a plan or mutates Garmin automatically.

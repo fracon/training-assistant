@@ -2552,12 +2552,12 @@
     "seconds": "Segundos",
     "date": "Data da marca (opcional)",
     "race": "Nome da prova (opcional)",
-    "save": "Salvar recorde",
+    "save": "Salvar marca",
     "cancel": "Cancelar",
     "edit": "Editar marca manual",
     "add": "Adicionar marca manual",
     "remove": "Remover marca manual",
-    "removeConfirm": "Remover a marca manual de {distance}? As outras fontes continuam sendo consideradas.",
+    "removeConfirm": "Remover a marca manual de {distance}? A anamnese ficará com a melhor sessão, se houver, ou sem marca nessa distância. O valor anterior não será restaurado.",
     "origin": {
       "manual": "Marca manual",
       "anamnesis": "Informada na anamnese",
@@ -2580,7 +2580,7 @@
     "time": "Tempo",
     "clearDate": "Deixar sem data",
     "empty": "Nenhuma marca registrada.",
-    "syncNote": "Novas melhores marcas atualizam sua anamnese automaticamente.",
-    "savedOther": "Marca manual salva. O recorde continua sendo {time}, com origem: {origin}."
+    "syncNote": "Adicionar ou atualizar uma marca manual atualiza sua anamnese automaticamente.",
+    "savedOther": "Marca manual salva. O recorde de {distance} continua sendo {time}, registrado em uma sessão."
   }
 }

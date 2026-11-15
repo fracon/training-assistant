@@ -8,7 +8,7 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.44.3`); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.44.4`); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
@@ -316,8 +316,13 @@ record CRUD, deterministic source selection and anamnesis synchronization.
 `records` namespace, and is subject to the completed-anamnesis page gate.
 Migration `2026-11-personal-records-v1` preserves original questionnaire race
 answers in `anamnesis_record_sources`, separately from derived marks. Never
-promote an unchanged copied mark to an original self-report; corrections and
-source deletion must re-evaluate surviving originals. Synchronize in the same
+promote an unchanged session copy to a self-report. An explicit manual save
+replaces the declared answer for its distance even when slower, preserving the
+year when no date is provided. Manual marks take precedence over an older
+anamnesis declaration; sessions still compete by best actual time. Removing a
+manual mark also removes that distance's superseded declaration: the best
+remaining session wins, or the distance has no mark. Never revive the old time.
+Deleting a nonexistent manual is a no-op for independent anamnesis answers. Synchronize in the same
 transaction as manual/FIT/Garmin result writes, rescheduling or session deletion.
 Only an explicitly answered race question is updated; never complete a draft.
 Changed automatic answers increment the revision so open tabs conflict normally,

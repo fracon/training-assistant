@@ -552,7 +552,7 @@ function racesField(item, answer) {
     };
     const otherPart = part(otherKm, 'races.otherKm', () => ({ unit: distanceUnit }));
     const time = el('fieldset', 'duration-group');
-    const timeLegend = el('legend', 'field-hint');
+    const timeLegend = el('legend', 'field-label');
     bind(timeLegend, () => t('races.time'));
     const timeInputs = el('div', 'duration-fields');
     timeInputs.append(part(hours, 'races.hours'), part(minutes, 'races.minutes'), part(seconds, 'races.seconds'));

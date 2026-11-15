@@ -39,7 +39,6 @@ function render() {
       const date = best.achieved_on ? formatDate(best.achieved_on, i18n.language) : best.year ? t('year', { year: best.year }) : t('unknownDate');
       card.append(element('p', `${t(`origin.${best.origin}`)} · ${date}`, 'record-source'));
       if (best.race_name) card.append(element('p', best.race_name));
-      card.append(element('p', t('syncNote'), 'field-hint'));
       if (best.training_id) {
         const link = element('a', t('openSession'));
         link.href = `/training-result.html?id=${best.training_id}`;
@@ -47,7 +46,7 @@ function render() {
       }
     } else card.append(element('p', t('empty'), 'field-hint'));
     const manual = element('div', '', 'record-manual');
-    if (record.manual && best?.origin !== 'manual') manual.append(element('p', t('manualTime', { time: time(record.manual.time_seconds) }), 'record-source'));
+    if (record.manual && best?.origin === 'session') manual.append(element('p', t('manualTime', { time: time(record.manual.time_seconds) }), 'record-source'));
     const actions = element('div', '', 'record-actions');
     const edit = action(t(record.manual ? 'edit' : 'add'), (button) => editRecord(record, button));
     edit.setAttribute('aria-label', `${edit.textContent} · ${name}`);
@@ -94,6 +93,7 @@ function editRecord(record, button) {
     $(`record${part}`).value = seconds === undefined ? '' : [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60][index];
   });
   picker.setValue(current?.achieved_on || '');
+  $('recordClearDate').hidden = !picker.getValue();
   $('recordRace').value = current?.race_name || '';
   focusTrap.activate();
   $('recordFormTitle').focus();
@@ -126,11 +126,9 @@ async function submit(event) {
     lock(false);
     render();
     const best = data.records.find((record) => record.distance === distance).best;
-    const notice = best.origin !== 'manual' ? t('savedOther', { time: time(best.time_seconds), origin: t(`origin.${best.origin}`) }) : null;
+    const sessionWins = best.origin === 'session';
     closeForm();
-    if (notice) { $('recordsStatus').textContent = notice; }
-    else { $('recordsStatus').textContent = t('saved'); }
-    showShellToast(i18n.messages, notice ? 'records.savedOther' : 'records.saved', 'success', 5000, { time: time(best.time_seconds), origin: t(`origin.${best.origin}`) });
+    showShellToast(i18n.messages, sessionWins ? 'records.savedOther' : 'records.saved', 'success', 5000, { distance: t(`distances.${distance}`), time: time(best.time_seconds) });
   } catch (err) { lock(false); error(err.codes?.[0], { focus: document.activeElement === document.body || $('recordForm').contains(document.activeElement) }); }
   finally { lock(false); }
 }
@@ -164,13 +162,13 @@ async function load() {
 async function init() {
   if (!await initShell({ active: 'records' })) return;
   i18n = getShellI18n();
-  picker = createDatePicker($('recordDate'), { getLanguage: () => i18n.language, getWeekStart: () => getUserPreferences().first_day_of_week });
+  picker = createDatePicker($('recordDate'), { getLanguage: () => i18n.language, getWeekStart: () => getUserPreferences().first_day_of_week, onChange: (iso) => { $('recordClearDate').hidden = !iso; } });
   $('recordForm').addEventListener('submit', submit);
   $('recordCancel').addEventListener('click', () => { if (!busy) closeForm(); });
   focusTrap = createDialogFocusTrap($('recordFormCard'), () => { if (!busy) closeForm(); });
   $('recordClose').addEventListener('click', () => { if (!busy) closeForm(); });
   $('recordFormCard').addEventListener('click', (event) => { if (event.target === $('recordFormCard') && !busy) closeForm(); });
-  $('recordClearDate').addEventListener('click', () => { picker.setValue(''); $('recordDate').focus(); });
+  $('recordClearDate').addEventListener('click', () => { picker.setValue(''); $('recordClearDate').hidden = true; $('recordDate').focus(); });
   $('recordsRetry').addEventListener('click', load);
   document.addEventListener('app:languagechange', () => { if (data) render(); picker.refresh(); });
   await load();
