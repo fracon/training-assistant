@@ -8,7 +8,7 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.45.0`); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.45.1`); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
@@ -626,6 +626,12 @@ are stable identifiers, not a statement of scope.
   covers all Brazilian states and U.S. states plus District of Columbia);
   reject unknown or incompatible abbreviations and ambiguous matches. Preserve
   the exact user-entered location in the training.
+- Spreadsheet import reads workbooks with SheetJS `xlsx` 0.20.3 from the
+  official `cdn.sheetjs.com` tarball (integrity-pinned in the lockfile); the
+  npm registry release stopped at the vulnerable 0.18.5. Do not replace it with
+  ExcelJS: PR #26 moved away from it because it rejects namespace-prefixed
+  workbook XML, and it cannot read `.xls`. `calendarImport.routes.test.js`
+  covers both formats and the fixed-version source.
 - Spreadsheet import deduplicates by exact **Date (`dia`) + Training Name
   (`treino`) + Description (`detalhes`)**. Calendar drag-and-drop rescheduling
   persists through its dedicated endpoint. Keep the shared Snackbar behavior
