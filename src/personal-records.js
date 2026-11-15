@@ -98,6 +98,8 @@ function captureAnamnesisRecords(db, userId, answer, previous) {
       if (JSON.stringify(before) === JSON.stringify(submitted)) {
         races = races.filter((race) => race.distance !== distance);
         if (original?.status === 'answered') races.push(...original.value.filter((race) => race.distance === distance));
+      } else {
+        db.prepare('DELETE FROM personal_records WHERE user_id=? AND distance=?').run(userId, distance);
       }
     }
     answer = { status: 'answered', value: races };

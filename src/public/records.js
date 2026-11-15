@@ -18,8 +18,14 @@ function element(tag, text, className) {
   if (className) node.className = className;
   return node;
 }
-function action(text, callback) {
-  const button = element('button', text, 'btn-secondary');
+function action(text, icon, callback, danger = false) {
+  const button = element('button', '', `btn-icon${danger ? ' action-danger' : ''}`);
+  const glyph = document.createElement('i');
+  glyph.dataset.lucide = icon;
+  glyph.setAttribute('aria-hidden', 'true');
+  const tooltip = element('span', text, 'custom-tooltip');
+  tooltip.setAttribute('aria-hidden', 'true');
+  button.append(glyph, tooltip);
   button.type = 'button';
   button.disabled = busy;
   button.addEventListener('click', () => callback(button));
@@ -32,7 +38,9 @@ function render() {
   for (const record of data.records) {
     const card = element('section', '', 'content-card');
     const name = t(`distances.${record.distance}`);
-    card.append(element('h2', name));
+    const header = element('header', '', 'record-header');
+    header.append(element('h2', name));
+    card.append(header);
     const best = record.best;
     if (best) {
       card.append(element('p', time(best.time_seconds), 'record-value'));
@@ -47,21 +55,22 @@ function render() {
     } else card.append(element('p', t('empty'), 'field-hint'));
     const manual = element('div', '', 'record-manual');
     if (record.manual && best?.origin === 'session') manual.append(element('p', t('manualTime', { time: time(record.manual.time_seconds) }), 'record-source'));
-    const actions = element('div', '', 'record-actions');
-    const edit = action(t(record.manual ? 'edit' : 'add'), (button) => editRecord(record, button));
-    edit.setAttribute('aria-label', `${edit.textContent} · ${name}`);
+    const actions = element('div', '', 'item-actions');
+    const edit = action(t(record.manual ? 'edit' : 'add'), record.manual ? 'pencil' : 'plus', (button) => editRecord(record, button));
+    edit.setAttribute('aria-label', `${t(record.manual ? 'edit' : 'add')} · ${name}`);
     edit.dataset.focusKey = `${record.distance}-edit`;
     actions.append(edit);
     if (record.manual) {
-      const remove = action(t('remove'), (button) => removeRecord(record, button));
-      remove.setAttribute('aria-label', `${remove.textContent} · ${name}`);
+      const remove = action(t('remove'), 'trash-2', (button) => removeRecord(record, button), true);
+      remove.setAttribute('aria-label', `${t('remove')} · ${name}`);
       remove.dataset.focusKey = `${record.distance}-remove`;
       actions.append(remove);
     }
-    manual.append(actions);
-    card.append(manual);
+    header.append(actions);
+    if (manual.childElementCount) card.append(manual);
     $('recordsList').append(card);
   }
+  refreshIcons();
   if (key && !focus.isConnected) $('recordsList').querySelector(`[data-focus-key="${key}"]`)?.focus();
   if (editing) $('recordFormTitle').textContent = `${t(editing.manual ? 'edit' : 'add')} · ${t(`distances.${editing.distance}`)}`;
   if (currentError) $('recordError').textContent = t(`errors.${currentError}`);

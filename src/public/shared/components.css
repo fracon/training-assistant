@@ -171,6 +171,17 @@
 @media (max-width: 600px) { .duration-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 
 /* Group labels are primary; duration sublabels are supporting text. */
-.field-hint { margin: 0; font-size: .78rem; color: var(--muted); font-weight: 400; line-height: 1.5; opacity: .8; }
+.duration-group .field-hint { margin: 0; font-size: .78rem; color: var(--muted); font-weight: 400; line-height: 1.5; opacity: .8; }
 .duration-group > legend { font-size: .82rem; font-weight: 600; color: var(--muted); letter-spacing: .02em; }
 .duration-fields label { font-size: .78rem; font-weight: 400; color: var(--muted); letter-spacing: normal; }
+
+/* Shared item actions: touch-sized icons, danger state and custom tooltips. */
+.item-actions { display: flex; gap: .35rem; flex-shrink: 0; }
+.item-actions .btn-icon { position: relative; width: 40px; height: 40px; flex-shrink: 0; }
+.item-actions .btn-icon svg { width: 18px; height: 18px; }
+.item-actions .btn-icon:focus-visible { outline: 2px solid var(--accent-deep); outline-offset: 1px; }
+.btn-icon.action-danger { color: var(--danger); }
+.btn-icon.action-danger:hover:not(:disabled) { color: var(--danger); background: rgba(165, 73, 47, .12); }
+.item-actions .custom-tooltip { position: absolute; bottom: 110%; right: 0; z-index: 50; width: max-content; max-width: min(220px, calc(100vw - 32px)); padding: 6px 10px; border-radius: 6px; background: var(--ink); color: var(--card); box-shadow: 0 4px 12px rgba(0, 0, 0, .15); font-size: .75rem; font-weight: 500; line-height: 1.4; white-space: normal; opacity: 0; pointer-events: none; transform: translateY(4px); transition: opacity .15s ease, transform .15s ease; }
+.item-actions .btn-icon:hover .custom-tooltip, .item-actions .btn-icon:focus-visible .custom-tooltip { opacity: 1; transform: translateY(0); }
+@media (prefers-reduced-motion: reduce) { .item-actions .custom-tooltip { transition: none; } }

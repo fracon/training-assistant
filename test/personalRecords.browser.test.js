@@ -27,7 +27,7 @@ test('Chrome: records preserve source data and manual drafts in a localized, acc
  const manual=()=>db.prepare("SELECT * FROM personal_records WHERE user_id=1 AND distance='21k'").get();
  for(const [lang,messages] of [['pt-BR',pt],['en-US',en]]) for(const width of [1280,390]){
   db.prepare("UPDATE athlete_anamnesis SET status='draft' WHERE user_id=1").run();
-  saveAnamnesis(db,1,{expected_revision:readAnamnesis(db,1).anamnesis.revision,answers:{race_results:{status:'answered',value:[{distance:'5k',time_seconds:1500,year:2024}]}}});
+  saveAnamnesis(db,1,{expected_revision:readAnamnesis(db,1).anamnesis.revision,answers:{race_results:{status:'answered',value:[{distance:'5k',time_seconds:1500,year:2024},...readAnamnesis(db,1).anamnesis.answers.race_results.value.filter(r=>r.distance!=='5k')]}}});
   db.prepare("UPDATE athlete_anamnesis SET status='completed' WHERE user_id=1").run();
   db.prepare('UPDATE users SET preferred_lang=? WHERE id=1').run(lang);
   await command('Emulation.setDeviceMetricsOverride',{width,height:800,deviceScaleFactor:1,mobile:width===390});
@@ -42,6 +42,11 @@ test('Chrome: records preserve source data and manual drafts in a localized, acc
   assert.equal(await evaluate("document.querySelectorAll('#recordsList > section')[1].textContent.includes("+JSON.stringify(messages.records.empty)+")"),true);
   const positions=await evaluate("[...document.querySelectorAll('#recordsList > section')].map(e=>Math.round(e.getBoundingClientRect().top))");
   assert.equal(positions[0]===positions[1],width===1280);
+  assert.equal(await evaluate(`([...document.querySelectorAll('#recordsList .btn-icon')].every(b=>{
+   const r=b.getBoundingClientRect();return Math.round(r.width)>=40 && Math.round(r.height)>=40 && b.closest('.record-header') && !b.hasAttribute('title') && b.querySelector('.custom-tooltip') && b.querySelector('[data-lucide]');
+  }))`),true);
+  assert.equal(await evaluate("document.querySelector('[data-focus-key=\"21k-remove\"]').classList.contains('action-danger')"),true);
+  assert.equal(await evaluate("document.querySelector('[data-focus-key=\"21k-edit\"]').getAttribute('aria-label')"),`${messages.records.edit} · ${messages.records.distances['21k']}`);
   await capture(`records-review-${lang}-${width}`);
   await click('[data-focus-key="21k-edit"]');
   assert.equal(await evaluate('document.activeElement.id'),'recordFormTitle');
@@ -99,11 +104,61 @@ test('Chrome: records preserve source data and manual drafts in a localized, acc
   assert.equal(await evaluate("document.querySelector('#recordsList > section:first-child .record-value')"),null);
   assert.equal(await evaluate('document.documentElement.scrollWidth <= window.innerWidth'),true);
  }
+ // Shared calendar stays outside the scrolling card and inside the modal focus trap.
+ for(const [lang,messages] of [['pt-BR',pt],['en-US',en]]) for(const [width,height] of [[1280,800],[390,844],[390,600]]){
+  db.prepare('UPDATE users SET preferred_lang=? WHERE id=1').run(lang);
+  await command('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:width===390});
+  await command('Page.navigate',{url:origin+'/records.html'});
+  await wait("document.querySelectorAll('#recordsList > section').length===4");
+  await click('[data-focus-key="21k-edit"]');
+  await new Promise(resolve=>setTimeout(resolve,250));
+  await evaluate("document.getElementById('recordDate').scrollIntoView({block:'center'})");
+  await new Promise(resolve=>setTimeout(resolve,100));
+  const mouseClick=async(selector)=>{
+   const p=await evaluate(`(()=>{const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}})()`);
+   await command('Input.dispatchMouseEvent',{type:'mousePressed',...p,button:'left',clickCount:1});
+   await command('Input.dispatchMouseEvent',{type:'mouseReleased',...p,button:'left',clickCount:1});
+  };
+  await mouseClick('#recordDate');
+  const visibility=await evaluate(`(()=>{const p=document.getElementById('recordDate-calendar-popup'),r=p.getBoundingClientRect();
+   return {inside:r.left>=0 && r.top>=0 && r.right<=innerWidth && r.bottom<=innerHeight,visible:!p.classList.contains('hidden'),
+    corners:[[r.left+4,r.top+4],[r.right-4,r.top+4],[r.left+4,r.bottom-4],[r.right-4,r.bottom-4]].every(([x,y])=>p.contains(document.elementFromPoint(x,y)))};})()`);
+  assert.deepEqual(visibility,{inside:true,visible:true,corners:true},`${lang} ${width}x${height}`);
+  await capture(`records-calendar-${lang}-${width}-${height}`);
+  await mouseClick('#recordDate-calendar-popup [data-date]');
+  assert.equal(await evaluate("document.getElementById('recordDate-calendar-popup').classList.contains('hidden')"),true);
+  assert.ok(await evaluate("document.getElementById('recordDate').dataset.iso"));
+  await evaluate("document.getElementById('recordDate').focus({preventScroll:true})");
+  await key('ArrowDown','ArrowDown',40);
+  assert.equal(await evaluate("document.activeElement.matches('#recordDate-calendar-popup [data-date]')"),true);
+  await key('ArrowRight','ArrowRight',39);
+  const selected=await evaluate('document.activeElement.dataset.date');
+  await command('Input.dispatchKeyEvent',{type:'keyDown',key:'Enter',code:'Enter',windowsVirtualKeyCode:13,text:'\r'});
+  await command('Input.dispatchKeyEvent',{type:'keyUp',key:'Enter',code:'Enter',windowsVirtualKeyCode:13});
+  assert.equal(await evaluate("document.getElementById('recordDate').dataset.iso"),selected);
+  // Resize and scrolling close the popup; the Save action remains reachable.
+  await mouseClick('#recordDate');
+  await evaluate("window.dispatchEvent(new Event('resize'))");
+  assert.equal(await evaluate("document.getElementById('recordDate-calendar-popup').classList.contains('hidden')"),true);
+  await mouseClick('#recordDate');
+  await evaluate("document.querySelector('#recordFormCard .modal-card').dispatchEvent(new Event('scroll'))");
+  assert.equal(await evaluate("document.getElementById('recordDate-calendar-popup').classList.contains('hidden')"),true);
+  await evaluate("document.getElementById('recordSave').scrollIntoView({block:'center'})");
+  await mouseClick('#recordSave');
+  await wait("document.getElementById('recordFormCard').hidden");
+  assert.equal(await evaluate('document.activeElement.dataset.focusKey'),'21k-edit');
+ }
  await command('Emulation.setDeviceMetricsOverride',{width:390,height:430,deviceScaleFactor:1,mobile:true});
  await command('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});
  await click('[data-focus-key="21k-edit"]'); await capture('records-review-low-height');
  assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'),true);
  await click('#recordCancel');
+ // Shared duration styles must not restyle hints on unrelated pages.
+ for(const [page,opacity] of [['shoes','0.8'],['weight','0.8'],['ai-coach','1']]){
+  await command('Page.navigate',{url:origin+'/'+page+'.html'});
+  await wait("document.body.classList.contains('shell-mounted') && !!document.querySelector('.field-hint')");
+  assert.deepEqual(await evaluate("(()=>{const s=getComputedStyle(document.querySelector('.field-hint'));return [s.opacity,s.lineHeight]})()"),[opacity,'normal'],page);
+ }
  await command('Page.navigate',{url:origin+'/training-memory.html'});
  await wait("!!document.getElementById('memory-personalRecords')");
  assert.equal(await evaluate("document.querySelector('#memory-personalRecords').closest('section').textContent.includes('1:58:20')"),true);

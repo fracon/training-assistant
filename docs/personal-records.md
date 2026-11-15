@@ -8,13 +8,20 @@ Each distance (5 km, 10 km, 21.0975 km and 42.195 km) has one current best time.
 The current athlete declaration is the manual mark when present; otherwise it is
 the anamnesis declaration. Eligible sessions compete with that declaration by
 actual time. A manual mark replaces the earlier anamnesis declaration even when
-it is slower: it can correct a mistaken time without leaving Recordes.
+it is slower: it can correct a mistaken time without leaving Recordes. Conversely,
+an explicit edit in the anamnesis replaces the declaration by removing the manual
+mark for that changed distance in the same transaction. Unchanged distances keep
+their manual marks; eligible sessions still compete by actual time.
 
 The manual-record action edits only that source, never a copied session. It
 opens a shared modal named for its fixed distance. Fields are ordered as time,
 optional date, optional race name. The clear-date action is visible only when
 a date exists. The page uses the same 720 px width as Shoes and Weight log,
-with a 2×2 grid on desktop and one column on mobile. Numeric/text inputs and
+with a 2×2 grid on desktop and one column on mobile. Card headers hold 40×40 px
+add/edit and danger-delete icons with localized custom tooltips and distance-aware
+accessible names. The manual description stays in the body when a session wins.
+The shared date picker opens against the viewport outside the scrolling modal
+card, flips above when needed, and closes on outside scroll or resize. Numeric/text inputs and
 duration-label hierarchy use shared styles. Saving is announced once through
 the shared toast; there is no persistent status line. The synchronization notice
 appears once above the grid. Session sources link to their result page; there

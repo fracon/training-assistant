@@ -40,6 +40,7 @@ test('DatePicker stays open while navigating months and closes after selecting a
     constructor(tag = 'div') {
       this.tagName = tag;
       this.dataset = {};
+      this.style = {};
       this.children = [];
       this.listeners = {};
       this.attributes = {};
@@ -56,6 +57,7 @@ test('DatePicker stays open while navigating months and closes after selecting a
         set: (value) => { this._className = value; this.classList.values = new Set(String(value).split(/\s+/).filter(Boolean)); },
       });
     }
+    getBoundingClientRect() { return { left: 100, top: 100, bottom: 140, width: 200, height: 280 }; }
     setAttribute(name, value) { this.attributes[name] = String(value); }
     addEventListener(name, callback) { this.listeners[name] = callback; }
     appendChild(child) { this.children.push(child); child.parentNode = this; return child; }
@@ -64,6 +66,8 @@ test('DatePicker stays open while navigating months and closes after selecting a
     closest() { return null; }
   }
   const previousDocument = global.document;
+  const previousWindow = global.window;
+  global.window = { innerWidth: 1280, innerHeight: 800, addEventListener() {} };
   global.document = {
     createElement: (tag) => new FakeElement(tag),
     addEventListener: () => {},
@@ -90,6 +94,7 @@ test('DatePicker stays open while navigating months and closes after selecting a
     picker.destroy();
   } finally {
     global.document = previousDocument;
+    global.window = previousWindow;
   }
 });
 

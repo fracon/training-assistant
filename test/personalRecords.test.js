@@ -107,8 +107,9 @@ test('manual declarations replace anamnesis values without reviving corrected va
   // An explicit edit is a new self-report; an unchanged automatic field is not.
   saveRecord(db,1,'5k',{time_seconds:1400});
   anam(db,[race('5k',1300),race('10k',3200)]);
-  assert.equal(best(db).origin,'manual');
-  deleteRecord(db,1,'5k'); assert.equal(best(db),null);
+  assert.equal(best(db).origin,'anamnesis');
+  assert.equal(readRecords(db,1).records[0].manual,null);
+  deleteRecord(db,1,'5k'); assert.equal(best(db).time_seconds,1300);
   deleteAnamnesis(db,1); assert.equal(best(db),null);
   assert.equal(db.prepare('SELECT COUNT(*) n FROM anamnesis_record_sources').get().n,0);
   saveRecord(db,1,'5k',{time_seconds:1200});
@@ -359,4 +360,26 @@ test('slower manual correction replaces the declaration; sessions compete and re
  // Idempotent removal without a manual must not erase an independent anamnesis answer.
  anam(db,[race('10k',3000)]); deleteRecord(db,1,'10k');
  assert.equal(readRecords(db,1).records[1].best.time_seconds,3000);
+});
+
+
+test('the latest explicit declaration wins in both directions and only replaces the edited distance', (t) => {
+  const db=setup(t);
+  anam(db,[race()]);
+  saveRecord(db,1,'5k',{time_seconds:1620});
+  saveRecord(db,2,'5k',{time_seconds:1700});
+  const unchanged=readAnamnesis(db,1).anamnesis.answers.race_results.value;
+  anam(db,[...unchanged,race('10k',3200,2025)]);
+  assert.equal(readRecords(db,1).records[0].manual.time_seconds,1620);
+  anam(db,[race('5k',1560,2025),race('10k',3200,2025)]);
+  assert.equal(readRecords(db,1).records[0].manual,null);
+  assert.deepEqual([best(db).origin,best(db).time_seconds,best(db).year],['anamnesis',1560,2025]);
+  assert.deepEqual(readAnamnesis(db,1).anamnesis.answers.race_results.value.find(r=>r.distance==='5k'),{...race('5k',1560,2025),distance_km:5});
+  assert.equal(readRecords(db,2).records[0].manual.time_seconds,1700);
+  saveRecord(db,1,'5k',{time_seconds:1620});
+  session(db,5,'24:00','2026-01-01');
+  syncAnamnesisRecords(db,1);
+  anam(db,[race('5k',1560,2025),race('10k',3200,2025)]);
+  assert.equal(readRecords(db,1).records[0].manual,null);
+  assert.deepEqual([best(db).origin,best(db).time_seconds],['session',1440]);
 });
