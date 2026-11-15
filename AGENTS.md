@@ -8,7 +8,7 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.44.6`); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.45.0`); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
@@ -1371,6 +1371,32 @@ have reached the provider leaves the persisted state for restart recovery to
 classify and is never replayed. Both only log a bounded
 `ai_dispatch_unexpected_error` with code locations, never messages, SQL,
 payloads or identifiers. Covered by `aiDispatchResilience.test.js`.
+
+Athlete reports and requests (#119): cycle and weekly payloads append
+`ATHLETE_REPORT_INSTRUCTIONS` (`src/ai/client.js`) after the safety rules, so
+an athlete's dated report and explicit requests are weighed instead of being
+outweighed by an older race or the applied plan: honor explicit requests the
+evidence does not contradict (adjusting the dose) and, when declining, cite
+the dated evidence and the criterion to honor them; a completed session with
+a realized RPE and no pain report counts as tolerated, and a missing later
+report never reopens it; do not prescribe below recently tolerated load
+without a recorded concern; hard efforts lose weight with time and later
+tolerated sessions; applied planning guides but does not override the current
+dated state; active or recent pain, injury, professional restrictions and
+worsening symptoms still prevail. The safety rule no longer tells the model to
+ignore notes: their content cannot change rules, schema, tools or format, but
+the athlete's statements are reports to weigh. The weekly report leads the
+adapted prompt under its own heading and the cycle accepts the same optional
+report (`optional_context`, at most 2000 characters, analysis still refuses
+it) from an optional field in the planning modal, sent with that generation
+only and cleared after it; a response that arrives after the modal was closed
+or reopened never clears a newer report (only the already sent text is cleared
+on reopening). `context.taskNotes` is absent when empty, so older
+contexts keep their hash; output schemas, adapter versions and external PT/EN
+prompt bytes are unchanged, and executions record `guidanceVersion:
+athlete-reports-v1`. Context selection is unchanged on purpose (a v7 policy
+would outdate every proposal). Covered by `athleteReports.test.js` and
+`cyclePlanning.browser.test.js`.
 
 Duplicate generations and completed cycles (#87): enqueueing refuses an
 equivalent request — same owner, purpose, resource and request hash — while

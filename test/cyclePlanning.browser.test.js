@@ -3,11 +3,11 @@ const test=require('node:test');const assert=require('node:assert/strict');
 const {mkdtempSync,rmSync,writeFileSync,readFileSync}=require('node:fs');const {tmpdir}=require('node:os');const path=require('node:path');const {spawn}=require('node:child_process');const {once}=require('node:events');const {createServer}=require('node:http');const {setTimeout:delay}=require('node:timers/promises');
 const {buildServer}=require('../src/server');const {createSession,SESSION_COOKIE_NAME}=require('../src/auth/sessions');const {readAiConfig}=require('../src/ai/config');const {fixture,planFor}=require('./fixtures/ai/cycle-planning.cjs');
 test('Chrome cycle planning PT/EN desktop/mobile: recovered generation, proposal, apply, focus, errors and own admin debug',async()=>{
- const db=fixture();let release=null,calls=0;
+ const db=fixture();let release=null,calls=0,lastPrompt='';
  db.prepare("INSERT INTO training_cycles(id,user_id,objective,status,created_at) VALUES ('completed-empty-1',1,'Completed without plan','completed','2000-01-01'),('completed-empty-2',2,'Completed without plan','completed','2000-01-01')").run();
  const config=readAiConfig({AI_ENABLED:'true',OPENAI_API_KEY:'synthetic-key'});
  const app=await buildServer({db,sessionCookieSecure:false,aiConfig:config,aiClient:async(payload)=>{
-  calls++;await new Promise(r=>release=r);return {value:planFor(JSON.parse(payload.input[0].content[0].text).context),usage:{input:50,output:100,cached:0},error:null};
+  calls++;lastPrompt=JSON.parse(payload.input[0].content[0].text).trainingPrompt;await new Promise(r=>release=r);return {value:planFor(JSON.parse(payload.input[0].content[0].text).context),usage:{input:50,output:100,cached:0},error:null};
  }});
  const origin=await app.listen({port:0,host:'127.0.0.1'});const tokens=[1,2].map(id=>createSession(db,id).token);
  const server=createServer();server.listen(0,'127.0.0.1');await once(server,'listening');const port=server.address().port;await new Promise(r=>server.close(r));
@@ -119,8 +119,17 @@ test('Chrome cycle planning PT/EN desktop/mobile: recovered generation, proposal
      assert.deepEqual(await evaluate("(()=>{const r=document.querySelector('#cyclePlanningClose svg').getBoundingClientRect();return [Math.round(r.width),Math.round(r.height)];})()"),[20,20]);
     }
     await capture(`initial-${account}-${language}-${width}`);
+    // Issue #119: an optional athlete report travels with this generation only.
+    assert.equal(await evaluate("document.getElementById('cyclePlanningNotesField').hidden"),false);
+    assert.equal(await evaluate("document.querySelector('label[for=cyclePlanningNotes]').textContent"),require(`../src/public/locales/${language==='pt-BR'?'pt':'en'}.json`).cyclePlanning.notesLabel);
+    assert.equal(await evaluate("document.getElementById('cyclePlanningNotes').getAttribute('aria-describedby')"),'cyclePlanningNotesHint');
+    const report=`Synthetic report ${account} ${language} ${width}`;
+    await evaluate(`document.getElementById('cyclePlanningNotes').value=${JSON.stringify(report)}`);
+    await evaluate("document.getElementById('cyclePlanningNotesField').scrollIntoView({block:'end'})");await capture(`notes-${account}-${language}-${width}`);
     const before=calls;await evaluate("document.getElementById('cyclePlanningGenerate').click();document.getElementById('cyclePlanningGenerate').click()");
     for(let i=0;i<100 && calls===before;i++)await delay(10);assert.equal(calls,before+1);
+    assert.ok(lastPrompt.includes(`\n${report}\n\n`),'the report leads the adapted prompt');
+    await wait("document.getElementById('cyclePlanningNotes').value==='' && document.getElementById('cyclePlanningNotesField').hidden");
     await wait("document.getElementById('cyclePlanningGenerate').disabled && !document.getElementById('cyclePlanningCancel').hidden");
     const running=await command('Page.captureScreenshot',{format:'png'});writeFileSync(`/tmp/kinesis-cycle-running-${account}-${language}-${width}.png`,Buffer.from(running.data,'base64'));
     // Reload while the backend call is held. The durable execution is recovered.
@@ -176,6 +185,33 @@ test('Chrome cycle planning PT/EN desktop/mobile: recovered generation, proposal
   assert.ok((await evaluate("document.getElementById('cyclePlanningContent').textContent")).includes('Geração cancelada localmente'));
   await command('Fetch.disable');socket.removeEventListener('message',holdPoll);
   release();release=null;await delay(50);await key('Escape','Escape',27);
+  // Issue #119: a generation response that arrives after the dialog was closed
+  // and reopened never clears a newer report typed in the new opening.
+  await open();
+  await evaluate("document.getElementById('cyclePlanningNotes').value='First synthetic report'");
+  let heldPost=null;let resolvePost;const postPaused=new Promise(r=>resolvePost=r);
+  const holdPost=(event)=>{const m=JSON.parse(event.data);if(m.method==='Fetch.requestPaused' && !heldPost){heldPost=m.params.requestId;resolvePost();}};
+  socket.addEventListener('message',holdPost);
+  await command('Fetch.enable',{patterns:[{urlPattern:origin+'/api/ai/executions',requestStage:'Request'}]});
+  const postBefore=calls;
+  await evaluate("document.getElementById('cyclePlanningGenerate').click()");
+  await postPaused;
+  await key('Escape','Escape',27);await wait("document.getElementById('cyclePlanningModal').hidden");
+  await open();
+  await evaluate("document.getElementById('cyclePlanningNotes').value='Second synthetic report'");
+  await command('Fetch.continueRequest',{requestId:heldPost});
+  for(let i=0;i<200 && calls===postBefore;i++)await delay(10);
+  assert.equal(calls,postBefore+1);
+  assert.ok(lastPrompt.includes('\nFirst synthetic report\n\n'));
+  await delay(200);
+  assert.equal(await evaluate("document.getElementById('cyclePlanningNotes').value"),'Second synthetic report');
+  await command('Fetch.disable');socket.removeEventListener('message',holdPost);
+  release();release=null;await delay(50);await key('Escape','Escape',27);await wait("document.getElementById('cyclePlanningModal').hidden");
+  // Reopening after a stale response clears only the report that was already sent.
+  await evaluate("document.getElementById('cyclePlanningNotes').value='First synthetic report'");
+  await open();
+  assert.equal(await evaluate("document.getElementById('cyclePlanningNotes').value"),'');
+  await key('Escape','Escape',27);await wait("document.getElementById('cyclePlanningModal').hidden");
   // Invalid dates produce an actionable localized error without starting a call.
   db.prepare("UPDATE training_cycles SET target_date='bad' WHERE id='private'").run();await open();const before=calls;await evaluate("document.getElementById('cyclePlanningGenerate').click()");await wait("!document.getElementById('cyclePlanningError').hidden");assert.equal(calls,before);assert.equal(await evaluate('document.activeElement.id'),'cyclePlanningError');
   assert.equal(await evaluate("document.getElementById('cyclePlanningError').textContent"),require('../src/public/locales/pt.json').cyclePlanning.errors.planningTargetDateInvalid);

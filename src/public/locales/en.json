@@ -2038,6 +2038,9 @@
     "recordsEmpty": "No records selected."
   },
   "cyclePlanning": {
+    "notesLabel": "How are you now? (optional)",
+    "notesPlaceholder": "E.g.: recovered from the last race, no pain, I want quality sessions and long runs of 17–24 km again.",
+    "notesHint": "Sent with this generation only. The AI weighs your report together with your recorded sessions.",
     "admin": "Administrator details",
     "proposalIncompatible": "Incompatible proposal. Generate a new proposal for review.",
     "proposalOutdated": "This proposal is outdated. You can generate a new plan using the saved changes.",

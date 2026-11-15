@@ -122,6 +122,11 @@
         <p id="cyclePlanningStatus" class="cycle-planning-state" role="status" aria-live="polite"></p>
         <p id="cyclePlanningError" class="form-error" role="alert" tabindex="-1" hidden></p>
         <div id="cyclePlanningContent" class="cycle-planning-content"></div>
+        <div id="cyclePlanningNotesField" class="field cycle-planning-notes" hidden>
+          <label class="field-label" for="cyclePlanningNotes" data-i18n="cyclePlanning.notesLabel">How are you now? (optional)</label>
+          <textarea id="cyclePlanningNotes" class="prompt-textarea" rows="3" maxlength="2000" aria-describedby="cyclePlanningNotesHint" data-i18n-placeholder="cyclePlanning.notesPlaceholder"></textarea>
+          <p id="cyclePlanningNotesHint" class="field-hint" data-i18n="cyclePlanning.notesHint">Sent with this generation only. The AI weighs it with your recorded sessions.</p>
+        </div>
         <section id="cyclePlanningAdmin" class="cycle-plan-section" aria-labelledby="cyclePlanningDebugHeading" hidden>
           <h3 id="cyclePlanningDebugHeading" data-i18n="cyclePlanning.admin">Administrator details</h3>
           <button id="cyclePlanningDebug" type="button" class="btn-secondary" hidden data-i18n="cyclePlanning.debug">Inspect my execution</button>

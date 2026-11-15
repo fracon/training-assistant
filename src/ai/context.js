@@ -316,9 +316,12 @@ function buildContext(
           version: hash(evidence),
         });
     }
-    if (typeof taskNotes === 'string' && taskNotes.trim())
-      context.taskNotes = { authority: 'user_report', text: taskNotes.trim() };
   }
+  // The athlete's dated report for a planning task (weekly workouts, and the
+  // cycle architecture since issue #119). Absent when empty, so contexts built
+  // without one keep their hash.
+  if (['workouts', 'cycle'].includes(purpose) && typeof taskNotes === 'string' && taskNotes.trim())
+    context.taskNotes = { authority: 'user_report', text: taskNotes.trim() };
   addReference(profileSource(context.profile));
   addReference({
     type: 'preferences',

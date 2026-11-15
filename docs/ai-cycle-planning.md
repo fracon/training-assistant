@@ -1294,3 +1294,18 @@ remains. Opening the modal cancels that list poll. Stale list responses and
 failed reads cannot overwrite a newer per-cycle summary. The summary does not
 alter freshness, compatibility, version-base, ownership or application rules.
 It summarizes current backend artifacts and makes no additional paid call.
+
+## Athlete report in cycle planning (#119)
+
+The planning modal offers an optional "How are you now?" field (PT/EN, at most
+2000 characters) sent as `optional_context` with that generation only and
+cleared after it; a changed report never reuses a pending idempotency key. A
+response that arrives after the modal was closed or reopened never clears the
+field, which may hold a newer report; reopening that cycle clears only the text
+that was already sent.
+The report becomes `context.taskNotes` (absent when empty, so older contexts
+keep their hash), leads the adapted prompt as "Current athlete report", and is
+weighed under the shared `ATHLETE_REPORT_INSTRUCTIONS` described in
+`docs/ai-weekly-workouts.md`. The `cycle-plan-v1` schema, `cycle-delivery-v3`
+adapter and external prompt bytes are unchanged; applied-plan freshness (#102)
+is unchanged.

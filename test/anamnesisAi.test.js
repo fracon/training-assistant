@@ -13,7 +13,7 @@ const { createDatabase } = require('../src/db/database');
 const { SESSION_COOKIE_NAME, createSession } = require('../src/auth/sessions');
 const { readAiConfig } = require('../src/ai/config');
 const { buildContext, contextIsCurrent, appliedPlanIsCurrent, projectContextForModel } = require('../src/ai/context');
-const { buildPayload, SAFETY_INSTRUCTIONS, ANAMNESIS_INSTRUCTIONS } = require('../src/ai/client');
+const { buildPayload, SAFETY_INSTRUCTIONS, ANAMNESIS_INSTRUCTIONS, ATHLETE_REPORT_INSTRUCTIONS } = require('../src/ai/client');
 const { createExecutionService } = require('../src/ai/executions');
 const { createCyclePlanAdapter } = require('../src/ai/cycle-plan-adapter');
 const { createWorkoutAnalysisAdapter } = require('../src/ai/workout-analysis-adapter');
@@ -220,10 +220,10 @@ test('the anamnesis rules reach the model only with an anamnesis in the context'
   const adapter = { instructions: 'Synthetic adapter instructions', adaptPrompt: (prompt) => prompt, format: { type: 'json_object' } };
   const payload = (context) => buildPayload({ model: 'synthetic', context, prompt: 'Synthetic prompt', adapter, maxOutputTokens: 100 });
   const without = payload(cycleContext(db));
-  assert.equal(without.instructions, `${SAFETY_INSTRUCTIONS}\n${adapter.instructions}`, 'payloads without it are unchanged');
+  assert.equal(without.instructions, `${SAFETY_INSTRUCTIONS}\n${ATHLETE_REPORT_INSTRUCTIONS}\n${adapter.instructions}`, 'payloads without it are unchanged');
   completeWith(db);
   const withIt = payload(cycleContext(db, { includeRecords: false }));
-  assert.equal(withIt.instructions, `${SAFETY_INSTRUCTIONS}\n${ANAMNESIS_INSTRUCTIONS}\n${adapter.instructions}`);
+  assert.equal(withIt.instructions, `${SAFETY_INSTRUCTIONS}\n${ATHLETE_REPORT_INSTRUCTIONS}\n${ANAMNESIS_INSTRUCTIONS}\n${adapter.instructions}`);
   for (const rule of [/nutrition, diet, calorie or supplement advice/, /weight, shape or BMI/, /promise or target weight loss/, /not diagnoses/, /health professional/])
     assert.match(ANAMNESIS_INSTRUCTIONS, rule);
   assert.match(withIt.input[0].content[0].text, /"anamnesis":/);
