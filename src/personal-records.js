@@ -118,7 +118,9 @@ function syncAnamnesisRecords(db, userId, now = new Date().toISOString()) {
   for (const record of readRecords(db, userId).records) {
     const best = record.best;
     if (!best) continue;
-    races.push({ distance: record.distance, distance_km: record.distance_km, time_seconds: best.time_seconds, year: best.year });
+    // Missing record metadata must not erase an answer the athlete already gave.
+    const previous = answers.race_results?.value?.find((race) => race.distance === record.distance);
+    races.push({ distance: record.distance, distance_km: record.distance_km, time_seconds: best.time_seconds, year: best.year ?? previous?.year ?? null });
   }
   const order = (distance) => { const index = answer.value.findIndex((race) => race.distance === distance); return index < 0 ? answer.value.length : index; };
   races.sort((a, b) => order(a.distance) - order(b.distance));

@@ -88,7 +88,7 @@ test('anamnesis originals survive synchronization, unrelated edits and deletion 
   saveRecord(db,1,'5k',{time_seconds:1400});
   let current=readAnamnesis(db,1).anamnesis;
   assert.equal(current.answers.race_results.value[0].time_seconds,1400);
-  assert.equal(current.answers.race_results.value[0].year,null);
+  assert.equal(current.answers.race_results.value[0].year,2024);
   assert.ok(current.revision>before.revision);
   assert.throws(()=>saveAnamnesis(db,1,{expected_revision:before.revision,answers:{race_results:answer([])}}),/changed in another session/);
   assert.equal(current.status,'draft');
@@ -248,4 +248,27 @@ test('the questionnaire accepts a record without a year and bounds other-distanc
  anam(db,[{distance:'5k',time_seconds:30}]);
  assert.equal(best(db).year,null);
  assert.throws(()=>anam(db,Array(6).fill(race('other',2000))),/An answer is invalid/);
+});
+
+
+test('record synchronization preserves an existing year when date is absent and replaces it only with a supplied year', (t)=>{
+ const db=setup(t);
+ anam(db,[race('5k',1500,2024)]);
+ const saved=()=>readAnamnesis(db,1).anamnesis;
+ saveRecord(db,1,'5k',{time_seconds:1400});
+ assert.equal(saved().answers.race_results.value[0].year,2024);
+ assert.equal(saved().answers.race_results.value[0].time_seconds,1400);
+ saveRecord(db,1,'5k',{time_seconds:1300,achieved_on:'2025-06-01'});
+ assert.equal(saved().answers.race_results.value[0].year,2025);
+ saveRecord(db,1,'5k',{time_seconds:1200,achieved_on:null});
+ assert.equal(saved().answers.race_results.value[0].year,2025);
+ assert.equal(saved().answers.race_results.value[0].time_seconds,1200);
+ const revision=saved().revision;
+ saveRecord(db,1,'5k',{time_seconds:1200});
+ assert.equal(saved().revision,revision);
+ // No year is invented for a distance with no previous answer.
+ saveRecord(db,1,'10k',{time_seconds:3000});
+ assert.equal(saved().answers.race_results.value.find(r=>r.distance==='10k').year,null);
+ assert.equal(best(db).achieved_on,null);
+ assert.equal(best(db).year,null, 'preserving the questionnaire does not fabricate a record date');
 });

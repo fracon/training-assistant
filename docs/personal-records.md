@@ -45,6 +45,9 @@ question is filled and a draft is never completed automatically. The questionnai
 supports nine rows (four standard records plus up to five other-distance results).
 Only positive whole seconds up to seven days are accepted. A missing year is
 stored as null and shown explicitly; a known year is never expanded into a date.
+When synchronizing a record without a date, preserve the existing questionnaire
+year for that distance. Only a nonempty incoming year replaces it; no date or
+year is fabricated on the independently stored record.
 
 Original self-reports are preserved when a questionnaire save sends back an
 unchanged automatically copied field. Explicit edits become new self-reports.
