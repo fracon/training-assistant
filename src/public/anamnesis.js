@@ -1,3 +1,4 @@
+import { formatDuration as formatSeconds } from './shared/duration.js';
 import {
   initShell,
   getShellI18n,
@@ -127,15 +128,10 @@ function formatAnswer(item, answer) {
 
 function formatRace(race) {
   const distance = race.distance === 'other' ? formatDistance(race.distance_km, prefs().distance_unit, 1) : t(`races.distances.${race.distance}`);
-  return `${distance} · ${formatSeconds(race.time_seconds)} · ${race.year}`;
+  return `${distance} · ${formatSeconds(race.time_seconds)} · ${race.year ?? t('races.unknownYear')}`;
 }
 
-function formatSeconds(total) {
-  const hours = Math.floor(total / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  const seconds = total % 60;
-  return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-}
+
 
 function parseNumber(text) {
   const normalized = String(text ?? '').trim().replace(',', '.');
@@ -555,15 +551,15 @@ function racesField(item, answer) {
       return wrapper;
     };
     const otherPart = part(otherKm, 'races.otherKm', () => ({ unit: distanceUnit }));
-    const time = el('fieldset', 'anamnesis-race-time');
-    const timeLegend = el('legend', 'field-hint');
+    const time = el('fieldset', 'duration-group');
+    const timeLegend = el('legend', 'field-label');
     bind(timeLegend, () => t('races.time'));
-    const timeInputs = el('div', 'anamnesis-duration');
+    const timeInputs = el('div', 'duration-fields');
     timeInputs.append(part(hours, 'races.hours'), part(minutes, 'races.minutes'), part(seconds, 'races.seconds'));
     time.append(timeLegend, timeInputs);
     const remove = el('button', 'btn-secondary anamnesis-race-remove', { type: 'button' });
     bind(remove, () => t('races.remove'));
-    const grid = el('div', 'anamnesis-race-grid');
+    const grid = el('div', 'form-grid');
     grid.append(part(select, 'races.distance'), otherPart, part(year, 'races.year'));
     row.append(title, grid, time, remove);
     const syncOther = () => { otherPart.hidden = select.value !== 'other'; };
@@ -576,11 +572,12 @@ function racesField(item, answer) {
       collect() {
         const timeParts = [hours, minutes, seconds];
         const yearValue = readNumber(year);
-        if (timeParts.every(isBlank) || yearValue === null) return { error: 'raceIncomplete' };
+        if (timeParts.every(isBlank)) return { error: 'raceIncomplete' };
         // A blank hours or minutes box means zero (a 5 km in 24:10).
         const [h, m, s] = timeParts.map((input) => (isBlank(input) ? 0 : readNumber(input)));
         if (![h, m, s].every(Number.isInteger) || h < 0 || m < 0 || m > 59 || s < 0 || s > 59) return { error: 'timeFormat' };
-        if (!Number.isInteger(yearValue)) return { error: 'invalidAnswer' };
+        if (yearValue !== null && !Number.isInteger(yearValue)) return { error: 'invalidAnswer' };
+        if (h * 3600 + m * 60 + s < 60 || h * 3600 + m * 60 + s > 604800) return { error: 'raceTimeRange' };
         const race = { distance: select.value, time_seconds: h * 3600 + m * 60 + s, year: yearValue };
         if (select.value === 'other') {
           const km = readNumber(otherKm);

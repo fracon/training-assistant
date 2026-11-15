@@ -476,7 +476,8 @@
       "administration": "Administração",
       "users": "Usuários",
       "feedback": "Feedbacks",
-      "aiHistory": "Histórico de prompts"
+      "aiHistory": "Histórico de prompts",
+      "records": "Recordes pessoais"
     },
     "soon": "Em breve",
     "noCycle": "Nenhum ciclo ativo",
@@ -2030,7 +2031,11 @@
     "anamnesisShared": "Compartilhados com a IA",
     "anamnesisNotShared": "Não compartilhados com a IA",
     "anamnesisNotStarted": "Ainda não respondida. Planejar o ciclo e gerar treinos com IA exige a anamnese concluída.",
-    "anamnesisDraft": "Em andamento. Conclua a anamnese para planejar o ciclo e gerar treinos com IA."
+    "anamnesisDraft": "Em andamento. Conclua a anamnese para planejar o ciclo e gerar treinos com IA.",
+    "personalRecords": "Recordes pessoais",
+    "recordsOrigin": "Marcas históricas selecionadas para este planejamento, com suas datas e origens.",
+    "openRecords": "Ver e corrigir recordes",
+    "recordsEmpty": "Nenhuma marca selecionada."
   },
   "cyclePlanning": {
     "admin": "Detalhes administrativos",
@@ -2276,7 +2281,7 @@
       },
       "race_results": {
         "label": "Resultados de prova",
-        "hint": "Opcional. Até 5 resultados recentes ajudam a estimar ritmos com mais segurança."
+        "hint": "Inclua seus melhores tempos de 5 km, 10 km, meia maratona e maratona. Você pode informar também até 5 resultados de outras distâncias. O ano é opcional."
       },
       "strength_training": {
         "label": "Você faz treino de força?",
@@ -2345,7 +2350,7 @@
       "otherDistance": "Outra",
       "otherKm": "Distância ({unit})",
       "time": "Tempo",
-      "year": "Ano",
+      "year": "Ano (opcional)",
       "none": "Não tenho resultados para informar",
       "distances": {
         "5k": "5 km",
@@ -2355,7 +2360,8 @@
       },
       "hours": "Horas",
       "minutes": "Minutos",
-      "seconds": "Segundos"
+      "seconds": "Segundos",
+      "unknownYear": "Ano não informado"
     },
     "experienceNotes": {
       "label": "Observações sobre sua experiência (opcional)",
@@ -2418,8 +2424,8 @@
       "invalidAnswer": "Este valor não é válido.",
       "textTooLong": "O texto está longo demais.",
       "timeFormat": "Informe um tempo válido: horas, minutos e segundos inteiros, com minutos e segundos de 0 a 59.",
-      "raceIncomplete": "Preencha distância, tempo e ano de cada resultado.",
-      "anamnesisConflict": "Suas respostas mudaram em outra sessão. Recarregue a página para continuar.",
+      "raceIncomplete": "Preencha distância e tempo de cada resultado.",
+      "anamnesisConflict": "Suas respostas mudaram em outra aba ou seus recordes foram atualizados automaticamente. Recarregue a versão salva antes de continuar.",
       "anamnesisIncomplete": "Ainda há perguntas sem resposta.",
       "memoryConflict": "As observações sobre experiência mudaram em outra sessão. Recarregue a versão salva: o texto que você digitou é mantido e, ao salvar, substitui a versão da outra sessão.",
       "weightDateExists": "Já existe um peso registrado nesta data.",
@@ -2428,7 +2434,8 @@
       "invalidWeightDate": "Escolha uma data válida.",
       "weightDateOutOfRange": "A data não pode estar no futuro.",
       "load": "Não foi possível carregar sua anamnese.",
-      "generic": "Não foi possível salvar. Tente novamente."
+      "generic": "Não foi possível salvar. Tente novamente.",
+      "raceTimeRange": "Informe um tempo entre 1 minuto e 168 horas, com minutos e segundos entre 0 e 59."
     },
     "placeholders": {
       "birth_year": "Ex.: 1990",
@@ -2527,5 +2534,53 @@
       "weightRequired": "Este é o único registro e sua anamnese concluída informa o peso. Para apagá-lo, escolha \"Prefiro não informar\" na anamnese.",
       "generic": "Não foi possível salvar. Tente novamente."
     }
+  },
+  "records": {
+    "pageTitle": "Recordes pessoais - Kinesis",
+    "title": "Recordes pessoais",
+    "subtitle": "Suas melhores marcas, incluindo as informadas na anamnese.",
+    "distances": {
+      "5k": "5 km",
+      "10k": "10 km",
+      "21k": "Meia maratona",
+      "42k": "Maratona"
+    },
+    "loading": "Carregando recordes…",
+    "retry": "Tentar novamente",
+    "hours": "Horas",
+    "minutes": "Minutos",
+    "seconds": "Segundos",
+    "date": "Data da marca (opcional)",
+    "race": "Nome da prova (opcional)",
+    "save": "Salvar marca",
+    "cancel": "Cancelar",
+    "edit": "Editar marca manual",
+    "add": "Adicionar marca manual",
+    "remove": "Remover marca manual",
+    "removeConfirm": "Remover a marca manual de {distance}? A anamnese ficará com a melhor sessão, se houver, ou sem marca nessa distância. O valor anterior não será restaurado.",
+    "origin": {
+      "manual": "Marca manual",
+      "anamnesis": "Informada na anamnese",
+      "session": "Resultado de sessão"
+    },
+    "openSession": "Ver sessão",
+    "unknownDate": "Data não informada",
+    "year": "Ano: {year}",
+    "manualTime": "Sua marca manual: {time} (o recorde atual é mais rápido).",
+    "note": "Resultados registrados nessa distância entram automaticamente, aceitando uma pequena diferença de medição do relógio. Treinos mais longos não são divididos para estimar recordes.",
+    "saved": "Marca salva.",
+    "deleted": "Marca manual removida.",
+    "errors": {
+      "load": "Não foi possível carregar os recordes.",
+      "generic": "Não foi possível salvar a alteração. Tente novamente.",
+      "invalidTime": "Informe um tempo entre 1 minuto e 168 horas, com minutos e segundos entre 0 e 59.",
+      "invalidDate": "Informe uma data válida entre 1950 e hoje.",
+      "invalidRaceName": "O nome da prova deve ter até 120 caracteres."
+    },
+    "time": "Tempo",
+    "clearDate": "Deixar sem data",
+    "empty": "Nenhuma marca registrada.",
+    "syncNote": "Adicionar ou atualizar uma marca manual atualiza sua anamnese automaticamente.",
+    "savedOther": "Marca manual salva. O recorde de {distance} continua sendo {time}, registrado em uma sessão."
   }
 }

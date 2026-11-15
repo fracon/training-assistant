@@ -161,7 +161,7 @@ test('Chrome PT/EN desktop/mobile: the anamnesis guides, validates, resumes, com
       await wait("!document.getElementById('anamnesisReview').hidden");
       assert.equal(await evaluate('document.activeElement.id'), 'anamnesisReviewTitle');
       assert.match(await evaluate("document.getElementById('anamnesisSummary').textContent"), /Synthetic knee discomfort/);
-      assert.match(await evaluate("document.getElementById('anamnesisSummary').textContent"), /0:24:10 · 2025/);
+      assert.match(await evaluate("document.getElementById('anamnesisSummary').textContent"), /24:10 · 2025/);
       await evaluate("document.getElementById('anamnesisComplete').click()");
       await wait(`document.getElementById('anamnesisStatus').textContent === ${JSON.stringify(a.status.completed)}`);
       assert.equal(await evaluate("document.getElementById('anamnesisReviewTitle').textContent"), a.answersTitle);

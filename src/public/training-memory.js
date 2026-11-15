@@ -1,3 +1,4 @@
+import { formatDuration } from './shared/duration.js';
 import {
   initShell,
   getShellI18n,
@@ -206,7 +207,7 @@ async function initMemory() {
       card.setAttribute('aria-labelledby', h.id);
       header.append(h);
       if (key !== 'interpretations') {
-        const actions = { cycle: 'editCycle', availability: 'editAvailability', plan: 'openPlanning', shoes: 'openShoes', previousCycles: 'openCycles', anamnesis: 'editAnamnesis' };
+        const actions = { cycle: 'editCycle', availability: 'editAvailability', plan: 'openPlanning', shoes: 'openShoes', previousCycles: 'openCycles', anamnesis: 'editAnamnesis', personalRecords: 'openRecords' };
         link(header, href, t(actions[key] ?? 'openCalendar'), key);
       }
       card.append(header); paragraph(card, t(origin), true);
@@ -267,6 +268,14 @@ async function initMemory() {
       metric(facts, t('anamnesisSensitive'), t(memory.anamnesis.sensitiveDataShared ? 'anamnesisShared' : 'anamnesisNotShared'));
       paragraph(anamnesis, `${t('updated')}: ${date(memory.anamnesis.updatedOn)}`, true).classList.add('memory-updated');
     } else paragraph(anamnesis, t(memory.anamnesis.status === 'draft' ? 'anamnesisDraft' : 'anamnesisNotStarted'));
+    if (memory.personalRecords) {
+      const records = section('personalRecords', 'recordsOrigin', '/records.html');
+      if (!memory.personalRecords.length) paragraph(records, t('recordsEmpty'));
+      for (const record of memory.personalRecords) {
+        const when = record.achievedOn !== 'not_informed' ? date(record.achievedOn) : record.year || t('unknown');
+        paragraph(records, `${formatDistance(record.distanceKm, getUserPreferences().distance_unit)} · ${formatDuration(record.timeSeconds)} · ${translate(i18n.messages, `records.origin.${record.origin}`)} · ${when}`);
+      }
+    }
     if (memory.purpose !== 'cycle') {
       const plan = section('plan', 'planOrigin', '/cycles.html');
       const applied = memory.appliedPlan;

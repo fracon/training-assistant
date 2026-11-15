@@ -1,0 +1,199 @@
+'use strict';
+const test=require('node:test');
+const assert=require('node:assert/strict');
+const {buildServer}=require('../src/server');
+const {createDatabase}=require('../src/db/database');
+const {createSession,SESSION_COOKIE_NAME}=require('../src/auth/sessions');
+const {saveAnamnesis,readAnamnesis}=require('../src/anamnesis');
+const {saveRecord}=require('../src/personal-records');
+const {launchChrome}=require('./helpers/chrome.cjs');
+const en=require('../src/public/locales/en.json');
+const pt=require('../src/public/locales/pt.json');
+
+test('Chrome: records preserve source data and manual drafts in a localized, accessible modal',async(t)=>{
+ const db=createDatabase({filename:':memory:'});
+ db.prepare("INSERT INTO users(id,email,password_hash,first_name,onboarding_status) VALUES (1,'records@example.test','unused','Ana','active')").run();
+ saveAnamnesis(db,1,{expected_revision:0,answers:{race_results:{status:'answered',value:[{distance:'5k',time_seconds:1500,year:2024}]}}});
+ db.prepare("UPDATE athlete_anamnesis SET status='completed',completed_at='2026-01-01T00:00:00Z'").run();
+ db.prepare("INSERT INTO trainings(user_id,dia,tipo,fit_distance,fit_duration,result_data_source) VALUES (1,'2026-01-01','Corrida',21.1,'1:58:20','manual')").run();
+ saveRecord(db,1,'21k',{time_seconds:7500,achieved_on:'2025-01-01',race_name:'Original race'});
+ const app=await buildServer({db,sessionCookieSecure:false});
+ const origin=await app.listen({port:0,host:'127.0.0.1'});
+ t.after(async()=>{await app.close();db.close();});
+ const {command,evaluate,wait,key,capture}=await launchChrome(t);
+ await command('Network.setCookie',{name:SESSION_COOKIE_NAME,value:createSession(db,1).token,url:origin,httpOnly:true});
+ const fill=async(id,value)=>evaluate(`document.getElementById(${JSON.stringify(id)}).value=${JSON.stringify(value)}`);
+ const click=async(selector)=>evaluate(`document.querySelector(${JSON.stringify(selector)}).click()`);
+ const manual=()=>db.prepare("SELECT * FROM personal_records WHERE user_id=1 AND distance='21k'").get();
+ for(const [lang,messages] of [['pt-BR',pt],['en-US',en]]) for(const width of [1280,390]){
+  db.prepare("UPDATE athlete_anamnesis SET status='draft' WHERE user_id=1").run();
+  saveAnamnesis(db,1,{expected_revision:readAnamnesis(db,1).anamnesis.revision,answers:{race_results:{status:'answered',value:[{distance:'5k',time_seconds:1500,year:2024},...readAnamnesis(db,1).anamnesis.answers.race_results.value.filter(r=>r.distance!=='5k')]}}});
+  db.prepare("UPDATE athlete_anamnesis SET status='completed' WHERE user_id=1").run();
+  db.prepare('UPDATE users SET preferred_lang=? WHERE id=1').run(lang);
+  await command('Emulation.setDeviceMetricsOverride',{width,height:800,deviceScaleFactor:1,mobile:width===390});
+  await command('Page.navigate',{url:origin+'/shoes.html'});
+  await wait("document.querySelector('.shoes-header-text h1') && document.body.classList.contains('shell-mounted')");
+  const expectedPageSizing=await evaluate("(()=>{const s=getComputedStyle(document.querySelector('.shoes-page'));return [s.maxWidth,s.paddingLeft,s.paddingRight]})()");
+  await command('Page.navigate',{url:origin+'/records.html'});
+  await wait("document.querySelectorAll('#recordsList > section').length===4");
+  assert.equal(await evaluate("document.querySelector('#recordsList .record-value').textContent"),'25:00');
+  assert.deepEqual(await evaluate("(()=>{const s=getComputedStyle(document.querySelector('.records-page'));return [s.maxWidth,s.paddingLeft,s.paddingRight]})()"),expectedPageSizing);
+  assert.equal(await evaluate("document.querySelector('#recordsList a[href=\"/anamnesis.html\"]')"),null);
+  assert.equal(await evaluate("document.querySelectorAll('#recordsList > section')[1].textContent.includes("+JSON.stringify(messages.records.empty)+")"),true);
+  const positions=await evaluate("[...document.querySelectorAll('#recordsList > section')].map(e=>Math.round(e.getBoundingClientRect().top))");
+  assert.equal(positions[0]===positions[1],width===1280);
+  assert.equal(await evaluate(`([...document.querySelectorAll('#recordsList .btn-icon')].every(b=>{
+   const r=b.getBoundingClientRect();return Math.round(r.width)>=40 && Math.round(r.height)>=40 && b.closest('.record-header') && !b.hasAttribute('title') && b.querySelector('.custom-tooltip') && b.querySelector('[data-lucide]');
+  }))`),true);
+  assert.equal(await evaluate("document.querySelector('[data-focus-key=\"21k-remove\"]').classList.contains('action-danger')"),true);
+  assert.equal(await evaluate("document.querySelector('[data-focus-key=\"21k-edit\"]').getAttribute('aria-label')"),`${messages.records.edit} · ${messages.records.distances['21k']}`);
+  await capture(`records-review-${lang}-${width}`);
+  await click('[data-focus-key="21k-edit"]');
+  assert.equal(await evaluate('document.activeElement.id'),'recordFormTitle');
+  assert.equal(await evaluate("document.getElementById('appView').closest('[inert]')!==null"),true);
+  assert.equal(await evaluate("document.getElementById('recordDistance')"),null);
+  assert.equal(await evaluate("document.getElementById('recordFormTitle').textContent"),`${messages.records.edit} · ${messages.records.distances['21k']}`);
+  assert.deepEqual(await evaluate("['recordHours','recordMinutes','recordSeconds','recordRace'].map(id=>document.getElementById(id).value)"),['2','5','0','Original race']);
+  await click('#recordSave');
+  await wait("document.getElementById('recordFormCard').hidden");
+  assert.equal(manual().time_seconds,7500,'saving cannot copy the faster session');
+  assert.equal(manual().race_name,'Original race');
+  assert.equal(await evaluate('document.activeElement.dataset.focusKey'),'21k-edit');
+  assert.equal(await evaluate("document.getElementById('recordsStatus')"),null);
+  assert.equal(await evaluate("document.querySelector('.toast-text').textContent.includes('1:58:20')"),true);
+  assert.equal(await evaluate("document.querySelectorAll('[data-i18n=\"records.syncNote\"]').length"),1);
+  await click('[data-focus-key="21k-edit"]');
+  assert.equal(await evaluate("document.getElementById('recordClearDate').hidden"),false);
+  await click('#recordClearDate');
+  assert.equal(await evaluate("document.getElementById('recordDate').dataset.iso"),'');
+  assert.equal(await evaluate("document.getElementById('recordClearDate').hidden"),true);
+  await click('#recordDate');
+  await click('#recordDate-calendar-popup [data-date]');
+  assert.equal(await evaluate("document.getElementById('recordClearDate').hidden"),false);
+  await click('#recordClearDate');
+  assert.deepEqual(await evaluate("[...document.querySelectorAll('#recordForm input')].map(e=>e.id)"),['recordHours','recordMinutes','recordSeconds','recordDate','recordRace']);
+  assert.equal(await evaluate("Math.abs(document.getElementById('recordHours').getBoundingClientRect().height-document.getElementById('recordRace').getBoundingClientRect().height)<0.1"),true);
+  assert.equal(await evaluate("Number(getComputedStyle(document.querySelector('.duration-group legend')).fontWeight)>Number(getComputedStyle(document.querySelector('.duration-fields label')).fontWeight)"),true);
+  await fill('recordRace','Draft <race>');
+  // Re-render during language change without permitting focus outside the modal.
+  await evaluate("document.dispatchEvent(new CustomEvent('app:languagechange'))");
+  assert.equal(await evaluate("document.getElementById('recordRace').value"),'Draft <race>');
+  await evaluate("document.getElementById('recordSave').focus()");
+  await key('Tab','Tab',9);
+  assert.equal(await evaluate('document.activeElement.id'),'recordClose');
+  await key('Tab','Tab',9,8);
+  assert.equal(await evaluate('document.activeElement.id'),'recordSave');
+  await capture(`records-review-form-${lang}-${width}`);
+  await key('Escape','Escape',27);
+  assert.equal(await evaluate("document.getElementById('recordFormCard').hidden"),true);
+  assert.equal(await evaluate('document.activeElement.dataset.focusKey'),'21k-edit');
+  await click('[data-focus-key="5k-edit"]');
+  assert.equal(await evaluate("document.getElementById('recordMinutes').value"),'');
+  assert.equal(await evaluate("document.getElementById('recordClearDate').hidden"),true);
+  await click('#recordSave'); await wait("!document.getElementById('recordError').hidden");
+  assert.equal(await evaluate('document.activeElement.id'),'recordHours');
+  await fill('recordMinutes','27'); await click('#recordSave');
+  await wait("document.getElementById('recordFormCard').hidden");
+  assert.equal(await evaluate("document.querySelector('#recordsList .record-value').textContent"),'27:00');
+  assert.equal(await evaluate("document.querySelector('.toast-text').textContent"),messages.records.saved);
+  assert.equal(readAnamnesis(db,1).anamnesis.answers.race_results.value.find(r=>r.distance==='5k').time_seconds,1620);
+  await click('[data-focus-key="5k-remove"]'); await wait("!!document.getElementById('confirmOkBtn')");
+  await click('#confirmOkBtn'); await wait("!document.querySelector('[data-focus-key=\"5k-remove\"]')");
+  assert.equal(readAnamnesis(db,1).anamnesis.answers.race_results.value.some(r=>r.distance==='5k'),false);
+  assert.equal(await evaluate("document.getElementById('recordsStatus')"),null);
+  assert.equal(await evaluate("document.querySelector('#recordsList > section:first-child .record-value')"),null);
+  assert.equal(await evaluate('document.documentElement.scrollWidth <= window.innerWidth'),true);
+ }
+ // Shared calendar stays outside the scrolling card and inside the modal focus trap.
+ for(const [lang,messages] of [['pt-BR',pt],['en-US',en]]) for(const [width,height] of [[1280,800],[390,844],[390,600]]){
+  db.prepare('UPDATE users SET preferred_lang=? WHERE id=1').run(lang);
+  await command('Emulation.setDeviceMetricsOverride',{width,height,deviceScaleFactor:1,mobile:width===390});
+  // A dated manual record: the reused picker must open on that month.
+  saveRecord(db,1,'21k',{time_seconds:7500,achieved_on:'2025-01-01',race_name:'Original race'});
+  await command('Page.navigate',{url:origin+'/records.html'});
+  await wait("document.querySelectorAll('#recordsList > section').length===4");
+  await click('[data-focus-key="21k-edit"]');
+  await new Promise(resolve=>setTimeout(resolve,250));
+  await evaluate("document.getElementById('recordDate').scrollIntoView({block:'center'})");
+  await new Promise(resolve=>setTimeout(resolve,100));
+  const mouseClick=async(selector)=>{
+   const p=await evaluate(`(()=>{const r=document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}})()`);
+   await command('Input.dispatchMouseEvent',{type:'mousePressed',...p,button:'left',clickCount:1});
+   await command('Input.dispatchMouseEvent',{type:'mouseReleased',...p,button:'left',clickCount:1});
+  };
+  await mouseClick('#recordDate');
+  const visibility=await evaluate(`(()=>{const p=document.getElementById('recordDate-calendar-popup'),r=p.getBoundingClientRect();
+   return {inside:r.left>=0 && r.top>=0 && r.right<=innerWidth && r.bottom<=innerHeight,visible:!p.classList.contains('hidden'),
+    corners:[[r.left+4,r.top+4],[r.right-4,r.top+4],[r.left+4,r.bottom-4],[r.right-4,r.bottom-4]].every(([x,y])=>p.contains(document.elementFromPoint(x,y)))};})()`);
+  assert.deepEqual(visibility,{inside:true,visible:true,corners:true},`${lang} ${width}x${height}`);
+  await capture(`records-calendar-${lang}-${width}-${height}`);
+  assert.equal(await evaluate("document.querySelector('#recordDate-calendar-popup .is-selected')?.dataset.date"),'2025-01-01','opens on the selected month');
+  // Escape closes only the calendar: the modal, typed values and focus stay.
+  const typedMinutes=await evaluate("document.getElementById('recordMinutes').value");
+  await evaluate("document.getElementById('recordMinutes').value='3'");
+  await evaluate("document.querySelector('#recordDate-calendar-popup .is-selected').focus()");
+  await key('Escape','Escape',27);
+  assert.equal(await evaluate("document.getElementById('recordDate-calendar-popup').hidden"),true);
+  assert.equal(await evaluate("document.getElementById('recordFormCard').hidden"),false);
+  assert.equal(await evaluate('document.activeElement.id'),'recordDate');
+  assert.equal(await evaluate("document.getElementById('recordMinutes').value"),'3');
+  await evaluate(`document.getElementById('recordMinutes').value=${JSON.stringify(typedMinutes)}`);
+  await mouseClick('#recordDate');
+  await mouseClick('#recordDate-calendar-popup [data-date]');
+  assert.equal(await evaluate("document.getElementById('recordDate-calendar-popup').classList.contains('hidden')"),true);
+  assert.ok(await evaluate("document.getElementById('recordDate').dataset.iso"));
+  await evaluate("document.getElementById('recordDate').focus({preventScroll:true})");
+  await key('ArrowDown','ArrowDown',40);
+  assert.equal(await evaluate("document.activeElement.matches('#recordDate-calendar-popup [data-date]')"),true);
+  await key('ArrowRight','ArrowRight',39);
+  const selected=await evaluate('document.activeElement.dataset.date');
+  await command('Input.dispatchKeyEvent',{type:'keyDown',key:'Enter',code:'Enter',windowsVirtualKeyCode:13,text:'\r'});
+  await command('Input.dispatchKeyEvent',{type:'keyUp',key:'Enter',code:'Enter',windowsVirtualKeyCode:13});
+  assert.equal(await evaluate("document.getElementById('recordDate').dataset.iso"),selected);
+  // Resize and scrolling close the popup; the Save action remains reachable.
+  await mouseClick('#recordDate');
+  await evaluate("window.dispatchEvent(new Event('resize'))");
+  assert.equal(await evaluate("document.getElementById('recordDate-calendar-popup').classList.contains('hidden')"),true);
+  await mouseClick('#recordDate');
+  await evaluate("document.querySelector('#recordFormCard .modal-card').dispatchEvent(new Event('scroll'))");
+  assert.equal(await evaluate("document.getElementById('recordDate-calendar-popup').classList.contains('hidden')"),true);
+  await evaluate("document.getElementById('recordSave').scrollIntoView({block:'center'})");
+  await mouseClick('#recordSave');
+  await wait("document.getElementById('recordFormCard').hidden");
+  assert.equal(await evaluate('document.activeElement.dataset.focusKey'),'21k-edit');
+ }
+ await command('Emulation.setDeviceMetricsOverride',{width:390,height:430,deviceScaleFactor:1,mobile:true});
+ await command('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});
+ await click('[data-focus-key="21k-edit"]'); await capture('records-review-low-height');
+ assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'),true);
+ await click('#recordCancel');
+ // Shared duration styles must not restyle hints on unrelated pages.
+ for(const [page,opacity] of [['shoes','0.8'],['weight','0.8'],['ai-coach','1']]){
+  await command('Page.navigate',{url:origin+'/'+page+'.html'});
+  await wait("document.body.classList.contains('shell-mounted') && !!document.querySelector('.field-hint')");
+  assert.deepEqual(await evaluate("(()=>{const s=getComputedStyle(document.querySelector('.field-hint'));return [s.opacity,s.lineHeight]})()"),[opacity,'normal'],page);
+ }
+ // Outside a modal the calendar opens attached to its field, even though the
+ // page container keeps a transform from its entrance animation.
+ await command('Emulation.setDeviceMetricsOverride',{width:1280,height:800,deviceScaleFactor:1,mobile:false});
+ await command('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'no-preference'}]});
+ for(const [page,id] of [['weight','weightDate'],['ai-coach','targetDateDisplay']]){
+  await command('Page.navigate',{url:origin+'/'+page+'.html'});
+  await wait(`document.body.classList.contains('shell-mounted') && !!document.getElementById('${id}')?.closest('.date-picker')`);
+  await wait("getComputedStyle(document.getElementById('appView')).transform!=='none'");
+  await evaluate(`document.getElementById('${id}').scrollIntoView({block:'center'});document.getElementById('${id}').click()`);
+  await wait(`!document.getElementById('${id}-calendar-popup').hidden`);
+  const gap=await evaluate(`(()=>{const p=document.getElementById('${id}-calendar-popup').getBoundingClientRect(),i=document.getElementById('${id}').getBoundingClientRect();
+   return {left:Math.round(Math.abs(p.left-i.left)),attached:Math.abs(p.top-i.bottom-6)<=1||Math.abs(i.top-p.bottom-6)<=1}})()`);
+  assert.deepEqual(gap,{left:0,attached:true},page);
+ }
+ await command('Page.navigate',{url:origin+'/training-memory.html'});
+ await wait("!!document.getElementById('memory-personalRecords')");
+ assert.equal(await evaluate("document.querySelector('#memory-personalRecords').closest('section').textContent.includes('1:58:20')"),true);
+ await click('#purposeTab-workouts');
+ await wait("document.getElementById('purposeTab-workouts').getAttribute('aria-selected')==='true' && !document.getElementById('memory-personalRecords')");
+ // Source invalidation still reveals the slower manual time, never a copied session.
+ db.prepare('DELETE FROM trainings').run();
+ const records=await app.inject({url:'/api/records',headers:{cookie:`${SESSION_COOKIE_NAME}=${createSession(db,1).token}`}});
+ assert.equal(records.json().records[2].best.time_seconds,7500);
+});

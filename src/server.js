@@ -1,6 +1,8 @@
 'use strict';
 
 const path = require('node:path');
+const { readRecords, saveRecord, deleteRecord, RecordError, syncAnamnesisRecords } = require('./personal-records');
+
 const { registerAiRoutes } = require('./ai/routes');
 const { readAiConfig } = require('./ai/config');
 const { readCyclePlanningSummary, hasPlanningHistory } = require('./ai/cycle-plans');
@@ -372,6 +374,13 @@ async function buildServer(options = {}) {
     if (!session) return reply.redirect('/login.html');
     if (needsAnamnesis(session)) return reply.redirect('/anamnesis.html');
     return reply.sendFile('weight.html');
+  });
+
+  app.get('/records.html', async (request, reply) => {
+    const session = sessionOf(request);
+    if (!session) return reply.redirect('/login.html');
+    if (needsAnamnesis(session)) return reply.redirect('/anamnesis.html');
+    return reply.sendFile('records.html');
   });
 
   app.get('/training-memory.html', async (request, reply) => {
@@ -1182,9 +1191,10 @@ async function buildServer(options = {}) {
           return reply.code(404).send({ error: 'Training not found.' });
         }
 
-        db.prepare(
-          'UPDATE trainings SET dia = ? WHERE id = ? AND user_id = ?',
-        ).run(date, id, request.user.id);
+        db.transaction(() => {
+          db.prepare('UPDATE trainings SET dia = ? WHERE id = ? AND user_id = ?').run(date, id, request.user.id);
+          syncAnamnesisRecords(db, request.user.id);
+        }).immediate();
 
         return { training: findTraining.get(id, request.user.id) };
       },
@@ -1249,6 +1259,7 @@ async function buildServer(options = {}) {
           db.prepare('UPDATE garmin_activity_imports SET is_current=0 WHERE user_id=? AND training_id=? AND is_current=1')
             .run(request.user.id, id);
           replaceCurrentEvidence(db, request.user.id, id, []);
+          syncAnamnesisRecords(db, request.user.id);
           reconcileShoeMileage(
             db,
             request.user.id,
@@ -1415,6 +1426,7 @@ async function buildServer(options = {}) {
             db.prepare('UPDATE garmin_activity_imports SET is_current=0 WHERE user_id=? AND training_id=? AND is_current=1')
               .run(request.user.id, id);
             replaceCurrentEvidence(db, request.user.id, id, evidence);
+            syncAnamnesisRecords(db, request.user.id);
             reconcileShoeMileage(
               db,
               request.user.id,
@@ -1475,6 +1487,7 @@ async function buildServer(options = {}) {
             id,
             request.user.id,
           );
+          syncAnamnesisRecords(db, request.user.id);
         });
         removeTraining();
 
@@ -1749,7 +1762,7 @@ async function buildServer(options = {}) {
     // Athlete anamnesis and weight log (issue #80). Owner-scoped only: there is
     // no administrative read. Responses are never cached and never logged.
     const anamnesisFailure = (reply, error) => {
-      if (error instanceof AnamnesisError)
+      if (error instanceof AnamnesisError || error instanceof RecordError)
         return reply.code(error.status).send({
           error: error.message,
           errors: [error.code],
@@ -1766,6 +1779,9 @@ async function buildServer(options = {}) {
           return anamnesisFailure(reply, error);
         }
       });
+    anamnesisRoute('get', '/api/records', (r) => readRecords(db, r.user.id));
+    anamnesisRoute('put', '/api/records/:distance', (r) => saveRecord(db, r.user.id, r.params.distance, r.body));
+    anamnesisRoute('delete', '/api/records/:distance', (r) => deleteRecord(db, r.user.id, r.params.distance));
     anamnesisRoute('get', '/api/anamnesis', (r) => readAnamnesis(db, r.user.id));
     anamnesisRoute('get', '/api/anamnesis/status', (r) => anamnesisStatus(db, r.user.id));
     anamnesisRoute('put', '/api/anamnesis', (r) => saveAnamnesis(db, r.user.id, r.body));

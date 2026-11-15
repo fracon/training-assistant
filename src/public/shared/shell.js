@@ -66,6 +66,13 @@ const NAV_ITEMS = [
     href: '/shoes.html',
     disabled: false,
   },
+  {
+    id: 'records',
+    icon: 'trophy',
+    labelKey: 'shell.nav.records',
+    href: '/records.html',
+    disabled: false,
+  },
   // Weight log (issue #80): a recurring tool, so it lives in the sidebar; the
   // one-time anamnesis stays in the account menu.
   {

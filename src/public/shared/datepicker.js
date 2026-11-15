@@ -45,12 +45,14 @@ export function createDatePicker(input, { isoInput = null, getLanguage = () => '
   wrapper.appendChild(icon);
   const popup = document.createElement('div');
   popup.className = 'date-picker-popup hidden';
+  popup.hidden = true;
   popup.setAttribute('role', 'dialog');
   popup.id = `${input.id}-calendar-popup`;
   input.setAttribute('aria-haspopup', 'dialog');
   input.setAttribute('aria-controls', popup.id);
   input.setAttribute('aria-expanded', 'false');
-  wrapper.appendChild(popup);
+  // Outside the scrolling/transformed card, but inside the active modal trap.
+  (input.closest('.modal-backdrop') || wrapper).appendChild(popup);
   let visibleMonth = dateFromIso(isoInput?.value || input.dataset.iso || '') || new Date();
 
   function currentIso() { return isoInput ? isoInput.value : (input.dataset.iso || ''); }
@@ -59,6 +61,34 @@ export function createDatePicker(input, { isoInput = null, getLanguage = () => '
     input.dataset.iso = iso;
     input.value = formatDate(iso, getLanguage());
     if (notify) onChange(iso);
+  }
+  function positionPopup() {
+    if (popup.classList.contains('hidden')) return;
+    const rect = input.getBoundingClientRect();
+    const margin = 8;
+    const gap = 6;
+    const width = Math.min(290, window.innerWidth - margin * 2);
+    popup.style.width = `${width}px`;
+    popup.style.maxHeight = `${Math.max(0, window.innerHeight - margin * 2)}px`;
+    const height = popup.getBoundingClientRect().height;
+    const below = window.innerHeight - rect.bottom - gap;
+    const above = rect.top - gap;
+    const preferredTop = below < height && above > below ? rect.top - gap - height : rect.bottom + gap;
+    const left = Math.max(margin, Math.min(rect.left, window.innerWidth - width - margin));
+    const top = Math.max(margin, Math.min(preferredTop, window.innerHeight - height - margin));
+    popup.style.left = `${left}px`;
+    popup.style.top = `${top}px`;
+    // A transformed ancestor (the page entrance animation keeps a transform on
+    // #appView) becomes the containing block of a fixed element, so viewport
+    // coordinates land offset. Measure where the popup really is and correct.
+    const placed = popup.getBoundingClientRect();
+    if (Math.abs(placed.left - left) > 0.5) popup.style.left = `${2 * left - placed.left}px`;
+    if (Math.abs(placed.top - top) > 0.5) popup.style.top = `${2 * top - placed.top}px`;
+  }
+  // Opening always starts at the selected date's month (or today), even when
+  // the picker is reused for another value, e.g. in a modal opened per item.
+  function showSelectedMonth() {
+    visibleMonth = dateFromIso(currentIso()) || new Date();
   }
   function render() {
     const focused = popup.contains(document.activeElement) ? document.activeElement : null;
@@ -83,16 +113,18 @@ export function createDatePicker(input, { isoInput = null, getLanguage = () => '
     const nextLabel = locale === 'pt-BR' ? 'Próximo mês' : 'Next month';
     popup.innerHTML = `<div class="date-picker-toolbar"><button type="button" data-calendar-action="previous" aria-label="${previousLabel}">‹</button><strong>${monthLabel(monthStart, locale)}</strong><button type="button" data-calendar-action="next" aria-label="${nextLabel}">›</button></div><div class="date-picker-weekdays">${headings.map((label) => `<span>${label}</span>`).join('')}</div><div class="date-picker-grid">${cells.join('')}</div>`;
     input.value = formatDate(selected, getLanguage());
-    if (focusedAction) popup.querySelector(`[data-calendar-action="${focusedAction}"]`)?.focus();
-    else if (focusedDate) popup.querySelector(`[data-date="${focusedDate}"]`)?.focus();
+    positionPopup();
+    if (focusedAction) popup.querySelector(`[data-calendar-action="${focusedAction}"]`)?.focus({ preventScroll: true });
+    else if (focusedDate) popup.querySelector(`[data-date="${focusedDate}"]`)?.focus({ preventScroll: true });
   }
   function close() {
     const restore = popup.contains(document.activeElement);
     popup.classList.add('hidden');
+    popup.hidden = true;
     input.setAttribute('aria-expanded', 'false');
-    if (restore) input.focus();
+    if (restore) input.focus({ preventScroll: true });
   }
-  input.addEventListener('click', (event) => { event.stopPropagation(); render(); popup.classList.toggle('hidden'); input.setAttribute('aria-expanded', String(!popup.classList.contains('hidden'))); });
+  input.addEventListener('click', (event) => { event.stopPropagation(); if (popup.classList.contains('hidden')) showSelectedMonth(); render(); popup.classList.toggle('hidden'); popup.hidden = popup.classList.contains('hidden'); input.setAttribute('aria-expanded', String(!popup.classList.contains('hidden'))); positionPopup(); });
   popup.addEventListener('click', (event) => {
     event.stopPropagation();
     const action = event.target.closest('[data-calendar-action]')?.dataset.calendarAction;
@@ -103,10 +135,13 @@ export function createDatePicker(input, { isoInput = null, getLanguage = () => '
   input.addEventListener('keydown', (event) => {
     if (!['Enter', ' ', 'ArrowDown'].includes(event.key)) return;
     event.preventDefault();
+    if (popup.classList.contains('hidden')) showSelectedMonth();
     render();
     popup.classList.remove('hidden');
+    popup.hidden = false;
     input.setAttribute('aria-expanded', 'true');
-    (popup.querySelector('.is-selected') || popup.querySelector('[data-date]')).focus();
+    positionPopup();
+    (popup.querySelector('.is-selected') || popup.querySelector('[data-date]')).focus({ preventScroll: true });
   });
   popup.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') { event.preventDefault(); close(); return; }
@@ -115,16 +150,18 @@ export function createDatePicker(input, { isoInput = null, getLanguage = () => '
     event.preventDefault();
     const days = [...popup.querySelectorAll('[data-date]')];
     const index = days.indexOf(event.target);
-    days[Math.min(days.length - 1, Math.max(0, index + delta))].focus();
+    days[Math.min(days.length - 1, Math.max(0, index + delta))].focus({ preventScroll: true });
   });
-  document.addEventListener('focusin', (event) => { if (!wrapper.contains(event.target)) close(); });
-  document.addEventListener('click', (event) => { if (!wrapper.contains(event.target)) close(); });
+  document.addEventListener('focusin', (event) => { if (!wrapper.contains(event.target) && !popup.contains(event.target)) close(); });
+  document.addEventListener('click', (event) => { if (!wrapper.contains(event.target) && !popup.contains(event.target)) close(); });
+  document.addEventListener('scroll', (event) => { if (!popup.contains(event.target)) close(); }, true);
+  if (typeof window !== 'undefined') window.addEventListener('resize', close);
   document.addEventListener('app:languagechange', render);
   document.addEventListener('kinesis:preferences-changed', render);
   updateValue(currentIso(), false);
   render();
   if (typeof window !== 'undefined' && window.lucide?.createIcons) window.lucide.createIcons({ nodes: [wrapper] });
-  const api = { getValue: currentIso, setValue: (iso) => updateValue(iso || '', false), refresh: render, destroy: close };
+  const api = { getValue: currentIso, setValue: (iso) => { updateValue(iso || '', false); showSelectedMonth(); }, refresh: render, destroy: close };
   input.datePicker = api;
   return api;
 }

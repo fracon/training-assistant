@@ -2,7 +2,14 @@
 
 A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, request and review weekly AI proposals, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized training-request prompts for use with an external AI.
 
-Current application version: **0.43.1** (active beta development). The Garmin Connect integration is opt-in per installation, in single-account `pilot` mode (default) or `multiuser` mode; see [Garmin Connect integration](#garmin-connect-integration).
+Current application version: **0.44.6** (active beta development). The Garmin Connect integration is opt-in per installation, in single-account `pilot` mode (default) or `multiuser` mode; see [Garmin Connect integration](#garmin-connect-integration).
+
+## Personal records
+
+The **Personal records / Recordes pessoais** page compares manual marks, original
+anamnesis answers and recorded session results for 5 km, 10 km, half marathon and
+marathon. New best times update the anamnesis automatically, and cycle planning
+uses the marks as historical references. See the [record contract](docs/personal-records.md).
 
 ## Welcome tour
 

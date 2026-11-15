@@ -166,6 +166,7 @@ textarea::placeholder {
 .grid { display: grid; gap: 0.7rem; }
 .grid-2x2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
+input[type="number"],
 input[type="text"],
 input[type="email"],
 input[type="password"],
@@ -190,6 +191,7 @@ select {
   padding-right: 1.9rem;
 }
 
+input[type="number"]:focus-visible,
 input[type="text"]:focus-visible,
 input[type="email"]:focus-visible,
 input[type="password"]:focus-visible,
@@ -230,11 +232,10 @@ select:focus-visible,
 }
 
 .date-picker-popup {
-  position: absolute;
-  z-index: 60;
-  top: calc(100% + 0.4rem);
-  left: 0;
-  width: min(290px, 100%);
+  position: fixed;
+  z-index: 10000;
+  width: min(290px, calc(100vw - 16px));
+  overflow-y: auto;
   padding: 0.75rem;
   border: 1px solid var(--line);
   border-radius: 12px;

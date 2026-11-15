@@ -226,7 +226,8 @@
       "administration": "Administration",
       "users": "Users",
       "feedback": "Feedbacks",
-      "aiHistory": "Prompt history"
+      "aiHistory": "Prompt history",
+      "records": "Personal records"
     },
     "soon": "Soon",
     "noCycle": "No active cycle",
@@ -2030,7 +2031,11 @@
     "anamnesisShared": "Shared with AI",
     "anamnesisNotShared": "Not shared with AI",
     "anamnesisNotStarted": "Not answered yet. Cycle planning and AI workout generation need a completed running profile.",
-    "anamnesisDraft": "In progress. Finish your running profile to plan the cycle and generate workouts with AI."
+    "anamnesisDraft": "In progress. Finish your running profile to plan the cycle and generate workouts with AI.",
+    "personalRecords": "Personal records",
+    "recordsOrigin": "Historical times selected for this planning task, with their dates and origins.",
+    "openRecords": "View and correct records",
+    "recordsEmpty": "No records selected."
   },
   "cyclePlanning": {
     "admin": "Administrator details",
@@ -2276,7 +2281,7 @@
       },
       "race_results": {
         "label": "Race results",
-        "hint": "Optional. Up to 5 recent results help estimate paces more safely."
+        "hint": "Include your best times for 5 km, 10 km, half marathon and marathon. You can also share up to 5 results at other distances. The year is optional."
       },
       "strength_training": {
         "label": "Do you do strength training?",
@@ -2345,7 +2350,7 @@
       "otherDistance": "Other",
       "otherKm": "Distance ({unit})",
       "time": "Time",
-      "year": "Year",
+      "year": "Year (optional)",
       "none": "I have no results to share",
       "distances": {
         "5k": "5 km",
@@ -2355,7 +2360,8 @@
       },
       "hours": "Hours",
       "minutes": "Minutes",
-      "seconds": "Seconds"
+      "seconds": "Seconds",
+      "unknownYear": "Year not provided"
     },
     "experienceNotes": {
       "label": "Notes about your experience (optional)",
@@ -2418,8 +2424,8 @@
       "invalidAnswer": "This value is not valid.",
       "textTooLong": "The text is too long.",
       "timeFormat": "Enter a valid time: whole hours, minutes and seconds, with minutes and seconds from 0 to 59.",
-      "raceIncomplete": "Fill in distance, time and year for each result.",
-      "anamnesisConflict": "Your answers changed in another session. Reload the page to continue.",
+      "raceIncomplete": "Fill in distance and time for each result.",
+      "anamnesisConflict": "Your answers changed in another tab or your records were updated automatically. Reload the saved version before continuing.",
       "anamnesisIncomplete": "Some questions are still unanswered.",
       "memoryConflict": "Your experience notes changed in another session. Reload the saved version: the text you typed is kept and, when you save, replaces the other session's version.",
       "weightDateExists": "A weight is already logged for this date.",
@@ -2428,7 +2434,8 @@
       "invalidWeightDate": "Choose a valid date.",
       "weightDateOutOfRange": "The date cannot be in the future.",
       "load": "Your running profile could not be loaded.",
-      "generic": "Could not save. Please try again."
+      "generic": "Could not save. Please try again.",
+      "raceTimeRange": "Enter a time between 1 minute and 168 hours, with minutes and seconds from 0 to 59."
     },
     "placeholders": {
       "birth_year": "e.g. 1990",
@@ -2527,5 +2534,53 @@
       "weightRequired": "This is the only entry and your completed running profile shares your weight. To delete it, choose \"I'd rather not say\" in the profile.",
       "generic": "Could not save. Please try again."
     }
+  },
+  "records": {
+    "pageTitle": "Personal records - Kinesis",
+    "title": "Personal records",
+    "subtitle": "Your best times, including those in your running profile.",
+    "distances": {
+      "5k": "5 km",
+      "10k": "10 km",
+      "21k": "Half marathon",
+      "42k": "Marathon"
+    },
+    "loading": "Loading records…",
+    "retry": "Try again",
+    "hours": "Hours",
+    "minutes": "Minutes",
+    "seconds": "Seconds",
+    "date": "Record date (optional)",
+    "race": "Race name (optional)",
+    "save": "Save time",
+    "cancel": "Cancel",
+    "edit": "Edit manual record",
+    "add": "Add manual record",
+    "remove": "Remove manual record",
+    "removeConfirm": "Remove the manual {distance} time? Your running profile will use the best session, if any, or have no time at this distance. The earlier value will not be restored.",
+    "origin": {
+      "manual": "Manual record",
+      "anamnesis": "From running profile",
+      "session": "Session result"
+    },
+    "openSession": "View session",
+    "unknownDate": "Date not provided",
+    "year": "Year: {year}",
+    "manualTime": "Your manual time: {time} (the current record is faster).",
+    "note": "Recorded results at this distance count automatically, allowing a small watch measurement difference. Longer workouts are not split to estimate records.",
+    "saved": "Record saved.",
+    "deleted": "Manual record removed.",
+    "errors": {
+      "load": "Could not load records.",
+      "generic": "Could not save the change. Try again.",
+      "invalidTime": "Enter a time between 1 minute and 168 hours, with minutes and seconds from 0 to 59.",
+      "invalidDate": "Enter a valid date between 1950 and today.",
+      "invalidRaceName": "Race name must be at most 120 characters."
+    },
+    "time": "Time",
+    "clearDate": "Remove date",
+    "empty": "No record yet.",
+    "syncNote": "Adding or updating a manual time automatically updates your running profile.",
+    "savedOther": "Manual time saved. The {distance} record remains {time}, recorded in a session."
   }
 }

@@ -148,7 +148,7 @@ test('the basis version follows answers and consent, never the weight log', () =
 
 test('contexts carry the completed anamnesis while older snapshots stay current', () => {
   const db = setup();
-  const before = cycleContext(db);
+  const before = cycleContext(db, { includeRecords: false });
   assert.equal(Object.hasOwn(before, 'anamnesis'), false);
   assert.equal(before.sources.some((ref) => ref.type === 'anamnesis'), false);
   completeWith(db);
@@ -198,7 +198,7 @@ test('an interpretation citing the anamnesis stops being current when its weight
 
 test('an applied plan depends on the anamnesis only when it recorded it, and never on the weight log', () => {
   const db = setup();
-  const legacy = JSON.stringify(cycleContext(db).sources);
+  const legacy = JSON.stringify(cycleContext(db, { includeRecords: false }).sources);
   completeWith(db);
   const recorded = JSON.stringify(cycleContext(db).sources);
   assert.equal(appliedPlanIsCurrent(db, 1, 'cycle', legacy), true, 'older plans are not outdated in bulk');
@@ -222,7 +222,7 @@ test('the anamnesis rules reach the model only with an anamnesis in the context'
   const without = payload(cycleContext(db));
   assert.equal(without.instructions, `${SAFETY_INSTRUCTIONS}\n${adapter.instructions}`, 'payloads without it are unchanged');
   completeWith(db);
-  const withIt = payload(cycleContext(db));
+  const withIt = payload(cycleContext(db, { includeRecords: false }));
   assert.equal(withIt.instructions, `${SAFETY_INSTRUCTIONS}\n${ANAMNESIS_INSTRUCTIONS}\n${adapter.instructions}`);
   for (const rule of [/nutrition, diet, calorie or supplement advice/, /weight, shape or BMI/, /promise or target weight loss/, /not diagnoses/, /health professional/])
     assert.match(ANAMNESIS_INSTRUCTIONS, rule);

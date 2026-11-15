@@ -1,5 +1,6 @@
 'use strict';
 
+const { syncAnamnesisRecords } = require('../personal-records');
 const crypto = require('node:crypto');
 const { FitUploadError, resolveFitBuffer } = require('../fitUpload');
 const { normalizeCalories, formatDuration, formatPace } = require('../fitParser');
@@ -416,6 +417,7 @@ function createGarminActivityImporter({ db, fetchImpl = fetch, config = process.
           replaceCurrentEvidence(db, request.user.id, current.id, evidence);
           persistenceStage = 'reconcile_shoe_mileage';
           reconcileShoeMileage(db, request.user.id, before, trainingFor(request));
+          syncAnamnesisRecords(db, request.user.id);
           return { imported: true };
       });
       let result;

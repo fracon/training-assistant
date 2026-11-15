@@ -8,7 +8,7 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.43.1`); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.44.6`); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
@@ -307,6 +307,39 @@ AI integration (PR 2):
   `test/anamnesisAi.browser.test.js`; suites whose synthetic accounts open
   application pages or generate complete a minimal anamnesis through
   `test/helpers/anamnesis.cjs`.
+
+## Personal records (#104)
+
+`src/personal-records.js` owns the four standard distances, owner-scoped manual
+record CRUD, deterministic source selection and anamnesis synchronization.
+`/records.html` follows the Weight log page, uses shared controls and the PT/EN
+`records` namespace, and is subject to the completed-anamnesis page gate.
+Migration `2026-11-personal-records-v1` preserves original questionnaire race
+answers in `anamnesis_record_sources`, separately from derived marks. Never
+promote an unchanged session copy to a self-report. An explicit manual save
+replaces the declared answer for its distance even when slower, preserving the
+year when no date is provided. Manual marks take precedence over an older
+anamnesis declaration. Conversely, an explicit questionnaire edit removes the
+manual mark only for each changed standard distance in the same transaction;
+unchanged distances retain their manual marks. Sessions still compete by best actual time. Removing a
+manual mark also removes that distance's superseded declaration: the best
+remaining session wins, or the distance has no mark. Never revive the old time.
+Deleting a nonexistent manual is a no-op for independent anamnesis answers. Synchronize in the same
+transaction as manual/FIT/Garmin result writes, rescheduling or session deletion.
+Only an explicitly answered race question is updated; never complete a draft.
+Changed automatic answers increment the revision so open tabs conflict normally,
+but keep the answer-edit timestamp; localized conflicts explain record updates.
+Feedback-only PATCH writes never scan record history. Applied-plan record and
+anamnesis basis versions use declared sources, never session-derived copies.
+Cycle Training Memory shows the same personalRecords selection as generation;
+model projections avoid repeating these marks in the anamnesis.
+
+Whole-session matching requires reaching the target with at most 2% extra,
+using the actual complete time. Never extrapolate from pace or a shorter
+session, or infer splits in longer sessions. No background Garmin/AI operations.
+New cycle contexts version `records:self`; legacy contexts/plans without it
+keep existing freshness behavior. See `docs/personal-records.md` and
+`test/personalRecords{,.browser}.test.js` for the contract and verification.
 
 ## Administration prompt history (#113)
 
@@ -630,7 +663,13 @@ are stable identifiers, not a statement of scope.
 - Distances and temperatures are stored in canonical metric units and converted
   for display/prompt generation through `src/public/shared/units.js`. Displayed
   dates use the shared locale-aware date formatter. Date inputs use the shared
-  DatePicker component, not raw text or uncontrolled native date inputs.
+  DatePicker component, not raw text or uncontrolled native date inputs. Its
+  popup is `position: fixed`, moved into the open `.modal-backdrop` so no
+  scrolling card clips it, and corrected against the real containing block
+  (`#appView` keeps a transform from its entrance animation). It always opens
+  on the selected date's month, and inside a `createDialogFocusTrap` dialog
+  Escape closes an open picker first, returning focus to its field, before
+  closing the dialog (`personalRecords.browser.test.js`).
 
 ## Onboarding architecture and contract
 
