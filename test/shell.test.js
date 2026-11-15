@@ -381,7 +381,7 @@ test('NAV_ITEMS includes cycles between dashboard and ai-coach', () => {
 test('shell.js NAV_ITEMS ends with the weight log after shoes, and the anamnesis stays in the account menu', () => {
   const js = readFileSync(join(__dirname, '..', 'src', 'public', 'shared', 'shell.js'), 'utf8');
   const block = js.slice(js.indexOf('const NAV_ITEMS = ['), js.indexOf('];', js.indexOf('const NAV_ITEMS = [')));
-  assert.deepEqual([...block.matchAll(/id:\s*'([^']+)'/g)].map((match) => match[1]), ['dashboard', 'cycles', 'ai-coach', 'calendar', 'shoes', 'weight']);
+  assert.deepEqual([...block.matchAll(/id:\s*'([^']+)'/g)].map((match) => match[1]), ['dashboard', 'cycles', 'ai-coach', 'calendar', 'shoes', 'records', 'weight']);
   assert.match(block, /id:\s*'weight',\s*icon:\s*'weight',\s*labelKey:\s*'shell\.nav\.weight',\s*href:\s*'\/weight\.html',\s*disabled:\s*false/);
   assert.doesNotMatch(block, /anamnesis\.html/);
   assert.equal(en.shell.nav.weight, 'Weight Log');

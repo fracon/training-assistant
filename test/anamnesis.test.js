@@ -167,7 +167,7 @@ test('every answer type validates status, value, bounds and stray fields', () =>
   bad({ current_pain: { status: 'answered', value: { answer: 'yes', details: 'x'.repeat(501) } } }, 'textTooLong', 'current_pain');
   bad({ current_pain: { status: 'unknown' } }, 'invalidStatus', 'current_pain');
   bad({ race_results: { status: 'answered', value: 'none' } }, 'invalidAnswer', 'race_results');
-  bad({ race_results: { status: 'answered', value: Array(6).fill({ distance: '5k', time_seconds: 1500, year: 2024 }) } }, 'invalidAnswer', 'race_results');
+  bad({ race_results: { status: 'answered', value: Array(10).fill({ distance: '5k', time_seconds: 1500, year: 2024 }) } }, 'invalidAnswer', 'race_results');
   const race = (value) => {
     const { __code: code, ...rest } = typeof value === 'object' ? value : { value };
     bad({ race_results: { status: 'answered', value: [typeof value === 'object' ? rest : value] } }, ...(code || ['invalidAnswer', 'race_results']));
@@ -177,9 +177,9 @@ test('every answer type validates status, value, bounds and stray fields', () =>
   race({ distance: '3k', time_seconds: 1500, year: 2024 });
   race({ distance: 'other', distance_km: '15', time_seconds: 1500, year: 2024 });
   race({ distance: 'other', distance_km: 0.1, time_seconds: 1500, year: 2024, __code: ['outOfRange', 'race_results'] });
-  race({ distance: '5k', distance_km: 5, time_seconds: 1500, year: 2024 });
+  race({ distance: '5k', distance_km: 6, time_seconds: 1500, year: 2024 });
   race({ distance: '5k', time_seconds: 1500.5, year: 2024 });
-  race({ distance: '5k', time_seconds: 30, year: 2024, __code: ['outOfRange', 'race_results'] });
+  race({ distance: '5k', time_seconds: 0, year: 2024, __code: ['outOfRange', 'race_results'] });
   race({ distance: '5k', time_seconds: 1500, year: '2024' });
   race({ distance: '5k', time_seconds: 1500, year: YEAR + 1, __code: ['outOfRange', 'race_results'] });
   // Accepted shapes.

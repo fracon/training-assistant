@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="/assets/brand/favicon.png?v=5" type="image/png">
+<title data-i18n="records.pageTitle">Personal records - Kinesis</title>
+<link rel="stylesheet" href="shared/shell.css"><link rel="stylesheet" href="shared/components.css">
+<link rel="stylesheet" href="shoes.css"><link rel="stylesheet" href="weight.css"><link rel="stylesheet" href="records.css">
+</head><body><main id="appView"><section class="shoes-page weight-page records-page" aria-labelledby="recordsTitle">
+<header class="shoes-header"><div class="shoes-header-text"><h1 id="recordsTitle" tabindex="-1" data-i18n="records.title">Personal records</h1><p class="shoes-subtitle" data-i18n="records.subtitle"></p></div></header>
+<p id="recordsLoading" role="status" data-i18n="records.loading">Loading records…</p>
+<div id="recordsLoadError" class="form-error weight-load-error" role="alert" hidden><span data-i18n="records.errors.load"></span><button id="recordsRetry" class="btn-secondary" type="button" data-i18n="records.retry"></button></div>
+<div id="recordsList" class="shoe-list"></div>
+<section id="recordFormCard" class="shoe-card weight-card" hidden aria-labelledby="recordFormTitle">
+<h2 id="recordFormTitle" data-i18n="records.formTitle"></h2>
+<form id="recordForm" novalidate>
+<div id="recordError" class="form-error" role="alert" hidden></div>
+<div class="field"><label class="field-label" for="recordDistance" data-i18n="records.distance"></label><select id="recordDistance"></select></div>
+<div class="record-time"><div class="field"><label class="field-label" for="recordHours" data-i18n="records.hours"></label><input id="recordHours" type="number" min="0" max="168" step="1" inputmode="numeric" placeholder="00" aria-describedby="recordError"></div><div class="field"><label class="field-label" for="recordMinutes" data-i18n="records.minutes"></label><input id="recordMinutes" type="number" min="0" max="59" step="1" inputmode="numeric" placeholder="00" aria-describedby="recordError"></div><div class="field"><label class="field-label" for="recordSeconds" data-i18n="records.seconds"></label><input id="recordSeconds" type="number" min="0" max="59" step="1" inputmode="numeric" placeholder="00" aria-describedby="recordError"></div>
+</div><div class="field"><label class="field-label" for="recordDate" data-i18n="records.date"></label><input id="recordDate" type="text" aria-describedby="recordError"><button id="recordClearDate" class="btn-secondary" type="button" data-i18n="records.clearDate"></button></div>
+<div class="field"><label class="field-label" for="recordRace" data-i18n="records.race"></label><input id="recordRace" type="text" maxlength="120" aria-describedby="recordError"></div>
+<div class="form-actions"><button id="recordCancel" class="btn-secondary" type="button" data-i18n="records.cancel"></button><button id="recordSave" class="btn-primary" type="submit" data-i18n="records.save"></button></div>
+</form></section>
+<p class="field-hint" data-i18n="records.note"></p>
+</section></main><script src="https://unpkg.com/lucide@latest"></script><script src="records.js" type="module"></script></body></html>

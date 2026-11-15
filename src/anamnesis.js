@@ -18,13 +18,14 @@
 const { userToday } = require('./time-zone');
 const { readMemory, hash } = require('./ai/memory');
 
+const { DISTANCES: RACE_DISTANCES, captureAnamnesisRecords, syncAnamnesisRecords } = require('./personal-records');
+
 const QUESTIONNAIRE_VERSION = 'anamnesis-v1';
 const STATUSES = ['answered', 'unknown', 'declined', 'not_applicable'];
 const MAX_DETAILS = 500;
 const MAX_OTHER_TEXT = 120;
-const MAX_RACES = 5;
+const MAX_RACES = 9;
 const MAX_WEIGHT_ENTRIES = 1000;
-const RACE_DISTANCES = { '5k': 5, '10k': 10, '21k': 21.0975, '42k': 42.195 };
 
 // The definition is the single source for validation and for the page, which
 // renders it from `GET /api/anamnesis`. `sensitive` marks LGPD-sensitive items
@@ -133,14 +134,15 @@ function normalizeRace(race, key, currentYear) {
     if (typeof race.distance_km !== 'number' || !Number.isFinite(race.distance_km)) throw invalid(key);
     if (race.distance_km < 0.4 || race.distance_km > 400) throw invalid(key, 'outOfRange');
     distanceKm = roundTo(race.distance_km, 3);
-  } else if (race.distance_km !== undefined) {
+  } else if (race.distance_km !== undefined && race.distance_km !== distanceKm) {
     throw invalid(key);
   }
   if (!Number.isInteger(race.time_seconds)) throw invalid(key);
-  if (race.time_seconds < 60 || race.time_seconds > 7 * 86400) throw invalid(key, 'outOfRange');
-  if (!Number.isInteger(race.year)) throw invalid(key);
-  if (race.year < 1950 || race.year > currentYear) throw invalid(key, 'outOfRange');
-  return { distance: race.distance, distance_km: distanceKm, time_seconds: race.time_seconds, year: race.year };
+  if (race.time_seconds <= 0 || race.time_seconds > 7 * 86400) throw invalid(key, 'outOfRange');
+  const year = race.year ?? null;
+  if (year !== null && !Number.isInteger(year)) throw invalid(key);
+  if (year !== null && (year < 1950 || year > currentYear)) throw invalid(key, 'outOfRange');
+  return { distance: race.distance, distance_km: distanceKm, time_seconds: race.time_seconds, year };
 }
 
 // Validates one submitted answer against its item and returns the canonical
@@ -192,7 +194,7 @@ function normalizeAnswer(item, answer, currentYear) {
     }
     default: {
       // races
-      if (!Array.isArray(value) || value.length > item.max) throw invalid(item.key);
+      if (!Array.isArray(value) || value.length > item.max || value.filter((race) => race?.distance === 'other').length > 5) throw invalid(item.key);
       return { status: 'answered', value: value.map((race) => normalizeRace(race, item.key, currentYear)) };
     }
   }
@@ -354,6 +356,9 @@ function saveAnamnesis(db, userId, body, now = new Date().toISOString()) {
          VALUES (?, ?, 'draft', ?, ?, ?, 1, ?, ?)`,
       ).run(userId, QUESTIONNAIRE_VERSION, JSON.stringify(answers), consent ? 1 : 0, consentAt, now, now);
     }
+    if (Object.hasOwn(submitted, 'race_results'))
+      captureAnamnesisRecords(db, userId, submitted.race_results ?? undefined, row ? JSON.parse(row.answers_json).race_results : undefined);
+    syncAnamnesisRecords(db, userId, now);
     return { anamnesis: publicAnamnesis(db, userId, definition, readRow(db, userId)) };
   }).immediate();
 }

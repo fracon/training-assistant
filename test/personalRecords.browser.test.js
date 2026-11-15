@@ -1,0 +1,96 @@
+'use strict';
+const test=require('node:test');
+const assert=require('node:assert/strict');
+const {buildServer}=require('../src/server');
+const {createDatabase}=require('../src/db/database');
+const {createSession,SESSION_COOKIE_NAME}=require('../src/auth/sessions');
+const {saveAnamnesis,readAnamnesis}=require('../src/anamnesis');
+const {launchChrome}=require('./helpers/chrome.cjs');
+const en=require('../src/public/locales/en.json');
+const pt=require('../src/public/locales/pt.json');
+
+test('Chrome: personal records PT/EN desktop/mobile, manual editing, source links, keyboard focus and preserved drafts',async(t)=>{
+ const db=createDatabase({filename:':memory:'});
+ db.prepare("INSERT INTO users(id,email,password_hash,first_name,onboarding_status) VALUES (1,'records@example.test','unused','Ana','active')").run();
+ saveAnamnesis(db,1,{expected_revision:0,answers:{race_results:{status:'answered',value:[{distance:'5k',time_seconds:1500,year:2024}]}}});
+ db.prepare("UPDATE athlete_anamnesis SET status='completed',completed_at='2026-01-01T00:00:00Z'").run();
+ const id=db.prepare("INSERT INTO trainings(user_id,dia,tipo,fit_distance,fit_duration,result_data_source) VALUES (1,'2026-01-01','Corrida',10,'50:00','manual')").run().lastInsertRowid;
+ const app=await buildServer({db,sessionCookieSecure:false});
+ const origin=await app.listen({port:0,host:'127.0.0.1'});
+ t.after(async()=>{await app.close();db.close();});
+ const {command,evaluate,wait,key,capture,intercept}=await launchChrome(t);
+ await command('Network.setCookie',{name:SESSION_COOKIE_NAME,value:createSession(db,1).token,url:origin,httpOnly:true});
+ const fill=async(id,value)=>evaluate(`document.getElementById(${JSON.stringify(id)}).value=${JSON.stringify(value)}`);
+ for(const [lang,messages] of [['pt-BR',pt],['en-US',en]]){
+  for(const width of [1280,390]){
+   db.prepare('UPDATE users SET preferred_lang=? WHERE id=1').run(lang);
+   await command('Emulation.setDeviceMetricsOverride',{width,height:800,deviceScaleFactor:1,mobile:width===390});
+   await command('Page.navigate',{url:origin+'/records.html'});
+   await wait("document.querySelectorAll('#recordsList > section').length===4");
+   assert.equal(await evaluate("document.querySelector('.sidebar-nav .nav-item.active').getAttribute('href')"),'/records.html');
+   assert.equal(await evaluate("document.getElementById('recordsTitle').textContent"),messages.records.title);
+   assert.equal(await evaluate("document.querySelector('#recordsList section .record-value').textContent"),'0:25:00');
+   assert.equal(await evaluate("[...document.querySelectorAll('#recordsList a')].find(link=>link.href.includes('training-result')).getAttribute('href')"),`/training-result.html?id=${id}`);
+   assert.equal(await evaluate('document.documentElement.scrollWidth <= window.innerWidth'),true);
+   await capture(`records-${lang}-${width}`);
+   await evaluate("document.querySelector('[data-focus-key=\"5k-edit\"]').click()");
+   assert.equal(await evaluate('document.activeElement.id'),'recordHours');
+   await evaluate("document.getElementById('recordSave').click()");
+   await wait("!document.getElementById('recordError').hidden");
+   assert.equal(await evaluate('document.activeElement.id'),'recordHours');
+   assert.equal(await evaluate("document.getElementById('recordHours').getAttribute('aria-invalid')"),'true');
+   await fill('recordMinutes','24'); await fill('recordSeconds','10');
+   await fill('recordRace','Synthetic <race>');
+   await evaluate("document.getElementById('recordSave').click()");
+   await wait("document.getElementById('recordFormCard').hidden && document.querySelector('#recordsList .record-value').textContent==='0:24:10'");
+   assert.equal(await evaluate('document.activeElement.dataset.focusKey'),'5k-edit');
+   assert.equal(await evaluate("document.querySelector('#recordsList section').textContent.includes('Synthetic <race>')"),true);
+   assert.equal(await evaluate("document.querySelector('#recordsList race')"),null);
+   assert.equal(readAnamnesis(db,1).anamnesis.answers.race_results.value[0].time_seconds,1450);
+   await evaluate("document.querySelector('[data-focus-key=\"5k-edit\"]').click()");
+   await fill('recordMinutes','23');
+   await evaluate("document.getElementById('recordDate').dataset.iso='2025-02-01'");
+   await evaluate("document.getElementById('recordClearDate').click()");
+   assert.equal(await evaluate("document.getElementById('recordDate').dataset.iso"),'');
+   const other = lang === 'en-US' ? 'pt-BR' : 'en-US';
+   await evaluate(`document.querySelector('[data-lang="${other}"]').click()`);
+   await wait(`document.documentElement.lang === '${other}'`);
+   assert.equal(await evaluate("document.getElementById('recordMinutes').value"),'23');
+   assert.equal(await evaluate("document.getElementById('recordRace').value"),'Synthetic <race>');
+   await evaluate(`document.querySelector('[data-lang="${lang}"]').click()`);
+   await wait(`document.documentElement.lang === '${lang}'`);
+   await capture(`records-form-${lang}-${width}`);
+   await evaluate("document.getElementById('recordCancel').click()");
+   assert.equal(await evaluate('document.activeElement.dataset.focusKey'),'5k-edit');
+   await evaluate("document.querySelector('[data-focus-key=\"5k-remove\"]').focus();document.querySelector('[data-focus-key=\"5k-remove\"]').click()");
+   await wait("document.querySelector('.confirm-backdrop') && !document.querySelector('.confirm-backdrop').classList.contains('hidden')");
+   await key('Escape','Escape',27);
+   await wait("!document.querySelector('.confirm-backdrop') || document.querySelector('.confirm-backdrop').classList.contains('hidden')");
+   assert.equal(await evaluate('document.activeElement.dataset.focusKey'),'5k-remove');
+   await evaluate("document.querySelector('[data-focus-key=\"5k-remove\"]').click()");
+   await wait("document.querySelector('.confirm-backdrop') && !document.querySelector('.confirm-backdrop').classList.contains('hidden')");
+   await evaluate("document.getElementById('confirmOkBtn').click()");
+   await wait("!document.querySelector('[data-focus-key=\"5k-remove\"]')");
+   assert.equal(await evaluate('document.activeElement.dataset.focusKey'),'5k-edit');
+   assert.equal(readAnamnesis(db,1).anamnesis.answers.race_results.value[0].time_seconds,1500);
+  }
+ }
+ // A save response must not take focus back after the person moves to language controls.
+ await evaluate("document.querySelector('[data-focus-key=\"42k-edit\"]').click()");
+ await fill('recordHours','4'); await fill('recordMinutes','10'); await fill('recordSeconds','0');
+ const held=await intercept('*api/records/42k*');
+ await evaluate("document.getElementById('recordSave').click()");
+ const pending=await held.next;
+ await evaluate("document.querySelector('[data-lang=\"pt-BR\"]').focus();document.querySelector('[data-lang=\"pt-BR\"]').click()");
+ await wait("document.documentElement.lang==='pt-BR'");
+ await held.release(pending);
+ await wait("document.getElementById('recordFormCard').hidden");
+ assert.equal(await evaluate('document.activeElement.dataset.lang'),'pt-BR');
+ // Reduced height and motion preserve form access, native labels and visible controls.
+ await command('Emulation.setDeviceMetricsOverride',{width:390,height:430,deviceScaleFactor:1,mobile:true});
+ await command('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-motion',value:'reduce'}]});
+ await evaluate("document.querySelector('[data-focus-key=\"42k-edit\"]').click()");
+ await wait("document.activeElement.id==='recordHours'");
+ await capture('records-low-height');
+ assert.equal(await evaluate('document.documentElement.scrollWidth <= window.innerWidth'),true);
+});

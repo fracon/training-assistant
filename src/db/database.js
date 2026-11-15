@@ -1232,6 +1232,7 @@ function migrateDatabase(db) {
     );
   });
   initializeAnamnesis();
+  require('../personal-records').migrateRecords(db);
   require('../ai/schema').migrateAi(db);
   require('../ai/schema').migrateAiDiagnostics(db);
   require('../ai/schema').migrateAiRawOutputs(db);

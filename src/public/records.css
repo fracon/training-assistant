@@ -1,0 +1,9 @@
+.record-time { display: flex; gap: .75rem; }
+.record-time .field { flex: 1; min-width: 0; }
+.records-page .record-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
+.records-page .form-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.records-page .record-source { color: var(--muted); font-size: .86rem; }
+.records-page .record-value { font-size: 1.45rem; margin: .5rem 0; font-weight: 700; }
+.records-page a { color: var(--accent-deep); }
+.records-page #recordClearDate { margin-top: .5rem; }
+.records-page .shoe-card h2 { margin: 0; font-size: 1.1rem; }

@@ -18,7 +18,7 @@ function buildPayload({ model, context, prompt, adapter, maxOutputTokens }) {
     background: false,
     reasoning: { effort: 'medium' },
     max_output_tokens: maxOutputTokens,
-    instructions: SAFETY_INSTRUCTIONS + (context?.anamnesis ? '\n' + ANAMNESIS_INSTRUCTIONS : '') + '\n' + adapter.instructions,
+    instructions: SAFETY_INSTRUCTIONS + (context?.anamnesis ? '\n' + ANAMNESIS_INSTRUCTIONS : '') + (context?.personalRecords?.length ? '\nUse personal records only as historical performance references. Consider the date or year when assessing relevance to the current cycle; not_informed means the date is unknown. Never assume a historical best is current fitness.' : '') + '\n' + adapter.instructions,
     input: [
       {
         role: 'user',

@@ -266,7 +266,12 @@ test('Chrome: the monthly volume shows the selected year, navigates by year and 
   assert.equal(await evaluate("getComputedStyle(document.activeElement).outlineStyle"), 'solid');
 
   // Hover shows the same custom tooltip; never a native title.
-  await evaluate("document.activeElement.blur(); document.querySelectorAll('.volume-month')[5].dispatchEvent(new MouseEvent('mouseenter'))");
+  // Use the actual pointer after keyboard navigation. A synthetic mouseenter
+  // can be followed by Chrome's real mouseleave during the pending scroll.
+  await evaluate("document.activeElement.blur(); document.querySelectorAll('.volume-month')[5].scrollIntoView({ block: 'center', behavior: 'instant' })");
+  const point = await evaluate("(() => { const rect = document.querySelectorAll('.volume-month')[5].getBoundingClientRect(); return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }; })()");
+  await browser.command('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point });
+  await wait("!document.getElementById('volumeTooltip').hidden && document.getElementById('volumeTooltip').textContent.startsWith('Junho: ')");
   assert.match(await evaluate(tooltip), /^Junho: /);
   assert.equal(await evaluate("document.querySelectorAll('#volumeCard [title]').length"), 0);
 

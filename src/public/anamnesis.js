@@ -127,7 +127,7 @@ function formatAnswer(item, answer) {
 
 function formatRace(race) {
   const distance = race.distance === 'other' ? formatDistance(race.distance_km, prefs().distance_unit, 1) : t(`races.distances.${race.distance}`);
-  return `${distance} · ${formatSeconds(race.time_seconds)} · ${race.year}`;
+  return `${distance} · ${formatSeconds(race.time_seconds)} · ${race.year ?? t('races.unknownYear')}`;
 }
 
 function formatSeconds(total) {
@@ -576,11 +576,11 @@ function racesField(item, answer) {
       collect() {
         const timeParts = [hours, minutes, seconds];
         const yearValue = readNumber(year);
-        if (timeParts.every(isBlank) || yearValue === null) return { error: 'raceIncomplete' };
+        if (timeParts.every(isBlank)) return { error: 'raceIncomplete' };
         // A blank hours or minutes box means zero (a 5 km in 24:10).
         const [h, m, s] = timeParts.map((input) => (isBlank(input) ? 0 : readNumber(input)));
         if (![h, m, s].every(Number.isInteger) || h < 0 || m < 0 || m > 59 || s < 0 || s > 59) return { error: 'timeFormat' };
-        if (!Number.isInteger(yearValue)) return { error: 'invalidAnswer' };
+        if (yearValue !== null && !Number.isInteger(yearValue)) return { error: 'invalidAnswer' };
         const race = { distance: select.value, time_seconds: h * 3600 + m * 60 + s, year: yearValue };
         if (select.value === 'other') {
           const km = readNumber(otherKm);

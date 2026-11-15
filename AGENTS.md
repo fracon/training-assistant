@@ -8,7 +8,7 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.43.1`); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.44.0`); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
@@ -307,6 +307,27 @@ AI integration (PR 2):
   `test/anamnesisAi.browser.test.js`; suites whose synthetic accounts open
   application pages or generate complete a minimal anamnesis through
   `test/helpers/anamnesis.cjs`.
+
+## Personal records (#104)
+
+`src/personal-records.js` owns the four standard distances, owner-scoped manual
+record CRUD, deterministic source selection and anamnesis synchronization.
+`/records.html` follows the Weight log page, uses shared controls and the PT/EN
+`records` namespace, and is subject to the completed-anamnesis page gate.
+Migration `2026-11-personal-records-v1` preserves original questionnaire race
+answers in `anamnesis_record_sources`, separately from derived marks. Never
+promote an unchanged copied mark to an original self-report; corrections and
+source deletion must re-evaluate surviving originals. Synchronize in the same
+transaction as manual/FIT/Garmin result writes, rescheduling or session deletion.
+Only an explicitly answered race question is updated; never complete a draft.
+Changed answers increment the revision so open tabs conflict normally.
+
+Whole-session matching requires reaching the target with at most 1% extra,
+using the actual complete time. Never extrapolate from pace or a shorter
+session, or infer splits in longer sessions. No background Garmin/AI operations.
+New cycle contexts version `records:self`; legacy contexts/plans without it
+keep existing freshness behavior. See `docs/personal-records.md` and
+`test/personalRecords{,.browser}.test.js` for the contract and verification.
 
 ## Administration prompt history (#113)
 
