@@ -79,13 +79,7 @@
 .anamnesis-races { display: flex; flex-direction: column; gap: .75rem; margin-bottom: .6rem; }
 .anamnesis-race { border: 1px solid var(--line); border-radius: 12px; padding: .75rem .85rem; display: flex; flex-direction: column; gap: .6rem; }
 .anamnesis-race-title { margin: 0; font-size: .82rem; font-weight: 600; }
-.anamnesis-race-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: .6rem; }
-.anamnesis-race-grid input, .anamnesis-race-grid select, .anamnesis-duration input { max-width: none; width: 100%; }
-.anamnesis-race-time { border: 0; padding: 0; margin: 0; min-width: 0; }
-.anamnesis-race-time > legend { padding: 0; margin-bottom: .35rem; }
 /* Same three-column hours/minutes/seconds layout as the manual result. */
-.anamnesis-duration { display: grid; grid-template-columns: repeat(3, minmax(0, 7rem)); gap: .6rem; }
-.anamnesis-duration .field { margin: 0; }
 .anamnesis-race-remove, .anamnesis-races + .btn-secondary { align-self: flex-start; }
 
 .anamnesis-review { display: flex; flex-direction: column; gap: .8rem; }
@@ -113,7 +107,6 @@
 @media (max-width: 600px) {
   .anamnesis-answers > div { grid-template-columns: minmax(0, 1fr); gap: .15rem; }
   .anamnesis-item input[type="text"], .anamnesis-item input[type="number"], .anamnesis-item select { max-width: none; }
-  .anamnesis-duration { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .anamnesis-actions { justify-content: stretch; }
   .anamnesis-actions .btn-primary, .anamnesis-actions .btn-secondary { flex: 1 1 auto; }
 }

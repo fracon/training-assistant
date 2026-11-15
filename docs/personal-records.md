@@ -1,7 +1,7 @@
 # Personal running records (#104)
 
 Available at `/records.html` after completing the running profile (anamnesis),
-with PT/EN navigation and forms. The page follows the Weight log page's shared
+with PT/EN navigation and forms. The page follows the shared
 shell, cards, inputs, date picker, confirmation dialog and focus conventions.
 
 Each distance (5 km, 10 km, 21.0975 km and 42.195 km) has one current best time,
@@ -9,17 +9,17 @@ selected from the athlete's original anamnesis answers, one editable manual
 record per distance and all eligible stored session results. Manual records
 remain editable even when another source wins. Ties prefer the manual record,
 then the original anamnesis answer, then sessions in date/ID order. The page
-shows the winning source and a session link where available. Updating a record
-opens the form with the current best time, regardless of origin. Empty distances
-remain visible without placeholder marks. The form reuses the anamnesis duration
-layout and synchronizes new best times automatically; no link to edit the
-anamnesis or separate clear-date action is shown. Editing/removing
+shows the winning source and a session link where available. The manual-record action edits only its own source, never a copied session or
+anamnesis mark. It opens a shared modal named for its fixed distance. Empty distances
+remain visible with a muted empty-state message. The form reuses the anamnesis duration
+layout and synchronizes new best times automatically; source links open the
+anamnesis or session, and an optional date can be cleared. Editing/removing
 an anamnesis source uses the questionnaire; session sources use the result page.
 
 ## Measured result eligibility
 
 A recorded session qualifies if its measured distance reaches the target and
-exceeds it by no more than 1%. Shorter distances do not qualify. The full stored
+exceeds it by no more than 2%. Shorter distances do not qualify. The full stored
 result time is used, with no adjustment for the extra distance and no pace
 extrapolation. A future session, missing/invalid/nonpositive duration, a duration above seven days or result
 with `none` provenance does not qualify. Known non-running FIT sports and
@@ -43,7 +43,7 @@ current best time per standard distance automatically. Other distances remain
 in the questionnaire. An unanswered/declined question stays unchanged; no other
 question is filled and a draft is never completed automatically. The questionnaire
 supports nine rows (four standard records plus up to five other-distance results).
-Only positive whole seconds up to seven days are accepted. A missing year is
+Only whole seconds from one minute through seven days are accepted. A missing year is
 stored as null and shown explicitly; a known year is never expanded into a date.
 When synchronizing a record without a date, preserve the existing questionnaire
 year for that distance. Only a nonempty incoming year replaces it; no date or
@@ -73,11 +73,18 @@ Authenticated, owner-scoped, `Cache-Control: no-store` endpoints:
 New cycle contexts contain the current personal records with distance, time,
 origin and known date/year. Missing dates are explicit. Instructions tell the
 model to treat them as historical references, considering age rather than assuming
-current fitness. The `records:self` source versions that selection. New proposals
-and applied plans that recorded it become outdated when it changes; older
+current fitness. The `records:self` source versions that selection. Training Memory projects the
+same record selection only for the cycle task. The model receives the four
+standard distances once, in personalRecords; the anamnesis model projection
+retains only other-distance race results. New proposals become outdated when record evidence changes. Applied plans
+compare only declared marks (manual and original anamnesis), never session
+improvements or automatic questionnaire copies; older
 snapshots/plans without this source retain their existing freshness rules.
 Draft anamnesis answers never enter the AI record projection.
-Synchronized anamnesis changes also follow its existing evidence freshness rules.
+Anamnesis evidence versions include synchronized marks, but its plan basis uses
+the original answers. Automatic synchronization increments the concurrency
+revision without changing the answer-edit timestamp. Feedback-only PATCH writes
+do not scan record history.
 Nothing generates AI output, applies a plan or mutates Garmin automatically.
 External PT/EN prompt templates are unchanged.
 

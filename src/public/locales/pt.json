@@ -2031,7 +2031,11 @@
     "anamnesisShared": "Compartilhados com a IA",
     "anamnesisNotShared": "Não compartilhados com a IA",
     "anamnesisNotStarted": "Ainda não respondida. Planejar o ciclo e gerar treinos com IA exige a anamnese concluída.",
-    "anamnesisDraft": "Em andamento. Conclua a anamnese para planejar o ciclo e gerar treinos com IA."
+    "anamnesisDraft": "Em andamento. Conclua a anamnese para planejar o ciclo e gerar treinos com IA.",
+    "personalRecords": "Recordes pessoais",
+    "recordsOrigin": "Marcas históricas selecionadas para este planejamento, com suas datas e origens.",
+    "openRecords": "Ver e corrigir recordes",
+    "recordsEmpty": "Nenhuma marca selecionada."
   },
   "cyclePlanning": {
     "admin": "Detalhes administrativos",
@@ -2421,7 +2425,7 @@
       "textTooLong": "O texto está longo demais.",
       "timeFormat": "Informe um tempo válido: horas, minutos e segundos inteiros, com minutos e segundos de 0 a 59.",
       "raceIncomplete": "Preencha distância e tempo de cada resultado.",
-      "anamnesisConflict": "Suas respostas mudaram em outra sessão. Recarregue a página para continuar.",
+      "anamnesisConflict": "Suas respostas mudaram em outra aba ou seus recordes foram atualizados automaticamente. Recarregue a versão salva antes de continuar.",
       "anamnesisIncomplete": "Ainda há perguntas sem resposta.",
       "memoryConflict": "As observações sobre experiência mudaram em outra sessão. Recarregue a versão salva: o texto que você digitou é mantido e, ao salvar, substitui a versão da outra sessão.",
       "weightDateExists": "Já existe um peso registrado nesta data.",
@@ -2430,7 +2434,8 @@
       "invalidWeightDate": "Escolha uma data válida.",
       "weightDateOutOfRange": "A data não pode estar no futuro.",
       "load": "Não foi possível carregar sua anamnese.",
-      "generic": "Não foi possível salvar. Tente novamente."
+      "generic": "Não foi possível salvar. Tente novamente.",
+      "raceTimeRange": "Informe um tempo entre 1 minuto e 168 horas, com minutos e segundos entre 0 e 59."
     },
     "placeholders": {
       "birth_year": "Ex.: 1990",
@@ -2542,8 +2547,6 @@
     },
     "loading": "Carregando recordes…",
     "retry": "Tentar novamente",
-    "formTitle": "Recorde pessoal",
-    "distance": "Distância",
     "hours": "Horas",
     "minutes": "Minutos",
     "seconds": "Segundos",
@@ -2551,8 +2554,8 @@
     "race": "Nome da prova (opcional)",
     "save": "Salvar recorde",
     "cancel": "Cancelar",
-    "edit": "Atualizar recorde",
-    "add": "Adicionar recorde",
+    "edit": "Editar marca manual",
+    "add": "Adicionar marca manual",
     "remove": "Remover marca manual",
     "removeConfirm": "Remover a marca manual de {distance}? As outras fontes continuam sendo consideradas.",
     "origin": {
@@ -2563,17 +2566,22 @@
     "openSession": "Ver sessão",
     "unknownDate": "Data não informada",
     "year": "Ano: {year}",
-    "manualTime": "Marca manual preservada: {time}",
-    "note": "Novas melhores marcas atualizam automaticamente a anamnese. Sessões são elegíveis quando atingem a distância, com até 1% de excedente; usa-se o tempo integral, sem estimar trechos de sessões mais longas.",
+    "manualTime": "Sua marca manual: {time} (o recorde atual é mais rápido).",
+    "note": "Resultados registrados nessa distância entram automaticamente, aceitando uma pequena diferença de medição do relógio. Treinos mais longos não são divididos para estimar recordes.",
     "saved": "Marca salva.",
     "deleted": "Marca manual removida.",
     "errors": {
       "load": "Não foi possível carregar os recordes.",
       "generic": "Não foi possível salvar a alteração. Tente novamente.",
-      "invalidTime": "Informe um tempo positivo de até 168 horas, com minutos e segundos entre 0 e 59.",
+      "invalidTime": "Informe um tempo entre 1 minuto e 168 horas, com minutos e segundos entre 0 e 59.",
       "invalidDate": "Informe uma data válida entre 1950 e hoje.",
       "invalidRaceName": "O nome da prova deve ter até 120 caracteres."
     },
-    "time": "Tempo"
+    "time": "Tempo",
+    "openAnamnesis": "Corrigir na anamnese",
+    "clearDate": "Deixar sem data",
+    "empty": "Nenhuma marca registrada.",
+    "syncNote": "Novas melhores marcas atualizam sua anamnese automaticamente.",
+    "savedOther": "Marca manual salva. O recorde continua sendo {time}, com origem: {origin}."
   }
 }

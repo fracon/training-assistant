@@ -58,6 +58,10 @@ function projectContextForModel(context) {
     });
     if (limitations.size) result.weatherLimitations = [...limitations];
   }
+  if (Array.isArray(context.personalRecords) && context.anamnesis && Array.isArray(context.anamnesis.experience.raceResults)) {
+    result.anamnesis = { ...context.anamnesis, experience: { ...context.anamnesis.experience,
+      raceResults: context.anamnesis.experience.raceResults.filter((race) => race.distance === 'other') } };
+  }
   return compactForModel(result);
 }
 
@@ -324,7 +328,7 @@ function buildContext(
   if (includeRecords && purpose === 'cycle') {
     const personalRecords = recordsContext(db, userId);
     context.personalRecords = personalRecords.records;
-    addReference({ type: 'records', id: 'self', version: personalRecords.version });
+    addReference({ type: 'records', id: 'self', version: personalRecords.version, basis: personalRecords.basisVersion });
   }
   // Completed anamnesis (issue #80): a user report, consent-aware. Absent
   // (not completed or not requested) it adds no key, reference or gap.
@@ -811,7 +815,7 @@ function planBasis(sources, cycleId) {
           ref.type === 'records' ||
           ref.type === 'availability',
       )
-      .map((ref) => [`${ref.type}:${ref.id}`, ref.type === 'anamnesis' ? ref.basis : ref.version]),
+      .map((ref) => [`${ref.type}:${ref.id}`, ['anamnesis', 'records'].includes(ref.type) ? ref.basis : ref.version]),
   );
 }
 function appliedPlanIsCurrent(db, userId, cycleId, sourcesJson) {
@@ -839,7 +843,7 @@ function appliedPlanIsCurrent(db, userId, cycleId, sourcesJson) {
   ]);
   // Plans applied before the anamnesis was a source never depend on it; one
   // that recorded it is outdated when it changes or is no longer completed.
-  if (stored.has('records:self')) current.set('records:self', [recordsContext(db, userId).version]);
+  if (stored.has('records:self')) current.set('records:self', [recordsContext(db, userId).basisVersion]);
   if (stored.has('anamnesis:self')) {
     const anamnesis = anamnesisContext(db, userId);
     if (anamnesis) current.set('anamnesis:self', [anamnesis.basisVersion]);

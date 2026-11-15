@@ -1151,7 +1151,6 @@ async function buildServer(options = {}) {
           ).run(...fields.map((field) => updates[field]), id, request.user.id);
           const after = findTraining.get(id, request.user.id);
           reconcileShoeMileage(db, request.user.id, before, after);
-          syncAnamnesisRecords(db, request.user.id);
           return null;
         });
         const refused = saveFeedback();

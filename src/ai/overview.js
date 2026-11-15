@@ -101,6 +101,7 @@ function memoryOverview(db, userId, config, asOf = null, { purpose = 'cycle', re
         sensitiveDataShared: context.anamnesis?.sensitiveDataShared ?? false,
         href: '/anamnesis.html',
       },
+      personalRecords: context.personalRecords ?? null,
       legacyAvailable,
       ranges: context.ranges,
       cycle: context.cycle && {

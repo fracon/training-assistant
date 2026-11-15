@@ -2031,7 +2031,11 @@
     "anamnesisShared": "Shared with AI",
     "anamnesisNotShared": "Not shared with AI",
     "anamnesisNotStarted": "Not answered yet. Cycle planning and AI workout generation need a completed running profile.",
-    "anamnesisDraft": "In progress. Finish your running profile to plan the cycle and generate workouts with AI."
+    "anamnesisDraft": "In progress. Finish your running profile to plan the cycle and generate workouts with AI.",
+    "personalRecords": "Personal records",
+    "recordsOrigin": "Historical times selected for this planning task, with their dates and origins.",
+    "openRecords": "View and correct records",
+    "recordsEmpty": "No records selected."
   },
   "cyclePlanning": {
     "admin": "Administrator details",
@@ -2421,7 +2425,7 @@
       "textTooLong": "The text is too long.",
       "timeFormat": "Enter a valid time: whole hours, minutes and seconds, with minutes and seconds from 0 to 59.",
       "raceIncomplete": "Fill in distance and time for each result.",
-      "anamnesisConflict": "Your answers changed in another session. Reload the page to continue.",
+      "anamnesisConflict": "Your answers changed in another tab or your records were updated automatically. Reload the saved version before continuing.",
       "anamnesisIncomplete": "Some questions are still unanswered.",
       "memoryConflict": "Your experience notes changed in another session. Reload the saved version: the text you typed is kept and, when you save, replaces the other session's version.",
       "weightDateExists": "A weight is already logged for this date.",
@@ -2430,7 +2434,8 @@
       "invalidWeightDate": "Choose a valid date.",
       "weightDateOutOfRange": "The date cannot be in the future.",
       "load": "Your running profile could not be loaded.",
-      "generic": "Could not save. Please try again."
+      "generic": "Could not save. Please try again.",
+      "raceTimeRange": "Enter a time between 1 minute and 168 hours, with minutes and seconds from 0 to 59."
     },
     "placeholders": {
       "birth_year": "e.g. 1990",
@@ -2542,8 +2547,6 @@
     },
     "loading": "Loading records…",
     "retry": "Try again",
-    "formTitle": "Personal record",
-    "distance": "Distance",
     "hours": "Hours",
     "minutes": "Minutes",
     "seconds": "Seconds",
@@ -2551,8 +2554,8 @@
     "race": "Race name (optional)",
     "save": "Save record",
     "cancel": "Cancel",
-    "edit": "Update record",
-    "add": "Add record",
+    "edit": "Edit manual record",
+    "add": "Add manual record",
     "remove": "Remove manual record",
     "removeConfirm": "Remove the manual {distance} record? Other sources will still be considered.",
     "origin": {
@@ -2563,17 +2566,22 @@
     "openSession": "View session",
     "unknownDate": "Date not provided",
     "year": "Year: {year}",
-    "manualTime": "Saved manual record: {time}",
-    "note": "New best times automatically update your running profile. Sessions qualify when they reach the distance with up to 1% extra; the full time is used, without estimating splits from longer sessions.",
+    "manualTime": "Your manual time: {time} (the current record is faster).",
+    "note": "Recorded results at this distance count automatically, allowing a small watch measurement difference. Longer workouts are not split to estimate records.",
     "saved": "Record saved.",
     "deleted": "Manual record removed.",
     "errors": {
       "load": "Could not load records.",
       "generic": "Could not save the change. Try again.",
-      "invalidTime": "Enter a positive time up to 168 hours, with minutes and seconds from 0 to 59.",
+      "invalidTime": "Enter a time between 1 minute and 168 hours, with minutes and seconds from 0 to 59.",
       "invalidDate": "Enter a valid date between 1950 and today.",
       "invalidRaceName": "Race name must be at most 120 characters."
     },
-    "time": "Time"
+    "time": "Time",
+    "openAnamnesis": "Correct in running profile",
+    "clearDate": "Remove date",
+    "empty": "No record yet.",
+    "syncNote": "New best times automatically update your running profile.",
+    "savedOther": "Manual time saved. The record remains {time}, from: {origin}."
   }
 }

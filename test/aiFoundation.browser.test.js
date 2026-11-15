@@ -409,8 +409,8 @@ test('training memory Chrome PT/EN desktop/mobile, ownership, keyboard, loading,
     );
     assert.equal(
       await evaluate(`document.querySelectorAll('#memoryOverview section').length`),
-      10,
-      'cycle planning view: goals, availability, anamnesis, recent, upcoming, references, totals, shoes, previous cycles, interpretations',
+      11,
+      'cycle planning view: goals, availability, anamnesis, personal records, recent, upcoming, references, totals, shoes, previous cycles, interpretations',
     );
     for(const language of ['en-US','pt-BR']) {
       await evaluate(`document.querySelector(".lang-switch [data-lang='${language}']").click()`);

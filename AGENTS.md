@@ -8,7 +8,7 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.44.1`); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.44.2`); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
@@ -320,9 +320,14 @@ promote an unchanged copied mark to an original self-report; corrections and
 source deletion must re-evaluate surviving originals. Synchronize in the same
 transaction as manual/FIT/Garmin result writes, rescheduling or session deletion.
 Only an explicitly answered race question is updated; never complete a draft.
-Changed answers increment the revision so open tabs conflict normally.
+Changed automatic answers increment the revision so open tabs conflict normally,
+but keep the answer-edit timestamp; localized conflicts explain record updates.
+Feedback-only PATCH writes never scan record history. Applied-plan record and
+anamnesis basis versions use declared sources, never session-derived copies.
+Cycle Training Memory shows the same personalRecords selection as generation;
+model projections avoid repeating these marks in the anamnesis.
 
-Whole-session matching requires reaching the target with at most 1% extra,
+Whole-session matching requires reaching the target with at most 2% extra,
 using the actual complete time. Never extrapolate from pace or a shorter
 session, or infer splits in longer sessions. No background Garmin/AI operations.
 New cycle contexts version `records:self`; legacy contexts/plans without it

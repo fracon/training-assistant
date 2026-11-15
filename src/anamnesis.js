@@ -138,7 +138,7 @@ function normalizeRace(race, key, currentYear) {
     throw invalid(key);
   }
   if (!Number.isInteger(race.time_seconds)) throw invalid(key);
-  if (race.time_seconds <= 0 || race.time_seconds > 7 * 86400) throw invalid(key, 'outOfRange');
+  if (race.time_seconds < 60 || race.time_seconds > 7 * 86400) throw invalid(key, 'outOfRange');
   const year = race.year ?? null;
   if (year !== null && !Number.isInteger(year)) throw invalid(key);
   if (year !== null && (year < 1950 || year > currentYear)) throw invalid(key, 'outOfRange');
@@ -509,7 +509,10 @@ function anamnesisContext(db, userId) {
       healthConditions: value('health_conditions'),
     };
   }
-  const basisVersion = hash(projection);
+  const original = db.prepare('SELECT answer_json FROM anamnesis_record_sources WHERE user_id=?').get(userId);
+  const basisProjection = { ...projection, experience: { ...projection.experience } };
+  if (original) basisProjection.experience.raceResults = contextValue(item('race_results'), original.answer_json ? JSON.parse(original.answer_json) : undefined);
+  const basisVersion = hash(basisProjection);
   if (consent) projection.body.weight = answers.weight?.status === 'answered' ? weightContext(db, userId) : 'not_informed';
   return { projection, basisVersion, version: hash(projection) };
 }

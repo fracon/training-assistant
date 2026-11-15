@@ -30,7 +30,7 @@ test('manual records validate strict bodies, dates, seconds and names and remain
   const db=setup(t);
   for (const body of [null,[],{},'bad',{time_seconds:1,role:'admin'}])
     assert.throws(()=>saveRecord(db,1,'5k',body), /invalidRecord|invalidTime/);
-  for (const time of [0,-1,1.5,'100',604801,Infinity]) assert.throws(()=>saveRecord(db,1,'5k',{time_seconds:time}), /invalidTime/);
+  for (const time of [0,1,59,-1,1.5,'100',604801,Infinity]) assert.throws(()=>saveRecord(db,1,'5k',{time_seconds:time}), /invalidTime/);
   for (const date of [5,'bad','9999-01-01','2026-02-30','1950-00-01','1949-12-31','2026-99-01'])
     assert.throws(()=>saveRecord(db,1,'5k',{time_seconds:1500,achieved_on:date}), /invalidDate/);
   for (const name of [5,'x'.repeat(121)]) assert.throws(()=>saveRecord(db,1,'5k',{time_seconds:1500,race_name:name}), /invalidRaceName/);
@@ -57,7 +57,7 @@ test('manual records validate strict bodies, dates, seconds and names and remain
 
 test('existing results match only proven whole distances with bounded tolerance; no extrapolation or future candidates', (t) => {
   const db=setup(t);
-  for (const [km,time] of [[4.99,'18:00'],[5.051,'17:00'],[10,'0:00'],[5,'bad'],[5,''],[5,null],[5,'0:99'],[5,'1'],[5,'-1:00'],[5,'1:00:99'],[5,'1000:00:00'],[5,'9'.repeat(400)+':00']]) session(db,km,time);
+  for (const [km,time] of [[4.99,'18:00'],[5.101,'17:00'],[10,'0:00'],[5,'bad'],[5,''],[5,null],[5,'0:99'],[5,'1'],[5,'-1:00'],[5,'1:00:99'],[5,'1000:00:00'],[5,'9'.repeat(400)+':00']]) session(db,km,time);
   session(db,5,'10:00','2099-01-01');
   session(db,5,'11:00','2025-01-01',2);
   session(db,5,'12:00','2025-01-01',1,'none');
@@ -245,7 +245,7 @@ test('AI record projection never exposes a draft anamnesis and falls back to ind
 
 test('the questionnaire accepts a record without a year and bounds other-distance answers independently', (t)=>{
  const db=setup(t);
- anam(db,[{distance:'5k',time_seconds:30}]);
+ anam(db,[{distance:'5k',time_seconds:60}]);
  assert.equal(best(db).year,null);
  assert.throws(()=>anam(db,Array(6).fill(race('other',2000))),/An answer is invalid/);
 });
@@ -271,4 +271,62 @@ test('record synchronization preserves an existing year when date is absent and 
  assert.equal(saved().answers.race_results.value.find(r=>r.distance==='10k').year,null);
  assert.equal(best(db).achieved_on,null);
  assert.equal(best(db).year,null, 'preserving the questionnaire does not fabricate a record date');
+});
+
+
+test('session improvements change context evidence but never the declared basis of an applied plan', (t)=>{
+ const db=setup(t);
+ const { anamnesisContext }=require('../src/anamnesis');
+ const { projectContextForModel }=require('../src/ai/context');
+ const { memoryOverview }=require('../src/ai/overview');
+ const config=readAiConfig({AI_ENABLED:'true',OPENAI_API_KEY:'synthetic'});
+ anam(db,[race(),race('other',3600)]);
+ db.prepare("UPDATE athlete_anamnesis SET status='completed',completed_at='2026-01-01T00:00:00Z' WHERE user_id=1").run();
+ db.prepare("INSERT INTO training_cycles(id,user_id,status,objective,target_date) VALUES ('c',1,'active','Synthetic','2026-12-31')").run();
+ const ctx=()=>buildContext(db,1,{purpose:'cycle',resourceId:'c',config});
+ const before=ctx(); const basis=anamnesisContext(db,1).basisVersion;
+ const stamp=readAnamnesis(db,1).anamnesis.updated_at;
+ const id=session(db,5,'20:00'); syncAnamnesisRecords(db,1);
+ assert.equal(contextIsCurrent(db,1,before,config),false);
+ assert.equal(appliedPlanIsCurrent(db,1,'c',JSON.stringify(before.sources)),true);
+ assert.equal(anamnesisContext(db,1).basisVersion,basis);
+ assert.equal(readAnamnesis(db,1).anamnesis.updated_at,stamp);
+ const current=ctx();
+ assert.equal(current.personalRecords[0].timeSeconds,1200);
+ assert.deepEqual(projectContextForModel(current).anamnesis.experience.raceResults.map(r=>r.distance),['other']);
+ assert.equal(projectContextForModel(current).anamnesis.experience.raceResults[0].distanceKm,15);
+ assert.equal(current.anamnesis.experience.raceResults[0].timeSeconds,1200, 'projection never changes protected snapshots');
+ assert.deepEqual(memoryOverview(db,1,config).personalRecords,current.personalRecords);
+ assert.equal(memoryOverview(db,1,config,null,{purpose:'workouts'}).personalRecords,null);
+ saveRecord(db,1,'5k',{time_seconds:1400});
+ assert.equal(appliedPlanIsCurrent(db,1,'c',JSON.stringify(current.sources)),false,'a declared mark changes the basis even if a session remains faster');
+ db.prepare('DELETE FROM trainings WHERE id=?').run(id); syncAnamnesisRecords(db,1);
+ assert.equal(best(db).time_seconds,1400);
+});
+
+test('GPS allowance accepts 10.15 km using the actual full time and rejects distances beyond two percent', (t)=>{
+ const db=setup(t);
+ session(db,10.201,'40:00'); assert.equal(readRecords(db,1).records[1].best,null);
+ session(db,10.15,'45:00'); assert.equal(readRecords(db,1).records[1].best.time_seconds,2700);
+});
+
+test('a questionnaire with no original race answer has no fabricated race basis', (t)=>{
+ const db=setup(t); anam(db,[]);
+ db.prepare("UPDATE athlete_anamnesis SET status='completed',completed_at='2026-01-01T00:00:00Z' WHERE user_id=1").run();
+ captureAnamnesisRecords(db,1,undefined);
+ assert.ok(anamnesisContext(db,1).basisVersion);
+});
+
+test('editing feedback does not scan result history or touch questionnaire timestamps/revision', async(t)=>{
+ const db=setup(t); anam(db,[race()]); const id=session(db,5,'20:00'); syncAnamnesisRecords(db,1);
+ const before=readAnamnesis(db,1).anamnesis;
+ const app=await buildServer({db,sessionCookieSecure:false}); t.after(()=>app.close());
+ const cookie=`${SESSION_COOKIE_NAME}=${createSession(db,1).token}`;
+ const prepare=db.prepare.bind(db);
+ db.prepare=(sql)=>{ assert.equal(sql.includes("result_data_source IN ('manual','fit_upload','garmin_connect')"),false,'feedback must not select all results'); return prepare(sql); };
+ const response=await app.inject({method:'PATCH',url:`/api/trainings/${id}`,headers:{cookie},payload:{feedback_notas:'Synthetic note'}});
+ db.prepare=prepare;
+ assert.equal(response.statusCode,200);
+ const after=readAnamnesis(db,1).anamnesis;
+ assert.equal(after.revision,before.revision); assert.equal(after.updated_at,before.updated_at);
 });

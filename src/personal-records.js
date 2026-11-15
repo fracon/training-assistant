@@ -41,13 +41,13 @@ function duration(value) {
 }
 
 // Conservative measurement tolerance: the measured distance must reach the
-// target and may exceed it by at most 1%. Always use the complete measured
+// target and may exceed it by at most 2%. Always use the complete measured
 // time, never extrapolate a shorter distance or scale an average pace.
 function matches(actual, target) {
-  return Number.isFinite(actual) && actual >= target && actual <= target * 1.01;
+  return Number.isFinite(actual) && actual >= target && actual <= target * 1.02;
 }
 
-function readRecords(db, userId, includeDraftAnamnesis = true) {
+function readRecords(db, userId, includeDraftAnamnesis = true, includeSessions = true) {
   const today = userToday(db, userId);
   const manual = db.prepare('SELECT distance,time_seconds,achieved_on,race_name FROM personal_records WHERE user_id=? ORDER BY distance').all(userId);
   const source = db.prepare(`SELECT s.answer_json,a.status FROM anamnesis_record_sources s
@@ -62,15 +62,15 @@ function readRecords(db, userId, includeDraftAnamnesis = true) {
       });
     }
   }
-  const sessions = db.prepare(`SELECT id,dia,fit_distance,fit_duration,fit_summary_json FROM trainings
-    WHERE user_id=? AND result_data_source IN ('manual','fit_upload','garmin_connect') AND dia<=? ORDER BY dia,id`).all(userId, today);
+  const sessions = includeSessions ? db.prepare(`SELECT id,dia,fit_distance,fit_duration,fit_summary_json FROM trainings
+    WHERE user_id=? AND result_data_source IN ('manual','fit_upload','garmin_connect') AND dia<=? ORDER BY dia,id`).all(userId, today) : [];
   for (const row of sessions) {
     let summary;
     try { summary = JSON.parse(row.fit_summary_json); } catch { continue; }
     if (summary?.activity?.sport && summary.activity.sport !== 'running') continue;
     const seconds = duration(row.fit_duration);
     for (const [distance, km] of Object.entries(DISTANCES)) {
-      if (seconds > 0 && seconds <= 604800 && matches(row.fit_distance, km)) candidates.push({
+      if (seconds >= 60 && seconds <= 604800 && matches(row.fit_distance, km)) candidates.push({
         distance, time_seconds: seconds, achieved_on: row.dia, year: Number(row.dia.slice(0, 4)),
         race_name: null, origin: 'session', training_id: row.id,
       });
@@ -127,14 +127,14 @@ function syncAnamnesisRecords(db, userId, now = new Date().toISOString()) {
   const next = { status: 'answered', value: races };
   if (JSON.stringify(answers.race_results) === JSON.stringify(next)) return;
   answers.race_results = next;
-  db.prepare(`UPDATE athlete_anamnesis SET answers_json=?, revision=revision+1, updated_at=? WHERE user_id=?`)
-    .run(JSON.stringify(answers), now, userId);
+  db.prepare(`UPDATE athlete_anamnesis SET answers_json=?, revision=revision+1 WHERE user_id=?`)
+    .run(JSON.stringify(answers), userId);
 }
 
 function validateRecord(body, today) {
   if (!body || typeof body !== 'object' || Array.isArray(body) ||
       Object.keys(body).some((key) => !['time_seconds', 'achieved_on', 'race_name'].includes(key))) throw new RecordError('invalidRecord');
-  if (!Number.isInteger(body.time_seconds) || body.time_seconds <= 0 || body.time_seconds > 604800) throw new RecordError('invalidTime');
+  if (!Number.isInteger(body.time_seconds) || body.time_seconds < 60 || body.time_seconds > 604800) throw new RecordError('invalidTime');
   const date = body.achieved_on ?? null;
   if (date !== null && (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
       !Number.isFinite(Date.parse(date)) || new Date(date).toISOString().slice(0, 10) !== date || date > today || date < '1950-01-01')) throw new RecordError('invalidDate');
@@ -165,12 +165,14 @@ function deleteRecord(db, userId, distance) {
 }
 
 function recordsContext(db, userId) {
-  const records = readRecords(db, userId, false).records.filter((row) => row.best).map((row) => ({
+  const project = (selection) => selection.records.filter((row) => row.best).map((row) => ({
     distanceKm: row.distance_km, timeSeconds: row.best.time_seconds,
     achievedOn: row.best.achieved_on || 'not_informed', year: row.best.year,
     origin: row.best.origin,
   }));
-  return { records, version: hash(records) };
+  const records = project(readRecords(db, userId, false));
+  const declared = project(readRecords(db, userId, false, false));
+  return { records, version: hash(records), basisVersion: hash(declared) };
 }
 
 module.exports = { DISTANCES, RecordError, migrateRecords, readRecords, saveRecord, deleteRecord,
