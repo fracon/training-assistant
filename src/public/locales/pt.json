@@ -2578,7 +2578,6 @@
       "invalidRaceName": "O nome da prova deve ter até 120 caracteres."
     },
     "time": "Tempo",
-    "openAnamnesis": "Corrigir na anamnese",
     "clearDate": "Deixar sem data",
     "empty": "Nenhuma marca registrada.",
     "syncNote": "Novas melhores marcas atualizam sua anamnese automaticamente.",

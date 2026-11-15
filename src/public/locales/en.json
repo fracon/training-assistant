@@ -2578,7 +2578,6 @@
       "invalidRaceName": "Race name must be at most 120 characters."
     },
     "time": "Time",
-    "openAnamnesis": "Correct in running profile",
     "clearDate": "Remove date",
     "empty": "No record yet.",
     "syncNote": "New best times automatically update your running profile.",

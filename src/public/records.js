@@ -40,9 +40,9 @@ function render() {
       card.append(element('p', `${t(`origin.${best.origin}`)} · ${date}`, 'record-source'));
       if (best.race_name) card.append(element('p', best.race_name));
       card.append(element('p', t('syncNote'), 'field-hint'));
-      if (best.training_id || best.origin === 'anamnesis') {
-        const link = element('a', t(best.training_id ? 'openSession' : 'openAnamnesis'));
-        link.href = best.training_id ? `/training-result.html?id=${best.training_id}` : '/anamnesis.html';
+      if (best.training_id) {
+        const link = element('a', t('openSession'));
+        link.href = `/training-result.html?id=${best.training_id}`;
         card.append(link);
       }
     } else card.append(element('p', t('empty'), 'field-hint'));

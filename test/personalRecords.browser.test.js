@@ -31,7 +31,7 @@ test('Chrome: records preserve source data and manual drafts in a localized, acc
   await command('Page.navigate',{url:origin+'/records.html'});
   await wait("document.querySelectorAll('#recordsList > section').length===4");
   assert.equal(await evaluate("document.querySelector('#recordsList .record-value').textContent"),'25:00');
-  assert.ok(await evaluate("document.querySelector('#recordsList a[href=\"/anamnesis.html\"]')!==null"));
+  assert.equal(await evaluate("document.querySelector('#recordsList a[href=\"/anamnesis.html\"]')"),null);
   assert.equal(await evaluate("document.querySelectorAll('#recordsList > section')[1].textContent.includes("+JSON.stringify(messages.records.empty)+")"),true);
   const positions=await evaluate("[...document.querySelectorAll('#recordsList > section')].map(e=>Math.round(e.getBoundingClientRect().top))");
   assert.equal(positions[0]===positions[1],width===1280);

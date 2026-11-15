@@ -12,8 +12,9 @@ then the original anamnesis answer, then sessions in date/ID order. The page
 shows the winning source and a session link where available. The manual-record action edits only its own source, never a copied session or
 anamnesis mark. It opens a shared modal named for its fixed distance. Empty distances
 remain visible with a muted empty-state message. The form reuses the anamnesis duration
-layout and synchronizes new best times automatically; source links open the
-anamnesis or session, and an optional date can be cleared. Editing/removing
+layout and synchronizes new best times automatically. Session sources link to
+their result page, and an optional date can be cleared. Records never presents
+a link asking the athlete to correct the anamnesis. Editing/removing
 an anamnesis source uses the questionnaire; session sources use the result page.
 
 ## Measured result eligibility
