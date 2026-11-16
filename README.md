@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, request and review weekly AI proposals, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized training-request prompts for use with an external AI.
 
-Current application version: **0.45.0** (active beta development). The Garmin Connect integration is opt-in per installation, in single-account `pilot` mode (default) or `multiuser` mode; see [Garmin Connect integration](#garmin-connect-integration).
+Current application version: **0.45.1** (active beta development). The Garmin Connect integration is opt-in per installation, in single-account `pilot` mode (default) or `multiuser` mode; see [Garmin Connect integration](#garmin-connect-integration).
 
 ## Personal records
 
@@ -624,7 +624,7 @@ specific location; it has no mandatory geographic default.
 
 ### Excel Training Import
 
-The Calendar page imports `.xlsx`/`.xls` plans and validates every row before persistence. The backend uses the SheetJS [`xlsx`](https://www.npmjs.com/package/xlsx) reader for workbook parsing, which tolerates namespace-prefixed XML emitted by Excel, LibreOffice, Google Sheets, and Numbers. The normalized rows then pass through `src/trainingImport.js`, which maps Portuguese and English aliases (including `Data`, `Dia`, `Período`, `Tipo`, `Treino`, `Detalhes`, `FC alvo`, `RPE`, `Tênis`, `Localização`, `Previsão do tempo`, and `Observações`) into the application schema. The generated AI Planning workbook contract uses these 12 columns, while legacy spreadsheets without a location column remain valid and import with no planned location.
+The Calendar page imports `.xlsx`/`.xls` plans and validates every row before persistence. The backend uses the SheetJS `xlsx` reader (0.20.3, installed from the official `cdn.sheetjs.com` tarball pinned with its integrity hash in `package-lock.json`, because the npm registry release stopped at the vulnerable 0.18.5) for workbook parsing, which tolerates namespace-prefixed XML emitted by Excel, LibreOffice, Google Sheets, and Numbers. The normalized rows then pass through `src/trainingImport.js`, which maps Portuguese and English aliases (including `Data`, `Dia`, `Período`, `Tipo`, `Treino`, `Detalhes`, `FC alvo`, `RPE`, `Tênis`, `Localização`, `Previsão do tempo`, and `Observações`) into the application schema. The generated AI Planning workbook contract uses these 12 columns, while legacy spreadsheets without a location column remain valid and import with no planned location.
 
 Upload validation accepts the standard Excel MIME types and falls back to the `.xlsx`/`.xls` filename extension when browsers send generic types such as `application/octet-stream` or `application/zip`. SheetJS performs the structural parsing; genuinely corrupt buffers receive a 400 response instead of crashing the server. Excel serial dates are normalized to the correct calendar day before persistence, including workbooks whose XML contains namespace prefixes.
 

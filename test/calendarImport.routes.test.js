@@ -523,3 +523,74 @@ test('import rejects header-only sheets that contain no training rows', async ()
 
   await app.close();
 });
+
+// Roadmap S3 / SheetJS security update. The backend reads workbooks with
+// SheetJS (PR #26) because ExcelJS rejects namespace-prefixed workbook XML
+// and cannot read legacy .xls files; both must keep importing.
+const NS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+const REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+function inlineCell(ref, text) {
+  return `<x:c r="${ref}" t="inlineStr"><x:is><x:t>${text}</x:t></x:is></x:c>`;
+}
+async function namespacedWorkbook(rows) {
+  const JSZip = require('jszip');
+  const zip = new JSZip();
+  const columns = 'ABCDEFGHIJKL';
+  const sheetRows = rows.map((row, index) => `<x:row r="${index + 1}">${
+    row.map((value, column) => inlineCell(`${columns[column]}${index + 1}`, value)).join('')}</x:row>`).join('');
+  zip.file('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>');
+  zip.file('_rels/.rels', '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');
+  zip.file('xl/workbook.xml', `<?xml version="1.0" encoding="UTF-8"?><x:workbook xmlns:x="${NS}" xmlns:r="${REL}"><x:sheets><x:sheet name="Treinos" sheetId="1" r:id="rId1"/></x:sheets></x:workbook>`);
+  zip.file('xl/_rels/workbook.xml.rels', '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>');
+  zip.file('xl/worksheets/sheet1.xml', `<?xml version="1.0" encoding="UTF-8"?><x:worksheet xmlns:x="${NS}"><x:sheetData>${sheetRows}</x:sheetData></x:worksheet>`);
+  return zip.generateAsync({ type: 'nodebuffer' });
+}
+
+test('import keeps reading namespace-prefixed workbooks (PR #26)', async () => {
+  const { db, app, upload } = await setup();
+  const buffer = await namespacedWorkbook([
+    ['Data', 'Dia', 'Tipo', 'Treino', 'Detalhes'],
+    ['12/09/2026', 'Sábado', 'Corrida', 'Longão', '90 min leve'],
+  ]);
+  // ExcelJS, the alternative library, cannot read this workbook.
+  await assert.rejects(new ExcelJS.Workbook().xlsx.load(buffer).then((workbook) => {
+    if (!workbook.worksheets[0]?.getCell('A2').value) throw new Error('unreadable');
+  }));
+
+  const response = await upload(buffer, 'treinos.xlsx');
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { imported: 1, skipped: 0 });
+  assert.deepEqual(db.prepare('SELECT dia, tipo, treino, detalhes FROM trainings').get(),
+    { dia: '2026-09-12', tipo: 'Corrida', treino: 'Longão', detalhes: '90 min leve' });
+  await app.close();
+});
+
+test('import keeps reading legacy .xls workbooks', async () => {
+  const XLSX = require('xlsx');
+  const { db, app, upload } = await setup();
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+    ['Data', 'Dia', 'Tipo', 'Treino'],
+    ['13/09/2026', 'Domingo', 'Corrida', 'Regenerativo'],
+  ]), 'Treinos');
+  const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'biff8' });
+
+  const response = await upload(buffer, 'treinos.xls', undefined, 'application/vnd.ms-excel');
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { imported: 1, skipped: 0 });
+  assert.deepEqual(db.prepare('SELECT dia, treino FROM trainings').get(), { dia: '2026-09-13', treino: 'Regenerativo' });
+  await app.close();
+});
+
+test('the workbook reader is a SheetJS release with the known advisories fixed', () => {
+  // npm's `xlsx` stopped at 0.18.5 (prototype pollution GHSA-4r6h-8v6p-xvw6,
+  // ReDoS GHSA-5pgg-2g8v-p4x9); fixed releases ship from cdn.sheetjs.com.
+  const { version } = require('xlsx');
+  const [major, minor, patch] = version.split('.').map(Number);
+  assert.ok(major > 0 || minor > 20 || (minor === 20 && patch >= 2), version);
+  const lock = require('../package-lock.json').packages['node_modules/xlsx'];
+  assert.match(lock.resolved, /^https:\/\/cdn\.sheetjs\.com\/xlsx-\d+\.\d+\.\d+\/xlsx-\d+\.\d+\.\d+\.tgz$/);
+  assert.match(lock.integrity, /^sha512-/);
+});

@@ -1,6 +1,6 @@
 {
   "name": "training-assistant",
-  "version": "0.45.0",
+  "version": "0.45.1",
   "description": "Self-hosted running training assistant with FIT analysis, training cycles, calendar planning, and AI-ready training prompts",
   "main": "src/server.js",
   "engines": {
@@ -29,7 +29,7 @@
     "fastify": "^5.2.1",
     "fit-file-parser": "^1.9.6",
     "unzipper": "^0.12.5",
-    "xlsx": "^0.18.5"
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
     "c8": "^10.1.3"
