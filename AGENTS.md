@@ -8,7 +8,7 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.47.0`); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.47.1`); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
@@ -61,6 +61,15 @@ desktop shell is unchanged.
 - Tab bar and sheet controls are at least 44 px tall and respect
   `safe-area-inset-bottom`; the shell height uses `100dvh`. Covered by
   `test/mobileShell.browser.test.js`.
+- Touch devices (`@media (pointer: coarse)`) give interactive controls a hit
+  area of at least 44×44 px (`.btn-icon`, dashboard card actions, language
+  buttons, inline source links, Request Workouts day toggles) without changing
+  the fine-pointer desktop size; icon-only actions keep translated
+  `aria-label`s and their custom tooltips are suppressed under
+  `(hover: none)`. No page may overflow horizontally at 320/360/390 px.
+  Covered by `test/mobileTouchTargets.browser.test.js`; browser suites that
+  assert hover tooltips launch Chrome with a fine pointer
+  (`launchChrome(t, { extraArgs })`).
 
 ## Account roles and administrative bootstrap
 

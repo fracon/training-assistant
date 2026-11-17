@@ -62,8 +62,10 @@
   font-size: 0.95rem;
 }
 
-.iso-date-input {
+.field input.iso-date-input {
   position: absolute;
+  inset: 0 auto auto 0;
+  min-width: 0;
   width: 1px;
   height: 1px;
   padding: 0;
@@ -648,4 +650,9 @@ body.external-prompt-open { overflow: hidden; }
   .availability-actions .availability-save-action {
     width: 100%;
   }
+}
+
+@media (pointer: coarse) {
+  .day-expand, .day-toggle { min-width: 44px; min-height: 44px; }
+  .day-toggle { cursor: pointer; }
 }

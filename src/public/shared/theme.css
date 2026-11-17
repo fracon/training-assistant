@@ -746,6 +746,10 @@ input.input-error:focus-visible {
   }
 }
 
+@media (pointer: coarse) {
+  .lang-switch button { min-width: 44px; min-height: 44px; }
+}
+
 @media (max-width: 640px) {
   /* The authenticated shell lays out its own phone top bar (shell.css);
      the account menu lives in its More sheet. */
