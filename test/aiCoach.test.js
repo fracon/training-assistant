@@ -718,7 +718,10 @@ test('weekly agenda keeps the availability checkbox independent from the accordi
     assert.match(row, /data-can-train/);
     assert.match(row, /data-expand/);
     assert.doesNotMatch(row, /data-expand[^>]*disabled/);
-    assert.doesNotMatch(row, /<label class="day-toggle">/);
+    const toggleLabel = row.match(/<label class="day-toggle">.*?<\/label>/)?.[0];
+    assert.ok(toggleLabel, 'the checkbox has a clickable day label');
+    assert.match(toggleLabel, /data-can-train/);
+    assert.doesNotMatch(toggleLabel, /data-expand/);
   }
 });
 

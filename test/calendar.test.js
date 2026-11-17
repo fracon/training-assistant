@@ -23,6 +23,10 @@ const {
   trainingResultUrl,
   isoFromGridKey,
   rescheduledTrainings,
+  weekDates,
+  weekGroups,
+  sessionMarkers,
+  sessionStatus,
 } = require('../src/public/calendar.js');
 const en = require('../src/public/locales/en.json');
 const pt = require('../src/public/locales/pt.json');
@@ -692,7 +696,7 @@ test('rescheduling travels through the dedicated /reschedule train', () => {
     js,
     /import \{ [^}]*updateTrainingDate[^}]*\} from '\.\/shared\/api\.js';/
   );
-  assert.match(js, /import \{ formatDate \} from '\.\/shared\/date\.js';/);
+  assert.match(js, /import \{ formatDate, formatCalendarDate, formatMonth \} from '\.\/shared\/date\.js';/);
 });
 
 test('reschedule toasts and the overflow hint are translated with key parity', () => {
@@ -734,4 +738,43 @@ test('the overflow chip hints through a custom tooltip, never a native title', (
   )?.[0];
   assert.ok(hoverBlock, 'the overflow chip tooltip reveals on hover');
   assert.match(hoverBlock, /opacity:\s*1/);
+});
+
+
+test('agenda weeks respect Sunday/Monday and civil year/month boundaries', () => {
+  assert.deepEqual(weekDates('2026-11-01', 'Monday'), ['2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29', '2026-10-30', '2026-10-31', '2026-11-01']);
+  assert.deepEqual(weekDates('2026-11-01', 'Sunday'), ['2026-11-01', '2026-11-02', '2026-11-03', '2026-11-04', '2026-11-05', '2026-11-06', '2026-11-07']);
+  assert.equal(weekDates('2027-01-01')[0], '2026-12-28');
+  assert.equal(weekDates('2026-03-29')[6], '2026-03-29');
+});
+
+test('agenda grouping keeps every session in day order, excludes empty/outside days', () => {
+  const sessions = [{ id: 1, dia: '2026-11-05' }, { id: 2, dia: '2026-11-03' }, { id: 3, dia: '2026-11-05' }, { id: 4, dia: '2026-11-09' }];
+  assert.deepEqual(weekGroups(sessions, '2026-11-04', 'Monday'), [{ dia: '2026-11-03', trainings: [sessions[1]] }, { dia: '2026-11-05', trainings: [sessions[0], sessions[2]] }]);
+  assert.deepEqual(weekGroups([], '2026-11-04', 'Sunday'), []);
+});
+
+test('mini-month markers distinguish mixed, completed, planned and empty days', () => {
+  assert.deepEqual(sessionMarkers([]), { planned: false, completed: false });
+  assert.deepEqual(sessionMarkers([{ completed: 1 }]), { planned: false, completed: true });
+  assert.deepEqual(sessionMarkers([{ completed: 0 }]), { planned: true, completed: false });
+  assert.deepEqual(sessionMarkers([{ completed: true }, { completed: false }]), { planned: true, completed: true });
+});
+
+test('agenda status uses completion and realized RPE in both languages', () => {
+  const { translate } = require('../src/public/shared/i18n.js');
+  for (const messages of [en, pt]) {
+    const t = (key, params) => translate(messages, key, params);
+    assert.equal(sessionStatus({ completed: 0 }, t), messages.calendar.agenda.planned);
+    assert.equal(sessionStatus({ completed: 0, feedback_rpe: 3 }, t), `${messages.calendar.agenda.planned} · RPE 3/5`);
+    assert.equal(sessionStatus({ completed: 1 }, t), messages.calendar.agenda.completed);
+    assert.equal(sessionStatus({ completed: 1, feedback_rpe: 3 }, t), `${messages.calendar.agenda.completed} · RPE 3/5`);
+  }
+});
+
+test('shared calendar date labels localize full and compact civil dates', () => {
+  const { formatCalendarDate } = require('../src/public/shared/date.js');
+  assert.equal(formatCalendarDate('invalid'), '');
+  assert.match(formatCalendarDate('2026-11-05', 'pt-BR'), /quinta-feira.*5.*novembro.*2026/);
+  assert.match(formatCalendarDate('2026-11-05', 'en-US', 'short'), /Thu.*Nov.*5/);
 });

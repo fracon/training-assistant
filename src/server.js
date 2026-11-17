@@ -772,7 +772,7 @@ async function buildServer(options = {}) {
         const trainings = db
           .prepare(
             `SELECT id, dia, periodo, tipo, treino, detalhes, fc_alvo, rpe, tenis, previsao, observacoes,
-                  fit_distance, fit_duration
+                  fit_distance, fit_duration, completed, feedback_rpe
            FROM trainings WHERE ${conditions.join(' AND ')} ORDER BY dia, id`,
           )
           .all(...params);

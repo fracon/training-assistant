@@ -171,7 +171,7 @@ export function buildDayRowHtml(day, { dayLabel, messages = {}, state = {} }) {
   const locationSummary = `<span class="day-location-summary" data-day-location-summary${location ? '' : ' hidden'}>${location ? '<i data-lucide="map-pin" aria-hidden="true"></i>' : ''}${location ? `<span>${escapeHtml(location)}</span>` : ''}</span>`;
   return `<fieldset class="day-row" data-day="${dbDay}" data-legacy-periods="${escapeHtml(JSON.stringify(legacyPeriods))}">
   <div class="day-summary${expanded ? ' is-expanded' : ''}">
-    <div class="day-toggle"><input type="checkbox" data-can-train aria-label="${dayLabel}" ${available ? 'checked' : ''} aria-controls="${detailsId}" ${configured ? 'data-configured="true"' : ''}><span class="day-label">${dayLabel}</span></div>
+    <label class="day-toggle"><input type="checkbox" data-can-train aria-label="${dayLabel}" ${available ? 'checked' : ''} aria-controls="${detailsId}" ${configured ? 'data-configured="true"' : ''}><span class="day-label">${dayLabel}</span></label>
     <div class="day-summary-copy"><span data-day-summary>${summary.text}</span>${locationSummary}${summary.incomplete ? `<span class="day-incomplete" data-day-incomplete>${messages.dayIncomplete || ''}</span>` : ''}</div>
     <button type="button" class="day-expand" data-expand aria-label="${expandLabel}" aria-controls="${detailsId}" aria-expanded="${expanded ? 'true' : 'false'}"><i data-lucide="chevron-down" class="day-expand-icon" aria-hidden="true"></i></button>
   </div>

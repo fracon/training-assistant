@@ -8,7 +8,7 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.47.0`); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.48.0`); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
@@ -61,6 +61,15 @@ desktop shell is unchanged.
 - Tab bar and sheet controls are at least 44 px tall and respect
   `safe-area-inset-bottom`; the shell height uses `100dvh`. Covered by
   `test/mobileShell.browser.test.js`.
+- Touch devices (`@media (pointer: coarse)`) give interactive controls a hit
+  area of at least 44×44 px (`.btn-icon`, dashboard card actions, language
+  buttons, inline source links, Request Workouts day toggles) without changing
+  the fine-pointer desktop size; icon-only actions keep translated
+  `aria-label`s and their custom tooltips are suppressed under
+  `(hover: none)`. No page may overflow horizontally at 320/360/390 px.
+  Covered by `test/mobileTouchTargets.browser.test.js`; browser suites that
+  assert hover tooltips launch Chrome with a fine pointer
+  (`launchChrome(t, { extraArgs })`).
 
 ## Account roles and administrative bootstrap
 
@@ -659,6 +668,21 @@ are stable identifiers, not a statement of scope.
   ExcelJS: PR #26 moved away from it because it rejects namespace-prefixed
   workbook XML, and it cannot read `.xls`. `calendarImport.routes.test.js`
   covers both formats and the fixed-version source.
+- Phones (`max-width: 640px`) show the Workouts page as a week agenda (owner
+  decision 2026-11-17): a mini month of day buttons (roving tabindex, arrow
+  keys, planned/completed dots, today and selected-week states) selects a week,
+  and the list below shows every session of that week as cards (type, title,
+  clamped details, completed/planned status with realized RPE, link to the
+  training result). Each card's **Move to another date** opens a
+  `createDialogFocusTrap` dialog with the shared DatePicker and reuses the
+  drag-and-drop reschedule path (`rescheduleTraining`), so both share the
+  optimistic update, toasts and rollback. `?week=` selects the applied week;
+  the week-start switch lives in Preferences on phones. The desktop month grid
+  and drag-and-drop are unchanged; the inactive view is `inert`, and grid
+  tooltips are kept inside the content area. `/api/calendar/trainings` also
+  returns the owner's `completed` and `feedback_rpe` for that status. Covered by
+  `test/calendar.test.js`, `test/calendarImport.routes.test.js` and
+  `test/calendarAgenda.browser.test.js`.
 - Spreadsheet import deduplicates by exact **Date (`dia`) + Training Name
   (`treino`) + Description (`detalhes`)**. Calendar drag-and-drop rescheduling
   persists through its dedicated endpoint. Keep the shared Snackbar behavior

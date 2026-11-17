@@ -95,3 +95,7 @@
   .anamnesis-actions { justify-content: stretch; }
   .anamnesis-actions .btn-primary, .anamnesis-actions .btn-secondary { flex: 1 1 auto; }
 }
+
+@media (pointer: coarse) {
+  .anamnesis-page a, .anamnesis-link-button { display: inline-flex; align-items: center; min-width: 44px; min-height: 44px; }
+}

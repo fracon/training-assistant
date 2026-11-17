@@ -604,6 +604,9 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       const before=saturday.querySelector('[data-can-train]').checked;
       saturday.querySelector('.day-label').click();
       const afterLabelClick=saturday.querySelector('[data-can-train]').checked;
+      // The day label is now a touch target. Restore the unchecked state
+      // before checking the independent expand/collapse control.
+      saturday.querySelector('.day-label').click();
       const expand=saturday.querySelector('[data-expand]');
       const closedHeader=saturday.querySelector('.day-summary').getBoundingClientRect();
       const closedButton=expand.getBoundingClientRect();
@@ -621,7 +624,7 @@ test('authenticated AI Coach availability works in PT/EN on desktop/mobile with 
       days: 7,
       expanders: true,
       before: false,
-      afterLabelClick: false,
+      afterLabelClick: true,
       expanded: { hidden: false, disabled: true },
       reclosed: true,
       chevron: {

@@ -126,7 +126,7 @@ test('Chrome persistence boundaries: closed save, failed reads, unavailable AI, 
  const app=await buildServer({db,sessionCookieSecure:false,aiConfig:config,aiClient:async(payload)=>{calls++;await new Promise(r=>release=r);return {value:planFor(JSON.parse(payload.input[0].content[0].text).context),usage:{input:10,output:20,cached:0},error:null};}});
  const origin=await app.listen({port:0,host:'127.0.0.1'});const token=createSession(db,2).token;
  t.after(async()=>{release?.();await app.close();db.close();});
- const browser=await launchChrome(t);const {command,evaluate,wait,capture,intercept}=browser;
+ const browser=await launchChrome(t, { extraArgs: ['--blink-settings=primaryPointerType=4,availablePointerTypes=4,primaryHoverType=2,availableHoverTypes=2'] });const {command,evaluate,wait,capture,intercept}=browser;
  const get=(id)=>db.prepare('SELECT * FROM training_cycles WHERE id=?').get(id);
  const keys=[];let promptRequests=0,posts=0;
  browser.socket.addEventListener('message',e=>{const m=JSON.parse(e.data);if(m.method!=='Network.requestWillBeSent')return;const r=m.params.request;
