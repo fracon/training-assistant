@@ -170,7 +170,8 @@
       },
       "failedTitle": "We found issues in your spreadsheet",
       "rowError": "Row {row} • {col}: {error}",
-      "close": "Close"
+      "close": "Close",
+      "compact": "Import"
     },
     "firstDayLabel": "Week starts on",
     "weekStart": {
@@ -213,7 +214,24 @@
       "Friday",
       "Saturday",
       "Sunday"
-    ]
+    ],
+    "agenda": {
+      "label": "Week agenda",
+      "planned": "Planned",
+      "completed": "Completed",
+      "rpe": "RPE {rpe}/5",
+      "sessionOne": "{count} session",
+      "sessionMany": "{count} sessions",
+      "weekRange": "{start} – {end}",
+      "empty": "No workouts this week."
+    },
+    "move": {
+      "title": "Move to another date",
+      "label": "Move to another date: {title}",
+      "date": "New date",
+      "cancel": "Cancel",
+      "submit": "Move"
+    }
   },
   "shell": {
     "nav": {
@@ -245,7 +263,17 @@
     },
     "anamnesis": "My running profile",
     "anamnesisLock": "Finish your running profile to unlock every Kinesis screen. It takes about 5 minutes.",
-    "anamnesisLockTitle": "Menu locked"
+    "anamnesisLockTitle": "Menu locked",
+    "tabs": {
+      "home": "Home",
+      "workouts": "Workouts",
+      "request": "Request",
+      "cycles": "Cycles",
+      "more": "More"
+    },
+    "close": "Close",
+    "account": "Account",
+    "moreNavLabel": "More sections"
   },
   "login": {
     "title": "Sign In - Kinesis",

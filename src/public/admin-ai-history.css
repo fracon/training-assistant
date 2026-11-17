@@ -11,7 +11,7 @@
 .field-hint { margin: 0; font-size: .78rem; color: var(--muted); opacity: .8; }
 .ai-history-filters { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); gap: .75rem; align-items: end; margin-bottom: 1rem; }
 .ai-history-filters .field { margin: 0; min-width: 0; }
-.ai-history-filters select { width: 100%; min-width: 0; }
+.ai-history-filters select { width: 100%; min-width: 0; text-overflow: ellipsis; }
 .ai-history-list { display: flex; flex-direction: column; gap: .65rem; list-style: none; margin: 0; padding: 0; }
 .ai-history-row { display: flex; align-items: center; justify-content: space-between; gap: .75rem; border: 1px solid var(--line); border-radius: 14px; background: var(--card); padding: .85rem 1rem; min-width: 0; }
 .ai-history-row-main { min-width: 0; display: flex; flex-direction: column; gap: .35rem; }

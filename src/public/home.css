@@ -780,3 +780,7 @@
   text-align: center;
   pointer-events: none;
 }
+
+@media (pointer: coarse) {
+  .card-action { min-width: 44px; min-height: 44px; flex-shrink: 0; }
+}

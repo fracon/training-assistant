@@ -6,12 +6,14 @@ body.shell-loading > main { visibility: hidden; }
 
 body.shell-mounted {
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
 }
 
 .app-shell {
   display: flex;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
 }
 
@@ -419,25 +421,281 @@ body.shell-mounted {
   font-weight: 600;
 }
 
+/* ---------- Phone navigation (<= 640px) ----------
+   Owner decision 2026-11-17: phones get a compact top bar (brand + feedback)
+   and a bottom tab bar (Home, Workouts, Request Workouts, Cycles, More). The
+   sidebar, the version footer and the topbar's language/account/sign-out move
+   into the More sheet. Both exist in the DOM on every width; CSS picks one. */
+
+.topbar-brand,
+.mobile-tabbar { display: none; }
+
 @media (max-width: 640px) {
-  .app-shell { flex-direction: column; }
-  .sidebar {
-    width: 100% !important;
-    flex-direction: row;
-    align-items: center;
-    border-right: none;
-    border-bottom: 1px solid var(--line);
-    padding: 0.5rem 0.7rem;
-    overflow-x: auto;
-    overflow-y: hidden;
-    scroll-padding-inline: 0.7rem;
+  body.shell-mounted,
+  .app-shell {
+    height: 100vh;
+    height: 100dvh;
   }
-  .sidebar-brand { flex: 0 0 auto; border-bottom: none; padding: 0 0.4rem; margin-bottom: 0; }
-  .sidebar-nav { flex: 0 0 auto; flex-direction: row; align-items: center; }
-  .nav-group { flex: 0 0 auto; flex-direction: row; margin-top: 0; padding-top: 0; border-top: none; }
-  .nav-label, .soon-chip, .toggle-label, .nav-group-title { display: none; }
-  .nav-item { padding: 0.5rem; }
-  .sidebar-footer { flex: 0 0 auto; margin-top: 0; margin-left: auto; }
+  .app-shell > .sidebar,
+  .main-column > .bottom-bar { display: none; }
+
+  .main-column > .topbar {
+    justify-content: space-between;
+    min-height: 3.25rem;
+    padding: 0.35rem 0.5rem 0.35rem 1rem;
+  }
+  .topbar-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--ink);
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+    text-decoration: none;
+    min-height: 44px;
+    border-radius: 10px;
+  }
+  .topbar-brand .brand-logo-mark { width: 28px; height: 28px; }
+  .topbar-brand:focus-visible {
+    outline: 2px solid var(--accent-deep);
+    outline-offset: 2px;
+  }
+  .main-column > .topbar .topbar-actions {
+    position: static;
+    transform: none;
+  }
+  .topbar-actions > .lang-switch,
+  .topbar-actions > .user-menu,
+  .topbar-actions > .logout-btn { display: none; }
+  .topbar-icon-btn { width: 44px; height: 44px; }
+  .topbar-icon-btn svg { width: 20px; height: 20px; }
+
+  .mobile-tabbar {
+    display: flex;
+    flex-shrink: 0;
+    align-items: stretch;
+    gap: 0.15rem;
+    padding: 0.3rem 0.35rem calc(0.3rem + env(safe-area-inset-bottom, 0px));
+    background: var(--card);
+    border-top: 1px solid var(--line);
+  }
+  .mobile-tabbar .tab-item,
+  .app-shell.collapsed .mobile-tabbar .tab-item {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 3.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.2rem;
+    padding: 0.3rem 0.15rem;
+    border: none;
+    border-radius: 12px;
+    background: transparent;
+    color: var(--muted);
+    font-family: inherit;
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    line-height: 1.15;
+    text-decoration: none;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+  .mobile-tabbar .tab-item svg { width: 22px; height: 22px; flex-shrink: 0; }
+  .mobile-tabbar .tab-label {
+    flex: none;
+    max-width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .mobile-tabbar .tab-item.active {
+    background: rgba(111, 144, 112, 0.16);
+    color: var(--accent-deep);
+  }
+  .mobile-tabbar .tab-item:focus-visible {
+    outline: 2px solid var(--accent-deep);
+    outline-offset: -2px;
+  }
+  /* The missing-cycle reason is announced through aria-describedby; a
+     visible chip does not fit a tab. */
+  .mobile-tabbar .soon-chip { display: none; }
+}
+
+/* ---------- More sheet (phones) ---------- */
+
+.mobile-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(60, 53, 42, 0.45);
+  backdrop-filter: blur(4px);
+}
+
+.mobile-sheet-backdrop[hidden] { display: none; }
+
+.mobile-sheet {
+  width: 100%;
+  max-width: 640px;
+  max-height: calc(100dvh - 2.5rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-bottom: none;
+  border-radius: 20px 20px 0 0;
+  padding: 1rem 1rem calc(1rem + env(safe-area-inset-bottom, 0px));
+  box-shadow: 0 -12px 40px rgba(60, 53, 42, 0.18);
+  animation: sheet-rise 0.22s ease both;
+}
+
+@keyframes sheet-rise {
+  from { transform: translateY(24px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.mobile-sheet-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.mobile-sheet-heading { min-width: 0; }
+
+.mobile-sheet-header h2 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.mobile-sheet-header h2:focus { outline: none; }
+
+.mobile-sheet-identity {
+  margin: 0.15rem 0 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.mobile-sheet-identity:empty { display: none; }
+
+.mobile-sheet-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  margin: -0.4rem -0.4rem 0 0;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.mobile-sheet-close svg { width: 20px; height: 20px; }
+
+.mobile-sheet-close:hover {
+  background: rgba(139, 129, 114, 0.1);
+  color: var(--ink);
+}
+
+.mobile-sheet-close:focus-visible {
+  outline: 2px solid var(--accent-deep);
+  outline-offset: 2px;
+}
+
+.mobile-sheet-nav,
+.mobile-sheet-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.mobile-sheet-section {
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line);
+}
+
+/* Same treatment as .nav-group-title, kept separate because that class
+   marks the admin-only group. */
+.mobile-sheet-section-title {
+  margin: 0 0 0.3rem;
+  padding: 0 0.62rem;
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+.mobile-sheet .nav-item,
+.mobile-sheet .user-menu-item {
+  min-height: 2.75rem;
+}
+
+/* Account actions read exactly like the navigation rows above them. */
+.mobile-sheet .user-menu-item {
+  gap: 0.65rem;
+  padding: 0.6rem 0.62rem;
+  border-radius: 12px;
+  color: var(--muted);
+  font-size: 0.88rem;
+  letter-spacing: 0.01em;
+}
+
+.mobile-sheet .nav-item svg,
+.mobile-sheet .user-menu-item svg {
+  width: 20px;
+  height: 20px;
+}
+
+.mobile-sheet-nav .nav-group {
+  margin-top: 0.5rem;
+  padding-top: 0.75rem;
+}
+
+.mobile-sheet-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line);
+}
+
+.mobile-sheet-footer .lang-switch .sep { display: none; }
+
+.mobile-sheet-footer .lang-switch button {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+.mobile-sheet-footer .logout-btn { min-height: 44px; }
+
+.mobile-sheet-version {
+  margin-left: auto;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-sheet { animation: none; }
 }
 
 /* ---------- Change Password modal (shell-owned) ---------- */
@@ -491,6 +749,9 @@ body.shell-mounted {
   font-size: 1.15rem;
   font-weight: 700;
 }
+
+/* Programmatic focus target on open; interactive controls keep their ring. */
+.password-modal-card .modal-header h2:focus { outline: none; }
 
 .password-modal-card .modal-close {
   display: inline-flex;

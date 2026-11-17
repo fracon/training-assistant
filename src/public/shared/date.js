@@ -83,3 +83,13 @@ export function formatMonth(month, language = EN_LOCALE, style = 'long') {
     timeZone: 'UTC',
   }).format(new Date(Date.UTC(2000, month - 1, 1))).replace(/\.$/, '');
 }
+
+// Civil date labels for calendars and agendas, independent of the viewer's time zone.
+export function formatCalendarDate(value, language = EN_LOCALE, style = 'full') {
+  const date = dateOnly(value);
+  if (!date) return '';
+  return new Intl.DateTimeFormat(dateLocale(language), style === 'short'
+    ? { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }
+    : { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }
+  ).format(date);
+}

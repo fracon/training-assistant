@@ -13,6 +13,7 @@ import {
 } from './preferences.js';
 import { showConfirm } from './confirm-modal.js';
 import { wireFeedback } from './feedback.js';
+import { createDialogFocusTrap } from './dialog-focus.js';
 
 export { showConfirm } from './confirm-modal.js';
 
@@ -117,6 +118,20 @@ export const ADMIN_NAV_GROUP = {
   ],
 };
 
+// Phones (<= 640px, MOBILE_NAV_QUERY) replace the sidebar with a bottom tab
+// bar (owner decision 2026-11-17): Home, Workouts, Request Workouts and Cycles,
+// then "More", a sheet with the remaining sections, the administration group
+// (admins only, absent from the DOM otherwise), the account menu, language and
+// sign-out. Tabs reuse NAV_ITEMS, so ids, hrefs and the guards stay shared;
+// each tab only adds a short visible label.
+export const MOBILE_NAV_QUERY = '(max-width: 640px)';
+export const MOBILE_TAB_ITEMS = [
+  { id: 'dashboard', tabLabelKey: 'shell.tabs.home' },
+  { id: 'calendar', tabLabelKey: 'shell.tabs.workouts' },
+  { id: 'ai-coach', tabLabelKey: 'shell.tabs.request' },
+  { id: 'cycles', tabLabelKey: 'shell.tabs.cycles' },
+];
+
 export function isAdministrator(user) {
   return user?.role === 'admin';
 }
@@ -183,8 +198,10 @@ export function getShellI18n() {
   return shellI18n;
 }
 
-function buildNavItem(item, activeId) {
-  const entry = el('a', `nav-item${item.disabled ? ' disabled' : ''}${item.id === activeId ? ' active' : ''}`);
+// `variant` keeps ids unique when the same item is rendered again in the
+// mobile tab bar ('tab') or the More sheet ('sheet').
+function buildNavItem(item, activeId, { variant = '', labelKey = item.labelKey } = {}) {
+  const entry = el('a', `nav-item${variant ? ` ${variant}-item` : ''}${item.disabled ? ' disabled' : ''}${item.id === activeId ? ' active' : ''}`);
   entry.dataset.navId = item.id;
   if (item.disabled) {
     entry.setAttribute('aria-disabled', 'true');
@@ -194,12 +211,13 @@ function buildNavItem(item, activeId) {
   }
   entry.setAttribute('data-i18n-aria-label', item.labelKey);
   entry.appendChild(icon(item.icon));
-  const label = el('span', 'nav-label sidebar-label');
-  label.setAttribute('data-i18n', item.labelKey);
+  // Tab labels are not .sidebar-label: the collapsed desktop rail hides those.
+  const label = el('span', variant === 'tab' ? 'nav-label tab-label' : 'nav-label sidebar-label');
+  label.setAttribute('data-i18n', labelKey);
   entry.appendChild(label);
   if (CYCLE_DEPENDENT_ITEMS.includes(item.id)) {
     const chip = el('span', 'soon-chip cycle-guard-badge hidden');
-    chip.id = `cycle-guard-${item.id}-description`;
+    chip.id = `cycle-guard-${item.id}${variant ? `-${variant}` : ''}-description`;
     chip.setAttribute('data-i18n', 'shell.noCycle');
     entry.appendChild(chip);
     entry.addEventListener('click', (event) => {
@@ -218,16 +236,138 @@ function buildNavItem(item, activeId) {
   return entry;
 }
 
-function buildNavGroup(group, activeId) {
+function buildNavGroup(group, activeId, variant = '') {
   const wrapper = el('div', 'nav-group');
   wrapper.dataset.navGroup = group.id;
   const title = el('p', 'nav-group-title sidebar-label');
   title.setAttribute('data-i18n', group.titleKey);
   wrapper.appendChild(title);
   for (const item of group.items) {
-    wrapper.appendChild(buildNavItem(item, activeId));
+    wrapper.appendChild(buildNavItem(item, activeId, { variant }));
   }
   return wrapper;
+}
+
+function buildMobileTabbar(activeId) {
+  const nav = el('nav', 'mobile-tabbar');
+  nav.setAttribute('aria-label', 'Main navigation');
+  nav.setAttribute('data-i18n-aria-label', 'shell.navLabel');
+  for (const tab of MOBILE_TAB_ITEMS) {
+    const item = NAV_ITEMS.find((candidate) => candidate.id === tab.id);
+    nav.appendChild(buildNavItem(item, activeId, { variant: 'tab', labelKey: tab.tabLabelKey }));
+  }
+  // A button, not a .nav-item: the anamnesis lock and the cycle guard never
+  // disable it, because the account, language and sign-out stay available.
+  const inSheet = Boolean(activeId) && !MOBILE_TAB_ITEMS.some((tab) => tab.id === activeId);
+  const more = el('button', `tab-item mobile-more-trigger${inSheet ? ' active' : ''}`);
+  more.type = 'button';
+  more.id = 'mobileMoreBtn';
+  more.setAttribute('aria-haspopup', 'dialog');
+  more.setAttribute('aria-expanded', 'false');
+  more.setAttribute('aria-controls', 'mobileMoreSheet');
+  more.appendChild(icon('menu'));
+  const label = el('span', 'nav-label tab-label');
+  label.setAttribute('data-i18n', 'shell.tabs.more');
+  label.textContent = 'More';
+  more.appendChild(label);
+  nav.appendChild(more);
+  return nav;
+}
+
+function buildSheetAction(tag, iconName, labelKey, fallback) {
+  const action = el(tag, 'user-menu-item');
+  if (tag === 'button') action.type = 'button';
+  const glyph = icon(iconName);
+  glyph.setAttribute('aria-hidden', 'true');
+  action.appendChild(glyph);
+  const label = el('span');
+  label.setAttribute('data-i18n', labelKey);
+  label.textContent = fallback;
+  action.appendChild(label);
+  return action;
+}
+
+// The More sheet is a direct child of <body> so the shared focus trap can
+// inert the whole application behind it. Account actions do not duplicate the
+// desktop menu's logic: they forward the click to the existing control
+// (data-shell-proxy), which keeps a single wiring for every action.
+function buildMobileSheet(activeId, user) {
+  const backdrop = el('div', 'mobile-sheet-backdrop');
+  backdrop.id = 'mobileMoreSheet';
+  backdrop.hidden = true;
+  const sheet = el('div', 'mobile-sheet');
+  sheet.setAttribute('role', 'dialog');
+  sheet.setAttribute('aria-modal', 'true');
+  sheet.setAttribute('aria-labelledby', 'mobileMoreTitle');
+
+  const header = el('div', 'mobile-sheet-header');
+  const heading = el('div', 'mobile-sheet-heading');
+  const title = el('h2');
+  title.id = 'mobileMoreTitle';
+  title.tabIndex = -1;
+  title.setAttribute('data-i18n', 'shell.tabs.more');
+  title.textContent = 'More';
+  const identity = el('p', 'mobile-sheet-identity');
+  identity.id = 'mobileSheetIdentity';
+  heading.append(title, identity);
+  const close = el('button', 'mobile-sheet-close');
+  close.type = 'button';
+  close.id = 'mobileMoreClose';
+  close.setAttribute('aria-label', 'Close');
+  close.setAttribute('data-i18n-aria-label', 'shell.close');
+  close.appendChild(icon('x'));
+  header.append(heading, close);
+  sheet.appendChild(header);
+
+  const nav = el('nav', 'mobile-sheet-nav');
+  nav.setAttribute('aria-label', 'More sections');
+  nav.setAttribute('data-i18n-aria-label', 'shell.moreNavLabel');
+  for (const item of NAV_ITEMS) {
+    if (MOBILE_TAB_ITEMS.some((tab) => tab.id === item.id)) continue;
+    nav.appendChild(buildNavItem(item, activeId, { variant: 'sheet' }));
+  }
+  if (isAdministrator(user)) {
+    nav.appendChild(buildNavGroup(ADMIN_NAV_GROUP, activeId, 'sheet'));
+  }
+  sheet.appendChild(nav);
+
+  const account = el('div', 'mobile-sheet-section');
+  // Not .nav-group-title: that class belongs to the admin-only group.
+  const accountTitle = el('p', 'mobile-sheet-section-title');
+  accountTitle.setAttribute('data-i18n', 'shell.account');
+  accountTitle.textContent = 'Account';
+  account.appendChild(accountTitle);
+  const setupGuide = buildSheetAction('button', 'circle-play', 'shell.setupGuide', 'Welcome tour');
+  setupGuide.dataset.shellProxy = 'userSetupGuide';
+  const anamnesis = buildSheetAction('a', 'clipboard-list', 'shell.anamnesis', 'My running profile');
+  anamnesis.href = '/anamnesis.html';
+  const memory = buildSheetAction('a', 'notebook-pen', 'memory.title', 'Training memory');
+  memory.href = '/training-memory.html';
+  const changePassword = buildSheetAction('button', 'key', 'shell.changePassword', 'Change Password');
+  changePassword.dataset.shellProxy = 'userChangePassword';
+  const preferences = buildSheetAction('button', 'settings', 'shell.preferences', 'Preferences');
+  preferences.dataset.shellProxy = 'userPreferences';
+  account.append(setupGuide, anamnesis, memory, changePassword, preferences);
+  sheet.appendChild(account);
+
+  const footer = el('div', 'mobile-sheet-footer');
+  footer.appendChild(buildLanguageSwitch());
+  const logout = el('button', 'logout-btn');
+  logout.type = 'button';
+  logout.dataset.shellProxy = 'logoutBtn';
+  logout.appendChild(icon('log-out'));
+  const logoutLabel = el('span');
+  logoutLabel.setAttribute('data-i18n', 'shell.logout');
+  logoutLabel.textContent = 'Logout';
+  logout.appendChild(logoutLabel);
+  footer.appendChild(logout);
+  const version = el('span', 'footer-version mobile-sheet-version');
+  version.id = 'mobileAppVersion';
+  footer.appendChild(version);
+  sheet.appendChild(footer);
+
+  backdrop.appendChild(sheet);
+  return backdrop;
 }
 
 function buildSidebar(activeId, user) {
@@ -341,19 +481,7 @@ export function buildUserMenu() {
   return menu;
 }
 
-function buildTopbar() {
-  const header = el('header', 'topbar');
-
-  const actions = el('div', 'topbar-actions');
-
-  const feedback = el('button', 'topbar-icon-btn');
-  feedback.type = 'button';
-  feedback.id = 'feedbackTrigger';
-  feedback.setAttribute('data-i18n-aria-label', 'globalFeedback.open');
-  feedback.setAttribute('aria-label', 'Send feedback');
-  feedback.appendChild(icon('message-square-plus'));
-  actions.appendChild(feedback);
-
+function buildLanguageSwitch() {
   const langSwitch = el('div', 'lang-switch');
   for (const [lang, text, aria] of [
     ['en-US', 'EN', 'English (US)'],
@@ -369,7 +497,36 @@ function buildTopbar() {
   const separator = el('span', 'sep');
   separator.textContent = '|';
   langSwitch.appendChild(separator);
-  actions.appendChild(langSwitch);
+  return langSwitch;
+}
+
+function buildTopbar() {
+  const header = el('header', 'topbar');
+
+  // Shown only on phones, where the sidebar (and its brand) gives way to the
+  // bottom tab bar. The image is decorative next to the visible name.
+  const brand = el('a', 'topbar-brand');
+  brand.href = '/home.html';
+  const brandMark = el('img', 'brand-logo brand-logo-mark');
+  brandMark.src = '/assets/brand/logo-mark.png';
+  brandMark.alt = '';
+  const brandText = el('span');
+  brandText.setAttribute('data-i18n', 'app.name');
+  brandText.textContent = 'Kinesis';
+  brand.append(brandMark, brandText);
+  header.appendChild(brand);
+
+  const actions = el('div', 'topbar-actions');
+
+  const feedback = el('button', 'topbar-icon-btn');
+  feedback.type = 'button';
+  feedback.id = 'feedbackTrigger';
+  feedback.setAttribute('data-i18n-aria-label', 'globalFeedback.open');
+  feedback.setAttribute('aria-label', 'Send feedback');
+  feedback.appendChild(icon('message-square-plus'));
+  actions.appendChild(feedback);
+
+  actions.appendChild(buildLanguageSwitch());
 
   const userMenu = buildUserMenu();
   actions.appendChild(userMenu);
@@ -427,6 +584,7 @@ function buildLayout(activeId, user) {
   const content = el('div', 'main-content');
   column.appendChild(content);
   column.appendChild(buildBottomBar());
+  column.appendChild(buildMobileTabbar(activeId));
   shellRoot.appendChild(column);
 
   const main = document.querySelector('main');
@@ -435,6 +593,7 @@ function buildLayout(activeId, user) {
   }
 
   document.body.prepend(shellRoot);
+  document.body.appendChild(buildMobileSheet(activeId, user));
   return shellRoot;
 }
 
@@ -445,6 +604,8 @@ export function getUserDisplayName(user) {
 export function updateUserBadgeIdentity(user) {
   const name = document.getElementById('userBadgeName');
   if (name) name.textContent = getUserDisplayName(user);
+  const sheetIdentity = document.getElementById('mobileSheetIdentity');
+  if (sheetIdentity) sheetIdentity.textContent = getUserDisplayName(user);
 }
 
 function setUserBadge(user) {
@@ -542,6 +703,40 @@ function translateAll(root, messages) {
   });
 }
 
+// The shell's own dialogs (change password, preferences) take focus and
+// containment like every other Kinesis dialog: heading focus on open, the
+// shared trap while open, and focus back to the opener when it is still
+// visible, otherwise to the visible account entry point (the badge on desktop,
+// More on phones, where the opener sat in a sheet that has already closed).
+const shellDialogFocus = new Map();
+const SHELL_FOCUS_FALLBACKS = ['userBadge', 'mobileMoreBtn', 'feedbackTrigger'];
+
+function isVisibleControl(element) {
+  return Boolean(element?.isConnected && element !== document.body && element.getClientRects?.().length > 0);
+}
+
+function activateShellDialog(backdrop, onEscape) {
+  let entry = shellDialogFocus.get(backdrop.id);
+  if (!entry) {
+    entry = { trap: createDialogFocusTrap(backdrop, onEscape), returnTo: null };
+    shellDialogFocus.set(backdrop.id, entry);
+  }
+  entry.returnTo = document.activeElement ?? null;
+  entry.trap.activate();
+  backdrop.querySelector('.modal-header h2')?.focus?.({ preventScroll: true });
+}
+
+function deactivateShellDialog(backdrop) {
+  const entry = shellDialogFocus.get(backdrop?.id);
+  if (!entry?.trap.isActive()) return;
+  entry.trap.deactivate();
+  const target = isVisibleControl(entry.returnTo)
+    ? entry.returnTo
+    : SHELL_FOCUS_FALLBACKS.map((id) => document.getElementById(id)).find(isVisibleControl);
+  entry.returnTo = null;
+  target?.focus?.({ preventScroll: true });
+}
+
 export function openChangePasswordModal(messages = shellI18n.messages) {
   closeUserMenu();
   const existing = document.getElementById('changePasswordModal');
@@ -549,6 +744,7 @@ export function openChangePasswordModal(messages = shellI18n.messages) {
     existing.classList.remove('hidden');
     translateAll(existing, messages);
     refreshIcons();
+    activateShellDialog(existing, closeChangePasswordModal);
     return;
   }
 
@@ -562,6 +758,7 @@ export function openChangePasswordModal(messages = shellI18n.messages) {
 
   const header = el('div', 'modal-header');
   const title = el('h2');
+  title.tabIndex = -1;
   title.setAttribute('data-i18n', 'password.title');
   title.textContent = translate(messages, 'password.title');
   const close = el('button', 'modal-close');
@@ -618,6 +815,7 @@ export function openChangePasswordModal(messages = shellI18n.messages) {
   });
   close.addEventListener('click', () => closeChangePasswordModal());
   refreshIcons();
+  activateShellDialog(backdrop, closeChangePasswordModal);
 }
 
 function buildPreferenceChoice(name, value, labelKey, checked) {
@@ -664,6 +862,7 @@ export function openPreferencesModal(messages = shellI18n.messages) {
     syncPreferencesFields(document.getElementById('preferencesForm'));
     translateAll(existing, messages);
     refreshIcons();
+    activateShellDialog(existing, closePreferencesModal);
     return;
   }
 
@@ -675,6 +874,7 @@ export function openPreferencesModal(messages = shellI18n.messages) {
   card.setAttribute('role', 'document');
   const header = el('div', 'modal-header');
   const title = el('h2');
+  title.tabIndex = -1;
   title.setAttribute('data-i18n', 'preferences.title');
   title.textContent = translate(messages, 'preferences.title');
   const close = el('button', 'modal-close');
@@ -726,11 +926,14 @@ export function openPreferencesModal(messages = shellI18n.messages) {
   });
   close.addEventListener('click', closePreferencesModal);
   refreshIcons();
+  activateShellDialog(backdrop, closePreferencesModal);
 }
 
 export function closePreferencesModal() {
   const modal = document.getElementById('preferencesModal');
-  if (modal) modal.classList.add('hidden');
+  if (!modal) return;
+  modal.classList.add('hidden');
+  deactivateShellDialog(modal);
 }
 
 export function wirePreferencesForm(form, messages = shellI18n.messages) {
@@ -779,6 +982,7 @@ export function closeChangePasswordModal() {
     if (label) label.textContent = translate(shellI18n.messages, 'password.submit');
   }
   modal.classList.add('hidden');
+  deactivateShellDialog(modal);
 }
 
 function clearPasswordFormError(formError) {
@@ -968,6 +1172,55 @@ export function wireUserMenu() {
   });
 }
 
+// The More sheet: opened only from the tab bar's More button, closed by its
+// close button, Escape, the backdrop, any forwarded action, or growing past the
+// phone breakpoint. Focus starts on its heading and returns to More.
+export function wireMobileNav() {
+  const trigger = document.getElementById('mobileMoreBtn');
+  const backdrop = document.getElementById('mobileMoreSheet');
+  if (!trigger || !backdrop) return;
+  const title = document.getElementById('mobileMoreTitle');
+  let trap = null;
+
+  const close = ({ restoreFocus = true } = {}) => {
+    if (backdrop.hidden) return;
+    backdrop.hidden = true;
+    trap?.deactivate();
+    trigger.setAttribute('aria-expanded', 'false');
+    if (restoreFocus && trigger.getClientRects().length > 0) trigger.focus({ preventScroll: true });
+  };
+  trap = createDialogFocusTrap(backdrop, () => close());
+
+  trigger.addEventListener('click', () => {
+    if (!backdrop.hidden) {
+      close();
+      return;
+    }
+    closeUserMenu();
+    backdrop.hidden = false;
+    trigger.setAttribute('aria-expanded', 'true');
+    refreshIcons();
+    trap.activate();
+    title?.focus({ preventScroll: true });
+  });
+  document.getElementById('mobileMoreClose')?.addEventListener('click', () => close());
+  backdrop.addEventListener('click', (event) => {
+    if (event.target === backdrop) close();
+  });
+  for (const action of backdrop.querySelectorAll('[data-shell-proxy]')) {
+    action.addEventListener('click', () => {
+      // The forwarded action takes over focus: the shell dialogs focus their
+      // heading and return to More, the tour falls back to More, sign-out leaves.
+      close({ restoreFocus: false });
+      document.getElementById(action.dataset.shellProxy)?.click();
+    });
+  }
+  const phone = globalThis.matchMedia?.(MOBILE_NAV_QUERY);
+  phone?.addEventListener?.('change', (event) => {
+    if (!event.matches) close({ restoreFocus: false });
+  });
+}
+
 function syncToggleState(shellRoot, collapsed) {
   shellRoot.classList.toggle('collapsed', collapsed);
   const toggle = shellRoot.querySelector('#sidebarToggle');
@@ -1045,6 +1298,7 @@ export async function initShell({ active } = {}) {
   // The user menu wires up before any page-specific guard runs, so a guard
   // failure can never leave the account trigger unbound.
   wireUserMenu();
+  wireMobileNav();
   wireFeedback({
     getMessages: () => shellI18n.messages,
     refreshIcons,
@@ -1077,8 +1331,10 @@ export async function initShell({ active } = {}) {
   // The footer only carries the app version; resolve it without blocking
   // the shell mount and degrade gracefully when unreachable.
   const versionLabel = shellRoot.querySelector('#appVersion');
+  const mobileVersionLabel = document.getElementById('mobileAppVersion');
   loadAppVersion().then((version) => {
     versionLabel.textContent = formatAppVersion(version);
+    if (mobileVersionLabel) mobileVersionLabel.textContent = formatAppVersion(version);
   });
 
   shellRoot.querySelector('#sidebarToggle').addEventListener('click', () => {
@@ -1113,12 +1369,15 @@ export async function initShell({ active } = {}) {
 
 // While the anamnesis is pending every navigation entry is disabled and
 // described by one note; completing it releases them (keeping the cycle guard).
-export function applyAnamnesisLock(shellRoot = document) {
-  const nav = shellRoot.querySelector('.sidebar-nav');
-  if (!nav || nav.querySelector('#anamnesisLockNote')) return;
+// The entries live in the sidebar, the mobile tab bar and the More sheet; the
+// sheet shows its own copy of the note, since the sidebar is hidden on phones.
+const LOCK_NOTE_ID = 'anamnesisLockNote';
+const SHEET_LOCK_NOTE_ID = 'anamnesisLockNoteSheet';
+
+function buildLockNote(id) {
   // A small card, not a .sidebar-label: that class keeps one clipped line.
   const note = el('div', 'nav-lock-note');
-  note.id = 'anamnesisLockNote';
+  note.id = id;
   note.setAttribute('role', 'note');
   const lockIcon = icon('lock');
   lockIcon.setAttribute('aria-hidden', 'true');
@@ -1131,26 +1390,43 @@ export function applyAnamnesisLock(shellRoot = document) {
   detail.textContent = translate(shellI18n.messages, 'shell.anamnesisLock');
   text.append(title, detail);
   note.append(lockIcon, text);
-  nav.prepend(note);
+  return note;
+}
+
+function allNavEntries(shellRoot) {
+  return new Set([...shellRoot.querySelectorAll('.nav-item'), ...document.querySelectorAll('.mobile-sheet .nav-item')]);
+}
+
+export function applyAnamnesisLock(shellRoot = document) {
+  const nav = shellRoot.querySelector('.sidebar-nav');
+  if (!nav || nav.querySelector(`#${LOCK_NOTE_ID}`)) return;
+  nav.prepend(buildLockNote(LOCK_NOTE_ID));
   nav.classList.add('is-anamnesis-locked');
+  const sheetNav = document.querySelector('.mobile-sheet-nav');
+  if (sheetNav) {
+    sheetNav.prepend(buildLockNote(SHEET_LOCK_NOTE_ID));
+    sheetNav.classList.add('is-anamnesis-locked');
+  }
   refreshIcons();
-  for (const navEntry of nav.querySelectorAll('.nav-item')) {
+  for (const navEntry of allNavEntries(shellRoot)) {
     navEntry.dataset.anamnesisLocked = '1';
     navEntry.classList.add('disabled');
     navEntry.setAttribute('aria-disabled', 'true');
     navEntry.removeAttribute('href');
-    addDescribedBy(navEntry, note.id);
+    addDescribedBy(navEntry, navEntry.closest('.mobile-sheet') ? SHEET_LOCK_NOTE_ID : LOCK_NOTE_ID);
   }
 }
 
 export function releaseAnamnesisLock(shellRoot = document) {
   const nav = shellRoot.querySelector('.sidebar-nav');
-  const note = nav?.querySelector('#anamnesisLockNote');
+  const note = nav?.querySelector(`#${LOCK_NOTE_ID}`);
   if (!note) return;
   const items = [...NAV_ITEMS, ...ADMIN_NAV_GROUP.items];
-  for (const navEntry of nav.querySelectorAll('.nav-item[data-anamnesis-locked]')) {
+  for (const navEntry of allNavEntries(shellRoot)) {
+    if (!navEntry.dataset.anamnesisLocked) continue;
     delete navEntry.dataset.anamnesisLocked;
-    removeDescribedBy(navEntry, note.id);
+    removeDescribedBy(navEntry, LOCK_NOTE_ID);
+    removeDescribedBy(navEntry, SHEET_LOCK_NOTE_ID);
     const cycleGuarded = navEntry.querySelector('.cycle-guard-badge:not(.hidden)');
     if (cycleGuarded) continue;
     navEntry.classList.remove('disabled');
@@ -1160,6 +1436,9 @@ export function releaseAnamnesisLock(shellRoot = document) {
   }
   note.remove();
   nav.classList.remove('is-anamnesis-locked');
+  const sheetNote = document.getElementById(SHEET_LOCK_NOTE_ID);
+  sheetNote?.parentElement?.classList.remove('is-anamnesis-locked');
+  sheetNote?.remove();
 }
 
 export function applyCycleGuard(shellRoot) {

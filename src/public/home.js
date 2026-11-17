@@ -718,11 +718,11 @@ function setupHomePage() {
     onboardingTour.hidden = true;
     tourTrap?.deactivate();
     // The menu item that opened the tour is hidden again by then, so fall back
-    // to a stable visible topbar control (the account badge is hidden on phones).
+    // to a stable visible shell control (on phones the account lives in More).
     const visible = (element) => element?.isConnected && element !== document.body && element.getClientRects().length > 0;
     const target = visible(tourReturnFocus)
       ? tourReturnFocus
-      : ['userBadge', 'feedbackTrigger', 'logoutBtn'].map((id) => document.getElementById(id)).find(visible);
+      : ['userBadge', 'mobileMoreBtn', 'feedbackTrigger', 'logoutBtn'].map((id) => document.getElementById(id)).find(visible);
     target?.focus?.();
     tourReturnFocus = null;
   }

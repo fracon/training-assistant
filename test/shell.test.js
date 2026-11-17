@@ -156,8 +156,8 @@ test('the footer carries only the app version, fetched from the backend', async 
   );
   assert.match(
     js,
-    /loadAppVersion\(\)\.then\(\(version\) => \{\s*\n\s*versionLabel\.textContent = formatAppVersion\(version\);\s*\n\s*\}\);/,
-    'the fetched version lands in the footer without blocking the mount'
+    /loadAppVersion\(\)\.then\(\(version\) => \{\s*\n\s*versionLabel\.textContent = formatAppVersion\(version\);\s*\n\s*if \(mobileVersionLabel\) mobileVersionLabel\.textContent = formatAppVersion\(version\);\s*\n\s*\}\);/,
+    'the fetched version lands in the footer (and the phone More sheet) without blocking the mount'
   );
 
   assert.equal(en.shell.footer, undefined);
@@ -692,6 +692,22 @@ test('the user menu injects a clickable dropdown and the change-password item op
         }
       },
       reset() {},
+      // Enough DOM for the shared dialog focus trap (inert siblings, focus).
+      hasAttribute(key) {
+        return Object.prototype.hasOwnProperty.call(this.attrs, key);
+      },
+      removeAttribute(key) {
+        delete this.attrs[key];
+      },
+      contains(other) {
+        for (let current = other; current; current = current.parent) {
+          if (current === this) return true;
+        }
+        return false;
+      },
+      focus() {
+        globalThis.document.activeElement = this;
+      },
       addEventListener(type, fn) {
         (listeners[type] ??= []).push(fn);
       },
@@ -771,6 +787,10 @@ test('the user menu injects a clickable dropdown and the change-password item op
     getElementById: (id) => registry.get(id) ?? findById(body, id),
     addEventListener: (type, fn) => {
       (docListeners[type] ??= []).push(fn);
+    },
+    // The shell dialogs' focus trap detaches its listeners on close.
+    removeEventListener: (type, fn) => {
+      docListeners[type] = (docListeners[type] ?? []).filter((listener) => listener !== fn);
     },
     dispatchEvent: (event) => dispatchedEvents.push(event.type),
     querySelectorAll: () => [],

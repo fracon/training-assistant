@@ -151,10 +151,12 @@
   transition: all 0.2s ease;
 }
 
+@media (hover: hover) {
 .import-btn:hover .custom-tooltip,
 .import-btn:focus-visible .custom-tooltip {
   opacity: 1;
   transform: translateY(0);
+}
 }
 
 .import-btn:disabled {
@@ -229,9 +231,11 @@
   transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
+@media (hover: hover) {
 .day-cell .training-chip.chip-more:hover .custom-tooltip {
   opacity: 1;
   transform: translateX(-50%) translateY(-8px);
+}
 }
 
 .day-cell .chip-type {
@@ -269,9 +273,11 @@
   transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
+@media (hover: hover) {
 .day-cell .training-chip:hover .chip-tooltip {
   opacity: 1;
   transform: translateX(-50%) translateY(-8px);
+}
 }
 
 .day-cell .chip-more {
@@ -419,5 +425,277 @@
   .month-nav h2 {
     min-width: 132px;
     font-size: 0.85rem;
+  }
+}
+
+.phone-calendar, .import-compact {
+  display: none;
+}
+.day-cell .chip-tooltip,
+.day-cell .training-chip.chip-more .custom-tooltip {
+  max-width: min(250px, calc(100vw - 24px));
+  overflow-wrap: anywhere;
+}
+/* Preserve the existing import dialog's text button and dimensions. */
+#importModalClose {
+  width: auto;
+  height: auto;
+}
+#importModal .modal-card {
+  max-width: none;
+  animation: none;
+}
+.move-card {
+  max-width: 440px;
+}
+.move-card .field {
+  margin-top: 1rem;
+}
+.move-card input {
+  width: 100%;
+}
+#moveTrainingTitle {
+  color: var(--muted);
+  font-size: .9rem;
+  line-height: 1.5;
+  overflow-wrap: break-word;
+}
+.move-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: .6rem;
+  margin-top: 1.3rem;
+}
+.move-actions button {
+  min-height: 44px;
+}
+#moveTitle:focus {
+  outline: none;
+}
+
+@media (max-width: 640px) {
+  .calendar-page {
+    padding: .8rem 1rem 1.5rem;
+  }
+  .calendar-header {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: .4rem .5rem;
+    margin-bottom: .6rem;
+    align-items: center;
+  }
+  .calendar-header h1 {
+    font-size: 1.1rem;
+    margin: 0;
+  }
+  .calendar-actions {
+    display: contents;
+  }
+  .week-start-picker, .calendar-grid, .import-full {
+    display: none;
+  }
+  .month-nav {
+    justify-self: end;
+    gap: .15rem;
+  }
+  .month-nav h2 {
+    min-width: 0;
+    width: 88px;
+    font-size: .8rem;
+  }
+  .month-nav button {
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
+  }
+  .import-btn {
+    grid-column: 1 / -1;
+    justify-self: end;
+    min-height: 44px;
+    padding: .4rem .8rem;
+  }
+  .import-compact {
+    display: inline;
+  }
+  .phone-calendar {
+    display: block;
+  }
+  .mini-month {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    padding: .5rem 0;
+    border-block: 1px solid var(--line);
+  }
+  .mini-day {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    min-height: 44px;
+    min-width: 0;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--ink);
+    font: inherit;
+    font-size: .82rem;
+    cursor: pointer;
+  }
+  .mini-day[aria-pressed="true"] {
+    background: rgba(111, 144, 112, 0.14);
+  }
+  .mini-day[aria-current="date"] {
+    border-color: var(--accent-deep);
+    font-weight: 700;
+  }
+  .mini-day.outside {
+    color: var(--muted);
+  }
+  .mini-day.outside > span {
+    opacity: .55;
+  }
+  .mini-day:focus-visible, .agenda-card-body:focus-visible, .agenda-move:focus-visible {
+    outline: 2px solid var(--accent-deep);
+    outline-offset: -2px;
+  }
+  .session-markers {
+    display: flex;
+    gap: 3px;
+    min-height: 6px;
+  }
+  .session-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    border: 1px solid var(--accent-deep);
+  }
+  .session-dot.completed {
+    background: var(--accent-deep);
+  }
+  .mini-legend {
+    display: flex;
+    justify-content: flex-end;
+    gap: .8rem;
+    font-size: .68rem;
+    color: var(--muted);
+    margin-top: .5rem;
+  }
+  .mini-legend > span {
+    display: inline-flex;
+    align-items: center;
+    gap: .3rem;
+  }
+  .agenda-week-title {
+    font-size: .9rem;
+    margin: 1.1rem 0;
+    color: var(--ink);
+  }
+  .agenda-day {
+    margin-top: 1rem;
+  }
+  .agenda-day h3 {
+    font-size: .8rem;
+    color: var(--muted);
+    font-weight: 600;
+    margin: 0 0 .5rem;
+  }
+  .agenda-card {
+    display: flex;
+    align-items: flex-start;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    margin-bottom: .65rem;
+    padding: .75rem;
+    gap: .25rem;
+  }
+  .agenda-card-body {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    flex-direction: column;
+    gap: .4rem;
+    color: var(--ink);
+    text-decoration: none;
+  }
+  .agenda-type {
+    align-self: flex-start;
+    max-width: 100%;
+    border-radius: 999px;
+    padding: .2rem .5rem;
+    background: rgba(111, 144, 112, 0.14);
+    color: var(--accent-deep);
+    font-size: .65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    overflow-wrap: break-word;
+  }
+  .agenda-title {
+    font-size: .92rem;
+    line-height: 1.45;
+    overflow-wrap: break-word;
+  }
+  .agenda-details {
+    color: var(--muted);
+    font-size: .8rem;
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .agenda-status {
+    color: var(--muted);
+    font-size: .75rem;
+    font-weight: 600;
+  }
+  .agenda-status.completed {
+    color: var(--accent-deep);
+  }
+  .agenda-move {
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
+    position: relative;
+  }
+  .agenda-move .custom-tooltip {
+    display: none;
+    position: absolute;
+    right: 0;
+    bottom: 100%;
+    width: max-content;
+    max-width: 240px;
+    padding: .5rem .75rem;
+    background: var(--ink);
+    color: var(--card);
+    border-radius: 6px;
+    font-size: .8rem;
+    pointer-events: none;
+  }
+  .agenda-empty {
+    color: var(--muted);
+    text-align: center;
+    font-size: .9rem;
+    padding: 2rem .5rem;
+  }
+}
+@media (max-width: 640px) and (hover: hover) {
+  .agenda-move:hover .custom-tooltip {
+    display: block;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .calendar-page *, .move-card {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+@media (hover: hover) {
+  .day-cell:hover {
+    position: relative;
+    z-index: 1;
   }
 }

@@ -16,10 +16,12 @@
         <div><h1 id="feedbackAdminTitle" data-i18n="feedbackAdmin.title">Feedbacks</h1><p data-i18n="feedbackAdmin.subtitle">Review feedback sent by Kinesis users.</p></div>
       </header>
       <div class="feedback-filters" aria-label="Feedback filters">
-        <label class="field-label" for="feedbackStatusFilter" data-i18n="feedbackAdmin.status">Status</label>
+        <div class="field"><label class="field-label" for="feedbackStatusFilter" data-i18n="feedbackAdmin.status">Status</label>
         <select id="feedbackStatusFilter"><option value="" data-i18n="feedbackAdmin.allStatuses">All statuses</option><option value="new" data-i18n="feedbackAdmin.statuses.new">New</option><option value="in_progress" data-i18n="feedbackAdmin.statuses.inProgress">In progress</option><option value="resolved" data-i18n="feedbackAdmin.statuses.resolved">Resolved</option></select>
-        <label class="field-label" for="feedbackTypeFilter" data-i18n="feedbackAdmin.type">Type</label>
+        </div>
+        <div class="field"><label class="field-label" for="feedbackTypeFilter" data-i18n="feedbackAdmin.type">Type</label>
         <select id="feedbackTypeFilter"><option value="" data-i18n="feedbackAdmin.allTypes">All types</option><option value="bug" data-i18n="feedbackAdmin.types.bug">Bug</option><option value="suggestion" data-i18n="feedbackAdmin.types.suggestion">Suggestion</option><option value="other" data-i18n="feedbackAdmin.types.other">Other</option></select>
+        </div>
       </div>
       <div id="feedbackAdminLoading" class="feedback-admin-state" role="status" aria-live="polite" data-i18n="feedbackAdmin.loading">Loading feedback…</div>
       <div id="feedbackAdminError" class="feedback-admin-state hidden" role="alert"><span data-i18n="feedbackAdmin.loadError">Feedback could not be loaded.</span> <button id="feedbackAdminRetry" class="btn-secondary" type="button" data-i18n="feedbackAdmin.retry">Try again</button></div>

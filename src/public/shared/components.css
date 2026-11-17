@@ -185,3 +185,12 @@
 .item-actions .custom-tooltip { position: absolute; bottom: 110%; right: 0; z-index: 50; width: max-content; max-width: min(220px, calc(100vw - 32px)); padding: 6px 10px; border-radius: 6px; background: var(--ink); color: var(--card); box-shadow: 0 4px 12px rgba(0, 0, 0, .15); font-size: .75rem; font-weight: 500; line-height: 1.4; white-space: normal; opacity: 0; pointer-events: none; transform: translateY(4px); transition: opacity .15s ease, transform .15s ease; }
 .item-actions .btn-icon:hover .custom-tooltip, .item-actions .btn-icon:focus-visible .custom-tooltip { opacity: 1; transform: translateY(0); }
 @media (prefers-reduced-motion: reduce) { .item-actions .custom-tooltip { transition: none; } }
+
+/* Keep icon artwork unchanged while giving touch controls a full hit area. */
+@media (pointer: coarse) {
+  .btn-icon { min-width: 44px; min-height: 44px; flex-shrink: 0; }
+}
+/* Touch actions use their accessible name; synthetic hover must not obscure content. */
+@media (hover: none) {
+  .btn-icon .custom-tooltip { display: none; }
+}

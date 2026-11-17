@@ -420,7 +420,8 @@
       },
       "failedTitle": "Encontramos problemas na sua planilha",
       "rowError": "Linha {row} • {col}: {error}",
-      "close": "Fechar"
+      "close": "Fechar",
+      "compact": "Importar"
     },
     "firstDayLabel": "A semana começa em",
     "weekStart": {
@@ -463,7 +464,24 @@
       "Sexta-feira",
       "Sábado",
       "Domingo"
-    ]
+    ],
+    "agenda": {
+      "label": "Agenda da semana",
+      "planned": "Planejado",
+      "completed": "Concluído",
+      "rpe": "RPE {rpe}/5",
+      "sessionOne": "{count} treino",
+      "sessionMany": "{count} treinos",
+      "weekRange": "{start} – {end}",
+      "empty": "Nenhum treino nesta semana."
+    },
+    "move": {
+      "title": "Mover para outra data",
+      "label": "Mover para outra data: {title}",
+      "date": "Nova data",
+      "cancel": "Cancelar",
+      "submit": "Mover"
+    }
   },
   "shell": {
     "nav": {
@@ -495,7 +513,17 @@
     },
     "anamnesis": "Minha anamnese",
     "anamnesisLock": "Conclua sua anamnese para liberar todas as telas do Kinesis. Leva cerca de 5 minutos.",
-    "anamnesisLockTitle": "Menu bloqueado"
+    "anamnesisLockTitle": "Menu bloqueado",
+    "tabs": {
+      "home": "Início",
+      "workouts": "Treinos",
+      "request": "Solicitar",
+      "cycles": "Ciclos",
+      "more": "Mais"
+    },
+    "close": "Fechar",
+    "account": "Conta",
+    "moreNavLabel": "Mais seções"
   },
   "login": {
     "title": "Entrar - Kinesis",

@@ -1445,25 +1445,28 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
     /* ── Narrow viewports keep the group usable without overflow ── */
 
     // The sidebar is still vertical at tablet width, so the group keeps its
-    // title; it becomes a horizontal bar at the mobile breakpoint, where the
-    // title is dropped along with the other labels.
-    for (const [width, height, mobile, groupTitleDisplay] of [
-      [1024, 800, false, 'block'],
-      [768, 900, true, 'block'],
-      [320, 812, true, 'none'],
-      [360, 812, true, 'none'],
-      [390, 812, true, 'none'],
+    // title; at the phone breakpoint the sidebar gives way to the bottom tab
+    // bar and the administration group moves, titled, into the More sheet.
+    for (const [width, height, mobile] of [
+      [1024, 800, false],
+      [768, 900, true],
+      [320, 812, true],
+      [360, 812, true],
+      [390, 812, true],
     ]) {
       await setViewport(width, height, mobile);
       await delay(250);
       const narrow = await evaluate(`({
         documentOverflow:document.documentElement.scrollWidth>document.documentElement.clientWidth,
         listOverflow:document.querySelector('.user-list').scrollWidth>document.querySelector('.user-list').clientWidth,
-        groupTitleDisplay:getComputedStyle(document.querySelector('.nav-group-title')).display,
-        itemVisible:document.querySelector('[data-nav-id="admin-users"]').getBoundingClientRect().width>0,
-        sidebarOverflow:getComputedStyle(document.querySelector('.sidebar')).overflowX,
-        controlsReachable:[...document.querySelectorAll('.sidebar-brand, .sidebar-nav, .sidebar-footer')]
-          .every((node)=>node.scrollWidth<=node.clientWidth || node.parentElement.scrollWidth>node.parentElement.clientWidth),
+        sidebarShown:document.querySelector('.sidebar').getClientRects().length>0,
+        tabbarShown:document.querySelector('.mobile-tabbar').getClientRects().length>0,
+        groupTitle:document.querySelector(innerWidth>640?'.sidebar .nav-group-title':'.mobile-sheet .nav-group-title')?.textContent||null,
+        itemReachable:innerWidth>640
+          ? document.querySelector('.sidebar [data-nav-id="admin-users"]').getBoundingClientRect().width>0
+          : document.querySelector('.mobile-sheet [data-nav-id="admin-users"]')?.getAttribute('aria-current')==='page',
+        controlsReachable:[...document.querySelectorAll('.sidebar-brand, .sidebar-nav, .sidebar-footer, .mobile-tabbar')]
+          .every((node)=>node.scrollWidth<=node.clientWidth),
         // The activity badge and its row action are the widest part of a row,
         // so both must stay inside the row instead of being clipped away.
         rowOverflow:[...document.querySelectorAll('.user-row')]
@@ -1473,18 +1476,26 @@ test('the administration page manages accounts in PT/EN with keyboard and mobile
         actionsVisible:[...document.querySelectorAll('.user-row [data-action]')]
           .every((node)=>node.getBoundingClientRect().width>0),
       })`);
+      const narrowGroupTitle = await evaluate(`document.querySelector('.sidebar .nav-group-title').textContent`);
+      assert.ok(narrowGroupTitle);
       assert.deepEqual(narrow, {
         documentOverflow: false,
         listOverflow: false,
-        groupTitleDisplay,
-        itemVisible: true,
-        sidebarOverflow: width <= 640 ? 'auto' : 'hidden',
+        sidebarShown: width > 640,
+        tabbarShown: width <= 640,
+        groupTitle: narrowGroupTitle,
+        itemReachable: true,
         controlsReachable: true,
         rowOverflow: false,
         badgesVisible: true,
         actionsVisible: true,
       }, `the layout stays intact at ${width}px`);
     }
+
+    // The rest of the scenario parks focus on the desktop sidebar toggle,
+    // which the phone layout hides.
+    await setViewport(1024, 800, false);
+    await delay(250);
 
     /* ── A save stays isolated from a later save until its refresh settles ── */
 
