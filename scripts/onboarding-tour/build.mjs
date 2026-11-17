@@ -2,7 +2,7 @@
 // Builds the narrated welcome tour videos (PT and EN) for the dashboard.
 //
 //   node scripts/onboarding-tour/build.mjs --python <venv python> --kokoro <model dir> \
-//     --whisper-model <ggml model> [--music <file> [--music-start <s>]] [--sfx <dir>]
+//     --whisper-model <ggml model> [--music <file> [--music-start <s>] [--music-splice <a>:<b>]] [--sfx <dir>]
 //     [--lang pt,en] [--work <dir>] [--preview]
 //
 // Pipeline per language (see README.md):
@@ -34,7 +34,7 @@ const PUBLIC_PREFIX = '/assets/onboarding/tour';
 const HYPERFRAMES = ['-y', 'hyperframes@0.9.31'];
 
 const VOICES = {
-  pt: { voice: 'pm_santa', lang: 'pt-br', whisper: 'pt' },
+  pt: { voice: 'pm_alex', lang: 'pt-br', whisper: 'pt' },
   en: { voice: 'am_michael', lang: 'en-us', whisper: 'en' },
 };
 // Spoken spellings only; captions and the transcript keep the written text.
@@ -54,7 +54,7 @@ function args() {
     i += 1;
   }
   if (!out.python || !out.kokoro || !out['whisper-model']) {
-    console.error('Usage: build.mjs --python <venv python> --kokoro <model dir> --whisper-model <ggml model> [--music <file> [--music-start <s>]] [--sfx <dir>] [--lang pt,en] [--work <dir>] [--preview]');
+    console.error('Usage: build.mjs --python <venv python> --kokoro <model dir> --whisper-model <ggml model> [--music <file> [--music-start <s>] [--music-splice <a>:<b>]] [--sfx <dir>] [--lang pt,en] [--work <dir>] [--preview]');
     process.exit(2);
   }
   return out;
@@ -158,13 +158,22 @@ function finalMix(options, mixed, duration, target) {
     return;
   }
   const d = duration.toFixed(3);
+  // `--music-splice A:B` lengthens a track that is shorter than the video
+  // without an audible loop: at A seconds it jumps back to B with a short
+  // crossfade. Pick A and B a whole number of bars apart, on the beat.
+  const splice = options['music-splice']?.split(':').map(Number);
+  const music = splice
+    ? `[1:a]atrim=0:${(splice[0] + 0.25).toFixed(3)},asetpts=N/SR/TB[m1];[2:a]atrim=${(splice[1] - 0.25).toFixed(3)},asetpts=N/SR/TB[m2];[m1][m2]acrossfade=d=0.5:c1=tri:c2=tri[music]`
+    : '[1:a]anull[music]';
   const graph = [
     '[0:a]asplit=2[voice][key]',
-    `[1:a]aresample=${RATE},aformat=channel_layouts=stereo,atrim=0:${d},asetpts=N/SR/TB,volume=0.13,afade=t=in:d=1.2,afade=t=out:st=${(duration - 3).toFixed(3)}:d=3[bed]`,
+    music,
+    `[music]aresample=${RATE},aformat=channel_layouts=stereo,atrim=0:${d},asetpts=N/SR/TB,volume=0.13,afade=t=in:d=1.2,afade=t=out:st=${(duration - 3).toFixed(3)}:d=3[bed]`,
     '[bed][key]sidechaincompress=threshold=0.02:ratio=4:attack=30:release=600[ducked]',
     `[voice][ducked]amix=inputs=2:normalize=0:duration=first,${norm}[out]`,
   ].join(';');
-  run('ffmpeg', ['-v', 'error', '-y', '-i', mixed, '-stream_loop', '-1', '-ss', options['music-start'], '-i', options.music,
+  const input = ['-ss', options['music-start'], '-i', options.music];
+  run('ffmpeg', ['-v', 'error', '-y', '-i', mixed, ...(splice ? [...input, ...input] : ['-stream_loop', '-1', ...input]),
     '-filter_complex', graph, '-map', '[out]', '-ar', String(RATE), target]);
 }
 

@@ -14,6 +14,7 @@ export const TOUR_SCENES = [
   { id: 'watch', cues: ['watch1'] },
   { id: 'result', cues: ['result1', 'result2'] },
   { id: 'insights', cues: ['insights1', 'insights2'] },
+  { id: 'records', cues: ['records1'] },
   { id: 'outro', cues: ['outro1', 'outro2'] },
 ];
 

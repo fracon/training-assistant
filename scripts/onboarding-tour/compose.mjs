@@ -88,6 +88,18 @@ function stageScene(sceneId, length, headline, plan) {
     const duration = fix(Math.max(0.25, Math.min(step.duration ?? 0.9, room)));
     tl.push(`tl.to('#${sceneId}-cam', { x: ${step.state.x}, y: ${step.state.y}, scale: ${step.state.scale}, duration: ${duration}, ease: '${step.ease ?? 'power2.inOut'}' }, ${fix(step.at)});`);
   });
+  // A long hold gets a slow push-in around the stage centre, so the picture
+  // never freezes while the narrator keeps talking about the same screen.
+  const holds = [{ from: 0.4, state: first }, ...moves.map((step, i) => {
+    const room = (moves[i + 1]?.at ?? length) - step.at - 0.03;
+    return { from: step.at + Math.max(0.25, Math.min(step.duration ?? 0.9, room)), state: step.state };
+  })];
+  holds.forEach((hold, i) => {
+    const until = (moves[i]?.at ?? length - 0.25) - 0.02;
+    if (until - hold.from < 2.4) return;
+    const k = 1.015; const cx = STAGE.w / 2; const cy = STAGE.h / 2;
+    tl.push(`tl.to('#${sceneId}-cam', { x: ${fix(cx - (cx - hold.state.x) * k)}, y: ${fix(cy - (cy - hold.state.y) * k)}, scale: ${fix(hold.state.scale * k)}, duration: ${fix(until - hold.from)}, ease: 'sine.inOut' }, ${fix(hold.from)});`);
+  });
   shots.forEach((s, i) => {
     tl.push(`tl.set('#${sceneId}-shot${i}', { opacity: ${i === 0 ? 1 : 0} }, 0);`);
     if (i > 0) tl.push(`tl.fromTo('#${sceneId}-shot${i}', { opacity: 0, filter: 'blur(8px)' }, { opacity: 1, filter: 'blur(0px)', duration: 0.3, ease: 'power2.out' }, ${fix(s.at)});`);
@@ -185,6 +197,7 @@ function introScene(scene, at, strings) {
   <script>
     const tl = gsap.timeline({ paused: true });
     tl.fromTo('#intro-mark', { opacity: 1, scale: 0.86 }, { opacity: 1, scale: 1, duration: 0.9, ease: 'expo.out' }, 0);
+    tl.to('#intro-mark', { scale: 1.06, y: -8, duration: ${fix(L - 1.2)}, ease: 'sine.inOut' }, 0.9);
     tl.fromTo('#intro .ch', { opacity: 0.0, filter: 'blur(6px)' }, { opacity: 1, filter: 'blur(0px)', duration: 0.2, ease: 'power4.out', stagger: 0.06 }, ${fix(Math.max(0.6, kinesisAt - 0.25))});
     ${tagAt.map((t, i) => `tl.fromTo('#intro-t${i}', { opacity: 0, y: 18, filter: 'blur(6px)' }, { opacity: 1, y: 0, filter: 'blur(0px)', duration: 0.3, ease: 'expo.out' }, ${fix(t)});`).join('\n    ')}
     tl.to(['#intro-mark', '#intro-name', '#intro-tag'], { opacity: 0, filter: 'blur(8px)', duration: 0.22, ease: 'power3.in' }, ${fix(L - 0.24)});
@@ -197,7 +210,7 @@ function introScene(scene, at, strings) {
 function watchScene(scene, at, strings, shots) {
   const L = scene.length;
   const chip = shots.calendar.boxes.first;
-  const land = at('watch1', 'direto') ?? 1.5;
+  const land = at('watch1', 'envia') ?? 1.5;
   const go = Math.max(0.6, land - 0.9);
   const sounds = [{ time: land, sfx: 'notify' }];
   const s = strings.watch;
@@ -378,6 +391,20 @@ function screenPlan(id, at, shots, cueAt) {
           ...sections.slice(0, 2).map((s, i) => ({ box: pad(s, 6), at: at('insights2', i === 0 ? 'historico' : 'informacao') }))],
       };
     }
+    case 'records': {
+      // Zoom into the four distance cards, then ring the session-derived 5 km
+      // mark and its source line as the narrator says "results".
+      const cards = b('records', 'cards');
+      const grid = pad(union(cards), 24);
+      return {
+        shots: [{ id: 'records' }],
+        camera: [{ state: cam(null) }, { at: at('records1', 'recordes') - 0.3, state: cam(grid, 0.92, 1.8), duration: 1 },
+          { at: at('records1', 'resultados') - 0.4, state: cam(pad(cards[0], 60), 0.85, 2.2), duration: 0.8 }],
+        rings: [{ box: pad(union(cards.slice(0, 2)), 8), at: at('records1', 'cinco'), until: at('records1', 'meia') - 0.1 },
+          { box: pad(union(cards.slice(2, 4)), 8), at: at('records1', 'meia'), until: at('records1', 'resultados') - 0.45 },
+          { box: pad(b('records', 'sources')[0], 6), at: at('records1', 'resultados') }],
+      };
+    }
     default:
       throw new Error(`No plan for scene ${id}`);
   }
@@ -386,9 +413,9 @@ function screenPlan(id, at, shots, cueAt) {
 // English anchors for the same moves, keyed by the Portuguese word used above.
 const EN_WORDS = {
   tenis: 'shoes', planejamento: 'plan', fases: 'phases', rodagem: 'mileage', objetivo: 'goal', data: 'date', dias: 'days', tempo: 'long', meta: 'personal', montar: 'build', revisar: 'review',
-  proposta: 'proposal', planilha: 'spreadsheet', calend: 'calendar', arrast: 'drag', direto: 'straight',
+  proposta: 'proposal', planilha: 'spreadsheet', calend: 'calendar', arrast: 'drag', envia: 'send',
   import: 'import', relogio: 'watch', fit: 'fit', esforco: 'effort', analise: 'analysis', historico: 'history',
-  informacao: 'detail',
+  informacao: 'detail', recordes: 'records', cinco: 'five', meia: 'half', resultados: 'results',
 };
 
 // The mixed narration must be written to <dir>/assets/narration.wav afterwards;

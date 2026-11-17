@@ -23,6 +23,7 @@ const DATA = {
   pt: {
     language: 'pt-BR', first: 'Ana', last: 'Corredora', objective: 'Correr 10 km',
     location: 'São Paulo, SP',
+    records: { session: 'Teste de 5 km', tenK: 'Corrida de Rua de Primavera', half: 'Meia Maratona da Cidade' },
     workouts: [
       ['Rodagem', 'Rodagem leve', '40 min em ritmo confortável'],
       ['Intervalado', 'Tiros 6×400 m', 'Aquecimento, 6×400 m forte, 2 min de trote'],
@@ -34,6 +35,7 @@ const DATA = {
   en: {
     language: 'en-US', first: 'Alex', last: 'Runner', objective: 'Run 10 km',
     location: 'Boston, MA',
+    records: { session: '5K time trial', tenK: 'Spring 10K', half: 'City Half Marathon' },
     workouts: [
       ['Run', 'Easy run', '40 min at a comfortable pace'],
       ['Intervals', 'Speed 6×400 m', 'Warm-up, 6×400 m hard, 2 min jog'],
@@ -71,11 +73,14 @@ const SHOTS = [
   })()`, boxes: { modal: '#cyclePlanningModal .modal-card', generate: '#cyclePlanningGenerate' } },
   { id: 'request', path: '/ai-coach.html', boxes: { availability: '.availability-fieldset', days: 'all:.availability-grid' } },
   { id: 'generate', path: '/ai-coach.html', prepare: `(async () => { document.getElementById('generateBtn')?.scrollIntoView({ block: 'center' }); await new Promise((r) => setTimeout(r, 400)); return true; })()`, boxes: { generate: '#generateBtn' } },
-  { id: 'calendar', path: '/calendar.html', boxes: { chips: 'all:.training-chip', first: '.training-chip', cells: 'each:.day-cell', chipList: 'each:.training-chip', import: '#importBtn' } },
+  // The past 5 km session (personal records) is left out of the week's chips.
+  { id: 'calendar', path: '/calendar.html', boxes: { chips: 'all:.training-chip:not([data-training-id="{fiveKId}"])', first: '.training-chip[data-training-id="{resultId}"]', cells: 'each:.day-cell', chipList: 'each:.training-chip:not([data-training-id="{fiveKId}"])', import: '#importBtn' } },
   { id: 'upload', path: '/training-result.html?id={resultId}', prepare: openResult('#fitDropzone', 'fit'), boxes: { dropzone: '#fitDropzone', source: '#resultSourceSelect' } },
   { id: 'rpe', path: '/training-result.html?id={resultId}', prepare: openResult('#feedbackRpe'), boxes: { rpe: '#feedbackRpe', emojis: 'each:.rpe-emoji' } },
   { id: 'analysis', path: '/training-result.html?id={resultId}', prepare: openResult('#analysisSection:not([hidden]), #generateBtn'), boxes: { analysis: '#analysisSection', generate: '#generateBtn' } },
   { id: 'memory', path: '/training-memory.html', boxes: { sections: 'each:.memory-section' } },
+  { id: 'records', path: '/records.html', prepare: `(async () => { for (let i = 0; i < 60 && !document.querySelector('#recordsList .content-card'); i += 1) await new Promise((r) => setTimeout(r, 100)); return true; })()`,
+    boxes: { grid: '#recordsList', cards: 'each:#recordsList .content-card', values: 'each:#recordsList .record-value', sources: 'each:#recordsList .record-source' } },
 ];
 
 function isoDate(date) { return date.toISOString().slice(0, 10); }
@@ -94,6 +99,11 @@ async function seed(app, db, lang) {
   if (registered.statusCode !== 201) throw new Error(`register ${registered.statusCode}`);
   const userId = db.prepare('SELECT id FROM users WHERE email = ?').get(email).id;
   db.prepare("UPDATE users SET onboarding_status = 'active' WHERE id = ?").run(userId);
+  // The tour opens after the mandatory anamnesis, so the athlete has completed
+  // a minimal one (no answers, no sensitive consent); without it every page
+  // redirects to the questionnaire.
+  db.prepare(`INSERT INTO athlete_anamnesis (user_id, questionnaire_version, status, answers_json, sensitive_ai_consent, revision, created_at, updated_at, completed_at)
+    VALUES (?, 'anamnesis-v1', 'completed', '{}', 0, 1, datetime('now'), datetime('now'), datetime('now'))`).run(userId);
   const login = await app.inject({ method: 'POST', url: '/api/auth/login', payload: { email, password } });
   const cookie = [].concat(login.headers['set-cookie'])[0].split(';')[0].split('=')[1];
 
@@ -128,7 +138,24 @@ async function seed(app, db, lang) {
     payload: { distance_km: 7.2, duration_seconds: 2538, feedback_rpe: 3 },
   });
   if (result.statusCode !== 200) throw new Error(`manual result ${result.statusCode} ${result.body}`);
-  return { cookie, resultId };
+
+  // Personal records: the 5 km comes from a completed session, the 10 km and
+  // the half marathon were entered by hand, and the marathon has no mark yet.
+  const fiveK = db.prepare('INSERT INTO trainings (user_id, training_cycle_id, dia, tipo, treino, detalhes, location) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(userId, cycleId, addDays(monday, -9), data.workouts[3][0], data.records.session, data.workouts[3][2], data.location).lastInsertRowid;
+  const fiveKResult = await app.inject({
+    method: 'PUT', url: `/api/trainings/${fiveK}/manual-results`, headers: { cookie: `ta_session=${cookie}` },
+    payload: { distance_km: 5.03, duration_seconds: 1428, feedback_rpe: 4 },
+  });
+  if (fiveKResult.statusCode !== 200) throw new Error(`5 km result ${fiveKResult.statusCode} ${fiveKResult.body}`);
+  for (const [distance, time, date, race] of [['10k', 3062, addDays(monday, -120), data.records.tenK], ['21k', 6895, addDays(monday, -300), data.records.half]]) {
+    const saved = await app.inject({
+      method: 'PUT', url: `/api/records/${distance}`, headers: { cookie: `ta_session=${cookie}` },
+      payload: { time_seconds: time, achieved_on: date, race_name: race },
+    });
+    if (saved.statusCode !== 200) throw new Error(`record ${distance} ${saved.statusCode} ${saved.body}`);
+  }
+  return { cookie, resultId, fiveKId: fiveK };
 }
 
 async function chrome() {
@@ -169,7 +196,8 @@ export async function captureScreens(lang, outDir) {
   const browser = await chrome();
   const shots = {};
   try {
-    const { cookie, resultId } = await seed(app, db, lang);
+    const { cookie, resultId, fiveKId } = await seed(app, db, lang);
+    const fill = (text) => text.replaceAll('{resultId}', resultId).replaceAll('{fiveKId}', fiveKId);
     const { command, evaluate } = browser;
     await command('Page.enable');
     await command('Network.enable');
@@ -177,7 +205,7 @@ export async function captureScreens(lang, outDir) {
     await command('Emulation.setDeviceMetricsOverride', { width: VIEW.width, height: VIEW.height, deviceScaleFactor: VIEW.scale, mobile: false });
     await command('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }, { name: 'prefers-reduced-motion', value: 'reduce' }] });
     for (const shot of SHOTS) {
-      await command('Page.navigate', { url: origin + shot.path.replace('{resultId}', resultId) });
+      await command('Page.navigate', { url: origin + fill(shot.path) });
       for (let i = 0; i < 200; i += 1) {
         if (await evaluate("document.readyState === 'complete' && document.body?.classList.contains('shell-mounted')").catch(() => false)) break;
         await delay(50);
@@ -187,7 +215,7 @@ export async function captureScreens(lang, outDir) {
       if (shot.prepare) await evaluate(shot.prepare);
       const boxes = await evaluate(`(() => {
         const out = {};
-        for (const [name, selector] of Object.entries(${JSON.stringify(shot.boxes)})) {
+        for (const [name, selector] of Object.entries(${fill(JSON.stringify(shot.boxes))})) {
           const mode = /^(all|each):/.exec(selector)?.[1] ?? 'first';
           const visible = [...document.querySelectorAll(mode === 'first' ? selector : selector.slice(mode.length + 1))].filter((node) => { const b = node.getBoundingClientRect(); return b.width > 0 && b.height > 0; });
           if (!visible.length) continue;

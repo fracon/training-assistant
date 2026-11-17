@@ -9,7 +9,7 @@ build; it only serves the files.
 ## How it is made
 
 1. **Narration** — [Kokoro](https://github.com/thewh1teagle/kokoro-onnx), a
-   local neural TTS, speaks each cue (`kokoro_tts.py`): voice `pm_santa` for
+   local neural TTS, speaks each cue (`kokoro_tts.py`): voice `pm_alex` for
    Portuguese and `am_michael` for English.
 2. **Word timings** — [whisper.cpp](https://github.com/ggml-org/whisper.cpp)
    transcribes every cue clip, so each camera move and highlight lands on the
@@ -92,7 +92,11 @@ falls back to the word's position in the text; update the anchor in
   corporate background, warm and optimistic"), retrieved with a free HeyGen
   sign-in (`npx hyperframes@0.9.31 auth login`) under HeyGen's terms. Keep the
   file outside the repository and pass its path; `--music-start <s>` skips into
-  the track. Without `--music` the video has voice and effects only.
+  the track. The track (83 s, 123 BPM) is shorter than the tour, so the build
+  passes `--music-splice 53.649:38.045`: at 53.649 s the bed jumps back eight
+  bars to 38.045 s with a 0.5 s crossfade on the beat, instead of restarting
+  the track. Without `--music-splice` a short track loops from its start.
+  Without `--music` the video has voice and effects only.
 
 Speech is synthesized and transcribed locally; no narration text is sent to a
 cloud service. Set `HYPERFRAMES_NO_TELEMETRY=1` (the build does) to keep the
@@ -101,7 +105,7 @@ HyperFrames CLI from sending usage events.
 ## Build
 
 ```sh
-ARGS="--music $HOME/kokoro/tour-music.mp3 --python $HOME/.venvs/kokoro/bin/python --kokoro $HOME/kokoro --whisper-model $HOME/.local/src/whisper.cpp/models/ggml-small.bin --work /tmp/tour"
+ARGS="--music $HOME/kokoro/tour-music.mp3 --music-splice 53.649:38.045 --python $HOME/.venvs/kokoro/bin/python --kokoro $HOME/kokoro --whisper-model $HOME/.local/src/whisper.cpp/models/ggml-small.bin --work /tmp/tour"
 
 # Review: narration, screens and the HyperFrames project, checked but not rendered.
 node scripts/onboarding-tour/build.mjs $ARGS --preview

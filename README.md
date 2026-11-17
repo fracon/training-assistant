@@ -2,7 +2,7 @@
 
 A **secure, self-hosted, multi-user running application** for planning training and recording results. Create cycles and workouts, request and review weekly AI proposals, import a spreadsheet, record results from `.FIT`/`.ZIP` or manual measurements, manage shoe mileage, and prepare localized training-request prompts for use with an external AI.
 
-Current application version: **0.45.1** (active beta development). The Garmin Connect integration is opt-in per installation, in single-account `pilot` mode (default) or `multiuser` mode; see [Garmin Connect integration](#garmin-connect-integration).
+Current application version: **0.46.0** (active beta development). The Garmin Connect integration is opt-in per installation, in single-account `pilot` mode (default) or `multiuser` mode; see [Garmin Connect integration](#garmin-connect-integration).
 
 ## Personal records
 
@@ -13,14 +13,16 @@ uses the marks as historical references. See the [record contract](docs/personal
 
 ## Welcome tour
 
-New accounts are greeted on the dashboard by a narrated welcome tour: a short
+New accounts are greeted on the dashboard, right after completing the
+mandatory anamnesis, by a narrated welcome tour: a short
 motion graphic with sound effects, played in Portuguese or English according to
 the application language, with optional captions (off until the viewer turns
 them on in the player) and a full transcript.
 It walks through shoes, cycles and cycle planning, Request Workouts, the
 calendar, a connected watch (described without naming a brand, since more
 watch makers are planned), recording results from the watch, a FIT file or by
-hand with realized effort, workout analysis and training memory, and ends with
+hand with realized effort, workout analysis, training memory and personal
+records, and ends with
 the next setup step for the account. It never autoplays, and it can be reopened
 at any time from the user menu (**Welcome tour / Tour de boas-vindas**). The
 videos are produced offline with HyperFrames from real Kinesis screens of a

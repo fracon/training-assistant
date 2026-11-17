@@ -1698,7 +1698,7 @@
       "tour": {
         "cues": {
           "intro1": "Boas-vindas ao Kinesis.",
-          "intro2": "Aqui você planeja, registra e entende seus treinos de corrida.",
+          "intro2": "Com a sua anamnese concluída, aqui você planeja, registra e entende seus treinos de corrida.",
           "shoes1": "Comece cadastrando seus tênis.",
           "shoes2": "A cada resultado registrado, o Kinesis soma a rodagem do par que você usou.",
           "cycle1": "Em seguida, crie um ciclo com o seu objetivo e uma data-alvo.",
@@ -1706,14 +1706,15 @@
           "cycle3": "Se quiser, gere um planejamento com as fases do ciclo.",
           "request1": "Em Solicitar Treinos, informe seus dias, horários e o tempo disponível.",
           "request2": "O Kinesis prepara uma proposta semanal, com a previsão do tempo, para você revisar e aplicar.",
-          "request3": "Prefere montar o plano por conta própria? Também dá para importar uma planilha.",
+          "request3": "Se preferir montar o seu próprio plano, também é possível importar uma planilha.",
           "calendar1": "Seus treinos ficam no calendário.",
-          "calendar2": "Se a semana mudar, é só arrastar um treino para outro dia.",
-          "watch1": "Com o relógio conectado, os treinos vão direto para ele.",
-          "result1": "Depois da corrida, importe o resultado do relógio em poucos cliques, ou envie o arquivo FIT, ou registre manualmente.",
+          "calendar2": "Se a semana mudar, basta arrastar o treino para outro dia.",
+          "watch1": "Com um relógio conectado, você envia os treinos para ele.",
+          "result1": "Depois da corrida, importe o resultado do relógio, envie o arquivo FIT ou registre os dados manualmente.",
           "result2": "Para concluir o treino, informe o esforço percebido, de um a cinco.",
           "insights1": "Com o resultado salvo, peça uma análise do treino.",
           "insights2": "E a memória de treino reúne seu histórico, mostrando de onde veio cada informação.",
+          "records1": "Seus recordes pessoais de cinco e dez quilômetros, meia maratona e maratona se atualizam com os seus resultados.",
           "outro1": "Tudo pronto para começar.",
           "outro2": "Bons treinos!"
         }
