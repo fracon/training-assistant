@@ -169,8 +169,11 @@ test('Chrome: the user menu opens the tour for existing accounts without writing
   await openPage(browser, origin, existing.cookie, '/home.html', { width: 390, height: 844, mobile: true, language: 'en-US' });
   await new Promise((resolve) => setTimeout(resolve, 500));
   assert.equal(await evaluate("document.getElementById('onboardingTour').hidden"), true, 'existing accounts are not interrupted');
-  assert.equal(await evaluate("document.getElementById('userSetupGuide').innerText.trim()"), 'Welcome tour');
-  await openFromMenu();
+  // On phones the account menu lives in the More sheet of the bottom tab bar.
+  await evaluate("document.getElementById('mobileMoreBtn').click()");
+  await wait("!document.getElementById('mobileMoreSheet').hidden");
+  assert.equal(await evaluate("document.querySelector('.mobile-sheet [data-shell-proxy=\"userSetupGuide\"]').innerText.trim()"), 'Welcome tour');
+  await evaluate("document.querySelector('.mobile-sheet [data-shell-proxy=\"userSetupGuide\"]').click()");
   await wait("!document.getElementById('onboardingTour').hidden && document.activeElement?.id === 'onboardingTourTitle'");
   const mobile = await evaluate(tourState);
   assert.deepEqual(mobile.action, { text: EN.cycleAction, href: '/cycles.html' });
@@ -180,8 +183,9 @@ test('Chrome: the user menu opens the tour for existing accounts without writing
   assert.ok(player.width > 300 && Math.abs(player.ratio - 16 / 9) < 0.05, 'the player keeps a 16:9 frame on mobile');
   await evaluate("document.getElementById('onboardingTourClose').click()");
   await wait("document.getElementById('onboardingTour').hidden");
-  await wait("document.activeElement?.id === 'feedbackTrigger'");
-  assert.equal(await evaluate('document.activeElement.getClientRects().length > 0'), true, 'focus returns to a visible topbar control on phones, where the account badge is hidden');
+  await wait("document.activeElement?.id === 'mobileMoreBtn'");
+  assert.equal(await evaluate('document.activeElement.getClientRects().length > 0'), true, 'focus returns to More, where the tour was opened on phones (the account badge is hidden)');
+  assert.equal(await evaluate("document.getElementById('mobileMoreSheet').hidden"), true, 'the sheet closed before the tour opened');
   assert.equal(presentationWrites, 0, 'closing an explicitly opened tour for an existing account writes nothing');
   assert.deepEqual(existing.onboarding(), { status: 'active', hidden: 0 });
 

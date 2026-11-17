@@ -156,8 +156,8 @@ test('the footer carries only the app version, fetched from the backend', async 
   );
   assert.match(
     js,
-    /loadAppVersion\(\)\.then\(\(version\) => \{\s*\n\s*versionLabel\.textContent = formatAppVersion\(version\);\s*\n\s*\}\);/,
-    'the fetched version lands in the footer without blocking the mount'
+    /loadAppVersion\(\)\.then\(\(version\) => \{\s*\n\s*versionLabel\.textContent = formatAppVersion\(version\);\s*\n\s*if \(mobileVersionLabel\) mobileVersionLabel\.textContent = formatAppVersion\(version\);\s*\n\s*\}\);/,
+    'the fetched version lands in the footer (and the phone More sheet) without blocking the mount'
   );
 
   assert.equal(en.shell.footer, undefined);

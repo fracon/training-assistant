@@ -8,7 +8,7 @@ vanilla HTML/CSS/JavaScript application using shared ES modules. The visual
 system uses DM Sans and the tokens in `src/public/shared/theme.css`. Production
 uses Docker Compose on ZimaOS, host port 8081 mapped to container port 3000,
 with a Cloudflare Tunnel in front. Application version is maintained in
-`package.json` and `package-lock.json` (currently `0.46.0`); follow the SemVer
+`package.json` and `package-lock.json` (currently `0.47.0`); follow the SemVer
 rule below.
 
 Each major page has its own HTML/CSS/JS under `src/public/`: login, register,
@@ -36,6 +36,31 @@ User account operations live in `src/auth/`; the admin role check lives in
 same dotenv configuration and `DATABASE_FILE`/`<cwd>/data/database.sqlite`
 path as `src/start.js`. The runtime Docker image must include the command
 entrypoints and continue to run as its non-root `node` user.
+
+## Phone shell (bottom tab bar)
+
+Owner decision 2026-11-17: at `MOBILE_NAV_QUERY` (`max-width: 640px`) the
+authenticated shell hides the sidebar and the version footer and shows a compact
+top bar (brand link to Home + feedback) and a bottom tab bar
+(`MOBILE_TAB_ITEMS`: Home, Workouts, Request Workouts, Cycles) followed by the
+**More** button. Both layouts are always in the DOM; only CSS chooses, so the
+desktop shell is unchanged.
+
+- Tabs reuse `NAV_ITEMS` through `buildNavItem` (`variant: 'tab'`): same ids,
+  hrefs, `aria-current`, full-label `aria-label` and cycle guard (its badge id
+  gets a `-tab` suffix and is announced, not shown). Visible tab labels come
+  from `shell.tabs.*` and must stay contained in the full accessible name.
+- More (`#mobileMoreBtn`, a button, never a `.nav-item`) opens
+  `#mobileMoreSheet`, a direct child of `<body>` so `createDialogFocusTrap`
+  can inert the application. Focus starts on its heading, Tab is contained,
+  Escape/backdrop/close return focus to More, and widening past the breakpoint
+  closes it. It holds the remaining `NAV_ITEMS`, the admin group (admins only),
+  the account actions, the language switch, sign-out and the version. Account
+  actions forward clicks (`data-shell-proxy`) to the desktop menu controls, so
+  every action keeps one wiring. More is the current tab for pages in the sheet.
+- Tab bar and sheet controls are at least 44 px tall and respect
+  `safe-area-inset-bottom`; the shell height uses `100dvh`. Covered by
+  `test/mobileShell.browser.test.js`.
 
 ## Account roles and administrative bootstrap
 
@@ -76,7 +101,8 @@ administration page. `src/server.js` gates `/admin-users.html` and mounts
 `/api/admin/users` behind `requireAuth` then `requireAdmin`; the shell renders
 the `ADMIN_NAV_GROUP` only for an admin session. The group is a separate sidebar
 section, never a loose header entry, and it must be absent from the DOM — not
-merely hidden — for every other account.
+merely hidden — for every other account. On phones the same group is rendered,
+titled, inside the More sheet (see *Phone shell*), under the same rule.
 
 - The list and read responses return identification, role, and the activity
   state only. They never expose or accept another account's training, cycle,
@@ -279,9 +305,10 @@ AI integration (PR 2):
   cycles, weight log, training memory, administration) to
   `/anamnesis.html`; `GET /api/me` carries `anamnesis_status` and
   `initShell` sends any other page (including statically served ones such
-  as shoes) there too. On the anamnesis page the shell locks every sidebar
-  entry (`applyAnamnesisLock`: disabled, no `href`, described by the
-  `#anamnesisLockNote` note) and `releaseAnamnesisLock` restores them on
+  as shoes) there too. On the anamnesis page the shell locks every sidebar,
+  phone tab and More sheet entry (`applyAnamnesisLock`: disabled, no `href`,
+  described by the `#anamnesisLockNote` note, or its sheet copy
+  `#anamnesisLockNoteSheet`; the More button itself stays enabled) and `releaseAnamnesisLock` restores them on
   completion, keeping the cycle guard. There is no "answer later": the page
   shows a welcome (`?welcome=1` from registration, consumed with
   `history.replaceState`) or a "required" card, and after completion a

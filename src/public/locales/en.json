@@ -245,7 +245,17 @@
     },
     "anamnesis": "My running profile",
     "anamnesisLock": "Finish your running profile to unlock every Kinesis screen. It takes about 5 minutes.",
-    "anamnesisLockTitle": "Menu locked"
+    "anamnesisLockTitle": "Menu locked",
+    "tabs": {
+      "home": "Home",
+      "workouts": "Workouts",
+      "request": "Request",
+      "cycles": "Cycles",
+      "more": "More"
+    },
+    "close": "Close",
+    "account": "Account",
+    "moreNavLabel": "More sections"
   },
   "login": {
     "title": "Sign In - Kinesis",

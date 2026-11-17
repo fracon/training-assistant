@@ -747,11 +747,10 @@ input.input-error:focus-visible {
 }
 
 @media (max-width: 640px) {
-  .topbar { justify-content: flex-start; }
+  /* The authenticated shell lays out its own phone top bar (shell.css);
+     the account menu lives in its More sheet. */
   .toast { top: 1rem; right: 1rem; }
-  .topbar-actions { right: 0.6rem; gap: 0.4rem; }
   .topbar > .lang-switch { right: 0.6rem; }
-  .user-badge { display: none; }
   .auth-header { right: 0.75rem; top: 0.75rem; }
   .auth-view { padding: 1.2rem 0.75rem; }
   .auth-card { padding: 1.4rem 1.1rem 1.3rem; }
