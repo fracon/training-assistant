@@ -2,110 +2,120 @@
 // Media, captions and scene boundaries of the narrated welcome tour.
 export const TOUR_MEDIA = {
   "pt": {
-    "duration": 83.897,
-    "webm": "/assets/onboarding/tour/kinesis-tour-pt.webm?v=4670988158",
-    "mp4": "/assets/onboarding/tour/kinesis-tour-pt.mp4?v=6b9b15fc06",
-    "captions": "/assets/onboarding/tour/kinesis-tour-pt.vtt?v=d8c9ce17f0",
-    "poster": "/assets/onboarding/tour/kinesis-tour-pt-poster.jpg?v=58364dfa34",
+    "duration": 91.505,
+    "webm": "/assets/onboarding/tour/kinesis-tour-pt.webm?v=5dd11da9f8",
+    "mp4": "/assets/onboarding/tour/kinesis-tour-pt.mp4?v=cbc63056d4",
+    "captions": "/assets/onboarding/tour/kinesis-tour-pt.vtt?v=984309d81a",
+    "poster": "/assets/onboarding/tour/kinesis-tour-pt-poster.jpg?v=42f8a68560",
     "scenes": [
       {
         "id": "intro",
         "start": 0,
-        "end": 7.561
+        "end": 9.198
       },
       {
         "id": "shoes",
-        "start": 7.561,
-        "end": 15.72
+        "start": 9.198,
+        "end": 17.241
       },
       {
         "id": "cycle",
-        "start": 15.72,
-        "end": 28.249
+        "start": 17.241,
+        "end": 29.6
       },
       {
         "id": "request",
-        "start": 28.249,
-        "end": 44.95
+        "start": 29.6,
+        "end": 45.731
       },
       {
         "id": "calendar",
-        "start": 44.95,
-        "end": 51.807
+        "start": 45.731,
+        "end": 52.498
       },
       {
         "id": "watch",
-        "start": 51.807,
-        "end": 56.307
+        "start": 52.498,
+        "end": 56.998
       },
       {
         "id": "result",
-        "start": 56.307,
-        "end": 68.634
+        "start": 56.998,
+        "end": 68.678
       },
       {
         "id": "insights",
-        "start": 68.634,
-        "end": 77.946
+        "start": 68.678,
+        "end": 77.796
+      },
+      {
+        "id": "records",
+        "start": 77.796,
+        "end": 85.628
       },
       {
         "id": "outro",
-        "start": 77.946,
-        "end": 83.897
+        "start": 85.628,
+        "end": 91.505
       }
     ]
   },
   "en": {
-    "duration": 82.034,
-    "webm": "/assets/onboarding/tour/kinesis-tour-en.webm?v=aacf607472",
-    "mp4": "/assets/onboarding/tour/kinesis-tour-en.mp4?v=423e5974a8",
-    "captions": "/assets/onboarding/tour/kinesis-tour-en.vtt?v=74954dfda8",
-    "poster": "/assets/onboarding/tour/kinesis-tour-en-poster.jpg?v=ab593ae30c",
+    "duration": 92.087,
+    "webm": "/assets/onboarding/tour/kinesis-tour-en.webm?v=dcda443de5",
+    "mp4": "/assets/onboarding/tour/kinesis-tour-en.mp4?v=69f15f02ca",
+    "captions": "/assets/onboarding/tour/kinesis-tour-en.vtt?v=eb007e6c69",
+    "poster": "/assets/onboarding/tour/kinesis-tour-en-poster.jpg?v=6680643cbe",
     "scenes": [
       {
         "id": "intro",
         "start": 0,
-        "end": 6.646
+        "end": 8.985
       },
       {
         "id": "shoes",
-        "start": 6.646,
-        "end": 13.974
+        "start": 8.985,
+        "end": 16.314
       },
       {
         "id": "cycle",
-        "start": 13.974,
-        "end": 26.814
+        "start": 16.314,
+        "end": 29.153
       },
       {
         "id": "request",
-        "start": 26.814,
-        "end": 42.247
+        "start": 29.153,
+        "end": 44.943
       },
       {
         "id": "calendar",
-        "start": 42.247,
-        "end": 49.129
+        "start": 44.943,
+        "end": 51.876
       },
       {
         "id": "watch",
-        "start": 49.129,
-        "end": 53.629
+        "start": 51.876,
+        "end": 56.376
       },
       {
         "id": "result",
-        "start": 53.629,
-        "end": 66.725
+        "start": 56.376,
+        "end": 68.259
       },
       {
         "id": "insights",
-        "start": 66.725,
-        "end": 76.613
+        "start": 68.259,
+        "end": 78.146
+      },
+      {
+        "id": "records",
+        "start": 78.146,
+        "end": 86.666
       },
       {
         "id": "outro",
-        "start": 76.613,
-        "end": 82.034
+        "start": 86.666,
+        "end": 92.087
       }
     ]
   }

@@ -1698,7 +1698,7 @@
       "tour": {
         "cues": {
           "intro1": "Welcome to Kinesis.",
-          "intro2": "This is where you plan, record, and understand your running.",
+          "intro2": "With your running profile complete, this is where you plan, record, and understand your training.",
           "shoes1": "Start by adding your running shoes.",
           "shoes2": "Every result you record adds to the mileage of the pair you wore.",
           "cycle1": "Next, create a cycle with your goal and a target date.",
@@ -1706,14 +1706,15 @@
           "cycle3": "If you like, generate a plan with the phases of your cycle.",
           "request1": "In Request Workouts, set the days, times, and how long you can train.",
           "request2": "Kinesis prepares a weekly proposal, with the forecast, for you to review and apply.",
-          "request3": "Prefer to build your own plan? You can also import a spreadsheet.",
+          "request3": "If you prefer to build your own plan, you can also import a spreadsheet.",
           "calendar1": "Your workouts live in the calendar.",
-          "calendar2": "If your week changes, just drag a workout to another day.",
-          "watch1": "With your watch connected, workouts go straight to it.",
-          "result1": "After your run, import the result from your watch in a few clicks, upload the FIT file, or enter it manually.",
+          "calendar2": "If your week changes, just drag the workout to another day.",
+          "watch1": "With a connected watch, you can send workouts to it.",
+          "result1": "After your run, import the result from your watch, upload the FIT file, or enter it manually.",
           "result2": "To complete the workout, rate your perceived effort from one to five.",
           "insights1": "With the result saved, ask for a workout analysis.",
           "insights2": "Your training memory brings your history together and shows where each detail came from.",
+          "records1": "Your personal records for five and ten kilometers, the half marathon, and the marathon update with your results.",
           "outro1": "You're all set to begin.",
           "outro2": "Happy running!"
         }
