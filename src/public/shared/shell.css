@@ -750,6 +750,9 @@ body.shell-mounted {
   font-weight: 700;
 }
 
+/* Programmatic focus target on open; interactive controls keep their ring. */
+.password-modal-card .modal-header h2:focus { outline: none; }
+
 .password-modal-card .modal-close {
   display: inline-flex;
   align-items: center;
