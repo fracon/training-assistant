@@ -594,3 +594,18 @@ test('the workbook reader is a SheetJS release with the known advisories fixed',
   assert.match(lock.resolved, /^https:\/\/cdn\.sheetjs\.com\/xlsx-\d+\.\d+\.\d+\/xlsx-\d+\.\d+\.\d+\.tgz$/);
   assert.match(lock.integrity, /^sha512-/);
 });
+
+test('calendar sessions expose owner-scoped completion and realized effort for agenda status', async (t) => {
+  const { db, app, getTrainings } = await setup();
+  t.after(async () => { await app.close(); db.close(); });
+  const owner = db.prepare('SELECT id FROM users').get().id;
+  const other = Number(db.prepare("INSERT INTO users (email, password_hash) VALUES ('other-agenda@example.test', 'unused')").run().lastInsertRowid);
+  const insert = db.prepare('INSERT INTO trainings (user_id, dia, tipo, completed, feedback_rpe) VALUES (?, ?, ?, ?, ?)');
+  insert.run(owner, '2026-11-05', 'Leve', 1, 3);
+  insert.run(owner, '2026-11-06', 'Leve', 0, null);
+  insert.run(other, '2026-11-05', 'Leve', 1, 5);
+  const response = await getTrainings();
+  assert.equal(response.status, 200);
+  const { trainings } = await response.json();
+  assert.deepEqual(trainings.map(({ completed, feedback_rpe }) => ({ completed, feedback_rpe })), [{ completed: 1, feedback_rpe: 3 }, { completed: 0, feedback_rpe: null }]);
+});

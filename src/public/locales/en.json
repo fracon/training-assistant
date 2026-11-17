@@ -170,7 +170,8 @@
       },
       "failedTitle": "We found issues in your spreadsheet",
       "rowError": "Row {row} • {col}: {error}",
-      "close": "Close"
+      "close": "Close",
+      "compact": "Import"
     },
     "firstDayLabel": "Week starts on",
     "weekStart": {
@@ -213,7 +214,24 @@
       "Friday",
       "Saturday",
       "Sunday"
-    ]
+    ],
+    "agenda": {
+      "label": "Week agenda",
+      "planned": "Planned",
+      "completed": "Completed",
+      "rpe": "RPE {rpe}/5",
+      "sessionOne": "{count} session",
+      "sessionMany": "{count} sessions",
+      "weekRange": "{start} – {end}",
+      "empty": "No workouts this week."
+    },
+    "move": {
+      "title": "Move to another date",
+      "label": "Move to another date: {title}",
+      "date": "New date",
+      "cancel": "Cancel",
+      "submit": "Move"
+    }
   },
   "shell": {
     "nav": {
