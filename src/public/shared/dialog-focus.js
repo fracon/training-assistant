@@ -62,6 +62,15 @@ export function createDialogFocusTrap(dialog, onEscape) {
       (event.shiftKey ? focusLast : focusFirst)();
       return;
     }
+    // The heading focused on open is not tabbable: Shift+Tab from it wraps to
+    // the last control instead of leaving the dialog; Tab moves on naturally.
+    if (!focusable.includes(document.activeElement)) {
+      if (event.shiftKey) {
+        event.preventDefault();
+        focusLast();
+      }
+      return;
+    }
     const first = focusable[0];
     const last = focusable.at(-1);
     if (event.shiftKey && document.activeElement === first) {

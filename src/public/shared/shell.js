@@ -703,6 +703,40 @@ function translateAll(root, messages) {
   });
 }
 
+// The shell's own dialogs (change password, preferences) take focus and
+// containment like every other Kinesis dialog: heading focus on open, the
+// shared trap while open, and focus back to the opener when it is still
+// visible, otherwise to the visible account entry point (the badge on desktop,
+// More on phones, where the opener sat in a sheet that has already closed).
+const shellDialogFocus = new Map();
+const SHELL_FOCUS_FALLBACKS = ['userBadge', 'mobileMoreBtn', 'feedbackTrigger'];
+
+function isVisibleControl(element) {
+  return Boolean(element?.isConnected && element !== document.body && element.getClientRects?.().length > 0);
+}
+
+function activateShellDialog(backdrop, onEscape) {
+  let entry = shellDialogFocus.get(backdrop.id);
+  if (!entry) {
+    entry = { trap: createDialogFocusTrap(backdrop, onEscape), returnTo: null };
+    shellDialogFocus.set(backdrop.id, entry);
+  }
+  entry.returnTo = document.activeElement ?? null;
+  entry.trap.activate();
+  backdrop.querySelector('.modal-header h2')?.focus?.({ preventScroll: true });
+}
+
+function deactivateShellDialog(backdrop) {
+  const entry = shellDialogFocus.get(backdrop?.id);
+  if (!entry?.trap.isActive()) return;
+  entry.trap.deactivate();
+  const target = isVisibleControl(entry.returnTo)
+    ? entry.returnTo
+    : SHELL_FOCUS_FALLBACKS.map((id) => document.getElementById(id)).find(isVisibleControl);
+  entry.returnTo = null;
+  target?.focus?.({ preventScroll: true });
+}
+
 export function openChangePasswordModal(messages = shellI18n.messages) {
   closeUserMenu();
   const existing = document.getElementById('changePasswordModal');
@@ -710,6 +744,7 @@ export function openChangePasswordModal(messages = shellI18n.messages) {
     existing.classList.remove('hidden');
     translateAll(existing, messages);
     refreshIcons();
+    activateShellDialog(existing, closeChangePasswordModal);
     return;
   }
 
@@ -723,6 +758,7 @@ export function openChangePasswordModal(messages = shellI18n.messages) {
 
   const header = el('div', 'modal-header');
   const title = el('h2');
+  title.tabIndex = -1;
   title.setAttribute('data-i18n', 'password.title');
   title.textContent = translate(messages, 'password.title');
   const close = el('button', 'modal-close');
@@ -779,6 +815,7 @@ export function openChangePasswordModal(messages = shellI18n.messages) {
   });
   close.addEventListener('click', () => closeChangePasswordModal());
   refreshIcons();
+  activateShellDialog(backdrop, closeChangePasswordModal);
 }
 
 function buildPreferenceChoice(name, value, labelKey, checked) {
@@ -825,6 +862,7 @@ export function openPreferencesModal(messages = shellI18n.messages) {
     syncPreferencesFields(document.getElementById('preferencesForm'));
     translateAll(existing, messages);
     refreshIcons();
+    activateShellDialog(existing, closePreferencesModal);
     return;
   }
 
@@ -836,6 +874,7 @@ export function openPreferencesModal(messages = shellI18n.messages) {
   card.setAttribute('role', 'document');
   const header = el('div', 'modal-header');
   const title = el('h2');
+  title.tabIndex = -1;
   title.setAttribute('data-i18n', 'preferences.title');
   title.textContent = translate(messages, 'preferences.title');
   const close = el('button', 'modal-close');
@@ -887,11 +926,14 @@ export function openPreferencesModal(messages = shellI18n.messages) {
   });
   close.addEventListener('click', closePreferencesModal);
   refreshIcons();
+  activateShellDialog(backdrop, closePreferencesModal);
 }
 
 export function closePreferencesModal() {
   const modal = document.getElementById('preferencesModal');
-  if (modal) modal.classList.add('hidden');
+  if (!modal) return;
+  modal.classList.add('hidden');
+  deactivateShellDialog(modal);
 }
 
 export function wirePreferencesForm(form, messages = shellI18n.messages) {
@@ -940,6 +982,7 @@ export function closeChangePasswordModal() {
     if (label) label.textContent = translate(shellI18n.messages, 'password.submit');
   }
   modal.classList.add('hidden');
+  deactivateShellDialog(modal);
 }
 
 function clearPasswordFormError(formError) {
@@ -1166,7 +1209,8 @@ export function wireMobileNav() {
   });
   for (const action of backdrop.querySelectorAll('[data-shell-proxy]')) {
     action.addEventListener('click', () => {
-      // The forwarded action (a modal, the tour or sign-out) takes over focus.
+      // The forwarded action takes over focus: the shell dialogs focus their
+      // heading and return to More, the tour falls back to More, sign-out leaves.
       close({ restoreFocus: false });
       document.getElementById(action.dataset.shellProxy)?.click();
     });

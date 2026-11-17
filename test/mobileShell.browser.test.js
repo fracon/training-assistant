@@ -128,8 +128,19 @@ test('Chrome PT/EN phone/desktop: bottom tab bar, More sheet, guards and the ana
     await evaluate("document.querySelector('.mobile-sheet [data-shell-proxy=\"userPreferences\"]').click()");
     await wait("document.getElementById('preferencesModal') && !document.getElementById('preferencesModal').classList.contains('hidden')");
     assert.equal(await evaluate("document.getElementById('mobileMoreSheet').hidden"), true);
+    // The shell dialog takes focus and containment, then hands focus back to More.
+    await wait("document.activeElement === document.querySelector('#preferencesModal .modal-header h2')");
+    assert.equal(await evaluate("document.querySelector('.app-shell').hasAttribute('inert')"), true);
+    await key('Tab', 'Tab', 9, 8);
+    assert.equal(await evaluate("!!document.activeElement?.closest('#preferencesModal')"), true, 'focus stays inside Preferences');
     await key('Escape', 'Escape', 27);
-    await wait("document.getElementById('preferencesModal').classList.contains('hidden')");
+    await wait("document.getElementById('preferencesModal').classList.contains('hidden') && document.activeElement?.id === 'mobileMoreBtn'");
+    assert.equal(await evaluate("document.querySelector('.app-shell').hasAttribute('inert')"), false);
+    await openSheet();
+    await evaluate("document.querySelector('.mobile-sheet [data-shell-proxy=\"userChangePassword\"]').click()");
+    await wait("document.activeElement === document.querySelector('#changePasswordModal .modal-header h2')");
+    await evaluate("document.getElementById('closeChangePasswordBtn').click()");
+    await wait("document.getElementById('changePasswordModal').classList.contains('hidden') && document.activeElement?.id === 'mobileMoreBtn'");
 
     // The sheet's language switch drives the whole application.
     const other = language === 'pt-BR' ? ['en-US', en] : ['pt-BR', pt];
@@ -151,6 +162,11 @@ test('Chrome PT/EN phone/desktop: bottom tab bar, More sheet, guards and the ana
     assert.equal(await evaluate(visible('.mobile-tabbar')), false);
     assert.equal(await evaluate(visible('.topbar-brand')), false);
     assert.equal(await evaluate(visible('#userBadge')), true);
+    // On desktop the same dialogs return focus to the account badge.
+    await evaluate("document.getElementById('userBadge').click();document.getElementById('userPreferences').click()");
+    await wait("document.activeElement === document.querySelector('#preferencesModal .modal-header h2')");
+    await key('Escape', 'Escape', 27);
+    await wait("document.getElementById('preferencesModal').classList.contains('hidden') && document.activeElement?.id === 'userBadge'");
 
     // A page that lives in the sheet marks More as the current section.
     await viewport(width);
