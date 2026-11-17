@@ -8,7 +8,9 @@ import {
   showShellToast,
 } from './shared/shell.js';
 import { translate } from './shared/i18n.js';
-import { formatDate } from './shared/date.js';
+import { formatDate, formatCalendarDate, formatMonth } from './shared/date.js';
+import { createDatePicker } from './shared/datepicker.js';
+import { createDialogFocusTrap } from './shared/dialog-focus.js';
 
 export const WEEK_START_STORAGE_KEY = 'training-assistant:first-day-of-week';
 export const SUPPORTED_WEEK_STARTS = ['Monday', 'Sunday'];
@@ -167,6 +169,31 @@ export function rescheduledTrainings(trainings, id, newIso) {
   );
 }
 
+// Noon local civil dates avoid UTC offsets and DST changing the selected day.
+export function weekDates(iso, firstDay = DEFAULT_WEEK_START) {
+  const date = new Date(`${iso}T12:00:00`);
+  const offset = (date.getDay() - (firstDay === 'Sunday' ? 0 : 1) + 7) % 7;
+  return Array.from({ length: 7 }, (_, index) => {
+    const day = new Date(date.getFullYear(), date.getMonth(), date.getDate() - offset + index, 12);
+    return isoFromGridKey(`${day.getFullYear()}-${day.getMonth() + 1}-${day.getDate()}`);
+  });
+}
+
+export function weekGroups(trainings, iso, firstDay) {
+  return weekDates(iso, firstDay).map((dia) => ({ dia, trainings: trainings.filter((training) => training.dia === dia) }))
+    .filter((group) => group.trainings.length);
+}
+
+export function sessionMarkers(trainings) {
+  return { planned: trainings.some((training) => !training.completed), completed: trainings.some((training) => Boolean(training.completed)) };
+}
+
+export function sessionStatus(training, t) {
+  const status = t(training.completed ? 'calendar.agenda.completed' : 'calendar.agenda.planned');
+  return training.feedback_rpe != null
+    ? `${status} · ${t('calendar.agenda.rpe', { rpe: training.feedback_rpe })}` : status;
+}
+
 function setupCalendarPage() {
   const grid = document.getElementById('calendarGrid');
   const monthTitle = document.getElementById('monthTitle');
@@ -184,12 +211,176 @@ function setupCalendarPage() {
     monthIndex: displayedDate.getMonth(),
     firstDay: DEFAULT_WEEK_START,
     trainings: [],
+    selectedDate: isoFromGridKey(`${displayedDate.getFullYear()}-${displayedDate.getMonth() + 1}-${displayedDate.getDate()}`),
   };
 
   let i18n = null;
+  const phone = window.matchMedia('(max-width: 640px)');
+  const miniMonth = document.getElementById('miniMonth');
+  const agenda = document.getElementById('weekAgenda');
+  const moveModal = document.getElementById('moveModal');
+  const moveDate = document.getElementById('moveDate');
+  let moveTraining = null, moveTrigger = null;
+  const picker = createDatePicker(moveDate, { getLanguage: () => i18n?.language, getWeekStart: () => state.firstDay });
+  const moveTrap = createDialogFocusTrap(moveModal, closeMove);
+
+  function closeMove() {
+    picker.destroy();
+    moveModal.classList.add('hidden');
+    moveTrap.deactivate();
+    const trigger = moveTrigger?.isConnected
+      ? moveTrigger : agenda.querySelector(`[data-training-id="${moveTraining?.id}"] .agenda-move`);
+    (phone.matches ? trigger || miniMonth.querySelector('[tabindex="0"]') : prevBtn)?.focus();
+    moveTraining = null;
+    moveTrigger = null;
+  }
+
+  function openMove(training, trigger) {
+    moveTraining = training;
+    moveTrigger = trigger;
+    document.getElementById('moveTrainingTitle').textContent = training.treino || training.tipo;
+    picker.setValue(training.dia);
+    moveModal.classList.remove('hidden');
+    moveTrap.activate();
+    document.getElementById('moveTitle').focus();
+  }
+
+  document.getElementById('moveCancel').addEventListener('click', closeMove);
+  moveModal.addEventListener('click', (event) => { if (event.target === moveModal) closeMove(); });
+  document.getElementById('moveForm').addEventListener('submit', (event) => {
+    event.preventDefault();
+    const id = moveTraining?.id;
+    const iso = picker.getValue();
+    if (!id || !iso) return;
+    closeMove();
+    rescheduleTraining(id, iso);
+  });
+
+  function selectMonthWeek() {
+    const todayInMonth = now.getFullYear() === state.year && now.getMonth() === state.monthIndex;
+    state.selectedDate = isoFromGridKey(`${state.year}-${state.monthIndex + 1}-${todayInMonth ? now.getDate() : 1}`);
+  }
+
+  function renderAgenda() {
+    const selectedWeek = weekDates(state.selectedDate, state.firstDay);
+    const byDay = trainingsByDay(state.trainings);
+    miniMonth.replaceChildren();
+    for (const jsDay of weekdayOrder(state.firstDay)) {
+      const header = el('span', 'weekday-head');
+      header.textContent = t(`calendar.weekdaysShort.${weekdayArrayIndex(jsDay)}`).slice(0, 1);
+      header.setAttribute('aria-hidden', 'true');
+      miniMonth.append(header);
+    }
+    const cells = buildCalendarCells(state.year, state.monthIndex, state.firstDay);
+    cells.forEach((cell, index) => {
+      const iso = isoFromGridKey(cell.key);
+      const sessions = byDay.get(cell.key) || [];
+      const button = el('button', `mini-day${cell.inMonth ? '' : ' outside'}`);
+      button.type = 'button';
+      button.dataset.date = iso;
+      button.tabIndex = iso === state.selectedDate ? 0 : -1;
+      button.setAttribute('aria-label', `${formatCalendarDate(iso, i18n.language)} · ${t(sessions.length === 1 ? 'calendar.agenda.sessionOne' : 'calendar.agenda.sessionMany', { count: sessions.length })}`);
+      button.setAttribute('aria-pressed', String(selectedWeek.includes(iso)));
+      if (cell.isToday) button.setAttribute('aria-current', 'date');
+      const number = el('span');
+      number.textContent = String(cell.dayNumber);
+      button.append(number);
+      const markers = el('span', 'session-markers');
+      markers.setAttribute('aria-hidden', 'true');
+      for (const [status, present] of Object.entries(sessionMarkers(sessions))) {
+        if (present) markers.append(el('i', `session-dot ${status}`));
+      }
+      button.append(markers);
+      button.addEventListener('click', () => {
+        state.selectedDate = iso;
+        render();
+        miniMonth.querySelector(`[data-date="${iso}"]`)?.focus();
+      });
+      button.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          button.click();
+          return;
+        }
+        const delta = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 }[event.key];
+        if (!delta) return;
+        event.preventDefault();
+        const target = miniMonth.querySelectorAll('button')[index + delta];
+        if (target) {
+          miniMonth.querySelectorAll('button').forEach((day) => { day.tabIndex = -1; });
+          target.tabIndex = 0;
+          target.focus();
+        }
+      });
+      miniMonth.append(button);
+    });
+    document.getElementById('agendaWeekTitle').textContent = t('calendar.agenda.weekRange', {
+      start: formatDate(selectedWeek[0], i18n.language), end: formatDate(selectedWeek[6], i18n.language),
+    });
+    agenda.replaceChildren();
+    const groups = weekGroups(state.trainings, state.selectedDate, state.firstDay);
+    if (!groups.length) {
+      const empty = el('p', 'agenda-empty');
+      empty.textContent = t('calendar.agenda.empty');
+      agenda.append(empty);
+    }
+    for (const group of groups) {
+      const section = el('section', 'agenda-day');
+      const heading = el('h3');
+      heading.textContent = formatCalendarDate(group.dia, i18n.language, 'short');
+      section.append(heading);
+      for (const training of group.trainings) {
+        const card = el('article', 'agenda-card');
+        card.dataset.trainingId = training.id;
+        const link = el('a', 'agenda-card-body');
+        link.href = trainingResultUrl(training.id);
+        const type = el('span', 'agenda-type');
+        type.textContent = training.tipo;
+        const title = el('strong', 'agenda-title');
+        // Spreadsheet imports may carry only the type.
+        title.textContent = training.treino || training.tipo;
+        const details = el('span', 'agenda-details');
+        details.textContent = training.detalhes;
+        const status = el('span', `agenda-status${training.completed ? ' completed' : ''}`);
+        status.textContent = sessionStatus(training, t);
+        link.append(type, title, details, status);
+        const move = el('button', 'btn-icon agenda-move');
+        move.type = 'button';
+        move.setAttribute('aria-label', t('calendar.move.label', { title: training.treino || training.tipo }));
+        move.innerHTML = '<i data-lucide="calendar-arrow-up"></i>';
+        const tooltip = el('span', 'custom-tooltip');
+        tooltip.textContent = t('calendar.move.title');
+        move.append(tooltip);
+        move.addEventListener('click', () => openMove(training, move));
+        card.append(link, move);
+        section.append(card);
+      }
+      agenda.append(section);
+    }
+    refreshIcons();
+  }
+
+  phone.addEventListener('change', () => {
+    if (!moveModal.classList.contains('hidden')) closeMove();
+    render();
+  });
 
   function t(key, params) {
     return translate(i18n ? i18n.messages : {}, key, params);
+  }
+
+  function containTooltip(anchor, tooltip) {
+    anchor.addEventListener('mouseenter', () => {
+      tooltip.style.marginLeft = '0px';
+      tooltip.style.marginTop = '0px';
+      const bounds = grid.closest('.main-content')?.getBoundingClientRect();
+      const left = Math.max(0, bounds?.left || 0) + 8;
+      const right = Math.min(innerWidth, bounds?.right || innerWidth) - 16;
+      const top = Math.max(0, bounds?.top || 0) + 8;
+      const rect = tooltip.getBoundingClientRect();
+      tooltip.style.marginLeft = `${Math.max(left - rect.left, Math.min(0, right - rect.right))}px`;
+      tooltip.style.marginTop = `${Math.max(0, top - rect.top)}px`;
+    });
   }
 
   function appendTrainingChips(cellNode, dayTrainings) {
@@ -209,6 +400,7 @@ function setupCalendarPage() {
         const tooltip = el('div', 'chip-tooltip');
         tooltip.textContent = training.detalhes;
         chip.appendChild(tooltip);
+        containTooltip(chip, tooltip);
       }
       chip.dataset.trainingId = String(training.id);
       chip.addEventListener('click', () => {
@@ -233,6 +425,7 @@ function setupCalendarPage() {
       const moreTooltip = el('div', 'custom-tooltip');
       moreTooltip.textContent = t('calendar.moreTooltip');
       more.appendChild(moreTooltip);
+      containTooltip(more, moreTooltip);
       cellNode.appendChild(more);
     }
   }
@@ -245,11 +438,19 @@ function setupCalendarPage() {
   }
 
   function render() {
-    monthTitle.textContent = `${t(`calendar.months.${state.monthIndex}`)} ${state.year}`;
+    // Retarget only focus that belonged to this view before replacing its nodes.
+    const focused = document.activeElement;
+    const focusedDate = focused?.closest('.mini-day')?.dataset.date;
+    const focusedTraining = focused?.closest('.agenda-card')?.dataset.trainingId;
+    const focusedMove = focused?.classList.contains('agenda-move');
+    monthTitle.textContent = `${phone.matches ? formatMonth(state.monthIndex + 1, i18n.language, 'short') : t(`calendar.months.${state.monthIndex}`)} ${state.year}`;
     if (statusEl) {
       statusEl.textContent = monthTitle.textContent;
     }
 
+    grid.inert = phone.matches;
+    document.getElementById('phoneCalendar').inert = !phone.matches;
+    renderAgenda();
     grid.innerHTML = '';
     const shortNames = [];
     for (let index = 0; index < 7; index += 1) {
@@ -304,11 +505,23 @@ function setupCalendarPage() {
       );
       grid.appendChild(node);
     }
+    if (focusedDate || focusedTraining) {
+      const target = phone.matches
+        ? (focusedDate ? miniMonth.querySelector(`[data-date="${focusedDate}"]`)
+          : agenda.querySelector(`[data-training-id="${focusedTraining}"] ${focusedMove ? '.agenda-move' : 'a'}`))
+          || miniMonth.querySelector('[tabindex="0"]')
+        : prevBtn;
+      if (target?.classList.contains('mini-day')) {
+        miniMonth.querySelectorAll('button').forEach((day) => { day.tabIndex = day === target ? 0 : -1; });
+      }
+      target?.focus({ preventScroll: true });
+    }
   }
 
   async function applyWeekStart(next) {
     if (!SUPPORTED_WEEK_STARTS.includes(next) || next === state.firstDay) return;
     state.firstDay = next;
+    picker.refresh();
     saveStoredWeekStart(next);
     syncToggleButtons();
     render();
@@ -326,6 +539,8 @@ function setupCalendarPage() {
   sundayBtn.addEventListener('click', () => applyWeekStart('Sunday'));
 
   document.addEventListener('app:languagechange', () => {
+    picker.setValue(picker.getValue());
+    picker.refresh();
     syncToggleButtons();
     render();
   });
@@ -336,6 +551,7 @@ function setupCalendarPage() {
       state.monthIndex = 11;
       state.year -= 1;
     }
+    selectMonthWeek();
     render();
   });
 
@@ -345,15 +561,15 @@ function setupCalendarPage() {
       state.monthIndex = 0;
       state.year += 1;
     }
+    selectMonthWeek();
     render();
   });
-
-  document.addEventListener('app:languagechange', render);
 
   document.addEventListener('kinesis:preferences-changed', (event) => {
     const next = event.detail?.first_day_of_week;
     if (!SUPPORTED_WEEK_STARTS.includes(next) || next === state.firstDay) return;
     state.firstDay = next;
+    picker.refresh();
     saveStoredWeekStart(next);
     syncToggleButtons();
     render();
@@ -390,8 +606,12 @@ function setupCalendarPage() {
     render();
   }
 
-  async function handleRescheduleDrop(trainingId, cellKey) {
+  function handleRescheduleDrop(trainingId, cellKey) {
     const newIso = isoFromGridKey(cellKey);
+    return rescheduleTraining(trainingId, newIso);
+  }
+
+  async function rescheduleTraining(trainingId, newIso) {
     const moved = rescheduledTrainings(state.trainings, trainingId, newIso);
     if (moved === state.trainings) return;
     state.trainings = moved;
